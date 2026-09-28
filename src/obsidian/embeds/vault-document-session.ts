@@ -1,5 +1,6 @@
 import type { FileManager } from "obsidian";
 import type { InkSnapshotV1 } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { ElementStore } from "../../domain/store/public";
 import type * as Session from "../../editor/session/session-port";
 import { AutosaveCoordinator } from "../../persistence/saving/autosave/public";
@@ -11,6 +12,7 @@ import type { DocumentRuntimeFactories, EditableDocumentModel } from "./document
 import {
   createVaultDocumentExecutor,
   createVaultFallbackFactory,
+  readVaultDocumentBytes,
   type LoadedVaultDocument,
   type VaultDocumentFilePort,
 } from "./vault-document-loader";
@@ -21,8 +23,8 @@ import {
   createVaultAutosaveSession,
   createVaultClipboardCoordinator,
   createVaultEditableModel,
+  createVaultElementPreparationActions,
   prepareVaultElementReplacement,
-  prepareVaultElementMutation,
   requireVaultPage,
 } from "./vault-document-model";
 import { VaultDocumentSessionMutations } from "./vault-document-session-mutations";
@@ -38,17 +40,9 @@ export interface ActiveDocumentEditorContext {
 export class VaultDocumentSession implements Session.DocumentSessionPort {
   readonly #cancelled = new Set<number>();
   readonly #identity: Session.SessionIdentity;
-  readonly #fileManager: FileManager;
-  readonly #files: VaultDocumentFilePort;
   readonly #hooks: recovery.VaultDocumentSessionHooks;
-  readonly #loadDocument: (
-    operation: Session.SessionOperationIdentity,
-    executor: DocumentRuntimePort,
-    purpose: "recovery" | "unlock",
-    workerEpoch: number,
-    policy?: trustedLoader.TrustedVaultDocumentLoadPolicy,
-  ) => Promise<LoadedVaultDocument | undefined>;
-  readonly #runtimes: DocumentRuntimeFactories;
+  readonly #loadDocument: ReturnType<typeof trustedLoader.createTrustedVaultDocumentLoader>;
+  readonly #workScheduler: WorkScheduler;
   #autosave: AutosaveCoordinator | undefined;
   #confirmedRevision = 0;
   readonly #lifecycle = { disposed: false, preparingForUnload: false };
@@ -65,16 +59,14 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   #revision = 0;
   #workerEpoch = 1;
   constructor(
-    fileManager: FileManager,
-    runtimes: DocumentRuntimeFactories,
-    files: VaultDocumentFilePort,
+    private readonly fileManager: FileManager,
+    private readonly runtimes: DocumentRuntimeFactories,
+    private readonly files: VaultDocumentFilePort,
     identity: Session.SessionIdentity,
     private readonly onDispose: () => void,
     hooks: recovery.VaultDocumentSessionHooks = {},
   ) {
-    this.#fileManager = fileManager;
-    this.#runtimes = runtimes;
-    this.#files = files;
+    this.#workScheduler = runtimes.workScheduler(identity.documentId);
     this.#identity = identity;
     this.#hooks = hooks;
     this.#loadDocument = trustedLoader.createTrustedVaultDocumentLoader({
@@ -83,7 +75,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       documentId: identity.documentId,
       files,
       scheduler: (isCancelled) => runtimes.createStoreScheduler(identity.documentId, isCancelled),
-      trustedHeads: hooks.trustedHeads,
+      hooks,
     });
   }
   get documentModel(): EditableDocumentModel | undefined {
@@ -103,6 +95,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#lifecycle.disposed = true;
     this.#workPriority.dispose();
     this.#autosave?.dispose();
+    this.#workScheduler.dispose();
     if (this.#autosave === undefined) this.#executor?.terminate();
     this.#autosave = undefined;
     this.#executor = undefined;
@@ -205,15 +198,22 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     return result;
   }
   async unlock(operation: Session.SessionOperationIdentity): Promise<Session.UnlockResult> {
-    if (this.#lifecycle.preparingForUnload || this.#model !== undefined) {
+    if (this.#lifecycle.preparingForUnload || this.#model !== undefined)
       return { ...operation, status: "load-error" };
-    }
     try {
+      const prefetchedBytes = Promise.resolve().then(() =>
+        this.#lifecycle.disposed ||
+        this.#lifecycle.preparingForUnload ||
+        this.#cancelled.has(operation.operationId)
+          ? undefined
+          : readVaultDocumentBytes(this.files, this.#identity.documentId),
+      );
       const executor = await this.#createExecutor();
       if (this.#lifecycle.disposed || this.#cancelled.delete(operation.operationId)) {
         executor.terminate();
         return { ...operation, status: "load-error" };
       }
+      let firstRead: Promise<Uint8Array | undefined> | undefined = prefetchedBytes;
       const outcome = await loadTrustedDocumentForUnlock({
         cancelled: () => this.#lifecycle.disposed || this.#cancelled.has(operation.operationId),
         consumeCancellation: () =>
@@ -221,8 +221,11 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         createFallback: this.#createFallbackFactory(),
         executor,
         fallbackUsed: this.#fallbackUsed,
-        load: (candidate, workerEpoch, policy) =>
-          this.#loadDocument(operation, candidate, "unlock", workerEpoch, policy),
+        load: (candidate, workerEpoch, policy) => {
+          const read = firstRead;
+          firstRead = undefined;
+          return this.#loadDocument(operation, candidate, "unlock", workerEpoch, policy, read);
+        },
         operation,
         pendingExternalVersion: this.#pendingTrustedExternalVersion,
         workerEpoch: this.#workerEpoch,
@@ -258,7 +261,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       documentId: this.#identity.documentId,
       fallbackUsed: this.#fallbackUsed,
       isGestureActive: () => this.#workPriority.inputActive,
-      runtimes: this.#runtimes,
+      runtimes: this.runtimes,
       sessionId: this.#identity.sessionId,
       workerEpoch: this.#workerEpoch,
     });
@@ -275,8 +278,9 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         this.#workerEpoch = workerEpoch;
       },
       disposed: () => this.#lifecycle.disposed,
+      documentId: this.#identity.documentId,
       isGestureActive: () => this.#workPriority.inputActive,
-      runtimes: this.#runtimes,
+      runtimes: this.runtimes,
       sessionId: this.#identity.sessionId,
     });
   }
@@ -297,7 +301,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       autosave: () => this.#autosave,
       disposed: () => this.#lifecycle.disposed,
       executor: () => this.#executor,
-      now: () => this.#runtimes.now(this.#identity.documentId),
+      now: () => this.runtimes.now(this.#identity.documentId),
       revision: () => this.#revision,
       sessionId: this.#identity.sessionId,
       workerEpoch: () => this.#workerEpoch,
@@ -311,10 +315,11 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       },
       store: () => this.#model?.store,
     });
-    const scheduler = (cancelled: () => boolean) =>
-      this.#runtimes.createStoreScheduler(
+    const scheduler = (cancelled: () => boolean, priority?: "frame") =>
+      this.runtimes.createStoreScheduler(
         this.#identity.documentId,
         () => this.#lifecycle.disposed || this.#lifecycle.preparingForUnload || cancelled(),
+        priority,
       );
     const model = createVaultEditableModel({
       actions: {
@@ -323,16 +328,12 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         commitElements: (elements) => mutations.commitElements(elements),
         beginInteractiveOperation: () => this.#workPriority.begin(),
         waitForBackground: () => this.#workPriority.waitForBackground(),
-        prepareElementMutation: (mutation, cancellation) =>
-          this.#workPriority.run(() =>
-            prepareVaultElementMutation({
-              active: !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
-              mutation,
-              cancellation,
-              store,
-              scheduler,
-            }),
-          ),
+        ...createVaultElementPreparationActions({
+          active: () => !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
+          run: (operation) => this.#workPriority.run(operation),
+          scheduler,
+          store,
+        }),
         commitPreparedElementMutation: (token) => mutations.commitPreparedElementMutation(token),
         commitPage: (page) => mutations.commitPage(page),
         encodeClipboard: (selectedIds) => clipboard.encode(selectedIds),
@@ -347,7 +348,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
               active: this.#autosave !== undefined && !this.#lifecycle.preparingForUnload,
               cancellation,
               replacements,
-              scheduler,
+              scheduler: (isCancelled) => scheduler(isCancelled, "frame"),
               store: this.#model?.store,
             }),
           ),
@@ -369,7 +370,6 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#model?.store.releasePreparedPressureGeometry();
     this.#model = model;
     this.#startAutosave(snapshot, outputHash, requiresCanonicalRewrite, executor, store);
-    executor.requestPrewarm?.();
   }
   #setInputActive(active: boolean, source: "gesture" | "navigation"): void {
     if (this.#lifecycle.disposed || this.#lifecycle.preparingForUnload) return;
@@ -387,10 +387,10 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   ): void {
     const createFallback = this.#fallbackUsed ? undefined : this.#createFallbackFactory();
     this.#autosave = createVaultAutosaveSession({
-      sliceBudgetMs: () => this.#runtimes.sliceBudgetMs?.(this.#identity.documentId) ?? 4,
+      workScheduler: this.#workScheduler,
       waitForBackground: () => this.#workPriority.waitForBackground(),
       beforeExistingWrite: (expectedContent) => this.#preserveMigrationSource(expectedContent),
-      clock: this.#runtimes.clock(this.#identity.documentId),
+      clock: this.runtimes.clock(this.#identity.documentId),
       confirmed: createConfirmedPersistenceObserver({
         active: () => !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
         documentId: this.#identity.documentId,
@@ -400,7 +400,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       ...(createFallback === undefined ? {} : { createFallback }),
       currentRevision: () => this.#revision,
       executor,
-      files: this.#files,
+      files: this.files,
       identity: this.#identity,
       initialSnapshot: snapshot,
       isGestureActive: () => this.#workPriority.inputActive,
@@ -419,7 +419,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     await ensureMigrationBackup({
       original: expectedContent,
       path,
-      port: this.#files,
+      port: this.files,
       sourceVersion,
     });
     if (this.#migrationBackupSourceVersion === sourceVersion) {
@@ -470,12 +470,12 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     completion: recovery.RecoveryCompletionOptions,
   ): Promise<Session.RecoveryResult> {
     return recovery.saveSessionRecoveryCopy({
-      sliceBudgetMs: () => this.#runtimes.sliceBudgetMs?.(this.#identity.documentId) ?? 4,
+      workScheduler: this.#workScheduler,
       completion,
       documentId: this.#identity.documentId,
       executor: this.#executor,
-      fileManager: this.#fileManager,
-      files: this.#files,
+      fileManager: this.fileManager,
+      files: this.files,
       operation,
       snapshot: () => {
         const model = this.#model;

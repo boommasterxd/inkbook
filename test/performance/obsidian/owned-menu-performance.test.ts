@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 import { Platform } from "obsidian";
 import { expect, it, vi } from "vitest";
@@ -38,6 +39,7 @@ it("renders and disposes a complete action menu with bounded work", () => {
   let disposed = 0;
   const factory = createOwnedMenuFactory({
     anchor,
+    workScheduler: workSchedulerFromFrames(window),
     keymap: {
       pushScope: () => {
         scopes += 1;

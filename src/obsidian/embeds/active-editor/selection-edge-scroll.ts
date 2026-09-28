@@ -42,14 +42,12 @@ export class SelectionEdgeAutoScroller {
   public update(screenPointer: PointV1): void {
     if (!Number.isFinite(screenPointer.x) || !Number.isFinite(screenPointer.y)) return;
     this.#pointer = screenPointer;
-    const delta = this.#delta(1);
-    if (delta !== undefined && this.#frame === undefined) this.#schedule();
+    if (this.#frame === undefined) this.#schedule();
   }
 
-  #delta(frameScale: number): PointV1 | undefined {
+  #delta(frameScale: number, viewport: SelectionEdgeViewport): PointV1 | undefined {
     const pointer = this.#pointer;
     if (pointer === undefined) return undefined;
-    const viewport = this.#options.readViewport();
     const x = edgeDelta(pointer.x, viewport.left, viewport.right, frameScale);
     const y = edgeDelta(pointer.y, viewport.top, viewport.bottom, frameScale);
     return x === 0 && y === 0 ? undefined : { x, y };
@@ -57,10 +55,11 @@ export class SelectionEdgeAutoScroller {
 
   #schedule(): void {
     this.#frame = this.#options.requestFrame((timestamp) => {
+      const viewport = this.#options.readViewport();
       // Keep the running frame owned while pointer reprojection may call update().
       this.#options.onFrame?.();
       this.#frame = undefined;
-      const delta = this.#delta(this.#frameScale(timestamp));
+      const delta = this.#delta(this.#frameScale(timestamp), viewport);
       if (delta === undefined) return;
       this.#options.onScroll({ x: delta.x, y: delta.y });
       this.#schedule();

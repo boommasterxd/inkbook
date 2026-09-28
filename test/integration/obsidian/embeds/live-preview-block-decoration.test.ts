@@ -9,6 +9,7 @@ import { createLivePreviewExtension } from "../../../../src/obsidian/embeds/live
 import { InkbookLoadingPreviewWidget } from "../../../../src/obsidian/embeds/live-preview-loading-widget";
 import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/presentation-port";
 import { configureTestEditorState } from "../../../adapters/obsidian/plugin";
+import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
@@ -72,6 +73,7 @@ function integrationPorts(control?: RecognitionControl): EmbedIntegrationPorts {
       detach: () => undefined,
       mount: () => undefined,
     },
+    workScheduler: nativeFrameWorkScheduler,
   } as unknown as EmbedIntegrationPorts;
 }
 
@@ -216,7 +218,10 @@ describe("Live Preview pending recognition", () => {
       expect(parent.textContent).not.toContain("!inkbook");
       expect(recognize).not.toHaveBeenCalled();
       await Promise.resolve();
-      expect(recognize).toHaveBeenCalledWith("drawings/page.svg");
+      expect(recognize).toHaveBeenCalledWith(
+        "drawings/page.svg",
+        view.dom.ownerDocument.defaultView,
+      );
       control.value = valid
         ? {
             aspectRatio: 4,

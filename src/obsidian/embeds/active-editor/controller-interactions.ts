@@ -17,6 +17,7 @@ import type { ActiveEditorChromeState } from "./controller-chrome-state";
 import type { ActivePointerCaptureOwner } from "./pointer-capture";
 import type { GestureController } from "../../../editor/gestures/public";
 import type { SelectionFrameSession } from "../../../editor/selection/public";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { ActiveEditorBackgroundSession } from "./background-session";
 import { ActiveEditorHistoryTraversal } from "./history-traversal";
 
@@ -69,8 +70,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     model: controller.model,
     motion: controller.renderer,
     onPendingChanged: options.onPendingChanged,
-    ownerWindow: options.ownerWindow,
-    sliceBudgetMs: controller.sliceBudgetMs ?? (() => 8),
+    workScheduler: controller.workScheduler,
   });
   const actions = new ActiveEditorActions({
     confirmEraseAll: controller.confirmEraseAll,
@@ -96,12 +96,12 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     actions,
     coalesced: new CoalescedPointerInput({
       dispatchMove: options.dispatchMove,
-      frameScheduler: options.ownerWindow,
-      now: () => options.ownerWindow.performance.now(),
+      frameScheduler: controller.workScheduler,
+      now: () => controller.workScheduler.now(),
       project: (event) => options.navigation.screenPointer(event),
     }),
     handles: new ActiveEditorHandleInteraction({
-      frameScheduler: options.ownerWindow,
+      frameScheduler: controller.workScheduler,
       history: options.history,
       layout: controller.selectionMoveLayout,
       model: controller.model,
@@ -115,6 +115,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       zoom: () => options.navigation.zoom,
     }),
     menus: new ActiveEditorMenuController({
+      workScheduler: controller.workScheduler,
       actions,
       factory: controller.menuFactory,
       inputSurface: controller.renderer.inputSurface,
@@ -145,6 +146,7 @@ export function createControllerNavigation(options: {
   const controller = options.controller;
   let appliedZoom = options.getInput().zoom;
   return new ActiveEditorNavigation({
+    workScheduler: controller.workScheduler,
     onNavigationActive: (active) => controller.model.setNavigationActive?.(active),
     activePageHeight: () =>
       controller.selectionMoveLayout.currentHeight?.() ??
@@ -203,11 +205,11 @@ export function createControllerInputState(options: ActiveEditorControllerOption
   });
 }
 
-export function createControllerPenGuard(ownerWindow: Window) {
+export function createControllerPenGuard(workScheduler: WorkScheduler) {
   return new Scrolling.PenScrollGuard({
     listeners: Scrolling.browserScrollListeners,
     metrics: Scrolling.browserScrollMetrics,
-    scheduler: Scrolling.createAnimationFrameScheduler(ownerWindow),
+    scheduler: Scrolling.createAnimationFrameScheduler(workScheduler),
   });
 }
 

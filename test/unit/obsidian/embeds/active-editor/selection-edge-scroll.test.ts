@@ -9,6 +9,7 @@ import { MovePreview } from "../../../../../src/obsidian/embeds/active-editor/mo
 import type { SelectionPreviewOptions } from "../../../../../src/obsidian/embeds/active-editor/selection-preview-contracts";
 import type { ActiveEditorNavigation } from "../../../../../src/obsidian/embeds/active-editor/navigation";
 import type { BrowserScrollElement } from "../../../../../src/obsidian/scrolling/index";
+import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
 class Frames {
   readonly callbacks = new Map<number, FrameRequestCallback>();
@@ -23,6 +24,11 @@ class Frames {
     this.callbacks.set(frame, callback);
     return frame;
   };
+
+  readonly workScheduler = workSchedulerFromFrames({
+    cancelAnimationFrame: this.cancel,
+    requestAnimationFrame: this.request,
+  });
 
   flush(timestamp = 0): void {
     const entry = this.callbacks.entries().next().value;
@@ -99,9 +105,9 @@ describe("selection edge auto-scroll", () => {
         onScroll.mockClear();
         const position = boundary - sign * inset;
         scroller.update(vertical ? { x: 500, y: position } : { x: position, y: 300 });
-        expect(frames.callbacks.size).toBe(speed === 0 ? 0 : 1);
+        expect(frames.callbacks.size).toBe(1);
+        frames.flush();
         if (speed !== 0) {
-          frames.flush();
           expect(onScroll).toHaveBeenCalledExactlyOnceWith(
             vertical ? { x: 0, y: sign * speed } : { x: sign * speed, y: 0 },
           );
@@ -115,15 +121,22 @@ describe("selection edge auto-scroll", () => {
   it("refreshes the held pointer before applying the next scroll step", () => {
     const frames = new Frames();
     const calls: string[] = [];
-    const scroller = createScroller(frames, {
+    const scroller = new SelectionEdgeAutoScroller({
+      cancelFrame: frames.cancel,
       onFrame: () => calls.push("refresh"),
       onScroll: () => calls.push("scroll"),
+      readViewport: () => {
+        calls.push("measure");
+        return { bottom: 500, left: 100, right: 900, top: 100 };
+      },
+      requestFrame: frames.request,
     });
 
     scroller.update({ x: 500, y: 490 });
+    expect(calls).toEqual([]);
     frames.flush();
 
-    expect(calls).toEqual(["refresh", "scroll"]);
+    expect(calls).toEqual(["measure", "refresh", "scroll"]);
     scroller.finish();
   });
 
@@ -150,6 +163,61 @@ function scrollDistanceOverOneSecond(refreshRate: number): number {
 }
 
 describe("active editor selection edge integration", () => {
+  it("reads owner geometry once per frame and observes owner transfer", () => {
+    const frames = new Frames();
+    let firstTop = 100;
+    const readFirst = vi.fn(() => ({
+      bottom: firstTop + 400,
+      height: 400,
+      left: 100,
+      right: 900,
+      top: firstTop,
+    }));
+    const readSecond = vi.fn(() => ({ bottom: 450, height: 350, left: 50, right: 850, top: 100 }));
+    const first = {
+      clientHeight: 400,
+      clientWidth: 800,
+      getBoundingClientRect: readFirst,
+      ownerDocument: { scrollingElement: null },
+    } as unknown as BrowserScrollElement;
+    const second = {
+      clientHeight: 350,
+      clientWidth: 800,
+      getBoundingClientRect: readSecond,
+      ownerDocument: { scrollingElement: null },
+    } as unknown as BrowserScrollElement;
+    let owner = first;
+    const drag = new ActiveEditorSelectionEdgeDrag({
+      workScheduler: frames.workScheduler,
+      layout: { begin: vi.fn(), finish: vi.fn(), updateBottom: vi.fn() },
+      navigation: { pan: vi.fn(), scroll: vi.fn() } as unknown as ActiveEditorNavigation,
+      ownerWindow: {
+        cancelAnimationFrame: frames.cancel,
+        innerHeight: 600,
+        innerWidth: 1_000,
+        requestAnimationFrame: frames.request,
+      } as unknown as Window,
+      scrollOwner: () => owner,
+    });
+    drag.begin();
+    for (let index = 0; index < 4; index += 1) {
+      drag.update({ x: 895, y: 495 });
+      expect(readFirst).toHaveBeenCalledTimes(index);
+      frames.flush(index * 16);
+    }
+    expect(readFirst).toHaveBeenCalledTimes(4);
+    firstTop = 300;
+    drag.update({ x: 500, y: 495 });
+    frames.flush(64);
+    expect(readFirst).toHaveBeenCalledTimes(5);
+    expect(frames.callbacks.size).toBe(0);
+    owner = second;
+    drag.update({ x: 895, y: 495 });
+    frames.flush(80);
+    expect(readSecond).toHaveBeenCalledOnce();
+    drag.finish(false);
+  });
+
   it("keeps pointer reprojection and native navigation in one drag session", () => {
     const frames = new Frames();
     const pan = vi.fn();
@@ -162,6 +230,7 @@ describe("active editor selection edge integration", () => {
       ownerDocument: { scrollingElement: null },
     } as unknown as BrowserScrollElement;
     const drag = new ActiveEditorSelectionEdgeDrag({
+      workScheduler: frames.workScheduler,
       layout: {
         begin: vi.fn(),
         finish: vi.fn(),
@@ -203,8 +272,8 @@ describe("selection edge-scroll frame arbitration", () => {
       store: {} as SelectionPreviewOptions["store"],
       setSelection: vi.fn(),
       frameScheduler: {
-        cancelAnimationFrame: frames.cancel,
-        requestAnimationFrame: frames.request,
+        cancelFrame: frames.cancel,
+        requestFrame: frames.request,
       },
       pageToScreen: (point) => point,
       viewportToPage: (point) => point,

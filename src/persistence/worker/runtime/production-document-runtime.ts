@@ -1,10 +1,14 @@
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ExecutorIdentity } from "../protocol";
 import { DocumentWorkerRuntime } from "./document-runtime";
 import { GestureAwareSliceScheduler } from "./slice-scheduler";
 
 export interface ProductionRuntimeScheduling {
-  readonly now?: () => number;
-  readonly yieldControl: () => Promise<void>;
+  readonly workScheduler: WorkScheduler;
+  readonly updateSchedulingProfile?: (
+    sliceMilliseconds: number,
+    frameIntervalMilliseconds: number,
+  ) => void;
 }
 
 export function createProductionDocumentRuntime(
@@ -13,8 +17,10 @@ export function createProductionDocumentRuntime(
 ): DocumentWorkerRuntime {
   const scheduler = new GestureAwareSliceScheduler({
     isInputActive: () => false,
-    ...(scheduling.now === undefined ? {} : { now: scheduling.now }),
-    yieldControl: scheduling.yieldControl,
+    workScheduler: scheduling.workScheduler,
+    ...(scheduling.updateSchedulingProfile === undefined
+      ? {}
+      : { updateSchedulingProfile: scheduling.updateSchedulingProfile }),
   });
   return new DocumentWorkerRuntime(identity, scheduler);
 }

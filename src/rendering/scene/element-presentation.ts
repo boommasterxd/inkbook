@@ -1,3 +1,4 @@
+import { roundCanonical } from "../../domain/geometry/public";
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import {
@@ -166,4 +167,17 @@ function combinedThemeClass(stroke: ColorV1 | null, fill: ColorV1 | null): strin
 
 function nullableNumber(value: number | null): string | null {
   return value === null ? null : String(value);
+}
+
+export function scaledDashPattern(value: string | null, scale: number): string | null {
+  return value === null
+    ? null
+    : value
+        .split(" ")
+        .map((part) => scaledStrokeWidth(part, scale))
+        .join(" ");
+}
+
+export function scaledStrokeWidth(value: string | null, scale: number): string | null {
+  return value === null ? null : String(roundCanonical(Number(value) * scale));
 }

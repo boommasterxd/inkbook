@@ -7,7 +7,7 @@ import type {
   NewFilePort,
 } from "../../persistence/saving/save-ports";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
-import { utf8ByteLengthWithinLimit } from "../../persistence/scheduling/utf8-byte-length";
+import { VerifiedMetadataGuardedFileRead } from "../../persistence/saving/verified-file-read";
 import { normalizeVaultPath, VaultBoundaryError, type PathNormalizer } from "./boundary";
 
 type HostConstructor<T> = abstract new (...arguments_: never[]) => T;
@@ -181,15 +181,10 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
     assertSizeWithinLimit(before.size, maximumBytes);
     const content = await read(file);
     const identity = this.#verifyStableRead(normalizedPath, file, before);
-    const actualBytes = utf8ByteLengthWithinLimit(content, maximumBytes);
-    if (actualBytes === null) throw new VaultBoundaryError("file-too-large");
-    if (actualBytes !== identity.size) throw new VaultBoundaryError("unexpected-host-result");
-    return {
-      content,
-      identity,
-      materialization: "host-full-read-not-bounded",
-      stabilityEvidence: "object-identity-and-stat-unchanged",
-    };
+    const verified = VerifiedMetadataGuardedFileRead.create(content, identity, maximumBytes);
+    if (verified === "too-large") throw new VaultBoundaryError("file-too-large");
+    if (verified === "size-mismatch") throw new VaultBoundaryError("unexpected-host-result");
+    return verified;
   }
 
   #verifyStableRead(path: string, file: TFile, before: FileReadIdentity): FileReadIdentity {

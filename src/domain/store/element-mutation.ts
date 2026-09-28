@@ -1,18 +1,21 @@
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { InkElementV1 } from "../schema/public";
-import { UniformSpatialIndex } from "../spatial/index";
+import type { UniformSpatialIndex } from "../spatial/index";
 
 import {
   addConnectionReferences,
+  removeConnectionReferences,
   assertResolvedConnections,
   isAnchorTarget,
+  isConnectable,
   prepareConnectionDetachments,
   resolveConnections,
 } from "./connections";
 import { classifyReplacement, elementsEqual, hasConnections } from "./element-comparison";
-import { DocumentCapacity } from "./document-capacity";
-import { mutableElement } from "./immutability";
+import type { DocumentCapacity, DocumentCapacityPatch } from "./document-capacity";
+import type { PreparedSpatialMutation } from "../spatial/mutation-preparation";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import { validateTrustedRemovalOrder } from "./trusted-removal-order";
 import { prepareMutationHistory } from "./mutation-history";
 import {
   assignRecordVersions,
@@ -40,16 +43,16 @@ import type {
 export interface ElementMutationPlan {
   readonly applied: AppliedElementMutation;
   readonly bands: Record<RenderBand, string[]>;
-  readonly capacity: DocumentCapacity;
+  readonly capacityPatch: DocumentCapacityPatch;
   readonly delta: StoreDelta;
-  readonly index: UniformSpatialIndex<string>;
-  readonly overflowCount: number;
+  readonly indexPatch: PreparedSpatialMutation;
   readonly ranks: Map<string, ElementRank>;
-  readonly records: Map<string, ElementRecord>;
-  readonly reverseConnections: Map<string, EndpointReference[]>;
+  readonly records: Map<string, ElementRecord | null>;
 }
 
 export interface MutationSource {
+  readonly capacity: DocumentCapacity;
+  readonly index: UniformSpatialIndex<string>;
   readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
   readonly geometryVersion: number;
   readonly paintVersion: number;
@@ -63,6 +66,7 @@ export async function planElementMutation(
   requested: ElementMutation,
   sourceScheduler: StoreSliceScheduler,
   replay?: AppliedElementMutation,
+  trustedRemoval = false,
 ): Promise<ElementMutationPlan | "cancelled" | null> {
   if (replay !== undefined && requested !== replay.forward && requested !== replay.reverse) {
     throw new RangeError("History replay must use a retained transition direction.");
@@ -81,32 +85,32 @@ export async function planElementMutation(
   if (desired === "cancelled") return desired;
   const records = await buildRecords(source, desired, removeIds, scheduler);
   if (records === "cancelled") return records;
-  const bands = await validateBands(requested.bands, records, scheduler);
-  if (bands === "cancelled") return bands;
-  const ranks = await buildRanks(bands, scheduler);
-  if (ranks === "cancelled") return ranks;
-  const delta = await buildDelta(source, sourceRanks, records, ranks, bands, scheduler);
+  const order = trustedRemoval
+    ? await validateTrustedRemovalOrder(requested, source, sourceRanks, removeIds, scheduler)
+    : await validateBands(requested.bands, source, records, sourceRanks, scheduler);
+  if (order === "cancelled") return order;
+  const { bands, ranks, dirtyBands } = order;
+  const delta = await buildDelta(source, sourceRanks, records, ranks, dirtyBands, scheduler);
   if (delta === "cancelled") return delta;
   if (delta === null) return null;
-  const derived = await buildDerivedState(records, scheduler);
+  const derived = await buildDerivedState(source, records, delta, sourceScheduler);
   if (derived === "cancelled") return derived;
-  const { capacity, index, reverseConnections } = derived;
+  const { capacityPatch, indexPatch } = derived;
   const applied = await prepareMutationHistory(
     { requested, source, desired, removeIds },
     scheduler,
     replay,
+    trustedRemoval,
   );
   if (applied === "cancelled") return applied;
   return {
     applied,
     bands,
-    capacity,
+    capacityPatch,
     delta,
-    index,
-    overflowCount: index.overflowCount,
+    indexPatch,
     ranks,
     records,
-    reverseConnections,
   };
 }
 
@@ -119,7 +123,7 @@ async function collectDesiredElements(
   const desired = await collectConnectionDetachments(source, removeIds, scheduler);
   if (desired === "cancelled") return desired;
   for (const element of elements) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (desired.has(element.id) && !removeIds.has(element.id)) {
       throw new RangeError(`Duplicate mutation element ID: ${element.id}`);
     }
@@ -136,8 +140,8 @@ async function collectDesiredElements(
   const lookup = (id: string) =>
     removeIds.has(id) ? undefined : (desired.get(id) ?? source.records.get(id)?.element);
   for (const [id, element] of desired) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
-    desired.set(id, resolveConnections(element, lookup));
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    if (isConnectable(element)) desired.set(id, resolveConnections(element, lookup));
   }
   return desired;
 }
@@ -161,11 +165,7 @@ async function collectConnectionDetachments(
 ): Promise<Map<string, InkElementV1> | "cancelled"> {
   const detached = new Map<string, InkElementV1>();
   for (const targetId of removeIds) {
-    if (!(
-      scheduler.checkpoint(source.reverseConnections.has(targetId) ? 16 : 1) ||
-      (await scheduler.resume())
-    ))
-      return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     const additions = prepareConnectionDetachments(
       new Set([targetId]),
       source.reverseConnections,
@@ -184,29 +184,28 @@ async function buildRecords(
   desired: ReadonlyMap<string, InkElementV1>,
   removeIds: ReadonlySet<string>,
   scheduler: MutationPreparationScheduler,
-): Promise<Map<string, ElementRecord> | "cancelled"> {
+): Promise<Map<string, ElementRecord | null> | "cancelled"> {
+  const records = new Map<string, ElementRecord | null>();
   for (const id of removeIds) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     requireElementRecord(source.records, id);
+    records.set(id, null);
   }
   const versions = await mutationVersions(source, desired, scheduler);
   if (versions === "cancelled") return versions;
   const { geometryVersion, paintVersion } = versions;
-  const records = new Map<string, ElementRecord>();
-  for (const [id, current] of source.records) {
-    if (!(scheduler.checkpoint(desired.has(id) ? 16 : 1) || (await scheduler.resume())))
-      return "cancelled";
-    if (removeIds.has(id)) continue;
-    const element = desired.get(id);
-    records.set(id, updatedRecord(current, element, geometryVersion, paintVersion));
-  }
   for (const [id, element] of desired) {
-    if (source.records.has(id)) continue;
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
-    records.set(
-      id,
-      assignRecordVersions(createInitialRecord(element), geometryVersion, paintVersion),
-    );
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    const current = source.records.get(id);
+    if (current === undefined) {
+      records.set(
+        id,
+        assignRecordVersions(createInitialRecord(element), geometryVersion, paintVersion),
+      );
+    } else {
+      const updated = updatedRecord(current, element, geometryVersion, paintVersion);
+      if (updated !== current) records.set(id, updated);
+    }
   }
   return records;
 }
@@ -220,8 +219,7 @@ async function mutationVersions(
   let changesPaint = false;
   for (const [id, element] of desired) {
     const current = source.records.get(id);
-    if (!(scheduler.checkpoint(current === undefined ? 1 : 16) || (await scheduler.resume())))
-      return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (current === undefined) {
       changesGeometry = true;
       changesPaint = true;
@@ -242,11 +240,11 @@ async function mutationVersions(
 
 function updatedRecord(
   current: ElementRecord,
-  element: InkElementV1 | undefined,
+  element: InkElementV1,
   geometryVersion: number,
   paintVersion: number,
 ): ElementRecord {
-  if (element === undefined || elementsEqual(current.element, element)) return current;
+  if (elementsEqual(current.element, element)) return current;
   const domains = classifyReplacement(current.element, element);
   return createReplacementRecord(
     element,
@@ -258,10 +256,30 @@ function updatedRecord(
 
 async function validateBands(
   requested: Readonly<Record<RenderBand, readonly string[]>>,
-  records: ReadonlyMap<string, ElementRecord>,
+  source: MutationSource,
+  records: ReadonlyMap<string, ElementRecord | null>,
+  sourceRanks: ReadonlyMap<string, ElementRank>,
   scheduler: MutationPreparationScheduler,
-): Promise<Record<RenderBand, string[]> | "cancelled"> {
+): Promise<
+  | {
+      bands: Record<RenderBand, string[]>;
+      ranks: Map<string, ElementRank>;
+      dirtyBands: Record<RenderBand, boolean>;
+    }
+  | "cancelled"
+> {
   const seen = new Set<string>();
+  const ranks = new Map<string, ElementRank>();
+  const dirtyBands = {
+    content: requested.content.length !== source.bands.content.length,
+    highlight: requested.highlight.length !== source.bands.highlight.length,
+  };
+  let resultingSize = source.records.size;
+  for (const [id, record] of records) {
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    if (record === null) resultingSize -= 1;
+    else if (!source.records.has(id)) resultingSize += 1;
+  }
   const bands: Record<RenderBand, string[]> = {
     content: new Array<string>(requested.content.length),
     highlight: new Array<string>(requested.highlight.length),
@@ -270,20 +288,23 @@ async function validateBands(
     for (let index = 0; index < requested[band].length; index += 1) {
       if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
       const id = requested[band][index]!;
-      const record = records.get(id);
-      if (record === undefined || renderBandOf(record.element) !== band || seen.has(id)) {
+      const record = records.has(id) ? records.get(id) : source.records.get(id);
+      if (record == null || renderBandOf(record.element) !== band || seen.has(id)) {
         throw new RangeError(
           "Mutation band order must contain each resulting element exactly once.",
         );
       }
       seen.add(id);
       bands[band][index] = id;
+      if (source.bands[band][index] !== id) dirtyBands[band] = true;
+      const prior = sourceRanks.get(id);
+      if (prior?.band !== band || prior.rank !== index) ranks.set(id, { band, rank: index });
     }
   }
-  if (seen.size !== records.size) {
+  if (seen.size !== resultingSize) {
     throw new RangeError("Mutation band order must contain each resulting element exactly once.");
   }
-  return bands;
+  return { bands, ranks, dirtyBands };
 }
 
 async function buildRanks(
@@ -303,23 +324,33 @@ async function buildRanks(
 async function buildDelta(
   source: MutationSource,
   sourceRanks: ReadonlyMap<string, ElementRank>,
-  records: ReadonlyMap<string, ElementRecord>,
+  records: ReadonlyMap<string, ElementRecord | null>,
   ranks: ReadonlyMap<string, ElementRank>,
-  bands: Readonly<Record<RenderBand, readonly string[]>>,
+  dirtyBands: Readonly<Record<RenderBand, boolean>>,
   scheduler: MutationPreparationScheduler,
 ): Promise<StoreDelta | "cancelled" | null> {
   const changes: Array<StoreDelta["changes"][number]> = [];
   let geometryVersion = source.geometryVersion;
   let paintVersion = source.paintVersion;
-  for (const id of source.records.keys()) {
+  const affected = new Set<string>();
+  for (const id of records.keys()) {
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    affected.add(id);
+  }
+  for (const id of ranks.keys()) {
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    affected.add(id);
+  }
+  for (const id of affected) {
     const before = source.records.get(id) ?? null;
-    const after = records.get(id) ?? null;
-    if (!(
-      scheduler.checkpoint(before === after || before === null || after === null ? 1 : 16) ||
-      (await scheduler.resume())
-    ))
-      return "cancelled";
-    const domains = mutationDomains(before, after, sourceRanks.get(id), ranks.get(id));
+    const after = records.has(id) ? (records.get(id) ?? null) : before;
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    const domains = mutationDomains(
+      before,
+      after,
+      sourceRanks.get(id),
+      ranks.get(id) ?? sourceRanks.get(id),
+    );
     if (domains.length === 0) continue;
     if (after !== null) {
       geometryVersion = Math.max(geometryVersion, after.geometryVersion);
@@ -327,29 +358,10 @@ async function buildDelta(
     }
     changes.push(Object.freeze({ after, before, domains: Object.freeze(domains), id }));
   }
-  for (const [id, after] of records) {
-    if (source.records.has(id)) continue;
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    const domains = mutationDomains(null, after, undefined, ranks.get(id));
-    geometryVersion = Math.max(geometryVersion, after.geometryVersion);
-    paintVersion = Math.max(paintVersion, after.paintVersion);
-    changes.push(Object.freeze({ after, before: null, domains: Object.freeze(domains), id }));
-  }
   if (changes.length === 0) return null;
-  const contentOrderChanged = await orderChanged(source.bands.content, bands.content, scheduler);
-  if (contentOrderChanged === "cancelled") return contentOrderChanged;
-  const highlightOrderChanged = await orderChanged(
-    source.bands.highlight,
-    bands.highlight,
-    scheduler,
-  );
-  if (highlightOrderChanged === "cancelled") return highlightOrderChanged;
   return Object.freeze({
     changes: Object.freeze(changes),
-    dirtyBands: Object.freeze({
-      content: contentOrderChanged,
-      highlight: highlightOrderChanged,
-    }),
+    dirtyBands: Object.freeze(dirtyBands),
     geometryVersion,
     paintVersion,
   });
@@ -374,7 +386,7 @@ function mutationDomains(
   }
   if (before === null || after === null || nextRank === undefined) return [];
   const domains =
-    before === after ? [] : classifyReplacement(before.element, mutableElement(after.element));
+    before === after ? [] : classifyReplacement(before.element, after.element as InkElementV1);
   if (
     previousRank === undefined ||
     previousRank.band !== nextRank.band ||
@@ -386,39 +398,69 @@ function mutationDomains(
 }
 
 async function buildDerivedState(
-  records: ReadonlyMap<string, ElementRecord>,
-  scheduler: MutationPreparationScheduler,
+  source: MutationSource,
+  records: ReadonlyMap<string, ElementRecord | null>,
+  delta: StoreDelta,
+  scheduler: StoreSliceScheduler,
 ): Promise<
-  | {
-      capacity: DocumentCapacity;
-      index: UniformSpatialIndex<string>;
-      reverseConnections: Map<string, EndpointReference[]>;
-    }
-  | "cancelled"
+  { capacityPatch: DocumentCapacityPatch; indexPatch: PreparedSpatialMutation } | "cancelled"
 > {
-  const index = new UniformSpatialIndex<string>();
-  const capacity = new DocumentCapacity();
-  const reverseConnections = new Map<string, EndpointReference[]>();
-  const lookup = (id: string) => records.get(id)?.element;
-  for (const [id, record] of records) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
-    index.insert(id, record.bounds);
-    capacity.addInitial(record);
-    assertResolvedConnections(record.element, lookup);
-    addConnectionReferences(reverseConnections, record.element);
+  const work = new MutationPreparationScheduler(scheduler);
+  const previous: ElementRecord[] = [];
+  const next: ElementRecord[] = [];
+  const removed: string[] = [];
+  const inserted: Array<{ id: string; bounds: ElementRecord["bounds"] }> = [];
+  const lookup = (id: string) =>
+    (records.has(id) ? records.get(id) : source.records.get(id))?.element;
+  for (const change of delta.changes) {
+    if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
+    if (change.before === change.after) continue;
+    if (change.before !== null) previous.push(change.before);
+    if (change.after !== null) {
+      next.push(change.after);
+      assertAffectedConnections(change.id, change.after, source, records, lookup);
+    }
+    if (change.before !== null && (change.after === null || change.domains.includes("geometry"))) {
+      removed.push(change.id);
+    }
+    if (change.after !== null && (change.before === null || change.domains.includes("geometry"))) {
+      inserted.push({ id: change.id, bounds: change.after.bounds });
+    }
   }
-  return { capacity, index, reverseConnections };
+  const capacity = await source.capacity.prepareTimeSliced(previous, next, scheduler);
+  if (capacity === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
+  const indexPatch = await source.index.prepareMutationTimeSliced(removed, inserted, scheduler);
+  if (indexPatch === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
+  return {
+    capacityPatch: capacity.patch,
+    indexPatch,
+  };
 }
 
-async function orderChanged(
-  left: readonly string[],
-  right: readonly string[],
-  scheduler: MutationPreparationScheduler,
-): Promise<boolean | "cancelled"> {
-  if (left.length !== right.length) return true;
-  for (let index = 0; index < left.length; index += 1) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    if (left[index] !== right[index]) return true;
+function assertAffectedConnections(
+  id: string,
+  after: ElementRecord,
+  source: MutationSource,
+  records: ReadonlyMap<string, ElementRecord | null>,
+  lookup: (id: string) => ElementRecord["element"] | undefined,
+): void {
+  assertResolvedConnections(after.element, lookup);
+  for (const { linearId } of source.reverseConnections.get(id) ?? []) {
+    const dependent = records.has(linearId) ? records.get(linearId) : source.records.get(linearId);
+    if (dependent != null) assertResolvedConnections(dependent.element, lookup);
   }
-  return false;
+}
+
+export function commitMutationDerivedState(
+  capacity: DocumentCapacity,
+  reverseConnections: Map<string, EndpointReference[]>,
+  plan: ElementMutationPlan,
+): void {
+  plan.indexPatch.commit();
+  capacity.commit(plan.capacityPatch);
+  for (const { before, after } of plan.delta.changes) {
+    if (before === after) continue;
+    if (before !== null) removeConnectionReferences(reverseConnections, before.element);
+    if (after !== null) addConnectionReferences(reverseConnections, after.element);
+  }
 }

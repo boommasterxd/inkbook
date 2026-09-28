@@ -7,6 +7,8 @@ import { table } from "../../unit/domain/schema/fixtures";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { selectionOverlayGeometry } from "../../../src/editor/selection/overlay-geometry";
 import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
+import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
+import { indexedStroke } from "../../fixtures/editor/stroke";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { PASS_THROUGH_PLANNER, createRotatedScaleFixture } from "./selection-input-fixture";
 
@@ -131,4 +133,35 @@ it("solves single-stroke factors once and reuses supplied factors during materia
   } finally {
     solve.mockRestore();
   }
+});
+
+it("skips frame scheduling for a zero anchor correction across 10,000 strokes", async () => {
+  const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
+  const shouldYield = vi.fn(() => true);
+  const yieldControl = vi.fn(async () => undefined);
+  const restored = await moveSelectionTimeSliced(
+    elements,
+    { x: 0, y: 0 },
+    {
+      shouldYield,
+      yieldControl,
+    },
+  );
+
+  expect(restored).not.toBe(elements);
+  expect(restored).toEqual(elements);
+  expect(restored?.[0]).toBe(elements[0]);
+  expect(shouldYield).not.toHaveBeenCalled();
+  expect(yieldControl).not.toHaveBeenCalled();
+  expect(
+    await moveSelectionTimeSliced(
+      elements,
+      { x: 0, y: 0 },
+      {
+        isCancelled: () => true,
+        shouldYield,
+        yieldControl,
+      },
+    ),
+  ).toBeNull();
 });

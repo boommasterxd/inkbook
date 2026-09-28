@@ -5,12 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActiveScenePreviewHandoff } from "../../../../src/obsidian/embeds/active-scene-handoff";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
+import { createConfirmedOutputFixture } from "../../../fixtures/obsidian/confirmed-output";
 
-import { Platform } from "obsidian";
+import { Platform, type Vault } from "obsidian";
 import * as previewBuilder from "../../../../src/obsidian/embeds/safe-preview-builder";
+import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/embeds/document-recognition";
 
 import { createInkbookLockedPreview } from "../../../../src/obsidian/embeds/locked-preview";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { deferredPreviewRecognition } from "../../../fixtures/obsidian/deferred-preview-recognition";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
@@ -29,19 +33,27 @@ describe("locked preview platform treatment", () => {
   it("marks only Android activation buttons for host tap-surface neutralization", () => {
     Platform.isAndroidApp = true;
     const androidButton = createHtmlElement("button");
-    const android = createInkbookLockedPreview(androidButton, {
-      aspectRatio: 1,
-      contentIdentity: CONTENT_IDENTITY,
-      safeSvg: SAFE_PREVIEW_SVG,
-    });
+    const android = createInkbookLockedPreview(
+      androidButton,
+      {
+        aspectRatio: 1,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      },
+      immediateWorkScheduler(),
+    );
 
     Platform.isAndroidApp = false;
     const desktopButton = createHtmlElement("button");
-    const desktop = createInkbookLockedPreview(desktopButton, {
-      aspectRatio: 1,
-      contentIdentity: CONTENT_IDENTITY,
-      safeSvg: SAFE_PREVIEW_SVG,
-    });
+    const desktop = createInkbookLockedPreview(
+      desktopButton,
+      {
+        aspectRatio: 1,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      },
+      immediateWorkScheduler(),
+    );
 
     expect(androidButton.classList.contains("inkbook-locked-preview-android")).toBe(true);
     expect(desktopButton.classList.contains("inkbook-locked-preview-android")).toBe(false);
@@ -51,7 +63,7 @@ describe("locked preview platform treatment", () => {
 });
 
 it("restores the latest deferred content before the preview handoff completes", async () => {
-  const { button, preview } = await preparedHiddenPreview();
+  const { button, preview } = await preparedPreview(true);
   preview.setDescriptor({
     aspectRatio: 2,
     contentIdentity: { ...CONTENT_IDENTITY, revision: 2 },
@@ -64,6 +76,7 @@ it("restores the latest deferred content before the preview handoff completes", 
     container: createHtmlElement("div"),
     motion: "reduced",
     preview: button,
+    workScheduler: immediateWorkScheduler(),
     refreshPreview: preview.refresh,
   });
   await preview.ensureReady();
@@ -86,13 +99,7 @@ it.each(["descriptor", "dispose"] as const)(
           resolveFetch = resolve;
         }),
     );
-    const button = createHtmlElement("button");
-    const preview = createInkbookLockedPreview(button, {
-      aspectRatio: 1,
-      contentIdentity: CONTENT_IDENTITY,
-      safeSvg: SAFE_PREVIEW_SVG,
-    });
-    await preview.ensureReady();
+    const { button, preview } = await preparedPreview();
     const original = button.querySelector("svg");
     const pending = preview.setSource("app://old.svg");
     if (operation === "dispose") preview.dispose();
@@ -121,11 +128,15 @@ it.each([false, true])(
       .mockImplementation(async () => new Response(serialized.value.svg));
     const parser = vi.spyOn(window.DOMParser.prototype, "parseFromString");
     const button = createHtmlElement("button");
-    const preview = createInkbookLockedPreview(button, {
-      aspectRatio: 1,
-      contentIdentity: CONTENT_IDENTITY,
-      safeSvg: SAFE_PREVIEW_SVG,
-    });
+    const preview = createInkbookLockedPreview(
+      button,
+      {
+        aspectRatio: 1,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      },
+      immediateWorkScheduler(),
+    );
     button.hidden = hidden;
     const identity = await preview.setSource("app://saved.svg");
     expect(identity).toEqual({
@@ -148,7 +159,7 @@ it.each([false, true])(
 );
 
 it("pauses detached preparation during input and publishes only the latest descriptor", async () => {
-  const { button, preview } = await preparedHiddenPreview();
+  const { button, preview } = await preparedPreview(true);
   let resume!: () => void;
   const paused = new Promise<void>((resolve) => {
     resume = resolve;
@@ -178,11 +189,15 @@ it("pauses detached preparation during input and publishes only the latest descr
 
 it("settles lock readiness when disposed during an input pause without building stale DOM", async () => {
   const button = createHtmlElement("button");
-  const preview = createInkbookLockedPreview(button, {
-    aspectRatio: 1,
-    contentIdentity: CONTENT_IDENTITY,
-    safeSvg: SAFE_PREVIEW_SVG,
-  });
+  const preview = createInkbookLockedPreview(
+    button,
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    immediateWorkScheduler(),
+  );
   preview.setBackgroundWait(() => new Promise<void>(() => undefined));
   preview.setDescriptor({
     aspectRatio: 2,
@@ -200,12 +215,7 @@ it("settles validated source identity while detached DOM preparation waits for i
   const serialized = serializeInkbookDocument(createSnapshot());
   if (!serialized.ok) throw new Error("Invalid test snapshot");
   vi.spyOn(window, "fetch").mockImplementation(async () => new Response(serialized.value.svg));
-  const button = createHtmlElement("button");
-  const preview = createInkbookLockedPreview(button, {
-    aspectRatio: 1,
-    contentIdentity: CONTENT_IDENTITY,
-    safeSvg: SAFE_PREVIEW_SVG,
-  });
+  const { button, preview } = await preparedPreview();
   const original = button.querySelector("svg");
   let resume!: () => void;
   const paused = new Promise<void>((resolve) => {
@@ -234,9 +244,140 @@ it("settles validated source identity while detached DOM preparation waits for i
   preview.dispose();
 });
 
-it("prepares initial content asynchronously with the current owning-window budget", async () => {
+it("shares validated Vault bytes across locked surfaces and builds independent SVG trees", async () => {
+  const serialized = serializeInkbookDocument(createSnapshot());
+  if (!serialized.ok) throw new Error("Invalid test snapshot");
+  const { file, cachedRead, recognition, release } = deferredPreviewRecognition(
+    "shared.svg",
+    serialized.value.svg.length,
+  );
+  const sourceLoader = { documentId: file.path, documents: recognition };
+  const first = createInkbookLockedPreview(
+    createHtmlElement("button"),
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    immediateWorkScheduler(),
+    sourceLoader,
+  );
+  const second = createInkbookLockedPreview(
+    createHtmlElement("button"),
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    immediateWorkScheduler(),
+    sourceLoader,
+  );
+  const source = `app://shared.svg?inkbook-revision=${String(serialized.value.snapshot.revision)}-${serialized.value.hash}`;
+  const firstLoad = first.setSource(source);
+  const secondLoad = second.setSource(source);
+  await vi.waitFor(() => expect(cachedRead).toHaveBeenCalledOnce());
+  first.dispose();
+  release(serialized.value.svg);
+  await expect(firstLoad).resolves.toBeUndefined();
+  await expect(secondLoad).resolves.toEqual({
+    outputHash: serialized.value.hash,
+    revision: serialized.value.snapshot.revision,
+  });
+  await second.ensureReady();
+  expect(second.element.querySelector("svg")).not.toBeNull();
+  const third = createInkbookLockedPreview(
+    createHtmlElement("button"),
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    immediateWorkScheduler(),
+    sourceLoader,
+  );
+  await third.setSource(source);
+  await third.ensureReady();
+  expect(cachedRead).toHaveBeenCalledOnce();
+  expect(third.element.querySelector("svg")).not.toBe(second.element.querySelector("svg"));
+  await expect(
+    third.setSource(`app://shared.svg?inkbook-revision=999-${serialized.value.hash}`),
+  ).rejects.toThrow("changed while loading");
+  expect(cachedRead).toHaveBeenCalledOnce();
+  expect(recognition.cached(file.path)).toMatchObject({
+    contentIdentity: {
+      outputHash: serialized.value.hash,
+      revision: serialized.value.snapshot.revision,
+    },
+  });
+  recognition.invalidate(file.path);
+  const reloaded = third.setSource(source);
+  await vi.waitFor(() => expect(cachedRead).toHaveBeenCalledTimes(2));
+  release(serialized.value.svg);
+  await expect(reloaded).resolves.toEqual({
+    outputHash: serialized.value.hash,
+    revision: serialized.value.snapshot.revision,
+  });
+  third.dispose();
+  second.dispose();
+  recognition.dispose();
+});
+
+it("uses confirmed safe bytes without reading again and rejects a mismatched revision", async () => {
+  const { file, serialized, signature } = createConfirmedOutputFixture();
+  const cachedRead = vi.fn(async () => serialized.value.svg);
+  const recognition = new ObsidianInkbookDocumentRecognition(
+    {
+      getFileByPath: (path: string) => (path === file.path ? file : null),
+      getResourcePath: () => "app://confirmed.svg",
+      cachedRead,
+    } as unknown as Vault,
+    { workScheduler: immediateWorkScheduler() },
+  );
+  recognition.acceptConfirmedOutput(
+    file.path,
+    serialized.value.svg,
+    serialized.value.hash,
+    signature,
+  );
+  const preview = createInkbookLockedPreview(
+    createHtmlElement("button"),
+    { aspectRatio: 1, contentIdentity: CONTENT_IDENTITY, safeSvg: SAFE_PREVIEW_SVG },
+    immediateWorkScheduler(),
+    { documentId: file.path, documents: recognition },
+  );
+  const prefix = `app://confirmed.svg?inkbook-revision=`;
+  await expect(
+    preview.setSource(
+      `${prefix}${String(serialized.value.snapshot.revision)}-${serialized.value.hash}`,
+    ),
+  ).resolves.toEqual({
+    outputHash: serialized.value.hash,
+    revision: serialized.value.snapshot.revision,
+  });
+  expect(cachedRead).not.toHaveBeenCalled();
+  await expect(
+    preview.setSource(
+      `app://other.svg?inkbook-revision=${String(serialized.value.snapshot.revision)}-${serialized.value.hash}`,
+    ),
+  ).rejects.toThrow("does not match its file");
+  expect(cachedRead).not.toHaveBeenCalled();
+  await expect(preview.setSource(`${prefix}999-${serialized.value.hash}`)).rejects.toThrow(
+    "changed while loading",
+  );
+  expect(cachedRead).not.toHaveBeenCalled();
+  expect(recognition.cached(file.path)).toMatchObject({
+    contentIdentity: {
+      outputHash: serialized.value.hash,
+      revision: serialized.value.snapshot.revision,
+    },
+  });
+  preview.dispose();
+  recognition.dispose();
+});
+
+it("prepares initial content asynchronously under the owning-window scheduler", async () => {
   const button = createHtmlElement("button");
-  const budget = vi.fn(() => 2);
+  const shouldYield = vi.fn(() => false);
   const parser = vi.spyOn(window.DOMParser.prototype, "parseFromString");
   const creates = vi.spyOn(document, "createElementNS");
   const preview = createInkbookLockedPreview(
@@ -246,29 +387,71 @@ it("prepares initial content asynchronously with the current owning-window budge
       contentIdentity: CONTENT_IDENTITY,
       safeSvg: `<svg xmlns="http://www.w3.org/2000/svg">${'<path d="M0 0"/>'.repeat(64)}</svg>`,
     },
-    budget,
+    immediateWorkScheduler(shouldYield),
   );
   expect(button.querySelector("svg")).toBeNull();
   expect(creates.mock.calls.some(([namespace]) => namespace === "http://www.w3.org/2000/svg")).toBe(
     false,
   );
-  budget.mockReturnValue(1);
   await preview.ensureReady();
   expect(button.querySelectorAll("path")).toHaveLength(64);
-  expect(budget).toHaveReturnedWith(1);
-  expect(budget).not.toHaveReturnedWith(2);
+  expect(shouldYield).toHaveBeenCalled();
   expect(parser).not.toHaveBeenCalled();
   preview.dispose();
 });
 
-async function preparedHiddenPreview() {
+async function preparedPreview(hidden = false) {
   const button = createHtmlElement("button");
-  const preview = createInkbookLockedPreview(button, {
-    aspectRatio: 1,
-    contentIdentity: CONTENT_IDENTITY,
-    safeSvg: SAFE_PREVIEW_SVG,
-  });
+  const preview = createInkbookLockedPreview(
+    button,
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    immediateWorkScheduler(),
+  );
   await preview.ensureReady();
-  button.hidden = true;
+  button.hidden = hidden;
   return { button, preview };
 }
+
+it("drains a newer hidden source received during lock preparation and retries failures", async () => {
+  const button = createHtmlElement("button");
+  button.hidden = true;
+  let release!: () => void;
+  const first = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const load = vi
+    .fn<(source: string) => Promise<void>>()
+    .mockReturnValueOnce(first)
+    .mockRejectedValueOnce(new Error("fetch failed"))
+    .mockResolvedValue(undefined);
+  const ensure = vi.fn(async () => {});
+  const root = createHtmlElement("div");
+  const handoff = new ActiveScenePreviewHandoff({
+    root,
+    container: root,
+    motion: "reduced",
+    preview: button,
+    workScheduler: immediateWorkScheduler(),
+    setPreviewSource: load,
+    ensurePreviewReady: ensure,
+  });
+  await handoff.setPreviewSource("first");
+  const ready = handoff.ensurePreviewReady();
+  await handoff.setPreviewSource("second");
+  release();
+  await expect(ready).rejects.toThrow("fetch failed");
+  expect(load.mock.calls).toEqual([["first"], ["second"]]);
+  await handoff.ensurePreviewReady();
+  expect(load.mock.calls).toEqual([["first"], ["second"], ["second"]]);
+  expect(ensure).toHaveBeenCalledOnce();
+  await handoff.setPreviewSource("last");
+  handoff.dispose();
+  await vi.waitFor(() => expect(load).toHaveBeenLastCalledWith("last"));
+  expect(button.hidden).toBe(false);
+  await handoff.setPreviewSource("disposed");
+  expect(load).toHaveBeenCalledTimes(4);
+});

@@ -250,7 +250,7 @@ function coalescedHarness(pointerType: "pen" | "mouse") {
   );
   let routed: GesturePreview = preview;
   const input = new CoalescedPointerInput(
-    liveInputOptions(scheduler, (pointer) => routed.update(pointer), pointerType),
+    liveInputOptions(scheduler.workScheduler, (pointer) => routed.update(pointer), pointerType),
   );
   routed = input.wrap(preview);
   const camera = fakeNode(renderer.svg).nodes[1]!;

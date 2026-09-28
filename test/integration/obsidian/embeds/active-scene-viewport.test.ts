@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { readActiveSceneViewport } from "../../../../src/obsidian/embeds/active-scene-viewport";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling";
@@ -68,9 +68,10 @@ describe("active scene viewport", () => {
       { height: 700, left: 0, top: 0, width: 1100 },
       { clientHeight: 700, clientWidth: 1100, document },
     );
+    const ownerRead = vi.spyOn(owner, "getBoundingClientRect");
     documentLike.scrollingElement = owner;
     const container = {
-      getBoundingClientRect: () => rect({ height: 700, left: 0, top: -300, width: 1000 }),
+      getBoundingClientRect: () => rect({ height: 700, left: 0, top: -300, width: 1300 }),
       ownerDocument: document,
     } as unknown as HTMLElement;
 
@@ -78,8 +79,9 @@ describe("active scene viewport", () => {
       height: 400,
       left: 0,
       top: 300,
-      width: 1000,
+      width: 1100,
     });
+    expect(ownerRead).not.toHaveBeenCalled();
   });
 
   it("measures the renderer viewport from the content box", () => {

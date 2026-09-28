@@ -1,4 +1,4 @@
-import type { ElementStore } from "../../domain/store/public";
+import type { EditableDocumentModel } from "./document-model-port";
 import { ActiveDocumentMemoryCoordinator } from "../../editor/session/active-document-memory-coordinator";
 import type { SvgSceneRenderer } from "../../rendering/scene";
 import { ElementSceneStore } from "./active-editor/scene-store";
@@ -7,8 +7,8 @@ export class ActiveSceneMemoryBinding {
   #coordinator: ActiveDocumentMemoryCoordinator | undefined;
   public readonly store: ElementSceneStore;
 
-  public constructor(store: ElementStore) {
-    this.store = new ElementSceneStore(store, this.evaluate);
+  public constructor(model: Pick<EditableDocumentModel, "store">) {
+    this.store = new ElementSceneStore(model.store, this.evaluate);
   }
 
   public readonly evaluate = (): void => {

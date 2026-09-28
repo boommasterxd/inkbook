@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
 import { PreparedPressureWindowCache } from "../../../../src/domain/store/prepared-pressure-window-cache";
+import { pressureWindowMemoryUsage } from "../../../../src/domain/geometry/pressure-window";
 import type { PressureWindow } from "../../../../src/domain/geometry/pressure-window";
 import { stroke } from "../schema/fixtures";
 
@@ -91,7 +92,10 @@ describe("store-owned prepared pressure windows", () => {
     const version = store.get(source.id)!.geometryVersion;
     const port = store.pressureGeometry(source.id, version);
     const value = window();
-    port.publishWindow(0, value);
+    expect(port.publishWindow(0, value)).toMatchObject({
+      window: value,
+      numericBytes: pressureWindowMemoryUsage(value),
+    });
     expect(port.readWindow(0)).toBe(value);
     expect(Object.isFrozen(value.loops[0]![0]!.start)).toBe(true);
     expect(store.activeDocumentMemoryUsage().pressureWindowCacheBytes).toBeGreaterThan(0);

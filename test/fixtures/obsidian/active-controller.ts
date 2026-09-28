@@ -12,6 +12,7 @@ import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index
 import type { SvgSceneRenderer } from "../../../src/rendering/scene/index";
 
 import type { SceneToolCursorFrame } from "../../../src/rendering/scene/tool-cursor";
+import { workSchedulerFromFrames } from "./work-scheduler";
 export function createHarness() {
   const input = createDiv();
   input.tabIndex = 0;
@@ -54,6 +55,7 @@ export function createHarness() {
     onStateChanged: vi.fn(),
     renderIcon: vi.fn(),
     renderer: renderer as unknown as SvgSceneRenderer,
+    workScheduler: workSchedulerFromFrames(window),
     sceneStore,
     selectionMoveLayout: { begin: vi.fn(), finish: vi.fn(), updateBottom: vi.fn() },
     scrollOwner: owner,
@@ -151,6 +153,7 @@ function documentModel(store: ElementStore): EditableDocumentModel {
     },
     planClipboardPaste: vi.fn(async () => null),
     prepareElementMutation: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
+    prepareElementRemoval: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
     prepareElementReplacement: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
     removeElements: vi.fn(),
     replaceElements: vi.fn(),

@@ -1,3 +1,4 @@
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import {
   Setting,
   SettingGroup,
@@ -115,6 +116,7 @@ export function createTab(
     store,
     undefined,
     refreshRateStatus,
+    { workScheduler: () => workSchedulerFromFrames(window) },
   );
 }
 

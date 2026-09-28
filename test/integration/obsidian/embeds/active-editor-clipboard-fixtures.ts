@@ -46,6 +46,7 @@ export function createClipboardDocumentModel(options: {
   readonly encodeClipboard?: EditableDocumentModel["encodeClipboard"];
   readonly planClipboardPaste: EditableDocumentModel["planClipboardPaste"];
   readonly prepareElementMutation: EditableDocumentModel["prepareElementMutation"];
+  readonly prepareElementRemoval?: EditableDocumentModel["prepareElementRemoval"];
   readonly revision?: () => number;
   readonly store: EditableDocumentModel["store"];
 }): EditableDocumentModel {
@@ -66,6 +67,19 @@ export function createClipboardDocumentModel(options: {
     encodeClipboard: options.encodeClipboard ?? vi.fn(async () => null),
     planClipboardPaste: options.planClipboardPaste,
     prepareElementMutation: options.prepareElementMutation,
+    prepareElementRemoval:
+      options.prepareElementRemoval ??
+      (async (ids, cancellation) => {
+        const scheduler = {
+          isCancelled: () => cancellation.isCancelled(),
+          shouldYield: () => false,
+          yieldControl: () => Promise.resolve(),
+        };
+        const mutation = await options.store.createRemovalMutationTimeSliced(ids, scheduler);
+        if (mutation === "cancelled") return { status: "cancelled", token: null };
+        if (mutation === null) return { status: "noop", token: null };
+        return options.prepareElementMutation(mutation, cancellation);
+      }),
   };
 }
 

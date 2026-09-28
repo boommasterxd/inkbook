@@ -17,6 +17,7 @@ import type { BackgroundSpacingDefaults } from "./controller-helpers";
 import type { ActiveEditorHistory } from "./history";
 import type { Keymap } from "obsidian";
 import type { EditorChromeOpenings } from "../editor-chrome-openings";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly container: HTMLElement;
@@ -40,7 +41,7 @@ export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly onStateChanged: () => void;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly renderer: SvgSceneRenderer;
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly sceneStore: ElementSceneStore;
   readonly selectionMoveLayout: {
     begin(): void;

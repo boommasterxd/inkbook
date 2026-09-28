@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import type { App, Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +20,9 @@ describe("Inkbook settings modal", () => {
     const app = { workspace: { containerEl: workspaceContainer } } as unknown as App;
     const plugin = {} as Plugin;
     const store = createTestSettingsStore();
-    const tab = new InkbookSettingTab(app, plugin, store);
+    const tab = new InkbookSettingTab(app, plugin, store, undefined, undefined, {
+      workScheduler: () => workSchedulerFromFrames(window),
+    });
     const controller = new InkbookSettingsModalController(app, tab, store);
 
     controller.open("shortcuts");
@@ -198,7 +201,9 @@ function openSettingsModalWithFullMotion(): {
   const app = { workspace: { containerEl: workspaceContainer } } as unknown as App;
   const store = createTestSettingsStore();
   store.updateDeviceSettings((settings) => ({ ...settings, motion: "full" }));
-  const tab = new InkbookSettingTab(app, {} as Plugin, store);
+  const tab = new InkbookSettingTab(app, {} as Plugin, store, undefined, undefined, {
+    workScheduler: () => workSchedulerFromFrames(window),
+  });
   const controller = new InkbookSettingsModalController(app, tab, store);
   controller.open("settings");
   return { controller, store };

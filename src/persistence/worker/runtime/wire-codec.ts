@@ -1,5 +1,4 @@
-import { isPreparedUnlockPaths } from "../../serialization/prepared-unlock-paths";
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import type { InkSnapshotV1, StrokeSamplesV1 } from "../../../domain/schema/public";
 import type { ClipboardResult, PastePlan } from "../../clipboard/types";
 import type { ExportFailure, ExportSuccess } from "../protocol";
 import {
@@ -47,10 +46,7 @@ import {
   encodeExportSuccessChunked,
   type ExportSuccessWireResult,
 } from "./export-output-wire";
-import {
-  inspectTrustedSvgOutput,
-  inspectTrustedSvgOutputSync,
-} from "../../scheduling/trusted-svg-output";
+import { adoptOwnedSvgOutput, adoptOwnedSvgOutputSync } from "../../scheduling/owned-svg-output";
 import { isDocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
 
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
@@ -198,7 +194,10 @@ function encodeIncrementalExportRequest(
   };
 }
 
-export function decodeRuntimeRequest(request: unknown): DocumentRuntimeRequest {
+export function decodeRuntimeRequest(
+  request: unknown,
+  resolvePoints?: (id: string) => StrokeSamplesV1,
+): DocumentRuntimeRequest {
   if (!isDocumentRuntimeWireRequest(request)) {
     throw new TypeError("Worker request does not match the runtime wire protocol.");
   }
@@ -211,7 +210,7 @@ export function decodeRuntimeRequest(request: unknown): DocumentRuntimeRequest {
     };
   }
   if (request.type === "model-sync-full-wire" || request.type === "model-sync-incremental-wire") {
-    return decodeModelSyncRequest(request);
+    return decodeModelSyncRequest(request, resolvePoints);
   }
   if (request.type === "export-incremental-wire") {
     const { changedElements, ...identity } = request;
@@ -220,7 +219,7 @@ export function decodeRuntimeRequest(request: unknown): DocumentRuntimeRequest {
       ...identity,
       ...(changedElements === undefined
         ? {}
-        : { changedElements: unpackElements(changedElements) }),
+        : { changedElements: unpackElements(changedElements, resolvePoints) }),
       type: "export-incremental",
     };
   }
@@ -253,7 +252,7 @@ export function decodeRuntimeResult(result: unknown): DocumentRuntimeResult {
     throw new TypeError("Worker result does not match the runtime wire protocol.");
   }
   if (result.type === "export-success-wire") {
-    const trusted = inspectTrustedSvgOutputSync(result.output, result.outputHash);
+    const trusted = adoptOwnedSvgOutputSync(result.output, result.outputHash);
     return {
       ...result,
       output: trusted.content,
@@ -294,7 +293,7 @@ export async function decodeRuntimeResultChunked(
     throw new TypeError("Worker result does not match the runtime wire protocol.");
   }
   if (result.type === "export-success-wire") {
-    const trusted = await inspectTrustedSvgOutput(result.output, result.outputHash, options);
+    const trusted = await adoptOwnedSvgOutput(result.output, result.outputHash, options);
     return {
       ...result,
       output: trusted.content,
@@ -432,11 +431,9 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
   if (!isRuntimeWireResultType(value.type)) return false;
   if (value.type === "unlock-success") {
     return (
-      (value.preparedPaths === undefined || isPreparedUnlockPaths(value.preparedPaths)) &&
       typeof value.lockedHeight === "number" &&
       Number.isFinite(value.lockedHeight) &&
       value.lockedHeight > 0 &&
-      isDocumentIntegrityManifest(value.integrityManifest) &&
       typeof value.requiresCanonicalRewrite === "boolean" &&
       typeof value.sourceVersion === "number" &&
       Number.isSafeInteger(value.sourceVersion) &&

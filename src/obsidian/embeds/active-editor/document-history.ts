@@ -41,20 +41,12 @@ export class ActiveDocumentHistory {
     isCurrent: () => boolean = () => true,
   ): Promise<DocumentMutationOutcome> {
     if (this.#pending || this.#history.isTraversing) return "busy";
-    const removed = new Set(ids.filter((id) => this.#model.store.get(id) !== undefined));
-    if (removed.size === 0) return "noop";
+    if (ids.length === 0) return "noop";
     const generation = ++this.#generation;
     const basisRevision = this.#model.revision;
-    const mutation: ElementMutation = {
-      bands: {
-        content: withoutIds(this.#model.store.materializeBandOrder("content"), removed),
-        highlight: withoutIds(this.#model.store.materializeBandOrder("highlight"), removed),
-      },
-      removeIds: [...removed],
-    };
     this.#setPending(true);
     try {
-      const prepared = await this.#model.prepareElementMutation(mutation, {
+      const prepared = await this.#model.prepareElementRemoval(ids, {
         isCancelled: () =>
           !this.#isCurrent(generation, basisRevision) || this.#history.isTraversing || !isCurrent(),
       });
@@ -109,10 +101,6 @@ export class ActiveDocumentHistory {
     this.#pending = pending;
     this.#onPendingChanged(pending);
   }
-}
-
-function withoutIds(ids: readonly string[], removed: ReadonlySet<string>): readonly string[] {
-  return ids.filter((id) => !removed.has(id));
 }
 
 export type UnifiedHistoryDirection = "redo" | "undo";

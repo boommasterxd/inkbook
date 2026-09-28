@@ -1,3 +1,4 @@
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -63,12 +64,12 @@ describe("browser scroll ports", () => {
 
     const requestAnimationFrame = vi.fn(() => 17);
     const cancelAnimationFrame = vi.fn();
-    const scheduler = createAnimationFrameScheduler({
-      cancelAnimationFrame,
-      requestAnimationFrame,
-    } as unknown as Window);
+    const workScheduler = workSchedulerFromFrames({ cancelAnimationFrame, requestAnimationFrame });
+    const requestFrame = vi.spyOn(workScheduler, "requestFrame");
+    const scheduler = createAnimationFrameScheduler(workScheduler);
     const callback = vi.fn();
     expect(scheduler.request(callback)).toBe(17);
+    expect(requestFrame).toHaveBeenCalledWith(callback, "input");
     scheduler.cancel(17);
     expect(requestAnimationFrame).toHaveBeenCalledWith(callback);
     expect(cancelAnimationFrame).toHaveBeenCalledWith(17);

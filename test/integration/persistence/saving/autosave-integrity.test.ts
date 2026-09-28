@@ -1,3 +1,4 @@
+import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { describe, expect, it, vi } from "vitest";
 
 import { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
@@ -104,6 +105,7 @@ async function createHarness(
   const document = new AutosaveDocumentFixture();
   const vault = new IntegrityVault(initial.svg);
   const coordinator = new AutosaveCoordinator({
+    workScheduler: createTestWorkScheduler(),
     clock: { clearTimeout: vi.fn(), setTimeout: vi.fn() },
     confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
     confirmedContent: initial.svg,

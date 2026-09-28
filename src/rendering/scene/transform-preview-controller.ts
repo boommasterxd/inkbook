@@ -1,5 +1,5 @@
 import type { SceneContentRenderer } from "./content-renderer";
-import { selectViewportNearPreviewIds } from "./preview-transform-selection";
+import { ViewportPreviewSelection } from "./preview-transform-selection";
 import type { PreviewTransform } from "./scene-visibility-reconciler";
 import type { PreviewStrokeWidth, SceneCamera, SceneStorePort, SceneViewport } from "./types";
 
@@ -13,6 +13,7 @@ export class SceneTransformPreviewController {
   readonly #content: SceneContentRenderer;
   readonly #dirty = new Set<string>();
   readonly #store: SceneStorePort;
+  readonly #candidates = new ViewportPreviewSelection();
   readonly #transforms = new Map<string, PreviewTransform>();
   #camera: SceneCamera;
   #ids: readonly string[] = [];
@@ -25,6 +26,10 @@ export class SceneTransformPreviewController {
     this.#content = content;
     this.#store = store;
     this.#camera = camera;
+  }
+
+  public memoryUsage(): number {
+    return this.#candidates.memoryUsage();
   }
 
   public get values(): ReadonlyMap<string, PreviewTransform> {
@@ -85,6 +90,7 @@ export class SceneTransformPreviewController {
     this.#contextDirty = false;
     this.#preview = undefined;
     this.#source = undefined;
+    this.#candidates.clear();
   }
 
   public write(): void {
@@ -110,6 +116,7 @@ export class SceneTransformPreviewController {
     this.#contextDirty = false;
     this.#preview = undefined;
     this.#source = undefined;
+    this.#candidates.clear();
   }
 
   private replaceSelection(ids: readonly string[], version: number): void {
@@ -117,7 +124,7 @@ export class SceneTransformPreviewController {
       this.#transforms.set(id, { strokeWidthScale: null, transform: null, version });
       this.#dirty.add(id);
     }
-    this.#ids = selectViewportNearPreviewIds(ids, this.#store, this.#viewport, this.#camera);
+    this.#ids = this.#candidates.select(ids, this.#store, this.#viewport, this.#camera);
     this.#source = ids;
   }
 

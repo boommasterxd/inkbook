@@ -1,4 +1,4 @@
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import type { InkSnapshotV1, StrokeSamplesV1 } from "../../../domain/schema/public";
 import { assertDocumentElementWireLimits } from "./packed-element-wire-limits";
 import {
   packElements,
@@ -56,7 +56,10 @@ export async function encodeModelSyncRequestChunked(
     : encodeIncremental(request, packed);
 }
 
-export function decodeModelSyncRequest(request: ModelSyncWireRequest): ModelSyncRuntimeRequest {
+export function decodeModelSyncRequest(
+  request: ModelSyncWireRequest,
+  resolvePoints?: (id: string) => StrokeSamplesV1,
+): ModelSyncRuntimeRequest {
   if (request.type === "model-sync-full-wire") {
     assertDocumentElementWireLimits(request.snapshot.elements);
     return {
@@ -69,7 +72,9 @@ export function decodeModelSyncRequest(request: ModelSyncWireRequest): ModelSync
   if (changedElements !== undefined) assertDocumentElementWireLimits(changedElements);
   return {
     ...identity,
-    ...(changedElements === undefined ? {} : { changedElements: unpackElements(changedElements) }),
+    ...(changedElements === undefined
+      ? {}
+      : { changedElements: unpackElements(changedElements, resolvePoints) }),
     type: "model-sync-incremental",
   };
 }

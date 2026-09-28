@@ -87,7 +87,7 @@ function setup() {
       lockedBufferLines: 1,
       margin: 24.3,
     },
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   return { renderer, scheduler, selected };

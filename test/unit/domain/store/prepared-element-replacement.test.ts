@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SpatialQueryScratch } from "../../../../src/domain/spatial/index";
 import { ElementStore } from "../../../../src/domain/store/public";
+import { moveSelectionTimeSliced } from "../../../../src/editor/selection/public";
 
-import { connectedLine, IDS, mixedElement, rectangle } from "./fixtures";
+import { connectedLine, highlighter, IDS, mixedElement, rectangle } from "./fixtures";
 
 const SCHEDULER = {
   shouldYield: () => false,
@@ -107,7 +108,31 @@ describe("ElementStore incremental prepared replacement", () => {
 });
 
 describe("ElementStore large replacement admission", () => {
-  it("admits large heapification and atomic commit in separate fresh host slices", async () => {
+  it("prepares canonical translations across old record thresholds without forced waits", async () => {
+    const strokes = Array.from({ length: 257 }, (_, index) => ({
+      ...highlighter(),
+      id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
+    }));
+    const store = new ElementStore(strokes);
+    const moved = await moveSelectionTimeSliced(strokes, { x: 1, y: 2 }, SCHEDULER);
+    if (moved === null) throw new Error("Expected translated strokes.");
+    let yields = 0;
+    const prepared = await store.prepareElementReplacement(moved, {
+      shouldYield: () => false,
+      yieldControl: async () => {
+        yields += 1;
+      },
+    });
+
+    expect(yields).toBe(0);
+    expect(prepared.token).not.toBeNull();
+    if (prepared.token === null) return;
+    expect(store.commitPreparedElementReplacement(prepared.token).delta?.changes).toHaveLength(
+      strokes.length,
+    );
+  });
+
+  it("uses remaining shared budget before atomic commit", async () => {
     const elements = Array.from({ length: 1_000 }, (_, index) =>
       rectangle(`00000000-0000-4000-8002-${index.toString().padStart(12, "0")}`),
     );
@@ -126,7 +151,7 @@ describe("ElementStore large replacement admission", () => {
       },
     );
 
-    expect(yields).toBe(5);
+    expect(yields).toBe(0);
     if (prepared.token === null) throw new Error("Expected a prepared replacement token.");
     expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
     expect(store.instrumentation.publishedDeltas).toBe(1);

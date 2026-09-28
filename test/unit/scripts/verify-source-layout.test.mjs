@@ -121,3 +121,16 @@ it("reports CSS files above the hard line limit", () => {
     "src/obsidian/styles/too-large.css: CSS files must not exceed 500 lines (found 501).",
   ]);
 });
+
+it("includes the work scheduling boundary in the source layout gate", () => {
+  const violations = validateSourceLayout([
+    {
+      content: "const channel = new MessageChannel();\nvoid channel;\n",
+      path: "src/obsidian/embeds/independent-scheduler.ts",
+    },
+  ]);
+
+  expect(violations).toEqual([
+    "src/obsidian/embeds/independent-scheduler.ts:1: native MessageChannel scheduling must use the shared work scheduler.",
+  ]);
+});

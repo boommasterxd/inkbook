@@ -1,3 +1,5 @@
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+
 export interface FrameScheduler {
   cancel(frame: number): void;
   request(callback: () => void): number;
@@ -58,9 +60,9 @@ export const browserScrollListeners: ScrollListenerPort<BrowserScrollElement> = 
   },
 };
 
-export function createAnimationFrameScheduler(view: Window): FrameScheduler {
+export function createAnimationFrameScheduler(workScheduler: WorkScheduler): FrameScheduler {
   return {
-    cancel: (frame) => view.cancelAnimationFrame(frame),
-    request: (callback) => view.requestAnimationFrame(callback),
+    cancel: (frame) => workScheduler.cancelFrame(frame),
+    request: (callback) => workScheduler.requestFrame(callback, "input"),
   };
 }

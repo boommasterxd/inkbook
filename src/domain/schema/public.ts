@@ -49,7 +49,6 @@ export {
   validateInkConnectionRelationsV1,
   validateInkPageV1,
   validateInkSnapshotV1,
-  validateRuntimeInkSnapshotV1,
 } from "./snapshot-validation";
 export type {
   ElementValidationDerivation,

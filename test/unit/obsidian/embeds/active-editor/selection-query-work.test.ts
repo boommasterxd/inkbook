@@ -4,9 +4,10 @@ import { ElementStore } from "../../../../../src/domain/store/public";
 import { PendingSelection } from "../../../../../src/obsidian/embeds/active-editor/pending-selection";
 import { SelectionQueryWork } from "../../../../../src/obsidian/embeds/active-editor/selection-query-work";
 import { ManualFrameScheduler } from "../../../../fixtures/obsidian/manual-frame-scheduler";
+import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 import { rectangle } from "../../../domain/store/fixtures";
 
-function setup(count = 160, scheduled = true) {
+function setup(count = 160) {
   const scheduler = new ManualFrameScheduler();
   const pending = new PendingSelection();
   const store = new ElementStore();
@@ -27,7 +28,9 @@ function setup(count = 160, scheduled = true) {
     }
   }
   const options = {
-    ...(scheduled ? { frameScheduler: scheduler } : {}),
+    workScheduler: workSchedulerFromFrames(scheduler, {
+      shouldYield: () => state.visits > 0 && state.visits % 64 === 0,
+    }),
     store,
     selection: () => state.selection,
     selectionSignal: pending.signal,
@@ -37,8 +40,18 @@ function setup(count = 160, scheduled = true) {
   return { finished, options, pending, scheduler, setSelection, state, store, work };
 }
 
+function unbudgetedNumericWork(
+  test: ReturnType<typeof setup>,
+  steps: Generator<number, ReadonlySet<string>>,
+): SelectionQueryWork {
+  return new SelectionQueryWork(
+    { ...test.options, workScheduler: workSchedulerFromFrames(test.scheduler) },
+    steps,
+  );
+}
+
 describe("selection query scheduling", () => {
-  it("bounds geometry steps per frame and publishes the completed selection only once", () => {
+  it("resumes at the shared deadline and publishes the completed selection only once", () => {
     const test = setup();
     expect(test.work.start()).toBe(false);
     expect(test.state.visits).toBe(64);
@@ -69,16 +82,21 @@ describe("selection query scheduling", () => {
     const work = new SelectionQueryWork(
       {
         ...test.options,
-        selectionWorkBudget: { now: () => tick, sliceBudgetMs: () => sliceBudgetMs },
+        workScheduler: workSchedulerFromFrames(test.scheduler, {
+          shouldYield: () => tick - sliceStart >= sliceBudgetMs,
+        }),
       },
       measuredSteps(),
     );
+    let sliceStart = 0;
     work.start();
-    const expected = Math.min(64, Math.max(1, sliceBudgetMs));
+    const expected = Math.min(160, sliceBudgetMs);
     expect(test.state.visits).toBe(expected);
-    expect(test.scheduler.pendingCount).toBe(1);
+    expect(test.scheduler.pendingCount).toBe(sliceBudgetMs >= 160 ? 0 : 1);
+    if (sliceBudgetMs >= 160) return;
+    sliceStart = tick;
     test.scheduler.runNext(1);
-    expect(test.state.visits).toBe(expected * 2);
+    expect(test.state.visits).toBe(sliceBudgetMs === 0 ? 1 : expected * 2);
     work.cancel();
     expect(test.scheduler.pendingCount).toBe(0);
   });
@@ -160,10 +178,58 @@ describe("selection query work ownership", () => {
     expect(test.setSelection).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])("finishes small work synchronously with scheduling=%s", (scheduled) => {
-    const test = setup(2, scheduled);
+  it("finishes small work synchronously inside the shared frame budget", () => {
+    const test = setup(2);
     expect(test.work.start()).toBe(true);
     expect(test.state.selection).toEqual(new Set(["selected"]));
     expect(test.scheduler.pendingCount).toBe(0);
+  });
+});
+
+describe("numeric selection work charges", () => {
+  it.each([
+    [65, 0],
+    [512, 0],
+    [65, 4095],
+    [512, 4095],
+  ])(
+    "continues %i-operation predicates after %i cheap units while budget remains",
+    (marker, prefix) => {
+      const test = setup();
+      const batches = prefix === 0 ? 65 : 2;
+      function* steps(): Generator<number, ReadonlySet<string>> {
+        for (let index = 0; index < prefix; index += 1) {
+          test.state.visits += 1;
+          yield 1;
+        }
+        for (let index = 0; index < batches; index += 1) {
+          test.state.visits += 1;
+          yield marker;
+        }
+        return new Set(["selected"]);
+      }
+      const work = unbudgetedNumericWork(test, steps());
+      expect(work.start()).toBe(true);
+      expect(test.state.visits).toBe(prefix + batches);
+      expect(test.setSelection).toHaveBeenCalledOnce();
+      expect(test.scheduler.pendingCount).toBe(0);
+    },
+  );
+
+  it("rechecks selection state at the charged-work quantum without a frame wait", () => {
+    const test = setup();
+    function* steps(): Generator<number, ReadonlySet<string>> {
+      for (let index = 0; index < 65; index += 1) {
+        test.state.visits += 1;
+        if (index === 63) test.state.selection = new Set(["newer-selection"]);
+        yield 512;
+      }
+      return new Set(["selected"]);
+    }
+    const work = unbudgetedNumericWork(test, steps());
+    expect(work.start()).toBe(false);
+    expect(test.state.visits).toBe(64);
+    expect(test.scheduler.pendingCount).toBe(0);
+    expect(test.setSelection).not.toHaveBeenCalled();
   });
 });

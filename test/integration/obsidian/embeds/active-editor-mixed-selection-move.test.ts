@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   calculateElementBounds,
   derivePageExtent,
+  rotatePointClockwise,
   translateElementGeometry,
 } from "../../../../src/domain/geometry/public";
 import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
@@ -23,6 +24,8 @@ describe("active editor mixed selection move", () => {
     const fixture = mixedMoveFixture();
     const { history, store, stroke, table } = fixture;
     const preview = mixedMovePreview(fixture);
+    const originalStroke = store.get(stroke.id)!.element;
+    if (originalStroke.kind !== "stroke") throw new Error("Expected stored stroke");
 
     preview.update(pointer(800, 940));
 
@@ -33,12 +36,22 @@ describe("active editor mixed selection move", () => {
       y: 848.169,
     });
     const movedStroke = store.get(stroke.id)?.element;
-    expect(movedStroke?.pivot).toEqual({ x: 1489.271, y: 908.189 });
+    if (movedStroke?.kind !== "stroke") throw new Error("Expected moved stroke");
+    expect(movedStroke.points).toBe(originalStroke.points);
+    expect(movedStroke.offset).toEqual({ x: -100, y: 40 });
+    expect(movedStroke.pivot).toEqual({ x: 1489.271, y: 908.189 });
     expect(strokeStart(movedStroke)).toEqual([1697.778, 613.438, 0.5]);
     expect(history.commandCount).toBe(1);
     expect(history.undo()).toBe(true);
     expect(store.get(table.id)?.element).toMatchObject({ x: 655.405, y: 808.169 });
-    expect(strokeStart(store.get(stroke.id)?.element)).toEqual([1797.778, 573.438, 0.5]);
+    const restoredStroke = store.get(stroke.id)!.element;
+    if (restoredStroke.kind !== "stroke") throw new Error("Expected restored stroke");
+    expect(restoredStroke.points).toBe(originalStroke.points);
+    expect(restoredStroke.offset).toBeUndefined();
+    expect(strokeStart(restoredStroke)).toEqual([1797.778, 573.438, 0.5]);
+    expect(history.redo()).toBe(true);
+    expect(store.get(stroke.id)?.element).toMatchObject({ offset: { x: -100, y: 40 } });
+    expect(strokeStart(store.get(stroke.id)?.element)).toEqual([1697.778, 613.438, 0.5]);
   });
 });
 
@@ -306,5 +319,14 @@ function pointer(x: number, y: number) {
 }
 
 function strokeStart(element: InkElementV1 | ImmutableInkElement | undefined): number[] {
-  return element?.kind === "stroke" ? [...element.points.slice(0, 3)] : [];
+  if (element?.kind !== "stroke") throw new Error("Expected stroke geometry");
+  const point = rotatePointClockwise(
+    {
+      x: element.points[0]! + (element.offset?.x ?? 0),
+      y: element.points[1]! + (element.offset?.y ?? 0),
+    },
+    element.pivot,
+    element.rotation,
+  );
+  return [point.x, point.y, element.points[2]!];
 }

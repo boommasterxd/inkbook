@@ -1,7 +1,7 @@
 import type { PressureWindow } from "../../../../src/domain/geometry/prepared-pressure-geometry";
 import * as pressureUnion from "../../../../src/domain/geometry/pressure-union";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
-import { moveSelection } from "../../../../src/editor/selection/transforms";
+import { scaleElement } from "../../../../src/editor/selection/transforms";
 import { rectangle } from "../../../unit/domain/store/fixtures";
 import { afterEach, expect, it, vi } from "vitest";
 import * as elementPath from "../../../../src/domain/geometry/element-path";
@@ -39,12 +39,14 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
   }
   const group = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
   const original = group.nodes[0]!.attributes.get("d");
-  renderer.setPreviewTransform(ids, "translate(10 0)", 1);
+  renderer.setPreviewTransform(ids, "scale(1.1 1)", 1);
   renderer.flushPointerFeedbackFrame();
   const handoff = renderer.beginPreviewCommit();
   handoff.arm(ids);
   renderer.clearPreviewTransforms();
-  const replacements = moveSelection(elements, { x: 10, y: 0 });
+  const replacements = elements.map((value) =>
+    scaleElement(value, { x: 0, y: 0 }, { x: 1.1, y: 1 }),
+  );
   const moved = replacements[0]!;
   if (moved.kind !== "stroke") throw new Error("Expected moved stroke");
   for (const value of replacements)
@@ -54,7 +56,13 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
       geometryVersion: 2,
     });
   const fullBuild = vi.spyOn(elementPath, "buildElementPathParts");
+  const originalStep = Reflect.get(ProgressivePreviewPath.prototype, "step");
   const step = vi.spyOn(ProgressivePreviewPath.prototype, "step");
+  step.mockImplementation(function (this: ProgressivePreviewPath, deadline, now) {
+    const complete = originalStep.call(this, deadline, now);
+    scheduler.time += 1;
+    return complete;
+  });
   renderer.applyDelta({
     affected: replacements.map((after, index) => ({
       id: after.id,
@@ -64,10 +72,11 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
     })),
   });
   scheduler.runFrame();
-  expect(step).not.toHaveBeenCalled();
+  expect(step.mock.calls.length).toBeGreaterThan(0);
+  expect(step.mock.calls.length).toBeLessThanOrEqual(8);
   expect(fullBuild).not.toHaveBeenCalled();
   expect(group.nodes[0]!.attributes.get("d")).toBe(original);
-  expect(group.attributes.get("transform")).toBe("translate(10 0)");
+  expect(group.attributes.get("transform")).toBe("scale(1.1 1)");
   return {
     renderer,
     scheduler,
@@ -87,16 +96,16 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
     pendingCommit();
   renderer.setPreviewTransform([element.id], "translate(5 0)", 2);
   renderer.flushPointerFeedbackFrame();
-  expect(group.attributes.get("transform")).toBe("translate(5 0) translate(10 0)");
+  expect(group.attributes.get("transform")).toBe("translate(5 0) scale(1.1 1)");
   renderer.clearPreviewTransforms();
   renderer.flushPointerFeedbackFrame();
-  expect(group.attributes.get("transform")).toBe("translate(10 0)");
+  expect(group.attributes.get("transform")).toBe("scale(1.1 1)");
   renderer.setPreviewTransform([element.id], "translate(5 0)", 3);
   renderer.flushPointerFeedbackFrame();
   while (scheduler.pendingCount > 0) {
     step.mockClear();
     scheduler.runFrame();
-    expect(step.mock.calls.length).toBeLessThanOrEqual(4);
+    expect(step.mock.calls.length).toBeLessThanOrEqual(8);
   }
   expect(fullBuild).not.toHaveBeenCalled();
   expect(group.nodes[0]!.attributes.get("d")).toBe(elementPath.buildElementPathParts(moved)[0]!.d);
@@ -123,7 +132,7 @@ it("defers a new canonical preview until the committed geometry basis is current
   renderer.setElementPreviews([newer], 2);
   renderer.flushPointerFeedbackFrame();
   expect(group.nodes[0]!.attributes.get("d")).toBe(original);
-  expect(group.attributes.get("transform")).toBe("translate(10 0)");
+  expect(group.attributes.get("transform")).toBe("scale(1.1 1)");
   expect(fullBuild).not.toHaveBeenCalled();
   while (scheduler.pendingCount > 0) scheduler.runFrame();
   expect(group.nodes[0]!.attributes.get("d")).toBe(elementPath.buildElementPathParts(newer)[0]!.d);
@@ -154,7 +163,7 @@ it("retains mixed constant-width ink and shapes while the preceding pressure job
   const camera = fakeNode(renderer.svg).nodes[1]!;
   const nodes = [...camera.nodes[3]!.nodes, ...camera.nodes[4]!.nodes];
   expect(nodes).toHaveLength(4);
-  for (const node of nodes) expect(node.attributes.get("transform")).toBe("translate(10 0)");
+  for (const node of nodes) expect(node.attributes.get("transform")).toBe("scale(1.1 1)");
   while (scheduler.pendingCount > 0) scheduler.runFrame();
   for (const node of nodes) expect(node.attributes.has("transform")).toBe(false);
   renderer.destroy();

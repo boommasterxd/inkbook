@@ -1,3 +1,5 @@
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import type { StrokeElementV1 } from "../../domain/schema/public";
 import {
   calculateElementBounds,
   derivePageExtent,
@@ -19,6 +21,10 @@ import {
 } from "../../domain/spatial/index";
 
 export interface ElementFacts {
+  readonly strokeGeometry?: {
+    readonly local: StrokeElementV1;
+    readonly bounds: Readonly<SpatialBounds>;
+  };
   readonly bottom: number;
   readonly connectedEndpoints: number;
   readonly spatialMemberships: number;
@@ -47,6 +53,10 @@ export function elementFacts(
   element: InkElementV1,
   derivation?: ElementValidationDerivation,
 ): ElementFacts {
+  if (element.kind === "stroke") {
+    if (derivation !== undefined) validatedElementDerivationBounds(element, derivation);
+    return strokeFacts(element);
+  }
   const bounds =
     derivation === undefined
       ? calculateElementBounds(element)
@@ -57,14 +67,41 @@ export function elementFacts(
 export function validatedDeltaElementFacts(
   element: InkElementV1,
   derivation?: ElementValidationDerivation,
+  previous?: ElementFacts,
 ): ElementFacts {
-  if (derivation === undefined) return elementFacts(element);
-  const derivedBounds = validatedElementDerivationBounds(element, derivation);
-  const calculatedBounds = calculateElementBounds(element);
-  if (!sameBounds(derivedBounds, calculatedBounds)) {
-    throw new TypeError("Element derivation does not match its geometry.");
+  if (element.kind === "stroke") {
+    if (derivation !== undefined) validatedElementDerivationBounds(element, derivation);
+    return strokeFacts(element, previous);
   }
-  return factsFromBounds(element, derivedBounds);
+  if (derivation === undefined) return elementFacts(element);
+  validatedElementDerivationBounds(element, derivation);
+  const calculatedBounds = calculateElementBounds(element);
+  // Translating retained bounds and recomputing translated geometry can round differently.
+  // A mismatched hint never supplies capacity facts; use the canonical recomputation.
+  return factsFromBounds(element, calculatedBounds);
+}
+
+function strokeFacts(stroke: StrokeElementV1, previous?: ElementFacts): ElementFacts {
+  const local = strokeLocalGeometry(stroke);
+  const cached = previous?.strokeGeometry;
+  const old = cached?.local;
+  const reusable =
+    old !== undefined &&
+    old.points === local.points &&
+    old.rotation === local.rotation &&
+    old.style.width === local.style.width &&
+    old.tool === local.tool &&
+    (local.rotation === 0 || (old.pivot.x === local.pivot.x && old.pivot.y === local.pivot.y));
+  const bounds = reusable ? cached!.bounds : calculateElementBounds(local);
+  const x = stroke.offset?.x ?? 0;
+  const y = stroke.offset?.y ?? 0;
+  const translated = {
+    minX: bounds.minX + x,
+    minY: bounds.minY + y,
+    maxX: bounds.maxX + x,
+    maxY: bounds.maxY + y,
+  };
+  return { ...factsFromBounds(stroke, translated), strokeGeometry: { local, bounds } };
 }
 
 function factsFromBounds(element: InkElementV1, bounds: Readonly<SpatialBounds>): ElementFacts {
@@ -78,15 +115,6 @@ function factsFromBounds(element: InkElementV1, bounds: Readonly<SpatialBounds>)
     strokePoints: element.kind === "stroke" ? element.points.length / 3 : 0,
     strokes: Number(element.kind === "stroke"),
   };
-}
-
-function sameBounds(left: Readonly<SpatialBounds>, right: Readonly<SpatialBounds>): boolean {
-  return (
-    left.minX === right.minX &&
-    left.minY === right.minY &&
-    left.maxX === right.maxX &&
-    left.maxY === right.maxY
-  );
 }
 
 export function aggregateElementFacts(facts: Iterable<ElementFacts>): AggregateFacts {

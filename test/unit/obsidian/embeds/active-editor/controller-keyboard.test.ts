@@ -26,7 +26,7 @@ function keyboardHarness(
     readonly canPaste?: boolean;
     readonly canClaimPasteShortcut?: boolean;
     readonly canRequestPaste?: boolean;
-    readonly hasValidatedPaste?: boolean;
+    readonly hasPasteCandidate?: boolean;
     readonly lastScreenPointer?: InputPoint | null;
     readonly navigationEnabled?: boolean;
     readonly pointerOver?: boolean;
@@ -48,7 +48,7 @@ function keyboardHarness(
     canClaimPasteShortcut:
       options.canClaimPasteShortcut ?? options.canRequestPaste ?? options.canPaste ?? false,
     canRequestPaste: options.canRequestPaste ?? options.canPaste ?? false,
-    hasValidatedPaste: options.hasValidatedPaste ?? options.canPaste ?? false,
+    hasPasteCandidate: options.hasPasteCandidate ?? options.canPaste ?? false,
     execute,
     isAvailable,
     pasteFromClipboardData,
@@ -171,7 +171,7 @@ describe("active editor keyboard controller", () => {
 
 describe("active editor clipboard keyboard controller", () => {
   it("claims Paste through a readable system Clipboard before payload validation", () => {
-    const harness = keyboardHarness({ canRequestPaste: true, hasValidatedPaste: false });
+    const harness = keyboardHarness({ canRequestPaste: true, hasPasteCandidate: false });
     harness.isAvailable.mockReturnValue(true);
 
     expect(harness.controller.handleKeyDown(key("v", { ctrlKey: true }))).toBe(true);

@@ -40,13 +40,13 @@ export function createInteractionRenderer(
 ) {
   const document = new FakeDocument();
   const scheduler = options.scheduler ?? new FakeScheduler();
+  if (options.frameBudgetMs !== undefined) scheduler.frameBudgetMs = options.frameBudgetMs;
   const container = asElement(new FakeNode(document, "div"));
   const renderer = new SvgSceneRenderer({
     container,
-    ...(options.frameBudgetMs === undefined ? {} : { frameBudgetMs: options.frameBudgetMs }),
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page: INTERACTION_PAGE,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store: new ElementSceneStore(store),
   });
   return { renderer, scheduler };

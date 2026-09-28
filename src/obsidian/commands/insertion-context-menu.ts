@@ -1,6 +1,7 @@
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { editorInfoField, type Editor, type MarkdownFileInfo, type Menu } from "obsidian";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import { addInsertionContextMenuItem, type InkbookInsertionCommand } from "./command-registry";
 import type { EmptyLineInsertionController } from "./empty-line-insertion";
@@ -15,29 +16,33 @@ export class InsertionContextMenuController {
   readonly #command: InkbookInsertionCommand;
   readonly #canInsert: EmptyLineInsertionController["canInsertAtLine"];
   #target: MenuTarget | undefined;
-  #expiry: { readonly ownerWindow: Window; readonly handle: number } | undefined;
+  #expiry: { readonly scheduler: WorkScheduler; readonly handle: number } | undefined;
+  readonly #workScheduler: (ownerWindow: Window | null) => WorkScheduler;
 
   constructor(
     command: InkbookInsertionCommand,
     canInsert: EmptyLineInsertionController["canInsertAtLine"],
+    workScheduler: (ownerWindow: Window | null) => WorkScheduler,
   ) {
     this.#command = command;
     this.#canInsert = canInsert;
+    this.#workScheduler = workScheduler;
   }
 
   capture(editor: Editor, line: number | null, ownerWindow: Window): void {
     this.clear();
     this.#target = { editor, line };
     // Obsidian may populate the menu in a later listener, after a microtask checkpoint.
+    const scheduler = this.#workScheduler(ownerWindow);
     this.#expiry = {
-      ownerWindow,
-      handle: ownerWindow.setTimeout(() => this.clear(), 0),
+      scheduler,
+      handle: scheduler.requestFrame(() => this.clear()),
     };
   }
 
   clear(): void {
     if (this.#expiry !== undefined) {
-      this.#expiry.ownerWindow.clearTimeout(this.#expiry.handle);
+      this.#expiry.scheduler.cancelFrame(this.#expiry.handle);
       this.#expiry = undefined;
     }
     this.#target = undefined;

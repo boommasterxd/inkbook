@@ -9,6 +9,7 @@ import type {
 import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/presentation-lifecycle-registry";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const FIRST_PREVIEW = {
@@ -90,6 +91,10 @@ describe("Reading-view preview content identity", () => {
 describe("Reading-view pending recognition", () => {
   it("immediately hides source until a validated preview adopts the placeholder", async () => {
     const harness = pendingReadingView();
+    expect(harness.recognize).toHaveBeenCalledWith(
+      "drawings/ink.svg",
+      harness.root.ownerDocument.defaultView,
+    );
     expect(harness.root.children[0]?.classNames).toContain("inkbook-loading-placeholder");
     expect(harness.attachments).toEqual([]);
     harness.resolve(FIRST_PREVIEW);
@@ -209,6 +214,7 @@ function createPorts(
       detach: () => undefined,
       mount: (attachment) => attachments.push(attachment),
     },
+    workScheduler: nativeFrameWorkScheduler,
   };
 }
 
@@ -233,11 +239,12 @@ function pendingReadingView(prepare?: (root: FakePresentationElement) => void) {
     resolvePromise = resolve;
     reject = rejectPromise;
   });
+  const recognize = vi.fn(() => recognition);
   const attachments: PresentationAttachment[] = [];
   const ports = createPorts(
     {
       cached: () => cached,
-      recognize: () => recognition,
+      recognize,
       subscribe: () => () => undefined,
     },
     attachments,
@@ -265,6 +272,7 @@ function pendingReadingView(prepare?: (root: FakePresentationElement) => void) {
     original,
     ports,
     processing,
+    recognize,
     reject,
     root,
     changeSource: () => {

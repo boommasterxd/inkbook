@@ -21,6 +21,7 @@ const boundary = vi.hoisted(() => {
     getEditorContext: vi.fn(() => ({})),
     activationRequests: vi.fn(),
     updateHighlights: vi.fn(),
+    prepareForUnload: vi.fn(async (): Promise<void> => undefined),
   };
 });
 
@@ -63,6 +64,7 @@ vi.mock("../../../../src/editor/session/workspace-editor-coordinator", () => ({
 vi.mock("../../../../src/obsidian/embeds/vault-document-session-factory", () => ({
   VaultDocumentSessionFactory: class {
     getEditorContext = boundary.getEditorContext;
+    prepareForUnload = boundary.prepareForUnload;
   },
 }));
 
@@ -72,6 +74,7 @@ vi.mock("../../../../src/obsidian/embeds/workspace-active-scene", () => ({
 
 function createHarness(initialEntrance?: PresentationAttachment["initialEntrance"]) {
   boundary.snapshot = { disposed: false };
+  boundary.prepareForUnload.mockReset().mockResolvedValue(undefined);
   boundary.updateHighlights.mockClear();
   boundary.createScene.mockReset().mockImplementation(() => ({
     dispose: vi.fn(),
@@ -285,4 +288,28 @@ it("propagates vault highlight changes to the mounted active presentation", asyn
   runtime.updateVaultSettings({ ...settings.vault, selectionHighlightsEnabled: false });
   runtime.updateVaultSettings({ ...settings.vault, selectionHighlightsEnabled: true });
   expect(boundary.updateHighlights.mock.calls).toEqual([[false], [true]]);
+});
+
+it("retains window scheduling until detached persistence has drained", async () => {
+  const { runtime, attachment } = createHarness();
+  runtimes.push(runtime);
+  const scheduler = runtime.refreshRateProfiles.workScheduler(
+    attachment.root.ownerDocument.defaultView,
+  );
+  let finishDrain: () => void = () => undefined;
+  boundary.prepareForUnload.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finishDrain = () => resolve();
+      }),
+  );
+  runtime.dispose();
+  expect(runtime.refreshRateProfiles.workScheduler(attachment.root.ownerDocument.defaultView)).toBe(
+    scheduler,
+  );
+  finishDrain();
+  await Promise.resolve();
+  expect(() =>
+    runtime.refreshRateProfiles.workScheduler(attachment.root.ownerDocument.defaultView),
+  ).toThrow("disposed");
 });

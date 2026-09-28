@@ -1,7 +1,6 @@
 import type { InkElementV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
 import { WorkerJobQueue } from "../job-queue";
 import type { ExecutorIdentity, ExportIdentity, WorkerJobKind } from "../protocol";
-import { yieldToMainThread } from "../../scheduling/main-thread-yield";
 import { DocumentModelRuntime, RuntimeModelError } from "./document-model";
 import type {
   DocumentRuntimePort,
@@ -30,8 +29,6 @@ interface PendingJob {
   readonly request: DocumentRuntimeRequest;
   readonly resolve: (result: DocumentRuntimeResult) => void;
 }
-
-const PREWARM_SLICE_MS = 6;
 
 export class DocumentWorkerRuntime implements DocumentRuntimePort {
   readonly #abortController = new AbortController();
@@ -101,6 +98,21 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     if (this.#terminated) return;
     this.#prewarmRequested = true;
     this.#schedulePrewarm();
+  }
+
+  public async checkpoint(signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    const pending = this.#scheduler?.checkpoint(
+      signal === this.#abortController.signal
+        ? signal
+        : AbortSignal.any([signal, this.#abortController.signal]),
+    );
+    if (pending !== undefined) await pending;
+    signal.throwIfAborted();
+  }
+
+  public setSchedulingProfile(sliceMilliseconds: number, frameIntervalMilliseconds: number): void {
+    this.#scheduler?.setSchedulingProfile?.(sliceMilliseconds, frameIntervalMilliseconds);
   }
 
   public setLiveInputActive(active: boolean): void {
@@ -173,8 +185,6 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       const { snapshot } = unlocked;
       return {
         identity: request.identity,
-        preparedPaths: unlocked.preparedPaths,
-        integrityManifest: unlocked.integrityManifest,
         lockedHeight: unlocked.lockedHeight,
         outputHash: unlocked.outputHash,
         requiresCanonicalRewrite: unlocked.requiresCanonicalRewrite,
@@ -331,7 +341,6 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   #staleResult(request: DocumentRuntimeRequest): DocumentRuntimeResult {
     return this.#failure(request, new RuntimeModelError("stale-executor", false));
   }
-
   #matchesExecutor(request: DocumentRuntimeRequest): boolean {
     const identity =
       request.type === "export-full" || request.type === "export-incremental"
@@ -342,14 +351,12 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       identity.workerEpoch === this.#executor.workerEpoch
     );
   }
-
   #matchesExportIdentity(identity: ExecutorIdentity): boolean {
     return (
       identity.sessionId === this.#executor.sessionId &&
       identity.workerEpoch === this.#executor.workerEpoch
     );
   }
-
   #kind(request: DocumentRuntimeRequest): WorkerJobKind {
     if (request.type === "unlock") return "unlock";
     if (
@@ -363,7 +370,6 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     if (request.type === "export-full" || request.type === "export-incremental") return "export";
     return "required";
   }
-
   #schedulePrewarm(): void {
     if (
       this.#terminated ||
@@ -378,27 +384,25 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       return;
     }
     this.#prewarmRunning = true;
-    queueMicrotask(() => void this.#runPrewarm());
+    void this.checkpoint(this.#abortController.signal)
+      .then(() => this.#runPrewarm())
+      .catch(() => {
+        this.#prewarmRunning = false;
+      });
   }
 
   async #runPrewarm(): Promise<void> {
-    let sliceStarted = performance.now();
     try {
       while (
         !this.#terminated &&
         this.#prewarmRequested &&
         !this.#liveInputActive &&
         !this.#running &&
+        this.#unacknowledgedExports.size === 0 &&
         this.#queue.pendingCount === 0
       ) {
         const hasMore = await this.#model.prewarmOne({
-          checkpoint: async () => {
-            this.#abortController.signal.throwIfAborted();
-            if (performance.now() - sliceStarted < PREWARM_SLICE_MS) return;
-            await yieldToMainThread();
-            this.#abortController.signal.throwIfAborted();
-            sliceStarted = performance.now();
-          },
+          checkpoint: () => this.checkpoint(this.#abortController.signal),
           signal: this.#abortController.signal,
         });
         if (!hasMore) {

@@ -1,9 +1,11 @@
 import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
 import { CoalescedExportTarget, type CoalescedExportPlan } from "../../worker/coalesced-export";
 import type { AutosaveDelta, AutosaveDocumentSource } from "./types";
+import { createExportRequest, type ExportDispatchIdentity } from "./export-request";
 
 export class AutosaveWorkerModelState {
   #modelRevision: number;
+  #preparedPathBaselineEstablished = false;
   #pending: CoalescedExportTarget<InkElementV1, PageV1> | null = null;
 
   public constructor(modelRevision: number) {
@@ -36,6 +38,24 @@ export class AutosaveWorkerModelState {
 
   public acknowledgeExport(modelRevision: number): void {
     this.#modelRevision = modelRevision;
+    this.#preparedPathBaselineEstablished = true;
+  }
+
+  public createExportRequest(
+    plan: CoalescedExportPlan<InkElementV1, PageV1, InkSnapshotV1>,
+    identity: ExportDispatchIdentity,
+    document: AutosaveDocumentSource,
+  ) {
+    return createExportRequest(
+      plan,
+      identity,
+      document.preparedPressurePaths?.bind(document),
+      !this.#preparedPathBaselineEstablished,
+    );
+  }
+
+  public resetPreparedPathBaseline(): void {
+    this.#preparedPathBaselineEstablished = false;
   }
 
   public acknowledgeSynchronization(modelRevision: number): void {

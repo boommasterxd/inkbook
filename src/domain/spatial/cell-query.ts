@@ -17,6 +17,30 @@ export function visitSpatialCells<Id>(
   }
 }
 
+export function visitOverflowEntries<Id>(
+  overflowSlots: ReadonlySet<number>,
+  slots: readonly (IndexedEntry<Id> | undefined)[],
+  bounds: SpatialBounds,
+  scratch: SpatialQueryScratch<Id>,
+): void {
+  for (const slot of overflowSlots) {
+    const entry = slots[slot];
+    if (entry !== undefined) scratch.visit(slot, entry.id, boundsIntersect(entry, bounds));
+  }
+}
+
+export function maximumOverflowBottom<Id>(
+  overflowSlots: ReadonlySet<number>,
+  slots: readonly (IndexedEntry<Id> | undefined)[],
+): number | undefined {
+  let maximum: number | undefined;
+  for (const slot of overflowSlots) {
+    const entry = slots[slot];
+    if (entry !== undefined) maximum = Math.max(maximum ?? -Infinity, entry.maxY);
+  }
+  return maximum;
+}
+
 function shouldVisitRange(range: CellRange, occupiedCellCount: number): boolean {
   const width = range.maxCellX - range.minCellX + 1;
   const height = range.maxCellY - range.minCellY + 1;

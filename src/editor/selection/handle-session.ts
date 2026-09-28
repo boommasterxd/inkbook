@@ -30,6 +30,7 @@ import {
   exceedsExactPreviewWork,
   exceedsReplacementWork,
   type SelectionReplacementPlanner,
+  type ReplacementWorkOptions,
 } from "./selection-work-budget";
 
 export type { SelectionReplacementPlanner } from "./selection-work-budget";
@@ -47,6 +48,10 @@ export type {
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 const SYNCHRONOUS_SELECTION_WORK_LIMIT = 16_384;
 const DEFAULT_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: true });
+const MOVE_REPLACEMENT_WORK = Object.freeze({
+  includeReverseDependencies: true,
+  countStrokeSamples: false,
+});
 const TABLE_SEPARATOR_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: false });
 
 export class SelectionHandleSession {
@@ -151,15 +156,9 @@ export class SelectionHandleSession {
     const pointer = this.#currentPointer;
     const materialized = await this.#materializeTimeSliced(scheduler, generation, pointer);
     if (materialized === null) return { status: "cancelled" };
-    const plan = await this.#planner.planReplacementsTimeSliced(materialized, {
-      isCancelled: () => this.#preparationCancelled(scheduler, generation),
-      shouldYield: scheduler.shouldYield,
-      yieldControl: scheduler.yieldControl,
-    });
-    if (plan === "cancelled") return { status: "cancelled" };
-    return plan === null
-      ? { status: "noop" }
-      : { previous: this.#elements, replacements: plan.replacements, status: "ready" };
+    // The model prepares and validates one version-bound transaction before adoption.
+    // Replanning here would repeat sample validation and connection propagation.
+    return { previous: this.#elements, replacements: materialized, status: "ready" };
   }
 
   #createPreview(): SelectionHandlePreview {
@@ -233,7 +232,11 @@ export class SelectionHandleSession {
     for (const element of this.#elements) {
       if (this.#preparationCancelled(scheduler, generation)) return null;
       replacements.push(this.#materializeOne(element, scaleFactors, pointer));
-      if (!(await this.#continuePreparation(scheduler, generation))) return null;
+      if (this.#preparationCancelled(scheduler, generation)) return null;
+      if (scheduler.shouldYield()) {
+        await scheduler.yieldControl();
+        if (this.#preparationCancelled(scheduler, generation)) return null;
+      }
     }
     if (this.#preparationCancelled(scheduler, generation)) return null;
     if (this.#action.kind !== "scale") return replacements;
@@ -442,19 +445,11 @@ export class SelectionHandleSession {
     );
   }
 
-  #replacementWorkOptions(): { readonly includeReverseDependencies: boolean } {
+  #replacementWorkOptions(): ReplacementWorkOptions {
+    if (this.#action.kind === "move") return MOVE_REPLACEMENT_WORK;
     return this.#action.kind === "table-header" || this.#action.kind === "table-column"
       ? TABLE_SEPARATOR_REPLACEMENT_WORK
       : DEFAULT_REPLACEMENT_WORK;
-  }
-
-  async #continuePreparation(
-    scheduler: TransformSliceScheduler,
-    generation: number,
-  ): Promise<boolean> {
-    if (this.#preparationCancelled(scheduler, generation)) return false;
-    if (scheduler.shouldYield()) await scheduler.yieldControl();
-    return !this.#preparationCancelled(scheduler, generation);
   }
 
   #preparationCancelled(scheduler: TransformSliceScheduler, generation: number): boolean {

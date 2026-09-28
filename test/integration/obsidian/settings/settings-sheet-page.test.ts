@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { Modal, type App, type Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -110,7 +111,9 @@ function setup(): {
   const store = createTestSettingsStore();
   const controller = new InkbookSettingsModalController(
     app,
-    new InkbookSettingTab(app, {} as Plugin, store),
+    new InkbookSettingTab(app, {} as Plugin, store, undefined, undefined, {
+      workScheduler: () => workSchedulerFromFrames(window),
+    }),
     store,
   );
   const lifecycle = { prepareLayoutChange: vi.fn(), requestLayout: vi.fn() };

@@ -27,6 +27,7 @@ export class InkbookLoadingPreviewWidget extends WidgetType {
     const placeholder = createLoadingPlaceholder(view.dom, {
       motion: this.ports.sessions.getMotionPreference?.() ?? "system",
       scheme: this.ports.scheme,
+      workScheduler: this.ports.workScheduler(view.dom.ownerDocument.defaultView),
       ...(this.entranceState.initialHeight === undefined
         ? {}
         : { initialHeight: this.entranceState.initialHeight }),
@@ -56,15 +57,17 @@ export class InkbookLoadingPreviewWidget extends WidgetType {
     // so its recognition subscriber can dispatch outside the active view update.
     queueMicrotask(() => {
       if (disposed) return;
-      void this.ports.documents.recognize(this.documentId).then((result) => {
-        if (
-          disposed ||
-          result !== false ||
-          this.ports.documents.cached(this.documentId) !== undefined
-        )
-          return;
-        view.dispatch({ effects: documentRecognitionUnavailable.of(this.documentId) });
-      });
+      void this.ports.documents
+        .recognize(this.documentId, view.dom.ownerDocument.defaultView)
+        .then((result) => {
+          if (
+            disposed ||
+            result !== false ||
+            this.ports.documents.cached(this.documentId) !== undefined
+          )
+            return;
+          view.dispatch({ effects: documentRecognitionUnavailable.of(this.documentId) });
+        });
     });
     return root;
   }

@@ -3,7 +3,7 @@ import type { InkElementV1 } from "../../domain/schema/public";
 import type { SceneContentRenderer } from "./content-renderer";
 import { SceneElementPreviewController } from "./element-preview-controller";
 import { ProgressiveElementPreview } from "./progressive-element-preview";
-import { selectViewportNearPreviewIds } from "./preview-transform-selection";
+import { ViewportPreviewSelection } from "./preview-transform-selection";
 import type { SceneCamera, SceneStorePort, SceneViewport } from "./types";
 
 /** Owns synchronous and progressive previews under the same commit/cancel lifetime. */
@@ -11,6 +11,7 @@ export class SceneElementPreviews {
   public readonly immediate: SceneElementPreviewController;
   public readonly progressive: ProgressiveElementPreview;
   readonly #store: SceneStorePort;
+  readonly #candidates = new ViewportPreviewSelection();
   #request: Parameters<ProgressiveElementPreview["set"]>[0] | undefined;
   #selection:
     | {
@@ -39,7 +40,7 @@ export class SceneElementPreviews {
     if (previous?.ids === ids && previous.viewport === viewport && previous.camera === camera) {
       return previous.selected;
     }
-    const selected = selectViewportNearPreviewIds(ids, this.#store, viewport, camera);
+    const selected = this.#candidates.select(ids, this.#store, viewport, camera);
     this.#selection = { camera, ids, selected, viewport };
     return selected;
   }
@@ -78,7 +79,16 @@ export class SceneElementPreviews {
   public clearProgressive(): void {
     this.#request = undefined;
     this.#selection = undefined;
+    this.#candidates.clear();
     this.progressive.clear();
+  }
+
+  public memoryUsage(): number {
+    return (
+      this.#candidates.memoryUsage() +
+      this.progressive.memoryUsage() +
+      this.content.previewMemoryUsage()
+    );
   }
 
   public get values(): ReadonlyMap<string, InkElementV1> {
@@ -98,6 +108,7 @@ export class SceneElementPreviews {
   public release(): void {
     this.#request = undefined;
     this.#selection = undefined;
+    this.#candidates.clear();
     this.immediate.release();
     this.progressive.release();
   }

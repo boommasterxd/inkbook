@@ -1,17 +1,21 @@
-import { TFile, type App, type Editor, type EditorPosition } from "obsidian";
+import { TFile, type App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  EmbedPasteController,
-  isCopiedEmbedPaste,
-  createObsidianEmbedPasteController,
-} from "../../../../src/obsidian/commands";
+import { createObsidianEmbedPasteController } from "../../../../src/obsidian/commands";
 import { createBuiltInSettings } from "../../../../src/domain/settings";
 import type { FilePlacementV1 } from "../../../../src/domain/settings/types";
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import type { InkbookSettingsStore } from "../../../../src/obsidian/settings";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { chooseInkbookAction } from "../../../../src/obsidian/dialogs/action-dialog";
+import { CLIPBOARD, FakeEditor, pasteRequest } from "../../../fixtures/obsidian/embed-paste";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+
+const TestTFile = TFile as unknown as new (path: string, size?: number) => TFile;
+const validationScheduling = {
+  workScheduler: () => immediateWorkScheduler(),
+  subscribeSchedulingProfile: () => () => undefined,
+};
 
 vi.mock("../../../../src/obsidian/dialogs/action-dialog", () => ({
   chooseInkbookAction: vi.fn(),
@@ -19,242 +23,6 @@ vi.mock("../../../../src/obsidian/dialogs/action-dialog", () => ({
 
 beforeEach(() => {
   vi.mocked(chooseInkbookAction).mockReset().mockResolvedValue("duplicate");
-});
-
-class FakeEditor {
-  content: string;
-  from: EditorPosition;
-  to: EditorPosition;
-  readonly replacements: string[] = [];
-
-  constructor(content = "", from = 0, to = from) {
-    this.content = content;
-    this.from = { ch: from, line: 0 };
-    this.to = { ch: to, line: 0 };
-  }
-
-  getCursor(side?: "anchor" | "from" | "head" | "to"): EditorPosition {
-    return side === "to" || side === "head" ? this.to : this.from;
-  }
-
-  getRange(from: EditorPosition, to: EditorPosition): string {
-    return this.content.slice(from.ch, to.ch);
-  }
-
-  getValue(): string {
-    return this.content;
-  }
-
-  replaceRange(replacement: string, from: EditorPosition, to = from): void {
-    this.replacements.push(replacement);
-    this.content = this.content.slice(0, from.ch) + replacement + this.content.slice(to.ch);
-    const cursor = from.ch + replacement.length;
-    this.from = { ch: cursor, line: 0 };
-    this.to = this.from;
-  }
-}
-
-const CLIPBOARD = "!inkbook[[drawings/source.svg]]";
-const SOURCE = '<svg data-inkbook-version="1"></svg>';
-const TestTFile = TFile as unknown as new (path: string, size?: number) => TFile;
-
-function request(editor: FakeEditor, overrides: Record<string, unknown> = {}) {
-  return {
-    clipboardText: CLIPBOARD,
-    editor: editor as unknown as Editor,
-    insideInkWidget: false,
-    sourcePath: "notes/page.md",
-    ...overrides,
-  };
-}
-
-function harness(choice: "duplicate" | "reference" | null) {
-  const events: string[] = [];
-  const create = vi.fn(async (path: string, content: string) => {
-    events.push(`create:${path}:${content}`);
-    events.push(`read:${path}`);
-    return guardedRead(path, content);
-  });
-  const read = vi.fn(async (path: string) => {
-    events.push(`read:${path}`);
-    return guardedRead(path, SOURCE);
-  });
-  const validate = vi.fn(async (content: string) => {
-    events.push(`validate:${content}`);
-    return true;
-  });
-  const choose = vi.fn(async () => {
-    events.push("choose");
-    return choice;
-  });
-  const trash = vi.fn(async (path: string) => {
-    events.push(`trash:${path}`);
-  });
-  const controller = new EmbedPasteController({
-    choices: { choose },
-    documents: { createAndReadBack: create, readWithMetadataGuard: read },
-    links: {
-      generateEmbed: (path) => {
-        events.push(`link:${path}`);
-        return `!inkbook[[${path}]]`;
-      },
-      resolveLinkTarget: (linkpath) =>
-        linkpath === "drawings/source.svg" ? { path: "drawings/source.svg" } : null,
-    },
-    placement: {
-      preparePath: async () => {
-        events.push("place");
-        return "drawings/duplicate.svg";
-      },
-    },
-    trash: { trash },
-    validation: { validate },
-  });
-  return { choose, controller, create, events, read, trash, validate };
-}
-
-describe("copied Inkbook embed paste", () => {
-  it("recognizes only one complete SVG embed outside an Inkbook widget", () => {
-    expect(isCopiedEmbedPaste(CLIPBOARD, false)).toBe(true);
-    expect(isCopiedEmbedPaste(`${CLIPBOARD}\n`, false)).toBe(false);
-    expect(isCopiedEmbedPaste(`${CLIPBOARD}${CLIPBOARD}`, false)).toBe(false);
-    expect(isCopiedEmbedPaste("![[drawing.png]]", false)).toBe(false);
-    expect(isCopiedEmbedPaste(CLIPBOARD, true)).toBe(false);
-  });
-
-  it("validates the resolved source before inserting another reference", async () => {
-    const editor = new FakeEditor("selected", 0, 8);
-    const test = harness("reference");
-
-    await expect(test.controller.paste(request(editor))).resolves.toEqual({
-      kind: "inserted",
-      mode: "reference",
-    });
-    expect(editor.content).toBe(CLIPBOARD);
-    expect(test.events).toEqual(["read:drawings/source.svg", `validate:${SOURCE}`, "choose"]);
-    expect(test.create).not.toHaveBeenCalled();
-  });
-
-  it("inserts the original Markdown without prompting when the SVG is not valid Inkbook data", async () => {
-    const editor = new FakeEditor();
-    const test = harness("duplicate");
-    test.validate.mockResolvedValue(false);
-
-    await expect(test.controller.paste(request(editor))).resolves.toEqual({
-      kind: "inserted",
-      mode: "original",
-    });
-    expect(editor.content).toBe(CLIPBOARD);
-    expect(test.choose).not.toHaveBeenCalled();
-    expect(test.create).not.toHaveBeenCalled();
-  });
-
-  it("cancels without changing the editor or creating a file", async () => {
-    const editor = new FakeEditor("selected", 0, 8);
-    const test = harness(null);
-
-    await expect(test.controller.paste(request(editor))).resolves.toEqual({ kind: "cancelled" });
-    expect(editor.content).toBe("selected");
-    expect(test.create).not.toHaveBeenCalled();
-    expect(test.trash).not.toHaveBeenCalled();
-  });
-});
-
-describe("copied Inkbook embed duplication", () => {
-  it("creates, reads back, and validates the duplicate before inserting its generated link", async () => {
-    const editor = new FakeEditor();
-    const test = harness("duplicate");
-    const originalReplace = editor.replaceRange.bind(editor);
-    editor.replaceRange = (replacement, from, to = from) => {
-      test.events.push(`replace:${replacement}`);
-      originalReplace(replacement, from, to);
-    };
-
-    await expect(test.controller.paste(request(editor))).resolves.toEqual({
-      kind: "inserted",
-      mode: "duplicate",
-    });
-    expect(editor.content).toBe("!inkbook[[drawings/duplicate.svg]]");
-    expect(test.events).toEqual([
-      "read:drawings/source.svg",
-      `validate:${SOURCE}`,
-      "choose",
-      "place",
-      `create:drawings/duplicate.svg:${SOURCE}`,
-      "read:drawings/duplicate.svg",
-      `validate:${SOURCE}`,
-      "link:drawings/duplicate.svg",
-      "replace:!inkbook[[drawings/duplicate.svg]]",
-    ]);
-  });
-
-  it("moves a completed duplicate to recoverable trash when the editor became stale", async () => {
-    const editor = new FakeEditor();
-    const test = harness("duplicate");
-    test.create.mockImplementation(async (path, content) => {
-      editor.content = "user edit";
-      return guardedRead(path, content);
-    });
-
-    await expect(test.controller.paste(request(editor))).resolves.toEqual({
-      cleanup: "trashed",
-      kind: "stale",
-    });
-    expect(editor.content).toBe("user edit");
-    expect(test.trash).toHaveBeenCalledWith("drawings/duplicate.svg");
-  });
-
-  it("does not trash an unrelated collision when Vault.create fails", async () => {
-    const editor = new FakeEditor();
-    const test = harness("duplicate");
-    const collision = new Error("collision");
-    test.create.mockRejectedValue(collision);
-
-    await expect(test.controller.paste(request(editor))).resolves.toEqual({
-      error: collision,
-      kind: "failed",
-    });
-    expect(test.trash).not.toHaveBeenCalled();
-    expect(editor.content).toBe("");
-  });
-});
-
-describe("atomic copied-embed duplicate read-back", () => {
-  it("trashes a created file that fails exact read-back validation", async () => {
-    const editor = new FakeEditor();
-    const test = harness("duplicate");
-    test.create.mockResolvedValueOnce(guardedRead("drawings/duplicate.svg", `${SOURCE}changed`));
-
-    const outcome = await test.controller.paste(request(editor));
-    expect(outcome.kind).toBe("failed");
-    expect(test.trash).toHaveBeenCalledWith("drawings/duplicate.svg");
-    expect(editor.content).toBe("");
-  });
-
-  it("rejects a replacement identity returned by atomic create-and-read-back", async () => {
-    const editor = new FakeEditor();
-    const test = harness("duplicate");
-    test.create.mockResolvedValueOnce(guardedRead("drawings/replaced.svg", SOURCE));
-
-    await expect(test.controller.paste(request(editor))).resolves.toMatchObject({ kind: "failed" });
-    expect(test.trash).toHaveBeenCalledWith("drawings/duplicate.svg");
-    expect(editor.content).toBe("");
-  });
-
-  it("fails closed when atomic read-back rejects raced oversized content", async () => {
-    const editor = new FakeEditor();
-    const test = harness("duplicate");
-    test.create.mockRejectedValueOnce(new Error("file-too-large"));
-
-    await expect(test.controller.paste(request(editor))).resolves.toMatchObject({ kind: "failed" });
-    expect(test.create).toHaveBeenCalledWith(
-      "drawings/duplicate.svg",
-      SOURCE,
-      FILE_SCHEMA_LIMITS.totalInputBytes,
-    );
-    expect(test.trash).not.toHaveBeenCalled();
-    expect(editor.content).toBe("");
-  });
 });
 
 describe("Obsidian copied-embed dialog", () => {
@@ -270,13 +38,18 @@ describe("Obsidian copied-embed dialog", () => {
         test.settings,
         { show: vi.fn() },
         signal,
-      ).paste(request(test.editor));
+        undefined,
+        validationScheduling,
+      ).paste(pasteRequest(test.editor));
 
       const readMotion = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].readMotion;
+      const workScheduler = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].workScheduler;
       expect(readMotion).toBeTypeOf("function");
+      expect(workScheduler).toBeTypeOf("function");
       expect(chooseInkbookAction).toHaveBeenCalledWith(test.app, {
         signal,
         readMotion,
+        workScheduler,
         title: "Paste Inkbook embed",
         description: "Choose how this drawing should be inserted.",
         actions: [
@@ -309,9 +82,14 @@ describe("Obsidian copied-embed composition", () => {
     const { app, editor, files, getFileByPath, serialized, settings } = test;
     const placementFeedback = vi.fn();
 
-    const result = await createObsidianEmbedPasteController(app, settings, {
-      show: placementFeedback,
-    }).paste(request(editor));
+    const result = await createObsidianEmbedPasteController(
+      app,
+      settings,
+      { show: placementFeedback },
+      undefined,
+      undefined,
+      validationScheduling,
+    ).paste(pasteRequest(editor));
 
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
     expect(placementFeedback).not.toHaveBeenCalled();
@@ -380,9 +158,14 @@ describe("Obsidian copied-embed size boundaries", () => {
       sourceSize: 1,
       readSource: () => oversized,
     });
-    const result = await createObsidianEmbedPasteController(app, settings, {
-      show: vi.fn(),
-    }).paste(request(editor));
+    const result = await createObsidianEmbedPasteController(
+      app,
+      settings,
+      { show: vi.fn() },
+      undefined,
+      undefined,
+      validationScheduling,
+    ).paste(pasteRequest(editor));
 
     expect(result).toEqual({ kind: "inserted", mode: "original" });
     expect(editor.content).toBe(CLIPBOARD);
@@ -395,9 +178,14 @@ async function runCompositionPaste(
     fallback: "attachment-folder-unavailable" | "custom-folder-unavailable",
   ) => void = vi.fn(),
 ) {
-  const result = await createObsidianEmbedPasteController(test.app, test.settings, {
-    show: placementFeedback,
-  }).paste(request(test.editor));
+  const result = await createObsidianEmbedPasteController(
+    test.app,
+    test.settings,
+    { show: placementFeedback },
+    undefined,
+    undefined,
+    validationScheduling,
+  ).paste(pasteRequest(test.editor));
   return { placementFeedback, result };
 }
 
@@ -487,14 +275,5 @@ function createCompositionHarness(
     getRandomValues,
     serialized,
     settings,
-  };
-}
-
-function guardedRead(path: string, content: string) {
-  return {
-    content,
-    identity: { ctime: 0, mtime: 0, path, size: content.length },
-    materialization: "host-full-read-not-bounded" as const,
-    stabilityEvidence: "object-identity-and-stat-unchanged" as const,
   };
 }

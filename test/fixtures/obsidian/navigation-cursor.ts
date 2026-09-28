@@ -7,6 +7,7 @@ import type { SvgSceneRenderer } from "../../../src/rendering/scene";
 import type { SceneToolCursorFrame } from "../../../src/rendering/scene/tool-cursor";
 import { domRect } from "./active-editor";
 import { ManualFrameScheduler } from "./manual-frame-scheduler";
+import { workSchedulerFromFrames } from "./work-scheduler";
 import { cursorPointerEvent, toolCursorHarness } from "./tool-cursor";
 
 export function navigationCursorFixture(tool: InputState["activeTool"], pointerType: string) {
@@ -54,6 +55,7 @@ export function navigationCursorFixture(tool: InputState["activeTool"], pointerT
   h.controls.input = { ...h.controls.input, activeTool: tool, fitZoom, zoom: fitZoom };
   h.controller.record(cursorPointerEvent({ pointerType, pressure: 0.5 }), "move");
   const navigation = new ActiveEditorNavigation({
+    workScheduler: workSchedulerFromFrames(frames),
     activePageHeight: () => 2000,
     container: {
       ownerDocument: document,

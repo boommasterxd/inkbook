@@ -1,8 +1,11 @@
 import { createProductionDocumentRuntime } from "./production-document-runtime";
 import { attachDocumentWorkerHost, type WorkerHostEndpoint } from "./worker-host";
+import { createWorkerWorkScheduler } from "./worker-work-scheduler";
 
 export interface DocumentWorkerBootstrap {
+  readonly frameIntervalMilliseconds: number;
   readonly sessionId: string;
+  readonly sliceMilliseconds: number;
   readonly type: "inkbook-worker-bootstrap";
   readonly workerEpoch: number;
 }
@@ -12,6 +15,7 @@ const endpoint = self as unknown as WorkerHostEndpoint;
 const bootstrap = (event: MessageEvent<unknown>): void => {
   if (!isBootstrap(event.data)) return;
   endpoint.removeEventListener("message", bootstrap);
+  const scheduling = createWorkerWorkScheduler(event.data);
   attachDocumentWorkerHost(
     endpoint,
     createProductionDocumentRuntime(
@@ -19,7 +23,7 @@ const bootstrap = (event: MessageEvent<unknown>): void => {
         sessionId: event.data.sessionId,
         workerEpoch: event.data.workerEpoch,
       },
-      { yieldControl: () => new Promise((resolve) => endpoint.setTimeout(resolve, 0)) },
+      scheduling,
     ),
   );
 };
@@ -36,6 +40,14 @@ function isBootstrap(value: unknown): value is DocumentWorkerBootstrap {
     typeof value.sessionId === "string" &&
     value.sessionId.length > 0 &&
     "workerEpoch" in value &&
-    Number.isSafeInteger(value.workerEpoch)
+    Number.isSafeInteger(value.workerEpoch) &&
+    "sliceMilliseconds" in value &&
+    typeof value.sliceMilliseconds === "number" &&
+    Number.isFinite(value.sliceMilliseconds) &&
+    value.sliceMilliseconds > 0 &&
+    "frameIntervalMilliseconds" in value &&
+    typeof value.frameIntervalMilliseconds === "number" &&
+    Number.isFinite(value.frameIntervalMilliseconds) &&
+    value.frameIntervalMilliseconds > 0
   );
 }

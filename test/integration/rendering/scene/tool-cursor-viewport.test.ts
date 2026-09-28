@@ -72,7 +72,11 @@ describe("viewport tool cursor surface", () => {
       "polygon(20px 30px, 520px 30px, 520px 430px, 20px 430px)",
     );
     clip = { left: 20, top: 0, right: 520, bottom: 330 };
-    h.renderer.invalidateLayout(false, true);
+    read.mockClear();
+    for (let sample = 0; sample < 10; sample += 1) h.renderer.invalidateLayout();
+    expect(read).not.toHaveBeenCalled();
+    h.scheduler.runAll();
+    expect(read).toHaveBeenCalledExactlyOnceWith(true);
     expect(h.cursor.attributes.get("transform")).toBe("translate(120 80)");
     expect(h.surface.attributes.get("clip-path")).toBe(
       "polygon(20px 0px, 520px 0px, 520px 330px, 20px 330px)",

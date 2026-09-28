@@ -1,3 +1,4 @@
+import { validatedSampleExtrema } from "./stroke-sample-extrema";
 import {
   calculateElementBounds,
   derivePageExtent,
@@ -360,6 +361,9 @@ function* validateBoundsAndExtent(
         elementId: element.id,
         spatialMemberships: spatialOverflow ? 0 : memberships,
         spatialOverflow,
+        ...(element.kind === "stroke"
+          ? { strokeSampleExtrema: validatedSampleExtrema(element.points)! }
+          : {}),
       }),
     );
     maximumBottom = Math.max(maximumBottom ?? 0, bounds.maxY);

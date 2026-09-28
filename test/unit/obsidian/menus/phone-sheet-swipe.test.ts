@@ -75,6 +75,7 @@ describe("PhoneSheetSwipeController", () => {
       fixture.backdrop.style.getPropertyValue("--inkbook-adaptive-panel-backdrop-opacity"),
     ).toBe("");
     expect(frames.pending).toBe(1);
+    expect(fixture.scheduleFrame).toHaveBeenCalledWith(expect.any(Function), "input");
     expect(fixture.surface.style.getPropertyValue("translate")).toBe("");
 
     frames.flush();

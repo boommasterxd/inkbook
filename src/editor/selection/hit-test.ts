@@ -95,6 +95,8 @@ export function elementContainsPoint(
   if (!Number.isFinite(tolerance) || tolerance < 0) return false;
   const point = rotatePointClockwise(pagePoint, element.pivot, -element.rotation);
   if (element.kind === "stroke") {
+    point.x -= element.offset?.x ?? 0;
+    point.y -= element.offset?.y ?? 0;
     return element.style.pressureEnabled
       ? pressureStrokeContainsPoint(element, pagePoint, tolerance, prepared)
       : hitStroke(element, point, tolerance + effectiveStrokeWidth(element) / 2);

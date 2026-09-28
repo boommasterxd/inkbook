@@ -1,7 +1,7 @@
 import type { AutosaveClock } from "./types";
 
 export const ACTIVE_GESTURE_RETRY_MS = 200;
-export const AUTOSAVE_DELAY_MS = 500;
+export const AUTOSAVE_DELAY_MS = 1_000;
 
 export class AutosaveTimer {
   readonly #clock: AutosaveClock;

@@ -1,11 +1,9 @@
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { SceneContentRenderer } from "./content-renderer";
 import { PATH_CACHE_MAX_BYTES } from "./constants";
 import { ProgressivePreviewPath } from "./progressive-preview-path";
-
-const IMMEDIATE_ELEMENT_LIMIT = 64;
-const PROGRESSIVE_STEPS_PER_FRAME = 4;
 
 export interface ProgressivePreviewTransform {
   readonly transform: string;
@@ -62,6 +60,10 @@ export class ProgressiveElementPreview {
     return this.#elements;
   }
 
+  public get pending(): boolean {
+    return this.#hasPending();
+  }
+
   public memoryUsage(): number {
     let bytes = this.#completedBytes + (this.#pending?.path.memoryUsage() ?? 0);
     if (this.#pending !== undefined) bytes += elementBytes(this.#pending.element);
@@ -91,6 +93,7 @@ export class ProgressiveElementPreview {
       this.#renderedFeedback.delete(id);
     }
     if (this.#pending !== undefined && !retained.has(this.#pending.element.id)) {
+      this.#pending?.path.cancel();
       this.#pending = undefined;
     }
     this.#request = request;
@@ -106,45 +109,35 @@ export class ProgressiveElementPreview {
     if (request === undefined || (request === this.#appliedRequest && zoom === this.#zoom)) return;
     this.#zoom = zoom;
     this.#appliedRequest = request;
-    let immediate = 0;
     const start = this.#immediateCursor;
     for (let offset = 0; offset < request.ids.length; offset += 1) {
       const index = (start + offset) % request.ids.length;
       const id = request.ids[index]!;
-      if (
-        immediate < IMMEDIATE_ELEMENT_LIMIT &&
-        now() < deadline &&
-        this.#writeImmediate(id, request)
-      ) {
-        immediate += 1;
-        this.#immediateCursor = index + 1;
-      } else this.#applyFeedback(id);
+      if (now() < deadline && this.#writeImmediate(id, request)) this.#immediateCursor = index + 1;
+      else this.#applyFeedback(id);
     }
   }
 
-  public write(deadline: number, now: () => number): boolean {
-    // Reserve frame time for residual feedback, immediate shapes, and scene writes.
-    // The fixed work cap also bounds fake clocks and unexpectedly cheap geometry.
-    for (let step = 0; step < PROGRESSIVE_STEPS_PER_FRAME; step += 1) {
-      if (now() >= deadline) return this.#hasPending();
+  public write(deadline: number, now: () => number, admittedFirstStep = false): boolean {
+    // An admitted late call may start one bounded unit; further work shares the frame deadline.
+    let stepped = false;
+    while (true) {
+      if ((stepped || !admittedFirstStep) && now() >= deadline) return this.#hasPending();
       const starting = this.#pending === undefined;
       const pending = this.#pending ?? this.#startNext();
       if (pending === undefined) return false;
       this.#pending = pending;
-      const longStroke =
-        pending.element.kind === "stroke" && pending.element.points.length > 256 * 3;
-      // Materialization and center preparation consume their own frame budget.
-      if (starting && longStroke) return true;
+      // Materialization itself can exhaust the budget before the next geometry unit.
+      if (starting && now() >= deadline) return true;
+      stepped = true;
       if (!pending.path.step(deadline, now)) continue;
       this.#complete(
         { element: pending.element, feedback: pending.feedback, parts: pending.path.parts! },
         pending.version,
       );
+      this.#pending?.path.cancel();
       this.#pending = undefined;
-      // Publishing a long path must not also allocate the next snapshot.
-      if (longStroke) return this.#hasPending();
     }
-    return this.#hasPending();
   }
 
   public applyMounted(ids: readonly string[]): void {
@@ -163,7 +156,9 @@ export class ProgressiveElementPreview {
             {
               element,
               feedback: this.#snapshotFeedback.get(id),
-              parts: buildElementPathParts(element),
+              parts: buildElementPathParts(
+                element.kind === "stroke" ? strokeLocalGeometry(element) : element,
+              ),
             },
             this.#versions.get(id)!,
           );
@@ -187,6 +182,7 @@ export class ProgressiveElementPreview {
     this.#renderedFeedback.clear();
     this.#request = undefined;
     this.#appliedRequest = undefined;
+    this.#pending?.path.cancel();
     this.#pending = undefined;
     this.#cursor = 0;
     this.#immediateCursor = 0;
@@ -205,7 +201,10 @@ export class ProgressiveElementPreview {
       this.#snapshotFeedback.delete(id);
       this.#renderedFeedback.delete(id);
     }
-    if (this.#pending?.element.id === id) this.#pending = undefined;
+    if (this.#pending?.element.id === id) {
+      this.#pending.path.cancel();
+      this.#pending = undefined;
+    }
     this.#replayIds.delete(id);
     this.#elements.set(id, element);
     this.#versions.set(id, version);
@@ -217,9 +216,18 @@ export class ProgressiveElementPreview {
     this.#versions.set(id, request.version);
     if (element === undefined) return false;
     this.#replayIds.delete(id);
-    if (this.#pending?.element.id === id) this.#pending = undefined;
+    if (this.#pending?.element.id === id) {
+      this.#pending.path.cancel();
+      this.#pending = undefined;
+    }
     this.#complete(
-      { element, feedback: request.feedback, parts: buildElementPathParts(element) },
+      {
+        element,
+        feedback: request.feedback,
+        parts: buildElementPathParts(
+          element.kind === "stroke" ? strokeLocalGeometry(element) : element,
+        ),
+      },
       request.version,
     );
     return true;

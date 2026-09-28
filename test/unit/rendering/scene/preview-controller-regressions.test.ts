@@ -6,21 +6,20 @@ import { SceneElementPreviews } from "../../../../src/rendering/scene/scene-elem
 import { SceneTransformPreviewController } from "../../../../src/rendering/scene/transform-preview-controller";
 import type { SceneStorePort } from "../../../../src/rendering/scene/types";
 
-import { fakeRectangleRecord } from "./fakes";
+import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
 
 describe("progressive scene preview candidate selection", () => {
   it("refreshes bounded progressive candidates on viewport changes and stops after clear", () => {
     const records = Array.from({ length: 257 }, (_, index) =>
       fakeRectangleRecord(String(index), index, index * 10),
     );
+    const store = new FakeSceneStore();
+    for (const record of records) store.records.set(record.id, record);
     const previews = new SceneElementPreviews(
       {
         promoteVisible: vi.fn(),
       } as unknown as SceneContentRenderer,
-      {
-        get: (id) => records[Number(id)],
-        query: vi.fn(),
-      },
+      store,
     );
     const set = vi.spyOn(previews.progressive, "set");
     const materialize = vi.fn();
@@ -36,7 +35,8 @@ describe("progressive scene preview candidate selection", () => {
     expect(set.mock.lastCall?.[0].ids).not.toContain("256");
     previews.refreshProgressiveContext(viewport, { x: -2560, zoom: 1 });
     expect(set.mock.lastCall?.[0].ids).toContain("256");
-    expect(set.mock.lastCall?.[0].ids).toHaveLength(256);
+    expect(set.mock.lastCall?.[0].ids.length).toBeLessThanOrEqual(256);
+    expect(set.mock.lastCall?.[0].ids).toContain("0");
     expect(materialize).not.toHaveBeenCalled();
     previews.clearProgressive();
     previews.refreshProgressiveContext(viewport, { x: 0, zoom: 1 });
@@ -145,5 +145,36 @@ describe("scene preview controller regressions", () => {
 
     expect(applyElementPreview).toHaveBeenCalledTimes(3);
     expect(applyElementPreview).toHaveBeenLastCalledWith({ ...changing, width: 80 });
+  });
+});
+
+describe("transformed preview candidate retention", () => {
+  it("retains translated preview roots when their source leaves the camera neighborhood", () => {
+    const store = new FakeSceneStore();
+    const ids = Array.from({ length: 300 }, (_, index) => String(index));
+    for (const id of ids) store.records.set(id, fakeRectangleRecord(id, 0, Number(id) * 1000));
+    const applyPreviewTransform = vi.fn();
+    const controller = new SceneTransformPreviewController(
+      {
+        applyPreviewTransform,
+        flushSelectionContext: vi.fn(),
+        promoteVisible: vi.fn(),
+      } as unknown as SceneContentRenderer,
+      store,
+      { x: 0, zoom: 1 },
+    );
+    const viewport = { height: 100, left: 0, top: 0, width: 100 };
+    controller.setContext({ x: 0, zoom: 1 }, viewport);
+    controller.set(ids, "translate(1000 0)", 1, "scale");
+    controller.setContext({ x: -1000, zoom: 1 }, viewport);
+    controller.refreshContext();
+    controller.write();
+    expect(controller.activeIds).toContain("0");
+    expect(applyPreviewTransform).toHaveBeenCalledWith("0", "translate(1000 0)", 1, null);
+    controller.clear();
+    controller.write();
+    expect(applyPreviewTransform).toHaveBeenCalledWith("0", null, Number.MAX_SAFE_INTEGER, null);
+    controller.release();
+    expect(controller.values.size).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { type App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
@@ -26,6 +27,7 @@ describe("phone tool panel native history", () => {
         createPhoneSheetHost: () => createPhoneSheetHost(app),
         ownerDocument: document,
         ownerWindow: window,
+        workScheduler: workSchedulerFromFrames(window),
         onClosed,
         renderIcon: vi.fn(),
         createContent: () => {

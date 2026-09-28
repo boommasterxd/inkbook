@@ -10,6 +10,9 @@ import {
 } from "../../../../src/obsidian/embeds/safe-preview-svg";
 import { createPreviewSvgAsync } from "../../../../src/obsidian/embeds/safe-preview-builder";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+
+const workScheduler = immediateWorkScheduler();
 
 interface PreviewResponse {
   readonly arrayBuffer: ReturnType<typeof vi.fn>;
@@ -49,12 +52,14 @@ describe("safe locked-preview SVG validation", () => {
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
 
-    const safeSvg = (await inspectPreviewSvg(serialized.value.svg))?.safeSvg ?? null;
+    const safeSvg =
+      (await inspectPreviewSvg(serialized.value.svg, { workScheduler }))?.safeSvg ?? null;
     expect(safeSvg).toBe(serialized.value.svg);
     if (safeSvg === null) return;
     const preview = await createPreviewSvgAsync(document, safeSvg, {
       checkpoint: async () => {},
       isCancelled: () => false,
+      workScheduler: immediateWorkScheduler(),
     });
     if (preview === undefined) throw new Error("Preview was unexpectedly cancelled.");
 
@@ -74,7 +79,7 @@ describe("safe locked-preview SVG validation", () => {
       '<script>bad()</script><g id="inkbook-content">',
     );
 
-    await expect(inspectPreviewSvg(unsafe)).resolves.toBeNull();
+    await expect(inspectPreviewSvg(unsafe, { workScheduler })).resolves.toBeNull();
   });
 });
 
@@ -83,9 +88,9 @@ describe("safe locked-preview SVG source loading", () => {
     const body = response(new ArrayBuffer(0), { ok: false });
     const loaded = loaderWindow(body);
 
-    await expect(loadValidatedPreviewSvg("app://vault/missing.svg", loaded.window)).rejects.toThrow(
-      "could not be loaded",
-    );
+    await expect(
+      loadValidatedPreviewSvg("app://vault/missing.svg", loaded.window, { workScheduler }),
+    ).rejects.toThrow("could not be loaded");
     expect(loaded.fetchMock).toHaveBeenCalledWith("app://vault/missing.svg", undefined);
     expect(body.arrayBuffer).not.toHaveBeenCalled();
   });
@@ -96,7 +101,9 @@ describe("safe locked-preview SVG source loading", () => {
     });
 
     await expect(
-      loadValidatedPreviewSvg("app://vault/large.svg", loaderWindow(body).window),
+      loadValidatedPreviewSvg("app://vault/large.svg", loaderWindow(body).window, {
+        workScheduler,
+      }),
     ).rejects.toThrow("exceeds the file limit");
     expect(body.arrayBuffer).not.toHaveBeenCalled();
   });
@@ -105,7 +112,9 @@ describe("safe locked-preview SVG source loading", () => {
     const body = response(new ArrayBuffer(FILE_SCHEMA_LIMITS.totalInputBytes + 1));
 
     await expect(
-      loadValidatedPreviewSvg("app://vault/large.svg", loaderWindow(body).window),
+      loadValidatedPreviewSvg("app://vault/large.svg", loaderWindow(body).window, {
+        workScheduler,
+      }),
     ).rejects.toThrow("exceeds the file limit");
     expect(body.arrayBuffer).toHaveBeenCalledOnce();
   });
@@ -114,7 +123,9 @@ describe("safe locked-preview SVG source loading", () => {
     const body = response(new TextEncoder().encode("<svg></svg>").buffer);
 
     await expect(
-      loadValidatedPreviewSvg("app://vault/unsafe.svg", loaderWindow(body).window),
+      loadValidatedPreviewSvg("app://vault/unsafe.svg", loaderWindow(body).window, {
+        workScheduler,
+      }),
     ).rejects.toThrow("not safe SVG");
   });
 
@@ -125,7 +136,7 @@ describe("safe locked-preview SVG source loading", () => {
     const body = response(new TextEncoder().encode(serialized.value.svg).buffer);
 
     await expect(
-      loadValidatedPreviewSvg("app://vault/safe.svg", loaderWindow(body).window),
+      loadValidatedPreviewSvg("app://vault/safe.svg", loaderWindow(body).window, { workScheduler }),
     ).resolves.toEqual({
       aspectRatio: 2_048.6 / serialized.value.lockedHeight,
       contentIdentity: {

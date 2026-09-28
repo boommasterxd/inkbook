@@ -50,7 +50,11 @@ function strokeGeometryEqual(
   right: InkElementV1,
 ): boolean {
   return (
-    right.kind === "stroke" && left.tool === right.tool && valuesEqual(left.points, right.points)
+    right.kind === "stroke" &&
+    left.tool === right.tool &&
+    (left.offset?.x ?? 0) === (right.offset?.x ?? 0) &&
+    (left.offset?.y ?? 0) === (right.offset?.y ?? 0) &&
+    valuesEqual(left.points, right.points)
   );
 }
 
@@ -171,6 +175,9 @@ function connectionsEqual(left: ImmutableInkElement, right: InkElementV1): boole
 
 function valuesEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
+  if (left instanceof Float64Array && right instanceof Float64Array) {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+  }
   if (Array.isArray(left) && Array.isArray(right)) {
     if (left.length !== right.length) return false;
     return left.every((value, index) => valuesEqual(value, right[index]));

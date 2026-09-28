@@ -18,6 +18,7 @@ import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
 import { immediateFrameScheduler } from "../../../fixtures/obsidian/immediate-frame-scheduler";
 import { expectLatestLinePreview } from "../../../fixtures/obsidian/selection-preview-assertions";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import { table as geometryTable } from "../../../unit/domain/geometry/fixtures";
 
 const PAGE: PageV1 = {
@@ -221,7 +222,6 @@ describe("active editor generic selection transforms", () => {
       new Set([stroke.id]),
     );
     const start = { ...handle.point, pointerId: 10, pointerType: "mouse" as const };
-
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, ...current })).toBe(true);
     expect(elementPreviews.flat().some(({ id }) => id === stroke.id)).toBe(false);
@@ -356,7 +356,7 @@ describe("active editor large selection handles", () => {
       onPendingChanged: (pending) => {
         if (!pending) finishPending();
       },
-      ownerWindow: frameWindow(),
+      workScheduler: workSchedulerFromFrames(frameWindow()),
     });
     const preview = new MovePreview({
       history,
@@ -413,7 +413,7 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
     model,
     motion: previewCommitMotion(),
     onPendingChanged: vi.fn(),
-    ownerWindow: frameWindow(),
+    workScheduler: workSchedulerFromFrames(frameWindow()),
   });
   const renderer = {
     clearElementPreviews: () => elementPreviews.push([]),

@@ -57,7 +57,8 @@ export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
 
   private apply(): void {
     const constrained = this.#denseReconciliation || this.#memoryPressure;
-    this.pathCache.setRetentionEnabled(!constrained);
+    // The LRU already enforces byte/entry caps; density alone must not evict reusable paths.
+    this.pathCache.setRetentionEnabled(!this.#memoryPressure);
     this.motion.setResourceConstrained(constrained);
   }
 }

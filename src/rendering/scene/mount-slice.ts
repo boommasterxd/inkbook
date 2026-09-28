@@ -1,56 +1,68 @@
-import type { SceneElementRecord } from "./types";
-import { MOUNT_SLICE_GEOMETRY_COST_BUDGET, MOUNT_SLICE_STROKE_POINT_BUDGET } from "./constants";
+import type { MutableSceneInstrumentation } from "./types";
 
-export interface MountCost {
-  readonly geometry: number;
-  readonly strokePoints: number;
+/** Shared allowance for new live SVG roots in one scene frame. */
+export interface ScenePublicationBudget {
+  remainingRoots: number;
 }
 
 export type MountYieldReason = "budget" | "deadline";
 
 export class MountSlice {
   public elements = 0;
-  public geometryCost = 0;
-  public strokePoints = 0;
+  #publicationNodes = 0;
+
+  public get publicationNodes(): number {
+    return this.#publicationNodes;
+  }
+
+  public get canPublish(): boolean {
+    return this.#publicationNodes < this.publicationLimit;
+  }
 
   public constructor(
     private readonly deadline: number,
     private readonly now: () => number,
+    private readonly publicationLimit = Infinity,
   ) {}
 
-  public blockingReason(cost: MountCost): MountYieldReason | undefined {
+  public blockingReason(): MountYieldReason | undefined {
     if (this.elements === 0) return undefined;
     if (this.now() >= this.deadline) return "deadline";
-    if (
-      this.strokePoints + cost.strokePoints > MOUNT_SLICE_STROKE_POINT_BUDGET ||
-      this.geometryCost + cost.geometry > MOUNT_SLICE_GEOMETRY_COST_BUDGET
-    ) {
-      return "budget";
-    }
     return undefined;
   }
 
-  public record(cost: MountCost): void {
-    this.elements += 1;
-    this.geometryCost += cost.geometry;
-    this.strokePoints += cost.strokePoints;
+  public prepare(job: { step(deadline: number, now: () => number): boolean }): boolean {
+    // The admitted job makes one bounded step, then the shared deadline controls continuation.
+    let started = false;
+    while (true) {
+      if (started && this.now() >= this.deadline) return false;
+      started = true;
+      if (job.step(this.deadline, this.now)) return true;
+    }
   }
-}
 
-export function mountCost(record: SceneElementRecord): MountCost {
-  const element = record.element;
-  if (element.kind === "stroke") {
-    const strokePoints = element.points.length / 3;
-    return {
-      geometry: strokePoints * (element.style.pressureEnabled ? 4 : 2),
-      strokePoints,
-    };
+  public claimPublicationNodes(count: number): boolean {
+    if (count <= 0 || this.#publicationNodes + count > this.publicationLimit) return false;
+    if (this.#publicationNodes > 0 && this.now() >= this.deadline) return false;
+    this.#publicationNodes += count;
+    return true;
   }
-  if (element.kind === "table") {
-    return { geometry: Math.max(32, element.columns * 8), strokePoints: 0 };
+
+  public report(
+    instrumentation: MutableSceneInstrumentation,
+    reason: MountYieldReason | undefined,
+  ): void {
+    if (this.elements === 0) return;
+    instrumentation.mountSlices += 1;
+    instrumentation.maximumMountSliceElements = Math.max(
+      instrumentation.maximumMountSliceElements,
+      this.elements,
+    );
+    if (reason === "budget") instrumentation.mountBudgetYields += 1;
+    else if (reason === "deadline") instrumentation.mountDeadlineYields += 1;
   }
-  if (element.kind === "coordinate-system") {
-    return { geometry: Math.max(32, element.axes.length * 16), strokePoints: 0 };
+
+  public record(): void {
+    this.elements += 1;
   }
-  return { geometry: 32, strokePoints: 0 };
 }

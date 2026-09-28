@@ -94,7 +94,7 @@ function validateOptionalDecimals(attributes: ReadonlyMap<string, string>): bool
   return opacityValid && (width === undefined || parseCanonicalSvgDecimal(width, 256) !== null);
 }
 
-function* validatePathAttributesSteps(
+export function* validatePathAttributesSteps(
   attributes: ReadonlyMap<string, string>,
   deadlineExceeded?: () => boolean,
 ): Generator<void, number | null> {
@@ -175,14 +175,14 @@ function expectTextElement(
   return end < 0 ? null : { next: end + closing.length, text: input.slice(tag.next, end) };
 }
 
-interface SvgTotals {
+export interface SvgTotals {
   commands: number;
   groups: number;
   pathBytes: number;
   paths: number;
 }
 
-function validPressureGroup(
+export function validPressureGroup(
   tag: NonNullable<ReturnType<typeof parseOpeningTag>>,
   id: string,
   pressurePaths: number | null,
@@ -192,15 +192,35 @@ function validPressureGroup(
     id === "inkbook-background" ||
     pressurePaths !== null ||
     tag.selfClosing ||
-    tag.attributes.size !== 1 ||
-    parseCanonicalSvgOpacity(tag.attributes.get("opacity")) === null
+    !validStrokeGroupAttributes(tag.attributes)
   )
     return false;
   totals.groups += 1;
   return totals.groups <= FILE_SCHEMA_LIMITS.elements;
 }
 
-function accountPath(totals: SvgTotals, commands: number, pathData: string): boolean {
+function validStrokeGroupAttributes(attributes: ReadonlyMap<string, string>): boolean {
+  if (attributes.size < 1 || attributes.size > 2) return false;
+  if ([...attributes.keys()].some((name) => name !== "opacity" && name !== "transform"))
+    return false;
+  const opacity = attributes.get("opacity");
+  if (opacity !== undefined && parseCanonicalSvgOpacity(opacity) === null) return false;
+  const transform = attributes.get("transform");
+  if (transform === undefined) return opacity !== undefined;
+  const match =
+    /^translate\((-?(?:0|[1-9]\d*)(?:\.\d{1,3})?) (-?(?:0|[1-9]\d*)(?:\.\d{1,3})?)\)$/u.exec(
+      transform,
+    );
+  return (
+    match !== null &&
+    match.slice(1).every((value) => {
+      const number = Number(value);
+      return Math.abs(number) <= 1_000_000 && number.toString() === value;
+    })
+  );
+}
+
+export function accountPath(totals: SvgTotals, commands: number, pathData: string): boolean {
   totals.paths += 1;
   totals.commands += commands;
   totals.pathBytes += pathData.length;
@@ -211,7 +231,7 @@ function accountPath(totals: SvgTotals, commands: number, pathData: string): boo
   );
 }
 
-function isBandGroup(tag: ReturnType<typeof parseOpeningTag>, id: string): boolean {
+export function isBandGroup(tag: ReturnType<typeof parseOpeningTag>, id: string): boolean {
   return (
     tag !== null &&
     tag.name === "g" &&

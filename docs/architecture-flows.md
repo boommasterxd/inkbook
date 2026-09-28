@@ -173,7 +173,7 @@ flowchart TD
   sceneDiff --> frame
   delta -. "Coarse committed UI state only" .-> react["React toolbar and dialogs"]
   command --> revision["Increment history and persisted revision once"]
-  revision --> autosave["Schedule autosave after 500 ms of inactivity"]
+  revision --> autosave["Schedule autosave after 1,000 ms of inactivity"]
 ```
 
 Pointer movement applies direct imperative feedback and creates no element records, history entries, React renders, or save work. Committed SVG paths and decorative overlays receive no pointer events and own no listeners. Creation and transformation gestures mutate preview nodes, and selection overlays apply the same algebraic transform in the same frame. An unselected touch target remains in `touch-pending` until release confirms a short tap or movement permanently resolves to pan or scroll; navigation never emits selection changes. Only a target selected before contact may enter `element-move`. Eligible mouse and pen input outside the current selection may emit one session-only clear before its content preview; claimed finger drawing defers that clear until commit so a preview cancelled into pinch remains selection-neutral. `page-pan` updates the horizontal camera and may continue through the shared kinetic animation frame without writing native `scrollTop`, while `note-scroll` classifies lifecycle only and leaves vertical motion plus kinetic scrolling to the native Obsidian scroll owner. Pending and vertically classified touch events remain available to the host; propagation is contained only after Inkbook claims horizontal page pan, pinch, finger drawing, or a preselected-element move. The reducer states are `idle`, `touch-pending`, `note-scroll`, `page-pan`, `element-move`, `lasso`, `eraser-gesture`, `tool-gesture`, and `pinch`. Rectangle and freeform-lasso selection query candidates through the spatial index by area bounds before applying the configured geometry-aware inclusion predicate. Candidate lookup for hit testing, context targets, erasing, culling, and snapping likewise uses the spatial index. A target transform follows the reverse connection map so connected arrow and line endpoints update without scanning all elements.
@@ -227,9 +227,9 @@ flowchart TD
   changedIds --> mountedChanges
   mountedChanges --> work
   diff --> work["Entrants, exits, changed nodes, and affected reorders only"]
-  work --> mountBudget{"Absolute deadline, 4,096 stroke points, and 16,384 geometry cost permit the next entrant?"}
+  work --> mountBudget{"Shared deadline and live-root publication allowance permit the next entrant?"}
   mountBudget -->|No| nextFrame
-  mountBudget -->|Yes| pathCache{"Path cache matches ID plus geometryVersion?"}
+  mountBudget -->|Yes| pathCache{"Versioned path or immutable local stroke shape cached?"}
   pathCache -->|Yes| reuse["Reuse the path"]
   pathCache -->|No| build["Build only the required mounted path"]
   reuse --> applied["Compare applied node versions and attributes"]
@@ -255,9 +255,11 @@ flowchart TD
   remaining -->|No| complete["Frame complete without a React render"]
 ```
 
-The ordinary frame cost follows reusable spatial-index candidates, mounted visible elements, and the classified published delta, rather than all 10,000 stored strokes. A refresh mounts the viewport plus 80 screen pixels of overscan. That envelope is retained while the current viewport plus a 40-screen-pixel safety reserve remains inside it, so small camera movements perform neither classification nor sorting and never omit visible content. A later refresh reuses the sorted bands when membership and order remain unchanged. The renderer mutates only entering, exiting, changed, or affected reordered nodes and attributes. Large or unusually dense viewports reconcile every exact visible element through a persistent band-and-rank cursor. Each slice uses the frame's absolute deadline plus fixed point and geometry budgets, admits at least one element for progress, and reuses the unchanged viewport query while the last complete frame remains visible.
+The workspace injects one `WorkScheduler` per owning window into scene, editor, preview, host presentation, and persistence paths. Its platform-independent policy lives in `domain/scheduling`; native scheduling belongs to the window adapter and the document worker adapter. Workers receive live profile updates and use their own thread slice budget with central task admission, without waiting for a synthetic display frame. Main-thread fallback uses the owning window's frame policy. See [Central Work Scheduling](rendering-and-performance.md#central-work-scheduling).
 
-All layout reads happen before pure calculations and DOM writes, so the frame does not alternate between layout measurement and mutation. Path and anchor entries are valid only for the same element ID and geometry version. The recently unmounted main-thread path LRU is capped at 4,096 entries and 32 MiB, and the target-anchor LRU at 4,096 targets and 8 MiB, with the active-document memory ceiling taking precedence. Background guides use one bounded full-page SVG pattern coverage path plus an optional terminal-edge path, both derived from the same fixed frame and canonical axes as standalone export. They regenerate only when page or pattern geometry changes, never for viewport clipping or camera pan. Transform previews use SVG transforms, and visible connected endpoints follow their target during the same frame. Canonical paths, bounds, spatial-index cells, and endpoint records update once on commit.
+The ordinary frame cost follows reusable spatial-index candidates, mounted visible elements, and the classified published delta, rather than all 10,000 stored strokes. A refresh mounts the viewport plus 80 screen pixels of overscan. That envelope is retained while the current viewport plus a 40-screen-pixel safety reserve remains inside it, so small camera movements perform neither classification nor sorting and never omit visible content. A later refresh reuses the sorted bands when membership and order remain unchanged. The renderer mutates only entering, exiting, changed, or affected reordered nodes and attributes. Large or unusually dense viewports reconcile every exact visible element through a persistent band-and-rank cursor. Each centrally admitted slice uses the owning window's shared absolute deadline between bounded work units, retains the separate live-root publication allowance, and reuses the unchanged viewport query while the last complete frame remains visible.
+
+All layout reads happen before pure calculations and DOM writes, so the frame does not alternate between layout measurement and mutation. World-space prepared paths and anchor entries require the same element ID and geometry version. Local stroke paths instead reuse immutable samples and matching shape attributes across position changes, under the [path-cache contract](rendering-and-performance.md#path-caches). The recently unmounted main-thread path LRU is capped at 4,096 entries and 32 MiB, and the target-anchor LRU at 4,096 targets and 8 MiB, with the active-document memory ceiling taking precedence. Background guides use one bounded full-page SVG pattern coverage path plus an optional terminal-edge path, both derived from the same fixed frame and canonical axes as standalone export. They regenerate only when page or pattern geometry changes, never for viewport clipping or camera pan. Transform previews use SVG transforms, and visible connected endpoints follow their target during the same frame. Bounds, spatial-index cells, and affected endpoint records update once on commit. A pure stroke translation retains its local path and updates its placement.
 
 React receives at most one coarse notification after a consistent committed transaction or discrete UI transition. Pointer samples, preview geometry, camera changes, culling, snapping, connection propagation, and animation-frame work stay entirely in the imperative renderer. This prevents the 10,000-stroke scene from producing component renders or virtual-tree work on the hot path.
 
@@ -334,7 +336,7 @@ sequenceDiagram
   participant Vault as Obsidian Vault
   participant Coordinator as WorkspaceEditorCoordinator
 
-  Editor->>Editor: Commit revision and start 500 ms inactivity timer
+  Editor->>Editor: Commit revision and start 1,000 ms inactivity timer
   Editor->>Editor: Wait for inactivity and no live gesture
   Editor->>Worker: Dispatch one incremental export generation with matching Store bounds
   Note over Editor,Worker: Later commits coalesce into one successor revision

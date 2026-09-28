@@ -17,6 +17,12 @@ import {
   createLassoSelectionArea,
   MAX_LASSO_SELECTION_POINTS,
 } from "../../../../src/editor/selection/selection-area";
+import { indexedPointInPolygon } from "../../../../src/editor/selection/lasso-edge-index";
+import {
+  pointInPolygonInclusive,
+  segmentInsidePolygon,
+} from "../../../../src/editor/selection/selection-polygon";
+import { primitiveTouchesAreaSteps } from "../../../../src/editor/selection/selection-area-primitives";
 import {
   arrow,
   coordinateSystem,
@@ -81,6 +87,87 @@ describe("selection area creation", () => {
       ),
     ).toThrow(RangeError);
   });
+});
+
+it("does not retain an index for caller-owned mutable polygon points", () => {
+  const points = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ];
+  const area = {
+    kind: "lasso" as const,
+    points,
+    bounds: { minX: 0, minY: 0, maxX: 16, maxY: 10 },
+  };
+  const target = { ...stroke(), points: [2, 2, 0.5] };
+  expect(elementMatchesSelectionArea(area, target, "touched")).toBe(true);
+  for (const point of points) point.x += 6;
+  expect(elementMatchesSelectionArea(area, target, "touched")).toBe(false);
+});
+
+it("matches inclusive even-odd parity at self-crossings and boundaries", () => {
+  const area = createLassoSelectionArea([
+    { x: 0, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+    { x: 10, y: 0 },
+  ]);
+  for (let x = -1; x <= 11; x += 0.5) {
+    for (let y = -1; y <= 11; y += 0.5) {
+      const point = { x, y };
+      const query = indexedPointInPolygon(point, area.points, area.bounds);
+      let result = query.next();
+      while (!result.done) result = query.next();
+      expect(result.value).toBe(pointInPolygonInclusive(point, area.points));
+    }
+  }
+});
+
+it("retains squared pressure-margin contact just outside an edge box", () => {
+  const area = createLassoSelectionArea([
+    { x: -1, y: 0.00002 },
+    { x: 1, y: 0.00002 },
+    { x: 1, y: 1 },
+    { x: -1, y: 1 },
+    { x: -1, y: 0.00002 },
+    { x: 3, y: -1 },
+  ]);
+  const steps = primitiveTouchesAreaSteps(area, {
+    kind: "pressure-capsule",
+    capsule: {
+      start: { center: { x: 0, y: 0 }, radius: 0 },
+      end: { center: { x: 0.5, y: 0 }, radius: 0 },
+    },
+  });
+  let result = steps.next();
+  while (!result.done) result = steps.next();
+  expect(result.value).toBe(true);
+});
+
+it("preserves long segment enclosure near lasso endpoints", () => {
+  const area = createLassoSelectionArea([
+    { x: 0, y: 0 },
+    { x: 1000000, y: 0 },
+    { x: 1000000, y: 100 },
+    { x: 600000, y: 100 },
+    { x: 600000, y: 20 },
+    { x: 400000, y: 20 },
+    { x: 400000, y: 100 },
+    { x: 0, y: 100 },
+  ]);
+  for (const offset of [-0.0005, -0.0001, 0, 0.0001, 0.0005]) {
+    const start = { x: 100, y: 20 + offset };
+    const end = { x: 999900, y: 20 - offset };
+    const original = segmentInsidePolygon(start, end, area.points);
+    const indexed = segmentInsidePolygon(start, end, area.points, area.bounds);
+    let oldResult = original.next();
+    let newResult = indexed.next();
+    while (!oldResult.done) oldResult = original.next();
+    while (!newResult.done) newResult = indexed.next();
+    expect(newResult.value).toBe(oldResult.value);
+  }
 });
 
 describe("selection area inclusion", () => {

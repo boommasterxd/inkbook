@@ -1,24 +1,28 @@
-import { afterEach, expect, it, vi } from "vitest";
-import { createMainThreadDeadline } from "../../../../src/persistence/scheduling/main-thread-checkpoint";
+import { expect, it } from "vitest";
 
-afterEach(() => vi.restoreAllMocks());
+import { createMainThreadCheckpoint } from "../../../../src/persistence/scheduling/main-thread-checkpoint";
+import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 
-it("uses a live deadline and falls back to four milliseconds for invalid budgets", () => {
-  let now = 0;
-  let budget = 8;
-  vi.spyOn(performance, "now").mockImplementation(() => now);
-  const deadline = createMainThreadDeadline(() => budget);
-  now = 3;
-  expect(deadline.exceeded()).toBe(false);
-  budget = 2;
-  expect(deadline.exceeded()).toBe(true);
-  deadline.restart();
-  expect(deadline.exceeded()).toBe(false);
-  for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-    budget = invalid;
-    now = 6;
-    expect(deadline.exceeded()).toBe(false);
-    now = 7;
-    expect(deadline.exceeded()).toBe(true);
-  }
+it("waits for background work before checking the shared frame budget", async () => {
+  const events: string[] = [];
+  let releaseBackground = (): void => undefined;
+  const workScheduler = createTestWorkScheduler({
+    checkpoint: () => {
+      events.push("shared-checkpoint");
+      return Promise.resolve();
+    },
+  });
+  const checkpoint = createMainThreadCheckpoint(workScheduler, () => {
+    events.push("background-gate");
+    return new Promise<void>((resolve) => {
+      releaseBackground = resolve;
+    });
+  });
+
+  const pending = checkpoint();
+  expect(events).toEqual(["background-gate"]);
+  releaseBackground();
+  await pending;
+
+  expect(events).toEqual(["background-gate", "shared-checkpoint"]);
 });

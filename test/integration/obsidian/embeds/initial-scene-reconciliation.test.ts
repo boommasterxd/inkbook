@@ -34,7 +34,6 @@ it("keeps initial handoff hidden while final viewport reconciliation spans multi
   let viewport = { height: 100, left: 0, top: 10_000, width: 100 };
   const renderer = new SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
-    frameBudgetMs: 8,
     layout: { readViewport: () => viewport },
     onSceneCommitted: () => {
       if (readiness.markSceneCommitted()) visible();
@@ -46,10 +45,12 @@ it("keeps initial handoff hidden while final viewport reconciliation spans multi
       lockedBufferLines: 1,
       margin: 24.3,
     },
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   scheduler.runAll();
+  expect(renderer.instrumentation()).toMatchObject({ backgroundBuilds: 1, frames: 2 });
+  expect(scheduler.pendingCount).toBe(0);
   expect(renderer.mountedCount).toBe(0);
   expect(visible).not.toHaveBeenCalled();
 
@@ -91,7 +92,7 @@ it.each(["complete", "dispose-before-layout", "dispose-after-layout"] as const)(
         margin: 24.3,
       },
       reducedMotion: true,
-      scheduler,
+      workScheduler: scheduler.workScheduler,
       store: new FakeSceneStore(),
     });
     if (outcome === "dispose-before-layout") renderer.destroy();
@@ -157,7 +158,7 @@ function growingClipHarness() {
       margin: 24.3,
     },
     reducedMotion: true,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   return { bounds, committed, renderer, root, scheduler, store };

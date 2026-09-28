@@ -1,3 +1,5 @@
+import { createHook } from "node:async_hooks";
+
 import { expect, it } from "vitest";
 
 import {
@@ -5,12 +7,107 @@ import {
   encodeRuntimeSelection,
 } from "../../../src/persistence/clipboard/codec";
 import { planPaste } from "../../../src/persistence/clipboard/operations";
+import { validateClipboardPayloadSliced } from "../../../src/persistence/clipboard/validation";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
+import { encodeRuntimeSelectionChunked } from "../../../src/persistence/worker/runtime/fallback-clipboard-codec";
+import { stroke } from "../../unit/domain/schema/fixtures";
 import { CLIPBOARD_ELEMENTS, CLIPBOARD_POINTS, createClipboardLimitFixture } from "./fixtures";
 import { createMinimalPersistenceFixture } from "./fixtures";
+import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 
 const MIB = 1024 * 1024;
+it("bounds postparse clipboard sample reads and discards cancelled validation", async () => {
+  const observations = Array.from({ length: 1_000 }, (_, index) => {
+    const element = stroke(index + 1);
+    const observed = observeSchemaArray([...element.points]);
+    const { createdAt: _createdAt, id: _id, ...body } = element;
+    return { body: { ...body, points: observed.observed }, observed };
+  });
+  const payload = {
+    elements: observations.map(({ body }, index) => ({
+      clipId: index.toString(36),
+      element: body,
+    })),
+    format: "inkbook-elements",
+    version: 1,
+  };
+  const totalReads = () =>
+    observations.reduce(
+      (sum, { observed }) => sum + observed.work.indexedReads + observed.work.descriptorReads,
+      0,
+    );
+  const controller = new AbortController();
+  let checkpoints = 0;
+  await expect(
+    validateClipboardPayloadSliced(
+      payload,
+      async () => {
+        checkpoints += 1;
+        if (checkpoints === 3) controller.abort();
+        controller.signal.throwIfAborted();
+      },
+      64,
+      170,
+    ),
+  ).rejects.toMatchObject({ name: "AbortError" });
+  expect(totalReads()).toBeLessThan(6_000);
+
+  const readsPerCheckpoint: number[] = [];
+  let lastReads = totalReads();
+  const result = await validateClipboardPayloadSliced(
+    payload,
+    async () => {
+      const reads = totalReads();
+      readsPerCheckpoint.push(reads - lastReads);
+      lastReads = reads;
+    },
+    64,
+    170,
+  );
+  expect(result.ok).toBe(true);
+  expect(readsPerCheckpoint.length).toBeGreaterThan(20);
+  expect(readsPerCheckpoint.every((reads) => reads <= 6_000)).toBe(true);
+});
+
+it("bounds Promise allocation in the 1,000-stroke sliced clipboard fallback", async () => {
+  const elements = Array.from({ length: 1_000 }, (_, index) => stroke(index + 1));
+  let nodes = 0;
+  let checkpoints = 0;
+  let promises = 0;
+  const hook = createHook({
+    init: (_id, type) => {
+      if (type === "PROMISE") promises += 1;
+    },
+  });
+  hook.enable();
+  let encoded: Awaited<ReturnType<typeof encodeRuntimeSelectionChunked>>;
+  try {
+    encoded = await encodeRuntimeSelectionChunked(
+      elements,
+      elements.map(({ id }) => id),
+      {
+        checkpoint: async () => {
+          checkpoints += 1;
+        },
+        signal: {
+          throwIfAborted: () => {
+            nodes += 1;
+          },
+        } as AbortSignal,
+        workProfile: { inputByteLimit: 16_384, nodeLimit: 256, outputByteLimit: 65_536 },
+      },
+    );
+  } finally {
+    hook.disable();
+  }
+  expect(encoded.ok).toBe(true);
+  expect(nodes).toBe(24_004);
+  expect(checkpoints).toBe(102);
+  // Checkpoints create Promises; the margin covers fixed test and serializer overhead.
+  expect(promises).toBeLessThanOrEqual(300);
+});
+
 it("bounds clipboard work and payloads at the maximum fixture capacity", () => {
   const elements = createClipboardLimitFixture();
   const selectedIds = new Set(elements.map(({ id }) => id));

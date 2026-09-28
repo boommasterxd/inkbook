@@ -3,6 +3,7 @@ import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { StrokePathGeometry } from "../../domain/geometry/stroke-path";
 import type { InkElementV1, PageV1 } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PathPresentation } from "./element-presentation";
 
 type SceneDirtyDomain = "connection" | "geometry" | "order" | "paint" | "visibility";
@@ -53,12 +54,6 @@ interface SceneLayoutPort {
   readViewport(): SceneViewport;
 }
 
-export interface SceneScheduler {
-  cancelAnimationFrame(handle: number): void;
-  now(): number;
-  requestAnimationFrame(callback: FrameRequestCallback): number;
-}
-
 export interface SceneCamera {
   readonly x: number;
   readonly zoom: number;
@@ -81,14 +76,13 @@ export interface SceneInputHandlers {
 export interface SceneRendererOptions {
   readonly accessibleName?: string;
   readonly container: HTMLElement;
-  readonly frameBudgetMs?: number | (() => number);
   readonly inputHandlers?: SceneInputHandlers;
   readonly layout: SceneLayoutPort;
   readonly page: PageV1;
   readonly onSceneCommitted?: () => void;
   readonly onResourceUsageChanged?: () => void;
   readonly reducedMotion?: boolean;
-  readonly scheduler?: SceneScheduler;
+  readonly workScheduler: WorkScheduler;
   readonly store: SceneStorePort;
 }
 
@@ -143,8 +137,6 @@ export interface SceneInstrumentationSnapshot {
   readonly liveTailNodesCreated: number;
   readonly liveTailNodesRemoved: number;
   readonly maximumMountSliceElements: number;
-  readonly maximumMountSliceGeometryCost: number;
-  readonly maximumMountSliceStrokePoints: number;
   readonly mountBudgetYields: number;
   readonly mountDeadlineYields: number;
   readonly mountSlices: number;
@@ -171,7 +163,9 @@ export interface SceneInstrumentationSnapshot {
   readonly staleFrames: number;
   readonly themeWrites: number;
   readonly visibilityCandidateCacheHits: number;
+  readonly visibilityCandidateVisits: number;
   readonly visibilityHysteresisHits: number;
+  readonly visibilityReconcileVisits: number;
   readonly visibilitySortSkips: number;
 }
 
@@ -198,8 +192,6 @@ export interface MutableSceneInstrumentation {
   liveTailNodesCreated: number;
   liveTailNodesRemoved: number;
   maximumMountSliceElements: number;
-  maximumMountSliceGeometryCost: number;
-  maximumMountSliceStrokePoints: number;
   mountBudgetYields: number;
   mountDeadlineYields: number;
   mountSlices: number;
@@ -226,6 +218,8 @@ export interface MutableSceneInstrumentation {
   staleFrames: number;
   themeWrites: number;
   visibilityCandidateCacheHits: number;
+  visibilityCandidateVisits: number;
   visibilityHysteresisHits: number;
+  visibilityReconcileVisits: number;
   visibilitySortSkips: number;
 }

@@ -11,7 +11,13 @@ import {
   derivePageExtent,
   translateElementGeometry,
 } from "../../domain/geometry/public";
-import { measureSpatialCapacity, type SpatialBounds } from "../../domain/spatial/index";
+import {
+  MAX_ELEMENT_CELLS,
+  measureSpatialCapacity,
+  spatialCellMembershipCount,
+  type SpatialBounds,
+} from "../../domain/spatial/index";
+import type { AggregateFacts } from "../serialization/incremental-validation";
 import { DOCUMENT_LIMITS, REPEATED_PASTE_OFFSET } from "./constants";
 import type {
   ClipboardResult,
@@ -35,6 +41,13 @@ export interface PlanPasteOptions {
   commandTimestamp: number;
   createId: () => string;
   previousRepeat?: PasteRepeatState;
+}
+
+export interface ValidatedModelPasteOptions extends Omit<PlanPasteOptions, "existingElements"> {
+  validatedModel: {
+    readonly facts: Readonly<AggregateFacts>;
+    readonly hasExistingId: (id: string) => boolean;
+  };
 }
 
 export const resolvePasteTarget = (invocation: PasteInvocation): PointV1 => {
@@ -172,6 +185,76 @@ const countDocumentLimits = (
   return { ok: true, value: undefined };
 };
 
+const countValidatedDocumentLimits = (
+  existing: Readonly<AggregateFacts>,
+  inserted: readonly InkElementV1[],
+  page: PageV1,
+  insertedBounds?: readonly ElementBounds[],
+): ClipboardResult<void> => {
+  if (existing.elements + inserted.length > DOCUMENT_LIMITS.elements) {
+    return failure("Document element limit is exceeded.");
+  }
+  let strokes = existing.strokes;
+  let points = existing.strokePoints;
+  let endpoints = existing.connectedEndpoints;
+  let memberships = existing.spatialMemberships;
+  let overflow = existing.spatialOverflow;
+  let maximumBottom = existing.maximumBottom;
+  const insertedEndpoints = countInsertedConnections(inserted);
+  if (!insertedEndpoints.ok) return insertedEndpoints;
+  endpoints += insertedEndpoints.value;
+  if (endpoints > DOCUMENT_LIMITS.connectedEndpoints) {
+    return failure("Document connected-endpoint limit is exceeded.");
+  }
+  for (let index = 0; index < inserted.length; index += 1) {
+    const element = inserted[index]!;
+    if (element.kind === "stroke") {
+      strokes += 1;
+      points += element.points.length / 3;
+    }
+    const bounds = insertedBounds?.[index] ?? calculateElementBounds(element);
+    const cells = spatialCellMembershipCount(bounds);
+    if (cells > MAX_ELEMENT_CELLS) overflow += 1;
+    else memberships += cells;
+    maximumBottom = Math.max(maximumBottom ?? bounds.maxY, bounds.maxY);
+  }
+  if (strokes > DOCUMENT_LIMITS.strokes || points > DOCUMENT_LIMITS.strokePoints) {
+    return failure("Document stroke limits are exceeded.");
+  }
+  if (
+    memberships > DOCUMENT_LIMITS.spatialIndexCellMemberships ||
+    overflow > DOCUMENT_LIMITS.spatialIndexOverflowElements
+  ) {
+    return failure("Document spatial-index capacity limits are exceeded.");
+  }
+  if (
+    derivePageExtent(page, maximumBottom).activeHeight >
+    (DOCUMENT_LIMITS.maximumDerivedHeight ?? Infinity)
+  ) {
+    return failure("Document maximum derived height is exceeded.");
+  }
+  return { ok: true, value: undefined };
+};
+
+const countInsertedConnections = (inserted: readonly InkElementV1[]): ClipboardResult<number> => {
+  let endpoints = 0;
+  const insertedFanout = new Map<string, number>();
+  for (const element of inserted) {
+    if (element.kind === "line" || element.kind === "arrow") {
+      for (const connection of [element.startConnection, element.endConnection]) {
+        if (connection === null) continue;
+        endpoints += 1;
+        const count = (insertedFanout.get(connection.targetId) ?? 0) + 1;
+        if (count > DOCUMENT_LIMITS.connectedEndpointsPerTarget) {
+          return failure("Document per-target connected-endpoint limit is exceeded.");
+        }
+        insertedFanout.set(connection.targetId, count);
+      }
+    }
+  }
+  return { ok: true, value: endpoints };
+};
+
 function* documentElements(
   existing: readonly InkElementV1[],
   inserted: readonly InkElementV1[],
@@ -213,14 +296,14 @@ const validateUntrustedInsertionRecords = (
 
 const createIds = (
   clipIds: readonly string[],
-  existingIds: ReadonlySet<string>,
+  hasExistingId: (id: string) => boolean,
   createId: () => string,
 ): ClipboardResult<Map<string, string>> => {
   const result = new Map<string, string>();
   const generated = new Set<string>();
   for (const clipId of clipIds) {
     const id = createId();
-    if (!UUID_V4.test(id) || existingIds.has(id) || generated.has(id)) {
+    if (!UUID_V4.test(id) || hasExistingId(id) || generated.has(id)) {
       return {
         ok: false,
         error: {
@@ -235,13 +318,30 @@ const createIds = (
   return { ok: true, value: result };
 };
 
-const hasValidPastePosition = (options: PlanPasteOptions): boolean =>
+const hasValidPastePosition = (options: Omit<PlanPasteOptions, "existingElements">): boolean =>
   Number.isSafeInteger(options.commandTimestamp) &&
   options.commandTimestamp >= 0 &&
   Number.isFinite(options.target.x) &&
   Number.isFinite(options.target.y);
 
-export const planPaste = (options: PlanPasteOptions): ClipboardResult<PastePlan> => {
+export const planPaste = (
+  options: PlanPasteOptions | ValidatedModelPasteOptions,
+): ClipboardResult<PastePlan> => {
+  if ("validatedModel" in options) {
+    // Only the document worker supplies facts from its validated, revision-matched model.
+    const { facts, hasExistingId } = options.validatedModel;
+    return planPasteInternal(options, hasExistingId, null, facts);
+  }
+  const existingIds = new Set(options.existingElements.map(({ id }) => id));
+  return planPasteInternal(options, (id) => existingIds.has(id), options.existingElements);
+};
+
+const planPasteInternal = (
+  options: Omit<PlanPasteOptions, "existingElements">,
+  hasExistingId: (id: string) => boolean,
+  existingElements: readonly InkElementV1[] | null,
+  existingFacts?: Readonly<AggregateFacts>,
+): ClipboardResult<PastePlan> => {
   if (!hasValidPastePosition(options)) {
     return {
       ok: false,
@@ -250,7 +350,7 @@ export const planPaste = (options: PlanPasteOptions): ClipboardResult<PastePlan>
   }
   const ids = createIds(
     options.decoded.payload.elements.map(({ clipId }) => clipId),
-    new Set(options.existingElements.map(({ id }) => id)),
+    hasExistingId,
     options.createId,
   );
   if (!ids.ok) return ids;
@@ -287,12 +387,13 @@ export const planPaste = (options: PlanPasteOptions): ClipboardResult<PastePlan>
     const records = validateUntrustedInsertionRecords(translated);
     if (!records.ok) return records;
   }
-  const documentLimits = countDocumentLimits(
-    options.existingElements,
-    translated,
-    options.page,
-    translatedBounds,
-  );
+  if (existingFacts === undefined && existingElements === null) {
+    throw new Error("Paste requires existing elements or validated aggregate facts.");
+  }
+  const documentLimits =
+    existingFacts === undefined
+      ? countDocumentLimits(existingElements!, translated, options.page, translatedBounds)
+      : countValidatedDocumentLimits(existingFacts, translated, options.page, translatedBounds);
   if (!documentLimits.ok) return documentLimits;
   const selectedIds: string[] = [];
   const highlightIds: string[] = [];

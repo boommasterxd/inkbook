@@ -1,19 +1,21 @@
 import {
   CLIPBOARD_SCHEMA_LIMITS,
-  validateInkElementV1,
   type ClipboardElementBodyV1,
   type InkClipboardV1,
   type InkElementV1,
   type ShapeAnchorV1,
 } from "../../domain/schema/public";
-import { validateRuntimeInkElementV1 } from "../../domain/schema/element-validation";
+import {
+  validateInkElementV1Steps,
+  validateRuntimeInkElementV1,
+} from "../../domain/schema/element-validation";
 import { hasReachableDependencyCycle } from "../../domain/schema/dependency-cycle";
 import {
   calculateElementBounds,
   isAnchorTarget,
   resolveShapeAnchor,
 } from "../../domain/geometry/public";
-import { measureSpatialCapacity } from "../../domain/spatial/index";
+import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../domain/spatial/index";
 import type { ClipboardResult, ElementBounds } from "./types";
 
 type UnknownRecord = Record<string, unknown>;
@@ -39,12 +41,14 @@ const hasExactKeys = (record: UnknownRecord, keys: readonly string[]): boolean =
 const placeholderUuid = (index: number): string =>
   `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
 
-const remapClipboardBody = (
+function* remapClipboardBodySteps(
   body: unknown,
   id: string,
   clipIds: ReadonlyMap<string, string>,
   allowRuntimeStrokeBuffers: boolean,
-): ClipboardResult<InkElementV1> => {
+  nodesPerStep: number,
+  samplesPerStep: number,
+): Generator<boolean | void, ClipboardResult<InkElementV1>> {
   if (!isRecord(body)) return failure("Clipboard element body must be an object.");
   if ("id" in body || "createdAt" in body) {
     return failure("Clipboard element body must not contain document identity fields.");
@@ -55,7 +59,12 @@ const remapClipboardBody = (
           { ...body, id, createdAt: 0 },
           { limits: CLIPBOARD_SCHEMA_LIMITS },
         )
-      : validateInkElementV1({ ...body, id, createdAt: 0 }, { limits: CLIPBOARD_SCHEMA_LIMITS });
+      : yield* validateInkElementV1Steps(
+          { ...body, id, createdAt: 0 },
+          { limits: CLIPBOARD_SCHEMA_LIMITS },
+          nodesPerStep,
+          samplesPerStep,
+        );
     return validation.ok
       ? { ok: true, value: validation.value }
       : failure(validation.error.message);
@@ -80,18 +89,14 @@ const remapClipboardBody = (
     endConnection: _endConnection,
     ...identityFree
   } = body;
-  const validation = validateInkElementV1(
-    {
-      ...identityFree,
-      id,
-      createdAt: 0,
-      startConnection: start.value,
-      endConnection: end.value,
-    },
+  const validation = yield* validateInkElementV1Steps(
+    { ...identityFree, id, createdAt: 0, startConnection: start.value, endConnection: end.value },
     { limits: CLIPBOARD_SCHEMA_LIMITS },
+    nodesPerStep,
+    samplesPerStep,
   );
   return validation.ok ? { ok: true, value: validation.value } : failure(validation.error.message);
-};
+}
 
 const polygonVertices = (kind: string): number => {
   if (kind === "triangle") return 3;
@@ -133,10 +138,12 @@ interface AggregateCounts {
   fanout: Map<string, number>;
 }
 
-const validateEntries = (
+function* validateEntriesSteps(
   entries: unknown[],
   allowRuntimeStrokeBuffers: boolean,
-): ClipboardResult<ValidatedEntry[]> => {
+  nodesPerStep: number,
+  samplesPerStep: number,
+): Generator<boolean | void, ClipboardResult<ValidatedEntry[]>> {
   if (entries.length === 0 || entries.length > CLIPBOARD_SCHEMA_LIMITS.elements) {
     return failure("Clipboard element count is outside the supported range.");
   }
@@ -154,15 +161,18 @@ const validateEntries = (
       return failure("Clipboard clipId values must be non-empty and unique.");
     }
     clipIds.set(entry.clipId, placeholderUuid(index));
+    yield;
   }
   const validated: ValidatedEntry[] = [];
   for (const entry of entries) {
     const wrapper = entry as UnknownRecord;
-    const element = remapClipboardBody(
+    const element = yield* remapClipboardBodySteps(
       wrapper.element,
       clipIds.get(wrapper.clipId as string)!,
       clipIds,
       allowRuntimeStrokeBuffers,
+      nodesPerStep,
+      samplesPerStep,
     );
     if (!element.ok) return element;
     validated.push({
@@ -170,9 +180,10 @@ const validateEntries = (
       body: wrapper.element as ClipboardElementBodyV1,
       element: element.value,
     });
+    yield;
   }
   return { ok: true, value: validated };
-};
+}
 
 const validateConnections = (
   body: Extract<ClipboardElementBodyV1, { kind: "line" | "arrow" }>,
@@ -209,9 +220,9 @@ const validateConnections = (
   return { ok: true, value: undefined };
 };
 
-const validateAggregateLimits = (
+function* validateAggregateLimitsSteps(
   entries: readonly ValidatedEntry[],
-): ClipboardResult<readonly ElementBounds[]> => {
+): Generator<void, ClipboardResult<readonly ElementBounds[]>> {
   if (hasClipboardConnectionCycle(entries)) {
     return failure("Clipboard linear endpoint connections must not contain self-links or cycles.");
   }
@@ -223,6 +234,9 @@ const validateAggregateLimits = (
   };
   const bodies = new Map(entries.map(({ clipId, body }) => [clipId, body]));
   const elements = new Map(entries.map(({ clipId, element }) => [clipId, element]));
+  const bounds: ElementBounds[] = [];
+  let cellMemberships = 0;
+  let overflowElements = 0;
   for (const { body, element } of entries) {
     if (element.kind === "stroke") {
       counts.strokes += 1;
@@ -234,20 +248,25 @@ const validateAggregateLimits = (
         return failure("Clipboard stroke limits are exceeded.");
       }
     }
-    if (body.kind !== "line" && body.kind !== "arrow") continue;
-    const connectionValidation = validateConnections(body, bodies, elements, counts);
-    if (!connectionValidation.ok) return connectionValidation;
+    if (body.kind === "line" || body.kind === "arrow") {
+      const connectionValidation = validateConnections(body, bodies, elements, counts);
+      if (!connectionValidation.ok) return connectionValidation;
+    }
+    const elementBounds = calculateElementBounds(element);
+    bounds.push(elementBounds);
+    const memberships = spatialCellMembershipCount(elementBounds);
+    if (memberships > MAX_ELEMENT_CELLS) overflowElements += 1;
+    else cellMemberships += memberships;
+    yield;
   }
-  const bounds = entries.map(({ element }) => calculateElementBounds(element));
-  const spatial = measureSpatialCapacity(bounds);
   if (
-    spatial.cellMemberships > CLIPBOARD_SCHEMA_LIMITS.spatialIndexCellMemberships ||
-    spatial.overflowElements > CLIPBOARD_SCHEMA_LIMITS.spatialIndexOverflowElements
+    cellMemberships > CLIPBOARD_SCHEMA_LIMITS.spatialIndexCellMemberships ||
+    overflowElements > CLIPBOARD_SCHEMA_LIMITS.spatialIndexOverflowElements
   ) {
     return failure("Clipboard spatial-index capacity limits are exceeded.");
   }
   return { ok: true, value: bounds };
-};
+}
 
 const hasClipboardConnectionCycle = (entries: readonly ValidatedEntry[]): boolean => {
   const bodies = new Map(entries.map(({ clipId, body }) => [clipId, body]));
@@ -290,10 +309,12 @@ const connectionMatches = (
   return resolved !== null && Math.hypot(resolved.x - endpoint.x, resolved.y - endpoint.y) <= 0.001;
 };
 
-const validateClipboardPayloadInternal = (
+function* validateClipboardPayloadSteps(
   value: unknown,
   allowRuntimeStrokeBuffers: boolean,
-): ClipboardResult<InkClipboardV1> => {
+  nodesPerStep: number,
+  samplesPerStep: number,
+): Generator<boolean | void, ClipboardResult<InkClipboardV1>> {
   if (!isRecord(value) || !hasExactKeys(value, ["format", "version", "elements"])) {
     return failure("Clipboard payload root does not match InkClipboardV1.");
   }
@@ -304,17 +325,55 @@ const validateClipboardPayloadInternal = (
   ) {
     return failure("Clipboard payload discriminator or version is invalid.");
   }
-  const entries = validateEntries(value.elements, allowRuntimeStrokeBuffers);
+  const entries = yield* validateEntriesSteps(
+    value.elements,
+    allowRuntimeStrokeBuffers,
+    nodesPerStep,
+    samplesPerStep,
+  );
   if (!entries.ok) return entries;
   if (!hasValidRenderBandOrder(entries.value)) {
     return failure("Clipboard elements violate fixed render-band order.");
   }
-  const limits = validateAggregateLimits(entries.value);
+  const limits = yield* validateAggregateLimitsSteps(entries.value);
   if (!limits.ok) return limits;
   const payload = value as unknown as InkClipboardV1;
   validatedBounds.set(payload, limits.value);
   return { ok: true, value: payload };
-};
+}
+
+function validateClipboardPayloadInternal(
+  value: unknown,
+  allowRuntimeStrokeBuffers: boolean,
+): ClipboardResult<InkClipboardV1> {
+  const steps = validateClipboardPayloadSteps(
+    value,
+    allowRuntimeStrokeBuffers,
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+  );
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+export async function validateClipboardPayloadSliced(
+  value: unknown,
+  checkpoint: () => Promise<void>,
+  nodeLimit: number,
+  sampleLimit: number,
+): Promise<ClipboardResult<InkClipboardV1>> {
+  const steps = validateClipboardPayloadSteps(value, false, nodeLimit * 3, sampleLimit);
+  let step = steps.next();
+  let visited = 0;
+  while (!step.done) {
+    visited += 1;
+    if (step.value === true || visited % nodeLimit === 0) await checkpoint();
+    step = steps.next();
+  }
+  await checkpoint();
+  return step.value;
+}
 
 export const validateClipboardPayload = (value: unknown): ClipboardResult<InkClipboardV1> =>
   validateClipboardPayloadInternal(value, false);

@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { navigationCursorFixture } from "../../../fixtures/obsidian/navigation-cursor";
 
 it.each([
@@ -68,3 +68,29 @@ it("uses the native clamped scroll result when a large pan reaches the owner bou
   navigation.dispose();
   h.controller.dispose();
 });
+
+it.each([0, 1, 2])(
+  "normalizes horizontal mode %s only when page units need a host read",
+  (deltaMode) => {
+    const { h, navigation, owner } = navigationCursorFixture("draw", "mouse");
+    Object.assign(h.window, { performance: { now: () => 1000 } });
+    navigation.restoreViewState({ cameraX: 0, zoom: 2 });
+    const readHeight = vi.fn(() => 300);
+    Object.defineProperty(owner, "clientHeight", { get: readHeight });
+    expect(
+      navigation.updateWheel({
+        clientX: 100,
+        clientY: 100,
+        deltaMode,
+        deltaX: 4,
+        deltaY: 0,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+      }),
+    ).toBe(true);
+    expect(readHeight).toHaveBeenCalledTimes(deltaMode === 2 ? 1 : 0);
+    navigation.dispose();
+    h.controller.dispose();
+  },
+);

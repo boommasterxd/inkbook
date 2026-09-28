@@ -8,6 +8,7 @@ import type { InputState } from "../../../src/editor/input/index";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene/index";
 import { domRect } from "../../fixtures/obsidian/active-editor";
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 interface NavigationProfileApi {
   readonly ActiveEditorNavigation: typeof import("../../../src/obsidian/embeds/active-editor/navigation").ActiveEditorNavigation;
@@ -104,6 +105,7 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
   let cameraWrites = 0;
   let layoutWrites = 0;
   let scrollWrites = 0;
+  let layoutReads = 0;
   let input: InputState = createInputState({
     fitZoom: rect.width / OUTER_PAGE_WIDTH,
     zoom: rect.width / OUTER_PAGE_WIDTH,
@@ -116,7 +118,10 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
     scrollingElement: null,
   };
   const owner = {
-    clientHeight: 500,
+    get clientHeight() {
+      layoutReads += 1;
+      return 500;
+    },
     getBoundingClientRect: () => domRect({ height: 500, left: 0, top: 0, width: 1_000 }),
     ownerDocument,
     scrollHeight: 10_000,
@@ -133,6 +138,7 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
     ownerDocument,
   } as unknown as HTMLElement;
   const navigation = new ActiveEditorNavigation({
+    workScheduler: workSchedulerFromFrames(frames.window),
     onNavigationActive: (active) => activity.push(active),
     activePageHeight: () => 2_000,
     applyZoomLayout: ({ blockSize }) => {
@@ -157,11 +163,15 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
       return cameraWrites;
     },
     frames,
+    get layoutReads() {
+      return layoutReads;
+    },
     get layoutWrites() {
       return layoutWrites;
     },
     navigation,
     resetWrites: () => {
+      layoutReads = 0;
       cameraWrites = 0;
       layoutWrites = 0;
       scrollWrites = 0;
@@ -264,6 +274,27 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () 
 });
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => {
+  it.each([0, 1, 2])("leaves native vertical wheel mode %s free of layout reads", (deltaMode) => {
+    const harness = createPanningHarness();
+    runInteractionFrames(() => {
+      expect(
+        harness.navigation.updateWheel({
+          clientX: 500,
+          clientY: 300,
+          deltaMode,
+          deltaX: 0,
+          deltaY: 4,
+          ctrlKey: false,
+          metaKey: false,
+          shiftKey: false,
+        }),
+      ).toBe(false);
+    });
+    expect(harness.layoutReads).toBe(0);
+    expect(harness.frames.pending).toBe(0);
+    disposeActiveNavigation(harness);
+  });
+
   it("keeps continuous anchored trackpad zoom with coalesced work", () => {
     const harness = createNavigationHarness();
     let claimedFrames = 0;

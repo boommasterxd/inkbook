@@ -38,7 +38,7 @@ describe("WorkspaceEditorCoordinator", () => {
   });
 });
 
-describe("WorkspaceEditorCoordinator activation", () => {
+describe("WorkspaceEditorCoordinator source binding", () => {
   it("binds unlock to the mounted preview identity and reports a changed source", async () => {
     const harness = createHarness();
     const previewContentIdentity = { outputHash: "a".repeat(64), revision: 7 };
@@ -58,7 +58,9 @@ describe("WorkspaceEditorCoordinator activation", () => {
     });
     expect(harness.coordinator.getSnapshot().current?.phase).toBe("load-error");
   });
+});
 
+describe("WorkspaceEditorCoordinator activation", () => {
   it("rejects unmounted requests and assigns monotonically increasing tokens", async () => {
     const harness = createHarness();
     const stale = harness.coordinator.requestActivation(documentA);

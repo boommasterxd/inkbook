@@ -21,7 +21,7 @@ const strokeStyle = {
 };
 
 describe("runtime geometry translation", () => {
-  it("translates every canonical coordinate of a runtime stroke", () => {
+  it("positions a runtime stroke without copying its sample buffer", () => {
     const source = {
       createdAt: 0,
       id: "00000000-0000-4000-8000-000000000010",
@@ -43,7 +43,8 @@ describe("runtime geometry translation", () => {
 
     expect(translated.kind).toBe("stroke");
     if (translated.kind !== "stroke") return;
-    expect(translated.points).toEqual(new Float64Array([2, 3, 0.5, 12, 13, 1]));
+    expect(translated.points).toBe(source.points);
+    expect(translated.offset).toEqual({ x: 2, y: 3 });
     expect(translated.pivot).toEqual({ x: 7, y: 8 });
   });
 
@@ -54,7 +55,7 @@ describe("runtime geometry translation", () => {
 });
 
 describe("stroke and linear geometry translation", () => {
-  it("copies ordinary stroke arrays and translates every linear variant", () => {
+  it("reuses ordinary stroke arrays and translates every linear variant", () => {
     const stroke = {
       createdAt: 0,
       id: "00000000-0000-4000-8000-000000000011",
@@ -69,7 +70,8 @@ describe("stroke and linear geometry translation", () => {
     expect(copied).not.toBe(stroke);
     expect(copied).toMatchObject({
       pivot: { x: 7, y: 8 },
-      points: [2, 3, 0.5, 12, 13, 1],
+      points: stroke.points,
+      offset: { x: 2, y: 3 },
     });
 
     const line: LineElementV1 = {

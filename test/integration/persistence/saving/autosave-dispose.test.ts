@@ -1,3 +1,4 @@
+import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { describe, expect, it, vi } from "vitest";
 
 import { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
@@ -57,6 +58,7 @@ function createCoordinator(
 ): AutosaveCoordinator {
   const initial = serializeSnapshot();
   return new AutosaveCoordinator({
+    workScheduler: createTestWorkScheduler(),
     clock: { clearTimeout: vi.fn(), setTimeout: vi.fn() },
     confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
     ...(lazyConfirmedContent ? {} : { confirmedContent: initial.svg }),

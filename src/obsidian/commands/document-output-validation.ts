@@ -1,12 +1,19 @@
 import type { App } from "obsidian";
+import { FRAME_WORK_SHARE, type WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import {
   createDocumentRuntime,
   DocumentWorkerRuntime,
+  GestureAwareSliceScheduler,
   type DocumentRuntimePort,
   type DocumentRuntimeResult,
 } from "../../persistence/worker/runtime/public";
 import { activeMarkdownOwnerWindow } from "./obsidian-host";
+
+export interface DocumentOutputScheduling {
+  readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
+  readonly subscribeSchedulingProfile: (listener: () => void) => () => void;
+}
 
 function validationSessionId(ownerWindow: Window): string {
   const bytes = new Uint8Array(12);
@@ -33,14 +40,23 @@ async function executeVerification(
   });
 }
 
-export async function validateDocumentOutput(app: App, content: string): Promise<boolean> {
+export async function validateDocumentOutput(
+  app: App,
+  content: string,
+  scheduling: DocumentOutputScheduling,
+): Promise<boolean> {
   const ownerWindow = activeMarkdownOwnerWindow(app);
+  const workScheduler = scheduling.workScheduler(ownerWindow);
   const sessionId = validationSessionId(ownerWindow);
   let runtime: DocumentRuntimePort | undefined;
   let workerEpoch = 1;
   try {
     try {
-      runtime = await createDocumentRuntime(sessionId, workerEpoch, ownerWindow);
+      runtime = await createDocumentRuntime(sessionId, workerEpoch, ownerWindow, {
+        workScheduler,
+        frameIntervalMilliseconds: () => workScheduler.budgetMs() / FRAME_WORK_SHARE,
+        subscribeSchedulingProfile: scheduling.subscribeSchedulingProfile,
+      });
       const workerResult = await executeVerification(runtime, sessionId, workerEpoch, content);
       if (workerResult.type !== "runtime-failure") return verified(workerResult);
     } catch {
@@ -51,7 +67,10 @@ export async function validateDocumentOutput(app: App, content: string): Promise
     }
 
     workerEpoch += 1;
-    runtime = new DocumentWorkerRuntime({ sessionId, workerEpoch });
+    runtime = new DocumentWorkerRuntime(
+      { sessionId, workerEpoch },
+      new GestureAwareSliceScheduler({ isInputActive: () => false, workScheduler }),
+    );
     return verified(await executeVerification(runtime, sessionId, workerEpoch, content));
   } catch {
     return false;

@@ -1,6 +1,6 @@
 import type { InkElementV1 } from "../schema/public";
 
-import { resolveConnections } from "./connections";
+import { isConnectable, resolveConnections } from "./connections";
 import { createInitialRecord } from "./record-factory";
 import { assertValidElement } from "./replacement-planner";
 import type { ElementRecord, ImmutableInkElement } from "./types";
@@ -23,6 +23,8 @@ export function prepareCreatedRecords(
     staged.set(element.id, element);
   }
   const initialLookup = (id: string) => staged.get(id) ?? ports.getExisting(id);
-  const resolved = elements.map((element) => resolveConnections(element, initialLookup));
+  const resolved = elements.map((element) =>
+    isConnectable(element) ? resolveConnections(element, initialLookup) : element,
+  );
   return resolved.map((element) => createInitialRecord(element));
 }

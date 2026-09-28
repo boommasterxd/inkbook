@@ -62,7 +62,7 @@ export class ActiveEditorNavigation {
   readonly #container: HTMLElement;
   #scrollOwner: BrowserScrollElement;
   readonly #getInput: () => InputState;
-  #ownerWindow: Window;
+  readonly #workScheduler: ActiveEditorNavigationOptions["workScheduler"];
   readonly #setInput: (input: InputState) => void;
   #cameraX = 0;
   #frame: number | undefined;
@@ -84,7 +84,7 @@ export class ActiveEditorNavigation {
     this.#setInput = options.setInput;
     const ownerWindow = options.container.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
-    this.#ownerWindow = ownerWindow;
+    this.#workScheduler = options.workScheduler;
     this.#activity = new NavigationActivity(ownerWindow, options.onNavigationActive);
     this.#panMomentum = new ActiveEditorPanMomentum(ownerWindow, () => this.#scheduleFrame());
     this.#zoom = positiveOr(options.getInput().zoom, 1);
@@ -175,7 +175,7 @@ export class ActiveEditorNavigation {
   public cancelPanMomentum(): void {
     this.#panMomentum.cancel();
     if (this.#frame !== undefined && !this.#hasPendingFrame()) {
-      this.#ownerWindow.cancelAnimationFrame(this.#frame);
+      this.#workScheduler.cancelFrame(this.#frame);
       this.#frame = undefined;
       this.#activity.settle();
     }
@@ -285,7 +285,6 @@ export class ActiveEditorNavigation {
     this.#origin = undefined;
     this.#gestureLayout = undefined;
     this.#scrollOwner = scrollOwner;
-    this.#ownerWindow = ownerWindow;
     this.#panMomentum.transferOwnerWindow(ownerWindow);
     return true;
   }
@@ -336,8 +335,6 @@ export class ActiveEditorNavigation {
     if (!Number.isFinite(event.deltaY) || !Number.isFinite(event.deltaX ?? 0)) return false;
     if (event.deltaY !== 0 || (event.deltaX ?? 0) !== 0) this.#activity.pulse();
     this.#panMomentum.prepareWheel(isZoomWheel(event));
-    const ownerPageHeight = browserScrollMetrics.getClientHeight(this.#scrollOwner);
-    const normalization = ownerPageHeight > 0 ? { pageHeight: ownerPageHeight } : {};
     if (isZoomWheel(event)) {
       const layout =
         this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
@@ -349,7 +346,7 @@ export class ActiveEditorNavigation {
           this.#frameState,
           {
             anchor: this.#latestAnchor,
-            factor: continuousWheelZoomFactor(event.deltaY, normalization),
+            factor: continuousWheelZoomFactor(event.deltaY),
           },
           this.#zoom,
           this.#getInput().fitZoom,
@@ -364,11 +361,14 @@ export class ActiveEditorNavigation {
       this.#panMomentum.cancelTrackpad();
       return false;
     }
-    const panX = horizontalPanWheel(event, normalization);
-    if (panX === undefined) {
+    const horizontal = horizontalPanWheel(event, {});
+    if (horizontal === undefined) {
       this.#panMomentum.cancelTrackpad();
       return false;
     }
+    const pageHeight =
+      event.deltaMode === 2 ? browserScrollMetrics.getClientHeight(this.#scrollOwner) : 0;
+    const panX = pageHeight > 0 ? horizontalPanWheel(event, { pageHeight })! : horizontal;
     const trackpadPanX = this.#panMomentum.trackpadWheelDelta(panX, event);
     this.#frameState = accumulateZoomInput(this.#frameState, { panX: trackpadPanX ?? panX });
     if (trackpadPanX === undefined) this.#panMomentum.cancelTrackpad();
@@ -379,12 +379,13 @@ export class ActiveEditorNavigation {
   #scheduleFrame(): void {
     this.#activity.hold();
     if (this.#frame !== undefined) return;
-    this.#frame = this.#ownerWindow.requestAnimationFrame((timestamp) => {
+    const callback = (timestamp: number): void => {
       this.#frame = undefined;
       this.#applyFrame(timestamp);
       if (this.#hasPendingFrame()) this.#scheduleFrame();
       else this.#activity.settle();
-    });
+    };
+    this.#frame = this.#workScheduler.requestFrame(callback, "input");
   }
 
   #applyFrame(timestamp: number): void {
@@ -483,7 +484,7 @@ export class ActiveEditorNavigation {
 
   #cancelPendingFrame(): void {
     this.#activity.reset();
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#clearPendingFrame();
   }

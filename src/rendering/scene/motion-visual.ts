@@ -21,6 +21,9 @@ export function createMotionVisual(
   const targets: { node: SVGElement; opacity: number }[] = [];
   let bytes = 0;
   for (const element of elements) {
+    if (motionBudgetExhausted(nodes.length, bytes, remainingPaths, remainingBytes)) {
+      return { bytes, nodes, targets };
+    }
     const parts = buildElementPathParts(element);
     const grouped = element.kind === "stroke" && element.style.pressureEnabled;
     const groupBytes = parts.reduce((total, part) => total + part.d.length * 2, 0);
@@ -42,22 +45,41 @@ export function createMotionVisual(
       if (nodes.length >= remainingPaths || bytes + pathBytes > remainingBytes) {
         return { bytes, nodes, targets };
       }
-      const node = ownerDocument.createElementNS(SVG_NAMESPACE, "path");
-      node.setAttribute("d", part.d);
-      node.setAttribute("pointer-events", "none");
-      node.setAttribute("aria-hidden", "true");
-      const presentation = pathPresentation(element, part);
-      for (const attribute of PRESENTATION_ATTRIBUTES) {
-        const value = presentation[attribute];
-        if (value !== null) node.setAttribute(attribute, value);
-      }
-      (group ?? parent).append(node);
+      const node = appendMotionPath(ownerDocument, group ?? parent, element, part);
       if (group === null) targets.push({ node, opacity: 1 });
       nodes.push(node);
       bytes += pathBytes;
     }
   }
   return { bytes, nodes, targets };
+}
+
+function appendMotionPath(
+  ownerDocument: Document,
+  parent: SVGGElement,
+  element: InkElementV1,
+  part: ReturnType<typeof buildElementPathParts>[number],
+): SVGPathElement {
+  const node = ownerDocument.createElementNS(SVG_NAMESPACE, "path");
+  node.setAttribute("d", part.d);
+  node.setAttribute("pointer-events", "none");
+  node.setAttribute("aria-hidden", "true");
+  const presentation = pathPresentation(element, part);
+  for (const attribute of PRESENTATION_ATTRIBUTES) {
+    const value = presentation[attribute];
+    if (value !== null) node.setAttribute(attribute, value);
+  }
+  parent.append(node);
+  return node;
+}
+
+function motionBudgetExhausted(
+  paths: number,
+  bytes: number,
+  remainingPaths: number,
+  remainingBytes: number,
+): boolean {
+  return paths >= remainingPaths || bytes >= remainingBytes;
 }
 
 export function removeMotionVisual(visual: MotionVisual): void {

@@ -138,41 +138,50 @@ describe("SelectionHandleSession work budgets", () => {
     },
   );
 
-  it("time-slices materialization, fixed-anchor measurement, and correction", async () => {
-    const shapes = Array.from({ length: 1_001 }, (_, index) =>
-      rectangle(`00000000-0000-4000-8001-${index.toString().padStart(12, "0")}`, index * 250, 0),
-    );
-    const session = new SelectionHandleSession({
-      action: {
-        anchor: { x: 0, y: 0 },
-        kind: "scale",
-        position: "bottom-right",
-        rotation: 0,
-      },
-      elements: shapes,
-      planner: {
-        countReverseDependencies: () => 0,
-        planReplacements: replacementPlan,
-        planReplacementsTimeSliced: async (replacements) => replacementPlan(replacements),
-      },
-      startPointer: { x: 1_000, y: 0 },
-    });
-    session.update({ x: 500, y: 0 });
-    let yields = 0;
-    const recordYield = async () => {
-      yields += 1;
-    };
+  it.each([
+    { anchorX: 0, passes: 2 },
+    { anchorX: 10, passes: 3 },
+  ])(
+    "time-slices scale work with anchor x=$anchorX in $passes passes",
+    async ({ anchorX, passes }) => {
+      const shapes = Array.from({ length: 1_001 }, (_, index) =>
+        rectangle(`00000000-0000-4000-8001-${index.toString().padStart(12, "0")}`, index * 250, 0),
+      );
+      const session = new SelectionHandleSession({
+        action: {
+          anchor: { x: anchorX, y: 0 },
+          kind: "scale",
+          position: "bottom-right",
+          rotation: 0,
+        },
+        elements: shapes,
+        planner: {
+          countReverseDependencies: () => 0,
+          planReplacements: replacementPlan,
+          planReplacementsTimeSliced: async (replacements) => replacementPlan(replacements),
+        },
+        startPointer: { x: 1_000, y: 0 },
+      });
+      session.update({ x: 500, y: 0 });
+      let yields = 0;
+      const recordYield = async () => {
+        yields += 1;
+      };
 
-    const prepared = await session.prepareCommitTimeSliced({
-      shouldYield: () => true,
-      yieldControl: recordYield,
-    });
+      const prepared = await session.prepareCommitTimeSliced({
+        shouldYield: () => true,
+        yieldControl: recordYield,
+      });
 
-    expect({ status: prepared.status, yields }).toEqual({
-      status: "ready",
-      yields: shapes.length * 3,
-    });
-  });
+      expect({ status: prepared.status, yields }).toEqual({
+        status: "ready",
+        yields: shapes.length * passes,
+      });
+      if (prepared.status !== "ready") throw new Error("Expected a prepared scale.");
+      const frame = createSelectionFrameAtRotation(prepared.replacements, 0);
+      expect(selectionFramePoint(frame!, "top-left").x).toBe(anchorX);
+    },
+  );
 });
 
 function pressureSession(stroke: ReturnType<typeof maximumStroke>): SelectionHandleSession {

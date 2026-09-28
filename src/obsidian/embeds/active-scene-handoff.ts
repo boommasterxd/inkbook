@@ -1,5 +1,6 @@
 import type { InitialPresentationEntrance } from "./presentation-entrance";
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { TRANSITION_DURATIONS } from "../../rendering/motion/transitions";
 
 type MotionPreference = InkbookDeviceSettingsV2["motion"];
@@ -8,6 +9,7 @@ const ACTIVE_SCENE_BLOCK_SIZE_PROPERTY = "--inkbook-active-scene-block-size";
 const LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY = "--inkbook-locked-container-block-size";
 
 interface PreviewHandoffOptions {
+  readonly workScheduler: WorkScheduler;
   readonly beginScrollStability?: () => () => void;
   readonly container: HTMLElement;
   readonly initialScrollStabilityRelease?: () => void;
@@ -29,6 +31,7 @@ export class ActiveScenePreviewHandoff {
   readonly #mediaQuery: MediaQueryList | undefined;
   #motion: MotionPreference;
   readonly #ownerWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   readonly #preview: HTMLElement | undefined;
   readonly #previewNextSibling: ChildNode | null;
   readonly #previewParent: Node | null;
@@ -40,6 +43,8 @@ export class ActiveScenePreviewHandoff {
   readonly #setPreviewSource: ((source: string) => Promise<void>) | undefined;
   readonly #lockedBlockSize: string;
   #disposed = false;
+  #pendingPreviewSource: string | undefined;
+  #sourcePreparation: Promise<void> | undefined;
   #onReady: (() => void) | undefined;
   #onLockComplete: (() => void) | undefined;
   #lockEditor: HTMLElement | undefined;
@@ -57,6 +62,7 @@ export class ActiveScenePreviewHandoff {
     this.#container = options.container;
     this.#motion = options.motion;
     this.#ownerWindow = ownerWindow;
+    this.#workScheduler = options.workScheduler;
     this.#preview = options.preview;
     this.#setPreviewAspectRatio = options.setPreviewAspectRatio;
     this.#refreshPreview = options.refreshPreview;
@@ -69,10 +75,10 @@ export class ActiveScenePreviewHandoff {
     this.#releaseScrollStability = options.initialScrollStabilityRelease;
     this.#mediaQuery = ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
     this.#mediaQuery?.addEventListener("change", this.#handleMotionChange);
-    this.#root.classList.add("inkbook-active-preparing");
-    this.#preview?.classList.add("inkbook-preview-handoff");
     const lockedHeight = this.#preview?.getBoundingClientRect().height ?? 0;
     this.#lockedBlockSize = lockedHeight > 0 ? `${String(lockedHeight)}px` : "";
+    this.#root.classList.add("inkbook-active-preparing");
+    this.#preview?.classList.add("inkbook-preview-handoff");
     if (this.#lockedBlockSize !== "") {
       this.#container.style.blockSize = this.#lockedBlockSize;
       this.#container.style.setProperty(
@@ -90,7 +96,7 @@ export class ActiveScenePreviewHandoff {
     this.#onReady = undefined;
     this.#clearTimer();
     this.#releaseTransitionStability();
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#mediaQuery?.removeEventListener("change", this.#handleMotionChange);
     const onLockComplete = this.#onLockComplete;
@@ -121,7 +127,6 @@ export class ActiveScenePreviewHandoff {
     if (activeBlockSize !== "") {
       this.#container.style.setProperty(ACTIVE_SCENE_BLOCK_SIZE_PROPERTY, activeBlockSize);
     }
-    this.#container.getBoundingClientRect();
     if (this.#reducedMotion()) {
       this.#startUnlockTransition(activeBlockSize);
       this.#complete();
@@ -135,10 +140,11 @@ export class ActiveScenePreviewHandoff {
   }
 
   #scheduleAfterPaint(callback: () => void): void {
-    this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+    // The intervening paint establishes the transition's start styles without a forced layout.
+    this.#frame = this.#workScheduler.requestFrame(() => {
       this.#frame = undefined;
       if (this.#disposed) return;
-      this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+      this.#frame = this.#workScheduler.requestFrame(() => {
         this.#frame = undefined;
         if (this.#disposed) return;
         callback();
@@ -169,6 +175,8 @@ export class ActiveScenePreviewHandoff {
   public restorePreview(): void {
     const preview = this.#preview;
     if (preview === undefined) return;
+    preview.hidden = false;
+    this.#refreshPreview?.();
     if (!preview.isConnected && this.#previewParent !== null) {
       if (this.#previewNextSibling?.parentNode === this.#previewParent) {
         this.#previewParent.insertBefore(preview, this.#previewNextSibling);
@@ -176,12 +184,42 @@ export class ActiveScenePreviewHandoff {
         this.#previewParent.appendChild(preview);
       }
     }
-    preview.hidden = false;
-    this.#refreshPreview?.();
+    if (this.#pendingPreviewSource !== undefined || this.#sourcePreparation !== undefined) {
+      void this.ensurePreviewReady().then(
+        () => this.#refreshPreview?.(),
+        () => undefined,
+      );
+    }
   }
 
   public async ensurePreviewReady(): Promise<void> {
-    await this.#ensurePreviewReady?.();
+    do {
+      await this.#prepareLatestSource();
+      await this.#ensurePreviewReady?.();
+    } while (this.#pendingPreviewSource !== undefined);
+  }
+
+  #prepareLatestSource(): Promise<void> {
+    if (this.#sourcePreparation !== undefined) return this.#sourcePreparation;
+    if (this.#pendingPreviewSource === undefined) return Promise.resolve();
+    const task = this.#drainPreviewSources().finally(() => {
+      if (this.#sourcePreparation === task) this.#sourcePreparation = undefined;
+    });
+    this.#sourcePreparation = task;
+    return task;
+  }
+
+  async #drainPreviewSources(): Promise<void> {
+    while (this.#pendingPreviewSource !== undefined) {
+      const source = this.#pendingPreviewSource;
+      this.#pendingPreviewSource = undefined;
+      try {
+        await this.#loadPreviewSource(source);
+      } catch (error) {
+        this.#pendingPreviewSource ??= source;
+        throw error;
+      }
+    }
   }
 
   public get reducedMotion(): boolean {
@@ -194,6 +232,12 @@ export class ActiveScenePreviewHandoff {
   }
 
   public setPreviewSource(source: string): Promise<void> {
+    if (this.#disposed || this.#preview === undefined) return Promise.resolve();
+    this.#pendingPreviewSource = source;
+    return this.#preview.hidden ? Promise.resolve() : this.#prepareLatestSource();
+  }
+
+  #loadPreviewSource(source: string): Promise<void> {
     const preview = this.#preview;
     if (preview === undefined) return Promise.resolve();
     if (this.#setPreviewSource !== undefined) {
@@ -260,7 +304,7 @@ export class ActiveScenePreviewHandoff {
 
   #finishReducedMotion(): void {
     if (this.#disposed) return;
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#clearTimer();
     const lockComplete = this.#onLockComplete;

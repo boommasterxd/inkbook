@@ -13,14 +13,12 @@ import type {
   ClipboardWritePayload,
   DecodedClipboard,
 } from "../../clipboard/types";
-import { validateClipboardPayload } from "../../clipboard/validation";
+import { validateClipboardPayloadSliced } from "../../clipboard/validation";
 import { parseChunkedJson } from "../../serialization/chunked-json-parser";
 import { runtimeSliceWorkProfile } from "./slice-scheduler";
 import type { RuntimeSliceContext, RuntimeSliceWorkProfile } from "./types";
 
 const encoder = new TextEncoder();
-const DEFAULT_CHECKPOINT_INTERVAL = 256;
-
 function runtimeWorkProfile(context: RuntimeSliceContext): RuntimeSliceWorkProfile {
   if (context.workProfile !== undefined) return context.workProfile;
   return runtimeSliceWorkProfile(context.sliceMilliseconds?.());
@@ -38,7 +36,7 @@ export async function encodeRuntimeSelectionChunked(
   for (let index = 0; index < elementsInRenderOrder.length; index += 1) {
     if (selection.has(elementsInRenderOrder[index]!.id))
       selected.push(elementsInRenderOrder[index]!);
-    await periodicCheckpoint(index, context, profile.nodeLimit);
+    if ((index + 1) % profile.nodeLimit === 0) await context.checkpoint();
   }
   if (selected.length !== selection.size) {
     return clipboardFailure("missing-selection", "The selection contains an unknown element.");
@@ -46,7 +44,7 @@ export async function encodeRuntimeSelectionChunked(
   const documentIds = new Map<string, string>();
   for (let index = 0; index < selected.length; index += 1) {
     documentIds.set(selected[index]!.id, compactClipId(index));
-    await periodicCheckpoint(index, context, profile.nodeLimit);
+    if ((index + 1) % profile.nodeLimit === 0) await context.checkpoint();
   }
   const clipboardElements: ClipboardElementV1[] = [];
   for (let index = 0; index < selected.length; index += 1) {
@@ -55,7 +53,7 @@ export async function encodeRuntimeSelectionChunked(
       clipId: compactClipId(index),
       element: createBody(element, documentIds),
     });
-    await periodicCheckpoint(index, context, profile.nodeLimit);
+    if ((index + 1) % profile.nodeLimit === 0) await context.checkpoint();
   }
   const encoded = await serializeClipboardPayload(
     { elements: clipboardElements, format: "inkbook-elements", version: 1 },
@@ -120,9 +118,13 @@ async function decodeCandidate(
     return clipboardFailure("invalid-json", "Clipboard JSON is malformed.");
   }
   await context.checkpoint();
-  const validated = validateClipboardPayload(value);
+  const validated = await validateClipboardPayloadSliced(
+    value,
+    context.checkpoint,
+    profile.nodeLimit,
+    Math.max(1, Math.floor(profile.inputByteLimit / 24)),
+  );
   if (!validated.ok) return validated;
-  await context.checkpoint();
   const canonical = await serializeClipboardPayload(validated.value, context, false, profile);
   if (!canonical.ok) return canonical;
   return {
@@ -159,6 +161,16 @@ async function serializeClipboardPayload(
   return { ok: true, value: result };
 }
 
+type JsonFrame =
+  | { readonly kind: "value"; readonly value: unknown }
+  | { readonly kind: "array"; readonly value: ArrayLike<unknown>; index: number }
+  | {
+      readonly kind: "object";
+      readonly value: Record<string, unknown>;
+      readonly keys: string[];
+      index: number;
+    };
+
 class CanonicalJsonWriter {
   readonly #chunks: string[] = [];
   readonly #context: RuntimeSliceContext;
@@ -172,22 +184,63 @@ class CanonicalJsonWriter {
   }
 
   public async write(value: unknown): Promise<void> {
-    this.#context.signal.throwIfAborted();
-    this.#nodes += 1;
-    if (this.#nodes % this.#profile.nodeLimit === 0) {
-      await this.#context.checkpoint();
+    const stack: JsonFrame[] = [{ kind: "value", value }];
+    while (stack.length > 0) {
+      const frame = stack.pop()!;
+      if (frame.kind === "value") {
+        this.#context.signal.throwIfAborted();
+        this.#nodes += 1;
+        if (this.#nodes % this.#profile.nodeLimit === 0) await this.#context.checkpoint();
+        this.#writeValue(frame.value, stack);
+      } else {
+        this.#continueContainer(frame, stack);
+      }
     }
+  }
+
+  #writeValue(value: unknown, stack: JsonFrame[]): void {
     if (value instanceof Float64Array || Array.isArray(value)) {
-      await this.#writeArray(value);
+      this.#append("[");
+      stack.push({ index: 0, kind: "array", value });
+    } else if (value !== null && typeof value === "object") {
+      this.#append("{");
+      stack.push({
+        index: 0,
+        keys: Object.keys(value).sort(),
+        kind: "object",
+        value: value as Record<string, unknown>,
+      });
+    } else {
+      const serialized = JSON.stringify(value);
+      if (serialized === undefined) throw new TypeError("Clipboard payload is not serializable.");
+      this.#append(serialized);
+    }
+  }
+
+  #continueContainer(
+    frame: Exclude<JsonFrame, { readonly kind: "value" }>,
+    stack: JsonFrame[],
+  ): void {
+    if (frame.kind === "array") {
+      if (frame.index === frame.value.length) {
+        this.#append("]");
+        return;
+      }
+      if (frame.index > 0) this.#append(",");
+      const nextValue = frame.value[frame.index];
+      frame.index += 1;
+      stack.push(frame, { kind: "value", value: nextValue });
       return;
     }
-    if (value !== null && typeof value === "object") {
-      await this.#writeObject(value as Record<string, unknown>);
+    if (frame.index === frame.keys.length) {
+      this.#append("}");
       return;
     }
-    const serialized = JSON.stringify(value);
-    if (serialized === undefined) throw new TypeError("Clipboard payload is not serializable.");
-    this.#append(serialized);
+    if (frame.index > 0) this.#append(",");
+    const key = frame.keys[frame.index]!;
+    this.#append(`${JSON.stringify(key)}:`);
+    frame.index += 1;
+    stack.push(frame, { kind: "value", value: frame.value[key] });
   }
 
   public async finish(): Promise<{ readonly byteLength: number; readonly text: string }> {
@@ -198,30 +251,9 @@ class CanonicalJsonWriter {
       const chunk = this.#chunks[index]!;
       text += chunk;
       byteLength += encoder.encode(chunk).byteLength;
-      await periodicCheckpoint(index, this.#context, this.#profile.nodeLimit);
+      if ((index + 1) % this.#profile.nodeLimit === 0) await this.#context.checkpoint();
     }
     return { byteLength, text };
-  }
-
-  async #writeArray(value: ArrayLike<unknown>): Promise<void> {
-    this.#append("[");
-    for (let index = 0; index < value.length; index += 1) {
-      if (index > 0) this.#append(",");
-      await this.write(value[index]);
-    }
-    this.#append("]");
-  }
-
-  async #writeObject(value: Record<string, unknown>): Promise<void> {
-    this.#append("{");
-    const keys = Object.keys(value).sort();
-    for (let index = 0; index < keys.length; index += 1) {
-      if (index > 0) this.#append(",");
-      const key = keys[index]!;
-      this.#append(`${JSON.stringify(key)}:`);
-      await this.write(value[key]);
-    }
-    this.#append("}");
   }
 
   #append(value: string): void {
@@ -286,14 +318,6 @@ async function utf8ByteLength(
     offset = end;
   }
   return bytes;
-}
-
-async function periodicCheckpoint(
-  index: number,
-  context: RuntimeSliceContext,
-  interval = DEFAULT_CHECKPOINT_INTERVAL,
-): Promise<void> {
-  if ((index + 1) % interval === 0) await context.checkpoint();
 }
 
 function compactClipId(index: number): string {

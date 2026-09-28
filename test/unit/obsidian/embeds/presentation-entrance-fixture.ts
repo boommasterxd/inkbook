@@ -5,6 +5,7 @@ import {
 import type { MotionPreference } from "../../../../src/rendering/motion/transitions";
 
 import { createPresentationMotionWindow } from "../../../fixtures/obsidian/presentation-motion-window";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 export function entranceHarness(state?: PresentationEntranceState) {
   const clock = createPresentationMotionWindow();
@@ -21,6 +22,7 @@ export function entranceHarness(state?: PresentationEntranceState) {
       presented += 1;
     },
     ownerWindow: clock.ownerWindow,
+    workScheduler: workSchedulerFromFrames(clock.ownerWindow),
     preview,
     root,
     ...(state === undefined ? {} : { state }),

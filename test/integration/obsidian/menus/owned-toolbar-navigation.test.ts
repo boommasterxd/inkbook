@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { type App, Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,7 +34,11 @@ function fixture() {
   document.body.append(options.anchor);
   const app = { workspace: { containerEl: document.body } } as App;
   const host = () => createPhoneSheetHost(app);
-  const factory = createOwnedMenuFactory({ anchor: options.anchor, createPhoneSheetHost: host });
+  const factory = createOwnedMenuFactory({
+    anchor: options.anchor,
+    workScheduler: workSchedulerFromFrames(window),
+    createPhoneSheetHost: host,
+  });
   const session = new EditorToolbarMenuSession({ ...options, factory, createPhoneSheetHost: host });
   return { options, session };
 }

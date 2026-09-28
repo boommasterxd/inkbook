@@ -1,8 +1,10 @@
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
+import { MountSlice, type ScenePublicationBudget } from "./mount-slice";
+import { SelectionCenterCache } from "./selection-center-cache";
 import { SelectionCenterTrace } from "./selection-center-trace";
 import type { MountedSceneElement } from "./mounted-element";
-import type { MutableSceneInstrumentation } from "./types";
+import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
 
 /** Retains only mounted center indicators, with camera-independent geometry and paint. */
 export class SceneSelectionTraces {
@@ -10,6 +12,7 @@ export class SceneSelectionTraces {
   readonly #frame: SVGPathElement;
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #traces = new Map<string, SelectionCenterTrace>();
+  readonly #cache = new SelectionCenterCache();
   #bytes = 0;
   #selectionDirty = false;
   #highlightsEnabled = true;
@@ -49,33 +52,74 @@ export class SceneSelectionTraces {
     return true;
   }
   public memoryUsage(): number {
-    return this.#bytes;
+    return this.#bytes + this.#cache.memoryUsage();
   }
   public flushContext(): void {
     if (!this.#selectionDirty) return;
     this.#selectionDirty = false;
-    for (const id of this.#traces.keys()) if (!this.#selected.has(id)) this.remove(id);
+    let removed: string[] | undefined;
+    for (const id of this.#traces.keys()) if (!this.#selected.has(id)) (removed ??= []).push(id);
+    if (removed !== undefined) this.removeMany(removed);
   }
 
   public update(
     entry: MountedSceneElement,
     element: InkElementV1,
     parts: readonly SvgPathPart[],
-  ): void {
+    budget?: ScenePublicationBudget,
+    cachedCenterPath?: string | null,
+  ): boolean {
     if (!this.includes(element)) {
       this.remove(entry.id);
-      return;
+      return true;
     }
     let trace = this.#traces.get(entry.id);
+    const created = trace === undefined;
     if (trace === undefined) {
-      trace = new SelectionCenterTrace(this.#group, entry, this.#instrumentation);
+      if (budget === undefined || budget.remainingRoots <= 0) return false;
+      trace = new SelectionCenterTrace(this.#group, entry, this.#instrumentation, this.#cache);
       this.#traces.set(entry.id, trace);
       this.#bytes += trace.memoryUsage();
+      budget.remainingRoots -= 1;
     }
     const before = trace.memoryUsage();
-    trace.update(entry, element, parts);
+    trace.update(entry, element, parts, cachedCenterPath);
     this.#bytes += trace.memoryUsage() - before;
+    if (created) this.#group.append(trace.node);
     this.syncFrameOutline();
+    return true;
+  }
+
+  public writeDirty(
+    dirty: Set<string>,
+    mounted: ReadonlyMap<string, MountedSceneElement>,
+    store: SceneStorePort,
+    deadline: number,
+    now: () => number,
+    budget: ScenePublicationBudget,
+  ): boolean {
+    const slice = new MountSlice(deadline, now);
+    for (const id of dirty) {
+      if (slice.blockingReason() !== undefined) return true;
+      const entry = mounted.get(id);
+      const record = store.get(id);
+      if (entry !== undefined && record !== undefined) {
+        const element = entry.displayedElement;
+        const included = this.includes(element);
+        const needsGeometry =
+          included &&
+          (this.#traces.get(id)?.needsGeometry(element, entry.displayedPathParts) ?? true);
+        const cachedCenterPath =
+          needsGeometry && element.kind === "stroke" && element.style.pressureEnabled
+            ? (this.#cache.read(element) ?? null)
+            : undefined;
+        if (!this.update(entry, element, entry.displayedPathParts, budget, cachedCenterPath))
+          return true;
+      }
+      dirty.delete(id);
+      slice.record();
+    }
+    return false;
   }
 
   public transform(id: string, entry: MountedSceneElement): void {
@@ -86,23 +130,42 @@ export class SceneSelectionTraces {
     this.#bytes += center.memoryUsage() - before;
   }
   public prune(mounted: ReadonlyMap<string, MountedSceneElement>): void {
+    let removed: string[] | undefined;
     for (const id of this.#traces.keys())
-      if (!mounted.has(id) || !this.#selected.has(id)) this.remove(id);
+      if (!mounted.has(id) || !this.#selected.has(id)) (removed ??= []).push(id);
+    if (removed !== undefined) this.removeMany(removed);
   }
   public release(): void {
-    for (const trace of this.#traces.values()) trace.release();
-    this.#traces.clear();
+    this.removeMany([...this.#traces.keys()]);
+    this.#cache.clear();
     this.#selected = new Set();
     this.#selectionDirty = false;
     this.#bytes = 0;
     this.syncFrameOutline();
   }
   private remove(id: string): void {
+    this.removeTrace(id);
+    this.syncFrameOutline();
+  }
+  private removeTrace(id: string): void {
     const trace = this.#traces.get(id);
     if (trace === undefined) return;
-    this.#bytes -= trace.memoryUsage();
+    const bytes = trace.memoryUsage();
     trace.release();
+    this.#bytes -= bytes;
     this.#traces.delete(id);
+  }
+  private removeMany(ids: readonly string[]): void {
+    if (ids.length === 0) return;
+    // Release large batches outside the connected SVG. SceneDom keeps this
+    // group last in the camera group, so appending restores its original order.
+    const parent = ids.length >= 32 ? this.#group.parentNode : null;
+    if (parent !== null) this.#group.remove();
+    try {
+      for (const id of ids) this.removeTrace(id);
+    } finally {
+      if (parent !== null) parent.appendChild(this.#group);
+    }
     this.syncFrameOutline();
   }
   private syncFrameOutline(): void {

@@ -1,4 +1,5 @@
 import { isReducedMotion, type MotionPreference } from "../../rendering/motion/transitions";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { ActiveHeightTransition } from "./active-editor/height-transition";
 import { LAYOUT_TRANSITION_CLASS } from "./transition-scroll-stability";
 
@@ -21,6 +22,7 @@ export interface PresentationEntranceState {
 }
 
 interface PresentationEntranceOptions {
+  readonly workScheduler: WorkScheduler;
   readonly motion: () => MotionPreference;
   readonly onPresented: () => void;
   readonly ownerWindow: Window;
@@ -49,7 +51,7 @@ export class PresentationEntrance {
     this.#options = options;
     this.#state = options.state ?? { presented: false };
     this.#query = options.ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
-    this.#transition = new ActiveHeightTransition(options.root, options.ownerWindow);
+    this.#transition = new ActiveHeightTransition(options.root, options.workScheduler);
     this.measured = new Promise((resolve) => {
       this.#resolveMeasured = resolve;
     });

@@ -1,7 +1,12 @@
 import type { PreparedPressureGeometryPort } from "./prepared-pressure-geometry";
 import type { PressureOutlinePiece } from "./pressure-outline-piece";
 import { assertPressureOutlineInput } from "./pressure-outline-validation";
-import { buildPressureCapsule, type PressureCenter } from "./pressure-joins";
+import {
+  buildPressureCapsule,
+  buildPressureCapsuleFromNibs,
+  preparePressureNib,
+  type PressureCenter,
+} from "./pressure-joins";
 import type { PressureDisk, PressureCapsule } from "./pressure-joins";
 import { pressureRadius } from "./pressure-radius";
 import { simplifyStrokeCenters } from "./stroke-simplification";
@@ -52,8 +57,12 @@ export function visitPreparedPressureOutline(
     });
   const first = slice.firstBoundary ?? 0;
   const last = slice.lastBoundary ?? centers.length - 1;
+  if (first >= last) return false;
+  let start = preparePressureNib(centers[first]!, width);
   for (let index = first; index < last; index += 1) {
-    const capsule = buildPressureCapsule(centers[index]!, centers[index + 1]!, width);
+    const end = preparePressureNib(centers[index + 1]!, width);
+    const capsule = buildPressureCapsuleFromNibs(start, end);
+    start = end;
     if (capsule.kind === "dot") {
       if (coveredDisk(centers, index, width, capsule)) continue;
       if (visitor(capsule)) return true;

@@ -3,6 +3,7 @@ import {
   type ElementMutationPlan,
   type MutationSource,
 } from "./element-mutation";
+import { createRemovalMutationTimeSliced } from "./removal-mutation";
 import type {
   AppliedElementMutation,
   ElementMutation,
@@ -24,6 +25,7 @@ export class PreparedElementMutations {
   >();
   readonly #readVersion: () => number;
   readonly #readSource: () => VersionedMutationSource;
+  readonly #trustedRemovalVersions = new WeakMap<ElementMutation, number>();
 
   public constructor(
     readSource: () => VersionedMutationSource,
@@ -33,6 +35,24 @@ export class PreparedElementMutations {
     this.#readSource = readSource;
     this.#readVersion = readVersion;
     this.#adopt = adopt;
+  }
+
+  public async createRemovalMutationTimeSliced(
+    ids: ReadonlySet<string> | readonly string[],
+    scheduler: StoreSliceScheduler,
+  ): Promise<ElementMutation | "cancelled" | null> {
+    const source = this.#readSource();
+    const mutation = await createRemovalMutationTimeSliced(ids, source.records, source.bands, {
+      isCancelled: () =>
+        source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
+      shouldYield: scheduler.shouldYield,
+      yieldControl: scheduler.yieldControl,
+    });
+    if (source.mutationVersion !== this.#readVersion() || scheduler.isCancelled?.())
+      return "cancelled";
+    if (mutation === null || mutation === "cancelled") return mutation;
+    this.#trustedRemovalVersions.set(mutation, source.mutationVersion);
+    return mutation;
   }
 
   public async prepare(
@@ -51,6 +71,7 @@ export class PreparedElementMutations {
         yieldControl: scheduler.yieldControl,
       },
       replay,
+      replay === undefined && this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
     );
     if (plan === "cancelled" || source.mutationVersion !== this.#readVersion()) {
       return { status: "cancelled", token: null };

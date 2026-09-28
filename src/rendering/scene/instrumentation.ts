@@ -26,8 +26,6 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     liveTailNodesCreated: 0,
     liveTailNodesRemoved: 0,
     maximumMountSliceElements: 0,
-    maximumMountSliceGeometryCost: 0,
-    maximumMountSliceStrokePoints: 0,
     mountBudgetYields: 0,
     mountDeadlineYields: 0,
     mountSlices: 0,
@@ -54,7 +52,9 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     staleFrames: 0,
     themeWrites: 0,
     visibilityCandidateCacheHits: 0,
+    visibilityCandidateVisits: 0,
     visibilityHysteresisHits: 0,
+    visibilityReconcileVisits: 0,
     visibilitySortSkips: 0,
   };
 }

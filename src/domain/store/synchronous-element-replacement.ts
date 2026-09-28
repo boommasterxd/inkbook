@@ -2,7 +2,12 @@ import type { UniformSpatialIndex } from "../spatial/index";
 
 import { DeltaBuilder } from "./delta-builder";
 import type { DocumentCapacity } from "./document-capacity";
-import { createReplacementRecord, nextRecordVersion } from "./record-factory";
+import {
+  createReplacementRecord,
+  createOwnedTranslatedReplacementRecord,
+  nextRecordVersion,
+} from "./record-factory";
+import { getCanonicalStrokeReplacementProof } from "../elements/stroke-replacement-proof";
 import {
   commitReverseConnectionPatches,
   createReverseConnectionPatches,
@@ -40,7 +45,7 @@ export function commitSynchronousReplacements(
     ? nextRecordVersion(state.paintVersion, "paintVersion")
     : state.paintVersion;
   const records = candidates.map(({ current, domains, element }) =>
-    createReplacementRecord(
+    replacementRecord(
       element,
       current,
       domains.includes("geometry") ? geometryVersion : current.geometryVersion,
@@ -79,4 +84,22 @@ export function commitSynchronousReplacements(
     paintVersion,
     replacementCount: candidates.length,
   };
+}
+
+function replacementRecord(
+  element: ReplacementCandidate["element"],
+  current: ElementRecord,
+  geometryVersion: number,
+  paintVersion: number,
+): ElementRecord {
+  const proof = getCanonicalStrokeReplacementProof(element);
+  return proof?.source === current.element
+    ? createOwnedTranslatedReplacementRecord(
+        element,
+        current,
+        geometryVersion,
+        paintVersion,
+        proof.translation,
+      )
+    : createReplacementRecord(element, current, geometryVersion, paintVersion);
 }

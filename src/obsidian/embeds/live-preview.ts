@@ -89,7 +89,7 @@ function recognizeVisibleEmbeds(
       isExecutableEmbedSyntax(view, embed.from, embed.to)
     ) {
       pending.add(documentId);
-      void ports.documents.recognize(documentId);
+      void ports.documents.recognize(documentId, view.dom.ownerDocument.defaultView);
     }
   });
 }
@@ -236,7 +236,7 @@ function subscribeRecognitions(
       view.dispatch({ effects: documentRecognitionChanged.of(changed) });
       for (const id of changed) {
         if (view.state.field(field).blocks.has(id) && ports.documents.cached(id) === undefined)
-          void ports.documents.recognize(id);
+          void ports.documents.recognize(id, view.dom.ownerDocument.defaultView);
       }
     });
   });

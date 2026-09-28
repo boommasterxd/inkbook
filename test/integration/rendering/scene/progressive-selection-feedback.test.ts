@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildElementPathParts,
@@ -10,7 +10,21 @@ import { rectangle } from "../../../unit/domain/store/fixtures";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { createAllElementSnapshot } from "../../../unit/persistence/serialization/fixtures";
-import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
+import { FakeSceneStore, fakeNode, type FakeScheduler } from "../../../unit/rendering/scene/fakes";
+import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
+
+afterEach(() => vi.restoreAllMocks());
+
+function chargePreviewSteps(scheduler: FakeScheduler) {
+  const originalStep = Reflect.get(ProgressivePreviewPath.prototype, "step");
+  const steps = vi.spyOn(ProgressivePreviewPath.prototype, "step");
+  steps.mockImplementation(function (this: ProgressivePreviewPath, deadline, now) {
+    const complete = originalStep.call(this, deadline, now);
+    scheduler.time += 1;
+    return complete;
+  });
+  return steps;
+}
 
 function setup(pressureEnabled: boolean, includeBox = false) {
   const elements: InkElementV1[] = [indexedStroke(1), indexedStroke(2)].map((element) => ({
@@ -63,10 +77,9 @@ describe("progressive resize pointer feedback", () => {
     for (const scale of [2, 3, 0.5, 4]) {
       request(scale);
       scheduler.runAll();
-      expect(nodes.map((node) => node.attributes.get("transform"))).toEqual([
-        `scale(${scale} 1)`,
-        `scale(${scale} 1)`,
-      ]);
+      expect(nodes.every((node) => node.attributes.get("transform") === `scale(${scale} 1)`)).toBe(
+        true,
+      );
       expect(nodes.map((node) => node.attributes.get("d"))).toEqual(original);
       expect(
         nodes.every((node) => node.attributes.get("vector-effect") === "non-scaling-stroke"),
@@ -95,10 +108,8 @@ describe("progressive resize pointer feedback", () => {
         expect(basis).toBeDefined();
         expect(paths[index]!.attributes.get("fill-rule")).toBe("nonzero");
         expect(paths[index]!.attributes.has("stroke-width")).toBe(false);
-        const transform =
-          scale === basis
-            ? undefined
-            : `scale(${scale} 1)${basis === 1 ? "" : ` scale(${1 / basis!} 1)`}`;
+        const inverse = basis === 1 ? "" : ` scale(${1 / basis!} 1)`;
+        const transform = scale === basis ? undefined : `scale(${scale} 1)${inverse}`;
         expect(nodes[index]!.attributes.get("transform")).toBe(transform);
         if (d !== previous[index]) publications += 1;
       }
@@ -128,14 +139,23 @@ describe("progressive resize pointer feedback", () => {
 
   it("publishes canonical rotated shapes on every pointer frame beside long pressure strokes", () => {
     const { renderer, scheduler, nodes, request } = setup(true, true);
+    const pressurePaths = nodes.slice(0, 2).map((node) => node.nodes[0]!.attributes.get("d"));
+    const steps = chargePreviewSteps(scheduler);
     for (const scale of [2, 3, 4]) {
-      const replacements = request(scale);
-      expect(nodes[2]!.attributes.get("d")).toBe(buildElementPathParts(replacements[2]!)[0]!.d);
-      expect(nodes[2]!.attributes.has("transform")).toBe(false);
-      expect(nodes[0]!.attributes.get("transform")).toBe(`scale(${scale} 1)`);
-      expect(nodes[1]!.attributes.get("transform")).toBe(`scale(${scale} 1)`);
-      scheduler.runNext();
+      scheduler.time += 16;
+      scheduler.workScheduler.requestFrame(() => {
+        const replacements = request(scale);
+        expect(nodes[2]!.attributes.get("d")).toBe(buildElementPathParts(replacements[2]!)[0]!.d);
+        expect(nodes[2]!.attributes.has("transform")).toBe(false);
+        expect(nodes[0]!.attributes.get("transform")).toBe(`scale(${scale} 1)`);
+        expect(nodes[1]!.attributes.get("transform")).toBe(`scale(${scale} 1)`);
+      }, "input");
+      scheduler.runFrame();
+      expect(nodes.slice(0, 2).map((node) => node.nodes[0]!.attributes.get("d"))).toEqual(
+        pressurePaths,
+      );
     }
+    expect(steps.mock.calls.length).toBeGreaterThan(4);
     renderer.destroy();
   });
 

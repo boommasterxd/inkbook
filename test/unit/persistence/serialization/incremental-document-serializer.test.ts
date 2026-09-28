@@ -99,7 +99,7 @@ describe("incremental document fragments", () => {
 });
 
 describe("incremental bounds derivation reuse", () => {
-  it("reuses validated store bounds and rejects mismatched derivations atomically", () => {
+  it("reuses matching bounds, recomputes stale hints and rejects mismatched identities atomically", () => {
     const snapshot = createAllElementSnapshot();
     const serializer = new IncrementalDocumentSerializer();
     expect(serializer.reset(snapshot).ok).toBe(true);
@@ -133,16 +133,27 @@ describe("incremental bounds derivation reuse", () => {
       ...derivation,
       bounds: { ...derivation.bounds, maxX: derivation.bounds.maxX + 1 },
     };
-    for (const invalidDerivation of [staleDerivation, { ...derivation, elementId: uuid(99) }]) {
+    expect(
+      serializer.applyDelta({
+        baseModelRevision: 8,
+        changedElementDerivations: [staleDerivation],
+        changedElements: [changed],
+        modelRevision: 9,
+      }),
+    ).toEqual({ ok: true, value: undefined });
+    for (const invalidDerivation of [
+      { ...derivation, elementId: uuid(99) },
+      { ...derivation, spatialMemberships: derivation.spatialMemberships + 1 },
+    ]) {
       expect(
         serializer.applyDelta({
-          baseModelRevision: 8,
+          baseModelRevision: 9,
           changedElementDerivations: [invalidDerivation],
           changedElements: [changed],
-          modelRevision: 9,
+          modelRevision: 10,
         }),
       ).toMatchObject({ error: { code: "invalid-delta" }, ok: false });
-      expect(serializer.currentSnapshot()?.revision).toBe(8);
+      expect(serializer.currentSnapshot()?.revision).toBe(9);
     }
   });
 });
@@ -197,11 +208,20 @@ describe("incremental background boundaries", () => {
       ok: false,
       error: { code: "static-output-limit-exceeded" },
     });
-    await expect(serializer.serializeChunked()).resolves.toMatchObject({
+    let checkpoints = 0;
+    await expect(
+      serializer.serializeChunked({
+        checkpoint: async () => {
+          checkpoints += 1;
+        },
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       error: { code: "static-output-limit-exceeded" },
     });
     expect(serializer.instrumentation.backgroundBuilds).toBe(0);
+    expect(serializer.instrumentation.fragmentBuilds).toBe(0);
+    expect(checkpoints).toBe(0);
   });
 });
 

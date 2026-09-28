@@ -54,7 +54,13 @@ function interpolateStroke(
   if (from.points.length !== to.points.length) return to;
   return {
     ...base(from, to, progress),
-    points: to.points.map((value, index) => number(from.points[index] ?? value, value, progress)),
+    ...(from.offset === undefined && to.offset === undefined
+      ? {}
+      : { offset: point(from.offset ?? { x: 0, y: 0 }, to.offset ?? { x: 0, y: 0 }, progress) }),
+    points:
+      from.points === to.points
+        ? to.points
+        : to.points.map((value, index) => number(from.points[index] ?? value, value, progress)),
   };
 }
 

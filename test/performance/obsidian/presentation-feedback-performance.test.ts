@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 
 import { PresentationOperationFeedback } from "../../../src/obsidian/embeds/presentation-operation-feedback";
 import { FakePresentationElement } from "../../fixtures/obsidian/presentation-dom";
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 it("hands off overdue loading feedback synchronously with bounded work", () => {
   const root = new FakePresentationElement();
@@ -13,7 +14,11 @@ it("hands off overdue loading feedback synchronously with bounded work", () => {
     requestAnimationFrame: () => ++scheduledWork,
     setTimeout: () => ++scheduledWork,
   });
-  const feedback = new PresentationOperationFeedback(root as unknown as HTMLElement);
+  const feedback = new PresentationOperationFeedback(
+    root as unknown as HTMLElement,
+    undefined,
+    workSchedulerFromFrames(ownerWindow),
+  );
 
   let invalidIndicators = 0;
   let retainedIndicators = 0;
@@ -59,7 +64,11 @@ it("positions detached loading feedback after attachment with bounded work", () 
   let retainedResources = 0;
   for (let sample = 0; sample < 2; sample += 1) {
     root.isConnected = false;
-    const feedback = new PresentationOperationFeedback(root as unknown as HTMLElement);
+    const feedback = new PresentationOperationFeedback(
+      root as unknown as HTMLElement,
+      undefined,
+      workSchedulerFromFrames(ownerWindow),
+    );
 
     feedback.begin("loading", 0);
     const indicators = root.getElementsByClassName("inkbook-operation-feedback");

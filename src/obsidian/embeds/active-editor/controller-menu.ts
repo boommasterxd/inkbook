@@ -14,6 +14,7 @@ import type { InputPoint } from "../../../editor/input/index";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { Keymap } from "obsidian";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 interface ActiveEditorMenuOptions {
   readonly event?: MouseEvent;
@@ -90,6 +91,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
 }
 
 export interface ActiveEditorMenuControllerOptions {
+  readonly workScheduler: WorkScheduler;
   readonly actions: ActiveEditorActions;
   readonly factory: MenuFactoryPort;
   readonly inputSurface: SvgSceneRenderer["inputSurface"];
@@ -194,6 +196,7 @@ export class ActiveEditorMenuController {
       },
       ownerDocument: this.#options.ownerDocument,
       ownerWindow,
+      workScheduler: this.#options.workScheduler,
       renderIcon: options.renderIcon,
     });
     this.#toolbarSession = session;

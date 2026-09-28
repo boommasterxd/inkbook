@@ -1,4 +1,5 @@
 import { setIcon } from "obsidian";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import {
   createPresentationFeedbackPositionLifecycle,
@@ -23,16 +24,24 @@ export class PresentationOperationFeedback {
   #indicator: HTMLElement | undefined;
   #positioning: PresentationFeedbackPositionLifecycle | undefined;
   readonly #ownerWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   readonly #root: HTMLElement;
   readonly #onLoadingShown: (() => void) | undefined;
   #timer: number | undefined;
 
-  public constructor(root: HTMLElement, onLoadingShown?: () => void) {
+  public constructor(
+    root: HTMLElement,
+    onLoadingShown?: () => void,
+    workScheduler?: WorkScheduler,
+  ) {
     const ownerWindow = root.ownerDocument.defaultView;
     if (ownerWindow === null) {
       throw new Error("Presentation feedback requires an owning window.");
     }
     this.#ownerWindow = ownerWindow;
+    if (workScheduler === undefined)
+      throw new Error("Presentation feedback requires a work scheduler.");
+    this.#workScheduler = workScheduler;
     this.#root = root;
     this.#onLoadingShown = onLoadingShown;
   }
@@ -56,7 +65,7 @@ export class PresentationOperationFeedback {
         this.#show(kind);
         return;
       }
-      this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+      this.#frame = this.#workScheduler.requestFrame(() => {
         if (this.#disposed || token !== this.#activeToken) return;
         this.#frame = undefined;
         this.#show(kind);
@@ -108,13 +117,14 @@ export class PresentationOperationFeedback {
       indicator,
       this.#root,
       "center",
+      this.#workScheduler,
     );
   }
 
   #clearCurrent(): void {
     if (this.#timer !== undefined) this.#ownerWindow.clearTimeout(this.#timer);
     this.#timer = undefined;
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#positioning?.dispose();
     this.#positioning = undefined;

@@ -1,5 +1,9 @@
 import { renderBandOf } from "../commands/render-bands";
-import { getCanonicalStrokeReplacementProof } from "../elements/stroke-replacement-proof";
+import {
+  inferStoredStrokeTranslation,
+  isValidatedInternalStyleReplacement,
+} from "../elements/stroke-replacement-proof";
+import { validateRuntimeReplacement } from "../elements/runtime-replacement-validation";
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
 import type { InkElementV1 } from "../schema/public";
 import { validateInkElementV1 } from "../schema/public";
@@ -88,9 +92,13 @@ async function prepareReplacementDraftsTimeSliced(
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
     prepareDraft(drafts, replacement, ports.getRecord);
-    const checkpoint = await yieldWhenRequested(scheduler);
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   const lookup = createLookup(drafts, ports.getRecord);
   const connectionRoots: string[] = [];
@@ -100,9 +108,13 @@ async function prepareReplacementDraftsTimeSliced(
       drafts.set(id, resolveConnections(draft, lookup));
       connectionRoots.push(id);
     }
-    const checkpoint = await yieldWhenRequested(scheduler);
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   assertAcyclicConnections(connectionRoots, lookup);
   const propagation = await propagateTargetChangesTimeSliced(drafts, ports, scheduler);
@@ -178,13 +190,21 @@ async function propagateTargetChangesTimeSliced(
     for (const reference of references) {
       if (cancelled(scheduler)) return "cancelled";
       propagateReference(reference, { drafts, lookup, ports, queue, queued });
-      const referenceCheckpoint = await yieldWhenRequested(scheduler);
+      const referenceCheckpoint = yieldWhenRequested(scheduler);
       if (referenceCheckpoint === "cancelled") return referenceCheckpoint;
-      yields += referenceCheckpoint;
+      if (referenceCheckpoint !== 0) {
+        const yielded = await referenceCheckpoint;
+        if (yielded === "cancelled") return yielded;
+        yields += yielded;
+      }
     }
-    const checkpoint = await yieldWhenRequested(scheduler);
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   return yields;
 }
@@ -249,9 +269,13 @@ async function classifyReplacementDraftsTimeSliced(
     if (cancelled(scheduler)) return "cancelled";
     const candidate = classifyCandidate(id, element, getRecord, lookup);
     if (candidate !== null) candidates.push(candidate);
-    const checkpoint = await yieldWhenRequested(scheduler);
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   return { candidates, yields };
 }
@@ -272,7 +296,7 @@ function classifyCandidate(
   if (elementsEqual(current.element, element)) return null;
   const domains = classifyReplacement(current.element, element);
   if (domains.length === 0) throw new RangeError("Replacement changed unsupported record fields.");
-  assertValidReplacementElement(current.element, element);
+  if (isConnectable(element)) assertValidReplacementElement(current.element, element);
   assertResolvedConnections(element, lookup);
   return { current, domains: Object.freeze(domains), element };
 }
@@ -289,7 +313,7 @@ function canonicalStrokeTranslation(
   replacement: InkElementV1,
 ): Readonly<{ x: number; y: number }> | null {
   if (current.kind !== "stroke" || replacement.kind !== "stroke") return null;
-  const proof = getCanonicalStrokeReplacementProof(replacement);
+  const proof = inferStoredStrokeTranslation(current, replacement);
   return proof?.source === current ? proof.translation : null;
 }
 
@@ -359,14 +383,20 @@ export function assertValidReplacementElement(
   current: ImmutableInkElement,
   replacement: InkElementV1,
 ): void {
+  if (isValidatedInternalStyleReplacement(current, replacement)) return;
   const isOwnedRuntimeStroke =
     current.kind === "stroke" &&
     current.points instanceof Float64Array &&
     replacement.kind === "stroke" &&
     replacement.points instanceof Float64Array;
-  const result = isOwnedRuntimeStroke
-    ? validateRuntimeInkElementV1(replacement)
-    : validateInkElementV1(replacement);
+  const reusesStrokeSamples =
+    current.kind === "stroke" &&
+    replacement.kind === "stroke" &&
+    current.points === replacement.points;
+  const result =
+    isOwnedRuntimeStroke || reusesStrokeSamples
+      ? validateRuntimeReplacement(current, replacement)
+      : validateInkElementV1(replacement);
   if (!result.ok) throw new RangeError(`Invalid element replacement: ${result.error.code}`);
 }
 

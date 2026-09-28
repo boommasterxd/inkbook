@@ -7,7 +7,7 @@ export function* hasInteriorLassoBoundary(
   inner: readonly PointV1[],
   outer: readonly PointV1[],
   contains: (point: PointV1, polygon: readonly PointV1[]) => boolean,
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   let checked = 0;
   for (const [start, end] of lassoEdges(outer)) {
     checked += 1;
@@ -30,11 +30,11 @@ export function* hasInteriorLassoBoundary(
 export function* hasOddLassoBoundary(
   outer: readonly PointV1[],
   near: (start: PointV1, end: PointV1) => boolean,
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   let checked = 0;
   for (const [start, end] of lassoEdges(outer)) {
     checked += 1;
-    if (checked % 16 === 0) yield;
+    if (checked % 16 === 0) yield 16;
     if (!near(start, end)) continue;
     const times = yield* overlapTimes(start, end, outer);
     for (let part = 1; part < times.length; part += 1) {
@@ -67,7 +67,7 @@ function* overlapTimes(
   start: PointV1,
   end: PointV1,
   outer: readonly PointV1[],
-): Generator<void, number[]> {
+): Generator<number | void, number[]> {
   const times = [0, 1];
   for (let vertex = 0; vertex < outer.length; vertex += 1) {
     const point = outer[vertex]!;
@@ -75,7 +75,7 @@ function* overlapTimes(
       const time = projectedTime(point, start, end);
       if (time > 0 && time < 1) times.push(time);
     }
-    if (vertex % 32 === 31) yield;
+    if (vertex % 32 === 31) yield 32;
   }
   return times.sort((left, right) => left - right);
 }
@@ -85,7 +85,7 @@ function* edgeMultiplicity(
   start: PointV1,
   end: PointV1,
   outer: readonly PointV1[],
-): Generator<void, number> {
+): Generator<number | void, number> {
   let multiplicity = 0;
   for (let edge = 0; edge < outer.length; edge += 1) {
     const first = outer[edge]!;
@@ -93,7 +93,7 @@ function* edgeMultiplicity(
     const time = projectedTime(point, first, last);
     if (onLine(first, start, end) && onLine(last, start, end) && time > 0 && time < 1)
       multiplicity += 1;
-    if (edge % 32 === 31) yield;
+    if (edge % 32 === 31) yield 32;
   }
   return multiplicity;
 }

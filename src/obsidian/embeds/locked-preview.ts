@@ -1,6 +1,8 @@
 import { Platform } from "obsidian";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { createPreviewSvgAsync } from "./safe-preview-builder";
 import { PreviewIdleScheduler } from "./preview-idle-scheduler";
+import type { InkbookDocumentRecognitionPort } from "./document-recognition";
 
 import {
   loadValidatedPreviewSvg,
@@ -37,9 +39,13 @@ export interface InkbookLockedPreviewSurface {
 export function createInkbookLockedPreview(
   button: HTMLButtonElement,
   descriptor: InkbookLockedPreviewDescriptor,
-  sliceBudgetMs?: () => number,
+  workScheduler: WorkScheduler,
+  sourceLoader?: {
+    readonly documentId: string;
+    readonly documents: InkbookDocumentRecognitionPort;
+  },
 ): InkbookLockedPreviewSurface {
-  return new LockedPreview(button, descriptor, sliceBudgetMs);
+  return new LockedPreview(button, descriptor, workScheduler, sourceLoader);
 }
 
 class LockedPreview implements InkbookLockedPreviewSurface {
@@ -60,7 +66,11 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   public constructor(
     public readonly element: HTMLButtonElement,
     descriptor: InkbookLockedPreviewDescriptor,
-    private readonly sliceBudgetMs?: () => number,
+    private readonly workScheduler: WorkScheduler,
+    private readonly sourceLoader?: {
+      readonly documentId: string;
+      readonly documents: InkbookDocumentRecognitionPort;
+    },
   ) {
     if (Platform.isAndroidApp) element.classList.add("inkbook-locked-preview-android");
     this.#media = element.createDiv({ cls: "inkbook-locked-preview-media" });
@@ -68,7 +78,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     const ownerWindow = element.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The Inkbook preview has no owning window.");
     this.#window = ownerWindow;
-    this.#scheduler = new PreviewIdleScheduler(ownerWindow);
+    this.#scheduler = new PreviewIdleScheduler(workScheduler);
     this.#descriptor = descriptor;
     this.#mountedIdentity = undefined;
     this.setAspectRatio(descriptor.aspectRatio);
@@ -93,14 +103,9 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   };
 
   public readonly ensureReady = async (): Promise<void> => {
-    this.#scheduler.promote();
-    try {
-      while (this.#pending !== undefined || this.#sourcePending !== undefined) {
-        await this.#sourcePending;
-        await this.#pending;
-      }
-    } finally {
-      this.#scheduler.demote();
+    while (this.#pending !== undefined || this.#sourcePending !== undefined) {
+      await this.#sourcePending;
+      await this.#pending;
     }
     if (this.#failure !== undefined) throw this.#failure;
   };
@@ -131,13 +136,21 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   ): Promise<PreviewContentIdentity | undefined> {
     const generation = ++this.#sourceGeneration;
     try {
-      const loaded = await loadValidatedPreviewSvg(
-        source,
-        this.#window,
-        () => this.#scheduler.waitForBackground(abort.signal),
-        abort.signal,
-        this.sliceBudgetMs,
-      );
+      if (this.sourceLoader?.documents.loadPreviewSource !== undefined)
+        await this.#scheduler.waitForBackground(abort.signal);
+      if (abort.signal.aborted) return undefined;
+      const loaded = await (this.sourceLoader?.documents.loadPreviewSource === undefined
+        ? loadValidatedPreviewSvg(source, this.#window, {
+            waitForBackground: () => this.#scheduler.waitForBackground(abort.signal),
+            signal: abort.signal,
+            workScheduler: this.workScheduler,
+          })
+        : this.sourceLoader.documents.loadPreviewSource(
+            this.sourceLoader.documentId,
+            source,
+            () => this.#scheduler.waitForBackground(abort.signal),
+            this.#window,
+          ));
       if (this.#disposed || generation !== this.#sourceGeneration) return undefined;
       this.#update(loaded);
       return loaded.contentIdentity;
@@ -200,10 +213,9 @@ class LockedPreview implements InkbookLockedPreviewSurface {
         this.element.ownerDocument,
         this.#descriptor.safeSvg,
         {
-          checkpoint: () => this.#scheduler.checkpoint(),
-          now: () => this.#window.performance.now(),
-          ...(this.sliceBudgetMs === undefined ? {} : { sliceBudgetMs: this.sliceBudgetMs }),
+          checkpoint: (initial) => this.#scheduler.checkpoint(initial),
           isCancelled: () => this.#disposed || target !== this.#generation,
+          workScheduler: this.workScheduler,
         },
       );
       if (this.#disposed) return;

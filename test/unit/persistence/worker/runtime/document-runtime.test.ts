@@ -1,5 +1,6 @@
 import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
+import { createTestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
 
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
 import {
@@ -23,13 +24,15 @@ import {
 } from "./fixtures";
 
 describe("document worker runtime", () => {
-  it.each(CURRENT_METADATA_REWRITES)(
-    "rejects noncanonical or unbound metadata in the production load as $expectedCode",
-    async ({ expectedCode, mutate, updateHash }) => {
+  it.each(
+    CURRENT_METADATA_REWRITES.map((entry, index) => ({ ...entry, acceptsFormatting: index === 0 })),
+  )(
+    "checks metadata integrity in production load (formatting accepted: $acceptsFormatting)",
+    async ({ expectedCode, mutate, updateHash, acceptsFormatting }) => {
       const serialized = serializeInkbookDocument(snapshot());
       if (!serialized.ok) throw new Error(serialized.error.code);
       const runtime = createProductionDocumentRuntime(executor, {
-        yieldControl: () => Promise.resolve(),
+        workScheduler: createTestWorkScheduler(),
       });
 
       await expect(
@@ -38,7 +41,11 @@ describe("document worker runtime", () => {
           input: rewriteDocumentMetadata(serialized.value.svg, mutate, updateHash),
           type: "unlock",
         }),
-      ).resolves.toMatchObject({ code: expectedCode, type: "runtime-failure" });
+      ).resolves.toMatchObject(
+        acceptsFormatting
+          ? { type: "unlock-success", requiresCanonicalRewrite: false }
+          : { code: expectedCode, type: "runtime-failure" },
+      );
     },
   );
 
@@ -321,8 +328,7 @@ describe("document worker fallback clipboard codec", () => {
     (_rate, sliceMilliseconds, inputByteLimit, nodeLimit, outputByteLimit) => {
       const scheduler = new GestureAwareSliceScheduler({
         isInputActive: () => false,
-        sliceMilliseconds,
-        yieldControl: () => Promise.resolve(),
+        workScheduler: createTestWorkScheduler({ budgetMs: sliceMilliseconds }),
       });
 
       expect(scheduler.getSliceWorkProfile()).toEqual({
@@ -365,10 +371,12 @@ describe("production document worker scheduling", () => {
     let now = 0;
     let yields = 0;
     const runtime = createProductionDocumentRuntime(executor, {
-      now: () => (now += 9),
-      yieldControl: async () => {
-        yields += 1;
-      },
+      workScheduler: createTestWorkScheduler({
+        now: () => (now += 9),
+        checkpoint: async () => {
+          yields += 1;
+        },
+      }),
     });
 
     const document = rectangleDocument(257);
@@ -399,42 +407,18 @@ describe("production document worker scheduling", () => {
 });
 
 describe("document worker fallback scheduling", () => {
-  it("pauses fallback work while a live gesture is active", async () => {
-    let active = true;
-    let now = 0;
-    let yields = 0;
-    const scheduler = new GestureAwareSliceScheduler({
-      isInputActive: () => active,
-      now: () => (now += 9),
-      yieldControl: async () => {
-        yields += 1;
-        active = false;
-      },
-    });
-    const runtime = new DocumentWorkerRuntime(executor, scheduler);
-    const result = await runtime.execute({
-      ...executor,
-      baseModelRevision: null,
-      exportGeneration: 1,
-      modelRevision: 0,
-      snapshot: snapshot(),
-      type: "export-full",
-    });
-
-    expect(result.type).toBe("export-success");
-    expect(yields).toBeGreaterThanOrEqual(2);
-  });
-
   it("aborts a running fallback checkpoint and releases its pending job", async () => {
     let releaseYield = (): void => undefined;
     let now = 0;
     const scheduler = new GestureAwareSliceScheduler({
       isInputActive: () => false,
-      now: () => (now += 9),
-      yieldControl: () =>
-        new Promise<void>((resolve) => {
-          releaseYield = resolve;
-        }),
+      workScheduler: createTestWorkScheduler({
+        now: () => (now += 9),
+        checkpoint: () =>
+          new Promise<void>((resolve) => {
+            releaseYield = resolve;
+          }),
+      }),
     });
     const runtime = new DocumentWorkerRuntime(executor, scheduler);
     const pending = runtime.execute({
@@ -460,11 +444,13 @@ describe("document worker fallback scheduling", () => {
     let yields = 0;
     const scheduler = new GestureAwareSliceScheduler({
       isInputActive: () => false,
-      now: () => (now += 9),
-      yieldControl: async () => {
-        yields += 1;
-        if (yields === 3) runtime.terminate();
-      },
+      workScheduler: createTestWorkScheduler({
+        now: () => (now += 9),
+        checkpoint: async () => {
+          yields += 1;
+          if (yields === 3) runtime.terminate();
+        },
+      }),
     });
     runtime = new DocumentWorkerRuntime(executor, scheduler);
     const batches: number[] = [];

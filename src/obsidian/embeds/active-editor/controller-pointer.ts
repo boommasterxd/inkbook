@@ -51,7 +51,10 @@ export class ActiveEditorPointerController {
   }
 
   public handleContextMenu(event: MouseEvent): void {
-    if ("pointerType" in event && event.pointerType === "pen") {
+    if (
+      ("pointerType" in event && (event.pointerType === "pen" || event.pointerType === "touch")) ||
+      isTouchCompatibilityEvent(event)
+    ) {
       if (event.cancelable) event.preventDefault();
       return;
     }
@@ -388,5 +391,17 @@ function claimsPointerGesture(
   return (
     interaction !== undefined &&
     (event.pointerType !== "touch" || touchInteractionBlocksNativeScroll(interaction))
+  );
+}
+
+/** Touch menus are opened once by the editor's long-press scheduler. */
+function isTouchCompatibilityEvent(event: MouseEvent): boolean {
+  if (!("sourceCapabilities" in event)) return false;
+  const capabilities = event.sourceCapabilities;
+  return (
+    capabilities !== null &&
+    typeof capabilities === "object" &&
+    "firesTouchEvents" in capabilities &&
+    capabilities.firesTouchEvents === true
   );
 }

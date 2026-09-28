@@ -1,8 +1,11 @@
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+
 const DIRECTION_THRESHOLD_PX = 6;
 const DISMISS_DISTANCE_RATIO = 0.5;
 const DISMISS_VELOCITY_PX_PER_MS = 0.45;
 
 interface PhoneSheetSwipeOptions {
+  readonly workScheduler: WorkScheduler;
   readonly backdrop: HTMLElement;
   readonly close: () => void;
   readonly onDragStart?: () => void;
@@ -220,7 +223,7 @@ export class PhoneSheetSwipeController {
     this.#pendingDragDistance = distance;
     this.#pendingDragHeight = height;
     if (this.#dragFrame !== undefined) return;
-    this.#dragFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
+    this.#dragFrame = this.#options.workScheduler.requestFrame(() => {
       this.#dragFrame = undefined;
       const pendingDistance = this.#pendingDragDistance;
       const pendingHeight = this.#pendingDragHeight;
@@ -228,7 +231,7 @@ export class PhoneSheetSwipeController {
       this.#pendingDragHeight = undefined;
       if (pendingDistance === undefined || pendingHeight === undefined) return;
       this.#applyDrag(pendingDistance, pendingHeight);
-    });
+    }, "input");
   }
 
   #applyDrag(distance: number, height: number): void {
@@ -249,7 +252,7 @@ export class PhoneSheetSwipeController {
     this.#flushPendingDrag();
     this.#options.surface.dataset.swipeState = "settling";
     this.#options.backdrop.dataset.swipeState = "settling";
-    this.#resetFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
+    this.#resetFrame = this.#options.workScheduler.requestFrame(() => {
       this.#resetFrame = undefined;
       this.#options.surface.style.removeProperty("translate");
       this.#options.backdrop.style.removeProperty("opacity");
@@ -273,7 +276,7 @@ export class PhoneSheetSwipeController {
 
   #cancelResetWork(): void {
     if (this.#resetFrame !== undefined) {
-      this.#options.ownerWindow.cancelAnimationFrame(this.#resetFrame);
+      this.#options.workScheduler.cancelFrame(this.#resetFrame);
       this.#resetFrame = undefined;
     }
     if (this.#resetTimer !== undefined) {
@@ -284,7 +287,7 @@ export class PhoneSheetSwipeController {
 
   #cancelDragFrame(): void {
     if (this.#dragFrame !== undefined) {
-      this.#options.ownerWindow.cancelAnimationFrame(this.#dragFrame);
+      this.#options.workScheduler.cancelFrame(this.#dragFrame);
       this.#dragFrame = undefined;
     }
     this.#pendingDragDistance = undefined;
@@ -293,7 +296,7 @@ export class PhoneSheetSwipeController {
 
   #flushPendingDrag(): void {
     if (this.#dragFrame !== undefined) {
-      this.#options.ownerWindow.cancelAnimationFrame(this.#dragFrame);
+      this.#options.workScheduler.cancelFrame(this.#dragFrame);
       this.#dragFrame = undefined;
     }
     const distance = this.#pendingDragDistance;

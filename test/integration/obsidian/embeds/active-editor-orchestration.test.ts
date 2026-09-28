@@ -1,35 +1,37 @@
+import { activeActions } from "../../../fixtures/obsidian/editor-actions";
+import { indexedStroke } from "../../../fixtures/editor/stroke";
+import { createLargeClipboardCandidate } from "../../../fixtures/persistence/clipboard-candidate";
 import { describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
 import type { ClipboardCandidates, PastePlan } from "../../../../src/persistence/clipboard/public";
 import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboard/constants";
 import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-editor/controller-actions";
-import { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
-import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
+import type { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import type { MenuFactoryPort, MenuItemPort, MenuPort } from "../../../../src/obsidian/menus/index";
+import { createActiveEditorMenuController } from "../../../fixtures/obsidian/active-editor-menu-controller";
 import { createClipboardModelDefaults } from "./active-editor-clipboard-fixtures";
 
 describe("active editor Clipboard discovery", () => {
-  it("exposes toolbar Paste only after validating the first system Clipboard item", async () => {
-    const planClipboardPaste = vi.fn(async () => pastePlan());
-    const model = documentModel(planClipboardPaste);
-    const stateChanged = vi.fn();
-    const actions = activeActions(
-      model,
-      new ElementSceneStore(model.store),
-      clipboardWindowWithRead("INKBOOK/1:{}"),
-      stateChanged,
+  it("exposes a toolbar candidate without planning and defers the full plan until Paste", async () => {
+    const candidate = createLargeClipboardCandidate();
+    const { actions, planClipboardPaste, stateChanged } = clipboardDiscovery(
+      clipboardWindowWithRead(candidate),
     );
 
     expect(actions.canPaste).toBe(false);
     await expect(actions.refreshPasteAvailability()).resolves.toBe(true);
     expect(actions.canPaste).toBe(true);
     expect(stateChanged).toHaveBeenCalledOnce();
+    expect(planClipboardPaste).not.toHaveBeenCalled();
+    actions.execute("paste");
+    await vi.waitFor(() => expect(planClipboardPaste).toHaveBeenCalledOnce());
     expect(planClipboardPaste).toHaveBeenCalledWith(
-      expect.objectContaining({ customText: "INKBOOK/1:{}" }),
+      expect.objectContaining({ customText: candidate }),
       { kind: "toolbar", visibleCanvasCenter: { x: 100, y: 100 } },
+      undefined,
     );
 
     expect(contextMenuTitles(actions)).toContain("Paste");
@@ -84,14 +86,8 @@ describe("active editor Clipboard discovery", () => {
     const read = new Promise<ClipboardItem[]>((resolve) => {
       completeRead = resolve;
     });
-    const planClipboardPaste = vi.fn(async () => pastePlan());
-    const model = documentModel(planClipboardPaste);
-    const stateChanged = vi.fn();
-    const actions = activeActions(
-      model,
-      new ElementSceneStore(model.store),
+    const { actions, planClipboardPaste, stateChanged } = clipboardDiscovery(
       clipboardWindow(() => read),
-      stateChanged,
     );
 
     const probe = actions.refreshPasteAvailability();
@@ -249,33 +245,56 @@ describe("active editor context-menu scaling", () => {
   });
 });
 
-function activeActions(
-  model: EditableDocumentModel,
-  sceneStore: ElementSceneStore,
-  ownerWindow: Window,
-  onStateChanged: () => void,
-  selection: ReadonlySet<string> = new Set(),
-  onFeedback?: (code: import("../../../../src/obsidian/feedback").InkbookFeedbackCode) => void,
-): ActiveEditorActions {
-  return new ActiveEditorActions({
-    renderer: { setElementFade: vi.fn(), clearElementFade: vi.fn() },
-    currentSelection: () => selection,
-    history: new ActiveEditorHistory(model),
-    isAttached: () => true,
-    isEnabled: () => true,
-    lastSessionPointer: () => null,
+it("keeps equivalent replacement selections current and rejects changed deletion selections", async () => {
+  const elements = [indexedStroke(0), indexedStroke(1)];
+  const original = new Set(elements.map(({ id }) => id));
+  let current: ReadonlySet<string> = original;
+  const prepareElementMutation = vi.fn<EditableDocumentModel["prepareElementMutation"]>(
+    async (_mutation, cancellation) => {
+      expect(cancellation?.isCancelled()).toBe(false);
+      current = new Set(original);
+      expect(cancellation?.isCancelled()).toBe(false);
+      const changed = new Set(original);
+      changed.delete(elements[0]!.id);
+      changed.add("replacement");
+      current = changed;
+      expect(cancellation?.isCancelled()).toBe(true);
+      current = new Set();
+      expect(cancellation?.isCancelled()).toBe(true);
+      return { status: "noop", token: null };
+    },
+  );
+  const model = {
+    ...documentModel(
+      vi.fn(async () => null),
+      new ElementStore(elements),
+    ),
+    prepareElementMutation,
+  };
+  const actions = activeActions(
     model,
-    onCopyEmbed: vi.fn(),
-    onDeleteEmbed: vi.fn(),
-    ...(onFeedback === undefined ? {} : { onFeedback }),
-    onPasteCommitted: vi.fn(),
-    onPendingChanged: vi.fn(),
-    onStateChanged,
+    new ElementSceneStore(model.store),
+    clipboardWindowWithEmptyRead(),
+    vi.fn(),
+    () => current,
+  );
+  actions.execute("delete");
+  await vi.waitFor(() => expect(prepareElementMutation).toHaveBeenCalledOnce());
+  await prepareElementMutation.mock.results[0]!.value;
+  actions.dispose();
+});
+
+function clipboardDiscovery(ownerWindow: Window) {
+  const planClipboardPaste = vi.fn(async () => pastePlan());
+  const model = documentModel(planClipboardPaste);
+  const stateChanged = vi.fn();
+  const actions = activeActions(
+    model,
+    new ElementSceneStore(model.store),
     ownerWindow,
-    sceneStore,
-    setSelection: vi.fn(),
-    visibleCenter: () => ({ x: 100, y: 100 }),
-  });
+    stateChanged,
+  );
+  return { actions, planClipboardPaste, stateChanged };
 }
 
 function menuController(
@@ -284,15 +303,7 @@ function menuController(
   storeSize: number,
 ): ActiveEditorMenuController {
   const factory: MenuFactoryPort = { create: () => menu, forEvent: () => menu };
-  return new ActiveEditorMenuController({
-    actions,
-    factory,
-    inputSurface: { focus: vi.fn() } as unknown as HTMLDivElement,
-    ownerDocument: {} as Document,
-    selectionSize: () => 0,
-    storeSize: () => storeSize,
-    toScreenPoint: (point) => point,
-  });
+  return createActiveEditorMenuController(actions, factory, storeSize);
 }
 
 function contextMenuTitles(actions: ActiveEditorActions): readonly string[] {
@@ -305,8 +316,8 @@ function contextMenuTitles(actions: ActiveEditorActions): readonly string[] {
 
 function documentModel(
   planClipboardPaste: EditableDocumentModel["planClipboardPaste"],
+  store = new ElementStore(),
 ): EditableDocumentModel {
-  const store = new ElementStore();
   return {
     mutationAvailability: "available",
     arrangeElements: vi.fn(),
@@ -326,6 +337,16 @@ function documentModel(
     },
     planClipboardPaste,
     prepareElementMutation: vi.fn(async () => ({ status: "noop" as const, token: null })),
+    async prepareElementRemoval(ids, cancellation) {
+      const mutation = await store.createRemovalMutationTimeSliced(ids, {
+        isCancelled: () => cancellation.isCancelled(),
+        shouldYield: () => false,
+        yieldControl: () => Promise.resolve(),
+      });
+      if (mutation === "cancelled") return { status: "cancelled", token: null };
+      if (mutation === null) return { status: "noop", token: null };
+      return this.prepareElementMutation(mutation, cancellation);
+    },
     revision: 0,
     store,
   };

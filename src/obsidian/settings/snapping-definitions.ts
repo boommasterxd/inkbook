@@ -1,11 +1,13 @@
 import type { Setting, SettingDefinitionGroup, SettingDefinitionRender } from "obsidian";
 
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { SettingsControlKey } from "./control-values";
 import { resetAction } from "./definition-helpers";
 import { SettingsPanelMotion } from "./settings-panel-motion";
 
 export interface SnappingGroupCallbacks {
+  readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly get: (key: SettingsControlKey) => unknown;
   readonly readMotion: () => InkbookDeviceSettingsV2["motion"];
   readonly reset: () => void;
@@ -104,7 +106,11 @@ function renderDependentToggle(
       .setValue(callbacks.get(key) === true)
       .onChange((value) => void callbacks.set(key, value)),
   );
-  const motion = new SettingsPanelMotion(row, callbacks.readMotion);
+  const motion = new SettingsPanelMotion(
+    row,
+    callbacks.readMotion,
+    callbacks.workScheduler(row.ownerDocument.defaultView),
+  );
   dependentMotions.add(motion);
   return () => {
     dependentMotions.delete(motion);

@@ -1,6 +1,7 @@
 import type { FileManager, TFile } from "obsidian";
 
 import { FILE_SCHEMA_LIMITS, type InkSnapshotV1 } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type {
   RecoveryOperationIdentity,
   RecoveryResult,
@@ -13,7 +14,7 @@ import type {
   DocumentRuntimePort,
   DocumentRuntimeResult,
 } from "../../persistence/worker/runtime/public";
-import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
+import { adoptOwnedSvgOutput } from "../../persistence/scheduling/owned-svg-output";
 import type { TrustedDocumentHeadPort } from "../storage/trusted-document-head-ledger";
 import {
   deriveDocumentIntegrityManifest,
@@ -60,7 +61,7 @@ interface SaveRecoveryCopyOptions {
   readonly files: RecoveryFilePort;
   readonly operation: RecoveryOperationIdentity;
   readonly snapshot: InkSnapshotV1;
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly stopped: () => boolean;
   readonly workerEpoch: number;
 }
@@ -137,10 +138,13 @@ export async function saveRecoveryCopy(options: SaveRecoveryCopyOptions): Promis
   try {
     const exported = await exportRecovery(options);
     if (exported === null) return failed(options.operation);
-    const trusted = await inspectTrustedSvgOutput(exported.output, exported.outputHash, {
-      ...(options.sliceBudgetMs === undefined ? {} : { sliceBudgetMs: options.sliceBudgetMs }),
+    const trusted = await adoptOwnedSvgOutput(exported.output, exported.outputHash, {
+      workScheduler: options.workScheduler,
     });
-    if (trusted.snapshotHash !== exported.integrityManifest.contentDigest) {
+    if (
+      trusted.revision !== exported.modelRevision ||
+      trusted.snapshotHash !== exported.integrityManifest.contentDigest
+    ) {
       return failed(options.operation);
     }
     const output = trusted.content;
@@ -279,7 +283,6 @@ export async function restoreWorkerBaseline(options: {
   readonly identity: SessionIdentity;
   readonly revision: number;
   readonly snapshot: InkSnapshotV1;
-  readonly sliceBudgetMs?: () => number;
   readonly workerEpoch: number;
 }): Promise<void> {
   try {

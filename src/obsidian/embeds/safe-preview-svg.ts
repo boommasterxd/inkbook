@@ -1,4 +1,5 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PersistedDocumentIdentity } from "../../editor/session/session-port";
 import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
 
@@ -10,6 +11,12 @@ export interface LoadedPreviewSvg {
 
 export type PreviewContentIdentity = PersistedDocumentIdentity;
 
+export interface PreviewInspectionOptions {
+  readonly signal?: AbortSignal;
+  readonly waitForBackground?: () => Promise<void>;
+  readonly workScheduler: WorkScheduler;
+}
+
 export function samePreviewContentIdentity(
   left: PreviewContentIdentity,
   right: PreviewContentIdentity,
@@ -19,16 +26,16 @@ export function samePreviewContentIdentity(
 
 export async function inspectPreviewSvg(
   source: string | Uint8Array,
-  waitForBackground?: () => Promise<void>,
-  signal?: AbortSignal,
-  sliceBudgetMs?: () => number,
+  options: PreviewInspectionOptions,
 ): Promise<LoadedPreviewSvg | null> {
   try {
     const trusted = await inspectTrustedSvgOutput(source, undefined, {
-      ...(signal === undefined ? {} : { signal }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
       versionPolicy: "editable",
-      ...(sliceBudgetMs === undefined ? {} : { sliceBudgetMs }),
-      ...(waitForBackground === undefined ? {} : { waitForBackground }),
+      workScheduler: options.workScheduler,
+      ...(options.waitForBackground === undefined
+        ? {}
+        : { waitForBackground: options.waitForBackground }),
     });
     return {
       aspectRatio: 2_048.6 / trusted.lockedHeight,
@@ -43,11 +50,12 @@ export async function inspectPreviewSvg(
 export async function loadValidatedPreviewSvg(
   source: string,
   owningWindow: Window,
-  waitForBackground?: () => Promise<void>,
-  signal?: AbortSignal,
-  sliceBudgetMs?: () => number,
+  options: PreviewInspectionOptions,
 ): Promise<LoadedPreviewSvg> {
-  const response = await owningWindow.fetch(source, signal === undefined ? undefined : { signal });
+  const response = await owningWindow.fetch(
+    source,
+    options.signal === undefined ? undefined : { signal: options.signal },
+  );
   if (!response.ok) throw new Error("The Inkbook preview source could not be loaded.");
   const declaredBytes = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredBytes) && declaredBytes > FILE_SCHEMA_LIMITS.totalInputBytes) {
@@ -57,7 +65,7 @@ export async function loadValidatedPreviewSvg(
   if (bytes.byteLength > FILE_SCHEMA_LIMITS.totalInputBytes) {
     throw new Error("The Inkbook preview source exceeds the file limit.");
   }
-  const trusted = await inspectPreviewSvg(bytes, waitForBackground, signal, sliceBudgetMs);
+  const trusted = await inspectPreviewSvg(bytes, options);
   if (trusted === null) {
     throw new Error("The Inkbook preview source is not safe SVG.");
   }

@@ -11,7 +11,11 @@ describe("eraser deterministic finalization", () => {
       let wallTime = 0;
       const wall = vi.spyOn(performance, "now").mockImplementation(() => ++wallTime);
       const strokes = Array.from({ length: 16 }, (_, index) => maximumStroke(index));
-      const eraser = createDenseStrokeEraser(strokes, () => 0.000001);
+      const eraser = createDenseStrokeEraser(
+        strokes,
+        () => 0.000001,
+        () => true,
+      );
       eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
       expect(eraser.retainedSweepCount).toBeGreaterThan(0);
       expect(eraser.candidateCount).toBeLessThan(strokes.length);

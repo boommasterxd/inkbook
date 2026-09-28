@@ -89,6 +89,17 @@ describe("pressure boundary intersections", () => {
       expect(swapped).toContainEqual({ first: hit.second, second: hit.first });
   });
 
+  it("preserves intersection parameters with a window-local arc-angle cache", () => {
+    const circle = arc({ x: 2, y: -3 }, 4, Math.PI / 4, -1.5 * Math.PI);
+    const crossing = line(-4, -3, 8, -3);
+    const expected = intersectPressureBoundaries(circle, crossing);
+    const cache = new WeakMap<PressureBoundaryArc, number>();
+    expect(intersectPressureBoundaries(circle, crossing, cache)).toEqual(expected);
+    expect(intersectPressureBoundaries(crossing, circle, cache)).toEqual(
+      intersectPressureBoundaries(crossing, circle),
+    );
+  });
+
   it("finds tangency and rejects nearby disjoint lines", () => {
     expect(intersectPressureBoundaries(line(-2, 1, 2, 1), arc(origin))).toEqual([
       { first: 0.5, second: 0.25 },
@@ -117,6 +128,24 @@ describe("pressure boundary intersections", () => {
         pressureBoundaryParameter(circle, { x: 0, y: sign * (1 + epsilon * 2) }),
       ).toBeUndefined();
     }
+  });
+});
+
+describe("pressure boundary radial tolerance", () => {
+  it("retains the radial tolerance near the coordinate limit", () => {
+    const center = { x: -999_999, y: -999_999 };
+    const circle = arc(center, 0.35, 0.4);
+    const epsilon = 32 * Number.EPSILON * Math.abs(center.x);
+    expect(pressureBoundaryParameter(circle, { x: center.x, y: center.y + 0.35 })).toBeDefined();
+    expect(
+      pressureBoundaryParameter(circle, { x: center.x, y: center.y + 0.35 + epsilon / 2 }),
+    ).toBeDefined();
+    expect(
+      pressureBoundaryParameter(circle, { x: center.x, y: center.y + 0.35 + epsilon * 2 }),
+    ).toBeUndefined();
+    expect(
+      pressureBoundaryParameter(circle, { x: center.x + 0.1, y: center.y + 0.1 }),
+    ).toBeUndefined();
   });
 });
 

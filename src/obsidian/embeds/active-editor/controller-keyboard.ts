@@ -178,7 +178,7 @@ export class ActiveEditorKeyboardController {
   #clipboardActionAvailable(action: "copy" | "cut", surfaceOwned: boolean): boolean {
     return shouldHandleClipboardShortcut(action, {
       hasSelection: this.#options.selectionSize() > 0,
-      hasValidInkPayload: this.#options.actions.hasValidatedPaste,
+      hasValidInkPayload: this.#options.actions.hasPasteCandidate,
       pointerOverActiveEditor: surfaceOwned || this.#pointerOver,
       textFieldFocused: false,
     });

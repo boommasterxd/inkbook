@@ -1,4 +1,5 @@
 import type { InkbookSettingsStore } from "./storage";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { ObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
 import { ShortcutRecordingView } from "./shortcut-recording-view";
 import { ShortcutReferenceView } from "./shortcut-reference-view";
@@ -16,6 +17,7 @@ export class ShortcutSettingsView {
   readonly #recordingView: ShortcutRecordingView;
   readonly #referenceView: ShortcutReferenceView;
   readonly #store: InkbookSettingsStore;
+  readonly #workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly #unsubscribe: () => void;
   #disposed = false;
   #panelMotions: SettingsPanelMotion[] = [];
@@ -24,9 +26,12 @@ export class ShortcutSettingsView {
     container: HTMLElement,
     store: InkbookSettingsStore,
     hostHotkeys: ObsidianHotkeyAccess = EMPTY_OBSIDIAN_HOTKEY_ACCESS,
+    workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
   ) {
     this.#container = container;
     this.#store = store;
+    if (workScheduler === undefined) throw new Error("Shortcut settings require a work scheduler.");
+    this.#workScheduler = workScheduler;
     this.#recordingView = new ShortcutRecordingView(container, store, hostHotkeys, () =>
       this.render(),
     );
@@ -81,7 +86,11 @@ export class ShortcutSettingsView {
       title: name,
       triggerClass: "inkbook-shortcut-section-trigger",
     });
-    const motion = new SettingsPanelMotion(panel, () => this.#store.getDeviceSettings().motion);
+    const motion = new SettingsPanelMotion(
+      panel,
+      () => this.#store.getDeviceSettings().motion,
+      this.#workScheduler(panel.ownerDocument.defaultView),
+    );
     this.#panelMotions.push(motion);
     trigger.addEventListener("click", () => {
       const nextExpanded = trigger.getAttribute("aria-expanded") !== "true";

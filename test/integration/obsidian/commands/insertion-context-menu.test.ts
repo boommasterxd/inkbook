@@ -8,15 +8,16 @@ import {
   InsertionContextMenuController,
 } from "../../../../src/obsidian/commands";
 import { registerInsertion } from "./insertion-command-fixture";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 function createHarness() {
-  let expire: (() => void) | undefined;
+  let expire: FrameRequestCallback | undefined;
   const ownerWindow = {
-    setTimeout: (callback: () => void) => {
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
       expire = callback;
       return 1;
     },
-    clearTimeout: vi.fn(),
+    cancelAnimationFrame: vi.fn(),
   } as unknown as Window;
   let line = 0;
   const setCursor = vi.fn((position: { line: number }) => {
@@ -27,7 +28,9 @@ function createHarness() {
   const request = vi.fn(() => true);
   const command = registerInsertion({ canInsert: () => line === 0, request });
   const canInsert = vi.fn((_editor: Editor, _path: string, target: number) => target === 0);
-  const controller = new InsertionContextMenuController(command, canInsert);
+  const controller = new InsertionContextMenuController(command, canInsert, () =>
+    workSchedulerFromFrames(ownerWindow),
+  );
   const addItem = vi.fn();
   const menu = { addItem } as unknown as Menu;
   return {
@@ -41,7 +44,7 @@ function createHarness() {
     request,
     setCursor,
     ownerWindow,
-    expire: () => expire?.(),
+    expire: () => expire?.(0),
   };
 }
 
