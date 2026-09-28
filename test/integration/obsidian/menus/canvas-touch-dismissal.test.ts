@@ -6,6 +6,7 @@ import { CanvasTouchBoundary } from "../../../../src/obsidian/embeds/canvas-touc
 import { AdaptivePanelSession } from "../../../../src/obsidian/menus/adaptive-panel";
 import { createOwnedMenuFactory } from "../../../../src/obsidian/menus/owned-menu-factory";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -87,6 +88,7 @@ function openMenu(
   if (kind === "style" || kind === "background") {
     return new AdaptivePanelSession({
       anchor: fixture.anchor,
+      workScheduler: workSchedulerFromFrames(window),
       canvasInputSurface: fixture.canvas,
       kind,
       label: kind,
@@ -103,6 +105,7 @@ function openMenu(
   }
   const menu = createOwnedMenuFactory({
     anchor: kind === "context" ? fixture.canvas : fixture.anchor,
+    workScheduler: workSchedulerFromFrames(window),
   }).create(kind === "context" ? "context" : "menu");
   menu.addItem((item) => item.setTitle("Action").onClick(vi.fn()));
   menu.onHide(fixture.closed);
