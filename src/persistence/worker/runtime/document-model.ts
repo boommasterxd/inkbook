@@ -25,6 +25,7 @@ import type { DocumentIntegrityManifest } from "../../serialization/document-int
 import { decodeClipboardChunked, encodeRuntimeSelectionChunked } from "./fallback-clipboard-codec";
 import {
   copyElementsToRuntime,
+  copyParsed,
   copySnapshotToRuntime,
   copySnapshotToRuntimeSliced,
   hasRuntimeStrokeSamples,
@@ -142,7 +143,7 @@ export class DocumentModelRuntime {
     let batchAdoptionMs = 0;
     let inputValidationMs = 0;
     let runtimeCopyMs = 0;
-    let stagedRuntimeSnapshot: RuntimeInkSnapshot | null = null;
+    let stagedSnapshot: RuntimeInkSnapshot | null = null;
     let stagedDerivations: SnapshotValidationDerivations | null = null;
     const parsed = await parseRuntimeInput(
       input,
@@ -150,13 +151,11 @@ export class DocumentModelRuntime {
       async (snapshot, derivations) => {
         const validationFinished = this.#now();
         inputValidationMs = validationFinished - started;
-        stagedRuntimeSnapshot = sliceContext
-          ? await copySnapshotToRuntimeSliced(snapshot, sliceContext, this.#pointCopies)
-          : copySnapshotToRuntime(snapshot, this.#pointCopies);
+        stagedSnapshot = await copyParsed(snapshot, derivations, this.#pointCopies, sliceContext);
         const copyFinished = this.#now();
         runtimeCopyMs = copyFinished - validationFinished;
         stagedDerivations = derivations;
-        await onValidatedSnapshot?.(stagedRuntimeSnapshot, derivations);
+        await onValidatedSnapshot?.(stagedSnapshot, derivations);
         callbackFinished = this.#now();
         batchAdoptionMs = callbackFinished - copyFinished;
       },
@@ -166,7 +165,7 @@ export class DocumentModelRuntime {
     sliceContext?.signal.throwIfAborted();
     const parserFinished = this.#now();
     const runtimeSnapshot =
-      stagedRuntimeSnapshot ??
+      stagedSnapshot ??
       (sliceContext
         ? await copySnapshotToRuntimeSliced(parsed.value.snapshot, sliceContext, this.#pointCopies)
         : copySnapshotToRuntime(parsed.value.snapshot, this.#pointCopies));

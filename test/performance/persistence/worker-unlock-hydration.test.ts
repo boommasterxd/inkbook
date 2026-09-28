@@ -1,4 +1,5 @@
 import * as geometry from "../../../src/domain/geometry/public";
+import * as strokeSamples from "../../../src/domain/elements/public";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../../src/domain/spatial/index";
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/public";
 import type { InkElementV1, InkSnapshotV1 } from "../../../src/domain/schema/public";
@@ -27,6 +28,7 @@ describe("document worker export performance", () => {
     expect(expectedBuilds).toBeGreaterThan(0);
     builds.mockClear();
     if (!serialized.ok) throw new Error(serialized.error.code);
+    const sampleScans = vi.spyOn(strokeSamples, "assertStrokeSamplesV1");
     const runtime = new DocumentWorkerRuntime({ sessionId: "phases", workerEpoch: 1 });
     const builder = ElementStore.createBuilder({
       shouldYield: () => false,
@@ -62,6 +64,7 @@ describe("document worker export performance", () => {
     );
     expect(unlocked.type).toBe("unlock-success");
     expect(builds).not.toHaveBeenCalled();
+    expect(sampleScans).not.toHaveBeenCalled();
     if (unlocked.type !== "unlock-success") throw new Error("Unlock failed.");
     const finalized = await builder.finalize();
     if (finalized === null) throw new Error("Store hydration was cancelled.");
