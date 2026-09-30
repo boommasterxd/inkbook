@@ -21,6 +21,7 @@ interface WorkspaceRuntimeLifecycleOptions {
   readonly autoActivationCancelled?: (attachmentKey: string) => void;
   readonly fallbackWindow: () => Window | undefined;
   readonly isDisposed: () => boolean;
+  readonly currentSaveSettlement?: (documentId: string) => Promise<void> | undefined;
   readonly notifyExternalChange: (documentId: string) => Promise<ExternalChangeOutcome | "ignored">;
   readonly presentations: () => Iterable<RuntimePresentation>;
   readonly reloadPresentation: (documentId: string) => void;
@@ -320,6 +321,11 @@ export class WorkspaceRuntimeLifecycle {
     documentId: string,
     pending: PendingVaultModification,
   ): Promise<void> {
+    const settlement = this.#options.currentSaveSettlement?.(documentId);
+    // A failed save still releases the queued external-content classification.
+    if (settlement !== undefined) await settlement.catch(() => undefined);
+    if (this.#options.isDisposed() || this.#pendingExternalChanges.get(documentId) !== pending)
+      return;
     const generation = pending.generation;
     const persisted = await this.#readPersistedIdentity(documentId);
     if (this.#options.isDisposed() || this.#pendingExternalChanges.get(documentId) !== pending) {

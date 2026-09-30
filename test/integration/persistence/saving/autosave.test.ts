@@ -68,6 +68,29 @@ function recordRectangleCommit(harness: Harness, revision: number, x: number): v
   });
 }
 
+it.each([false, true])(
+  "settles only the current save operation with indeterminate result %s",
+  async (indeterminate) => {
+    const harness = await createHarness();
+    expect(harness.coordinator.currentSaveSettlement).toBeUndefined();
+    let release!: () => void;
+    harness.vault.processGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    harness.vault.failAfterWrite = indeterminate;
+    recordRectangleCommit(harness, 1, 170);
+    const flush = harness.coordinator.flush("detach");
+    await harness.vault.waitForProcessCount(1);
+    const settlement = harness.coordinator.currentSaveSettlement;
+    expect(settlement).toBeInstanceOf(Promise);
+    release();
+    await settlement;
+    await expect(flush).resolves.toBe(indeterminate ? "verification-required" : "clean");
+    expect(harness.coordinator.currentSaveSettlement).toBeUndefined();
+    expect(harness.coordinator.dirty).toBe(indeterminate);
+  },
+);
+
 describe("autosave trust boundaries", () => {
   it("ignores a delayed notification for the confirmed base when a local commit wins the race", async () => {
     const harness = await createHarness();

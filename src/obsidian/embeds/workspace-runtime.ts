@@ -99,6 +99,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       autoActivationCancelled: (key) => cancelInitialWorkspaceLoading(this.#mounted.get(key)),
       fallbackWindow: () => this.#fallbackWindow(),
       isDisposed: () => this.#disposed,
+      currentSaveSettlement: (documentId) => this.#sessions.currentSaveSettlement(documentId),
       notifyExternalChange: (documentId) => this.#coordinator.notifyExternalChange(documentId),
       presentations: () => this.#mounted.values(),
       reloadPresentation: (documentId) => this.#reloadPresentation(documentId),

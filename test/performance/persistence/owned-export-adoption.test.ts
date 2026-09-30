@@ -116,10 +116,20 @@ async function confirmHostWrite(content: string, outputHash: string): Promise<vo
   const notify = vi.fn(async () => "ignored" as const);
   const lookup = vi.fn(() => file);
   const cachedRead = vi.fn(async () => content);
+  const read = vi.fn(async () => content);
+  const frames: FrameRequestCallback[] = [];
+  const scheduler = {
+    ...immediateWorkScheduler(),
+    requestFrame: (callback: FrameRequestCallback) => frames.push(callback),
+  };
+  let settle!: () => void;
+  const settlement = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
   const vault = {
     getFileByPath: lookup,
     cachedRead,
-    read: async () => content,
+    read,
     getResourcePath: () => path,
   } as unknown as Vault;
   const recognition = new ObsidianInkbookDocumentRecognition(vault, {
@@ -145,15 +155,19 @@ async function confirmHostWrite(content: string, outputHash: string): Promise<vo
     activate: () => {},
     fallbackWindow: () => undefined,
     isDisposed: () => false,
+    currentSaveSettlement: () => settlement,
     presentations: () => [],
     reloadPresentation: () => {},
     notifyExternalChange: notify,
-    workScheduler: () => immediateWorkScheduler(),
+    workScheduler: () => scheduler,
     vault,
   });
   recognition.deferRefresh(path);
   lifecycle.handleVaultModification(path, resolve);
+  frames.shift()?.(0);
+  expect(read).not.toHaveBeenCalled();
   lifecycle.handlePersisted({ documentId: path, outputHash, revision: 2, lockedAspectRatio: 1 });
+  settle();
   await vi.waitFor(() => expect(lookup).toHaveBeenCalledTimes(5));
   expect(await recognition.recognize(path)).toMatchObject({ contentIdentity: { outputHash } });
   expect(cachedRead).not.toHaveBeenCalled();
@@ -163,6 +177,7 @@ async function confirmHostWrite(content: string, outputHash: string): Promise<vo
   recognition.deferRefresh(path);
   lifecycle.handleVaultModification(path, resolve);
   lifecycle.handlePersisted({ documentId: path, outputHash, revision: 2, lockedAspectRatio: 1 });
+  frames.shift()?.(0);
   await vi.waitFor(() => expect(notify).toHaveBeenCalledExactlyOnceWith(path));
   expect(recognition.cached(path)).toBeUndefined();
   const staleSignature = `${file.stat.ctime}:${file.stat.mtime}:${file.stat.size}`;

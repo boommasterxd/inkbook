@@ -81,6 +81,9 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   get documentModel(): EditableDocumentModel | undefined {
     return this.#lifecycle.preparingForUnload ? undefined : this.#model;
   }
+  get currentSaveSettlement(): Promise<void> | undefined {
+    return this.#autosave?.currentSaveSettlement;
+  }
   get editorContext(): ActiveDocumentEditorContext | undefined {
     const history = this.#history;
     const model = this.documentModel;
@@ -240,14 +243,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       this.#executor = outcome.executor;
       this.#workerEpoch = outcome.workerEpoch;
       const loaded = outcome.loaded;
-      this.#adoptDocument(
-        loaded.snapshot,
-        loaded.outputHash,
-        loaded.requiresCanonicalRewrite,
-        outcome.executor,
-        loaded.store,
-        loaded.sourceVersion,
-      );
+      this.#adoptLoadedDocument(loaded, outcome.executor);
       return { ...operation, workerEpoch: this.#workerEpoch, status: "active" };
     } catch {
       this.#executor?.terminate();
@@ -433,15 +429,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     const executor = this.#executor;
     if (executor === undefined) return { ...operation, status: "failed" };
     const confirmed = await recovery.reloadExternalDocument({
-      adopt: (loaded: LoadedVaultDocument) =>
-        this.#adoptDocument(
-          loaded.snapshot,
-          loaded.outputHash,
-          loaded.requiresCanonicalRewrite,
-          executor,
-          loaded.store,
-          loaded.sourceVersion,
-        ),
+      adopt: (loaded: LoadedVaultDocument) => this.#adoptLoadedDocument(loaded, executor),
       load: () =>
         this.#loadDocument(operation, executor, "recovery", this.#workerEpoch, {
           ...(acceptExternalVersion ? { acceptExternalVersion: "validated-current" as const } : {}),
@@ -464,6 +452,16 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       stopped: () => this.#recoveryStopped(operation),
     });
     return { ...operation, status: confirmed ? "confirmed" : "failed" };
+  }
+  #adoptLoadedDocument(loaded: LoadedVaultDocument, executor: DocumentRuntimePort): void {
+    this.#adoptDocument(
+      loaded.snapshot,
+      loaded.outputHash,
+      loaded.requiresCanonicalRewrite,
+      executor,
+      loaded.store,
+      loaded.sourceVersion,
+    );
   }
   async #saveLocalCopy(
     operation: Session.RecoveryOperationIdentity,

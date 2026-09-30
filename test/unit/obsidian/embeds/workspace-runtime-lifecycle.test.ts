@@ -20,6 +20,7 @@ function createHarness(
   const dismiss = vi.fn();
   const notifyExternalChange = vi.fn(async () => "reloaded" as const);
   const reloadPresentation = vi.fn();
+  const currentSave = { settlement: undefined as Promise<void> | undefined };
   const timers: Array<() => void> = [];
   const ownerWindow = {
     clearTimeout: vi.fn(),
@@ -32,6 +33,7 @@ function createHarness(
     activate: vi.fn(),
     fallbackWindow: () => ownerWindow,
     isDisposed: () => false,
+    currentSaveSettlement: () => currentSave.settlement,
     notifyExternalChange,
     presentations: () => presentations,
     reloadPresentation,
@@ -47,7 +49,15 @@ function createHarness(
   if (queueAutoActivation) {
     lifecycle.queueAutoActivation("drawings/ink.svg", ownerWindow, vi.fn(), dismiss);
   }
-  return { dismiss, lifecycle, notifyExternalChange, ownerWindow, reloadPresentation, timers };
+  return {
+    currentSave,
+    dismiss,
+    lifecycle,
+    notifyExternalChange,
+    ownerWindow,
+    reloadPresentation,
+    timers,
+  };
 }
 
 describe("WorkspaceRuntimeLifecycle", () => {
@@ -172,34 +182,43 @@ describe("WorkspaceRuntimeLifecycle confirmed read-back handoff", () => {
     },
   );
 
-  it("keeps an invalidated same-metadata read-back on the external-change path", async () => {
-    const own = serializedDocument(1);
-    const external = serializedDocument(2);
-    own.read.mockResolvedValue(external.content);
-    const readBack = VerifiedMetadataGuardedFileRead.create(
-      own.content,
-      { ...own.file.stat, path: own.file.path },
-      own.file.stat.size,
-      () => false,
-    );
-    if (typeof readBack === "string") throw new Error(readBack);
-    const harness = createHarness([], true, own.vault);
-    const accept = vi.fn();
-    harness.lifecycle.setConfirmedOutputReceiver(accept);
-    harness.lifecycle.handleVaultModification(own.file.path);
-    harness.lifecycle.handlePersisted({
-      documentId: own.file.path,
-      lockedAspectRatio: 4,
-      outputHash: own.hash,
-      revision: 1,
-      readBack,
-    });
-    harness.timers[1]?.();
-    await vi.waitFor(() => expect(harness.notifyExternalChange).toHaveBeenCalledOnce());
-    expect(own.read).toHaveBeenCalledOnce();
-    expect(accept).not.toHaveBeenCalled();
-    harness.lifecycle.dispose();
-  });
+  it.each(["fulfilled", "rejected"])(
+    "releases an invalidated same-metadata read-back after a %s save operation",
+    async (outcome) => {
+      const own = serializedDocument(1);
+      const external = serializedDocument(2);
+      own.read.mockResolvedValue(external.content);
+      const readBack = VerifiedMetadataGuardedFileRead.create(
+        own.content,
+        { ...own.file.stat, path: own.file.path },
+        own.file.stat.size,
+        () => false,
+      );
+      if (typeof readBack === "string") throw new Error(readBack);
+      const harness = createHarness([], false, own.vault);
+      let settle!: () => void;
+      harness.currentSave.settlement = new Promise<void>((resolve, reject) => {
+        settle = outcome === "fulfilled" ? resolve : () => reject(new Error("save failed"));
+      });
+      const accept = vi.fn();
+      harness.lifecycle.setConfirmedOutputReceiver(accept);
+      harness.lifecycle.handleVaultModification(own.file.path);
+      harness.lifecycle.handlePersisted({
+        documentId: own.file.path,
+        lockedAspectRatio: 4,
+        outputHash: own.hash,
+        revision: 1,
+        readBack,
+      });
+      harness.timers[0]?.();
+      expect(own.read).not.toHaveBeenCalled();
+      settle();
+      await vi.waitFor(() => expect(harness.notifyExternalChange).toHaveBeenCalledOnce());
+      expect(own.read).toHaveBeenCalledOnce();
+      expect(accept).not.toHaveBeenCalled();
+      harness.lifecycle.dispose();
+    },
+  );
 });
 
 describe("WorkspaceRuntimeLifecycle host synchronization", () => {

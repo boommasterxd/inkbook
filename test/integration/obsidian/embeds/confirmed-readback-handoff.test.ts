@@ -31,7 +31,16 @@ function serialized(revision: number) {
   return result.value;
 }
 
-function createHarness() {
+function createConfirmation(lifecycle: WorkspaceRuntimeLifecycle) {
+  return createConfirmedPersistenceObserver({
+    active: () => true,
+    documentId: path,
+    lockedAspectRatio: () => 4,
+    persisted: (event) => lifecycle.handlePersisted(event),
+  });
+}
+
+function createHarness(currentSave = { settlement: undefined as Promise<void> | undefined }) {
   const base = serialized(1);
   const output = serialized(2);
   let content = base.svg;
@@ -83,6 +92,7 @@ function createHarness() {
     activate: vi.fn(),
     fallbackWindow: () => undefined,
     isDisposed: () => false,
+    currentSaveSettlement: () => currentSave.settlement,
     notifyExternalChange,
     presentations: () => [{ attachment, scene: undefined }],
     reloadPresentation: vi.fn(),
@@ -99,16 +109,12 @@ function createHarness() {
     recognition.deferRefresh(path);
     lifecycle.handleVaultModification(path, accept);
   }
-  const confirm = createConfirmedPersistenceObserver({
-    active: () => true,
-    documentId: path,
-    lockedAspectRatio: () => 4,
-    persisted: (event) => lifecycle.handlePersisted(event),
-  });
+  const confirm = createConfirmation(lifecycle);
   return {
     base,
     output,
     files,
+    currentSave,
     recognition,
     lifecycle,
     read,
@@ -137,7 +143,7 @@ function saveHarness(
     verify: async (content) => content === h.output.svg,
   },
 ) {
-  return saveExistingFile(
+  const pending = saveExistingFile(
     {
       path,
       expectedBase: h.base.svg,
@@ -149,6 +155,8 @@ function saveHarness(
     h.files,
     verifier,
   );
+  h.currentSave.settlement = pending.then(h.confirm, () => undefined);
+  return pending;
 }
 
 it("uses the actual verified read-back for recognition without another read, hash, or safe scan", async () => {
@@ -156,8 +164,21 @@ it("uses the actual verified read-back for recognition without another read, has
   const hash = vi.spyOn(ChunkedSha256.prototype, "update");
   const nativeHash = vi.spyOn(crypto.subtle, "digest");
   const scan = vi.spyOn(preview, "inspectPreviewSvg");
-  const saved = await saveHarness(h);
-  h.confirm(saved);
+  const verifying = deferred();
+  const release = deferred();
+  const pending = saveHarness(h, {
+    verify: async (content) => {
+      verifying.resolve();
+      await release.promise;
+      return content === h.output.svg;
+    },
+  });
+  await verifying.promise;
+  h.frames.splice(0).forEach((frame) => frame());
+  expect(h.read).toHaveBeenCalledTimes(2);
+  release.resolve();
+  await pending;
+  await h.currentSave.settlement;
   await Promise.all(h.loaded);
   h.frames.forEach((frame) => frame());
   await Promise.resolve();
@@ -184,12 +205,14 @@ it("does not adopt a read-back invalidated by an external write during asynchron
     },
   });
   await verifying.promise;
+  h.frames.splice(0).forEach((frame) => frame());
+  expect(h.read).toHaveBeenCalledTimes(2);
   h.replace(serialized(3).svg);
   h.modified();
   release.resolve();
   const saved = await pending;
   expect(saved.readBack?.isCurrent?.()).toBe(false);
-  h.confirm(saved);
+  await h.currentSave.settlement;
   await Promise.allSettled(h.loaded);
   h.frames.splice(0).forEach((frame) => frame());
   await vi.waitFor(() => expect(h.notifyExternalChange).toHaveBeenCalledOnce());

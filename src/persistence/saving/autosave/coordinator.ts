@@ -93,6 +93,9 @@ export class AutosaveCoordinator {
   public get retainedConfirmedContentBytes(): number {
     return this.#confirmedContent?.length ?? 0;
   }
+  public get currentSaveSettlement(): Promise<void> | undefined {
+    return this.#savePromise ?? undefined;
+  }
   public recordCommit(delta: Autosave.AutosaveDelta): void {
     if (this.#disposed) return;
     if (delta.modelRevision !== this.#document.currentRevision()) {
@@ -237,11 +240,7 @@ export class AutosaveCoordinator {
     this.#resolveWaiters();
   }
   #kick(): void {
-    if (this.#disposed) {
-      this.#resolveWaiters();
-      return;
-    }
-    if (!this.dirty || isAutosaveSuspended(this.#status)) {
+    if (this.#disposed || !this.dirty || isAutosaveSuspended(this.#status)) {
       this.#resolveWaiters();
       return;
     }
@@ -418,17 +417,16 @@ export class AutosaveCoordinator {
       active.result = null;
       if (!this.#disposed) {
         if (outputTrusted) this.#handleSaveFailure(error);
-        else this.#handleUntrustedExport(active);
+        else {
+          if (this.#save === active) this.#save = null;
+          this.#requireFullSnapshot();
+          if (this.#switchToFallback()) this.#setStatus("debouncing");
+        }
       }
     } finally {
       this.#savePromise = null;
       if (!this.#disposed && this.dirty && !isAutosaveSuspended(this.#status)) this.#kick();
     }
-  }
-  #handleUntrustedExport(active: Autosave.ActiveAutosave): void {
-    if (this.#save === active) this.#save = null;
-    this.#requireFullSnapshot();
-    if (this.#switchToFallback()) this.#setStatus("debouncing");
   }
   #handleSaveFailure(error: unknown): void {
     const status = classifyAutosaveFailure(error);
