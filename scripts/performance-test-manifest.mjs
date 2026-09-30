@@ -81,6 +81,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/stress-limits.test.ts",
     "test/performance/persistence/worker-unlock-hydration.test.ts",
     "test/performance/rendering/scene/dense-viewport-reconciliation.test.ts",
+    "test/performance/rendering/scene/initial-visible-preparation.test.ts",
     "test/performance/rendering/scene/path-cache-remount-performance.test.ts",
     "test/performance/rendering/scene/preview-selection-work.test.ts",
     "test/performance/rendering/scene/render-mount-complexity.test.ts",

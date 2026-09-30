@@ -168,6 +168,19 @@ describe("prepared unlock viewport", () => {
     expect(unlockViewportFixture("inkbook-active-ready").read().height).toBe(118);
   });
 
+  it.each(["inkbook-active-preparing", "inkbook-active-transitioning"])(
+    "covers both current and target heights during a shrinking %s",
+    (phase) => {
+      const h = unlockViewportFixture(phase, "202px");
+      h.resize(602);
+      expect(h.read().height).toBe(600);
+      h.resize(402);
+      expect(h.read().height).toBe(400);
+      h.resize(202);
+      expect(h.read().height).toBe(200);
+    },
+  );
+
   it.each(["", "auto", "100%", "NaNpx", "Infinitypx", "0px", "1px"])(
     "falls back to current geometry before a valid pixel target exists: %s",
     (blockSize) => {

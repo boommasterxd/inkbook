@@ -144,6 +144,50 @@ function createFixture(
   };
 }
 
+describe("active editor initial visibility proof", () => {
+  it.each(["full", "reduced", "system"] as const)(
+    "waits for one paint of an unchanged complete scene proof with %s motion",
+    (motion) => {
+      const h = createFixture(motion);
+      h.setActiveBlockSize("240px");
+      let proof: number | undefined;
+      h.handoff.ready(h.completed, () => proof);
+      h.runFrame();
+      proof = 1;
+      h.runFrame();
+      expect(h.preview.hidden).toBe(false);
+      expect(h.completed).not.toHaveBeenCalled();
+      h.runFrame();
+      proof = 2;
+      h.setActiveBlockSize("360px");
+      h.runFrame();
+      expect(h.completed).not.toHaveBeenCalled();
+      if (motion === "system") h.media.setMatches(true);
+      else {
+        h.runFrame();
+        h.runFrame();
+      }
+      expect(h.completed).toHaveBeenCalledOnce();
+      expect(h.preview.hidden).toBe(true);
+      expect(h.container.style.blockSize).toBe("360px");
+      h.handoff.dispose();
+    },
+  );
+
+  it("does not reveal a pending scene when reduced motion changes or disposal occurs", () => {
+    const h = createFixture("system");
+    h.handoff.ready(h.completed, () => undefined);
+    h.media.setMatches(true);
+    h.runFrame();
+    h.runFrame();
+    expect(h.preview.hidden).toBe(false);
+    expect(h.completed).not.toHaveBeenCalled();
+    h.handoff.dispose();
+    expect(h.framePending()).toBe(false);
+    expect(h.completed).not.toHaveBeenCalled();
+  });
+});
+
 describe("active editor unlock preview motion", () => {
   it("keeps the preview in the same block until the in-place editor is ready", () => {
     const fixture = createFixture("full", true);

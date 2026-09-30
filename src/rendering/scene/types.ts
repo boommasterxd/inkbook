@@ -79,6 +79,8 @@ export interface SceneRendererOptions {
   readonly inputHandlers?: SceneInputHandlers;
   readonly layout: SceneLayoutPort;
   readonly page: PageV1;
+  /** The presentation explicitly releases initial exact-viewport preparation after its handoff. */
+  readonly deferInitialOverscan?: boolean;
   readonly onSceneCommitted?: () => void;
   readonly onResourceUsageChanged?: () => void;
   readonly reducedMotion?: boolean;
