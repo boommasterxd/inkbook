@@ -1,6 +1,7 @@
 import type { PointV1 } from "../schema/types";
+import { PRESSURE_PREPARATION_CHECK_INTERVAL } from "./pressure-union";
 
-/** Each step inspects one vertex or performs one bounded local removal. */
+/** Each checkpoint groups a bounded number of vertex inspections or local removals. */
 export function* iteratePressureContourQuantization(
   closed: readonly PointV1[],
   grid: number,
@@ -8,12 +9,13 @@ export function* iteratePressureContourQuantization(
 ): Generator<void, PointV1[]> {
   const points = closed.slice(0, -1);
   const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+  let inspected = 0;
   for (const point of points) {
     bounds.minX = Math.min(bounds.minX, point.x);
     bounds.maxX = Math.max(bounds.maxX, point.x);
     bounds.minY = Math.min(bounds.minY, point.y);
     bounds.maxY = Math.max(bounds.maxY, point.y);
-    yield;
+    if (++inspected % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   }
   for (let index = 0; index < points.length; index += 1) {
     const before = points[(index + points.length - 1) % points.length]!;
@@ -50,20 +52,21 @@ export function* iteratePressureContourQuantization(
       additions.push([before, best, current], [current, best, after]);
       points[index] = best;
     }
-    yield;
+    if ((index + 1) % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   }
   yield* removeCollinear(points);
   return [...points, points[0]!];
 }
 function* removeCollinear(points: PointV1[]): Generator<void> {
   let changed = true;
+  let inspected = 0;
   while (changed && points.length > 3) {
     changed = false;
     for (let index = 0; index < points.length; index += 1) {
       const before = points[(index + points.length - 1) % points.length]!;
       const current = points[index]!;
       const after = points[(index + 1) % points.length]!;
-      yield;
+      if (++inspected % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
       if (
         Math.abs(cross(before, current, after)) > roundoff(before, current, after) ||
         (current.x - before.x) * (after.x - current.x) +

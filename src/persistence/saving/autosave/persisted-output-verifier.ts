@@ -13,7 +13,7 @@ type VerificationPurpose = "preflight" | "read-back" | "verification";
 
 interface AutosaveVerifierOptions {
   readonly workScheduler: WorkScheduler;
-  readonly waitForBackground?: () => Promise<void>;
+  readonly waitForBackground?: () => Promise<void> | undefined;
   readonly executor: () => DocumentRuntimePort;
   readonly isDisposed: () => boolean;
   readonly sessionId: string;

@@ -1,4 +1,6 @@
 import { validatedSampleExtrema } from "./stroke-sample-extrema";
+import type { ParsedJsonProof } from "./parsed-json-proof";
+import { strokeLocalGeometry } from "../geometry/stroke-position";
 import {
   calculateElementBounds,
   derivePageExtent,
@@ -109,22 +111,42 @@ export function* validateInkSnapshotV1Steps(
   return yield* validateSnapshotSteps(value, options, false);
 }
 
+export function* validateRuntimeInkSnapshotV1Steps(
+  value: unknown,
+  options: SnapshotValidationOptions = {},
+): Generator<void, SnapshotValidationResult> {
+  return yield* validateSnapshotSteps(value, options, true);
+}
+
+/** Internal parser ownership permits structural reuse; semantic checks remain complete. */
+export function* validateParsedInkSnapshotV1Steps(
+  value: unknown,
+  proof: ParsedJsonProof,
+  options: SnapshotValidationOptions = {},
+  allowRuntimeStrokeBuffers = false,
+): Generator<void, SnapshotValidationResult> {
+  return yield* validateSnapshotSteps(value, options, allowRuntimeStrokeBuffers, proof);
+}
+
 function* validateSnapshotSteps(
   value: unknown,
   options: SnapshotValidationOptions,
   allowRuntimeStrokeBuffers: boolean,
+  parsedProof?: ParsedJsonProof,
 ): Generator<void, SnapshotValidationResult> {
   const statistics = createStatistics();
   try {
     const limits = options.limits ?? FILE_SCHEMA_LIMITS;
     assertByteLengths(options, limits);
-    statistics.maximumDepth = yield* assertJsonTreeSteps(
-      value,
-      jsonNodeBudget(limits),
-      2048,
-      allowRuntimeStrokeBuffers,
-      jsonContainerBudget(limits),
-    );
+    statistics.maximumDepth =
+      parsedProof?.consume(value, limits) ??
+      (yield* assertJsonTreeSteps(
+        value,
+        jsonNodeBudget(limits),
+        2048,
+        allowRuntimeStrokeBuffers,
+        jsonContainerBudget(limits),
+      ));
     assertRecord(value, "$");
     assertExactKeys(value, ["format", "version", "revision", "page", "elements"], "$");
     assertLiteral(value.format, INKBOOK_FORMAT, "$.format");
@@ -350,7 +372,18 @@ function* validateBoundsAndExtent(
   const derivations: ElementValidationDerivation[] = [];
   for (let index = 0; index < elements.length; index += 1) {
     const element = elements[index] as InkElementV1;
-    const bounds = Object.freeze(calculateElementBounds(element));
+    const localBounds = Object.freeze(
+      calculateElementBounds(element.kind === "stroke" ? strokeLocalGeometry(element) : element),
+    );
+    const bounds =
+      element.kind === "stroke" && element.offset !== undefined
+        ? Object.freeze({
+            minX: localBounds.minX + element.offset.x,
+            minY: localBounds.minY + element.offset.y,
+            maxX: localBounds.maxX + element.offset.x,
+            maxY: localBounds.maxY + element.offset.y,
+          })
+        : localBounds;
     const memberships = spatialCellMembershipCount(bounds);
     const spatialOverflow = memberships > MAX_ELEMENT_CELLS;
     if (spatialOverflow) overflowElements += 1;
@@ -362,7 +395,10 @@ function* validateBoundsAndExtent(
         spatialMemberships: spatialOverflow ? 0 : memberships,
         spatialOverflow,
         ...(element.kind === "stroke"
-          ? { strokeSampleExtrema: validatedSampleExtrema(element.points)! }
+          ? {
+              strokeLocalBounds: localBounds,
+              strokeSampleExtrema: validatedSampleExtrema(element.points)!,
+            }
           : {}),
       }),
     );

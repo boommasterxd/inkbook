@@ -152,9 +152,10 @@ async function postHostedResult(
 ): Promise<void> {
   try {
     const controller = new AbortController();
-    await runtime.checkpoint?.(controller.signal);
+    const admission = runtime.checkpoint?.(controller.signal);
+    if (admission !== undefined) await admission;
     const encoded = await encodeRuntimeResultChunked(result, {
-      checkpoint: () => runtime.checkpoint?.(controller.signal) ?? Promise.resolve(),
+      checkpoint: () => runtime.checkpoint?.(controller.signal),
       signal: controller.signal,
     });
     if (result.type === "export-success") {

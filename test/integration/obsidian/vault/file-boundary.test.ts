@@ -249,7 +249,34 @@ describe("Obsidian vault bounded reads", () => {
       code: "unexpected-host-result",
     });
   });
+});
 
+describe("Obsidian vault current read-back proofs", () => {
+  it("invalidates a read-back proof on modifications even when file metadata is unchanged", async () => {
+    const { file, files, state } = createBinaryReadFixture("drawings/proof.svg", 11);
+    const read = await files.readWithMetadataGuard(file.path, 11);
+    expect(read.isCurrent?.()).toBe(true);
+    files.noteModification("missing.svg");
+    expect(read.isCurrent?.()).toBe(true);
+    files.noteModification(file.path);
+    expect(file.stat).toEqual({ ctime: 0, mtime: 0, size: 11 });
+    expect(read.isCurrent?.()).toBe(false);
+    const fresh = await files.readWithMetadataGuard(file.path, 11);
+    expect(fresh.isCurrent?.()).toBe(true);
+    state.files.set(file.path, new FakeFile(file.path, 11));
+    expect(fresh.isCurrent?.()).toBe(false);
+  });
+
+  it("rejects same-metadata modifications during an asynchronous read", async () => {
+    const { file, files, state } = createBinaryReadFixture("drawings/read-race.svg", 11);
+    state.onTextRead = () => files.noteModification(file.path);
+    await expect(files.readWithMetadataGuard(file.path, 11)).rejects.toMatchObject({
+      code: "unexpected-host-result",
+    });
+  });
+});
+
+describe("Obsidian vault serialized read and write operations", () => {
   it("serializes bounded reads and process writes for the same path", async () => {
     const { file, files, state } = createBinaryReadFixture("drawings/serialized.svg", 11);
     let releaseRead: (() => void) | undefined;

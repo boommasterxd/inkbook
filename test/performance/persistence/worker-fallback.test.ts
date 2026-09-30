@@ -104,7 +104,7 @@ function createScheduledFallback(): {
   scheduler = new GestureAwareSliceScheduler({
     isInputActive: () => {
       if (inputEndObserved) {
-        inputEndObserved = false;
+        // The release event remains effective through all resumed gate rechecks.
         return false;
       }
       const active = probe.isInputActive();
@@ -119,7 +119,10 @@ function createScheduledFallback(): {
     },
     workScheduler: createTestWorkScheduler({
       budgetMs: INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
-      checkpoint: probe.yieldControl,
+      checkpoint: () => {
+        inputEndObserved = false;
+        return probe.yieldControl();
+      },
     }),
   });
   return {

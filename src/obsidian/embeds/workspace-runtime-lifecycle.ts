@@ -3,7 +3,8 @@ import { TFile, type Vault } from "obsidian";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { ExternalChangeOutcome } from "../../editor/session/session-port";
-import { hashSvgContent } from "../../persistence/scheduling/trusted-svg-output";
+import { hashConfirmedSvgContent } from "../../persistence/scheduling/trusted-svg-output";
+import { VerifiedMetadataGuardedFileRead } from "../../persistence/saving/verified-file-read";
 import { scanCanonicalRevisionPrefix } from "../../persistence/saving/revision-scan";
 import type { ActiveInkbookScene } from "./active-scene";
 import { isLiveOwnerWindow, resolvePresentationWindow } from "./owner-window-registry";
@@ -48,6 +49,10 @@ export type HostWriteResolved = (output?: {
   readonly outputHash: string;
   readonly signature: string;
 }) => void;
+export type ConfirmedOutputReceiver = (
+  documentId: string,
+  output: Parameters<HostWriteResolved>[0],
+) => void;
 
 interface PendingVaultModification {
   readonly resolved?: HostWriteResolved;
@@ -80,6 +85,7 @@ export function isWindowTimeoutHandle(value: unknown): value is WindowTimeoutHan
 }
 
 export class WorkspaceRuntimeLifecycle {
+  #confirmedOutputReceiver: ConfirmedOutputReceiver | undefined;
   readonly #confirmedHostWrites = new Map<string, Set<string>>();
   readonly #insertionUndoHints = new Map<string, InsertionUndoHint>();
   readonly #options: WorkspaceRuntimeLifecycleOptions;
@@ -88,6 +94,10 @@ export class WorkspaceRuntimeLifecycle {
 
   public constructor(options: WorkspaceRuntimeLifecycleOptions) {
     this.#options = options;
+  }
+
+  public setConfirmedOutputReceiver(receiver: ConfirmedOutputReceiver): void {
+    this.#confirmedOutputReceiver = receiver;
   }
 
   public queueAutoActivation(
@@ -198,7 +208,8 @@ export class WorkspaceRuntimeLifecycle {
 
   public handlePersisted(event: VaultDocumentPersistedEvent): void {
     if (this.#options.isDisposed()) return;
-    if (this.#pendingExternalChanges.has(event.documentId)) {
+    const adopted = this.#adoptConfirmedReadBack(event);
+    if (!adopted && this.#pendingExternalChanges.has(event.documentId)) {
       const confirmations = this.#confirmedHostWrites.get(event.documentId) ?? new Set<string>();
       confirmations.add(persistedIdentityKey(event));
       this.#confirmedHostWrites.set(event.documentId, confirmations);
@@ -209,6 +220,29 @@ export class WorkspaceRuntimeLifecycle {
       hint.dismiss();
     }
     this.#refreshPreviews(event.documentId, `${String(event.revision)}-${event.outputHash}`);
+  }
+
+  #adoptConfirmedReadBack(event: VaultDocumentPersistedEvent): boolean {
+    const read = event.readBack;
+    if (
+      read === undefined ||
+      !VerifiedMetadataGuardedFileRead.isVerified(read) ||
+      read.identity.path !== event.documentId ||
+      read.isCurrent?.() !== true
+    )
+      return false;
+    const pending = this.#pendingExternalChanges.get(event.documentId);
+    const output = {
+      content: read.content,
+      outputHash: event.outputHash,
+      signature: `${String(read.identity.ctime)}:${String(read.identity.mtime)}:${String(read.identity.size)}`,
+    };
+    if (pending?.frame !== undefined) pending.frame.scheduler.cancelFrame(pending.frame.handle);
+    this.#pendingExternalChanges.delete(event.documentId);
+    this.#confirmedHostWrites.delete(event.documentId);
+    if (pending?.resolved !== undefined) pending.resolved(output);
+    else this.#confirmedOutputReceiver?.(event.documentId, output);
+    return true;
   }
 
   public updateSavedCopyPreview(presentation: RuntimePresentation, savedPath: string): void {
@@ -231,6 +265,7 @@ export class WorkspaceRuntimeLifecycle {
     this.#insertionUndoHints.clear();
     this.#confirmedHostWrites.clear();
     this.#pendingExternalChanges.clear();
+    this.#confirmedOutputReceiver = undefined;
   }
 
   #activatePending(
@@ -323,7 +358,7 @@ export class WorkspaceRuntimeLifecycle {
       if (!sameVaultFile(this.#options.vault, documentId, file, before)) return undefined;
       const revision = scanCanonicalRevisionPrefix(content);
       if (revision === null) return undefined;
-      const outputHash = await hashSvgContent(content, {
+      const outputHash = await hashConfirmedSvgContent(content, {
         workScheduler: this.#options.workScheduler(
           resolvePresentationWindow(documentId, this.#options.presentations()) ??
             this.#options.fallbackWindow() ??

@@ -23,7 +23,7 @@ export class AutosaveExportIntegrity {
   }
 
   public constructor(
-    readonly waitForBackground?: () => Promise<void>,
+    readonly waitForBackground?: () => Promise<void> | undefined,
     ownsElement?: (element: InkElementV1) => boolean,
     readonly workScheduler?: WorkScheduler,
   ) {
@@ -39,13 +39,19 @@ export class AutosaveExportIntegrity {
     let matches = false;
     try {
       const checkpoint = createMainThreadCheckpoint(this.workScheduler, this.waitForBackground);
-      await checkpoint();
+      const ready = checkpoint();
+      if (ready !== undefined) await ready;
       if (signal?.aborted || !isCurrent()) return "cancelled";
       const value = snapshot();
-      const currentCheckpoint = async (): Promise<void> => {
+      const assertCurrent = (): void => {
         if (signal?.aborted || !isCurrent()) throw new Error("Obsolete export integrity check.");
-        await checkpoint();
-        if (signal?.aborted || !isCurrent()) throw new Error("Obsolete export integrity check.");
+      };
+      const currentCheckpoint = (): Promise<void> | undefined => {
+        assertCurrent();
+        const pending = checkpoint();
+        if (pending !== undefined) return pending.then(assertCurrent);
+        assertCurrent();
+        return undefined;
       };
       const digest = await this.#metadata.digest(value, currentCheckpoint, signal);
       matches = sameDocumentIntegrityManifest(
@@ -68,7 +74,7 @@ export class AutosaveExportIntegrity {
 
 export async function inspectIntegrityBoundExport(
   result: ExportSuccess,
-  waitForBackground?: () => Promise<void>,
+  waitForBackground?: () => Promise<void> | undefined,
   workScheduler?: WorkScheduler,
 ) {
   const trusted = await adoptOwnedSvgOutput(result.output, result.outputHash, {

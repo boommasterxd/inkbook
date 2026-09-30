@@ -16,7 +16,7 @@ export interface ChunkedUtf8OutputAssembly {
 }
 
 export interface ChunkedOutputAssemblyOptions {
-  readonly checkpoint?: () => Promise<void>;
+  readonly checkpoint?: () => Promise<void> | undefined;
   readonly maximumBytes?: number;
   readonly signal?: AbortSignal;
   readonly sliceByteLimit?: number;
@@ -58,7 +58,8 @@ export async function assembleAndHashChunkedOutput(
       throwIfMaximumExceeded(hash.totalBytes, options.maximumBytes);
       bytesSinceCheckpoint += encoded.byteLength;
       if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-        await options.checkpoint();
+        const pending = options.checkpoint();
+        if (pending !== undefined) await pending;
         throwIfCancelled(options.signal);
         bytesSinceCheckpoint = 0;
       }
@@ -70,7 +71,8 @@ export async function assembleAndHashChunkedOutput(
   throwIfMaximumExceeded(hash.totalBytes, options.maximumBytes);
   bytesSinceCheckpoint += remainder.byteLength;
   if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-    await options.checkpoint();
+    const pending = options.checkpoint();
+    if (pending !== undefined) await pending;
     throwIfCancelled(options.signal);
   }
   throwIfCancelled(options.signal);
@@ -95,7 +97,8 @@ export async function assembleAndHashChunkedUtf8Output(
     for (const written of encoder.encodeInto(fragment, output)) {
       bytesSinceCheckpoint += written;
       if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-        await options.checkpoint();
+        const pending = options.checkpoint();
+        if (pending !== undefined) await pending;
         throwIfCancelled(options.signal);
         bytesSinceCheckpoint = 0;
       }
@@ -117,7 +120,7 @@ export async function hashExactUtf8Output(
   output: Uint8Array<ArrayBuffer>,
   signal?: AbortSignal,
   digest: ExactOutputDigest | null = platformDigest(),
-  checkpoint?: () => Promise<void>,
+  checkpoint?: () => Promise<void> | undefined,
 ): Promise<string> {
   throwIfCancelled(signal);
   if (digest !== null) {
@@ -135,7 +138,8 @@ export async function hashExactUtf8Output(
     for (let offset = 0; offset < output.byteLength; offset += DEFAULT_SLICE_BYTE_LIMIT) {
       throwIfCancelled(signal);
       fallback.update(output.subarray(offset, offset + DEFAULT_SLICE_BYTE_LIMIT));
-      await checkpoint();
+      const pending = checkpoint();
+      if (pending !== undefined) await pending;
     }
   }
   throwIfCancelled(signal);

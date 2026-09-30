@@ -6,17 +6,22 @@ import {
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
 
+function createInitialScene() {
+  const store = createViewportRectangleStore(256, (rank) => (rank < 128 ? 10 : 150));
+  const committed = vi.fn();
+  const scene = createSceneFixture(
+    NAVIGATION_PAGE,
+    store,
+    { height: 100, left: 0, top: 0, width: 100 },
+    { deferInitialOverscan: true, onSceneCommitted: committed },
+  );
+  return { ...scene, store, committed };
+}
+
 it.each(["viewport", "camera", "generation", "layout", "geometry"] as const)(
   "replaces the initial scene proof after a %s change and retains prepared geometry",
   (change) => {
-    const store = createViewportRectangleStore(256, (rank) => (rank < 128 ? 10 : 150));
-    const committed = vi.fn();
-    const { renderer, scheduler } = createSceneFixture(
-      NAVIGATION_PAGE,
-      store,
-      { height: 100, left: 0, top: 0, width: 100 },
-      { deferInitialOverscan: true, onSceneCommitted: committed },
-    );
+    const { renderer, scheduler, store, committed } = createInitialScene();
     scheduler.runNext();
     expect(renderer.mountedCount).toBe(64);
     expect(renderer.sceneCommitProof).toBeUndefined();
@@ -48,23 +53,16 @@ it.each(["viewport", "camera", "generation", "layout", "geometry"] as const)(
 it.each(["visible", "overscan"] as const)(
   "cancels unpublished %s preparation on disposal",
   (phase) => {
-    const store = createViewportRectangleStore(256, (rank) => (rank < 128 ? 10 : 150));
-    const committed = vi.fn();
-    const { renderer, scheduler } = createSceneFixture(
-      NAVIGATION_PAGE,
-      store,
-      { height: 100, left: 0, top: 0, width: 100 },
-      { deferInitialOverscan: true, onSceneCommitted: committed },
-    );
+    const { renderer, scheduler, committed } = createInitialScene();
     if (phase === "overscan") {
       scheduler.runAll();
       renderer.releaseInitialOverscan();
     }
     scheduler.runNext();
     expect(scheduler.pendingCount).toBeGreaterThan(0);
-  renderer.destroy();
-  expect(renderer.sceneCommitProof).toBeUndefined();
-  scheduler.runAll();
+    renderer.destroy();
+    expect(renderer.sceneCommitProof).toBeUndefined();
+    scheduler.runAll();
     expect(committed).toHaveBeenCalledTimes(phase === "visible" ? 0 : 1);
     expect(renderer.mountedCount).toBe(0);
     expect(scheduler.pendingCount).toBe(0);

@@ -13,10 +13,12 @@ import {
 import { packClipboardPayload } from "./clipboard-wire-payload";
 import {
   packElements,
+  packValidatedElements,
   packElementsChunked,
   type PackedElements,
   type RuntimeWireSliceOptions,
   unpackElements,
+  unpackValidatedElements,
 } from "./element-wire-codec";
 import { copyElementsFromRuntime } from "./runtime-elements";
 import type {
@@ -401,7 +403,7 @@ function unpackPastePlan(result: ClipboardResult<PackedPastePlan>): ClipboardRes
 export function encodeUnlockBatch(
   batch: UnlockRuntimeBatch,
 ): StructuredTransfer<DocumentRuntimeWireUnlockBatch> {
-  const elements = packElements(batch.elements);
+  const elements = packValidatedElements(batch.elements, batch.derivations);
   return {
     transfer: buffersAsTransferables(elements.pointBuffers),
     value: {
@@ -418,7 +420,7 @@ export function decodeUnlockBatch(batch: unknown): UnlockRuntimeBatch {
     throw new TypeError("Worker unlock batch does not match the runtime wire protocol.");
   }
   assertUnlockBatchWireLimits(batch.elements);
-  return { ...batch, elements: unpackElements(batch.elements) };
+  return { ...batch, elements: unpackValidatedElements(batch.elements, batch.derivations) };
 }
 
 export function isDocumentRuntimeWireRequest(value: unknown): value is DocumentRuntimeWireRequest {

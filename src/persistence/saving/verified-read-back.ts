@@ -1,11 +1,16 @@
 import { SaveError } from "./save-errors";
-import type { ExistingFilePort, PersistedOutputVerifier } from "./save-ports";
-import { readExistingFileWithinLimit } from "./bounded-file-read";
+import type {
+  ExistingFilePort,
+  MetadataGuardedFileRead,
+  PersistedOutputVerifier,
+} from "./save-ports";
+import { readGuardedFileWithinLimit } from "./bounded-file-read";
 
 export interface ConfirmedSave {
   readonly content: string;
   readonly revision: number;
   readonly outputHash: string;
+  readonly readBack?: MetadataGuardedFileRead;
 }
 
 export async function readConfirmedSave(
@@ -15,18 +20,19 @@ export async function readConfirmedSave(
   vault: ExistingFilePort,
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
-  const readBack = await readExistingFileWithinLimit(vault, path);
+  const readBack = await readGuardedFileWithinLimit(vault, path);
   return confirmReadBack(readBack, revision, outputHash, verifier);
 }
 
 export async function confirmReadBack(
-  readBack: string,
+  readBack: string | MetadataGuardedFileRead,
   revision: number,
   outputHash: string,
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
-  if (!(await verifier.verify(readBack, revision, outputHash))) {
+  const content = typeof readBack === "string" ? readBack : readBack.content;
+  if (!(await verifier.verify(content, revision, outputHash))) {
     throw new SaveError("read-back-mismatch");
   }
-  return { content: readBack, revision, outputHash };
+  return { content, revision, outputHash, ...(typeof readBack === "string" ? {} : { readBack }) };
 }

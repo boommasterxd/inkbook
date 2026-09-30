@@ -6,7 +6,7 @@ const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const SCAN_UNITS = 16 * 1024;
 
 interface PreviewBuildOptions {
-  readonly checkpoint: (initial?: boolean) => Promise<void>;
+  readonly checkpoint: (initial?: boolean) => Promise<void> | undefined;
   readonly isCancelled: () => boolean;
   readonly workScheduler: WorkScheduler;
 }
@@ -21,7 +21,8 @@ export async function createPreviewSvgAsync(
   const steps = buildPreviewSteps(ownerDocument, safeSvg, exhausted);
   let initial = true;
   while (true) {
-    await options.checkpoint(initial);
+    const pending = options.checkpoint(initial);
+    if (pending !== undefined) await pending;
     initial = false;
     if (options.isCancelled()) return undefined;
     const step = steps.next();

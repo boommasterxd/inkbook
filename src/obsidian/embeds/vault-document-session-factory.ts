@@ -61,6 +61,10 @@ export class VaultDocumentSessionFactory implements SessionFactory {
     return model;
   }
 
+  noteVaultModification(documentId: string): void {
+    this.#files.noteModification(documentId);
+  }
+
   getEditorContext(sessionId: string): ActiveDocumentEditorContext | undefined {
     const context = this.#sessions.get(sessionId)?.editorContext;
     return context;

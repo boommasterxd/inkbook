@@ -3,7 +3,20 @@ import { parseOpeningTag } from "../../documents/svg-tag";
 import { hashRuntimeInput } from "./runtime-input-hash";
 
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
-import type { DocumentRuntimeRequest, DocumentRuntimeResult } from "./types";
+import type { DocumentRuntimeRequest, DocumentRuntimeResult, UnlockRuntimeBatch } from "./types";
+
+export function matchesUnlockBatchIdentity(
+  batch: Pick<UnlockRuntimeBatch, "identity">,
+  request: DocumentRuntimeRequest,
+): boolean {
+  if (request.type !== "unlock") return false;
+  return (
+    batch.identity.sessionId === request.identity.sessionId &&
+    batch.identity.workerEpoch === request.identity.workerEpoch &&
+    batch.identity.operationId === request.identity.operationId &&
+    batch.identity.purpose === request.identity.purpose
+  );
+}
 
 export async function assertResultMatchesRequest(
   request: DocumentRuntimeRequest,

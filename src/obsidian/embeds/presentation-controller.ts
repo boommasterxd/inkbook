@@ -40,7 +40,7 @@ export interface PresentationPreviewLifecycle {
   readonly entranceState?: PresentationEntranceState;
   readonly refresh?: () => void;
   readonly ensureReady?: () => Promise<void>;
-  readonly setBackgroundWait?: (wait: (() => Promise<void>) | undefined) => void;
+  readonly setBackgroundWait?: (wait: (() => Promise<void> | undefined) | undefined) => void;
   readonly dispose?: () => void;
   readonly requestHostMeasure?: () => void;
   readonly removeMarkdown?: (

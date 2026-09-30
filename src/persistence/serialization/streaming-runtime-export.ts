@@ -99,7 +99,8 @@ async function prepareRuntimeExport(
       return limitFailure();
     }
     maximumBottom = Math.max(maximumBottom ?? 0, fragment.bottom);
-    await options.checkpoint?.();
+    const pending = options.checkpoint?.();
+    if (pending !== undefined) await pending;
   }
   if (!metadataBudget.tryReserve(2)) return limitFailure();
   const extent = derivePageExtent(snapshot.page, maximumBottom);

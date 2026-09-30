@@ -100,15 +100,16 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#schedulePrewarm();
   }
 
-  public async checkpoint(signal: AbortSignal): Promise<void> {
+  public checkpoint(signal: AbortSignal): Promise<void> | undefined {
     signal.throwIfAborted();
     const pending = this.#scheduler?.checkpoint(
       signal === this.#abortController.signal
         ? signal
         : AbortSignal.any([signal, this.#abortController.signal]),
     );
-    if (pending !== undefined) await pending;
+    if (pending !== undefined) return pending.then(() => signal.throwIfAborted());
     signal.throwIfAborted();
+    return undefined;
   }
 
   public setSchedulingProfile(sliceMilliseconds: number, frameIntervalMilliseconds: number): void {
@@ -172,13 +173,13 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       const unlocked = await this.#model.unlock(
         request.input,
         sliceContext,
-        async (snapshot, derivations) => {
+        async (snapshot, derivations, adoptionSignal) => {
           batchCount = await emitUnlockBatches(
             request.identity,
             snapshot.elements,
             derivations,
             observer,
-            signal,
+            adoptionSignal,
           );
         },
       );
@@ -384,11 +385,10 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       return;
     }
     this.#prewarmRunning = true;
-    void this.checkpoint(this.#abortController.signal)
-      .then(() => this.#runPrewarm())
-      .catch(() => {
-        this.#prewarmRunning = false;
-      });
+    const pending = this.checkpoint(this.#abortController.signal);
+    void (pending?.then(() => this.#runPrewarm()) ?? this.#runPrewarm()).catch(() => {
+      this.#prewarmRunning = false;
+    });
   }
 
   async #runPrewarm(): Promise<void> {

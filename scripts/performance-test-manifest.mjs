@@ -21,6 +21,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/worker-point-references.test.ts",
     "test/performance/persistence/autosave-recovery-work.test.ts",
     "test/performance/persistence/canonical-metadata-cache.test.ts",
+    "test/performance/persistence/compact-stroke-samples.test.ts",
     "test/performance/obsidian/selection-camera-work.test.ts",
     "test/performance/obsidian/clipboard-candidate-probe.test.ts",
     "test/performance/persistence/owned-export-adoption.test.ts",

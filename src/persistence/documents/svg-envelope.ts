@@ -1,5 +1,6 @@
 import type { InkSnapshotV1 } from "../../domain/schema/public";
 import { canonicalMetadataText, metadataSha256 } from "../serialization/canonical-metadata";
+import { COMPACT_METADATA_ENCODING } from "../serialization/stroke-sample-codec";
 import { serializeSvgNumber } from "./svg-number";
 import { CANONICAL_THEME_STYLESHEET } from "./svg-theme";
 import { escapeXmlText } from "./xml-text";
@@ -29,7 +30,7 @@ export function serializeSvgEnvelope(
     `data-inkbook-revision="${snapshot.revision}" ` +
     `data-inkbook-snapshot-sha256="${metadataHash}">` +
     `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>` +
-    `<metadata id="inkbook-snapshot" data-encoding="json">${metadata}</metadata>` +
+    `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">${metadata}</metadata>` +
     `<g id="inkbook-background">${joinPaths(bands.background)}</g>` +
     `<g id="inkbook-highlights">${joinPaths(bands.highlights)}</g>` +
     `<g id="inkbook-content">${joinPaths(bands.content)}</g>` +

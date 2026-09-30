@@ -6,7 +6,9 @@ import { AutosaveCoordinator } from "./coordinator";
 import type { AutosaveSessionBaseOptions } from "./types";
 
 interface AutosaveSessionOptions extends AutosaveSessionBaseOptions {
-  readonly orderByBand: () => Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
+  readonly orderByBand: (
+    band: "content" | "highlight",
+  ) => Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
   readonly path: string;
   readonly sessionId: string;
   readonly snapshot: () => InkSnapshotV1;
@@ -15,7 +17,7 @@ interface AutosaveSessionOptions extends AutosaveSessionBaseOptions {
   readonly preparedPressurePaths?: (
     modelRevision: number,
     changedIds?: ReadonlySet<string>,
-  ) => readonly PreparedPressurePathHint[];
+  ) => Iterable<PreparedPressurePathHint>;
   readonly vault: ExistingFilePort;
 }
 

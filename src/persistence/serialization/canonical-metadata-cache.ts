@@ -6,8 +6,8 @@ import {
 import {
   canonicalElementFragments,
   canonicalStrokeMetadataFrame,
-  canonicalStrokeSampleFragments,
 } from "./canonical-element-fragments";
+import { encodeStrokeSamplesSteps } from "./stroke-sample-codec";
 import { metadataPrefix } from "./canonical-metadata";
 import { ChunkedSha256 } from "./chunked-output-sha256";
 
@@ -49,7 +49,7 @@ export class CanonicalMetadataCache {
 
   public async digest(
     snapshot: InkSnapshotV1,
-    checkpoint: () => Promise<void>,
+    checkpoint: () => Promise<void> | undefined,
     signal?: AbortSignal,
   ): Promise<string> {
     const fragments = [encoder.encode(metadataPrefix(snapshot.revision, snapshot.page))];
@@ -71,41 +71,24 @@ export class CanonicalMetadataCache {
       pendingBytes += elementBytes;
       pendingElements += 1;
       if (pendingBytes >= CHUNK_BYTES || pendingElements >= CHECKPOINT_FRAGMENTS) {
-        await checkpoint();
+        const pending = checkpoint();
+        if (pending !== undefined) await pending;
         pendingBytes = 0;
         pendingElements = 0;
       }
     }
-    if (pendingElements > 0) await checkpoint();
-    fragments.push(SUFFIX_BYTES);
-    const output = new Uint8Array(length);
-    let offset = 0;
-    pendingBytes = 0;
-    let pendingFragments = 0;
-    for (const fragment of fragments) {
-      for (let start = 0; start < fragment.byteLength;) {
-        signal?.throwIfAborted();
-        const end = Math.min(fragment.byteLength, start + CHUNK_BYTES - pendingBytes);
-        const chunk = fragment.subarray(start, end);
-        output.set(chunk, offset);
-        offset += chunk.byteLength;
-        start = end;
-        pendingBytes += chunk.byteLength;
-        pendingFragments += 1;
-        if (pendingBytes === CHUNK_BYTES || pendingFragments >= CHECKPOINT_FRAGMENTS) {
-          await checkpoint();
-          pendingBytes = 0;
-          pendingFragments = 0;
-        }
-      }
+    if (pendingElements > 0) {
+      const pending = checkpoint();
+      if (pending !== undefined) await pending;
     }
-    if (pendingFragments > 0) await checkpoint();
+    fragments.push(SUFFIX_BYTES);
+    const output = await copyMetadataBytes(fragments, length, checkpoint, signal);
     return digestBytes(output, checkpoint, signal);
   }
 
   #elementBytes(
     element: InkElementV1,
-    checkpoint: () => Promise<void>,
+    checkpoint: () => Promise<void> | undefined,
     signal?: AbortSignal,
   ): readonly Uint8Array<ArrayBuffer>[] | Promise<readonly Uint8Array<ArrayBuffer>[]> {
     const cached = this.#elements.get(element.id);
@@ -124,7 +107,7 @@ export class CanonicalMetadataCache {
   async #encodeElement(
     element: InkElementV1,
     cached: CachedElement | undefined,
-    checkpoint: () => Promise<void>,
+    checkpoint: () => Promise<void> | undefined,
     signal?: AbortSignal,
   ): Promise<readonly Uint8Array<ArrayBuffer>[]> {
     const owned = this.ownsElement(element);
@@ -149,13 +132,11 @@ export class CanonicalMetadataCache {
   async #strokeBytes(
     element: Extract<InkElementV1, { kind: "stroke" }>,
     reusedSamples: Uint8Array<ArrayBuffer> | undefined,
-    checkpoint: () => Promise<void>,
+    checkpoint: () => Promise<void> | undefined,
     signal?: AbortSignal,
   ): Promise<Pick<CachedElement, "fragments" | "samples">> {
     const { prefix, suffix } = canonicalStrokeMetadataFrame(element);
-    const samples =
-      reusedSamples ??
-      (await encodeFragments(canonicalStrokeSampleFragments(element.points), checkpoint, signal));
+    const samples = reusedSamples ?? (await encodeSampleBytes(element.points, checkpoint, signal));
     signal?.throwIfAborted();
     const fragments = [encoder.encode(prefix), samples, encoder.encode(suffix)];
     if (
@@ -193,9 +174,44 @@ export class CanonicalMetadataCache {
   }
 }
 
+async function copyMetadataBytes(
+  fragments: readonly Uint8Array<ArrayBuffer>[],
+  length: number,
+  checkpoint: () => Promise<void> | undefined,
+  signal?: AbortSignal,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const output = new Uint8Array(length);
+  let offset = 0;
+  let pendingBytes = 0;
+  let pendingFragments = 0;
+  for (const fragment of fragments) {
+    for (let start = 0; start < fragment.byteLength;) {
+      signal?.throwIfAborted();
+      const end = Math.min(fragment.byteLength, start + CHUNK_BYTES - pendingBytes);
+      const chunk = fragment.subarray(start, end);
+      output.set(chunk, offset);
+      offset += chunk.byteLength;
+      start = end;
+      pendingBytes += chunk.byteLength;
+      pendingFragments += 1;
+      if (pendingBytes === CHUNK_BYTES || pendingFragments >= CHECKPOINT_FRAGMENTS) {
+        const pending = checkpoint();
+        if (pending !== undefined) await pending;
+        pendingBytes = 0;
+        pendingFragments = 0;
+      }
+    }
+  }
+  if (pendingFragments > 0) {
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
+  }
+  return output;
+}
+
 async function encodeFragments(
   fragments: Iterable<string>,
-  checkpoint: () => Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const encoded: Uint8Array<ArrayBuffer>[] = [];
@@ -206,7 +222,8 @@ async function encodeFragments(
     encoded.push(bytes);
     length += bytes.byteLength;
     if (length > FILE_SCHEMA_LIMITS.metadataBytes) throw new RangeError("Metadata byte limit.");
-    await checkpoint();
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
   }
   return joinBytes(encoded, length);
 }
@@ -226,7 +243,7 @@ function joinBytes(
 
 async function digestBytes(
   bytes: Uint8Array<ArrayBuffer>,
-  checkpoint: () => Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
 ): Promise<string> {
   signal?.throwIfAborted();
@@ -246,7 +263,34 @@ async function digestBytes(
   for (let start = 0; start < bytes.byteLength; start += CHUNK_BYTES) {
     signal?.throwIfAborted();
     hasher.update(bytes.subarray(start, start + CHUNK_BYTES));
-    await checkpoint();
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
   }
   return hasher.digestHex();
+}
+
+async function encodeSampleBytes(
+  points: ArrayLike<number>,
+  checkpoint: () => Promise<void> | undefined,
+  signal?: AbortSignal,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const steps = encodeStrokeSamplesSteps(points, signal);
+  let step = steps.next();
+  while (!step.done) {
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
+    step = steps.next();
+  }
+  if (step.value.length <= CHUNK_BYTES) return encoder.encode(step.value);
+  // The compact alphabet is ASCII, so its character and UTF-8 byte counts agree.
+  const bytes = new Uint8Array(step.value.length);
+  for (let start = 0; start < step.value.length; start += CHUNK_BYTES) {
+    signal?.throwIfAborted();
+    bytes.set(encoder.encode(step.value.slice(start, start + CHUNK_BYTES)), start);
+    if (start + CHUNK_BYTES < step.value.length) {
+      const pending = checkpoint();
+      if (pending !== undefined) await pending;
+    }
+  }
+  return bytes;
 }

@@ -8,10 +8,12 @@ export class VerifiedMetadataGuardedFileRead implements MetadataGuardedFileRead 
   public readonly identity: FileReadIdentity;
   public readonly materialization = "host-full-read-not-bounded" as const;
   public readonly stabilityEvidence = "object-identity-and-stat-unchanged" as const;
+  public readonly isCurrent?: () => boolean;
 
-  private constructor(content: string, identity: FileReadIdentity) {
+  private constructor(content: string, identity: FileReadIdentity, isCurrent?: () => boolean) {
     this.content = content;
     this.identity = Object.freeze({ ...identity });
+    if (isCurrent !== undefined) this.isCurrent = isCurrent;
     Object.freeze(this);
   }
 
@@ -19,11 +21,12 @@ export class VerifiedMetadataGuardedFileRead implements MetadataGuardedFileRead 
     content: string,
     identity: FileReadIdentity,
     maximumBytes: number,
+    isCurrent?: () => boolean,
   ): VerifiedMetadataGuardedFileRead | "too-large" | "size-mismatch" {
     const bytes = utf8ByteLengthWithinLimit(content, maximumBytes);
     if (bytes === null) return "too-large";
     if (bytes !== identity.size) return "size-mismatch";
-    return new VerifiedMetadataGuardedFileRead(content, identity);
+    return new VerifiedMetadataGuardedFileRead(content, identity, isCurrent);
   }
 
   public static isVerified(read: MetadataGuardedFileRead): read is VerifiedMetadataGuardedFileRead {

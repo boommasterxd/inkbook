@@ -13,7 +13,10 @@ import { validateRuntimeInkSnapshotV1 } from "../../domain/schema/snapshot-valid
 import { serializeSvgNumber } from "../documents/svg-number";
 import { BackgroundFragmentCache } from "./background";
 import { canonicalElement, canonicalPage, canonicalSnapshot } from "./canonical-snapshot";
-import { canonicalMetadataSha256 } from "./canonical-metadata";
+import {
+  canonicalMetadataFragmentsSha256,
+  metadataPrefix as canonicalMetadataPrefix,
+} from "./canonical-metadata";
 import { codecFailure, invalidSnapshot } from "./codec-failure";
 import {
   assembleAndHashChunkedOutput,
@@ -88,7 +91,7 @@ export class IncrementalDocumentSerializer {
     if (
       element?.kind !== "stroke" ||
       !element.style.pressureEnabled ||
-      element.offset !== undefined ||
+      (element.offset !== undefined && (element.offset.x !== 0 || element.offset.y !== 0)) ||
       pressureShapeKey(element) !== shapeKey
     )
       return false;
@@ -274,8 +277,9 @@ export class IncrementalDocumentSerializer {
     const assembly = this.#assembleElements(outputBudget, metadataBudget);
     if (!assembly.ok) return assembly;
     const metadata = snapshotMetadata(revision, page, assembly.value.metadata);
-    const metadataHash = canonicalMetadataSha256(
-      snapshotValue(revision, page, assembly.value.elements),
+    const metadataHash = canonicalMetadataFragmentsSha256(
+      canonicalMetadataPrefix(revision, page),
+      assembly.value.canonicalMetadata,
     );
     const svg = envelope(
       revision,
@@ -324,8 +328,9 @@ export class IncrementalDocumentSerializer {
     if (!assembly.ok) return assembly;
     if (!metadataBudget.tryReserve(2)) return this.#outputLimitExceeded();
     const metadataBytes = metadataBudget.usedBytes;
-    const metadataHash = canonicalMetadataSha256(
-      snapshotValue(revision, page, assembly.value.elements),
+    const metadataHash = canonicalMetadataFragmentsSha256(
+      canonicalMetadataPrefix(revision, page),
+      assembly.value.canonicalMetadata,
     );
     let assembled;
     try {
@@ -418,6 +423,7 @@ export class IncrementalDocumentSerializer {
         highlights: fragments.value.highlight.map(({ svg }) => svg).join(""),
         maximumBottom: fragments.value.maximumBottom,
         metadata: fragments.value.metadata,
+        canonicalMetadata: fragments.value.canonicalMetadata,
       },
     };
   }
@@ -427,6 +433,7 @@ export class IncrementalDocumentSerializer {
   ): DocumentCodecResult<FragmentAssembly> {
     const elements: InkElementV1[] = [];
     const metadata: string[] = [];
+    const canonicalMetadata: string[] = [];
     const fragments: Record<RenderBand, ElementFragments[]> = { content: [], highlight: [] };
     let maximumBottom: number | null = null;
     for (const band of ["highlight", "content"] as const) {
@@ -442,6 +449,7 @@ export class IncrementalDocumentSerializer {
         }
         elements.push(element);
         metadata.push(elementFragments.metadata);
+        canonicalMetadata.push(elementFragments.canonicalMetadata);
         fragments[band].push(elementFragments);
         maximumBottom = Math.max(maximumBottom ?? 0, elementFragments.bottom);
       }
@@ -454,6 +462,7 @@ export class IncrementalDocumentSerializer {
         highlight: fragments.highlight,
         maximumBottom,
         metadata,
+        canonicalMetadata,
       },
     };
   }

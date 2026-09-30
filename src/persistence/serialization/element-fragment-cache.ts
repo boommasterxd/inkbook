@@ -1,5 +1,6 @@
 import type { InkElementV1 } from "../../domain/schema/public";
-import { serializeCanonicalElementMetadata, type ElementFragments } from "./element-fragments";
+import { serializeCanonicalElementMetadata } from "./canonical-element-fragments";
+import type { ElementFragments } from "./element-fragments";
 
 const MAXIMUM_ELEMENTS = 20_000;
 const MAXIMUM_BYTES = 64 * 1024 * 1024;

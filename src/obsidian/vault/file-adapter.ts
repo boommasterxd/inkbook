@@ -28,6 +28,7 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
   readonly #normalizePath: PathNormalizer;
   readonly #operationsByPath = new Map<string, Promise<void>>();
   readonly #vault: Vault;
+  readonly #modifications = new WeakMap<TFile, number>();
 
   constructor(vault: Vault, classes: ObsidianFileClasses, normalizePath: PathNormalizer) {
     this.#vault = vault;
@@ -42,6 +43,13 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
       throw new VaultBoundaryError("file-not-found");
     }
     return file;
+  }
+
+  noteModification(path: string): void {
+    const file = this.#vault.getFileByPath(path);
+    if (file instanceof this.#classes.file) {
+      this.#modifications.set(file, (this.#modifications.get(file) ?? 0) + 1);
+    }
   }
 
   resolveFolder(untrustedPath: string | null): TFolder {
@@ -178,13 +186,29 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
   ): Promise<MetadataGuardedFileRead> {
     const file = this.resolveFile(normalizedPath);
     const before = snapshotIdentity(file);
+    const generation = this.#modifications.get(file) ?? 0;
     assertSizeWithinLimit(before.size, maximumBytes);
     const content = await read(file);
     const identity = this.#verifyStableRead(normalizedPath, file, before);
-    const verified = VerifiedMetadataGuardedFileRead.create(content, identity, maximumBytes);
+    const isCurrent = () => this.#isCurrentRead(file, identity, generation);
+    if (!isCurrent()) throw new VaultBoundaryError("unexpected-host-result");
+    const verified = VerifiedMetadataGuardedFileRead.create(
+      content,
+      identity,
+      maximumBytes,
+      isCurrent,
+    );
     if (verified === "too-large") throw new VaultBoundaryError("file-too-large");
     if (verified === "size-mismatch") throw new VaultBoundaryError("unexpected-host-result");
     return verified;
+  }
+
+  #isCurrentRead(file: TFile, identity: FileReadIdentity, generation: number): boolean {
+    return (
+      this.#vault.getFileByPath(identity.path) === file &&
+      (this.#modifications.get(file) ?? 0) === generation &&
+      sameIdentity(identity, snapshotIdentity(file))
+    );
   }
 
   #verifyStableRead(path: string, file: TFile, before: FileReadIdentity): FileReadIdentity {

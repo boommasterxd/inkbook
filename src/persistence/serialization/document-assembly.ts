@@ -4,6 +4,7 @@ import { CANONICAL_THEME_STYLESHEET } from "../documents/svg-theme";
 import { escapeXmlText } from "../documents/xml-text";
 import { metadataPrefix as canonicalMetadataPrefix } from "./canonical-metadata";
 import { encodedByteLength } from "./encoded-byte-budget";
+import { COMPACT_METADATA_ENCODING } from "./stroke-sample-codec";
 
 interface FragmentAssembly {
   readonly content: Iterable<{ readonly svg: string }>;
@@ -95,6 +96,6 @@ function rootPrefix(revision: number, lockedHeight: number, metadataHash: string
     `data-inkbook-format="inkbook" data-inkbook-version="1" data-inkbook-revision="${revision}" ` +
     `data-inkbook-snapshot-sha256="${metadataHash}">` +
     `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>` +
-    `<metadata id="inkbook-snapshot" data-encoding="json">`
+    `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">`
   );
 }

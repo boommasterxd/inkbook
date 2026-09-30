@@ -22,7 +22,7 @@ export interface TrustedSvgOutput {
 
 interface TrustedSvgInspectionOptions extends Utf8AdoptionOptions {
   readonly versionPolicy?: SafeSvgVersionPolicy;
-  readonly waitForBackground?: () => Promise<void>;
+  readonly waitForBackground?: () => Promise<void> | undefined;
 }
 
 /** Hashes complete bounded bytes without repeating validation of an owned exact output. */
@@ -30,13 +30,9 @@ export async function hashSvgContent(
   content: string,
   options: TrustedSvgInspectionOptions = {},
 ): Promise<string> {
-  const checkpoint =
-    options.checkpoint ??
-    createMainThreadCheckpoint(options.workScheduler, options.waitForBackground);
-  await checkpoint();
+  const { checkpoint, pending, chunkBytes } = prepareHash(options);
+  if (pending !== undefined) await pending;
   options.signal?.throwIfAborted();
-  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
-  assertChunkBytes(chunkBytes);
   const inspected = await inspectString(content, chunkBytes, checkpoint, options.signal);
   options.signal?.throwIfAborted();
   return inspected.outputHash;
@@ -53,13 +49,9 @@ export async function hashConfirmedSvgContent(
     crypto.subtle === undefined
   )
     return hashSvgContent(content, options);
-  const checkpoint =
-    options.checkpoint ??
-    createMainThreadCheckpoint(options.workScheduler, options.waitForBackground);
-  await checkpoint();
+  const { checkpoint, pending, chunkBytes } = prepareHash(options);
+  if (pending !== undefined) await pending;
   options.signal?.throwIfAborted();
-  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
-  assertChunkBytes(chunkBytes);
   const encoded = await encodeConfirmedContent(
     content,
     Math.min(chunkBytes, DEFAULT_CHUNK_BYTES),
@@ -70,10 +62,19 @@ export async function hashConfirmedSvgContent(
   return hashExactUtf8Output(encoded, options.signal, undefined, checkpoint);
 }
 
+function prepareHash(options: TrustedSvgInspectionOptions) {
+  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
+  assertChunkBytes(chunkBytes);
+  const checkpoint =
+    options.checkpoint ??
+    createMainThreadCheckpoint(options.workScheduler, options.waitForBackground);
+  return { checkpoint, chunkBytes, pending: checkpoint() };
+}
+
 async function encodeConfirmedContent(
   content: string,
   chunkBytes: number,
-  checkpoint: () => Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   const encoder = new TextEncoder();
@@ -96,7 +97,8 @@ async function encodeConfirmedContent(
       }
     }
     offset = end;
-    await checkpoint();
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
   }
   signal?.throwIfAborted();
   return output.subarray(0, writtenBytes);
@@ -110,12 +112,16 @@ export async function inspectTrustedSvgOutput(
   options.signal?.throwIfAborted();
   const waitForBackground = options.waitForBackground;
   const yieldCheckpoint = options.checkpoint ?? createMainThreadCheckpoint(options.workScheduler);
-  const checkpoint = async (): Promise<void> => {
-    if (waitForBackground !== undefined) await waitForBackground();
-    await yieldCheckpoint();
+  const checkpoint = (): Promise<void> | undefined => {
     options.signal?.throwIfAborted();
+    const ready = waitForBackground?.();
+    const pending = ready === undefined ? yieldCheckpoint() : ready.then(yieldCheckpoint);
+    if (pending !== undefined) return pending.then(() => options.signal?.throwIfAborted());
+    options.signal?.throwIfAborted();
+    return undefined;
   };
-  await checkpoint();
+  const pending = checkpoint();
+  if (pending !== undefined) await pending;
   options.signal?.throwIfAborted();
   const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
   assertChunkBytes(chunkBytes);
@@ -142,7 +148,7 @@ interface InspectedOutput {
 async function inspectOutput(
   output: string | Uint8Array,
   chunkBytes: number,
-  checkpoint: () => Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
 ): Promise<InspectedOutput> {
   if (typeof output === "string") return inspectString(output, chunkBytes, checkpoint, signal);
@@ -152,7 +158,7 @@ async function inspectOutput(
 async function inspectBytes(
   output: Uint8Array,
   chunkBytes: number,
-  checkpoint: () => Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
 ): Promise<InspectedOutput> {
   assertOwnedBytes(output);
@@ -160,7 +166,8 @@ async function inspectBytes(
   for (let offset = 0; offset < output.byteLength; offset += chunkBytes) {
     signal?.throwIfAborted();
     hasher.update(output.subarray(offset, Math.min(output.byteLength, offset + chunkBytes)));
-    await checkpoint();
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
     signal?.throwIfAborted();
   }
   const content = await adoptUtf8Output(output, {
@@ -174,7 +181,7 @@ async function inspectBytes(
 async function inspectString(
   output: string,
   chunkBytes: number,
-  checkpoint: () => Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
 ): Promise<InspectedOutput> {
   const hasher = new ChunkedSha256();
@@ -185,7 +192,8 @@ async function inspectString(
     hasher.update(encoder.encode(output.slice(offset, end)));
     if (hasher.totalBytes > FILE_SCHEMA_LIMITS.totalInputBytes) throw oversizedOutput();
     offset = end;
-    await checkpoint();
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
     signal?.throwIfAborted();
   }
   return { content: output, outputHash: hasher.digestHex(), totalBytes: hasher.totalBytes };
@@ -208,7 +216,7 @@ function nextChunkEnd(input: string, offset: number, chunkCodeUnits: number): nu
 async function validateSafeSvgIncrementally(
   content: string,
   totalBytes: number,
-  checkpoint: () => Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
   versionPolicy: SafeSvgVersionPolicy = "current",
   workScheduler?: Utf8AdoptionOptions["workScheduler"],
@@ -222,7 +230,8 @@ async function validateSafeSvgIncrementally(
   let step = steps.next();
   while (!step.done) {
     signal?.throwIfAborted();
-    await checkpoint();
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
     signal?.throwIfAborted();
     step = steps.next();
   }

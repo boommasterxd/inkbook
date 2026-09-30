@@ -15,7 +15,7 @@ export interface PreparedSave extends PreparedOutput {
 }
 
 export interface SaveRevisionSource {
-  readonly waitForBackground?: () => Promise<void>;
+  readonly waitForBackground?: () => Promise<void> | undefined;
   currentRevision(): number;
 }
 
@@ -30,7 +30,8 @@ export async function saveExistingFile(
   vault: ExistingFilePort,
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
-  if (revisionSource.waitForBackground) await revisionSource.waitForBackground();
+  const pending = revisionSource.waitForBackground?.();
+  if (pending !== undefined) await pending;
   validatePreparedOutput(prepared);
   const preflight = await readExistingFileWithinLimit(vault, prepared.path);
   if (!exactStringEqual(preflight, prepared.expectedBase)) {
@@ -47,7 +48,8 @@ export async function saveExistingFileFromVerifiedPreflight(
   vault: ExistingFilePort,
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
-  if (revisionSource.waitForBackground) await revisionSource.waitForBackground();
+  const pending = revisionSource.waitForBackground?.();
+  if (pending !== undefined) await pending;
   validatePreparedOutput(prepared);
   if (
     preflight.base.revision !== expectedBase.revision ||

@@ -64,10 +64,7 @@ export function createVaultAutosaveSession(
     executor: options.executor,
     initialSnapshot: options.initialSnapshot,
     isGestureActive: options.isGestureActive,
-    orderByBand: () => ({
-      content: options.store.materializeBandOrder("content"),
-      highlight: options.store.materializeBandOrder("highlight"),
-    }),
+    orderByBand: (band) => ({ [band]: options.store.materializeBandOrder(band) }),
     outputHash: options.outputHash,
     path: options.identity.documentId,
     ...(options.requiresCanonicalRewrite === undefined
@@ -75,13 +72,14 @@ export function createVaultAutosaveSession(
       : { requiresCanonicalRewrite: options.requiresCanonicalRewrite }),
     sessionId: options.identity.sessionId,
     ownsIntegrityElement: (element) => options.store.get(element.id)?.element === element,
-    preparedPressurePaths: (revision, changedIds) =>
-      revision === options.currentRevision()
-        ? options.store.preparedPressurePaths(changedIds).flatMap(({ record, parts }) => {
-            const hint = preparedPressurePathHint(record, parts, revision);
-            return hint === undefined ? [] : [hint];
-          })
-        : [],
+    preparedPressurePaths: function* (revision, changedIds) {
+      if (revision === options.currentRevision()) {
+        for (const { record, parts } of options.store.preparedPressurePaths(changedIds)) {
+          const hint = preparedPressurePathHint(record, parts, revision);
+          if (hint !== undefined) yield hint;
+        }
+      }
+    },
     integritySnapshot: () => ({
       format: "inkbook",
       version: 1,
@@ -133,13 +131,14 @@ export function createConfirmedPersistenceObserver(options: {
   readonly lockedAspectRatio: () => number;
   readonly persisted: ((event: VaultDocumentPersistedEvent) => void) | undefined;
 }): (persistence: ConfirmedPersistence) => void {
-  return ({ outputHash, revision }) => {
+  return ({ outputHash, revision, readBack }) => {
     if (!options.active()) return;
     options.persisted?.({
       documentId: options.documentId,
       lockedAspectRatio: options.lockedAspectRatio(),
       outputHash,
       revision,
+      ...(readBack === undefined ? {} : { readBack }),
     });
   };
 }

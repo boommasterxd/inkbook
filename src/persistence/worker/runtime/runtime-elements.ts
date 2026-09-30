@@ -94,7 +94,10 @@ async function copyElementsToRuntimeSlicedInternal(
         ),
       );
     }
-    if ((index + 1) % profile.nodeLimit === 0) await context.checkpoint();
+    if ((index + 1) % profile.nodeLimit === 0) {
+      const pending = context.checkpoint();
+      if (pending !== undefined) await pending;
+    }
   }
   context.signal.throwIfAborted();
   return copied;
@@ -122,7 +125,8 @@ async function copyStrokeToRuntimeSliced(
     const end = Math.min(source.length, start + sampleSlice);
     for (let index = start; index < end; index += 1) points[index] = source[index]!;
     if (!validated) assertStrokeSamplesV1(points.subarray(start, end));
-    await context.checkpoint();
+    const pending = context.checkpoint();
+    if (pending !== undefined) await pending;
   }
   copyValidatedSampleExtrema(source, points);
   if (reusable) pointCopies?.set(source, points as RuntimeStrokeSamples);

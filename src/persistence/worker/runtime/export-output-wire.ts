@@ -27,7 +27,8 @@ export async function encodeExportSuccessChunked(
   options: RuntimeWireSliceOptions,
 ): Promise<ExportWireTransfer> {
   options.signal.throwIfAborted();
-  await options.checkpoint();
+  const pending = options.checkpoint();
+  if (pending !== undefined) await pending;
   options.signal.throwIfAborted();
   return encodeExportSuccess(result);
 }

@@ -30,7 +30,7 @@ interface PendingRecognition {
   readonly signature: string;
   readonly promise: Promise<InkbookDocumentRecognition>;
   readonly resolve: (value: InkbookDocumentRecognition) => void;
-  readonly gates: Set<() => Promise<void>>;
+  readonly gates: Set<() => Promise<void> | undefined>;
 }
 
 export type InkbookDocumentRecognition = false | LoadedPreviewSvg;
@@ -42,7 +42,7 @@ export interface InkbookDocumentRecognitionPort {
   loadPreviewSource?: (
     documentId: string,
     source: string,
-    waitForBackground?: () => Promise<void>,
+    waitForBackground?: () => Promise<void> | undefined,
     ownerWindow?: Window | null,
   ) => Promise<LoadedPreviewSvg>;
 }
@@ -107,7 +107,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   public readonly loadPreviewSource = async (
     documentId: string,
     source: string,
-    waitForBackground?: () => Promise<void>,
+    waitForBackground?: () => Promise<void> | undefined,
     ownerWindow?: Window | null,
   ): Promise<LoadedPreviewSvg> => {
     const file = this.#resolveFile(documentId);
@@ -204,7 +204,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       signature,
       promise,
       resolve,
-      gates: new Set<() => Promise<void>>(),
+      gates: new Set<() => Promise<void> | undefined>(),
     };
     this.#addOwner(request, ownerWindow);
     this.#pending.set(documentId, request);
@@ -401,8 +401,14 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       let preview: LoadedPreviewSvg | null;
       try {
         preview = await inspectPreviewSvg(content, {
-          waitForBackground: () =>
-            Promise.all(Array.from(request.gates, (gate) => gate())).then(() => undefined),
+          waitForBackground: () => {
+            const pending: Promise<void>[] = [];
+            for (const gate of request.gates) {
+              const ready = gate();
+              if (ready !== undefined) pending.push(ready);
+            }
+            return pending.length === 0 ? undefined : Promise.all(pending).then(() => undefined);
+          },
           signal: abort.signal,
           workScheduler,
         });

@@ -36,6 +36,10 @@ describe("owned canonical export adoption work", () => {
     const scan = vi.spyOn(safeSvg, "validateSafeSvgSteps");
     const syncScan = vi.spyOn(safeSvg, "validateSafeSvg");
     const hash = vi.spyOn(ChunkedSha256.prototype, "update");
+    const nativeHash = vi.spyOn(crypto.subtle, "digest");
+    const hashedBytes = () =>
+      hash.mock.calls.reduce((bytes, [chunk]) => bytes + chunk.byteLength, 0) +
+      nativeHash.mock.calls.reduce((bytes, [, input]) => bytes + input.byteLength, 0);
     const options = { checkpoint: async () => {}, signal: new AbortController().signal };
     const decoded = await decodeRuntimeResultChunked(transfer.value, options);
     if (decoded.type !== "export-success") throw new Error("Expected canonical export");
@@ -85,18 +89,18 @@ describe("owned canonical export adoption work", () => {
     expect(scan).not.toHaveBeenCalled();
     expect(syncScan).not.toHaveBeenCalled();
     expect(hash).not.toHaveBeenCalled();
+    expect(nativeHash).not.toHaveBeenCalled();
     await confirmHostWrite(adopted.content, adopted.outputHash);
     expect(scan).not.toHaveBeenCalled();
     expect(syncScan).not.toHaveBeenCalled();
-    expect(hash.mock.calls.reduce((bytes, [chunk]) => bytes + chunk.byteLength, 0)).toBe(
+    expect(hashedBytes()).toBe(
       new TextEncoder().encode(adopted.content).byteLength * 2 + "<script/>".length,
     );
     hash.mockClear();
+    nativeHash.mockClear();
     await verifyBoundRequest(adopted.content, adopted.outputHash);
     expect(scan).not.toHaveBeenCalled();
-    expect(hash.mock.calls.reduce((bytes, [chunk]) => bytes + chunk.byteLength, 0)).toBe(
-      new TextEncoder().encode(adopted.content).byteLength,
-    );
+    expect(hashedBytes()).toBe(new TextEncoder().encode(adopted.content).byteLength);
     readback = adopted.content.replace("</svg>", "<script>alert(1)</script></svg>");
     await expect(save()).rejects.toMatchObject({ code: "read-back-mismatch" });
     expect(fallback).toHaveBeenCalledExactlyOnceWith(readback, 2, adopted.outputHash);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { CoalescedExportTarget } from "../../../../src/persistence/worker/coalesced-export";
 
@@ -47,6 +47,20 @@ describe("coalesced export target", () => {
     expect(target.materialize({ orderByBand: { highlight: ["h2", "h1"] } })).toMatchObject({
       orderChanges: { highlight: ["h2", "h1"] },
     });
+  });
+
+  it("reads lazy band order only for dirty bands and never for a full snapshot", () => {
+    const target = new CoalescedExportTarget<ElementRecord, never>(0, ({ id }) => id);
+    const orderByBand = vi.fn(() => ["a"]);
+    target.record({ changedElements: [{ id: "a", value: 1 }], modelRevision: 1 });
+    expect(target.materialize({ orderByBand })).toMatchObject({ orderChanges: {} });
+    expect(orderByBand).not.toHaveBeenCalled();
+    target.record({ dirtyBands: ["content"], modelRevision: 2 });
+    expect(target.materialize({ orderByBand })).toMatchObject({ orderChanges: { content: ["a"] } });
+    expect(orderByBand).toHaveBeenCalledExactlyOnceWith("content");
+    target.requireFullSnapshot(2);
+    target.materialize({ orderByBand, snapshot: {} });
+    expect(orderByBand).toHaveBeenCalledOnce();
   });
 
   it("upgrades one pending entry to a full snapshot after baseline invalidation", () => {

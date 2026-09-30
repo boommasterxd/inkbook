@@ -3,7 +3,7 @@ import { isHighlightElement } from "../../domain/commands/render-bands";
 import { calculateElementBounds } from "../../domain/geometry/public";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { escapeXmlText } from "../documents/xml-text";
-import { canonicalElement } from "./canonical-snapshot";
+import { serializeCanonicalElementMetadata } from "./canonical-element-fragments";
 import { encodedByteLength } from "./encoded-byte-budget";
 import { serializedPathDataByteLength, serializeElementPaths, serializeParts } from "./path-markup";
 
@@ -77,14 +77,4 @@ function elementFragments(
       (canonicalMetadata === metadata ? 0 : canonicalMetadataBytes),
     svg,
   };
-}
-
-export function serializeCanonicalElementMetadata(element: InkElementV1): string {
-  const canonical = canonicalElement(element, true);
-  if (canonical.kind !== "stroke" || !(canonical.points instanceof Float64Array)) {
-    return JSON.stringify(canonical);
-  }
-  const marker = "__inkbook_runtime_points__";
-  const template = JSON.stringify({ ...canonical, points: marker });
-  return template.replace(`"points":"${marker}"`, `"points":[${canonical.points.join(",")}]`);
 }

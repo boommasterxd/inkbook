@@ -14,7 +14,7 @@ const MAXIMUM_TAG_CHARACTERS = 16 * 1024 * 1024 + 4096;
 /** Validates supplied presentation syntax without reconstructing snapshot geometry. */
 export class StreamingSafeStaticValidator {
   public readonly failure = "invalid-svg";
-  readonly #checkpoint: () => Promise<void>;
+  readonly #checkpoint: () => Promise<void> | undefined;
   readonly #totals: SvgTotals = { commands: 0, groups: 0, pathBytes: 0, paths: 0 };
   #pending = "";
   #maximumPendingCharacters = 0;
@@ -24,7 +24,7 @@ export class StreamingSafeStaticValidator {
   #closed = false;
   #valid = true;
 
-  public constructor(checkpoint: () => Promise<void>) {
+  public constructor(checkpoint: () => Promise<void> | undefined) {
     this.#checkpoint = checkpoint;
   }
 
@@ -83,7 +83,8 @@ export class StreamingSafeStaticValidator {
     const validation = validatePathAttributesSteps(tag.attributes);
     let step = validation.next();
     while (!step.done) {
-      await this.#checkpoint();
+      const pending = this.#checkpoint();
+      if (pending !== undefined) await pending;
       step = validation.next();
     }
     if (step.value === null) return false;

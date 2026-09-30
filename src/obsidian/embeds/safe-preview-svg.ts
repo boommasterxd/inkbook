@@ -13,7 +13,7 @@ export type PreviewContentIdentity = PersistedDocumentIdentity;
 
 export interface PreviewInspectionOptions {
   readonly signal?: AbortSignal;
-  readonly waitForBackground?: () => Promise<void>;
+  readonly waitForBackground?: () => Promise<void> | undefined;
   readonly workScheduler: WorkScheduler;
 }
 

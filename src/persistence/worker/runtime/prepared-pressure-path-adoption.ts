@@ -51,7 +51,8 @@ export async function acceptPreparedPressurePaths(
     const validation = validatePathDataSteps(candidate.d);
     let step = validation.next();
     while (!step.done) {
-      await context?.checkpoint();
+      const pending = context?.checkpoint();
+      if (pending !== undefined) await pending;
       context?.signal.throwIfAborted();
       step = validation.next();
     }

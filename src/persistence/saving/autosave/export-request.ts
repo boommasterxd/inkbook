@@ -28,7 +28,7 @@ export function createExportRequest(
   readPreparedPressurePaths?: (
     modelRevision: number,
     changedIds?: ReadonlySet<string>,
-  ) => readonly PreparedPressurePathHint[],
+  ) => Iterable<PreparedPressurePathHint>,
   includeBaselinePreparedPressurePaths = false,
 ): ConcreteExportRequest {
   const preparedPressurePaths = collectPreparedPressurePaths(
@@ -63,7 +63,7 @@ function collectPreparedPressurePaths(
     | ((
         modelRevision: number,
         changedIds?: ReadonlySet<string>,
-      ) => readonly PreparedPressurePathHint[])
+      ) => Iterable<PreparedPressurePathHint>)
     | undefined,
   includeBaseline: boolean,
 ): readonly PreparedPressurePathHint[] {
@@ -76,15 +76,17 @@ function collectPreparedPressurePaths(
   const paths: PreparedPressurePathHint[] = [];
   const candidates = read(plan.modelRevision, changed ?? undefined);
   let bytes = 0;
-  for (let index = 0; index < Math.min(candidates.length, MAX_PREPARED_PRESSURE_HINTS); index++) {
-    const hint = candidates[index]!;
-    if (hint.modelRevision !== plan.modelRevision || (changed !== null && !changed.has(hint.id)))
-      continue;
-    const size = preparedPressureHintBytes(hint);
-    if (size > MAX_PREPARED_PRESSURE_HINT_BYTES - bytes) continue;
-    paths.push(hint);
-    bytes += size;
-    if (paths.length >= MAX_PREPARED_PRESSURE_HINTS) break;
+  let visited = 0;
+  for (const hint of candidates) {
+    visited += 1;
+    if (hint.modelRevision === plan.modelRevision && (changed === null || changed.has(hint.id))) {
+      const size = preparedPressureHintBytes(hint);
+      if (size <= MAX_PREPARED_PRESSURE_HINT_BYTES - bytes) {
+        paths.push(hint);
+        bytes += size;
+      }
+    }
+    if (visited >= MAX_PREPARED_PRESSURE_HINTS) break;
   }
   return paths;
 }

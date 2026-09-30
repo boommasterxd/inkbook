@@ -36,11 +36,12 @@ it("saves visible contour builds on a cold 10k-stroke unlock followed by an incr
     currentRevision: () => baseline.revision + 1,
     isGestureActive: () => false,
     orderByBand: () => ({ content: store.materializeBandOrder("content") }),
-    preparedPressurePaths: (revision: number) =>
-      store.preparedPressurePaths().flatMap(({ record, parts }) => {
+    preparedPressurePaths: function* (revision: number) {
+      for (const { record, parts } of store.preparedPressurePaths()) {
         const hint = preparedPressurePathHint(record, parts, revision);
-        return hint === undefined ? [] : [hint];
-      }),
+        if (hint !== undefined) yield hint;
+      }
+    },
     snapshot: () =>
       store.materializeSnapshot({ page: baseline.page, revision: baseline.revision + 1 }),
   };

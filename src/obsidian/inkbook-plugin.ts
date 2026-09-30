@@ -259,6 +259,15 @@ function createEmbedIntegration(
     deferUntilLayoutReady: true,
     workScheduler: (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
   });
+  runtime.setConfirmedOutputReceiver((documentId, output) => {
+    if (output !== undefined)
+      documentRecognition.acceptConfirmedOutput(
+        documentId,
+        output.content,
+        output.outputHash,
+        output.signature,
+      );
+  });
   return {
     documentRecognition,
     ports: {

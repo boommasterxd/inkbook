@@ -37,6 +37,7 @@ export interface FragmentSerializerInstrumentation {
 }
 
 export interface ElementAssembly {
+  readonly canonicalMetadata: string[];
   readonly content: string;
   readonly elements: InkElementV1[];
   readonly highlights: string;
@@ -45,6 +46,7 @@ export interface ElementAssembly {
 }
 
 export interface FragmentAssembly {
+  readonly canonicalMetadata: string[];
   readonly content: ElementFragments[];
   readonly elements: InkElementV1[];
   readonly highlight: ElementFragments[];

@@ -1,7 +1,8 @@
 import { nextSafeCounter } from "../../worker/identity";
 import type { ExportSuccess, PurposeOperationIdentity, VaultBase } from "../../worker/protocol";
 import type { DocumentRuntimeResult, ModelSyncRuntimeRequest } from "../../worker/runtime/public";
-import { readExistingFileWithinLimit } from "../bounded-file-read";
+import { readExistingFileWithinLimit, readGuardedFileWithinLimit } from "../bounded-file-read";
+import type { MetadataGuardedFileRead } from "../save-ports";
 import type { PreparedSave } from "../save-existing";
 import * as integrity from "./export-integrity";
 import type * as Autosave from "./types";
@@ -17,6 +18,7 @@ import { assertAutosaveInitialState } from "./coordinator-validation";
 import { inspectAutosaveExternalChange } from "./external-change";
 import { inspectIndeterminateSave } from "./indeterminate-save";
 import { classifyAutosaveFailure } from "./save-failure";
+type ConfirmedBase = Extract<VaultBase, { type: "confirmed" }>;
 export class AutosaveCoordinator {
   readonly #beforeExistingWrite;
   #canonicalRewritePending: boolean;
@@ -172,7 +174,7 @@ export class AutosaveCoordinator {
         activeOutputHash: active.proof.outputHash,
         activeRevision: active.proof.revision,
         previousBase: active.previousBase,
-        read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
+        read: () => readGuardedFileWithinLimit(this.#terminalVault, this.#path),
         stopped: () => this.#disposed,
         verify: (content) => this.#verifier.verify(content, "verification"),
       });
@@ -403,11 +405,14 @@ export class AutosaveCoordinator {
         },
       });
       if (this.#disposed) return;
-      this.#confirmSavedOutput({
-        outputHash: confirmed.outputHash,
-        revision: confirmed.revision,
-        type: "confirmed",
-      });
+      this.#confirmSavedOutput(
+        {
+          outputHash: confirmed.outputHash,
+          revision: confirmed.revision,
+          type: "confirmed",
+        },
+        confirmed.readBack,
+      );
       this.#resolveWaiters();
     } catch (error) {
       active.result = null;
@@ -435,23 +440,20 @@ export class AutosaveCoordinator {
     inspected: Awaited<ReturnType<typeof inspectIndeterminateSave>>,
   ): void {
     if (inspected?.outcome === "confirmed") {
-      this.#confirmSavedOutput(inspected.confirmedBase);
-    } else if (inspected?.outcome === "retryable-error") {
+      this.#confirmSavedOutput(inspected.confirmedBase, inspected.readBack);
+    } else if (inspected !== undefined) {
       this.#save = null;
-      this.#requireFullSnapshot();
-      this.#setStatus("retryable-error");
-    } else if (inspected?.outcome === "conflict") {
-      this.#save = null;
-      this.#setStatus("conflict");
+      if (inspected.outcome === "retryable-error") this.#requireFullSnapshot();
+      this.#setStatus(inspected.outcome);
     }
     this.#resolveWaiters();
   }
-  #confirmSavedOutput(base: Extract<VaultBase, { type: "confirmed" }>): void {
+  #confirmSavedOutput(base: ConfirmedBase, readBack?: MetadataGuardedFileRead): void {
     this.#confirmedBase = base;
     this.#confirmedContent = null;
     this.#canonicalRewritePending = false;
     this.#save = null;
-    notifyConfirmedPersistence(this.#observer, this.#path, base);
+    notifyConfirmedPersistence(this.#observer, this.#path, base, readBack);
     this.#executor.requestPrewarm?.();
     this.#setStatus(this.dirty ? "debouncing" : "clean");
   }

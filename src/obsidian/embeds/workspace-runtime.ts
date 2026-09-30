@@ -19,7 +19,11 @@ import {
   type PresentationAttachment,
   type PresentationSessionPort,
 } from "./presentation-port";
-import { type HostWriteResolved, WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
+import {
+  type ConfirmedOutputReceiver,
+  type HostWriteResolved,
+  WorkspaceRuntimeLifecycle,
+} from "./workspace-runtime-lifecycle";
 import {
   handleWorkspaceActivationFailure,
   showWorkspaceLoadRecovery,
@@ -39,12 +43,12 @@ import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
 import {
   createWorkspaceMountedPresentation,
+  createWorkspacePresentationStateSetter,
   disposeWorkspaceMountedPresentations,
   cancelInitialWorkspaceLoading,
   startInitialWorkspaceLoading,
   updateWorkspaceMountedSettings,
 } from "./workspace-mounted-presentation";
-import type { PresentationOperationFeedbackHandle } from "./presentation-operation-feedback";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
 import * as trustedHeadStorage from "../storage/trusted-document-head-ledger";
@@ -59,6 +63,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
+  readonly #setState = createWorkspacePresentationStateSetter(this.#mounted);
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
@@ -304,8 +309,12 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly abortAutoActivation = (documentId: string): void =>
     this.#lifecycle.abortAutoActivation(documentId);
 
-  readonly handleVaultModification = (documentId: string, resolved?: HostWriteResolved): void =>
+  readonly handleVaultModification = (documentId: string, resolved?: HostWriteResolved): void => {
+    this.#sessions.noteVaultModification(documentId);
     this.#lifecycle.handleVaultModification(documentId, resolved);
+  };
+  readonly setConfirmedOutputReceiver = (receiver: ConfirmedOutputReceiver): void =>
+    this.#lifecycle.setConfirmedOutputReceiver(receiver);
   handleMarkdownEditorChange(sourcePath: string, pane: HTMLElement): void {
     if (this.#disposed) return;
     const current = this.#coordinator.getSnapshot().current;
@@ -466,16 +475,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       feedback: this.#feedback,
       openRecovery: this.#host.openRecovery,
     });
-  }
-
-  #setState(
-    attachment: AttachmentIdentity,
-    state: string,
-    feedback?: PresentationOperationFeedbackHandle,
-  ): void {
-    feedback?.finish();
-    const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
-    if (mounted !== undefined) mounted.attachment.root.dataset.inkbookState = state;
   }
 
   #owningWindow(documentId: string): Window {

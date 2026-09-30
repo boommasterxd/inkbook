@@ -34,6 +34,7 @@ export interface VaultDocumentPersistedEvent {
   readonly lockedAspectRatio: number;
   readonly outputHash: string;
   readonly revision: number;
+  readonly readBack?: MetadataGuardedFileRead;
 }
 
 export interface VaultDocumentSessionHooks {

@@ -24,7 +24,8 @@ export async function hashRuntimeInput(
     } else hash.update(input.subarray(offset, end));
     if (hash.totalBytes > FILE_SCHEMA_LIMITS.totalInputBytes) return null;
     offset = end;
-    await context?.checkpoint();
+    const pending = context?.checkpoint();
+    if (pending !== undefined) await pending;
   }
   context?.signal.throwIfAborted();
   return hash.digestHex();

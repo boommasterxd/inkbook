@@ -210,15 +210,16 @@ export class ProgressivePreviewPath {
       return this.#pendingPieces.length === 0;
     }
     this.#windowJob ??= preparePressureWindowSteps(this.#pendingPieces.slice(0, count));
-    for (let index = 0; index < 4096; index++) {
-      if (index > 0 && now() >= deadline) return false;
+    let started = false;
+    for (;;) {
+      if (started && now() >= deadline) return false;
+      started = true;
       const step = this.#windowJob.next();
       if (!step.done) continue;
       const measurement = this.pressureGeometry?.publishWindow(this.#windows.length, step.value);
       this.acceptWindow(step.value, count, measurement);
       return this.#pendingPieces.length === 0;
     }
-    return false;
   }
 
   private acceptWindow(

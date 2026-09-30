@@ -38,10 +38,13 @@ describe("canonical pressure path groups", () => {
     for (let offset = 0; offset < bytes.length; offset += 7) {
       expect((await parser.write(bytes.subarray(offset, offset + 7))).ok).toBe(true);
     }
-    expect(await parser.finish()).toMatchObject({
-      ok: true,
-      value: { requiresCanonicalRewrite: false, snapshot: document.snapshot },
-    });
+    const parsed = await parser.finish();
+    expect(parsed).toMatchObject({ ok: true, value: { requiresCanonicalRewrite: false } });
+    if (!parsed.ok) return;
+    const stroke = parsed.value.snapshot.elements[0];
+    expect(stroke?.kind).toBe("stroke");
+    if (stroke?.kind !== "stroke") return;
+    expect(stroke.points).toEqual(new Float64Array([100, 100, 0, 150, 100, 0.5, 200, 100, 1]));
     const model = new DocumentModelRuntime(() => 0);
     await expect(model.verifyOutput(document.current)).resolves.toMatchObject({ revision: 7 });
     await expect(model.unlock(document.current)).resolves.toMatchObject({

@@ -12,6 +12,8 @@ export interface MetadataGuardedFileRead {
   readonly materialization: "host-full-read-not-bounded";
   /** This evidence detects ordinary races but cannot prove an atomic content snapshot. */
   readonly stabilityEvidence: "object-identity-and-stat-unchanged";
+  /** A transient host proof invalidated by any later file modification or replacement. */
+  readonly isCurrent?: () => boolean;
 }
 
 export interface ExistingFilePort {

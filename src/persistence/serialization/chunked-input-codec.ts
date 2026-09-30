@@ -1,9 +1,9 @@
 import { StreamingSafeStaticValidator } from "./streaming-safe-static";
-import type {
-  InkSnapshotV1,
-  SnapshotValidationDerivations,
-  ValidationError,
-} from "../../domain/schema/public";
+import {
+  ValidatedSnapshotAdoption,
+  type ValidatedSnapshotConsumer,
+} from "./validated-snapshot-adoption";
+import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
 import { FILE_SCHEMA_LIMITS, MAX_JSON_DEPTH } from "../../domain/schema/public";
 import { jsonContainerBudget, jsonNodeBudget } from "../../domain/schema/validation-internals";
 import {
@@ -11,11 +11,11 @@ import {
   type SafeSvgPrelude,
 } from "../documents/safe-svg-validator";
 import { backgroundFitsStaticLimit } from "./background";
-import { validateCurrentMetadataIntegrity } from "./canonical-metadata";
+import { validateParsedMetadata } from "./parsed-metadata-validation";
 import {
   ChunkedJsonCancelledError,
   ChunkedJsonParseError,
-  parseChunkedJson,
+  parseChunkedJsonWithProof,
 } from "./chunked-json-parser";
 import {
   ChunkedInputCancelledError,
@@ -25,10 +25,7 @@ import {
 import { combineInputBytes, positiveInputInteger } from "./chunked-input-utils";
 import { isCanonicalLockedHeight } from "./locked-height";
 import { ChunkedSha256 } from "./chunked-output-sha256";
-import {
-  migrateAndValidateDocumentSnapshotSteps,
-  type MigratedSnapshot,
-} from "./document-migration";
+import type { MigratedSnapshot } from "./document-migration";
 import type { DocumentHashPort } from "./sha256";
 import type {
   DocumentCodecError,
@@ -47,7 +44,7 @@ const JSON_STRING_SCRATCH_CHARACTERS = 16 * 1024;
 const MAXIMUM_PREFIX_CHARACTERS = 64 * 1024;
 const METADATA_INPUT_CODE_UNITS_PER_STEP = 16 * 1024;
 
-const IMMEDIATE_CHUNKED_INPUT_CHECKPOINT: ChunkedInputCheckpoint = () => Promise.resolve();
+const IMMEDIATE_CHUNKED_INPUT_CHECKPOINT: ChunkedInputCheckpoint = () => undefined;
 
 export type { ChunkedInkbookInputOptions, ChunkedInputCheckpoint };
 
@@ -59,12 +56,8 @@ export class ChunkedInkbookInputParser {
   readonly #incrementalHash: ChunkedSha256;
   readonly #inputSliceBytes: number;
   readonly #staticValidation: "canonical" | "safe";
-  readonly #onValidatedSnapshot:
-    | ((
-        snapshot: InkSnapshotV1,
-        derivations: SnapshotValidationDerivations,
-      ) => Promise<void> | void)
-    | undefined;
+  readonly #onValidatedSnapshot: ValidatedSnapshotConsumer | undefined;
+  readonly #adoption: ValidatedSnapshotAdoption;
   readonly #signal: AbortSignal | undefined;
   readonly #byteChunks: Uint8Array[] = [];
   readonly #metadata = new StreamingSvgMetadataParser(FILE_SCHEMA_LIMITS.metadataBytes);
@@ -92,6 +85,7 @@ export class ChunkedInkbookInputParser {
     this.#onValidatedSnapshot = options.onValidatedSnapshot;
     this.#staticValidation = options.staticValidation ?? "canonical";
     this.#signal = options.signal;
+    this.#adoption = new ValidatedSnapshotAdoption(options.signal);
   }
 
   public get bytesReceived(): number {
@@ -154,6 +148,8 @@ export class ChunkedInkbookInputParser {
       ) {
         return failure("invalid-svg", "Document does not satisfy the safe SVG envelope.");
       }
+      await this.#adoption.finish();
+      this.#throwIfCancelled();
       const beforeHash = this.#runCheckpoint();
       if (beforeHash !== null) await beforeHash;
       const hash = this.#completeHash();
@@ -169,6 +165,9 @@ export class ChunkedInkbookInputParser {
         },
       };
     } finally {
+      this.#adoption.cancel();
+      const settling = this.#adoption.settle();
+      if (settling !== undefined) await settling;
       this.#releaseBuffers();
       this.#markFinished();
     }
@@ -182,33 +181,26 @@ export class ChunkedInkbookInputParser {
     if (beforeMetadata !== null) await beforeMetadata;
     const parsed = await this.#parseMetadata(metadataText);
     if (!parsed.ok) return parsed;
-    const migrated = await runSteps(
-      migrateAndValidateDocumentSnapshotSteps(parsed.value, {
-        metadataBytes,
-        totalInputBytes: this.#bytes,
-      }),
-      () => this.#runCheckpoint(),
-    );
-    if (!migrated.ok) return migrated;
-    const integrity = validateCurrentMetadataIntegrity(
+    return validateParsedMetadata(parsed.value, {
+      checkpoint: () => this.#runCheckpoint() ?? undefined,
+      metadataBytes,
       metadataText,
-      this.#prelude?.snapshotHash ?? null,
-      migrated.value,
-      this.#staticValidation,
-    );
-    return integrity.ok ? migrated : integrity;
+      prelude: this.#prelude,
+      ...(this.#signal === undefined ? {} : { signal: this.#signal }),
+      staticValidation: this.#staticValidation,
+      totalInputBytes: this.#bytes,
+    });
   }
 
-  async #parseMetadata(metadataText: string): Promise<DocumentCodecResult<unknown>> {
+  async #parseMetadata(
+    metadataText: string,
+  ): Promise<DocumentCodecResult<Awaited<ReturnType<typeof parseChunkedJsonWithProof>>>> {
     try {
       const checkpoint =
         this.#checkpoint === IMMEDIATE_CHUNKED_INPUT_CHECKPOINT
           ? undefined
-          : async (): Promise<void> => {
-              const pending = this.#runCheckpoint();
-              if (pending !== null) await pending;
-            };
-      const value = await parseChunkedJson(metadataText, {
+          : () => this.#runCheckpoint() ?? undefined;
+      const value = await parseChunkedJsonWithProof(metadataText, {
         batchCharacters: Math.min(this.#inputSliceBytes, METADATA_INPUT_CODE_UNITS_PER_STEP),
         ...(checkpoint === undefined ? {} : { checkpoint }),
         limits: {
@@ -310,7 +302,10 @@ export class ChunkedInkbookInputParser {
       if (result.kind === "complete") {
         return this.#completeMetadata(result, input, offset);
       }
-      if (offset < input.length) await this.#checkpointMetadataSlice();
+      if (offset < input.length) {
+        const pending = this.#checkpointMetadataSlice();
+        if (pending !== undefined) await pending;
+      }
     }
     return { ok: true, value: undefined };
   }
@@ -340,7 +335,10 @@ export class ChunkedInkbookInputParser {
       const end = Math.min(offset + METADATA_INPUT_CODE_UNITS_PER_STEP, input.length);
       if (!(await this.#writeStaticChunk(input.slice(offset, end)))) return this.#staticFailure();
       offset = end;
-      if (offset < input.length) await this.#checkpointMetadataSlice();
+      if (offset < input.length) {
+        const pending = this.#checkpointMetadataSlice();
+        if (pending !== undefined) await pending;
+      }
     }
     return { ok: true, value: undefined };
   }
@@ -350,9 +348,8 @@ export class ChunkedInkbookInputParser {
     return (await this.#staticMatcher?.write(input)) === true;
   }
 
-  async #checkpointMetadataSlice(): Promise<void> {
-    const checkpoint = this.#runCheckpoint();
-    if (checkpoint !== null) await checkpoint;
+  #checkpointMetadataSlice(): Promise<void> | undefined {
+    return this.#runCheckpoint() ?? undefined;
   }
 
   async #initializeStaticMatcher(
@@ -389,7 +386,7 @@ export class ChunkedInkbookInputParser {
         : new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
     this.#runtimeSnapshot = snapshot;
     this.#streamPhase = "static";
-    await this.#onValidatedSnapshot?.(snapshot, migrated.derivations);
+    this.#adoption.start(snapshot, migrated.derivations, this.#onValidatedSnapshot);
     this.#throwIfCancelled();
     return { ok: true, value: undefined };
   }
@@ -415,14 +412,9 @@ export class ChunkedInkbookInputParser {
 
   #runCheckpoint(): Promise<void> | null {
     this.#throwIfCancelled();
-    return this.#checkpoint === IMMEDIATE_CHUNKED_INPUT_CHECKPOINT
-      ? null
-      : this.#waitForCheckpoint();
-  }
-
-  async #waitForCheckpoint(): Promise<void> {
-    await this.#checkpoint();
-    this.#throwIfCancelled();
+    const pending =
+      this.#checkpoint === IMMEDIATE_CHUNKED_INPUT_CHECKPOINT ? undefined : this.#checkpoint();
+    return pending === undefined ? null : pending.then(() => this.#throwIfCancelled());
   }
 
   #assertCollecting(): void {
@@ -434,6 +426,7 @@ export class ChunkedInkbookInputParser {
 
   #throwIfCancelled(): void {
     if (this.#signal?.aborted === true) {
+      this.#adoption.cancel();
       this.#state = "cancelled";
       this.#releaseBuffers();
       throw new ChunkedInputCancelledError();
@@ -454,19 +447,6 @@ export class ChunkedInkbookInputParser {
   #markFinished(): void {
     if (this.#state !== "cancelled") this.#state = "finished";
   }
-}
-
-async function runSteps<T>(
-  iterator: Generator<void, T>,
-  checkpoint: () => Promise<void> | null,
-): Promise<T> {
-  let step = iterator.next();
-  while (!step.done) {
-    const pending = checkpoint();
-    if (pending !== null) await pending;
-    step = iterator.next();
-  }
-  return step.value;
 }
 
 function isHighSurrogate(value: number): boolean {

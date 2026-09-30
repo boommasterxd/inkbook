@@ -12,7 +12,7 @@ describe("session interactive priority", () => {
     const first = priority.begin();
     const second = priority.begin();
     const work = vi.fn();
-    const waiting = priority.waitForBackground().then(work);
+    const waiting = priority.waitForBackground()?.then(work);
     first();
     first();
     await tick();
@@ -36,7 +36,7 @@ describe("session interactive priority", () => {
       };
       if (outcome === "resolve") expect(await priority.run(operation)).toBe(42);
       else await expect(priority.run(operation)).rejects.toThrow("failure");
-      await priority.waitForBackground();
+      expect(priority.waitForBackground()).toBeUndefined();
     },
   );
 
@@ -46,7 +46,7 @@ describe("session interactive priority", () => {
     priority.setInputActive(true);
     const releaseHistory = priority.begin();
     const resumed = vi.fn();
-    const waiting = priority.waitForBackground().then(resumed);
+    const waiting = priority.waitForBackground()?.then(resumed);
     priority.setInputActive(false);
     priority.setInputActive(false);
     await tick();
@@ -70,7 +70,7 @@ describe("session interactive priority", () => {
     release();
     priority.begin()();
     priority.dispose();
-    await priority.waitForBackground();
+    expect(priority.waitForBackground()).toBeUndefined();
     expect(await priority.run(async () => 42)).toBe(42);
   });
 });
@@ -83,7 +83,7 @@ it.each(["gesture", "navigation"] as const)(
     priority.setInputActive(true, "navigation");
     priority.setInputActive(true, "navigation");
     const resumed = vi.fn();
-    const waiting = priority.waitForBackground().then(resumed);
+    const waiting = priority.waitForBackground()?.then(resumed);
     priority.setInputActive(false, first);
     await tick();
     expect(priority.inputActive).toBe(true);

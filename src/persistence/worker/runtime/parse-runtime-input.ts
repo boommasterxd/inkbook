@@ -1,14 +1,11 @@
-import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
 import { ChunkedInkbookInputParser } from "../../serialization/chunked-input-codec";
+import type { ValidatedSnapshotConsumer } from "../../serialization/validated-snapshot-adoption";
 import type { RuntimeSliceContext } from "./types";
 
 export async function parseRuntimeInput(
   input: string | Uint8Array,
   context?: RuntimeSliceContext,
-  onValidatedSnapshot?: (
-    snapshot: InkSnapshotV1,
-    derivations: SnapshotValidationDerivations,
-  ) => Promise<void> | void,
+  onValidatedSnapshot?: ValidatedSnapshotConsumer,
   staticValidation: "canonical" | "safe" = "canonical",
 ) {
   const inputSliceBytes = context?.workProfile?.inputByteLimit ?? 256 * 1024;

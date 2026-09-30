@@ -1,6 +1,7 @@
 import { VerifiedOutputProofs } from "./verified-output-proofs";
 import * as preparedPaths from "./prepared-pressure-path-adoption";
 import { parseRuntimeInput } from "./parse-runtime-input";
+import type { ValidatedSnapshotConsumer } from "../../serialization/validated-snapshot-adoption";
 import type {
   InkSnapshotV1,
   SnapshotValidationDerivations,
@@ -133,10 +134,7 @@ export class DocumentModelRuntime {
   public async unlock(
     input: string | Uint8Array,
     sliceContext?: RuntimeSliceContext,
-    onValidatedSnapshot?: (
-      snapshot: InkSnapshotV1,
-      derivations: SnapshotValidationDerivations,
-    ) => Promise<void> | void,
+    onValidatedSnapshot?: ValidatedSnapshotConsumer,
   ): Promise<ModelUnlockResult> {
     const started = this.#now();
     let callbackFinished = started;
@@ -148,14 +146,20 @@ export class DocumentModelRuntime {
     const parsed = await parseRuntimeInput(
       input,
       sliceContext,
-      async (snapshot, derivations) => {
+      async (snapshot, derivations, signal) => {
         const validationFinished = this.#now();
         inputValidationMs = validationFinished - started;
-        stagedSnapshot = await copyParsed(snapshot, derivations, this.#pointCopies, sliceContext);
+        stagedSnapshot = await copyParsed(
+          snapshot,
+          derivations,
+          this.#pointCopies,
+          sliceContext === undefined ? undefined : { ...sliceContext, signal },
+        );
+        signal.throwIfAborted();
         const copyFinished = this.#now();
         runtimeCopyMs = copyFinished - validationFinished;
         stagedDerivations = derivations;
-        await onValidatedSnapshot?.(stagedSnapshot, derivations);
+        await onValidatedSnapshot?.(stagedSnapshot, derivations, signal);
         callbackFinished = this.#now();
         batchAdoptionMs = callbackFinished - copyFinished;
       },
@@ -397,9 +401,8 @@ export class DocumentModelRuntime {
   }
 
   #resetForExport(snapshot: InkSnapshotV1, modelRevision: number) {
-    if (snapshot.revision !== modelRevision) {
+    if (snapshot.revision !== modelRevision)
       throw new RuntimeModelError("revision-mismatch", false);
-    }
     return this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot));
   }
 
@@ -461,15 +464,13 @@ export class DocumentModelRuntime {
       ? (snapshot as RuntimeInkSnapshot)
       : copySnapshotToRuntime(snapshot, this.#pointCopies);
   }
-
   #atRevision(revision: number): InkSnapshotV1 {
     if (this.#modelRevision !== revision || this.#serializer.currentRevision() !== revision) {
       throw new RuntimeModelError("basis-revision-mismatch", true);
     }
     const snapshot = this.#snapshot ?? this.#serializer.currentSnapshot();
-    if (snapshot === null || snapshot.revision !== revision) {
+    if (snapshot === null || snapshot.revision !== revision)
       throw new RuntimeModelError("snapshot-invalid", false);
-    }
     this.#snapshot = snapshot;
     return snapshot;
   }

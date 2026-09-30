@@ -21,7 +21,7 @@ export async function verifyExactWorkerContent(
   versionPolicy: "current" | "editable" = "current",
   options: {
     readonly workScheduler?: WorkScheduler;
-    readonly waitForBackground?: () => Promise<void>;
+    readonly waitForBackground?: () => Promise<void> | undefined;
     readonly confirmedBase?: VaultBase;
   } = {},
 ): Promise<VerifiedPersistedOutput> {

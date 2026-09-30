@@ -51,7 +51,7 @@ export class DocumentRevisionExhaustedError extends RangeError {
 
 export interface EditableDocumentModel {
   beginInteractiveOperation?(): () => void;
-  waitForBackground?(): Promise<void>;
+  waitForBackground?(): Promise<void> | undefined;
   readonly mutationAvailability: DocumentMutationAvailability;
   readonly page: InkSnapshotV1["page"];
   readonly revision: number;
