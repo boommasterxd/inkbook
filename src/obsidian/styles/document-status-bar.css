@@ -37,6 +37,7 @@
 
 .inkbook-status-bar[data-save-status="saved"] .inkbook-status-bar-icon {
   color: var(--interactive-accent);
+  translate: 0 1px;
 }
 
 .inkbook-status-bar[data-save-status="saving"] .inkbook-status-bar-icon {
