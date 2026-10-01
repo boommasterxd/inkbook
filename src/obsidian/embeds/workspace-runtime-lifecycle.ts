@@ -220,7 +220,7 @@ export class WorkspaceRuntimeLifecycle {
       this.#insertionUndoHints.delete(event.documentId);
       hint.dismiss();
     }
-    this.#refreshPreviews(event.documentId, `${String(event.revision)}-${event.outputHash}`);
+    this.#refreshPreviews(event.documentId, persistedIdentityKey(event));
   }
 
   #adoptConfirmedReadBack(event: VaultDocumentPersistedEvent): boolean {
@@ -437,7 +437,7 @@ function sameVaultFile(vault: Vault, documentId: string, file: TFile, signature:
 }
 
 function persistedIdentityKey(identity: PersistedIdentity): string {
-  return `${String(identity.revision)}:${identity.outputHash}`;
+  return `${String(identity.revision)}-${identity.outputHash}`;
 }
 
 function createPendingAutoActivation(
