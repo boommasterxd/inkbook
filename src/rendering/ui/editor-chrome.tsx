@@ -1,7 +1,6 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 
 import { InkbookToolbar } from "./toolbar";
-import { DocumentSaveStatusIndicator } from "./document-save-status";
 import { toolbarMainHalfWidth } from "./toolbar-layout";
 import { editorChromeLayoutKey } from "./editor-chrome-snapshot";
 import type { InkbookEditorChromeProps } from "./editor-chrome-types";
@@ -45,12 +44,6 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
         styleIcon={props.styleIcon}
         toolbarRef={toolbar}
       />
-      {props.toolbarState.saveStatus === undefined ? null : (
-        <DocumentSaveStatusIndicator
-          renderIcon={props.renderIcon}
-          status={props.toolbarState.saveStatus}
-        />
-      )}
     </div>
   );
 }

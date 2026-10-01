@@ -1,4 +1,5 @@
 import { StateField } from "@codemirror/state";
+import { FakePresentationElement } from "../../fixtures/obsidian/presentation-dom";
 
 export { Keymap, Scope } from "./keymap";
 export { Modal, Setting, SettingGroup } from "./settings";
@@ -250,6 +251,7 @@ export class Plugin extends Component {
   readonly editorExtensions: unknown[] = [];
   readonly postProcessors: MarkdownPostProcessor[] = [];
   readonly settingTabs: PluginSettingTab[] = [];
+  readonly statusBarItems: FakePresentationElement[] = [];
   settingsData: unknown;
 
   constructor(app?: App) {
@@ -272,6 +274,12 @@ export class Plugin extends Component {
 
   addSettingTab(tab: PluginSettingTab): void {
     this.settingTabs.push(tab);
+  }
+
+  addStatusBarItem(): HTMLElement {
+    const item = new FakePresentationElement();
+    this.statusBarItems.push(item);
+    return item as unknown as HTMLElement;
   }
 
   registerEditorExtension(extension: unknown): void {

@@ -49,7 +49,6 @@ function sameToolbarState(
     a.fingerDrawingEnabled === b.fingerDrawingEnabled &&
     a.hasSelection === b.hasSelection &&
     a.openFlyout === b.openFlyout &&
-    a.saveStatus === b.saveStatus &&
     a.pasteVisible === b.pasteVisible
   );
 }

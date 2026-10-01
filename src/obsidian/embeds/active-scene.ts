@@ -72,7 +72,6 @@ export class ActiveInkbookScene {
   readonly #store: ElementSceneStore;
   readonly #transitionScrollStability: TransitionScrollStability;
   readonly #unsubscribeStore: () => void;
-  readonly #unsubscribeSaveStatus: (() => void) | undefined;
   public readonly ready: Promise<boolean>;
 
   public constructor(options: ActiveInkbookSceneOptions) {
@@ -119,9 +118,6 @@ export class ActiveInkbookScene {
     this.#removeViewportListeners = () => scrollBinding?.dispose();
     this.#controller.setEnabled(false);
     this.#chrome = beginEditorChromeMount(this.#chromeHost, this.#controller.chromeProps());
-    this.#unsubscribeSaveStatus = options.model.subscribeSaveStatus?.(() =>
-      this.#chrome.update(this.#controller.chromeProps()),
-    );
     this.#removeInputListeners = attachActiveSceneInputListeners(
       this.#renderer,
       this.#controller,
@@ -248,7 +244,6 @@ export class ActiveInkbookScene {
     this.#lockLayoutTransition = undefined;
     this.#layout.dispose();
     this.#unsubscribeStore();
-    this.#unsubscribeSaveStatus?.();
     this.#removeViewportListeners();
     this.#removeInputListeners();
     this.#controller.dispose();

@@ -31,8 +31,8 @@ describe("Inkbook host styles", () => {
     expect(feedback).toContain("pointer-events: none");
     expect(icon).toContain("animation: inkbook-operation-spin 800ms linear infinite");
     for (const selector of [
-      '.inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon,\n  .inkbook-root:not([data-inkbook-motion="full"]) .inkbook-document-save-status-icon',
-      '.inkbook-root[data-inkbook-motion="reduced"] .inkbook-operation-feedback-icon,\n.inkbook-root[data-inkbook-motion="reduced"] .inkbook-document-save-status-icon',
+      '.inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon',
+      '.inkbook-root[data-inkbook-motion="reduced"] .inkbook-operation-feedback-icon',
     ]) {
       expect(blockFor(selector, motionStylesheet)).toContain("animation: none");
     }

@@ -21,7 +21,7 @@ const boundary = vi.hoisted(() => {
     snapshot,
     sessionHooks: undefined as VaultDocumentSessionHooks | undefined,
     createScene: vi.fn(),
-    getEditorContext: vi.fn(() => ({})),
+    getEditorContext: vi.fn(() => ({ model: { getSaveStatus: () => "saved" as const } })),
     activationRequests: vi.fn(),
     updateHighlights: vi.fn(),
     prepareForUnload: vi.fn(async (): Promise<void> => undefined),
@@ -162,15 +162,19 @@ describe("workspace activation entrance barrier", () => {
     expect(currentProof?.("ink.svg")).toBeUndefined();
   });
   it("hydrates concurrently and mounts only after the presentation is ready", async () => {
-    const { finishEntrance, runtime, settings } = startActivation();
+    const { attachment, finishEntrance, runtime, settings } = startActivation();
     await Promise.resolve();
     expect(boundary.snapshot.current?.phase).toBe("active");
     expect(boundary.createScene).not.toHaveBeenCalled();
+    expect(runtime.documentStatus.current()).toBeNull();
     finishEntrance(true);
     await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledOnce());
+    expect(runtime.documentStatus.current()).toEqual({ path: "ink.svg", status: "saved" });
     expect(runtime.getMotionPreference()).toBe(settings.device.motion);
     settings.device = { ...settings.device, motion: "reduced" };
     expect(runtime.getMotionPreference()).toBe("reduced");
+    runtime.detach(attachment);
+    expect(runtime.documentStatus.current()).toBeNull();
   });
 
   it("does not mount when presentation disposal resolves the barrier to false", async () => {
@@ -221,6 +225,34 @@ describe("workspace activation entrance barrier", () => {
 });
 
 describe("coalesced workspace activation", () => {
+  it.each(["locking", "locked"] as const)(
+    "does not publish late scene readiness after the session becomes %s",
+    async (phase) => {
+      const { attachment, finishEntrance, runtime } = startActivation();
+      let finishScene: (ready: boolean) => void = () => undefined;
+      const ready = new Promise<boolean>((resolve) => {
+        finishScene = resolve;
+      });
+      boundary.createScene.mockImplementationOnce(() => ({
+        dispose: vi.fn(),
+        ready,
+        setScheme: vi.fn(),
+      }));
+      const changes = vi.fn();
+      runtime.documentStatus.subscribe(changes);
+      finishEntrance(true);
+      await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledOnce());
+      const current = boundary.snapshot.current;
+      if (current === undefined) throw new Error("Missing active session.");
+      boundary.snapshot = { disposed: false, current: { ...current, phase } };
+      attachment.root.dataset.inkbookState = phase;
+      finishScene(true);
+      await ready;
+      expect(runtime.documentStatus.current()).toBeNull();
+      expect(changes).not.toHaveBeenCalled();
+      expect(attachment.root.dataset.inkbookState).toBe(phase);
+    },
+  );
   it.each(["auto-first", "manual-first"])(
     "preserves the auto attempt with %s invocation",
     async (order) => {

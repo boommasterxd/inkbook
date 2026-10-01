@@ -7,7 +7,6 @@ import { WorkspaceEditorCoordinator } from "../../editor/session/workspace-edito
 import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
 import type { InkbookCommandAction, ObsidianEmbedActions } from "../commands";
-import { ActiveInkbookScene } from "./active-scene";
 import {
   OwnerWindowRegistry,
   pruneOwnerWindowRegistry,
@@ -35,7 +34,12 @@ import {
   mountWorkspaceActiveScene,
   presentationActivationReady,
 } from "./workspace-runtime-scene-readiness";
-import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
+import {
+  activeWorkspaceScene,
+  executeWorkspaceSceneAction,
+  recordWorkspaceMarkdownHistory,
+} from "./workspace-runtime-editor";
+import { WorkspaceDocumentStatus } from "./workspace-document-status";
 import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
 import { showWorkspaceHeadlessRecovery } from "./workspace-recovery-actions";
 import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
@@ -69,7 +73,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #sessions: VaultDocumentSessionFactory;
   #safeStaticProof: ((documentId: string) => SafeStaticProof | undefined) | undefined;
   readonly #settings: () => WorkspaceRuntimeSettings;
-
+  readonly documentStatus: WorkspaceDocumentStatus;
   constructor(
     vault: Vault,
     fileManager: FileManager,
@@ -79,6 +83,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     host: WorkspaceFeedbackHost &
       Omit<EditorChromeOpenings, "confirmEraseAll"> & {
         readonly deviceStorage?: trustedHeadStorage.DeviceLocalStoragePort;
+        readonly resolveDocumentStatusPane?: (root: HTMLElement) => HTMLElement | undefined;
       },
   ) {
     const trustedHeads =
@@ -86,6 +91,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         ? undefined
         : new trustedHeadStorage.TrustedDocumentHeadLedger(host.deviceStorage);
     this.#host = host;
+    this.documentStatus = new WorkspaceDocumentStatus(host.resolveDocumentStatusPane);
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
     this.#feedback = new WorkspaceFeedbackRouter(host.manager, (documentId) =>
@@ -144,7 +150,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       sessions: this.#sessions,
     });
   }
-
   mount(attachment: PresentationAttachment): void {
     if (this.#disposed) return;
     const key = presentationAttachmentKey(attachment);
@@ -166,15 +171,14 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#coordinator.mountAttachment(attachment);
     this.#lifecycle.continueAutoActivation(attachment);
   }
-
   readonly activate = (attachment: PresentationAttachment): void => this.#activate(attachment);
-
   #activate(attachment: PresentationAttachment, autoActivationAttempt?: number): void {
     if (this.#disposed) return;
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
     const activation = beginWorkspaceActivation(mounted, autoActivationAttempt);
     if (activation === undefined) return;
+    this.documentStatus.detach(attachment);
     const loadFeedback = activation.feedback;
     this.#setState(attachment, "unlocking");
     const handle = this.#coordinator.requestActivation(attachment);
@@ -199,12 +203,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         const presented = await presentationActivationReady(attachment);
         const context = this.#sessions.getEditorContext(outcome.sessionId);
         const current = this.#mounted.get(presentationAttachmentKey(attachment))?.activation;
-        const stillActive = isCurrentPresentationActivation(
-          this.#coordinator.getSnapshot(),
-          attachment,
-          outcome.sessionId,
-        );
-        if (!presented || context === undefined || current !== activation || !stillActive) {
+        const isActive = () =>
+          isCurrentPresentationActivation(
+            this.#coordinator.getSnapshot(),
+            attachment,
+            outcome.sessionId,
+          );
+        if (!presented || context === undefined || current !== activation || !isActive()) {
           loadFeedback?.finish();
           this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
           return;
@@ -242,6 +247,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
             this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
           },
           onReady: () => {
+            if (!isActive()) return;
+            this.documentStatus.bind(attachment, context.model);
             this.#setState(attachment, "active", loadFeedback);
             this.#lifecycle.completeAutoActivation(attachment, activation.autoActivationAttempt);
           },
@@ -276,15 +283,12 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       if (!this.lockActivePresentation()) throw new Error("No active Inkbook presentation.");
       return;
     }
-    const scene = this.#activeScene();
-    if (scene === undefined || !scene.isActionAvailable(action)) {
-      throw new Error(`Inkbook action is unavailable: ${action}`);
-    }
-    scene.executeAction(action);
+    executeWorkspaceSceneAction(action, this.#coordinator.getSnapshot(), this.#mounted);
   }
   isAvailable(action: InkbookCommandAction): boolean {
     if (action === "lock") return this.hasActivePresentation();
-    return this.#activeScene()?.isActionAvailable(action) ?? false;
+    const scene = activeWorkspaceScene(this.#coordinator.getSnapshot(), this.#mounted);
+    return scene?.isActionAvailable(action) ?? false;
   }
   readonly lockActivePresentation = (): boolean => this.#coordinator.requestLockCurrent();
   readonly getMotionPreference = () => this.#settings().device.motion;
@@ -325,17 +329,18 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   };
   handleMarkdownEditorChange(sourcePath: string, pane: HTMLElement): void {
     if (this.#disposed) return;
-    const current = this.#coordinator.getSnapshot().current;
-    if (current?.phase !== "active" || current.attachment === undefined) return;
-    const mounted = this.#mounted.get(presentationAttachmentKey(current.attachment));
-    if (mounted !== undefined && ownsMarkdownEditorChange(mounted.attachment, sourcePath, pane)) {
-      mounted.scene?.recordMarkdownHistory();
-    }
+    recordWorkspaceMarkdownHistory(
+      this.#coordinator.getSnapshot(),
+      this.#mounted,
+      sourcePath,
+      pane,
+    );
   }
   readonly prepareForQuit = (): Promise<void> => this.#sessions.prepareForUnload();
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.documentStatus.dispose();
     this.#safeStaticProof = undefined;
     this.#lifecycle.dispose();
     this.#headlessRecovery?.close();
@@ -359,6 +364,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
 
   #releaseScene(attachment: AttachmentIdentity): void {
+    this.documentStatus.detach(attachment);
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
     mounted.activation?.release();
@@ -390,13 +396,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     scene?.dispose();
     mounted.scene = undefined;
     this.#setState(attachment, "locked");
-  }
-
-  #activeScene(): ActiveInkbookScene | undefined {
-    const attachment = this.#coordinator.getSnapshot().current?.attachment;
-    return attachment === undefined
-      ? undefined
-      : this.#mounted.get(presentationAttachmentKey(attachment))?.scene;
   }
 
   #showAttachedRecovery(notice: {

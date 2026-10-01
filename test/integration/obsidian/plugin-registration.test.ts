@@ -12,7 +12,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { activateInkbookPlugin } from "../../../src/obsidian/inkbook-plugin";
 import { STRAIGHT_HIGHLIGHTER_ICON_ID } from "../../../src/rendering/ui/icon-ids";
-import { configureTestEditorState, testIconRegistry } from "../../adapters/obsidian/plugin";
+import {
+  configureTestEditorState,
+  testIconRegistry,
+  type Plugin as RegisteredPlugin,
+} from "../../adapters/obsidian/plugin";
 import { InkbookLoadingPreviewWidget } from "../../../src/obsidian/embeds/live-preview-loading-widget";
 import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
 
@@ -70,6 +74,7 @@ function createApp() {
       },
       workspace: {
         containerEl,
+        getActiveViewOfType: () => null,
         on: (name: string, callback: (...arguments_: never[]) => void) => {
           if (name === "css-change") cssChange.mockImplementation(callback);
           workspaceEvents.set(name, callback);
@@ -168,6 +173,12 @@ describe("plugin host registration", () => {
     expect(registrations.editorExtensions).toHaveLength(1);
     expect(vaultEvents.size).toBe(0);
     expect(registrations.settingTabs).toHaveLength(1);
+    const statusItems = (plugin as unknown as RegisteredPlugin).statusBarItems;
+    expect(statusItems).toHaveLength(1);
+    expect(statusItems[0]?.classNames).toContain("inkbook-status-bar-item");
+    expect(statusItems[0]?.children[0]?.dataset.saveStatus).toBe("inactive");
+    expect(workspaceEvents.has("active-leaf-change")).toBe(true);
+    expect(workspaceEvents.has("layout-change")).toBe(false);
     expect(registrations.commands.map((command) => command.id)).toEqual([
       "lock-active-embed",
       "copy-embed",
@@ -209,6 +220,7 @@ describe("plugin host registration", () => {
     await expect(tasks.promise()).resolves.toEqual([undefined]);
 
     deactivate?.();
+    expect(statusItems[0]?.children).toHaveLength(0);
     expect(testIconRegistry.has(STRAIGHT_HIGHLIGHTER_ICON_ID)).toBe(false);
   });
 

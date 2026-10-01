@@ -28,7 +28,6 @@ import { FakePresentationElement, inkbookRoot } from "../../fixtures/obsidian/pr
 
 class InkbookPlugin extends Plugin {
   #deactivate: (() => void) | undefined;
-
   override async onload(): Promise<void> {
     this.#deactivate = await activateInkbookPlugin(this);
   }
@@ -182,6 +181,7 @@ function createPluginHarness() {
     workspace: {
       containerEl: { ownerDocument: { defaultView: ownerWindow } },
       getActiveViewOfType: () => null,
+      getLeavesOfType: () => [],
       on: (name: string, callback: ((tasks: Tasks) => void) | (() => void)) => {
         if (name === "css-change") cssChange = callback as () => void;
         if (name === "quit") quit = callback;

@@ -1,5 +1,9 @@
 import { createPhoneSheetHost } from "./menus/phone-sheet-host";
 import {
+  registerDocumentStatusBar,
+  resolveDocumentStatusPane,
+} from "./runtime/document-status-bar-binding";
+import {
   MarkdownView,
   normalizePath,
   Plugin,
@@ -52,7 +56,6 @@ export async function activateInkbookPlugin(
   if (!isActive()) return undefined;
   const unregisterIcons = registerInkbookIcons();
   const feedback = new InkbookFeedbackManager();
-  let active = true;
   const lifetime = new AbortController();
   let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
   const workScheduler = schedulerFromRuntime(() => runtimeForSettings);
@@ -71,6 +74,7 @@ export async function activateInkbookPlugin(
   plugin.register(() => embedActions.dispose());
   const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, settingsModal);
   runtimeForSettings = runtime;
+  const disposeStatus = registerDocumentStatusBar(plugin, runtime, settings);
   const validationScheduling = documentOutputScheduling(runtime, workScheduler);
   plugin.register(runtime.refreshRateProfiles.subscribe(() => settingTab.update()));
   registerSettingsSubscriptions(plugin, settings, runtime);
@@ -114,7 +118,7 @@ export async function activateInkbookPlugin(
   plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports));
   plugin.registerEditorExtension(createLivePreviewExtension(ports));
   plugin.app.workspace.onLayoutReady(() => {
-    if (!active || !isActive()) return;
+    if (lifetime.signal.aborted || !isActive()) return;
     layoutReady = true;
     registerVaultLifecycle(plugin, runtime, documentRecognition);
     registerMarkdownHistory(plugin, runtime);
@@ -131,7 +135,7 @@ export async function activateInkbookPlugin(
   registerWorkspaceLifecycle(plugin, runtime, scheme);
 
   return () => {
-    active = false;
+    disposeStatus();
     lifetime.abort();
     embedActions.dispose();
     lifecycle.disposeAll();
@@ -209,6 +213,7 @@ function createRuntime(
     }),
     embedActions,
     {
+      resolveDocumentStatusPane: (root) => resolveDocumentStatusPane(plugin.app.workspace, root),
       confirmEraseAll: (signal) =>
         confirmInkbookAction(plugin.app, {
           title: "Erase all elements?",

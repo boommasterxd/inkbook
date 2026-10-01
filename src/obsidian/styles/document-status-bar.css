@@ -1,0 +1,56 @@
+.inkbook-status-bar-item {
+  order: -1;
+}
+
+.inkbook-status-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  color: var(--text-muted);
+}
+
+.inkbook-status-bar[data-save-status="failed"] {
+  color: var(--text-error);
+}
+
+.inkbook-status-bar-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.inkbook-status-bar-icon[hidden] {
+  display: none;
+}
+
+.inkbook-status-bar-icon svg {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.inkbook-status-bar[data-save-status="saved"] .inkbook-status-bar-icon {
+  color: var(--interactive-accent);
+}
+
+.inkbook-status-bar[data-save-status="saving"] .inkbook-status-bar-icon {
+  animation: inkbook-status-bar-saving 1s linear infinite;
+}
+
+@keyframes inkbook-status-bar-saving {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inkbook-status-bar:not([data-inkbook-motion="full"])[data-save-status="saving"]
+    .inkbook-status-bar-icon {
+    animation: none;
+  }
+}
+
+.inkbook-status-bar[data-inkbook-motion="reduced"][data-save-status="saving"]
+  .inkbook-status-bar-icon {
+  animation: none;
+}
