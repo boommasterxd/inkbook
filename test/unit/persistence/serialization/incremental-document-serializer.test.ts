@@ -228,13 +228,7 @@ describe("incremental background boundaries", () => {
 
 describe("runtime fragment ownership", () => {
   it("does not infer ownership for public deltas from a previously owned runtime model", async () => {
-    const snapshot = createAllElementSnapshot();
-    const runtime = { ...snapshot, elements: unpackElements(packElements(snapshot.elements)) };
-    const serializer = new IncrementalDocumentSerializer();
-    expect(serializer.resetRuntime(runtime, true).ok).toBe(true);
-    expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
-    const stroke = runtime.elements.find((element) => element.kind === "stroke");
-    if (stroke?.kind !== "stroke") throw new Error("Missing stroke fixture.");
+    const { runtime, serializer, stroke } = await warmedRuntimeSerializer(true);
     const copy = structuredClone(stroke);
     const changed = { ...copy, style: { ...copy.style, opacity: 0.5 } };
     expect(
@@ -255,13 +249,7 @@ describe("runtime fragment ownership", () => {
   });
 
   it("rechecks externally mutable typed samples when runtime ownership is not attested", async () => {
-    const snapshot = createAllElementSnapshot();
-    const runtime = { ...snapshot, elements: unpackElements(packElements(snapshot.elements)) };
-    const serializer = new IncrementalDocumentSerializer();
-    expect(serializer.resetRuntime(runtime).ok).toBe(true);
-    expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
-    const stroke = runtime.elements.find((element) => element.kind === "stroke");
-    if (stroke?.kind !== "stroke") throw new Error("Missing stroke fixture.");
+    const { runtime, serializer, stroke } = await warmedRuntimeSerializer(false);
     stroke.points[0] = stroke.points[0]! + 0.001;
     const append = vi.spyOn(SampleBase64Writer.prototype, "append");
     try {
@@ -275,12 +263,7 @@ describe("runtime fragment ownership", () => {
   });
 
   it("preserves adopted fragments after invalid samples or cancelled output", async () => {
-    const snapshot = createAllElementSnapshot();
-    const runtime = { ...snapshot, elements: unpackElements(packElements(snapshot.elements)) };
-    const serializer = new IncrementalDocumentSerializer();
-    expect(serializer.resetRuntime(runtime, true).ok).toBe(true);
-    const cold = await serializer.serializeRuntimeChunked({});
-    if (!cold.ok) throw new Error(cold.error.code);
+    const { runtime, serializer, cold } = await warmedRuntimeSerializer(true);
     expect(serializer.resetRuntime(runtime, true).ok).toBe(true);
     const invalid = structuredClone(runtime);
     const stroke = invalid.elements.find((element) => element.kind === "stroke");
@@ -293,7 +276,7 @@ describe("runtime fragment ownership", () => {
       serializer.serializeRuntimeChunked({ signal: controller.signal }),
     ).rejects.toThrow();
     const result = await serializer.serializeRuntimeChunked({});
-    expect(result).toMatchObject({ ok: true, value: { hash: cold.value.hash } });
+    expect(result).toMatchObject({ ok: true, value: { hash: cold.hash } });
     expect(serializer.instrumentation.fragmentBuilds).toBe(runtime.elements.length);
     serializer.clear();
     expect(serializer.instrumentation).toMatchObject({ cacheBytes: 0, cacheElements: 0 });
@@ -431,4 +414,16 @@ function warmedSerializer(snapshot: ReturnType<typeof createAllElementSnapshot>)
   serializer.reset(snapshot);
   serializer.serialize({ hash: () => "baseline" });
   return { buildsBefore: serializer.instrumentation.fragmentBuilds, serializer };
+}
+
+async function warmedRuntimeSerializer(ownsSamples: boolean) {
+  const snapshot = createAllElementSnapshot();
+  const runtime = { ...snapshot, elements: unpackElements(packElements(snapshot.elements)) };
+  const serializer = new IncrementalDocumentSerializer();
+  expect(serializer.resetRuntime(runtime, ownsSamples).ok).toBe(true);
+  const cold = await serializer.serializeRuntimeChunked({});
+  if (!cold.ok) throw new Error(cold.error.code);
+  const stroke = runtime.elements.find((element) => element.kind === "stroke");
+  if (stroke?.kind !== "stroke") throw new Error("Missing stroke fixture.");
+  return { runtime, serializer, stroke, cold: cold.value };
 }

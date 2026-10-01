@@ -14,6 +14,22 @@ import {
   rectangle,
 } from "./vault-session-fixtures";
 
+async function createFailedWriteHarness(afterWriting = false) {
+  const harness = persistenceHarness();
+  await harness.session.unlock(operation());
+  const model = harness.factory.getDocumentModel("session-1")!;
+  model.commitElement(rectangle());
+  const persist = harness.process.getMockImplementation()!;
+  harness.process.mockImplementationOnce(async (file, update) => {
+    if (afterWriting) await persist(file, update);
+    throw new Error("Deliberate Vault process failure");
+  });
+  await expect(harness.session.lockLatest(operation())).resolves.toMatchObject({
+    status: "failed",
+  });
+  return { ...harness, model };
+}
+
 describe("vault session save status", () => {
   it("shows pending immediately for a legacy palette that still requires its canonical rewrite", async () => {
     const svg = documentFromSnapshot().svg.replace(
@@ -66,16 +82,7 @@ describe("vault session save verification retry", () => {
   it.each([false, true])(
     "recovers a genuine Vault throw afterWriting=%s with only required writes",
     async (afterWriting) => {
-      const { content, factory, process, session } = persistenceHarness();
-      await session.unlock(operation());
-      const model = factory.getDocumentModel("session-1")!;
-      model.commitElement(rectangle());
-      const persist = process.getMockImplementation()!;
-      process.mockImplementationOnce(async (file, update) => {
-        if (afterWriting) await persist(file, update);
-        throw new Error("Deliberate Vault process failure");
-      });
-      await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+      const { content, model, process, session } = await createFailedWriteHarness(afterWriting);
       expect(model.getSaveStatus!()).toBe("failed");
       await expect(session.lockLatest({ ...operation(), operationId: 2 })).resolves.toMatchObject({
         revision: model.revision,
@@ -96,16 +103,7 @@ describe("vault session save verification retry", () => {
   );
 
   it("persists edits made during verification before confirming the latest revision", async () => {
-    const { factory, process, session } = persistenceHarness();
-    await session.unlock(operation());
-    const model = factory.getDocumentModel("session-1")!;
-    model.commitElement(rectangle());
-    const persist = process.getMockImplementation()!;
-    process.mockImplementationOnce(async (file, update) => {
-      await persist(file, update);
-      throw new Error("Deliberate post-write failure");
-    });
-    await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+    const { model, process, session } = await createFailedWriteHarness(true);
     const retry = session.lockLatest({ ...operation(), operationId: 2 });
     model.commitElement({ ...rectangle(), id: "00000000-0000-4000-8000-000000000002" });
     expect(model.getSaveStatus!()).toBe("failed");
@@ -118,12 +116,7 @@ describe("vault session save verification retry", () => {
 
 describe("vault session save verification boundaries", () => {
   it("fails closed when verification discovers external content after an indeterminate write", async () => {
-    const { content, factory, process, replaceExternal, session } = persistenceHarness();
-    await session.unlock(operation());
-    const model = factory.getDocumentModel("session-1")!;
-    model.commitElement(rectangle());
-    process.mockRejectedValueOnce(new Error("Deliberate Vault process failure"));
-    await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+    const { content, model, process, replaceExternal, session } = await createFailedWriteHarness();
     const external = documentFromSnapshot({ ...emptySnapshot(), revision: 20 });
     replaceExternal(external);
     await expect(session.lockLatest({ ...operation(), operationId: 2 })).resolves.toMatchObject({
@@ -138,11 +131,7 @@ describe("vault session save verification boundaries", () => {
   });
 
   it("does not confirm or rewrite a session disposed during asynchronous retry verification", async () => {
-    const { factory, process, session } = persistenceHarness();
-    await session.unlock(operation());
-    factory.getDocumentModel("session-1")!.commitElement(rectangle());
-    process.mockRejectedValueOnce(new Error("Deliberate Vault process failure"));
-    await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+    const { factory, process, session } = await createFailedWriteHarness();
     const retry = session.lockLatest({ ...operation(), operationId: 2 });
     session.dispose();
     await expect(retry).resolves.toMatchObject({ status: "failed" });
@@ -220,12 +209,7 @@ describe("vault session save status recovery and lifecycle", () => {
   });
 
   it("keeps an unconfirmed vault write visibly failed while further edits are retained", async () => {
-    const { factory, process, session } = persistenceHarness();
-    await session.unlock(operation());
-    const model = factory.getDocumentModel("session-1")!;
-    model.commitElement(rectangle());
-    process.mockRejectedValueOnce(new Error("Vault write failed"));
-    await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+    const { model, session } = await createFailedWriteHarness();
     expect(model.getSaveStatus!()).toBe("failed");
     model.commitElement({ ...rectangle(), id: "00000000-0000-4000-8000-000000000002" });
     expect(model.getSaveStatus!()).toBe("failed");
