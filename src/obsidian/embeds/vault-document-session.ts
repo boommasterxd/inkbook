@@ -170,6 +170,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     };
   }
   async lockLatest(operation: Session.SessionOperationIdentity): Promise<Session.SaveResult> {
+    if (this.#autosave?.status === "verification-required")
+      await this.#autosave.retryVerification();
     const outcome = await this.#autosave?.flush("lock");
     if (this.#lifecycle.disposed || outcome === undefined || outcome !== "clean") {
       return { ...operation, revision: this.#revision, status: "failed" };

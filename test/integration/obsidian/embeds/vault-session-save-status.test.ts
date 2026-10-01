@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import {
   CANONICAL_THEME_STYLESHEET,
   LEGACY_THEME_STYLESHEET_V1,
@@ -58,6 +59,95 @@ describe("vault session save status", () => {
     model.commitElement({ ...rectangle(), id: "00000000-0000-4000-8000-000000000004" });
     session.dispose();
     expect(statuses).toHaveLength(5);
+  });
+});
+
+describe("vault session save verification retry", () => {
+  it.each([false, true])(
+    "recovers a genuine Vault throw afterWriting=%s with only required writes",
+    async (afterWriting) => {
+      const { content, factory, process, session } = persistenceHarness();
+      await session.unlock(operation());
+      const model = factory.getDocumentModel("session-1")!;
+      model.commitElement(rectangle());
+      const persist = process.getMockImplementation()!;
+      process.mockImplementationOnce(async (file, update) => {
+        if (afterWriting) await persist(file, update);
+        throw new Error("Deliberate Vault process failure");
+      });
+      await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+      expect(model.getSaveStatus!()).toBe("failed");
+      await expect(session.lockLatest({ ...operation(), operationId: 2 })).resolves.toMatchObject({
+        revision: model.revision,
+        status: "confirmed",
+      });
+      expect(process).toHaveBeenCalledTimes(afterWriting ? 1 : 2);
+      expect(model.getSaveStatus!()).toBe("saved");
+      expect(session.getSnapshot()).toMatchObject({
+        confirmedRevision: model.revision,
+        dirty: false,
+      });
+      await expect(parseInkbookDocumentForTest(content())).resolves.toMatchObject({
+        ok: true,
+        value: { snapshot: { revision: model.revision, elements: [rectangle()] } },
+      });
+      session.dispose();
+    },
+  );
+
+  it("persists edits made during verification before confirming the latest revision", async () => {
+    const { factory, process, session } = persistenceHarness();
+    await session.unlock(operation());
+    const model = factory.getDocumentModel("session-1")!;
+    model.commitElement(rectangle());
+    const persist = process.getMockImplementation()!;
+    process.mockImplementationOnce(async (file, update) => {
+      await persist(file, update);
+      throw new Error("Deliberate post-write failure");
+    });
+    await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+    const retry = session.lockLatest({ ...operation(), operationId: 2 });
+    model.commitElement({ ...rectangle(), id: "00000000-0000-4000-8000-000000000002" });
+    expect(model.getSaveStatus!()).toBe("failed");
+    await expect(retry).resolves.toMatchObject({ revision: model.revision, status: "confirmed" });
+    expect(model.getSaveStatus!()).toBe("saved");
+    expect(process).toHaveBeenCalledTimes(2);
+    session.dispose();
+  });
+});
+
+describe("vault session save verification boundaries", () => {
+  it("fails closed when verification discovers external content after an indeterminate write", async () => {
+    const { content, factory, process, replaceExternal, session } = persistenceHarness();
+    await session.unlock(operation());
+    const model = factory.getDocumentModel("session-1")!;
+    model.commitElement(rectangle());
+    process.mockRejectedValueOnce(new Error("Deliberate Vault process failure"));
+    await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+    const external = documentFromSnapshot({ ...emptySnapshot(), revision: 20 });
+    replaceExternal(external);
+    await expect(session.lockLatest({ ...operation(), operationId: 2 })).resolves.toMatchObject({
+      status: "failed",
+    });
+    expect(process).toHaveBeenCalledOnce();
+    expect(content()).toBe(external.svg);
+    expect(model.getSaveStatus!()).toBe("failed");
+    expect(model.store.size).toBe(1);
+    expect(session.getSnapshot().dirty).toBe(true);
+    session.dispose();
+  });
+
+  it("does not confirm or rewrite a session disposed during asynchronous retry verification", async () => {
+    const { factory, process, session } = persistenceHarness();
+    await session.unlock(operation());
+    factory.getDocumentModel("session-1")!.commitElement(rectangle());
+    process.mockRejectedValueOnce(new Error("Deliberate Vault process failure"));
+    await expect(session.lockLatest(operation())).resolves.toMatchObject({ status: "failed" });
+    const retry = session.lockLatest({ ...operation(), operationId: 2 });
+    session.dispose();
+    await expect(retry).resolves.toMatchObject({ status: "failed" });
+    expect(process).toHaveBeenCalledOnce();
+    expect(factory.getDocumentModel("session-1")).toBeUndefined();
   });
 });
 
