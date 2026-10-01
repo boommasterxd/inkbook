@@ -89,8 +89,15 @@ describe("document save status icons", () => {
       expect(renderIcon).toHaveBeenCalledTimes(3);
       render("failed");
       expect(status.textContent).toBe("Save failed");
-      expect(status.querySelector(".inkbook-document-save-status-icon")).toBeNull();
-      expect(renderIcon).toHaveBeenCalledTimes(3);
+      const failedIcon = status.querySelector(".inkbook-document-save-status-icon");
+      expect(failedIcon?.getAttribute("aria-hidden")).toBe("true");
+      expect(renderIcon).toHaveBeenLastCalledWith(failedIcon, "circle-alert");
+      render("failed");
+      expect(renderIcon).toHaveBeenCalledTimes(4);
+      render("saved");
+      expect(renderIcon).toHaveBeenLastCalledWith(failedIcon, "check");
+      expect(status.textContent).toBe("Saved");
+      expect(renderIcon).toHaveBeenCalledTimes(5);
     } finally {
       act(() => root.unmount());
       delete reactEnvironment.IS_REACT_ACT_ENVIRONMENT;

@@ -9,6 +9,13 @@ const LABELS: Readonly<Record<DocumentSaveStatus, string>> = {
   failed: "Save failed",
 };
 
+const ICONS: Readonly<Record<DocumentSaveStatus, string | null>> = {
+  saved: "check",
+  pending: null,
+  saving: "loader-circle",
+  failed: "circle-alert",
+};
+
 const DETAILS: Readonly<Record<DocumentSaveStatus, string>> = {
   saved: "All current changes have been saved.",
   pending: "Current changes are waiting for autosave.",
@@ -21,8 +28,7 @@ export function DocumentSaveStatusIndicator(props: {
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
 }) {
   const iconRef = useRef<HTMLSpanElement>(null);
-  const icon =
-    props.status === "saved" ? "check" : props.status === "saving" ? "loader-circle" : null;
+  const icon = ICONS[props.status];
   useEffect(() => {
     if (iconRef.current !== null && icon !== null) props.renderIcon(iconRef.current, icon);
   }, [icon, props.renderIcon]);

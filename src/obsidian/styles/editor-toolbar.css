@@ -54,7 +54,10 @@
   animation: inkbook-operation-spin 900ms linear infinite;
 }
 
-.inkbook-root .inkbook-document-save-status[data-save-status="failed"] {
+.inkbook-root .inkbook-document-save-status[data-save-status="failed"],
+.inkbook-root
+  .inkbook-document-save-status[data-save-status="failed"]
+  .inkbook-document-save-status-icon {
   color: var(--text-error);
 }
 
