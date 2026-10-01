@@ -1,6 +1,12 @@
+// @vitest-environment happy-dom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import type { DocumentSaveStatus } from "../../../../src/editor/session/session-port";
+import { DocumentSaveStatusIndicator } from "../../../../src/rendering/ui/document-save-status";
 import {
   InkbookEditorChrome,
   registerToolbarResize,
@@ -26,7 +32,7 @@ describe("Inkbook editor chrome", () => {
         />,
       );
       expect(markup).toContain(`data-save-status="${saveStatus}"`);
-      expect(markup).toContain(`>${label}</span>`);
+      expect(markup).toContain(`${label}</span>`);
       expect(markup).toContain('role="status"');
       expect(markup).toContain('aria-live="polite"');
       expect(markup).toContain('aria-atomic="true"');
@@ -34,6 +40,65 @@ describe("Inkbook editor chrome", () => {
       expect(markup).toMatch(/<\/div><\/div><\/div><span[^>]*inkbook-document-save-status/u);
     },
   );
+});
+
+describe("document save status icons", () => {
+  it("updates decorative save icons only when needed and preserves authoritative status text", () => {
+    const reactEnvironment = window as Window & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    reactEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+    const root = createRoot(container);
+    const renderIcon = vi.fn((element: HTMLElement, icon: string) => {
+      const glyph = document.createElementNS("http://www.w3.org/1999/xhtml", "i");
+      glyph.setAttribute("data-icon", icon);
+      element.replaceChildren(glyph);
+    });
+    const render = (status: DocumentSaveStatus): void => {
+      act(() =>
+        root.render(<DocumentSaveStatusIndicator renderIcon={renderIcon} status={status} />),
+      );
+    };
+    try {
+      render("pending");
+      const status = container.querySelector("[role='status']") as HTMLElement;
+      expect(status.textContent).toBe("Unsaved changes");
+      expect(status.querySelector(".inkbook-document-save-status-icon")).toBeNull();
+      expect(renderIcon).not.toHaveBeenCalled();
+
+      render("saving");
+      const icon = status.querySelector(".inkbook-document-save-status-icon") as HTMLElement;
+      expect(icon.getAttribute("aria-hidden")).toBe("true");
+      expect(renderIcon).toHaveBeenLastCalledWith(icon, "loader-circle");
+      expect(status.textContent).toBe("Saving");
+      render("saving");
+      expect(renderIcon).toHaveBeenCalledOnce();
+
+      render("saved");
+      expect(renderIcon).toHaveBeenLastCalledWith(icon, "check");
+      expect(icon.querySelector("[data-icon]")?.getAttribute("data-icon")).toBe("check");
+      expect(status.textContent).toBe("Saved");
+      expect(status.getAttribute("title")).toBe("All current changes have been saved.");
+      expect(status.getAttribute("aria-live")).toBe("polite");
+      expect(status.getAttribute("aria-atomic")).toBe("true");
+      render("saved");
+      expect(renderIcon).toHaveBeenCalledTimes(2);
+
+      render("pending");
+      expect(status.querySelector(".inkbook-document-save-status-icon")).toBeNull();
+      render("saving");
+      expect(renderIcon).toHaveBeenCalledTimes(3);
+      render("failed");
+      expect(status.textContent).toBe("Save failed");
+      expect(status.querySelector(".inkbook-document-save-status-icon")).toBeNull();
+      expect(renderIcon).toHaveBeenCalledTimes(3);
+    } finally {
+      act(() => root.unmount());
+      delete reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    }
+  });
+});
+
+describe("Inkbook editor chrome layout", () => {
   it("renders toolbar chrome without scene, canvas, or custom menu content", () => {
     const markup = renderToStaticMarkup(
       <InkbookEditorChrome

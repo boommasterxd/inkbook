@@ -18,11 +18,14 @@
 }
 
 .inkbook-root .inkbook-document-save-status {
+  align-items: center;
   background: var(--menu-background);
   border: 1px solid var(--menu-border-color);
   border-radius: 999px;
   color: var(--text-muted);
+  display: inline-flex;
   font-size: var(--font-smallest);
+  gap: 4px;
   inset-block-start: 56px;
   inset-inline-end: 8px;
   line-height: 1.5;
@@ -30,6 +33,25 @@
   padding: 1px 8px;
   pointer-events: auto;
   position: absolute;
+}
+
+.inkbook-root .inkbook-document-save-status-icon {
+  block-size: 14px;
+  color: var(--interactive-accent);
+  display: inline-flex;
+  flex: 0 0 14px;
+  inline-size: 14px;
+}
+
+.inkbook-root .inkbook-document-save-status-icon svg {
+  block-size: 100%;
+  inline-size: 100%;
+}
+
+.inkbook-root
+  :where(.inkbook-document-save-status[data-save-status="saving"])
+  .inkbook-document-save-status-icon {
+  animation: inkbook-operation-spin 900ms linear infinite;
 }
 
 .inkbook-root .inkbook-document-save-status[data-save-status="failed"] {

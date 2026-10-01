@@ -141,7 +141,8 @@
   opacity: 1;
 }
 
-.inkbook-root[data-inkbook-motion="reduced"] .inkbook-operation-feedback-icon {
+.inkbook-root[data-inkbook-motion="reduced"] .inkbook-operation-feedback-icon,
+.inkbook-root[data-inkbook-motion="reduced"] .inkbook-document-save-status-icon {
   animation: none;
 }
 
@@ -154,7 +155,8 @@
     --inkbook-motion-fast: 0ms;
   }
 
-  .inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon {
+  .inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon,
+  .inkbook-root:not([data-inkbook-motion="full"]) .inkbook-document-save-status-icon {
     animation: none;
   }
 

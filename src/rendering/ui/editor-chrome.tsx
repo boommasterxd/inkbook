@@ -46,7 +46,10 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
         toolbarRef={toolbar}
       />
       {props.toolbarState.saveStatus === undefined ? null : (
-        <DocumentSaveStatusIndicator status={props.toolbarState.saveStatus} />
+        <DocumentSaveStatusIndicator
+          renderIcon={props.renderIcon}
+          status={props.toolbarState.saveStatus}
+        />
       )}
     </div>
   );

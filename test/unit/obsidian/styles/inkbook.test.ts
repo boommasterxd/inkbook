@@ -24,17 +24,18 @@ describe("Inkbook host styles", () => {
   it("centers delayed operation feedback in the visible embed without changing layout", () => {
     const feedback = declarationsFor(".inkbook-root .inkbook-operation-feedback");
     const icon = declarationsFor(".inkbook-root .inkbook-operation-feedback-icon");
-    const reducedMotion = blockFor(
-      '.inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon',
-      motionStylesheet,
-    );
 
     expect(feedback).toContain("position: absolute");
     expect(feedback).toContain("translate: -50% -50%");
     expect(feedback).not.toContain("inset-block-start: 50%");
     expect(feedback).toContain("pointer-events: none");
     expect(icon).toContain("animation: inkbook-operation-spin 800ms linear infinite");
-    expect(reducedMotion).toContain("animation: none");
+    for (const selector of [
+      '.inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon,\n  .inkbook-root:not([data-inkbook-motion="full"]) .inkbook-document-save-status-icon',
+      '.inkbook-root[data-inkbook-motion="reduced"] .inkbook-operation-feedback-icon,\n.inkbook-root[data-inkbook-motion="reduced"] .inkbook-document-save-status-icon',
+    ]) {
+      expect(blockFor(selector, motionStylesheet)).toContain("animation: none");
+    }
   });
 
   it("animates the active tool visual without resizing its button or icon", () => {
