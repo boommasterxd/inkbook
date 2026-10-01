@@ -31,13 +31,24 @@ describe("Inkbook editor chrome", () => {
           toolbarState={{ ...props.toolbarState, saveStatus }}
         />,
       );
-      expect(markup).toContain(`data-save-status="${saveStatus}"`);
-      expect(markup).toContain(`${label}</span>`);
-      expect(markup).toContain('role="status"');
-      expect(markup).toContain('aria-live="polite"');
-      expect(markup).toContain('aria-atomic="true"');
-      expect(markup).toContain('title="');
-      expect(markup).toMatch(/<\/div><\/div><\/div><span[^>]*inkbook-document-save-status/u);
+      const document = new DOMParser().parseFromString(markup, "text/html");
+      const status = document.querySelector<HTMLElement>("[role='status']");
+      const sizing = status?.querySelector<HTMLElement>(".inkbook-document-save-status-sizing");
+      const labels = Array.from(
+        sizing?.querySelectorAll<HTMLElement>(".inkbook-document-save-status-labels > span") ?? [],
+        (node) => node.textContent,
+      );
+
+      expect(status?.dataset.saveStatus).toBe(saveStatus);
+      expect(status?.parentElement).toBe(document.querySelector(".inkbook-toolbar-shell"));
+      expect(status?.querySelector(".inkbook-document-save-status-content")?.textContent).toBe(
+        label,
+      );
+      expect(status?.getAttribute("aria-live")).toBe("polite");
+      expect(status?.getAttribute("aria-atomic")).toBe("true");
+      expect(status?.getAttribute("title")).toBeTruthy();
+      expect(sizing?.getAttribute("aria-hidden")).toBe("true");
+      expect(labels).toEqual(["Saved", "Unsaved changes", "Saving…", "Save failed"]);
     },
   );
 });
@@ -61,7 +72,23 @@ describe("document save status icons", () => {
     try {
       render("pending");
       const status = container.querySelector("[role='status']") as HTMLElement;
-      expect(status.textContent).toBe("Unsaved changes");
+      const content = status.querySelector(".inkbook-document-save-status-content") as HTMLElement;
+      const sizing = status.querySelector(".inkbook-document-save-status-sizing") as HTMLElement;
+      const sizingChildren = Array.from(sizing.querySelectorAll("span"));
+      const expectSizingRetained = (): void => {
+        expect(status.querySelector(".inkbook-document-save-status-sizing")).toBe(sizing);
+        const currentChildren = Array.from(sizing.querySelectorAll("span"));
+        expect(currentChildren).toHaveLength(sizingChildren.length);
+        currentChildren.forEach((child, index) => expect(child).toBe(sizingChildren[index]));
+      };
+      expect(content.textContent).toBe("Unsaved changes");
+      expect(sizing.getAttribute("aria-hidden")).toBe("true");
+      expect(
+        Array.from(
+          sizing.querySelectorAll(".inkbook-document-save-status-labels > span"),
+          (node) => node.textContent,
+        ),
+      ).toEqual(["Saved", "Unsaved changes", "Saving…", "Save failed"]);
       expect(status.querySelector(".inkbook-document-save-status-icon")).toBeNull();
       expect(renderIcon).not.toHaveBeenCalled();
 
@@ -69,14 +96,16 @@ describe("document save status icons", () => {
       const icon = status.querySelector(".inkbook-document-save-status-icon") as HTMLElement;
       expect(icon.getAttribute("aria-hidden")).toBe("true");
       expect(renderIcon).toHaveBeenLastCalledWith(icon, "loader-circle");
-      expect(status.textContent).toBe("Saving…");
+      expect(content.textContent).toBe("Saving…");
+      expectSizingRetained();
       render("saving");
       expect(renderIcon).toHaveBeenCalledOnce();
 
       render("saved");
       expect(renderIcon).toHaveBeenLastCalledWith(icon, "check");
       expect(icon.querySelector("[data-icon]")?.getAttribute("data-icon")).toBe("check");
-      expect(status.textContent).toBe("Saved");
+      expect(content.textContent).toBe("Saved");
+      expectSizingRetained();
       expect(status.getAttribute("title")).toBe("All current changes have been saved.");
       expect(status.getAttribute("aria-live")).toBe("polite");
       expect(status.getAttribute("aria-atomic")).toBe("true");
@@ -84,11 +113,14 @@ describe("document save status icons", () => {
       expect(renderIcon).toHaveBeenCalledTimes(2);
 
       render("pending");
+      expectSizingRetained();
       expect(status.querySelector(".inkbook-document-save-status-icon")).toBeNull();
       render("saving");
+      expectSizingRetained();
       expect(renderIcon).toHaveBeenCalledTimes(3);
       render("failed");
-      expect(status.textContent).toBe("Save failed");
+      expect(content.textContent).toBe("Save failed");
+      expectSizingRetained();
       const failedIcon = status.querySelector(".inkbook-document-save-status-icon");
       expect(failedIcon?.getAttribute("aria-hidden")).toBe("true");
       expect(renderIcon).toHaveBeenLastCalledWith(failedIcon, "circle-alert");
@@ -96,7 +128,8 @@ describe("document save status icons", () => {
       expect(renderIcon).toHaveBeenCalledTimes(4);
       render("saved");
       expect(renderIcon).toHaveBeenLastCalledWith(failedIcon, "check");
-      expect(status.textContent).toBe("Saved");
+      expect(content.textContent).toBe("Saved");
+      expectSizingRetained();
       expect(renderIcon).toHaveBeenCalledTimes(5);
     } finally {
       act(() => root.unmount());

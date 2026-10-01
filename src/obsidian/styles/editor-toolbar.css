@@ -18,21 +18,49 @@
 }
 
 .inkbook-root .inkbook-document-save-status {
-  align-items: center;
-  background: var(--menu-background);
+  background: var(--background-primary);
   border: 1px solid var(--menu-border-color);
-  border-radius: 999px;
+  border-block-start: 0;
+  border-radius: 0 0 12px 12px;
   color: var(--text-muted);
-  display: inline-flex;
+  display: grid;
   font-size: var(--font-smallest);
-  gap: 4px;
-  inset-block-start: 56px;
-  inset-inline-end: 8px;
+  inset-block-start: 55px;
+  inset-inline-start: 50%;
   line-height: 1.5;
   max-inline-size: calc(100% - 16px);
-  padding: 1px 8px;
+  padding: 3px 12px;
+  place-items: center;
   pointer-events: auto;
   position: absolute;
+  translate: -50% 0;
+  white-space: nowrap;
+}
+
+.inkbook-root .inkbook-document-save-status-content,
+.inkbook-root .inkbook-document-save-status-sizing {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  grid-area: 1 / 1;
+  justify-content: center;
+}
+
+.inkbook-root .inkbook-document-save-status-sizing {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.inkbook-root .inkbook-document-save-status-labels {
+  display: grid;
+}
+
+.inkbook-root .inkbook-document-save-status-labels > span {
+  grid-area: 1 / 1;
+}
+
+.inkbook-root .inkbook-document-save-status-icon-space {
+  inline-size: 14px;
 }
 
 .inkbook-root .inkbook-document-save-status-icon {

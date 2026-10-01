@@ -42,10 +42,20 @@ export function DocumentSaveStatusIndicator(props: {
       role="status"
       title={DETAILS[props.status]}
     >
-      {icon === null ? null : (
-        <span aria-hidden="true" className="inkbook-document-save-status-icon" ref={iconRef} />
-      )}
-      {LABELS[props.status]}
+      <span aria-hidden="true" className="inkbook-document-save-status-sizing">
+        <span className="inkbook-document-save-status-icon-space" />
+        <span className="inkbook-document-save-status-labels">
+          {Object.values(LABELS).map((label) => (
+            <span key={label}>{label}</span>
+          ))}
+        </span>
+      </span>
+      <span className="inkbook-document-save-status-content">
+        {icon === null ? null : (
+          <span aria-hidden="true" className="inkbook-document-save-status-icon" ref={iconRef} />
+        )}
+        <span>{LABELS[props.status]}</span>
+      </span>
     </span>
   );
 }
