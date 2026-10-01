@@ -170,6 +170,8 @@ Keep CodeMirror and Lezer external to the production bundle. Add direct CodeMirr
 
 - Write technical content in English and use ASCII-compatible `kebab-case` documentation filenames. Preserve exact product, API, UI, command, and identifier spelling when part of a contract.
 - Keep each document focused on one stable responsibility and below 500 lines.
+- Use stable topic-based filenames; do not create date-specific documentation files.
+- Keep one-off measurement reports and changing speed comparisons out of `docs/`. Document lasting architecture, resource budgets, and verification requirements in their canonical topic documents.
 - Store technical documentation under `docs/`, except for standardized root files such as `AGENTS.md`, `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and `LICENSE.md`.
 - Update the Documentation Index whenever a Markdown file under `docs/` is created, moved, renamed, or deleted. Keep it complete, recursive, alphabetically sorted, and free of broken links.
 
@@ -201,9 +203,6 @@ Keep CodeMirror and Lezer external to the production bundle. Add direct CodeMirr
 | [`docs/keyboard-shortcuts.md`](docs/keyboard-shortcuts.md)                                                 | Defines configurable canvas bindings, fixed system shortcuts, gesture modifiers, command ownership, settings UI, and persistence.                                     |
 | [`docs/obsidian-integration.md`](docs/obsidian-integration.md)                                             | Defines supported Obsidian surfaces, multi-window ownership, native-scrollbar stability, public APIs, lifecycle, host storage, UI rules, and release requirements.    |
 | [`docs/performance-ci.md`](docs/performance-ci.md)                                                         | Defines deterministic performance checks, coverage limits, authoring rules, and local/hosted parity.                                                                  |
-| [`docs/performance-diagnostics-2026-09-30.md`](docs/performance-diagnostics-2026-09-30.md)                 | Records paired Obsidian loading/save diagnostics, compact-file sizes, exact build identities, verification, and measurement limits.                                   |
-| [`docs/performance-diagnostics-2026-10-01.md`](docs/performance-diagnostics-2026-10-01.md)                 | Records lossless pipeline work reuse, paired Obsidian load/save observations, exact sample preservation, and measurement limits.                                      |
-| [`docs/performance-worker-offload-2026-10-01.md`](docs/performance-worker-offload-2026-10-01.md)           | Records worker offload diagnostics, confirmed-readback timing, main-thread samples, exact sample preservation, and measurement limits.                                |
 | [`docs/quality-and-testing.md`](docs/quality-and-testing.md)                                               | Defines performance, memory, file-size, scroll stability, document-worker, multi-window, animation, accessibility, and verification requirements.                     |
 | [`docs/rendering-and-performance.md`](docs/rendering-and-performance.md)                                   | Defines the imperative SVG scene, gesture updates, culling, bounded caches, document-worker boundary, and coalesced asynchronous persistence.                         |
 | [`docs/settings.md`](docs/settings.md)                                                                     | Defines tool defaults, page preferences, input settings, scope, precedence, and validation.                                                                           |
