@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { PresentationOperationFeedback } from "../../../src/obsidian/embeds/presentation-operation-feedback";
 import { FakePresentationElement } from "../../fixtures/obsidian/presentation-dom";
@@ -98,4 +98,50 @@ it("positions detached loading feedback after attachment with bounded work", () 
   expect(invalidPositions).toBe(0);
   expect(retainedResources).toBe(0);
   expect(timers).toBe(0);
+});
+
+it("bounds actual loading layout reads and live insertion across a scroll burst", () => {
+  const root = new FakePresentationElement();
+  const ownerWindow = root.ownerDocument.defaultView;
+  if (ownerWindow === null) throw new Error("Missing owner window.");
+  const frames = new Map<number, FrameRequestCallback>();
+  let handle = 0;
+  Object.assign(ownerWindow, {
+    performance: { now: () => 1000 },
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      frames.set(++handle, callback);
+      return handle;
+    },
+    cancelAnimationFrame: (handle: number) => frames.delete(handle),
+  });
+  const read = vi.spyOn(root, "getBoundingClientRect");
+  const insertion = vi.spyOn(root, "appendChild");
+  const scheduler = workSchedulerFromFrames(ownerWindow);
+  const request = vi.spyOn(scheduler, "requestFrame");
+  const feedback = new PresentationOperationFeedback(
+    root as unknown as HTMLElement,
+    undefined,
+    scheduler,
+  );
+  feedback.begin("loading", 0);
+  expect(read).toHaveBeenCalledOnce();
+  expect(insertion).toHaveBeenCalledOnce();
+  expect(read.mock.invocationCallOrder[0]).toBeLessThan(insertion.mock.invocationCallOrder[0]!);
+  read.mockClear();
+  for (let event = 0; event < 1_000; event += 1) {
+    root.ownerDocument.dispatchEvent(new Event("scroll"));
+  }
+  expect(read).not.toHaveBeenCalled();
+  expect(frames.size).toBe(1);
+  expect(request).toHaveBeenCalledExactlyOnceWith(expect.any(Function), "input");
+  for (const [handle, callback] of frames) {
+    frames.delete(handle);
+    callback(16);
+  }
+  expect(read).toHaveBeenCalledOnce();
+  expect(insertion).toHaveBeenCalledOnce();
+  root.ownerDocument.dispatchEvent(new Event("scroll"));
+  feedback.dispose();
+  expect(frames.size).toBe(0);
+  expect(root.children).toHaveLength(0);
 });

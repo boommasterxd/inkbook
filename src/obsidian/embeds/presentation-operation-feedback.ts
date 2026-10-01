@@ -104,7 +104,9 @@ export class PresentationOperationFeedback {
   #show(kind: PresentationOperationKind): void {
     if (kind === "loading") this.#onLoadingShown?.();
     const label = kind === "loading" ? "Loading drawing" : "Saving drawing";
-    const indicator = this.#root.createDiv({ cls: "inkbook-operation-feedback" });
+    const indicator = (this.#ownerWindow as Window & { createDiv: typeof createDiv }).createDiv({
+      cls: "inkbook-operation-feedback",
+    });
     indicator.setAttribute("role", "status");
     indicator.setAttribute("aria-atomic", "true");
     indicator.setAttribute("aria-label", label);
@@ -119,6 +121,7 @@ export class PresentationOperationFeedback {
       "center",
       this.#workScheduler,
     );
+    this.#root.appendChild(indicator);
   }
 
   #clearCurrent(): void {

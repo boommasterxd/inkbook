@@ -60,10 +60,10 @@ export function createPresentationFeedbackPositionLifecycle(
       return;
     }
     measured = true;
-    surface.classList.remove("inkbook-feedback-unmeasured");
     const presentationBounds = presentation.getBoundingClientRect();
     const boundary = resolveVisibleOwnerBoundary(presentation, ownerDocument);
     const position = resolvePresentationFeedbackPosition(presentationBounds, boundary);
+    surface.classList.remove("inkbook-feedback-unmeasured");
     applyPosition(surface, position, presentationBounds, boundary, verticalAnchor);
   };
   const schedule = (): void => {
@@ -71,7 +71,7 @@ export function createPresentationFeedbackPositionLifecycle(
     frame = workScheduler.requestFrame(() => {
       frame = undefined;
       reposition();
-    });
+    }, "input");
   };
   const observer = createResizeObserver(ownerWindow, schedule, surface, presentation);
   ownerDocument.addEventListener("scroll", schedule, true);

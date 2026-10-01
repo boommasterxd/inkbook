@@ -33,6 +33,25 @@ describe("PresentationOperationFeedback held insertion", () => {
   });
 });
 
+describe("PresentationOperationFeedback layout", () => {
+  it.each(["loading", "saving"] as const)(
+    "measures %s feedback before inserting its live DOM indicator",
+    (kind) => {
+      const harness = createHarness();
+      const read = vi.spyOn(harness.root, "getBoundingClientRect").mockImplementation(() => {
+        expect(harness.indicator()).toBeNull();
+        return { bottom: 100, height: 100, left: 0, right: 600, top: 0, width: 600 };
+      });
+      harness.feedback.begin(kind);
+      harness.runTimer();
+      if (kind === "loading") harness.runFrame();
+      expect(read).toHaveBeenCalledOnce();
+      expect(harness.indicator()?.dataset.inkbookOperation).toBe(kind);
+      harness.feedback.dispose();
+    },
+  );
+});
+
 describe("PresentationOperationFeedback", () => {
   it("shows loading feedback only after the delay and removes it on completion", () => {
     const harness = createHarness();
@@ -223,6 +242,7 @@ function createHarness(onLoadingShown?: () => void) {
     workSchedulerFromFrames(ownerWindow),
   );
   return {
+    root,
     delay: () => [...timers.values()][0]?.delay,
     feedback,
     indicator: () => root.getElementsByClassName("inkbook-operation-feedback").item(0),

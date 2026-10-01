@@ -415,13 +415,18 @@
 
 .inkbook-root .inkbook-operation-feedback {
   align-items: center;
-  color: var(--text-muted);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  box-shadow: var(--shadow-s);
+  color: var(--interactive-accent);
   display: flex;
   block-size: 40px;
   inline-size: 40px;
   justify-content: center;
   pointer-events: none;
   position: absolute;
+  transition: none;
   translate: -50% -50%;
   z-index: var(--layer-menu);
 }
