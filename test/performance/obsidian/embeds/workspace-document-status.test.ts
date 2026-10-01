@@ -121,7 +121,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
     expect(root.dataset.saveStatus).toBe("pending");
     // One semantic transition may update status, label, title, icon visibility and icon content.
     expect(observer.takeRecords().length).toBeLessThanOrEqual(6);
-    expect(icons).toHaveBeenCalledOnce();
+    expect(icons).toHaveBeenCalledTimes(2);
     expect(subscribe).toHaveBeenCalledOnce();
     expect(containment).toHaveBeenCalledOnce();
     clock.advance(999);
@@ -131,7 +131,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
     expect(execute).toHaveBeenCalledOnce();
     expect(root.dataset.saveStatus).toBe("saving");
     expect(observer.takeRecords().length).toBeLessThanOrEqual(6);
-    expect(icons).toHaveBeenCalledTimes(2);
+    expect(icons).toHaveBeenCalledTimes(3);
     expect(containment).toHaveBeenCalledOnce();
     dispose();
     dispose();
@@ -141,7 +141,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
     expect(unsubscribe).toHaveBeenCalledOnce();
     expect(container.children).toHaveLength(0);
     expect(observer.takeRecords()).toHaveLength(0);
-    expect(icons).toHaveBeenCalledTimes(2);
+    expect(icons).toHaveBeenCalledTimes(3);
   } finally {
     observer.disconnect();
     dispose();

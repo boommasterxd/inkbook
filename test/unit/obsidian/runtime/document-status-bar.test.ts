@@ -71,7 +71,7 @@ describe("native document status bar", () => {
     const path = "Sketches/Notebook.svg";
     for (const [status, text, glyph] of [
       ["saved", "Saved", "check"],
-      ["pending", "Unsaved changes", null],
+      ["pending", "Unsaved changes", "pencil"],
       ["saving", "Saving…", "loader-circle"],
       ["failed", "Save failed", "circle-alert"],
       ["saved", "Saved", "check"],
@@ -81,8 +81,8 @@ describe("native document status bar", () => {
       expect(label.textContent).toBe(text);
       expect(label.textContent).not.toContain(path);
       expect(root.title).toBe(`Inkbook: ${text}\n${path}`);
-      expect(icon.hidden).toBe(glyph === null);
-      if (glyph !== null) expect(icon.dataset.icon).toBe(glyph);
+      expect(icon.hidden).toBe(false);
+      expect(icon.dataset.icon).toBe(glyph);
     }
     update(null);
     expect(root.dataset.saveStatus).toBe("inactive");
@@ -90,25 +90,28 @@ describe("native document status bar", () => {
     expect(root.title).toBe("No Inkbook embed open");
   });
 
-  it("retains nodes and skips unchanged DOM and icon work, including path-only updates", () => {
-    const icons = vi.spyOn(obsidian, "setIcon");
-    const saved = { path: "First.svg", status: "saved" } as const;
-    const { root, icon, label, update } = fixture(saved);
-    const observer = new MutationObserver(() => undefined);
-    observer.observe(root, { attributes: true, childList: true, subtree: true });
-    for (let index = 0; index < 100; index += 1) update({ ...saved });
-    expect(observer.takeRecords()).toHaveLength(0);
-    expect(icons).toHaveBeenCalledOnce();
-    update({ path: "Second.svg", status: "saved" });
-    const changes = observer.takeRecords();
-    expect(changes).toHaveLength(1);
-    expect(changes[0]?.attributeName).toBe("title");
-    expect(root.title).toContain("Second.svg");
-    expect(icons).toHaveBeenCalledOnce();
-    expect(root.firstElementChild).toBe(icon);
-    expect(root.lastElementChild).toBe(label);
-    observer.disconnect();
-  });
+  it.each(["saved", "pending"] as const)(
+    "retains nodes and skips unchanged %s DOM and icon work, including path-only updates",
+    (status) => {
+      const icons = vi.spyOn(obsidian, "setIcon");
+      const saved = { path: "First.svg", status };
+      const { root, icon, label, update } = fixture(saved);
+      const observer = new MutationObserver(() => undefined);
+      observer.observe(root, { attributes: true, childList: true, subtree: true });
+      for (let index = 0; index < 100; index += 1) update({ ...saved });
+      expect(observer.takeRecords()).toHaveLength(0);
+      expect(icons).toHaveBeenCalledOnce();
+      update({ path: "Second.svg", status });
+      const changes = observer.takeRecords();
+      expect(changes).toHaveLength(1);
+      expect(changes[0]?.attributeName).toBe("title");
+      expect(root.title).toContain("Second.svg");
+      expect(icons).toHaveBeenCalledOnce();
+      expect(root.firstElementChild).toBe(icon);
+      expect(root.lastElementChild).toBe(label);
+      observer.disconnect();
+    },
+  );
 
   it("releases its subscription and owned node once and ignores late notifications", () => {
     const { container, dispose, root, unsubscribe, update } = fixture();

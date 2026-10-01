@@ -13,6 +13,10 @@
   color: var(--text-error);
 }
 
+.inkbook-status-bar-label {
+  text-box: trim-both cap alphabetic;
+}
+
 .inkbook-status-bar-icon {
   display: inline-flex;
   flex: none;
@@ -24,7 +28,9 @@
   display: none;
 }
 
-.inkbook-status-bar-icon svg {
+.inkbook-status-bar .inkbook-status-bar-icon svg {
+  display: block;
+  margin: 0;
   width: var(--icon-xs);
   height: var(--icon-xs);
 }

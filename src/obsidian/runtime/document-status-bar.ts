@@ -11,9 +11,9 @@ const LABELS: Readonly<Record<DocumentSaveStatus, string>> = {
   failed: "Save failed",
 };
 
-const ICONS: Readonly<Record<DocumentSaveStatus, string | null>> = {
+const ICONS: Readonly<Record<DocumentSaveStatus, string>> = {
   saved: "check",
-  pending: null,
+  pending: "pencil",
   saving: "loader-circle",
   failed: "circle-alert",
 };
@@ -31,7 +31,7 @@ export function mountDocumentStatusBar(
   root.setAttribute("aria-atomic", "true");
   const icon = root.createSpan({ cls: "inkbook-status-bar-icon" });
   icon.setAttribute("aria-hidden", "true");
-  const label = root.createSpan();
+  const label = root.createSpan({ cls: "inkbook-status-bar-label" });
   let disposed = false;
   let previousIcon: string | null = null;
   const update = (): void => {
