@@ -32,6 +32,7 @@ import { loadTrustedDocumentForUnlock } from "./vault-document-trusted-unlock";
 import { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import { ActiveEditorHistory } from "./active-editor/history";
 import { SessionScenePaths } from "./session-scene-paths";
+import { DocumentSaveStatusSource } from "./document-save-status";
 export type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
 export interface ActiveDocumentEditorContext {
   readonly history: ActiveEditorHistory;
@@ -44,6 +45,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   readonly #loadDocument: ReturnType<typeof trustedLoader.createTrustedVaultDocumentLoader>;
   readonly #workScheduler: WorkScheduler;
   #autosave: AutosaveCoordinator | undefined;
+  readonly #saveStatus = new DocumentSaveStatusSource();
   #confirmedRevision = 0;
   readonly #lifecycle = { disposed: false, preparingForUnload: false };
   #unloadPreparation: Promise<void> | undefined;
@@ -96,6 +98,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   dispose(): void {
     if (this.#lifecycle.disposed) return;
     this.#lifecycle.disposed = true;
+    this.#saveStatus.dispose();
     this.#workPriority.dispose();
     this.#autosave?.dispose();
     this.#workScheduler.dispose();
@@ -132,7 +135,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       this.#autosave === undefined
     )
       return "conflict";
-    return recovery.reloadCleanExternalChange({
+    const outcome = await recovery.reloadCleanExternalChange({
       accepts: (candidate) =>
         recovery.acceptsSessionOperation(this.#identity, this.#workerEpoch, candidate),
       baseRevision: () => this.#revision,
@@ -140,6 +143,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       ...(operation === undefined ? {} : { operation }),
       reload: (recovery) => this.#runExternalReload(recovery),
     });
+    if (this.#autosave) this.#saveStatus.update(this.#autosave);
+    return outcome;
   }
   async #runExternalReload(
     operation: Session.RecoveryOperationIdentity,
@@ -322,6 +327,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       );
     const model = createVaultEditableModel({
       actions: {
+        getSaveStatus: this.#saveStatus.current,
+        subscribeSaveStatus: this.#saveStatus.subscribe,
         prepareScenePaths: scenePaths.prepare,
         commitBandOrder: (order) => mutations.commitBandOrder(order),
         commitElement: (element) => mutations.commitElements([element]),
@@ -390,6 +397,9 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         lockedAspectRatio: () => lockedDocumentAspectRatio(this.#page, store),
         persisted: this.#hooks.persisted,
       }),
+      statusChanged: (status) => {
+        if (this.#autosave) this.#saveStatus.update({ status, dirty: this.#autosave.dirty });
+      },
       ...(createFallback === undefined ? {} : { createFallback }),
       currentRevision: () => this.#revision,
       executor,
@@ -403,6 +413,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       store,
       workerEpoch: this.#workerEpoch,
     });
+    this.#saveStatus.update(this.#autosave);
   }
   async #preserveMigrationSource(expectedContent: string): Promise<void> {
     const sourceVersion = this.#migrationBackupSourceVersion;
@@ -432,8 +443,9 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
           ...(acceptExternalVersion ? { acceptExternalVersion: "validated-current" as const } : {}),
         }),
       releaseAutosave: () => {
-        this.#autosave?.dispose("preserve-executor");
+        const autosave = this.#autosave;
         this.#autosave = undefined;
+        autosave?.dispose("preserve-executor");
       },
       restore: () => {
         const model = this.#model;

@@ -17,6 +17,25 @@
   position: relative;
 }
 
+.inkbook-root .inkbook-document-save-status {
+  background: var(--menu-background);
+  border: 1px solid var(--menu-border-color);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  inset-block-start: 56px;
+  inset-inline-end: 8px;
+  line-height: 1.5;
+  max-inline-size: calc(100% - 16px);
+  padding: 1px 8px;
+  pointer-events: auto;
+  position: absolute;
+}
+
+.inkbook-root .inkbook-document-save-status[data-save-status="failed"] {
+  color: var(--text-error);
+}
+
 .inkbook-root .inkbook-toolbar-composition-scrollable {
   border-radius: 999px;
   overflow: auto hidden;

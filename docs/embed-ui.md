@@ -129,6 +129,12 @@ The overflow menu opens through an Inkbook-owned menu below the three-dot trigge
 
 The overflow and selection context menus expose Bring forward, Send backward, Bring to front, and Send to back as four flat Arrange actions. Canvas context menus retain flat actions without submenus. Disabled boundary actions remain visible in the menu so their layer behavior is discoverable. These actions do not consume four permanent toolbar slots. Overflow also contains Settings and Keyboard shortcuts with the built-in `settings` and `keyboard` icons. On desktop and tablet both schedule opening an Inkbook dialog after the menu closes; on phones they open subpages of the existing sheet as specified in [Obsidian integration](obsidian-integration.md#commands-menus-icons-and-styling). Settings renders only the general settings content, while Keyboard shortcuts renders only its dedicated shortcut content; neither adds an internal view switcher.
 
+### Document Save Status
+
+The active editor keeps a compact text status beneath the toolbar, outside its horizontal scrolling track: `Saved`, `Unsaved changes`, `Saving`, or `Save failed`. It derives these states from the owning session's authoritative autosave coordinator, including pending canonical rewrites and external-change failures. `Saved` requires confirmation of the current document revision; completion of an older save leaves newer edits pending. This status does not add a timer or alter the existing 1,000-millisecond autosave debounce defined in [Rendering and Performance](rendering-and-performance.md#document-worker-autosave-and-export).
+
+The status uses `role="status"`, polite announcements, and a descriptive tooltip; color alone never carries its meaning. Failures retain the existing recovery actions and local session data. Only meaningful state changes notify the chrome, and repeated commits in the same state do not rerender it. Detach, session replacement, and disposal release subscriptions; replacing a clean externally changed document does not expose the discarded coordinator's disposal state.
+
 ## Context Menu Presentation
 
 Canvas menus use the shared lifecycle-owned adaptive surface with host-matching menu controls, never a React-rendered SVG overlay. Every actionable entry has a built-in Lucide icon:

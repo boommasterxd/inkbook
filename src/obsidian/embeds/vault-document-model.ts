@@ -59,6 +59,7 @@ export function createVaultAutosaveSession(
       : { waitForBackground: options.waitForBackground }),
     clock: options.clock,
     confirmed: options.confirmed,
+    ...(options.statusChanged ? { statusChanged: options.statusChanged } : {}),
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),
     currentRevision: options.currentRevision,
     executor: options.executor,

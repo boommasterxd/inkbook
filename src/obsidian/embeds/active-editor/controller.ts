@@ -343,6 +343,7 @@ export class ActiveEditorController {
       hasSelection: this.#selection.size > 0,
       openFlyout: this.#chromeState.openFlyout,
       pasteVisible: this.#actions.pasteVisible,
+      saveStatus: this.#model.getSaveStatus?.(),
     });
   }
   #beginPreview(start: GesturePreviewStart, options: ActiveEditorControllerOptions) {

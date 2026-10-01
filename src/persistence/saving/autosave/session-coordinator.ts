@@ -50,7 +50,10 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
     },
     executor: options.executor,
     initialSnapshot: options.initialSnapshot,
-    observer: { confirmed: options.confirmed, statusChanged: () => undefined },
+    observer: {
+      confirmed: options.confirmed,
+      statusChanged: options.statusChanged ?? (() => undefined),
+    },
     path: options.path,
     ...(options.requiresCanonicalRewrite === undefined
       ? {}

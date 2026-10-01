@@ -138,6 +138,7 @@ export function createToolbarState(options: {
   hasSelection: boolean;
   openFlyout: ToolbarState["openFlyout"];
   pasteVisible: boolean;
+  saveStatus?: ToolbarState["saveStatus"];
 }): ToolbarState {
   return {
     actionConfirmation: options.actionConfirmation ?? null,
@@ -150,5 +151,6 @@ export function createToolbarState(options: {
     hasSelection: options.hasSelection,
     openFlyout: options.openFlyout,
     pasteVisible: options.pasteVisible,
+    ...(options.saveStatus === undefined ? {} : { saveStatus: options.saveStatus }),
   };
 }

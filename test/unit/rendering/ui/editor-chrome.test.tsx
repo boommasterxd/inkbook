@@ -6,8 +6,34 @@ import {
   registerToolbarResize,
 } from "../../../../src/rendering/ui/editor-chrome";
 import { toolbarMainHalfWidth } from "../../../../src/rendering/ui/toolbar-layout";
+import { createEditorChromeProps } from "../../../fixtures/editor-chrome";
 
 describe("Inkbook editor chrome", () => {
+  it.each([
+    ["saved", "Saved"],
+    ["pending", "Unsaved changes"],
+    ["saving", "Saving"],
+    ["failed", "Save failed"],
+  ] as const)(
+    "exposes %s as persistent accessible text outside the scrollable controls",
+    (saveStatus, label) => {
+      const props = createEditorChromeProps({} as Document);
+      const markup = renderToStaticMarkup(
+        <InkbookEditorChrome
+          {...props}
+          layout="scrollable"
+          toolbarState={{ ...props.toolbarState, saveStatus }}
+        />,
+      );
+      expect(markup).toContain(`data-save-status="${saveStatus}"`);
+      expect(markup).toContain(`>${label}</span>`);
+      expect(markup).toContain('role="status"');
+      expect(markup).toContain('aria-live="polite"');
+      expect(markup).toContain('aria-atomic="true"');
+      expect(markup).toContain('title="');
+      expect(markup).toMatch(/<\/div><\/div><\/div><span[^>]*inkbook-document-save-status/u);
+    },
+  );
   it("renders toolbar chrome without scene, canvas, or custom menu content", () => {
     const markup = renderToStaticMarkup(
       <InkbookEditorChrome

@@ -1,3 +1,5 @@
+import type { DocumentSaveStatus } from "../../editor/session/session-port";
+
 export type ToolId =
   "select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "shape";
 
@@ -40,6 +42,7 @@ export const TOOLBAR_ACTION_CONFIRMATION_MS = 900;
 export type FlyoutId = "background" | "overflow" | "shape" | "style";
 
 export interface ToolbarState {
+  readonly saveStatus?: DocumentSaveStatus;
   readonly activeTool: ToolId;
   readonly actionConfirmation?: ToolbarActionConfirmation | null;
   readonly canPaste: boolean;

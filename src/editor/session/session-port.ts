@@ -1,5 +1,7 @@
 import type { AttachmentIdentity, SessionPhase } from "./session-state";
 
+export type DocumentSaveStatus = "saved" | "pending" | "saving" | "failed";
+
 export interface SessionIdentity {
   readonly documentId: string;
   readonly sessionId: string;

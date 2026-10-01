@@ -30,6 +30,7 @@ export interface AutosaveSessionBaseOptions {
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
   readonly confirmed: (persistence: ConfirmedPersistence) => void;
+  readonly statusChanged?: (status: AutosaveStatus) => void;
   readonly createFallback?: (workerEpoch: number) => DocumentRuntimePort;
   readonly currentRevision: () => number;
   readonly executor: DocumentRuntimePort;

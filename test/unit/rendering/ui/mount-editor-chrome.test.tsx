@@ -62,4 +62,19 @@ describe("editor chrome mount", () => {
       /owning document/u,
     );
   });
+
+  it("renders only changed save states and keeps toolbar layout measurement independent", () => {
+    const ownerDocument = {} as Document;
+    const initial = createEditorChromeProps(ownerDocument);
+    const mounted = mountEditorChrome({ ownerDocument } as HTMLElement, initial);
+    for (const saveStatus of ["saved", "pending", "saving", "failed", "saved"] as const) {
+      const next = { ...initial, toolbarState: { ...initial.toolbarState, saveStatus } };
+      mounted.update(next);
+      const renders = reactRoot.render.mock.calls.length;
+      mounted.update({ ...next, toolbarState: { ...next.toolbarState } });
+      expect(reactRoot.render).toHaveBeenCalledTimes(renders);
+    }
+    expect(reactRoot.render).toHaveBeenCalledTimes(6);
+    mounted.unmount();
+  });
 });
