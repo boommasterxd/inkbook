@@ -16,7 +16,7 @@ import type { RecoveryFilePort } from "./vault-document-recovery";
 import type { MigrationBackupPort } from "../../persistence/documents/migration-backup";
 import { serializeSvgNumber } from "../../persistence/documents/svg-number";
 import { verifyVaultUnlockIntegrity } from "./vault-unlock-integrity";
-import { matchVaultPreviewProof } from "./vault-preview-proof";
+import { readVaultPreviewProofCandidate } from "./vault-preview-proof";
 import type { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
 
 interface VaultUnlockFilePort {
@@ -186,11 +186,7 @@ export async function loadVaultDocument(
   const safeStaticProof =
     options.safeStaticProof === undefined
       ? undefined
-      : await matchVaultPreviewProof(
-          bytes,
-          options.safeStaticProof,
-          options.scheduler(options.cancelled),
-        );
+      : readVaultPreviewProofCandidate(bytes, options.safeStaticProof);
   if (options.cancelled()) return undefined;
   const elements: InkElementV1[] = [];
   const builder = ElementStore.createBuilder(options.scheduler(options.cancelled));

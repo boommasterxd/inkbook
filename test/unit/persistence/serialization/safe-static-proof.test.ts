@@ -10,6 +10,8 @@ import {
 } from "../../../../src/persistence/worker/runtime/unlock-request-wire";
 import { rewriteDocumentMetadata } from "../../../fixtures/persistence/metadata-rewrite";
 import { createSnapshot } from "./fixtures";
+import { parseRuntimeInput } from "../../../../src/persistence/worker/runtime/parse-runtime-input";
+import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
 
 let svg: string;
 let proof: SafeStaticProof;
@@ -156,5 +158,99 @@ describe("safe-static proof trust and validation boundaries", () => {
     await parser.write(new TextEncoder().encode(svg));
     cancel = true;
     await expect(parser.finish()).rejects.toMatchObject({ code: "input-cancelled" });
+  });
+});
+
+describe("executor preview candidate binding", () => {
+  it.each(["string", "bytes"])(
+    "binds fresh %s input before skipping the static scan",
+    async (kind) => {
+      const input = kind === "string" ? svg : new TextEncoder().encode(svg);
+      const staticWrite = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
+      const result = await parseRuntimeInput(input, undefined, undefined, "safe", undefined, proof);
+      expect(result.ok).toBe(true);
+      expect(staticWrite).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { change: (source: string) => source.replace("M0 0L2048.6", "M1 0L2048.6"), ok: true },
+    { change: (source: string) => `${source} `, ok: true },
+    { change: (source: string) => source.replace("</svg>", "<script/></svg>"), ok: false },
+  ])("fully validates changed input on a candidate miss ($ok)", async ({ change, ok }) => {
+    const staticWrite = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
+    const result = await parseRuntimeInput(
+      new TextEncoder().encode(change(svg)),
+      undefined,
+      undefined,
+      "safe",
+      undefined,
+      proof,
+    );
+    expect(result.ok).toBe(ok);
+    expect(staticWrite).toHaveBeenCalled();
+  });
+
+  it("rejects forged candidates before hashing or parsing", async () => {
+    const update = vi.spyOn(ChunkedSha256.prototype, "update");
+    await expect(
+      parseRuntimeInput(
+        svg,
+        undefined,
+        undefined,
+        "safe",
+        undefined,
+        Object.create(SafeStaticProof.prototype) as SafeStaticProof,
+      ),
+    ).rejects.toThrow("owned validation");
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("cancels candidate binding before metadata adoption", async () => {
+    const controller = new AbortController();
+    const adopt = vi.fn();
+    const staticWrite = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
+    await expect(
+      parseRuntimeInput(
+        new TextEncoder().encode(svg),
+        {
+          signal: controller.signal,
+          checkpoint: () => {
+            controller.abort();
+            return Promise.resolve();
+          },
+        },
+        adopt,
+        "safe",
+        undefined,
+        proof,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(adopt).not.toHaveBeenCalled();
+    expect(staticWrite).not.toHaveBeenCalled();
+  });
+
+  it("retains terminal byte binding when input changes after the candidate hash", async () => {
+    const input = new TextEncoder().encode(svg);
+    const controller = new AbortController();
+    let remainingHashCheckpoints = Math.ceil(input.byteLength / (64 * 1024));
+    const staticWrite = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
+    const result = await parseRuntimeInput(
+      input,
+      {
+        signal: controller.signal,
+        checkpoint: () => {
+          remainingHashCheckpoints -= 1;
+          if (remainingHashCheckpoints === 0) input[input.length - 1] = 0x20;
+          return undefined;
+        },
+      },
+      undefined,
+      "safe",
+      undefined,
+      proof,
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "invalid-svg" } });
+    expect(staticWrite).not.toHaveBeenCalled();
   });
 });

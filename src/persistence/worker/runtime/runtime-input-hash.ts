@@ -5,7 +5,15 @@ import type { RuntimeSliceContext } from "./types";
 export async function hashRuntimeInput(
   input: string | Uint8Array,
   context?: RuntimeSliceContext,
+  expectedBytes?: number,
 ): Promise<string | null> {
+  if (
+    expectedBytes !== undefined &&
+    (!Number.isSafeInteger(expectedBytes) ||
+      expectedBytes < 0 ||
+      expectedBytes > FILE_SCHEMA_LIMITS.totalInputBytes)
+  )
+    return null;
   if (input.length > FILE_SCHEMA_LIMITS.totalInputBytes) return null;
   const hash = new ChunkedSha256();
   const encoder = new TextEncoder();
@@ -28,5 +36,6 @@ export async function hashRuntimeInput(
     if (pending !== undefined) await pending;
   }
   context?.signal.throwIfAborted();
+  if (expectedBytes !== undefined && hash.totalBytes !== expectedBytes) return null;
   return hash.digestHex();
 }
