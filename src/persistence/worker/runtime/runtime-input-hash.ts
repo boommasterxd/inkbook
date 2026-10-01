@@ -1,6 +1,25 @@
 import { FILE_SCHEMA_LIMITS } from "../../../domain/schema/public";
 import { ChunkedSha256 } from "../../serialization/chunked-output-sha256";
 import type { RuntimeSliceContext } from "./types";
+import { hashConfirmedSvgContent } from "../../scheduling/trusted-svg-output";
+
+/** Save preflight retains the bounded native digest advantage inside the worker. */
+export async function hashConfirmedRuntimeInput(
+  input: string | Uint8Array,
+  context?: RuntimeSliceContext,
+  expectedBytes?: number,
+): Promise<string | null> {
+  if (typeof input !== "string") return hashRuntimeInput(input, context, expectedBytes);
+  if (!validExpectedBytes(expectedBytes) || input.length > FILE_SCHEMA_LIMITS.totalInputBytes)
+    return null;
+  const options = {
+    ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
+    chunkBytes: inputChunkSize(context),
+  };
+  return expectedBytes === undefined
+    ? hashConfirmedSvgContent(input, options)
+    : hashConfirmedSvgContent(input, { ...options, expectedBytes });
+}
 
 export async function hashRuntimeInput(
   input: string | Uint8Array,
@@ -11,11 +30,7 @@ export async function hashRuntimeInput(
   if (input.length > FILE_SCHEMA_LIMITS.totalInputBytes) return null;
   const hash = new ChunkedSha256();
   const encoder = new TextEncoder();
-  const requested = context?.workProfile?.inputByteLimit ?? 64 * 1024;
-  const chunkSize =
-    Number.isSafeInteger(requested) && requested > 0
-      ? Math.max(2, Math.min(requested, 64 * 1024))
-      : 64 * 1024;
+  const chunkSize = inputChunkSize(context);
   for (let offset = 0; offset < input.length;) {
     context?.signal.throwIfAborted();
     let end = Math.min(offset + chunkSize, input.length);
@@ -32,6 +47,13 @@ export async function hashRuntimeInput(
   context?.signal.throwIfAborted();
   if (expectedBytes !== undefined && hash.totalBytes !== expectedBytes) return null;
   return hash.digestHex();
+}
+
+function inputChunkSize(context?: RuntimeSliceContext): number {
+  const requested = context?.workProfile?.inputByteLimit ?? 64 * 1024;
+  return Number.isSafeInteger(requested) && requested > 0
+    ? Math.max(2, Math.min(requested, 64 * 1024))
+    : 64 * 1024;
 }
 
 function validExpectedBytes(expectedBytes: number | undefined): boolean {

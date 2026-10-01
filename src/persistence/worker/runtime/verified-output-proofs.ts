@@ -1,4 +1,4 @@
-import { hashRuntimeInput } from "./runtime-input-hash";
+import { hashConfirmedRuntimeInput, hashRuntimeInput } from "./runtime-input-hash";
 import { parseRuntimeInput } from "./parse-runtime-input";
 import type { RuntimeSliceContext } from "./types";
 import { parseSafeSvgRoot } from "../../documents/svg-envelope-root";
@@ -58,7 +58,9 @@ export class VerifiedOutputProofs {
       options.confirmedBase !== undefined ||
       options.expectedBytes !== undefined
     ) {
-      const hash = await hashRuntimeInput(input, context, options.expectedBytes);
+      const hashInput =
+        options.confirmedBase === undefined ? hashRuntimeInput : hashConfirmedRuntimeInput;
+      const hash = await hashInput(input, context, options.expectedBytes);
       if (hash === null) return null;
       const proof = [this.#input, this.#export, options.confirmedBase].find(
         (entry) => entry != null && entry.outputHash === hash && entry.revision === root.revision,

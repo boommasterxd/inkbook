@@ -45,6 +45,14 @@ describe("confirmed persisted base verification work", () => {
       else mainEncodedBytes += result.byteLength;
       return result;
     });
+    const encoder = new TextEncoder();
+    const originalEncodeInto = encoder.encodeInto.bind(encoder);
+    vi.spyOn(TextEncoder.prototype, "encodeInto").mockImplementation((input, destination) => {
+      const result = originalEncodeInto(input, destination);
+      if (workerActive) workerEncodedBytes += result.written;
+      else mainEncodedBytes += result.written;
+      return result;
+    });
     const scan = vi.spyOn(safeSvg, "validateSafeSvgSteps");
     const geometry = vi.spyOn(pressure, "iteratePressureUnion");
     const hash = vi.spyOn(ChunkedSha256.prototype, "update");
@@ -61,13 +69,11 @@ describe("confirmed persisted base verification work", () => {
       }),
     ).resolves.toEqual(confirmedBase);
     const expectedBytes = serialized.value.totalBytes;
-    expect(nativeHash).not.toHaveBeenCalled();
+    expect(nativeHash).toHaveBeenCalledExactlyOnceWith("SHA-256", expect.any(Uint8Array));
+    expect(nativeHash.mock.calls[0]![1].byteLength).toBe(expectedBytes);
     expect(mainEncodedBytes).toBe(0);
     expect(workerEncodedBytes).toBe(expectedBytes);
-    expect(hash.mock.calls.reduce((bytes, [chunk]) => bytes + chunk.byteLength, 0)).toBe(
-      expectedBytes,
-    );
-    expect(hash.mock.calls.every(([chunk]) => chunk.byteLength <= 3 * 64 * 1024)).toBe(true);
+    expect(hash).not.toHaveBeenCalled();
     expect(execute).toHaveBeenCalledTimes(1);
     expect(scan).not.toHaveBeenCalled();
     expect(geometry).not.toHaveBeenCalled();
@@ -84,10 +90,12 @@ describe("confirmed persisted base verification work", () => {
     // the shared template's validation derivation, with no duplicate comparison.
     expect(geometry.mock.calls.length).toBeGreaterThan(0);
     expect(geometry.mock.calls.length).toBeLessThanOrEqual(STANDARD_STROKES + 1);
-    expect(nativeHash).not.toHaveBeenCalled();
+    expect(nativeHash).toHaveBeenCalledTimes(2);
     runtime.terminate();
   }, 120_000);
+});
 
+describe("confirmed hashing fallback work", () => {
   it("keeps over-capacity files on bounded streaming hashing", async () => {
     const source = "x".repeat(20 * 1024 * 1024 + 1);
     const nativeHash = vi.spyOn(crypto.subtle, "digest");

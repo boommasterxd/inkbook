@@ -3,7 +3,7 @@ import { ObsidianInkbookDocumentRecognition } from "../../../src/obsidian/embeds
 import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-envelope";
 import * as safeSvgValidator from "../../../src/persistence/documents/safe-svg-validator";
 import { ChunkedSha256 } from "../../../src/persistence/serialization/chunked-output-sha256";
-import { hashSvgContent } from "../../../src/persistence/scheduling/trusted-svg-output";
+import { hashConfirmedSvgContent } from "../../../src/persistence/scheduling/trusted-svg-output";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 import { deferredPreviewRecognition } from "../../fixtures/obsidian/deferred-preview-recognition";
 import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
@@ -58,7 +58,7 @@ it("shares one full Vault read, hash, and safe inspection across visible preview
     highlights: [],
     content: ['<path d="M0 0L1 1" fill="none" stroke="#112233FF"/>'.repeat(10_000)],
   });
-  const outputHash = await hashSvgContent(svg);
+  const outputHash = await hashConfirmedSvgContent(svg);
   const { file, cachedRead, recognition, release } = deferredPreviewRecognition(
     "shared.svg",
     svg.length,

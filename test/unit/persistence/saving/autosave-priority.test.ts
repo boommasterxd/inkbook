@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
 import { AutosaveExportIntegrity } from "../../../../src/persistence/saving/autosave/export-integrity";
-import { hashSvgContent } from "../../../../src/persistence/scheduling/trusted-svg-output";
+import { hashConfirmedSvgContent } from "../../../../src/persistence/scheduling/trusted-svg-output";
 import { verifyExactWorkerContent } from "../../../../src/persistence/saving/autosave/trusted-verification";
 import { AutosavePersistedOutputVerifier } from "../../../../src/persistence/saving/autosave/persisted-output-verifier";
 import {
@@ -286,7 +286,7 @@ it.each(["read-back", "verification"] as const)(
           confirmedBase: {
             type: "confirmed",
             revision: 0,
-            outputHash: await hashSvgContent(content),
+            outputHash: await hashConfirmedSvgContent(content),
           },
         },
       ),

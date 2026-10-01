@@ -27,41 +27,55 @@ interface TrustedSvgInspectionOptions extends Utf8AdoptionOptions {
   readonly waitForBackground?: () => Promise<void> | undefined;
 }
 
-/** Hashes complete bounded bytes without repeating validation of an owned exact output. */
-export async function hashSvgContent(
-  content: string,
-  options: TrustedSvgInspectionOptions = {},
-): Promise<string> {
-  const { checkpoint, pending, chunkBytes } = prepareHash(options);
-  if (pending !== undefined) await pending;
-  options.signal?.throwIfAborted();
-  const inspected = await inspectString(content, chunkBytes, checkpoint, options.signal);
-  options.signal?.throwIfAborted();
-  return inspected.outputHash;
-}
-
 /** Uses a bounded native digest for confirmed-base preflight; other inputs retain sliced hashing. */
+export function hashConfirmedSvgContent(
+  content: string,
+  options: TrustedSvgInspectionOptions & { readonly expectedBytes: number },
+): Promise<string | null>;
+export function hashConfirmedSvgContent(
+  content: string,
+  options?: TrustedSvgInspectionOptions,
+): Promise<string>;
 export async function hashConfirmedSvgContent(
   content: string,
-  options: TrustedSvgInspectionOptions = {},
-): Promise<string> {
+  options: TrustedSvgInspectionOptions & { readonly expectedBytes?: number } = {},
+): Promise<string | null> {
+  const expectedBytes = options.expectedBytes;
   if (
-    content.length > MAX_NATIVE_HASH_BYTES ||
-    typeof crypto === "undefined" ||
-    crypto.subtle === undefined
+    expectedBytes !== undefined &&
+    (!Number.isSafeInteger(expectedBytes) ||
+      expectedBytes < 0 ||
+      expectedBytes > FILE_SCHEMA_LIMITS.totalInputBytes)
   )
-    return hashSvgContent(content, options);
+    return null;
   const { checkpoint, pending, chunkBytes } = prepareHash(options);
   if (pending !== undefined) await pending;
   options.signal?.throwIfAborted();
-  const encoded = await encodeConfirmedContent(
-    content,
-    Math.min(chunkBytes, DEFAULT_CHUNK_BYTES),
-    checkpoint,
-    options.signal,
+  if (canHashConfirmedNatively(content, expectedBytes)) {
+    const encoded = await encodeConfirmedContent(
+      content,
+      Math.min(chunkBytes, DEFAULT_CHUNK_BYTES),
+      checkpoint,
+      options.signal,
+    );
+    if (encoded !== null) {
+      if (expectedBytes !== undefined && encoded.byteLength !== expectedBytes) return null;
+      return hashExactUtf8Output(encoded, options.signal, undefined, checkpoint);
+    }
+  }
+  const inspected = await inspectString(content, chunkBytes, checkpoint, options.signal);
+  return expectedBytes === undefined || inspected.totalBytes === expectedBytes
+    ? inspected.outputHash
+    : null;
+}
+
+function canHashConfirmedNatively(content: string, expectedBytes?: number): boolean {
+  return (
+    content.length <= MAX_NATIVE_HASH_BYTES &&
+    (expectedBytes === undefined || expectedBytes <= MAX_NATIVE_HASH_BYTES) &&
+    typeof crypto !== "undefined" &&
+    crypto.subtle !== undefined
   );
-  if (encoded === null) return hashSvgContent(content, options);
-  return hashExactUtf8Output(encoded, options.signal, undefined, checkpoint);
 }
 
 function prepareHash(options: TrustedSvgInspectionOptions) {
