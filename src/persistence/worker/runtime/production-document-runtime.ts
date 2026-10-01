@@ -22,5 +22,6 @@ export function createProductionDocumentRuntime(
       ? {}
       : { updateSchedulingProfile: scheduling.updateSchedulingProfile }),
   });
-  return new DocumentWorkerRuntime(identity, scheduler);
+  // This composition runs only behind the actual worker's transferred request channel.
+  return new DocumentWorkerRuntime(identity, scheduler, undefined, true);
 }

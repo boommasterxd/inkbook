@@ -48,11 +48,12 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     executor: ExecutorIdentity,
     scheduler: InputAwareSliceScheduler | null = null,
     services: DocumentRuntimeServices = DEFAULT_RUNTIME_SERVICES,
+    ownsTransferredSamples = false,
   ) {
     this.#executor = executor;
     this.#scheduler = scheduler;
     this.#services = services;
-    this.#model = new DocumentModelRuntime(services.now);
+    this.#model = new DocumentModelRuntime(services.now, ownsTransferredSamples);
   }
 
   public get instrumentation() {

@@ -260,10 +260,16 @@ async function acknowledgeAndPrewarm(
   runtime: DocumentWorkerRuntime,
   identity: Parameters<DocumentWorkerRuntime["acknowledgeExport"]>[0],
 ): Promise<void> {
-  runtime.acknowledgeExport(identity, true);
-  runtime.requestPrewarm();
-  while (runtime.instrumentation.prewarmedElements < snapshot.elements.length) {
+  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAt");
+  try {
+    runtime.acknowledgeExport(identity, true);
+    runtime.requestPrewarm();
     await Promise.resolve();
+    expect(prewarm).not.toHaveBeenCalled();
+    expect(runtime.instrumentation.prewarmVisitedElements).toBe(0);
+    expect(runtime.instrumentation.prewarmedBytes).toBe(0);
+  } finally {
+    prewarm.mockRestore();
   }
   expect(runtime.instrumentation.cacheElements).toBe(snapshot.elements.length);
   expect(runtime.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);

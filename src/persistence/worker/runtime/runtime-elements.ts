@@ -3,6 +3,7 @@ import {
   validatedSampleExtrema,
 } from "../../../domain/schema/stroke-sample-extrema";
 import { assertStrokeSamplesV1 } from "../../../domain/elements/public";
+import { isStoredStroke } from "../../../domain/elements/stroke-replacement-proof";
 import { MAX_STROKE_POINTS } from "../../../domain/schema/public";
 import type {
   InkElementV1,
@@ -32,10 +33,16 @@ export function copySnapshotToRuntime(
   snapshot: InkSnapshotV1,
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
   derivations?: SnapshotValidationDerivations,
+  ownsSamples = false,
 ): RuntimeInkSnapshot {
   return {
     ...snapshot,
-    elements: copyElementsToRuntimeInternal(snapshot.elements, pointCopies, derivations),
+    elements: copyElementsToRuntimeInternal(
+      snapshot.elements,
+      pointCopies,
+      derivations,
+      ownsSamples,
+    ),
   };
 }
 
@@ -46,8 +53,8 @@ export async function copyParsed(
   context?: RuntimeSliceContext,
 ): Promise<RuntimeInkSnapshot> {
   return context === undefined
-    ? copySnapshotToRuntime(snapshot, pointCopies, derivations)
-    : copySnapshotToRuntimeSliced(snapshot, context, pointCopies, derivations);
+    ? copySnapshotToRuntime(snapshot, pointCopies, derivations, true)
+    : copySnapshotToRuntimeSliced(snapshot, context, pointCopies, derivations, true);
 }
 
 export async function copySnapshotToRuntimeSliced(
@@ -55,6 +62,7 @@ export async function copySnapshotToRuntimeSliced(
   context: RuntimeSliceContext,
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
   derivations?: SnapshotValidationDerivations,
+  ownsSamples = false,
 ): Promise<RuntimeInkSnapshot> {
   return {
     ...snapshot,
@@ -63,6 +71,7 @@ export async function copySnapshotToRuntimeSliced(
       context,
       pointCopies,
       derivations,
+      ownsSamples,
     ),
   };
 }
@@ -72,6 +81,7 @@ async function copyElementsToRuntimeSlicedInternal(
   context: RuntimeSliceContext,
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
   derivations?: SnapshotValidationDerivations,
+  ownsSamples = false,
 ): Promise<RuntimeInkElement[]> {
   const profile = context.workProfile ?? runtimeSliceWorkProfile(context.sliceMilliseconds?.());
   const sampleSlice = Math.max(3, Math.floor(profile.inputByteLimit / 24) * 3);
@@ -82,7 +92,8 @@ async function copyElementsToRuntimeSlicedInternal(
       assertValidatedStrokeSource(element, derivations, index);
     }
     if (element.kind !== "stroke") copied.push(element);
-    else if (element.points instanceof Float64Array) copied.push(element as RuntimeStrokeElement);
+    else if (element.points instanceof Float64Array && (ownsSamples || isStoredStroke(element)))
+      copied.push(element as RuntimeStrokeElement);
     else {
       copied.push(
         await copyStrokeToRuntimeSliced(
@@ -111,7 +122,7 @@ async function copyStrokeToRuntimeSliced(
   validated = false,
 ): Promise<RuntimeStrokeElement> {
   const source = element.points;
-  const reusable = Object.isFrozen(source);
+  const reusable = Object.isFrozen(source) || isStoredStroke(element);
   const retained = reusable ? pointCopies?.get(source) : undefined;
   if (retained !== undefined) return { ...element, points: retained };
   if (
@@ -136,20 +147,23 @@ async function copyStrokeToRuntimeSliced(
 export function copyElementsToRuntime(
   elements: readonly InkElementV1[],
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
+  ownsSamples = false,
 ): RuntimeInkElement[] {
-  return copyElementsToRuntimeInternal(elements, pointCopies);
+  return copyElementsToRuntimeInternal(elements, pointCopies, undefined, ownsSamples);
 }
 
 function copyElementsToRuntimeInternal(
   elements: readonly InkElementV1[],
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
   derivations?: SnapshotValidationDerivations,
+  ownsSamples = false,
 ): RuntimeInkElement[] {
   return elements.map((element, index) => {
     if (element.kind !== "stroke") return element;
     if (derivations !== undefined) assertValidatedStrokeSource(element, derivations, index);
-    if (element.points instanceof Float64Array) return element as RuntimeStrokeElement;
-    const reusable = Object.isFrozen(element.points);
+    if (element.points instanceof Float64Array && (ownsSamples || isStoredStroke(element)))
+      return element as RuntimeStrokeElement;
+    const reusable = Object.isFrozen(element.points) || isStoredStroke(element);
     let points = reusable ? pointCopies?.get(element.points) : undefined;
     if (points === undefined) {
       const copied = new Float64Array(element.points);

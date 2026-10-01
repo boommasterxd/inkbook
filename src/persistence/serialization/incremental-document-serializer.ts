@@ -2,7 +2,6 @@ import { StrokeShapeCache } from "./stroke-shape-cache";
 import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 import { pressureShapeKey } from "./prepared-pressure-hints";
-import { derivePageExtent } from "../../domain/geometry/public";
 import {
   FILE_SCHEMA_LIMITS,
   validateInkSnapshotV1,
@@ -12,14 +11,13 @@ import {
   type SnapshotValidationDerivations,
 } from "../../domain/schema/public";
 import { validateRuntimeInkSnapshotV1 } from "../../domain/schema/snapshot-validation";
-import { serializeSvgNumber } from "../documents/svg-number";
 import { BackgroundFragmentCache } from "./background";
 import { canonicalElement, canonicalPage, canonicalSnapshot } from "./canonical-snapshot";
 import {
   canonicalMetadataFragmentsSha256,
   metadataPrefix as canonicalMetadataPrefix,
 } from "./canonical-metadata";
-import { codecFailure, invalidSnapshot } from "./codec-failure";
+import { codecFailure, generatedOutputLimitFailure, invalidSnapshot } from "./codec-failure";
 import {
   assembleAndHashChunkedOutput,
   type ChunkedOutputAssemblyOptions,
@@ -37,7 +35,6 @@ import { prepareDocumentDelta, validateDocumentDelta } from "./incremental-docum
 import type { EncodedByteBudget } from "./encoded-byte-budget";
 import * as incrementalValidation from "./incremental-validation";
 import type {
-  Background,
   DocumentSerializationDelta,
   ElementAssembly,
   FragmentSerializerInstrumentation,
@@ -125,6 +122,10 @@ export class IncrementalDocumentSerializer {
   public currentElementCount(): number {
     return this.#elements.size;
   }
+  /** Valid after successful serialization has checked every current element identity. */
+  public hasCompleteFragmentCache(): boolean {
+    return this.#cache.size === this.#elements.size;
+  }
   public currentAggregateFacts(): Readonly<incrementalValidation.AggregateFacts> | null {
     return this.#revision === null ? null : { ...this.#aggregateFacts };
   }
@@ -156,19 +157,22 @@ export class IncrementalDocumentSerializer {
   public reset(snapshot: InkSnapshotV1): DocumentCodecResult<void> {
     return this.#reset(snapshot, false);
   }
-  public resetRuntime(snapshot: InkSnapshotV1): DocumentCodecResult<void> {
-    return this.#reset(snapshot, true);
+  /** Runtime composition may explicitly attest exclusive immutable sample ownership. */
+  public resetRuntime(snapshot: InkSnapshotV1, ownsSamples = false): DocumentCodecResult<void> {
+    return this.#reset(snapshot, true, undefined, ownsSamples);
   }
   public resetValidatedRuntime(
     snapshot: InkSnapshotV1,
     derivations: SnapshotValidationDerivations,
+    ownsSamples = false,
   ): DocumentCodecResult<void> {
-    return this.#reset(snapshot, true, derivations);
+    return this.#reset(snapshot, true, derivations, ownsSamples);
   }
   #reset(
     snapshot: InkSnapshotV1,
     runtimeStrokeBuffers: boolean,
     validatedDerivations?: SnapshotValidationDerivations,
+    ownsRuntimeSamples = false,
   ): DocumentCodecResult<void> {
     let validatedSnapshot = snapshot;
     let derivations = validatedDerivations;
@@ -184,7 +188,11 @@ export class IncrementalDocumentSerializer {
     if (derivations.elements.length !== validatedSnapshot.elements.length) {
       return codecFailure("invalid-delta", "Validated element derivations are incomplete.");
     }
-    const canonical = canonicalSnapshot(validatedSnapshot, runtimeStrokeBuffers);
+    const canonical = canonicalSnapshot(
+      validatedSnapshot,
+      runtimeStrokeBuffers,
+      !ownsRuntimeSamples,
+    );
     const nextFacts = new Map<string, incrementalValidation.ElementFacts>();
     try {
       for (let index = 0; index < canonical.elements.length; index += 1) {
@@ -214,7 +222,7 @@ export class IncrementalDocumentSerializer {
     this.#revision = canonical.revision;
     for (let index = 0; index < canonical.elements.length; index += 1) {
       const element = canonical.elements[index]!;
-      this.#cache.adopt(element);
+      this.#cache.adopt(element, ownsRuntimeSamples);
       this.#elements.set(element.id, element);
       this.#facts.set(element.id, nextFacts.get(element.id)!);
       this.#derivedBoundsReuses += 1;
@@ -226,6 +234,7 @@ export class IncrementalDocumentSerializer {
   public applyDelta(
     delta: DocumentSerializationDelta,
     deferredFragmentIds?: ReadonlySet<string>,
+    ownsSamples = false,
   ): DocumentCodecResult<void> {
     if (this.#revision === null || delta.baseModelRevision !== this.#revision) {
       return codecFailure(
@@ -258,7 +267,8 @@ export class IncrementalDocumentSerializer {
       this.#shapeCache.retire(id);
     }
     for (const changedElement of prepared.value.changed.values()) {
-      const element = canonicalElement(changedElement, this.#runtimeStrokeBuffers);
+      const element = canonicalElement(changedElement, this.#runtimeStrokeBuffers, !ownsSamples);
+      if (ownsSamples) this.#cache.retainRuntimeOwnership(element);
       this.#elements.set(element.id, element);
       this.#facts.set(element.id, facts.value.changed.get(element.id)!);
       if (deferredFragmentIds?.has(element.id)) {
@@ -292,7 +302,7 @@ export class IncrementalDocumentSerializer {
       this.#page,
       this.#revision,
       this.#aggregateFacts.maximumBottom,
-      this.#resolveBackground.bind(this),
+      this.#backgroundCache,
     );
     if (!prepared.ok) return prepared;
     const {
@@ -341,7 +351,7 @@ export class IncrementalDocumentSerializer {
       this.#page,
       this.#revision,
       this.#aggregateFacts.maximumBottom,
-      this.#resolveBackground.bind(this),
+      this.#backgroundCache,
     );
     if (!prepared.ok) return prepared;
     const {
@@ -355,7 +365,7 @@ export class IncrementalDocumentSerializer {
     } = prepared.value;
     const assembly = this.#collectFragments(outputBudget, metadataBudget);
     if (!assembly.ok) return assembly;
-    if (!metadataBudget.tryReserve(2)) return this.#outputLimitExceeded();
+    if (!metadataBudget.tryReserve(2)) return generatedOutputLimitFailure();
     const metadataBytes = metadataBudget.usedBytes;
     const metadataHash = canonicalMetadataFragmentsSha256(
       canonicalMetadataPrefix(revision, page),
@@ -375,7 +385,7 @@ export class IncrementalDocumentSerializer {
         { ...options, maximumBytes: FILE_SCHEMA_LIMITS.totalInputBytes },
       );
     } catch (error) {
-      if (error instanceof ChunkedOutputLimitError) return this.#outputLimitExceeded();
+      if (error instanceof ChunkedOutputLimitError) return generatedOutputLimitFailure();
       throw error;
     }
     const snapshot = snapshotValue(revision, page, assembly.value.elements);
@@ -408,22 +418,6 @@ export class IncrementalDocumentSerializer {
       this.#backgroundCache,
     );
   }
-  #resolveBackground(page: PageV1, maximumBottom: number | null): DocumentCodecResult<Background> {
-    const extent = derivePageExtent(page, maximumBottom);
-    const lockedHeight = Number(serializeSvgNumber(extent.lockedHeight));
-    const background = this.#backgroundCache.resolve(
-      page,
-      lockedHeight,
-      FILE_SCHEMA_LIMITS.totalInputBytes,
-    );
-    if (background === null) {
-      return codecFailure(
-        "static-output-limit-exceeded",
-        "Generated background exceeds file limits.",
-      );
-    }
-    return { ok: true, value: { background, lockedHeight } };
-  }
   public clear(): void {
     this.#cache.clear();
     this.#shapeCache.clear();
@@ -444,7 +438,7 @@ export class IncrementalDocumentSerializer {
   ): DocumentCodecResult<ElementAssembly> {
     const fragments = this.#collectFragments(outputBudget, metadataBudget);
     if (!fragments.ok) return fragments;
-    if (!metadataBudget.tryReserve(2)) return this.#outputLimitExceeded();
+    if (!metadataBudget.tryReserve(2)) return generatedOutputLimitFailure();
     return {
       ok: true,
       value: {
@@ -485,8 +479,5 @@ export class IncrementalDocumentSerializer {
     this.#fragmentBuilds += 1;
     this.#cache.retainIfSpace(element.id, fragments);
     return fragments;
-  }
-  #outputLimitExceeded(): DocumentCodecResult<never> {
-    return codecFailure("static-output-limit-exceeded", "Generated document exceeds file limits.");
   }
 }

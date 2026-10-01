@@ -86,7 +86,10 @@ export class DocumentModelRuntime {
   #modelRevision: number | null = null;
   #snapshot: InkSnapshotV1 | null = null;
 
-  public constructor(now: () => number = () => performance.now()) {
+  public constructor(
+    now: () => number = () => performance.now(),
+    readonly ownsTransferredSamples = false,
+  ) {
     this.#now = now;
   }
 
@@ -237,6 +240,9 @@ export class DocumentModelRuntime {
       this.#snapshot = serialized.value.snapshot;
       this.#modelRevision = serialized.value.snapshot.revision;
       this.#resetPrewarmState();
+      if (this.#serializer.hasCompleteFragmentCache()) {
+        this.#prewarmCursor = this.#serializer.currentElementCount();
+      }
       return {
         hash: serialized.value.hash,
         integrityManifest,
@@ -392,18 +398,23 @@ export class DocumentModelRuntime {
   #resetForExport(snapshot: InkSnapshotV1, modelRevision: number) {
     if (snapshot.revision !== modelRevision)
       throw new RuntimeModelError("revision-mismatch", false);
-    return this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot));
+    // Unowned samples are privately copied; transfers and immutable Store samples may be borrowed.
+    return this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot), true);
   }
 
   #applyIncremental(request: IncrementalModelRequest, deferredFragmentIds?: ReadonlySet<string>) {
+    const ownsSamples = this.ownsTransferredSamples;
+    const changedElements =
+      request.changedElements === undefined
+        ? undefined
+        : copyElementsToRuntime(request.changedElements, this.#pointCopies, ownsSamples);
     return this.#serializer.applyDelta(
       {
         ...request,
-        ...(request.changedElements === undefined
-          ? {}
-          : { changedElements: copyElementsToRuntime(request.changedElements, this.#pointCopies) }),
+        ...(changedElements === undefined ? {} : { changedElements }),
       },
       deferredFragmentIds,
+      true,
     );
   }
 
@@ -411,16 +422,16 @@ export class DocumentModelRuntime {
     if (snapshot.revision !== modelRevision) {
       throw new RuntimeModelError("revision-mismatch", false);
     }
-    return this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot));
+    return this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot), true);
   }
 
   #reset(snapshot: InkSnapshotV1): void {
-    this.#adoptResetResult(this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot)));
+    this.#adoptResetResult(this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot), true));
     this.#modelRevision = this.#snapshot!.revision;
   }
 
   #resetValidated(snapshot: InkSnapshotV1, derivations: SnapshotValidationDerivations): void {
-    this.#adoptResetResult(this.#serializer.resetValidatedRuntime(snapshot, derivations));
+    this.#adoptResetResult(this.#serializer.resetValidatedRuntime(snapshot, derivations, true));
   }
 
   #adoptResetResult(result: ReturnType<IncrementalDocumentSerializer["resetRuntime"]>): void {
@@ -449,9 +460,9 @@ export class DocumentModelRuntime {
   }
 
   #runtimeSnapshot(snapshot: InkSnapshotV1): RuntimeInkSnapshot {
-    return hasRuntimeStrokeSamples(snapshot)
+    return this.ownsTransferredSamples && hasRuntimeStrokeSamples(snapshot)
       ? (snapshot as RuntimeInkSnapshot)
-      : copySnapshotToRuntime(snapshot, this.#pointCopies);
+      : copySnapshotToRuntime(snapshot, this.#pointCopies, undefined, this.ownsTransferredSamples);
   }
   #atRevision(revision: number): InkSnapshotV1 {
     if (this.#modelRevision !== revision || this.#serializer.currentRevision() !== revision) {

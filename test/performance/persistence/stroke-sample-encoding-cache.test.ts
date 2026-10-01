@@ -20,9 +20,9 @@ it("avoids encoding point reads on cold loaded export and header changes across 
   await parser.write(new TextEncoder().encode(disk.value.svg));
   const parsed = await parser.finish();
   if (!parsed.ok) throw new Error(parsed.error.code);
-  expect(serializer.resetValidatedRuntime(parsed.value.snapshot, parsed.value.derivations).ok).toBe(
-    true,
-  );
+  expect(
+    serializer.resetValidatedRuntime(parsed.value.snapshot, parsed.value.derivations, true).ok,
+  ).toBe(true);
   expect(serializer.instrumentation.sampleEncodingCacheElements).toBe(10_000);
   const encode = sampleCodec.encodeStrokeSamples;
   let pointReads = 0;
@@ -44,30 +44,42 @@ it("avoids encoding point reads on cold loaded export and header changes across 
     const first = parsed.value.snapshot.elements.find((element) => element.kind === "stroke")!;
     const moved = { ...first, offset: { x: 10, y: 10 }, style: { ...first.style, opacity: 0.5 } };
     expect(
-      serializer.applyDelta({
-        baseModelRevision: fixture.revision,
-        changedElements: [moved],
-        modelRevision: fixture.revision + 1,
-      }).ok,
+      serializer.applyDelta(
+        {
+          baseModelRevision: fixture.revision,
+          changedElements: [moved],
+          modelRevision: fixture.revision + 1,
+        },
+        undefined,
+        true,
+      ).ok,
     ).toBe(true);
     expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
     expect(pointReads).toBe(0);
     const points = new Float64Array(first.points);
     points[0] = points[0]! + 0.001;
     expect(
-      serializer.applyDelta({
-        baseModelRevision: fixture.revision + 1,
-        changedElements: [{ ...moved, points: adoptTransferredStrokeSamples(points) }],
-        modelRevision: fixture.revision + 2,
-      }).ok,
+      serializer.applyDelta(
+        {
+          baseModelRevision: fixture.revision + 1,
+          changedElements: [{ ...moved, points: adoptTransferredStrokeSamples(points) }],
+          modelRevision: fixture.revision + 2,
+        },
+        undefined,
+        true,
+      ).ok,
     ).toBe(true);
     expect(pointReads).toBe(points.length);
     expect(
-      serializer.applyDelta({
-        baseModelRevision: fixture.revision + 2,
-        changedElements: [first],
-        modelRevision: fixture.revision + 3,
-      }).ok,
+      serializer.applyDelta(
+        {
+          baseModelRevision: fixture.revision + 2,
+          changedElements: [first],
+          modelRevision: fixture.revision + 3,
+        },
+        undefined,
+        true,
+      ).ok,
     ).toBe(true);
     expect(pointReads).toBe(points.length + first.points.length);
     expect(serializer.instrumentation.sampleEncodingCacheBytes).toBeLessThanOrEqual(

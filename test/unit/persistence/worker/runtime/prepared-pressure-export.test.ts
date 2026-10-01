@@ -90,7 +90,8 @@ it.each([undefined, { x: 0, y: 0 }])(
     const encoded = encodeRuntimeRequest(request);
     const decoded = decodeRuntimeRequest(encoded.value);
     if (decoded.type !== "export-full") throw new Error("Expected full export.");
-    const runtime = new DocumentWorkerRuntime(identity);
+    // The wire decoder supplies receiver-owned samples, as in production worker composition.
+    const runtime = new DocumentWorkerRuntime(identity, null, undefined, true);
     const result = await runtime.execute(decoded);
     expectCanonicalExport(result, document);
     expect(runtime.instrumentation.shapeBuilds).toBe(0);
