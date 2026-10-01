@@ -10,24 +10,39 @@ describe("runtime export cache performance", () => {
     const { serializer, cold } = await warmSerializer(snapshot);
     const warmed = serializer.instrumentation;
     const encode = vi.spyOn(TextEncoder.prototype, "encode");
+    const encodeInto = vi.spyOn(TextEncoder.prototype, "encodeInto");
+    const decode = vi.spyOn(TextDecoder.prototype, "decode");
     try {
       for (let sample = 0; sample < 2; sample += 1) {
         encode.mockClear();
+        encodeInto.mockClear();
+        decode.mockClear();
         const result = await serializer.serializeRuntimeChunked({});
         if (!result.ok) throw new Error(result.error.code);
         expect(result.value.hash).toBe(cold.value.hash);
         expect(result.value.totalBytes).toBe(cold.value.totalBytes);
-        // Large metadata and SVG output use bounded encodeInto assembly. Warm encode calls
-        // are limited to static document prefixes, never one allocation per cached element.
+        // Only the fixed envelope and small page background require text encoding.
+        // Observe both encoder APIs so direct encodeInto assembly cannot hide a full pass.
         expect(encode.mock.calls.length).toBeLessThan(32);
+        const encodedBytes = encode.mock.results.reduce(
+          (sum, result) =>
+            sum + (result.type === "return" ? (result.value as Uint8Array).byteLength : 0),
+          0,
+        );
+        expect(encodedBytes).toBeLessThan(16 * 1024);
+        expect(encodeInto).not.toHaveBeenCalled();
+        expect(decode).not.toHaveBeenCalled();
       }
     } finally {
       encode.mockRestore();
+      encodeInto.mockRestore();
+      decode.mockRestore();
       serializer.clear();
     }
     expect(warmed.cacheElements).toBe(11_000);
     expect(warmed.cacheBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
     expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds);
+    expect(serializer.instrumentation).toMatchObject({ cacheElements: 0, cacheBytes: 0 });
   }, 120_000);
 
   for (const type of ["lines", "squares", "dots"] as const) {

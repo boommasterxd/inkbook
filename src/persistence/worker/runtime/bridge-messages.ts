@@ -46,7 +46,8 @@ export interface BridgeExportAcknowledgement {
 }
 
 export interface BridgeControl {
-  readonly action: "prewarm" | "set-live-input" | "set-profile";
+  readonly action: "cancel-scene-paths" | "prewarm" | "set-live-input" | "set-profile";
+  readonly identity?: import("../protocol").PurposeOperationIdentity;
   readonly active?: boolean;
   readonly frameIntervalMilliseconds?: number;
   readonly sliceMilliseconds?: number;

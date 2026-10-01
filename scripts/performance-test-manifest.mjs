@@ -22,6 +22,8 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/autosave-recovery-work.test.ts",
     "test/performance/persistence/canonical-metadata-cache.test.ts",
     "test/performance/persistence/compact-stroke-samples.test.ts",
+    "test/performance/persistence/preview-proof-reuse.test.ts",
+    "test/performance/persistence/stroke-sample-encoding-cache.test.ts",
     "test/performance/obsidian/selection-camera-work.test.ts",
     "test/performance/obsidian/clipboard-candidate-probe.test.ts",
     "test/performance/persistence/owned-export-adoption.test.ts",
@@ -87,5 +89,6 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/preview-selection-work.test.ts",
     "test/performance/rendering/scene/render-mount-complexity.test.ts",
     "test/performance/rendering/scene/retained-viewport-publication.test.ts",
+    "test/performance/rendering/scene/worker-visible-contours.test.ts",
   ]),
 });

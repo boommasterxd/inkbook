@@ -38,6 +38,8 @@ export interface SpatialQuerySink {
  * `query` must perform exact conservative-bounds rejection before publishing IDs.
  */
 export interface SceneStorePort {
+  preparePressurePaths?:
+    import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation | undefined;
   pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
   query(bounds: Bounds, sink: SpatialQuerySink): void;

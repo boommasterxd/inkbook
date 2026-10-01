@@ -453,8 +453,7 @@ it("shares bounded preparation work across cold strokes instead of yielding four
     width: 100,
   });
   scheduler.runAll();
-  const originalStep = Object.getOwnPropertyDescriptor(ProgressivePreviewPath.prototype, "step")!
-    .value as ProgressivePreviewPath["step"];
+  const originalStep = ProgressivePreviewPath.prototype.step;
   const starts: { deadline: number; time: number }[] = [];
   const steps = vi.spyOn(ProgressivePreviewPath.prototype, "step").mockImplementation(function (
     this: ProgressivePreviewPath,

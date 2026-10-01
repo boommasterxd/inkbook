@@ -3,6 +3,7 @@ import {
   isCanonicalUnitIntervalNumber,
 } from "../../domain/schema/canonical";
 import { MAX_ABSOLUTE_COORDINATE, MAX_STROKE_POINTS } from "../../domain/schema/constants";
+import type { ParsedJsonProof } from "../../domain/schema/parsed-json-proof";
 import { SampleBase64Reader, SampleBase64Writer } from "./sample-base64";
 
 const GEOMETRY_SCALE = 1000;
@@ -55,6 +56,7 @@ export function* decodeStrokeSamplesSteps(
   input: string,
   signal?: AbortSignal,
   maximumPoints: number = MAX_STROKE_POINTS,
+  parsedProof?: ParsedJsonProof,
 ): Generator<void, Float64Array<ArrayBuffer>> {
   signal?.throwIfAborted();
   if (typeof input !== "string" || input.length > MAXIMUM_ENCODED_CHARACTERS) invalidSamples();
@@ -68,6 +70,10 @@ export function* decodeStrokeSamplesSteps(
   const points = new Float64Array(count * 3);
   let x = 0;
   let y = 0;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
   for (let point = 0; point < count; point += 1) {
     x += unZigZag(readVarint(reader));
     y += unZigZag(readVarint(reader));
@@ -82,6 +88,10 @@ export function* decodeStrokeSamplesSteps(
     points[point * 3] = x / GEOMETRY_SCALE;
     points[point * 3 + 1] = y / GEOMETRY_SCALE;
     points[point * 3 + 2] = pressure / PRESSURE_SCALE;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
     if ((point + 1) % CANCELLATION_INTERVAL_POINTS === 0) {
       signal?.throwIfAborted();
       yield;
@@ -89,6 +99,12 @@ export function* decodeStrokeSamplesSteps(
   }
   if (reader.remainingBytes !== 0) invalidSamples();
   signal?.throwIfAborted();
+  parsedProof?.retainDecodedStrokeSamples(points, {
+    minX: minX / GEOMETRY_SCALE,
+    minY: minY / GEOMETRY_SCALE,
+    maxX: maxX / GEOMETRY_SCALE,
+    maxY: maxY / GEOMETRY_SCALE,
+  });
   return points;
 }
 

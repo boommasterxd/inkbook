@@ -24,7 +24,6 @@ import {
   createVaultClipboardCoordinator,
   createVaultEditableModel,
   createVaultElementPreparationActions,
-  prepareVaultElementReplacement,
   requireVaultPage,
 } from "./vault-document-model";
 import { VaultDocumentSessionMutations } from "./vault-document-session-mutations";
@@ -32,6 +31,7 @@ import { lockedDocumentAspectRatio } from "./vault-document-session-identity";
 import { loadTrustedDocumentForUnlock } from "./vault-document-trusted-unlock";
 import { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import { ActiveEditorHistory } from "./active-editor/history";
+import { SessionScenePaths } from "./session-scene-paths";
 export type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
 export interface ActiveDocumentEditorContext {
   readonly history: ActiveEditorHistory;
@@ -280,14 +280,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       sessionId: this.#identity.sessionId,
     });
   }
-  #adoptDocument(
-    snapshot: InkSnapshotV1,
-    outputHash: string,
-    requiresCanonicalRewrite: boolean,
-    executor: DocumentRuntimePort,
-    store: ElementStore,
-    sourceVersion: number,
-  ): void {
+  #adoptLoadedDocument(loaded: LoadedVaultDocument, executor: DocumentRuntimePort): void {
+    const { snapshot, outputHash, requiresCanonicalRewrite, store, sourceVersion } = loaded;
     this.#migrationBackupSourceVersion =
       sourceVersion < snapshot.version ? sourceVersion : undefined;
     this.#page = snapshot.page;
@@ -311,6 +305,15 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       },
       store: () => this.#model?.store,
     });
+    const scenePaths = new SessionScenePaths({
+      disposed: () => this.#lifecycle.disposed || this.#lifecycle.preparingForUnload,
+      executor: () => this.#executor,
+      revision: () => this.#revision,
+      sessionId: this.#identity.sessionId,
+      synchronize: (identity) =>
+        this.#autosave?.synchronizeWorkerBaseline(identity) ?? Promise.resolve(false),
+      workerEpoch: () => this.#workerEpoch,
+    });
     const scheduler = (cancelled: () => boolean, priority?: "frame") =>
       this.runtimes.createStoreScheduler(
         this.#identity.documentId,
@@ -319,6 +322,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       );
     const model = createVaultEditableModel({
       actions: {
+        preparePressurePaths: scenePaths.prepare,
         commitBandOrder: (order) => mutations.commitBandOrder(order),
         commitElement: (element) => mutations.commitElements([element]),
         commitElements: (elements) => mutations.commitElements(elements),
@@ -326,6 +330,9 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         waitForBackground: () => this.#workPriority.waitForBackground(),
         ...createVaultElementPreparationActions({
           active: () => !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
+          replacementActive: () =>
+            this.#autosave !== undefined && !this.#lifecycle.preparingForUnload,
+          replacementStore: () => this.#model?.store,
           run: (operation) => this.#workPriority.run(operation),
           scheduler,
           store,
@@ -338,16 +345,6 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         arrangeElements: (ids, action) => mutations.arrangeElements(ids, action),
         removeElements: (ids) => mutations.removeElements(ids),
         replaceElements: (elements) => mutations.replaceElements(elements),
-        prepareElementReplacement: (replacements, cancellation) =>
-          this.#workPriority.run(() =>
-            prepareVaultElementReplacement({
-              active: this.#autosave !== undefined && !this.#lifecycle.preparingForUnload,
-              cancellation,
-              replacements,
-              scheduler: (isCancelled) => scheduler(isCancelled, "frame"),
-              store: this.#model?.store,
-            }),
-          ),
         commitPreparedElementReplacement: (token) =>
           mutations.commitPreparedElementReplacement(token),
         setGestureActive: (active) => this.#setInputActive(active, "gesture"),
@@ -452,16 +449,6 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       stopped: () => this.#recoveryStopped(operation),
     });
     return { ...operation, status: confirmed ? "confirmed" : "failed" };
-  }
-  #adoptLoadedDocument(loaded: LoadedVaultDocument, executor: DocumentRuntimePort): void {
-    this.#adoptDocument(
-      loaded.snapshot,
-      loaded.outputHash,
-      loaded.requiresCanonicalRewrite,
-      executor,
-      loaded.store,
-      loaded.sourceVersion,
-    );
   }
   async #saveLocalCopy(
     operation: Session.RecoveryOperationIdentity,

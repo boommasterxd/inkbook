@@ -1,6 +1,7 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { InputActivityGate } from "./input-activity-gate";
 import { ModelPointReferences } from "./model-point-references";
+import { isBridgeResponse } from "./bridge-response-validation";
 import type {
   DocumentRuntimeObserver,
   DocumentRuntimePort,
@@ -13,8 +14,6 @@ import {
   decodeUnlockBatch,
   decodeRuntimeResultChunked,
   encodeRuntimeRequestChunked,
-  isDocumentRuntimeWireResult,
-  isDocumentRuntimeWireUnlockBatch,
 } from "./wire-codec";
 import {
   assertResultMatchesRequest,
@@ -25,7 +24,6 @@ import type {
   BridgeControl,
   BridgeExportAcknowledgement,
   BridgeRequest,
-  BridgeResponse,
   BridgeSuccess,
   BridgeUnlockBatch,
 } from "./bridge-messages";
@@ -144,6 +142,27 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     } catch {
       this.#failExecutor("error");
     }
+  }
+  public cancelScenePreparation(identity: import("../protocol").PurposeOperationIdentity): void {
+    if (this.#terminated) return;
+    for (const [id, pending] of this.#pending) {
+      if (pending.request.type !== "prepare-scene-paths") continue;
+      const candidate = pending.request.identity;
+      if (
+        candidate.operationId !== identity.operationId ||
+        candidate.sessionId !== identity.sessionId ||
+        candidate.workerEpoch !== identity.workerEpoch ||
+        candidate.purpose !== identity.purpose
+      )
+        continue;
+      this.#settlePending(id, pending);
+      pending.reject(new Error("Scene preparation was cancelled."));
+    }
+    this.#endpoint.postMessage({
+      action: "cancel-scene-paths",
+      identity,
+      type: "inkbook-worker-control",
+    } satisfies BridgeControl);
   }
 
   public notifySchedulingProfileChanged(): void {
@@ -456,20 +475,6 @@ function exportIdentityKey(identity: ExportIdentity): string {
   return `${identity.sessionId}:${identity.workerEpoch}:${identity.exportGeneration}:${identity.modelRevision}`;
 }
 
-function isBridgeResponse(value: unknown): value is BridgeResponse {
-  return (
-    isObject(value) &&
-    (value.type === "inkbook-worker-result" ||
-      value.type === "inkbook-worker-error" ||
-      value.type === "inkbook-worker-unlock-batch") &&
-    Number.isSafeInteger(value.requestId) &&
-    ((value.type === "inkbook-worker-error" && value.code === "executor-failed") ||
-      (value.type === "inkbook-worker-result" && isDocumentRuntimeWireResult(value.result)) ||
-      (value.type === "inkbook-worker-unlock-batch" &&
-        isDocumentRuntimeWireUnlockBatch(value.batch)))
-  );
-}
-
 function validUnlockCompletion(
   result: DocumentRuntimeResult,
   pending: PendingBridgeRequest,
@@ -482,10 +487,6 @@ function validUnlockCompletion(
     result.snapshot.batchCount === pending.nextUnlockBatchIndex &&
     result.snapshot.elementCount === pending.adoptedElementCount
   );
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function scheduleTimeout(callback: () => void, milliseconds: number): () => void {

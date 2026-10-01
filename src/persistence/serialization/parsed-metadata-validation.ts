@@ -10,6 +10,7 @@ import {
 } from "./document-migration";
 import type { DocumentCodecResult } from "./types";
 import type { ChunkedInputCheckpoint } from "./chunked-input-types";
+import type { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 
 interface MetadataValidationContext {
   readonly checkpoint: ChunkedInputCheckpoint;
@@ -17,6 +18,7 @@ interface MetadataValidationContext {
   readonly metadataText: string;
   readonly prelude: SafeSvgPrelude | null;
   readonly signal?: AbortSignal;
+  readonly sampleEncodingCache?: StrokeSampleEncodingCache;
   readonly staticValidation: "canonical" | "safe";
   readonly totalInputBytes: number;
 }
@@ -42,7 +44,15 @@ export async function validateParsedMetadata(
   const compact = context.prelude?.metadataEncoding === COMPACT_METADATA_ENCODING;
   if (compact) {
     try {
-      await runSteps(decodeCompactSnapshotSteps(parsed.value, context.signal), context.checkpoint);
+      await runSteps(
+        decodeCompactSnapshotSteps(parsed.value, context.signal, {
+          proof: parsed.proof,
+          ...(context.sampleEncodingCache === undefined
+            ? {}
+            : { sampleEncodingCache: context.sampleEncodingCache }),
+        }),
+        context.checkpoint,
+      );
     } catch (error) {
       if (!(error instanceof RangeError)) throw error;
       return {

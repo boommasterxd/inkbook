@@ -1,6 +1,7 @@
 import { parseSafeSvgRoot } from "../../documents/svg-envelope-root";
 import { parseOpeningTag } from "../../documents/svg-tag";
 import { hashRuntimeInput } from "./runtime-input-hash";
+import { validatePreparedScenePaths } from "./prepare-scene-paths";
 
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import type { DocumentRuntimeRequest, DocumentRuntimeResult, UnlockRuntimeBatch } from "./types";
@@ -25,6 +26,9 @@ export async function assertResultMatchesRequest(
 ): Promise<void> {
   if (!matchesRequestIdentity(request, result)) {
     throw new TypeError("Worker result does not match its exact request identity and purpose.");
+  }
+  if (request.type === "prepare-scene-paths" && result.type === "prepare-scene-paths-success") {
+    await validatePreparedScenePaths(request, result, options);
   }
   if (
     request.type !== "verify-output" ||
@@ -81,6 +85,7 @@ const SUCCESS_TYPE_BY_REQUEST = {
   "clipboard-plan-paste": "clipboard-plan-paste-success",
   "model-sync-full": "model-sync-success",
   "model-sync-incremental": "model-sync-success",
+  "prepare-scene-paths": "prepare-scene-paths-success",
   unlock: "unlock-success",
   "verify-output": "verify-output-success",
 } as const;

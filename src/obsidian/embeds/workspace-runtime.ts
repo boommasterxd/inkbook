@@ -12,7 +12,6 @@ import {
   OwnerWindowRegistry,
   pruneOwnerWindowRegistry,
   resolveFallbackWindow,
-  resolvePresentationWindow,
 } from "./owner-window-registry";
 import {
   presentationAttachmentKey,
@@ -52,6 +51,7 @@ import {
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
 import * as trustedHeadStorage from "../storage/trusted-document-head-ledger";
+import type { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #host: WorkspaceFeedbackHost & Omit<EditorChromeOpenings, "confirmEraseAll">;
   readonly #coordinator: WorkspaceEditorCoordinator;
@@ -67,6 +67,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
+  #safeStaticProof: ((documentId: string) => SafeStaticProof | undefined) | undefined;
   readonly #settings: () => WorkspaceRuntimeSettings;
 
   constructor(
@@ -117,6 +118,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       }),
       {
         persisted: (event) => this.#lifecycle.handlePersisted(event),
+        safeStaticProof: (documentId) => this.#safeStaticProof?.(documentId),
         ...(trustedHeads === undefined ? {} : { trustedHeads }),
       },
     );
@@ -316,6 +318,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   };
   readonly setConfirmedOutputReceiver = (receiver: ConfirmedOutputReceiver): void =>
     this.#lifecycle.setConfirmedOutputReceiver(receiver);
+  readonly setSafeStaticProofProvider = (
+    provider: (documentId: string) => SafeStaticProof | undefined,
+  ): void => {
+    this.#safeStaticProof = provider;
+  };
   handleMarkdownEditorChange(sourcePath: string, pane: HTMLElement): void {
     if (this.#disposed) return;
     const current = this.#coordinator.getSnapshot().current;
@@ -329,6 +336,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#safeStaticProof = undefined;
     this.#lifecycle.dispose();
     this.#headlessRecovery?.close();
     this.#headlessRecovery = undefined;
@@ -479,21 +487,14 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
 
   #owningWindow(documentId: string): Window {
-    const mountedWindow = resolvePresentationWindow(documentId, this.#mounted.values());
-    if (mountedWindow !== undefined) return mountedWindow;
-    const leasedWindow = this.#ownerWindows.resolve(documentId);
-    if (leasedWindow !== undefined) return leasedWindow;
-    const fallbackWindow = this.#fallbackWindow();
-    if (fallbackWindow !== undefined) return fallbackWindow;
-    throw new Error("The Inkbook presentation has no owning window.");
+    return this.#ownerWindows.require(documentId, this.#mounted.values(), this.#fallbackWindow);
   }
 
-  #fallbackWindow(): Window | undefined {
-    return resolveFallbackWindow(
+  readonly #fallbackWindow = (): Window | undefined =>
+    resolveFallbackWindow(
       this.#coordinator.getSnapshot().current?.documentId,
       this.#mounted.values(),
       this.#ownerWindows,
       this.#fallbackOwnerWindow,
     );
-  }
 }

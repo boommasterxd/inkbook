@@ -1,9 +1,11 @@
 import { StreamingSafeStaticValidator } from "./streaming-safe-static";
+import { SafeStaticProof } from "./safe-static-proof";
+import { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 import {
   ValidatedSnapshotAdoption,
   type ValidatedSnapshotConsumer,
 } from "./validated-snapshot-adoption";
-import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
+import type { InkSnapshotV1 } from "../../domain/schema/public";
 import { FILE_SCHEMA_LIMITS, MAX_JSON_DEPTH } from "../../domain/schema/public";
 import { jsonContainerBudget, jsonNodeBudget } from "../../domain/schema/validation-internals";
 import {
@@ -22,17 +24,16 @@ import {
   type ChunkedInkbookInputOptions,
   type ChunkedInputCheckpoint,
 } from "./chunked-input-types";
-import { combineInputBytes, positiveInputInteger } from "./chunked-input-utils";
+import {
+  combineInputBytes,
+  positiveInputInteger,
+  inputFailure as failure,
+} from "./chunked-input-utils";
 import { isCanonicalLockedHeight } from "./locked-height";
 import { ChunkedSha256 } from "./chunked-output-sha256";
 import type { MigratedSnapshot } from "./document-migration";
 import type { DocumentHashPort } from "./sha256";
-import type {
-  DocumentCodecError,
-  DocumentCodecErrorCode,
-  DocumentCodecResult,
-  ParsedInkbookDocument,
-} from "./types";
+import type { DocumentCodecResult, ParsedInkbookDocument } from "./types";
 import { StreamingStaticIntegrityMatcher } from "./streaming-static-integrity";
 import {
   StreamingSvgMetadataParser,
@@ -56,6 +57,9 @@ export class ChunkedInkbookInputParser {
   readonly #incrementalHash: ChunkedSha256;
   readonly #inputSliceBytes: number;
   readonly #staticValidation: "canonical" | "safe";
+  readonly #safeStaticProof: SafeStaticProof | undefined;
+  readonly #sampleEncodingCache: StrokeSampleEncodingCache | undefined;
+  readonly #stagedSampleEncodings: StrokeSampleEncodingCache | undefined;
   readonly #onValidatedSnapshot: ValidatedSnapshotConsumer | undefined;
   readonly #adoption: ValidatedSnapshotAdoption;
   readonly #signal: AbortSignal | undefined;
@@ -84,12 +88,29 @@ export class ChunkedInkbookInputParser {
     positiveInputInteger(options.pathBatchSize ?? 128, "pathBatchSize");
     this.#onValidatedSnapshot = options.onValidatedSnapshot;
     this.#staticValidation = options.staticValidation ?? "canonical";
+    if (
+      options.safeStaticProof !== undefined &&
+      !SafeStaticProof.isAuthentic(options.safeStaticProof)
+    ) {
+      throw new TypeError("Safe SVG proof must come from an owned validation producer.");
+    }
+    if (options.safeStaticProof !== undefined && options.hasher !== undefined) {
+      throw new TypeError("Safe SVG proof requires hashing the complete actual input bytes.");
+    }
+    this.#safeStaticProof = this.#staticValidation === "safe" ? options.safeStaticProof : undefined;
+    this.#sampleEncodingCache = options.sampleEncodingCache;
+    this.#stagedSampleEncodings =
+      options.sampleEncodingCache === undefined ? undefined : new StrokeSampleEncodingCache();
     this.#signal = options.signal;
     this.#adoption = new ValidatedSnapshotAdoption(options.signal);
   }
 
   public get bytesReceived(): number {
     return this.#bytes;
+  }
+
+  public get retainedSampleEncodingBytes(): number {
+    return this.#stagedSampleEncodings?.instrumentation.sampleEncodingCacheBytes ?? 0;
   }
 
   public get maximumRetainedStaticInputCharacters(): number {
@@ -140,8 +161,8 @@ export class ChunkedInkbookInputParser {
       if (!flushed.ok) return flushed;
       if (
         this.#streamPhase !== "static" ||
-        this.#staticMatcher === null ||
-        !this.#staticMatcher.finish() ||
+        (this.#safeStaticProof === undefined &&
+          (this.#staticMatcher === null || !this.#staticMatcher.finish())) ||
         this.#migrated === null ||
         this.#runtimeSnapshot === null ||
         this.#prelude === null
@@ -153,6 +174,17 @@ export class ChunkedInkbookInputParser {
       const beforeHash = this.#runCheckpoint();
       if (beforeHash !== null) await beforeHash;
       const hash = this.#completeHash();
+      if (
+        this.#safeStaticProof !== undefined &&
+        !this.#safeStaticProof.matches(hash, this.#bytes)
+      ) {
+        return failure("invalid-svg", "Document bytes no longer match the owned safe SVG proof.");
+      }
+      this.#sampleEncodingCache?.adoptValidated(
+        this.#stagedSampleEncodings!,
+        this.#runtimeSnapshot,
+        this.#migrated.sourceVersion,
+      );
       return {
         ok: true,
         value: {
@@ -189,6 +221,9 @@ export class ChunkedInkbookInputParser {
       ...(this.#signal === undefined ? {} : { signal: this.#signal }),
       staticValidation: this.#staticValidation,
       totalInputBytes: this.#bytes,
+      ...(this.#stagedSampleEncodings === undefined
+        ? {}
+        : { sampleEncodingCache: this.#stagedSampleEncodings }),
     });
   }
 
@@ -261,8 +296,7 @@ export class ChunkedInkbookInputParser {
     if (input.length === 0) return { ok: true, value: undefined };
     if (this.#streamPhase === "prefix") return this.#consumePrefix(input);
     if (this.#streamPhase === "metadata") return this.#consumeMetadata(input);
-    this.#maximumStaticChunkCharacters = Math.max(this.#maximumStaticChunkCharacters, input.length);
-    if ((await this.#staticMatcher?.write(input)) !== true) {
+    if (!(await this.#writeStaticChunk(input))) {
       return this.#staticFailure();
     }
     return { ok: true, value: undefined };
@@ -344,6 +378,7 @@ export class ChunkedInkbookInputParser {
   }
 
   async #writeStaticChunk(input: string): Promise<boolean> {
+    if (this.#safeStaticProof !== undefined) return true;
     this.#maximumStaticChunkCharacters = Math.max(this.#maximumStaticChunkCharacters, input.length);
     return (await this.#staticMatcher?.write(input)) === true;
   }
@@ -381,9 +416,11 @@ export class ChunkedInkbookInputParser {
     }
     this.#migrated = migrated;
     this.#staticMatcher =
-      this.#staticValidation === "safe"
-        ? new StreamingSafeStaticValidator(() => this.#checkpointMetadataSlice())
-        : new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
+      this.#safeStaticProof !== undefined
+        ? null
+        : this.#staticValidation === "safe"
+          ? new StreamingSafeStaticValidator(() => this.#checkpointMetadataSlice())
+          : new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
     this.#runtimeSnapshot = snapshot;
     this.#streamPhase = "static";
     this.#adoption.start(snapshot, migrated.derivations, this.#onValidatedSnapshot);
@@ -414,6 +451,7 @@ export class ChunkedInkbookInputParser {
     this.#throwIfCancelled();
     const pending =
       this.#checkpoint === IMMEDIATE_CHUNKED_INPUT_CHECKPOINT ? undefined : this.#checkpoint();
+    if (pending === undefined) this.#throwIfCancelled();
     return pending === undefined ? null : pending.then(() => this.#throwIfCancelled());
   }
 
@@ -434,6 +472,7 @@ export class ChunkedInkbookInputParser {
   }
 
   #releaseBuffers(): void {
+    this.#stagedSampleEncodings?.clear();
     this.#byteChunks.length = 0;
     this.#metadata.release();
     this.#prefix = "";
@@ -457,14 +496,4 @@ function metadataSliceEnd(input: string, offset: number): number {
   let end = Math.min(offset + METADATA_INPUT_CODE_UNITS_PER_STEP, input.length);
   if (end < input.length && isHighSurrogate(input.charCodeAt(end - 1))) end -= 1;
   return end;
-}
-
-function failure<T>(
-  code: DocumentCodecErrorCode,
-  message: string,
-  validationError?: ValidationError,
-): DocumentCodecResult<T> {
-  const error: DocumentCodecError =
-    validationError === undefined ? { code, message } : { code, message, validationError };
-  return { error, ok: false };
 }

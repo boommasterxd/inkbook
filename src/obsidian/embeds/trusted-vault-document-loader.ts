@@ -44,6 +44,11 @@ export function createTrustedVaultDocumentLoader(options: {
         operation,
         purpose,
         scheduler: options.scheduler,
+        ...(options.hooks.safeStaticProof === undefined
+          ? {}
+          : {
+              safeStaticProof: () => options.hooks.safeStaticProof?.(options.documentId),
+            }),
         ...(prefetchedBytes === undefined ? {} : { prefetchedBytes }),
         workerEpoch,
       },

@@ -12,11 +12,14 @@ import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-sch
 import type { ObsidianEmbedActions } from "../../../../src/obsidian/commands";
 import { InkbookFeedbackManager } from "../../../../src/obsidian/feedback";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { SafeStaticProof } from "../../../../src/persistence/serialization/safe-static-proof";
+import type { VaultDocumentSessionHooks } from "../../../../src/obsidian/embeds/vault-document-recovery";
 
 const boundary = vi.hoisted(() => {
   const snapshot: WorkspaceEditorCoordinatorSnapshot = { disposed: false };
   return {
     snapshot,
+    sessionHooks: undefined as VaultDocumentSessionHooks | undefined,
     createScene: vi.fn(),
     getEditorContext: vi.fn(() => ({})),
     activationRequests: vi.fn(),
@@ -63,6 +66,14 @@ vi.mock("../../../../src/editor/session/workspace-editor-coordinator", () => ({
 
 vi.mock("../../../../src/obsidian/embeds/vault-document-session-factory", () => ({
   VaultDocumentSessionFactory: class {
+    constructor(
+      _vault: unknown,
+      _fileManager: unknown,
+      _runtimes: unknown,
+      hooks: VaultDocumentSessionHooks,
+    ) {
+      boundary.sessionHooks = hooks;
+    }
     getEditorContext = boundary.getEditorContext;
     prepareForUnload = boundary.prepareForUnload;
   },
@@ -137,6 +148,19 @@ function startActivation() {
 }
 
 describe("workspace activation entrance barrier", () => {
+  it("forwards only the current host preview proof and releases its provider on disposal", () => {
+    const { runtime } = createHarness();
+    runtimes.push(runtime);
+    const proof = SafeStaticProof.fromTrustedProducer("a".repeat(64), 100);
+    const provider = vi.fn(() => proof);
+    const currentProof = boundary.sessionHooks?.safeStaticProof;
+    expect(currentProof?.("ink.svg")).toBeUndefined();
+    runtime.setSafeStaticProofProvider(provider);
+    expect(currentProof?.("ink.svg")).toBe(proof);
+    expect(provider).toHaveBeenCalledWith("ink.svg");
+    runtime.dispose();
+    expect(currentProof?.("ink.svg")).toBeUndefined();
+  });
   it("hydrates concurrently and mounts only after the presentation is ready", async () => {
     const { finishEntrance, runtime, settings } = startActivation();
     await Promise.resolve();

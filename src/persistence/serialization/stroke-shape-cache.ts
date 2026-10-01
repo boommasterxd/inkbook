@@ -1,4 +1,5 @@
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
+import { CanonicalElementPathPreparation } from "../../domain/geometry/canonical-element-path-preparation";
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import type { StrokeElementV1 } from "../../domain/schema/public";
 
@@ -24,6 +25,15 @@ export class StrokeShapeCache {
     };
   }
   public resolve(stroke: StrokeElementV1): readonly SvgPathPart[] {
+    const cached = this.read(stroke);
+    if (cached !== undefined) return cached;
+    const local = strokeLocalGeometry(stroke);
+    const parts = buildElementPathParts(local);
+    this.#builds += 1;
+    this.#retain(local, parts);
+    return parts;
+  }
+  public read(stroke: StrokeElementV1): readonly SvgPathPart[] | undefined {
     const local = strokeLocalGeometry(stroke);
     const cached = this.#entries.get(stroke.id);
     if (
@@ -38,10 +48,31 @@ export class StrokeShapeCache {
       this.#entries.set(stroke.id, cached);
       return cached.parts;
     }
-    const parts = buildElementPathParts(local);
-    this.#builds += 1;
-    this.#retain(local, parts);
-    return parts;
+    return undefined;
+  }
+  /** Uses the same bounded canonical geometry steps as a cold scene path. */
+  public async prepare(
+    stroke: StrokeElementV1,
+    context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
+  ): Promise<readonly SvgPathPart[]> {
+    const cached = this.read(stroke);
+    if (cached !== undefined) return cached;
+    const job = new CanonicalElementPathPreparation(stroke);
+    try {
+      for (;;) {
+        context.signal.throwIfAborted();
+        const pending = context.checkpoint();
+        if (pending !== undefined) await pending;
+        if (job.stepOperation()) break;
+      }
+      context.signal.throwIfAborted();
+      const parts = job.parts!;
+      this.#builds += 1;
+      this.#retain(strokeLocalGeometry(stroke), parts);
+      return parts;
+    } finally {
+      job.cancel();
+    }
   }
   /** A validated current-model contour produced by the active Store scene. */
   public seed(stroke: StrokeElementV1, d: string): void {

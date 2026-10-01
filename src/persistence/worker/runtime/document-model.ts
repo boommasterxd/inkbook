@@ -1,6 +1,9 @@
 import { VerifiedOutputProofs } from "./verified-output-proofs";
+import { ZERO_EXPORT_PHASES, ZERO_UNLOCK_PHASES } from "./runtime-phase-instrumentation";
+import { prepareScenePaths } from "./prepare-scene-paths";
 import * as preparedPaths from "./prepared-pressure-path-adoption";
 import { parseRuntimeInput } from "./parse-runtime-input";
+import type { SafeStaticProof } from "../../serialization/safe-static-proof";
 import type { ValidatedSnapshotConsumer } from "../../serialization/validated-snapshot-adoption";
 import type {
   InkSnapshotV1,
@@ -67,36 +70,6 @@ type IncrementalModelRequest =
 const MAX_PREWARM_BYTES = 64 * 1024 * 1024;
 const MAX_PREWARM_ELEMENTS = 20_000;
 
-interface UnlockPhaseDurations {
-  readonly batchAdoptionMs: number;
-  readonly inputValidationMs: number;
-  readonly modelAdoptionMs: number;
-  readonly parserFinalizeMs: number;
-  readonly runtimeCopyMs: number;
-  readonly totalMs: number;
-}
-
-interface ExportPhaseDurations {
-  readonly modelUpdateMs: number;
-  readonly serializationMs: number;
-  readonly totalMs: number;
-}
-
-const ZERO_UNLOCK_PHASES: UnlockPhaseDurations = Object.freeze({
-  batchAdoptionMs: 0,
-  inputValidationMs: 0,
-  modelAdoptionMs: 0,
-  parserFinalizeMs: 0,
-  runtimeCopyMs: 0,
-  totalMs: 0,
-});
-
-const ZERO_EXPORT_PHASES: ExportPhaseDurations = Object.freeze({
-  modelUpdateMs: 0,
-  serializationMs: 0,
-  totalMs: 0,
-});
-
 export class DocumentModelRuntime {
   readonly #outputProofs = new VerifiedOutputProofs();
   #pointCopies = new WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>();
@@ -135,6 +108,7 @@ export class DocumentModelRuntime {
     input: string | Uint8Array,
     sliceContext?: RuntimeSliceContext,
     onValidatedSnapshot?: ValidatedSnapshotConsumer,
+    safeStaticProof?: SafeStaticProof,
   ): Promise<ModelUnlockResult> {
     const started = this.#now();
     let callbackFinished = started;
@@ -164,6 +138,8 @@ export class DocumentModelRuntime {
         batchAdoptionMs = callbackFinished - copyFinished;
       },
       "safe",
+      this.#serializer.sampleEncodingCache,
+      safeStaticProof,
     );
     if (!parsed.ok) throw new RuntimeModelError(parsed.error.code, false);
     sliceContext?.signal.throwIfAborted();
@@ -284,6 +260,15 @@ export class DocumentModelRuntime {
     this.#prewarmedElementCount = 0;
     this.#prewarmVisitedElementCount = 0;
     this.#prewarmCursor = 0;
+  }
+
+  public async prepareScenePaths(
+    request: import("./types").PrepareScenePathsRuntimeRequest,
+    context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
+  ): Promise<import("./types").PreparedScenePathsRuntimeSuccess["paths"]> {
+    return prepareScenePaths(request, context, this.#serializer, () => {
+      this.#validatedPasteState(request.basisRevision);
+    });
   }
 
   public encodeClipboard(

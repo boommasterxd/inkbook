@@ -20,6 +20,7 @@ import type {
   PurposeOperationIdentity,
   VerifiedPersistedOutput,
 } from "../protocol";
+import type { SafeStaticProof } from "../../serialization/safe-static-proof";
 
 export type DocumentExportRequest = ExportRequest<InkElementV1, PageV1, InkSnapshotV1>;
 
@@ -51,6 +52,22 @@ export interface UnlockRuntimeRequest {
   readonly identity: PurposeOperationIdentity;
   readonly input: string | Uint8Array;
   readonly type: "unlock";
+  readonly safeStaticProof?: SafeStaticProof;
+}
+
+/** IDs are in visible-first order; no source-file presentation paths are accepted. */
+export interface PrepareScenePathsRuntimeRequest {
+  readonly basisRevision: number;
+  readonly identity: PurposeOperationIdentity;
+  readonly ids: readonly string[];
+  readonly type: "prepare-scene-paths";
+}
+
+export interface PreparedScenePathsRuntimeSuccess {
+  readonly basisRevision: number;
+  readonly identity: PurposeOperationIdentity;
+  readonly paths: readonly { readonly id: string; readonly d: string }[];
+  readonly type: "prepare-scene-paths-success";
 }
 
 interface EncodeClipboardRuntimeRequest {
@@ -89,6 +106,7 @@ export type DocumentRuntimeRequest =
   | EncodeClipboardRuntimeRequest
   | ModelSyncRuntimeRequest
   | PlanClipboardPasteRuntimeRequest
+  | PrepareScenePathsRuntimeRequest
   | UnlockRuntimeRequest
   | VerifyRuntimeRequest;
 
@@ -159,11 +177,13 @@ export type DocumentRuntimeResult =
   | ExportResult
   | ModelSyncRuntimeSuccess
   | PlanClipboardPasteRuntimeSuccess
+  | PreparedScenePathsRuntimeSuccess
   | RuntimeFailure
   | UnlockRuntimeSuccess
   | VerifyRuntimeSuccess;
 
 export interface DocumentRuntimePort {
+  cancelScenePreparation?(identity: PurposeOperationIdentity): void;
   acknowledgeExport?(identity: ExportIdentity, accepted: boolean): void;
   checkpoint?(signal: AbortSignal): Promise<void> | undefined;
   execute(

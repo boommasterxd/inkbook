@@ -16,6 +16,7 @@ import type {
 } from "../../persistence/worker/runtime/public";
 import { adoptOwnedSvgOutput } from "../../persistence/scheduling/owned-svg-output";
 import type { TrustedDocumentHeadPort } from "../storage/trusted-document-head-ledger";
+import type { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
 import {
   deriveDocumentIntegrityManifest,
   sameDocumentIntegrityManifest,
@@ -39,6 +40,7 @@ export interface VaultDocumentPersistedEvent {
 
 export interface VaultDocumentSessionHooks {
   readonly persisted?: (event: VaultDocumentPersistedEvent) => void;
+  readonly safeStaticProof?: (documentId: string) => SafeStaticProof | undefined;
   readonly trustedHeads?: TrustedDocumentHeadPort;
 }
 

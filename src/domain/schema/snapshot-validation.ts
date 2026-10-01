@@ -138,8 +138,9 @@ function* validateSnapshotSteps(
   try {
     const limits = options.limits ?? FILE_SCHEMA_LIMITS;
     assertByteLengths(options, limits);
+    const parsedDepth = parsedProof?.consume(value, limits);
     statistics.maximumDepth =
-      parsedProof?.consume(value, limits) ??
+      parsedDepth ??
       (yield* assertJsonTreeSteps(
         value,
         jsonNodeBudget(limits),
@@ -155,7 +156,12 @@ function* validateSnapshotSteps(
     assertPage(value.page, "$.page");
     if (!Array.isArray(value.elements)) fail("invalid-type", "$.elements", "Expected an array.");
 
-    const context = { allowRuntimeStrokeBuffers, limits, statistics };
+    const context: ValidationContext = {
+      allowRuntimeStrokeBuffers,
+      limits,
+      statistics,
+      ...(parsedDepth === undefined || parsedProof === undefined ? {} : { parsedProof }),
+    };
     yield* validateElements(value.elements, context);
     const derivations = yield* validateDocumentRelations(
       value.elements as InkElementV1[],

@@ -1,5 +1,7 @@
 import type { DocumentHashPort } from "./sha256";
 import type { ValidatedSnapshotConsumer } from "./validated-snapshot-adoption";
+import type { SafeStaticProof } from "./safe-static-proof";
+import type { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 
 export type ChunkedInputCheckpoint = () => Promise<void> | undefined;
 
@@ -11,6 +13,8 @@ export interface ChunkedInkbookInputOptions {
   readonly onValidatedSnapshot?: ValidatedSnapshotConsumer;
   readonly pathBatchSize?: number;
   readonly signal?: AbortSignal;
+  readonly safeStaticProof?: SafeStaticProof;
+  readonly sampleEncodingCache?: StrokeSampleEncodingCache;
 }
 
 export class ChunkedInputCancelledError extends Error {

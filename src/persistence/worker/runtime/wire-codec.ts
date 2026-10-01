@@ -28,7 +28,6 @@ import type {
   EncodeClipboardRuntimeSuccess,
   PlanClipboardPasteRuntimeSuccess,
   UnlockRuntimeBatch,
-  UnlockRuntimeRequest,
 } from "./types";
 import { assertUnlockBatchWireLimits } from "./unlock-batch-limits";
 import {
@@ -42,7 +41,12 @@ import {
   type ModelSyncWireRequest,
 } from "./model-sync-wire";
 import { isRuntimeWireRequestType, isRuntimeWireResultType } from "./wire-message-types";
-import { exclusiveTransferBytes } from "./transferable-bytes";
+import {
+  decodeUnlockRequest,
+  encodeUnlockRequest,
+  isUnlockPurposeIdentity,
+  type UnlockWireRequest,
+} from "./unlock-request-wire";
 import {
   encodeExportSuccess,
   encodeExportSuccessChunked,
@@ -50,6 +54,7 @@ import {
 } from "./export-output-wire";
 import { adoptOwnedSvgOutput, adoptOwnedSvgOutputSync } from "../../scheduling/owned-svg-output";
 import { isDocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
+import { assertScenePathIds } from "./scene-path-limits";
 
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
 interface FullExportWireRequest extends Omit<
@@ -72,12 +77,18 @@ export type DocumentRuntimeWireRequest =
   | Exclude<
       DocumentRuntimeRequest,
       {
-        type: "export-full" | "export-incremental" | "model-sync-full" | "model-sync-incremental";
+        type:
+          | "export-full"
+          | "export-incremental"
+          | "model-sync-full"
+          | "model-sync-incremental"
+          | "unlock";
       }
     >
   | FullExportWireRequest
   | IncrementalExportWireRequest
-  | ModelSyncWireRequest;
+  | ModelSyncWireRequest
+  | UnlockWireRequest;
 
 type PackedPastePlan = Omit<PastePlan, "elements"> & { readonly elements: PackedElements };
 
@@ -141,9 +152,7 @@ export function encodeRuntimeRequest(
     const packed = packElements(changedElements ?? []);
     return encodeIncrementalExportRequest(identity, changedElements, packed);
   }
-  if (request.type === "unlock" && request.input instanceof Uint8Array) {
-    return transferableUnlock(request);
-  }
+  if (request.type === "unlock") return encodeUnlockRequest(request);
   return { transfer: [], value: request };
 }
 
@@ -202,6 +211,12 @@ export function decodeRuntimeRequest(
 ): DocumentRuntimeRequest {
   if (!isDocumentRuntimeWireRequest(request)) {
     throw new TypeError("Worker request does not match the runtime wire protocol.");
+  }
+  if (request.type === "unlock") return decodeUnlockRequest(request);
+  if (request.type === "prepare-scene-paths") {
+    assertScenePathIds(request.ids);
+    if (!Number.isSafeInteger(request.basisRevision) || request.basisRevision < 0)
+      throw new TypeError("Invalid scene preparation revision.");
   }
   if (request.type === "export-full-wire") {
     assertDocumentElementWireLimits(request.snapshot.elements);
@@ -462,16 +477,9 @@ export function isDocumentRuntimeWireUnlockBatch(
     Number.isSafeInteger(value.batchIndex) &&
     value.batchIndex >= 0 &&
     Array.isArray(value.derivations) &&
-    isPurposeIdentity(value.identity) &&
+    isUnlockPurposeIdentity(value.identity) &&
     isPackedElements(value.elements)
   );
-}
-
-function transferableUnlock(
-  request: UnlockRuntimeRequest,
-): StructuredTransfer<DocumentRuntimeWireRequest> {
-  const input = exclusiveTransferBytes(request.input as Uint8Array);
-  return { transfer: [input.buffer], value: { ...request, input } };
 }
 
 function buffersAsTransferables(buffers: readonly Float64Array[]): Transferable[] {
@@ -480,18 +488,6 @@ function buffersAsTransferables(buffers: readonly Float64Array[]): Transferable[
 
 function isPackedElements(value: unknown): value is PackedElements {
   return isRecord(value) && Array.isArray(value.records) && Array.isArray(value.pointBuffers);
-}
-
-function isPurposeIdentity(value: unknown): value is UnlockRuntimeBatch["identity"] {
-  return (
-    isRecord(value) &&
-    typeof value.sessionId === "string" &&
-    typeof value.workerEpoch === "number" &&
-    Number.isSafeInteger(value.workerEpoch) &&
-    typeof value.operationId === "number" &&
-    Number.isSafeInteger(value.operationId) &&
-    (value.purpose === "recovery" || value.purpose === "unlock")
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

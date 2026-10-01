@@ -3,6 +3,7 @@ import { validateSafeSvgSteps, type SafeSvgValidation } from "../documents/safe-
 import type { SafeSvgVersionPolicy } from "../documents/svg-envelope-root";
 import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
 import { hashExactUtf8Output } from "../serialization/chunked-output-assembler";
+import { SafeStaticProof } from "../serialization/safe-static-proof";
 
 import { adoptUtf8Output, type Utf8AdoptionOptions } from "./utf8-adoption";
 import { createMainThreadCheckpoint } from "./main-thread-checkpoint";
@@ -18,6 +19,7 @@ export interface TrustedSvgOutput {
   readonly revision: number;
   readonly snapshotHash: string | null;
   readonly totalBytes: number;
+  readonly safeStaticProof: SafeStaticProof;
 }
 
 interface TrustedSvgInspectionOptions extends Utf8AdoptionOptions {
@@ -242,6 +244,10 @@ async function validateSafeSvgIncrementally(
 function trustedOutput(inspected: InspectedOutput, safe: SafeSvgValidation): TrustedSvgOutput {
   return {
     ...inspected,
+    safeStaticProof: SafeStaticProof.fromTrustedProducer(
+      inspected.outputHash,
+      inspected.totalBytes,
+    ),
     lockedHeight: safe.lockedHeight,
     revision: safe.revision,
     snapshotHash: safe.snapshotHash,

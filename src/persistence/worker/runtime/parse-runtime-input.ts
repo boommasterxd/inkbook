@@ -1,12 +1,16 @@
 import { ChunkedInkbookInputParser } from "../../serialization/chunked-input-codec";
 import type { ValidatedSnapshotConsumer } from "../../serialization/validated-snapshot-adoption";
 import type { RuntimeSliceContext } from "./types";
+import type { StrokeSampleEncodingCache } from "../../serialization/stroke-sample-encoding-cache";
+import type { SafeStaticProof } from "../../serialization/safe-static-proof";
 
 export async function parseRuntimeInput(
   input: string | Uint8Array,
   context?: RuntimeSliceContext,
   onValidatedSnapshot?: ValidatedSnapshotConsumer,
   staticValidation: "canonical" | "safe" = "canonical",
+  sampleEncodingCache?: StrokeSampleEncodingCache,
+  safeStaticProof?: SafeStaticProof,
 ) {
   const inputSliceBytes = context?.workProfile?.inputByteLimit ?? 256 * 1024;
   const inputWriteChunk = context?.workProfile?.inputByteLimit ?? 16 * 1024;
@@ -15,6 +19,8 @@ export async function parseRuntimeInput(
     inputSliceBytes,
     staticValidation,
     ...(onValidatedSnapshot === undefined ? {} : { onValidatedSnapshot }),
+    ...(sampleEncodingCache === undefined ? {} : { sampleEncodingCache }),
+    ...(safeStaticProof === undefined ? {} : { safeStaticProof }),
   });
   if (typeof input === "string") await writeStringInput(parser, input, inputWriteChunk);
   else await writeByteInput(parser, input, inputWriteChunk);

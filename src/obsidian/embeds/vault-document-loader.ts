@@ -16,6 +16,8 @@ import type { RecoveryFilePort } from "./vault-document-recovery";
 import type { MigrationBackupPort } from "../../persistence/documents/migration-backup";
 import { serializeSvgNumber } from "../../persistence/documents/svg-number";
 import { verifyVaultUnlockIntegrity } from "./vault-unlock-integrity";
+import { matchVaultPreviewProof } from "./vault-preview-proof";
+import type { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
 
 interface VaultUnlockFilePort {
   readBinaryForUnlock(path: string, maximumBytes: number): Promise<UnlockFile>;
@@ -134,6 +136,7 @@ interface VaultDocumentLoaderOptions {
   readonly files: VaultUnlockFilePort;
   readonly prefetchedBytes?: Promise<Uint8Array | undefined>;
   readonly workerEpoch: number;
+  readonly safeStaticProof?: () => SafeStaticProof | undefined;
 }
 
 interface RecoveringVaultDocumentLoaderOptions {
@@ -180,6 +183,15 @@ export async function loadVaultDocument(
   const bytes = await (options.prefetchedBytes ??
     readVaultDocumentBytes(options.files, options.documentId));
   if (bytes === undefined || options.cancelled()) return undefined;
+  const safeStaticProof =
+    options.safeStaticProof === undefined
+      ? undefined
+      : await matchVaultPreviewProof(
+          bytes,
+          options.safeStaticProof,
+          options.scheduler(options.cancelled),
+        );
+  if (options.cancelled()) return undefined;
   const elements: InkElementV1[] = [];
   const builder = ElementStore.createBuilder(options.scheduler(options.cancelled));
   let nextBatchIndex = 0;
@@ -194,6 +206,7 @@ export async function loadVaultDocument(
         },
         input: bytes,
         type: "unlock",
+        ...(safeStaticProof === undefined ? {} : { safeStaticProof }),
       },
       {
         unlockBatch: async (batch, signal) => {

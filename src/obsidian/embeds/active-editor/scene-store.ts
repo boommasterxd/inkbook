@@ -19,6 +19,7 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
     this.#store = store;
     this.#unsubscribeMemoryUsage = store.subscribeMemoryUsage(onMemoryUsageChanged);
   }
+  public preparePressurePaths: SceneStorePort["preparePressurePaths"];
 
   public get(id: string): ReturnType<SceneStorePort["get"]> {
     const record = this.#store.get(id);

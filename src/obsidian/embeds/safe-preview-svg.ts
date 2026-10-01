@@ -2,11 +2,13 @@ import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PersistedDocumentIdentity } from "../../editor/session/session-port";
 import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
+import type { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
 
 export interface LoadedPreviewSvg {
   readonly aspectRatio: number;
   readonly contentIdentity: PreviewContentIdentity;
   readonly safeSvg: string;
+  readonly safeStaticProof?: SafeStaticProof;
 }
 
 export type PreviewContentIdentity = PersistedDocumentIdentity;
@@ -41,6 +43,7 @@ export async function inspectPreviewSvg(
       aspectRatio: 2_048.6 / trusted.lockedHeight,
       contentIdentity: { outputHash: trusted.outputHash, revision: trusted.revision },
       safeSvg: trusted.content,
+      safeStaticProof: trusted.safeStaticProof,
     };
   } catch {
     return null;

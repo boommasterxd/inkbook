@@ -2,6 +2,7 @@ import type { InkElementV1, SnapshotValidationDerivations } from "../../../domai
 import { WorkerJobQueue } from "../job-queue";
 import type { ExecutorIdentity, ExportIdentity, WorkerJobKind } from "../protocol";
 import { DocumentModelRuntime, RuntimeModelError } from "./document-model";
+import { runClipboardRequest } from "./runtime-clipboard";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeObserver,
@@ -18,12 +19,8 @@ import {
   strokePointByteLength,
 } from "./unlock-batch-limits";
 
-type ClipboardRuntimeRequest = Extract<
-  DocumentRuntimeRequest,
-  { type: "clipboard-decode" | "clipboard-encode" | "clipboard-plan-paste" }
->;
-
 interface PendingJob {
+  readonly abortController: AbortController;
   readonly observer: DocumentRuntimeObserver | undefined;
   readonly reject: (reason: unknown) => void;
   readonly request: DocumentRuntimeRequest;
@@ -83,7 +80,13 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         return;
       }
       if (request.type === "unlock") this.#unlockPending = true;
-      this.#jobs.set(id, { observer, reject, request, resolve });
+      this.#jobs.set(id, {
+        abortController: new AbortController(),
+        observer,
+        reject,
+        request,
+        resolve,
+      });
       void this.#drain();
     });
   }
@@ -92,6 +95,19 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     if (!this.#matchesExportIdentity(identity)) return;
     this.#unacknowledgedExports.delete(exportIdentityKey(identity));
     this.#schedulePrewarm();
+  }
+  public cancelScenePreparation(identity: import("../protocol").PurposeOperationIdentity): void {
+    for (const job of this.#jobs.values()) {
+      if (job.request.type !== "prepare-scene-paths") continue;
+      const candidate = job.request.identity;
+      if (
+        candidate.sessionId === identity.sessionId &&
+        candidate.workerEpoch === identity.workerEpoch &&
+        candidate.operationId === identity.operationId &&
+        candidate.purpose === identity.purpose
+      )
+        job.abortController.abort();
+    }
   }
 
   public requestPrewarm(): void {
@@ -143,12 +159,17 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       const pending = this.#jobs.get(active.id);
       if (pending === undefined) break;
       try {
+        const signal = AbortSignal.any([
+          this.#abortController.signal,
+          pending.abortController.signal,
+        ]);
+        signal.throwIfAborted();
         const result =
           this.#scheduler === null
-            ? await this.#run(pending.request, pending.observer, this.#abortController.signal)
+            ? await this.#run(pending.request, pending.observer, signal)
             : await this.#scheduler.run(
                 (signal) => this.#run(pending.request, pending.observer, signal),
-                this.#abortController.signal,
+                signal,
               );
         if (!this.#terminated) pending.resolve(result);
       } catch (error) {
@@ -168,6 +189,8 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     signal: AbortSignal,
   ): Promise<DocumentRuntimeResult> {
     const sliceContext = runtimeSliceContext(this.#scheduler, signal);
+    if (request.type === "prepare-scene-paths")
+      return this.#prepareScenePaths(request, sliceContext, signal);
     if (request.type === "unlock") {
       let batchCount = 0;
       const unlocked = await this.#model.unlock(
@@ -182,6 +205,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
             adoptionSignal,
           );
         },
+        request.safeStaticProof,
       );
       const { snapshot } = unlocked;
       return {
@@ -201,15 +225,14 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         type: "unlock-success",
       };
     }
-    if (request.type === "clipboard-encode") {
-      return this.#runClipboard(request, sliceContext);
-    }
-    if (request.type === "clipboard-decode") {
-      return this.#runClipboard(request, sliceContext);
-    }
-    if (request.type === "clipboard-plan-paste") {
-      return this.#runClipboard(request, sliceContext);
-    }
+    if (
+      request.type === "clipboard-encode" ||
+      request.type === "clipboard-decode" ||
+      request.type === "clipboard-plan-paste"
+    )
+      return runClipboardRequest(this.#model, request, sliceContext, () =>
+        this.#services.createId(),
+      );
     if (request.type === "model-sync-full" || request.type === "model-sync-incremental") {
       this.#model.synchronize(request);
       return {
@@ -259,6 +282,24 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     };
   }
 
+  async #prepareScenePaths(
+    request: Extract<DocumentRuntimeRequest, { type: "prepare-scene-paths" }>,
+    context: RuntimeSliceContext | undefined,
+    signal: AbortSignal,
+  ): Promise<DocumentRuntimeResult> {
+    return {
+      basisRevision: request.basisRevision,
+      identity: request.identity,
+      paths: await this.#model.prepareScenePaths(
+        request,
+        context ?? {
+          checkpoint: () => undefined,
+          signal,
+        },
+      ),
+      type: "prepare-scene-paths-success",
+    };
+  }
   #failure(request: DocumentRuntimeRequest, error: unknown): DocumentRuntimeResult {
     if (request.type === "export-full" || request.type === "export-incremental") {
       return {
@@ -278,64 +319,6 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       identity: request.identity,
       retryable: error instanceof RuntimeModelError && error.retryable,
       type: "runtime-failure",
-    };
-  }
-
-  async #runClipboard(
-    request: ClipboardRuntimeRequest,
-    context: RuntimeSliceContext | undefined,
-  ): Promise<DocumentRuntimeResult> {
-    if (request.type === "clipboard-encode") {
-      return {
-        identity: request.identity,
-        result:
-          context === undefined
-            ? this.#model.encodeClipboard(request.basisRevision, request.selectedIds)
-            : await this.#model.encodeClipboardSliced(
-                request.basisRevision,
-                request.selectedIds,
-                context,
-              ),
-        type: "clipboard-encode-success",
-      };
-    }
-    if (request.type === "clipboard-decode") {
-      return {
-        identity: request.identity,
-        result:
-          context === undefined
-            ? this.#model.decodeClipboard(request.basisRevision, request.candidates)
-            : await this.#model.decodeClipboardSliced(
-                request.basisRevision,
-                request.candidates,
-                context,
-              ),
-        type: "clipboard-decode-success",
-      };
-    }
-    const createId = (): string => this.#services.createId();
-    return {
-      identity: request.identity,
-      result:
-        context === undefined
-          ? this.#model.planClipboardPaste(
-              request.basisRevision,
-              request.candidates,
-              request.invocation,
-              request.commandTimestamp,
-              createId,
-              request.previousRepeat,
-            )
-          : await this.#model.planClipboardPasteSliced(request.basisRevision, request.candidates, {
-              commandTimestamp: request.commandTimestamp,
-              context,
-              createId,
-              invocation: request.invocation,
-              ...(request.previousRepeat === undefined
-                ? {}
-                : { previousRepeat: request.previousRepeat }),
-            }),
-      type: "clipboard-plan-paste-success",
     };
   }
 

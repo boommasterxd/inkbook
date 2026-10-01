@@ -27,6 +27,10 @@ export interface FragmentSerializerInstrumentation {
   readonly shapeCacheBytes: number;
   readonly shapeCacheElements: number;
   readonly retiredPointComparisons: number;
+  readonly sampleEncodingBuilds: number;
+  readonly sampleEncodingHits: number;
+  readonly sampleEncodingCacheBytes: number;
+  readonly sampleEncodingCacheElements: number;
   readonly cacheBytes: number;
   readonly cacheElements: number;
   readonly derivedBoundsReuses: number;

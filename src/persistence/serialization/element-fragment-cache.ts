@@ -29,7 +29,17 @@ export class ElementFragmentCache {
       this.remove(element.id);
       return;
     }
-    this.#entries.set(element.id, { ...cached, element });
+    const descriptors = Object.getOwnPropertyDescriptors(cached);
+    this.#entries.set(
+      element.id,
+      Object.defineProperties(
+        {},
+        {
+          ...descriptors,
+          element: { value: element, enumerable: true, configurable: true },
+        },
+      ) as ElementFragments,
+    );
   }
   public replace(id: string, fragments: ElementFragments): void {
     const previous = this.#entries.get(id);

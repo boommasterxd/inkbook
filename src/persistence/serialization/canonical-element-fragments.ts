@@ -1,12 +1,22 @@
 import type { InkElementV1 } from "../../domain/schema/public";
 import { canonicalElement } from "./canonical-snapshot";
 import { encodeStrokeSamples } from "./stroke-sample-codec";
+import type { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 
-export function serializeCanonicalElementMetadata(element: InkElementV1): string {
+export function serializeCanonicalElementMetadata(
+  element: InkElementV1,
+  sampleCache?: StrokeSampleEncodingCache,
+): string {
   const canonical = canonicalElement(element, true);
   return JSON.stringify(
     canonical.kind === "stroke"
-      ? { ...canonical, points: encodeStrokeSamples(canonical.points) }
+      ? {
+          ...canonical,
+          points:
+            element.kind === "stroke" && sampleCache !== undefined
+              ? sampleCache.resolve(element)
+              : encodeStrokeSamples(canonical.points),
+        }
       : canonical,
   );
 }

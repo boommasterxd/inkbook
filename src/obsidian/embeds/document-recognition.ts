@@ -5,8 +5,10 @@ import type { MetadataGuardedFileRead } from "../../persistence/saving/save-port
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { createRecognitionWorkScheduler } from "./document-recognition-scheduler";
-import { samePreviewContentIdentity, type PreviewContentIdentity } from "./safe-preview-svg";
+import { samePreviewContentIdentity } from "./safe-preview-svg";
 import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
+import { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
+import { matchesPreviewResource, previewSourceIdentity } from "./preview-resource-identity";
 
 const MAXIMUM_RECOGNITION_CACHE_ENTRIES = 256;
 const MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS = 32 * 1024 * 1024;
@@ -15,6 +17,7 @@ const MAXIMUM_ACTIVE_READS = 4;
 const MAXIMUM_QUEUED_READS = 4096;
 interface RecognitionEntry {
   readonly confirmedFile?: TFile;
+  readonly recognizedFile?: TFile;
   pendingRefresh?: boolean;
   readonly signature: string;
   readonly value: InkbookDocumentRecognition;
@@ -154,6 +157,23 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     return entry.value;
   }
 
+  /** Only current lifecycle-owned preview validation authorizes static scan reuse. */
+  public safeStaticProof(documentId: string): SafeStaticProof | undefined {
+    const file = this.#resolveFile(documentId);
+    const entry = this.#entries.get(documentId);
+    if (
+      file === undefined ||
+      entry === undefined ||
+      entry.recognizedFile !== file ||
+      entry.pendingRefresh ||
+      entry.signature !== fileSignature(file) ||
+      entry.value === false
+    )
+      return undefined;
+    const proof = entry.value.safeStaticProof;
+    return SafeStaticProof.isAuthentic(proof) ? proof : undefined;
+  }
+
   /** Only a confirmed own writer readback can authorize skipping canonical validation. */
   public matchesConfirmedOutput(read: MetadataGuardedFileRead): boolean {
     const file = this.#resolveFile(read.identity.path);
@@ -238,7 +258,11 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     if (this.#pending.get(documentId) === request) {
       this.#pending.delete(documentId);
       this.#deleteEntry(documentId);
-      this.#entries.set(documentId, { signature: request.signature, value });
+      this.#entries.set(documentId, {
+        recognizedFile: request.file,
+        signature: request.signature,
+        value,
+      });
       this.#markupCodeUnits += value === false ? 0 : value.safeSvg.length;
       this.#evictOverflow();
       request.resolve(value);
@@ -464,34 +488,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   }
 }
 
-function previewSourceIdentity(source: string): PreviewContentIdentity | undefined {
-  try {
-    const value = new URL(source).searchParams.get("inkbook-revision");
-    const match = /^(\d+)-([a-f0-9]{64})$/u.exec(value ?? "");
-    const revision = Number(match?.[1]);
-    return match !== null && Number.isSafeInteger(revision)
-      ? { revision, outputHash: match[2]! }
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function immutablePreview(value: LoadedPreviewSvg): LoadedPreviewSvg {
   Object.freeze(value.contentIdentity);
   return Object.freeze(value);
-}
-
-function matchesPreviewResource(vault: Vault, file: TFile, source: string): boolean {
-  try {
-    const expected = new URL(vault.getResourcePath(file));
-    const actual = new URL(source);
-    expected.search = "";
-    expected.hash = "";
-    actual.search = "";
-    actual.hash = "";
-    return actual.href === expected.href;
-  } catch {
-    return false;
-  }
 }

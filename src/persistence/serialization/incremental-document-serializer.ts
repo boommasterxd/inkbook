@@ -1,4 +1,5 @@
 import { StrokeShapeCache } from "./stroke-shape-cache";
+import { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 import { pressureShapeKey } from "./prepared-pressure-hints";
 import { derivePageExtent } from "../../domain/geometry/public";
 import {
@@ -42,6 +43,7 @@ import type {
   FragmentAssembly,
 } from "./incremental-document-serializer-types";
 import { prepareSerialization } from "./serialization-budgets";
+import { collectOrderedElementFragments } from "./ordered-element-fragments";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "./types";
@@ -49,6 +51,15 @@ export class IncrementalDocumentSerializer {
   readonly #cache = new ElementFragmentCache();
   readonly #shapeCache = new StrokeShapeCache();
   readonly #elements = new Map<string, InkElementV1>();
+  public readonly sampleEncodingCache = new StrokeSampleEncodingCache((stroke) => {
+    const current = this.#elements.get(stroke.id);
+    return (
+      this.#runtimeStrokeBuffers &&
+      current?.kind === "stroke" &&
+      current.points === stroke.points &&
+      stroke.points instanceof Float64Array
+    );
+  });
   readonly #facts = new Map<string, incrementalValidation.ElementFacts>();
   readonly #orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
   readonly #backgroundCache = new BackgroundFragmentCache();
@@ -65,6 +76,7 @@ export class IncrementalDocumentSerializer {
     return {
       backgroundBuilds: this.#backgroundCache.builds,
       ...this.#shapeCache.instrumentation,
+      ...this.sampleEncodingCache.instrumentation,
       cacheBytes: this.#cache.retainedBytes,
       cacheElements: this.#cache.size,
       derivedBoundsReuses: this.#derivedBoundsReuses,
@@ -101,6 +113,15 @@ export class IncrementalDocumentSerializer {
   public hasElement(id: string): boolean {
     return this.#elements.has(id);
   }
+  public async preparePressurePath(
+    id: string,
+    context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
+  ): Promise<string | undefined> {
+    const element = this.#elements.get(id);
+    if (element?.kind !== "stroke" || !element.style.pressureEnabled) return undefined;
+    const parts = await this.#shapeCache.prepare(element, context);
+    return parts.length === 1 && parts[0]?.paint === "fill" ? parts[0].d : undefined;
+  }
   public currentElementCount(): number {
     return this.#elements.size;
   }
@@ -115,7 +136,12 @@ export class IncrementalDocumentSerializer {
       this.#cache.touch(id);
       return 0;
     }
-    const fragments = buildElementFragments(element, this.#facts.get(id)?.bottom, this.#shapeCache);
+    const fragments = buildElementFragments(
+      element,
+      this.#facts.get(id)?.bottom,
+      this.#shapeCache,
+      this.sampleEncodingCache,
+    );
     if (fragments.bytes > maximumBytes) return null;
     this.#fragmentBuilds += 1;
     this.#cache.replace(id, fragments);
@@ -172,6 +198,7 @@ export class IncrementalDocumentSerializer {
       return codecFailure("invalid-delta", "Validated element derivation is inconsistent.");
     }
     this.#runtimeStrokeBuffers = runtimeStrokeBuffers;
+    this.sampleEncodingCache.reconcile(canonical);
     const activeIds = new Set(canonical.elements.map(({ id }) => id));
     for (const id of this.#cache.ids()) {
       if (!activeIds.has(id)) this.#cache.remove(id);
@@ -227,6 +254,7 @@ export class IncrementalDocumentSerializer {
       this.#facts.delete(id);
       this.#elements.delete(id);
       this.#cache.remove(id);
+      this.sampleEncodingCache.remove(id);
       this.#shapeCache.retire(id);
     }
     for (const changedElement of prepared.value.changed.values()) {
@@ -242,6 +270,7 @@ export class IncrementalDocumentSerializer {
             element,
             facts.value.changed.get(element.id)!.bottom,
             this.#shapeCache,
+            this.sampleEncodingCache,
           ),
         );
         this.#fragmentBuilds += 1;
@@ -398,6 +427,7 @@ export class IncrementalDocumentSerializer {
   public clear(): void {
     this.#cache.clear();
     this.#shapeCache.clear();
+    this.sampleEncodingCache.clear();
     this.#backgroundCache.clear();
     this.#elements.clear();
     this.#facts.clear();
@@ -431,40 +461,13 @@ export class IncrementalDocumentSerializer {
     outputBudget: EncodedByteBudget,
     metadataBudget: EncodedByteBudget,
   ): DocumentCodecResult<FragmentAssembly> {
-    const elements: InkElementV1[] = [];
-    const metadata: string[] = [];
-    const canonicalMetadata: string[] = [];
-    const fragments: Record<RenderBand, ElementFragments[]> = { content: [], highlight: [] };
-    let maximumBottom: number | null = null;
-    for (const band of ["highlight", "content"] as const) {
-      for (const id of this.#orders[band]) {
-        const element = this.#elements.get(id)!;
-        const elementFragments = this.#fragmentsFor(element);
-        const separatorBytes = metadata.length === 0 ? 0 : 1;
-        if (
-          !metadataBudget.tryReserve(elementFragments.metadataBytes + separatorBytes) ||
-          !outputBudget.tryReserve(elementFragments.bytes + separatorBytes)
-        ) {
-          return this.#outputLimitExceeded();
-        }
-        elements.push(element);
-        metadata.push(elementFragments.metadata);
-        canonicalMetadata.push(elementFragments.canonicalMetadata);
-        fragments[band].push(elementFragments);
-        maximumBottom = Math.max(maximumBottom ?? 0, elementFragments.bottom);
-      }
-    }
-    return {
-      ok: true,
-      value: {
-        content: fragments.content,
-        elements,
-        highlight: fragments.highlight,
-        maximumBottom,
-        metadata,
-        canonicalMetadata,
-      },
-    };
+    return collectOrderedElementFragments({
+      orders: this.#orders,
+      element: (id) => this.#elements.get(id)!,
+      fragment: (element) => this.#fragmentsFor(element),
+      outputBudget,
+      metadataBudget,
+    });
   }
   #fragmentsFor(element: InkElementV1): ElementFragments {
     const cached = this.#cache.current(element);
@@ -477,6 +480,7 @@ export class IncrementalDocumentSerializer {
       element,
       this.#facts.get(element.id)?.bottom,
       this.#shapeCache,
+      this.sampleEncodingCache,
     );
     this.#fragmentBuilds += 1;
     this.#cache.retainIfSpace(element.id, fragments);

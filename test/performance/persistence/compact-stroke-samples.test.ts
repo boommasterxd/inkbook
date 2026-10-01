@@ -5,6 +5,14 @@ import {
 } from "../../../src/persistence/serialization/stroke-sample-codec";
 import { decodeStrokeSamples } from "../../fixtures/persistence/stroke-sample-codec";
 import { SampleBase64Reader } from "../../../src/persistence/serialization/sample-base64";
+import { parseChunkedJsonWithProof } from "../../../src/persistence/serialization/chunked-json-parser";
+import { decodeCompactSnapshotSteps } from "../../../src/persistence/serialization/compact-snapshot";
+import {
+  validateParsedInkSnapshotV1Steps,
+  validateRuntimeInkSnapshotV1,
+} from "../../../src/domain/schema/snapshot-validation";
+import { createOneStrokeWorkerSnapshot } from "../../fixtures/persistence/worker-bridge";
+import { finishGeometrySteps } from "../../fixtures/domain/geometry-steps";
 
 describe("compact stroke sample work bounds", () => {
   it("decodes the maximum stroke with one exact output buffer and one read per encoded byte", () => {
@@ -39,6 +47,50 @@ describe("compact stroke sample work bounds", () => {
       expect(() => decodeStrokeSamples("gYAB")).toThrow(RangeError);
       expect(probe.reads).toHaveBeenCalledTimes(3);
       expect(probe.allocations).toEqual([]);
+    } finally {
+      probe.restore();
+    }
+  });
+
+  it("validates maximum decoded samples once and rescans externally mutable runtime buffers", async () => {
+    const count = 16_384;
+    const points = new Float64Array(count * 3);
+    for (let index = 0; index < count; index += 1) {
+      points[index * 3] = index / 1000;
+      points[index * 3 + 1] = -index / 1000 || 0;
+      points[index * 3 + 2] = (index % 11) / 10;
+    }
+    const encoded = encodeStrokeSamples(points);
+    const source = createOneStrokeWorkerSnapshot();
+    const disk = { ...source, elements: [{ ...source.elements[0], points: encoded }] };
+    const owned = await parseChunkedJsonWithProof(JSON.stringify(disk), {
+      limits: {
+        maximumContainerEntries: 20_000,
+        maximumDepth: 16,
+        maximumNodes: 1024,
+        maximumOutputCharacters: encoded.length + 4096,
+        maximumStringScratchCharacters: encoded.length,
+      },
+    });
+    const probe = observeDecoderAllocations(true);
+
+    try {
+      finishGeometrySteps(
+        decodeCompactSnapshotSteps(owned.value, undefined, { proof: owned.proof }),
+      );
+      const result = finishGeometrySteps(
+        validateParsedInkSnapshotV1Steps(owned.value, owned.proof, {}, true),
+      );
+
+      expect(result).toMatchObject({ ok: true, statistics: { strokePoints: count } });
+      expect(probe.allocations).toEqual([count * 3]);
+      expect(probe.sampleReads.pressure).toBe(0);
+      // The bounds pass reads endpoint x/y once and interior x/y three times.
+      expect(probe.sampleReads.coordinates).toBeLessThanOrEqual(6 * count - 8);
+      const previousCoordinateReads = probe.sampleReads.coordinates;
+      expect(validateRuntimeInkSnapshotV1(owned.value).ok).toBe(true);
+      expect(probe.sampleReads.pressure).toBe(count);
+      expect(probe.sampleReads.coordinates - previousCoordinateReads).toBe(8 * count - 8);
     } finally {
       probe.restore();
     }
@@ -80,22 +132,38 @@ describe("compact stroke sample point-budget work bounds", () => {
   );
 });
 
-function observeDecoderAllocations() {
+function observeDecoderAllocations(observeSamples = false) {
   const reads = vi.spyOn(SampleBase64Reader.prototype, "read");
   const NativeFloat64Array = Float64Array;
   const allocations: number[] = [];
+  const sampleReads = { coordinates: 0, pressure: 0 };
   vi.stubGlobal(
     "Float64Array",
     new Proxy(NativeFloat64Array, {
       construct(target, argumentsList, newTarget) {
         allocations.push(Number(argumentsList[0]));
-        return Reflect.construct(target, argumentsList, newTarget) as InstanceType<typeof target>;
+        const samples = Reflect.construct(target, argumentsList, newTarget) as InstanceType<
+          typeof target
+        >;
+        return observeSamples
+          ? new Proxy(samples, {
+              get(buffer, key): unknown {
+                if (typeof key === "string" && /^(0|[1-9][0-9]*)$/.test(key)) {
+                  if (Number(key) % 3 === 2) sampleReads.pressure += 1;
+                  else sampleReads.coordinates += 1;
+                }
+                const value: unknown = Reflect.get(buffer, key, buffer);
+                return typeof value === "function" ? value.bind(buffer) : value;
+              },
+            })
+          : samples;
       },
     }),
   );
   return {
     reads,
     allocations,
+    sampleReads,
     restore() {
       reads.mockRestore();
       vi.unstubAllGlobals();

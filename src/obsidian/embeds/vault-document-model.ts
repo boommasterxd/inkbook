@@ -177,10 +177,15 @@ export async function prepareVaultElementRemoval(options: {
 
 export function createVaultElementPreparationActions(options: {
   readonly active: () => boolean;
+  readonly replacementActive: () => boolean;
+  readonly replacementStore: () => ElementStore | undefined;
   readonly run: InteractiveWorkPriority["run"];
-  readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
+  readonly scheduler: (isCancelled: () => boolean, priority?: "frame") => StoreSliceScheduler;
   readonly store: ElementStore;
-}): Pick<EditableActions, "prepareElementMutation" | "prepareElementRemoval"> {
+}): Pick<
+  EditableActions,
+  "prepareElementMutation" | "prepareElementRemoval" | "prepareElementReplacement"
+> {
   return {
     prepareElementMutation: (mutation, cancellation) =>
       options.run(() =>
@@ -200,6 +205,16 @@ export function createVaultElementPreparationActions(options: {
           ids,
           scheduler: options.scheduler,
           store: options.store,
+        }),
+      ),
+    prepareElementReplacement: (replacements, cancellation) =>
+      options.run(() =>
+        prepareVaultElementReplacement({
+          active: options.replacementActive(),
+          cancellation,
+          replacements,
+          scheduler: (isCancelled) => options.scheduler(isCancelled, "frame"),
+          store: options.replacementStore(),
         }),
       ),
   };

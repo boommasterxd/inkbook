@@ -259,6 +259,9 @@ function createEmbedIntegration(
     deferUntilLayoutReady: true,
     workScheduler: (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
   });
+  runtime.setSafeStaticProofProvider((documentId) =>
+    documentRecognition.safeStaticProof(documentId),
+  );
   runtime.setConfirmedOutputReceiver((documentId, output) => {
     if (output !== undefined)
       documentRecognition.acceptConfirmedOutput(
