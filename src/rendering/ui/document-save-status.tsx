@@ -5,7 +5,7 @@ import type { DocumentSaveStatus } from "../../editor/session/session-port";
 const LABELS: Readonly<Record<DocumentSaveStatus, string>> = {
   saved: "Saved",
   pending: "Unsaved changes",
-  saving: "Saving",
+  saving: "Saving…",
   failed: "Save failed",
 };
 

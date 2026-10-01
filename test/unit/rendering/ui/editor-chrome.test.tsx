@@ -18,7 +18,7 @@ describe("Inkbook editor chrome", () => {
   it.each([
     ["saved", "Saved"],
     ["pending", "Unsaved changes"],
-    ["saving", "Saving"],
+    ["saving", "Saving…"],
     ["failed", "Save failed"],
   ] as const)(
     "exposes %s as persistent accessible text outside the scrollable controls",
@@ -69,7 +69,7 @@ describe("document save status icons", () => {
       const icon = status.querySelector(".inkbook-document-save-status-icon") as HTMLElement;
       expect(icon.getAttribute("aria-hidden")).toBe("true");
       expect(renderIcon).toHaveBeenLastCalledWith(icon, "loader-circle");
-      expect(status.textContent).toBe("Saving");
+      expect(status.textContent).toBe("Saving…");
       render("saving");
       expect(renderIcon).toHaveBeenCalledOnce();
 
