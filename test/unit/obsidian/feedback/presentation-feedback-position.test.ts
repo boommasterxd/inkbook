@@ -75,15 +75,55 @@ describe("presentation feedback position", () => {
   });
 });
 
-function createScrollingFeedback() {
+describe("viewport-hosted presentation feedback", () => {
+  it("keeps viewport coordinates stable until the coalesced scroll frame publishes fresh geometry", () => {
+    const harness = createScrollingFeedback(true);
+    expect(harness.host?.parentElement).toBe(harness.presentation.ownerDocument.body);
+    expect(harness.surface.style.insetBlockStart).toBe("350px");
+    expect(harness.surface.style.insetInlineStart).toBe("350px");
+    harness.top = -100;
+    for (let event = 0; event < 20; event += 1) {
+      harness.presentation.ownerDocument.dispatchEvent(new Event("scroll"));
+    }
+    expect(harness.surface.style.insetBlockStart).toBe("350px");
+    expect(harness.frames.size).toBe(1);
+    harness.runFrame();
+    expect(harness.surface.style.insetBlockStart).toBe("150px");
+    expect(harness.surface.style.insetInlineStart).toBe("350px");
+    harness.top = 700;
+    harness.presentation.ownerDocument.dispatchEvent(new Event("scroll"));
+    harness.runFrame();
+    expect(harness.surface.style.visibility).toBe("hidden");
+    harness.lifecycle.dispose();
+  });
+
+  it("rejects a viewport host for bottom-anchored notices", () => {
+    const presentation = new FakePresentationElement();
+    const surface = new FakePresentationElement(presentation.ownerDocument);
+    expect(() =>
+      createPresentationFeedbackPositionLifecycle(
+        surface as unknown as HTMLElement,
+        presentation as unknown as HTMLElement,
+        "bottom",
+        undefined,
+        surface as unknown as HTMLElement,
+      ),
+    ).toThrow(/center/i);
+  });
+});
+
+function createScrollingFeedback(viewportHosted = false) {
   const viewport = new FakePresentationElement();
   viewport.clientHeight = 800;
   const owner = new FakePresentationElement(viewport.ownerDocument);
   owner.clientHeight = 600;
   owner.scrollHeight = 2_000;
   const presentation = new FakePresentationElement(viewport.ownerDocument);
+  viewport.append(owner);
   owner.append(presentation);
   const surface = new FakePresentationElement(viewport.ownerDocument);
+  const host = viewportHosted ? new FakePresentationElement(viewport.ownerDocument) : undefined;
+  host?.append(surface);
   let top = 200;
   vi.spyOn(owner, "getBoundingClientRect").mockReturnValue({
     bottom: 700,
@@ -122,10 +162,12 @@ function createScrollingFeedback() {
     presentation as unknown as HTMLElement,
     "center",
     scheduler,
+    host as unknown as HTMLElement | undefined,
   );
   return {
     presentation,
     surface,
+    host,
     lifecycle,
     requests,
     frames,

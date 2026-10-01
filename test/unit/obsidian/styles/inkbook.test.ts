@@ -12,7 +12,6 @@ const stylesheet = [
 ].join("\n");
 const motionStylesheet = readStylesheet("src/obsidian/styles/motion.css");
 const toolbarMotionStylesheet = readStylesheet("src/obsidian/styles/editor-toolbar-motion.css");
-
 describe("Inkbook host styles", () => {
   it("anchors feedback outside note layout without intercepting the window", () => {
     const host = declarationsFor(".inkbook-root.inkbook-feedback-host");
@@ -24,7 +23,9 @@ describe("Inkbook host styles", () => {
   it("centers delayed operation feedback in the visible embed without changing layout", () => {
     const feedback = declarationsFor(".inkbook-root .inkbook-operation-feedback");
     const icon = declarationsFor(".inkbook-root .inkbook-operation-feedback-icon");
-
+    expect(declarationsFor(".inkbook-root.inkbook-operation-feedback-host")).toContain(
+      "position: fixed",
+    );
     expect(feedback).toContain("position: absolute");
     expect(feedback).toContain("translate: -50% -50%");
     expect(feedback).not.toContain("inset-block-start: 50%");

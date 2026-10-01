@@ -3,7 +3,6 @@ import { useAsyncWindowFrames } from "../../fixtures/obsidian/async-presentation
 import { Plugin, TFile, Tasks, type MarkdownRenderChild } from "obsidian";
 import type { MarkdownSectionInformation } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
-
 import {
   createBuiltInDeviceSettings,
   createBuiltInSettings,
@@ -380,7 +379,7 @@ describe("plugin workspace realm integration", () => {
     expect(scenes.records[0]?.dispose).toHaveBeenCalledOnce();
     expect(presentation.preview.hidden).toBe(false);
     const recoveryPanel = presentation.root.getElementsByClassName("inkbook-feedback").item(0);
-    const pendingFeedback = presentation.root
+    const pendingFeedback = presentation.root.ownerDocument.body
       .getElementsByClassName("inkbook-operation-feedback")
       .item(0);
     const recoveryButtons = recoveryPanel?.getElementsByTagName("button");
@@ -463,17 +462,18 @@ describe("plugin workspace activation serialization", () => {
 
     scene.options.onLock();
     const root = inkbookRoot(presentation.root);
+    const body = root.ownerDocument.body as unknown as FakePresentationElement;
     expect(root.dataset.inkbookState).toBe("locking");
     await vi.waitFor(() =>
       expect(
-        root.getElementsByClassName("inkbook-operation-feedback").item(0)?.dataset.inkbookOperation,
+        body.getElementsByClassName("inkbook-operation-feedback").item(0)?.dataset.inkbookOperation,
       ).toBe("saving"),
     );
     presentation.button.dispatch("click");
     await Promise.resolve();
     expect(scenes.records).toHaveLength(1);
     expect(root.dataset.inkbookState).toBe("locking");
-    expect(root.getElementsByClassName("inkbook-operation-feedback").item(0)).not.toBeNull();
+    expect(body.getElementsByClassName("inkbook-operation-feedback").item(0)).not.toBeNull();
     harness.plugin.onunload();
     releaseProcess();
   });
