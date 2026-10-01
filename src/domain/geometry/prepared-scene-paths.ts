@@ -1,6 +1,6 @@
 import type { SvgPathPart } from "./svg-path-part";
 
-/** Bounded, internally generated local contours; never imported SVG markup. */
+/** Bounded, internally generated local stroke paths; never imported SVG markup. */
 export interface PreparedScenePathEntry {
   readonly id: string;
   readonly parts: readonly SvgPathPart[];

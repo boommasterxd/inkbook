@@ -322,7 +322,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       );
     const model = createVaultEditableModel({
       actions: {
-        preparePressurePaths: scenePaths.prepare,
+        prepareScenePaths: scenePaths.prepare,
         commitBandOrder: (order) => mutations.commitBandOrder(order),
         commitElement: (element) => mutations.commitElements([element]),
         commitElements: (elements) => mutations.commitElements(elements),

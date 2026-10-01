@@ -31,7 +31,7 @@ interface MountPreparationOptions {
   readonly upcomingIds?: () => Iterable<string>;
 }
 
-/** Owns one cancellable cold pressure build, never a queue of retained documents. */
+/** Owns one cancellable cold stroke build, never a queue of retained documents. */
 export class SceneMountPreparation {
   #pending: PendingPath | undefined;
   readonly #remote: RemoteScenePaths;
@@ -110,8 +110,7 @@ export class SceneMountPreparation {
       this.cancelLocal();
       return cached;
     }
-    if (record.element.kind !== "stroke" || !record.element.style.pressureEnabled)
-      return pathCache.build(record.element, pressure);
+    if (record.element.kind !== "stroke") return pathCache.build(record.element, pressure);
     if (this.#pending?.id !== record.id || this.#pending.version !== record.geometryVersion) {
       this.cancelLocal();
       const remote = this.#remote.read(record, this.options.upcomingIds ?? (() => []));

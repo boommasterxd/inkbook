@@ -20,7 +20,7 @@ it("batches the actual ascending visibility-delta entrants and avoids local cont
   const store: SceneStorePort = {
     get: (id) => fake.get(id),
     query: (bounds, sink) => fake.query(bounds, sink),
-    preparePressurePaths: async (ids) => {
+    prepareScenePaths: async (ids) => {
       requests++;
       return ids.map((id) => ({ id, parts: [{ d: "M0 0Z", paint: "fill" }] }));
     },

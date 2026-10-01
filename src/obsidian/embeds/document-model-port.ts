@@ -50,7 +50,7 @@ export class DocumentRevisionExhaustedError extends RangeError {
 }
 
 export interface EditableDocumentModel {
-  preparePressurePaths?: import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation;
+  prepareScenePaths?: import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation;
   beginInteractiveOperation?(): () => void;
   waitForBackground?(): Promise<void> | undefined;
   readonly mutationAvailability: DocumentMutationAvailability;

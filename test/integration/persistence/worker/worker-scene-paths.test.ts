@@ -18,52 +18,61 @@ const identity = {
 };
 
 describe("worker canonical scene contour export reuse", () => {
-  it.each([false, true])("reuses visible contours in export through bridge=%s", async (bridge) => {
-    const harness = createWorkerBridgeHarness();
-    const port = bridge ? createWorkerBridgeClient(harness.clientEndpoint) : harness.runtime;
-    const stroke = createTestStroke();
-    const other = { ...stroke, id: "00000000-0000-4000-8000-000000000002" };
-    await port.execute({
-      baseModelRevision: null,
-      identity,
-      modelRevision: 0,
-      snapshot: createWorkerSnapshot([stroke, other]),
-      type: "model-sync-full",
-    });
-    expect(harness.runtime.instrumentation.shapeBuilds).toBe(0);
-    const result = await port.execute({
-      basisRevision: 0,
-      identity,
-      ids: [other.id],
-      type: "prepare-scene-paths",
-    });
-    expect(result).toMatchObject({
-      basisRevision: 0,
-      type: "prepare-scene-paths-success",
-      paths: [{ id: other.id, d: buildElementPathParts(other)[0]!.d }],
-    });
-    expect(harness.runtime.instrumentation.shapeBuilds).toBe(1);
-    await port.execute({
-      basisRevision: 0,
-      identity,
-      ids: [other.id],
-      type: "prepare-scene-paths",
-    });
-    expect(harness.runtime.instrumentation.shapeBuilds).toBe(1);
-    const exported = await port.execute({
-      baseModelRevision: 0,
-      exportGeneration: 1,
-      modelRevision: 0,
-      sessionId: "session-a",
-      workerEpoch: 1,
-      type: "export-incremental",
-    });
-    expect(exported.type).toBe("export-success");
-    expect(harness.runtime.instrumentation.shapeBuilds).toBe(2);
-    port.terminate();
-    harness.detach();
-    expect(harness.runtime.instrumentation.shapeCacheBytes).toBe(0);
-  });
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    "reuses visible paths in export through bridge=%s, pressure=%s",
+    async (bridge, pressureEnabled) => {
+      const harness = createWorkerBridgeHarness();
+      const port = bridge ? createWorkerBridgeClient(harness.clientEndpoint) : harness.runtime;
+      const original = createTestStroke();
+      const stroke = { ...original, style: { ...original.style, pressureEnabled } };
+      const other = { ...stroke, id: "00000000-0000-4000-8000-000000000002" };
+      await port.execute({
+        baseModelRevision: null,
+        identity,
+        modelRevision: 0,
+        snapshot: createWorkerSnapshot([stroke, other]),
+        type: "model-sync-full",
+      });
+      expect(harness.runtime.instrumentation.shapeBuilds).toBe(0);
+      const result = await port.execute({
+        basisRevision: 0,
+        identity,
+        ids: [other.id],
+        type: "prepare-scene-paths",
+      });
+      expect(result).toMatchObject({
+        basisRevision: 0,
+        type: "prepare-scene-paths-success",
+        paths: [{ id: other.id, parts: buildElementPathParts(other) }],
+      });
+      expect(harness.runtime.instrumentation.shapeBuilds).toBe(1);
+      await port.execute({
+        basisRevision: 0,
+        identity,
+        ids: [other.id],
+        type: "prepare-scene-paths",
+      });
+      expect(harness.runtime.instrumentation.shapeBuilds).toBe(1);
+      const exported = await port.execute({
+        baseModelRevision: 0,
+        exportGeneration: 1,
+        modelRevision: 0,
+        sessionId: "session-a",
+        workerEpoch: 1,
+        type: "export-incremental",
+      });
+      expect(exported.type).toBe("export-success");
+      expect(harness.runtime.instrumentation.shapeBuilds).toBe(2);
+      port.terminate();
+      harness.detach();
+      expect(harness.runtime.instrumentation.shapeCacheBytes).toBe(0);
+    },
+  );
 });
 
 describe("worker canonical scene contour lifecycle", () => {
@@ -102,57 +111,61 @@ describe("worker canonical scene contour lifecycle", () => {
         ids: [stroke.id, "missing"],
         type: "prepare-scene-paths",
       }),
-    ).toMatchObject({ paths: [{ id: stroke.id, d: buildElementPathParts(edited)[0]!.d }] });
+    ).toMatchObject({ paths: [{ id: stroke.id, parts: buildElementPathParts(edited) }] });
     runtime.terminate();
   });
 
-  it("cancels suspended geometry without publishing a partial cache and keeps the executor usable", async () => {
-    let block = false;
-    let admitted!: () => void;
-    const admission = new Promise<void>((resolve) => {
-      admitted = resolve;
-    });
-    const runtime = new DocumentWorkerRuntime(identity, {
-      checkpoint: (signal) => {
-        if (!block) return undefined;
-        admitted();
-        return new Promise((_, reject) =>
-          signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }),
-        );
-      },
-      run: async (operation, signal) => operation(signal),
-    });
-    const stroke = createTestStroke();
-    await runtime.execute({
-      baseModelRevision: null,
-      identity,
-      modelRevision: 0,
-      snapshot: createWorkerSnapshot([stroke]),
-      type: "model-sync-full",
-    });
-    block = true;
-    const pending = runtime.execute({
-      basisRevision: 0,
-      identity,
-      ids: [stroke.id],
-      type: "prepare-scene-paths",
-    });
-    await admission;
-    runtime.cancelScenePreparation(identity);
-    expect((await pending).type).toBe("runtime-failure");
-    expect(runtime.instrumentation.shapeBuilds).toBe(0);
-    expect(runtime.instrumentation.shapeCacheBytes).toBe(0);
-    block = false;
-    expect(
-      (
-        await runtime.execute({
-          basisRevision: 0,
-          identity,
-          ids: [stroke.id],
-          type: "prepare-scene-paths",
-        })
-      ).type,
-    ).toBe("prepare-scene-paths-success");
-    runtime.terminate();
-  });
+  it.each([false, true])(
+    "cancels suspended geometry without a partial cache for pressure=%s",
+    async (pressureEnabled) => {
+      let block = false;
+      let admitted!: () => void;
+      const admission = new Promise<void>((resolve) => {
+        admitted = resolve;
+      });
+      const runtime = new DocumentWorkerRuntime(identity, {
+        checkpoint: (signal) => {
+          if (!block) return undefined;
+          admitted();
+          return new Promise((_, reject) =>
+            signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }),
+          );
+        },
+        run: async (operation, signal) => operation(signal),
+      });
+      const original = createTestStroke();
+      const stroke = { ...original, style: { ...original.style, pressureEnabled } };
+      await runtime.execute({
+        baseModelRevision: null,
+        identity,
+        modelRevision: 0,
+        snapshot: createWorkerSnapshot([stroke]),
+        type: "model-sync-full",
+      });
+      block = true;
+      const pending = runtime.execute({
+        basisRevision: 0,
+        identity,
+        ids: [stroke.id],
+        type: "prepare-scene-paths",
+      });
+      await admission;
+      runtime.cancelScenePreparation(identity);
+      expect((await pending).type).toBe("runtime-failure");
+      expect(runtime.instrumentation.shapeBuilds).toBe(0);
+      expect(runtime.instrumentation.shapeCacheBytes).toBe(0);
+      block = false;
+      expect(
+        (
+          await runtime.execute({
+            basisRevision: 0,
+            identity,
+            ids: [stroke.id],
+            type: "prepare-scene-paths",
+          })
+        ).type,
+      ).toBe("prepare-scene-paths-success");
+      runtime.terminate();
+    },
+  );
 });

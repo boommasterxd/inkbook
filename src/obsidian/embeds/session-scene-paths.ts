@@ -51,7 +51,7 @@ export class SessionScenePaths {
         result.identity.workerEpoch !== identity.workerEpoch
       )
         return undefined;
-      return result.paths.map(({ id, d }) => ({ id, parts: [{ d, paint: "fill" }] }));
+      return result.paths;
     } catch {
       return undefined;
     } finally {

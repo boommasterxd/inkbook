@@ -18,7 +18,7 @@ export class RemoteScenePaths {
     record: SceneElementRecord,
     upcoming: () => Iterable<string>,
   ): readonly SvgPathPart[] | "pending" | undefined {
-    if (this.store.preparePressurePaths === undefined) return undefined;
+    if (this.store.prepareScenePaths === undefined) return undefined;
     if (!this.#batch?.versions.has(record.id)) this.start(record, upcoming);
     const batch = this.#batch!;
     if (batch.pending) return "pending";
@@ -55,11 +55,10 @@ export class RemoteScenePaths {
     for (const id of upcoming()) {
       if (++visited > MAX_PREPARED_SCENE_PATH_IDS - 1) break;
       const candidate = this.store.get(id);
-      if (candidate?.element.kind === "stroke" && candidate.element.style.pressureEnabled)
-        batch.versions.set(id, candidate.geometryVersion);
+      if (candidate?.element.kind === "stroke") batch.versions.set(id, candidate.geometryVersion);
     }
     this.#batch = batch;
-    void this.store.preparePressurePaths!([...batch.versions.keys()], batch.controller.signal).then(
+    void this.store.prepareScenePaths!([...batch.versions.keys()], batch.controller.signal).then(
       (paths) => {
         if (this.#batch !== batch || batch.controller.signal.aborted) return;
         for (const path of paths ?? [])

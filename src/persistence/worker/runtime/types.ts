@@ -66,7 +66,7 @@ export interface PrepareScenePathsRuntimeRequest {
 export interface PreparedScenePathsRuntimeSuccess {
   readonly basisRevision: number;
   readonly identity: PurposeOperationIdentity;
-  readonly paths: readonly { readonly id: string; readonly d: string }[];
+  readonly paths: readonly import("../../../domain/geometry/prepared-scene-paths").PreparedScenePathEntry[];
   readonly type: "prepare-scene-paths-success";
 }
 

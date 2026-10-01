@@ -7,9 +7,9 @@ export class ActiveSceneMemoryBinding {
   #coordinator: ActiveDocumentMemoryCoordinator | undefined;
   public readonly store: ElementSceneStore;
 
-  public constructor(model: Pick<EditableDocumentModel, "store" | "preparePressurePaths">) {
+  public constructor(model: Pick<EditableDocumentModel, "store" | "prepareScenePaths">) {
     this.store = new ElementSceneStore(model.store, this.evaluate);
-    this.store.preparePressurePaths = model.preparePressurePaths;
+    this.store.prepareScenePaths = model.prepareScenePaths;
   }
 
   public readonly evaluate = (): void => {

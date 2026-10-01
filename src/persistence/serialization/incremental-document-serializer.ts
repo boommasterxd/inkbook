@@ -1,4 +1,5 @@
 import { StrokeShapeCache } from "./stroke-shape-cache";
+import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 import { pressureShapeKey } from "./prepared-pressure-hints";
 import { derivePageExtent } from "../../domain/geometry/public";
@@ -113,14 +114,13 @@ export class IncrementalDocumentSerializer {
   public hasElement(id: string): boolean {
     return this.#elements.has(id);
   }
-  public async preparePressurePath(
+  public async prepareScenePath(
     id: string,
     context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
-  ): Promise<string | undefined> {
+  ): Promise<readonly SvgPathPart[] | undefined> {
     const element = this.#elements.get(id);
-    if (element?.kind !== "stroke" || !element.style.pressureEnabled) return undefined;
-    const parts = await this.#shapeCache.prepare(element, context);
-    return parts.length === 1 && parts[0]?.paint === "fill" ? parts[0].d : undefined;
+    if (element?.kind !== "stroke") return undefined;
+    return this.#shapeCache.prepare(element, context);
   }
   public currentElementCount(): number {
     return this.#elements.size;
