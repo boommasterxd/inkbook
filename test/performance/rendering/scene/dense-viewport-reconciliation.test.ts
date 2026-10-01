@@ -1,5 +1,5 @@
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
-import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
+import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
 import { mergeVisibleBand } from "../../../../src/rendering/scene/visibility-order";
 import {
   FakeNode,
@@ -453,17 +453,18 @@ it("shares bounded preparation work across cold strokes instead of yielding four
     width: 100,
   });
   scheduler.runAll();
-  const originalStep = ProgressivePreviewPath.prototype.step;
+  const originalStep = Object.getOwnPropertyDescriptor(
+    CanonicalElementPathPreparation.prototype,
+    "step",
+  )!.value as CanonicalElementPathPreparation["step"];
   const starts: { deadline: number; time: number }[] = [];
-  const steps = vi.spyOn(ProgressivePreviewPath.prototype, "step").mockImplementation(function (
-    this: ProgressivePreviewPath,
-    deadline,
-    now,
-  ) {
-    starts.push({ deadline: deadline ?? Infinity, time: scheduler.time });
-    scheduler.time += 0.25;
-    return originalStep.call(this, deadline, now);
-  });
+  const steps = vi
+    .spyOn(CanonicalElementPathPreparation.prototype, "step")
+    .mockImplementation(function (this: CanonicalElementPathPreparation, deadline, now) {
+      starts.push({ deadline: deadline ?? Infinity, time: scheduler.time });
+      scheduler.time += 0.25;
+      return originalStep.call(this, deadline, now);
+    });
   try {
     renderer.setViewport({ height: 100, left: 0, top: 980, width: 100 });
     scheduler.runNext();
