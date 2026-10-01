@@ -53,7 +53,6 @@ function createCoordinator(
   executor: DocumentRuntimePort,
   documentSource: AutosaveDocumentFixture,
   vault: DisposeRaceVault,
-  lazyConfirmedContent = false,
   createFallback?: (workerEpoch: number) => DocumentRuntimePort,
 ): AutosaveCoordinator {
   const initial = serializeSnapshot();
@@ -61,7 +60,6 @@ function createCoordinator(
     workScheduler: createTestWorkScheduler(),
     clock: { clearTimeout: vi.fn(), setTimeout: vi.fn() },
     confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
-    ...(lazyConfirmedContent ? {} : { confirmedContent: initial.svg }),
     ...(createFallback === undefined ? {} : { createFallback }),
     documentSource,
     executor,
@@ -96,7 +94,7 @@ describe("AutosaveCoordinator terminal export disposal", () => {
     const createFallback = vi.fn(
       (epoch: number) => new DocumentWorkerRuntime({ sessionId: "session-a", workerEpoch: epoch }),
     );
-    const coordinator = createCoordinator(executor, documentSource, vault, false, createFallback);
+    const coordinator = createCoordinator(executor, documentSource, vault, createFallback);
     recordCommit(coordinator, documentSource);
     const flush = coordinator.flush("retry");
 
@@ -172,7 +170,7 @@ describe("AutosaveCoordinator terminal persistence disposal", () => {
       input: initial.svg,
       type: "unlock",
     });
-    const coordinator = createCoordinator(executor, documentSource, vault, true);
+    const coordinator = createCoordinator(executor, documentSource, vault);
     recordCommit(coordinator, documentSource);
     const flush = coordinator.flush("retry");
     await vault.waitForRead();

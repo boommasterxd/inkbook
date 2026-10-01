@@ -8,6 +8,7 @@ import type {
 import type { DocumentRuntimePort } from "../../worker/runtime/public";
 
 import { verifyExactWorkerContent } from "./trusted-verification";
+import type { MetadataGuardedFileRead } from "../save-ports";
 
 type VerificationPurpose = "preflight" | "read-back" | "verification";
 
@@ -30,11 +31,13 @@ export class AutosavePersistedOutputVerifier {
   }
 
   async verify(
-    content: string,
+    read: string | MetadataGuardedFileRead,
     purpose: VerificationPurpose,
     confirmedBase?: VaultBase,
   ): Promise<VerifiedPersistedOutput> {
     this.#assertLive();
+    assertCurrentRead(read);
+    const content = typeof read === "string" ? read : read.content;
     const identity = this.#operationIdentity(purpose);
     const verify = async (
       operation: PurposeOperationIdentity,
@@ -45,20 +48,27 @@ export class AutosavePersistedOutputVerifier {
         content,
         purpose === "read-back" ? "current" : "editable",
         {
+          assertCurrent: () => {
+            this.#assertLive();
+            assertCurrentRead(read);
+          },
           workScheduler: this.#options.workScheduler,
           ...(this.#options.waitForBackground
             ? { waitForBackground: this.#options.waitForBackground }
             : {}),
           ...(confirmedBase ? { confirmedBase } : {}),
+          ...(typeof read === "string" ? {} : { expectedBytes: read.identity.size }),
         },
       );
       this.#assertLive();
+      assertCurrentRead(read);
       return persisted;
     };
     try {
       return await verify(identity);
     } catch {
       this.#assertLive();
+      assertCurrentRead(read);
       if (!this.#options.switchToFallback()) {
         throw new Error("Persisted output verification failed.");
       }
@@ -66,8 +76,12 @@ export class AutosavePersistedOutputVerifier {
     }
   }
 
-  async verifyExpected(content: string, revision: number, hash: string): Promise<boolean> {
-    const persisted = await this.verify(content, "read-back");
+  async verifyExpected(
+    read: string | MetadataGuardedFileRead,
+    revision: number,
+    hash: string,
+  ): Promise<boolean> {
+    const persisted = await this.verify(read, "read-back");
     return (
       persisted.type === "confirmed" &&
       persisted.revision === revision &&
@@ -97,5 +111,11 @@ export class AutosavePersistedOutputVerifier {
     if (this.#options.isDisposed()) {
       throw new Error("The autosave coordinator has been disposed.");
     }
+  }
+}
+
+function assertCurrentRead(read: string | MetadataGuardedFileRead): void {
+  if (typeof read !== "string" && read.isCurrent?.() === false) {
+    throw new Error("The persisted-output host read is obsolete.");
   }
 }

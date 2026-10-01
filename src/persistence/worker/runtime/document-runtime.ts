@@ -242,17 +242,18 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       };
     }
     if (request.type === "verify-output") {
-      const parsed = await this.#model.verifyOutput(request.input, sliceContext);
+      const parsed = await this.#model.verifyOutput(request.input, sliceContext, {
+        ...(request.expectedBytes === undefined ? {} : { expectedBytes: request.expectedBytes }),
+        versionPolicy:
+          request.versionPolicy ??
+          (request.identity.purpose === "read-back" ? "current" : "editable"),
+        ...(request.identity.purpose === "preflight" && request.confirmedBase !== undefined
+          ? { confirmedBase: request.confirmedBase }
+          : {}),
+      });
       return {
         identity: request.identity,
-        persisted:
-          parsed !== null
-            ? {
-                outputHash: parsed.outputHash,
-                revision: parsed.revision,
-                type: "confirmed",
-              }
-            : { type: "unreadable" },
+        persisted: parsed === null ? { type: "unreadable" } : { ...parsed, type: "confirmed" },
         type: "verify-output-success",
       };
     }
@@ -267,6 +268,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         modelRevision: request.modelRevision,
         output: result.output,
         outputHash: result.hash,
+        totalBytes: result.totalBytes,
         sessionId: request.sessionId,
         type: "export-success",
         workerEpoch: request.workerEpoch,

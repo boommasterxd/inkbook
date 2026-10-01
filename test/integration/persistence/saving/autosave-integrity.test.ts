@@ -108,7 +108,6 @@ async function createHarness(
     workScheduler: createTestWorkScheduler(),
     clock: { clearTimeout: vi.fn(), setTimeout: vi.fn() },
     confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
-    confirmedContent: initial.svg,
     documentSource: document,
     executor: wrap(runtime),
     initialSnapshot: snapshot(),

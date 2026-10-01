@@ -24,55 +24,31 @@ export interface VerifiedExistingFilePreflight {
   readonly content: string;
 }
 
+interface ConfirmedPreflightEvidence {
+  readonly expectedBase: Extract<VaultBase, { type: "confirmed" }>;
+  readonly preflight: VerifiedExistingFilePreflight;
+}
+
 export async function saveExistingFile(
   prepared: PreparedSave,
   revisionSource: SaveRevisionSource,
   vault: ExistingFilePort,
   verifier: PersistedOutputVerifier,
+  verified?: ConfirmedPreflightEvidence,
 ): Promise<ConfirmedSave> {
   const pending = revisionSource.waitForBackground?.();
   if (pending !== undefined) await pending;
   validatePreparedOutput(prepared);
-  const preflight = await readExistingFileWithinLimit(vault, prepared.path);
-  if (!exactStringEqual(preflight, prepared.expectedBase)) {
+  const preflight =
+    verified?.preflight.content ?? (await readExistingFileWithinLimit(vault, prepared.path));
+  const matchesBase =
+    verified === undefined
+      ? exactStringEqual(preflight, prepared.expectedBase)
+      : verified.preflight.base.revision === verified.expectedBase.revision &&
+        verified.preflight.base.outputHash === verified.expectedBase.outputHash;
+  if (!matchesBase) {
     throw new SaveError("external-conflict");
   }
-  return writeExistingFile(prepared, preflight, revisionSource, vault, verifier);
-}
-
-export async function saveExistingFileFromVerifiedPreflight(
-  prepared: Omit<PreparedSave, "expectedBase">,
-  expectedBase: Extract<VaultBase, { type: "confirmed" }>,
-  preflight: VerifiedExistingFilePreflight,
-  revisionSource: SaveRevisionSource,
-  vault: ExistingFilePort,
-  verifier: PersistedOutputVerifier,
-): Promise<ConfirmedSave> {
-  const pending = revisionSource.waitForBackground?.();
-  if (pending !== undefined) await pending;
-  validatePreparedOutput(prepared);
-  if (
-    preflight.base.revision !== expectedBase.revision ||
-    preflight.base.outputHash !== expectedBase.outputHash
-  ) {
-    throw new SaveError("external-conflict");
-  }
-  return writeExistingFile(
-    { ...prepared, expectedBase: preflight.content },
-    preflight.content,
-    revisionSource,
-    vault,
-    verifier,
-  );
-}
-
-async function writeExistingFile(
-  prepared: PreparedSave,
-  preflight: string,
-  revisionSource: SaveRevisionSource,
-  vault: ExistingFilePort,
-  verifier: PersistedOutputVerifier,
-): Promise<ConfirmedSave> {
   if (revisionSource.currentRevision() !== prepared.revision) {
     throw new SaveError("stale-editor-revision");
   }
@@ -101,4 +77,21 @@ async function writeExistingFile(
   }
 
   return readConfirmedSave(prepared.path, prepared.revision, prepared.outputHash, vault, verifier);
+}
+
+export function saveExistingFileFromVerifiedPreflight(
+  prepared: Omit<PreparedSave, "expectedBase">,
+  expectedBase: Extract<VaultBase, { type: "confirmed" }>,
+  preflight: VerifiedExistingFilePreflight,
+  revisionSource: SaveRevisionSource,
+  vault: ExistingFilePort,
+  verifier: PersistedOutputVerifier,
+): Promise<ConfirmedSave> {
+  return saveExistingFile(
+    { ...prepared, expectedBase: preflight.content },
+    revisionSource,
+    vault,
+    verifier,
+    { expectedBase, preflight },
+  );
 }

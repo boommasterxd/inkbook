@@ -7,13 +7,7 @@ export async function hashRuntimeInput(
   context?: RuntimeSliceContext,
   expectedBytes?: number,
 ): Promise<string | null> {
-  if (
-    expectedBytes !== undefined &&
-    (!Number.isSafeInteger(expectedBytes) ||
-      expectedBytes < 0 ||
-      expectedBytes > FILE_SCHEMA_LIMITS.totalInputBytes)
-  )
-    return null;
+  if (!validExpectedBytes(expectedBytes)) return null;
   if (input.length > FILE_SCHEMA_LIMITS.totalInputBytes) return null;
   const hash = new ChunkedSha256();
   const encoder = new TextEncoder();
@@ -38,4 +32,13 @@ export async function hashRuntimeInput(
   context?.signal.throwIfAborted();
   if (expectedBytes !== undefined && hash.totalBytes !== expectedBytes) return null;
   return hash.digestHex();
+}
+
+function validExpectedBytes(expectedBytes: number | undefined): boolean {
+  return (
+    expectedBytes === undefined ||
+    (Number.isSafeInteger(expectedBytes) &&
+      expectedBytes >= 0 &&
+      expectedBytes <= FILE_SCHEMA_LIMITS.totalInputBytes)
+  );
 }

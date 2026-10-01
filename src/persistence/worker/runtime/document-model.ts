@@ -1,4 +1,5 @@
 import { VerifiedOutputProofs } from "./verified-output-proofs";
+import type { OutputVerificationOptions } from "./verified-output-proofs";
 import { ZERO_EXPORT_PHASES, ZERO_UNLOCK_PHASES } from "./runtime-phase-instrumentation";
 import { prepareScenePaths } from "./prepare-scene-paths";
 import * as preparedPaths from "./prepared-pressure-path-adoption";
@@ -45,6 +46,7 @@ export type ModelExportResult =
       readonly integrityManifest: DocumentIntegrityManifest;
       readonly ok: true;
       readonly output: string | Uint8Array;
+      readonly totalBytes: number;
     };
 
 export interface ModelUnlockResult {
@@ -176,8 +178,9 @@ export class DocumentModelRuntime {
   public async verifyOutput(
     input: string | Uint8Array,
     sliceContext?: RuntimeSliceContext,
+    options?: OutputVerificationOptions,
   ): Promise<{ readonly outputHash: string; readonly revision: number } | null> {
-    return this.#outputProofs.verify(input, sliceContext);
+    return this.#outputProofs.verify(input, sliceContext, options);
   }
 
   public initialize(snapshot: InkSnapshotV1): void {
@@ -239,6 +242,7 @@ export class DocumentModelRuntime {
         integrityManifest,
         ok: true,
         output: serialized.value.svg,
+        totalBytes: serialized.value.totalBytes,
       };
     } catch (error) {
       return failure(error instanceof RuntimeModelError ? error.code : "runtime-failure", false);

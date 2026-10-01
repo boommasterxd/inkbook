@@ -27,11 +27,11 @@ export async function saveNewFile(
   }
   let readBack: MetadataGuardedFileRead;
   try {
-    readBack = await vault.createAndReadBack(
-      prepared.path,
-      prepared.output,
-      FILE_SCHEMA_LIMITS.totalInputBytes,
-    );
+    const create =
+      verifier.verifyRead === undefined
+        ? vault.createAndReadBack.bind(vault)
+        : (vault.createAndReadBackForVerification ?? vault.createAndReadBack).bind(vault);
+    readBack = await create(prepared.path, prepared.output, FILE_SCHEMA_LIMITS.totalInputBytes);
   } catch {
     throw new SaveError("vault-write-failed");
   }

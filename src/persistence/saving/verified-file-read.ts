@@ -32,4 +32,10 @@ export class VerifiedMetadataGuardedFileRead implements MetadataGuardedFileRead 
   public static isVerified(read: MetadataGuardedFileRead): read is VerifiedMetadataGuardedFileRead {
     return #verified in read;
   }
+
+  /** Called only after exact-byte verification by the owned worker or export producer. */
+  public static fromVerifiedRead(read: MetadataGuardedFileRead): VerifiedMetadataGuardedFileRead {
+    if (read.isCurrent?.() === false) throw new Error("The verified host read is obsolete.");
+    return new VerifiedMetadataGuardedFileRead(read.content, read.identity, read.isCurrent);
+  }
 }

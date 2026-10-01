@@ -8,6 +8,7 @@ import type {
 } from "../../persistence/saving/save-ports";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 import { VerifiedMetadataGuardedFileRead } from "../../persistence/saving/verified-file-read";
+import { MetadataGuardedFileReadCandidate } from "../../persistence/saving/metadata-guarded-file-read";
 import { normalizeVaultPath, VaultBoundaryError, type PathNormalizer } from "./boundary";
 
 type HostConstructor<T> = abstract new (...arguments_: never[]) => T;
@@ -96,6 +97,12 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
     return this.#readTextWithMetadataGuard(path, maximumBytes, (file) => this.#vault.read(file));
   }
 
+  async readForVerification(path: string, maximumBytes: number): Promise<MetadataGuardedFileRead> {
+    return this.#readWithMetadataGuard(path, maximumBytes, (normalizedPath) =>
+      this.#readText(normalizedPath, maximumBytes, (file) => this.#vault.read(file), true),
+    );
+  }
+
   #readWithMetadataGuard<Result>(
     path: string,
     maximumBytes: number,
@@ -128,11 +135,33 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
     content: string,
     maximumBytes: number,
   ): Promise<MetadataGuardedFileRead> {
+    return this.#createAndReadBack(path, content, maximumBytes, false);
+  }
+
+  async createAndReadBackForVerification(
+    path: string,
+    content: string,
+    maximumBytes: number,
+  ): Promise<MetadataGuardedFileRead> {
+    return this.#createAndReadBack(path, content, maximumBytes, true);
+  }
+
+  #createAndReadBack(
+    path: string,
+    content: string,
+    maximumBytes: number,
+    deferByteVerification: boolean,
+  ): Promise<MetadataGuardedFileRead> {
     assertMaximumBytes(maximumBytes);
     const normalizedPath = normalizeVaultPath(path, this.#normalizePath);
     return this.#serialize(normalizedPath, async () => {
       await this.#create(normalizedPath, content);
-      return this.#readText(normalizedPath, maximumBytes, (file) => this.#vault.read(file));
+      return this.#readText(
+        normalizedPath,
+        maximumBytes,
+        (file) => this.#vault.read(file),
+        deferByteVerification,
+      );
     });
   }
 
@@ -183,6 +212,7 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
     normalizedPath: string,
     maximumBytes: number,
     read: (file: TFile) => Promise<string>,
+    deferByteVerification = false,
   ): Promise<MetadataGuardedFileRead> {
     const file = this.resolveFile(normalizedPath);
     const before = snapshotIdentity(file);
@@ -192,6 +222,11 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
     const identity = this.#verifyStableRead(normalizedPath, file, before);
     const isCurrent = () => this.#isCurrentRead(file, identity, generation);
     if (!isCurrent()) throw new VaultBoundaryError("unexpected-host-result");
+    // UTF-16 length is a constant-time lower bound for UTF-8 bytes. Exact size is
+    // checked by the worker or by comparison with the verified canonical export.
+    assertSizeWithinLimit(content.length, maximumBytes);
+    if (deferByteVerification)
+      return new MetadataGuardedFileReadCandidate(content, identity, isCurrent);
     const verified = VerifiedMetadataGuardedFileRead.create(
       content,
       identity,

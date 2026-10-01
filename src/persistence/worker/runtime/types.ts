@@ -95,9 +95,13 @@ interface PlanClipboardPasteRuntimeRequest {
 }
 
 interface VerifyRuntimeRequest {
+  /** Scalar evidence supplied only by the owning save coordinator, never by file markup. */
+  readonly confirmedBase?: { readonly outputHash: string; readonly revision: number };
+  readonly expectedBytes?: number;
   readonly identity: PurposeOperationIdentity;
   readonly input: string | Uint8Array;
   readonly type: "verify-output";
+  readonly versionPolicy?: "current" | "editable";
 }
 
 export type DocumentRuntimeRequest =

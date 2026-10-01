@@ -12,6 +12,20 @@ export interface ExportWireTransfer {
   readonly value: ExportSuccessWireResult;
 }
 
+/** Adopts only the exact bytes already inspected through the owned worker channel. */
+export function adoptExportSuccess(
+  result: ExportSuccessWireResult,
+  trusted: { readonly content: string; readonly outputHash: string },
+): ExportSuccess {
+  return {
+    ...result,
+    output: trusted.content,
+    outputHash: trusted.outputHash,
+    totalBytes: result.output.byteLength,
+    type: "export-success",
+  };
+}
+
 export function encodeExportSuccess(result: ExportSuccess): ExportWireTransfer {
   const bytes = exclusiveTransferBytes(
     typeof result.output === "string" ? new TextEncoder().encode(result.output) : result.output,

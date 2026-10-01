@@ -2,6 +2,7 @@ import type { VaultBase, VerifiedPersistedOutput } from "../../worker/protocol";
 import type { MetadataGuardedFileRead } from "../save-ports";
 
 import { sameVaultBase } from "./verification";
+import { VerifiedMetadataGuardedFileRead } from "../verified-file-read";
 
 export type IndeterminateSaveInspection =
   | { readonly outcome: "conflict" | "retryable-error" }
@@ -18,7 +19,7 @@ export async function inspectIndeterminateSave(options: {
   readonly previousBase: VaultBase;
   readonly read: () => Promise<string | MetadataGuardedFileRead>;
   readonly stopped: () => boolean;
-  readonly verify: (content: string) => Promise<VerifiedPersistedOutput>;
+  readonly verify: (read: string | MetadataGuardedFileRead) => Promise<VerifiedPersistedOutput>;
 }): Promise<IndeterminateSaveInspection> {
   let readBack: string | MetadataGuardedFileRead;
   try {
@@ -27,9 +28,9 @@ export async function inspectIndeterminateSave(options: {
     return undefined;
   }
   if (options.stopped()) return undefined;
-  const content = typeof readBack === "string" ? readBack : readBack.content;
-  const persisted = await options.verify(content);
+  const persisted = await options.verify(readBack);
   if (options.stopped()) return undefined;
+  if (typeof readBack !== "string" && readBack.isCurrent?.() === false) return undefined;
   const expected: VaultBase = {
     outputHash: options.activeOutputHash,
     revision: options.activeRevision,
@@ -39,7 +40,11 @@ export async function inspectIndeterminateSave(options: {
     return {
       confirmedBase: expected,
       outcome: "confirmed",
-      ...(typeof readBack === "string" ? {} : { readBack }),
+      ...(typeof readBack === "string"
+        ? {}
+        : {
+            readBack: VerifiedMetadataGuardedFileRead.fromVerifiedRead(readBack),
+          }),
     };
   }
   if (sameVaultBase(persisted, options.previousBase)) return { outcome: "retryable-error" };

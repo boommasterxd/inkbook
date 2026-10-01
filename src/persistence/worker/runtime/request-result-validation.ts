@@ -1,6 +1,5 @@
 import { parseSafeSvgRoot } from "../../documents/svg-envelope-root";
 import { parseOpeningTag } from "../../documents/svg-tag";
-import { hashRuntimeInput } from "./runtime-input-hash";
 import { validatePreparedScenePaths } from "./prepare-scene-paths";
 
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
@@ -37,9 +36,8 @@ export async function assertResultMatchesRequest(
   ) {
     return;
   }
-  // The bundled worker already validated the markup. Bind its answer to these exact
-  // request bytes, rather than parsing every path again on the receiving thread.
-  const outputHash = await hashRuntimeInput(request.input, options);
+  // The owned bundled-worker channel binds its complete inspection to this exact
+  // operation. Keep receiving-thread validation bounded to identity and scalars.
   const prefix =
     typeof request.input === "string"
       ? request.input.slice(0, 4096)
@@ -48,8 +46,15 @@ export async function assertResultMatchesRequest(
   const root =
     tag === null
       ? null
-      : parseSafeSvgRoot(tag, request.identity.purpose === "read-back" ? "current" : "editable");
-  if (root?.revision !== result.persisted.revision || outputHash !== result.persisted.outputHash) {
+      : parseSafeSvgRoot(
+          tag,
+          request.versionPolicy ??
+            (request.identity.purpose === "read-back" ? "current" : "editable"),
+        );
+  if (
+    root?.revision !== result.persisted.revision ||
+    !/^[0-9a-f]{64}$/u.test(result.persisted.outputHash)
+  ) {
     throw new TypeError("Worker verification result does not describe the exact request content.");
   }
 }

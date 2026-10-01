@@ -193,7 +193,7 @@ it("uses the actual verified read-back for recognition without another read, has
   h.recognition.dispose();
 });
 
-it("does not adopt a read-back invalidated by an external write during asynchronous verification", async () => {
+it("rejects a read-back invalidated by an external write during asynchronous verification", async () => {
   const h = createHarness();
   const verifying = deferred();
   const release = deferred();
@@ -210,8 +210,7 @@ it("does not adopt a read-back invalidated by an external write during asynchron
   h.replace(serialized(3).svg);
   h.modified();
   release.resolve();
-  const saved = await pending;
-  expect(saved.readBack?.isCurrent?.()).toBe(false);
+  await expect(pending).rejects.toMatchObject({ code: "read-back-mismatch" });
   await h.currentSave.settlement;
   await Promise.allSettled(h.loaded);
   h.frames.splice(0).forEach((frame) => frame());

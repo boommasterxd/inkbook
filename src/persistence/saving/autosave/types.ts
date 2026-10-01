@@ -75,7 +75,6 @@ export interface AutosaveCoordinatorOptions {
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
   readonly confirmedBase: VaultBase;
-  readonly confirmedContent?: string | null;
   readonly createFallback?: (workerEpoch: number) => DocumentRuntimePort;
   readonly documentSource: AutosaveDocumentSource;
   readonly executor: DocumentRuntimePort;
@@ -95,7 +94,6 @@ export type ExternalChangeOutcome = "conflict" | "reload-required" | "unchanged"
 
 export interface ActiveAutosave {
   readonly previousBase: VaultBase;
-  readonly previousContent: string | null;
   readonly proof: ActiveSaveProof;
   result: ExportSuccess | null;
 }

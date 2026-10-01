@@ -85,7 +85,10 @@ export async function inspectIntegrityBoundExport(
   if (trusted.snapshotHash !== result.integrityManifest.contentDigest) {
     throw new TypeError("Export snapshot digest mismatch.");
   }
-  return trusted;
+  return {
+    ...trusted,
+    ...(result.totalBytes === undefined ? {} : { totalBytes: result.totalBytes }),
+  };
 }
 
 export function createAutosaveExportIntegrity(

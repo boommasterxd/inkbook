@@ -7,7 +7,7 @@ import { ChunkedSha256 } from "../../../src/persistence/serialization/chunked-ou
 import { sha256Hex } from "../../../src/persistence/serialization/sha256";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/document-codec";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
-import { createStandardPersistenceFixture } from "./fixtures";
+import { createStandardPersistenceFixture, STANDARD_STROKES } from "./fixtures";
 
 const identity = {
   operationId: 1,
@@ -18,12 +18,33 @@ const identity = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("confirmed persisted base verification work", () => {
-  it("checks all 10k-stroke source bytes without rescanning SVG or rebuilding pressure geometry", async () => {
+  it("checks all 10k-stroke source bytes in the worker without Main encoding, hashing, or SVG scans", async () => {
     const snapshot = createStandardPersistenceFixture(2);
     const serialized = serializeInkbookDocument(snapshot);
     if (!serialized.ok) throw new Error(serialized.error.code);
     const runtime = new DocumentWorkerRuntime({ sessionId: "base", workerEpoch: 1 });
-    const execute = vi.spyOn(runtime, "execute");
+    let workerActive = false;
+    let mainEncodedBytes = 0;
+    let workerEncodedBytes = 0;
+    const originalExecute = runtime.execute.bind(runtime);
+    const execute = vi.spyOn(runtime, "execute").mockImplementation(async (request) => {
+      workerActive = true;
+      try {
+        return await originalExecute(request);
+      } finally {
+        workerActive = false;
+      }
+    });
+    const originalEncode = new TextEncoder().encode.bind(new TextEncoder());
+    vi.spyOn(TextEncoder.prototype, "encode").mockImplementation(function (
+      this: TextEncoder,
+      input,
+    ) {
+      const result = originalEncode(input);
+      if (workerActive) workerEncodedBytes += result.byteLength;
+      else mainEncodedBytes += result.byteLength;
+      return result;
+    });
     const scan = vi.spyOn(safeSvg, "validateSafeSvgSteps");
     const geometry = vi.spyOn(pressure, "iteratePressureUnion");
     const hash = vi.spyOn(ChunkedSha256.prototype, "update");
@@ -36,13 +57,18 @@ describe("confirmed persisted base verification work", () => {
     await expect(
       verifyExactWorkerContent(runtime, identity, serialized.value.svg, "editable", {
         confirmedBase,
+        expectedBytes: serialized.value.totalBytes,
       }),
     ).resolves.toEqual(confirmedBase);
-    const expectedBytes = new TextEncoder().encode(serialized.value.svg).byteLength;
-    expect(nativeHash).toHaveBeenCalledOnce();
-    expect((nativeHash.mock.calls[0]![1] as Uint8Array).byteLength).toBe(expectedBytes);
-    expect(hash).not.toHaveBeenCalled();
-    expect(execute).not.toHaveBeenCalled();
+    const expectedBytes = serialized.value.totalBytes;
+    expect(nativeHash).not.toHaveBeenCalled();
+    expect(mainEncodedBytes).toBe(0);
+    expect(workerEncodedBytes).toBe(expectedBytes);
+    expect(hash.mock.calls.reduce((bytes, [chunk]) => bytes + chunk.byteLength, 0)).toBe(
+      expectedBytes,
+    );
+    expect(hash.mock.calls.every(([chunk]) => chunk.byteLength <= 3 * 64 * 1024)).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(scan).not.toHaveBeenCalled();
     expect(geometry).not.toHaveBeenCalled();
     // An appended byte must take the normal validation path, even with the same revision.
@@ -51,9 +77,14 @@ describe("confirmed persisted base verification work", () => {
         confirmedBase,
       }),
     ).resolves.toMatchObject({ revision: 2, type: "confirmed" });
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(scan).toHaveBeenCalledTimes(1);
-    expect(nativeHash).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(mainEncodedBytes).toBe(0);
+    expect(scan).not.toHaveBeenCalled();
+    // Unknown exact bytes require one full canonical comparison: each stroke plus
+    // the shared template's validation derivation, with no duplicate comparison.
+    expect(geometry.mock.calls.length).toBeGreaterThan(0);
+    expect(geometry.mock.calls.length).toBeLessThanOrEqual(STANDARD_STROKES + 1);
+    expect(nativeHash).not.toHaveBeenCalled();
     runtime.terminate();
   }, 120_000);
 

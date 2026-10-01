@@ -12,6 +12,7 @@ import {
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
 import { snapshot } from "../worker/runtime/fixtures";
 import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import { MetadataGuardedFileReadCandidate } from "../../../../src/persistence/saving/metadata-guarded-file-read";
 
 function pausedBackground() {
   let resume: () => void = () => undefined;
@@ -152,6 +153,46 @@ describe("obsolete export integrity", () => {
 });
 
 describe("confirmed preflight base", () => {
+  it.each(["before-dispatch", "after-worker"] as const)(
+    "rejects a stale host read %s without replacing the executor",
+    async (phase) => {
+      const { serialized, runtime } = createVerificationHarness();
+      let current = true;
+      const read = new MetadataGuardedFileReadCandidate(
+        serialized.svg,
+        { ctime: 1, mtime: 1, size: serialized.totalBytes, path: "drawing.svg" },
+        () => current,
+      );
+      const fallback = vi.fn(() => false);
+      const pause = pausedBackground();
+      const originalExecute = DocumentWorkerRuntime.prototype.execute.bind(runtime);
+      const execute = vi.spyOn(runtime, "execute").mockImplementation(async (request) => {
+        const result = await originalExecute(request);
+        current = false;
+        return result;
+      });
+      const verifier = new AutosavePersistedOutputVerifier({
+        executor: () => runtime,
+        isDisposed: () => false,
+        sessionId: "priority-session",
+        switchToFallback: fallback,
+        workScheduler: createTestWorkScheduler(),
+        workerEpoch: () => 1,
+        waitForBackground: pause.waitForBackground,
+      });
+      const verifying = verifier.verify(read, "preflight", {
+        type: "confirmed",
+        revision: 0,
+        outputHash: serialized.hash,
+      });
+      if (phase === "before-dispatch") current = false;
+      pause.resume();
+      await expect(verifying).rejects.toThrow("obsolete");
+      expect(execute).toHaveBeenCalledTimes(phase === "before-dispatch" ? 0 : 1);
+      expect(fallback).not.toHaveBeenCalled();
+      runtime.terminate();
+    },
+  );
   it.each(["hash", "revision"] as const)(
     "retains full verification for a mismatched %s",
     async (field) => {
@@ -215,7 +256,12 @@ it("retains a confirmed base across multiple discarded canonical exports", async
       outputHash: serialized.hash,
     }),
   ).resolves.toMatchObject({ type: "confirmed", revision: 0 });
-  expect(execute).not.toHaveBeenCalled();
+  expect(execute).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      type: "verify-output",
+      confirmedBase: { type: "confirmed", revision: 0, outputHash: serialized.hash },
+    }),
+  );
   runtime.terminate();
 });
 

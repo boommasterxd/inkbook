@@ -5,6 +5,9 @@ import type {
   PersistedOutputVerifier,
 } from "./save-ports";
 import { readGuardedFileWithinLimit } from "./bounded-file-read";
+import { VerifiedMetadataGuardedFileRead } from "./verified-file-read";
+import { utf8ByteLengthWithinLimit } from "../scheduling/utf8-byte-length";
+import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 
 export interface ConfirmedSave {
   readonly content: string;
@@ -31,8 +34,32 @@ export async function confirmReadBack(
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
   const content = typeof readBack === "string" ? readBack : readBack.content;
-  if (!(await verifier.verify(content, revision, outputHash))) {
+  const guarded = typeof readBack !== "string";
+  if (guarded && readBack.isCurrent?.() === false) throw new SaveError("read-back-mismatch");
+  if (
+    guarded &&
+    verifier.verifyRead === undefined &&
+    !VerifiedMetadataGuardedFileRead.isVerified(readBack) &&
+    utf8ByteLengthWithinLimit(content, FILE_SCHEMA_LIMITS.totalInputBytes) !==
+      readBack.identity.size
+  ) {
     throw new SaveError("read-back-mismatch");
   }
-  return { content, revision, outputHash, ...(typeof readBack === "string" ? {} : { readBack }) };
+  const valid =
+    guarded && verifier.verifyRead !== undefined
+      ? await verifier.verifyRead(readBack, revision, outputHash)
+      : await verifier.verify(content, revision, outputHash);
+  if (!valid || (guarded && readBack.isCurrent?.() === false)) {
+    throw new SaveError("read-back-mismatch");
+  }
+  return {
+    content,
+    revision,
+    outputHash,
+    ...(guarded
+      ? {
+          readBack: VerifiedMetadataGuardedFileRead.fromVerifiedRead(readBack),
+        }
+      : {}),
+  };
 }

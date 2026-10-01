@@ -48,6 +48,7 @@ import {
   type UnlockWireRequest,
 } from "./unlock-request-wire";
 import {
+  adoptExportSuccess,
   encodeExportSuccess,
   encodeExportSuccessChunked,
   type ExportSuccessWireResult,
@@ -270,12 +271,7 @@ export function decodeRuntimeResult(result: unknown): DocumentRuntimeResult {
   }
   if (result.type === "export-success-wire") {
     const trusted = adoptOwnedSvgOutputSync(result.output, result.outputHash);
-    return {
-      ...result,
-      output: trusted.content,
-      outputHash: trusted.outputHash,
-      type: "export-success",
-    };
+    return adoptExportSuccess(result, trusted);
   }
   if (result.type === "clipboard-encode-success-wire") {
     return {
@@ -311,12 +307,7 @@ export async function decodeRuntimeResultChunked(
   }
   if (result.type === "export-success-wire") {
     const trusted = await adoptOwnedSvgOutput(result.output, result.outputHash, options);
-    return {
-      ...result,
-      output: trusted.content,
-      outputHash: trusted.outputHash,
-      type: "export-success",
-    };
+    return adoptExportSuccess(result, trusted);
   }
   if (result.type === "clipboard-encode-success-wire") {
     return {
