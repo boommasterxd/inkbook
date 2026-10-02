@@ -5,6 +5,7 @@ import { PresentationController } from "../../../../src/obsidian/embeds/presenta
 import type { PresentationAttachmentInput } from "../../../../src/obsidian/embeds/presentation-port";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { createPresentationMotionWindow } from "../../../fixtures/obsidian/presentation-motion-window";
 
 describe("locked-preview scheme replacement", () => {
   it("hands the initial loading timestamp to the attachment only once", () => {
@@ -50,6 +51,95 @@ describe("locked-preview scheme replacement", () => {
     scheme.refresh();
     expect(refresh).toHaveBeenCalledOnce();
 
+    controller.dispose();
+  });
+});
+
+describe("persistent presentation shell measurement", () => {
+  it.each([
+    [400, "10px"],
+    [700, "14px"],
+    [1_200, "20px"],
+  ])(
+    "keeps the %i-pixel shell radius across retained editor visibility changes",
+    (width, radius) => {
+      const owner = new FakePresentationElement();
+      owner.clientWidth = width;
+      const root = new FakePresentationElement(owner.ownerDocument);
+      owner.append(root);
+      const flushFrames = installMeasurementFrames(root);
+      let rootWidth = width;
+      root.getBoundingClientRect = () => ({
+        bottom: 100,
+        height: 100,
+        left: 0,
+        right: rootWidth,
+        top: 0,
+        width: rootWidth,
+      });
+      const chrome = root.createDiv({ cls: "inkbook-editor-chrome" });
+      const background = chrome.createDiv({ cls: "inkbook-background-container" });
+      const readBackground = vi.fn(() => ({
+        bottom: 100,
+        height: 100,
+        left: 0,
+        right: chrome.hidden ? 0 : width - 2,
+        top: 0,
+        width: chrome.hidden ? 0 : width - 2,
+      }));
+      background.getBoundingClientRect = readBackground;
+      const controller = mountShellMeasurement(root, "retained-editor-radius");
+      flushFrames();
+      const readRadius = () =>
+        (root.style as unknown as Record<string, string>)["--inkbook-shell-radius"];
+
+      for (const hidden of [false, true, false]) {
+        chrome.hidden = hidden;
+        root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+        flushFrames();
+        expect(readRadius()).toBe(radius);
+      }
+      rootWidth = 0;
+      root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+      flushFrames();
+      expect(readRadius()).toBe(radius);
+      rootWidth = width;
+      root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+      flushFrames();
+      expect(readRadius()).toBe(radius);
+      expect(readBackground).not.toHaveBeenCalled();
+      chrome.hidden = true;
+      rootWidth = 800;
+      owner.clientWidth = 800;
+      root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+      flushFrames();
+      expect(readRadius()).toBe("16px");
+      controller.dispose();
+    },
+  );
+
+  it("waits for a positive root width before releasing queued activation", () => {
+    const owner = new FakePresentationElement();
+    const root = new FakePresentationElement(owner.ownerDocument);
+    owner.append(root);
+    let width = 0;
+    root.getBoundingClientRect = () => ({
+      bottom: 100,
+      height: 100,
+      left: 0,
+      right: width,
+      top: 0,
+      width,
+    });
+    const activate = vi.fn();
+    const controller = mountShellMeasurement(root, "zero-width", activate);
+    controller.activate();
+    expect(activate).not.toHaveBeenCalled();
+    expect(root.style).not.toHaveProperty("--inkbook-shell-radius");
+    width = 600;
+    root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+    expect(activate).toHaveBeenCalledOnce();
+    expect(root.style).toHaveProperty("--inkbook-shell-radius", "12px");
     controller.dispose();
   });
 });
@@ -147,6 +237,35 @@ function mountMeasuredPresentation(
   );
   controller.mount();
   return controller;
+}
+
+function mountShellMeasurement(
+  root: FakePresentationElement,
+  attachmentId: string,
+  activate = vi.fn(),
+): PresentationController {
+  const controller = new PresentationController(
+    createPresentationAttachment(root, attachmentId),
+    { activate, detach: vi.fn(), mount: vi.fn() },
+    new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
+    undefined,
+    workSchedulerFromFrames(root.ownerDocument.defaultView as Window),
+  );
+  controller.mount();
+  return controller;
+}
+
+function installMeasurementFrames(root: FakePresentationElement): () => void {
+  const motion = createPresentationMotionWindow();
+  Object.assign(root.ownerDocument.defaultView ?? {}, {
+    requestAnimationFrame: (callback: FrameRequestCallback) =>
+      motion.ownerWindow.requestAnimationFrame(callback),
+    cancelAnimationFrame: (id: number) => motion.ownerWindow.cancelAnimationFrame(id),
+  });
+  return () => {
+    for (let frame = 0; motion.frames.size > 0 && frame < 3; frame += 1) motion.frame(frame);
+    expect(motion.frames.size).toBe(0);
+  };
 }
 
 function installObservers(ownerWindow: Window): {

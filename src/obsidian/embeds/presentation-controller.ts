@@ -282,10 +282,12 @@ export class PresentationController {
       "--inkbook-container-width",
       `${String(measurement.contentWidth)}px`,
     );
-    this.#attachment.root.style.setProperty(
-      "--inkbook-shell-radius",
-      `${String(shellRadius(measurement.contentWidth))}px`,
-    );
+    if (measurement.contentWidth > 0) {
+      this.#attachment.root.style.setProperty(
+        "--inkbook-shell-radius",
+        `${String(shellRadius(measurement.contentWidth))}px`,
+      );
+    }
     if (measurement.requiresSettledRead) {
       this.#measured = false;
       this.#scheduleSettledMeasurement();
@@ -393,18 +395,14 @@ function readPresentationMeasurement(
   const ownerClientRight = finiteLayoutValue(ownerRect.left) + owner.clientLeft + owner.clientWidth;
   const availableWidth = Math.max(0, ownerClientRight - rootLeft);
   const requiresSettledRead = rootRect.width > availableWidth + 0.5;
-  const backgroundCandidate = root.getElementsByClassName("inkbook-background-container").item(0);
-  const background = isHtmlElement(backgroundCandidate) ? backgroundCandidate : null;
-  const measuredElement = background ?? root;
   const contentWidth = Math.max(
     0,
-    Math.min(readContentBoxWidth(measuredElement, owningWindow), availableWidth),
+    Math.min(readContentBoxWidth(root, owningWindow, rootRect.width), availableWidth),
   );
   return { availableWidth, contentWidth, requiresSettledRead };
 }
 
-function readContentBoxWidth(element: HTMLElement, owningWindow: Window): number {
-  const width = element.getBoundingClientRect().width;
+function readContentBoxWidth(element: HTMLElement, owningWindow: Window, width: number): number {
   const style = owningWindow.getComputedStyle(element);
   return (
     width -
@@ -422,8 +420,4 @@ function cssPixels(value: string | undefined): number {
 
 function finiteLayoutValue(value: number | undefined): number {
   return Number.isFinite(value) ? (value ?? 0) : 0;
-}
-
-function isHtmlElement(element: Element | null): element is HTMLElement {
-  return element !== null && "style" in element;
 }
