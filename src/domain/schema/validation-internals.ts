@@ -11,6 +11,7 @@ import type {
   ValidationErrorCode,
   ValidationStatistics,
 } from "./validation-types";
+import type { StrokeSampleExtrema } from "./stroke-sample-extrema";
 
 class ValidationFailure extends Error {
   readonly validationError: ValidationError;
@@ -24,6 +25,9 @@ class ValidationFailure extends Error {
 
 export interface ValidationContext {
   allowRuntimeStrokeBuffers?: boolean;
+  parsedProof?: {
+    consumeDecodedStrokeSamples(samples: object): StrokeSampleExtrema | undefined;
+  };
   limits: Readonly<SchemaLimits>;
   statistics: ValidationStatistics;
 }

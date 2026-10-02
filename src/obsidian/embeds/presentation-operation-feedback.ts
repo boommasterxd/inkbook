@@ -1,5 +1,6 @@
 import { setIcon } from "obsidian";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import { bindFeedbackPresentationStyle } from "../feedback/window-feedback-host";
 
 import {
   createPresentationFeedbackPositionLifecycle,
@@ -22,6 +23,8 @@ export class PresentationOperationFeedback {
   #disposed = false;
   #frame: number | undefined;
   #indicator: HTMLElement | undefined;
+  #host: HTMLElement | undefined;
+  #unbindStyle: (() => void) | undefined;
   #positioning: PresentationFeedbackPositionLifecycle | undefined;
   readonly #ownerWindow: Window;
   readonly #workScheduler: WorkScheduler;
@@ -104,7 +107,9 @@ export class PresentationOperationFeedback {
   #show(kind: PresentationOperationKind): void {
     if (kind === "loading") this.#onLoadingShown?.();
     const label = kind === "loading" ? "Loading drawing" : "Saving drawing";
-    const indicator = this.#root.createDiv({ cls: "inkbook-operation-feedback" });
+    const indicator = (this.#ownerWindow as Window & { createDiv: typeof createDiv }).createDiv({
+      cls: "inkbook-operation-feedback",
+    });
     indicator.setAttribute("role", "status");
     indicator.setAttribute("aria-atomic", "true");
     indicator.setAttribute("aria-label", label);
@@ -113,11 +118,18 @@ export class PresentationOperationFeedback {
     icon.setAttribute("aria-hidden", "true");
     setIcon(icon, "loader-circle");
     this.#indicator = indicator;
+    const host = (this.#ownerWindow as Window & { createDiv: typeof createDiv }).createDiv({
+      cls: "inkbook-root inkbook-operation-feedback-host",
+    });
+    host.appendChild(indicator);
+    this.#host = host;
+    this.#unbindStyle = bindFeedbackPresentationStyle(host, this.#root);
     this.#positioning = createPresentationFeedbackPositionLifecycle(
       indicator,
       this.#root,
       "center",
       this.#workScheduler,
+      host,
     );
   }
 
@@ -128,6 +140,10 @@ export class PresentationOperationFeedback {
     this.#frame = undefined;
     this.#positioning?.dispose();
     this.#positioning = undefined;
+    this.#unbindStyle?.();
+    this.#unbindStyle = undefined;
+    this.#host?.remove();
+    this.#host = undefined;
     this.#indicator?.remove();
     this.#indicator = undefined;
   }

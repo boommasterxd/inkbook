@@ -1,5 +1,6 @@
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import type { StrokeElementV1 } from "../../domain/schema/public";
+import { assertSpatialBounds } from "../../domain/spatial/bounds";
 import {
   calculateElementBounds,
   derivePageExtent,
@@ -54,7 +55,7 @@ export function elementFacts(
   derivation?: ElementValidationDerivation,
 ): ElementFacts {
   if (element.kind === "stroke") {
-    if (derivation !== undefined) validatedElementDerivationBounds(element, derivation);
+    if (derivation !== undefined) return validatedStrokeFacts(element, derivation);
     return strokeFacts(element);
   }
   const bounds =
@@ -62,6 +63,28 @@ export function elementFacts(
       ? calculateElementBounds(element)
       : validatedElementDerivationBounds(element, derivation);
   return factsFromBounds(element, bounds);
+}
+
+function validatedStrokeFacts(
+  stroke: StrokeElementV1,
+  derivation: ElementValidationDerivation,
+): ElementFacts {
+  const worldBounds = validatedElementDerivationBounds(stroke, derivation);
+  const local = strokeLocalGeometry(stroke);
+  const bounds =
+    derivation.strokeLocalBounds ??
+    (stroke.offset === undefined ? worldBounds : calculateElementBounds(local));
+  assertSpatialBounds(bounds);
+  const x = stroke.offset?.x ?? 0;
+  const y = stroke.offset?.y ?? 0;
+  if (
+    bounds.minX + x !== worldBounds.minX ||
+    bounds.minY + y !== worldBounds.minY ||
+    bounds.maxX + x !== worldBounds.maxX ||
+    bounds.maxY + y !== worldBounds.maxY
+  )
+    throw new TypeError("Stroke local bounds do not match their validated placement.");
+  return { ...factsFromBounds(stroke, worldBounds), strokeGeometry: { local, bounds } };
 }
 
 export function validatedDeltaElementFacts(

@@ -59,15 +59,13 @@ export function createVaultAutosaveSession(
       : { waitForBackground: options.waitForBackground }),
     clock: options.clock,
     confirmed: options.confirmed,
+    ...(options.statusChanged ? { statusChanged: options.statusChanged } : {}),
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),
     currentRevision: options.currentRevision,
     executor: options.executor,
     initialSnapshot: options.initialSnapshot,
     isGestureActive: options.isGestureActive,
-    orderByBand: () => ({
-      content: options.store.materializeBandOrder("content"),
-      highlight: options.store.materializeBandOrder("highlight"),
-    }),
+    orderByBand: (band) => ({ [band]: options.store.materializeBandOrder(band) }),
     outputHash: options.outputHash,
     path: options.identity.documentId,
     ...(options.requiresCanonicalRewrite === undefined
@@ -75,13 +73,14 @@ export function createVaultAutosaveSession(
       : { requiresCanonicalRewrite: options.requiresCanonicalRewrite }),
     sessionId: options.identity.sessionId,
     ownsIntegrityElement: (element) => options.store.get(element.id)?.element === element,
-    preparedPressurePaths: (revision, changedIds) =>
-      revision === options.currentRevision()
-        ? options.store.preparedPressurePaths(changedIds).flatMap(({ record, parts }) => {
-            const hint = preparedPressurePathHint(record, parts, revision);
-            return hint === undefined ? [] : [hint];
-          })
-        : [],
+    preparedPressurePaths: function* (revision, changedIds) {
+      if (revision === options.currentRevision()) {
+        for (const { record, parts } of options.store.preparedPressurePaths(changedIds)) {
+          const hint = preparedPressurePathHint(record, parts, revision);
+          if (hint !== undefined) yield hint;
+        }
+      }
+    },
     integritySnapshot: () => ({
       format: "inkbook",
       version: 1,
@@ -133,13 +132,14 @@ export function createConfirmedPersistenceObserver(options: {
   readonly lockedAspectRatio: () => number;
   readonly persisted: ((event: VaultDocumentPersistedEvent) => void) | undefined;
 }): (persistence: ConfirmedPersistence) => void {
-  return ({ outputHash, revision }) => {
+  return ({ outputHash, revision, readBack }) => {
     if (!options.active()) return;
     options.persisted?.({
       documentId: options.documentId,
       lockedAspectRatio: options.lockedAspectRatio(),
       outputHash,
       revision,
+      ...(readBack === undefined ? {} : { readBack }),
     });
   };
 }
@@ -178,10 +178,15 @@ export async function prepareVaultElementRemoval(options: {
 
 export function createVaultElementPreparationActions(options: {
   readonly active: () => boolean;
+  readonly replacementActive: () => boolean;
+  readonly replacementStore: () => ElementStore | undefined;
   readonly run: InteractiveWorkPriority["run"];
-  readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
+  readonly scheduler: (isCancelled: () => boolean, priority?: "frame") => StoreSliceScheduler;
   readonly store: ElementStore;
-}): Pick<EditableActions, "prepareElementMutation" | "prepareElementRemoval"> {
+}): Pick<
+  EditableActions,
+  "prepareElementMutation" | "prepareElementRemoval" | "prepareElementReplacement"
+> {
   return {
     prepareElementMutation: (mutation, cancellation) =>
       options.run(() =>
@@ -201,6 +206,16 @@ export function createVaultElementPreparationActions(options: {
           ids,
           scheduler: options.scheduler,
           store: options.store,
+        }),
+      ),
+    prepareElementReplacement: (replacements, cancellation) =>
+      options.run(() =>
+        prepareVaultElementReplacement({
+          active: options.replacementActive(),
+          cancellation,
+          replacements,
+          scheduler: (isCancelled) => options.scheduler(isCancelled, "frame"),
+          store: options.replacementStore(),
         }),
       ),
   };

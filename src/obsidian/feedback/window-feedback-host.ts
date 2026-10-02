@@ -5,21 +5,30 @@ export function mountWindowFeedback(element: HTMLElement, source: HTMLElement): 
     body.getElementsByClassName("inkbook-feedback-host").item(0) ??
     body.createDiv({ cls: "inkbook-root inkbook-feedback-host" });
   const slot = (host as HTMLElement).createDiv({ cls: "inkbook-root inkbook-feedback-slot" });
+  const unbindStyle = bindFeedbackPresentationStyle(slot, source);
+  slot.append(element);
+  return () => {
+    unbindStyle();
+    slot.remove();
+    if (host.children.length === 0) host.remove();
+  };
+}
+
+/** Retains the originating presentation's scheme and motion in an owned external surface. */
+export function bindFeedbackPresentationStyle(
+  target: HTMLElement,
+  source: HTMLElement,
+): () => void {
   const syncStyle = (): void => {
     for (const key of ["inkbookScheme", "inkbookMotion"] as const) {
       const value = source.dataset[key];
-      if (value === undefined) delete slot.dataset[key];
-      else slot.dataset[key] = value;
+      if (value === undefined) delete target.dataset[key];
+      else if (target.dataset[key] !== value) target.dataset[key] = value;
     }
   };
   syncStyle();
   const observer = observeSourceStyle(source, syncStyle);
-  slot.append(element);
-  return () => {
-    observer?.disconnect();
-    slot.remove();
-    if (host.children.length === 0) host.remove();
-  };
+  return () => observer?.disconnect();
 }
 
 function observeSourceStyle(

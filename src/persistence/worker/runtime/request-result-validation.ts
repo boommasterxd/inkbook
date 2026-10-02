@@ -1,9 +1,22 @@
 import { parseSafeSvgRoot } from "../../documents/svg-envelope-root";
 import { parseOpeningTag } from "../../documents/svg-tag";
-import { hashRuntimeInput } from "./runtime-input-hash";
+import { validatePreparedScenePaths } from "./prepare-scene-paths";
 
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
-import type { DocumentRuntimeRequest, DocumentRuntimeResult } from "./types";
+import type { DocumentRuntimeRequest, DocumentRuntimeResult, UnlockRuntimeBatch } from "./types";
+
+export function matchesUnlockBatchIdentity(
+  batch: Pick<UnlockRuntimeBatch, "identity">,
+  request: DocumentRuntimeRequest,
+): boolean {
+  if (request.type !== "unlock") return false;
+  return (
+    batch.identity.sessionId === request.identity.sessionId &&
+    batch.identity.workerEpoch === request.identity.workerEpoch &&
+    batch.identity.operationId === request.identity.operationId &&
+    batch.identity.purpose === request.identity.purpose
+  );
+}
 
 export async function assertResultMatchesRequest(
   request: DocumentRuntimeRequest,
@@ -13,6 +26,9 @@ export async function assertResultMatchesRequest(
   if (!matchesRequestIdentity(request, result)) {
     throw new TypeError("Worker result does not match its exact request identity and purpose.");
   }
+  if (request.type === "prepare-scene-paths" && result.type === "prepare-scene-paths-success") {
+    await validatePreparedScenePaths(request, result, options);
+  }
   if (
     request.type !== "verify-output" ||
     result.type !== "verify-output-success" ||
@@ -20,9 +36,8 @@ export async function assertResultMatchesRequest(
   ) {
     return;
   }
-  // The bundled worker already validated the markup. Bind its answer to these exact
-  // request bytes, rather than parsing every path again on the receiving thread.
-  const outputHash = await hashRuntimeInput(request.input, options);
+  // The owned bundled-worker channel binds its complete inspection to this exact
+  // operation. Keep receiving-thread validation bounded to identity and scalars.
   const prefix =
     typeof request.input === "string"
       ? request.input.slice(0, 4096)
@@ -31,8 +46,15 @@ export async function assertResultMatchesRequest(
   const root =
     tag === null
       ? null
-      : parseSafeSvgRoot(tag, request.identity.purpose === "read-back" ? "current" : "editable");
-  if (root?.revision !== result.persisted.revision || outputHash !== result.persisted.outputHash) {
+      : parseSafeSvgRoot(
+          tag,
+          request.versionPolicy ??
+            (request.identity.purpose === "read-back" ? "current" : "editable"),
+        );
+  if (
+    root?.revision !== result.persisted.revision ||
+    !/^[0-9a-f]{64}$/u.test(result.persisted.outputHash)
+  ) {
     throw new TypeError("Worker verification result does not describe the exact request content.");
   }
 }
@@ -68,6 +90,7 @@ const SUCCESS_TYPE_BY_REQUEST = {
   "clipboard-plan-paste": "clipboard-plan-paste-success",
   "model-sync-full": "model-sync-success",
   "model-sync-incremental": "model-sync-success",
+  "prepare-scene-paths": "prepare-scene-paths-success",
   unlock: "unlock-success",
   "verify-output": "verify-output-success",
 } as const;

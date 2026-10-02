@@ -21,7 +21,7 @@ export interface LockedPreviewPresentation {
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly refreshPreview?: () => void;
   readonly ensurePreviewReady?: () => Promise<void>;
-  readonly setPreviewBackgroundWait?: (wait: (() => Promise<void>) | undefined) => void;
+  readonly setPreviewBackgroundWait?: (wait: (() => Promise<void> | undefined) | undefined) => void;
   readonly setPreviewSource?: (source: string) => Promise<void>;
 }
 
@@ -29,7 +29,7 @@ export interface InkbookLockedPreviewSurface {
   readonly element: HTMLButtonElement;
   readonly refresh: () => void;
   readonly ensureReady: () => Promise<void>;
-  readonly setBackgroundWait: (wait: (() => Promise<void>) | undefined) => void;
+  readonly setBackgroundWait: (wait: (() => Promise<void> | undefined) | undefined) => void;
   readonly dispose: () => void;
   readonly setDescriptor: (descriptor: InkbookLockedPreviewDescriptor) => void;
   readonly setAspectRatio: (aspectRatio: number) => void;
@@ -98,7 +98,9 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     this.#mountedIdentity = this.#descriptor.contentIdentity;
   };
 
-  public readonly setBackgroundWait = (wait: (() => Promise<void>) | undefined): void => {
+  public readonly setBackgroundWait = (
+    wait: (() => Promise<void> | undefined) | undefined,
+  ): void => {
     this.#scheduler.setBackgroundWait(wait);
   };
 
@@ -136,8 +138,10 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   ): Promise<PreviewContentIdentity | undefined> {
     const generation = ++this.#sourceGeneration;
     try {
-      if (this.sourceLoader?.documents.loadPreviewSource !== undefined)
-        await this.#scheduler.waitForBackground(abort.signal);
+      if (this.sourceLoader?.documents.loadPreviewSource !== undefined) {
+        const ready = this.#scheduler.waitForBackground(abort.signal);
+        if (ready !== undefined) await ready;
+      }
       if (abort.signal.aborted) return undefined;
       const loaded = await (this.sourceLoader?.documents.loadPreviewSource === undefined
         ? loadValidatedPreviewSvg(source, this.#window, {

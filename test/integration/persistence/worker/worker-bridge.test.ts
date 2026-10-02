@@ -273,6 +273,63 @@ describe("document worker bridge timeout controls", () => {
   });
 });
 
+describe("document worker scene cancellation", () => {
+  it("ignores foreign scene cancellation identities and settles only the exact operation", async () => {
+    const { clientEndpoint, detach } = bridgeHarness();
+    const client = createWorkerBridgeClient(clientEndpoint);
+    const snapshot = oneStrokeSnapshot();
+    const identity = {
+      operationId: 8,
+      purpose: "background" as const,
+      sessionId: "session-a",
+      workerEpoch: 1,
+    };
+    await client.execute({
+      baseModelRevision: null,
+      identity,
+      modelRevision: 0,
+      snapshot,
+      type: "model-sync-full",
+    });
+    client.setLiveInputActive(true);
+    const request = {
+      basisRevision: 0,
+      identity,
+      ids: [snapshot.elements[0]!.id],
+      type: "prepare-scene-paths" as const,
+    };
+    const pending = client.execute(request);
+    const settled = vi.fn();
+    void pending.then(settled, settled);
+
+    for (const foreign of [
+      { ...identity, sessionId: "session-b" },
+      { ...identity, workerEpoch: 2 },
+      { ...identity, purpose: "verification" as const },
+      { ...identity, operationId: 9 },
+    ]) {
+      client.cancelScenePreparation(foreign);
+      await Promise.resolve();
+      expect(settled).not.toHaveBeenCalled();
+    }
+
+    client.setLiveInputActive(false);
+    await expect(pending).resolves.toMatchObject({
+      identity,
+      type: "prepare-scene-paths-success",
+      paths: [{ id: snapshot.elements[0]!.id }],
+    });
+    expect(settled).toHaveBeenCalledOnce();
+    client.setLiveInputActive(true);
+    const cancelled = client.execute(request);
+    const cancellation = expect(cancelled).rejects.toThrow("Scene preparation was cancelled.");
+    client.cancelScenePreparation(identity);
+    await cancellation;
+    client.terminate();
+    detach();
+  });
+});
+
 describe("document worker bridge input controls", () => {
   it("forwards live-input and prewarm controls without creating operation identities", () => {
     const clientEndpoint = new TestWorkerEndpoint();

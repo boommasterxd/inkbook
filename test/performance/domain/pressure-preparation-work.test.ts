@@ -3,9 +3,46 @@ import * as intersections from "../../../src/domain/geometry/pressure-boundary-i
 import { pressureArcPoint } from "../../../src/domain/geometry/pressure-joins";
 import { visitPreparedPressureOutline } from "../../../src/domain/geometry/pressure-outline";
 import * as pressureRadius from "../../../src/domain/geometry/pressure-radius";
-import { pressureShapeBoundary } from "../../../src/domain/geometry/pressure-union";
+import {
+  iteratePressureUnion,
+  pressureShapeBoundary,
+} from "../../../src/domain/geometry/pressure-union";
 
 describe("bounded pressure preparation work", () => {
+  it("groups exact-union probes without widening a bounded contour step", () => {
+    const shapes = Array.from({ length: 64 }, (_, index) => ({
+      kind: "dot" as const,
+      center: { x: index % 8, y: Math.floor(index / 8) },
+      radius: 3,
+    }));
+    const probes = vi.spyOn(intersections, "intersectPressureBoundaries");
+    try {
+      const job = iteratePressureUnion(shapes);
+      let resumptions = 0;
+      let step;
+      do {
+        const previous = probes.mock.calls.length;
+        step = job.next();
+        resumptions += 1;
+        // One disk boundary can probe two edges for each of the other 63 disks.
+        expect(probes.mock.calls.length - previous).toBeLessThanOrEqual(126);
+      } while (!step.done);
+      expect(probes.mock.calls.length).toBe(step.value.work.intersectionTests);
+      expect(probes.mock.calls.length).toBeGreaterThan(500);
+      // Reject the former per-source and per-interval generator polling cadence.
+      expect(resumptions).toBeLessThanOrEqual(
+        128 +
+          Math.ceil(step.value.work.intervalTests / 16) +
+          2 * Math.ceil(step.value.work.visibleFragments / 16) +
+          step.value.contours.length +
+          1,
+      );
+      expect(resumptions).toBeLessThanOrEqual(512);
+    } finally {
+      probes.mockRestore();
+    }
+  });
+
   it.each([
     { first: 0, last: 64, stopAfterFirst: false, expectedNibs: 65, expectedPieces: 64 },
     { first: 16, last: 32, stopAfterFirst: false, expectedNibs: 17, expectedPieces: 16 },

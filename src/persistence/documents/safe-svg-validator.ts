@@ -13,6 +13,10 @@ import { parseCanonicalSvgDecimal, parseCanonicalSvgOpacity } from "./svg-number
 import { parseSafeSvgRoot, type SafeSvgRoot, type SafeSvgVersionPolicy } from "./svg-envelope-root";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "./svg-output-limits";
 import { decodeMetadataTextSteps, measureUtf8BytesSteps } from "./safe-svg-metadata";
+import {
+  COMPACT_METADATA_ENCODING,
+  type SnapshotMetadataEncoding,
+} from "../serialization/stroke-sample-codec";
 const MAXIMUM_FILE_BYTES = 64 * 1024 * 1024;
 const MAXIMUM_METADATA_BYTES = 60 * 1024 * 1024;
 const MAXIMUM_PATHS = 60_004;
@@ -37,6 +41,7 @@ const PATH_ATTRIBUTES = new Set([
 interface SafeSvgPrefix {
   readonly cursor: number;
   readonly metadataText: string;
+  readonly metadataEncoding: SnapshotMetadataEncoding;
   readonly requiresCanonicalRewrite: boolean;
   readonly root: SafeSvgRoot;
 }
@@ -57,6 +62,7 @@ export interface SafeSvgValidation {
   readonly lockedHeight: number;
   readonly metadataBytes: number;
   readonly metadataText: string;
+  readonly metadataEncoding: SnapshotMetadataEncoding;
   readonly pathCommands: number;
   readonly paths: number;
   readonly revision: number;
@@ -68,6 +74,7 @@ export interface SafeSvgValidation {
 export type SafeSvgPrelude = Readonly<
   Pick<SafeSvgRoot, "revision" | "snapshotHash" | "version"> & {
     lockedHeight: number;
+    metadataEncoding: SnapshotMetadataEncoding;
     requiresCanonicalRewrite: boolean;
   }
 >;
@@ -309,6 +316,7 @@ export function validateEditableSafeSvgPrelude(prefix: string): SafeSvgPrelude |
     ? null
     : {
         lockedHeight: safe.lockedHeight,
+        metadataEncoding: safe.metadataEncoding,
         requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
         revision: safe.revision,
         snapshotHash: safe.snapshotHash,
@@ -370,6 +378,7 @@ export function* validateSafeSvgSteps(
     lockedHeight: prefix.root.height,
     metadataBytes: metadata.metadataBytes,
     metadataText: metadata.metadataText,
+    metadataEncoding: prefix.metadataEncoding,
     pathCommands: totals.commands,
     paths: totals.paths,
     revision: prefix.root.revision,
@@ -411,8 +420,11 @@ function parseSafeSvgPrefix(
   const style = expectTextElement(svg, cursor, "style", { id: "inkbook-theme" });
   if (style === null || !isSupportedThemeStylesheet(style.text)) return null;
   cursor = skipWhitespace(svg, style.next);
+  const metadataTag = parseOpeningTag(svg, cursor);
+  const metadataEncoding = metadataTag?.attributes.get("data-encoding");
+  if (metadataEncoding !== "json" && metadataEncoding !== COMPACT_METADATA_ENCODING) return null;
   const metadata = expectTextElement(svg, cursor, "metadata", {
-    "data-encoding": "json",
+    "data-encoding": metadataEncoding,
     id: "inkbook-snapshot",
   });
   return metadata === null
@@ -420,6 +432,7 @@ function parseSafeSvgPrefix(
     : {
         cursor: skipWhitespace(svg, metadata.next),
         metadataText: metadata.text,
+        metadataEncoding,
         requiresCanonicalRewrite: style.text !== CANONICAL_THEME_STYLESHEET,
         root,
       };

@@ -1,0 +1,80 @@
+.inkbook-status-bar-item {
+  order: -1;
+}
+
+.inkbook-status-bar {
+  display: inline-flex;
+  flex: none;
+  overflow: clip visible;
+  min-width: 0;
+  vertical-align: middle;
+  color: var(--text-muted);
+}
+
+.inkbook-status-bar-content {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--size-2-2);
+  padding-block: 1px;
+  width: max-content;
+  white-space: nowrap;
+}
+
+.inkbook-status-bar[data-save-status="failed"] {
+  color: var(--text-error);
+}
+
+.inkbook-status-bar-label {
+  text-box: trim-both cap alphabetic;
+}
+
+.inkbook-status-bar-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.inkbook-status-bar-icon[hidden] {
+  display: none;
+}
+
+.inkbook-status-bar .inkbook-status-bar-icon svg {
+  display: block;
+  margin: 0;
+  width: auto;
+  height: 0.75em;
+}
+
+@supports (height: 1cap) {
+  .inkbook-status-bar .inkbook-status-bar-icon svg {
+    height: 1cap;
+  }
+}
+
+.inkbook-status-bar[data-save-status="saved"] .inkbook-status-bar-icon {
+  color: var(--interactive-accent);
+}
+
+.inkbook-status-bar[data-save-status="saving"] .inkbook-status-bar-icon {
+  animation: inkbook-status-bar-saving 1s linear infinite;
+}
+
+@keyframes inkbook-status-bar-saving {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inkbook-status-bar:not([data-inkbook-motion="full"])[data-save-status="saving"]
+    .inkbook-status-bar-icon {
+    animation: none;
+  }
+}
+
+.inkbook-status-bar[data-inkbook-motion="reduced"][data-save-status="saving"]
+  .inkbook-status-bar-icon {
+  animation: none;
+}

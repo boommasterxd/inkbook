@@ -27,6 +27,19 @@ describe("UTF-8 output adoption", () => {
     expect(checkpoint).not.toHaveBeenCalled();
   });
 
+  it("decodes all chunks before returning when checkpoints remain synchronous", async () => {
+    const checkpoint = vi.fn(() => undefined);
+    const decode = vi.spyOn(TextDecoder.prototype, "decode");
+    const pending = adoptUtf8Output(new TextEncoder().encode("abcdefgh"), {
+      checkpoint,
+      chunkBytes: 2,
+    });
+    expect(decode).toHaveBeenCalledTimes(5);
+    expect(checkpoint).toHaveBeenCalledTimes(6);
+    await expect(pending).resolves.toBe("abcdefgh");
+    decode.mockRestore();
+  });
+
   it("rejects invalid chunk sizes", async () => {
     await expect(adoptUtf8Output(new Uint8Array(), { chunkBytes: 0 })).rejects.toThrow(
       "positive safe integer",

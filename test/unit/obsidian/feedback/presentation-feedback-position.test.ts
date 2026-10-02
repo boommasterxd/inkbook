@@ -25,7 +25,163 @@ describe("presentation feedback position", () => {
       ).visible,
     ).toBe(false);
   });
+
+  it("centers the visible intersection during continuous scrolling in both directions", () => {
+    const harness = createScrollingFeedback();
+    const positions = [200, 100, 0, -100, -200, -300, -200, -100, 0, 100, 200, 400, 600, 700];
+    for (const top of positions) {
+      harness.top = top;
+      harness.presentation.ownerDocument.dispatchEvent(new Event("scroll"));
+      harness.runFrame();
+      const visibleTop = Math.max(top, 100);
+      const visibleBottom = Math.min(top + 300, 700);
+      expect(harness.surface.style.visibility).toBe(
+        visibleBottom > visibleTop ? "visible" : "hidden",
+      );
+      if (visibleBottom > visibleTop) {
+        expect(Number.parseFloat(harness.surface.style.insetBlockStart) + top).toBe(
+          (visibleTop + visibleBottom) / 2,
+        );
+      }
+    }
+    expect(harness.requests).toHaveBeenCalledWith(expect.any(Function), "input");
+    harness.lifecycle.dispose();
+  });
+
+  it("reads fresh geometry before writes and coalesces scroll and resize notifications", () => {
+    const harness = createScrollingFeedback();
+    const reads = vi.spyOn(harness.presentation, "getBoundingClientRect");
+    reads.mockClear();
+    const order: string[] = [];
+    reads.mockImplementation(() => {
+      order.push("read");
+      return { bottom: 500, height: 300, left: 100, right: 700, top: 200, width: 600 };
+    });
+    vi.spyOn(harness.surface.classList, "remove").mockImplementation(() => order.push("write"));
+    for (let event = 0; event < 20; event += 1) {
+      harness.presentation.ownerDocument.dispatchEvent(new Event("scroll"));
+      harness.presentation.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+    }
+    expect(reads).not.toHaveBeenCalled();
+    expect(harness.frames.size).toBe(1);
+    harness.runFrame();
+    expect(reads).toHaveBeenCalledOnce();
+    expect(order).toEqual(["read", "write"]);
+    harness.presentation.ownerDocument.dispatchEvent(new Event("scroll"));
+    harness.lifecycle.dispose();
+    expect(harness.frames.size).toBe(0);
+    harness.presentation.ownerDocument.dispatchEvent(new Event("scroll"));
+    expect(harness.frames.size).toBe(0);
+  });
 });
+
+describe("viewport-hosted presentation feedback", () => {
+  it("keeps viewport coordinates stable until the coalesced scroll frame publishes fresh geometry", () => {
+    const harness = createScrollingFeedback(true);
+    expect(harness.host?.parentElement).toBe(harness.presentation.ownerDocument.body);
+    expect(harness.surface.style.insetBlockStart).toBe("350px");
+    expect(harness.surface.style.insetInlineStart).toBe("350px");
+    harness.top = -100;
+    for (let event = 0; event < 20; event += 1) {
+      harness.presentation.ownerDocument.dispatchEvent(new Event("scroll"));
+    }
+    expect(harness.surface.style.insetBlockStart).toBe("350px");
+    expect(harness.frames.size).toBe(1);
+    harness.runFrame();
+    expect(harness.surface.style.insetBlockStart).toBe("150px");
+    expect(harness.surface.style.insetInlineStart).toBe("350px");
+    harness.top = 700;
+    harness.presentation.ownerDocument.dispatchEvent(new Event("scroll"));
+    harness.runFrame();
+    expect(harness.surface.style.visibility).toBe("hidden");
+    harness.lifecycle.dispose();
+  });
+
+  it("rejects a viewport host for bottom-anchored notices", () => {
+    const presentation = new FakePresentationElement();
+    const surface = new FakePresentationElement(presentation.ownerDocument);
+    expect(() =>
+      createPresentationFeedbackPositionLifecycle(
+        surface as unknown as HTMLElement,
+        presentation as unknown as HTMLElement,
+        "bottom",
+        undefined,
+        surface as unknown as HTMLElement,
+      ),
+    ).toThrow(/center/i);
+  });
+});
+
+function createScrollingFeedback(viewportHosted = false) {
+  const viewport = new FakePresentationElement();
+  viewport.clientHeight = 800;
+  const owner = new FakePresentationElement(viewport.ownerDocument);
+  owner.clientHeight = 600;
+  owner.scrollHeight = 2_000;
+  const presentation = new FakePresentationElement(viewport.ownerDocument);
+  viewport.append(owner);
+  owner.append(presentation);
+  const surface = new FakePresentationElement(viewport.ownerDocument);
+  const host = viewportHosted ? new FakePresentationElement(viewport.ownerDocument) : undefined;
+  host?.append(surface);
+  let top = 200;
+  vi.spyOn(owner, "getBoundingClientRect").mockReturnValue({
+    bottom: 700,
+    height: 600,
+    left: 0,
+    right: 800,
+    top: 100,
+    width: 800,
+  });
+  vi.spyOn(presentation, "getBoundingClientRect").mockImplementation(() => ({
+    bottom: top + 300,
+    height: 300,
+    left: 100,
+    right: 700,
+    top,
+    width: 600,
+  }));
+  const ownerWindow = viewport.ownerDocument.defaultView;
+  if (ownerWindow === null) throw new Error("Missing owner window.");
+  vi.spyOn(ownerWindow, "getComputedStyle").mockReturnValue({
+    overflowY: "auto",
+  } as CSSStyleDeclaration);
+  const frames = new Map<number, FrameRequestCallback>();
+  let handle = 0;
+  vi.spyOn(ownerWindow, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.set(++handle, callback);
+    return handle;
+  });
+  vi.spyOn(ownerWindow, "cancelAnimationFrame").mockImplementation((handle) =>
+    frames.delete(handle),
+  );
+  const scheduler = workSchedulerFromFrames(ownerWindow);
+  const requests = vi.spyOn(scheduler, "requestFrame");
+  const lifecycle = createPresentationFeedbackPositionLifecycle(
+    surface as unknown as HTMLElement,
+    presentation as unknown as HTMLElement,
+    "center",
+    scheduler,
+    host as unknown as HTMLElement | undefined,
+  );
+  return {
+    presentation,
+    surface,
+    host,
+    lifecycle,
+    requests,
+    frames,
+    set top(value: number) {
+      top = value;
+    },
+    runFrame: () => {
+      for (const [handle, callback] of [...frames]) {
+        frames.delete(handle);
+        callback(16);
+      }
+    },
+  };
+}
 
 describe("detached presentation feedback", () => {
   it("shows a centered indicator immediately across widget insertion before observer delivery", () => {

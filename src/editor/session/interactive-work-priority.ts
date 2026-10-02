@@ -44,9 +44,9 @@ export class InteractiveWorkPriority {
     }
   }
 
-  public async waitForBackground(): Promise<void> {
+  public waitForBackground(): Promise<void> | undefined {
     // Recheck when a new interactive operation starts before a resumed waiter runs.
-    while (this.#pending !== undefined) await this.#pending;
+    return this.#pending?.then(() => this.waitForBackground());
   }
 
   public dispose(): void {

@@ -331,6 +331,7 @@ export class ActiveInkbookScene {
     return new SvgSceneRenderer({
       container: this.#container,
       workScheduler: options.workScheduler,
+      deferInitialOverscan: true,
       inputHandlers: createSceneInputHandlers(controller),
       layout: {
         readViewport: () => readActiveSceneViewport(this.#container, scrollOwner(), this.#root),
@@ -428,13 +429,17 @@ export class ActiveInkbookScene {
 
   #completePreviewHandoff(): void {
     if (this.#disposed) return;
-    this.#previewHandoff.ready(() => {
-      if (this.#disposed) return;
-      this.#readyForInput = true;
-      this.#controller.setEnabled(true);
-      this.#renderer.inputSurface.focus({ preventScroll: true });
-      this.#resolveReady(true);
-    });
+    this.#previewHandoff.ready(
+      () => {
+        if (this.#disposed) return;
+        this.#readyForInput = true;
+        this.#controller.setEnabled(true);
+        this.#renderer.inputSurface.focus({ preventScroll: true });
+        this.#resolveReady(true);
+        this.#renderer.releaseInitialOverscan();
+      },
+      () => this.#renderer.sceneCommitProof,
+    );
   }
 
   #updateChrome(): void {

@@ -11,6 +11,7 @@ import {
 import { createPreviewSvgAsync } from "../../../../src/obsidian/embeds/safe-preview-builder";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { SafeStaticProof } from "../../../../src/persistence/serialization/safe-static-proof";
 
 const workScheduler = immediateWorkScheduler();
 
@@ -135,9 +136,12 @@ describe("safe locked-preview SVG source loading", () => {
     if (!serialized.ok) return;
     const body = response(new TextEncoder().encode(serialized.value.svg).buffer);
 
-    await expect(
-      loadValidatedPreviewSvg("app://vault/safe.svg", loaderWindow(body).window, { workScheduler }),
-    ).resolves.toEqual({
+    const preview = await loadValidatedPreviewSvg(
+      "app://vault/safe.svg",
+      loaderWindow(body).window,
+      { workScheduler },
+    );
+    expect(preview).toMatchObject({
       aspectRatio: 2_048.6 / serialized.value.lockedHeight,
       contentIdentity: {
         outputHash: serialized.value.hash,
@@ -145,6 +149,7 @@ describe("safe locked-preview SVG source loading", () => {
       },
       safeSvg: serialized.value.svg,
     });
+    expect(preview.safeStaticProof).toBeInstanceOf(SafeStaticProof);
     expect(body.arrayBuffer).toHaveBeenCalledOnce();
   });
 });

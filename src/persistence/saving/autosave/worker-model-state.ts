@@ -31,7 +31,7 @@ export class AutosaveWorkerModelState {
     if (pending === null) return null;
     this.#pending = null;
     return pending.materialize({
-      orderByBand: document.orderByBand(),
+      orderByBand: (band) => document.orderByBand(band)[band],
       ...(pending.requiresFullSnapshot ? { snapshot: document.snapshot() } : {}),
     });
   }

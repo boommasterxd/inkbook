@@ -3,8 +3,44 @@ import { expect, it, vi } from "vitest";
 import { SharedFrameScheduler } from "../../../src/domain/scheduling/shared-frame-scheduler";
 import { ManualHost } from "../../fixtures/scheduling/manual-frame-host";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
+import { GestureAwareSliceScheduler } from "../../../src/persistence/worker/runtime/slice-scheduler";
+import { createMainThreadCheckpoint } from "../../../src/persistence/scheduling/main-thread-checkpoint";
 
 const profile = INTERACTION_REFRESH_PROFILE;
+
+it(`preserves synchronous admission, shared exhaustion, and input cancellation at ${profile.refreshRate} Hz`, async () => {
+  const host = new ManualHost();
+  host.budget = profile.interruptibleSliceDeadlineMs;
+  host.frameInterval = profile.frameDurationMs;
+  const scheduler = new SharedFrameScheduler(host);
+  const worker = new GestureAwareSliceScheduler({
+    isInputActive: () => false,
+    workScheduler: scheduler,
+  });
+  const signal = new AbortController().signal;
+  const checkpoint = createMainThreadCheckpoint(scheduler, () => undefined);
+  for (let index = 0; index < 10_000; index += 1) {
+    expect(checkpoint()).toBeUndefined();
+    expect(worker.checkpoint(signal)).toBeUndefined();
+  }
+  expect(host.frameRequests).toBe(0);
+  expect(host.pendingTimers).toBe(1);
+  worker.setLiveInputActive(true);
+  const controller = new AbortController();
+  const held = worker.checkpoint(controller.signal);
+  expect(held).toBeInstanceOf(Promise);
+  controller.abort(new Error("cancelled input wait"));
+  await expect(held).rejects.toThrow("cancelled input wait");
+  worker.setLiveInputActive(false);
+  host.time = host.budget;
+  const exhausted = worker.checkpoint(signal);
+  expect(exhausted).toBeInstanceOf(Promise);
+  expect(host.pendingFrames).toBe(1);
+  scheduler.dispose();
+  await expect(exhausted).rejects.toThrow();
+  expect(host.pendingTimers).toBe(0);
+  expect(host.pendingFrames).toBe(0);
+});
 
 it(`bounds 10,000 competing callbacks by one shared ${profile.refreshRate} Hz budget`, () => {
   const host = new ManualHost();

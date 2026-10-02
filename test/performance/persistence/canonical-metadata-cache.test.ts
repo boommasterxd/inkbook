@@ -3,6 +3,7 @@ import { rectangle } from "../../unit/persistence/worker/runtime/fixtures";
 import { expect, it, vi } from "vitest";
 import { CanonicalMetadataCache } from "../../../src/persistence/serialization/canonical-metadata-cache";
 import * as canonical from "../../../src/persistence/serialization/canonical-snapshot";
+import { serializeCanonicalElementMetadata } from "../../../src/persistence/serialization/canonical-element-fragments";
 import { createTestStroke, createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 
 it("serializes only replaced elements across a 10,000-stroke save and releases cached ownership", async () => {
@@ -107,24 +108,29 @@ it("evicts the least recently used element after 20,000 retained identities", as
 });
 
 it("evicts old encoded bytes beyond 32 MiB while keeping the newest maximum-length stroke", async () => {
-  const points = Array.from(
-    { length: 16_384 * 3 },
-    (_, index) => [2000, 999000, 0.9999][index % 3]!,
-  );
+  const points = Array.from({ length: 16_384 * 3 }, (_, index) => {
+    const sign = Math.floor(index / 3) % 2 === 0 ? 1 : -1;
+    if (index % 3 === 0) return sign * 999_000;
+    if (index % 3 === 1) return sign * 499_000;
+    return 0.9999;
+  });
   Object.freeze(points);
-  const elements = Array.from({ length: 120 }, (_, index) =>
+  const shortPoints = [2000, 999000, 0.9999];
+  Object.freeze(shortPoints);
+  const elements = Array.from({ length: 15_000 }, (_, index) =>
     Object.freeze({
       ...createTestStroke(),
       id: elementId(index),
-      points,
+      points: index === 0 || index >= 14_881 ? points : shortPoints,
     }),
   );
-  // This is below the file's 2,000,000-point limit but above the canonical-byte cache budget.
-  const bytesPerElement = new TextEncoder().encode(
-    JSON.stringify(canonical.canonicalElement(elements[0]!)),
-  ).byteLength;
-  expect(bytesPerElement * elements.length).toBeGreaterThan(32 * 1024 * 1024);
-  expect(bytesPerElement * elements.length).toBeLessThan(60 * 1024 * 1024);
+  // Wide alternating deltas retain the byte-capacity case after compact encoding;
+  // 120 maximum-length strokes and 14,880 dots remain below two million points.
+  const bytes = (element: InkElementV1) =>
+    new TextEncoder().encode(serializeCanonicalElementMetadata(element)).byteLength;
+  const metadataBytes = bytes(elements[0]!) * 120 + bytes(elements[1]!) * 14_880;
+  expect(metadataBytes).toBeGreaterThan(32 * 1024 * 1024);
+  expect(metadataBytes).toBeLessThan(60 * 1024 * 1024);
   const cache = new CanonicalMetadataCache(Object.isFrozen);
   const digest = (values: readonly InkElementV1[]) =>
     cache.digest(createWorkerSnapshot([...values]), async () => undefined);

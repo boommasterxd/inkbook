@@ -1,6 +1,7 @@
 import type { VaultBase, VerifiedPersistedOutput } from "../../worker/protocol";
 
 import { sameVaultBase } from "./verification";
+import type { MetadataGuardedFileRead } from "../save-ports";
 
 export type ExternalChangeInspection =
   | { readonly outcome: "conflict" | "unchanged" }
@@ -14,15 +15,17 @@ export async function inspectAutosaveExternalChange(options: {
   readonly confirmedBase: VaultBase;
   readonly currentRevision: () => number;
   readonly dirty: () => boolean;
-  readonly read: () => Promise<string>;
+  readonly read: () => Promise<string | MetadataGuardedFileRead>;
   readonly stopped: () => boolean;
-  readonly verify: (content: string) => Promise<VerifiedPersistedOutput>;
+  readonly verify: (read: string | MetadataGuardedFileRead) => Promise<VerifiedPersistedOutput>;
 }): Promise<ExternalChangeInspection> {
   const expectedRevision = options.currentRevision();
   const content = await runUnlessStopped(options.read, options.stopped);
   if (content === undefined) return { outcome: "conflict" };
   const persisted = await runUnlessStopped(() => options.verify(content), options.stopped);
   if (persisted === undefined) return { outcome: "conflict" };
+  if (typeof content !== "string" && content.isCurrent?.() === false)
+    return { outcome: "conflict" };
   const activeSaveBase = options.activeSaveBase();
   if (
     sameVaultBase(persisted, options.confirmedBase) ||

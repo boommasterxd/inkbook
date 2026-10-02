@@ -47,7 +47,7 @@ function preparedContentHeight(
     const blockSize = container.style.blockSize;
     const target = blockSize.endsWith("px") ? Number.parseFloat(blockSize) : Number.NaN;
     if (Number.isFinite(target) && target > measurement.blockInsets) {
-      return target - measurement.blockInsets;
+      return Math.max(target - measurement.blockInsets, measurement.contentBox.height);
     }
   }
   return Math.max(0, measurement.contentBox.height);

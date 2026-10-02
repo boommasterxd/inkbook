@@ -12,7 +12,6 @@ const stylesheet = [
 ].join("\n");
 const motionStylesheet = readStylesheet("src/obsidian/styles/motion.css");
 const toolbarMotionStylesheet = readStylesheet("src/obsidian/styles/editor-toolbar-motion.css");
-
 describe("Inkbook host styles", () => {
   it("anchors feedback outside note layout without intercepting the window", () => {
     const host = declarationsFor(".inkbook-root.inkbook-feedback-host");
@@ -24,17 +23,20 @@ describe("Inkbook host styles", () => {
   it("centers delayed operation feedback in the visible embed without changing layout", () => {
     const feedback = declarationsFor(".inkbook-root .inkbook-operation-feedback");
     const icon = declarationsFor(".inkbook-root .inkbook-operation-feedback-icon");
-    const reducedMotion = blockFor(
-      '.inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon',
-      motionStylesheet,
+    expect(declarationsFor(".inkbook-root.inkbook-operation-feedback-host")).toContain(
+      "position: fixed",
     );
-
     expect(feedback).toContain("position: absolute");
     expect(feedback).toContain("translate: -50% -50%");
     expect(feedback).not.toContain("inset-block-start: 50%");
     expect(feedback).toContain("pointer-events: none");
     expect(icon).toContain("animation: inkbook-operation-spin 800ms linear infinite");
-    expect(reducedMotion).toContain("animation: none");
+    for (const selector of [
+      '.inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon',
+      '.inkbook-root[data-inkbook-motion="reduced"] .inkbook-operation-feedback-icon',
+    ]) {
+      expect(blockFor(selector, motionStylesheet)).toContain("animation: none");
+    }
   });
 
   it("animates the active tool visual without resizing its button or icon", () => {

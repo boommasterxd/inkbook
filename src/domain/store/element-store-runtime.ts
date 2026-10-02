@@ -99,14 +99,10 @@ export class ElementStoreRuntime {
     };
   }
 
-  public preparedPressurePaths(
+  public *preparedPressurePaths(
     record: (id: string) => ElementRecord | undefined,
     ids?: ReadonlySet<string>,
   ) {
-    const result: Array<{
-      readonly record: ElementRecord;
-      readonly parts: readonly import("../geometry/svg-path-part").SvgPathPart[];
-    }> = [];
     const versions =
       ids === undefined
         ? this.#pressurePaths.cachedVersions()
@@ -120,9 +116,8 @@ export class ElementStoreRuntime {
       )
         continue;
       const parts = this.#pressurePaths.read(id, version);
-      if (parts !== undefined) result.push({ record: current, parts });
+      if (parts !== undefined) yield { record: current, parts };
     }
-    return result;
   }
 
   public releasePressureGeometry(): void {

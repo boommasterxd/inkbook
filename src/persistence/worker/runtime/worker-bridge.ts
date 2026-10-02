@@ -1,6 +1,7 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { InputActivityGate } from "./input-activity-gate";
 import { ModelPointReferences } from "./model-point-references";
+import { isBridgeResponse } from "./bridge-response-validation";
 import type {
   DocumentRuntimeObserver,
   DocumentRuntimePort,
@@ -13,16 +14,16 @@ import {
   decodeUnlockBatch,
   decodeRuntimeResultChunked,
   encodeRuntimeRequestChunked,
-  isDocumentRuntimeWireResult,
-  isDocumentRuntimeWireUnlockBatch,
 } from "./wire-codec";
-import { assertResultMatchesRequest } from "./request-result-validation";
+import {
+  assertResultMatchesRequest,
+  matchesUnlockBatchIdentity,
+} from "./request-result-validation";
 import type {
   BridgeBatchAcknowledgement,
   BridgeControl,
   BridgeExportAcknowledgement,
   BridgeRequest,
-  BridgeResponse,
   BridgeSuccess,
   BridgeUnlockBatch,
 } from "./bridge-messages";
@@ -87,9 +88,8 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     options: WorkerDocumentRuntimePortOptions,
   ) {
     const timeout = options.requestTimeoutMilliseconds ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    if (!(timeout > 0) || !Number.isFinite(timeout)) {
+    if (!(timeout > 0) || !Number.isFinite(timeout))
       throw new RangeError("requestTimeoutMilliseconds must be a positive finite number.");
-    }
     this.#requestTimeoutMilliseconds = timeout;
     this.#workScheduler = options.workScheduler;
     this.#frameIntervalMilliseconds = options.frameIntervalMilliseconds;
@@ -142,6 +142,27 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     } catch {
       this.#failExecutor("error");
     }
+  }
+  public cancelScenePreparation(identity: import("../protocol").PurposeOperationIdentity): void {
+    if (this.#terminated) return;
+    for (const [id, pending] of this.#pending) {
+      if (pending.request.type !== "prepare-scene-paths") continue;
+      const candidate = pending.request.identity;
+      if (
+        candidate.operationId !== identity.operationId ||
+        candidate.sessionId !== identity.sessionId ||
+        candidate.workerEpoch !== identity.workerEpoch ||
+        candidate.purpose !== identity.purpose
+      )
+        continue;
+      this.#settlePending(id, pending);
+      pending.reject(new Error("Scene preparation was cancelled."));
+    }
+    this.#endpoint.postMessage({
+      action: "cancel-scene-paths",
+      identity,
+      type: "inkbook-worker-control",
+    } satisfies BridgeControl);
   }
 
   public notifySchedulingProfileChanged(): void {
@@ -228,7 +249,8 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
         pending.abortController.signal,
         exportRequest ? "frame" : "background",
       );
-      await checkpoint();
+      const admission = checkpoint();
+      if (admission !== undefined) await admission;
       const encoded = await encodeRuntimeRequestChunked(request, {
         checkpoint,
         signal: pending.abortController.signal,
@@ -255,12 +277,14 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   async #adoptResult(message: BridgeSuccess, pending: PendingBridgeRequest): Promise<void> {
     try {
       const decodeCheckpoint = this.#createMainThreadCheckpoint(pending.abortController.signal);
-      await decodeCheckpoint();
+      const admission = decodeCheckpoint();
+      if (admission !== undefined) await admission;
       const result = await decodeRuntimeResultChunked(message.result, {
         checkpoint: decodeCheckpoint,
         signal: pending.abortController.signal,
       });
-      await decodeCheckpoint();
+      const verificationAdmission = decodeCheckpoint();
+      if (verificationAdmission !== undefined) await verificationAdmission;
       await assertResultMatchesRequest(pending.request, result, {
         checkpoint: decodeCheckpoint,
         signal: pending.abortController.signal,
@@ -298,18 +322,19 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     }
     let batch: UnlockRuntimeBatch;
     try {
+      if (!matchesUnlockBatchIdentity(message.batch, pending.request)) {
+        this.#finishBatch(message, pending);
+        return;
+      }
       batch = decodeUnlockBatch(message.batch);
     } catch {
-      this.#finishBatch(message, pending);
-      return;
-    }
-    if (!matchesUnlockBatchIdentity(batch, pending.request)) {
       this.#finishBatch(message, pending);
       return;
     }
     pending.batchAdoptionPending = true;
     void Promise.resolve(pending.observer?.unlockBatch(batch, pending.abortController.signal)).then(
       () => {
+        if (!this.#isPending(message.requestId, pending)) return;
         this.#pointReferences.stageUnlock(batch);
         pending.adoptedElementCount += batch.elements.length;
         pending.batchAdoptionPending = false;
@@ -321,10 +346,15 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   }
 
   #finishBatch(message: BridgeUnlockBatch, pending: PendingBridgeRequest): void {
+    if (!this.#isPending(message.requestId, pending)) return;
     this.#acknowledgeBatch(message, false);
     this.#settlePending(message.requestId, pending);
     pending.reject(new Error("Document worker unlock batch adoption failed."));
     this.#failExecutor("protocol", pending.request);
+  }
+
+  #isPending(requestId: number, pending: PendingBridgeRequest): boolean {
+    return this.#pending.get(requestId) === pending && !pending.abortController.signal.aborted;
   }
 
   #settlePending(requestId: number, pending: PendingBridgeRequest): void {
@@ -395,23 +425,28 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   #createMainThreadCheckpoint(
     signal: AbortSignal,
     priority: "background" | "frame" = "background",
-  ): () => Promise<void> {
-    return async () => {
+  ): () => Promise<void> | undefined {
+    return () => {
       const ready = this.#inputGate.waitUntilInactive(signal);
-      if (ready !== undefined) await ready;
-      signal.throwIfAborted();
-      if (priority === "frame") {
-        if (this.#workScheduler.shouldYield()) {
-          await this.#workScheduler.nextFrame(signal, "frame");
-        }
-      } else {
-        const pending = this.#workScheduler.checkpoint(signal);
-        if (pending !== undefined) await pending;
-      }
-      signal.throwIfAborted();
+      if (ready !== undefined)
+        return ready.then(() => this.#checkpointMainThread(signal, priority));
+      return this.#checkpointMainThread(signal, priority);
     };
   }
 
+  #checkpointMainThread(
+    signal: AbortSignal,
+    priority: "background" | "frame",
+  ): Promise<void> | undefined {
+    signal.throwIfAborted();
+    const pending =
+      priority === "background"
+        ? this.#workScheduler.checkpoint(signal)
+        : this.#workScheduler.shouldYield()
+          ? this.#workScheduler.nextFrame(signal, "frame")
+          : undefined;
+    return pending?.then(() => signal.throwIfAborted());
+  }
   #publishSchedulingProfile(): void {
     if (this.#terminated) return;
     const sliceMilliseconds = this.#workScheduler.budgetMs();
@@ -440,20 +475,6 @@ function exportIdentityKey(identity: ExportIdentity): string {
   return `${identity.sessionId}:${identity.workerEpoch}:${identity.exportGeneration}:${identity.modelRevision}`;
 }
 
-function isBridgeResponse(value: unknown): value is BridgeResponse {
-  return (
-    isObject(value) &&
-    (value.type === "inkbook-worker-result" ||
-      value.type === "inkbook-worker-error" ||
-      value.type === "inkbook-worker-unlock-batch") &&
-    Number.isSafeInteger(value.requestId) &&
-    ((value.type === "inkbook-worker-error" && value.code === "executor-failed") ||
-      (value.type === "inkbook-worker-result" && isDocumentRuntimeWireResult(value.result)) ||
-      (value.type === "inkbook-worker-unlock-batch" &&
-        isDocumentRuntimeWireUnlockBatch(value.batch)))
-  );
-}
-
 function validUnlockCompletion(
   result: DocumentRuntimeResult,
   pending: PendingBridgeRequest,
@@ -466,23 +487,6 @@ function validUnlockCompletion(
     result.snapshot.batchCount === pending.nextUnlockBatchIndex &&
     result.snapshot.elementCount === pending.adoptedElementCount
   );
-}
-
-function matchesUnlockBatchIdentity(
-  batch: UnlockRuntimeBatch,
-  request: DocumentRuntimeRequest,
-): boolean {
-  if (request.type !== "unlock") return false;
-  return (
-    batch.identity.sessionId === request.identity.sessionId &&
-    batch.identity.workerEpoch === request.identity.workerEpoch &&
-    batch.identity.operationId === request.identity.operationId &&
-    batch.identity.purpose === request.identity.purpose
-  );
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function scheduleTimeout(callback: () => void, milliseconds: number): () => void {

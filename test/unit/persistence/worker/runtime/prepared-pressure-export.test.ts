@@ -50,7 +50,7 @@ function preparedStore(stroke: StrokeElementV1) {
 }
 
 function preparedHints(store: ElementStore, revision: number) {
-  return store.preparedPressurePaths().flatMap(({ record, parts }) => {
+  return Array.from(store.preparedPressurePaths()).flatMap(({ record, parts }) => {
     const hint = preparedPressurePathHint(record, parts, revision);
     return hint === undefined ? [] : [hint];
   });
@@ -75,41 +75,66 @@ function expectCanonicalExport(
   expect(result.outputHash).toBe(canonical.value.hash);
 }
 
-it("reuses a current scene contour across the worker wire with canonical output", async () => {
-  const stroke = pressureStroke();
-  const store = preparedStore(stroke);
-  const document = store.materializeSnapshot({ page: snapshot().page, revision: 1 });
-  store.resetInstrumentation();
-  const request = createExportRequest(fullPlan(document), identity, (revision) =>
-    preparedHints(store, revision),
-  );
-  expect(request.preparedPressurePaths).toHaveLength(1);
-  expect(store.instrumentation.fullStoreScans).toBe(0);
-  const encoded = encodeRuntimeRequest(request);
-  const decoded = decodeRuntimeRequest(encoded.value);
-  if (decoded.type !== "export-full") throw new Error("Expected full export.");
-  const runtime = new DocumentWorkerRuntime(identity);
-  const result = await runtime.execute(decoded);
-  expectCanonicalExport(result, document);
-  expect(runtime.instrumentation.shapeBuilds).toBe(0);
-  expect(runtime.instrumentation.shapeCacheBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
-  runtime.acknowledgeExport(result, true);
+it.each([undefined, { x: 0, y: 0 }])(
+  "reuses a current scene contour with offset %j across the worker wire",
+  async (offset) => {
+    const stroke = { ...pressureStroke(), ...(offset === undefined ? {} : { offset }) };
+    const store = preparedStore(stroke);
+    const document = store.materializeSnapshot({ page: snapshot().page, revision: 1 });
+    store.resetInstrumentation();
+    const request = createExportRequest(fullPlan(document), identity, (revision) =>
+      preparedHints(store, revision),
+    );
+    expect(request.preparedPressurePaths).toHaveLength(1);
+    expect(store.instrumentation.fullStoreScans).toBe(0);
+    const encoded = encodeRuntimeRequest(request);
+    const decoded = decodeRuntimeRequest(encoded.value);
+    if (decoded.type !== "export-full") throw new Error("Expected full export.");
+    // The wire decoder supplies receiver-owned samples, as in production worker composition.
+    const runtime = new DocumentWorkerRuntime(identity, null, undefined, true);
+    const result = await runtime.execute(decoded);
+    expectCanonicalExport(result, document);
+    expect(runtime.instrumentation.shapeBuilds).toBe(0);
+    expect(runtime.instrumentation.shapeCacheBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+    runtime.acknowledgeExport(result, true);
 
-  const moved = translatedStroke(decoded.snapshot.elements[0] as StrokeElementV1, {
-    x: 5,
-    y: 8,
+    const moved = translatedStroke(decoded.snapshot.elements[0] as StrokeElementV1, {
+      x: 5,
+      y: 8,
+    });
+    const changed = await runtime.execute({
+      ...identity,
+      baseModelRevision: 1,
+      changedElements: [moved],
+      exportGeneration: 2,
+      modelRevision: 2,
+      type: "export-incremental",
+    });
+    expect(changed.type).toBe("export-success");
+    expect(runtime.instrumentation.shapeBuilds).toBe(0);
+    runtime.terminate();
+  },
+);
+
+it("stops collecting lazy prepared hints at the receiver entry limit", () => {
+  const store = preparedStore(pressureStroke());
+  const hint = preparedHints(store, 1)[0]!;
+  const document = store.materializeSnapshot({ page: snapshot().page, revision: 1 });
+  let visits = 0;
+  let closed = false;
+  const request = createExportRequest(fullPlan(document), identity, function* () {
+    try {
+      for (let index = 0; index < 2_000; index++) {
+        visits += 1;
+        yield { ...hint, id: `hint-${index}`, d: "M0 0" };
+      }
+    } finally {
+      closed = true;
+    }
   });
-  const changed = await runtime.execute({
-    ...identity,
-    baseModelRevision: 1,
-    changedElements: [moved],
-    exportGeneration: 2,
-    modelRevision: 2,
-    type: "export-incremental",
-  });
-  expect(changed.type).toBe("export-success");
-  expect(runtime.instrumentation.shapeBuilds).toBe(0);
-  runtime.terminate();
+  expect(visits).toBe(1_024);
+  expect(request.preparedPressurePaths).toHaveLength(1_024);
+  expect(closed).toBe(true);
 });
 
 it("rejects stale same-length geometry, old revisions, and malformed paths", async () => {

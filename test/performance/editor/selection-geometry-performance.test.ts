@@ -384,7 +384,7 @@ it("bounds real cold-window intersections between yields and stops on cancellati
   const intersect = vi.spyOn(pressureIntersections, "intersectPressureBoundaries");
   try {
     const cancelled = pressurePaintAdditionSteps(centers, 8);
-    cancelled.next();
+    while (intersect.mock.calls.length === 0) cancelled.next();
     cancelled.return(undefined);
     const before = intersect.mock.calls.length;
     expect(cancelled.next().done).toBe(true);
@@ -393,11 +393,16 @@ it("bounds real cold-window intersections between yields and stops on cancellati
     let previous = intersect.mock.calls.length;
     let result = steps.next();
     while (!result.done) {
-      expect(intersect.mock.calls.length - previous).toBeLessThanOrEqual(4);
+      // Each grouped union interval can probe at most four capsule boundaries.
+      expect(intersect.mock.calls.length - previous).toBeLessThanOrEqual(
+        pressureUnion.PRESSURE_PREPARATION_CHECK_INTERVAL * 4,
+      );
       previous = intersect.mock.calls.length;
       result = steps.next();
     }
-    expect(intersect.mock.calls.length - previous).toBeLessThanOrEqual(4);
+    expect(intersect.mock.calls.length - previous).toBeLessThanOrEqual(
+      pressureUnion.PRESSURE_PREPARATION_CHECK_INTERVAL * 4,
+    );
     expect(intersect.mock.calls.length).toBeGreaterThan(0);
     expect(intersect.mock.calls.length).toBeLessThanOrEqual(64 * 63 * 16);
   } finally {

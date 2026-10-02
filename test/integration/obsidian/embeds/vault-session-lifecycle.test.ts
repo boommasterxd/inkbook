@@ -263,7 +263,9 @@ describe("VaultDocumentSession live executor lifecycle", () => {
     model?.setNavigationActive?.(true);
     model?.setNavigationActive?.(true);
     const resumed = vi.fn();
-    const waiting = model?.waitForBackground?.().then(resumed);
+    const pending = model?.waitForBackground?.();
+    expect(pending).toBeDefined();
+    const waiting = pending!.then(resumed);
     await Promise.resolve();
     expect(resumed).not.toHaveBeenCalled();
     model?.setGestureActive(false);

@@ -1,6 +1,8 @@
 import type { InkSnapshotV1, PageV1 } from "../../domain/schema/public";
 
 import { canonicalElement, canonicalPage } from "./canonical-snapshot";
+import { serializeCanonicalElementMetadata } from "./canonical-element-fragments";
+import { COMPACT_METADATA_ENCODING, type SnapshotMetadataEncoding } from "./stroke-sample-codec";
 import {
   hashExactUtf8Output,
   type ChunkedOutputAssemblyOptions,
@@ -27,6 +29,13 @@ export function canonicalMetadataSha256(snapshot: InkSnapshotV1): string {
   return hashFragments(canonicalMetadataFragments(snapshot));
 }
 
+export function canonicalMetadataFragmentsSha256(
+  prefix: string,
+  elements: Iterable<string>,
+): string {
+  return hashFragments(completeMetadataTextFragments(prefix, elements));
+}
+
 export async function canonicalMetadataSha256Async(
   prefix: string,
   elementMetadata: Iterable<Uint8Array>,
@@ -48,7 +57,8 @@ export async function canonicalMetadataSha256Async(
     for (const written of writer.append(fragment)) {
       bytesSinceCheckpoint += written;
       if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-        await options.checkpoint();
+        const pending = options.checkpoint();
+        if (pending !== undefined) await pending;
         options.signal?.throwIfAborted();
         bytesSinceCheckpoint = 0;
       }
@@ -58,9 +68,13 @@ export async function canonicalMetadataSha256Async(
   return hashExactUtf8Output(output, options.signal, options.digest, options.checkpoint);
 }
 
-function canonicalMetadataMatches(input: string, snapshot: InkSnapshotV1): boolean {
+function canonicalMetadataMatches(
+  input: string,
+  snapshot: InkSnapshotV1,
+  encoding: SnapshotMetadataEncoding,
+): boolean {
   let offset = 0;
-  for (const fragment of canonicalMetadataFragments(snapshot)) {
+  for (const fragment of canonicalMetadataFragments(snapshot, encoding)) {
     if (!input.startsWith(fragment, offset)) return false;
     offset += fragment.length;
   }
@@ -72,12 +86,20 @@ export function validateCurrentMetadataIntegrity(
   expectedHash: string | null,
   migrated: MigratedSnapshot,
   validation: "canonical" | "safe" = "canonical",
+  encoding: SnapshotMetadataEncoding = COMPACT_METADATA_ENCODING,
+  actualMetadataHash?: string,
 ): DocumentCodecResult<undefined> {
   if (migrated.sourceVersion !== 1) return { ok: true, value: undefined };
-  if (validation === "canonical" && !canonicalMetadataMatches(metadataText, migrated.snapshot)) {
+  if (
+    validation === "canonical" &&
+    !canonicalMetadataMatches(metadataText, migrated.snapshot, encoding)
+  ) {
     return metadataFailure("invalid-json", "Snapshot metadata is not canonical compact JSON.");
   }
-  if (expectedHash === null || metadataSha256(metadataText) !== expectedHash) {
+  if (
+    expectedHash === null ||
+    (actualMetadataHash ?? metadataSha256(metadataText)) !== expectedHash
+  ) {
     return metadataFailure("invalid-svg", "Snapshot metadata does not match its envelope hash.");
   }
   return { ok: true, value: undefined };
@@ -108,11 +130,17 @@ export function metadataPrefix(revision: number, page: PageV1): string {
   );
 }
 
-function* canonicalMetadataFragments(snapshot: InkSnapshotV1): Iterable<string> {
+function* canonicalMetadataFragments(
+  snapshot: InkSnapshotV1,
+  encoding: SnapshotMetadataEncoding = COMPACT_METADATA_ENCODING,
+): Iterable<string> {
   yield metadataPrefix(snapshot.revision, snapshot.page);
   for (let index = 0; index < snapshot.elements.length; index += 1) {
     if (index > 0) yield ",";
-    yield JSON.stringify(canonicalElement(snapshot.elements[index]!));
+    const element = snapshot.elements[index]!;
+    yield encoding === "json"
+      ? JSON.stringify(canonicalElement(element))
+      : serializeCanonicalElementMetadata(element);
   }
   yield "]}";
 }
@@ -165,6 +193,20 @@ function* completeMetadataByteFragments(
     first = false;
   }
   yield METADATA_SUFFIX_BYTES;
+}
+
+function* completeMetadataTextFragments(
+  prefix: string,
+  elements: Iterable<string>,
+): Iterable<string> {
+  yield prefix;
+  let first = true;
+  for (const element of elements) {
+    if (!first) yield ",";
+    yield element;
+    first = false;
+  }
+  yield "]}";
 }
 
 function metadataFailure(

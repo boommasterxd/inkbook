@@ -7,6 +7,7 @@ import { createConfirmedOutputFixture } from "../../../fixtures/obsidian/confirm
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 import type { WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
 import { SchedulerDisposedError } from "../../../../src/domain/scheduling/work-scheduler";
+import { SafeStaticProof } from "../../../../src/persistence/serialization/safe-static-proof";
 
 vi.mock("../../../../src/obsidian/embeds/safe-preview-svg", () => ({ inspectPreviewSvg: vi.fn() }));
 
@@ -79,9 +80,16 @@ it("grants canonical proof only to a current own write confirmation", async () =
     aspectRatio: 1,
     contentIdentity: { outputHash: serialized.value.hash, revision: 0 },
     safeSvg: serialized.value.svg,
+    safeStaticProof: SafeStaticProof.fromTrustedProducer(serialized.value.hash, file.stat.size),
   });
   await recognition.recognize(file.path);
   expect(recognition.matchesConfirmedOutput(read)).toBe(false);
+  expect(recognition.safeStaticProof(file.path)?.outputHash).toBe(serialized.value.hash);
+  const replaced = new File(file.path, file.stat.size);
+  Object.assign(replaced.stat, file.stat);
+  files.set(file.path, replaced);
+  expect(recognition.safeStaticProof(file.path)).toBeUndefined();
+  files.set(file.path, file);
 
   recognition.acceptConfirmedOutput(
     file.path,
@@ -113,6 +121,27 @@ it("grants canonical proof only to a current own write confirmation", async () =
 });
 
 describe("completed recognition markup budgets", () => {
+  it("releases preview proof on pending refresh, invalidation, eviction, and disposal", async () => {
+    const proof = SafeStaticProof.fromTrustedProducer("a".repeat(64), 1);
+    vi.mocked(inspectPreviewSvg).mockResolvedValue({
+      ...previewWithSize(12 * 1024 * 1024),
+      safeStaticProof: proof,
+    });
+    const recognition = cacheHarness();
+    await recognition.recognize("a.svg");
+    expect(recognition.safeStaticProof("a.svg")).toBe(proof);
+    recognition.deferRefresh("a.svg");
+    expect(recognition.safeStaticProof("a.svg")).toBeUndefined();
+    recognition.invalidate("a.svg");
+    expect(recognition.safeStaticProof("a.svg")).toBeUndefined();
+    await recognition.recognize("a.svg");
+    await recognition.recognize("b.svg");
+    await recognition.recognize("c.svg");
+    expect(recognition.safeStaticProof("a.svg")).toBeUndefined();
+    expect(recognition.safeStaticProof("c.svg")).toBe(proof);
+    recognition.dispose();
+    expect(recognition.safeStaticProof("c.svg")).toBeUndefined();
+  });
   it("evicts at completion rather than waiting for another read and preserves recent hits", async () => {
     const recognition = cacheHarness();
     vi.mocked(inspectPreviewSvg).mockResolvedValue(previewWithSize(12 * 1024 * 1024));

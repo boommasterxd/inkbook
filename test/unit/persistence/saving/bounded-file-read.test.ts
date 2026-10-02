@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/constants";
-import { readExistingFileWithinLimit } from "../../../../src/persistence/saving/bounded-file-read";
+import {
+  readExistingFileWithinLimit,
+  readGuardedFileWithinLimit,
+} from "../../../../src/persistence/saving/bounded-file-read";
+import { MetadataGuardedFileReadCandidate } from "../../../../src/persistence/saving/metadata-guarded-file-read";
 import type { MetadataGuardedFileRead } from "../../../../src/persistence/saving/save-ports";
 import { VerifiedMetadataGuardedFileRead } from "../../../../src/persistence/saving/verified-file-read";
 
@@ -15,6 +19,32 @@ function guardedRead(content: string, size: number): MetadataGuardedFileRead {
 }
 
 describe("bounded existing-file read", () => {
+  it("defers an authentic host candidate's actual UTF-8 measurement and rejects stale ownership", async () => {
+    const content = "ä😀".repeat(1000);
+    let current = true;
+    const candidate = new MetadataGuardedFileReadCandidate(
+      content,
+      guardedRead(content, 6000).identity,
+      () => current,
+    );
+    const vault = {
+      readForVerification: async () => candidate,
+      readWithMetadataGuard: vi.fn(async () => guardedRead(content, 6000)),
+      process: async () => content,
+    };
+    const charCodeAt = vi.spyOn(String.prototype, "charCodeAt");
+    try {
+      expect(await readGuardedFileWithinLimit(vault, "page.svg")).toBe(candidate);
+      expect(charCodeAt).not.toHaveBeenCalled();
+      expect(vault.readWithMetadataGuard).not.toHaveBeenCalled();
+      expect(VerifiedMetadataGuardedFileRead.isVerified(candidate)).toBe(false);
+      expect(MetadataGuardedFileReadCandidate.isOwned({ ...candidate })).toBe(false);
+      current = false;
+      await expect(readGuardedFileWithinLimit(vault, "page.svg")).rejects.toThrow("obsolete");
+    } finally {
+      charCodeAt.mockRestore();
+    }
+  });
   it("reuses an adapter-verified byte count without a second content scan", async () => {
     const content = "inkbook".repeat(1000);
     const read = VerifiedMetadataGuardedFileRead.create(

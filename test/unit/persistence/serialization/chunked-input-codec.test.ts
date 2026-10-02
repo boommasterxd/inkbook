@@ -42,8 +42,26 @@ async function expectChunkedInputToMatchSynchronous(
   await parser.write(bytes);
 
   const result = await parser.finish();
-  expect(result).toEqual(await parseInkbookDocumentForTest(bytes));
+  expect(logicalStrokePoints(result)).toEqual(await parseInkbookDocumentForTest(bytes));
   return result;
+}
+
+function logicalStrokePoints(
+  result: Awaited<ReturnType<typeof parseInkbookDocumentForTest>>,
+): Awaited<ReturnType<typeof parseInkbookDocumentForTest>> {
+  if (!result.ok) return result;
+  return {
+    ...result,
+    value: {
+      ...result.value,
+      snapshot: {
+        ...result.value.snapshot,
+        elements: result.value.snapshot.elements.map((element) =>
+          element.kind === "stroke" ? { ...element, points: Array.from(element.points) } : element,
+        ),
+      },
+    },
+  };
 }
 
 async function expectSnapshotMetadataPrefixAccepted(
@@ -68,7 +86,13 @@ describe("chunked Inkbook input", () => {
       expect((await parser.write(bytes.subarray(offset, offset + 23))).ok).toBe(true);
     }
 
-    expect(await parser.finish()).toEqual(await parseInkbookDocumentForTest(bytes));
+    const parsed = await parser.finish();
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      const stroke = parsed.value.snapshot.elements.find((element) => element.kind === "stroke");
+      expect(stroke?.kind === "stroke" && stroke.points).toBeInstanceOf(Float64Array);
+    }
+    expect(logicalStrokePoints(parsed)).toEqual(await parseInkbookDocumentForTest(bytes));
     expect(parser.maximumRetainedStaticInputCharacters).toBeLessThanOrEqual(47);
   });
 

@@ -295,8 +295,10 @@ function oversizedFragment(
     element,
     metadata,
     metadataBytes: metadata.length,
+    metadataUtf8: textEncoder.encode(metadata),
     pathDataBytes: 0,
     retainedBytes: metadata.length + svg.length,
     svg,
+    svgUtf8: textEncoder.encode(svg),
   };
 }

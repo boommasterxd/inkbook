@@ -80,7 +80,12 @@ function visiblePageBounds(
 export function visibilityPageBounds(
   viewport: SceneViewport,
   camera: SceneCamera,
+  initialVisibleOnly = false,
 ): { readonly envelope: Bounds; readonly retained: Bounds } {
+  if (initialVisibleOnly) {
+    const bounds = visiblePageBounds(viewport, camera, 0);
+    return { envelope: bounds, retained: bounds };
+  }
   return {
     envelope: visiblePageBounds(viewport, camera, VIEWPORT_OVERSCAN_SCREEN_PX),
     retained: visiblePageBounds(viewport, camera, VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX),

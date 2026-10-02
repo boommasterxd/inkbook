@@ -36,7 +36,10 @@ export async function encodeRuntimeSelectionChunked(
   for (let index = 0; index < elementsInRenderOrder.length; index += 1) {
     if (selection.has(elementsInRenderOrder[index]!.id))
       selected.push(elementsInRenderOrder[index]!);
-    if ((index + 1) % profile.nodeLimit === 0) await context.checkpoint();
+    if ((index + 1) % profile.nodeLimit === 0) {
+      const pending = context.checkpoint();
+      if (pending !== undefined) await pending;
+    }
   }
   if (selected.length !== selection.size) {
     return clipboardFailure("missing-selection", "The selection contains an unknown element.");
@@ -44,7 +47,10 @@ export async function encodeRuntimeSelectionChunked(
   const documentIds = new Map<string, string>();
   for (let index = 0; index < selected.length; index += 1) {
     documentIds.set(selected[index]!.id, compactClipId(index));
-    if ((index + 1) % profile.nodeLimit === 0) await context.checkpoint();
+    if ((index + 1) % profile.nodeLimit === 0) {
+      const pending = context.checkpoint();
+      if (pending !== undefined) await pending;
+    }
   }
   const clipboardElements: ClipboardElementV1[] = [];
   for (let index = 0; index < selected.length; index += 1) {
@@ -53,7 +59,10 @@ export async function encodeRuntimeSelectionChunked(
       clipId: compactClipId(index),
       element: createBody(element, documentIds),
     });
-    if ((index + 1) % profile.nodeLimit === 0) await context.checkpoint();
+    if ((index + 1) % profile.nodeLimit === 0) {
+      const pending = context.checkpoint();
+      if (pending !== undefined) await pending;
+    }
   }
   const encoded = await serializeClipboardPayload(
     { elements: clipboardElements, format: "inkbook-elements", version: 1 },
@@ -117,7 +126,8 @@ async function decodeCandidate(
   } catch {
     return clipboardFailure("invalid-json", "Clipboard JSON is malformed.");
   }
-  await context.checkpoint();
+  const pending = context.checkpoint();
+  if (pending !== undefined) await pending;
   const validated = await validateClipboardPayloadSliced(
     value,
     context.checkpoint,
@@ -190,7 +200,10 @@ class CanonicalJsonWriter {
       if (frame.kind === "value") {
         this.#context.signal.throwIfAborted();
         this.#nodes += 1;
-        if (this.#nodes % this.#profile.nodeLimit === 0) await this.#context.checkpoint();
+        if (this.#nodes % this.#profile.nodeLimit === 0) {
+          const pending = this.#context.checkpoint();
+          if (pending !== undefined) await pending;
+        }
         this.#writeValue(frame.value, stack);
       } else {
         this.#continueContainer(frame, stack);
@@ -251,7 +264,10 @@ class CanonicalJsonWriter {
       const chunk = this.#chunks[index]!;
       text += chunk;
       byteLength += encoder.encode(chunk).byteLength;
-      if ((index + 1) % this.#profile.nodeLimit === 0) await this.#context.checkpoint();
+      if ((index + 1) % this.#profile.nodeLimit === 0) {
+        const pending = this.#context.checkpoint();
+        if (pending !== undefined) await pending;
+      }
     }
     return { byteLength, text };
   }
@@ -314,7 +330,8 @@ async function utf8ByteLength(
     if (end < value.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
     bytes += encoder.encode(value.slice(offset, end)).byteLength;
     if (bytes > CLIPBOARD_LIMITS.totalInputBytes) return bytes;
-    await context.checkpoint();
+    const pending = context.checkpoint();
+    if (pending !== undefined) await pending;
     offset = end;
   }
   return bytes;

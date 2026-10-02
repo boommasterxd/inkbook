@@ -57,7 +57,7 @@ it("reuses worker-runtime geometry while exporting moved, undone, and redone str
     createSnapshot([{ ...original, style: { ...original.style, pressureEnabled: true } }]),
   );
   const serializer = new IncrementalDocumentSerializer();
-  expect(serializer.resetRuntime(runtime).ok).toBe(true);
+  expect(serializer.resetRuntime(runtime, true).ok).toBe(true);
   expect(serializer.serialize().ok).toBe(true);
   const retained = serializer.currentSnapshot()!.elements[0]!;
   if (retained.kind !== "stroke") throw new Error("Missing retained stroke");
@@ -69,11 +69,15 @@ it("reuses worker-runtime geometry while exporting moved, undone, and redone str
       pivot: { x: retained.pivot.x + offset.x, y: retained.pivot.y + offset.y },
     };
     expect(
-      serializer.applyDelta({
-        baseModelRevision: revision - 1,
-        modelRevision: revision,
-        changedElements: [moved],
-      }).ok,
+      serializer.applyDelta(
+        {
+          baseModelRevision: revision - 1,
+          modelRevision: revision,
+          changedElements: [moved],
+        },
+        undefined,
+        true,
+      ).ok,
     ).toBe(true);
     expect(serializer.serialize().ok).toBe(true);
   }
@@ -83,14 +87,16 @@ it("reuses worker-runtime geometry while exporting moved, undone, and redone str
 it("keeps compatible local shapes across full resets and invalidates changed samples", () => {
   const runtime = copySnapshotToRuntime(createSnapshot([stroke()]));
   const serializer = new IncrementalDocumentSerializer();
-  expect(serializer.resetRuntime(runtime).ok).toBe(true);
+  expect(serializer.resetRuntime(runtime, true).ok).toBe(true);
   expect(serializer.serialize().ok).toBe(true);
   expect(serializer.instrumentation.shapeBuilds).toBe(1);
 
   const original = runtime.elements[0]!;
   if (original.kind !== "stroke") throw new Error("Missing runtime stroke");
   const repainted = { ...original, style: { ...original.style, opacity: 0.5 } };
-  expect(serializer.resetRuntime({ ...runtime, elements: [repainted], revision: 8 }).ok).toBe(true);
+  expect(serializer.resetRuntime({ ...runtime, elements: [repainted], revision: 8 }, true).ok).toBe(
+    true,
+  );
   expect(serializer.serialize().ok).toBe(true);
   expect(serializer.instrumentation.shapeBuilds).toBe(1);
 

@@ -8,6 +8,10 @@ import {
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../../unit/persistence/serialization/fixtures";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { WorkspaceRuntimeLifecycle } from "../../../../src/obsidian/embeds/workspace-runtime-lifecycle";
+import { handleWorkspaceActivationFailure } from "../../../../src/obsidian/embeds/workspace-load-recovery";
+import type { PresentationAttachment } from "../../../../src/obsidian/embeds/presentation-port";
+import type { LoadedPreviewSvg } from "../../../../src/obsidian/embeds/safe-preview-svg";
 
 function testFile(path: string, size: number): TFile {
   const Constructor = TFile as unknown as new (filePath: string, fileSize: number) => TFile;
@@ -137,6 +141,81 @@ it("binds a versioned preview to its Vault resource despite changing host cache 
   );
   expect(cachedRead).toHaveBeenCalledOnce();
   recognition.dispose();
+});
+
+it("refreshes an externally reset source through the validated preview identity consumer", async () => {
+  const original = serializeInkbookDocument({ ...createSnapshot(), revision: 9 });
+  const reset = serializeInkbookDocument({ ...createSnapshot(), revision: 2 });
+  if (!original.ok || !reset.ok) throw new Error("Invalid test snapshots.");
+  let content = original.value.svg;
+  const file = testFile("drawings/reset.svg", new TextEncoder().encode(content).byteLength);
+  const cachedRead = vi.fn(async () => content);
+  const vault = {
+    cachedRead,
+    getFileByPath: (path: string) => (path === file.path ? file : null),
+    getResourcePath: () => "app://vault/drawings/reset.svg?1700000000000",
+  } as unknown as Vault;
+  const recognition = new ObsidianInkbookDocumentRecognition(vault, {
+    workScheduler: immediateWorkScheduler(),
+  });
+  const previews: Promise<LoadedPreviewSvg>[] = [];
+  const attachment = {
+    documentId: file.path,
+    root: { getElementsByTagName: () => ({ item: () => null, length: 0 }) },
+    setPreviewSource: (source: string) => {
+      const pending = recognition.loadPreviewSource(file.path, source);
+      previews.push(pending);
+      return pending.then(({ contentIdentity }) => contentIdentity);
+    },
+  } as unknown as PresentationAttachment;
+  const lifecycle = new WorkspaceRuntimeLifecycle({
+    activate: vi.fn(),
+    fallbackWindow: () => undefined,
+    isDisposed: () => false,
+    notifyExternalChange: async () => "ignored",
+    presentations: () => [{ attachment, scene: undefined }],
+    reloadPresentation: vi.fn(),
+    workScheduler: () => immediateWorkScheduler(),
+    vault,
+  });
+  try {
+    lifecycle.handlePersisted({
+      documentId: file.path,
+      lockedAspectRatio: 4,
+      outputHash: original.value.hash,
+      revision: 9,
+    });
+    await expect(previews[0]).resolves.toMatchObject({
+      contentIdentity: { outputHash: original.value.hash, revision: 9 },
+      safeSvg: content,
+    });
+    content = reset.value.svg;
+    file.stat.mtime += 1;
+    file.stat.size = new TextEncoder().encode(content).byteLength;
+    recognition.invalidate(file.path);
+    handleWorkspaceActivationFailure(
+      {
+        actualSourceIdentity: { outputHash: reset.value.hash, revision: 2 },
+        kind: "source-changed",
+        sessionId: "reset-session",
+        token: 1,
+      },
+      {
+        failAutoActivation: vi.fn(),
+        refreshPreview: (identity) => lifecycle.refreshPersistedPreview(file.path, identity),
+        setState: vi.fn(),
+        showLoadError: vi.fn(),
+      },
+    );
+    await expect(previews[1]).resolves.toMatchObject({
+      contentIdentity: { outputHash: reset.value.hash, revision: 2 },
+      safeSvg: content,
+    });
+    expect(cachedRead).toHaveBeenCalledTimes(2);
+  } finally {
+    lifecycle.dispose();
+    recognition.dispose();
+  }
 });
 
 describe("layout-ready recognition gate", () => {

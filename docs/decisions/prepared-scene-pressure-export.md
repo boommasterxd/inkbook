@@ -22,8 +22,10 @@ its current document revision matches the export plan. The bounded request carri
 that revision and the local shape header with the path. The first accepted export
 per worker epoch can seed unchanged baseline contours even on an incremental
 request; later incremental requests select changed IDs only. An epoch change
-reopens that initial handoff. Offset-bearing strokes remain excluded because the
-Store pressure cache and translated scene paths have different coordinate spaces.
+reopens that initial handoff. Explicit zero offsets are eligible; nonzero offsets
+remain excluded because the Store pressure cache and translated scene paths have
+different coordinate spaces. Lazy enumeration visits at most 1,024 current cache
+entries and retains at most 4 MiB in one handoff.
 
 The worker checks request/revision agreement, supported shape fields, path syntax,
 and transport limits before seeding its existing shape cache. It does not possess

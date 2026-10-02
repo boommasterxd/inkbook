@@ -10,11 +10,14 @@ const HASH = /^[0-9a-f]{64}$/u;
 export async function adoptOwnedSvgOutput(
   output: string | Uint8Array,
   outputHash: string,
-  options: Utf8AdoptionOptions & { readonly waitForBackground?: () => Promise<void> } = {},
+  options: Utf8AdoptionOptions & {
+    readonly waitForBackground?: () => Promise<void> | undefined;
+  } = {},
 ) {
   options.signal?.throwIfAborted();
   assertOwnedOutput(output, outputHash);
-  if (options.waitForBackground) await options.waitForBackground();
+  const ready = options.waitForBackground?.();
+  if (ready !== undefined) await ready;
   options.signal?.throwIfAborted();
   const content = await adoptUtf8Output(output, options);
   options.signal?.throwIfAborted();

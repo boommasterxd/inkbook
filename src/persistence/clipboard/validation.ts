@@ -359,7 +359,7 @@ function validateClipboardPayloadInternal(
 
 export async function validateClipboardPayloadSliced(
   value: unknown,
-  checkpoint: () => Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
   nodeLimit: number,
   sampleLimit: number,
 ): Promise<ClipboardResult<InkClipboardV1>> {
@@ -368,10 +368,14 @@ export async function validateClipboardPayloadSliced(
   let visited = 0;
   while (!step.done) {
     visited += 1;
-    if (step.value === true || visited % nodeLimit === 0) await checkpoint();
+    if (step.value === true || visited % nodeLimit === 0) {
+      const pending = checkpoint();
+      if (pending !== undefined) await pending;
+    }
     step = steps.next();
   }
-  await checkpoint();
+  const pending = checkpoint();
+  if (pending !== undefined) await pending;
   return step.value;
 }
 

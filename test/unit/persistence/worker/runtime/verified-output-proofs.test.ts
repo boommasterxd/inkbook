@@ -25,6 +25,45 @@ async function exportRevision(model: DocumentModelRuntime, revision: number) {
 
 afterEach(() => vi.restoreAllMocks());
 
+describe("confirmed scalar output byte proofs", () => {
+  it("binds confirmed scalar evidence to exact input bytes, host size, revision, and lifetime", async () => {
+    const input = source();
+    const model = new DocumentModelRuntime();
+    const expectedBytes = new TextEncoder().encode(input.svg).byteLength;
+    const build = vi.spyOn(union, "iteratePressureUnion");
+    const confirmedBase = { outputHash: input.hash, revision: 1 };
+    expect(
+      await model.verifyOutput(input.svg, undefined, { confirmedBase, expectedBytes }),
+    ).toEqual(confirmedBase);
+    expect(build).not.toHaveBeenCalled();
+    expect(
+      await model.verifyOutput(input.svg, undefined, {
+        confirmedBase,
+        expectedBytes: expectedBytes - 1,
+      }),
+    ).toBeNull();
+    expect(
+      await model.verifyOutput(input.svg, undefined, { confirmedBase, expectedBytes: Number.NaN }),
+    ).toBeNull();
+    expect(build).not.toHaveBeenCalled();
+    expect(
+      await model.verifyOutput(input.svg + "\n", undefined, {
+        confirmedBase,
+        expectedBytes: expectedBytes + 1,
+      }),
+    ).not.toBeNull();
+    expect(build).toHaveBeenCalledTimes(1);
+    model.clear();
+    expect(
+      await model.verifyOutput(input.svg, undefined, {
+        confirmedBase: { ...confirmedBase, revision: 2 },
+        expectedBytes,
+      }),
+    ).toEqual(confirmedBase);
+    expect(build).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("runtime-owned output byte proofs", () => {
   it("fully verifies safe unlocked bytes once and checks changed or invalid input", async () => {
     const input = source();

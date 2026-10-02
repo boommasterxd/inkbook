@@ -51,7 +51,7 @@ export function serializeInkbookDocument(
       "Generated SVG does not satisfy the static markup contract.",
     );
   }
-  const metadataBytes = encoder.encode(JSON.stringify(snapshot)).byteLength;
+  const metadataBytes = staticValidation.metadataBytes;
   const totalBytes = encoder.encode(svg).byteLength;
   if (
     metadataBytes > FILE_SCHEMA_LIMITS.metadataBytes ||

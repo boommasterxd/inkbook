@@ -24,7 +24,6 @@ interface Harness {
 async function createHarness(
   options: {
     readonly gesture?: boolean;
-    readonly lazyConfirmedContent?: boolean;
     readonly vaultContent?: string;
   } = {},
 ): Promise<Harness> {
@@ -44,20 +43,29 @@ async function createHarness(
   const documentSource = new AutosaveDocumentFixture();
   documentSource.gestureActive = options.gesture ?? false;
   const vault = new MemoryVault(options.vaultContent ?? initial.svg);
+  const coordinator = createCoordinator({ clock, documentSource, initial, vault }, executor);
+  return { clock, coordinator, documentSource, initial, vault };
+}
+
+function createCoordinator(
+  harness: Omit<Harness, "coordinator">,
+  executor: DocumentRuntimePort,
+  createFallback?: (workerEpoch: number) => DocumentRuntimePort,
+): AutosaveCoordinator {
   const coordinator = new AutosaveCoordinator({
     workScheduler: createTestWorkScheduler(),
-    clock,
-    confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
-    ...(options.lazyConfirmedContent ? {} : { confirmedContent: initial.svg }),
-    documentSource,
+    clock: harness.clock,
+    confirmedBase: { outputHash: harness.initial.hash, revision: 0, type: "confirmed" },
+    ...(createFallback === undefined ? {} : { createFallback }),
+    documentSource: harness.documentSource,
     executor,
     initialSnapshot: snapshot(),
     path: "drawing.svg",
     sessionId: "session-a",
-    vault,
+    vault: harness.vault,
     workerEpoch: 1,
   });
-  return { clock, coordinator, documentSource, initial, vault };
+  return coordinator;
 }
 
 function recordRectangleCommit(harness: Harness, revision: number, x: number): void {
@@ -67,6 +75,29 @@ function recordRectangleCommit(harness: Harness, revision: number, x: number): v
     modelRevision: revision,
   });
 }
+
+it.each([false, true])(
+  "settles only the current save operation with indeterminate result %s",
+  async (indeterminate) => {
+    const harness = await createHarness();
+    expect(harness.coordinator.currentSaveSettlement).toBeUndefined();
+    let release!: () => void;
+    harness.vault.processGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    harness.vault.failAfterWrite = indeterminate;
+    recordRectangleCommit(harness, 1, 170);
+    const flush = harness.coordinator.flush("detach");
+    await harness.vault.waitForProcessCount(1);
+    const settlement = harness.coordinator.currentSaveSettlement;
+    expect(settlement).toBeInstanceOf(Promise);
+    release();
+    await settlement;
+    await expect(flush).resolves.toBe(indeterminate ? "verification-required" : "clean");
+    expect(harness.coordinator.currentSaveSettlement).toBeUndefined();
+    expect(harness.coordinator.dirty).toBe(indeterminate);
+  },
+);
 
 describe("autosave trust boundaries", () => {
   it("ignores a delayed notification for the confirmed base when a local commit wins the race", async () => {
@@ -136,19 +167,7 @@ describe("autosave trust boundaries", () => {
       },
       terminate: () => undefined,
     };
-    const coordinator = new AutosaveCoordinator({
-      workScheduler: createTestWorkScheduler(),
-      clock: harness.clock,
-      confirmedBase: { outputHash: harness.initial.hash, revision: 0, type: "confirmed" },
-      confirmedContent: harness.initial.svg,
-      documentSource: harness.documentSource,
-      executor,
-      initialSnapshot: snapshot(),
-      path: "drawing.svg",
-      sessionId: "session-a",
-      vault: harness.vault,
-      workerEpoch: 1,
-    });
+    const coordinator = createCoordinator(harness, executor);
     harness.documentSource.commit(1, 136);
     coordinator.recordCommit({ changedElements: [rectangle(136)], modelRevision: 1 });
 
@@ -170,7 +189,6 @@ describe("autosave orchestration", () => {
     await expect(harness.coordinator.flush("retry")).resolves.toBe("clean");
     expect(harness.vault.processCount).toBe(1);
     expect(harness.coordinator.dirty).toBe(false);
-    expect(harness.coordinator.retainedConfirmedContentBytes).toBe(0);
   });
 
   it("rechecks every 200 ms without dispatching while a gesture is active", async () => {
@@ -213,7 +231,7 @@ describe("autosave orchestration", () => {
   });
 
   it("loads and verifies the confirmed content lazily without a duplicate preflight read", async () => {
-    const harness = await createHarness({ lazyConfirmedContent: true });
+    const harness = await createHarness();
     recordRectangleCommit(harness, 1, 175);
 
     await expect(harness.coordinator.flush("retry")).resolves.toBe("clean");
@@ -222,7 +240,7 @@ describe("autosave orchestration", () => {
   });
 
   it("suspends without reading when lazy expected-base content is oversized", async () => {
-    const harness = await createHarness({ lazyConfirmedContent: true });
+    const harness = await createHarness();
     harness.vault.reportedSize = FILE_SCHEMA_LIMITS.totalInputBytes + 1;
     recordRectangleCommit(harness, 1, 176);
 
@@ -291,22 +309,9 @@ describe("autosave backpressure and recovery", () => {
       terminate: () => undefined,
     };
     let fallbackCreations = 0;
-    const coordinator = new AutosaveCoordinator({
-      workScheduler: createTestWorkScheduler(),
-      clock: harness.clock,
-      confirmedBase: { outputHash: harness.initial.hash, revision: 0, type: "confirmed" },
-      confirmedContent: harness.initial.svg,
-      createFallback: (workerEpoch) => {
-        fallbackCreations += 1;
-        return new DocumentWorkerRuntime({ sessionId: "session-a", workerEpoch });
-      },
-      documentSource: harness.documentSource,
-      executor: failingExecutor,
-      initialSnapshot: snapshot(),
-      path: "drawing.svg",
-      sessionId: "session-a",
-      vault: harness.vault,
-      workerEpoch: 1,
+    const coordinator = createCoordinator(harness, failingExecutor, (workerEpoch) => {
+      fallbackCreations += 1;
+      return new DocumentWorkerRuntime({ sessionId: "session-a", workerEpoch });
     });
     harness.documentSource.commit(1, 180);
     coordinator.recordCommit({ changedElements: [rectangle(180)], modelRevision: 1 });
@@ -345,28 +350,16 @@ describe("autosave verification executor recovery", () => {
     };
     let fallbackCreations = 0;
     const fallbackRequests: string[] = [];
-    const coordinator = new AutosaveCoordinator({
-      workScheduler: createTestWorkScheduler(),
-      clock: harness.clock,
-      confirmedBase: { outputHash: harness.initial.hash, revision: 0, type: "confirmed" },
-      createFallback: (workerEpoch) => {
-        fallbackCreations += 1;
-        const fallback = new DocumentWorkerRuntime({ sessionId: "session-a", workerEpoch });
-        return {
-          execute: (request, observer) => {
-            fallbackRequests.push(request.type);
-            return fallback.execute(request, observer);
-          },
-          terminate: () => fallback.terminate(),
-        };
-      },
-      documentSource: harness.documentSource,
-      executor,
-      initialSnapshot: snapshot(),
-      path: "drawing.svg",
-      sessionId: "session-a",
-      vault: harness.vault,
-      workerEpoch: 1,
+    const coordinator = createCoordinator(harness, executor, (workerEpoch) => {
+      fallbackCreations += 1;
+      const fallback = new DocumentWorkerRuntime({ sessionId: "session-a", workerEpoch });
+      return {
+        execute: (request, observer) => {
+          fallbackRequests.push(request.type);
+          return fallback.execute(request, observer);
+        },
+        terminate: () => fallback.terminate(),
+      };
     });
     harness.documentSource.commit(1, 200);
     coordinator.recordCommit({ changedElements: [rectangle(200)], modelRevision: 1 });

@@ -11,6 +11,8 @@ import {
 import { pressureCapsuleContains } from "./pressure-capsule-containment";
 
 export const MAX_PRESSURE_UNION_SHAPES = 64;
+/** Bounded geometry/cancellation intervals; consumers still use the shared time budget. */
+export const PRESSURE_PREPARATION_CHECK_INTERVAL = 16;
 // Cap exact-union effort linearly in input size; native capsules preserve identical fill.
 export const PRESSURE_UNION_OPERATIONS_PER_SHAPE = 512;
 
@@ -45,10 +47,18 @@ interface Source {
 interface UnionContext {
   readonly work: PressureUnionWork;
   readonly arcAngles: PressureArcAngleCache;
+  readonly maximumOperations: number;
+  inspectedIntervals: number;
 }
 interface Interval {
   first: number;
   last: number;
+}
+interface BoundaryClip {
+  readonly boundary: PressureBoundarySegment;
+  readonly source: Source;
+  readonly earlier: boolean;
+  readonly context: UnionContext;
 }
 interface Edge {
   readonly boundary: PressureBoundarySegment;
@@ -82,7 +92,12 @@ export function* iteratePressureUnion(
   if (chain !== undefined) return { contours: [chain], usedFallback: false, work };
   if (shapes.length === 1 && shapes[0]!.kind === "capsule")
     return { contours: [pressureShapeBoundary(shapes[0]!)], usedFallback: false, work };
-  const context: UnionContext = { work, arcAngles: new WeakMap<PressureBoundaryArc, number>() };
+  const context: UnionContext = {
+    work,
+    arcAngles: new WeakMap<PressureBoundaryArc, number>(),
+    maximumOperations: shapes.length * PRESSURE_UNION_OPERATIONS_PER_SHAPE,
+    inspectedIntervals: 0,
+  };
   const sources = shapes.map((shape) => {
     const boundaries = pressureShapeBoundary(shape);
     return {
@@ -179,30 +194,33 @@ function* clipBoundary(
     }
     cuts.sort((a, b) => a - b);
     const next: Interval[] = [];
+    const clip = { boundary, source, earlier: other < owner, context };
     for (const interval of intervals) {
-      let first = interval.first;
-      for (const cut of cuts) {
-        if (cut <= first + PARAMETER_ERROR || cut >= interval.last - PARAMETER_ERROR) continue;
-        retainInterval(next, boundary, { first, last: cut }, source, other < owner, context);
-        first = cut;
-      }
-      retainInterval(
-        next,
-        boundary,
-        { first, last: interval.last },
-        source,
-        other < owner,
-        context,
-      );
-      if (operationCount(work) > sources.length * PRESSURE_UNION_OPERATIONS_PER_SHAPE)
-        return undefined;
-      yield;
+      retainCutIntervals(next, interval, cuts, clip);
+      if (operationCount(work) > context.maximumOperations) return undefined;
+      if (++context.inspectedIntervals % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
     }
     work.peakIntervals = Math.max(work.peakIntervals, next.length);
     intervals = next;
-    yield;
   }
+  yield;
   return intervals;
+}
+
+function retainCutIntervals(
+  output: Interval[],
+  interval: Interval,
+  cuts: readonly number[],
+  clip: BoundaryClip,
+): void {
+  const { boundary, source, earlier, context } = clip;
+  let first = interval.first;
+  for (const cut of cuts) {
+    if (cut <= first + PARAMETER_ERROR || cut >= interval.last - PARAMETER_ERROR) continue;
+    retainInterval(output, boundary, { first, last: cut }, source, earlier, context);
+    first = cut;
+  }
+  retainInterval(output, boundary, { first, last: interval.last }, source, earlier, context);
 }
 
 function operationCount(work: PressureUnionWork): number {
@@ -326,7 +344,7 @@ function* stitch(
       end,
       used: false,
     });
-    yield;
+    if ((index + 1) % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   }
   if (nodes.some((node) => node.incoming !== node.outgoing.length)) return undefined;
   const contours: PressureBoundarySegment[][] = [];
@@ -355,7 +373,7 @@ function* traceContour(
     const next = nodes[current.end]!.outgoing.find((index) => !edges[index]!.used);
     if (next === undefined) return undefined;
     current = edges[next]!;
-    yield;
+    if (contour.length % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   } while (contour.length <= edges.length);
   return undefined;
 }

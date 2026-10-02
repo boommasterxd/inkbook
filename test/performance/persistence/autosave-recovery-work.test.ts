@@ -67,7 +67,6 @@ function createRecovery(options: RecoveryOptions = {}) {
     workerEpoch: 1,
     path: "recovery.svg",
     confirmedBase: { type: "confirmed", revision: 0, outputHash: serialized.value.hash },
-    confirmedContent: content,
     executor,
     vault,
     clock: {

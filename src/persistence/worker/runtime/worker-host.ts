@@ -152,9 +152,10 @@ async function postHostedResult(
 ): Promise<void> {
   try {
     const controller = new AbortController();
-    await runtime.checkpoint?.(controller.signal);
+    const admission = runtime.checkpoint?.(controller.signal);
+    if (admission !== undefined) await admission;
     const encoded = await encodeRuntimeResultChunked(result, {
-      checkpoint: () => runtime.checkpoint?.(controller.signal) ?? Promise.resolve(),
+      checkpoint: () => runtime.checkpoint?.(controller.signal),
       signal: controller.signal,
     });
     if (result.type === "export-success") {
@@ -251,7 +252,9 @@ function createPendingAcknowledgement(
 }
 
 function applyControl(runtime: DocumentRuntimePort, control: BridgeControl): void {
-  if (control.action === "prewarm") runtime.requestPrewarm?.();
+  if (control.action === "cancel-scene-paths" && control.identity !== undefined)
+    runtime.cancelScenePreparation?.(control.identity);
+  else if (control.action === "prewarm") runtime.requestPrewarm?.();
   else if (control.action === "set-live-input")
     runtime.setLiveInputActive?.(control.active === true);
   else if (
@@ -287,7 +290,13 @@ function isBridgeControl(value: unknown): value is BridgeControl {
   return (
     isObject(value) &&
     value.type === "inkbook-worker-control" &&
-    ((value.action === "prewarm" && value.active === undefined) ||
+    ((value.action === "cancel-scene-paths" &&
+      isObject(value.identity) &&
+      typeof value.identity.sessionId === "string" &&
+      Number.isSafeInteger(value.identity.workerEpoch) &&
+      Number.isSafeInteger(value.identity.operationId) &&
+      value.identity.purpose === "background") ||
+      (value.action === "prewarm" && value.active === undefined) ||
       (value.action === "set-live-input" && typeof value.active === "boolean") ||
       (value.action === "set-profile" &&
         typeof value.sliceMilliseconds === "number" &&

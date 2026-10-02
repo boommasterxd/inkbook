@@ -53,6 +53,7 @@ export interface ValidationByteLengths {
 }
 
 export interface ElementValidationDerivation {
+  readonly strokeLocalBounds?: Readonly<SpatialBounds>;
   readonly strokeSampleExtrema?: StrokeSampleExtrema;
   readonly bounds: Readonly<SpatialBounds>;
   readonly elementId: string;

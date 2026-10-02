@@ -11,7 +11,9 @@ import {
   elementFacts,
   validatedDeltaElementFacts,
 } from "../../../../src/persistence/serialization/incremental-validation";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as geometry from "../../../../src/domain/geometry/public";
+import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 
 import type {
   BoxShapeElementV1,
@@ -26,6 +28,33 @@ import {
 import { createAllElementSnapshot, createSnapshot, uuid } from "./fixtures";
 
 describe("incremental serializer validation", () => {
+  it("reuses validated local bounds for placed rotated strokes and rejects inconsistent hints", () => {
+    const source = stroke(1);
+    const placed = { ...source, offset: { x: 120.25, y: 250.125 }, rotation: 0.3 };
+    const snapshot = createSnapshot([placed]);
+    const validation = validateInkSnapshotV1(snapshot);
+    if (!validation.ok) throw new Error(validation.error.message);
+    const derivation = validation.derivations.elements[0]!;
+    const builds = vi.spyOn(geometry, "calculateElementBounds");
+    try {
+      const facts = elementFacts(placed, derivation);
+      expect(builds).not.toHaveBeenCalled();
+      expect(facts.strokeGeometry?.bounds).toBe(derivation.strokeLocalBounds);
+      expect(facts.bottom).toBe(derivation.bounds.maxY);
+      expect(() =>
+        elementFacts(placed, {
+          ...derivation,
+          strokeLocalBounds: {
+            ...derivation.strokeLocalBounds!,
+            minX: derivation.strokeLocalBounds!.minX + 1,
+          },
+        }),
+      ).toThrow("placement");
+    } finally {
+      builds.mockRestore();
+    }
+  });
+
   it("rejects invalid changed elements while accepting viewport overflow", () => {
     const snapshot = createAllElementSnapshot();
     const serializer = initialized(snapshot);

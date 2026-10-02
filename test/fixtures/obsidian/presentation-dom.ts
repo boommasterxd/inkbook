@@ -100,6 +100,13 @@ export class FakePresentationElement {
       removeEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
         documentListeners.get(type)?.delete(callback);
       },
+      dispatchEvent: (event: Event) => {
+        for (const callback of documentListeners.get(event.type) ?? []) {
+          if (typeof callback === "function") callback(event);
+          else callback.handleEvent(event);
+        }
+        return true;
+      },
     });
     const windowListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
     let frameTime = 0;
@@ -117,6 +124,11 @@ export class FakePresentationElement {
         }
       },
       document: documentPort as unknown as Document,
+      createDiv: (options?: { readonly cls?: string }) => {
+        const element = new FakePresentationElement(documentPort as unknown as Document);
+        for (const className of options?.cls?.split(" ") ?? []) element.classList.add(className);
+        return element;
+      },
       ResizeObserver: class {
         public disconnect(): void {}
         public observe(): void {}
@@ -191,6 +203,11 @@ export class FakePresentationElement {
     child.parentElement = this;
     child.isConnected = this.isConnected;
     this.children.push(child);
+  }
+
+  public appendChild(child: FakePresentationElement): FakePresentationElement {
+    this.append(child);
+    return child;
   }
 
   public insertBefore(child: FakePresentationElement, reference: FakePresentationElement): void {

@@ -1,5 +1,12 @@
 import { copyStrokeSamplesToRuntime } from "../../../domain/elements/public";
-import type { InkElementV1, StrokeElementV1, StrokeSamplesV1 } from "../../../domain/schema/public";
+import {
+  MAX_STROKE_POINTS,
+  validatedElementDerivationBounds,
+  type ElementValidationDerivation,
+  type InkElementV1,
+  type StrokeElementV1,
+  type StrokeSamplesV1,
+} from "../../../domain/schema/public";
 import { adoptTransferredStrokeSamples } from "./runtime-elements";
 
 type NonStrokeElement = Exclude<InkElementV1, StrokeElementV1>;
@@ -12,15 +19,32 @@ export interface PackedElements {
 }
 
 export interface RuntimeWireSliceOptions {
-  readonly checkpoint: () => Promise<void>;
+  readonly checkpoint: () => Promise<void> | undefined;
   readonly signal: AbortSignal;
   readonly reusePoints?: (element: InkElementV1) => boolean;
 }
 
 export function packElements(elements: readonly InkElementV1[]): PackedElements {
+  return packElementsWithCopy(elements, copyStrokeSamplesToRuntime);
+}
+
+/** The hosted unlock producer has already completed semantic sample validation. */
+export function packValidatedElements(
+  elements: readonly InkElementV1[],
+  derivations: readonly ElementValidationDerivation[],
+): PackedElements {
+  assertMatchingDerivations(elements, derivations);
+  return packElementsWithCopy(elements, (points) => new Float64Array(points));
+}
+
+function packElementsWithCopy(
+  elements: readonly InkElementV1[],
+  copyPoints: (points: StrokeSamplesV1) => Readonly<Float64Array>,
+): PackedElements {
   const pointBuffers: Float64Array[] = [];
   const records: PackedElement[] = [];
-  for (const element of elements) appendPackedElement(element, records, pointBuffers);
+  for (const element of elements)
+    appendPackedElement(element, records, pointBuffers, undefined, copyPoints);
   return { pointBuffers, records };
 }
 
@@ -36,7 +60,8 @@ export async function packElementsChunked(
     appendPackedElement(element, records, pointBuffers, options.reusePoints);
     bytesSinceCheckpoint += estimatedElementBytes(element);
     if ((index + 1) % 64 !== 0 && bytesSinceCheckpoint < 256 * 1024) continue;
-    await options.checkpoint();
+    const pending = options.checkpoint();
+    if (pending !== undefined) await pending;
     options.signal.throwIfAborted();
     bytesSinceCheckpoint = 0;
   }
@@ -45,6 +70,28 @@ export async function packElementsChunked(
 
 export function unpackElements(
   packed: PackedElements,
+  resolvePoints?: (id: string) => StrokeSamplesV1,
+): InkElementV1[] {
+  return unpackElementBuffers(packed, adoptTransferredStrokeSamples, resolvePoints);
+}
+
+/** Only the identity-checked owned unlock channel may bypass repeated sample scans. */
+export function unpackValidatedElements(
+  packed: PackedElements,
+  derivations: readonly ElementValidationDerivation[],
+): InkElementV1[] {
+  const elements = unpackElementBuffers(packed, (points) => {
+    if (points.length < 3 || points.length % 3 !== 0 || points.length / 3 > MAX_STROKE_POINTS)
+      throw new RangeError("Validated stroke point-buffer length is invalid.");
+    return points as unknown as StrokeSamplesV1;
+  });
+  assertMatchingDerivations(elements, derivations);
+  return elements;
+}
+
+function unpackElementBuffers(
+  packed: PackedElements,
+  adopt: (points: Float64Array) => StrokeSamplesV1,
   resolvePoints?: (id: string) => StrokeSamplesV1,
 ): InkElementV1[] {
   if (!hasPackedArrays(packed)) {
@@ -72,7 +119,7 @@ export function unpackElements(
     }
     used.add(index);
     const { pointsBufferIndex: _index, ...element } = record;
-    return { ...element, points: adoptTransferredStrokeSamples(points) };
+    return { ...element, points: adopt(points) };
   });
   if (used.size !== packed.pointBuffers.length) {
     throw new RangeError("Every stroke point buffer must be referenced exactly once.");
@@ -85,6 +132,7 @@ function appendPackedElement(
   records: PackedElement[],
   pointBuffers: Float64Array[],
   reusePoints?: (element: InkElementV1) => boolean,
+  copyPoints: (points: StrokeSamplesV1) => Readonly<Float64Array> = copyStrokeSamplesToRuntime,
 ): void {
   const reused = reusePoints?.(element) === true;
   if (element.kind !== "stroke") {
@@ -92,9 +140,24 @@ function appendPackedElement(
     return;
   }
   const pointsBufferIndex = reused ? -1 : pointBuffers.length;
-  if (!reused) pointBuffers.push(copyStrokeSamplesToRuntime(element.points));
+  if (!reused) pointBuffers.push(copyPoints(element.points));
   const { points: _points, ...record } = element;
   records.push({ ...record, pointsBufferIndex });
+}
+
+function assertMatchingDerivations(
+  elements: readonly InkElementV1[],
+  derivations: readonly ElementValidationDerivation[],
+): void {
+  if (elements.length !== derivations.length)
+    throw new TypeError("Validated element derivations are incomplete.");
+  for (let index = 0; index < elements.length; index += 1) {
+    const element = elements[index]!;
+    const derivation = derivations[index]!;
+    validatedElementDerivationBounds(element, derivation);
+    if (element.kind === "stroke" && derivation.strokeSampleExtrema === undefined)
+      throw new TypeError("Validated stroke sample extrema are missing.");
+  }
 }
 
 function estimatedElementBytes(element: InkElementV1): number {

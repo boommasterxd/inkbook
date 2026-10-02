@@ -13,6 +13,18 @@ export function createTerminalVaultPort(
   const create = vault.create;
   const createAndReadBack = vault.createAndReadBack;
   return {
+    ...(vault.createAndReadBackForVerification === undefined
+      ? {}
+      : {
+          createAndReadBackForVerification: (path: string, content: string, maximumBytes: number) =>
+            whileLive(() => vault.createAndReadBackForVerification!(path, content, maximumBytes)),
+        }),
+    ...(vault.readForVerification === undefined
+      ? {}
+      : {
+          readForVerification: (path: string, maximumBytes: number) =>
+            whileLive(() => vault.readForVerification!(path, maximumBytes)),
+        }),
     ...(create === undefined
       ? {}
       : {

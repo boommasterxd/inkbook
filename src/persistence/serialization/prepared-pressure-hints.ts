@@ -22,7 +22,7 @@ export function preparedPressurePathHint(
   if (
     source?.kind !== "stroke" ||
     !source.style.pressureEnabled ||
-    source.offset !== undefined ||
+    (source.offset !== undefined && (source.offset.x !== 0 || source.offset.y !== 0)) ||
     parts.length !== 1 ||
     parts[0]?.paint !== "fill"
   )

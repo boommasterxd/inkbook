@@ -27,6 +27,20 @@ export class OwnerWindowRegistry {
     }
     return ownerWindow;
   }
+
+  require(
+    documentId: string,
+    presentations: Iterable<OwnedPresentation>,
+    fallback: () => Window | undefined,
+  ): Window {
+    const mounted = resolvePresentationWindow(documentId, presentations);
+    if (mounted !== undefined) return mounted;
+    const retained = this.resolve(documentId);
+    if (retained !== undefined) return retained;
+    const candidate = fallback();
+    if (candidate !== undefined) return candidate;
+    throw new Error("The Inkbook presentation has no owning window.");
+  }
 }
 
 export function isLiveOwnerWindow(ownerWindow: Window | undefined): ownerWindow is Window {

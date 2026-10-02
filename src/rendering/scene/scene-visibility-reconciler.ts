@@ -7,6 +7,7 @@ import {
   type PendingMutationRun,
 } from "./visibility-publication";
 import { SceneMountPreparation, type PreviewTransform } from "./scene-mount-preparation";
+import { upcomingScenePathIds } from "./upcoming-scene-paths";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { MountSlice } from "./mount-slice";
 import type { MountYieldReason, ScenePublicationBudget } from "./mount-slice";
@@ -59,15 +60,14 @@ export class SceneVisibilityReconciler {
     this.#preparation = new SceneMountPreparation({
       ...options,
       ownerDocument: options.dom.ownerDocument,
+      upcomingIds: () => upcomingScenePathIds(this.#pending, this.options.mounted),
     });
   }
-
   public memoryUsage(): number {
-    const orderBytes = this.#pending?.order.memoryUsage() ?? 0;
     return (
       this.#preparation.memoryUsage() +
       (this.#publishedEntrantIds.length + this.#deferredExits.size) * 8 +
-      orderBytes
+      (this.#pending?.order.memoryUsage() ?? 0)
     );
   }
 

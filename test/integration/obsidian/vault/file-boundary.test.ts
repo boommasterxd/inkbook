@@ -6,6 +6,8 @@ import { ObsidianVaultFileAdapter } from "../../../../src/obsidian/vault/file-ad
 import { ObsidianVaultFolderAdapter } from "../../../../src/obsidian/vault/folder-adapter";
 import { ObsidianManagedFileAdapter } from "../../../../src/obsidian/vault/managed-files";
 import { ObsidianCreationPathResolver } from "../../../../src/obsidian/vault/placement";
+import { MetadataGuardedFileReadCandidate } from "../../../../src/persistence/saving/metadata-guarded-file-read";
+import { VerifiedMetadataGuardedFileRead } from "../../../../src/persistence/saving/verified-file-read";
 
 class FakeFile {
   basename: string;
@@ -170,6 +172,31 @@ describe("Obsidian vault file boundary", () => {
   });
 });
 
+describe("Obsidian vault deferred verification reads", () => {
+  it("retains stable host evidence while deferring full UTF-8 measurement for worker verification", async () => {
+    const { file, files, state } = createBinaryReadFixture("drawings/worker.svg", 6);
+    state.text.set(file.path, "ä😀");
+    const charCodeAt = vi.spyOn(String.prototype, "charCodeAt");
+    let candidate;
+    try {
+      candidate = await files.readForVerification(file.path, 6);
+      expect(charCodeAt).not.toHaveBeenCalled();
+    } finally {
+      charCodeAt.mockRestore();
+    }
+    expect(MetadataGuardedFileReadCandidate.isOwned(candidate)).toBe(true);
+    expect(VerifiedMetadataGuardedFileRead.isVerified(candidate)).toBe(false);
+    expect(candidate.identity.size).toBe(6);
+    expect(candidate.isCurrent?.()).toBe(true);
+    files.noteModification(file.path);
+    expect(candidate.isCurrent?.()).toBe(false);
+    await expect(files.readForVerification(file.path, 5)).rejects.toMatchObject({
+      code: "file-too-large",
+    });
+    expect(state.textReads).toEqual([file.path]);
+  });
+});
+
 describe("Obsidian vault bounded reads", () => {
   it("preflights file size before reading binary content", async () => {
     const { file, files, state } = createBinaryReadFixture("drawings/large.svg", 11);
@@ -249,7 +276,34 @@ describe("Obsidian vault bounded reads", () => {
       code: "unexpected-host-result",
     });
   });
+});
 
+describe("Obsidian vault current read-back proofs", () => {
+  it("invalidates a read-back proof on modifications even when file metadata is unchanged", async () => {
+    const { file, files, state } = createBinaryReadFixture("drawings/proof.svg", 11);
+    const read = await files.readWithMetadataGuard(file.path, 11);
+    expect(read.isCurrent?.()).toBe(true);
+    files.noteModification("missing.svg");
+    expect(read.isCurrent?.()).toBe(true);
+    files.noteModification(file.path);
+    expect(file.stat).toEqual({ ctime: 0, mtime: 0, size: 11 });
+    expect(read.isCurrent?.()).toBe(false);
+    const fresh = await files.readWithMetadataGuard(file.path, 11);
+    expect(fresh.isCurrent?.()).toBe(true);
+    state.files.set(file.path, new FakeFile(file.path, 11));
+    expect(fresh.isCurrent?.()).toBe(false);
+  });
+
+  it("rejects same-metadata modifications during an asynchronous read", async () => {
+    const { file, files, state } = createBinaryReadFixture("drawings/read-race.svg", 11);
+    state.onTextRead = () => files.noteModification(file.path);
+    await expect(files.readWithMetadataGuard(file.path, 11)).rejects.toMatchObject({
+      code: "unexpected-host-result",
+    });
+  });
+});
+
+describe("Obsidian vault serialized read and write operations", () => {
   it("serializes bounded reads and process writes for the same path", async () => {
     const { file, files, state } = createBinaryReadFixture("drawings/serialized.svg", 11);
     let releaseRead: (() => void) | undefined;
@@ -271,6 +325,17 @@ describe("Obsidian vault bounded reads", () => {
 });
 
 describe("Obsidian vault verified creation", () => {
+  it("preserves strict generic creation checks while the save path defers exact UTF-8 size", async () => {
+    const { files } = createBinaryReadFixture("drawings/existing.svg", 11);
+    // The test host's create method reports UTF-16 code units rather than actual bytes.
+    await expect(files.createAndReadBack("strict.svg", "ä😀", 6)).rejects.toMatchObject({
+      code: "unexpected-host-result",
+    });
+    const candidate = await files.createAndReadBackForVerification("worker.svg", "ä😀", 6);
+    expect(candidate.identity.size).toBe(3);
+    expect(MetadataGuardedFileReadCandidate.isOwned(candidate)).toBe(true);
+    expect(VerifiedMetadataGuardedFileRead.isVerified(candidate)).toBe(false);
+  });
   it("keeps creation and its guarded read-back in one serialized path operation", async () => {
     const { files, state } = createBinaryReadFixture("drawings/existing.svg", 11);
     let releaseRead: (() => void) | undefined;
