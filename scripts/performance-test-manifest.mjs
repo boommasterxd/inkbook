@@ -57,6 +57,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/obsidian/phone-sheet-editable-performance.test.ts",
     "test/performance/obsidian/phone-sheet-pages-performance.test.ts",
     "test/performance/obsidian/presentation-feedback-performance.test.ts",
+    "test/performance/obsidian/presentation-measurement-work.test.ts",
     "test/performance/obsidian/recognition-cache-performance.test.ts",
     "test/performance/obsidian/settings-render-performance.test.ts",
     "test/performance/persistence/safe-svg-validation.test.ts",
