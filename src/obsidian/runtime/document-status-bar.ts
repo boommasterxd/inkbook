@@ -3,6 +3,7 @@ import { setIcon } from "obsidian";
 import type { DocumentSaveStatus } from "../../editor/session/session-port";
 import type { MotionPreference } from "../../rendering/motion/transitions";
 import type { WorkspaceDocumentSaveStatusSource } from "../embeds/workspace-document-status";
+import { DocumentStatusBarMotion } from "./document-status-bar-motion";
 
 const LABELS: Readonly<Record<DocumentSaveStatus, string>> = {
   saved: "Saved",
@@ -18,26 +19,33 @@ const ICONS: Readonly<Record<DocumentSaveStatus, string>> = {
   failed: "circle-alert",
 };
 
-/** Mounts one native status item; its owner releases it through the returned disposer. */
+/** Mounts one native status item and owns its content and motion lifetime. */
 export function mountDocumentStatusBar(
   container: HTMLElement,
   source: WorkspaceDocumentSaveStatusSource,
   readPreference: () => MotionPreference = () => "system",
-): () => void {
+): { dispose: () => void; refreshMotion: () => void } {
   const root = container.createSpan({ cls: "inkbook-status-bar" });
   root.setAttribute("role", "status");
   root.setAttribute("aria-label", "Inkbook save status");
   root.setAttribute("aria-live", "polite");
   root.setAttribute("aria-atomic", "true");
-  const icon = root.createSpan({ cls: "inkbook-status-bar-icon" });
+  const content = root.createSpan({ cls: "inkbook-status-bar-content" });
+  const icon = content.createSpan({ cls: "inkbook-status-bar-icon" });
   icon.setAttribute("aria-hidden", "true");
-  const label = root.createSpan({ cls: "inkbook-status-bar-label" });
+  const label = content.createSpan({ cls: "inkbook-status-bar-label" });
+  const widthMotion = new DocumentStatusBarMotion(root, content, readPreference);
   let disposed = false;
   let previousIcon: string | null = null;
-  const update = (): void => {
+  const refreshMotion = (): void => {
     if (disposed) return;
     const motion = readPreference();
     if (root.dataset.inkbookMotion !== motion) root.dataset.inkbookMotion = motion;
+    widthMotion.refreshMotion();
+  };
+  const update = (): void => {
+    if (disposed) return;
+    refreshMotion();
     const current = source.current();
     const status = current?.status ?? "inactive";
     if (root.dataset.saveStatus !== status) root.dataset.saveStatus = status;
@@ -55,10 +63,12 @@ export function mountDocumentStatusBar(
   icon.hidden = true;
   const unsubscribe = source.subscribe(update);
   update();
-  return () => {
+  const dispose = (): void => {
     if (disposed) return;
     disposed = true;
+    widthMotion.dispose();
     unsubscribe();
     root.remove();
   };
+  return { dispose, refreshMotion };
 }

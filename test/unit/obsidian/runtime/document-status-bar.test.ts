@@ -36,11 +36,12 @@ function fixture(
   };
   const container = createHtmlElement("div");
   document.body.append(container);
-  const dispose = mountDocumentStatusBar(container, source, readPreference);
+  const { dispose } = mountDocumentStatusBar(container, source, readPreference);
   cleanups.push(dispose);
   const root = container.firstElementChild as HTMLElement;
-  const icon = root.firstElementChild as HTMLElement;
-  const label = root.lastElementChild as HTMLElement;
+  const content = root.firstElementChild as HTMLElement;
+  const icon = content.firstElementChild as HTMLElement;
+  const label = content.lastElementChild as HTMLElement;
   return {
     container,
     dispose,
@@ -107,8 +108,8 @@ describe("native document status bar", () => {
       expect(changes[0]?.attributeName).toBe("title");
       expect(root.title).toContain("Second.svg");
       expect(icons).toHaveBeenCalledOnce();
-      expect(root.firstElementChild).toBe(icon);
-      expect(root.lastElementChild).toBe(label);
+      expect(root.firstElementChild?.firstElementChild).toBe(icon);
+      expect(root.firstElementChild?.lastElementChild).toBe(label);
       observer.disconnect();
     },
   );

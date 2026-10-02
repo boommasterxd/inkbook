@@ -4,9 +4,21 @@
 
 .inkbook-status-bar {
   display: inline-flex;
+  flex: none;
+  overflow: clip;
+  min-width: 0;
+  vertical-align: middle;
+  color: var(--text-muted);
+}
+
+.inkbook-status-bar-content {
+  display: inline-flex;
+  flex: none;
   align-items: center;
   gap: var(--size-2-2);
-  color: var(--text-muted);
+  padding-block: 1px;
+  width: max-content;
+  white-space: nowrap;
 }
 
 .inkbook-status-bar[data-save-status="failed"] {
@@ -22,6 +34,7 @@
   flex: none;
   align-items: center;
   justify-content: center;
+  translate: 0 1px;
 }
 
 .inkbook-status-bar-icon[hidden] {
@@ -37,7 +50,6 @@
 
 .inkbook-status-bar[data-save-status="saved"] .inkbook-status-bar-icon {
   color: var(--interactive-accent);
-  translate: 0 1px;
 }
 
 .inkbook-status-bar[data-save-status="saving"] .inkbook-status-bar-icon {

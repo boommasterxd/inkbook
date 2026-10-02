@@ -21,7 +21,11 @@ export function registerDocumentStatusBar(
 ): () => void {
   const item = plugin.addStatusBarItem();
   item.classList.add("inkbook-status-bar-item");
-  const dispose = mountDocumentStatusBar(item, runtime.documentStatus, runtime.getMotionPreference);
+  const statusBar = mountDocumentStatusBar(
+    item,
+    runtime.documentStatus,
+    runtime.getMotionPreference,
+  );
   let disposed = false;
   const refreshPane = (): void => {
     if (disposed) return;
@@ -32,16 +36,15 @@ export function registerDocumentStatusBar(
   refreshPane();
   plugin.app.workspace.onLayoutReady(refreshPane);
   plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", refreshPane));
-  const unsubscribeSettings = settings.subscribeDeviceSettings((value) => {
+  const unsubscribeSettings = settings.subscribeDeviceSettings(() => {
     if (disposed) return;
-    const status = item.children[0] as HTMLElement | undefined;
-    if (status !== undefined) status.dataset.inkbookMotion = value.motion;
+    statusBar.refreshMotion();
   });
   const release = (): void => {
     if (disposed) return;
     disposed = true;
     unsubscribeSettings();
-    dispose();
+    statusBar.dispose();
     item.remove();
   };
   plugin.register(release);
