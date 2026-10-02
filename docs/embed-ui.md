@@ -67,7 +67,7 @@ Its appearance:
 - 1-pixel outer border
 - gray Obsidian surface
 - rounded background-container corners
-- dynamic radius of `clamp(10px, 2% of the container width, 20px)`
+- dynamic radius of `clamp(10px, 2% of the embed root content width, 20px)`; measure the persistent root in both states, never a retained editor child, and retain the last valid radius while the root has zero width
 - no additional internal CSS padding
 - the visible unpatterned margin on all four sides is part of the SVG page, scales with it, and is writable
 
@@ -84,7 +84,7 @@ The normative DOM layer hierarchy is:
 
 Activation preserves the root, top-edge anchor, measured width, presentation attachment, and active editor identity while intentionally animating the block from `lockedHeight` to `activeHeight`. The toolbar overlays the note immediately above the page, including Markdown already painted there, and does not move that content or reduce, cover, or pad the SVG page. The embed root explicitly preserves visible overflow and disables host-imposed paint containment so the upward toolbar overhang remains painted and hit-testable; paint containment remains scoped to the page surface below it. A stroke commit, autosave, SVG resource refresh, theme change, or asynchronous document reclassification MUST NOT detach, remount, move, or lock the active editor.
 
-The embed uses its own final background-container content-box width after the resolved note scroller's native right-hand scrollbar gutter has been stabilized. It respects note padding, readable-line width, lists, callouts, and other nested constraints; it never adopts the full scroller width. No Inkbook layer, including the toolbar, input surface, focus treatment, or background container, extends over the owner client edge or scrollbar gutter. Pointer contact does not add or remove any layout-affecting UI. The host-scroll ownership, edge clamp, and platform-specific native overlay behavior are defined in [Obsidian Integration](obsidian-integration.md#native-scroll-owner-and-scrollbar-stability).
+The outer shell uses its own persistent embed-root content-box width after the resolved note scroller's native right-hand scrollbar gutter has been stabilized. The editor independently measures its background-container content box for page layout and width-fit zoom. Both respect note padding, readable-line width, lists, callouts, and other nested constraints; they never adopt the full scroller width. No Inkbook layer, including the toolbar, input surface, focus treatment, or background container, extends over the owner client edge or scrollbar gutter. Pointer contact does not add or remove any layout-affecting UI. The host-scroll ownership, edge clamp, and platform-specific native overlay behavior are defined in [Obsidian Integration](obsidian-integration.md#native-scroll-owner-and-scrollbar-stability).
 
 ## Toolbar Layout
 
