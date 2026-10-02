@@ -185,6 +185,8 @@ The primary toolbar is one 48-pixel-high rounded surface with 2 pixels of intern
 
 Every control has a 44-by-44-pixel hit target. The icon may be visually smaller and does not change size between rest, hover, active, and focus states. Controls retain accessible names through `aria-label` and use Obsidian's hover tooltips without duplicate browser `title` tooltips.
 
+The canvas input surface has an accessible name through `aria-labelledby` referencing its own hidden text label. It has no hover tooltip and does not carry `aria-label` or `title`, because Obsidian interprets `aria-label` as a tooltip trigger. Toolbar tooltips use the host's pointer-type filtering and touch cancellation; Inkbook does not introduce a separate touch or long-press tooltip trigger.
+
 The 48-pixel toolbar track is positioned inside a 68-pixel overlay envelope with 8 pixels above and 12 pixels below it. The complete envelope is translated above a zero-height host, so it creates no dead page padding, moves no surrounding Markdown, and removes no writable SVG space.
 
 It is positioned above the drawing area inside the same in-place editor boundary while painting over the note rather than participating in note flow. The zero-height host uses native sticky positioning. Its inset compensates for the measured top padding of the already resolved public scroll owner, without private Obsidian selectors or per-scroll JavaScript writes. As the note scrolls, the toolbar moves normally until it reaches the visible top edge, remains there while its embed is visible, and leaves the viewport with the embed's bottom boundary.
