@@ -5,7 +5,7 @@
 .inkbook-status-bar {
   display: inline-flex;
   flex: none;
-  overflow: clip;
+  overflow: clip visible;
   min-width: 0;
   vertical-align: middle;
   color: var(--text-muted);
@@ -34,7 +34,6 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  translate: 0 1px;
 }
 
 .inkbook-status-bar-icon[hidden] {
@@ -44,8 +43,14 @@
 .inkbook-status-bar .inkbook-status-bar-icon svg {
   display: block;
   margin: 0;
-  width: var(--icon-xs);
-  height: var(--icon-xs);
+  width: auto;
+  height: 0.75em;
+}
+
+@supports (height: 1cap) {
+  .inkbook-status-bar .inkbook-status-bar-icon svg {
+    height: 1cap;
+  }
 }
 
 .inkbook-status-bar[data-save-status="saved"] .inkbook-status-bar-icon {

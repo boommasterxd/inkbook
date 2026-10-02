@@ -12,11 +12,12 @@ const LABELS: Readonly<Record<DocumentSaveStatus, string>> = {
   failed: "Save failed",
 };
 
-const ICONS: Readonly<Record<DocumentSaveStatus, string>> = {
-  saved: "check",
-  pending: "pencil",
-  saving: "loader-circle",
-  failed: "circle-alert",
+// Tight glyph bounds include the native two-unit stroke and rounded caps.
+const ICONS: Readonly<Record<DocumentSaveStatus, { name: string; viewBox: string }>> = {
+  saved: { name: "check", viewBox: "3 5 18 13" },
+  pending: { name: "pencil", viewBox: "1 1 22 22" },
+  saving: { name: "loader-circle", viewBox: "2 2 20 20" },
+  failed: { name: "circle-alert", viewBox: "1 1 22 22" },
 };
 
 /** Mounts one native status item and owns its content and motion lifetime. */
@@ -36,7 +37,7 @@ export function mountDocumentStatusBar(
   const label = content.createSpan({ cls: "inkbook-status-bar-label" });
   const widthMotion = new DocumentStatusBarMotion(root, content, readPreference);
   let disposed = false;
-  let previousIcon: string | null = null;
+  let previousIcon: (typeof ICONS)[DocumentSaveStatus] | null = null;
   const refreshMotion = (): void => {
     if (disposed) return;
     const motion = readPreference();
@@ -58,7 +59,13 @@ export function mountDocumentStatusBar(
     previousIcon = nextIcon;
     icon.hidden = nextIcon === null;
     if (nextIcon === null) icon.replaceChildren();
-    else setIcon(icon, nextIcon);
+    else {
+      setIcon(icon, nextIcon.name);
+      const svg = icon.querySelector("svg");
+      svg?.setAttribute("viewBox", nextIcon.viewBox);
+      svg?.removeAttribute("width");
+      svg?.removeAttribute("height");
+    }
   };
   icon.hidden = true;
   const unsubscribe = source.subscribe(update);

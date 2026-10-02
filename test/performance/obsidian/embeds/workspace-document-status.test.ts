@@ -19,6 +19,41 @@ import {
 } from "../../../integration/persistence/saving/fixtures";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
 
+function mockNativeStatusIcon() {
+  return vi.spyOn(obsidian, "setIcon").mockImplementation((element) => {
+    const svg = document.importNode(
+      new DOMParser().parseFromString(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"/>',
+        "image/svg+xml",
+      ).documentElement,
+      true,
+    );
+    element.replaceChildren(svg);
+  });
+}
+
+function expectNormalizedIcon(icon: Element, viewBox: string) {
+  expect(icon.firstElementChild?.getAttribute("viewBox")).toBe(viewBox);
+  expect(icon.firstElementChild?.hasAttribute("width")).toBe(false);
+  expect(icon.firstElementChild?.hasAttribute("height")).toBe(false);
+}
+
+function verifyRetainedStatusNodes(
+  workspace: WorkspaceDocumentStatus,
+  container: HTMLElement,
+  root: HTMLElement,
+  observer: MutationObserver,
+) {
+  const icon = root.querySelector(".inkbook-status-bar-icon")!;
+  const glyph = icon.firstElementChild;
+  const label = root.querySelector(".inkbook-status-bar-label")!;
+  for (let index = 0; index < 10_000; index += 1) workspace.setActivePane(container);
+  expect(observer.takeRecords()).toHaveLength(0);
+  expect(icon.firstElementChild).toBe(glyph);
+  expect(root.querySelector(".inkbook-status-bar-label")).toBe(label);
+  return glyph;
+}
+
 it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: caches public pane ownership across 10,000 host events without frame or DOM work`, () => {
   const value = documentStatusBarBindingFixture();
   const observer = new MutationObserver(() => undefined);
@@ -146,11 +181,12 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
     },
   };
   workspaceStatus.bind(attachment, model);
-  workspaceStatus.bind({ ...attachment }, model);
-  const icons = vi.spyOn(obsidian, "setIcon");
+  const icons = mockNativeStatusIcon();
   const containment = vi.spyOn(container, "contains");
   const { dispose } = mountDocumentStatusBar(container, workspaceStatus);
   const root = container.firstElementChild as HTMLElement;
+  const icon = root.querySelector(".inkbook-status-bar-icon")!;
+  const geometry = vi.spyOn(SVGElement.prototype, "getBoundingClientRect");
   const observer = new MutationObserver(() => undefined);
   observer.observe(root, { attributes: true, childList: true, subtree: true });
   const documentSource = new AutosaveDocumentFixture();
@@ -178,9 +214,17 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
       workspaceStatus.setActivePane(container);
     }
     expect(root.dataset.saveStatus).toBe("pending");
-    // One semantic transition may update status, label, title, icon visibility and icon content.
-    expect(observer.takeRecords().length).toBeLessThanOrEqual(6);
+    // One transition updates content and normalizes the new SVG in three attribute writes.
+    expect(observer.takeRecords().length).toBeLessThanOrEqual(9);
     expect(icons).toHaveBeenCalledTimes(2);
+    expectNormalizedIcon(icon, "1 1 22 22");
+    const pendingGlyph = verifyRetainedStatusNodes(workspaceStatus, container, root, observer);
+    attachment.documentId = "renamed.svg";
+    workspaceStatus.setActivePane(container);
+    const pathChanges = observer.takeRecords();
+    expect(pathChanges).toHaveLength(1);
+    expect(pathChanges[0]?.attributeName).toBe("title");
+    expect(icon.firstElementChild).toBe(pendingGlyph);
     expect(subscribe).toHaveBeenCalledOnce();
     expect(containment).toHaveBeenCalledOnce();
     clock.advance(999);
@@ -189,8 +233,10 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
     clock.advance(1);
     expect(execute).toHaveBeenCalledOnce();
     expect(root.dataset.saveStatus).toBe("saving");
-    expect(observer.takeRecords().length).toBeLessThanOrEqual(6);
+    expect(observer.takeRecords().length).toBeLessThanOrEqual(9);
     expect(icons).toHaveBeenCalledTimes(3);
+    expectNormalizedIcon(icon, "2 2 20 20");
+    expect(geometry).not.toHaveBeenCalled();
     expect(containment).toHaveBeenCalledOnce();
     dispose();
     dispose();
