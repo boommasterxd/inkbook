@@ -129,10 +129,7 @@ export class SceneDom {
     defs.append(this.#backgroundPattern);
     this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);
 
-    this.inputSurface.tabIndex = 0;
-    this.inputSurface.setAttribute("class", "inkbook-canvas-input");
-    this.inputSurface.setAttribute("aria-label", accessibleName);
-    this.inputSurface.setAttribute("role", "application");
+    this.configureInputSurface(accessibleName);
     this.svg.setAttribute("height", "100%");
     this.svg.setAttribute("width", "100%");
     this.svg.setAttribute("pointer-events", "none");
@@ -264,6 +261,20 @@ export class SceneDom {
 
   private createSvg<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {
     return this.ownerDocument.createElementNS(SVG_NAMESPACE, name);
+  }
+
+  private configureInputSurface(accessibleName: string): void {
+    const label = this.ownerDocument.createElementNS("http://www.w3.org/1999/xhtml", "span");
+    const labelId = `${this.#backgroundPatternId}-input-label`;
+    label.setAttribute("id", labelId);
+    label.setAttribute("hidden", "");
+    label.textContent = accessibleName;
+    this.inputSurface.append(label);
+    this.inputSurface.tabIndex = 0;
+    this.inputSurface.setAttribute("class", "inkbook-canvas-input");
+    // Obsidian turns aria-label into a hover tooltip, even on the canvas.
+    this.inputSurface.setAttribute("aria-labelledby", labelId);
+    this.inputSurface.setAttribute("role", "application");
   }
 
   private attachHandlers(handlers: SceneInputHandlers): void {

@@ -303,7 +303,12 @@ describe("scene DOM ownership", () => {
     const input = fakeNode(renderer.inputSurface);
 
     expect(input.tabIndex).toBe(0);
-    expect(input.attributes.get("aria-label")).toBe("Inkbook canvas");
+    const label = input.nodes[0]!;
+    expect(input.attributes.has("aria-label")).toBe(false);
+    expect(input.attributes.has("title")).toBe(false);
+    expect(input.attributes.get("aria-labelledby")).toBe(label.attributes.get("id"));
+    expect(label.attributes.has("hidden")).toBe(true);
+    expect((label as unknown as HTMLElement).textContent).toBe("Inkbook canvas");
     expect(input.attributes.get("class")).toBe("inkbook-canvas-input");
     expect(input.listeners.get("pointerdown")?.size).toBe(1);
     expect(container.nodes[0]?.nodes[2]?.nodes[0]?.attributes.get("fill-rule")).toBe("evenodd");
