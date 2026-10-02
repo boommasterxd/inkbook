@@ -11,6 +11,7 @@ const serialCapacityTests = [
   "test/unit/persistence/saving/trusted-svg-output.test.ts",
   "test/unit/persistence/serialization/chunked-output-sha256.test.ts",
   "test/unit/persistence/serialization/pressure-stroke-capacity.test.ts",
+  "test/unit/persistence/worker/runtime/runtime-input-hash.test.ts",
 ];
 
 export default defineConfig({
