@@ -12,6 +12,7 @@ import {
   type StrokeStyleV1,
   type TableElementV1,
 } from "../../domain/schema/public";
+import { copyValidatedSampleExtrema } from "../../domain/schema/stroke-sample-extrema";
 
 interface CanonicalElementBase {
   readonly createdAt: number;
@@ -24,6 +25,7 @@ interface CanonicalElementBase {
 export function canonicalSnapshot(
   snapshot: InkSnapshotV1,
   preserveRuntimeStrokeBuffers = false,
+  copyRuntimeStrokeBuffers = false,
 ): InkSnapshotV1 {
   return {
     format: "inkbook",
@@ -31,7 +33,7 @@ export function canonicalSnapshot(
     revision: snapshot.revision,
     page: canonicalPage(snapshot.page),
     elements: snapshot.elements.map((element) =>
-      canonicalElement(element, preserveRuntimeStrokeBuffers),
+      canonicalElement(element, preserveRuntimeStrokeBuffers, copyRuntimeStrokeBuffers),
     ),
   };
 }
@@ -58,6 +60,7 @@ export function canonicalPage(page: PageV1): PageV1 {
 export function canonicalElement(
   element: InkElementV1,
   preserveRuntimeStrokeBuffers = false,
+  copyRuntimeStrokeBuffers = false,
 ): InkElementV1 {
   const base = {
     kind: element.kind,
@@ -74,7 +77,7 @@ export function canonicalElement(
       ...(element.offset === undefined ? {} : { offset: canonicalPoint(element.offset) }),
       points:
         preserveRuntimeStrokeBuffers && element.points instanceof Float64Array
-          ? element.points
+          ? runtimeSamples(element.points, copyRuntimeStrokeBuffers)
           : [...element.points],
       style: canonicalStrokeStyle(element.style),
     };
@@ -141,6 +144,13 @@ export function canonicalElement(
     height: element.height,
     style: canonicalShapeStyle(element.style),
   };
+}
+
+function runtimeSamples<T extends Float64Array>(points: T, copy: boolean): T {
+  if (!copy) return points;
+  const owned = new Float64Array(points);
+  copyValidatedSampleExtrema(points, owned);
+  return owned as T;
 }
 
 function canonicalTable(element: TableElementV1, base: CanonicalElementBase): TableElementV1 {

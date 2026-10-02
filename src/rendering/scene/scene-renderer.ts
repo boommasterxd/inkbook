@@ -9,7 +9,7 @@ import type { ProgressivePreviewTransform } from "./progressive-element-preview"
 import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import { SceneFrameWork } from "./scene-frame-work";
-import { canCompleteSceneFrame, needsAnotherSceneFrame } from "./scene-frame-completion";
+import { completeSceneFrame } from "./scene-frame-completion";
 import * as stats from "./instrumentation";
 import { ScenePathCache, type PreparedScenePath } from "./path-cache";
 import { ScenePreviewCommitController, type PreviewCommitHandoff } from "./preview-commit-handoff";
@@ -107,6 +107,7 @@ export class SvgSceneRenderer {
       this.#transformPreviews,
       this.#elementPreviews,
     );
+    this.#visibilityCoordinator.setInitialVisibleOnly(options.deferInitialOverscan ?? false);
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
     this.#frameWork = new SceneFrameWork({
@@ -159,13 +160,20 @@ export class SvgSceneRenderer {
   public get hasPendingSceneCommit(): boolean {
     return this.#sceneCommits.pending;
   }
+  public get sceneCommitProof(): number | undefined {
+    return this.#sceneCommits.proof;
+  }
+  public releaseInitialOverscan(): void {
+    this.assertActive();
+    this.#visibilityCoordinator.setInitialVisibleOnly(false);
+    this.#frames.schedule();
+  }
   public setActiveDocumentMemoryPressure(active: boolean): void {
     this.assertActive();
     this.#resourcePolicy.setActiveDocumentMemoryPressure(active);
   }
-  public memoryUsage(): ReturnType<SceneResourcePolicy["memoryUsage"]> {
-    return this.#resourcePolicy.memoryUsage();
-  }
+  public readonly memoryUsage = (): ReturnType<SceneResourcePolicy["memoryUsage"]> =>
+    this.#resourcePolicy.memoryUsage();
   public beginPreviewCommit(): PreviewCommitHandoff {
     this.assertActive();
     return this.#previewCommits.begin();
@@ -174,6 +182,7 @@ export class SvgSceneRenderer {
     runtime.validateCamera(camera);
     if (camera.x === this.#camera.x && camera.zoom === this.#camera.zoom) return;
     const zoomChanged = camera.zoom !== this.#camera.zoom;
+    if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
     this.#camera = camera;
     this.#frameWriter.setCamera(camera);
     this.#visibilityCoordinator.setContext(camera, this.#viewport);
@@ -183,6 +192,7 @@ export class SvgSceneRenderer {
   public setViewport(viewport: Scene.SceneViewport): void {
     runtime.validateViewport(viewport);
     if (runtime.sameViewport(this.#viewport, viewport)) return;
+    if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
     this.#viewport = viewport;
     this.#frameWriter.invalidateCursorLayout();
     this.#visibilityCoordinator.setContext(this.#camera, viewport);
@@ -193,7 +203,8 @@ export class SvgSceneRenderer {
     this.assertActive();
     this.#layoutDirty = true;
     this.#frameWriter.invalidateCursorLayout();
-    if (requestCommit) this.#sceneCommits.markPending();
+    if (requestCommit || this.#visibilityCoordinator.initialVisibleOnly)
+      this.#sceneCommits.markPending();
     this.#frames.schedule();
   }
   public setPage(page: Schema.PageV1, height = this.#pageHeight): void {
@@ -395,6 +406,7 @@ export class SvgSceneRenderer {
   }
   public replaceGeneration(): void {
     this.assertActive();
+    if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
     this.#frames.replaceGeneration();
     this.#visibilityCoordinator.invalidate();
     this.#frames.schedule();
@@ -435,12 +447,7 @@ export class SvgSceneRenderer {
       this.#layoutDirty = false;
     }
     this.#frameWriter.readToolCursor();
-    if (this.#previewCommits.releaseCommitted()) {
-      this.#elementPreviews.retainCommittedGeometry(this.#transformPreviews.values);
-      this.#transformPreviews.clear();
-      this.#elementPreviews.clear();
-      this.#visibilityCoordinator.releasePreviews();
-    }
+    this.#visibilityCoordinator.releaseCommittedPreview(this.#previewCommits);
     this.#visibilityCoordinator.prepare(this.#viewport, this.#camera, deadline, () =>
       this.#scheduler.now(),
     );
@@ -458,31 +465,24 @@ export class SvgSceneRenderer {
       this.#transformPreviews.values,
       this.#elementPreviews.values,
     );
-    this.#elementPreviews.applyMounted(this.#content.takeCommittedPreviewIds());
-    this.#liveStroke.settleCommits(
-      (id) => this.#content.hasMounted(id) || !this.#visibility.contains(id),
+    this.#visibilityCoordinator.finishMountedFrame(
+      this.#liveStroke,
+      this.#frameWriter.livePathCommits,
+      this.#motion,
+      startedAt,
     );
-    this.#frameWriter.livePathCommits.settle(
-      (id) => this.#content.hasMounted(id) || !this.#visibility.contains(id),
+    completeSceneFrame(
+      work,
+      {
+        query: this.#visibilityCoordinator.hasPendingQuery,
+        motion: this.#motion.pending,
+        exits: this.#content.hasPendingExitCleanup,
+      },
+      this.#sceneCommits,
+      this.#frames,
     );
-    const mountedIds = this.#content.takeNewlyMountedIds();
-    this.#motion.bindMountedEntrances(mountedIds, startedAt);
-    this.#motion.finishEntranceBatch();
-    this.#elementPreviews.applyMounted(mountedIds);
-    if (canCompleteSceneFrame(work, this.#visibilityCoordinator.hasPendingQuery))
-      this.#sceneCommits.completeFrame();
-    const overBudget = this.#scheduler.now() >= deadline;
-    if (
-      needsAnotherSceneFrame(
-        work,
-        this.#visibilityCoordinator.hasPendingQuery,
-        this.#motion.pending,
-        this.#content.hasPendingExitCleanup,
-      )
-    )
-      this.#frames.schedule();
     stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
-    if (!overBudget) this.#resourcePolicy.notifyUsageChanged();
+    if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
   }
   private writeBackground(deadline: number, allowAtomic = false): boolean {
     if (!this.#backgroundDirty || this.#viewport === undefined) return false;

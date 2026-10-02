@@ -170,6 +170,8 @@ Keep CodeMirror and Lezer external to the production bundle. Add direct CodeMirr
 
 - Write technical content in English and use ASCII-compatible `kebab-case` documentation filenames. Preserve exact product, API, UI, command, and identifier spelling when part of a contract.
 - Keep each document focused on one stable responsibility and below 500 lines.
+- Use stable topic-based filenames; do not create date-specific documentation files.
+- Keep one-off measurement reports and changing speed comparisons out of `docs/`. Document lasting architecture, resource budgets, and verification requirements in their canonical topic documents.
 - Store technical documentation under `docs/`, except for standardized root files such as `AGENTS.md`, `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and `LICENSE.md`.
 - Update the Documentation Index whenever a Markdown file under `docs/` is created, moved, renamed, or deleted. Keep it complete, recursive, alphabetically sorted, and free of broken links.
 
@@ -183,6 +185,7 @@ Keep CodeMirror and Lezer external to the production bundle. Add direct CodeMirr
 | [`docs/decisions/centerline-selection-highlights.md`](docs/decisions/centerline-selection-highlights.md)   | Records centerline selection indicators, geometric transform bounds, and verification boundaries.                                                                     |
 | [`docs/decisions/central-work-scheduler.md`](docs/decisions/central-work-scheduler.md)                     | Records shared window budgets, worker scheduling policy, explicit waits, lifecycle ownership, and enforcement.                                                        |
 | [`docs/decisions/compact-stroke-contours.md`](docs/decisions/compact-stroke-contours.md)                   | Records compact pressure contours, constant-width simplification, reference output budgets, and verification boundaries.                                              |
+| [`docs/decisions/compact-stroke-metadata.md`](docs/decisions/compact-stroke-metadata.md)                   | Records exact compact stroke metadata, reader compatibility, integrity binding, and verification boundaries.                                                          |
 | [`docs/decisions/deterministic-performance-checks.md`](docs/decisions/deterministic-performance-checks.md) | Records removal of timing gates, retained work/resource checks, and the accepted speed-coverage gap.                                                                  |
 | [`docs/decisions/performance-base-comparison.md`](docs/decisions/performance-base-comparison.md)           | Historically records PR-base-only performance comparisons and the accepted cumulative-regression limitation.                                                          |
 | [`docs/decisions/performance-bounded-measurements.md`](docs/decisions/performance-bounded-measurements.md) | Historically records scenario-level timing selection, fixed measurement populations, six-pair decisions and the two-runner workload partition, and validation limits. |

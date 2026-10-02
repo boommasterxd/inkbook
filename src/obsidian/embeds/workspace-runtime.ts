@@ -7,19 +7,21 @@ import { WorkspaceEditorCoordinator } from "../../editor/session/workspace-edito
 import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
 import type { InkbookCommandAction, ObsidianEmbedActions } from "../commands";
-import { ActiveInkbookScene } from "./active-scene";
 import {
   OwnerWindowRegistry,
   pruneOwnerWindowRegistry,
   resolveFallbackWindow,
-  resolvePresentationWindow,
 } from "./owner-window-registry";
 import {
   presentationAttachmentKey,
   type PresentationAttachment,
   type PresentationSessionPort,
 } from "./presentation-port";
-import { type HostWriteResolved, WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
+import {
+  type ConfirmedOutputReceiver,
+  type HostWriteResolved,
+  WorkspaceRuntimeLifecycle,
+} from "./workspace-runtime-lifecycle";
 import {
   handleWorkspaceActivationFailure,
   showWorkspaceLoadRecovery,
@@ -32,22 +34,28 @@ import {
   mountWorkspaceActiveScene,
   presentationActivationReady,
 } from "./workspace-runtime-scene-readiness";
-import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
+import {
+  activeWorkspaceScene,
+  executeWorkspaceSceneAction,
+  recordWorkspaceMarkdownHistory,
+} from "./workspace-runtime-editor";
+import { WorkspaceDocumentStatus } from "./workspace-document-status";
 import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
 import { showWorkspaceHeadlessRecovery } from "./workspace-recovery-actions";
 import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
 import {
   createWorkspaceMountedPresentation,
+  createWorkspacePresentationStateSetter,
   disposeWorkspaceMountedPresentations,
   cancelInitialWorkspaceLoading,
   startInitialWorkspaceLoading,
   updateWorkspaceMountedSettings,
 } from "./workspace-mounted-presentation";
-import type { PresentationOperationFeedbackHandle } from "./presentation-operation-feedback";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
 import * as trustedHeadStorage from "../storage/trusted-document-head-ledger";
+import type { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #host: WorkspaceFeedbackHost & Omit<EditorChromeOpenings, "confirmEraseAll">;
   readonly #coordinator: WorkspaceEditorCoordinator;
@@ -59,11 +67,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
+  readonly #setState = createWorkspacePresentationStateSetter(this.#mounted);
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
+  #safeStaticProof: ((documentId: string) => SafeStaticProof | undefined) | undefined;
   readonly #settings: () => WorkspaceRuntimeSettings;
-
+  readonly documentStatus: WorkspaceDocumentStatus;
   constructor(
     vault: Vault,
     fileManager: FileManager,
@@ -73,6 +83,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     host: WorkspaceFeedbackHost &
       Omit<EditorChromeOpenings, "confirmEraseAll"> & {
         readonly deviceStorage?: trustedHeadStorage.DeviceLocalStoragePort;
+        readonly resolveDocumentStatusPane?: (root: HTMLElement) => HTMLElement | undefined;
       },
   ) {
     const trustedHeads =
@@ -80,6 +91,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         ? undefined
         : new trustedHeadStorage.TrustedDocumentHeadLedger(host.deviceStorage);
     this.#host = host;
+    this.documentStatus = new WorkspaceDocumentStatus(host.resolveDocumentStatusPane);
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
     this.#feedback = new WorkspaceFeedbackRouter(host.manager, (documentId) =>
@@ -94,6 +106,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       autoActivationCancelled: (key) => cancelInitialWorkspaceLoading(this.#mounted.get(key)),
       fallbackWindow: () => this.#fallbackWindow(),
       isDisposed: () => this.#disposed,
+      currentSaveSettlement: (documentId) => this.#sessions.currentSaveSettlement(documentId),
       notifyExternalChange: (documentId) => this.#coordinator.notifyExternalChange(documentId),
       presentations: () => this.#mounted.values(),
       reloadPresentation: (documentId) => this.#reloadPresentation(documentId),
@@ -111,6 +124,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       }),
       {
         persisted: (event) => this.#lifecycle.handlePersisted(event),
+        safeStaticProof: (documentId) => this.#safeStaticProof?.(documentId),
         ...(trustedHeads === undefined ? {} : { trustedHeads }),
       },
     );
@@ -136,7 +150,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       sessions: this.#sessions,
     });
   }
-
   mount(attachment: PresentationAttachment): void {
     if (this.#disposed) return;
     const key = presentationAttachmentKey(attachment);
@@ -158,15 +171,14 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#coordinator.mountAttachment(attachment);
     this.#lifecycle.continueAutoActivation(attachment);
   }
-
   readonly activate = (attachment: PresentationAttachment): void => this.#activate(attachment);
-
   #activate(attachment: PresentationAttachment, autoActivationAttempt?: number): void {
     if (this.#disposed) return;
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
     const activation = beginWorkspaceActivation(mounted, autoActivationAttempt);
     if (activation === undefined) return;
+    this.documentStatus.detach(attachment);
     const loadFeedback = activation.feedback;
     this.#setState(attachment, "unlocking");
     const handle = this.#coordinator.requestActivation(attachment);
@@ -191,12 +203,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         const presented = await presentationActivationReady(attachment);
         const context = this.#sessions.getEditorContext(outcome.sessionId);
         const current = this.#mounted.get(presentationAttachmentKey(attachment))?.activation;
-        const stillActive = isCurrentPresentationActivation(
-          this.#coordinator.getSnapshot(),
-          attachment,
-          outcome.sessionId,
-        );
-        if (!presented || context === undefined || current !== activation || !stillActive) {
+        const isActive = () =>
+          isCurrentPresentationActivation(
+            this.#coordinator.getSnapshot(),
+            attachment,
+            outcome.sessionId,
+          );
+        if (!presented || context === undefined || current !== activation || !isActive()) {
           loadFeedback?.finish();
           this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
           return;
@@ -234,6 +247,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
             this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
           },
           onReady: () => {
+            if (!isActive()) return;
+            this.documentStatus.bind(attachment, context.model);
             this.#setState(attachment, "active", loadFeedback);
             this.#lifecycle.completeAutoActivation(attachment, activation.autoActivationAttempt);
           },
@@ -268,15 +283,12 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       if (!this.lockActivePresentation()) throw new Error("No active Inkbook presentation.");
       return;
     }
-    const scene = this.#activeScene();
-    if (scene === undefined || !scene.isActionAvailable(action)) {
-      throw new Error(`Inkbook action is unavailable: ${action}`);
-    }
-    scene.executeAction(action);
+    executeWorkspaceSceneAction(action, this.#coordinator.getSnapshot(), this.#mounted);
   }
   isAvailable(action: InkbookCommandAction): boolean {
     if (action === "lock") return this.hasActivePresentation();
-    return this.#activeScene()?.isActionAvailable(action) ?? false;
+    const scene = activeWorkspaceScene(this.#coordinator.getSnapshot(), this.#mounted);
+    return scene?.isActionAvailable(action) ?? false;
   }
   readonly lockActivePresentation = (): boolean => this.#coordinator.requestLockCurrent();
   readonly getMotionPreference = () => this.#settings().device.motion;
@@ -304,21 +316,32 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly abortAutoActivation = (documentId: string): void =>
     this.#lifecycle.abortAutoActivation(documentId);
 
-  readonly handleVaultModification = (documentId: string, resolved?: HostWriteResolved): void =>
+  readonly handleVaultModification = (documentId: string, resolved?: HostWriteResolved): void => {
+    this.#sessions.noteVaultModification(documentId);
     this.#lifecycle.handleVaultModification(documentId, resolved);
+  };
+  readonly setConfirmedOutputReceiver = (receiver: ConfirmedOutputReceiver): void =>
+    this.#lifecycle.setConfirmedOutputReceiver(receiver);
+  readonly setSafeStaticProofProvider = (
+    provider: (documentId: string) => SafeStaticProof | undefined,
+  ): void => {
+    this.#safeStaticProof = provider;
+  };
   handleMarkdownEditorChange(sourcePath: string, pane: HTMLElement): void {
     if (this.#disposed) return;
-    const current = this.#coordinator.getSnapshot().current;
-    if (current?.phase !== "active" || current.attachment === undefined) return;
-    const mounted = this.#mounted.get(presentationAttachmentKey(current.attachment));
-    if (mounted !== undefined && ownsMarkdownEditorChange(mounted.attachment, sourcePath, pane)) {
-      mounted.scene?.recordMarkdownHistory();
-    }
+    recordWorkspaceMarkdownHistory(
+      this.#coordinator.getSnapshot(),
+      this.#mounted,
+      sourcePath,
+      pane,
+    );
   }
   readonly prepareForQuit = (): Promise<void> => this.#sessions.prepareForUnload();
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.documentStatus.dispose();
+    this.#safeStaticProof = undefined;
     this.#lifecycle.dispose();
     this.#headlessRecovery?.close();
     this.#headlessRecovery = undefined;
@@ -341,6 +364,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
 
   #releaseScene(attachment: AttachmentIdentity): void {
+    this.documentStatus.detach(attachment);
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
     mounted.activation?.release();
@@ -372,13 +396,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     scene?.dispose();
     mounted.scene = undefined;
     this.#setState(attachment, "locked");
-  }
-
-  #activeScene(): ActiveInkbookScene | undefined {
-    const attachment = this.#coordinator.getSnapshot().current?.attachment;
-    return attachment === undefined
-      ? undefined
-      : this.#mounted.get(presentationAttachmentKey(attachment))?.scene;
   }
 
   #showAttachedRecovery(notice: {
@@ -468,32 +485,15 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     });
   }
 
-  #setState(
-    attachment: AttachmentIdentity,
-    state: string,
-    feedback?: PresentationOperationFeedbackHandle,
-  ): void {
-    feedback?.finish();
-    const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
-    if (mounted !== undefined) mounted.attachment.root.dataset.inkbookState = state;
-  }
-
   #owningWindow(documentId: string): Window {
-    const mountedWindow = resolvePresentationWindow(documentId, this.#mounted.values());
-    if (mountedWindow !== undefined) return mountedWindow;
-    const leasedWindow = this.#ownerWindows.resolve(documentId);
-    if (leasedWindow !== undefined) return leasedWindow;
-    const fallbackWindow = this.#fallbackWindow();
-    if (fallbackWindow !== undefined) return fallbackWindow;
-    throw new Error("The Inkbook presentation has no owning window.");
+    return this.#ownerWindows.require(documentId, this.#mounted.values(), this.#fallbackWindow);
   }
 
-  #fallbackWindow(): Window | undefined {
-    return resolveFallbackWindow(
+  readonly #fallbackWindow = (): Window | undefined =>
+    resolveFallbackWindow(
       this.#coordinator.getSnapshot().current?.documentId,
       this.#mounted.values(),
       this.#ownerWindows,
       this.#fallbackOwnerWindow,
     );
-  }
 }

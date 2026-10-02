@@ -12,5 +12,19 @@ export async function parseInkbookDocumentForTest(
   const parser = new ChunkedInkbookInputParser();
   const bytes = typeof input === "string" ? encoder.encode(input) : input;
   const write = await parser.write(bytes);
-  return write.ok ? parser.finish() : write;
+  if (!write.ok) return write;
+  const parsed = await parser.finish();
+  if (!parsed.ok) return parsed;
+  return {
+    ...parsed,
+    value: {
+      ...parsed.value,
+      snapshot: {
+        ...parsed.value.snapshot,
+        elements: parsed.value.snapshot.elements.map((element) =>
+          element.kind === "stroke" ? { ...element, points: Array.from(element.points) } : element,
+        ),
+      },
+    },
+  };
 }

@@ -253,14 +253,13 @@ function createCoordinator(
   document: MutableDocument,
   executor: ControlledExecutor,
   vault: ControlledVault,
-  waitForBackground?: () => Promise<void>,
+  waitForBackground?: () => Promise<void> | undefined,
 ): AutosaveCoordinator {
   return new AutosaveCoordinator({
     workScheduler: createTestWorkScheduler(),
     clock,
     ...(waitForBackground ? { waitForBackground } : {}),
     confirmedBase: { outputHash: hash(0), revision: 0, type: "confirmed" },
-    confirmedContent: output(0),
     documentSource: document,
     executor,
     initialSnapshot: document.snapshot(),

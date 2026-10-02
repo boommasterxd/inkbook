@@ -75,19 +75,21 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
     return runtimeSliceWorkProfile(this.getSliceMilliseconds());
   }
 
-  public async checkpoint(signal: AbortSignal): Promise<void> {
+  public checkpoint(signal: AbortSignal): Promise<void> | undefined {
     const ready = this.#inputGate.waitUntilInactive(signal);
-    if (ready !== undefined) await ready;
+    if (ready !== undefined) return ready.then(() => this.checkpoint(signal));
     const pending = this.#workScheduler.checkpoint(signal);
-    if (pending !== undefined) await pending;
+    if (pending !== undefined) return pending.then(() => signal.throwIfAborted());
     signal.throwIfAborted();
+    return undefined;
   }
 
   public async run<T>(
     operation: (signal: AbortSignal) => T | Promise<T>,
     signal: AbortSignal,
   ): Promise<T> {
-    await this.checkpoint(signal);
+    const pending = this.checkpoint(signal);
+    if (pending !== undefined) await pending;
     return operation(signal);
   }
 

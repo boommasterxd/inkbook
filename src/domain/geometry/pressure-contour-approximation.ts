@@ -3,6 +3,7 @@ import { pressureArcPoint, type PressureBoundaryArc } from "./pressure-joins";
 import type { PressureBoundarySegment } from "./pressure-boundary-intersections";
 import { iteratePressureBoundarySimplification } from "./pressure-boundary-simplification";
 import { iteratePressureContourQuantization } from "./pressure-contour-quantization";
+import { PRESSURE_PREPARATION_CHECK_INTERVAL } from "./pressure-union";
 
 export function pressureContourOutwardError(width: number): number {
   return Math.min(0.5, width / 32);
@@ -24,7 +25,7 @@ export function* iteratePressureContourApproximation(
     if (edge.kind === "line") points.push(edge.end);
     else yield* appendArc(points, edge, tolerance, triangles);
     if (points.length > 4096) return [...loop];
-    yield;
+    if (points.length % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   }
   const reduced = yield* iteratePressureBoundarySimplification(points, tolerance, (triangle) =>
     additions.push(triangle),
@@ -70,7 +71,7 @@ function* appendArc(
       };
       points.push(support);
       additions.push([start, support, end]);
-      yield;
+      if (points.length % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
       if (points.length > 4096) return;
     }
   }

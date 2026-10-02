@@ -1,6 +1,8 @@
 import {
   validateInkSnapshotV1,
   validateInkSnapshotV1Steps,
+  validateRuntimeInkSnapshotV1,
+  validateRuntimeInkSnapshotV1Steps,
   type SnapshotValidationOptions,
 } from "../../domain/schema/snapshot-validation";
 
@@ -72,15 +74,23 @@ export function* migrateSnapshotSequentiallySteps(
 
 export function createDocumentSnapshotMigrations(
   options: SnapshotValidationOptions = {},
+  allowRuntimeStrokeBuffers = false,
 ): readonly SnapshotMigrationStep[] {
   return Object.freeze([
     Object.freeze({
       fromVersion: 0,
       migrate: migrateVersionZero,
       toVersion: 1,
-      validate: (snapshot: unknown) => validateInkSnapshotV1(snapshot, options).ok,
+      validate: (snapshot: unknown) =>
+        (allowRuntimeStrokeBuffers
+          ? validateRuntimeInkSnapshotV1(snapshot, options)
+          : validateInkSnapshotV1(snapshot, options)
+        ).ok,
       validateSteps: function* (snapshot: unknown): Generator<void, boolean> {
-        return (yield* validateInkSnapshotV1Steps(snapshot, options)).ok;
+        const steps = allowRuntimeStrokeBuffers
+          ? validateRuntimeInkSnapshotV1Steps(snapshot, options)
+          : validateInkSnapshotV1Steps(snapshot, options);
+        return (yield* steps).ok;
       },
     }),
   ]);

@@ -1,11 +1,19 @@
 import { SaveError } from "./save-errors";
-import type { ExistingFilePort, PersistedOutputVerifier } from "./save-ports";
-import { readExistingFileWithinLimit } from "./bounded-file-read";
+import type {
+  ExistingFilePort,
+  MetadataGuardedFileRead,
+  PersistedOutputVerifier,
+} from "./save-ports";
+import { readGuardedFileWithinLimit } from "./bounded-file-read";
+import { VerifiedMetadataGuardedFileRead } from "./verified-file-read";
+import { utf8ByteLengthWithinLimit } from "../scheduling/utf8-byte-length";
+import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 
 export interface ConfirmedSave {
   readonly content: string;
   readonly revision: number;
   readonly outputHash: string;
+  readonly readBack?: MetadataGuardedFileRead;
 }
 
 export async function readConfirmedSave(
@@ -15,18 +23,43 @@ export async function readConfirmedSave(
   vault: ExistingFilePort,
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
-  const readBack = await readExistingFileWithinLimit(vault, path);
+  const readBack = await readGuardedFileWithinLimit(vault, path);
   return confirmReadBack(readBack, revision, outputHash, verifier);
 }
 
 export async function confirmReadBack(
-  readBack: string,
+  readBack: string | MetadataGuardedFileRead,
   revision: number,
   outputHash: string,
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
-  if (!(await verifier.verify(readBack, revision, outputHash))) {
+  const content = typeof readBack === "string" ? readBack : readBack.content;
+  const guarded = typeof readBack !== "string";
+  if (guarded && readBack.isCurrent?.() === false) throw new SaveError("read-back-mismatch");
+  if (
+    guarded &&
+    verifier.verifyRead === undefined &&
+    !VerifiedMetadataGuardedFileRead.isVerified(readBack) &&
+    utf8ByteLengthWithinLimit(content, FILE_SCHEMA_LIMITS.totalInputBytes) !==
+      readBack.identity.size
+  ) {
     throw new SaveError("read-back-mismatch");
   }
-  return { content: readBack, revision, outputHash };
+  const valid =
+    guarded && verifier.verifyRead !== undefined
+      ? await verifier.verifyRead(readBack, revision, outputHash)
+      : await verifier.verify(content, revision, outputHash);
+  if (!valid || (guarded && readBack.isCurrent?.() === false)) {
+    throw new SaveError("read-back-mismatch");
+  }
+  return {
+    content,
+    revision,
+    outputHash,
+    ...(guarded
+      ? {
+          readBack: VerifiedMetadataGuardedFileRead.fromVerifiedRead(readBack),
+        }
+      : {}),
+  };
 }

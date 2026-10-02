@@ -61,7 +61,7 @@ it("waits for the shared deadline when the initial slice is already exhausted", 
   );
   const scheduler = new PreviewIdleScheduler({ ...immediateWorkScheduler(), checkpoint });
   let completed = false;
-  const initial = scheduler.checkpoint(true).then(() => {
+  const initial = scheduler.checkpoint(true)!.then(() => {
     completed = true;
   });
   await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledOnce());
@@ -85,7 +85,7 @@ it("waits only for an exhausted shared budget and checks input again afterward",
   input = true;
   f.releaseBudget();
   let completed = false;
-  void continuation.then(() => {
+  void continuation!.then(() => {
     completed = true;
   });
   await Promise.resolve();
@@ -121,4 +121,16 @@ it("propagates shared scheduler failures while the preview is live", async () =>
   });
   await expect(scheduler.checkpoint()).rejects.toThrow("closed window");
   scheduler.dispose();
+});
+
+it("keeps idle gates and available shared admission synchronous", () => {
+  const checkpoint = vi.fn(() => undefined);
+  const gate = vi.fn(() => undefined);
+  const scheduler = new PreviewIdleScheduler({ ...immediateWorkScheduler(), checkpoint });
+  scheduler.setBackgroundWait(gate);
+  expect(scheduler.waitForBackground()).toBeUndefined();
+  expect(scheduler.checkpoint()).toBeUndefined();
+  expect(checkpoint).toHaveBeenCalledOnce();
+  scheduler.dispose();
+  expect(scheduler.checkpoint()).toBeUndefined();
 });

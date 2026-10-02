@@ -75,7 +75,7 @@ describe("fallback checkpoint clock", () => {
     await waiting;
     const reads = now.mock.calls.length;
     controller.abort(new Error("cancelled"));
-    await expect(scheduler.checkpoint(controller.signal)).rejects.toThrow("cancelled");
+    expect(() => scheduler.checkpoint(controller.signal)).toThrow("cancelled");
     expect(now).toHaveBeenCalledTimes(reads);
     workScheduler.dispose();
   });

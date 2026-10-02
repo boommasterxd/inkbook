@@ -33,7 +33,9 @@ export type CoalescedExportPlan<TElement, TPage, TSnapshot> =
   FullExportPlan<TSnapshot> | IncrementalExportPlan<TElement, TPage>;
 
 export interface ExportMaterialization<TSnapshot> {
-  readonly orderByBand?: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>;
+  readonly orderByBand?:
+    | Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>
+    | ((band: RenderBand) => readonly ElementId[] | undefined);
   readonly snapshot?: TSnapshot;
 }
 
@@ -138,11 +140,11 @@ export class CoalescedExportTarget<TElement, TPage> {
   }
 
   #materializeOrders(
-    orderByBand: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>,
+    orderByBand: NonNullable<ExportMaterialization<unknown>["orderByBand"]>,
   ): Readonly<Partial<Record<RenderBand, readonly ElementId[]>>> {
     const result: Partial<Record<RenderBand, readonly ElementId[]>> = {};
     for (const band of this.#dirtyBands) {
-      const order = orderByBand[band];
+      const order = typeof orderByBand === "function" ? orderByBand(band) : orderByBand[band];
       if (order === undefined) {
         throw new Error(`Dirty render band ${band} requires its complete order.`);
       }

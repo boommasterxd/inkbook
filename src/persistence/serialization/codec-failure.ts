@@ -19,3 +19,7 @@ export function codecFailure<T>(
   const error: DocumentCodecError = { code, message };
   return { error, ok: false };
 }
+
+export function generatedOutputLimitFailure(): DocumentCodecResult<never> {
+  return codecFailure("static-output-limit-exceeded", "Generated document exceeds file limits.");
+}

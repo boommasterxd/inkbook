@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { SampleBase64Writer } from "../../../../src/persistence/serialization/sample-base64";
 
 import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import {
@@ -225,6 +226,63 @@ describe("incremental background boundaries", () => {
   });
 });
 
+describe("runtime fragment ownership", () => {
+  it("does not infer ownership for public deltas from a previously owned runtime model", async () => {
+    const { runtime, serializer, stroke } = await warmedRuntimeSerializer(true);
+    const copy = structuredClone(stroke);
+    const changed = { ...copy, style: { ...copy.style, opacity: 0.5 } };
+    expect(
+      serializer.applyDelta({
+        baseModelRevision: runtime.revision,
+        changedElements: [changed],
+        modelRevision: runtime.revision + 1,
+      }).ok,
+    ).toBe(true);
+    const append = vi.spyOn(SampleBase64Writer.prototype, "append");
+    try {
+      expect(serializer.resetRuntime(serializer.currentSnapshot()!, true).ok).toBe(true);
+      expect(append).toHaveBeenCalled();
+    } finally {
+      append.mockRestore();
+      serializer.clear();
+    }
+  });
+
+  it("rechecks externally mutable typed samples when runtime ownership is not attested", async () => {
+    const { runtime, serializer, stroke } = await warmedRuntimeSerializer(false);
+    stroke.points[0] = stroke.points[0]! + 0.001;
+    const append = vi.spyOn(SampleBase64Writer.prototype, "append");
+    try {
+      expect(serializer.resetRuntime(runtime).ok).toBe(true);
+      expect(append).toHaveBeenCalled();
+      expect(serializer.instrumentation.cacheElements).toBe(runtime.elements.length - 1);
+    } finally {
+      append.mockRestore();
+      serializer.clear();
+    }
+  });
+
+  it("preserves adopted fragments after invalid samples or cancelled output", async () => {
+    const { runtime, serializer, cold } = await warmedRuntimeSerializer(true);
+    expect(serializer.resetRuntime(runtime, true).ok).toBe(true);
+    const invalid = structuredClone(runtime);
+    const stroke = invalid.elements.find((element) => element.kind === "stroke");
+    if (stroke?.kind !== "stroke") throw new Error("Missing stroke fixture.");
+    stroke.points[0] = -0;
+    expect(serializer.resetRuntime(invalid)).toMatchObject({ ok: false });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      serializer.serializeRuntimeChunked({ signal: controller.signal }),
+    ).rejects.toThrow();
+    const result = await serializer.serializeRuntimeChunked({});
+    expect(result).toMatchObject({ ok: true, value: { hash: cold.hash } });
+    expect(serializer.instrumentation.fragmentBuilds).toBe(runtime.elements.length);
+    serializer.clear();
+    expect(serializer.instrumentation).toMatchObject({ cacheBytes: 0, cacheElements: 0 });
+  });
+});
+
 describe("runtime stroke fragment serialization", () => {
   it("retains worker-owned stroke buffers while emitting public-schema JSON", () => {
     const snapshot = createAllElementSnapshot();
@@ -240,7 +298,7 @@ describe("runtime stroke fragment serialization", () => {
     const serializer = new IncrementalDocumentSerializer();
 
     expect(validateInkSnapshotV1(runtimeSnapshot).ok).toBe(false);
-    expect(serializer.resetRuntime(runtimeSnapshot).ok).toBe(true);
+    expect(serializer.resetRuntime(runtimeSnapshot, true).ok).toBe(true);
     const actual = serializer.serialize();
     const expected = serializeInkbookDocument(snapshot);
 
@@ -356,4 +414,16 @@ function warmedSerializer(snapshot: ReturnType<typeof createAllElementSnapshot>)
   serializer.reset(snapshot);
   serializer.serialize({ hash: () => "baseline" });
   return { buildsBefore: serializer.instrumentation.fragmentBuilds, serializer };
+}
+
+async function warmedRuntimeSerializer(ownsSamples: boolean) {
+  const snapshot = createAllElementSnapshot();
+  const runtime = { ...snapshot, elements: unpackElements(packElements(snapshot.elements)) };
+  const serializer = new IncrementalDocumentSerializer();
+  expect(serializer.resetRuntime(runtime, ownsSamples).ok).toBe(true);
+  const cold = await serializer.serializeRuntimeChunked({});
+  if (!cold.ok) throw new Error(cold.error.code);
+  const stroke = runtime.elements.find((element) => element.kind === "stroke");
+  if (stroke?.kind !== "stroke") throw new Error("Missing stroke fixture.");
+  return { runtime, serializer, stroke, cold: cold.value };
 }

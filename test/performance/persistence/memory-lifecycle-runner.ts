@@ -107,7 +107,7 @@ async function runLifecycle(
 }
 
 async function waitForPrewarm(runtime: DocumentWorkerRuntime, elementCount: number): Promise<void> {
-  while (runtime.instrumentation.prewarmedElements < elementCount) {
+  while (runtime.instrumentation.cacheElements < elementCount) {
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
 }

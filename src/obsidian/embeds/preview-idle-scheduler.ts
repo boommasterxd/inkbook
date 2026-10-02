@@ -3,32 +3,47 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 /** Gates preview work behind live input and the owning window's shared scheduler. */
 export class PreviewIdleScheduler {
   readonly #abort = new AbortController();
-  #waitForBackground: (() => Promise<void>) | undefined;
+  #waitForBackground: (() => Promise<void> | undefined) | undefined;
   #disposed = false;
   readonly #waiting = new Set<() => void>();
 
   public constructor(private readonly workScheduler: WorkScheduler) {}
 
-  public setBackgroundWait(wait: (() => Promise<void>) | undefined): void {
+  public setBackgroundWait(wait: (() => Promise<void> | undefined) | undefined): void {
     this.#waitForBackground = wait;
   }
 
-  public async checkpoint(initial = false): Promise<void> {
+  public checkpoint(initial = false): Promise<void> | undefined {
     // Allow the presentation to install its input-priority gate before the first slice.
-    if (initial) await Promise.resolve();
-    await this.waitForBackground();
+    if (initial) return Promise.resolve().then(() => this.checkpoint());
+    if (this.#disposed) return;
+    const ready = this.waitForBackground();
+    return ready === undefined ? this.#admit() : ready.then(() => this.#admit());
+  }
+
+  #admit(): Promise<void> | undefined {
     if (this.#disposed) return;
     try {
-      await this.workScheduler.checkpoint(this.#abort.signal);
+      const pending = this.workScheduler.checkpoint(this.#abort.signal);
+      if (pending !== undefined) {
+        return pending.then(
+          () => this.waitForBackground(),
+          (error: unknown) => {
+            if (!this.#disposed) throw error;
+          },
+        );
+      }
     } catch (error: unknown) {
       if (!this.#disposed) throw error;
     }
-    await this.waitForBackground();
+    return this.waitForBackground();
   }
 
-  public async waitForBackground(signal?: AbortSignal): Promise<void> {
+  public waitForBackground(signal?: AbortSignal): Promise<void> | undefined {
     if (this.#disposed || signal?.aborted === true || this.#waitForBackground === undefined) return;
-    await new Promise<void>((resolve, reject) => {
+    const pending = this.#waitForBackground();
+    if (pending === undefined || this.#disposed || Boolean(signal?.aborted)) return;
+    return new Promise<void>((resolve, reject) => {
       const finish = (): void => {
         this.#waiting.delete(finish);
         signal?.removeEventListener("abort", finish);
@@ -36,7 +51,7 @@ export class PreviewIdleScheduler {
       };
       this.#waiting.add(finish);
       signal?.addEventListener("abort", finish, { once: true });
-      void this.#waitForBackground?.().then(finish, (error: unknown) => {
+      void pending.then(finish, (error: unknown) => {
         this.#waiting.delete(finish);
         signal?.removeEventListener("abort", finish);
         reject(error instanceof Error ? error : new Error("Preview scheduling failed."));

@@ -6,6 +6,7 @@ import type {
   ShapeStyleV1,
   StrokeStyleV1,
 } from "../../../../src/domain/schema/public";
+import { rewriteDocumentMetadata } from "../../../fixtures/persistence/metadata-rewrite";
 
 const strokeStyle: StrokeStyleV1 = {
   color: { type: "theme-text" },
@@ -192,9 +193,15 @@ export function createAllElementSnapshot(): InkSnapshotV1 {
 }
 
 export function appendMetadataProperty(svg: string, propertyJson: string): string {
-  const marker = '"elements":[]}';
-  if (!svg.includes(marker)) throw new Error("Expected empty serialized elements.");
-  return svg.replace(marker, `"elements":[],${propertyJson}}`);
+  return rewriteDocumentMetadata(
+    svg,
+    (metadata) => {
+      const marker = '"elements":[]}';
+      if (!metadata.includes(marker)) throw new Error("Expected empty serialized elements.");
+      return metadata.replace(marker, `"elements":[],${propertyJson}}`);
+    },
+    true,
+  );
 }
 
 export function wideMetadataArrayProperty(entries: number): string {

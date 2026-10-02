@@ -4,8 +4,15 @@ import { CANONICAL_THEME_STYLESHEET } from "../documents/svg-theme";
 import { escapeXmlText } from "../documents/xml-text";
 import { metadataPrefix as canonicalMetadataPrefix } from "./canonical-metadata";
 import { encodedByteLength } from "./encoded-byte-budget";
+import { COMPACT_METADATA_ENCODING } from "./stroke-sample-codec";
 
-interface FragmentAssembly {
+interface FragmentAssembly<T> {
+  readonly content: Iterable<T>;
+  readonly highlight: Iterable<T>;
+  readonly metadata: Iterable<T>;
+}
+
+interface MarkupFragmentAssembly {
   readonly content: Iterable<{ readonly svg: string }>;
   readonly highlight: Iterable<{ readonly svg: string }>;
   readonly metadata: Iterable<string>;
@@ -23,29 +30,72 @@ export function snapshotMetadataPrefix(revision: number, page: PageV1): string {
   return escapeXmlText(canonicalMetadataPrefix(revision, page));
 }
 
-export function* documentFragments(
+export function documentFragments(
   revision: number,
   lockedHeight: number,
   metadataPrefix: string,
   metadataHash: string,
-  assembly: FragmentAssembly,
+  assembly: MarkupFragmentAssembly,
   background: string,
 ): Iterable<string> {
-  yield rootPrefix(revision, lockedHeight, metadataHash);
-  yield metadataPrefix;
+  return assembleDocumentFragments(
+    { background, lockedHeight, metadataHash, metadataPrefix, revision },
+    {
+      content: markup(assembly.content),
+      highlight: markup(assembly.highlight),
+      metadata: assembly.metadata,
+    },
+    (text) => text,
+  );
+}
+
+export function documentUtf8Fragments(
+  revision: number,
+  lockedHeight: number,
+  metadataPrefix: string,
+  metadataHash: string,
+  assembly: FragmentAssembly<Uint8Array>,
+  background: string,
+): Iterable<Uint8Array> {
+  const encoder = new TextEncoder();
+  return assembleDocumentFragments(
+    { background, lockedHeight, metadataHash, metadataPrefix, revision },
+    assembly,
+    (text) => encoder.encode(text),
+  );
+}
+
+function* markup(fragments: Iterable<{ readonly svg: string }>): Iterable<string> {
+  for (const fragment of fragments) yield fragment.svg;
+}
+
+function* assembleDocumentFragments<T>(
+  envelope: Readonly<{
+    background: string;
+    lockedHeight: number;
+    metadataHash: string;
+    metadataPrefix: string;
+    revision: number;
+  }>,
+  assembly: FragmentAssembly<T>,
+  encode: (text: string) => T,
+): Iterable<T> {
+  yield encode(rootPrefix(envelope.revision, envelope.lockedHeight, envelope.metadataHash));
+  yield encode(envelope.metadataPrefix);
+  const separator = encode(",");
   let firstMetadata = true;
   for (const metadata of assembly.metadata) {
-    if (!firstMetadata) yield ",";
+    if (!firstMetadata) yield separator;
     yield metadata;
     firstMetadata = false;
   }
-  yield `]}</metadata><g id="inkbook-background">`;
-  yield background;
-  yield `</g><g id="inkbook-highlights">`;
-  for (const fragment of assembly.highlight) yield fragment.svg;
-  yield `</g><g id="inkbook-content">`;
-  for (const fragment of assembly.content) yield fragment.svg;
-  yield "</g></svg>";
+  yield encode(`]}</metadata><g id="inkbook-background">`);
+  yield encode(envelope.background);
+  yield encode(`</g><g id="inkbook-highlights">`);
+  yield* assembly.highlight;
+  yield encode(`</g><g id="inkbook-content">`);
+  yield* assembly.content;
+  yield encode("</g></svg>");
 }
 
 export function documentStaticByteLength(
@@ -95,6 +145,6 @@ function rootPrefix(revision: number, lockedHeight: number, metadataHash: string
     `data-inkbook-format="inkbook" data-inkbook-version="1" data-inkbook-revision="${revision}" ` +
     `data-inkbook-snapshot-sha256="${metadataHash}">` +
     `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>` +
-    `<metadata id="inkbook-snapshot" data-encoding="json">`
+    `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">`
   );
 }

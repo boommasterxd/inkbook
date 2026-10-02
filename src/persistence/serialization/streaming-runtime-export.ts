@@ -4,7 +4,7 @@ import { serializeSvgNumber } from "../documents/svg-number";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "../documents/svg-output-limits";
 import { BackgroundFragmentCache, backgroundPathDataByteLength } from "./background";
 import {
-  assembleAndHashChunkedUtf8Output,
+  assembleAndHashPreparedUtf8Output,
   type ChunkedOutputAssemblyOptions,
 } from "./chunked-output-assembler";
 import { codecFailure } from "./codec-failure";
@@ -13,7 +13,7 @@ import {
   metadataPrefix as canonicalMetadataPrefix,
 } from "./canonical-metadata";
 import {
-  documentFragments,
+  documentUtf8Fragments,
   documentStaticByteLength,
   snapshotMetadataPrefix,
 } from "./document-assembly";
@@ -44,7 +44,7 @@ export async function serializeRuntimeSnapshotToUtf8(
   const prepared = await prepareRuntimeExport(snapshot, options, resolveFragment, backgroundCache);
   if (!prepared.ok) return prepared;
   const value = prepared.value;
-  const assembled = await assembleAndHashChunkedUtf8Output(
+  const assembled = await assembleAndHashPreparedUtf8Output(
     runtimeDocumentFragments(snapshot, value),
     value.totalBytes,
     { ...options, maximumBytes: FILE_SCHEMA_LIMITS.totalInputBytes },
@@ -99,7 +99,8 @@ async function prepareRuntimeExport(
       return limitFailure();
     }
     maximumBottom = Math.max(maximumBottom ?? 0, fragment.bottom);
-    await options.checkpoint?.();
+    const pending = options.checkpoint?.();
+    if (pending !== undefined) await pending;
   }
   if (!metadataBudget.tryReserve(2)) return limitFailure();
   const extent = derivePageExtent(snapshot.page, maximumBottom);
@@ -148,8 +149,8 @@ function* fragmentCanonicalMetadata(fragments: readonly ElementFragments[]): Ite
 function runtimeDocumentFragments(
   snapshot: InkSnapshotV1,
   prepared: PreparedRuntimeExport,
-): Iterable<string> {
-  return documentFragments(
+): Iterable<Uint8Array> {
+  return documentUtf8Fragments(
     snapshot.revision,
     prepared.lockedHeight,
     prepared.metadataPrefix,
@@ -163,17 +164,17 @@ function runtimeDocumentFragments(
   );
 }
 
-function* fragmentMetadata(fragments: readonly ElementFragments[]): Iterable<string> {
-  for (const fragment of fragments) yield fragment.metadata;
+function* fragmentMetadata(fragments: readonly ElementFragments[]): Iterable<Uint8Array> {
+  for (const fragment of fragments) yield fragment.metadataUtf8;
 }
 
 function* fragmentMarkup(
   fragments: readonly ElementFragments[],
   band: "content" | "highlight",
-): Iterable<ElementFragments> {
+): Iterable<Uint8Array> {
   for (const fragment of fragments) {
     if (elementRenderBand(fragment.element) !== band) continue;
-    yield fragment;
+    yield fragment.svgUtf8;
   }
 }
 

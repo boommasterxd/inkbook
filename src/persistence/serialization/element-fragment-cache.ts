@@ -1,11 +1,16 @@
 import type { InkElementV1 } from "../../domain/schema/public";
-import { serializeCanonicalElementMetadata, type ElementFragments } from "./element-fragments";
+import {
+  canonicalStrokeMetadataFrame,
+  serializeCanonicalElementMetadata,
+} from "./canonical-element-fragments";
+import type { ElementFragments } from "./element-fragments";
 
 const MAXIMUM_ELEMENTS = 20_000;
 const MAXIMUM_BYTES = 64 * 1024 * 1024;
 
 export class ElementFragmentCache {
   readonly #entries = new Map<string, ElementFragments>();
+  #ownedRuntimeElements = new WeakSet<InkElementV1>();
   #bytes = 0;
 
   public get retainedBytes(): number {
@@ -21,14 +26,40 @@ export class ElementFragmentCache {
     const cached = this.#entries.get(element.id);
     return cached?.element === element ? cached : undefined;
   }
-  public adopt(element: InkElementV1): void {
+  /** Called only after successful validation by composition that owns immutable runtime samples. */
+  public retainRuntimeOwnership(element: InkElementV1): void {
+    this.#ownedRuntimeElements.add(element);
+  }
+  /** Only runtime composition may attest exclusive immutable ownership after full validation. */
+  public adopt(element: InkElementV1, ownsRuntimeSamples = false): void {
     const cached = this.#entries.get(element.id);
+    const ownedSource = cached !== undefined && this.#ownedRuntimeElements.has(cached.element);
+    if (ownsRuntimeSamples) this.retainRuntimeOwnership(element);
     if (cached === undefined) return;
-    if (cached.canonicalMetadata !== serializeCanonicalElementMetadata(element)) {
+    const matching =
+      ownsRuntimeSamples &&
+      ownedSource &&
+      cached.element.kind === "stroke" &&
+      element.kind === "stroke" &&
+      cached.element.points instanceof Float64Array &&
+      element.points instanceof Float64Array
+        ? sameRuntimeStrokeMetadata(cached.element, element)
+        : cached.canonicalMetadata === serializeCanonicalElementMetadata(element);
+    if (!matching) {
       this.remove(element.id);
       return;
     }
-    this.#entries.set(element.id, { ...cached, element });
+    const descriptors = Object.getOwnPropertyDescriptors(cached);
+    this.#entries.set(
+      element.id,
+      Object.defineProperties(
+        {},
+        {
+          ...descriptors,
+          element: { value: element, enumerable: true, configurable: true },
+        },
+      ) as ElementFragments,
+    );
   }
   public replace(id: string, fragments: ElementFragments): void {
     const previous = this.#entries.get(id);
@@ -59,6 +90,7 @@ export class ElementFragmentCache {
   }
   public clear(): void {
     this.#entries.clear();
+    this.#ownedRuntimeElements = new WeakSet();
     this.#bytes = 0;
   }
   #evict(): void {
@@ -68,4 +100,19 @@ export class ElementFragmentCache {
       this.remove(oldest[0]);
     }
   }
+}
+
+function sameRuntimeStrokeMetadata(
+  source: Extract<InkElementV1, { kind: "stroke" }>,
+  element: Extract<InkElementV1, { kind: "stroke" }>,
+): boolean {
+  const before = canonicalStrokeMetadataFrame(source);
+  const after = canonicalStrokeMetadataFrame(element);
+  if (before.prefix !== after.prefix || before.suffix !== after.suffix) return false;
+  if (source.points === element.points) return true;
+  if (source.points.length !== element.points.length) return false;
+  for (let index = 0; index < source.points.length; index += 1) {
+    if (!Object.is(source.points[index], element.points[index])) return false;
+  }
+  return true;
 }

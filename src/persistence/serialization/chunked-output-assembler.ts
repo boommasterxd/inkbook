@@ -16,7 +16,7 @@ export interface ChunkedUtf8OutputAssembly {
 }
 
 export interface ChunkedOutputAssemblyOptions {
-  readonly checkpoint?: () => Promise<void>;
+  readonly checkpoint?: () => Promise<void> | undefined;
   readonly maximumBytes?: number;
   readonly signal?: AbortSignal;
   readonly sliceByteLimit?: number;
@@ -58,7 +58,8 @@ export async function assembleAndHashChunkedOutput(
       throwIfMaximumExceeded(hash.totalBytes, options.maximumBytes);
       bytesSinceCheckpoint += encoded.byteLength;
       if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-        await options.checkpoint();
+        const pending = options.checkpoint();
+        if (pending !== undefined) await pending;
         throwIfCancelled(options.signal);
         bytesSinceCheckpoint = 0;
       }
@@ -70,15 +71,16 @@ export async function assembleAndHashChunkedOutput(
   throwIfMaximumExceeded(hash.totalBytes, options.maximumBytes);
   bytesSinceCheckpoint += remainder.byteLength;
   if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-    await options.checkpoint();
+    const pending = options.checkpoint();
+    if (pending !== undefined) await pending;
     throwIfCancelled(options.signal);
   }
   throwIfCancelled(options.signal);
   return { hash: hash.digestHex(), output, totalBytes: hash.totalBytes };
 }
 
-export async function assembleAndHashChunkedUtf8Output(
-  fragments: Iterable<string>,
+export async function assembleAndHashPreparedUtf8Output(
+  fragments: Iterable<Uint8Array>,
   totalBytes: number,
   options: ChunkedOutputAssemblyOptions = {},
 ): Promise<ChunkedUtf8OutputAssembly> {
@@ -87,21 +89,22 @@ export async function assembleAndHashChunkedUtf8Output(
   validateMaximumBytes(options.maximumBytes);
   throwIfMaximumExceeded(totalBytes, options.maximumBytes);
   throwIfCancelled(options.signal);
-  const encoder = new FragmentUtf8Encoder(sliceByteLimit);
   const output = new ExactUtf8Output(totalBytes);
   let bytesSinceCheckpoint = 0;
   for (const fragment of fragments) {
     throwIfCancelled(options.signal);
-    for (const written of encoder.encodeInto(fragment, output)) {
-      bytesSinceCheckpoint += written;
+    for (let offset = 0; offset < fragment.byteLength;) {
+      const end = Math.min(fragment.byteLength, offset + sliceByteLimit);
+      bytesSinceCheckpoint += output.appendBytes(fragment.subarray(offset, end));
+      offset = end;
       if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-        await options.checkpoint();
+        const pending = options.checkpoint();
+        if (pending !== undefined) await pending;
         throwIfCancelled(options.signal);
         bytesSinceCheckpoint = 0;
       }
     }
   }
-  encoder.finishInto(output);
   throwIfCancelled(options.signal);
   const exactOutput = output.finish();
   const hash = await hashExactUtf8Output(
@@ -117,7 +120,7 @@ export async function hashExactUtf8Output(
   output: Uint8Array<ArrayBuffer>,
   signal?: AbortSignal,
   digest: ExactOutputDigest | null = platformDigest(),
-  checkpoint?: () => Promise<void>,
+  checkpoint?: () => Promise<void> | undefined,
 ): Promise<string> {
   throwIfCancelled(signal);
   if (digest !== null) {
@@ -135,7 +138,8 @@ export async function hashExactUtf8Output(
     for (let offset = 0; offset < output.byteLength; offset += DEFAULT_SLICE_BYTE_LIMIT) {
       throwIfCancelled(signal);
       fallback.update(output.subarray(offset, offset + DEFAULT_SLICE_BYTE_LIMIT));
-      await checkpoint();
+      const pending = checkpoint();
+      if (pending !== undefined) await pending;
     }
   }
   throwIfCancelled(signal);
@@ -150,12 +154,13 @@ class ExactUtf8Output {
     this.#output = new Uint8Array(totalBytes);
   }
 
-  public appendText(input: string, encoder: TextEncoder): number {
-    const target = this.#output.subarray(this.#offset);
-    const { read, written } = encoder.encodeInto(input, target);
-    if (read !== input.length) throw new ChunkedOutputLimitError();
-    this.#offset += written;
-    return written;
+  public appendBytes(input: Uint8Array): number {
+    if (input.byteLength > this.#output.byteLength - this.#offset) {
+      throw new ChunkedOutputLimitError();
+    }
+    this.#output.set(input, this.#offset);
+    this.#offset += input.byteLength;
+    return input.byteLength;
   }
 
   public finish(): Uint8Array<ArrayBuffer> {
@@ -187,26 +192,11 @@ class FragmentUtf8Encoder {
     }
   }
 
-  public *encodeInto(fragment: string, output: ExactUtf8Output): Iterable<number> {
-    let input = this.#nextInput(fragment);
-    for (let offset = 0; offset < input.length;) {
-      const end = this.#safeEnd(input, offset);
-      yield output.appendText(input.slice(offset, end), this.#encoder);
-      offset = end;
-    }
-  }
-
   public finish(): Uint8Array {
     if (this.#pendingHighSurrogate.length === 0) return new Uint8Array();
     const encoded = this.#encoder.encode(this.#pendingHighSurrogate);
     this.#pendingHighSurrogate = "";
     return encoded;
-  }
-
-  public finishInto(output: ExactUtf8Output): void {
-    if (this.#pendingHighSurrogate.length === 0) return;
-    output.appendText(this.#pendingHighSurrogate, this.#encoder);
-    this.#pendingHighSurrogate = "";
   }
 
   #nextInput(fragment: string): string {

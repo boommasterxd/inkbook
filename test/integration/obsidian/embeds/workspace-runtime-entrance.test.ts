@@ -12,13 +12,16 @@ import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-sch
 import type { ObsidianEmbedActions } from "../../../../src/obsidian/commands";
 import { InkbookFeedbackManager } from "../../../../src/obsidian/feedback";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { SafeStaticProof } from "../../../../src/persistence/serialization/safe-static-proof";
+import type { VaultDocumentSessionHooks } from "../../../../src/obsidian/embeds/vault-document-recovery";
 
 const boundary = vi.hoisted(() => {
   const snapshot: WorkspaceEditorCoordinatorSnapshot = { disposed: false };
   return {
     snapshot,
+    sessionHooks: undefined as VaultDocumentSessionHooks | undefined,
     createScene: vi.fn(),
-    getEditorContext: vi.fn(() => ({})),
+    getEditorContext: vi.fn(() => ({ model: { getSaveStatus: () => "saved" as const } })),
     activationRequests: vi.fn(),
     updateHighlights: vi.fn(),
     prepareForUnload: vi.fn(async (): Promise<void> => undefined),
@@ -63,6 +66,14 @@ vi.mock("../../../../src/editor/session/workspace-editor-coordinator", () => ({
 
 vi.mock("../../../../src/obsidian/embeds/vault-document-session-factory", () => ({
   VaultDocumentSessionFactory: class {
+    constructor(
+      _vault: unknown,
+      _fileManager: unknown,
+      _runtimes: unknown,
+      hooks: VaultDocumentSessionHooks,
+    ) {
+      boundary.sessionHooks = hooks;
+    }
     getEditorContext = boundary.getEditorContext;
     prepareForUnload = boundary.prepareForUnload;
   },
@@ -137,16 +148,33 @@ function startActivation() {
 }
 
 describe("workspace activation entrance barrier", () => {
+  it("forwards only the current host preview proof and releases its provider on disposal", () => {
+    const { runtime } = createHarness();
+    runtimes.push(runtime);
+    const proof = SafeStaticProof.fromTrustedProducer("a".repeat(64), 100);
+    const provider = vi.fn(() => proof);
+    const currentProof = boundary.sessionHooks?.safeStaticProof;
+    expect(currentProof?.("ink.svg")).toBeUndefined();
+    runtime.setSafeStaticProofProvider(provider);
+    expect(currentProof?.("ink.svg")).toBe(proof);
+    expect(provider).toHaveBeenCalledWith("ink.svg");
+    runtime.dispose();
+    expect(currentProof?.("ink.svg")).toBeUndefined();
+  });
   it("hydrates concurrently and mounts only after the presentation is ready", async () => {
-    const { finishEntrance, runtime, settings } = startActivation();
+    const { attachment, finishEntrance, runtime, settings } = startActivation();
     await Promise.resolve();
     expect(boundary.snapshot.current?.phase).toBe("active");
     expect(boundary.createScene).not.toHaveBeenCalled();
+    expect(runtime.documentStatus.current()).toBeNull();
     finishEntrance(true);
     await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledOnce());
+    expect(runtime.documentStatus.current()).toEqual({ path: "ink.svg", status: "saved" });
     expect(runtime.getMotionPreference()).toBe(settings.device.motion);
     settings.device = { ...settings.device, motion: "reduced" };
     expect(runtime.getMotionPreference()).toBe("reduced");
+    runtime.detach(attachment);
+    expect(runtime.documentStatus.current()).toBeNull();
   });
 
   it("does not mount when presentation disposal resolves the barrier to false", async () => {
@@ -197,6 +225,34 @@ describe("workspace activation entrance barrier", () => {
 });
 
 describe("coalesced workspace activation", () => {
+  it.each(["locking", "locked"] as const)(
+    "does not publish late scene readiness after the session becomes %s",
+    async (phase) => {
+      const { attachment, finishEntrance, runtime } = startActivation();
+      let finishScene: (ready: boolean) => void = () => undefined;
+      const ready = new Promise<boolean>((resolve) => {
+        finishScene = resolve;
+      });
+      boundary.createScene.mockImplementationOnce(() => ({
+        dispose: vi.fn(),
+        ready,
+        setScheme: vi.fn(),
+      }));
+      const changes = vi.fn();
+      runtime.documentStatus.subscribe(changes);
+      finishEntrance(true);
+      await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledOnce());
+      const current = boundary.snapshot.current;
+      if (current === undefined) throw new Error("Missing active session.");
+      boundary.snapshot = { disposed: false, current: { ...current, phase } };
+      attachment.root.dataset.inkbookState = phase;
+      finishScene(true);
+      await ready;
+      expect(runtime.documentStatus.current()).toBeNull();
+      expect(changes).not.toHaveBeenCalled();
+      expect(attachment.root.dataset.inkbookState).toBe(phase);
+    },
+  );
   it.each(["auto-first", "manual-first"])(
     "preserves the auto attempt with %s invocation",
     async (order) => {

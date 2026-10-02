@@ -12,6 +12,7 @@ import {
   iteratePressureUnion,
   pressureShapeBoundary,
   PRESSURE_UNION_OPERATIONS_PER_SHAPE,
+  PRESSURE_PREPARATION_CHECK_INTERVAL as CHECK_INTERVAL,
 } from "../../../src/domain/geometry/pressure-union";
 import { polygonWinding, sampleSvgPathContours } from "../../fixtures/domain/svg-path-fill";
 import { PRESSURE_REFERENCE } from "../../fixtures/domain/pressure-reference";
@@ -19,11 +20,9 @@ import { smoothStrokeCenters } from "../../../src/domain/geometry/stroke-path";
 import { simplifyStrokeCenters } from "../../../src/domain/geometry/stroke-simplification";
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
-
 import { buildPressureOutline } from "../../../src/domain/geometry/pressure-outline";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
 import { buildPressureResizeFrame } from "./geometry-frame-fixture";
-
 const STYLE = {
   color: { type: "theme-text" as const },
   opacity: 1,
@@ -31,11 +30,9 @@ const STYLE = {
   smoothing: 0.5 as const,
   width: 22 as const,
 };
-
 function sample(index: number) {
   return { x: index % 2 ? 200 : 0, y: index, pressure: index % 2, time: index };
 }
-
 function regularCapsules(count: number, xOffset: number) {
   const centers = Array.from({ length: count }, (_, index) => ({
     x: index * 3 + xOffset,
@@ -409,13 +406,17 @@ describe("bounded capsule union work", () => {
       cancelled.next();
       const firstReads = calls.mock.calls.length;
       expect(firstReads).toBeGreaterThan(0);
-      expect(firstReads).toBeLessThanOrEqual(4);
+      expect(firstReads).toBeLessThanOrEqual(CHECK_INTERVAL * 4);
       cancelled.return(undefined as never);
       expect(calls.mock.calls).toHaveLength(firstReads);
       calls.mockClear();
       const pending = iteratePressureUnion(shapes);
-      let step = pending.next();
-      while (!step.done) step = pending.next();
+      let step;
+      do {
+        const before = calls.mock.calls.length;
+        step = pending.next();
+        expect(calls.mock.calls.length - before).toBeLessThanOrEqual(CHECK_INTERVAL * 4);
+      } while (!step.done);
       expect(step.value.work.intersectionTests).toBe(calls.mock.calls.length);
       // Four source boundaries against four boundaries of every other shape.
       expect(calls.mock.calls.length).toBeLessThanOrEqual(64 * 63 * 16);
@@ -474,17 +475,23 @@ describe("incremental contour approximation work", () => {
           const beforeDistances = distances.mock.calls.length;
           step = iterator.next();
           maximumReads = Math.max(maximumReads, reads - before);
-          maximumDistances = Math.max(
-            maximumDistances,
-            distances.mock.calls.length - beforeDistances,
-          );
+          const distanceWork = distances.mock.calls.length - beforeDistances;
+          maximumDistances = Math.max(maximumDistances, distanceWork);
         } while (!step.done);
         expect(step.value.length).toBeGreaterThan(0);
         expect(maximumReads).toBeGreaterThan(0);
-        // A quantization vertex has sixteen candidates, each reading fewer than
-        // 56 coordinates, plus local bookkeeping; chain distances yield individually.
-        expect(maximumReads).toBeLessThanOrEqual(16 * 56 + 64);
-        expect(maximumDistances).toBeLessThanOrEqual(2);
+        const group = CHECK_INTERVAL;
+        // Per vertex: quantization <=16 candidates*56 reads+64 bookkeeping reads;
+        // simplification <=16 chord+2 local distances*12 reads+128 local reads.
+        // Phase tails add <=64 reads/vertex for quantization, or 4 for initialization.
+        const readLimit =
+          kind === "quantization"
+            ? group * (16 * 56 + 64) + group * 64
+            : group * ((group + 2) * 12 + 128) + group * 4;
+        expect(maximumReads).toBeLessThanOrEqual(readLimit);
+        expect(maximumDistances).toBeLessThanOrEqual(
+          kind === "quantization" ? 0 : group * (group + 2),
+        );
       } finally {
         distances.mockRestore();
       }

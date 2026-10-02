@@ -56,8 +56,8 @@ describe("visible render mount complexity", () => {
     const firstFrameMounts = renderer.mountedCount;
     while (scheduler.pendingCount > 0) scheduler.runNext();
 
-    expect(actualBuilds).toHaveBeenCalledTimes(1);
-    expect(preparations).toHaveBeenCalledTimes(2);
+    expect(actualBuilds).toHaveBeenCalledTimes(0);
+    expect(preparations).toHaveBeenCalledTimes(3);
     actualBuilds.mockRestore();
     preparations.mockRestore();
     const instrumentation = renderer.instrumentation();

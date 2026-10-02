@@ -63,7 +63,7 @@ describe("confirmed base ownership across exports", () => {
       expect(process).toHaveBeenCalledTimes(4);
       expect(
         execute.mock.calls.filter(([request]) => request.type === "verify-output"),
-      ).toHaveLength(0);
+      ).toHaveLength(9);
       coordinator.dispose();
     },
   );

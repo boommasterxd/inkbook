@@ -25,9 +25,12 @@ export function rewriteDocumentMetadata(
   mutate: (metadata: string) => string,
   updateHash: boolean,
 ): string {
-  const marker = 'data-encoding="json">';
-  const start = svg.indexOf(marker) + marker.length;
+  const openingTag = svg.indexOf("<metadata");
+  const start = svg.indexOf(">", openingTag) + 1;
   const end = svg.indexOf("</metadata>", start);
+  if (openingTag < 0 || start === 0 || end < start) {
+    throw new Error("Expected a complete Inkbook metadata element.");
+  }
   const metadata = mutate(svg.slice(start, end));
   const rewritten = `${svg.slice(0, start)}${metadata}${svg.slice(end)}`;
   return updateHash

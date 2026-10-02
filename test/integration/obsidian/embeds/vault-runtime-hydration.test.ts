@@ -7,6 +7,8 @@ import { commitVaultPage } from "../../../../src/obsidian/embeds/vault-document-
 import type { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
+import { inspectTrustedSvgOutput } from "../../../../src/persistence/scheduling/trusted-svg-output";
+import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
 import {
   createTestStroke,
   createWorkerSnapshot,
@@ -27,7 +29,14 @@ describe("vault runtime hydration", () => {
     const bytes = new TextEncoder().encode(serialized.value.svg);
     const file = new TestTFile("drawings/ink.svg", bytes.byteLength);
     const runtime = new DocumentWorkerRuntime({ sessionId: "session-a", workerEpoch: 1 });
-
+    const proof = (await inspectTrustedSvgOutput(serialized.value.svg)).safeStaticProof;
+    const hashUpdate = vi.spyOn(ChunkedSha256.prototype, "update");
+    const execute = runtime.execute.bind(runtime);
+    const execution = vi.spyOn(runtime, "execute").mockImplementation((request, observer) => {
+      expect(hashUpdate).not.toHaveBeenCalled();
+      expect(request).toMatchObject({ type: "unlock", safeStaticProof: proof });
+      return execute(request, observer);
+    });
     const loaded = await loadVaultDocument({
       cancelled: () => false,
       documentId: file.path,
@@ -53,7 +62,12 @@ describe("vault runtime hydration", () => {
         }),
       },
       workerEpoch: 1,
+      safeStaticProof: () => proof,
     });
+    expect(execution).toHaveBeenCalledOnce();
+    expect(hashUpdate).toHaveBeenCalled();
+    execution.mockRestore();
+    hashUpdate.mockRestore();
     if (loaded === undefined) throw new Error("Expected a hydrated runtime document.");
 
     const snapshotElement = loaded.snapshot.elements[0];

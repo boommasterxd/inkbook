@@ -260,10 +260,16 @@ async function acknowledgeAndPrewarm(
   runtime: DocumentWorkerRuntime,
   identity: Parameters<DocumentWorkerRuntime["acknowledgeExport"]>[0],
 ): Promise<void> {
-  runtime.acknowledgeExport(identity, true);
-  runtime.requestPrewarm();
-  while (runtime.instrumentation.prewarmedElements < snapshot.elements.length) {
+  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAt");
+  try {
+    runtime.acknowledgeExport(identity, true);
+    runtime.requestPrewarm();
     await Promise.resolve();
+    expect(prewarm).not.toHaveBeenCalled();
+    expect(runtime.instrumentation.prewarmVisitedElements).toBe(0);
+    expect(runtime.instrumentation.prewarmedBytes).toBe(0);
+  } finally {
+    prewarm.mockRestore();
   }
   expect(runtime.instrumentation.cacheElements).toBe(snapshot.elements.length);
   expect(runtime.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);
@@ -312,8 +318,10 @@ function assertIntegritySlice(work: IntegrityWork, sliceBytes: number): void {
   // Canonical fragments and fallback hash blocks each checkpoint independently.
   expect(work.encodedBytes).toBeLessThanOrEqual(sliceBytes);
   expect(work.hashedBytes).toBeLessThanOrEqual(sliceBytes);
-  expect(work.elementReads).toBeLessThanOrEqual(1);
-  expect(work.canonicalElements).toBeLessThanOrEqual(1);
+  // Compact sample text allows several small records within the cache's bounded
+  // 64-fragment group; the independently observed byte budget still applies.
+  expect(work.elementReads).toBeLessThanOrEqual(64);
+  expect(work.canonicalElements).toBeLessThanOrEqual(64);
 }
 
 function assertIntegrityTotals(

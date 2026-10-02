@@ -15,12 +15,100 @@ import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/p
 import { createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
 
 import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
+import {
+  createWorkerBridgeHarness,
+  createWorkerBridgeClient,
+} from "../../fixtures/persistence/worker-bridge";
 
 afterEach(() => vi.restoreAllMocks());
 
 const snapshot = createStandardPersistenceFixture();
 
 describe("document worker export performance", () => {
+  it("hydrates the complete worker wire without rescanning or recopying received samples", async () => {
+    const serialized = serializeInkbookDocument(snapshot);
+    if (!serialized.ok) throw new Error(serialized.error.code);
+    const harness = createWorkerBridgeHarness();
+    harness.clientEndpoint.cloneTransfers = true;
+    harness.hostEndpoint.cloneTransfers = true;
+    const client = createWorkerBridgeClient(harness.clientEndpoint);
+    const scans = vi.spyOn(strokeSamples, "assertStrokeSamplesV1");
+    const copies = vi.spyOn(strokeSamples, "copyStrokeSamplesToRuntime");
+    const copyWork = observeSampleCopyBytes();
+    const builder = ElementStore.createBuilder({
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    let batches = 0;
+    let transferredBytes = 0;
+    let elements = 0;
+    try {
+      const result = await client.execute(
+        {
+          type: "unlock",
+          input: serialized.value.svg,
+          identity: { operationId: 1, purpose: "unlock", sessionId: "session-a", workerEpoch: 1 },
+        },
+        {
+          unlockBatch: async (batch) => {
+            expect(batch.batchIndex).toBe(batches++);
+            expect(batch.elements.length).toBeLessThanOrEqual(256);
+            const bytes = batch.elements.reduce(
+              (total, element) =>
+                total + (element.kind === "stroke" ? element.points.length * 8 : 0),
+              0,
+            );
+            expect(bytes).toBeLessThanOrEqual(4 * 1024 * 1024);
+            transferredBytes += bytes;
+            elements += batch.elements.length;
+            await builder.appendOwnedValidatedRuntime(batch.elements, batch.derivations);
+          },
+        },
+      );
+      expect(result.type).toBe("unlock-success");
+      expect(batches).toBe(Math.ceil(snapshot.elements.length / 256));
+      expect(elements).toBe(snapshot.elements.length);
+      expect(transferredBytes).toBe(
+        snapshot.elements.reduce(
+          (total, element) => total + (element.kind === "stroke" ? element.points.length * 8 : 0),
+          0,
+        ),
+      );
+      expect((await builder.finalize())?.size).toBe(snapshot.elements.length);
+      expect(scans).not.toHaveBeenCalled();
+      expect(copies).not.toHaveBeenCalled();
+      expect(copyWork.bytes).toBe(transferredBytes);
+      expect(
+        harness.hostEndpoint.transfers
+          .flat()
+          .filter((buffer) => buffer instanceof ArrayBuffer && buffer.byteLength === 0),
+      ).toHaveLength(snapshot.elements.filter((element) => element.kind === "stroke").length);
+    } finally {
+      vi.unstubAllGlobals();
+      client.terminate();
+      harness.detach();
+      harness.runtime.terminate();
+    }
+  }, 120_000);
+});
+
+function observeSampleCopyBytes() {
+  const work = { bytes: 0 };
+  const native = Float64Array;
+  vi.stubGlobal(
+    "Float64Array",
+    new Proxy(native, {
+      construct(target, argumentsList, newTarget) {
+        const source: unknown = argumentsList[0];
+        if (source instanceof native || Array.isArray(source)) work.bytes += source.length * 8;
+        return Reflect.construct(target, argumentsList, newTarget) as Float64Array;
+      },
+    }),
+  );
+  return work;
+}
+
+describe("validated worker export work", () => {
   it("bounds unlock batches and incremental-save work while reusing validated bounds", async () => {
     const builds = vi.spyOn(pressureUnion, "iteratePressureUnion");
     const serialized = serializeInkbookDocument(snapshot);

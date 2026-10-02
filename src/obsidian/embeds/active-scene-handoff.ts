@@ -46,6 +46,7 @@ export class ActiveScenePreviewHandoff {
   #pendingPreviewSource: string | undefined;
   #sourcePreparation: Promise<void> | undefined;
   #onReady: (() => void) | undefined;
+  #readSceneProof: () => number | undefined = () => 0;
   #onLockComplete: (() => void) | undefined;
   #lockEditor: HTMLElement | undefined;
   #releaseScrollStability: (() => void) | undefined;
@@ -117,17 +118,18 @@ export class ActiveScenePreviewHandoff {
     this.#initialEntrance?.resumePreview();
   }
 
-  public ready(onReady?: () => void): void {
+  public ready(onReady?: () => void, readSceneProof: () => number | undefined = () => 0): void {
     if (this.#disposed || this.#started || this.#root.classList.contains("inkbook-active-ready")) {
       return;
     }
     this.#onReady = onReady;
+    this.#readSceneProof = readSceneProof;
     this.#started = true;
     const activeBlockSize = this.#container.style.blockSize;
     if (activeBlockSize !== "") {
       this.#container.style.setProperty(ACTIVE_SCENE_BLOCK_SIZE_PROPERTY, activeBlockSize);
     }
-    if (this.#reducedMotion()) {
+    if (this.#reducedMotion() && this.#readSceneProof() !== undefined) {
       this.#startUnlockTransition(activeBlockSize);
       this.#complete();
       return;
@@ -136,14 +138,28 @@ export class ActiveScenePreviewHandoff {
   }
 
   #scheduleUnlockTransition(activeBlockSize: string): void {
-    this.#scheduleAfterPaint(() => this.#startUnlockTransition(activeBlockSize));
+    let proof: number | undefined;
+    this.#scheduleAfterPaint(
+      () => {
+        if (proof === undefined || proof !== this.#readSceneProof()) {
+          this.#scheduleUnlockTransition(this.#container.style.blockSize);
+          return;
+        }
+        this.#startUnlockTransition(this.#container.style.blockSize || activeBlockSize);
+        if (this.#reducedMotion()) this.#complete();
+      },
+      () => {
+        proof = this.#readSceneProof();
+      },
+    );
   }
 
-  #scheduleAfterPaint(callback: () => void): void {
+  #scheduleAfterPaint(callback: () => void, beforePaint?: () => void): void {
     // The intervening paint establishes the transition's start styles without a forced layout.
     this.#frame = this.#workScheduler.requestFrame(() => {
       this.#frame = undefined;
       if (this.#disposed) return;
+      beforePaint?.();
       this.#frame = this.#workScheduler.requestFrame(() => {
         this.#frame = undefined;
         if (this.#disposed) return;
@@ -320,7 +336,13 @@ export class ActiveScenePreviewHandoff {
       lockComplete();
       return;
     }
-    if (this.#started && !this.#root.classList.contains("inkbook-active-ready")) this.#complete();
+    if (this.#started && !this.#root.classList.contains("inkbook-active-ready")) {
+      if (this.#readSceneProof() === undefined) {
+        this.#scheduleUnlockTransition(this.#container.style.blockSize);
+        return;
+      }
+      this.#complete();
+    }
   }
 
   #clearTimer(): void {

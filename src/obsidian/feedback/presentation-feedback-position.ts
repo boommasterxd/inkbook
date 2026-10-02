@@ -44,7 +44,10 @@ export function createPresentationFeedbackPositionLifecycle(
   presentation: HTMLElement,
   verticalAnchor: PresentationFeedbackVerticalAnchor = "bottom",
   workScheduler?: WorkScheduler,
+  viewportHost?: HTMLElement,
 ): PresentationFeedbackPositionLifecycle {
+  if (viewportHost !== undefined && verticalAnchor !== "center")
+    throw new Error("Viewport feedback requires a center anchor.");
   const ownerDocument = presentation.ownerDocument;
   const ownerWindow = ownerDocument.defaultView;
   if (ownerWindow === null) return { dispose: () => undefined };
@@ -57,21 +60,30 @@ export function createPresentationFeedbackPositionLifecycle(
     if (!active) return;
     if (!measured && verticalAnchor === "center" && !presentation.isConnected) {
       prepareUnmeasuredCenter(surface);
+      placeViewportHost(viewportHost, presentation, false);
       return;
     }
     measured = true;
-    surface.classList.remove("inkbook-feedback-unmeasured");
     const presentationBounds = presentation.getBoundingClientRect();
     const boundary = resolveVisibleOwnerBoundary(presentation, ownerDocument);
     const position = resolvePresentationFeedbackPosition(presentationBounds, boundary);
-    applyPosition(surface, position, presentationBounds, boundary, verticalAnchor);
+    placeViewportHost(viewportHost, presentation, true);
+    surface.classList.remove("inkbook-feedback-unmeasured");
+    applyPosition(
+      surface,
+      position,
+      presentationBounds,
+      boundary,
+      verticalAnchor,
+      viewportHost !== undefined,
+    );
   };
   const schedule = (): void => {
     if (!active || frame !== undefined) return;
     frame = workScheduler.requestFrame(() => {
       frame = undefined;
       reposition();
-    });
+    }, "input");
   };
   const observer = createResizeObserver(ownerWindow, schedule, surface, presentation);
   ownerDocument.addEventListener("scroll", schedule, true);
@@ -95,23 +107,36 @@ function prepareUnmeasuredCenter(surface: HTMLElement): void {
   surface.classList.add("inkbook-feedback-unmeasured");
 }
 
+function placeViewportHost(
+  host: HTMLElement | undefined,
+  presentation: HTMLElement,
+  measured: boolean,
+): void {
+  if (host === undefined) return;
+  const space = measured ? "viewport" : "presentation";
+  const parent = measured ? presentation.ownerDocument.body : presentation;
+  if (host.parentElement !== parent) parent.appendChild(host);
+  if (host.dataset.inkbookFeedbackSpace !== space) host.dataset.inkbookFeedbackSpace = space;
+}
+
 function applyPosition(
   surface: HTMLElement,
   position: PresentationFeedbackPosition,
   presentation: FeedbackRect,
   boundary: VisibleOwnerBoundary,
   verticalAnchor: PresentationFeedbackVerticalAnchor,
+  viewportCoordinates: boolean,
 ): void {
   if (verticalAnchor === "center") {
     const visibleTop = Math.max(presentation.top, boundary.top);
     const visibleBottom = Math.min(presentation.bottom, boundary.bottom);
     surface.style.removeProperty("inset-block-end");
-    surface.style.insetBlockStart = `${String(visibleTop + (visibleBottom - visibleTop) / 2 - presentation.top)}px`;
+    surface.style.insetBlockStart = `${String(visibleTop + (visibleBottom - visibleTop) / 2 - (viewportCoordinates ? 0 : presentation.top))}px`;
   } else {
     surface.style.insetBlockEnd = `${String(position.bottom)}px`;
     surface.style.removeProperty("inset-block-start");
   }
-  surface.style.insetInlineStart = `${String(position.left)}px`;
+  surface.style.insetInlineStart = `${String(position.left + (viewportCoordinates ? presentation.left : 0))}px`;
   surface.style.maxInlineSize = `${String(position.maxInlineSize)}px`;
   surface.style.visibility = position.visible ? "visible" : "hidden";
 }

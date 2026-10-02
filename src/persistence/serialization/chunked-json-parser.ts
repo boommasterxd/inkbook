@@ -1,43 +1,18 @@
 import { BoundedJsonStringBuilder } from "./bounded-json-string-builder";
+import { ParsedJsonProof } from "../../domain/schema/parsed-json-proof";
 import type { ChunkedJsonLimits } from "./chunked-json-limits";
 import { positiveSafeInteger, validateChunkedJsonLimits } from "./chunked-json-parser-limits";
 import { JsonContainerScanError, scanJsonContainerWidths } from "./json-container-width";
+import { ChunkedJsonCancelledError, ChunkedJsonParseError } from "./chunked-json-errors";
+export { ChunkedJsonCancelledError, ChunkedJsonParseError } from "./chunked-json-errors";
 
 const DEFAULT_BATCH_CHARACTERS = 64 * 1024;
 
 export interface ChunkedJsonParseOptions {
   readonly batchCharacters?: number;
-  readonly checkpoint?: () => Promise<void>;
+  readonly checkpoint?: () => Promise<void> | undefined;
   readonly limits: ChunkedJsonLimits;
   readonly signal?: AbortSignal;
-}
-
-export type ChunkedJsonParseErrorCode =
-  | "container-limit-exceeded"
-  | "depth-limit-exceeded"
-  | "duplicate-key"
-  | "invalid-json"
-  | "node-limit-exceeded"
-  | "output-limit-exceeded";
-
-export class ChunkedJsonParseError extends SyntaxError {
-  public constructor(
-    public readonly code: ChunkedJsonParseErrorCode,
-    public readonly offset: number,
-    message: string,
-  ) {
-    super(`${message} at character ${offset}.`);
-    this.name = "ChunkedJsonParseError";
-  }
-}
-
-export class ChunkedJsonCancelledError extends Error {
-  public readonly code = "json-parse-cancelled";
-
-  public constructor() {
-    super("Chunked JSON parsing was cancelled.");
-    this.name = "ChunkedJsonCancelledError";
-  }
 }
 
 type ArrayState = "comma-or-end" | "value" | "value-or-end";
@@ -77,9 +52,18 @@ export function parseChunkedJson(
   return new ChunkedJsonParser(input, options).parse();
 }
 
+export async function parseChunkedJsonWithProof(
+  input: string,
+  options: ChunkedJsonParseOptions,
+): Promise<{ readonly value: unknown; readonly proof: ParsedJsonProof }> {
+  const parser = new ChunkedJsonParser(input, options);
+  const value = await parser.parse();
+  return { value, proof: parser.proof(value) };
+}
+
 class ChunkedJsonParser {
   readonly #batchCharacters: number;
-  readonly #checkpoint: (() => Promise<void>) | undefined;
+  readonly #checkpoint: (() => Promise<void> | undefined) | undefined;
   readonly #input: string;
   readonly #limits: ChunkedJsonLimits;
   readonly #signal: AbortSignal | undefined;
@@ -87,6 +71,9 @@ class ChunkedJsonParser {
   readonly #stringBuilder: BoundedJsonStringBuilder;
   #nextCheckpoint: number;
   #nodes = 0;
+  #maximumDepth = 1;
+  #maximumContainerEntries = 0;
+  #finiteNumbers = true;
   #outputCharacters = 0;
   #position = 0;
   #root: unknown;
@@ -110,11 +97,21 @@ class ChunkedJsonParser {
     const steps = this.#parseSteps();
     let step = steps.next();
     while (!step.done) {
-      if (this.#checkpoint !== undefined) await this.#checkpoint();
+      const pending = this.#checkpoint?.();
+      if (pending !== undefined) await pending;
       this.#throwIfCancelled();
       step = steps.next();
     }
     return step.value;
+  }
+
+  public proof(value: unknown): ParsedJsonProof {
+    return ParsedJsonProof.fromParser(value, {
+      finiteNumbers: this.#finiteNumbers,
+      maximumContainerEntries: this.#maximumContainerEntries,
+      maximumDepth: this.#maximumDepth,
+      nodes: this.#nodes,
+    });
   }
 
   *#parseSteps(): Generator<void, unknown> {
@@ -290,7 +287,9 @@ class ChunkedJsonParser {
     const token = this.#input.slice(start, this.#position);
     this.#addOutputCharacters(token.length);
     yield* this.#checkpointsAfterAdvance();
-    return { value: Number(token) };
+    const value = Number(token);
+    this.#finiteNumbers &&= Number.isFinite(value);
+    return { value };
   }
 
   *#readString(): Generator<void, string> {
@@ -403,6 +402,7 @@ class ChunkedJsonParser {
   }
 
   #checkDepth(): void {
+    this.#maximumDepth = Math.max(this.#maximumDepth, this.#stack.length + 1);
     if (this.#stack.length + 1 > this.#limits.maximumDepth) {
       throw new ChunkedJsonParseError(
         "depth-limit-exceeded",
@@ -432,6 +432,7 @@ class ChunkedJsonParser {
       );
     }
     frame.entries += 1;
+    this.#maximumContainerEntries = Math.max(this.#maximumContainerEntries, frame.entries);
   }
 
   #addOutputCharacters(count: number): void {

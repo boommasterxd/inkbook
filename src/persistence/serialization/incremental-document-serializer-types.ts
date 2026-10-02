@@ -27,6 +27,10 @@ export interface FragmentSerializerInstrumentation {
   readonly shapeCacheBytes: number;
   readonly shapeCacheElements: number;
   readonly retiredPointComparisons: number;
+  readonly sampleEncodingBuilds: number;
+  readonly sampleEncodingHits: number;
+  readonly sampleEncodingCacheBytes: number;
+  readonly sampleEncodingCacheElements: number;
   readonly cacheBytes: number;
   readonly cacheElements: number;
   readonly derivedBoundsReuses: number;
@@ -37,6 +41,7 @@ export interface FragmentSerializerInstrumentation {
 }
 
 export interface ElementAssembly {
+  readonly canonicalMetadata: string[];
   readonly content: string;
   readonly elements: InkElementV1[];
   readonly highlights: string;
@@ -45,6 +50,7 @@ export interface ElementAssembly {
 }
 
 export interface FragmentAssembly {
+  readonly canonicalMetadata: string[];
   readonly content: ElementFragments[];
   readonly elements: InkElementV1[];
   readonly highlight: ElementFragments[];

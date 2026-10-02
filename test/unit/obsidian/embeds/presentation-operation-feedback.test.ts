@@ -33,6 +33,95 @@ describe("PresentationOperationFeedback held insertion", () => {
   });
 });
 
+describe("PresentationOperationFeedback layout", () => {
+  it("owns feedback in the presentation window body and synchronizes presentation styling", () => {
+    const harness = createHarness();
+    harness.root.dataset.inkbookScheme = "dark";
+    harness.root.dataset.inkbookMotion = "reduced";
+    const operation = harness.feedback.begin("loading", 0);
+    const host = harness.indicator()?.parentElement;
+    expect(host?.parentElement).toBe(harness.body);
+    expect(host?.classNames.has("inkbook-root")).toBe(true);
+    expect(host?.classNames.has("inkbook-operation-feedback-host")).toBe(true);
+    expect(host?.dataset.inkbookFeedbackSpace).toBe("viewport");
+    expect(host?.dataset.inkbookScheme).toBe("dark");
+    expect(host?.dataset.inkbookMotion).toBe("reduced");
+    expect(harness.root.children).toHaveLength(0);
+    expect(harness.observeStyle).toHaveBeenCalledWith(harness.root, {
+      attributes: true,
+      attributeFilter: ["data-inkbook-scheme", "data-inkbook-motion"],
+    });
+    harness.root.dataset.inkbookScheme = "light";
+    delete harness.root.dataset.inkbookMotion;
+    harness.syncStyle();
+    expect(host?.dataset.inkbookScheme).toBe("light");
+    expect(host?.dataset.inkbookMotion).toBeUndefined();
+    operation.finish();
+    expect(harness.body.children).toEqual([harness.root]);
+    expect(harness.disconnectStyle).toHaveBeenCalledOnce();
+    harness.feedback.dispose();
+  });
+
+  it("moves the same detached feedback host to its owning body after the first measurement", () => {
+    const harness = createHarness();
+    harness.root.remove();
+    harness.feedback.begin("loading", 0);
+    const indicator = harness.indicator();
+    const host = indicator?.parentElement;
+    expect(host?.parentElement).toBe(harness.root);
+    expect(host?.dataset.inkbookFeedbackSpace).toBe("presentation");
+    expect(indicator?.classNames.has("inkbook-feedback-unmeasured")).toBe(true);
+    harness.runFrame();
+    expect(host?.parentElement).toBe(harness.root);
+    harness.body.append(harness.root);
+    harness.root.ownerDocument.dispatchEvent(new Event("scroll"));
+    harness.runFrame();
+    expect(harness.indicator()).toBe(indicator);
+    expect(host?.parentElement).toBe(harness.body);
+    expect(host?.dataset.inkbookFeedbackSpace).toBe("viewport");
+    expect(indicator?.classNames.has("inkbook-feedback-unmeasured")).toBe(false);
+    harness.feedback.dispose();
+    expect(harness.body.children).toEqual([harness.root]);
+    expect(harness.pendingFrames()).toBe(0);
+  });
+
+  it.each(["replacement", "disposal"])("releases visible feedback resources on %s", (action) => {
+    const harness = createHarness();
+    harness.feedback.begin("loading", 0);
+    const host = harness.indicator()?.parentElement;
+    harness.root.ownerDocument.dispatchEvent(new Event("scroll"));
+    expect(harness.pendingFrames()).toBe(1);
+    if (action === "replacement") harness.feedback.begin("saving");
+    else harness.feedback.dispose();
+    expect(host?.parentElement).toBeNull();
+    expect(harness.disconnectStyle).toHaveBeenCalledOnce();
+    expect(harness.disconnectResize).toHaveBeenCalledOnce();
+    expect(harness.pendingFrames()).toBe(0);
+    harness.root.ownerDocument.dispatchEvent(new Event("scroll"));
+    harness.root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+    expect(harness.pendingFrames()).toBe(0);
+    harness.feedback.dispose();
+    expect(harness.delay()).toBeUndefined();
+  });
+
+  it.each(["loading", "saving"] as const)(
+    "measures %s feedback before inserting its live DOM indicator",
+    (kind) => {
+      const harness = createHarness();
+      const read = vi.spyOn(harness.root, "getBoundingClientRect").mockImplementation(() => {
+        expect(harness.indicator()).toBeNull();
+        return { bottom: 100, height: 100, left: 0, right: 600, top: 0, width: 600 };
+      });
+      harness.feedback.begin(kind);
+      harness.runTimer();
+      if (kind === "loading") harness.runFrame();
+      expect(read).toHaveBeenCalledOnce();
+      expect(harness.indicator()?.dataset.inkbookOperation).toBe(kind);
+      harness.feedback.dispose();
+    },
+  );
+});
+
 describe("PresentationOperationFeedback", () => {
   it("shows loading feedback only after the delay and removes it on completion", () => {
     const harness = createHarness();
@@ -49,6 +138,8 @@ describe("PresentationOperationFeedback", () => {
     const indicator = harness.indicator();
     expect(indicator?.attributes.get("role")).toBe("status");
     expect(indicator?.attributes.get("aria-label")).toBe("Loading drawing");
+    expect(indicator?.attributes.get("aria-atomic")).toBe("true");
+    expect(indicator?.children[0]?.attributes.get("aria-hidden")).toBe("true");
     expect(indicator?.dataset.inkbookOperation).toBe("loading");
     expect(indicator?.style.insetBlockEnd).toBeUndefined();
     expect(indicator?.style.insetBlockStart).toBe("50px");
@@ -191,9 +282,12 @@ function createHarness(onLoadingShown?: () => void) {
   const timers = new Map<number, { readonly callback: () => void; readonly delay: number }>();
   let nextFrame = 0;
   let nextTimer = 0;
-  const root = new FakePresentationElement();
+  const body = new FakePresentationElement();
+  const root = new FakePresentationElement(body.ownerDocument);
+  body.append(root);
   const ownerWindow = root.ownerDocument.defaultView;
   if (ownerWindow === null) throw new Error("Missing owner window.");
+  const observers = createObserverHarness(ownerWindow);
   const mutableWindow = ownerWindow as unknown as {
     performance: { now: () => number };
     cancelAnimationFrame: (handle: number) => void;
@@ -223,9 +317,13 @@ function createHarness(onLoadingShown?: () => void) {
     workSchedulerFromFrames(ownerWindow),
   );
   return {
+    body,
+    ...observers,
+    root,
     delay: () => [...timers.values()][0]?.delay,
     feedback,
-    indicator: () => root.getElementsByClassName("inkbook-operation-feedback").item(0),
+    indicator: () =>
+      (root.isConnected ? body : root).getElementsByClassName("inkbook-operation-feedback").item(0),
     pendingFrameHandles: () => [...frames.keys()],
     pendingFrames: () => frames.size,
     runCapturedFrame: (handle: number | undefined) => {
@@ -245,4 +343,25 @@ function createHarness(onLoadingShown?: () => void) {
       next[1].callback();
     },
   };
+}
+
+function createObserverHarness(ownerWindow: Window) {
+  const observeStyle = vi.fn();
+  const disconnectStyle = vi.fn();
+  const disconnectResize = vi.fn();
+  let syncStyle = () => undefined;
+  Object.assign(ownerWindow, {
+    MutationObserver: class {
+      public constructor(callback: () => undefined) {
+        syncStyle = callback;
+      }
+      public observe = observeStyle;
+      public disconnect = disconnectStyle;
+    },
+    ResizeObserver: class {
+      public observe = vi.fn();
+      public disconnect = disconnectResize;
+    },
+  });
+  return { observeStyle, disconnectStyle, disconnectResize, syncStyle: () => syncStyle() };
 }

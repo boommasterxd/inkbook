@@ -1,7 +1,8 @@
 import { nextSafeCounter } from "../../worker/identity";
 import type { ExportSuccess, PurposeOperationIdentity, VaultBase } from "../../worker/protocol";
 import type { DocumentRuntimeResult, ModelSyncRuntimeRequest } from "../../worker/runtime/public";
-import { readExistingFileWithinLimit } from "../bounded-file-read";
+import { readGuardedFileWithinLimit } from "../bounded-file-read";
+import type { MetadataGuardedFileRead } from "../save-ports";
 import type { PreparedSave } from "../save-existing";
 import * as integrity from "./export-integrity";
 import type * as Autosave from "./types";
@@ -17,11 +18,11 @@ import { assertAutosaveInitialState } from "./coordinator-validation";
 import { inspectAutosaveExternalChange } from "./external-change";
 import { inspectIndeterminateSave } from "./indeterminate-save";
 import { classifyAutosaveFailure } from "./save-failure";
+type ConfirmedBase = Extract<VaultBase, { type: "confirmed" }>;
 export class AutosaveCoordinator {
   readonly #beforeExistingWrite;
   #canonicalRewritePending: boolean;
   #confirmedBase: VaultBase;
-  #confirmedContent: string | null;
   readonly #createFallback;
   readonly #document;
   #disposed = false;
@@ -49,7 +50,6 @@ export class AutosaveCoordinator {
   public constructor(options: Autosave.AutosaveCoordinatorOptions) {
     assertAutosaveInitialState(options);
     this.#integrity = integrity.createAutosaveExportIntegrity(options);
-    this.#confirmedContent = options.confirmedContent ?? null;
     this.#beforeExistingWrite = options.beforeExistingWrite;
     this.#canonicalRewritePending = options.requiresCanonicalRewrite ?? false;
     this.#confirmedBase = options.confirmedBase;
@@ -88,8 +88,8 @@ export class AutosaveCoordinator {
   public get status(): Autosave.AutosaveStatus {
     return this.#status;
   }
-  public get retainedConfirmedContentBytes(): number {
-    return this.#confirmedContent?.length ?? 0;
+  public get currentSaveSettlement(): Promise<void> | undefined {
+    return this.#savePromise ?? undefined;
   }
   public recordCommit(delta: Autosave.AutosaveDelta): void {
     if (this.#disposed) return;
@@ -172,9 +172,9 @@ export class AutosaveCoordinator {
         activeOutputHash: active.proof.outputHash,
         activeRevision: active.proof.revision,
         previousBase: active.previousBase,
-        read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
+        read: () => readGuardedFileWithinLimit(this.#terminalVault, this.#path),
         stopped: () => this.#disposed,
-        verify: (content) => this.#verifier.verify(content, "verification"),
+        verify: (read) => this.#verifier.verify(read, "verification"),
       });
       this.#adoptIndeterminateSaveInspection(inspected);
     } catch {
@@ -198,7 +198,7 @@ export class AutosaveCoordinator {
       confirmedBase,
       currentRevision: () => this.#document.currentRevision(),
       dirty: () => this.dirty,
-      read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
+      read: () => readGuardedFileWithinLimit(this.#terminalVault, this.#path),
       stopped: () => this.#disposed,
       verify: (content) => this.#verifier.verify(content, "preflight", confirmedBase),
     });
@@ -208,7 +208,6 @@ export class AutosaveCoordinator {
     }
     if (inspected.outcome === "reload-required") {
       this.#confirmedBase = inspected.confirmedBase;
-      this.#confirmedContent = null;
     }
     return inspected.outcome;
   }
@@ -235,11 +234,7 @@ export class AutosaveCoordinator {
     this.#resolveWaiters();
   }
   #kick(): void {
-    if (this.#disposed) {
-      this.#resolveWaiters();
-      return;
-    }
-    if (!this.dirty || isAutosaveSuspended(this.#status)) {
+    if (this.#disposed || !this.dirty || isAutosaveSuspended(this.#status)) {
       this.#resolveWaiters();
       return;
     }
@@ -350,7 +345,6 @@ export class AutosaveCoordinator {
     this.#saveOperationId = nextSafeCounter(this.#saveOperationId, "saveOperationId");
     this.#save = {
       previousBase: this.#confirmedBase,
-      previousContent: this.#confirmedContent,
       proof: {
         outputHash: prepared.outputHash,
         revision: prepared.modelRevision,
@@ -378,11 +372,11 @@ export class AutosaveCoordinator {
         outputHash: trusted.outputHash,
         path: this.#path,
         revision: result.modelRevision,
+        ...(trusted.totalBytes === undefined ? {} : { totalBytes: trusted.totalBytes }),
       };
       const expectedBase = await resolveAutosaveExpectedBase({
         confirmedBase: active.previousBase,
-        confirmedContent: active.previousContent,
-        read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
+        read: () => readGuardedFileWithinLimit(this.#terminalVault, this.#path),
         verify: (content) => this.#verifier.verify(content, "preflight", active.previousBase),
       });
       if (this.#disposed) return;
@@ -400,30 +394,33 @@ export class AutosaveCoordinator {
         verifier: {
           verify: (content, revision, hash) =>
             this.#verifier.verifyExpected(content, revision, hash),
+          verifyRead: (read, revision, hash) => this.#verifier.verifyExpected(read, revision, hash),
         },
       });
       if (this.#disposed) return;
-      this.#confirmSavedOutput({
-        outputHash: confirmed.outputHash,
-        revision: confirmed.revision,
-        type: "confirmed",
-      });
+      this.#confirmSavedOutput(
+        {
+          outputHash: confirmed.outputHash,
+          revision: confirmed.revision,
+          type: "confirmed",
+        },
+        confirmed.readBack,
+      );
       this.#resolveWaiters();
     } catch (error) {
       active.result = null;
       if (!this.#disposed) {
         if (outputTrusted) this.#handleSaveFailure(error);
-        else this.#handleUntrustedExport(active);
+        else {
+          if (this.#save === active) this.#save = null;
+          this.#requireFullSnapshot();
+          if (this.#switchToFallback()) this.#setStatus("debouncing");
+        }
       }
     } finally {
       this.#savePromise = null;
       if (!this.#disposed && this.dirty && !isAutosaveSuspended(this.#status)) this.#kick();
     }
-  }
-  #handleUntrustedExport(active: Autosave.ActiveAutosave): void {
-    if (this.#save === active) this.#save = null;
-    this.#requireFullSnapshot();
-    if (this.#switchToFallback()) this.#setStatus("debouncing");
   }
   #handleSaveFailure(error: unknown): void {
     const status = classifyAutosaveFailure(error);
@@ -435,23 +432,19 @@ export class AutosaveCoordinator {
     inspected: Awaited<ReturnType<typeof inspectIndeterminateSave>>,
   ): void {
     if (inspected?.outcome === "confirmed") {
-      this.#confirmSavedOutput(inspected.confirmedBase);
-    } else if (inspected?.outcome === "retryable-error") {
+      this.#confirmSavedOutput(inspected.confirmedBase, inspected.readBack);
+    } else if (inspected !== undefined) {
       this.#save = null;
-      this.#requireFullSnapshot();
-      this.#setStatus("retryable-error");
-    } else if (inspected?.outcome === "conflict") {
-      this.#save = null;
-      this.#setStatus("conflict");
+      if (inspected.outcome === "retryable-error") this.#requireFullSnapshot();
+      this.#setStatus(inspected.outcome);
     }
     this.#resolveWaiters();
   }
-  #confirmSavedOutput(base: Extract<VaultBase, { type: "confirmed" }>): void {
+  #confirmSavedOutput(base: ConfirmedBase, readBack?: MetadataGuardedFileRead): void {
     this.#confirmedBase = base;
-    this.#confirmedContent = null;
     this.#canonicalRewritePending = false;
     this.#save = null;
-    notifyConfirmedPersistence(this.#observer, this.#path, base);
+    notifyConfirmedPersistence(this.#observer, this.#path, base, readBack);
     this.#executor.requestPrewarm?.();
     this.#setStatus(this.dirty ? "debouncing" : "clean");
   }

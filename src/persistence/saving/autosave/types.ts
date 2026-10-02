@@ -2,7 +2,7 @@ import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ExportDelta } from "../../worker/coalesced-export";
 import type { DocumentRuntimePort } from "../../worker/runtime/public";
-import type { ExistingFilePort, NewFilePort } from "../save-ports";
+import type { ExistingFilePort, MetadataGuardedFileRead, NewFilePort } from "../save-ports";
 import type { VaultBase } from "../../worker/protocol";
 import type { ActiveSaveProof, ExportSuccess } from "../../worker/protocol";
 import type { PreparedPressurePathHint } from "../../serialization/prepared-pressure-hints";
@@ -26,10 +26,11 @@ export interface AutosaveClock {
 
 export interface AutosaveSessionBaseOptions {
   readonly workScheduler: WorkScheduler;
-  readonly waitForBackground?: () => Promise<void>;
+  readonly waitForBackground?: () => Promise<void> | undefined;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
   readonly confirmed: (persistence: ConfirmedPersistence) => void;
+  readonly statusChanged?: (status: AutosaveStatus) => void;
   readonly createFallback?: (workerEpoch: number) => DocumentRuntimePort;
   readonly currentRevision: () => number;
   readonly executor: DocumentRuntimePort;
@@ -43,7 +44,9 @@ export interface AutosaveSessionBaseOptions {
 export interface AutosaveDocumentSource {
   currentRevision(): number;
   isGestureActive(): boolean;
-  orderByBand(): Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
+  orderByBand(
+    band: "content" | "highlight",
+  ): Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
   snapshot(): InkSnapshotV1;
   /** Read-only Store-owned identities for integrity hashing, never mutation or transport. */
   integritySnapshot?(): InkSnapshotV1;
@@ -52,13 +55,14 @@ export interface AutosaveDocumentSource {
   preparedPressurePaths?(
     modelRevision: number,
     changedIds?: ReadonlySet<string>,
-  ): readonly PreparedPressurePathHint[];
+  ): Iterable<PreparedPressurePathHint>;
 }
 
 export interface ConfirmedPersistence {
   readonly outputHash: string;
   readonly path: string;
   readonly revision: number;
+  readonly readBack?: MetadataGuardedFileRead;
 }
 
 export interface AutosaveObserver {
@@ -68,11 +72,10 @@ export interface AutosaveObserver {
 
 export interface AutosaveCoordinatorOptions {
   readonly workScheduler: WorkScheduler;
-  readonly waitForBackground?: () => Promise<void>;
+  readonly waitForBackground?: () => Promise<void> | undefined;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
   readonly confirmedBase: VaultBase;
-  readonly confirmedContent?: string | null;
   readonly createFallback?: (workerEpoch: number) => DocumentRuntimePort;
   readonly documentSource: AutosaveDocumentSource;
   readonly executor: DocumentRuntimePort;
@@ -92,7 +95,6 @@ export type ExternalChangeOutcome = "conflict" | "reload-required" | "unchanged"
 
 export interface ActiveAutosave {
   readonly previousBase: VaultBase;
-  readonly previousContent: string | null;
   readonly proof: ActiveSaveProof;
   result: ExportSuccess | null;
 }

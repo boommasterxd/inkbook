@@ -20,6 +20,7 @@ import type {
   PurposeOperationIdentity,
   VerifiedPersistedOutput,
 } from "../protocol";
+import type { SafeStaticProof } from "../../serialization/safe-static-proof";
 
 export type DocumentExportRequest = ExportRequest<InkElementV1, PageV1, InkSnapshotV1>;
 
@@ -51,6 +52,22 @@ export interface UnlockRuntimeRequest {
   readonly identity: PurposeOperationIdentity;
   readonly input: string | Uint8Array;
   readonly type: "unlock";
+  readonly safeStaticProof?: SafeStaticProof;
+}
+
+/** IDs are in visible-first order; no source-file presentation paths are accepted. */
+export interface PrepareScenePathsRuntimeRequest {
+  readonly basisRevision: number;
+  readonly identity: PurposeOperationIdentity;
+  readonly ids: readonly string[];
+  readonly type: "prepare-scene-paths";
+}
+
+export interface PreparedScenePathsRuntimeSuccess {
+  readonly basisRevision: number;
+  readonly identity: PurposeOperationIdentity;
+  readonly paths: readonly import("../../../domain/geometry/prepared-scene-paths").PreparedScenePathEntry[];
+  readonly type: "prepare-scene-paths-success";
 }
 
 interface EncodeClipboardRuntimeRequest {
@@ -78,9 +95,13 @@ interface PlanClipboardPasteRuntimeRequest {
 }
 
 interface VerifyRuntimeRequest {
+  /** Scalar evidence supplied only by the owning save coordinator, never by file markup. */
+  readonly confirmedBase?: { readonly outputHash: string; readonly revision: number };
+  readonly expectedBytes?: number;
   readonly identity: PurposeOperationIdentity;
   readonly input: string | Uint8Array;
   readonly type: "verify-output";
+  readonly versionPolicy?: "current" | "editable";
 }
 
 export type DocumentRuntimeRequest =
@@ -89,6 +110,7 @@ export type DocumentRuntimeRequest =
   | EncodeClipboardRuntimeRequest
   | ModelSyncRuntimeRequest
   | PlanClipboardPasteRuntimeRequest
+  | PrepareScenePathsRuntimeRequest
   | UnlockRuntimeRequest
   | VerifyRuntimeRequest;
 
@@ -159,13 +181,15 @@ export type DocumentRuntimeResult =
   | ExportResult
   | ModelSyncRuntimeSuccess
   | PlanClipboardPasteRuntimeSuccess
+  | PreparedScenePathsRuntimeSuccess
   | RuntimeFailure
   | UnlockRuntimeSuccess
   | VerifyRuntimeSuccess;
 
 export interface DocumentRuntimePort {
+  cancelScenePreparation?(identity: PurposeOperationIdentity): void;
   acknowledgeExport?(identity: ExportIdentity, accepted: boolean): void;
-  checkpoint?(signal: AbortSignal): Promise<void>;
+  checkpoint?(signal: AbortSignal): Promise<void> | undefined;
   execute(
     request: DocumentRuntimeRequest,
     observer?: DocumentRuntimeObserver,
@@ -182,7 +206,7 @@ export interface DocumentRuntimeServices {
 }
 
 export interface InputAwareSliceScheduler {
-  checkpoint(signal: AbortSignal): Promise<void>;
+  checkpoint(signal: AbortSignal): Promise<void> | undefined;
   getSliceMilliseconds?(): number;
   getSliceWorkProfile?(): RuntimeSliceWorkProfile;
   run<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal: AbortSignal): Promise<T>;
@@ -197,7 +221,7 @@ export interface RuntimeSliceWorkProfile {
 }
 
 export interface RuntimeSliceContext {
-  readonly checkpoint: () => Promise<void>;
+  readonly checkpoint: () => Promise<void> | undefined;
   readonly sliceMilliseconds?: () => number;
   readonly workProfile?: RuntimeSliceWorkProfile;
   readonly signal: AbortSignal;

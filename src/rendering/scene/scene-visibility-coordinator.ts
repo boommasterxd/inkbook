@@ -10,6 +10,10 @@ import type { SceneVisibilityState } from "./visibility-state";
 import type { SceneTransformPreviewController } from "./transform-preview-controller";
 import type { SceneElementPreviews } from "./scene-element-previews";
 import { sameViewport, validateViewport } from "./scene-runtime";
+import type { ScenePreviewCommitController } from "./preview-commit-handoff";
+import type { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
+import type { SceneLivePathCommits } from "./live-path-commits";
+import type { SceneMotionController } from "./scene-motion-controller";
 
 export class SceneVisibilityCoordinator {
   readonly #content: SceneContentRenderer;
@@ -20,6 +24,17 @@ export class SceneVisibilityCoordinator {
   #dirty = true;
   #orderDirty = false;
   #queryPending = false;
+  #initialVisibleOnly = false;
+
+  public get initialVisibleOnly(): boolean {
+    return this.#initialVisibleOnly;
+  }
+
+  public setInitialVisibleOnly(active: boolean): void {
+    if (active === this.#initialVisibleOnly) return;
+    this.#initialVisibleOnly = active;
+    this.invalidate();
+  }
 
   public get hasPendingQuery(): boolean {
     return this.#queryPending;
@@ -54,6 +69,30 @@ export class SceneVisibilityCoordinator {
   public releasePreviews(): void {
     this.invalidate();
     this.#content.replaceVisibility(this.#visibility.resortCurrent(), !this.#orderDirty);
+  }
+
+  public releaseCommittedPreview(commits: ScenePreviewCommitController): void {
+    if (!commits.releaseCommitted()) return;
+    this.#elements.retainCommittedGeometry(this.#transforms.values);
+    this.#transforms.clear();
+    this.#elements.clear();
+    this.releasePreviews();
+  }
+
+  public finishMountedFrame(
+    liveStroke: SceneLiveStrokeRenderer,
+    livePaths: SceneLivePathCommits,
+    motion: SceneMotionController,
+    frameTime: number,
+  ): void {
+    this.#elements.applyMounted(this.#content.takeCommittedPreviewIds());
+    const settled = (id: string) => this.#content.hasMounted(id) || !this.#visibility.contains(id);
+    liveStroke.settleCommits(settled);
+    livePaths.settle(settled);
+    const mountedIds = this.#content.takeNewlyMountedIds();
+    motion.bindMountedEntrances(mountedIds, frameTime);
+    motion.finishEntranceBatch();
+    this.#elements.applyMounted(mountedIds);
   }
 
   public releaseLostPreviews(
@@ -97,7 +136,7 @@ export class SceneVisibilityCoordinator {
       }
       return;
     }
-    const { envelope, retained } = visibilityPageBounds(viewport, camera);
+    const { envelope, retained } = visibilityPageBounds(viewport, camera, this.#initialVisibleOnly);
     const orderDirty = this.#orderDirty;
     const progressive = !orderDirty;
     this.#dirty = false;

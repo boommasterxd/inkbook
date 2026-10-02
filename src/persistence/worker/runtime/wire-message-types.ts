@@ -6,6 +6,7 @@ const REQUEST_TYPES = new Set([
   "export-incremental-wire",
   "model-sync-full-wire",
   "model-sync-incremental-wire",
+  "prepare-scene-paths",
   "unlock",
   "verify-output",
 ]);
@@ -17,6 +18,7 @@ const RESULT_TYPES = new Set([
   "export-failure",
   "export-success-wire",
   "model-sync-success",
+  "prepare-scene-paths-success",
   "runtime-failure",
   "unlock-success",
   "verify-output-success",

@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,7 +9,7 @@ import {
 } from "../../../../src/rendering/ui/editor-chrome";
 import { toolbarMainHalfWidth } from "../../../../src/rendering/ui/toolbar-layout";
 
-describe("Inkbook editor chrome", () => {
+describe("Inkbook editor chrome layout", () => {
   it("renders toolbar chrome without scene, canvas, or custom menu content", () => {
     const markup = renderToStaticMarkup(
       <InkbookEditorChrome
@@ -46,6 +48,7 @@ describe("Inkbook editor chrome", () => {
     expect(markup).not.toContain("inkbook-flyout");
     expect(markup).not.toContain("inkbook-scene");
     expect(markup).not.toContain("inkbook-canvas-input");
+    expect(markup).not.toContain('role="status"');
   });
 
   it("remeasures the primary pill through the owning window resize observer", () => {

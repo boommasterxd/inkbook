@@ -1,4 +1,5 @@
 import type { ArrangeAction } from "../../domain/commands/arrange";
+import type { DocumentSaveStatus } from "../../editor/session/session-port";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
@@ -50,8 +51,11 @@ export class DocumentRevisionExhaustedError extends RangeError {
 }
 
 export interface EditableDocumentModel {
+  getSaveStatus?(): DocumentSaveStatus;
+  subscribeSaveStatus?(listener: () => void): () => void;
+  prepareScenePaths?: import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation;
   beginInteractiveOperation?(): () => void;
-  waitForBackground?(): Promise<void>;
+  waitForBackground?(): Promise<void> | undefined;
   readonly mutationAvailability: DocumentMutationAvailability;
   readonly page: InkSnapshotV1["page"];
   readonly revision: number;

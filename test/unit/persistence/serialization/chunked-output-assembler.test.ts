@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   assembleAndHashChunkedOutput,
-  assembleAndHashChunkedUtf8Output,
+  assembleAndHashPreparedUtf8Output,
   ChunkedOutputCancelledError,
   ChunkedOutputLimitError,
   hashExactUtf8Output,
@@ -48,37 +48,6 @@ describe("chunked output assembly", () => {
     expect(result.totalBytes).toBe(new TextEncoder().encode(expected).byteLength);
   });
 
-  it("writes exact transferable UTF-8 bytes without constructing a complete output string", async () => {
-    const fragments = ["before \ud83d", "\udd8b after ä"];
-    const expected = new TextEncoder().encode(fragments.join(""));
-    const result = await assembleAndHashChunkedUtf8Output(fragments, expected.byteLength, {
-      checkpoint: async () => undefined,
-      sliceByteLimit: 3,
-    });
-
-    expect(result.output).toEqual(expected);
-    expect(result.output.byteOffset).toBe(0);
-    expect(result.output.byteLength).toBe(result.output.buffer.byteLength);
-    expect(result.hash).toBe(sha256Hex(expected));
-  });
-
-  it("rejects an inconsistent exact UTF-8 allocation", async () => {
-    await expect(assembleAndHashChunkedUtf8Output(["abcd"], 3)).rejects.toBeInstanceOf(
-      ChunkedOutputLimitError,
-    );
-    await expect(assembleAndHashChunkedUtf8Output(["abcd"], 5)).rejects.toThrow(
-      "byte count is inconsistent",
-    );
-    const multibyte = "ä✒️";
-    const exactBytes = new TextEncoder().encode(multibyte).byteLength;
-    await expect(
-      assembleAndHashChunkedUtf8Output([multibyte], exactBytes - 1),
-    ).rejects.toBeInstanceOf(ChunkedOutputLimitError);
-    await expect(assembleAndHashChunkedUtf8Output([multibyte], exactBytes + 1)).rejects.toThrow(
-      "byte count is inconsistent",
-    );
-  });
-
   it("checks cancellation before consuming fragments", async () => {
     const controller = new AbortController();
     controller.abort();
@@ -114,7 +83,7 @@ describe("chunked output assembly", () => {
   });
 });
 
-describe("exact UTF-8 encoding parity", () => {
+describe("chunked Unicode hashing parity", () => {
   it.each([
     { fragments: ["plain ASCII"], name: "ASCII" },
     { fragments: ["Grüße ", "東京"], name: "multibyte text" },
@@ -123,14 +92,77 @@ describe("exact UTF-8 encoding parity", () => {
       name: "split surrogate pair",
     },
     { fragments: [`lone ${String.fromCharCode(0xd83d)}`], name: "lone surrogate" },
-  ])("matches canonical TextEncoder bytes for $name", async ({ fragments }) => {
+  ])("matches canonical TextEncoder hashing for $name", async ({ fragments }) => {
     const expected = new TextEncoder().encode(fragments.join(""));
-    const result = await assembleAndHashChunkedUtf8Output(fragments, expected.byteLength, {
+    const result = await assembleAndHashChunkedOutput(fragments, {
+      checkpoint: async () => undefined,
       sliceByteLimit: 5,
     });
 
-    expect(result.output).toEqual(expected);
+    expect(result.output).toBe(fragments.join(""));
     expect(result.hash).toBe(sha256Hex(expected));
+    expect(result.totalBytes).toBe(expected.byteLength);
+  });
+});
+
+describe("prepared UTF-8 output assembly", () => {
+  it("copies exact prepared Unicode bytes without encoding or mutating the fragments", async () => {
+    const text = "Grüße 東京 😀<&>";
+    const bytes = new TextEncoder().encode(text);
+    const fragments = [bytes.subarray(0, 5), bytes.subarray(5)];
+    const expectedHash = sha256Hex(bytes);
+    const encode = vi.spyOn(TextEncoder.prototype, "encode");
+    const encodeInto = vi.spyOn(TextEncoder.prototype, "encodeInto");
+
+    const result = await assembleAndHashPreparedUtf8Output(fragments, bytes.byteLength, {
+      sliceByteLimit: 3,
+    });
+
+    expect(result.output).toEqual(bytes);
+    expect(result.output.buffer).not.toBe(bytes.buffer);
+    expect(result.output.byteOffset).toBe(0);
+    expect(result.output.byteLength).toBe(result.output.buffer.byteLength);
+    expect(result.hash).toBe(expectedHash);
+    expect(result.totalBytes).toBe(bytes.byteLength);
+    expect(encode).not.toHaveBeenCalled();
+    expect(encodeInto).not.toHaveBeenCalled();
+  });
+
+  it("rejects incorrect allocations and byte limits before consuming excessive data", async () => {
+    const fragment = new Uint8Array([1, 2, 3, 4]);
+    await expect(assembleAndHashPreparedUtf8Output([fragment], 3)).rejects.toBeInstanceOf(
+      ChunkedOutputLimitError,
+    );
+    await expect(assembleAndHashPreparedUtf8Output([fragment], 5)).rejects.toThrow(
+      "byte count is inconsistent",
+    );
+    const fragments = { [Symbol.iterator]: vi.fn(() => [fragment][Symbol.iterator]()) };
+    await expect(
+      assembleAndHashPreparedUtf8Output(fragments, 4, { maximumBytes: 3 }),
+    ).rejects.toBeInstanceOf(ChunkedOutputLimitError);
+    expect(fragments[Symbol.iterator]).not.toHaveBeenCalled();
+    await expect(
+      assembleAndHashPreparedUtf8Output([], 0, { sliceByteLimit: 0 }),
+    ).rejects.toBeInstanceOf(RangeError);
+  });
+
+  it("cancels between bounded copies and leaves reusable source buffers intact", async () => {
+    const bytes = new Uint8Array(20).fill(7);
+    const expected = bytes.slice();
+    await expectCancellationAfterCheckpoint((checkpoint, signal) =>
+      assembleAndHashPreparedUtf8Output([bytes], bytes.byteLength, {
+        checkpoint,
+        signal,
+        sliceByteLimit: 4,
+      }),
+    );
+    expect(bytes).toEqual(expected);
+    await expect(
+      assembleAndHashPreparedUtf8Output([bytes], bytes.byteLength),
+    ).resolves.toMatchObject({
+      output: expected,
+      totalBytes: bytes.byteLength,
+    });
   });
 });
 
@@ -173,7 +205,7 @@ describe("exact UTF-8 output hashing", () => {
     let checkpoints = 0;
     const expected = new TextEncoder().encode(text);
 
-    const result = await assembleAndHashChunkedUtf8Output([text], expected.byteLength, {
+    const result = await assembleAndHashPreparedUtf8Output([expected], expected.byteLength, {
       checkpoint: async () => {
         checkpoints += 1;
       },
@@ -229,30 +261,20 @@ describe("exact UTF-8 output hashing", () => {
     ).resolves.toEqual(outputs.map(sha256Hex));
   });
 
-  it("assembles concurrent outputs without sharing encoder state", async () => {
-    const high = String.fromCharCode(0xd83d);
-    const inputs = [
-      [`left ${high}`, String.fromCharCode(0xdd8b)],
-      [`right ${high}`, String.fromCharCode(0xde80)],
-    ];
-    const expected = inputs.map((fragments) => new TextEncoder().encode(fragments.join("")));
+  it("copies concurrent prepared outputs into independent exact buffers", async () => {
+    const expected = ["left 🖋", "right 🚀"].map((text) => new TextEncoder().encode(text));
     const results = await Promise.all(
-      inputs.map((fragments, index) =>
-        assembleAndHashChunkedUtf8Output(fragments, expected[index]!.byteLength),
+      expected.map((bytes) =>
+        assembleAndHashPreparedUtf8Output(
+          [bytes.subarray(0, 6), bytes.subarray(6)],
+          bytes.byteLength,
+        ),
       ),
     );
 
     expect(results.map(({ output }) => output)).toEqual(expected);
     expect(results.map(({ hash }) => hash)).toEqual(expected.map(sha256Hex));
-  });
-
-  it("honors slice cancellation while writing directly into exact output", async () => {
-    await expectCancellationAfterCheckpoint((checkpoint, signal) =>
-      assembleAndHashChunkedUtf8Output(["a".repeat(20)], 20, {
-        checkpoint,
-        signal,
-        sliceByteLimit: 4,
-      }),
-    );
+    expect(results[0]!.output.buffer).not.toBe(expected[0]!.buffer);
+    expect(results[1]!.output.buffer).not.toBe(expected[1]!.buffer);
   });
 });

@@ -1,5 +1,6 @@
 import type { PointV1 } from "../schema/types";
 import { pointSegmentDistance } from "./primitives";
+import { PRESSURE_PREPARATION_CHECK_INTERVAL } from "./pressure-union";
 
 interface Vertex {
   point: PointV1;
@@ -46,9 +47,10 @@ export function* iteratePressureBoundarySimplification(
     extent.minY = Math.min(extent.minY, point.y);
     extent.maxX = Math.max(extent.maxX, point.x);
     extent.maxY = Math.max(extent.maxY, point.y);
-    yield;
+    if ((index + 1) % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   }
   let index = 0;
+  let inspected = 0;
   while (vertices[index]!.next >= 0) {
     const first = vertices[index]!;
     const middle = vertices[first.next]!;
@@ -57,13 +59,13 @@ export function* iteratePressureBoundarySimplification(
       (yield* removeConcave(vertices, index, tolerance, points, addedTriangle)) ||
       replaceConvexPair(vertices, index, tolerance, extent, addedTriangle);
     index = changed ? Math.max(0, first.previous) : first.next;
-    yield;
+    if (++inspected % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
     // Every successful rewrite removes a vertex; backtracking is at most one link.
   }
   const result: PointV1[] = [];
   for (let current = 0; current >= 0; current = vertices[current]!.next) {
     result.push(vertices[current]!.point);
-    yield;
+    if (result.length % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   }
   return result;
 }
@@ -140,7 +142,7 @@ function* chordError(
       maximum,
       pointSegmentDistance(points[index]!, points[first]!, points[last]!),
     );
-    yield;
+    if ((index - first) % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
     if (maximum > tolerance) break;
   }
   return maximum;

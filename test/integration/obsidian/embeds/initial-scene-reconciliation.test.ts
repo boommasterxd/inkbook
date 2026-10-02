@@ -33,6 +33,7 @@ it("keeps initial handoff hidden while final viewport reconciliation spans multi
   const document = new FakeDocument();
   let viewport = { height: 100, left: 0, top: 10_000, width: 100 };
   const renderer = new SvgSceneRenderer({
+    deferInitialOverscan: true,
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => viewport },
     onSceneCommitted: () => {
@@ -77,6 +78,7 @@ it.each(["complete", "dispose-before-layout", "dispose-after-layout"] as const)(
     const document = new FakeDocument();
     let commits = 0;
     const renderer = new SvgSceneRenderer({
+      deferInitialOverscan: true,
       container: asElement(new FakeNode(document, "div")),
       layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
       onSceneCommitted: () => {

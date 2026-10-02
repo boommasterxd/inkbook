@@ -1,5 +1,5 @@
 import type { PointV1 } from "./types";
-import { retainValidatedSampleExtrema } from "./stroke-sample-extrema";
+import { retainValidatedSampleExtrema, type StrokeSampleExtrema } from "./stroke-sample-extrema";
 import {
   assertGeometryNumber,
   assertUnitInterval,
@@ -27,6 +27,12 @@ export function* assertStrokeSamplesSteps(
   if (context.statistics.strokePoints > context.limits.strokePoints) {
     fail("stroke-point-limit-exceeded", path, "Total stroke point count exceeds the limit.");
   }
+  const decodedExtrema = context.parsedProof?.consumeDecodedStrokeSamples(value);
+  if (decodedExtrema !== undefined) {
+    assertDecodedExtrema(decodedExtrema, path, context.limits.absoluteCoordinate, offset);
+    retainValidatedSampleExtrema(value, decodedExtrema);
+    return;
+  }
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -52,4 +58,29 @@ export function* assertStrokeSamplesSteps(
     if ((index / 3 + 1) % samplesPerStep === 0) yield true;
   }
   retainValidatedSampleExtrema(value, { minX, minY, maxX, maxY });
+}
+
+function assertDecodedExtrema(
+  bounds: StrokeSampleExtrema,
+  path: string,
+  maximum: number,
+  offset: PointV1 | undefined,
+): void {
+  if (
+    bounds.minX < -maximum ||
+    bounds.maxX > maximum ||
+    bounds.minY < -maximum ||
+    bounds.maxY > maximum
+  ) {
+    fail("invalid-range", path, `Absolute geometry must not exceed ${maximum}.`);
+  }
+  if (
+    offset !== undefined &&
+    (bounds.minX + offset.x < -maximum ||
+      bounds.maxX + offset.x > maximum ||
+      bounds.minY + offset.y < -maximum ||
+      bounds.maxY + offset.y > maximum)
+  ) {
+    fail("invalid-range", path, "Translated stroke coordinates exceed the numeric limit.");
+  }
 }

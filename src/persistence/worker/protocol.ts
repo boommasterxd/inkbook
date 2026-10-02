@@ -63,6 +63,7 @@ export interface ExportSuccess extends ExportIdentity {
   readonly integrityManifest: DocumentIntegrityManifest;
   readonly output: string | Uint8Array;
   readonly outputHash: string;
+  readonly totalBytes?: number;
   readonly type: "export-success";
 }
 

@@ -57,7 +57,6 @@ async function createBackgroundHarness() {
     workScheduler: createTestWorkScheduler(),
     clock: { clearTimeout: () => undefined, setTimeout: () => 1 },
     confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
-    confirmedContent: initial.svg,
     documentSource: source,
     executor,
     initialSnapshot,

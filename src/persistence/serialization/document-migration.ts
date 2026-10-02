@@ -1,5 +1,10 @@
 import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../domain/schema/public";
-import { validateInkSnapshotV1Steps } from "../../domain/schema/snapshot-validation";
+import {
+  validateInkSnapshotV1Steps,
+  validateParsedInkSnapshotV1Steps,
+  validateRuntimeInkSnapshotV1Steps,
+} from "../../domain/schema/snapshot-validation";
+import type { ParsedJsonProof } from "../../domain/schema/parsed-json-proof";
 
 import {
   createDocumentSnapshotMigrations,
@@ -10,6 +15,8 @@ import type { DocumentCodecResult } from "./types";
 interface MigrationValidationOptions {
   readonly metadataBytes: number;
   readonly totalInputBytes: number;
+  readonly parsedJsonProof?: ParsedJsonProof;
+  readonly allowRuntimeStrokeBuffers?: boolean;
 }
 
 export interface MigratedSnapshot {
@@ -24,7 +31,7 @@ export function* migrateAndValidateDocumentSnapshotSteps(
 ): Generator<void, DocumentCodecResult<MigratedSnapshot>> {
   const migration = migrateSnapshotSequentiallySteps(
     value,
-    createDocumentSnapshotMigrations(options),
+    createDocumentSnapshotMigrations(options, options.allowRuntimeStrokeBuffers === true),
   );
   let migrationStep = migration.next();
   while (!migrationStep.done) {
@@ -32,7 +39,11 @@ export function* migrateAndValidateDocumentSnapshotSteps(
     migrationStep = migration.next();
   }
   if (!migrationStep.value.ok) return migrationFailure();
-  const validation = validateInkSnapshotV1Steps(migrationStep.value.value, options);
+  const validation = createValidationSteps(
+    migrationStep.value.value,
+    migrationStep.value.migrated,
+    options,
+  );
   let validationStep = validation.next();
   while (!validationStep.done) {
     yield;
@@ -56,6 +67,24 @@ export function* migrateAndValidateDocumentSnapshotSteps(
       sourceVersion: migrationStep.value.sourceVersion,
     },
   };
+}
+
+function createValidationSteps(
+  value: unknown,
+  migrated: boolean,
+  options: MigrationValidationOptions,
+) {
+  if (options.parsedJsonProof !== undefined && !migrated) {
+    return validateParsedInkSnapshotV1Steps(
+      value,
+      options.parsedJsonProof,
+      options,
+      options.allowRuntimeStrokeBuffers === true,
+    );
+  }
+  return options.allowRuntimeStrokeBuffers === true
+    ? validateRuntimeInkSnapshotV1Steps(value, options)
+    : validateInkSnapshotV1Steps(value, options);
 }
 
 function migrationFailure(): DocumentCodecResult<never> {

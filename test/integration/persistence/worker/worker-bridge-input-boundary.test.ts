@@ -41,7 +41,7 @@ async function expectRejectedBatch(
 }
 
 describe("document worker bridge input boundary", () => {
-  it("rejects a forged verification result that does not describe the exact request", async () => {
+  it("rejects malformed verification hash evidence from the owned worker channel", async () => {
     const document = serializeOneStrokeWorkerSnapshot();
     const { clientEndpoint, hostEndpoint } = createWorkerBridgeEndpoints();
     const client = createWorkerBridgeClient(clientEndpoint);
@@ -57,7 +57,7 @@ describe("document worker bridge input boundary", () => {
       requestId: 1,
       result: {
         identity,
-        persisted: { outputHash: "0".repeat(64), revision: 0, type: "confirmed" },
+        persisted: { outputHash: "invalid-hash", revision: 0, type: "confirmed" },
         type: "verify-output-success",
       },
       type: "inkbook-worker-result",

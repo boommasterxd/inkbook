@@ -18,9 +18,9 @@ An Inkbook file is UTF-8 XML with this required order:
      data-inkbook-format="inkbook"
      data-inkbook-version="1"
      data-inkbook-revision="{revision}"
-     data-inkbook-snapshot-sha256="{lowercase SHA-256 of decoded compact JSON}">
+     data-inkbook-snapshot-sha256="{lowercase SHA-256 of decoded compact disk JSON}">
   <style id="inkbook-theme">{canonical theme stylesheet}</style>
-  <metadata id="inkbook-snapshot" data-encoding="json">{escaped compact JSON}</metadata>
+  <metadata id="inkbook-snapshot" data-encoding="json-varint-v1">{escaped compact disk JSON}</metadata>
   <g id="inkbook-background"></g>
   <g id="inkbook-highlights"></g>
   <g id="inkbook-content"></g>
@@ -31,8 +31,10 @@ The background group starts with one page-surface path covering the complete `vi
 
 Additional envelope rules:
 
-- Metadata is the exact canonical compact JSON serialization escaped as XML text. Loading streams its XML character data through the bounded `StreamingSvgMetadataParser`, decodes only the permitted XML entities, and parses the decoded text with the synchronous bounded structural-scan plus native parser or the bounded chunked parser, without creating an SVG DOM. Unlock accepts schema-valid JSON formatting and property order when the hash of the original decoded text matches the envelope; duplicate keys remain invalid. It does not serialize all parsed points again merely to compare JSON spelling. Strict canonical parsing for output verification still requires exact canonical reserialization.
-- `data-inkbook-snapshot-sha256` is the lowercase SHA-256 of the decoded canonical metadata text. Current-version loading requires an exact hash match for the supplied decoded metadata text in both synchronous and streaming paths. This consistency binding detects uncoordinated metadata rewriting, including changes to fields that do not affect locked static geometry; it does not establish origin or authenticity.
+- Current metadata uses the [compact disk encoding](file-format.md#disk-metadata-encoding); legacy `data-encoding="json"` remains readable. The metadata hash binds the exact decoded disk JSON text, including Base64 sample strings, rather than a reconstructed numeric-array representation. Canonical writers, incremental fragments, and the independent Store integrity manifest use the same current encoding.
+
+- Metadata is the exact canonical compact JSON serialization escaped as XML text. Loading streams its XML character data through the bounded `StreamingSvgMetadataParser`, decodes only the permitted XML entities, and parses the decoded text with the same bounded chunked parser in the worker and main-thread fallback, without creating an SVG DOM. Unlock accepts schema-valid JSON formatting and property order when the hash of the original decoded text matches the envelope; duplicate keys remain invalid. It does not serialize all parsed points again merely to compare JSON spelling. Strict canonical parsing for output verification still requires exact canonical reserialization.
+- `data-inkbook-snapshot-sha256` is the lowercase SHA-256 of the decoded canonical metadata text. Current-version loading requires an exact hash match for the supplied decoded metadata text in both worker and main-thread fallback paths. This consistency binding detects uncoordinated metadata rewriting, including changes to fields that do not affect locked static geometry; it does not establish origin or authenticity.
 - `viewBox` is authoritative; `width` and `height` MAY be omitted.
 - Opacity output uses at most four decimal places. Pressure-stroke groups apply `round(style.opacity * colorAlpha, 4)` once; Theme text has alpha 1, and explicit RGBA uses its byte alpha divided by 255. Their child paths use opaque RGB paint without child opacity. Other paths retain their canonical snapshot opacity and RGBA paint separately. All other numeric SVG output uses at most three decimal places. Numeric output removes insignificant trailing zeros.
 - `data-inkbook-revision` is the canonical unsigned decimal snapshot revision. A root and snapshot mismatch is invalid.

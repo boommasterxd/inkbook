@@ -5,10 +5,6 @@ import type {
   VerifiedPersistedOutput,
 } from "../../worker/protocol";
 import type { DocumentRuntimePort, DocumentRuntimeResult } from "../../worker/runtime/public";
-import {
-  hashConfirmedSvgContent,
-  inspectTrustedSvgOutput,
-} from "../../scheduling/trusted-svg-output";
 
 import { scanCanonicalRevisionPrefix } from "../revision-scan";
 
@@ -21,38 +17,36 @@ export async function verifyExactWorkerContent(
   versionPolicy: "current" | "editable" = "current",
   options: {
     readonly workScheduler?: WorkScheduler;
-    readonly waitForBackground?: () => Promise<void>;
+    readonly waitForBackground?: () => Promise<void> | undefined;
     readonly confirmedBase?: VaultBase;
+    readonly expectedBytes?: number;
+    readonly assertCurrent?: () => void;
   } = {},
 ): Promise<VerifiedPersistedOutput> {
-  let trusted;
-  try {
-    const base = options.confirmedBase;
-    if (
-      identity.purpose === "preflight" &&
-      versionPolicy === "editable" &&
-      base?.type === "confirmed" &&
-      scanCanonicalRevisionPrefix(content) === base.revision &&
-      (await hashConfirmedSvgContent(content, options)) === base.outputHash
-    ) {
-      return { outputHash: base.outputHash, revision: base.revision, type: "confirmed" };
-    }
-    trusted = await inspectTrustedSvgOutput(content, undefined, {
-      ...(options.workScheduler ? { workScheduler: options.workScheduler } : {}),
-      versionPolicy,
-      ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
-    });
-  } catch {
-    return { type: "unreadable" };
-  }
-  const result = await executor.execute({ identity, input: content, type: "verify-output" });
-  return verifiedResult(identity, result, trusted);
+  const pending = options.waitForBackground?.();
+  if (pending !== undefined) await pending;
+  options.assertCurrent?.();
+  const base = options.confirmedBase;
+  const result = await executor.execute({
+    identity,
+    input: content,
+    type: "verify-output",
+    versionPolicy,
+    ...(options.expectedBytes === undefined ? {} : { expectedBytes: options.expectedBytes }),
+    ...(identity.purpose === "preflight" &&
+    versionPolicy === "editable" &&
+    base?.type === "confirmed"
+      ? { confirmedBase: base }
+      : {}),
+  });
+  options.assertCurrent?.();
+  return verifiedResult(identity, result, content);
 }
 
 function verifiedResult(
   identity: PurposeOperationIdentity,
   result: DocumentRuntimeResult,
-  trusted: { readonly outputHash: string; readonly revision: number },
+  content: string,
 ): VerifiedPersistedOutput {
   if (
     result.type !== "verify-output-success" ||
@@ -63,10 +57,10 @@ function verifiedResult(
   if (result.persisted.type === "unreadable") return result.persisted;
   if (
     result.persisted.type !== "confirmed" ||
-    result.persisted.revision !== trusted.revision ||
-    result.persisted.outputHash !== trusted.outputHash
+    result.persisted.revision !== scanCanonicalRevisionPrefix(content) ||
+    !/^[0-9a-f]{64}$/u.test(result.persisted.outputHash)
   ) {
     throw new Error("Persisted output verification does not match the exact content.");
   }
-  return { ...trusted, type: "confirmed" };
+  return result.persisted;
 }

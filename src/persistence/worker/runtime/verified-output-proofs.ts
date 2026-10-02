@@ -1,6 +1,14 @@
-import { hashRuntimeInput } from "./runtime-input-hash";
+import { hashConfirmedRuntimeInput, hashRuntimeInput } from "./runtime-input-hash";
 import { parseRuntimeInput } from "./parse-runtime-input";
 import type { RuntimeSliceContext } from "./types";
+import { parseSafeSvgRoot } from "../../documents/svg-envelope-root";
+import { parseOpeningTag } from "../../documents/svg-tag";
+
+export interface OutputVerificationOptions {
+  readonly confirmedBase?: OutputProof;
+  readonly expectedBytes?: number;
+  readonly versionPolicy?: "current" | "editable";
+}
 
 interface OutputProof {
   readonly outputHash: string;
@@ -34,16 +42,31 @@ export class VerifiedOutputProofs {
   public async verify(
     input: string | Uint8Array,
     context?: RuntimeSliceContext,
+    options: OutputVerificationOptions = {},
   ): Promise<OutputProof | null> {
     const epoch = this.#epoch;
-    if (this.#input !== null || this.#export !== null) {
-      const hash = await hashRuntimeInput(input, context);
-      const proof = [this.#input, this.#export].find(
-        (entry) => entry !== null && entry.outputHash === hash,
+    const prefix =
+      typeof input === "string"
+        ? input.slice(0, 4096)
+        : new TextDecoder().decode(input.subarray(0, 4096));
+    const tag = parseOpeningTag(prefix, 0);
+    const root = tag === null ? null : parseSafeSvgRoot(tag, options.versionPolicy ?? "editable");
+    if (root === null) return null;
+    if (
+      this.#input !== null ||
+      this.#export !== null ||
+      options.confirmedBase !== undefined ||
+      options.expectedBytes !== undefined
+    ) {
+      const hashInput =
+        options.confirmedBase === undefined ? hashRuntimeInput : hashConfirmedRuntimeInput;
+      const hash = await hashInput(input, context, options.expectedBytes);
+      if (hash === null) return null;
+      const proof = [this.#input, this.#export, options.confirmedBase].find(
+        (entry) => entry != null && entry.outputHash === hash && entry.revision === root.revision,
       );
       context?.signal.throwIfAborted();
       if (epoch === this.#epoch && proof != null) {
-        this.#input = proof;
         return { ...proof };
       }
     }

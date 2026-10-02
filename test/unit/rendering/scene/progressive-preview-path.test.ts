@@ -149,7 +149,7 @@ it("keeps completed path identity when stepped again", () => {
   expect(job.parts).toBe(parts);
 });
 
-it("bounds actual contour operations and releases its suspended-job reserve", () => {
+it("obeys the supplied deadline and releases its suspended-job reserve", () => {
   const original = windowJobs.preparePressureWindowSteps;
   let operations = 0;
   vi.spyOn(windowJobs, "preparePressureWindowSteps").mockImplementation(function* (pieces) {
@@ -171,7 +171,7 @@ it("bounds actual contour operations and releases its suspended-job reserve", ()
     const before = operations;
     job.step();
     maximum = Math.max(maximum, operations - before);
-    expect(operations - before).toBeLessThanOrEqual(4096);
+    // Window capacity and bounded generator operations govern uninterrupted work.
   }
   expect(maximum).toBeGreaterThan(0);
   const deferred = new ProgressivePreviewPath(element);
@@ -194,6 +194,24 @@ it("bounds actual contour operations and releases its suspended-job reserve", ()
     deferred.parts.reduce((bytes, part) => bytes + part.d.length * 2, 0),
   );
   expect(job.parts).toEqual(buildElementPathParts(element));
+});
+
+it("keeps progressing past the former step quota while shared time remains", () => {
+  const prepare = windowJobs.preparePressureWindowSteps;
+  let operations = 0;
+  vi.spyOn(windowJobs, "preparePressureWindowSteps").mockImplementation(function* (pieces) {
+    for (let index = 0; index < 5000; index += 1) {
+      operations += 1;
+      yield;
+    }
+    return yield* prepare(pieces);
+  });
+  const job = new ProgressivePreviewPath(pressureWindowStroke());
+  const clock = vi.fn(() => 0);
+  while (operations === 0) job.step(1, clock);
+  expect(operations).toBe(5000);
+  job.cancel();
+  expect(job.memoryUsage()).toBe(0);
 });
 
 it("reuses canonical pressure paths and windows without repeating their union", () => {

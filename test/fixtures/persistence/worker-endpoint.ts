@@ -6,6 +6,7 @@ export class TestWorkerEndpoint implements WorkerBridgeEndpoint, WorkerHostEndpo
   readonly sentMessages: unknown[] = [];
   readonly transfers: Transferable[][] = [];
   terminated = false;
+  public cloneTransfers = false;
   readonly #listeners = {
     error: new Set<() => void>(),
     message: new Set<(event: MessageEvent<unknown>) => void>(),
@@ -36,7 +37,8 @@ export class TestWorkerEndpoint implements WorkerBridgeEndpoint, WorkerHostEndpo
     this.sentMessages.push(message);
     this.transfers.push(transfer);
     const listeners = this.peer === null ? [] : this.peer.#listeners.message;
-    for (const listener of listeners) listener({ data: message } as MessageEvent<unknown>);
+    const data = this.cloneTransfers ? structuredClone(message, { transfer }) : message;
+    for (const listener of listeners) listener({ data } as MessageEvent<unknown>);
   }
 
   public removeEventListener(

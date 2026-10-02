@@ -1,10 +1,28 @@
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import type { AttachmentIdentity } from "../../editor/session/session-state";
 
-import type { PresentationAttachment } from "./presentation-port";
-import { PresentationOperationFeedback } from "./presentation-operation-feedback";
+import { presentationAttachmentKey, type PresentationAttachment } from "./presentation-port";
+import {
+  PresentationOperationFeedback,
+  type PresentationOperationFeedbackHandle,
+} from "./presentation-operation-feedback";
 import type { WorkspaceMountedPresentation } from "./workspace-load-recovery";
 import type { WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
+
+export function createWorkspacePresentationStateSetter(
+  presentations: ReadonlyMap<string, WorkspaceMountedPresentation>,
+): (
+  attachment: AttachmentIdentity,
+  state: string,
+  feedback?: PresentationOperationFeedbackHandle,
+) => void {
+  return (attachment, state, feedback) => {
+    feedback?.finish();
+    const mounted = presentations.get(presentationAttachmentKey(attachment));
+    if (mounted !== undefined) mounted.attachment.root.dataset.inkbookState = state;
+  };
+}
 
 export function createWorkspaceMountedPresentation(
   attachment: PresentationAttachment,

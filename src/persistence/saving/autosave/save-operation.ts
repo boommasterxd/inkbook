@@ -1,21 +1,20 @@
 import type { ConfirmedSave, PreparedSave, SaveRevisionSource } from "../save-existing";
 import {
-  saveExistingFile,
   saveExistingFileFromVerifiedPreflight,
   type VerifiedExistingFilePreflight,
 } from "../save-existing";
 import { SaveError } from "../save-errors";
 import { saveNewFile } from "../save-new";
-import type { ExistingFilePort, NewFilePort, PersistedOutputVerifier } from "../save-ports";
+import type {
+  ExistingFilePort,
+  MetadataGuardedFileRead,
+  NewFilePort,
+  PersistedOutputVerifier,
+} from "../save-ports";
 import type { VaultBase, VerifiedPersistedOutput } from "../../worker/protocol";
 import { isExactPreparedOutput, sameVaultBase } from "./verification";
 
 export type AutosaveExpectedBase =
-  | {
-      readonly base: Extract<VaultBase, { type: "confirmed" }>;
-      readonly content: string;
-      readonly type: "content";
-    }
   | {
       readonly base: Extract<VaultBase, { type: "confirmed" }>;
       readonly preflight: VerifiedExistingFilePreflight;
@@ -34,9 +33,8 @@ export interface AutosavePersistenceOptions {
 
 interface AutosaveExpectedBaseOptions {
   readonly confirmedBase: VaultBase;
-  readonly confirmedContent: string | null;
-  readonly read: () => Promise<string>;
-  readonly verify: (content: string) => Promise<VerifiedPersistedOutput>;
+  readonly read: () => Promise<string | MetadataGuardedFileRead>;
+  readonly verify: (read: string | MetadataGuardedFileRead) => Promise<VerifiedPersistedOutput>;
 }
 
 export async function resolveAutosaveExpectedBase(
@@ -45,11 +43,11 @@ export async function resolveAutosaveExpectedBase(
   if (options.confirmedBase.type === "missing") {
     return { base: options.confirmedBase, type: "missing" };
   }
-  if (options.confirmedContent !== null) {
-    return { base: options.confirmedBase, content: options.confirmedContent, type: "content" };
-  }
-  const content = await options.read();
-  const persisted = await options.verify(content);
+  const read = await options.read();
+  const content = typeof read === "string" ? read : read.content;
+  const persisted = await options.verify(read);
+  if (typeof read !== "string" && read.isCurrent?.() === false)
+    throw new SaveError("external-conflict");
   if (!sameVaultBase(persisted, options.confirmedBase) || persisted.type !== "confirmed") {
     throw new SaveError("external-conflict");
   }
@@ -64,21 +62,9 @@ export async function persistPreparedOutput(
   options: AutosavePersistenceOptions,
 ): Promise<ConfirmedSave> {
   if (options.beforeExistingWrite !== undefined && options.expectedBase.type !== "missing") {
-    await options.beforeExistingWrite(
-      options.expectedBase.type === "content"
-        ? options.expectedBase.content
-        : options.expectedBase.preflight.content,
-    );
+    await options.beforeExistingWrite(options.expectedBase.preflight.content);
   }
   const verifier = exactOrFallbackVerifier(options.prepared, options.verifier);
-  if (options.expectedBase.type === "content") {
-    return saveExistingFile(
-      { ...options.prepared, expectedBase: options.expectedBase.content },
-      options.revisionSource,
-      options.vault,
-      verifier,
-    );
-  }
   if (options.expectedBase.type === "preflight") {
     return saveExistingFileFromVerifiedPreflight(
       options.prepared,
@@ -100,6 +86,13 @@ export async function persistPreparedOutput(
     {
       create,
       createAndReadBack,
+      ...(options.vault.createAndReadBackForVerification === undefined
+        ? {}
+        : {
+            createAndReadBackForVerification: options.vault.createAndReadBackForVerification.bind(
+              options.vault,
+            ),
+          }),
       process: (path, update) => options.vault.process(path, update),
       readWithMetadataGuard: (path, maximumBytes) =>
         options.vault.readWithMetadataGuard(path, maximumBytes),
@@ -124,5 +117,22 @@ function exactOrFallbackVerifier(
       )
         ? Promise.resolve(true)
         : fallback.verify(content, revision, hash),
+    ...(fallback.verifyRead === undefined
+      ? {}
+      : {
+          verifyRead: (read: MetadataGuardedFileRead, revision: number, hash: string) =>
+            prepared.totalBytes !== undefined &&
+            read.identity.size === prepared.totalBytes &&
+            isExactPreparedOutput(
+              read.content,
+              prepared.output,
+              revision,
+              prepared.revision,
+              hash,
+              prepared.outputHash,
+            )
+              ? Promise.resolve(read.isCurrent?.() !== false)
+              : fallback.verifyRead!(read, revision, hash),
+        }),
   };
 }

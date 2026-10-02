@@ -199,6 +199,16 @@ describe("existing SVG save", () => {
 });
 
 describe("existing SVG save verification", () => {
+  it("uses the shared save flow without rereading a verified preflight", async () => {
+    const vault = memoryVault();
+    await expect(saveFromVerifiedPreflight(vault, baseHash)).resolves.toMatchObject({
+      revision: 2,
+      outputHash,
+    });
+    expect(vault.processCount()).toBe(1);
+    expect(vault.readCount()).toBe(1);
+  });
+
   it("keeps the file dirty when read-back proof fails", async () => {
     const vault = memoryVault();
     await expect(

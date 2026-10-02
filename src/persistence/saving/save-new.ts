@@ -1,5 +1,10 @@
 import { SaveError } from "./save-errors";
-import type { ExistingFilePort, NewFilePort, PersistedOutputVerifier } from "./save-ports";
+import type {
+  ExistingFilePort,
+  MetadataGuardedFileRead,
+  NewFilePort,
+  PersistedOutputVerifier,
+} from "./save-ports";
 import type { PreparedSave, SaveRevisionSource } from "./save-existing";
 import { confirmReadBack, type ConfirmedSave } from "./verified-read-back";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
@@ -14,20 +19,19 @@ export async function saveNewFile(
   if (revisionSource.currentRevision() !== prepared.revision) {
     throw new SaveError("stale-editor-revision");
   }
-  if (revisionSource.waitForBackground) await revisionSource.waitForBackground();
+  const pending = revisionSource.waitForBackground?.();
+  if (pending !== undefined) await pending;
   validatePreparedOutput(prepared);
   if (revisionSource.currentRevision() !== prepared.revision) {
     throw new SaveError("stale-editor-revision");
   }
-  let readBack: string;
+  let readBack: MetadataGuardedFileRead;
   try {
-    readBack = (
-      await vault.createAndReadBack(
-        prepared.path,
-        prepared.output,
-        FILE_SCHEMA_LIMITS.totalInputBytes,
-      )
-    ).content;
+    const create =
+      verifier.verifyRead === undefined
+        ? vault.createAndReadBack.bind(vault)
+        : (vault.createAndReadBackForVerification ?? vault.createAndReadBack).bind(vault);
+    readBack = await create(prepared.path, prepared.output, FILE_SCHEMA_LIMITS.totalInputBytes);
   } catch {
     throw new SaveError("vault-write-failed");
   }
