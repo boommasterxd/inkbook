@@ -37,6 +37,11 @@ function observeEncoding() {
   return { encode, writtenBytes: () => bytes, readCodeUnits: () => codeUnits };
 }
 
+async function referenceHash(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 describe("confirmed worker native hash evidence", () => {
   it("encodes complete Unicode once under the shared checkpoint and digests exact bytes", async () => {
     const input = "a😀ä".repeat(20);
@@ -94,7 +99,7 @@ describe("confirmed worker native hash evidence", () => {
 describe("confirmed worker native hash fallback", () => {
   it("accepts exactly 20 MiB in the native digest without retaining a sliced hash", async () => {
     const input = "x".repeat(20 * 1024 * 1024);
-    const expected = sha256Hex(input);
+    const expected = await referenceHash(input);
     const digest = vi.spyOn(crypto.subtle, "digest");
     const hash = vi.spyOn(ChunkedSha256.prototype, "update");
     await expect(hashConfirmedRuntimeInput(input, sliceContext(), input.length)).resolves.toBe(
@@ -138,7 +143,7 @@ describe("confirmed worker native hash fallback", () => {
 
   it.each(["x", "ä"])("streams above the 20 MiB native byte cap with %s", async (character) => {
     const input = character.repeat((20 * 1024 * 1024) / (character === "x" ? 1 : 2) + 1);
-    const expected = sha256Hex(input);
+    const expected = await referenceHash(input);
     const bytes = new TextEncoder().encode(input).byteLength;
     const digest = vi.spyOn(crypto.subtle, "digest");
     const encode = vi.spyOn(TextEncoder.prototype, "encodeInto");
