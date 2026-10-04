@@ -20,7 +20,6 @@ import { FakeNode, FakeScheduler } from "../../../unit/rendering/scene/fakes";
 // Reading the clock for scheduler admission is not scene work. Later synthetic ticks
 // exercise deadlines; the assertions below bound actual mounts, queries, and builds.
 const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 8;
-const MAX_MOUNT_SLICE_ELEMENTS = 6;
 const TRANSITIONS = 12;
 const DEFAULT_CAMERA: SceneCamera = { x: 0, zoom: 1 };
 const DEFAULT_VIEWPORT: SceneViewport = { height: 100, left: 0, top: 0, width: 100 };
@@ -59,7 +58,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
     const instrumentation = renderer.instrumentation();
     expect(instrumentation.spatialQueries).toBeGreaterThan(0);
     expect(instrumentation.domEntrants).toBeGreaterThan(0);
-    expect(instrumentation.domExits).toBeGreaterThan(0);
+    expect(instrumentation.domExits).toBe(0);
+    expect(instrumentation.detachedCacheEntries).toBeGreaterThan(0);
+    expect(instrumentation.detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
     expect(renderer.mountedCount).toBeLessThan(INTERACTION_ELEMENT_COUNT);
     expect(renderer.mountedIds("content")).toEqual(
       expectedVisibleIds(fixture.store, fixture.ids, finalViewport, finalCamera),
@@ -121,12 +122,15 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
     const { renderer, scheduler } = createProfileRenderer(fixture.store);
     try {
       drainPendingFrames(scheduler);
+      const connected = new Set(renderer.mountedIds("content"));
+      const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
       for (let transition = 0; transition < 16; transition += 1) {
         const viewport = { ...DEFAULT_VIEWPORT, top: transition % 2 === 0 ? 800 : 0 };
         const camera = { x: transition % 3 === 0 ? -50 : 0, zoom: transition % 4 ? 1 : 1.05 };
         const previous = new Set(renderer.mountedIds("content"));
         const expected = expectedVisibleIds(fixture.store, fixture.ids, viewport, camera);
         const entrants = expected.filter((id) => !previous.has(id)).length;
+        const publications = expected.filter((id) => !connected.has(id)).length;
         const expectedSet = new Set(expected);
         const exits = [...previous].filter((id) => !expectedSet.has(id)).length;
         // Order proof and priority classification precede the existing mount/exit phases.
@@ -139,8 +143,13 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         expect(renderer.mountedIds("content")).toEqual(expected);
         const stats = renderer.instrumentation();
         expect(stats.spatialQueries).toBe(1);
-        expect(stats.domEntrants).toBe(entrants);
-        expect(stats.domExits).toBe(exits);
+        expect(stats.domEntrants).toBe(publications);
+        expect(stats.domExits).toBe(0);
+        for (const id of expected) connected.add(id);
+        expect(content.nodes).toHaveLength(connected.size);
+        expect(new Set(content.nodes).size).toBe(connected.size);
+        expect(content.nodes.length - expected.length).toBeLessThanOrEqual(8_192);
+        expect(stats.detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
         expect(stats.geometryBuilds).toBeLessThanOrEqual(entrants);
         // Order, priority, warm checks, stage/retry, and newly mounted exit-iterator visits.
         expect(stats.visibilityReconcileVisits).toBeLessThanOrEqual(
@@ -324,15 +333,25 @@ function drainBoundedReconciliation(
   scheduler: FakeScheduler,
   maximumFrames: number,
 ): void {
+  const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+  const originalInsert = content.insertBefore.bind(content);
+  let publishedRoots = 0;
+  const insert = vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
+    publishedRoots += node.fragment ? node.nodes.length : 1;
+    return originalInsert(node, successor);
+  });
   let frames = 0;
-  while (scheduler.pendingCount > 0) {
-    expect(scheduler.pendingCount).toBe(1);
-    expect(frames, JSON.stringify(renderer.instrumentation())).toBeLessThan(maximumFrames);
-    scheduler.runNext();
-    frames += 1;
-    const stats = renderer.instrumentation();
-    // Simulated time controls scheduling; the observed mount count remains the work bound.
-    expect(stats.maximumMountSliceElements).toBeLessThanOrEqual(MAX_MOUNT_SLICE_ELEMENTS);
+  try {
+    while (scheduler.pendingCount > 0) {
+      expect(scheduler.pendingCount).toBe(1);
+      expect(frames, JSON.stringify(renderer.instrumentation())).toBeLessThan(maximumFrames);
+      publishedRoots = 0;
+      scheduler.runNext();
+      frames += 1;
+      expect(publishedRoots).toBeLessThanOrEqual(64);
+    }
+  } finally {
+    insert.mockRestore();
   }
 }
 

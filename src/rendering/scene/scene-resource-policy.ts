@@ -24,6 +24,10 @@ export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
   #lastPathCacheBytes = 0;
   #memoryPressure = false;
 
+  public get allowsNavigationPreparation(): boolean {
+    return !this.#memoryPressure;
+  }
+
   public constructor(
     private readonly pathCache: ScenePathCache,
     private readonly motion: SceneMotionController,

@@ -101,7 +101,7 @@ describe("resumable scene reconciliation", () => {
     });
   });
 
-  it("advances the viewport priority proof when a query consumes the shared frame deadline", () => {
+  it("defers viewport classification when a query consumes the shared frame deadline", () => {
     const scheduler = new AdvancingScheduler();
     const store = new QueryCostStore(scheduler);
     const expected = populateRectangles(store, 12);
@@ -111,9 +111,9 @@ describe("resumable scene reconciliation", () => {
 
     expect(renderer.mountedCount).toBe(0);
     expect(renderer.instrumentation()).toMatchObject({
-      mountSlices: 1,
+      mountSlices: 0,
       spatialQueries: 1,
-      visibilityReconcileVisits: 1,
+      visibilityReconcileVisits: 0,
     });
 
     scheduler.runAll();
@@ -346,7 +346,7 @@ describe("pending scene state replacement", () => {
     expect(renderer.mountedCount).toBeGreaterThan(0);
     expect(renderer.mountedCount).toBeLessThan(ids.length);
     const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-    expect(contentGroup.nodes).toHaveLength(renderer.mountedCount);
+    expect(contentGroup.nodes).toHaveLength(ids.length);
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(0);
   });

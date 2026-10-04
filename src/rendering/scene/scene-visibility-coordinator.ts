@@ -15,6 +15,14 @@ import type { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import type { SceneLivePathCommits } from "./live-path-commits";
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { Bounds } from "../../domain/geometry/primitives";
+import type { SceneVisibilityPriority } from "./scene-entrant-priority";
+import { NavigationPathPreparation } from "./navigation-path-preparation";
+import type { ScenePathCache } from "./path-cache";
+
+interface NavigationPreparationOptions {
+  readonly cache: ScenePathCache;
+  readonly scene: SceneRendererOptions;
+}
 
 export class SceneVisibilityCoordinator {
   readonly #content: SceneContentRenderer;
@@ -28,6 +36,10 @@ export class SceneVisibilityCoordinator {
   #initialVisibleOnly = false;
   #priorityViewport: Bounds | undefined;
   #priorityZoom: number | undefined;
+  #priority: SceneVisibilityPriority | undefined;
+  readonly #navigation: NavigationPathPreparation | undefined;
+  #envelope: Bounds | undefined;
+  #navigationHandle: number | undefined;
 
   public get initialVisibleOnly(): boolean {
     return this.#initialVisibleOnly;
@@ -49,24 +61,54 @@ export class SceneVisibilityCoordinator {
     resources: SceneResourcePolicy,
     transforms: SceneTransformPreviewController,
     elements: SceneElementPreviews,
+    private readonly navigationOptions?: NavigationPreparationOptions,
   ) {
     this.#content = content;
     this.#visibility = visibility;
     this.#resources = resources;
     this.#transforms = transforms;
     this.#elements = elements;
+    if (navigationOptions !== undefined)
+      this.#navigation = new NavigationPathPreparation(
+        navigationOptions.scene.store,
+        navigationOptions.cache,
+      );
+  }
+
+  public previewMemoryUsage(): number {
+    return (
+      this.#elements.memoryUsage() +
+      this.#transforms.memoryUsage() +
+      this.#visibility.queryMemoryUsage() +
+      (this.#navigationHandle === undefined ? 0 : 128) +
+      (this.#navigation?.memoryUsage() ?? 0)
+    );
+  }
+
+  public release(): void {
+    this.cancelNavigationPreparation();
+    this.#visibility.release();
+  }
+
+  public cancelNavigationPreparation(): void {
+    this.cancelNavigationFrame();
+    this.#navigation?.cancel();
   }
 
   /** Camera changes defer cancellation until the next visibility query proves a new target. */
   public invalidate(preservePending = false): void {
     this.#dirty = true;
+    this.cancelNavigationFrame();
     if (!preservePending) {
+      this.#navigation?.cancel();
       this.#content.cancelPendingVisibility();
     }
   }
 
   public invalidateOrder(): void {
+    this.cancelNavigationFrame();
     this.#orderDirty = true;
+    this.#visibility.invalidateStagedOrder();
   }
 
   public releasePreviews(): void {
@@ -89,13 +131,15 @@ export class SceneVisibilityCoordinator {
     frameTime: number,
   ): void {
     this.#elements.applyMounted(this.#content.takeCommittedPreviewIds());
-    const settled = (id: string) => this.#content.hasMounted(id) || !this.#visibility.contains(id);
+    const settled = (id: string) =>
+      this.#content.hasMounted(id) || (!this.#queryPending && !this.#visibility.contains(id));
     liveStroke.settleCommits(settled);
     livePaths.settle(settled);
     const mountedIds = this.#content.takeNewlyMountedIds();
     motion.bindMountedEntrances(mountedIds, frameTime);
     motion.finishEntranceBatch();
     this.#elements.applyMounted(mountedIds);
+    this.prepareNavigation();
   }
 
   public releaseLostPreviews(
@@ -127,7 +171,7 @@ export class SceneVisibilityCoordinator {
     viewport: SceneViewport | undefined,
     camera: SceneCamera,
     deadline = Infinity,
-    now: () => number = () => 0,
+    now: () => number = () => this.navigationOptions?.scene.workScheduler.now() ?? 0,
   ): void {
     if (viewport === undefined) return;
     this.setPriority(viewport, camera);
@@ -141,6 +185,8 @@ export class SceneVisibilityCoordinator {
       return;
     }
     const { envelope, retained } = visibilityPageBounds(viewport, camera, this.#initialVisibleOnly);
+    this.#envelope = envelope;
+    this.#navigation?.setTarget(this.#priority, envelope);
     const orderDirty = this.#orderDirty;
     const progressive = !orderDirty;
     this.#dirty = false;
@@ -148,13 +194,14 @@ export class SceneVisibilityCoordinator {
     const result = this.#visibility.query(
       envelope,
       retained,
-      !orderDirty && !this.#content.hasVisibilityWork && !this.#content.needsVisibilityRestart,
+      !orderDirty && !this.#content.needsVisibilityRestart,
       deadline,
       now,
     );
     this.#queryPending = result.pending === true;
     if (this.#queryPending) {
       this.#dirty = true;
+      this.#orderDirty ||= orderDirty;
       return;
     }
     if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) return;
@@ -162,6 +209,52 @@ export class SceneVisibilityCoordinator {
       !result.changed && orderDirty ? this.#visibility.resortCurrent() : result.visibility;
     this.#content.replaceVisibility(visibility, progressive, result.delta);
     this.#resources.updateVisibility(visibility);
+  }
+
+  private prepareNavigation(): void {
+    const options = this.navigationOptions;
+    if (options === undefined || this.#envelope === undefined) return;
+    if (
+      options.scene.isInputActive?.() === true ||
+      !this.#resources.allowsNavigationPreparation ||
+      this.#initialVisibleOnly
+    ) {
+      this.cancelNavigationFrame();
+      this.#navigation!.cancel();
+      return;
+    }
+    if (
+      this.#dirty ||
+      this.#orderDirty ||
+      this.#queryPending ||
+      this.#content.hasPendingWork ||
+      this.#elements.progressive.pending ||
+      this.#transforms.values.size > 0 ||
+      this.#elements.values.size > 0
+    ) {
+      this.cancelNavigationFrame();
+      this.#navigation!.pause();
+      return;
+    }
+    this.#navigation!.setTarget(this.#priority, this.#envelope);
+    const scheduler = options.scene.workScheduler;
+    if (this.#navigation!.prepare(scheduler.deadline(), () => scheduler.now()))
+      this.scheduleNavigationFrame();
+  }
+
+  private scheduleNavigationFrame(): void {
+    if (this.#navigationHandle !== undefined) return;
+    this.#navigationHandle = this.navigationOptions!.scene.workScheduler.requestFrame(() => {
+      this.#navigationHandle = undefined;
+      this.prepareNavigation();
+      this.#resources.notifyUsageChanged();
+    }, "background");
+  }
+
+  private cancelNavigationFrame(): void {
+    if (this.#navigationHandle === undefined) return;
+    this.navigationOptions!.scene.workScheduler.cancelFrame(this.#navigationHandle);
+    this.#navigationHandle = undefined;
   }
 
   private setPriority(viewport: SceneViewport, camera: SceneCamera): void {
@@ -179,10 +272,11 @@ export class SceneVisibilityCoordinator {
     const x = previous === undefined || zoomChanged ? 0 : bounds.minX - previous.minX;
     const y = previous === undefined || zoomChanged ? 0 : bounds.minY - previous.minY;
     const length = Math.hypot(x, y);
-    this.#content.setVisibilityPriority({
+    this.#priority = {
       viewport: bounds,
       direction: { x: length === 0 ? 0 : x / length, y: length === 0 ? 0 : y / length },
-    });
+    };
+    this.#content.setVisibilityPriority(this.#priority);
     this.#priorityViewport = bounds;
     this.#priorityZoom = camera.zoom;
   }

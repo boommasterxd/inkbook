@@ -1,6 +1,8 @@
 import {
   publishVisibilityRuns,
   mountedRootCount,
+  publicationRootCount,
+  canPublishCachedElement,
   RetainedDomOrder,
   type PendingMutationRun,
 } from "./visibility-publication";
@@ -83,26 +85,22 @@ export class SceneVisibilityReconciler {
       )
     );
   }
-
   public get needsRestart(): boolean {
     return this.#cancelled;
   }
-
   public get hasPendingCleanup(): boolean {
     const pending = this.#pending;
     return pending !== undefined && hasPendingVisibilityCleanup(pending);
   }
-
   public get hasPendingWork(): boolean {
     return this.#pending !== undefined;
   }
-
   public get waitingForPaths(): boolean {
     return this.#waitingForPaths;
   }
-
   public setPriority(priority: SceneVisibilityPriority): void {
     this.#priority = priority;
+    this.#pending?.delta?.priority?.retarget([], [], priority);
   }
 
   public hasUnprotectedDeferredExit(
@@ -244,6 +242,7 @@ export class SceneVisibilityReconciler {
         deadline,
         now,
         isExit,
+        publication,
         onSkipped: (id) =>
           this.#deferredExits.skipped(
             id,
@@ -406,10 +405,11 @@ export class SceneVisibilityReconciler {
     if (record === undefined || record.band !== pending.cursor.band) return undefined;
     const reason = slice.blockingReason();
     if (reason !== undefined) return reason;
-    if (pending.progressive && !slice.canPublish) return "budget";
+    if (pending.progressive && !canPublishCachedElement(slice, this.options.detachedCache, id))
+      return "budget";
     const entry = this.stageEntry(pending, record, slice, previews);
     if (entry === undefined) return "budget";
-    if (!slice.claimPublicationNodes(mountedRootCount(entry))) return "budget";
+    if (!slice.claimPublicationNodes(publicationRootCount(entry))) return "budget";
     this.addMutation(pending.cursor, entry, true);
     slice.record();
     return undefined;
@@ -428,7 +428,7 @@ export class SceneVisibilityReconciler {
       preview?.strokeWidthScale ?? null,
       this.options.instrumentation,
     );
-    if (!slice.claimPublicationNodes(mountedRootCount(entrant))) return "budget";
+    if (!slice.claimPublicationNodes(publicationRootCount(entrant))) return "budget";
     this.addMutation(pending.cursor, entrant, true);
     return undefined;
   }

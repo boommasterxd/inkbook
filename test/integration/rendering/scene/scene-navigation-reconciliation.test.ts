@@ -8,9 +8,60 @@ import {
   createViewportRectangleStore,
 } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
-import { FakeSceneStore, fakeNode, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
+import {
+  FakeNode,
+  FakeSceneStore,
+  fakeNode,
+  fakeRectangleRecord,
+} from "../../../unit/rendering/scene/fakes";
 
 const VIEWPORT = { height: 100, left: 0, top: 0, width: 100 };
+
+it("retires invalidated cached roots before fresh publication on an immediate return", () => {
+  const store = new FakeSceneStore();
+  const original = Array.from({ length: 130 }, (_, rank) =>
+    fakeRectangleRecord(`stale-${rank}`, rank, 10 + rank * 25),
+  );
+  for (const record of original) store.records.set(record.id, record);
+  const viewport = { ...VIEWPORT, width: 4_000 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  scheduler.runAll();
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  renderer.setViewport({ ...viewport, top: 10_000 });
+  scheduler.runAll();
+  expect(renderer.mountedCount).toBe(0);
+  expect(content.nodes).toHaveLength(130);
+  const oldPaths = content.nodes.map((node) => node.attributes.get("d")!);
+  const replacements = original.map((record) => {
+    if (record.element.kind !== "rectangle") throw new Error("Expected a rectangle.");
+    const next = { ...record, geometryVersion: 2, element: { ...record.element, width: 21 } };
+    store.records.set(record.id, next);
+    return next;
+  });
+  renderer.applyDelta({ affected: replacements.map(({ id }) => ({ id, domains: ["geometry"] })) });
+  renderer.setViewport(viewport);
+  const newPaths = replacements.map((record) => buildElementPathParts(record.element)[0]!.d);
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
+  try {
+    let frames = 0;
+    while (scheduler.pendingCount > 0) {
+      expect(frames++).toBeLessThan(20);
+      remove.mockClear();
+      scheduler.runNext();
+      expect(remove.mock.calls.length).toBeLessThanOrEqual(64);
+      const painted = new Set(content.nodes.map((node) => node.attributes.get("d")));
+      original.forEach((_record, index) => {
+        expect(painted.has(oldPaths[index]) && painted.has(newPaths[index])).toBe(false);
+      });
+    }
+    expect(content.nodes.map((node) => node.attributes.get("d"))).toEqual(newPaths);
+    expect(renderer.mountedCount).toBe(130);
+  } finally {
+    remove.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
 
 function createNavigationHarness() {
   const store = new FakeSceneStore();
@@ -50,7 +101,7 @@ it("drops staged entries outside the new viewport and releases an interrupted mo
   renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(0);
-  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(0);
+  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(64);
 
   renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
   scheduler.runNext();
@@ -101,8 +152,8 @@ it("cleans an obsolete delta exit while a cold entrant is suspended, then cancel
   renderer.setViewport({ height: 100, left: 0, top: 0, width: 120 });
   scheduler.runAll(30);
   expect(renderer.mountedIds("content")).toEqual(["old"]);
-  expect(renderer.instrumentation().domExits).toBe(1);
-  expect(renderer.instrumentation().domEntrants).toBe(2);
+  expect(renderer.instrumentation().domExits).toBe(0);
+  expect(renderer.instrumentation().domEntrants).toBe(1);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
 });
@@ -225,7 +276,8 @@ it.each(["immediate", "progressive", "transform"] as const)(
       setPreview(next.id, 2);
       scheduler.runAll();
       expect(renderer.mountedCount).toBe(0);
-      expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(0);
+      expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(1);
+      expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
     } finally {
       renderer.destroy();
     }
@@ -269,11 +321,12 @@ it.each(["progressive", "transform"] as const)(
         mountedCount: renderer.mountedCount,
         pendingFrames: scheduler.pendingCount,
       }).toEqual({
-        domExits: 1,
+        domExits: 0,
         mountedCount: 0,
         pendingFrames: 0,
       });
-      expect(oldNode.parent).toBeUndefined();
+      expect(oldNode.parent).toBeDefined();
+      expect(oldNode.attributes.has("transform")).toBe(false);
     } finally {
       renderer.destroy();
     }

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { PATH_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants";
+import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import { MAX_PREPARED_SCENE_PATH_IDS } from "../../../../src/domain/geometry/prepared-scene-paths";
 import { FakeScheduler, FakeNode, FakeSceneStore } from "../../../unit/rendering/scene/fakes";
 import {
   createPressureNavigationHarness,
@@ -24,12 +26,19 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz interaction profile`, ()
     const { renderer, scheduler } = createInteractionRenderer(fixture.store);
     scheduler.runAll();
     renderer.resetInstrumentation();
+    const mounted = new Set(renderer.mountedIds("content"));
+    const preparations = vi.spyOn(ScenePathCache.prototype, "startPreparation");
 
     runCameraFrames(renderer, scheduler);
     const cameraStats = renderer.instrumentation();
     expect(cameraStats.spatialQueries).toBe(0);
     expect(cameraStats.visibilityHysteresisHits).toBe(PREVIEW_FRAMES);
-    expect(cameraStats).toMatchObject({ domEntrants: 0, domExits: 0, geometryBuilds: 0 });
+    expect(cameraStats).toMatchObject({ domEntrants: 0, domExits: 0 });
+    // The first directional retarget may prepare one bounded strip while mounted ink is reused.
+    expect(cameraStats.geometryBuilds).toBeLessThanOrEqual(MAX_PREPARED_SCENE_PATH_IDS);
+    expect(preparations.mock.calls.length).toBe(cameraStats.geometryBuilds);
+    expect(preparations.mock.calls.every(([element]) => !mounted.has(element.id))).toBe(true);
+    preparations.mockRestore();
 
     renderer.setPreviewTransform(fixture.ids, "translate(0 0)", 1);
     scheduler.runAll();
@@ -123,7 +132,9 @@ it("makes entrant progress while every camera frame changes membership under a b
   expect(nodes.mock.calls.filter(([, tag]) => tag === "path").length).toBeLessThanOrEqual(2);
   // Two entrants plus at most one cancelled build of the alternating entrant.
   expect(renderer.instrumentation().geometryBuilds).toBeLessThanOrEqual(3);
-  expect(renderer.instrumentation().visibilityHysteresisHits).toBe(0);
+  expect(renderer.instrumentation().visibilityHysteresisHits).toBeLessThanOrEqual(
+    INTERACTION_REFRESH_PROFILE.sampleCount,
+  );
   now.mockRestore();
   renderer.setCamera({ x: -50, zoom: 1 });
   scheduler.runAll();

@@ -8,16 +8,17 @@ import {
   refreshVisibleRanks,
   sortVisibleBand,
 } from "./visibility-order";
-import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "./constants";
-import { containsBounds, envelopesOverlap, intersects } from "./visibility-bounds";
+import { containsBounds, envelopesOverlap } from "./visibility-bounds";
 import { VisibilityEdgeQuery } from "./visibility-edge-query";
 import type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from "./visibility-types";
 import { growVisibilityCapacity, growVisibilityMarkers } from "./visibility-markers";
 import { VisibilityCandidates } from "./visibility-candidates";
+import { VisibilityClassification } from "./visibility-classification";
 export type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from "./visibility-types";
 
 export class SceneVisibilityState {
   readonly #candidates: VisibilityCandidates;
+  readonly #classification: VisibilityClassification;
   readonly #contentIds: (string | undefined)[] = [];
   readonly #freeSlots: number[] = [];
   readonly #highlightIds: (string | undefined)[] = [];
@@ -52,6 +53,7 @@ export class SceneVisibilityState {
     this.#instrumentation = instrumentation;
     this.#edges = new VisibilityEdgeQuery(store, instrumentation);
     this.#candidates = new VisibilityCandidates(store, instrumentation, (id) => this.slotFor(id));
+    this.#classification = new VisibilityClassification(store, instrumentation);
   }
 
   public query(
@@ -63,12 +65,18 @@ export class SceneVisibilityState {
   ): VisibilityQueryResult {
     if (this.canReuseCurrent(retainedBounds)) {
       this.#edges.release();
+      this.#classification.release();
+      this.#candidates.cancelPending();
       this.#instrumentation.visibilityHysteresisHits += 1;
       return { changed: false, visibility: this.currentResult() };
     }
-    if (allowEdge && this.canQueryEdges(bounds)) return this.queryEdges(bounds, deadline, now);
+    if (allowEdge && this.canQueryEdges(bounds)) {
+      this.#classification.release();
+      this.#candidates.cancelPending();
+      return this.queryEdges(bounds, deadline, now);
+    }
     this.#edges.release();
-    return this.queryFull(bounds);
+    return this.queryFull(bounds, deadline, now);
   }
 
   public resortCurrent(): VisibilityResult {
@@ -107,11 +115,29 @@ export class SceneVisibilityState {
 
   public contains(id: string): boolean {
     const slot = this.#slotById.get(id);
-    return slot !== undefined && this.#visibleMarkers[slot] === this.#visibleEpoch;
+    return (
+      this.#hasCurrentVisibility &&
+      slot !== undefined &&
+      this.#visibleMarkers[slot] === this.#visibleEpoch
+    );
+  }
+
+  public queryMemoryUsage(): number {
+    return (
+      this.#candidates.memoryUsage() +
+      this.#edges.memoryUsage() +
+      this.#classification.memoryUsage()
+    );
   }
 
   public invalidateCandidates(): void {
     this.#candidates.invalidate();
+    this.#classification.release();
+  }
+
+  public invalidateStagedOrder(): void {
+    this.#classification.release();
+    this.#edges.release();
   }
 
   public invalidateForChanges(
@@ -122,11 +148,13 @@ export class SceneVisibilityState {
   public invalidateForChanges(before?: Bounds | null, after?: Bounds | null): void {
     this.#currentInvalidated = true;
     this.#edges.release();
+    this.#classification.release();
     this.#candidates.invalidateForChanges(before, after);
   }
 
   public release(): void {
     this.#candidates.release();
+    this.#classification.release();
     clearVisibleReferences(this.#contentIds, this.#contentCount);
     clearVisibleReferences(this.#highlightIds, this.#highlightCount);
     clearVisibleReferences(this.#nextContentIds, this.#nextContentCount);
@@ -193,7 +221,7 @@ export class SceneVisibilityState {
       deadline,
       now,
     );
-    if (changes === "pending")
+    if (changes === "pending" || now() >= deadline)
       return { changed: false, visibility: this.currentResult(), pending: true };
     this.#newContentIds.length = 0;
     this.#newHighlightIds.length = 0;
@@ -214,15 +242,22 @@ export class SceneVisibilityState {
       (record.band === "highlight" ? this.#newHighlightIds : this.#newContentIds).push(record.id);
     }
     this.#retainedRanksStable = true;
-    const delta = this.publishNextVisibility(true);
+    const delta = this.publishNextVisibility();
     this.#edges.release();
     return { changed: true, visibility: this.currentResult(), ...(delta ? { delta } : {}) };
   }
 
-  private queryFull(bounds: Bounds): VisibilityQueryResult {
-    this.#candidates.refresh(bounds);
+  private queryFull(bounds: Bounds, deadline: number, now: () => number): VisibilityQueryResult {
+    if (!this.#candidates.refresh(bounds, deadline, now))
+      return { changed: false, visibility: this.currentResult(), pending: true };
+    if (!this.#classification.collect(bounds, this.#candidates, deadline, now))
+      return { changed: false, visibility: this.currentResult(), pending: true };
+    // Marker/order adoption stays synchronous so a partially adopted epoch is never observable.
+    if (now() >= deadline)
+      return { changed: false, visibility: this.currentResult(), pending: true };
     const previousEpoch = this.beginVisibleQuery();
-    const membershipUnchanged = this.classifyCandidates(bounds, previousEpoch);
+    const membershipUnchanged = this.classifyCandidates(previousEpoch);
+    this.#classification.release();
     this.#visibilityEnvelope = bounds;
     this.#currentInvalidated = false;
     if (membershipUnchanged) {
@@ -234,18 +269,10 @@ export class SceneVisibilityState {
     return { changed: true, visibility: this.currentResult(), ...(delta ? { delta } : {}) };
   }
 
-  private classifyCandidates(bounds: Bounds, previousEpoch: number | undefined): boolean {
+  private classifyCandidates(previousEpoch: number | undefined): boolean {
     let unchanged = previousEpoch !== undefined;
-    for (let index = 0; index < this.#candidates.count; index += 1) {
-      this.#instrumentation.visibilityCandidateVisits += 1;
-      const id = this.#candidates.ids[index];
-      if (id === undefined) continue;
-      const record = this.#store.get(id);
-      if (record === undefined) {
-        this.releaseId(id);
-        continue;
-      }
-      if (!intersects(bounds, record.bounds)) continue;
+    for (const record of this.#classification.records) {
+      const id = record.id;
       const slot = this.#slotById.get(id);
       if (slot === undefined) continue;
       const bandCode = record.band === "highlight" ? 1 : 2;
@@ -285,15 +312,10 @@ export class SceneVisibilityState {
     this.#nextContentCount += 1;
   }
 
-  private publishNextVisibility(allowLargeDelta = false): VisibilityDelta | undefined {
+  private publishNextVisibility(): VisibilityDelta | undefined {
     this.#enteredIds.length = 0;
     this.#exitedIds.length = 0;
-    const deltaEligible =
-      this.#hasCurrentVisibility &&
-      this.#retainedRanksStable &&
-      (allowLargeDelta ||
-        this.#newContentIds.length + this.#newHighlightIds.length <=
-          SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    const deltaEligible = this.#hasCurrentVisibility && this.#retainedRanksStable;
     const incremental = deltaEligible;
     if (incremental) {
       clearVisibleReferences(this.#nextContentIds, this.#nextContentCount);
@@ -317,20 +339,8 @@ export class SceneVisibilityState {
       for (const id of this.#newHighlightIds) this.#enteredIds.push(id);
       for (const id of this.#newContentIds) this.#enteredIds.push(id);
     }
-    this.clearCurrentBand(
-      this.#contentIds,
-      this.#contentCount,
-      "content",
-      deltaEligible,
-      allowLargeDelta,
-    );
-    this.clearCurrentBand(
-      this.#highlightIds,
-      this.#highlightCount,
-      "highlight",
-      deltaEligible,
-      allowLargeDelta,
-    );
+    this.clearCurrentBand(this.#contentIds, this.#contentCount, "content", deltaEligible);
+    this.clearCurrentBand(this.#highlightIds, this.#highlightCount, "highlight", deltaEligible);
     this.#contentCount = copyVisibleReferences(
       this.#nextContentIds,
       this.#nextContentCount,
@@ -347,11 +357,7 @@ export class SceneVisibilityState {
     }
     this.#hasCurrentVisibility = true;
     this.discardNextVisibility();
-    return deltaEligible &&
-      (allowLargeDelta ||
-        this.#enteredIds.length + this.#exitedIds.length <= SCENE_PUBLICATION_ROOTS_PER_FRAME)
-      ? { entered: this.#enteredIds, exited: this.#exitedIds }
-      : undefined;
+    return deltaEligible ? { entered: this.#enteredIds, exited: this.#exitedIds } : undefined;
   }
 
   private clearCurrentBand(
@@ -359,17 +365,10 @@ export class SceneVisibilityState {
     count: number,
     band: RenderBand,
     trackDelta: boolean,
-    allowLargeDelta: boolean,
   ): void {
     for (let index = 0; index < count; index += 1) {
       const id = ids[index];
-      if (
-        trackDelta &&
-        id !== undefined &&
-        !this.containsInBand(id, band) &&
-        (allowLargeDelta ||
-          this.#enteredIds.length + this.#exitedIds.length <= SCENE_PUBLICATION_ROOTS_PER_FRAME)
-      )
+      if (trackDelta && id !== undefined && !this.containsInBand(id, band))
         this.#exitedIds.push(id);
       ids[index] = undefined;
     }

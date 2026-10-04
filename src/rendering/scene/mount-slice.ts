@@ -3,6 +3,7 @@ import type { MutableSceneInstrumentation } from "./types";
 /** Shared allowance for new live SVG roots in one scene frame. */
 export interface ScenePublicationBudget {
   remainingRoots: number;
+  remainingRemovals?: number;
 }
 
 export type MountYieldReason = "budget" | "deadline" | "paths";
@@ -42,7 +43,8 @@ export class MountSlice {
   }
 
   public claimPublicationNodes(count: number): boolean {
-    if (count <= 0 || this.#publicationNodes + count > this.publicationLimit) return false;
+    if (count === 0) return true;
+    if (count < 0 || this.#publicationNodes + count > this.publicationLimit) return false;
     if (this.#publicationNodes > 0 && this.now() >= this.deadline) return false;
     this.#publicationNodes += count;
     return true;

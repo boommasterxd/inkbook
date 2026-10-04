@@ -1,5 +1,6 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
-import { mountedRootCount, type PendingMutationRun } from "./visibility-publication";
+import { publicationRootCount, type PendingMutationRun } from "./visibility-publication";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
 import { updatePreviewTransform, type MountedSceneElement } from "./mounted-element";
 import type { MountSlice, MountYieldReason } from "./mount-slice";
 import type { PreviewTransform } from "./scene-mount-preparation";
@@ -11,12 +12,13 @@ import { VisibleMountOrder } from "./visible-mount-order";
 export function completeDeltaPublication(
   pending: PendingReconciliation,
   ids: readonly string[],
-  options: Pick<DeltaStageOptions, "mounted" | "store" | "instrumentation">,
+  options: Pick<DeltaStageOptions, "mounted" | "store" | "instrumentation" | "detachedCache">,
 ): void {
   const delta = pending.delta;
   if (delta === undefined || ids.length === 0) return;
   for (const id of ids) {
     delta.priority?.release(id);
+    if (options.detachedCache !== undefined) continue;
     if (delta.order !== undefined) {
       delta.order.add(id);
       continue;
@@ -40,6 +42,7 @@ export function completeDeltaPublication(
 }
 
 interface DeltaStageOptions {
+  readonly detachedCache?: DetachedSceneElementCache;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly mounted: ReadonlyMap<string, MountedSceneElement>;
   readonly store: SceneStorePort;
@@ -102,10 +105,7 @@ export function stageVisibilityDelta(
   options: DeltaStageOptions,
 ): MountYieldReason | undefined {
   const delta = pending.delta!;
-  if (delta.phase === "paths") {
-    if (options.waiting()) return "paths";
-    delta.phase = "warm";
-  }
+  if (delta.phase === "paths") delta.phase = "deferred";
   if (delta.phase === "warm") {
     const reason = stageDeltaCandidates(pending, slice, previews, options);
     if (reason !== undefined || delta.deferred.length === 0) return reason;
@@ -114,9 +114,7 @@ export function stageVisibilityDelta(
     delta.index = 0;
     delta.phase = "deferred";
   }
-  const reason = options.waiting()
-    ? "paths"
-    : stageDeferredCandidates(pending, slice, previews, options);
+  const reason = stageDeferredCandidates(pending, slice, previews, options);
   if (reason === "paths") delta.phase = "paths";
   return reason;
 }
@@ -198,7 +196,7 @@ function stageDeltaEntry(
   }
   const reason = slice.blockingReason();
   if (reason !== undefined) return reason;
-  if (!slice.canPublish) return "budget";
+  if (!slice.canPublish && !options.detachedCache?.isConnected(id)) return "budget";
   const entry = pending.entrants.get(id) ?? options.stage(pending, record, slice, previews);
   if (entry === undefined) {
     pending.delta!.deferred.push(id);
@@ -215,7 +213,7 @@ function stageDeltaEntry(
   );
   const successor = deltaSuccessor(pending, record, slice, options);
   if (successor === "deadline") return "deadline";
-  if (!slice.claimPublicationNodes(mountedRootCount(entry))) return "budget";
+  if (!slice.claimPublicationNodes(publicationRootCount(entry))) return "budget";
   const run = options.run(record.band, successor);
   run.entries[0] = entry;
   run.entrants[0] = true;
@@ -232,6 +230,7 @@ function deltaSuccessor(
   options: DeltaStageOptions,
 ): MountedSceneElement | "deadline" | undefined {
   const delta = pending.delta!;
+  if (options.detachedCache !== undefined) return options.detachedCache.successor(record);
   if (delta.order !== undefined) return delta.order.successor(record.id, record.band);
   const band = pending.visibility[record.band];
   const search = delta.search;

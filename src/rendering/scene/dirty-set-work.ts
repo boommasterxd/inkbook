@@ -16,12 +16,17 @@ export function writeDirtySet(
 }
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { SceneStorePort } from "./types";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
 
 export function markSceneOrderDirty(
   id: string,
   store: SceneStorePort,
   dirty: Record<RenderBand, Set<string>>,
+  retained?: DetachedSceneElementCache,
 ): void {
+  retained?.invalidateRanks();
+  retained?.invalidate(id);
+  retained?.unregisterMounted(id);
   const record = store.get(id);
   if (record === undefined) {
     dirty.content.add(id);

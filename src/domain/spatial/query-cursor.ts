@@ -57,6 +57,11 @@ export class SpatialQueryCursor<Id> {
     this.seen = undefined;
   }
 
+  /** Conservative iterator/slot bookkeeping; engine-specific Set overhead may differ. */
+  public memoryUsage(): number {
+    return this.iterator === undefined ? 0 : 256 + (this.seen?.size ?? 0) * 32;
+  }
+
   private visitCandidate(slot: number, ids: Id[]): void {
     if (this.seen!.has(slot)) return;
     this.seen!.add(slot);

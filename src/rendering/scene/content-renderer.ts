@@ -52,6 +52,7 @@ export class SceneContentRenderer {
   readonly #store: SceneStorePort;
   readonly #selectionTraces: SceneSelectionTraces;
   readonly #selectionDirty = new Set<string>();
+  readonly #detachedCache: SceneVisibilityReconcilerOptions["detachedCache"];
 
   public constructor(
     dom: SceneDom,
@@ -62,6 +63,7 @@ export class SceneContentRenderer {
     options: Pick<SceneVisibilityReconcilerOptions, "onPathsReady" | "detachedCache"> = {},
   ) {
     this.#dom = dom;
+    this.#detachedCache = options.detachedCache;
     this.#selectionTraces = new SceneSelectionTraces(
       dom.selectionTraceGroup,
       instrumentation,
@@ -87,12 +89,10 @@ export class SceneContentRenderer {
     if (this.#selectionTraces.setSelection(ids))
       this.#selectionTraces.markMountedDirty(this.#mounted, this.#selectionDirty);
   }
-
   public setSelectionHighlightsEnabled(enabled: boolean): void {
     if (this.#selectionTraces.setHighlightsEnabled(enabled))
       this.#selectionTraces.markMountedDirty(this.#mounted, this.#selectionDirty);
   }
-
   public flushSelectionContext(): void {
     this.#selectionTraces.flushContext();
   }
@@ -105,42 +105,37 @@ export class SceneContentRenderer {
       (this.#deferredPreviews.size + this.#committedPreviewIds.length) * 8
     );
   }
-
   public get mountedCount(): number {
     return this.#mounted.size;
   }
-
   public hasMounted(id: string): boolean {
     return this.#mounted.has(id);
   }
-
   public mountedIds(band: RenderBand): readonly string[] {
     return mountedVisibleIds(this.#committedIds[band], this.#committedCounts[band], this.#mounted);
   }
-
   public takeNewlyMountedIds(): readonly string[] {
     if (this.#newlyMountedIds.length === 0) return EMPTY_IDS;
     const ids = this.#newlyMountedIds;
     this.#newlyMountedIds = EMPTY_IDS;
     return ids;
   }
-
   public markGeometry(id: string): void {
     if (this.#mounted.has(id)) this.#geometryDirty.add(id);
     this.#pathCache.invalidate(id);
   }
-
   public markPaint(id: string): void {
     this.#paintDirty.add(id);
   }
 
   public markOrder(id: string): void {
-    markSceneOrderDirty(id, this.#store, this.#orderDirty);
-    this.#reconciler.cancel();
+    this.markOrders([id]);
   }
 
   public markOrders(ids: readonly string[]): void {
-    for (const id of ids) markSceneOrderDirty(id, this.#store, this.#orderDirty);
+    for (const id of ids) {
+      markSceneOrderDirty(id, this.#store, this.#orderDirty, this.#detachedCache);
+    }
     this.#reconciler.cancel();
   }
 
@@ -177,6 +172,7 @@ export class SceneContentRenderer {
     now: () => number,
     publication: ScenePublicationBudget,
   ): boolean {
+    if (this.#detachedCache?.flushEvictions(deadline, now, publication)) return true;
     if (this.#geometryDirty.size > 0) {
       if (
         writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
@@ -207,7 +203,10 @@ export class SceneContentRenderer {
 
   public get hasMountedWork(): boolean {
     return (
-      this.#geometryDirty.size > 0 || this.#paintDirty.size > 0 || this.#selectionDirty.size > 0
+      this.#detachedCache?.hasPendingCleanup === true ||
+      this.#geometryDirty.size > 0 ||
+      this.#paintDirty.size > 0 ||
+      this.#selectionDirty.size > 0
     );
   }
 
@@ -409,6 +408,7 @@ export class SceneContentRenderer {
     this.#orderDirty.content.clear();
     this.#orderDirty.highlight.clear();
     this.#mounted.clear();
+    this.#detachedCache?.dispose();
     this.#newlyMountedIds = EMPTY_IDS;
     this.#committedIds.content.length = 0;
     this.#committedIds.highlight.length = 0;

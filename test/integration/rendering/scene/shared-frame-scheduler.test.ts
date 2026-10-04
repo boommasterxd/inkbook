@@ -41,9 +41,9 @@ it("defers a second scene when the first consumes the shared window deadline", (
   expect(scheduler.pendingCount).toBe(1);
   scheduler.runNext();
   expect(first.renderer.instrumentation().spatialQueries).toBe(1);
-  // The exhausted slice starts the viewport priority proof before any SVG publication.
+  // Exhausted indexed acquisition defers classification and publication to the next frame.
   expect(first.renderer.mountedCount).toBe(0);
-  expect(first.renderer.instrumentation().visibilityReconcileVisits).toBe(1);
+  expect(first.renderer.instrumentation().visibilityReconcileVisits).toBe(0);
   expect(second.renderer.instrumentation().spatialQueries).toBe(0);
   expect(scheduler.pendingCount).toBe(1);
 
@@ -163,6 +163,12 @@ it("services preview and background while visible content is still mounting", ()
   expect(renderer.hasPendingSceneCommit).toBe(true);
   scheduler.runNext();
   expect(materializations).toBe(1);
+  // Query classification now shares the frame deadline; background admission waits for it.
+  let frames = 0;
+  while (renderer.instrumentation().backgroundBuilds === 0) {
+    if (++frames > 100) throw new Error("Background work did not finish during reconciliation.");
+    scheduler.runNext();
+  }
   expect(renderer.instrumentation().backgroundBuilds).toBe(1);
   expect(renderer.mountedCount).toBeLessThan(store.records.size);
   expect(renderer.hasPendingSceneCommit).toBe(true);

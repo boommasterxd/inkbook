@@ -33,6 +33,13 @@ export interface SpatialQuerySink {
   add(id: string): void;
 }
 
+interface SceneSpatialQueryCursor extends Pick<
+  import("../../domain/spatial/query-cursor").SpatialQueryCursor<string>,
+  "advance" | "cancel"
+> {
+  memoryUsage?(): number;
+}
+
 /**
  * Read-only view of the authoritative element store and its spatial index.
  * `query` must perform exact conservative-bounds rejection before publishing IDs.
@@ -42,6 +49,7 @@ export interface SceneStorePort {
     import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation | undefined;
   pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
+  beginQuery?(bounds: Bounds): SceneSpatialQueryCursor;
   query(bounds: Bounds, sink: SpatialQuerySink): void;
 }
 
@@ -80,6 +88,7 @@ export interface SceneRendererOptions {
   readonly container: HTMLElement;
   readonly inputHandlers?: SceneInputHandlers;
   readonly layout: SceneLayoutPort;
+  readonly isInputActive?: () => boolean;
   readonly page: PageV1;
   /** The presentation explicitly releases initial exact-viewport preparation after its handoff. */
   readonly deferInitialOverscan?: boolean;

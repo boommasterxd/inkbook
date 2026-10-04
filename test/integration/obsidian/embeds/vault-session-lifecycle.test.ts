@@ -287,11 +287,12 @@ describe("VaultDocumentSession live executor lifecycle", () => {
     const { factory, session } = documentSessionHarness({
       create: async () => runtime,
     });
-
     await expect(session.unlock(operation())).resolves.toMatchObject({ status: "active" });
     const model = factory.getDocumentModel("session-1");
+    expect(model?.isGestureActive?.()).toBe(false);
     model?.setGestureActive(true);
     model?.setNavigationActive?.(true);
+    expect(model?.isGestureActive?.()).toBe(true);
     model?.setNavigationActive?.(true);
     const resumed = vi.fn();
     const pending = model?.waitForBackground?.();
@@ -300,6 +301,7 @@ describe("VaultDocumentSession live executor lifecycle", () => {
     await Promise.resolve();
     expect(resumed).not.toHaveBeenCalled();
     model?.setGestureActive(false);
+    expect(model?.isGestureActive?.()).toBe(false);
     expect(setLiveInputActive).toHaveBeenLastCalledWith(false);
     expect(setNavigationActive).toHaveBeenLastCalledWith(true);
     await Promise.resolve();
@@ -307,7 +309,6 @@ describe("VaultDocumentSession live executor lifecycle", () => {
     model?.setNavigationActive?.(false);
     await waiting;
     expect(resumed).toHaveBeenCalledOnce();
-
     expect(requestPrewarm).not.toHaveBeenCalled();
     expect(setLiveInputActive.mock.calls).toEqual([[true], [false]]);
     expect(setNavigationActive.mock.calls).toEqual([[true], [false]]);

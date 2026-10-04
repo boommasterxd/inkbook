@@ -266,21 +266,23 @@ describe("sliced scene exit cleanup", () => {
     harness.renderer.destroy();
   });
 
-  it("publishes the new viewport before obsolete offscreen nodes finish cleanup", () => {
+  it("publishes the new viewport while retaining obsolete offscreen roots", () => {
     const next = fakeRectangleRecord("new-visible", 200, 10, 1_000);
     const harness = setup([...rectangles(200), next]);
     expect(harness.renderer.mountedCount).toBe(200);
     harness.renderer.setViewport({ height: 500, left: 0, top: 1_000, width: 500 });
     harness.scheduler.runNext();
     expect(harness.renderer.mountedIds("content")).toEqual([next.id]);
-    expect(harness.renderer.mountedCount).toBe(137);
-    expect(harness.scheduler.pendingCount).toBe(1);
+    expect(harness.renderer.mountedCount).toBe(1);
+    expect(harness.scheduler.pendingCount).toBe(0);
     const newNode = harness.content.nodes.find((node) =>
       node.attributes.get("d")?.includes("1000"),
     );
     expect(newNode).toBeDefined();
     harness.scheduler.runAll();
-    expect(harness.content.nodes).toEqual([newNode]);
+    expect(harness.content.nodes).toHaveLength(201);
+    expect(harness.content.nodes[200]).toBe(newNode);
+    expect(harness.renderer.instrumentation().domExits).toBe(0);
     harness.renderer.destroy();
   });
 });
@@ -441,7 +443,7 @@ describe("retained DOM order after rank changes", () => {
       ],
     });
     harness.scheduler.runNext();
-    expect(harness.content.nodes).toEqual([original[1], original[2], original[0]]);
+    expect(harness.content.nodes).toEqual([original[2], original[1], original[0]]);
 
     harness.renderer.setViewport({ height: 2000, left: 0, top: 0, width: 500 });
     harness.scheduler.runAll();

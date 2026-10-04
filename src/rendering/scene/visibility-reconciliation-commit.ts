@@ -47,6 +47,10 @@ export function removeOrderedVisibilityExits(
   options: Parameters<typeof removeVisibilityExits>[1],
   frame: Parameters<typeof removeVisibilityExits>[2],
 ): boolean {
+  // Ownership-only exits need no physical sorting; admit their existing bounded cursor first.
+  if (!pending.exitOrderPrepared && options.detachedCache?.retentionEnabled) {
+    if (removeVisibilityExits(pending, options, { ...frame, retainedOnly: true })) return true;
+  }
   if (
     !pending.exitOrderPrepared &&
     pending.exitScanComplete &&
@@ -126,7 +130,7 @@ export function publishPendingVisibility(
   const committedVisibility = pending.targetPublished ? undefined : pending.visibility;
   pending.targetPublished ||= newlyMountedIds.length > 0;
   pending.cleanupFirst ||=
-    pending.scanExits &&
+    hasPendingVisibilityCleanup(pending) &&
     (newlyMountedIds.length > 0 ||
       (cleanup.waitingForPaths && hasPendingVisibilityCleanup(pending)));
   return {

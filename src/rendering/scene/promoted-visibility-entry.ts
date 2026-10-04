@@ -6,7 +6,7 @@ import type {
 } from "./reconciliation-state";
 import type { SceneElementRecord } from "./types";
 import { firstMountedSuccessor } from "./visibility-order";
-import { mountedRootCount, type PendingMutationRun } from "./visibility-publication";
+import { publicationRootCount, type PendingMutationRun } from "./visibility-publication";
 import { invalidateDeltaSuccessor } from "./visibility-delta-reconciliation";
 
 interface PromotionOptions extends SceneVisibilityReconcilerOptions {
@@ -28,12 +28,13 @@ export function stagePromotedVisibility(
   if (id === undefined) return {};
   const record = options.store.get(id);
   if (record === undefined || !options.visibility.contains(id)) return {};
-  if (pending.progressive && !slice.canPublish) return { id, reason: "budget" };
+  if (pending.progressive && !slice.canPublish && !options.detachedCache?.isConnected(id))
+    return { id, reason: "budget" };
   const entry = pending.entrants.get(id) ?? options.stage(record);
   slice.record();
   if (entry === undefined) return options.waiting() ? { id } : { id, reason: "budget" };
   if (!pending.progressive) return {};
-  if (!slice.claimPublicationNodes(mountedRootCount(entry))) return { id, reason: "budget" };
+  if (!slice.claimPublicationNodes(publicationRootCount(entry))) return { id, reason: "budget" };
   const successor = firstMountedSuccessor(pending.visibility[entry.band], id, options.mounted);
   const run = options.run(entry, successor);
   run.entries[0] = entry;

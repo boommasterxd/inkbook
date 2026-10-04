@@ -13,6 +13,7 @@ interface SceneFrameWorkPorts {
   readonly elements: SceneElementPreviews;
   readonly motion: SceneMotionController;
   readonly scheduler: WorkScheduler;
+  readonly queryPending?: () => boolean;
   readonly writeBackground: (deadline: number, allowAtomic: boolean) => boolean;
 }
 
@@ -62,6 +63,7 @@ export class SceneFrameWork {
       !pendingPreview &&
       !pendingMotion &&
       !content.hasPendingWork &&
+      this.ports.queryPending?.() !== true &&
       !content.pendingElementFades;
     let earlierWork = false;
     if (deferredFirst) {
@@ -142,7 +144,11 @@ export class SceneFrameWork {
         content.flushElementFades(deadline, now);
       } else if (lane === 2 && motion.pending) {
         motion.write(frameTime, deadline, now, true);
-      } else if (lane === 3 && this.ports.backgroundPending()) {
+      } else if (
+        lane === 3 &&
+        this.ports.backgroundPending() &&
+        this.ports.queryPending?.() !== true
+      ) {
         // A validated background DOM write is indivisible once this lane is admitted.
         this.ports.writeBackground(deadline, true);
       } else continue;

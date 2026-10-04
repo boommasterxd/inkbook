@@ -57,6 +57,9 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
 
   renderer.resetInstrumentation();
   const creation = vi.spyOn(document, "createElementNS");
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const insertion = vi.spyOn(content, "insertBefore");
+  const originalNodes = [...content.nodes];
   showOffset(renderer, scheduler, 0);
 
   expect(renderer.instrumentation()).toMatchObject({
@@ -64,7 +67,12 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
     detachedCacheHits: BATCH_SIZE,
     contentGeometryWrites: 0,
     contentAttributeWrites: 0,
+    domEntrants: 0,
+    domExits: 0,
   });
+  expect(insertion).not.toHaveBeenCalled();
+  expect(content.nodes).toEqual(originalNodes);
+  insertion.mockRestore();
   expect(creation.mock.calls.filter(([, tag]) => tag === "path" || tag === "g")).toHaveLength(0);
   creation.mockRestore();
   await annotate(
@@ -86,6 +94,8 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
   expect(renderer.instrumentation().pathCacheEntries).toBe(PATH_CACHE_MAX_ENTRIES);
   expect(renderer.instrumentation().detachedCacheEntries).toBeLessThanOrEqual(8_192);
   expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1_024 * 1_024);
+  expect(content.nodes.length).toBeLessThanOrEqual(8_192);
+  expect(content.nodes.length).toBeGreaterThanOrEqual(8_192 - 64);
   renderer.destroy();
   expect(renderer.instrumentation().pathCacheEntries).toBe(0);
   expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
@@ -119,7 +129,7 @@ it("retains 2,500 immutable contours once across scene ID and geometry identity"
   }
 });
 
-it("releases detached nodes immediately for deleted or changed geometry and memory pressure", () => {
+it("invalidates retained nodes immediately and retires connected roots in admitted frames", () => {
   const store = new FakeSceneStore();
   const first = fakeRectangleRecord("delete", 0, 10);
   const second = fakeRectangleRecord("change", 1, 20);
@@ -139,8 +149,13 @@ it("releases detached nodes immediately for deleted or changed geometry and memo
   showOffset(renderer, scheduler, 0);
   showOffset(renderer, scheduler, 3_000);
   expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
   renderer.setActiveDocumentMemoryPressure(true);
+  expect(remove).not.toHaveBeenCalled();
+  expect(renderer.instrumentation().detachedCacheBytes).toBeGreaterThan(0);
+  scheduler.runAll();
   expect(renderer.instrumentation().detachedCacheBytes).toBe(0);
+  remove.mockRestore();
   showOffset(renderer, scheduler, 0);
   showOffset(renderer, scheduler, 3_000);
   expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
@@ -255,7 +270,18 @@ it("builds a height-invariant spacing preview once and reuses its final geometry
 
 function showOffset(renderer: SvgSceneRenderer, scheduler: FakeScheduler, offset: number): void {
   renderer.setCamera({ x: -offset, zoom: 1 });
-  scheduler.runAll();
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
+  try {
+    let frames = 0;
+    while (scheduler.pendingCount > 0) {
+      expect(frames++).toBeLessThan(100);
+      remove.mockClear();
+      scheduler.runNext();
+      expect(remove.mock.calls.length).toBeLessThanOrEqual(64);
+    }
+  } finally {
+    remove.mockRestore();
+  }
 }
 
 function populateBatch(store: FakeSceneStore, batch: number, offset: number): void {

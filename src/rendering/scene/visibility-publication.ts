@@ -8,7 +8,7 @@ import {
 } from "./mounted-element";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
-import type { MountSlice, MountYieldReason } from "./mount-slice";
+import type { MountSlice, MountYieldReason, ScenePublicationBudget } from "./mount-slice";
 import type { DetachedSceneElementCache } from "./detached-element-cache";
 
 export interface PendingMutationRun {
@@ -22,6 +22,7 @@ export interface PendingMutationRun {
 }
 
 interface PublicationOptions {
+  readonly detachedCache?: DetachedSceneElementCache | undefined;
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly mounted: Map<string, MountedSceneElement>;
@@ -30,6 +31,19 @@ interface PublicationOptions {
 
 export function mountedRootCount(entry: MountedSceneElement): number {
   return entry.group === null ? entry.paths.length : 1;
+}
+
+/** Connected revisits have already paid their browser publication cost. */
+export function publicationRootCount(entry: MountedSceneElement): number {
+  return firstPath(entry).parentNode === null ? mountedRootCount(entry) : 0;
+}
+
+export function canPublishCachedElement(
+  slice: MountSlice,
+  cache: DetachedSceneElementCache | undefined,
+  id: string,
+): boolean {
+  return slice.canPublish || cache?.isConnected(id) === true;
 }
 
 export function scanVisibilityExits(
@@ -146,7 +160,15 @@ export function publishVisibilityRun(
     entry.committedRank = entry.rank;
     entry.committedOrderEpoch = epoch;
     entry.band = run.band;
-    if (retainedOrderPreserved && !run.entrants[index]) {
+    options.detachedCache?.registerMounted(entry, options.store);
+    const connectedRevisit = run.entrants[index] && publicationRootCount(entry) === 0;
+    if (run.entrants[index]) {
+      options.detachedCache?.commitReservation(entry);
+      options.mounted.set(entry.id, entry);
+      ids.push(entry.id);
+      if (!connectedRevisit) options.instrumentation.domEntrants += 1;
+    }
+    if (connectedRevisit || (retainedOrderPreserved && !run.entrants[index])) {
       // Rank shifts can mark retained nodes dirty without changing their relative DOM order.
       flush(entry);
       continue;
@@ -154,14 +176,27 @@ export function publishVisibilityRun(
     fragment ??= createFragment(options.dom.ownerDocument);
     appendElementToFragment(entry, fragment);
     hasPendingNodes = true;
-    if (run.entrants[index]) {
-      options.mounted.set(entry.id, entry);
-      ids.push(entry.id);
-      options.instrumentation.domEntrants += 1;
-    } else options.instrumentation.domReorders += 1;
+    if (!run.entrants[index]) options.instrumentation.domReorders += 1;
+    flushCachedSuccessor(entry, run.entries[index - 1] ?? run.successor, options, flush);
   }
   flush(run.successor);
   return ids;
+}
+
+function flushCachedSuccessor(
+  entry: MountedSceneElement,
+  next: MountedSceneElement | undefined,
+  options: PublicationOptions,
+  flush: (successor: MountedSceneElement) => void,
+): void {
+  const successor = options.detachedCache?.successor(entry);
+  if (
+    successor !== undefined &&
+    (next === undefined ||
+      (options.store.get(successor.id)?.rank ?? successor.rank) <
+        (options.store.get(next.id)?.rank ?? next.rank))
+  )
+    flush(successor);
 }
 
 export function publishVisibilityRuns(frame: {
@@ -201,13 +236,59 @@ interface ExitPublication {
   exitIndex: number;
 }
 interface ExitOptions extends PublicationOptions {
-  readonly detachedCache?: DetachedSceneElementCache | undefined;
   readonly visibility: { releaseId(id: string): void };
   readonly pathCache: {
     invalidate(id: string): void;
     retain(id: string, version: number, parts: MountedSceneElement["pathParts"]): void;
   };
   readonly isExitReady?: (id: string, now: number) => boolean;
+}
+
+function retainVisibilityExit(
+  entry: MountedSceneElement,
+  record: ReturnType<SceneStorePort["get"]>,
+  options: ExitOptions,
+): "retained" | "pending" | undefined {
+  if (
+    record === undefined ||
+    entry.geometryVersion !== record.geometryVersion ||
+    entry.detachedPathCount > 0 ||
+    entry.displayedPathParts !== entry.pathParts
+  )
+    return undefined;
+  if (options.detachedCache?.retainConnected(entry, options.store)) {
+    options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
+    options.mounted.delete(entry.id);
+    return "retained";
+  }
+  return options.detachedCache?.hasPendingCleanup && options.detachedCache.retentionEnabled
+    ? "pending"
+    : undefined;
+}
+
+function removeVisibilityExitNode(
+  entry: MountedSceneElement,
+  record: ReturnType<SceneStorePort["get"]>,
+  options: ExitOptions,
+  finalization: {
+    readonly pending: ExitPublication;
+    readonly onRemoved: ((id: string) => void) | undefined;
+  },
+): void {
+  if (!removeMountedElementNode(entry)) return;
+  finalization.pending.exitIndex += 1;
+  options.mounted.delete(entry.id);
+  options.detachedCache?.unregisterMounted(entry.id);
+  finalization.onRemoved?.(entry.id);
+  if (record === undefined) {
+    options.detachedCache?.invalidate(entry.id);
+    options.pathCache.invalidate(entry.id);
+    options.visibility.releaseId(entry.id);
+  } else {
+    options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
+    options.detachedCache?.retain(entry);
+  }
+  options.instrumentation.domExits += 1;
 }
 
 /** Removes old paths incrementally, rechecking visibility after every retarget. */
@@ -220,12 +301,18 @@ export function removeVisibilityExits(
     readonly isExit: (id: string) => boolean;
     readonly onSkipped?: (id: string) => void;
     readonly onRemoved?: (id: string) => void;
+    readonly publication?: ScenePublicationBudget;
+    readonly retainedOnly?: boolean;
   },
 ): boolean {
   let visitedNodes = 0;
   let removedNodes = 0;
   while (pending.exitIndex < pending.exitIds.length) {
-    if (removedNodes >= 64 || (visitedNodes > 0 && frame.now() >= frame.deadline)) return false;
+    if (
+      (frame.publication?.remainingRemovals ?? 64 - removedNodes) <= 0 ||
+      (visitedNodes > 0 && frame.now() >= frame.deadline)
+    )
+      return false;
     const id = pending.exitIds[pending.exitIndex];
     const entry = id === undefined ? undefined : options.mounted.get(id);
     visitedNodes += 1;
@@ -235,21 +322,19 @@ export function removeVisibilityExits(
       continue;
     }
     if (options.isExitReady?.(entry.id, frame.now()) === false) return false;
-    removedNodes += 1;
-    if (!removeMountedElementNode(entry)) continue;
-    pending.exitIndex += 1;
-    options.mounted.delete(entry.id);
-    frame.onRemoved?.(entry.id);
     const record = options.store.get(entry.id);
-    if (record === undefined) {
-      options.detachedCache?.invalidate(entry.id);
-      options.pathCache.invalidate(entry.id);
-      options.visibility.releaseId(entry.id);
-    } else {
-      options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
-      options.detachedCache?.retain(entry);
+    const retention = retainVisibilityExit(entry, record, options);
+    if (retention === "retained") {
+      pending.exitIndex += 1;
+      frame.onRemoved?.(entry.id);
+      continue;
     }
-    options.instrumentation.domExits += 1;
+    if (retention === "pending") return false;
+    if (frame.retainedOnly) return false;
+    removedNodes += 1;
+    if (frame.publication !== undefined)
+      frame.publication.remainingRemovals = (frame.publication.remainingRemovals ?? 64) - 1;
+    removeVisibilityExitNode(entry, record, options, { pending, onRemoved: frame.onRemoved });
   }
   return true;
 }

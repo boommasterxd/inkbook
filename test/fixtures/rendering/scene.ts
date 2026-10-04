@@ -34,19 +34,26 @@ export function createSceneFixture(
   page: PageV1,
   store: SceneStorePort,
   viewport: SceneViewport = { height: 1000, left: 0, top: 0, width: 2048 },
-  options: Pick<SceneRendererOptions, "onSceneCommitted" | "deferInitialOverscan"> & {
+  options: Pick<
+    SceneRendererOptions,
+    "onSceneCommitted" | "deferInitialOverscan" | "isInputActive" | "onResourceUsageChanged"
+  > & {
     readonly frameBudgetMs?: number | (() => number);
   } = {},
   scheduler = new FakeScheduler(options.frameBudgetMs),
 ) {
   const document = new FakeDocument();
   const renderer = new SvgSceneRenderer({
+    ...(options.isInputActive === undefined ? {} : { isInputActive: options.isInputActive }),
     ...(options.deferInitialOverscan === undefined
       ? {}
       : { deferInitialOverscan: options.deferInitialOverscan }),
     ...(options.onSceneCommitted === undefined
       ? {}
       : { onSceneCommitted: options.onSceneCommitted }),
+    ...(options.onResourceUsageChanged === undefined
+      ? {}
+      : { onResourceUsageChanged: options.onResourceUsageChanged }),
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => viewport },
     page,

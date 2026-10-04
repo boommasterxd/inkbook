@@ -333,6 +333,7 @@ export class ActiveInkbookScene {
       workScheduler: options.workScheduler,
       deferInitialOverscan: true,
       inputHandlers: createSceneInputHandlers(controller),
+      isInputActive: () => options.model.isGestureActive?.() ?? true,
       layout: {
         readViewport: () => readActiveSceneViewport(this.#container, scrollOwner(), this.#root),
       },

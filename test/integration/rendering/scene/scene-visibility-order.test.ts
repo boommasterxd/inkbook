@@ -4,10 +4,46 @@ import {
   createPendingScenePathStore,
   createSceneFixture,
   createSceneRecord,
+  createViewportRectangleStore,
 } from "../../../fixtures/rendering/scene";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
-import { FakeSceneStore, fakeNode, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
+import {
+  FakeSceneStore,
+  FakeScheduler,
+  fakeNode,
+  fakeRectangleRecord,
+} from "../../../unit/rendering/scene/fakes";
+
+it("restarts staged immutable ranks after an order-only change during classification", () => {
+  const scheduler = new FakeScheduler();
+  const store = createViewportRectangleStore(20, () => 10);
+  const ids = [...store.records.keys()];
+  const get = vi.spyOn(store, "get").mockImplementation((id) => {
+    scheduler.time += 1;
+    const record = store.records.get(id);
+    return record === undefined ? undefined : { ...record };
+  });
+  const { renderer } = createSceneFixture(
+    NAVIGATION_PAGE,
+    store,
+    { height: 100, left: 0, top: 0, width: 100 },
+    {},
+    scheduler,
+  );
+  scheduler.runNext();
+  expect(renderer.mountedCount).toBe(0);
+  expect(get.mock.calls.length).toBeGreaterThan(0);
+  expect(get.mock.calls.length).toBeLessThan(ids.length);
+  const first = store.records.get(ids[0]!)!;
+  store.records.set(first.id, { ...first, rank: ids.length });
+  renderer.applyDelta({ affected: [{ domains: ["order"], id: first.id }] });
+  scheduler.runAll();
+  expect(renderer.mountedIds("content")).toEqual([...ids.slice(1), first.id]);
+  expect(renderer.instrumentation().spatialQueries).toBe(1);
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+});
 
 it("merges viewport entrants into band order and sorts after a rank change", () => {
   const store = new FakeSceneStore();
@@ -117,7 +153,7 @@ it("publishes a cached entrant while the earlier cold stroke waits for the worke
   const retained = content.nodes[0]!;
   renderer.setViewport({ ...viewport, top: 1_000 });
   scheduler.runAll();
-  expect(retained.parent).toBeUndefined();
+  expect(retained.parent).toBe(content);
   renderer.resetInstrumentation();
   const create = vi.spyOn(document, "createElementNS");
   renderer.setViewport({ ...viewport, height: 200 });

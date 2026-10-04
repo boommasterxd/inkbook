@@ -197,9 +197,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     ) {
       return { ...operation, status: "failed" };
     }
-    if (this.#recoveryOperation !== undefined) {
+    if (this.#recoveryOperation !== undefined)
       this.#cancelled.add(this.#recoveryOperation.operationId);
-    }
     this.#recoveryOperation = operation;
     const result = await (action === "reload-external"
       ? this.#reloadExternal(operation, true)
@@ -340,6 +339,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         commitElements: (elements) => mutations.commitElements(elements),
         beginInteractiveOperation: () => this.#workPriority.begin(),
         waitForBackground: () => this.#workPriority.waitForBackground(),
+        isGestureActive: () => this.#workPriority.gestureActive,
         ...createVaultElementPreparationActions({
           active: () => !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
           replacementActive: () =>

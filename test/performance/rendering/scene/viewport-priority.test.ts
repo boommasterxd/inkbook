@@ -44,12 +44,17 @@ it("publishes the actual viewport before highlight overscan within a 10,000-elem
   });
   const domain = new ElementStore(elements);
   const scene = new ElementSceneStore(domain);
-  const queryOriginal = domain.query.bind(domain);
+  const queryOriginal = domain.beginQuery.bind(domain);
   let indexedVisits = 0;
-  const query = vi.spyOn(domain, "query").mockImplementation((bounds, scratch) => {
-    const count = queryOriginal(bounds, scratch);
-    indexedVisits += scratch.candidateVisitCount;
-    return count;
+  const query = vi.spyOn(domain, "beginQuery").mockImplementation((bounds) => {
+    const cursor = queryOriginal(bounds);
+    const advance = cursor.advance.bind(cursor);
+    vi.spyOn(cursor, "advance").mockImplementation((limit) => {
+      const step = advance(limit);
+      indexedVisits += step.workUnits;
+      return step;
+    });
+    return cursor;
   });
   const get = vi.spyOn(scene, "get");
   const { renderer, scheduler, document } = createSceneFixture(NAVIGATION_PAGE, scene, {
@@ -134,7 +139,7 @@ it("keeps bounded protocol lookahead ordered without consuming a 10,000-candidat
   get.mockRestore();
 });
 
-it("removes collected old roots before a partial exit scan can starve behind new publication", () => {
+it("finishes logical exits without detaching cached roots behind new publication", () => {
   const store = new FakeSceneStore();
   for (let rank = 0; rank < 768; rank += 1) {
     const id = `cleanup-${rank}`;
@@ -162,21 +167,36 @@ it("removes collected old roots before a partial exit scan can starve behind new
     expect(first.domEntrants).toBe(64);
     expect(oldRemovals).toBe(0);
     let frames = 0;
-    while (oldRemovals === 0 && frames < 100) {
+    while (renderer.instrumentation().detachedCacheEntries === 0 && frames < 100) {
       const before = oldRemovals;
       scheduler.runNext();
       expect(oldRemovals - before).toBeLessThanOrEqual(1);
       frames += 1;
     }
-    expect(oldRemovals).toBe(1);
+    expect(
+      renderer.instrumentation().detachedCacheEntries,
+      JSON.stringify({
+        ...renderer.instrumentation(),
+        mountedCount: renderer.mountedCount,
+        pendingCount: scheduler.pendingCount,
+      }),
+    ).toBeGreaterThan(0);
+    expect(oldRemovals).toBe(0);
     expect(renderer.instrumentation().domExits).toBe(oldRemovals);
     expect(renderer.instrumentation().domEntrants).toBeLessThanOrEqual(66);
-    expect([...oldNodes].filter((node) => node.parent === content)).toHaveLength(255);
+    expect([...oldNodes].filter((node) => node.parent === content)).toHaveLength(256);
     restoreClock();
     remove.mockRestore();
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(512);
-    expect(renderer.instrumentation().domExits).toBe(256);
+    expect(renderer.mountedIds("content")).toEqual(
+      Array.from({ length: 512 }, (_, rank) => `cleanup-${rank + 256}`),
+    );
+    expect(renderer.instrumentation().domExits).toBe(0);
+    expect(renderer.instrumentation().detachedCacheEntries).toBe(256);
+    expect(content.nodes).toHaveLength(768);
+    expect(new Set(content.nodes).size).toBe(768);
+    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
   } finally {
     restoreClock();
     remove.mockRestore();
@@ -214,8 +234,11 @@ it("finishes partially scanned old mounts while remote geometry waits, then stop
     expect(signals).toHaveLength(1);
     expect(signals[0]!.aborted).toBe(false);
     expect(renderer.mountedIds("content")).toEqual(["warm"]);
-    expect(oldNodes.every((node) => node.parent === undefined)).toBe(true);
-    expect(renderer.instrumentation().domExits).toBe(64);
+    expect(oldNodes.every((node) => node.parent === content)).toBe(true);
+    expect(renderer.instrumentation().domExits).toBe(0);
+    expect(renderer.instrumentation().detachedCacheEntries).toBe(64);
+    expect(content.nodes).toHaveLength(65);
+    expect(new Set(content.nodes).size).toBe(65);
     expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(
       oldNodes.length * 3 + 16,
     );

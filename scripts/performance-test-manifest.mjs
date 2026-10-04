@@ -16,6 +16,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/interaction-refresh-reconciliation.test.ts",
     "test/performance/rendering/scene/live-stroke-refresh-profile.test.ts",
     "test/performance/rendering/scene/motion-frame-budget.test.ts",
+    "test/performance/rendering/scene/navigation-index-work.test.ts",
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
@@ -91,6 +92,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/preview-selection-work.test.ts",
     "test/performance/rendering/scene/render-mount-complexity.test.ts",
     "test/performance/rendering/scene/retained-viewport-publication.test.ts",
+    "test/performance/rendering/scene/worker-progress-publication.test.ts",
     "test/performance/rendering/scene/worker-visible-contours.test.ts",
     "test/performance/rendering/scene/viewport-priority.test.ts",
   ]),

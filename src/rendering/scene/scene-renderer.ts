@@ -95,7 +95,7 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
-      () => this.#elementPreviews.memoryUsage() + this.#transformPreviews.memoryUsage(),
+      () => this.#visibilityCoordinator.previewMemoryUsage(),
       this.#detachedCache,
     );
     this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
@@ -110,12 +110,14 @@ export class SvgSceneRenderer {
       this.#resourcePolicy,
       this.#transformPreviews,
       this.#elementPreviews,
+      { cache: this.#pathCache, scene: options },
     );
     this.#visibilityCoordinator.setInitialVisibleOnly(options.deferInitialOverscan ?? false);
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
     this.#frameWork = new SceneFrameWork({
       backgroundPending: () => this.#backgroundDirty && this.#viewport !== undefined,
+      queryPending: () => this.#visibilityCoordinator.hasPendingQuery,
       content: this.#content,
       contentScheduler: this.#contentScheduler,
       elements: this.#elementPreviews,
@@ -176,9 +178,10 @@ export class SvgSceneRenderer {
   public setActiveDocumentMemoryPressure(active: boolean): void {
     this.assertActive();
     this.#resourcePolicy.setActiveDocumentMemoryPressure(active);
+    if (active) this.#visibilityCoordinator.cancelNavigationPreparation();
+    if (this.#content.hasMountedWork) this.#frames.schedule();
   }
-  public readonly memoryUsage = (): ReturnType<SceneResourcePolicy["memoryUsage"]> =>
-    this.#resourcePolicy.memoryUsage();
+  public readonly memoryUsage = () => this.#resourcePolicy.memoryUsage();
   public beginPreviewCommit(): PreviewCommitHandoff {
     this.assertActive();
     return this.#previewCommits.begin();
@@ -415,6 +418,7 @@ export class SvgSceneRenderer {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#frames.dispose();
+    this.#visibilityCoordinator.release();
     this.#liveStroke.dispose();
     this.#frameWriter.release();
     this.#previewCommits.release();
@@ -422,7 +426,6 @@ export class SvgSceneRenderer {
     this.#deltas.release();
     this.#dom.release();
     this.#backgroundCache.clear();
-    this.#visibility.release();
     this.#content.release();
     this.#transformPreviews.release();
     this.#elementPreviews.release();
@@ -448,15 +451,12 @@ export class SvgSceneRenderer {
     }
     this.#frameWriter.readToolCursor();
     this.#visibilityCoordinator.releaseCommittedPreview(this.#previewCommits);
-    this.#visibilityCoordinator.prepare(this.#viewport, this.#camera, deadline, () =>
-      this.#scheduler.now(),
-    );
+    this.#visibilityCoordinator.prepare(this.#viewport, this.#camera, deadline);
     this.#transformPreviews.refreshContext();
     this.#visibilityCoordinator.releaseLostPreviews(
       this.#transformPreviews.values,
       () => this.#elementPreviews.values,
     );
-    // Pointer completion is indivisible input feedback; it still uses the shared deadline.
     this.flushPointerFeedbackFrame(deadline);
     this.#motion.writeSelectionFeedback(startedAt);
     const work = this.#frameWork.write(

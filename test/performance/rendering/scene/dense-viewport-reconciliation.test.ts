@@ -172,7 +172,7 @@ it("bounds combined ink and selection publication when 6,081 selected entries re
   expect(renderer.mountedIds("content")).toEqual([...selected]);
   expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(selected.size);
   expect(renderer.instrumentation()).toMatchObject({
-    domEntrants: selected.size,
+    domEntrants: 0,
     domReorders: 0,
     selectionTraceNodesCreated: selected.size,
   });
@@ -327,21 +327,16 @@ it("does not reappend returning retained nodes during unfinished viewport exit c
 
   renderer.setViewport({ ...viewport, top: 1_000 });
   let frames = 0;
-  // Return while both publication and fair exit cleanup are still incomplete.
-  while (
-    (renderer.instrumentation().domEntrants === 4_200 ||
-      renderer.instrumentation().domExits === 0) &&
-    scheduler.pendingCount > 0
-  ) {
+  // Return after publication starts while the target viewport remains incomplete.
+  while (renderer.instrumentation().domEntrants === 4_200 && scheduler.pendingCount > 0) {
     scheduler.runNext();
     expect(++frames).toBeLessThan(200);
   }
   expect(renderer.instrumentation().domEntrants).toBeGreaterThan(4_200);
   expect(renderer.instrumentation().domEntrants).toBeLessThan(8_400);
-  expect(renderer.instrumentation().domExits).toBeGreaterThan(0);
+  expect(renderer.instrumentation().domExits).toBe(0);
   const retained = new Set(content.nodes.filter((node) => originalSet.has(node)));
-  expect(retained.size).toBeGreaterThan(4_000);
-  expect(retained.size).toBeLessThan(4_200);
+  expect(retained.size).toBe(4_200);
 
   const originalInsert = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!
     .value as (this: FakeNode, node: FakeNode, reference: FakeNode | null) => FakeNode;
@@ -375,7 +370,12 @@ it("does not reappend returning retained nodes during unfinished viewport exit c
     expect(siblingScans).toBe(0);
     expect(siblingVisits).toBe(0);
     expect(siblingVisitBudget).toBe(0);
-    expect(content.nodes).toHaveLength(4_200);
+    expect(renderer.mountedIds("content")).toEqual(
+      Array.from({ length: 4_200 }, (_, rank) => `entry-${rank}`),
+    );
+    expect(content.nodes.length - renderer.mountedCount).toBeLessThanOrEqual(8_192);
+    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+    expect(new Set(content.nodes).size).toBe(content.nodes.length);
     for (let rank = 0; rank < 4_200; rank += 1) {
       if (retained.has(originalNodes[rank]!)) expect(content.nodes[rank]).toBe(originalNodes[rank]);
     }
