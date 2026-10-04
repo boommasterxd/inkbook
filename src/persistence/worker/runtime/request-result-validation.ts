@@ -5,6 +5,33 @@ import { validatePreparedScenePaths } from "./prepare-scene-paths";
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import type { DocumentRuntimeRequest, DocumentRuntimeResult, UnlockRuntimeBatch } from "./types";
 
+export function isRequiredSceneRequest(request: DocumentRuntimeRequest): boolean {
+  return (
+    request.type === "prepare-scene-paths" ||
+    ((request.type === "model-sync-full" || request.type === "model-sync-incremental") &&
+      request.identity.purpose === "background")
+  );
+}
+
+export function validUnlockCompletion(
+  result: DocumentRuntimeResult,
+  pending: {
+    readonly acceptsUnlockBatches: boolean;
+    readonly batchAdoptionPending: boolean;
+    readonly nextUnlockBatchIndex: number;
+    readonly adoptedElementCount: number;
+  },
+): boolean {
+  if (!pending.acceptsUnlockBatches) return result.type !== "unlock-success";
+  if (result.type === "runtime-failure") return true;
+  return (
+    result.type === "unlock-success" &&
+    !pending.batchAdoptionPending &&
+    result.snapshot.batchCount === pending.nextUnlockBatchIndex &&
+    result.snapshot.elementCount === pending.adoptedElementCount
+  );
+}
+
 export function matchesUnlockBatchIdentity(
   batch: Pick<UnlockRuntimeBatch, "identity">,
   request: DocumentRuntimeRequest,

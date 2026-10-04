@@ -257,6 +257,8 @@ function applyControl(runtime: DocumentRuntimePort, control: BridgeControl): voi
   else if (control.action === "prewarm") runtime.requestPrewarm?.();
   else if (control.action === "set-live-input")
     runtime.setLiveInputActive?.(control.active === true);
+  else if (control.action === "set-navigation")
+    runtime.setNavigationActive?.(control.active === true);
   else if (
     control.sliceMilliseconds !== undefined &&
     control.frameIntervalMilliseconds !== undefined
@@ -287,24 +289,24 @@ function isBridgeRequest(value: unknown): value is BridgeRequest {
 }
 
 function isBridgeControl(value: unknown): value is BridgeControl {
+  if (!isObject(value) || value.type !== "inkbook-worker-control") return false;
   return (
-    isObject(value) &&
-    value.type === "inkbook-worker-control" &&
-    ((value.action === "cancel-scene-paths" &&
+    (value.action === "cancel-scene-paths" &&
       isObject(value.identity) &&
       typeof value.identity.sessionId === "string" &&
       Number.isSafeInteger(value.identity.workerEpoch) &&
       Number.isSafeInteger(value.identity.operationId) &&
       value.identity.purpose === "background") ||
-      (value.action === "prewarm" && value.active === undefined) ||
-      (value.action === "set-live-input" && typeof value.active === "boolean") ||
-      (value.action === "set-profile" &&
-        typeof value.sliceMilliseconds === "number" &&
-        Number.isFinite(value.sliceMilliseconds) &&
-        value.sliceMilliseconds > 0 &&
-        typeof value.frameIntervalMilliseconds === "number" &&
-        Number.isFinite(value.frameIntervalMilliseconds) &&
-        value.frameIntervalMilliseconds > 0))
+    (value.action === "prewarm" && value.active === undefined) ||
+    ((value.action === "set-live-input" || value.action === "set-navigation") &&
+      typeof value.active === "boolean") ||
+    (value.action === "set-profile" &&
+      typeof value.sliceMilliseconds === "number" &&
+      Number.isFinite(value.sliceMilliseconds) &&
+      value.sliceMilliseconds > 0 &&
+      typeof value.frameIntervalMilliseconds === "number" &&
+      Number.isFinite(value.frameIntervalMilliseconds) &&
+      value.frameIntervalMilliseconds > 0)
   );
 }
 

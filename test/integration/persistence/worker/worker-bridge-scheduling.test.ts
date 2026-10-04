@@ -4,6 +4,7 @@ import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-f
 import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
 import {
   createOneStrokeWorkerSnapshot,
+  createWorkerBridgeClient,
   createWorkerBridgeHarness,
 } from "../../../fixtures/persistence/worker-bridge";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
@@ -20,6 +21,18 @@ function fullExportRequest() {
     type: "export-full" as const,
     workerEpoch: 1,
   };
+}
+
+function isExportRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    "request" in message &&
+    typeof message.request === "object" &&
+    message.request !== null &&
+    "type" in message.request &&
+    message.request.type === "export-full"
+  );
 }
 
 describe("document worker export admission", () => {
@@ -113,6 +126,105 @@ describe("document worker export admission", () => {
     expect(host.pendingFrames).toBe(0);
     scheduler.dispose();
     expect(host.pendingTimers).toBe(0);
+  });
+});
+
+describe("document worker navigation admission", () => {
+  it("admits required paths during navigation while export and drawing gates stay independent", async () => {
+    const harness = createWorkerBridgeHarness();
+    const client = createWorkerBridgeClient(harness.clientEndpoint);
+    const snapshot = createOneStrokeWorkerSnapshot();
+    const identity = {
+      operationId: 1,
+      purpose: "background" as const,
+      sessionId: "session-a",
+      workerEpoch: 1,
+    };
+    client.setNavigationActive(true);
+    await client.execute({
+      baseModelRevision: null,
+      identity,
+      modelRevision: 0,
+      snapshot,
+      type: "model-sync-full",
+    });
+    client.requestPrewarm();
+    const exportRequest = fullExportRequest();
+    let exported = false;
+    const exportPending = client.execute(exportRequest).then((result) => {
+      exported = true;
+      return result;
+    });
+    const paths = await client.execute({
+      basisRevision: 0,
+      identity,
+      ids: [snapshot.elements[0]!.id],
+      type: "prepare-scene-paths",
+    });
+    expect(paths.type).toBe("prepare-scene-paths-success");
+    expect(exported).toBe(false);
+    expect(harness.runtime.instrumentation.prewarmVisitedElements).toBe(0);
+    expect(harness.clientEndpoint.sentMessages.some(isExportRequest)).toBe(false);
+    client.setLiveInputActive(true);
+    client.setNavigationActive(false);
+    await Promise.resolve();
+    expect(exported).toBe(false);
+    client.setLiveInputActive(false);
+    expect((await exportPending).type).toBe("export-success");
+    client.terminate();
+    harness.detach();
+  });
+});
+
+describe("document worker navigation adoption", () => {
+  it("holds a completed export on the main thread while required navigation paths can settle", async () => {
+    const harness = createWorkerBridgeHarness();
+    const client = createWorkerBridgeClient(harness.clientEndpoint);
+    const post = harness.hostEndpoint.postMessage.bind(harness.hostEndpoint);
+    const intercept = vi
+      .spyOn(harness.hostEndpoint, "postMessage")
+      .mockImplementation((message, transfer) => {
+        if (
+          typeof message === "object" &&
+          message !== null &&
+          "result" in message &&
+          typeof message.result === "object" &&
+          message.result !== null &&
+          "type" in message.result &&
+          message.result.type === "export-success-wire"
+        )
+          client.setNavigationActive(true);
+        post(message, transfer);
+      });
+    let adopted = false;
+    const pending = client.execute(fullExportRequest()).then((result) => {
+      adopted = true;
+      return result;
+    });
+    await vi.waitFor(() => expect(harness.runtime.instrumentation.unacknowledgedExports).toBe(1));
+    await Promise.resolve();
+    expect(adopted).toBe(false);
+    expect(
+      (
+        await client.execute({
+          basisRevision: 0,
+          identity: {
+            operationId: 1,
+            purpose: "background",
+            sessionId: "session-a",
+            workerEpoch: 1,
+          },
+          ids: [createOneStrokeWorkerSnapshot().elements[0]!.id],
+          type: "prepare-scene-paths",
+        })
+      ).type,
+    ).toBe("prepare-scene-paths-success");
+    expect(adopted).toBe(false);
+    client.setNavigationActive(false);
+    expect((await pending).type).toBe("export-success");
+    intercept.mockRestore();
+    client.terminate();
+    harness.detach();
   });
 });
 

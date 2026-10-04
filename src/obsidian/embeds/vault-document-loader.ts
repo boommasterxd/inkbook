@@ -49,6 +49,7 @@ export async function createVaultDocumentExecutor(options: {
   readonly documentId: string;
   readonly fallbackUsed: boolean;
   readonly isGestureActive: () => boolean;
+  readonly isNavigationActive?: () => boolean;
   readonly runtimes: ExecutorFactoryPort;
   readonly sessionId: string;
   readonly workerEpoch: number;
@@ -68,18 +69,14 @@ export async function createVaultDocumentExecutor(options: {
       executor.terminate();
       throw new Error("The document session has been disposed.");
     }
+    initializeExecutorActivity(executor, options);
     return { executor, fallbackUsed: options.fallbackUsed, workerEpoch: options.workerEpoch };
   } catch {
     if (options.disposed()) throw new Error("The document session has been disposed.");
     if (options.fallbackUsed) throw new Error("The document fallback executor already failed.");
     const workerEpoch = options.workerEpoch + 1;
     return {
-      executor: options.runtimes.createFallback(
-        options.sessionId,
-        workerEpoch,
-        options.isGestureActive,
-        options.documentId,
-      ),
+      executor: createVaultFallbackExecutor({ ...options, workerEpoch }),
       fallbackUsed: true,
       workerEpoch,
     };
@@ -90,17 +87,28 @@ function createVaultFallbackExecutor(options: {
   readonly documentId: string;
   readonly disposed: () => boolean;
   readonly isGestureActive: () => boolean;
+  readonly isNavigationActive?: () => boolean;
   readonly runtimes: ExecutorFactoryPort;
   readonly sessionId: string;
   readonly workerEpoch: number;
 }): DocumentRuntimePort {
   if (options.disposed()) throw new Error("The document session has been disposed.");
-  return options.runtimes.createFallback(
+  const executor = options.runtimes.createFallback(
     options.sessionId,
     options.workerEpoch,
     options.isGestureActive,
     options.documentId,
   );
+  initializeExecutorActivity(executor, options);
+  return executor;
+}
+
+function initializeExecutorActivity(
+  executor: DocumentRuntimePort,
+  options: { readonly isGestureActive: () => boolean; readonly isNavigationActive?: () => boolean },
+): void {
+  if (options.isGestureActive()) executor.setLiveInputActive?.(true);
+  if (options.isNavigationActive?.()) executor.setNavigationActive?.(true);
 }
 
 export function createVaultFallbackFactory(options: {
@@ -108,6 +116,7 @@ export function createVaultFallbackFactory(options: {
   readonly documentId: string;
   readonly disposed: () => boolean;
   readonly isGestureActive: () => boolean;
+  readonly isNavigationActive?: () => boolean;
   readonly runtimes: ExecutorFactoryPort;
   readonly sessionId: string;
 }): (workerEpoch: number) => DocumentRuntimePort {

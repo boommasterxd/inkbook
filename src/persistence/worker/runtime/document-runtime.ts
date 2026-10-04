@@ -1,8 +1,14 @@
-import type { InkElementV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
 import { WorkerJobQueue } from "../job-queue";
-import type { ExecutorIdentity, ExportIdentity, WorkerJobKind } from "../protocol";
+import {
+  exportIdentityKey,
+  type ExecutorIdentity,
+  type ExportIdentity,
+  type WorkerJobKind,
+} from "../protocol";
 import { DocumentModelRuntime, RuntimeModelError } from "./document-model";
 import { runClipboardRequest } from "./runtime-clipboard";
+import { isRequiredSceneRequest } from "./request-result-validation";
+import { emitUnlockBatches } from "./unlock-batches";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeObserver,
@@ -11,13 +17,7 @@ import type {
   DocumentRuntimeServices,
   InputAwareSliceScheduler,
   RuntimeSliceContext,
-  UnlockRuntimeBatch,
 } from "./types";
-import {
-  MAX_UNLOCK_BATCH_ELEMENTS,
-  MAX_UNLOCK_BATCH_POINT_BYTES,
-  strokePointByteLength,
-} from "./unlock-batch-limits";
 
 interface PendingJob {
   readonly abortController: AbortController;
@@ -38,6 +38,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   readonly #services: DocumentRuntimeServices;
   #nextJobId = 0;
   #liveInputActive = false;
+  #navigationActive = false;
   #prewarmRequested = false;
   #prewarmRunning = false;
   #running = false;
@@ -139,6 +140,14 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     if (!active) this.#schedulePrewarm();
   }
 
+  public setNavigationActive(active: boolean): void {
+    this.#navigationActive = active;
+    if (!active) {
+      void this.#drain();
+      this.#schedulePrewarm();
+    }
+  }
+
   public terminate(): void {
     this.#terminated = true;
     this.#abortController.abort();
@@ -151,11 +160,14 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#prewarmRequested = false;
   }
 
+  readonly #eligibleJob = (job: import("../protocol").WorkerJob<DocumentRuntimeRequest>): boolean =>
+    !this.#navigationActive || isRequiredSceneRequest(job.payload);
+
   async #drain(): Promise<void> {
     if (this.#running) return;
     this.#running = true;
     while (!this.#terminated) {
-      const active = this.#queue.startNext();
+      const active = this.#queue.startNext(this.#eligibleJob);
       if (active === null) break;
       const pending = this.#jobs.get(active.id);
       if (pending === undefined) break;
@@ -171,13 +183,14 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
             : await this.#scheduler.run(
                 (signal) => this.#run(pending.request, pending.observer, signal),
                 signal,
+                isRequiredSceneRequest(pending.request) ? "frame" : undefined,
               );
         if (!this.#terminated) pending.resolve(result);
       } catch (error) {
         if (!this.#terminated) pending.resolve(this.#failure(pending.request, error));
       }
       this.#jobs.delete(active.id);
-      this.#queue.complete(active.id);
+      this.#queue.complete(active.id, this.#eligibleJob);
       if (pending.request.type === "unlock") this.#unlockPending = false;
     }
     this.#running = false;
@@ -189,7 +202,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     observer: DocumentRuntimeObserver | undefined,
     signal: AbortSignal,
   ): Promise<DocumentRuntimeResult> {
-    const sliceContext = runtimeSliceContext(this.#scheduler, signal);
+    const sliceContext = runtimeSliceContext(this.#scheduler, signal, request);
     if (request.type === "prepare-scene-paths")
       return this.#prepareScenePaths(request, sliceContext, signal);
     if (request.type === "unlock") {
@@ -363,6 +376,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       this.#prewarmRunning ||
       !this.#prewarmRequested ||
       this.#liveInputActive ||
+      this.#navigationActive ||
       this.#running ||
       this.#unacknowledgedExports.size > 0 ||
       this.#queue.active !== null ||
@@ -383,6 +397,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         !this.#terminated &&
         this.#prewarmRequested &&
         !this.#liveInputActive &&
+        !this.#navigationActive &&
         !this.#running &&
         this.#unacknowledgedExports.size === 0 &&
         this.#queue.pendingCount === 0
@@ -405,19 +420,17 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   }
 }
 
-function exportIdentityKey(identity: ExportIdentity): string {
-  return `${identity.sessionId}:${identity.workerEpoch}:${identity.exportGeneration}:${identity.modelRevision}`;
-}
-
 function runtimeSliceContext(
   scheduler: InputAwareSliceScheduler | null,
   signal: AbortSignal,
+  request: DocumentRuntimeRequest,
 ): RuntimeSliceContext | undefined {
   if (scheduler === null) return undefined;
   const sliceMilliseconds = scheduler.getSliceMilliseconds?.bind(scheduler);
   const workProfile = scheduler.getSliceWorkProfile?.bind(scheduler);
   return {
-    checkpoint: () => scheduler.checkpoint(signal),
+    checkpoint: () =>
+      scheduler.checkpoint(signal, isRequiredSceneRequest(request) ? "frame" : undefined),
     ...(sliceMilliseconds === undefined ? {} : { sliceMilliseconds }),
     ...(workProfile === undefined ? {} : { workProfile: workProfile() }),
     signal,
@@ -428,59 +441,3 @@ const DEFAULT_RUNTIME_SERVICES: DocumentRuntimeServices = Object.freeze({
   createId: () => crypto.randomUUID(),
   now: () => performance.now(),
 });
-
-async function emitUnlockBatches(
-  identity: Extract<DocumentRuntimeRequest, { type: "unlock" }>["identity"],
-  elements: readonly InkElementV1[],
-  derivations: SnapshotValidationDerivations,
-  observer: DocumentRuntimeObserver | undefined,
-  signal: AbortSignal,
-): Promise<number> {
-  if (elements.length !== derivations.elements.length) {
-    throw new TypeError("Validated element derivations are incomplete.");
-  }
-  let batchIndex = 0;
-  let current: InkElementV1[] = [];
-  let currentDerivations = [] as (typeof derivations.elements)[number][];
-  let currentBytes = 0;
-  for (let index = 0; index < elements.length; index += 1) {
-    const element = elements[index]!;
-    const elementBytes = strokePointByteLength(element);
-    if (
-      current.length > 0 &&
-      (current.length >= MAX_UNLOCK_BATCH_ELEMENTS ||
-        currentBytes + elementBytes > MAX_UNLOCK_BATCH_POINT_BYTES)
-    ) {
-      await emitUnlockBatch(
-        { batchIndex, derivations: currentDerivations, elements: current, identity },
-        observer,
-        signal,
-      );
-      batchIndex += 1;
-      current = [];
-      currentDerivations = [];
-      currentBytes = 0;
-    }
-    current.push(element);
-    currentDerivations.push(derivations.elements[index]!);
-    currentBytes += elementBytes;
-  }
-  if (current.length > 0) {
-    await emitUnlockBatch(
-      { batchIndex, derivations: currentDerivations, elements: current, identity },
-      observer,
-      signal,
-    );
-    batchIndex += 1;
-  }
-  return batchIndex;
-}
-
-async function emitUnlockBatch(
-  batch: UnlockRuntimeBatch,
-  observer: DocumentRuntimeObserver | undefined,
-  signal: AbortSignal,
-): Promise<void> {
-  signal.throwIfAborted();
-  await observer?.unlockBatch(batch, signal);
-}

@@ -196,6 +196,7 @@ export interface DocumentRuntimePort {
   ): Promise<DocumentRuntimeResult>;
   requestPrewarm?(): void;
   setLiveInputActive?(active: boolean): void;
+  setNavigationActive?(active: boolean): void;
   setSchedulingProfile?(sliceMilliseconds: number, frameIntervalMilliseconds: number): void;
   terminate(): void;
 }
@@ -206,10 +207,14 @@ export interface DocumentRuntimeServices {
 }
 
 export interface InputAwareSliceScheduler {
-  checkpoint(signal: AbortSignal): Promise<void> | undefined;
+  checkpoint(signal: AbortSignal, priority?: "frame"): Promise<void> | undefined;
   getSliceMilliseconds?(): number;
   getSliceWorkProfile?(): RuntimeSliceWorkProfile;
-  run<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal: AbortSignal): Promise<T>;
+  run<T>(
+    operation: (signal: AbortSignal) => T | Promise<T>,
+    signal: AbortSignal,
+    priority?: "frame",
+  ): Promise<T>;
   setLiveInputActive?(active: boolean): void;
   setSchedulingProfile?(sliceMilliseconds: number, frameIntervalMilliseconds: number): void;
 }

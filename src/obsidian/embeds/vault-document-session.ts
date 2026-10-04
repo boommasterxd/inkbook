@@ -121,6 +121,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#lifecycle.preparingForUnload = true;
     this.#workPriority.dispose();
     this.#executor?.setLiveInputActive?.(false);
+    this.#executor?.setNavigationActive?.(false);
     this.#recoveryOperation = undefined;
     this.#cancelled.clear();
     this.#unloadPreparation = prepareAutosaveForUnload(this.#autosave, () => this.dispose());
@@ -263,7 +264,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       disposed: () => this.#lifecycle.disposed,
       documentId: this.#identity.documentId,
       fallbackUsed: this.#fallbackUsed,
-      isGestureActive: () => this.#workPriority.inputActive,
+      isGestureActive: () => this.#workPriority.gestureActive,
+      isNavigationActive: () => this.#workPriority.navigationActive,
       runtimes: this.runtimes,
       sessionId: this.#identity.sessionId,
       workerEpoch: this.#workerEpoch,
@@ -282,7 +284,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       },
       disposed: () => this.#lifecycle.disposed,
       documentId: this.#identity.documentId,
-      isGestureActive: () => this.#workPriority.inputActive,
+      isGestureActive: () => this.#workPriority.gestureActive,
+      isNavigationActive: () => this.#workPriority.navigationActive,
       runtimes: this.runtimes,
       sessionId: this.#identity.sessionId,
     });
@@ -374,11 +377,9 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#startAutosave(snapshot, outputHash, requiresCanonicalRewrite, executor, store);
   }
   #setInputActive(active: boolean, source: "gesture" | "navigation"): void {
-    if (this.#lifecycle.disposed || this.#lifecycle.preparingForUnload) return;
-    const previous = this.#workPriority.inputActive;
-    this.#workPriority.setInputActive(active, source);
-    if (previous !== this.#workPriority.inputActive)
-      this.#executor?.setLiveInputActive?.(this.#workPriority.inputActive);
+    if (!this.#workPriority.setInputActive(active, source)) return;
+    if (source === "navigation") this.#executor?.setNavigationActive?.(active);
+    else this.#executor?.setLiveInputActive?.(active);
   }
   #startAutosave(
     snapshot: InkSnapshotV1,

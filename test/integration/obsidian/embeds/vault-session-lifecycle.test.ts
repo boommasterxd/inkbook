@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { StoreSliceScheduler } from "../../../../src/domain/store/public";
 import { VaultDocumentSessionFactory } from "../../../../src/obsidian/embeds/vault-document-session-factory";
 import {
+  createVaultDocumentExecutor,
+  createVaultFallbackFactory,
+} from "../../../../src/obsidian/embeds/vault-document-loader";
+import {
   DocumentWorkerRuntime,
   type DocumentRuntimePort,
 } from "../../../../src/persistence/worker/runtime/public";
@@ -243,14 +247,41 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
 });
 
 describe("VaultDocumentSession live executor lifecycle", () => {
+  it.each([false, true])(
+    "inherits live navigation and gesture state when constructing fallback=%s",
+    async (fallback) => {
+      const core = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
+      const gesture = vi.spyOn(core, "setLiveInputActive");
+      const navigation = vi.spyOn(core, "setNavigationActive");
+      const options = {
+        disposed: () => false,
+        documentId: "drawings/ink.svg",
+        isGestureActive: () => true,
+        isNavigationActive: () => true,
+        runtimes: { create: async () => core, createFallback: () => core },
+        sessionId: "session-1",
+      };
+      const executor = fallback
+        ? createVaultFallbackFactory({ ...options, adopt: () => undefined })(2)
+        : (await createVaultDocumentExecutor({ ...options, fallbackUsed: false, workerEpoch: 1 }))
+            .executor;
+      expect(executor).toBe(core);
+      expect(gesture).toHaveBeenCalledExactlyOnceWith(true);
+      expect(navigation).toHaveBeenCalledExactlyOnceWith(true);
+      core.terminate();
+    },
+  );
+
   it("avoids eager export prewarming and mirrors live gesture state", async () => {
     const core = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
     const requestPrewarm = vi.fn(() => core.requestPrewarm());
     const setLiveInputActive = vi.fn((active: boolean) => core.setLiveInputActive(active));
+    const setNavigationActive = vi.fn((active: boolean) => core.setNavigationActive(active));
     const runtime: DocumentRuntimePort = {
       execute: (request, observer) => core.execute(request, observer),
       requestPrewarm,
       setLiveInputActive,
+      setNavigationActive,
       terminate: () => core.terminate(),
     };
     const { factory, session } = documentSessionHarness({
@@ -269,6 +300,8 @@ describe("VaultDocumentSession live executor lifecycle", () => {
     await Promise.resolve();
     expect(resumed).not.toHaveBeenCalled();
     model?.setGestureActive(false);
+    expect(setLiveInputActive).toHaveBeenLastCalledWith(false);
+    expect(setNavigationActive).toHaveBeenLastCalledWith(true);
     await Promise.resolve();
     expect(resumed).not.toHaveBeenCalled();
     model?.setNavigationActive?.(false);
@@ -277,6 +310,7 @@ describe("VaultDocumentSession live executor lifecycle", () => {
 
     expect(requestPrewarm).not.toHaveBeenCalled();
     expect(setLiveInputActive.mock.calls).toEqual([[true], [false]]);
+    expect(setNavigationActive.mock.calls).toEqual([[true], [false]]);
   });
 
   it("does not construct a fallback after disposal wins worker failure", async () => {

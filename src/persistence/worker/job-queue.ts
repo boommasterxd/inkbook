@@ -58,19 +58,24 @@ export class WorkerJobQueue<TPayload> {
     return this.#admitSingle(job, "export");
   }
 
-  public complete(activeJobId: string): WorkerJob<TPayload> | null {
+  public complete(
+    activeJobId: string,
+    eligible: (job: WorkerJob<TPayload>) => boolean = () => true,
+  ): WorkerJob<TPayload> | null {
     if (this.#active?.id !== activeJobId) {
       return null;
     }
     this.#active = null;
-    return this.startNext();
+    return this.startNext(eligible);
   }
 
-  public startNext(): WorkerJob<TPayload> | null {
+  public startNext(
+    eligible: (job: WorkerJob<TPayload>) => boolean = () => true,
+  ): WorkerJob<TPayload> | null {
     if (this.#active !== null) {
       return this.#active;
     }
-    this.#active = this.#takeHighestPriority();
+    this.#active = this.#takeHighestPriority(eligible);
     return this.#active;
   }
 
@@ -127,22 +132,26 @@ export class WorkerJobQueue<TPayload> {
     ].sort((left, right) => PRIORITY[left.kind] - PRIORITY[right.kind]);
   }
 
-  #takeHighestPriority(): WorkerJob<TPayload> | null {
-    if (this.#unlock !== null) {
+  #takeHighestPriority(
+    eligible: (job: WorkerJob<TPayload>) => boolean,
+  ): WorkerJob<TPayload> | null {
+    if (this.#unlock !== null && eligible(this.#unlock)) {
       const job = this.#unlock;
       this.#unlock = null;
       return job;
     }
-    const required = this.#required.shift();
+    const index = this.#required.findIndex(eligible);
+    const required = index === -1 ? undefined : this.#required.splice(index, 1)[0];
     if (required !== undefined) {
       return required;
     }
-    if (this.#clipboard !== null) {
+    if (this.#clipboard !== null && eligible(this.#clipboard)) {
       const job = this.#clipboard;
       this.#clipboard = null;
       return job;
     }
     const job = this.#export;
+    if (job === null || !eligible(job)) return null;
     this.#export = null;
     return job;
   }

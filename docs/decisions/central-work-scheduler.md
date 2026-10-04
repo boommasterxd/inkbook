@@ -44,8 +44,12 @@ and camera `input` still precede both; other asynchronous preparation keeps its
 default `background` priority. The main-thread encoding and dispatch of a pending
 worker export also use `frame` admission, preserving overlap between export and
 scene work instead of holding the worker idle until rendering finishes. The
-input-active gate and autosave debounce remain unchanged; other worker requests
-and result adoption retain background admission. This changes admission order,
+autosave debounce remains unchanged. Required viewport contour preparation and
+its background-purpose model synchronization use frame admission during
+navigation; drawing still gates them. Other requests and result adoption retain
+background admission and defer during navigation. An already running worker
+export may finish within the central budget, with main-thread adoption deferred.
+This changes admission order,
 not the shared budget or the requirement to yield only when necessary.
 
 Remove count-based CPU slice quotas and forced handoffs while the shared budget remains. Preserve bounded indivisible work units, frame publication caps, input-priority gates,

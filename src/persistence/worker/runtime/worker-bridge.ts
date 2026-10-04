@@ -1,6 +1,7 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { InputActivityGate } from "./input-activity-gate";
 import { ModelPointReferences } from "./model-point-references";
+import { scheduleRequestTimeout } from "./request-timeout";
 import { isBridgeResponse } from "./bridge-response-validation";
 import type {
   DocumentRuntimeObserver,
@@ -9,7 +10,7 @@ import type {
   DocumentRuntimeResult,
   UnlockRuntimeBatch,
 } from "./types";
-import type { ExportIdentity } from "../protocol";
+import { exportIdentityKey, type ExportIdentity } from "../protocol";
 import {
   decodeUnlockBatch,
   decodeRuntimeResultChunked,
@@ -18,6 +19,8 @@ import {
 import {
   assertResultMatchesRequest,
   matchesUnlockBatchIdentity,
+  validUnlockCompletion,
+  isRequiredSceneRequest,
 } from "./request-result-validation";
 import type {
   BridgeBatchAcknowledgement,
@@ -76,10 +79,12 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   readonly #frameIntervalMilliseconds: () => number;
   readonly #workScheduler: WorkScheduler;
   readonly #inputGate = new InputActivityGate(() => this.#liveInputActive);
+  readonly #navigationGate = new InputActivityGate(() => this.#navigationActive);
   readonly #unsubscribeSchedulingProfile: (() => void) | undefined;
   #publishedProfile: string | undefined;
   #failureReported = false;
   #liveInputActive = false;
+  #navigationActive = false;
   #nextRequestId = 0;
   #terminated = false;
 
@@ -122,7 +127,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
         resolve,
         cancelTimeout: undefined,
       };
-      pending.cancelTimeout = scheduleTimeout(
+      pending.cancelTimeout = scheduleRequestTimeout(
         () => this.#timeoutRequest(requestId, pending),
         this.#requestTimeoutMilliseconds,
       );
@@ -200,6 +205,21 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     }
   }
 
+  public setNavigationActive(active: boolean): void {
+    if (this.#terminated || this.#navigationActive === active) return;
+    this.#navigationActive = active;
+    if (!active) this.#navigationGate.notifyInactive();
+    try {
+      this.#endpoint.postMessage({
+        action: "set-navigation",
+        active,
+        type: "inkbook-worker-control",
+      } satisfies BridgeControl);
+    } catch {
+      this.#failExecutor("error");
+    }
+  }
+
   public terminate(): void {
     if (this.#terminated) return;
     for (const message of this.#exportReceipts.values()) this.#acknowledgeExport(message, false);
@@ -244,11 +264,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   ): Promise<void> {
     try {
       if (request.type === "unlock") this.#pointReferences.clear();
-      const exportRequest = request.type === "export-full" || request.type === "export-incremental";
-      const checkpoint = this.#createMainThreadCheckpoint(
-        pending.abortController.signal,
-        exportRequest ? "frame" : "background",
-      );
+      const checkpoint = this.#createMainThreadCheckpoint(pending.abortController.signal, request);
       const admission = checkpoint();
       if (admission !== undefined) await admission;
       const encoded = await encodeRuntimeRequestChunked(request, {
@@ -276,7 +292,11 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
 
   async #adoptResult(message: BridgeSuccess, pending: PendingBridgeRequest): Promise<void> {
     try {
-      const decodeCheckpoint = this.#createMainThreadCheckpoint(pending.abortController.signal);
+      const decodeCheckpoint = this.#createMainThreadCheckpoint(
+        pending.abortController.signal,
+        pending.request,
+        true,
+      );
       const admission = decodeCheckpoint();
       if (admission !== undefined) await admission;
       const result = await decodeRuntimeResultChunked(message.result, {
@@ -420,18 +440,25 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     this.#pointReferences.clear();
     this.#rejectAll();
     this.#inputGate.notifyInactive();
+    this.#navigationGate.notifyInactive();
   }
 
   #createMainThreadCheckpoint(
     signal: AbortSignal,
-    priority: "background" | "frame" = "background",
+    request: DocumentRuntimeRequest,
+    adoption = false,
   ): () => Promise<void> | undefined {
-    return () => {
+    const required = isRequiredSceneRequest(request);
+    const exportRequest = request.type === "export-full" || request.type === "export-incremental";
+    const priority = required || (!adoption && exportRequest) ? "frame" : "background";
+    const checkpoint = (): Promise<void> | undefined => {
       const ready = this.#inputGate.waitUntilInactive(signal);
-      if (ready !== undefined)
-        return ready.then(() => this.#checkpointMainThread(signal, priority));
+      if (ready !== undefined) return ready.then(checkpoint);
+      const navigation = required ? undefined : this.#navigationGate.waitUntilInactive(signal);
+      if (navigation !== undefined) return navigation.then(checkpoint);
       return this.#checkpointMainThread(signal, priority);
     };
+    return checkpoint;
   }
 
   #checkpointMainThread(
@@ -469,29 +496,4 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     } satisfies BridgeControl);
     this.#publishedProfile = profile;
   }
-}
-
-function exportIdentityKey(identity: ExportIdentity): string {
-  return `${identity.sessionId}:${identity.workerEpoch}:${identity.exportGeneration}:${identity.modelRevision}`;
-}
-
-function validUnlockCompletion(
-  result: DocumentRuntimeResult,
-  pending: PendingBridgeRequest,
-): boolean {
-  if (!pending.acceptsUnlockBatches) return result.type !== "unlock-success";
-  if (result.type === "runtime-failure") return true;
-  return (
-    result.type === "unlock-success" &&
-    !pending.batchAdoptionPending &&
-    result.snapshot.batchCount === pending.nextUnlockBatchIndex &&
-    result.snapshot.elementCount === pending.adoptedElementCount
-  );
-}
-
-function scheduleTimeout(callback: () => void, milliseconds: number): () => void {
-  const signal = AbortSignal.timeout(milliseconds);
-  const onTimeout = (): void => callback();
-  signal.addEventListener("abort", onTimeout, { once: true });
-  return () => signal.removeEventListener("abort", onTimeout);
 }

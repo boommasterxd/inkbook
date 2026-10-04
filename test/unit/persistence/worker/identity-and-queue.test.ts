@@ -6,6 +6,33 @@ import type { WorkerJob, WorkerJobKind } from "../../../../src/persistence/worke
 const job = (id: string, kind: WorkerJobKind): WorkerJob<string> => ({ id, kind, payload: id });
 
 describe("bounded non-preemptive worker queue", () => {
+  it("retains ineligible queued work while eligible jobs proceed within the original capacities", () => {
+    const queue = new WorkerJobQueue<string>({ requiredCapacity: 2 });
+    queue.admit(job("verify", "required"));
+    queue.admit(job("scene", "required"));
+    queue.admit(job("clipboard", "clipboard"));
+    queue.admit(job("export", "export"));
+    const sceneOnly = (candidate: WorkerJob<string>) => candidate.id === "scene";
+    expect(queue.pendingCount).toBe(4);
+    expect(queue.admit(job("overflow", "required"))).toBe("full");
+    expect(queue.startNext(sceneOnly)?.id).toBe("scene");
+    expect(queue.complete("scene", sceneOnly)).toBeNull();
+    expect(queue.pendingCount).toBe(3);
+    expect(queue.startNext()?.id).toBe("verify");
+    expect(queue.complete("verify")?.id).toBe("clipboard");
+    expect(queue.complete("clipboard")?.id).toBe("export");
+    expect(queue.complete("export")).toBeNull();
+  });
+
+  it("retains a gated exclusive unlock and clears blocked jobs without starting them", () => {
+    const queue = new WorkerJobQueue<string>();
+    queue.admit(job("unlock", "unlock"));
+    expect(queue.startNext(() => false)).toBeNull();
+    expect(queue.clearPending()).toEqual([job("unlock", "unlock")]);
+    expect(queue.pendingCount).toBe(0);
+    expect(queue.startNext()).toBeNull();
+  });
+
   it("does not preempt an active job and then starts pending work by priority", () => {
     const queue = new WorkerJobQueue<string>();
     expect(queue.admit(job("export", "export"))).toBe("accepted");
