@@ -106,6 +106,8 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
   let layoutWrites = 0;
   let scrollWrites = 0;
   let layoutReads = 0;
+  let scrollHeightReads = 0;
+  let pageReads = 0;
   let input: InputState = createInputState({
     fitZoom: rect.width / OUTER_PAGE_WIDTH,
     zoom: rect.width / OUTER_PAGE_WIDTH,
@@ -124,7 +126,10 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
     },
     getBoundingClientRect: () => domRect({ height: 500, left: 0, top: 0, width: 1_000 }),
     ownerDocument,
-    scrollHeight: 10_000,
+    get scrollHeight() {
+      scrollHeightReads += 1;
+      return 10_000;
+    },
     get scrollTop() {
       return scrollTop;
     },
@@ -140,7 +145,10 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
   const navigation = new ActiveEditorNavigation({
     workScheduler: workSchedulerFromFrames(frames.window),
     onNavigationActive: (active) => activity.push(active),
-    activePageHeight: () => 2_000,
+    activePageHeight: () => {
+      pageReads += 1;
+      return 2_000;
+    },
     applyZoomLayout: ({ blockSize }) => {
       rect.height = blockSize + 2;
       layoutWrites += 1;
@@ -169,12 +177,17 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
     get layoutWrites() {
       return layoutWrites;
     },
+    get workReads() {
+      return { page: pageReads, scrollHeight: scrollHeightReads };
+    },
     navigation,
     resetWrites: () => {
       layoutReads = 0;
       cameraWrites = 0;
       layoutWrites = 0;
       scrollWrites = 0;
+      scrollHeightReads = 0;
+      pageReads = 0;
     },
     get scrollWrites() {
       return scrollWrites;
@@ -306,6 +319,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => 
     expect(claimedFrames).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.layoutWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    // The viewport's measured client height is reused for the projected native range.
+    expect(harness.layoutReads).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(harness.workReads.scrollHeight).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(harness.workReads.page).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
 
     disposeActiveNavigation(harness);
   });
@@ -321,27 +338,27 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => 
     disposeActiveNavigation(harness);
   });
 
-  it("keeps horizontal trackpad handoff and momentum with coalesced work", () => {
+  it.each([
+    { input: "trackpad handoff", mode: 2 },
+    { input: "touch", mode: 3 },
+  ])("keeps horizontal $input momentum with coalesced work", ({ mode }) => {
     const harness = createPanningHarness();
     let claimedEvents = 0;
-    const update = navigationFrame(2, harness);
+    const update = navigationFrame(mode, harness);
     runInteractionFrames((frame) => {
       if (update(frame)) claimedEvents += 1;
     });
 
-    expect(claimedEvents).toBe((INTERACTION_REFRESH_PROFILE.sampleCount / 4) * 3);
-    expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-    expect(harness.frames.maxPending).toBe(1);
+    if (mode === 2) {
+      expect(claimedEvents).toBe((INTERACTION_REFRESH_PROFILE.sampleCount / 4) * 3);
+      expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+      expect(harness.frames.maxPending).toBe(1);
+    } else expect(harness.cameraWrites).toBeGreaterThan(0);
     expect(harness.scrollWrites).toBe(0);
-
-    disposeActiveNavigation(harness);
-  });
-
-  it("keeps horizontal touch momentum with coalesced work", () => {
-    const harness = createPanningHarness();
-    runInteractionFrames(navigationFrame(3, harness));
-
-    expect(harness.cameraWrites).toBeGreaterThan(0);
+    expect(harness.workReads.scrollHeight).toBe(0);
+    expect(harness.workReads.page).toBe(0);
+    expect(harness.layoutWrites).toBe(0);
+    expect(harness.layoutReads).toBeLessThanOrEqual(INTERACTION_REFRESH_PROFILE.sampleCount);
 
     disposeActiveNavigation(harness);
   });

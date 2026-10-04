@@ -85,7 +85,7 @@ export function projectedScrollBounds(
   blockSize: number,
 ) {
   const currentScrollHeight = browserScrollMetrics.getScrollHeight(owner);
-  const clientHeight = browserScrollMetrics.getClientHeight(owner);
+  const clientHeight = layout.ownerViewport.bottom - layout.ownerViewport.top;
   const heightDelta = blockSize - layout.containerBounds.height;
   return {
     min: 0,

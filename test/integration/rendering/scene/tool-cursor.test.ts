@@ -1,12 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { cursorPointerEvent, toolCursorHarness } from "../../../fixtures/obsidian/tool-cursor";
-import { bindSceneScrollOwner } from "../../../../src/obsidian/embeds/active-scene-runtime";
+import { sceneNavigationFixture } from "../../../fixtures/obsidian/scene-navigation";
 import { createInputState } from "../../../../src/editor/input";
-import { createControllerNavigation } from "../../../../src/obsidian/embeds/active-editor/controller-interactions";
-import type { ActiveEditorControllerOptions } from "../../../../src/obsidian/embeds/active-editor/controller-types";
-import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling";
-import { domRect } from "../../../fixtures/obsidian/active-editor";
-import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import { liveStrokePresentation } from "../../../../src/rendering/scene/element-presentation";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
@@ -63,90 +58,10 @@ function setup() {
   return { renderer, scheduler, store, layout, cursor, svg };
 }
 
-function setupNavigation() {
-  const { renderer, scheduler, cursor } = setup();
-  let input = createInputState({ fitZoom: 0.1, zoom: 1 });
-  let navigationFrame: FrameRequestCallback | undefined;
-  const window = Object.assign(new EventTarget(), {
-    setTimeout: () => 1,
-    clearTimeout: () => {},
-    requestAnimationFrame: (callback: FrameRequestCallback) => {
-      navigationFrame = callback;
-      return 1;
-    },
-    cancelAnimationFrame: () => {
-      navigationFrame = undefined;
-    },
-    getComputedStyle: () => ({}),
-    innerWidth: 1000,
-    innerHeight: 800,
-  });
-  const ownerDocument = { defaultView: window, scrollingElement: null };
-  const owner = Object.assign(new EventTarget(), {
-    ownerDocument,
-    scrollTop: 200,
-    scrollHeight: 10000,
-    clientHeight: 800,
-    getBoundingClientRect: () => domRect({ left: 0, top: 0, width: 1000, height: 800 }),
-  });
-  const bounds = { left: 0, top: 100, width: 1000, height: 2000 };
-  const top = () => 300 - owner.scrollTop;
-  const read = vi.fn(() => ({
-    cursor: { ...CURSOR, x: 250, y: 300 - top() },
-    system: "crosshair",
-  }));
-  const navigation = createControllerNavigation({
-    controller: {
-      renderer,
-      container: {
-        ownerDocument,
-        getBoundingClientRect: () => domRect({ ...bounds, top: top() }),
-      },
-      model: { page: {}, store: {} },
-      workScheduler: workSchedulerFromFrames(window),
-      selectionMoveLayout: { currentHeight: () => 2000 },
-      applyZoomLayout: (update: { blockSize: number }) => {
-        bounds.height = update.blockSize;
-      },
-    } as unknown as ActiveEditorControllerOptions,
-    getInput: () => input,
-    setInput: (next) => {
-      input = next;
-    },
-    isSelectionMoveActive: () => false,
-    renderSelection: () => {},
-    scrollOwner: owner as unknown as BrowserScrollElement,
-  });
-  const binding = bindSceneScrollOwner(
-    owner as unknown as BrowserScrollElement,
-    window as unknown as Window,
-    { root: { style: { setProperty: () => {} } } } as unknown as Parameters<
-      typeof bindSceneScrollOwner
-    >[2],
-    renderer,
-    { handleNativeScroll: () => navigation.notifyScroll() } as Parameters<
-      typeof bindSceneScrollOwner
-    >[4],
-  );
-  renderer.requestToolCursorFrame(read);
-  scheduler.runAll();
-  return {
-    binding,
-    renderer,
-    scheduler,
-    cursor,
-    read,
-    navigation,
-    top,
-    owner,
-    navigationFrame: () => navigationFrame!(16),
-  };
-}
-
 describe("retained tool cursor", () => {
   it("keeps the icon at the stationary pointer before the scene frame on zoom, pan and resize", () => {
     const { renderer, scheduler, cursor, read, navigation, top, owner, navigationFrame, binding } =
-      setupNavigation();
+      sceneNavigationFixture(setup(), CURSOR);
     const assertPosition = () => {
       expect(cursor.attributes.get("transform")).toBe(`translate(250 ${String(300 - top())})`);
       expect(read).toHaveBeenCalledExactlyOnceWith(true);
@@ -155,9 +70,11 @@ describe("retained tool cursor", () => {
     };
     for (const deltaY of [-100, -100, 100]) {
       read.mockClear();
+      read.layout.readViewport.mockClear();
       navigation.updateWheel({ clientX: 250, clientY: 300, deltaMode: 0, deltaY });
       navigationFrame();
       assertPosition();
+      expect(read.layout.readViewport).not.toHaveBeenCalled();
     }
     read.mockClear();
     navigation.scroll(30);
@@ -419,8 +336,19 @@ describe("retained staged marker commits", () => {
       scheduler.time += 2;
       return scheduler.time;
     });
-    scheduler.runNext();
-    expect(scheduler.pendingCount).toBe(1);
+    let preparationFrames = 0;
+    while (renderer.mountedCount === 0) {
+      // Match FakeScheduler.runAll's liveness guard without requiring a specific frame count.
+      if (++preparationFrames > 100)
+        throw new Error("Marker handoff publication failed to settle.");
+      expect(scheduler.pendingCount).toBe(1);
+      scheduler.runNext();
+      const mounted = new Set(renderer.mountedIds("content"));
+      retained.forEach((node, index) => {
+        expect(node.parent === group).toBe(!mounted.has(ids[index]!));
+        expect(node.nodes[0]!.attributes.get("d")).toBe(`M10 10L${String(20 + index)} 10`);
+      });
+    }
     expect(renderer.mountedCount).toBe(1);
     expect(retained.filter((node) => node.parent === group)).toHaveLength(1);
     clock.mockRestore();

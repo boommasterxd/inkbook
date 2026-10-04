@@ -1,4 +1,5 @@
 import type { NavigationCursorLayout } from "./navigation-layout";
+import { activeSceneViewportFromBounds } from "../active-scene-viewport";
 import * as Scrolling from "../../scrolling/index";
 import { createInputState, type InputState } from "../../../editor/input/index";
 import type { PointerSample } from "../../../editor/input/index";
@@ -153,7 +154,12 @@ export function createControllerNavigation(options: {
       derivePageExtent(controller.model.page, controller.model.store.getMaximumBottom() ?? null)
         .activeHeight,
     applyCamera: (camera, layout) => {
-      if (layout !== undefined) options.adoptCursorLayout?.(layout);
+      if (layout !== undefined) {
+        options.adoptCursorLayout?.(layout);
+        controller.renderer.setViewport(
+          activeSceneViewportFromBounds(layout.containerBounds, layout.ownerViewport),
+        );
+      }
       controller.renderer.setCamera(camera);
       if (camera.zoom !== appliedZoom || !options.isSelectionMoveActive()) {
         options.renderSelection();

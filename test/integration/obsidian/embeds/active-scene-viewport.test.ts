@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { readActiveSceneViewport } from "../../../../src/obsidian/embeds/active-scene-viewport";
+import { readNavigationLayout } from "../../../../src/obsidian/embeds/active-editor/navigation-layout";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling";
 
 interface RectOptions {
@@ -80,6 +81,13 @@ describe("active scene viewport", () => {
       left: 0,
       top: 300,
       width: 1100,
+    });
+    expect(ownerRead).not.toHaveBeenCalled();
+    expect(readNavigationLayout(container, owner)?.ownerViewport).toEqual({
+      bottom: 700,
+      left: 0,
+      right: 1100,
+      top: 0,
     });
     expect(ownerRead).not.toHaveBeenCalled();
   });

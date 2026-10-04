@@ -43,7 +43,7 @@ class Frames {
   }
 }
 
-function createHarness() {
+function createHarness(activePageHeight = () => 2000) {
   const frames = new Frames();
   const sequence: string[] = [];
   const rect = { height: 1_000, left: 20, top: 100, width: 1_000 };
@@ -76,7 +76,7 @@ function createHarness() {
   } as unknown as HTMLElement;
   const navigation = new ActiveEditorNavigation({
     workScheduler: workSchedulerFromFrames(frames.window),
-    activePageHeight: () => 2_000,
+    activePageHeight,
     applyZoomLayout: ({ blockSize }) => {
       sequence.push("layout-write");
       rect.height = blockSize;
@@ -95,6 +95,54 @@ function createHarness() {
 }
 
 describe("active editor keyboard and wheel navigation", () => {
+  it.each(["wheel", "keyboard"])(
+    "measures %s anchors after intervening native layout changes",
+    (source) => {
+      const harness = createHarness();
+      const oldZoom = harness.navigation.zoom;
+      if (source === "wheel") harness.navigation.updateWheel(zoomWheel(-4));
+      else harness.navigation.updateKeyboardStep(1, { x: 400, y: 200 });
+      expect(harness.readBounds).not.toHaveBeenCalled();
+      harness.owner.scrollTop = 280;
+      Object.assign(harness.rect, { left: 50, top: 20 });
+      const anchorX = source === "wheel" ? 500 - 50 : 400;
+      const anchorViewportY = source === "wheel" ? 300 : 220;
+      const oldPageY = (280 + anchorViewportY - 300) / oldZoom;
+
+      harness.frames.flush();
+
+      expect(harness.readBounds).toHaveBeenCalledOnce();
+      expect(anchorX / harness.navigation.zoom - harness.navigation.cameraX).toBeCloseTo(
+        anchorX / oldZoom,
+      );
+      expect(
+        (harness.owner.scrollTop + anchorViewportY - 300) / harness.navigation.zoom,
+      ).toBeCloseTo(oldPageY);
+      harness.navigation.dispose();
+    },
+  );
+
+  it("pans horizontally without deriving page height or reading native scroll range", () => {
+    const pageHeight = vi.fn(() => 2000);
+    const harness = createHarness(pageHeight);
+    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
+    pageHeight.mockClear();
+    const readScrollHeight = vi.fn(() => 4000);
+    Object.defineProperty(harness.owner, "scrollHeight", { get: readScrollHeight });
+    const previousScrollTop = harness.owner.scrollTop;
+    harness.sequence.length = 0;
+
+    harness.navigation.pan(-30);
+    harness.frames.flush();
+
+    expect(harness.navigation.cameraX).toBe(-130);
+    expect(harness.owner.scrollTop).toBe(previousScrollTop);
+    expect(harness.sequence).toEqual(["layout-read", "layout-read", "camera-write"]);
+    expect(pageHeight).not.toHaveBeenCalled();
+    expect(readScrollHeight).not.toHaveBeenCalled();
+    harness.navigation.dispose();
+  });
+
   it("applies magnitude-proportional trackpad pinch zoom in the next animation frame", () => {
     const harness = createHarness();
     const oldZoom = harness.navigation.zoom;

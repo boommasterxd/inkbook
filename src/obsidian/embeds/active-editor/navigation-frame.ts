@@ -15,7 +15,7 @@ interface NavigationFrameInput {
   readonly cameraX: number;
   readonly frame: ZoomFrameState;
   readonly layout: NavigationLayoutRead;
-  readonly pageHeight: number;
+  readonly pageHeight: () => number;
   readonly scrollOwner: BrowserScrollElement;
   readonly zoom: number;
 }
@@ -33,6 +33,22 @@ export function resolveNavigationFrame(
 ): NavigationFrameResult | undefined {
   const fitZoom = calculateFitZoom(input.layout.containerWidth);
   if (fitZoom === undefined) return undefined;
+  const limits = calculateZoomLimits(fitZoom);
+  const zoom = Math.max(fitZoom, Math.min(limits.maxZoom, input.zoom * input.frame.factor));
+  if (zoom === input.zoom && input.frame.panY === 0) {
+    return {
+      blockSize: input.layout.containerBounds.height,
+      cameraX: clampCameraX(
+        input.cameraX + input.frame.panX / zoom,
+        input.layout.containerWidth,
+        zoom,
+      ),
+      fitZoom,
+      scrollTop: input.layout.scrollTop,
+      zoom,
+    };
+  }
+  const pageHeight = Math.max(0, input.pageHeight());
   const anchor =
     input.frame.anchor ??
     pagePointAnchor(
@@ -41,14 +57,12 @@ export function resolveNavigationFrame(
       input.cameraX,
       input.zoom,
     );
-  const limits = calculateZoomLimits(fitZoom);
-  const zoom = Math.max(fitZoom, Math.min(limits.maxZoom, input.zoom * input.frame.factor));
-  const blockSize = renderedContainerHeight(input.pageHeight, zoom);
+  const blockSize = renderedContainerHeight(pageHeight, zoom);
   const scrollBounds = projectedScrollBounds(input.scrollOwner, input.layout, blockSize);
   const anchored = applyAnchoredZoom({
     anchor,
     containerWidth: input.layout.containerWidth,
-    derivedPageHeight: input.pageHeight,
+    derivedPageHeight: pageHeight,
     embedTopInScrollContent: input.layout.embedTopInScrollContent,
     oldCameraX: input.cameraX,
     oldScrollTop: input.layout.scrollTop,

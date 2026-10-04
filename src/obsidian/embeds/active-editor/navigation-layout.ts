@@ -2,6 +2,7 @@ import type { InputPoint } from "../../../editor/input/index";
 import type { ZoomAnchor } from "../../../editor/zoom/index";
 import { clampScrollTop, type ScrollBounds } from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
+import { readScrollOwnerViewport } from "../active-scene-viewport";
 import { measureElementBox, type ElementContentBox } from "./element-content-box";
 
 interface ViewportRect {
@@ -47,7 +48,7 @@ export function readNavigationLayout(
 ): NavigationLayoutRead | undefined {
   const { contentBox: containerBounds } = measureElementBox(container);
   if (!Number.isFinite(containerBounds.width) || containerBounds.width <= 0) return undefined;
-  const ownerViewport = readOwnerViewport(scrollOwner);
+  const ownerViewport = readScrollOwnerViewport(scrollOwner);
   const scrollTop = browserScrollMetrics.getScrollTop(scrollOwner);
   return {
     containerBounds,
@@ -130,19 +131,6 @@ export function applyNativePan(
   bounds: ScrollBounds,
 ): number {
   return clampScrollTop(scrollTop - screenDeltaY, bounds);
-}
-
-function readOwnerViewport(scrollOwner: BrowserScrollElement): ViewportRect {
-  const document = scrollOwner.ownerDocument;
-  if (document.scrollingElement === scrollOwner) {
-    const view = document.defaultView;
-    const width = view?.innerWidth ?? scrollOwner.getBoundingClientRect().width;
-    const height = view?.innerHeight ?? browserScrollMetrics.getClientHeight(scrollOwner);
-    return { bottom: height, left: 0, right: width, top: 0 };
-  }
-  const bounds = scrollOwner.getBoundingClientRect();
-  const bottom = bounds.top + browserScrollMetrics.getClientHeight(scrollOwner);
-  return { bottom, left: bounds.left, right: bounds.right, top: bounds.top };
 }
 
 function intersectionCenter(

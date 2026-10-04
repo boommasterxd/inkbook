@@ -70,7 +70,7 @@ export class ActiveEditorNavigation {
   #gestureLayout: NavigationLayoutRead | undefined;
   #latestAnchor: ZoomAnchor | undefined;
   #origin: { cameraX: number; scrollTop: number } | undefined;
-  #pendingLayout: NavigationLayoutRead | undefined;
+  #anchorSource: ((layout: NavigationLayoutRead) => ZoomAnchor) | undefined;
   readonly #panMomentum: ActiveEditorPanMomentum;
   #wheelState: WheelZoomState = createWheelZoomState();
   #zoom: number;
@@ -294,20 +294,13 @@ export class ActiveEditorNavigation {
 
   #queueKeyboardZoom(factor: number, lastScreenPointer: InputPoint | null): boolean {
     this.cancelPanMomentum();
-    const layout = this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
-    const anchor =
+    this.#anchorSource =
       lastScreenPointer !== null &&
       Number.isFinite(lastScreenPointer.x) &&
-      Number.isFinite(lastScreenPointer.y) &&
-      layout !== undefined
-        ? localScreenPointAnchor(layout, lastScreenPointer)
+      Number.isFinite(lastScreenPointer.y)
+        ? (layout) => localScreenPointAnchor(layout, lastScreenPointer)
         : undefined;
-    if (layout !== undefined) this.#pendingLayout = layout;
-    if (anchor !== undefined) this.#latestAnchor = anchor;
-    this.#frameState = accumulateZoomInput(this.#frameState, {
-      ...(anchor === undefined ? {} : { anchor }),
-      factor,
-    });
+    this.#frameState = accumulateZoomInput(this.#frameState, { factor });
     this.#scheduleFrame();
     return true;
   }
@@ -317,6 +310,7 @@ export class ActiveEditorNavigation {
     this.begin();
     const layout = this.#gestureLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
     if (layout === undefined) return;
+    this.#anchorSource = undefined;
     this.#latestAnchor = pagePointAnchor(layout, anchor, this.#cameraX, this.#zoom);
     this.#frameState = accumulateZoomInput(this.#frameState, {
       anchor: this.#latestAnchor,
@@ -336,16 +330,12 @@ export class ActiveEditorNavigation {
     if (event.deltaY !== 0 || (event.deltaX ?? 0) !== 0) this.#activity.pulse();
     this.#panMomentum.prepareWheel(isZoomWheel(event));
     if (isZoomWheel(event)) {
-      const layout =
-        this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
-      if (layout === undefined) return false;
-      this.#pendingLayout = layout;
-      this.#latestAnchor = wheelAnchor(layout, event);
+      const point = { clientX: event.clientX, clientY: event.clientY };
+      this.#anchorSource = (layout) => wheelAnchor(layout, point);
       if (isContinuousZoomWheel(event)) {
         this.#frameState = accumulateContinuousZoomInput(
           this.#frameState,
           {
-            anchor: this.#latestAnchor,
             factor: continuousWheelZoomFactor(event.deltaY),
           },
           this.#zoom,
@@ -407,17 +397,19 @@ export class ActiveEditorNavigation {
     this.#frameState = reduction.state;
     const frame = reduction.frame;
     if (frame.factor === 1 && frame.panX === 0 && frame.panY === 0) return;
-    const layout = this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
-    this.#pendingLayout = undefined;
+    const layout = readNavigationLayout(this.#container, this.#scrollOwner);
     if (layout === undefined) {
       this.cancelPanMomentum();
       return;
     }
     const resolved = resolveNavigationFrame({
       cameraX: this.#cameraX,
-      frame,
+      frame:
+        this.#anchorSource === undefined
+          ? frame
+          : { ...frame, anchor: (this.#latestAnchor = this.#anchorSource(layout)) },
       layout,
-      pageHeight: Math.max(0, this.#activePageHeight()),
+      pageHeight: this.#activePageHeight,
       scrollOwner: this.#scrollOwner,
       zoom: this.#zoom,
     });
@@ -494,6 +486,6 @@ export class ActiveEditorNavigation {
     this.#wheelState = createWheelZoomState();
     this.#frameState = createZoomFrameState();
     this.#latestAnchor = undefined;
-    this.#pendingLayout = undefined;
+    this.#anchorSource = undefined;
   }
 }
