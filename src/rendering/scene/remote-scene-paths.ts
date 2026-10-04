@@ -3,6 +3,7 @@ import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import type { SceneElementRecord, SceneStorePort } from "./types";
 
 interface Batch {
+  retarget: ((ids: readonly string[]) => void) | undefined;
   readonly controller: AbortController;
   readonly sequence: number;
   readonly versions: Map<string, number>;
@@ -40,7 +41,7 @@ export class RemoteScenePaths {
       this.start(record, upcoming);
     }
     const batch = this.#batch!;
-    if (batch.pending) return "pending";
+    if (batch.pending && !batch.paths.has(record.id)) return "pending";
     const parts =
       batch.versions.get(record.id) === record.geometryVersion
         ? batch.paths.get(record.id)
@@ -60,7 +61,10 @@ export class RemoteScenePaths {
       batch.versions.delete(id);
       batch.paths.delete(id);
     }
-    if (batch.versions.size > 0) return;
+    if (batch.versions.size > 0) {
+      batch.retarget?.([...batch.versions.keys()]);
+      return;
+    }
     batch.controller.abort();
     this.#batch = undefined;
     this.#hasPublished = false;
@@ -75,6 +79,7 @@ export class RemoteScenePaths {
 
   private start(record: SceneElementRecord, upcoming: () => Iterable<string>): void {
     const batch: Batch = {
+      retarget: undefined,
       controller: new AbortController(),
       sequence: this.#sequence,
       versions: new Map([[record.id, record.geometryVersion]]),
@@ -84,17 +89,16 @@ export class RemoteScenePaths {
     // The first required contour has its own response, so bulk lookahead cannot delay it.
     if (this.#hasPublished) this.addLookahead(batch, upcoming());
     this.#batch = batch;
-    void this.store.prepareScenePaths!([...batch.versions.keys()], batch.controller.signal).then(
+    void this.store.prepareScenePaths!([...batch.versions.keys()], batch.controller.signal, {
+      onProgress: (paths) => this.adopt(batch, paths),
+      setRetarget: (handler) => {
+        batch.retarget = handler;
+        if (handler !== undefined) handler([...batch.versions.keys()]);
+      },
+    }).then(
       (paths) => {
         if (this.#batch !== batch || batch.controller.signal.aborted) return;
-        for (const path of paths ?? []) {
-          const record = this.store.get(path.id);
-          if (record === undefined || batch.versions.get(path.id) !== record.geometryVersion)
-            continue;
-          batch.paths.set(path.id, path.parts);
-          if (batch.sequence === this.#sequence) this.#hasPublished = true;
-          this.options.onPrepared?.(record, path.parts);
-        }
+        this.adopt(batch, paths ?? [], false);
         batch.pending = false;
         this.options.onReady?.();
       },
@@ -104,6 +108,25 @@ export class RemoteScenePaths {
         this.options.onReady?.();
       },
     );
+  }
+
+  private adopt(
+    batch: Batch,
+    paths: readonly import("../../domain/geometry/prepared-scene-paths").PreparedScenePathEntry[],
+    notify = true,
+  ): void {
+    if (this.#batch !== batch || batch.controller.signal.aborted) return;
+    let ready = false;
+    for (const path of paths) {
+      if (!batch.versions.has(path.id) || batch.paths.has(path.id)) continue;
+      const record = this.store.get(path.id);
+      if (record === undefined || batch.versions.get(path.id) !== record.geometryVersion) continue;
+      batch.paths.set(path.id, path.parts);
+      if (batch.sequence === this.#sequence) this.#hasPublished = true;
+      this.options.onPrepared?.(record, path.parts);
+      ready = true;
+    }
+    if (ready && notify) this.options.onReady?.();
   }
 
   private addLookahead(batch: Batch, upcoming: Iterable<string>): void {

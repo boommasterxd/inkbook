@@ -2,6 +2,8 @@ import { VerifiedOutputProofs } from "./verified-output-proofs";
 import type { OutputVerificationOptions } from "./verified-output-proofs";
 import { ZERO_EXPORT_PHASES, ZERO_UNLOCK_PHASES } from "./runtime-phase-instrumentation";
 import { prepareScenePaths } from "./prepare-scene-paths";
+import { RuntimeModelError } from "./runtime-model-error";
+export { RuntimeModelError } from "./runtime-model-error";
 import * as preparedPaths from "./prepared-pressure-path-adoption";
 import { parseRuntimeInput } from "./parse-runtime-input";
 import type { SafeStaticProof } from "../../serialization/safe-static-proof";
@@ -275,10 +277,17 @@ export class DocumentModelRuntime {
   public async prepareScenePaths(
     request: import("./types").PrepareScenePathsRuntimeRequest,
     context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
+    progress?: import("./prepare-scene-paths").ScenePathProgress,
   ): Promise<import("./types").PreparedScenePathsRuntimeSuccess["paths"]> {
-    return prepareScenePaths(request, context, this.#serializer, () => {
-      this.#validatedPasteState(request.basisRevision);
-    });
+    return prepareScenePaths(
+      request,
+      context,
+      this.#serializer,
+      () => {
+        this.#validatedPasteState(request.basisRevision);
+      },
+      progress,
+    );
   }
 
   public encodeClipboard(
@@ -482,16 +491,6 @@ export class DocumentModelRuntime {
     const facts = this.#serializer.currentAggregateFacts();
     if (page === null || facts === null) throw new RuntimeModelError("snapshot-invalid", false);
     return { facts, page };
-  }
-}
-
-export class RuntimeModelError extends Error {
-  public constructor(
-    public readonly code: string,
-    public readonly retryable: boolean,
-  ) {
-    super(code);
-    this.name = "RuntimeModelError";
   }
 }
 

@@ -216,6 +216,8 @@ export function decodeRuntimeRequest(
   if (request.type === "unlock") return decodeUnlockRequest(request);
   if (request.type === "prepare-scene-paths") {
     assertScenePathIds(request.ids);
+    if (request.streamProgress !== undefined && typeof request.streamProgress !== "boolean")
+      throw new TypeError("Invalid scene preparation progress mode.");
     if (!Number.isSafeInteger(request.basisRevision) || request.basisRevision < 0)
       throw new TypeError("Invalid scene preparation revision.");
   }

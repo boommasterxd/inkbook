@@ -57,6 +57,8 @@ export interface UnlockRuntimeRequest {
 
 /** IDs are in visible-first order; no source-file presentation paths are accepted. */
 export interface PrepareScenePathsRuntimeRequest {
+  /** Complete contours go to scenePaths; the terminal paths array is then empty. */
+  readonly streamProgress?: boolean;
   readonly basisRevision: number;
   readonly identity: PurposeOperationIdentity;
   readonly ids: readonly string[];
@@ -136,6 +138,7 @@ export interface UnlockRuntimeBatch {
 
 export interface DocumentRuntimeObserver {
   unlockBatch(batch: UnlockRuntimeBatch, signal: AbortSignal): Promise<void> | void;
+  scenePaths?(batch: PreparedScenePathsRuntimeSuccess, signal: AbortSignal): Promise<void> | void;
 }
 
 export interface EncodeClipboardRuntimeSuccess {
@@ -187,6 +190,7 @@ export type DocumentRuntimeResult =
   | VerifyRuntimeSuccess;
 
 export interface DocumentRuntimePort {
+  retargetScenePreparation?(identity: PurposeOperationIdentity, ids: readonly string[]): void;
   cancelScenePreparation?(identity: PurposeOperationIdentity): void;
   acknowledgeExport?(identity: ExportIdentity, accepted: boolean): void;
   checkpoint?(signal: AbortSignal): Promise<void> | undefined;

@@ -8,7 +8,13 @@ export interface PreparedScenePathEntry {
 
 export const MAX_PREPARED_SCENE_PATH_IDS = 256;
 
+export interface ScenePathPreparationObserver {
+  onProgress(paths: readonly PreparedScenePathEntry[]): void;
+  setRetarget(handler: ((ids: readonly string[]) => void) | undefined): void;
+}
+
 export type ScenePathPreparation = (
   ids: readonly string[],
   signal: AbortSignal,
+  observer?: ScenePathPreparationObserver,
 ) => Promise<readonly PreparedScenePathEntry[] | undefined>;

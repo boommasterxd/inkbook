@@ -1,4 +1,5 @@
 import { ModelPointReferences } from "./model-point-references";
+import { assertScenePathIds } from "./scene-path-limits";
 import type {
   DocumentRuntimeObserver,
   DocumentRuntimePort,
@@ -19,6 +20,7 @@ import type {
   BridgeRequest,
   BridgeSuccess,
   BridgeUnlockBatch,
+  BridgeScenePaths,
 } from "./bridge-messages";
 
 export interface WorkerHostEndpoint {
@@ -128,7 +130,20 @@ function dispatchHostedRequest(
     return;
   }
   if (request.type === "unlock") pointReferences.clear();
+  let sceneBatchIndex = 0;
   const observer: DocumentRuntimeObserver = {
+    scenePaths: (batch, signal) =>
+      postScenePaths(
+        endpoint,
+        acknowledgements,
+        {
+          batch,
+          batchIndex: sceneBatchIndex++,
+          requestId,
+          type: "inkbook-worker-scene-paths",
+        },
+        signal,
+      ),
     unlockBatch: async (batch, signal) => {
       await postUnlockBatch(endpoint, acknowledgements, requestId, batch, signal);
       pointReferences.stageUnlock(batch);
@@ -251,9 +266,41 @@ function createPendingAcknowledgement(
   };
 }
 
+function postScenePaths(
+  endpoint: WorkerHostEndpoint,
+  acknowledgements: Map<string, PendingAcknowledgement>,
+  message: BridgeScenePaths,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const key = acknowledgementKey(message.requestId, message.batchIndex);
+  return new Promise((resolve, reject) => {
+    const abort = (): void => {
+      acknowledgements.delete(key);
+      signal.removeEventListener("abort", abort);
+      reject(new Error("Document worker scene paths were aborted."));
+    };
+    const pending = createPendingAcknowledgement(signal, abort, resolve, reject);
+    acknowledgements.set(key, pending);
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      endpoint.postMessage(message);
+    } catch {
+      acknowledgements.delete(key);
+      pending.reject(new Error("Document worker scene path dispatch failed."));
+    }
+  });
+}
+
 function applyControl(runtime: DocumentRuntimePort, control: BridgeControl): void {
   if (control.action === "cancel-scene-paths" && control.identity !== undefined)
     runtime.cancelScenePreparation?.(control.identity);
+  else if (
+    control.action === "retarget-scene-paths" &&
+    control.identity !== undefined &&
+    control.ids !== undefined
+  )
+    runtime.retargetScenePreparation?.(control.identity, control.ids);
   else if (control.action === "prewarm") runtime.requestPrewarm?.();
   else if (control.action === "set-live-input")
     runtime.setLiveInputActive?.(control.active === true);
@@ -291,12 +338,7 @@ function isBridgeRequest(value: unknown): value is BridgeRequest {
 function isBridgeControl(value: unknown): value is BridgeControl {
   if (!isObject(value) || value.type !== "inkbook-worker-control") return false;
   return (
-    (value.action === "cancel-scene-paths" &&
-      isObject(value.identity) &&
-      typeof value.identity.sessionId === "string" &&
-      Number.isSafeInteger(value.identity.workerEpoch) &&
-      Number.isSafeInteger(value.identity.operationId) &&
-      value.identity.purpose === "background") ||
+    validSceneControl(value) ||
     (value.action === "prewarm" && value.active === undefined) ||
     ((value.action === "set-live-input" || value.action === "set-navigation") &&
       typeof value.active === "boolean") ||
@@ -307,6 +349,27 @@ function isBridgeControl(value: unknown): value is BridgeControl {
       typeof value.frameIntervalMilliseconds === "number" &&
       Number.isFinite(value.frameIntervalMilliseconds) &&
       value.frameIntervalMilliseconds > 0)
+  );
+}
+
+function validRetargetIds(ids: unknown): boolean {
+  try {
+    assertScenePathIds(ids as readonly string[]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validSceneControl(value: Record<string, unknown>): boolean {
+  return (
+    (value.action === "cancel-scene-paths" || value.action === "retarget-scene-paths") &&
+    (value.action !== "retarget-scene-paths" || validRetargetIds(value.ids)) &&
+    isObject(value.identity) &&
+    typeof value.identity.sessionId === "string" &&
+    Number.isSafeInteger(value.identity.workerEpoch) &&
+    Number.isSafeInteger(value.identity.operationId) &&
+    value.identity.purpose === "background"
   );
 }
 

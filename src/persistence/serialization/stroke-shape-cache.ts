@@ -63,6 +63,7 @@ export class StrokeShapeCache {
         context.signal.throwIfAborted();
         const pending = context.checkpoint();
         if (pending !== undefined) await pending;
+        context.signal.throwIfAborted();
         if (job.stepOperation()) break;
       }
       context.signal.throwIfAborted();

@@ -1,4 +1,7 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
+import * as pressureWindow from "../../../../src/domain/geometry/pressure-window";
+import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/incremental-document-serializer";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/document-runtime";
 import {
   MAX_SCENE_PATH_BYTES,
@@ -24,6 +27,13 @@ import {
   createTestStroke,
   createWorkerSnapshot,
 } from "../../../fixtures/persistence/worker-snapshot";
+
+const RETARGET_IDENTITY = {
+  operationId: 1,
+  purpose: "background" as const,
+  sessionId: "session-a",
+  workerEpoch: 1,
+};
 
 it("prepares only three thousand visible contours of ten thousand in bounded worker batches", async () => {
   const identity = {
@@ -326,6 +336,117 @@ it("bounds local plain-stroke fallback steps and releases cancelled scratch befo
   fixture.cache.release();
   expect(fixture.preparation.memoryUsage()).toBe(0);
 });
+
+it.each([false, true])(
+  "stops a suspended maximum contour before more real geometry work, pressure=%s",
+  async (pressureEnabled) => {
+    const identity = RETARGET_IDENTITY;
+    const maximum = maximumPlainMount().original;
+    const target = { ...maximum, style: { ...maximum.style, pressureEnabled } };
+    const first = { ...createTestStroke(), id: "00000000-0000-4000-8000-000000000002" };
+    const last = { ...first, id: "00000000-0000-4000-8000-000000000003" };
+    let currentId: string | undefined;
+    let targetMemory!: () => number;
+    let targetSteps = 0;
+    let unionStarted = false;
+    let block = true;
+    const admission = deferred();
+    const handoff = deferred();
+    // Original methods are invoked with the actual instance through call().
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked through call with the actual serializer instance.
+    const prepare = IncrementalDocumentSerializer.prototype.prepareScenePath;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked through call with the actual geometry instance.
+    const step = CanonicalElementPathPreparation.prototype.stepOperation;
+    const union = pressureWindow.preparePressureWindowSteps;
+    const spies = [
+      vi
+        .spyOn(IncrementalDocumentSerializer.prototype, "prepareScenePath")
+        .mockImplementation(async function (this: IncrementalDocumentSerializer, id, context) {
+          currentId = id;
+          try {
+            return await prepare.call(this, id, context);
+          } finally {
+            currentId = undefined;
+          }
+        }),
+      vi
+        .spyOn(CanonicalElementPathPreparation.prototype, "stepOperation")
+        .mockImplementation(function (this: CanonicalElementPathPreparation) {
+          if (currentId === target.id) {
+            targetSteps++;
+            targetMemory = () => this.memoryUsage();
+          }
+          return step.call(this);
+        }),
+      vi.spyOn(pressureWindow, "preparePressureWindowSteps").mockImplementation((pieces) => {
+        if (currentId === target.id) unionStarted = true;
+        return union(pieces);
+      }),
+    ];
+    const runtime = new DocumentWorkerRuntime(identity, {
+      checkpoint: () => {
+        if (
+          !block ||
+          currentId !== target.id ||
+          (pressureEnabled ? !unionStarted : targetSteps === 0)
+        )
+          return undefined;
+        admission.resolve();
+        return handoff.promise;
+      },
+      run: async (operation, signal) => operation(signal),
+    });
+    try {
+      await runtime.execute({
+        baseModelRevision: null,
+        identity,
+        modelRevision: 0,
+        snapshot: createWorkerSnapshot([first, target, last]),
+        type: "model-sync-full",
+      });
+      const progress: string[] = [];
+      const pending = runtime.execute(
+        {
+          basisRevision: 0,
+          identity,
+          ids: [first.id, target.id, last.id],
+          streamProgress: true,
+          type: "prepare-scene-paths",
+        },
+        {
+          unlockBatch: () => undefined,
+          scenePaths: (batch) => {
+            progress.push(...batch.paths.map(({ id }) => id));
+          },
+        },
+      );
+      await admission.promise;
+      expect(progress).toEqual([first.id]);
+      expect(targetMemory()).toBeGreaterThan(0);
+      expect(runtime.instrumentation.shapeBuilds).toBe(1);
+      const steps = targetSteps;
+      runtime.retargetScenePreparation(identity, [first.id, last.id]);
+      block = false;
+      handoff.resolve();
+      expect(await pending).toMatchObject({ paths: [] });
+      expect(targetSteps).toBe(steps);
+      expect(progress).toEqual([first.id, last.id]);
+      expect(targetMemory()).toBe(0);
+      expect(runtime.instrumentation.shapeBuilds).toBe(2);
+    } finally {
+      runtime.terminate();
+      for (const spy of spies) spy.mockRestore();
+    }
+  },
+);
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((ready) => {
+    resolve = ready;
+  });
+  return { promise, resolve };
+}
 
 function maximumPlainMount() {
   const base = createTestStroke();

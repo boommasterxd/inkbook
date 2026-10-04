@@ -9,6 +9,7 @@ import { DocumentModelRuntime, RuntimeModelError } from "./document-model";
 import { runClipboardRequest } from "./runtime-clipboard";
 import { isRequiredSceneRequest } from "./request-result-validation";
 import { emitUnlockBatches } from "./unlock-batches";
+import { ScenePathOperation } from "./scene-path-operation";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeObserver,
@@ -20,6 +21,7 @@ import type {
 } from "./types";
 
 interface PendingJob {
+  readonly sceneOperation?: ScenePathOperation;
   readonly abortController: AbortController;
   readonly observer: DocumentRuntimeObserver | undefined;
   readonly reject: (reason: unknown) => void;
@@ -74,6 +76,12 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     if (this.#unlockPending) {
       return Promise.reject(new Error("Unlock is exclusive until its terminal result."));
     }
+    let sceneOperation: ScenePathOperation | undefined;
+    try {
+      if (request.type === "prepare-scene-paths") sceneOperation = new ScenePathOperation(request);
+    } catch (error) {
+      return Promise.resolve(this.#failure(request, error));
+    }
     const id = `${this.#kind(request)}:${++this.#nextJobId}`;
     return new Promise((resolve, reject) => {
       const admission = this.#queue.admit({ id, kind: this.#kind(request), payload: request });
@@ -83,6 +91,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       }
       if (request.type === "unlock") this.#unlockPending = true;
       this.#jobs.set(id, {
+        ...(sceneOperation === undefined ? {} : { sceneOperation }),
         abortController: new AbortController(),
         observer,
         reject,
@@ -110,6 +119,14 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       )
         job.abortController.abort();
     }
+  }
+
+  public retargetScenePreparation(
+    identity: import("../protocol").PurposeOperationIdentity,
+    ids: readonly string[],
+  ): void {
+    for (const job of this.#jobs.values())
+      if (job.sceneOperation?.matches(identity)) job.sceneOperation.retarget(ids);
   }
 
   public requestPrewarm(): void {
@@ -204,7 +221,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   ): Promise<DocumentRuntimeResult> {
     const sliceContext = runtimeSliceContext(this.#scheduler, signal, request);
     if (request.type === "prepare-scene-paths")
-      return this.#prepareScenePaths(request, sliceContext, signal);
+      return this.#prepareScenePaths(request, sliceContext, signal, observer);
     if (request.type === "unlock") {
       let batchCount = 0;
       const unlocked = await this.#model.unlock(
@@ -302,7 +319,13 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     request: Extract<DocumentRuntimeRequest, { type: "prepare-scene-paths" }>,
     context: RuntimeSliceContext | undefined,
     signal: AbortSignal,
+    observer: DocumentRuntimeObserver | undefined,
   ): Promise<DocumentRuntimeResult> {
+    const operation = [...this.#jobs.values()].find(
+      (job) => job.request === request,
+    )?.sceneOperation;
+    if (request.streamProgress === true && observer?.scenePaths === undefined)
+      throw new TypeError("Scene progress requires an observer.");
     return {
       basisRevision: request.basisRevision,
       identity: request.identity,
@@ -312,6 +335,25 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
           checkpoint: () => undefined,
           signal,
         },
+        operation === undefined
+          ? undefined
+          : {
+              operation,
+              ...(request.streamProgress !== true || observer?.scenePaths === undefined
+                ? {}
+                : {
+                    publish: (paths, signal) =>
+                      observer.scenePaths!(
+                        {
+                          basisRevision: request.basisRevision,
+                          identity: request.identity,
+                          paths,
+                          type: "prepare-scene-paths-success",
+                        },
+                        signal,
+                      ),
+                  }),
+            },
       ),
       type: "prepare-scene-paths-success",
     };

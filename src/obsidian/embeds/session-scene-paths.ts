@@ -16,7 +16,7 @@ export class SessionScenePaths {
   #operationId = 0;
   public constructor(private readonly options: SessionScenePathOptions) {}
 
-  public readonly prepare: ScenePathPreparation = async (ids, signal) => {
+  public readonly prepare: ScenePathPreparation = async (ids, signal, observer) => {
     if (signal.aborted || this.options.disposed()) return undefined;
     const identity: PurposeOperationIdentity = {
       operationId: ++this.#operationId,
@@ -36,12 +36,32 @@ export class SessionScenePaths {
         return undefined;
       executor = this.options.executor();
       if (executor === undefined) return undefined;
-      const result = await executor.execute({
-        basisRevision: revision,
-        identity,
-        ids,
-        type: "prepare-scene-paths",
+      let retainedIds = ids;
+      let started = false;
+      observer?.setRetarget((retained) => {
+        retainedIds = retained;
+        if (started) executor?.retargetScenePreparation?.(identity, retained);
       });
+      const requestIds = retainedIds;
+      const pending = executor.execute(
+        {
+          basisRevision: revision,
+          identity,
+          ids: requestIds,
+          streamProgress: observer !== undefined,
+          type: "prepare-scene-paths",
+        },
+        {
+          unlockBatch: () => undefined,
+          scenePaths: (batch) => {
+            if (this.isCurrent(identity, revision, signal) && batch.basisRevision === revision)
+              observer?.onProgress(batch.paths);
+          },
+        },
+      );
+      started = true;
+      if (retainedIds !== requestIds) executor.retargetScenePreparation?.(identity, retainedIds);
+      const result = await pending;
       if (
         !this.isCurrent(identity, revision, signal) ||
         result.type !== "prepare-scene-paths-success" ||
@@ -55,6 +75,7 @@ export class SessionScenePaths {
     } catch {
       return undefined;
     } finally {
+      observer?.setRetarget(undefined);
       signal.removeEventListener("abort", cancel);
     }
   };

@@ -3,6 +3,8 @@ import { InputActivityGate } from "./input-activity-gate";
 import { ModelPointReferences } from "./model-point-references";
 import { scheduleRequestTimeout } from "./request-timeout";
 import { isBridgeResponse } from "./bridge-response-validation";
+import { ScenePathReceiver } from "./scene-path-receiver";
+import { acknowledgePathBatch, controlScenePreparation } from "./scene-bridge-control";
 import type {
   DocumentRuntimeObserver,
   DocumentRuntimePort,
@@ -23,26 +25,28 @@ import {
   isRequiredSceneRequest,
 } from "./request-result-validation";
 import type {
-  BridgeBatchAcknowledgement,
   BridgeControl,
   BridgeExportAcknowledgement,
   BridgeRequest,
   BridgeSuccess,
   BridgeUnlockBatch,
+  BridgeScenePaths,
 } from "./bridge-messages";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-
-export interface WorkerBridgeEndpoint {
-  addEventListener(type: "error", listener: () => void): void;
-  addEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
-  postMessage(message: unknown, transfer?: Transferable[]): void;
-  removeEventListener(type: "error", listener: () => void): void;
-  removeEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
-  terminate(): void;
-}
+import type {
+  WorkerBridgeEndpoint,
+  WorkerRuntimeFailure,
+  WorkerDocumentRuntimePortOptions,
+} from "./worker-bridge-contracts";
+export type {
+  WorkerBridgeEndpoint,
+  WorkerRuntimeFailure,
+  WorkerDocumentRuntimePortOptions,
+} from "./worker-bridge-contracts";
 
 interface PendingBridgeRequest {
+  readonly sceneReceiver: ScenePathReceiver;
   readonly acceptsUnlockBatches: boolean;
   adoptedElementCount: number;
   readonly abortController: AbortController;
@@ -54,19 +58,6 @@ interface PendingBridgeRequest {
   resultAdoptionPending: boolean;
   readonly resolve: (result: DocumentRuntimeResult) => void;
   cancelTimeout: (() => void) | undefined;
-}
-
-export interface WorkerRuntimeFailure {
-  readonly kind: "error" | "protocol" | "timeout";
-  readonly request?: DocumentRuntimeRequest;
-}
-
-export interface WorkerDocumentRuntimePortOptions {
-  readonly workScheduler: WorkScheduler;
-  readonly onExecutorFailure?: (failure: WorkerRuntimeFailure) => void;
-  readonly frameIntervalMilliseconds: () => number;
-  readonly requestTimeoutMilliseconds?: number;
-  readonly subscribeSchedulingProfile?: (listener: () => void) => () => void;
 }
 
 export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
@@ -111,10 +102,13 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     request: DocumentRuntimeRequest,
     observer?: DocumentRuntimeObserver,
   ): Promise<DocumentRuntimeResult> {
+    if (ScenePathReceiver.needsObserver(request, observer))
+      return Promise.reject(new TypeError("Scene progress requires an observer."));
     if (this.#terminated) return Promise.reject(new Error("Document worker port is terminated."));
     const requestId = ++this.#nextRequestId;
     return new Promise((resolve, reject) => {
       const pending: PendingBridgeRequest = {
+        sceneReceiver: new ScenePathReceiver(),
         acceptsUnlockBatches: request.type === "unlock",
         adoptedElementCount: 0,
         abortController: new AbortController(),
@@ -149,25 +143,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     }
   }
   public cancelScenePreparation(identity: import("../protocol").PurposeOperationIdentity): void {
-    if (this.#terminated) return;
-    for (const [id, pending] of this.#pending) {
-      if (pending.request.type !== "prepare-scene-paths") continue;
-      const candidate = pending.request.identity;
-      if (
-        candidate.operationId !== identity.operationId ||
-        candidate.sessionId !== identity.sessionId ||
-        candidate.workerEpoch !== identity.workerEpoch ||
-        candidate.purpose !== identity.purpose
-      )
-        continue;
-      this.#settlePending(id, pending);
-      pending.reject(new Error("Scene preparation was cancelled."));
-    }
-    this.#endpoint.postMessage({
-      action: "cancel-scene-paths",
-      identity,
-      type: "inkbook-worker-control",
-    } satisfies BridgeControl);
+    if (!this.#terminated) controlScenePreparation(this.#endpoint, this.#pending, identity);
   }
 
   public notifySchedulingProfileChanged(): void {
@@ -177,6 +153,13 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     } catch {
       this.#failExecutor("error");
     }
+  }
+
+  public retargetScenePreparation(
+    identity: import("../protocol").PurposeOperationIdentity,
+    ids: readonly string[],
+  ): void {
+    if (!this.#terminated) controlScenePreparation(this.#endpoint, this.#pending, identity, ids);
   }
 
   public acknowledgeExport(identity: ExportIdentity, accepted: boolean): void {
@@ -237,13 +220,17 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
       this.#adoptUnlockBatch(event.data, pending);
       return;
     }
+    if (event.data.type === "inkbook-worker-scene-paths") {
+      this.#adoptScenePaths(event.data, pending);
+      return;
+    }
     if (event.data.type === "inkbook-worker-error") {
       this.#settlePending(event.data.requestId, pending);
       pending.reject(new Error(event.data.code));
       this.#failExecutor("error", pending.request);
       return;
     }
-    if (pending.resultAdoptionPending) {
+    if (pending.resultAdoptionPending || pending.sceneReceiver.waiting) {
       this.#settlePending(event.data.requestId, pending);
       pending.reject(new Error("Document worker returned an invalid result."));
       this.#failExecutor("protocol", pending.request);
@@ -253,9 +240,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     void this.#adoptResult(event.data, pending);
   };
 
-  readonly #onError = (): void => {
-    this.#failExecutor("error");
-  };
+  readonly #onError = (): void => this.#failExecutor("error");
 
   async #dispatch(
     requestId: number,
@@ -282,6 +267,8 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
         } satisfies BridgeRequest,
         [...encoded.transfer],
       );
+      if (request.type === "prepare-scene-paths" && pending.sceneReceiver.retainedIds !== undefined)
+        this.retargetScenePreparation(request.identity, pending.sceneReceiver.retainedIds);
     } catch {
       if (this.#pending.get(requestId) !== pending) return;
       this.#settlePending(requestId, pending);
@@ -359,15 +346,38 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
         pending.adoptedElementCount += batch.elements.length;
         pending.batchAdoptionPending = false;
         pending.nextUnlockBatchIndex += 1;
-        this.#acknowledgeBatch(message, true);
+        acknowledgePathBatch(this.#endpoint, message, true);
       },
       () => this.#finishBatch(message, pending),
     );
   }
 
+  #adoptScenePaths(message: BridgeScenePaths, pending: PendingBridgeRequest): void {
+    const checkpoint = this.#createMainThreadCheckpoint(
+      pending.abortController.signal,
+      pending.request,
+      true,
+    );
+    void pending.sceneReceiver
+      .adopt(message, pending.request, pending.observer, pending.abortController.signal, checkpoint)
+      .then(
+        () => {
+          if (this.#isPending(message.requestId, pending))
+            acknowledgePathBatch(this.#endpoint, message, true);
+        },
+        () => {
+          if (!this.#isPending(message.requestId, pending)) return;
+          acknowledgePathBatch(this.#endpoint, message, false);
+          this.#settlePending(message.requestId, pending);
+          pending.reject(new Error("Document worker scene path adoption failed."));
+          this.#failExecutor("protocol", pending.request);
+        },
+      );
+  }
+
   #finishBatch(message: BridgeUnlockBatch, pending: PendingBridgeRequest): void {
     if (!this.#isPending(message.requestId, pending)) return;
-    this.#acknowledgeBatch(message, false);
+    acknowledgePathBatch(this.#endpoint, message, false);
     this.#settlePending(message.requestId, pending);
     pending.reject(new Error("Document worker unlock batch adoption failed."));
     this.#failExecutor("protocol", pending.request);
@@ -382,15 +392,6 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     pending.cancelTimeout?.();
     pending.cancelTimeout = undefined;
     pending.abortController.abort();
-  }
-
-  #acknowledgeBatch(message: BridgeUnlockBatch, accepted: boolean): void {
-    this.#endpoint.postMessage({
-      accepted,
-      batchIndex: message.batch.batchIndex,
-      requestId: message.requestId,
-      type: "inkbook-worker-batch-acknowledgement",
-    } satisfies BridgeBatchAcknowledgement);
   }
 
   #acknowledgeExport(message: BridgeSuccess, accepted: boolean): void {
