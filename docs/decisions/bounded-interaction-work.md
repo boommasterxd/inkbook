@@ -133,10 +133,20 @@ relative order, insert returning elements between retained DOM anchors rather
 than reparenting unchanged nodes; retain the full ordering path for actual reorder
 and partial detachment. A still-mounted exit returning with an older visibility
 generation uses a temporary, once-per-band DOM-position map to prove its retained
-order. Progressive publication invalidates that proof; reconciliation disposal
-releases it. Completion refreshes the retained proof in the existing visibility
-copy, so future full reconciliations can reuse it. Partial work never publishes a
-completed proof. A stale generation alone must not move unchanged DOM nodes.
+order. Only actual retained-node reordering invalidates that proof; new entrants
+and connected returns that need no reorder preserve the retained relative-order
+snapshot. Reconciliation disposal releases the temporary position map. Completion
+refreshes the retained proof in the existing visibility copy, so future full
+reconciliations can reuse it. Partial work never publishes a completed proof. A
+stale generation alone must not move unchanged DOM nodes.
+The retained SVG lives in a presentation-owned shadow root so host selectors cannot
+match its large active subtree through ancestors; ownership and styling boundaries
+are defined in [Rendering and Performance](../rendering-and-performance.md#imperative-scene-ownership).
+Keep progressive insertion flat and element-complete. The 16-element unit bounds
+each native publication; the 64-original-root frame allowance counts multipart
+elements. An existing late-scene admission may complete one already-prepared
+queued unit, without fresh preparation, cleanup, or deadline renewal. See the
+[canonical publication contract](../rendering-and-performance.md#imperative-scene-ownership).
 Pressure-window publication shares one identity-bound
 memory measurement with its immediate consumer. Warm metadata digest assembly
 batches cooperative checkpoints while keeping output-copy slices bounded and
