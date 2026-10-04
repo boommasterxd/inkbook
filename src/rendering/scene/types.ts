@@ -127,6 +127,10 @@ export interface SceneInstrumentationSnapshot {
   readonly contentAttributeWrites: number;
   readonly contentGeometryWrites: number;
   readonly domEntrants: number;
+  readonly detachedCacheBytes: number;
+  readonly detachedCacheEntries: number;
+  readonly detachedCacheEvictions: number;
+  readonly detachedCacheHits: number;
   readonly domExits: number;
   readonly domFragmentRuns: number;
   readonly domReorders: number;
@@ -182,6 +186,10 @@ export interface MutableSceneInstrumentation {
   contentAttributeWrites: number;
   contentGeometryWrites: number;
   domEntrants: number;
+  detachedCacheBytes: number;
+  detachedCacheEntries: number;
+  detachedCacheEvictions: number;
+  detachedCacheHits: number;
   domExits: number;
   domFragmentRuns: number;
   domReorders: number;

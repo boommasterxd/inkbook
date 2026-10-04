@@ -6,6 +6,32 @@ import {
 } from "../../../../src/rendering/scene/scene-delta-router";
 import { fakeRectangleRecord } from "./fakes";
 
+it.each(["geometry", "paint", "order", "visibility"] as const)(
+  "releases detached %s records only when geometry changed or the element disappeared",
+  (domain) => {
+    const { ports, spies } = routingPorts();
+    spies.readRecord.mockReturnValue(fakeRectangleRecord("retained", 0, 10));
+    const delta = { affected: [{ domains: [domain], id: "retained" }] };
+
+    routeSceneDelta(delta, ports);
+    expect(spies.invalidateDetached).toHaveBeenCalledTimes(domain === "geometry" ? 1 : 0);
+    spies.readRecord.mockReturnValue(undefined);
+    routeSceneDelta(delta, ports);
+    expect(spies.invalidateDetached).toHaveBeenCalledTimes(domain === "geometry" ? 2 : 1);
+  },
+);
+
+it("invalidates detached deletions after order and visibility cancellation retained their pending nodes", () => {
+  const { ports, spies } = routingPorts();
+  routeSceneDelta(
+    { affected: [{ id: "removed", after: null, domains: ["order", "visibility"] }] },
+    ports,
+  );
+  const invalidated = spies.invalidateDetached.mock.invocationCallOrder[0];
+  expect(invalidated).toBeGreaterThan(spies.markOrders.mock.invocationCallOrder[0]!);
+  expect(invalidated).toBeGreaterThan(spies.invalidateVisibility.mock.invocationCallOrder[0]!);
+});
+
 describe("scene delta routing", () => {
   it("batches visibility invalidation while preserving every geometry mark", () => {
     const { ports, spies } = routingPorts();
@@ -107,6 +133,8 @@ describe("scene delta routing", () => {
 function routingPorts(): {
   readonly ports: SceneDeltaRoutingPorts;
   readonly spies: Record<
+    | "readRecord"
+    | "invalidateDetached"
     | "invalidateForChanges"
     | "invalidatePath"
     | "invalidateVisibility"
@@ -121,6 +149,8 @@ function routingPorts(): {
   >;
 } {
   const spies = {
+    readRecord: vi.fn(),
+    invalidateDetached: vi.fn(),
     invalidateForChanges: vi.fn(),
     invalidatePath: vi.fn(),
     invalidateVisibility: vi.fn(),
@@ -133,6 +163,7 @@ function routingPorts(): {
     prepareElementRemoval: vi.fn(),
   };
   const ports = {
+    detachedCache: { invalidate: spies.invalidateDetached },
     content: {
       markGeometry: spies.markGeometry,
       markOrder: vi.fn(),
@@ -144,7 +175,7 @@ function routingPorts(): {
     invalidateVisibility: spies.invalidateVisibility,
     markOrderVisibilityDirty: spies.markOrderVisibilityDirty,
     pathCache: { invalidate: spies.invalidatePath },
-    store: { get: vi.fn(), query: vi.fn() },
+    store: { get: spies.readRecord, query: vi.fn() },
     visibility: {
       invalidateForChanges: spies.invalidateForChanges,
       releaseId: spies.releaseId,

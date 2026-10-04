@@ -31,6 +31,21 @@ fallback, and serialized contour output.
 Canonical budgets and ownership belong in
 [Rendering and Performance](../rendering-and-performance.md).
 
+Navigation distinguishes required viewport preparation from background work.
+The first required remote contour has an early response; subsequent lookahead
+excludes reusable local geometry and retains valid overlapping work. Remote
+completion wakes the existing scene scheduler. Spatial preparation serves the
+actual viewport before overscan and follows scroll or pan direction while final
+SVG paint order remains canonical. Ready cached candidates can pass a suspended
+cold candidate, and old-node cleanup does not precede their first preparation.
+
+Bounded detached-node reuse avoids repeated SVG creation and geometry attribute
+writes on revisits. Geometry identity and ID/version aliases share one canonical
+path-cache entry. Both caches retain independent byte and entry caps, participate
+in active-document memory pressure, and release stale geometry and deleted IDs.
+The live-root publication cap remains unchanged: node reuse cannot eliminate
+native insertion, layout, or paint costs.
+
 A smaller fade-start quota was rejected: the paired selection-delete diagnostic
 did not reduce long native tasks and increased layerization work. Keep the
 existing deadline-checked fade allowance, full duration, and width-dependent blur.

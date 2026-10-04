@@ -5,7 +5,7 @@ export interface ScenePublicationBudget {
   remainingRoots: number;
 }
 
-export type MountYieldReason = "budget" | "deadline";
+export type MountYieldReason = "budget" | "deadline" | "paths";
 
 export class MountSlice {
   public elements = 0;

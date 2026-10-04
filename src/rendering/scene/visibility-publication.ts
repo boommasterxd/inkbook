@@ -9,6 +9,7 @@ import {
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
 import type { MountSlice, MountYieldReason } from "./mount-slice";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
 
 export interface PendingMutationRun {
   band: RenderBand;
@@ -200,6 +201,7 @@ interface ExitPublication {
   exitIndex: number;
 }
 interface ExitOptions extends PublicationOptions {
+  readonly detachedCache?: DetachedSceneElementCache | undefined;
   readonly visibility: { releaseId(id: string): void };
   readonly pathCache: {
     invalidate(id: string): void;
@@ -240,9 +242,13 @@ export function removeVisibilityExits(
     frame.onRemoved?.(entry.id);
     const record = options.store.get(entry.id);
     if (record === undefined) {
+      options.detachedCache?.invalidate(entry.id);
       options.pathCache.invalidate(entry.id);
       options.visibility.releaseId(entry.id);
-    } else options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
+    } else {
+      options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
+      options.detachedCache?.retain(entry);
+    }
     options.instrumentation.domExits += 1;
   }
   return true;

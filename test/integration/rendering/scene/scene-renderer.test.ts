@@ -10,6 +10,7 @@ import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema
 import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
+import { flushSceneViewport } from "../../../fixtures/rendering/scene";
 import {
   FakeDocument,
   FakeNode,
@@ -399,13 +400,16 @@ describe("mounted scene updates", () => {
     scheduler.runAll();
     expect(renderer.instrumentation().contentGeometryWrites).toBe(2);
 
-    renderer.setViewport({ height: 100, left: 0, top: 1000, width: 100 });
-    scheduler.runAll();
+    flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 1000, width: 100 });
     expect(renderer.mountedCount).toBe(0);
     renderer.resetInstrumentation();
-    renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
-    scheduler.runAll();
-    expect(renderer.instrumentation()).toMatchObject({ geometryBuilds: 0, pathCacheHits: 2 });
+    flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 0, width: 100 });
+    expect(renderer.instrumentation()).toMatchObject({
+      geometryBuilds: 0,
+      detachedCacheHits: 2,
+      contentGeometryWrites: 0,
+      contentAttributeWrites: 0,
+    });
   });
 
   it("replaces direct sibling path topology when arrow paint semantics change", () => {

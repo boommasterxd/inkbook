@@ -6,7 +6,15 @@ import {
 } from "./constants";
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { ScenePathCache } from "./path-cache";
-import type { SceneCamera, SceneViewport } from "./types";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
+import type {
+  MutableSceneInstrumentation,
+  SceneCamera,
+  SceneInstrumentationSnapshot,
+  SceneViewport,
+} from "./types";
+import type { SceneBackgroundCache } from "./background-cache";
+import * as stats from "./instrumentation";
 import type { VisibilityResult } from "./visibility-state";
 import type { ActiveDocumentMemoryScenePort } from "../../editor/session/active-document-memory-coordinator";
 
@@ -21,17 +29,50 @@ export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
     private readonly motion: SceneMotionController,
     private readonly onUsageChanged: () => void,
     private readonly previewMemoryUsage: () => number = () => 0,
+    private readonly detachedCache?: DetachedSceneElementCache,
   ) {}
 
   public memoryUsage(): ReturnType<ActiveDocumentMemoryScenePort["memoryUsage"]> {
     return {
       motionCacheBytes: this.motion.cacheMemoryUsage(),
-      pathCacheBytes: this.pathCache.cacheMemoryUsage() + this.previewMemoryUsage(),
+      pathCacheBytes: this.pathMemoryUsage(),
     };
   }
 
+  public refreshInstrumentation(
+    value: MutableSceneInstrumentation,
+    background: SceneBackgroundCache,
+  ): void {
+    stats.refreshCacheInstrumentation(value, background, this.pathCache, this.detachedCache);
+  }
+
+  public instrumentation(
+    value: MutableSceneInstrumentation,
+    background: SceneBackgroundCache,
+  ): SceneInstrumentationSnapshot {
+    this.refreshInstrumentation(value, background);
+    this.motion.refreshInstrumentation();
+    return stats.snapshotInstrumentation(value);
+  }
+
+  public resetInstrumentation(
+    value: MutableSceneInstrumentation,
+    background: SceneBackgroundCache,
+  ): void {
+    stats.resetInstrumentation(value);
+    background.resetStatistics();
+    this.pathCache.resetStatistics();
+    this.detachedCache?.resetStatistics();
+    this.motion.refreshInstrumentation();
+  }
+
+  public releaseCaches(): void {
+    this.pathCache.release();
+    this.detachedCache?.release();
+  }
+
   public notifyUsageChanged(): void {
-    const pathBytes = this.pathCache.cacheMemoryUsage() + this.previewMemoryUsage();
+    const pathBytes = this.pathMemoryUsage();
     const motionBytes = this.motion.cacheMemoryUsage();
     if (pathBytes === this.#lastPathCacheBytes && motionBytes === this.#lastMotionCacheBytes)
       return;
@@ -59,7 +100,16 @@ export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
     const constrained = this.#denseReconciliation || this.#memoryPressure;
     // The LRU already enforces byte/entry caps; density alone must not evict reusable paths.
     this.pathCache.setRetentionEnabled(!this.#memoryPressure);
+    this.detachedCache?.setRetentionEnabled(!this.#memoryPressure);
     this.motion.setResourceConstrained(constrained);
+  }
+
+  private pathMemoryUsage(): number {
+    return (
+      this.pathCache.cacheMemoryUsage() +
+      this.previewMemoryUsage() +
+      (this.detachedCache?.memoryUsage() ?? 0)
+    );
   }
 }
 

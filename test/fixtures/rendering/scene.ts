@@ -68,6 +68,16 @@ export function createViewportRectangleStore(
   return store;
 }
 
+/** Applies a viewport and drains its coalesced scene publication and cleanup. */
+export function flushSceneViewport(
+  renderer: SvgSceneRenderer,
+  scheduler: FakeScheduler,
+  viewport: SceneViewport,
+): void {
+  renderer.setViewport(viewport);
+  scheduler.runAll();
+}
+
 export function createSceneRecord(element: InkElementV1, rank = 0): SceneElementRecord {
   return {
     id: element.id,
@@ -78,4 +88,17 @@ export function createSceneRecord(element: InkElementV1, rank = 0): SceneElement
     band: renderBandOf(element),
     bounds: calculateElementBounds(element),
   };
+}
+
+/** A remote geometry boundary that stays pending until its lifecycle aborts it. */
+export function createPendingScenePathStore() {
+  const store: FakeSceneStore & Pick<SceneStorePort, "prepareScenePaths"> = new FakeSceneStore();
+  const signals: AbortSignal[] = [];
+  store.prepareScenePaths = (_ids, signal) => {
+    signals.push(signal);
+    return new Promise<undefined>((resolve) => {
+      signal.addEventListener("abort", () => resolve(undefined), { once: true });
+    });
+  };
+  return { store, signals };
 }

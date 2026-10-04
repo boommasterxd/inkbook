@@ -14,6 +14,7 @@ import type { ScenePreviewCommitController } from "./preview-commit-handoff";
 import type { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import type { SceneLivePathCommits } from "./live-path-commits";
 import type { SceneMotionController } from "./scene-motion-controller";
+import type { Bounds } from "../../domain/geometry/primitives";
 
 export class SceneVisibilityCoordinator {
   readonly #content: SceneContentRenderer;
@@ -25,6 +26,8 @@ export class SceneVisibilityCoordinator {
   #orderDirty = false;
   #queryPending = false;
   #initialVisibleOnly = false;
+  #priorityViewport: Bounds | undefined;
+  #priorityZoom: number | undefined;
 
   public get initialVisibleOnly(): boolean {
     return this.#initialVisibleOnly;
@@ -127,6 +130,7 @@ export class SceneVisibilityCoordinator {
     now: () => number = () => 0,
   ): void {
     if (viewport === undefined) return;
+    this.setPriority(viewport, camera);
     if (!this.#dirty) {
       if (this.#orderDirty) {
         this.#orderDirty = false;
@@ -158,5 +162,28 @@ export class SceneVisibilityCoordinator {
       !result.changed && orderDirty ? this.#visibility.resortCurrent() : result.visibility;
     this.#content.replaceVisibility(visibility, progressive, result.delta);
     this.#resources.updateVisibility(visibility);
+  }
+
+  private setPriority(viewport: SceneViewport, camera: SceneCamera): void {
+    const bounds = visibilityPageBounds(viewport, camera, true).envelope;
+    const previous = this.#priorityViewport;
+    const zoomChanged = this.#priorityZoom !== camera.zoom;
+    if (
+      !zoomChanged &&
+      previous?.minX === bounds.minX &&
+      previous.minY === bounds.minY &&
+      previous.maxX === bounds.maxX &&
+      previous.maxY === bounds.maxY
+    )
+      return;
+    const x = previous === undefined || zoomChanged ? 0 : bounds.minX - previous.minX;
+    const y = previous === undefined || zoomChanged ? 0 : bounds.minY - previous.minY;
+    const length = Math.hypot(x, y);
+    this.#content.setVisibilityPriority({
+      viewport: bounds,
+      direction: { x: length === 0 ? 0 : x / length, y: length === 0 ? 0 : y / length },
+    });
+    this.#priorityViewport = bounds;
+    this.#priorityZoom = camera.zoom;
   }
 }

@@ -71,6 +71,7 @@ it("prepares only three thousand visible contours of ten thousand in bounded wor
     query: () => undefined,
     prepareScenePaths: async (ids) => {
       requests++;
+      if (requests === 1) expect(ids).toHaveLength(1);
       expect(ids.length).toBeLessThanOrEqual(256);
       expect(ids.every((id) => records.get(id)!.rank < 3000)).toBe(true);
       const pending = runtime.execute({
@@ -105,13 +106,80 @@ it("prepares only three thousand visible contours of ten thousand in bounded wor
     expect(preparation.memoryUsage()).toBeLessThanOrEqual(MAX_SCENE_PATH_BYTES + 256 * 128);
   }
   expect(published).toBe(3000);
-  expect(requests).toBe(Math.ceil(3000 / 256));
-  expect(reads).toBeLessThanOrEqual(3000);
+  expect(requests).toBe(1 + Math.ceil(2999 / 256));
+  expect(reads).toBeLessThanOrEqual(6000);
   expect(runtime.instrumentation.shapeBuilds).toBe(3000);
   preparation.cancel();
   expect(preparation.memoryUsage()).toBe(0);
   runtime.terminate();
   expect(runtime.instrumentation.shapeCacheBytes).toBe(0);
+});
+
+it("requests only cold contours among six hundred entrants and retains overlapping completion", async () => {
+  const elements = Array.from({ length: 600 }, (_, rank) => ({
+    ...createTestStroke(),
+    id: `stroke-${rank}`,
+  }));
+  const records = new Map(
+    elements.map((element, rank) => [
+      element.id,
+      {
+        band: "content" as const,
+        bounds: { minX: 0, minY: 0, maxX: 20, maxY: 20 },
+        element,
+        geometryVersion: 0,
+        id: element.id,
+        paintVersion: 0,
+        rank,
+      },
+    ]),
+  );
+  const cold = [0, 1, 500].map((index) => elements[index]!.id);
+  const cached = new Set(elements.map((element) => element.id).filter((id) => !cold.includes(id)));
+  let requested = 0;
+  let wakes = 0;
+  let finish!: () => void;
+  let signal!: AbortSignal;
+  const preparation = new RemoteScenePaths(
+    {
+      get: (id) => records.get(id),
+      query: () => undefined,
+      prepareScenePaths: (ids, cancellation) => {
+        requested += ids.length;
+        expect(ids.every((id) => !cached.has(id))).toBe(true);
+        signal = cancellation;
+        return new Promise((resolve) => {
+          finish = () => resolve(ids.map((id) => ({ id, parts: [{ d: "M0 0Z", paint: "fill" }] })));
+        });
+      },
+    },
+    {
+      isCached: (record) => cached.has(record.id),
+      onPrepared: (record) => {
+        cached.add(record.id);
+      },
+      onReady: () => {
+        wakes++;
+      },
+    },
+  );
+  for (const id of cold) {
+    const record = records.get(id)!;
+    const upcoming = () => elements.slice(record.rank + 1).map((element) => element.id);
+    expect(preparation.read(record, upcoming)).toBe("pending");
+    preparation.cancel((retained) => retained === id);
+    expect(signal.aborted).toBe(false);
+    expect(preparation.waiting).toBe(true);
+    finish();
+    await Promise.resolve();
+    expect(preparation.waiting).toBe(false);
+    expect(preparation.read(record, upcoming)).toEqual([{ d: "M0 0Z", paint: "fill" }]);
+  }
+  expect(requested).toBe(3);
+  expect(wakes).toBe(3);
+  expect(cached.size).toBe(600);
+  preparation.cancel();
+  expect(preparation.memoryUsage()).toBe(0);
 });
 
 it("discards cancelled or edited batch results and lets unavailable providers fall back", async () => {
@@ -129,6 +197,7 @@ it("discards cancelled or edited batch results and lets unavailable providers fa
     value: readonly { id: string; parts: readonly { d: string; paint: "fill" }[] }[],
   ) => void;
   let signal: AbortSignal | undefined;
+  let wakes = 0;
   const store: SceneStorePort = {
     get: () => record,
     query: () => undefined,
@@ -139,21 +208,41 @@ it("discards cancelled or edited batch results and lets unavailable providers fa
       });
     },
   };
-  const preparation = new RemoteScenePaths(store);
+  const preparation = new RemoteScenePaths(store, {
+    onReady: () => {
+      wakes++;
+    },
+  });
   expect(preparation.read(record, () => [])).toBe("pending");
   preparation.cancel();
   expect(signal?.aborted).toBe(true);
   finish([{ id: record.id, parts: [{ d: "M0 0Z", paint: "fill" }] }]);
   await Promise.resolve();
   expect(preparation.memoryUsage()).toBe(0);
+  expect(wakes).toBe(0);
   expect(preparation.read(record, () => [])).toBe("pending");
   finish([{ id: record.id, parts: [{ d: "M0 0Z", paint: "fill" }] }]);
   await Promise.resolve();
+  expect(wakes).toBe(1);
   expect(preparation.read({ ...record, geometryVersion: 1 }, () => [])).toBeUndefined();
   preparation.cancel();
   expect(
     new RemoteScenePaths({ get: () => record, query: () => undefined }).read(record, () => []),
   ).toBeUndefined();
+  const failed = new RemoteScenePaths(
+    { ...store, prepareScenePaths: () => Promise.reject(new Error("unavailable")) },
+    {
+      onReady: () => {
+        wakes++;
+      },
+    },
+  );
+  expect(failed.read(record, () => [])).toBe("pending");
+  await Promise.resolve();
+  expect(failed.waiting).toBe(false);
+  expect(failed.read(record, () => [])).toBeUndefined();
+  expect(failed.memoryUsage()).toBe(0);
+  expect(wakes).toBe(2);
 });
 
 it("mounts a maximum plain stroke with worker geometry and zero main-thread sample reads or builds", async () => {

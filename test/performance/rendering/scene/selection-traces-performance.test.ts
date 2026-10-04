@@ -51,6 +51,18 @@ function traceRemovalWork(
   return { batches: groupOrders.length, connected, removed: traceOrders.length };
 }
 
+function observeTraceRemoval(roots: readonly FakeNode[]) {
+  const group = roots[0]!.parent!;
+  const parent = group.parent!;
+  return {
+    group,
+    parent,
+    siblings: [...parent.nodes],
+    remove: vi.spyOn(FakeNode.prototype, "remove"),
+    append: vi.spyOn(parent, "appendChild"),
+  };
+}
+
 it("reuses retained center geometry across camera, move, rotation and ink opacity", () => {
   let reads = 0;
   const source = maximumStroke(0);
@@ -137,11 +149,7 @@ it("reuses 1000 mixed short and long selected centers after culling", () => {
   expect(nodes()).toHaveLength(1000);
   expect(builds).toHaveBeenCalledTimes(1000);
   const roots = nodes();
-  const group = roots[0]!.parent!;
-  const parent = group.parent!;
-  const siblings = [...parent.nodes];
-  const remove = vi.spyOn(FakeNode.prototype, "remove");
-  const append = vi.spyOn(parent, "appendChild");
+  const { group, parent, siblings, remove, append } = observeTraceRemoval(roots);
   renderer.setSelectedElements(
     new Set(roots.slice(0, 500).map((root) => root.attributes.get("data-selection-element-id")!)),
   );
@@ -176,6 +184,30 @@ it("reuses 1000 mixed short and long selected centers after culling", () => {
   expect(parent.nodes).toEqual(siblings);
   expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
+
+it.each([1, 10, 31])(
+  "detaches culling batches of %i selected traces before native removal",
+  (count) => {
+    const { renderer, scheduler, select, nodes } = createSelectionTraceFixture(
+      Array.from({ length: count }, (_, index) => indexedStroke(index)),
+    );
+    const { group, parent, siblings, remove, append } = observeTraceRemoval(select());
+    try {
+      renderer.setCamera({ x: 5000, zoom: 1 });
+      scheduler.runAll();
+      expect(nodes()).toEqual([]);
+      expect(parent.nodes).toEqual(siblings);
+      expect(traceRemovalWork(remove, append, group)).toEqual({
+        batches: 1,
+        connected: 0,
+        removed: count,
+      });
+    } finally {
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+  },
+);
 
 it("reads samples only for center builds while preserving the 64-root frame cap", () => {
   const document = new FakeDocument();

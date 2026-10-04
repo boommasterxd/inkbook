@@ -300,8 +300,9 @@ export function setMountedElementMotion(
 ): void {
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
   for (const node of nodes) {
-    if (opacity === null) clearMotionStyle(node);
-    else writeMotionStyle(node, opacity * entry.groupOpacity, scale);
+    if (opacity === null) {
+      if (node.getAttribute("data-inkbook-motion") !== null) clearMotionStyle(node);
+    } else writeMotionStyle(node, opacity * entry.groupOpacity, scale);
   }
 }
 

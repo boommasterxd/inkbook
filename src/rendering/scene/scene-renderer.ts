@@ -3,6 +3,7 @@ import type { SceneToolCursorFrameReader } from "./tool-cursor";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type * as Schema from "../../domain/schema/public";
 import { SceneBackgroundCache } from "./background-cache";
+import { DetachedSceneElementCache } from "./detached-element-cache";
 import { DEFAULT_CAMERA } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import type { ProgressivePreviewTransform } from "./progressive-element-preview";
@@ -47,6 +48,7 @@ export class SvgSceneRenderer {
   readonly #previewCommits: ScenePreviewCommitController;
   readonly #resourcePolicy: SceneResourcePolicy;
   readonly #pathCache = new ScenePathCache();
+  readonly #detachedCache = new DetachedSceneElementCache();
   readonly #elementPreviews: SceneElementPreviews;
   readonly #transformPreviews: SceneTransformPreviewController;
   readonly #scheduler: Scene.SceneRendererOptions["workScheduler"];
@@ -80,6 +82,7 @@ export class SvgSceneRenderer {
       this.#visibility,
       this.#pathCache,
       this.#stats,
+      { detachedCache: this.#detachedCache, onPathsReady: () => this.#frames.schedule() },
     );
     this.#contentScheduler = new SceneContentScheduler(this.#content, this.#scheduler);
     this.#motion = new SceneMotionController(
@@ -93,6 +96,7 @@ export class SvgSceneRenderer {
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
       () => this.#elementPreviews.memoryUsage() + this.#transformPreviews.memoryUsage(),
+      this.#detachedCache,
     );
     this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
     this.#transformPreviews = new SceneTransformPreviewController(
@@ -131,6 +135,7 @@ export class SvgSceneRenderer {
       previews: this.#previewCommits,
       routing: {
         content: this.#content,
+        detachedCache: this.#detachedCache,
         invalidateVisibility: () => this.#visibilityCoordinator.invalidate(),
         markOrderVisibilityDirty: () => this.#visibilityCoordinator.invalidateOrder(),
         pathCache: this.#pathCache,
@@ -191,12 +196,12 @@ export class SvgSceneRenderer {
   }
   public setViewport(viewport: Scene.SceneViewport): void {
     runtime.validateViewport(viewport);
+    this.#layoutDirty = false;
     if (runtime.sameViewport(this.#viewport, viewport)) return;
     if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
     this.#viewport = viewport;
     this.#frameWriter.invalidateCursorLayout();
     this.#visibilityCoordinator.setContext(this.#camera, viewport);
-    this.#layoutDirty = false;
     this.#frames.schedule();
   }
   public invalidateLayout(requestCommit = false): void {
@@ -391,15 +396,10 @@ export class SvgSceneRenderer {
     if (this.#content.promoteVisible(id)) this.#frames.schedule();
   }
   public instrumentation(): Scene.SceneInstrumentationSnapshot {
-    stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
-    this.#motion.refreshInstrumentation();
-    return stats.snapshotInstrumentation(this.#stats);
+    return this.#resourcePolicy.instrumentation(this.#stats, this.#backgroundCache);
   }
   public resetInstrumentation(): void {
-    stats.resetInstrumentation(this.#stats);
-    this.#pathCache.resetStatistics();
-    this.#backgroundCache.resetStatistics();
-    this.#motion.refreshInstrumentation();
+    this.#resourcePolicy.resetInstrumentation(this.#stats, this.#backgroundCache);
   }
   public mountedIds(band: RenderBand): readonly string[] {
     return this.#content.mountedIds(band);
@@ -426,7 +426,7 @@ export class SvgSceneRenderer {
     this.#content.release();
     this.#transformPreviews.release();
     this.#elementPreviews.release();
-    this.#pathCache.release();
+    this.#resourcePolicy.releaseCaches();
     this.#sceneCommits.release();
   }
   private renderFrame(frameTime: number, scene: boolean): void {
@@ -481,7 +481,7 @@ export class SvgSceneRenderer {
       this.#sceneCommits,
       this.#frames,
     );
-    stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
+    this.#resourcePolicy.refreshInstrumentation(this.#stats, this.#backgroundCache);
     if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
   }
   private writeBackground(deadline: number, allowAtomic = false): boolean {

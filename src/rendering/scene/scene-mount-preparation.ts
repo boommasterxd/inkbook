@@ -10,6 +10,7 @@ import type { ProgressivePreviewPath } from "./progressive-preview-path";
 import { localPressureGeometry } from "./stroke-position";
 import { RemoteScenePaths } from "./remote-scene-paths";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
 
 export interface PreviewTransform {
   readonly strokeWidthScale: number | null;
@@ -29,6 +30,8 @@ interface MountPreparationOptions {
   readonly pathCache: ScenePathCache;
   readonly store: SceneStorePort;
   readonly upcomingIds?: () => Iterable<string>;
+  readonly onPathsReady?: () => void;
+  readonly detachedCache?: DetachedSceneElementCache;
 }
 
 /** Owns one cancellable cold stroke build, never a queue of retained documents. */
@@ -37,7 +40,20 @@ export class SceneMountPreparation {
   readonly #remote: RemoteScenePaths;
 
   public constructor(private readonly options: MountPreparationOptions) {
-    this.#remote = new RemoteScenePaths(options.store);
+    this.#remote = new RemoteScenePaths(options.store, {
+      ...(options.onPathsReady === undefined ? {} : { onReady: options.onPathsReady }),
+      isCached: (record) =>
+        options.pathCache.has(record.id, record.geometryVersion) ||
+        options.pathCache.read(
+          record.element,
+          options.store.pressureGeometry?.(record.id, record.geometryVersion),
+        ) !== undefined,
+      onPrepared: (record, parts) => {
+        const pressure = options.store.pressureGeometry?.(record.id, record.geometryVersion);
+        localPressureGeometry(record.element, pressure)?.publishPath?.(parts);
+        options.pathCache.completePreparation(record.element, parts);
+      },
+    });
   }
 
   public isCurrent(entry: MountedSceneElement): boolean {
@@ -53,12 +69,16 @@ export class SceneMountPreparation {
     return this.#pending?.id;
   }
 
+  public get waiting(): boolean {
+    return this.#pending === undefined && this.#remote.waiting;
+  }
+
   public memoryUsage(): number {
     return (this.#pending?.path.memoryUsage() ?? 0) + this.#remote.memoryUsage();
   }
 
   public cancel(retainVisible?: (id: string) => boolean): void {
-    this.#remote.cancel();
+    this.#remote.cancel(retainVisible);
     const pending = this.#pending;
     if (
       pending !== undefined &&
@@ -78,15 +98,19 @@ export class SceneMountPreparation {
     record: SceneElementRecord,
     slice: MountSlice,
     preview: PreviewTransform | undefined,
+    allowLocal = true,
   ): MountedSceneElement | undefined {
-    const parts = this.prepare(record, slice);
-    if (parts === undefined) return undefined;
-    const entry = createMountedElement(
-      this.options.ownerDocument,
-      record,
-      parts,
-      this.options.instrumentation,
-    );
+    let entry = this.options.detachedCache?.take(record, this.options.instrumentation);
+    if (entry === undefined) {
+      const parts = this.prepare(record, slice, allowLocal);
+      if (parts === undefined) return undefined;
+      entry = createMountedElement(
+        this.options.ownerDocument,
+        record,
+        parts,
+        this.options.instrumentation,
+      );
+    }
     if (preview !== undefined)
       updatePreviewTransform(
         entry,
@@ -101,18 +125,19 @@ export class SceneMountPreparation {
   private prepare(
     record: SceneElementRecord,
     slice: MountSlice,
+    allowLocal: boolean,
   ): readonly SvgPathPart[] | undefined {
     const { pathCache, store } = this.options;
     const pressure = store.pressureGeometry?.(record.id, record.geometryVersion);
     const cached =
       pathCache.take(record.id, record.geometryVersion) ?? pathCache.read(record.element, pressure);
     if (cached !== undefined) {
-      this.cancelLocal();
+      if (this.#pending?.id === record.id) this.cancelLocal();
       return cached;
     }
     if (record.element.kind !== "stroke") return pathCache.build(record.element, pressure);
     if (this.#pending?.id !== record.id || this.#pending.version !== record.geometryVersion) {
-      this.cancelLocal();
+      if (this.#pending !== undefined) return undefined;
       const remote = this.#remote.read(record, this.options.upcomingIds ?? (() => []));
       if (remote === "pending") return undefined;
       if (remote !== undefined) {
@@ -126,7 +151,7 @@ export class SceneMountPreparation {
         path: pathCache.startPreparation(record.element, pressure),
       };
     }
-    if (!slice.prepare(this.#pending.path)) return undefined;
+    if (!allowLocal || !slice.prepare(this.#pending.path)) return undefined;
     const parts = this.#pending.path.parts!;
     localPressureGeometry(record.element, pressure)?.publishPath?.(parts);
     pathCache.completePreparation(record.element, parts);

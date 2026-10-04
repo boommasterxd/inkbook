@@ -129,8 +129,8 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         const entrants = expected.filter((id) => !previous.has(id)).length;
         const expectedSet = new Set(expected);
         const exits = [...previous].filter((id) => !expectedSet.has(id)).length;
-        // At least one scanned, staged, or removed element per slice, plus phase handoffs.
-        const maximumFrames = previous.size + expected.length + exits + 2;
+        // Order proof and priority classification precede the existing mount/exit phases.
+        const maximumFrames = previous.size + expected.length * 3 + exits + 2;
         renderer.resetInstrumentation();
         fixture.store.resetInstrumentation();
         renderer.setViewport(viewport);
@@ -142,6 +142,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         expect(stats.domEntrants).toBe(entrants);
         expect(stats.domExits).toBe(exits);
         expect(stats.geometryBuilds).toBeLessThanOrEqual(entrants);
+        // Order, priority, warm checks, stage/retry, and newly mounted exit-iterator visits.
+        expect(stats.visibilityReconcileVisits).toBeLessThanOrEqual(
+          previous.size + expected.length * 6 + 16,
+        );
         expect(fixture.store.instrumentation.fullStoreScans).toBe(0);
         expect(fixture.store.instrumentation.bandScans).toBe(0);
       }
@@ -323,7 +327,7 @@ function drainBoundedReconciliation(
   let frames = 0;
   while (scheduler.pendingCount > 0) {
     expect(scheduler.pendingCount).toBe(1);
-    expect(frames).toBeLessThan(maximumFrames);
+    expect(frames, JSON.stringify(renderer.instrumentation())).toBeLessThan(maximumFrames);
     scheduler.runNext();
     frames += 1;
     const stats = renderer.instrumentation();

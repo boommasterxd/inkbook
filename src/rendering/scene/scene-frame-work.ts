@@ -22,6 +22,7 @@ export interface SceneFrameWorkResult {
   readonly pendingMotion: boolean;
   readonly pendingPreview: boolean;
   readonly pendingVisibility: boolean;
+  readonly waitingForPaths?: boolean;
 }
 
 /** Gives an admitted scene one bounded late unit and rotates competing queues. */
@@ -83,7 +84,14 @@ export class SceneFrameWork {
       // The sole pending operation may commit atomically even if bookkeeping spent the slice.
       backgroundDeferred = this.ports.writeBackground(deadline, backgroundOnly);
     }
-    return { backgroundDeferred, pendingFades, pendingMotion, pendingPreview, pendingVisibility };
+    return {
+      backgroundDeferred,
+      pendingFades,
+      pendingMotion,
+      pendingPreview,
+      pendingVisibility,
+      waitingForPaths: content.waitingForPaths,
+    };
   }
 
   private writeLate(
@@ -110,6 +118,7 @@ export class SceneFrameWork {
       pendingMotion: this.ports.motion.pending,
       pendingPreview: this.ports.elements.progressive.pending,
       pendingVisibility,
+      waitingForPaths: content.waitingForPaths,
     };
   }
 

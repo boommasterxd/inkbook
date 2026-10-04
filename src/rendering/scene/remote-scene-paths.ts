@@ -4,22 +4,41 @@ import type { SceneElementRecord, SceneStorePort } from "./types";
 
 interface Batch {
   readonly controller: AbortController;
+  readonly sequence: number;
   readonly versions: Map<string, number>;
   readonly paths: Map<string, readonly SvgPathPart[]>;
   pending: boolean;
 }
 
+interface RemoteScenePathOptions {
+  readonly isCached?: (record: SceneElementRecord) => boolean;
+  readonly onReady?: () => void;
+  readonly onPrepared?: (record: SceneElementRecord, parts: readonly SvgPathPart[]) => void;
+}
+
 /** One visible lookahead batch owns bounded returned contours until their mount. */
 export class RemoteScenePaths {
   #batch: Batch | undefined;
-  public constructor(private readonly store: SceneStorePort) {}
+  #hasPublished = false;
+  #sequence = 0;
+  public constructor(
+    private readonly store: SceneStorePort,
+    private readonly options: RemoteScenePathOptions = {},
+  ) {}
+
+  public get waiting(): boolean {
+    return this.#batch?.pending === true;
+  }
 
   public read(
     record: SceneElementRecord,
     upcoming: () => Iterable<string>,
   ): readonly SvgPathPart[] | "pending" | undefined {
     if (this.store.prepareScenePaths === undefined) return undefined;
-    if (!this.#batch?.versions.has(record.id)) this.start(record, upcoming);
+    if (!this.#batch?.versions.has(record.id)) {
+      if (this.waiting) return "pending";
+      this.start(record, upcoming);
+    }
     const batch = this.#batch!;
     if (batch.pending) return "pending";
     const parts =
@@ -31,9 +50,20 @@ export class RemoteScenePaths {
     return parts;
   }
 
-  public cancel(): void {
-    this.#batch?.controller.abort();
+  public cancel(retainVisible?: (id: string) => boolean): void {
+    this.#sequence += 1;
+    this.#hasPublished = false;
+    const batch = this.#batch;
+    if (batch === undefined) return;
+    for (const [id, version] of batch.versions) {
+      if (retainVisible?.(id) === true && this.store.get(id)?.geometryVersion === version) continue;
+      batch.versions.delete(id);
+      batch.paths.delete(id);
+    }
+    if (batch.versions.size > 0) return;
+    batch.controller.abort();
     this.#batch = undefined;
+    this.#hasPublished = false;
   }
 
   public memoryUsage(): number {
@@ -44,30 +74,47 @@ export class RemoteScenePaths {
   }
 
   private start(record: SceneElementRecord, upcoming: () => Iterable<string>): void {
-    this.cancel();
     const batch: Batch = {
       controller: new AbortController(),
+      sequence: this.#sequence,
       versions: new Map([[record.id, record.geometryVersion]]),
       paths: new Map(),
       pending: true,
     };
-    let visited = 0;
-    for (const id of upcoming()) {
-      if (++visited > MAX_PREPARED_SCENE_PATH_IDS - 1) break;
-      const candidate = this.store.get(id);
-      if (candidate?.element.kind === "stroke") batch.versions.set(id, candidate.geometryVersion);
-    }
+    // The first required contour has its own response, so bulk lookahead cannot delay it.
+    if (this.#hasPublished) this.addLookahead(batch, upcoming());
     this.#batch = batch;
     void this.store.prepareScenePaths!([...batch.versions.keys()], batch.controller.signal).then(
       (paths) => {
         if (this.#batch !== batch || batch.controller.signal.aborted) return;
-        for (const path of paths ?? [])
-          if (batch.versions.has(path.id)) batch.paths.set(path.id, path.parts);
+        for (const path of paths ?? []) {
+          const record = this.store.get(path.id);
+          if (record === undefined || batch.versions.get(path.id) !== record.geometryVersion)
+            continue;
+          batch.paths.set(path.id, path.parts);
+          if (batch.sequence === this.#sequence) this.#hasPublished = true;
+          this.options.onPrepared?.(record, path.parts);
+        }
         batch.pending = false;
+        this.options.onReady?.();
       },
       () => {
-        if (this.#batch === batch) batch.pending = false;
+        if (this.#batch !== batch || batch.controller.signal.aborted) return;
+        batch.pending = false;
+        this.options.onReady?.();
       },
     );
+  }
+
+  private addLookahead(batch: Batch, upcoming: Iterable<string>): void {
+    let visited = 0;
+    for (const id of upcoming) {
+      if (batch.versions.has(id)) continue;
+      if (++visited > MAX_PREPARED_SCENE_PATH_IDS - 1) break;
+      const candidate = this.store.get(id);
+      if (candidate?.element.kind !== "stroke" || this.options.isCached?.(candidate) === true)
+        continue;
+      batch.versions.set(id, candidate.geometryVersion);
+    }
   }
 }

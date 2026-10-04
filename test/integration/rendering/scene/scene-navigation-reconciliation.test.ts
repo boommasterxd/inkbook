@@ -291,8 +291,9 @@ it.each([true, false])(
     const now = vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++);
     renderer.setCamera({ x: returning ? -1_000 : -50, zoom: 1 });
     scheduler.runNext();
-    expect(renderer.mountedCount).toBeGreaterThanOrEqual(mounted);
+    expect(renderer.mountedCount).toBeGreaterThanOrEqual(mounted - 1);
     expect(renderer.mountedCount).toBeLessThanOrEqual(mounted + 1);
+    expect(renderer.instrumentation().domExits).toBeLessThanOrEqual(1);
     renderer.setCamera({ x: returning ? 0 : -1_000, zoom: 1 });
     now.mockRestore();
     scheduler.runAll();

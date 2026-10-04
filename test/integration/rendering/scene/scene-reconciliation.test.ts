@@ -101,7 +101,7 @@ describe("resumable scene reconciliation", () => {
     });
   });
 
-  it("allows one bounded mount when a query consumes the shared frame deadline", () => {
+  it("advances the viewport priority proof when a query consumes the shared frame deadline", () => {
     const scheduler = new AdvancingScheduler();
     const store = new QueryCostStore(scheduler);
     const expected = populateRectangles(store, 12);
@@ -109,10 +109,11 @@ describe("resumable scene reconciliation", () => {
 
     scheduler.runNext();
 
-    expect(renderer.mountedCount).toBe(1);
+    expect(renderer.mountedCount).toBe(0);
     expect(renderer.instrumentation()).toMatchObject({
       mountSlices: 1,
       spatialQueries: 1,
+      visibilityReconcileVisits: 1,
     });
 
     scheduler.runAll();
@@ -266,7 +267,7 @@ describe("resumable scene reconciliation after invalidation", () => {
     expect(renderer.mountedCount).toBe(store.records.size);
     expect(renderer.instrumentation()).toMatchObject({
       pathCacheEvictions: 0,
-      pathCacheHits: prepared,
+      detachedCacheHits: prepared,
       spatialQueries: 1,
     });
   });

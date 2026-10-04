@@ -3,6 +3,7 @@ import { createSceneFixture, createSceneRecord } from "../../../fixtures/renderi
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { FakeSceneStore } from "../../../unit/rendering/scene/fakes";
+import { flushBoundedScenePublication } from "../../../fixtures/rendering/scene-publication";
 
 function initialVisibleFixture() {
   const store = new FakeSceneStore();
@@ -38,13 +39,9 @@ it("prepares and publishes the complete exact viewport before reading any oversc
     { height: 100, left: 0, top: 0, width: 100 },
     { deferInitialOverscan: true },
   );
-  let previous = 0;
-  while (scheduler.pendingCount > 0) {
-    scheduler.runNext();
-    expect(renderer.mountedCount - previous).toBeLessThanOrEqual(64);
-    previous = renderer.mountedCount;
+  flushBoundedScenePublication(renderer, scheduler, () => {
     if (renderer.mountedCount < 160) expect(renderer.sceneCommitProof).toBeUndefined();
-  }
+  });
   expect(renderer.mountedIds("highlight")).toEqual(fixture.visible.highlight);
   expect(renderer.mountedIds("content")).toEqual(fixture.visible.content);
   expect(renderer.sceneCommitProof).toBeDefined();
@@ -54,12 +51,7 @@ it("prepares and publishes the complete exact viewport before reading any oversc
   const visibleReads = new Map(fixture.reads);
 
   renderer.releaseInitialOverscan();
-  previous = renderer.mountedCount;
-  while (scheduler.pendingCount > 0) {
-    scheduler.runNext();
-    expect(renderer.mountedCount - previous).toBeLessThanOrEqual(64);
-    previous = renderer.mountedCount;
-  }
+  flushBoundedScenePublication(renderer, scheduler);
   expect(renderer.mountedCount).toBe(800);
   expect(fixture.reads.size).toBe(800);
   for (const [id, count] of visibleReads) expect(fixture.reads.get(id)).toBe(count);

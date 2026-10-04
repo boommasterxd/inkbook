@@ -1,4 +1,5 @@
 import * as strokeGeometry from "../../../../src/domain/geometry/stroke-path";
+import * as elementGeometry from "../../../../src/domain/geometry/element-path";
 import * as intersections from "../../../../src/domain/geometry/pressure-boundary-intersections";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { PRESSURE_REFERENCE } from "../../../fixtures/domain/pressure-reference";
@@ -9,6 +10,8 @@ import { expect, it, vi } from "vitest";
 import type { PageV1 } from "../../../../src/domain/schema/public";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
+import { PATH_CACHE_MAX_ENTRIES } from "../../../../src/rendering/scene/constants";
+import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import {
   FakeDocument,
   FakeNode,
@@ -53,27 +56,95 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
   expect(renderer.instrumentation().pathCacheEntries).toBe(2_100);
 
   renderer.resetInstrumentation();
+  const creation = vi.spyOn(document, "createElementNS");
   showOffset(renderer, scheduler, 0);
 
   expect(renderer.instrumentation()).toMatchObject({
     geometryBuilds: 0,
-    pathCacheHits: BATCH_SIZE,
+    detachedCacheHits: BATCH_SIZE,
+    contentGeometryWrites: 0,
+    contentAttributeWrites: 0,
   });
-  await annotate("2,100 retained paths, 700 remount hits, 0 geometry builds", "performance");
+  expect(creation.mock.calls.filter(([, tag]) => tag === "path" || tag === "g")).toHaveLength(0);
+  creation.mockRestore();
+  await annotate(
+    "2,100 retained paths, 700 reused nodes, 0 geometry builds or content writes",
+    "performance",
+  );
 
   // Cross the documented entry capacity and verify eviction through renderer ownership.
-  for (let batch = 3; batch < 6; batch += 1) {
+  const batches = Math.ceil(PATH_CACHE_MAX_ENTRIES / BATCH_SIZE);
+  for (let batch = 3; batch <= batches; batch += 1) {
     const offset = batch * 1_000;
     populateBatch(store, batch, offset);
     showOffset(renderer, scheduler, offset);
     expect(renderer.mountedCount).toBe(BATCH_SIZE);
-    expect(renderer.instrumentation().pathCacheEntries).toBeLessThanOrEqual(4_096);
-    expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(32 * 1_024 * 1_024);
+    expect(renderer.instrumentation().pathCacheEntries).toBeLessThanOrEqual(PATH_CACHE_MAX_ENTRIES);
+    expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(25 * 1_024 * 1_024);
   }
-  showOffset(renderer, scheduler, 6_000);
-  expect(renderer.instrumentation().pathCacheEntries).toBe(4_096);
+  showOffset(renderer, scheduler, (batches + 1) * 1_000);
+  expect(renderer.instrumentation().pathCacheEntries).toBe(PATH_CACHE_MAX_ENTRIES);
+  expect(renderer.instrumentation().detachedCacheEntries).toBeLessThanOrEqual(8_192);
+  expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1_024 * 1_024);
   renderer.destroy();
   expect(renderer.instrumentation().pathCacheEntries).toBe(0);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("retains 2,500 immutable contours once across scene ID and geometry identity", () => {
+  const cache = new ScenePathCache(4_096);
+  const elements = Array.from({ length: 2_500 }, (_, index) => {
+    const element = indexedStroke(index);
+    const points = Array.from(element.points);
+    Object.freeze(points);
+    return { ...element, points };
+  });
+  const build = vi.spyOn(elementGeometry, "buildElementPathParts");
+  try {
+    const parts = elements.map((element) => cache.build(element));
+    const geometryWork = build.mock.calls.length;
+    expect(geometryWork).toBeGreaterThan(0);
+    elements.forEach((element, index) => cache.retain(element.id, 1, parts[index]!));
+    expect(cache.statistics()).toMatchObject({ entries: 2_500, evictions: 0 });
+    for (const element of elements) {
+      expect(cache.take(element.id, 1)).toBe(cache.read(element));
+      expect(cache.build(element)).toBe(cache.read(element));
+    }
+    expect(build).toHaveBeenCalledTimes(geometryWork);
+    cache.release();
+    expect(cache.cacheMemoryUsage()).toBe(0);
+  } finally {
+    build.mockRestore();
+  }
+});
+
+it("releases detached nodes immediately for deleted or changed geometry and memory pressure", () => {
+  const store = new FakeSceneStore();
+  const first = fakeRectangleRecord("delete", 0, 10);
+  const second = fakeRectangleRecord("change", 1, 20);
+  store.records.set(first.id, first);
+  store.records.set(second.id, second);
+  const { renderer, scheduler } = createSceneFixture(PAGE, store);
+  scheduler.runAll();
+  showOffset(renderer, scheduler, 3_000);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(2);
+  store.records.delete(first.id);
+  renderer.applyDelta({ affected: [{ id: first.id, domains: ["geometry"] }] });
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
+  store.records.set(second.id, { ...second, geometryVersion: 2 });
+  renderer.applyDelta({ affected: [{ id: second.id, domains: ["geometry"] }] });
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
+  scheduler.runAll();
+  showOffset(renderer, scheduler, 0);
+  showOffset(renderer, scheduler, 3_000);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
+  renderer.setActiveDocumentMemoryPressure(true);
+  expect(renderer.instrumentation().detachedCacheBytes).toBe(0);
+  showOffset(renderer, scheduler, 0);
+  showOffset(renderer, scheduler, 3_000);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
+  renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
 });
 

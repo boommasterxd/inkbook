@@ -11,6 +11,7 @@ import { VersionedCache } from "../../domain/cache/versioned-cache";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { PATH_CACHE_MAX_BYTES, PATH_CACHE_MAX_ENTRIES } from "./constants";
+import { SceneGeometryAliases } from "./scene-geometry-aliases";
 
 const PATH_PART_OVERHEAD_BYTES = 48;
 const SHARED_LOOKUP_OVERHEAD_BYTES = 128;
@@ -22,6 +23,7 @@ export interface PreparedScenePath {
 }
 
 interface CachedPath {
+  readonly prepared?: boolean;
   readonly parts: readonly SvgPathPart[];
   readonly windows?: readonly PressureWindow[] | undefined;
   readonly pressureGeometry?: PreparedPressureGeometryPort | undefined;
@@ -30,13 +32,20 @@ interface CachedPath {
 
 export class ScenePathCache extends VersionedCache<CachedPath> {
   readonly #identities = new WeakMap<object, Map<string, string>>();
+  readonly #parts = new WeakMap<readonly SvgPathPart[], string>();
+  readonly #retainedKeys = new Set<string>();
+  readonly #aliases: SceneGeometryAliases;
   readonly #maximumBytes: number;
   #nextIdentity = 0;
   public constructor(maximumEntries = PATH_CACHE_MAX_ENTRIES, maximumBytes = PATH_CACHE_MAX_BYTES) {
-    super(maximumEntries, maximumBytes, (_id, entry) => {
+    const aliasBytes = Math.max(1, Math.min(Math.floor(maximumBytes / 4), maximumEntries * 256));
+    super(maximumEntries, maximumBytes, (id, entry) => {
+      this.#retainedKeys.delete(id);
+      this.#aliases.invalidateKey(id);
       entry.releaseLookup?.();
     });
     this.#maximumBytes = maximumBytes;
+    this.#aliases = new SceneGeometryAliases(maximumEntries, aliasBytes);
   }
 
   public read(
@@ -55,6 +64,8 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     const key = signature === undefined ? undefined : lookup?.get(signature);
     const cached = key === undefined ? undefined : this.getCached(key, 0);
     if (cached !== undefined) {
+      this.#aliases.retain(element.id, undefined, key!);
+      this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
       cached.windows?.forEach((window, index) => pressureGeometry?.publishWindow(index, window));
       return cached.parts;
     }
@@ -72,7 +83,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
   public completePreparation(element: InkElementV1, parts: readonly SvgPathPart[]): void {
     const signature = immutableStrokeSignature(element);
     if (signature !== undefined && element.kind === "stroke")
-      this.retainShared(element.points, signature, parts, []);
+      this.retainShared(element, signature, parts, []);
   }
 
   public build(
@@ -100,17 +111,26 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
         pressureGeometry?.publishWindow(index, window);
       },
     });
-    this.retainShared(points, signature, parts, windows);
+    this.retainShared(element, signature, parts, windows);
     return parts;
   }
 
   private retainShared(
-    points: object & { readonly length: number },
+    element: InkElementV1,
     signature: string,
     parts: readonly SvgPathPart[],
     windows: readonly PressureWindow[],
   ): void {
-    if (!this.retentionEnabled) return;
+    if (!this.retentionEnabled || element.kind !== "stroke") return;
+    const points = element.points;
+    const existingLookup = this.#identities.get(points);
+    const existingKey = existingLookup?.get(signature);
+    if (existingKey !== undefined && this.#retainedKeys.has(existingKey)) {
+      this.#parts.set(parts, existingKey);
+      this.#aliases.retain(element.id, undefined, existingKey);
+      this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
+      return;
+    }
     const bytes =
       SHARED_LOOKUP_OVERHEAD_BYTES +
       points.length * 8 +
@@ -118,7 +138,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
       pathBytes(parts) +
       windows.reduce((total, window) => total + pressureWindowRetainedBytes(window), 0);
     if (bytes > this.#maximumBytes) return;
-    const lookup = this.#identities.get(points) ?? new Map<string, string>();
+    const lookup = existingLookup ?? new Map<string, string>();
     const key = `\0stroke-geometry:${this.#nextIdentity++}`;
     this.retainCached(
       key,
@@ -127,29 +147,58 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
         parts,
         windows,
         releaseLookup: () => {
-          lookup.delete(signature);
+          if (lookup.get(signature) === key) lookup.delete(signature);
           if (lookup.size === 0) this.#identities.delete(points);
         },
       },
       bytes,
     );
+    this.#retainedKeys.add(key);
+    this.#parts.set(parts, key);
     lookup.set(signature, key);
     this.#identities.set(points, lookup);
+    this.#aliases.retain(element.id, undefined, key);
+    this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
   }
 
   public cacheMemoryUsage(): number {
-    return this.cachedBytes;
+    return this.cachedBytes + this.#aliases.memoryUsage();
+  }
+
+  public override statistics(): ReturnType<VersionedCache<CachedPath>["statistics"]> {
+    return { ...super.statistics(), bytes: this.cacheMemoryUsage() };
+  }
+
+  public override release(): void {
+    super.release();
+    this.#aliases.release();
+  }
+
+  public override invalidate(id: string): void {
+    const key = this.#aliases.invalidate(id);
+    if (key !== undefined && !this.#aliases.hasOwners(key)) super.invalidate(key);
+    super.invalidate(id);
   }
 
   public take(id: string, geometryVersion: number): readonly SvgPathPart[] | undefined {
-    const cached = this.takeCached(id, geometryVersion);
+    const key = this.#aliases.read(id, geometryVersion);
+    const cached = key === undefined ? this.getCached(id, geometryVersion) : this.getCached(key, 0);
     if (cached === undefined) return undefined;
+    // A lazy live handoff owns its builder until first use; release that owner immediately.
+    if (cached.prepared === true && key !== undefined) this.takeCached(key, 0);
     if (cached.pressureGeometry !== undefined) {
       cached.windows?.forEach((window, index) =>
         cached.pressureGeometry!.publishWindow(index, window),
       );
     }
-    return cached.parts;
+    const parts = cached.parts;
+    this.#parts.set(parts, key ?? id);
+    return parts;
+  }
+
+  public has(id: string, geometryVersion: number): boolean {
+    const key = this.#aliases.read(id, geometryVersion);
+    return key !== undefined && this.#retainedKeys.has(key);
   }
 
   public retainPreparedFromStore(
@@ -173,10 +222,15 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     prepared: PreparedScenePath,
     pressureGeometry?: PreparedPressureGeometryPort,
   ): void {
+    if (!this.retentionEnabled) return;
+    const bytes = SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + prepared.geometryMemoryBytes;
+    if (bytes > this.#maximumBytes) return;
+    const key = `\0prepared:${this.#nextIdentity++}`;
     this.retainCached(
-      id,
-      geometryVersion,
+      key,
+      0,
       {
+        prepared: true,
         // Preserve the lazy live-stroke handoff: taking the entry finalizes its geometry.
         get parts() {
           return prepared.geometry;
@@ -186,13 +240,29 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
         },
         pressureGeometry,
       },
-      id.length * 2 + prepared.geometryMemoryBytes,
+      bytes,
     );
+    this.#retainedKeys.add(key);
+    this.#aliases.retain(id, geometryVersion, key);
+    this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
   }
 
   public retain(id: string, geometryVersion: number, parts: readonly SvgPathPart[]): void {
-    const bytes = id.length * 2 + pathBytes(parts);
-    this.retainCached(id, geometryVersion, { parts }, bytes);
+    if (!this.retentionEnabled) return;
+    const key = this.#parts.get(parts);
+    if (key !== undefined && this.#retainedKeys.has(key)) {
+      this.#aliases.retain(id, geometryVersion, key);
+      this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
+      return;
+    }
+    const bytes = SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + pathBytes(parts);
+    if (bytes > this.#maximumBytes) return;
+    const canonical = `\0path:${this.#nextIdentity++}`;
+    this.retainCached(canonical, 0, { parts }, bytes);
+    this.#retainedKeys.add(canonical);
+    this.#parts.set(parts, canonical);
+    this.#aliases.retain(id, geometryVersion, canonical);
+    this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
   }
 }
 

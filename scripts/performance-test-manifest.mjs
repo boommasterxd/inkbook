@@ -92,5 +92,6 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/render-mount-complexity.test.ts",
     "test/performance/rendering/scene/retained-viewport-publication.test.ts",
     "test/performance/rendering/scene/worker-visible-contours.test.ts",
+    "test/performance/rendering/scene/viewport-priority.test.ts",
   ]),
 });

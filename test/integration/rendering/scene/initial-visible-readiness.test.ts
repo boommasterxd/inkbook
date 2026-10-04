@@ -18,6 +18,20 @@ function createInitialScene() {
   return { ...scene, store, committed };
 }
 
+it("uses an unchanged supplied viewport until a later external layout invalidation", () => {
+  const { renderer, scheduler } = createInitialScene();
+  scheduler.runAll();
+  renderer.resetInstrumentation();
+  renderer.invalidateLayout();
+  renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
+  scheduler.runAll();
+  expect(renderer.instrumentation().layoutReads).toBe(0);
+  renderer.invalidateLayout();
+  scheduler.runAll();
+  expect(renderer.instrumentation().layoutReads).toBe(1);
+  renderer.destroy();
+});
+
 it.each(["viewport", "camera", "generation", "layout", "geometry"] as const)(
   "replaces the initial scene proof after a %s change and retains prepared geometry",
   (change) => {

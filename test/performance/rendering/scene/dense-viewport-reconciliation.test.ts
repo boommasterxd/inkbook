@@ -327,11 +327,18 @@ it("does not reappend returning retained nodes during unfinished viewport exit c
 
   renderer.setViewport({ ...viewport, top: 1_000 });
   let frames = 0;
-  while (renderer.instrumentation().domEntrants < 8_400 && scheduler.pendingCount > 0) {
+  // Return while both publication and fair exit cleanup are still incomplete.
+  while (
+    (renderer.instrumentation().domEntrants === 4_200 ||
+      renderer.instrumentation().domExits === 0) &&
+    scheduler.pendingCount > 0
+  ) {
     scheduler.runNext();
     expect(++frames).toBeLessThan(200);
   }
-  expect(renderer.instrumentation().domEntrants).toBe(8_400);
+  expect(renderer.instrumentation().domEntrants).toBeGreaterThan(4_200);
+  expect(renderer.instrumentation().domEntrants).toBeLessThan(8_400);
+  expect(renderer.instrumentation().domExits).toBeGreaterThan(0);
   const retained = new Set(content.nodes.filter((node) => originalSet.has(node)));
   expect(retained.size).toBeGreaterThan(4_000);
   expect(retained.size).toBeLessThan(4_200);

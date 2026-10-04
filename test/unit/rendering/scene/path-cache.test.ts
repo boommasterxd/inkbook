@@ -65,6 +65,88 @@ describe("scene-owned immutable stroke reuse", () => {
   });
 });
 
+describe("scene geometry identity and alias ownership", () => {
+  it("retains repeated completion once and preserves the current identity through eviction", () => {
+    const cache = new ScenePathCache(1, 1024 * 1024);
+    const stroke = immutableStroke();
+    const parts = geometry.buildElementPathParts(stroke);
+    cache.completePreparation(stroke, parts);
+    cache.completePreparation(stroke, [...parts]);
+    expect(cache.statistics()).toMatchObject({ entries: 1, evictions: 0 });
+    expect(cache.read(stroke)).toBe(parts);
+    const changed = { ...stroke, style: { ...stroke.style, width: 4 as const } };
+    const replacement = cache.build(changed);
+    expect(cache.statistics()).toMatchObject({ entries: 1, evictions: 1 });
+    expect(cache.read(changed)).toBe(replacement);
+    expect(cache.read(stroke)).toBeUndefined();
+  });
+
+  it("shares one contour across geometry identity and ID/version aliases", () => {
+    const cache = new ScenePathCache();
+    const stroke = immutableStroke();
+    const parts = cache.build(stroke);
+    const originalBytes = cache.cacheMemoryUsage();
+    cache.retain(stroke.id, 1, parts);
+    cache.retain("copied", 2, parts);
+    expect(cache.has(stroke.id, 1)).toBe(true);
+    expect(cache.has(stroke.id, 1)).toBe(true);
+    expect(cache.statistics().entries).toBe(1);
+    expect(cache.cacheMemoryUsage() - originalBytes).toBeLessThan(512);
+    expect(cache.take(stroke.id, 1)).toBe(parts);
+    expect(cache.take(stroke.id, 1)).toBe(parts);
+    expect(cache.take("copied", 1)).toBeUndefined();
+    expect(cache.read(stroke)).toBe(parts);
+    cache.retain("copied", 3, parts);
+    cache.invalidate("copied");
+    expect(cache.take("copied", 3)).toBeUndefined();
+    expect(cache.read(stroke)).toBe(parts);
+    cache.release();
+    expect(cache.cacheMemoryUsage()).toBe(0);
+    cache.retain(stroke.id, 4, parts);
+    expect(cache.statistics().entries).toBe(1);
+    expect(cache.take(stroke.id, 4)).toBe(parts);
+  });
+});
+
+describe("scene geometry alias invalidation", () => {
+  it("releases the final ID owner synchronously while preserving contours shared by another ID", () => {
+    const cache = new ScenePathCache();
+    const stroke = immutableStroke();
+    const copied = { ...stroke, id: "copy" };
+    const parts = cache.build(stroke);
+    expect(cache.build(copied)).toBe(parts);
+    cache.invalidate(stroke.id);
+    expect(cache.statistics().entries).toBe(1);
+    expect(cache.read(copied)).toBe(parts);
+    cache.retain(stroke.id, 1, parts);
+    cache.retain(copied.id, 1, parts);
+    expect(cache.take(stroke.id, 1)).toBe(parts);
+    cache.invalidate(stroke.id);
+    expect(cache.statistics().entries).toBe(1);
+    expect(cache.take(copied.id, 1)).toBe(parts);
+    cache.invalidate(copied.id);
+    expect(cache.statistics().entries).toBe(0);
+    expect(cache.cacheMemoryUsage()).toBe(0);
+    expect(cache.read(copied)).toBeUndefined();
+  });
+
+  it("releases a completed stroke before any viewport exit and after stale-version probes", () => {
+    const cache = new ScenePathCache();
+    const stroke = immutableStroke();
+    const parts = geometry.buildElementPathParts(stroke);
+    cache.completePreparation(stroke, parts);
+    cache.invalidate(stroke.id);
+    expect(cache.statistics().entries).toBe(0);
+    expect(cache.cacheMemoryUsage()).toBe(0);
+    cache.retain(stroke.id, 2, parts);
+    expect(cache.has(stroke.id, 1)).toBe(false);
+    expect(cache.take(stroke.id, 1)).toBeUndefined();
+    cache.invalidate(stroke.id);
+    expect(cache.statistics().entries).toBe(0);
+    expect(cache.cacheMemoryUsage()).toBe(0);
+  });
+});
+
 describe("scene stroke reuse resource ownership", () => {
   it("uses the existing entry and byte limits and releases identity lookups on memory pressure", () => {
     const cache = new ScenePathCache(1, 1024 * 1024);

@@ -1,6 +1,11 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
-import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import {
+  createPendingScenePathStore,
+  createSceneFixture,
+  createSceneRecord,
+} from "../../../fixtures/rendering/scene";
+import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { FakeSceneStore, fakeNode, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
 
@@ -49,4 +54,101 @@ it("merges viewport entrants into band order and sorts after a rank change", () 
   expect(firstNode.parent).toBe(contentGroup);
   expect(contentGroup.nodes[1]).toBe(firstNode);
   renderer.destroy();
+});
+
+it.each([
+  { name: "down", horizontal: false, initial: 0, sign: 1 },
+  { name: "up", horizontal: false, initial: 2_000, sign: -1 },
+  { name: "right", horizontal: true, initial: 0, sign: 1 },
+  { name: "left", horizontal: true, initial: 2_000, sign: -1 },
+])("prepares entrants along $name navigation while preserving final SVG rank", (scenario) => {
+  const store = new FakeSceneStore();
+  const ids = Array.from({ length: 128 }, (_, rank) => `direction-${rank}`);
+  ids.forEach((id, rank) => {
+    const coordinate = 1_020 + rank / 4;
+    store.records.set(
+      id,
+      fakeRectangleRecord(
+        id,
+        rank,
+        scenario.horizontal ? coordinate : 20,
+        scenario.horizontal ? 20 : coordinate,
+      ),
+    );
+  });
+  const viewport = {
+    height: 100,
+    left: 0,
+    top: scenario.horizontal ? 0 : scenario.initial,
+    width: 100,
+  };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  if (scenario.horizontal) renderer.setCamera({ x: -scenario.initial, zoom: 1 });
+  scheduler.runAll();
+  expect(renderer.mountedCount).toBe(0);
+  if (scenario.horizontal) renderer.setCamera({ x: -1_000, zoom: 1 });
+  else renderer.setViewport({ ...viewport, top: 1_000 });
+  scheduler.runNext();
+  expect(renderer.mountedIds("content")).toEqual(
+    scenario.sign > 0 ? ids.slice(0, 64) : ids.slice(64),
+  );
+  scheduler.runAll();
+  expect(renderer.mountedIds("content")).toEqual(ids);
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  expect(content.nodes).toHaveLength(128);
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("publishes a cached entrant while the earlier cold stroke waits for the worker", () => {
+  const { store, signals } = createPendingScenePathStore();
+  const warm = fakeRectangleRecord("warm", 1, 20, 110);
+  const stroke = {
+    ...indexedStroke(0),
+    pivot: { x: 20, y: 240 },
+    points: [20, 240, 0.5, 30, 240, 0.5],
+  };
+  store.records.set(warm.id, warm);
+  store.records.set(stroke.id, createSceneRecord(stroke, 0));
+  const viewport = { height: 50, left: 0, top: 100, width: 100 };
+  const { renderer, scheduler, document } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  scheduler.runAll();
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const retained = content.nodes[0]!;
+  renderer.setViewport({ ...viewport, top: 1_000 });
+  scheduler.runAll();
+  expect(retained.parent).toBeUndefined();
+  renderer.resetInstrumentation();
+  const create = vi.spyOn(document, "createElementNS");
+  renderer.setViewport({ ...viewport, height: 200 });
+  scheduler.runAll();
+  expect(signals).toHaveLength(1);
+  expect(renderer.mountedIds("content")).toEqual([warm.id]);
+  expect(content.nodes[0]).toBe(retained);
+  expect(renderer.instrumentation()).toMatchObject({ geometryBuilds: 0, detachedCacheHits: 1 });
+  expect(create.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(0);
+  expect(scheduler.pendingCount).toBe(0);
+  renderer.destroy();
+  expect(signals[0]!.aborted).toBe(true);
+});
+
+it("prioritizes the viewport center when zoom reveals missing elements", () => {
+  const store = new FakeSceneStore();
+  const ids = Array.from({ length: 128 }, (_, rank) => `zoom-${String(rank).padStart(3, "0")}`);
+  ids.forEach((id, rank) => store.records.set(id, fakeRectangleRecord(id, rank, 490, 400 + rank)));
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
+    height: 100,
+    left: 0,
+    top: 0,
+    width: 100,
+  });
+  scheduler.runAll();
+  expect(renderer.mountedCount).toBe(0);
+  renderer.setCamera({ x: 0, zoom: 0.1 });
+  scheduler.runNext();
+  expect(renderer.mountedIds("content")).toEqual(ids.slice(58, 122));
+  scheduler.runAll();
+  expect(renderer.mountedIds("content")).toEqual(ids);
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
 });

@@ -13,7 +13,7 @@ function needsAnotherSceneFrame(
   pendingExitCleanup: boolean,
 ): boolean {
   return (
-    work.pendingVisibility ||
+    (work.pendingVisibility && work.waitingForPaths !== true) ||
     work.backgroundDeferred ||
     work.pendingPreview ||
     work.pendingFades ||

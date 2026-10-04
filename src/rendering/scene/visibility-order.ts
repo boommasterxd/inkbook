@@ -82,6 +82,17 @@ export function firstMountedSuccessor(
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { SceneStorePort } from "./types";
 import type { BandVisibility } from "./visibility-types";
+import type { VisibilityResult } from "./visibility-types";
+
+export function commitVisibleBands(
+  ids: Record<RenderBand, (string | undefined)[]>,
+  counts: Record<RenderBand, number>,
+  visibility: VisibilityResult,
+  proof?: Parameters<typeof copyCommittedVisibility>[3],
+): void {
+  for (const band of ["highlight", "content"] as const)
+    counts[band] = copyCommittedVisibility(ids[band], counts[band], visibility[band], proof);
+}
 
 export function copyCommittedVisibility(
   target: (string | undefined)[],

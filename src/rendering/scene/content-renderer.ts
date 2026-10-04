@@ -20,8 +20,10 @@ import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
 import type { SceneVisibilityState, VisibilityResult } from "./visibility-state";
 import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
-import { writeDirtySet } from "./dirty-set-work";
-import { copyCommittedVisibility, mountedVisibleIds } from "./visibility-order";
+import { markSceneOrderDirty, writeDirtySet } from "./dirty-set-work";
+import { commitVisibleBands, mountedVisibleIds } from "./visibility-order";
+import type { SceneVisibilityReconcilerOptions } from "./reconciliation-state";
+import type { SceneVisibilityPriority } from "./scene-entrant-priority";
 
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
@@ -57,6 +59,7 @@ export class SceneContentRenderer {
     visibility: SceneVisibilityState,
     pathCache: ScenePathCache,
     instrumentation: MutableSceneInstrumentation,
+    options: Pick<SceneVisibilityReconcilerOptions, "onPathsReady" | "detachedCache"> = {},
   ) {
     this.#dom = dom;
     this.#selectionTraces = new SceneSelectionTraces(
@@ -68,6 +71,7 @@ export class SceneContentRenderer {
     this.#pathCache = pathCache;
     this.#instrumentation = instrumentation;
     this.#reconciler = new SceneVisibilityReconciler({
+      ...options,
       dom,
       instrumentation,
       isExitReady: (id, now) => this.isElementFadeExitReady(id, now),
@@ -80,18 +84,13 @@ export class SceneContentRenderer {
   }
 
   public setSelectedElements(ids: ReadonlySet<string>): void {
-    if (this.#selectionTraces.setSelection(ids)) this.markSelectionDirty();
+    if (this.#selectionTraces.setSelection(ids))
+      this.#selectionTraces.markMountedDirty(this.#mounted, this.#selectionDirty);
   }
 
   public setSelectionHighlightsEnabled(enabled: boolean): void {
-    if (this.#selectionTraces.setHighlightsEnabled(enabled)) this.markSelectionDirty();
-  }
-
-  private markSelectionDirty(): void {
-    for (const id of this.#mounted.keys()) {
-      if (this.#selectionTraces.needsUpdate(id, this.#mounted.get(id)?.displayedElement))
-        this.#selectionDirty.add(id);
-    }
+    if (this.#selectionTraces.setHighlightsEnabled(enabled))
+      this.#selectionTraces.markMountedDirty(this.#mounted, this.#selectionDirty);
   }
 
   public flushSelectionContext(): void {
@@ -136,21 +135,13 @@ export class SceneContentRenderer {
   }
 
   public markOrder(id: string): void {
-    this.markOrderDirty(id);
+    markSceneOrderDirty(id, this.#store, this.#orderDirty);
     this.#reconciler.cancel();
   }
 
   public markOrders(ids: readonly string[]): void {
-    for (const id of ids) this.markOrderDirty(id);
+    for (const id of ids) markSceneOrderDirty(id, this.#store, this.#orderDirty);
     this.#reconciler.cancel();
-  }
-
-  private markOrderDirty(id: string): void {
-    const record = this.#store.get(id);
-    if (record === undefined) {
-      this.#orderDirty.content.add(id);
-      this.#orderDirty.highlight.add(id);
-    } else this.#orderDirty[record.band].add(id);
   }
 
   public materializePreviewGeometry(
@@ -224,6 +215,14 @@ export class SceneContentRenderer {
     return this.#reconciler.hasPendingWork;
   }
 
+  public get waitingForPaths(): boolean {
+    return this.#reconciler.waitingForPaths && !this.hasMountedWork;
+  }
+
+  public setVisibilityPriority(priority: SceneVisibilityPriority): void {
+    this.#reconciler.setPriority(priority);
+  }
+
   public hasUnprotectedDeferredExit(
     ...args: Parameters<SceneVisibilityReconciler["hasUnprotectedDeferredExit"]>
   ): boolean {
@@ -269,12 +268,11 @@ export class SceneContentRenderer {
       this.#selectionTraces.prune(this.#mounted);
     }
     this.#newlyMountedIds = result.newlyMountedIds;
-    if (result.newlyMountedIds.length > 0) {
-      for (const id of result.newlyMountedIds) {
-        if (this.#selectionTraces.needsUpdate(id, this.#mounted.get(id)?.displayedElement))
-          this.#selectionDirty.add(id);
-      }
-    }
+    this.#selectionTraces.markMountedDirty(
+      this.#mounted,
+      this.#selectionDirty,
+      result.newlyMountedIds,
+    );
     return result.pending || this.#selectionDirty.size > 0;
   }
 
@@ -388,7 +386,7 @@ export class SceneContentRenderer {
   }
 
   public isElementFadeExitReady(id: string, now: number): boolean {
-    return this.#fades.isExitReady(id, now);
+    return !this.#fades.pending && this.#fades.isExitReady(id, now);
   }
 
   public setElementMotion(ids: readonly string[], opacity: number | null, scale = 1): void {
@@ -486,15 +484,17 @@ export class SceneContentRenderer {
       this.#selectionDirty.add(id);
   }
   private commitVisibility(visibility: VisibilityResult, orderProofEpoch?: number): void {
-    for (const band of ["highlight", "content"] as const) {
-      this.#committedCounts[band] = copyCommittedVisibility(
-        this.#committedIds[band],
-        this.#committedCounts[band],
-        visibility[band],
-        orderProofEpoch === undefined
-          ? undefined
-          : { mounted: this.#mounted, store: this.#store, epoch: orderProofEpoch },
-      );
-    }
+    commitVisibleBands(
+      this.#committedIds,
+      this.#committedCounts,
+      visibility,
+      orderProofEpoch === undefined
+        ? undefined
+        : {
+            mounted: this.#mounted,
+            store: this.#store,
+            epoch: orderProofEpoch,
+          },
+    );
   }
 }

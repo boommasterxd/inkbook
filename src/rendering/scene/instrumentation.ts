@@ -1,6 +1,7 @@
 import type { MutableSceneInstrumentation, SceneInstrumentationSnapshot } from "./types";
 import type { SceneBackgroundCache } from "./background-cache";
 import type { ScenePathCache } from "./path-cache";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
 
 export function createInstrumentation(): MutableSceneInstrumentation {
   return {
@@ -12,6 +13,10 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     contentAttributeWrites: 0,
     contentGeometryWrites: 0,
     domEntrants: 0,
+    detachedCacheBytes: 0,
+    detachedCacheEntries: 0,
+    detachedCacheEvictions: 0,
+    detachedCacheHits: 0,
     domExits: 0,
     domFragmentRuns: 0,
     domReorders: 0,
@@ -75,6 +80,7 @@ export function refreshCacheInstrumentation(
   value: MutableSceneInstrumentation,
   background: SceneBackgroundCache,
   pathSource: ScenePathCache,
+  detachedSource?: DetachedSceneElementCache,
 ): void {
   const path = pathSource.statistics();
   value.geometryBuilds = path.builds;
@@ -82,6 +88,11 @@ export function refreshCacheInstrumentation(
   value.pathCacheEntries = path.entries;
   value.pathCacheEvictions = path.evictions;
   value.pathCacheHits = path.hits;
+  const detached = detachedSource?.statistics();
+  value.detachedCacheBytes = detached?.bytes ?? 0;
+  value.detachedCacheEntries = detached?.entries ?? 0;
+  value.detachedCacheEvictions = detached?.evictions ?? 0;
+  value.detachedCacheHits = detached?.hits ?? 0;
   value.backgroundBuilds = background.builds;
   value.backgroundCacheHits = background.hits;
 }

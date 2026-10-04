@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { PATH_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants";
 import { FakeScheduler, FakeNode, FakeSceneStore } from "../../../unit/rendering/scene/fakes";
 import {
   createPressureNavigationHarness,
   NAVIGATION_VISIBLE_STROKES,
   NAVIGATION_PAGE,
 } from "../../../fixtures/rendering/pressure-navigation";
-import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import { createSceneFixture, flushSceneViewport } from "../../../fixtures/rendering/scene";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
 import {
   INTERACTION_ELEMENT_COUNT,
@@ -83,17 +84,18 @@ it("finishes cold pressure mounting during uninterrupted zoom and reuses dense o
     NAVIGATION_VISIBLE_STROKES,
   );
 
-  renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
-  scheduler.runAll();
+  flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 10_000, width: 100 });
   expect(renderer.instrumentation().pathCacheEntries).toBe(NAVIGATION_VISIBLE_STROKES);
-  expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(32 * 1_024 * 1_024);
+  expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
   renderer.resetInstrumentation();
-  renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
-  scheduler.runAll();
+  nodes.mockClear();
+  flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 0, width: 100 });
   expect(renderer.instrumentation()).toMatchObject({
     geometryBuilds: 0,
-    pathCacheHits: NAVIGATION_VISIBLE_STROKES,
+    detachedCacheHits: NAVIGATION_VISIBLE_STROKES,
+    contentGeometryWrites: 0,
   });
+  expect(nodes.mock.calls.filter(([, tag]) => tag === "path" || tag === "g")).toEqual([]);
   renderer.destroy();
   expect(renderer.instrumentation().pathCacheEntries).toBe(0);
   expect(scheduler.pendingCount).toBe(0);

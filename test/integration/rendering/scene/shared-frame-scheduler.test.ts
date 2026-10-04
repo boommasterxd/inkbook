@@ -41,7 +41,9 @@ it("defers a second scene when the first consumes the shared window deadline", (
   expect(scheduler.pendingCount).toBe(1);
   scheduler.runNext();
   expect(first.renderer.instrumentation().spatialQueries).toBe(1);
-  expect(first.renderer.mountedCount).toBe(1);
+  // The exhausted slice starts the viewport priority proof before any SVG publication.
+  expect(first.renderer.mountedCount).toBe(0);
+  expect(first.renderer.instrumentation().visibilityReconcileVisits).toBe(1);
   expect(second.renderer.instrumentation().spatialQueries).toBe(0);
   expect(scheduler.pendingCount).toBe(1);
 

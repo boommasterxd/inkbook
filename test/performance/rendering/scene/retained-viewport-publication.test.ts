@@ -13,6 +13,9 @@ import { SpatialQueryScratch, UniformSpatialIndex } from "../../../../src/domain
 import type { SceneStorePort, SpatialQuerySink } from "../../../../src/rendering/scene";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
 import { removeVisibilityExits } from "../../../../src/rendering/scene/visibility-publication";
+import { removeOrderedVisibilityExits } from "../../../../src/rendering/scene/visibility-reconciliation-commit";
+import type { PendingReconciliation } from "../../../../src/rendering/scene/reconciliation-state";
+import type { MountedSceneElement } from "../../../../src/rendering/scene/mounted-element";
 import { arrow } from "../../../unit/domain/schema/fixtures";
 import {
   FakeNode,
@@ -23,13 +26,13 @@ import {
 } from "../../../unit/rendering/scene/fakes";
 import type { Bounds } from "../../../../src/domain/geometry/public";
 
-it("bounds retained reorder writes when a partially detached arrow returns", () => {
+it("repairs only the partial arrow while preserving retained order and frame bounds", () => {
   const store = new FakeSceneStore();
   const target = { height: 100, left: 0, top: 100, width: 400 };
   const element = { ...arrow(500), start: { x: 200, y: 150 }, end: { x: 300, y: 150 } };
   for (let rank = 0; rank < 256; rank += 1) {
     const record =
-      rank === 200
+      rank === 63
         ? createSceneRecord(element, rank)
         : fakeRectangleRecord(`retained-${rank}`, rank, 20, 150);
     store.records.set(record.id, record);
@@ -38,7 +41,7 @@ it("bounds retained reorder writes when a partially detached arrow returns", () 
   scheduler.runAll(20);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   expect(content.nodes).toHaveLength(257);
-  const arrowTail = content.nodes[201]!;
+  const arrowTail = content.nodes[64]!;
   const remove = vi.spyOn(arrowTail, "remove");
   const originalRemove = Object.getOwnPropertyDescriptor(FakeNode.prototype, "remove")!.value as (
     this: FakeNode,
@@ -57,7 +60,7 @@ it("bounds retained reorder writes when a partially detached arrow returns", () 
     renderer.resetInstrumentation();
     const writes = collectFrameWrites(content, scheduler, () => renderer.setViewport(target), 20);
     expect(writes.every((count) => count <= 64)).toBe(true);
-    expect(renderer.instrumentation().domReorders).toBeGreaterThan(64);
+    expect(renderer.instrumentation().domReorders).toBe(1);
     expect(renderer.mountedIds("content")).toEqual([...store.records.keys()]);
     expect(content.nodes).toHaveLength(257);
   } finally {
@@ -407,6 +410,61 @@ it("scans exit candidates until the shared deadline instead of a fixed visit quo
   ).toBe(true);
   expect(pending.exitIndex).toBe(ids.length);
   expect(get).toHaveBeenCalledTimes(ids.length);
+});
+
+it("orders the document-capacity cleanup once while keeping its partial cursor", () => {
+  const count = 20_000;
+  const ids = Array.from({ length: count }, (_, rank) => `exit-${rank}`);
+  const mounted = new Map<string, MountedSceneElement>();
+  for (let rank = 0; rank < count; rank += 1) {
+    mounted.set(ids[rank]!, {
+      id: ids[rank]!,
+      committedRank: rank,
+      band: rank < count / 2 ? "highlight" : "content",
+      detachedPathCount: 0,
+    } as MountedSceneElement);
+  }
+  mounted.set("partial", {
+    id: "partial",
+    committedRank: count,
+    band: "content",
+    detachedPathCount: 1,
+  } as MountedSceneElement);
+  const reverse = [...ids].reverse();
+  const pending = {
+    exitIds: ["consumed", "partial", ...reverse, "partial", ...reverse],
+    exitIndex: 1,
+    exitScanComplete: true,
+    exitOrderPrepared: false,
+  } as PendingReconciliation;
+  const get = vi.spyOn(mounted, "get");
+  const options = { mounted } as unknown as Parameters<typeof removeVisibilityExits>[1];
+  const frame = { deadline: 8, now: () => 8, isExit: () => false };
+  expect(removeOrderedVisibilityExits(pending, options, frame)).toBe(false);
+  expect(get).not.toHaveBeenCalled();
+  expect(pending.exitOrderPrepared).toBe(false);
+  expect(pending.exitIds).toEqual(["consumed", "partial", ...reverse, "partial", ...reverse]);
+  let clockReads = 0;
+  const admitted = { ...frame, now: () => (clockReads++ === 0 ? 0 : 8) };
+  expect(removeOrderedVisibilityExits(pending, options, admitted)).toBe(false);
+  expect(pending.exitIds).toEqual(["consumed", "partial", ...ids]);
+  expect(pending.exitIndex).toBe(1);
+  expect(get.mock.calls.length).toBeGreaterThan(count);
+  expect(get.mock.calls.length).toBeLessThanOrEqual(count * 32 + 1);
+  get.mockClear();
+  expect(removeOrderedVisibilityExits(pending, options, frame)).toBe(false);
+  expect(get).toHaveBeenCalledExactlyOnceWith("partial");
+  expect(pending.exitIndex).toBe(2);
+  pending.exitOrderPrepared = false;
+  for (let index = 0; index < count; index += 1) {
+    pending.exitIds[index + 2] = ids[count - index - 1]!;
+  }
+  get.mockClear();
+  clockReads = 0;
+  expect(removeOrderedVisibilityExits(pending, options, admitted)).toBe(false);
+  expect(pending.exitIds).toEqual(["consumed", "partial", ...ids]);
+  expect(pending.exitIndex).toBe(2);
+  expect(get.mock.calls.length).toBeLessThanOrEqual(count * 32 + 1);
 });
 
 it("checks the deadline while a full fallback visits stable mounted elements", () => {
