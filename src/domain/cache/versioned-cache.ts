@@ -31,6 +31,10 @@ export abstract class VersionedCache<T> {
     this.#builds += 1;
   }
 
+  protected trimCachedToBytes(maximumBytes: number): void {
+    this.#lru.trimToBytes(maximumBytes);
+  }
+
   protected get cachedBytes(): number {
     return this.#lru.retainedBytes;
   }
