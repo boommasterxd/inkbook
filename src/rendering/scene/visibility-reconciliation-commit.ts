@@ -92,6 +92,8 @@ export function prepareVisibilityCleanup(
   },
 ): MountYieldReason | undefined {
   if (!pending.cleanupFirst) return undefined;
+  const initialBlock = slice.blockingReason();
+  if (initialBlock !== undefined) return initialBlock;
   pending.cleanupFirst = false;
   const hasCollectedExits = pending.exitIndex < pending.exitIds.length;
   if (hasCollectedExits) {
@@ -100,7 +102,7 @@ export function prepareVisibilityCleanup(
     const blocked = slice.blockingReason();
     if (blocked !== undefined) return blocked;
   }
-  const blocked = cleanup.collect();
+  const blocked = cleanup.collect() ?? slice.blockingReason();
   if (blocked !== undefined) return blocked;
   if (!hasCollectedExits && pending.exitIndex < pending.exitIds.length) {
     cleanup.remove();
@@ -117,14 +119,14 @@ export function publishPendingVisibility(
     readonly collect: () => void;
     readonly remove: () => void;
     readonly canWork: () => boolean;
-    readonly waitingForPaths: boolean;
+    readonly waitingForPreparation: boolean;
   },
 ): ReconciliationResult {
   if (pending.scanExits && newlyMountedIds.length > 0 && cleanup.canWork()) cleanup.collect();
   if (
     pending.delta !== undefined &&
     pending.exitIndex < pending.exitIds.length &&
-    (!pending.scanExits || cleanup.canWork())
+    cleanup.canWork()
   )
     cleanup.remove();
   const committedVisibility = pending.targetPublished ? undefined : pending.visibility;
@@ -132,7 +134,7 @@ export function publishPendingVisibility(
   pending.cleanupFirst ||=
     hasPendingVisibilityCleanup(pending) &&
     (newlyMountedIds.length > 0 ||
-      (cleanup.waitingForPaths && hasPendingVisibilityCleanup(pending)));
+      (cleanup.waitingForPreparation && hasPendingVisibilityCleanup(pending)));
   return {
     ...(newlyMountedIds.length === 0 || committedVisibility === undefined
       ? {}

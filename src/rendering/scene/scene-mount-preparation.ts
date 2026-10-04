@@ -73,6 +73,10 @@ export class SceneMountPreparation {
     return this.#pending === undefined && this.#remote.waiting;
   }
 
+  public get waitingForPreparation(): boolean {
+    return this.#pending !== undefined || this.#remote.waiting;
+  }
+
   public memoryUsage(): number {
     return (this.#pending?.path.memoryUsage() ?? 0) + this.#remote.memoryUsage();
   }

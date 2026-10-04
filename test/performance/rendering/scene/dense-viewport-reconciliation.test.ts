@@ -453,33 +453,32 @@ it("shares bounded preparation work across cold strokes instead of yielding four
     };
     store.records.set(element.id, createSceneRecord(element, index));
   }
-  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
-    height: 100,
-    left: 0,
-    top: 0,
-    width: 100,
-  });
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   scheduler.runAll();
   const originalStep = Object.getOwnPropertyDescriptor(
     CanonicalElementPathPreparation.prototype,
     "step",
   )!.value as CanonicalElementPathPreparation["step"];
   const starts: { deadline: number; time: number }[] = [];
+  const completed = new Set<CanonicalElementPathPreparation>();
   const steps = vi
     .spyOn(CanonicalElementPathPreparation.prototype, "step")
     .mockImplementation(function (this: CanonicalElementPathPreparation, deadline, now) {
       starts.push({ deadline: deadline ?? Infinity, time: scheduler.time });
       scheduler.time += 0.25;
-      return originalStep.call(this, deadline, now);
+      const done = originalStep.call(this, deadline, now);
+      if (done) completed.add(this);
+      return done;
     });
   try {
-    renderer.setViewport({ height: 100, left: 0, top: 980, width: 100 });
+    renderer.setViewport({ ...viewport, top: 980 });
     scheduler.runNext();
     expect(steps.mock.calls.length).toBeGreaterThan(4);
     expect(starts.slice(1).every(({ deadline, time }) => time < deadline)).toBe(true);
     expect(scheduler.time).toBeGreaterThanOrEqual(starts[0]!.deadline);
-    expect(renderer.mountedCount).toBeGreaterThan(0);
-    expect(renderer.mountedCount).toBeLessThan(10);
+    expect(completed.size).toBeGreaterThan(0);
+    expect(completed.size).toBeLessThan(10);
     expect(scheduler.pendingCount).toBeGreaterThan(0);
     let frames = 1;
     while (scheduler.pendingCount > 0) {

@@ -48,6 +48,7 @@ interface DeltaStageOptions {
   readonly store: SceneStorePort;
   readonly visibility: { contains(id: string): boolean };
   readonly waiting: () => boolean;
+  readonly publish: () => void;
   readonly prepareDeferred: () => string | undefined;
   readonly stage: (
     pending: PendingReconciliation,
@@ -220,6 +221,7 @@ function stageDeltaEntry(
   run.count = 1;
   pending.runCount += 1;
   slice.record();
+  options.publish();
   return undefined;
 }
 

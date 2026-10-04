@@ -29,6 +29,58 @@ interface PublicationOptions {
   readonly store: SceneStorePort;
 }
 
+function commitMountedEntry(
+  entry: MountedSceneElement,
+  run: PendingMutationRun,
+  options: PublicationOptions,
+  epoch: number,
+): void {
+  entry.rank = options.store.get(entry.id)?.rank ?? Number.MAX_SAFE_INTEGER;
+  entry.committedRank = entry.rank;
+  entry.committedOrderEpoch = epoch;
+  entry.band = run.band;
+  options.detachedCache?.registerMounted(entry, options.store);
+}
+
+function commitPublishedEntry(
+  entry: MountedSceneElement,
+  run: PendingMutationRun,
+  options: PublicationOptions,
+  epoch: number,
+): boolean {
+  commitMountedEntry(entry, run, options, epoch);
+  const connected = publicationRootCount(entry) === 0;
+  options.detachedCache?.commitReservation(entry);
+  options.mounted.set(entry.id, entry);
+  if (!connected) options.instrumentation.domEntrants += 1;
+  return connected;
+}
+
+/** A stable delta run has one exact physical successor, including cached offscreen anchors. */
+export function publishStableEntrantRun(
+  run: PendingMutationRun,
+  options: PublicationOptions,
+  epoch: number,
+): string[] {
+  const ids: string[] = [];
+  let fragment: DocumentFragment | undefined;
+  for (let index = run.count - 1; index >= 0; index -= 1) {
+    const entry = run.entries[index];
+    if (entry === undefined) continue;
+    const connected = commitPublishedEntry(entry, run, options, epoch);
+    ids.push(entry.id);
+    if (connected) continue;
+    fragment ??= createFragment(options.dom.ownerDocument);
+    appendElementToFragment(entry, fragment);
+  }
+  if (fragment === undefined) return ids;
+  options.dom
+    .group(run.band)
+    .insertBefore(fragment, run.successor === undefined ? null : firstPath(run.successor));
+  options.instrumentation.domFragmentRuns += 1;
+  return ids;
+}
+
 export function mountedRootCount(entry: MountedSceneElement): number {
   return entry.group === null ? entry.paths.length : 1;
 }
@@ -156,17 +208,13 @@ export function publishVisibilityRun(
   for (let index = run.count - 1; index >= 0; index -= 1) {
     const entry = run.entries[index];
     if (entry === undefined) continue;
-    entry.rank = options.store.get(entry.id)?.rank ?? Number.MAX_SAFE_INTEGER;
-    entry.committedRank = entry.rank;
-    entry.committedOrderEpoch = epoch;
-    entry.band = run.band;
-    options.detachedCache?.registerMounted(entry, options.store);
-    const connectedRevisit = run.entrants[index] && publicationRootCount(entry) === 0;
+    const connectedRevisit = run.entrants[index]
+      ? commitPublishedEntry(entry, run, options, epoch)
+      : false;
     if (run.entrants[index]) {
-      options.detachedCache?.commitReservation(entry);
-      options.mounted.set(entry.id, entry);
       ids.push(entry.id);
-      if (!connectedRevisit) options.instrumentation.domEntrants += 1;
+    } else {
+      commitMountedEntry(entry, run, options, epoch);
     }
     if (connectedRevisit || (retainedOrderPreserved && !run.entrants[index])) {
       // Rank shifts can mark retained nodes dirty without changing their relative DOM order.

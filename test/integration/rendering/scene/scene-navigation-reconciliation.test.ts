@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import {
   createSceneFixture,
@@ -144,10 +145,25 @@ it("cleans an obsolete delta exit while a cold entrant is suspended, then cancel
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(["old"]);
-  const now = vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++);
+  const originalStep = Object.getOwnPropertyDescriptor(
+    CanonicalElementPathPreparation.prototype,
+    "step",
+  )!.value as CanonicalElementPathPreparation["step"];
+  const step = vi
+    .spyOn(CanonicalElementPathPreparation.prototype, "step")
+    .mockImplementation(function (this: CanonicalElementPathPreparation, deadline, now) {
+      const complete = originalStep.call(this, deadline, now);
+      scheduler.time += 8;
+      return complete;
+    });
   renderer.setViewport({ height: 100, left: 0, top: 50, width: 100 });
-  scheduler.runNext();
-  now.mockRestore();
+  let remaining = 100;
+  while (renderer.mountedCount > 0 || step.mock.calls.length === 0) {
+    expect(remaining--).toBeGreaterThan(0);
+    scheduler.runNext();
+  }
+  expect(step.mock.results.every((result) => result.value === false)).toBe(true);
+  step.mockRestore();
   expect(renderer.mountedCount).toBe(0);
   renderer.setViewport({ height: 100, left: 0, top: 0, width: 120 });
   scheduler.runAll(30);

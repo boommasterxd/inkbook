@@ -13,16 +13,8 @@ import {
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
 
-class AdvancingScheduler extends FakeScheduler {
-  override now(): number {
-    const current = this.time;
-    this.time += 2;
-    return current;
-  }
-}
-
 it("keeps initial handoff hidden while final viewport reconciliation spans multiple frames", () => {
-  const scheduler = new AdvancingScheduler();
+  const scheduler = new FakeScheduler();
   const store = new FakeSceneStore();
   for (let index = 0; index < 20; index += 1) {
     const id = `rectangle-${String(index)}`;
@@ -50,10 +42,21 @@ it("keeps initial handoff hidden while final viewport reconciliation spans multi
     store,
   });
   scheduler.runAll();
-  expect(renderer.instrumentation()).toMatchObject({ backgroundBuilds: 1, frames: 2 });
+  expect(renderer.instrumentation()).toMatchObject({ backgroundBuilds: 1 });
   expect(scheduler.pendingCount).toBe(0);
   expect(renderer.mountedCount).toBe(0);
   expect(visible).not.toHaveBeenCalled();
+
+  let pathCreations = 0;
+  const create = document.createElementNS.bind(document);
+  const paths = vi.spyOn(document, "createElementNS").mockImplementation((namespace, tag) => {
+    const node = create(namespace, tag);
+    if (tag === "path") {
+      pathCreations += 1;
+      scheduler.time += 9;
+    }
+    return node;
+  });
 
   renderer.setCamera({ x: 0, zoom: 0.5 });
   viewport = { height: 100, left: 0, top: 0, width: 100 };
@@ -61,11 +64,14 @@ it("keeps initial handoff hidden while final viewport reconciliation spans multi
   scheduler.runNext();
   scheduler.runNext();
   scheduler.runNext();
+  expect(pathCreations).toBeGreaterThan(0);
   expect(renderer.mountedCount).toBeLessThan(20);
   expect.soft(visible).not.toHaveBeenCalled();
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(20);
+  expect(pathCreations).toBe(20);
   expect(visible).toHaveBeenCalledOnce();
+  paths.mockRestore();
   renderer.destroy();
 });
 

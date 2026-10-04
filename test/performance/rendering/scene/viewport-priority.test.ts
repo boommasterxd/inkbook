@@ -13,6 +13,7 @@ import {
   beginViewportPublication,
   chargeClockAfterPublication,
   flushBoundedScenePublication,
+  observeSceneInsertions,
 } from "../../../fixtures/rendering/scene-publication";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
@@ -161,18 +162,22 @@ it("finishes logical exits without detaching cached roots behind new publication
     if (oldNodes.has(this)) oldRemovals += 1;
     originalRemove.call(this);
   });
-  const restoreClock = chargeClockAfterPublication(content, scheduler);
+  let frameRoots = 0;
+  const insertion = observeSceneInsertions(content, (roots) => {
+    expect(roots).toBeLessThanOrEqual(16);
+    expect(scheduler.time).toBeLessThan(scheduler.workScheduler.deadline());
+    frameRoots += roots;
+    expect(frameRoots).toBeLessThanOrEqual(64);
+    scheduler.time += 8;
+  });
   try {
     const first = beginViewportPublication(renderer, scheduler, { ...viewport, top: 1_000 });
-    expect(first.domEntrants).toBe(64);
+    expect(first.domEntrants).toBeGreaterThan(0);
+    expect(first.domEntrants).toBe(frameRoots);
+    expect(first.detachedCacheEntries).toBe(0);
     expect(oldRemovals).toBe(0);
-    let frames = 0;
-    while (renderer.instrumentation().detachedCacheEntries === 0 && frames < 100) {
-      const before = oldRemovals;
-      scheduler.runNext();
-      expect(oldRemovals - before).toBeLessThanOrEqual(1);
-      frames += 1;
-    }
+    frameRoots = 0;
+    scheduler.runNext();
     expect(
       renderer.instrumentation().detachedCacheEntries,
       JSON.stringify({
@@ -180,12 +185,12 @@ it("finishes logical exits without detaching cached roots behind new publication
         mountedCount: renderer.mountedCount,
         pendingCount: scheduler.pendingCount,
       }),
-    ).toBeGreaterThan(0);
+    ).toBe(256);
     expect(oldRemovals).toBe(0);
     expect(renderer.instrumentation().domExits).toBe(oldRemovals);
     expect(renderer.instrumentation().domEntrants).toBeLessThanOrEqual(66);
     expect([...oldNodes].filter((node) => node.parent === content)).toHaveLength(256);
-    restoreClock();
+    insertion.mockRestore();
     remove.mockRestore();
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(512);
@@ -198,7 +203,7 @@ it("finishes logical exits without detaching cached roots behind new publication
     expect(new Set(content.nodes).size).toBe(768);
     expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
   } finally {
-    restoreClock();
+    insertion.mockRestore();
     remove.mockRestore();
     renderer.destroy();
   }

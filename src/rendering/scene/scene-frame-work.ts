@@ -75,10 +75,12 @@ export class SceneFrameWork {
     const fadePending = content.pendingElementFades;
     const pendingFades = now() < deadline ? content.flushElementFades(deadline, now) : fadePending;
     earlierWork ||= fadePending;
-    const pendingVisibility =
-      now() < deadline || !earlierWork
-        ? contentScheduler.write(deadline, transforms, elements)
-        : content.hasPendingWork;
+    const contentAdmitted = now() < deadline;
+    if (!contentAdmitted && !earlierWork)
+      return this.writeLate(frameTime, deadline, transforms, elements);
+    const pendingVisibility = contentAdmitted
+      ? contentScheduler.write(deadline, transforms, elements)
+      : content.hasPendingWork;
     this.#preferDeferred = pendingVisibility && !deferredFirst;
     if (!deferredFirst) {
       pendingPreview = preview.write(deadline, now);
@@ -109,7 +111,7 @@ export class SceneFrameWork {
     if (deferredPending && (!contentPending || this.#preferDeferred)) {
       this.writeOneDeferred(frameTime, deadline);
     } else if (contentPending) {
-      pendingVisibility = contentScheduler.write(deadline, transforms, elements);
+      pendingVisibility = contentScheduler.write(deadline, transforms, elements, true);
     }
     if (contentPending && deferredPending) this.#preferDeferred = !this.#preferDeferred;
     else this.#preferDeferred = false;

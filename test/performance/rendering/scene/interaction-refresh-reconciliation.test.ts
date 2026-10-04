@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as motionVisual from "../../../../src/rendering/scene/motion-visual";
 
 import { boundsIntersect } from "../../../../src/domain/geometry/public";
+import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import { SpatialQueryCursor } from "../../../../src/domain/spatial/query-cursor";
 import { ElementStore, type StoreDelta } from "../../../../src/domain/store/public";
 import { moveSelection } from "../../../../src/editor/selection/transforms";
+import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import type { SceneCamera, SceneViewport } from "../../../../src/rendering/scene/types";
@@ -17,12 +20,14 @@ import {
 } from "./interaction-refresh-profile-fixture";
 import { FakeNode, FakeScheduler } from "../../../unit/rendering/scene/fakes";
 
-// Reading the clock for scheduler admission is not scene work. Later synthetic ticks
-// exercise deadlines; the assertions below bound actual mounts, queries, and builds.
-const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 8;
+// Scheduling time advances at observed work boundaries, never at clock reads.
+// This controlled work cost exercises deadlines without claiming execution speed.
+const SIMULATED_WORK_COST_MS = 0.5;
 const TRANSITIONS = 12;
 const DEFAULT_CAMERA: SceneCamera = { x: 0, zoom: 1 };
 const DEFAULT_VIEWPORT: SceneViewport = { height: 100, left: 0, top: 0, width: 100 };
+
+afterEach(() => vi.restoreAllMocks());
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation profile`, () => {
   it("keeps coalesced pan, zoom, and viewport jumps with bounded work", () => {
@@ -278,29 +283,66 @@ describe("restored stroke motion work", () => {
 });
 
 class ProfileScheduler extends FakeScheduler {
-  #frameEntryRead = false;
-
-  public override now(): number {
-    const current = this.time;
-    if (!this.#frameEntryRead)
-      this.time +=
-        INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / FAKE_CLOCK_CHECKPOINTS_PER_FRAME;
-    this.#frameEntryRead = false;
-    return current;
-  }
+  public publishedRoots = 0;
 
   public override runNext(): void {
     this.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-    this.#frameEntryRead = true;
     super.runNext();
   }
 }
 
 function createProfileRenderer(store: ElementStore) {
   const scheduler = new ProfileScheduler();
-  return createInteractionRenderer(store, {
+  observePreparationWork(scheduler);
+  const fixture = createInteractionRenderer(store, {
     frameBudgetMs: () => INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
     scheduler,
+  });
+  const content = (fixture.renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+  const originalInsert = content.insertBefore.bind(content);
+  vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
+    const roots = node.fragment ? node.nodes.length : 1;
+    const result = originalInsert(node, successor);
+    scheduler.publishedRoots += roots;
+    scheduler.time += roots * SIMULATED_WORK_COST_MS;
+    return result;
+  });
+  return { ...fixture, scheduler };
+}
+
+function observePreparationWork(scheduler: FakeScheduler): void {
+  const originalGet = Object.getOwnPropertyDescriptor(ElementSceneStore.prototype, "get")!
+    .value as ElementSceneStore["get"];
+  vi.spyOn(ElementSceneStore.prototype, "get").mockImplementation(function (
+    this: ElementSceneStore,
+    id,
+  ) {
+    const record = originalGet.call(this, id);
+    scheduler.time += SIMULATED_WORK_COST_MS;
+    return record;
+  });
+  const originalAdvance = Object.getOwnPropertyDescriptor(SpatialQueryCursor.prototype, "advance")!
+    .value as SpatialQueryCursor<unknown>["advance"];
+  vi.spyOn(SpatialQueryCursor.prototype, "advance").mockImplementation(function (
+    this: SpatialQueryCursor<unknown>,
+    maximum,
+  ) {
+    const result = originalAdvance.call(this, maximum);
+    scheduler.time += result.workUnits * SIMULATED_WORK_COST_MS;
+    return result;
+  });
+  const originalStep = Object.getOwnPropertyDescriptor(
+    CanonicalElementPathPreparation.prototype,
+    "step",
+  )!.value as CanonicalElementPathPreparation["step"];
+  vi.spyOn(CanonicalElementPathPreparation.prototype, "step").mockImplementation(function (
+    this: CanonicalElementPathPreparation,
+    deadline,
+    now,
+  ) {
+    const complete = originalStep.call(this, deadline, now);
+    scheduler.time += SIMULATED_WORK_COST_MS;
+    return complete;
   });
 }
 
@@ -330,28 +372,17 @@ function drainPendingFrames(scheduler: FakeScheduler): void {
 
 function drainBoundedReconciliation(
   renderer: SvgSceneRenderer,
-  scheduler: FakeScheduler,
+  scheduler: ProfileScheduler,
   maximumFrames: number,
 ): void {
-  const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
-  const originalInsert = content.insertBefore.bind(content);
-  let publishedRoots = 0;
-  const insert = vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
-    publishedRoots += node.fragment ? node.nodes.length : 1;
-    return originalInsert(node, successor);
-  });
   let frames = 0;
-  try {
-    while (scheduler.pendingCount > 0) {
-      expect(scheduler.pendingCount).toBe(1);
-      expect(frames, JSON.stringify(renderer.instrumentation())).toBeLessThan(maximumFrames);
-      publishedRoots = 0;
-      scheduler.runNext();
-      frames += 1;
-      expect(publishedRoots).toBeLessThanOrEqual(64);
-    }
-  } finally {
-    insert.mockRestore();
+  while (scheduler.pendingCount > 0) {
+    expect(scheduler.pendingCount).toBe(1);
+    expect(frames, JSON.stringify(renderer.instrumentation())).toBeLessThan(maximumFrames);
+    scheduler.publishedRoots = 0;
+    scheduler.runNext();
+    frames += 1;
+    expect(scheduler.publishedRoots).toBeLessThanOrEqual(64);
   }
 }
 

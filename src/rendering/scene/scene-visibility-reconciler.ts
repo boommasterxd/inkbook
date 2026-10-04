@@ -1,5 +1,4 @@
 import {
-  publishVisibilityRuns,
   mountedRootCount,
   publicationRootCount,
   canPublishCachedElement,
@@ -16,7 +15,7 @@ import type { SceneElementRecord } from "./types";
 import type { VisibilityDelta, VisibilityResult } from "./visibility-state";
 import type { SceneVisibilityPriority } from "./scene-entrant-priority";
 import { stagePromotedVisibility } from "./promoted-visibility-entry";
-import { completeDeltaPublication, orderDeltaPublication } from "./visibility-delta-reconciliation";
+import { createProgressiveVisibilityPublisher } from "./progressive-visibility-publication";
 import {
   removeOrderedVisibilityExits,
   collectPendingVisibilityExits,
@@ -255,25 +254,41 @@ export class SceneVisibilityReconciler {
       if (removeExits()) this.#pending = undefined;
       return { newlyMountedIds: EMPTY_IDS, pending: false };
     }
+    const publish = createProgressiveVisibilityPublisher(pending, this.options, {
+      deadline,
+      now,
+      epoch: this.#orderEpoch,
+      budget: publication,
+      output: this.#newlyMountedIds,
+      published: this.#publishedEntrantIds,
+    });
+    const initialPublication = publish?.();
+    const publicationBlocked = initialPublication === false;
     const slice = new MountSlice(
       deadline,
       now,
       pending.progressive ? publication.remainingRoots : Infinity,
     );
-    const reason =
-      prepareVisibilityCleanup(pending, slice, {
-        collect: () =>
-          collectPendingVisibilityExits(pending, slice, this.options.instrumentation, (id) =>
-            this.addExit(pending, id),
-          ),
-        remove: removeExits,
-      }) ?? this.stageSlice(pending, slice, previewTransforms, deadline, now);
+    // A retained reorder also spends admission even though it reports no new IDs.
+    if (initialPublication === true) slice.record();
+    let reason: MountYieldReason | undefined = publicationBlocked
+      ? now() < deadline
+        ? "budget"
+        : "deadline"
+      : (slice.blockingReason() ??
+        prepareVisibilityCleanup(pending, slice, {
+          collect: () =>
+            collectPendingVisibilityExits(pending, slice, this.options.instrumentation, (id) =>
+              this.addExit(pending, id),
+            ),
+          remove: removeExits,
+        }) ??
+        this.stageSlice(pending, slice, previewTransforms, deadline, now, publish));
+    if (publish?.() === false) reason = now() < deadline ? "budget" : "deadline";
     this.#waitingForPaths = reason === "paths";
     slice.report(this.options.instrumentation, reason);
-    if (pending.progressive)
-      publication.remainingRoots = Math.max(0, publication.remainingRoots - slice.publicationNodes);
     if (reason !== undefined) {
-      const newlyMountedIds = pending.progressive ? this.publishProgress(pending) : EMPTY_IDS;
+      const newlyMountedIds = pending.progressive ? this.#newlyMountedIds : EMPTY_IDS;
       return publishPendingVisibility(pending, newlyMountedIds, {
         collect: () => {
           collectPendingVisibilityExits(pending, slice, this.options.instrumentation, (id) =>
@@ -282,15 +297,15 @@ export class SceneVisibilityReconciler {
         },
         remove: removeExits,
         canWork: () => now() < deadline,
-        waitingForPaths: reason === "paths",
+        waitingForPreparation: this.#preparation.waitingForPreparation,
       });
     }
-    // Prepared publication is one atomic DOM operation after its bounded preparation.
+    // Initial and unproved order changes retain their atomic publication contract.
     this.#orderEpoch = commitVisibilityReconciliation(
       pending,
       this.options,
       this.#orderEpoch,
-      this.#newlyMountedIds,
+      pending.progressive ? [] : this.#newlyMountedIds,
     );
     const newlyMountedIds = this.#newlyMountedIds;
     pending.published = true;
@@ -312,13 +327,28 @@ export class SceneVisibilityReconciler {
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
     deadline: number,
     now: () => number,
+    publish: ((force?: boolean) => boolean | undefined) | undefined,
   ): MountYieldReason | undefined {
     return stageVisibilitySlice(pending, slice, previewTransforms, {
       ...this.options,
       pendingId: () => this.#preparation.pendingId,
       waiting: () => this.#preparation.waiting,
-      promoted: () => this.stagePromoted(pending, slice, previewTransforms),
-      bands: () => this.stageBands(pending, slice, previewTransforms, deadline, now),
+      promoted: () => {
+        const reason = this.stagePromoted(pending, slice, previewTransforms);
+        publish?.(false);
+        return reason;
+      },
+      publish: () => {
+        publish?.(false);
+      },
+      bands: () =>
+        stageVisibilityBands(pending, deadline, now, {
+          finish: () => finishReconciliationRun(pending),
+          entry: (id) => this.stageVisibleId(id, pending, slice, previewTransforms),
+          publish: () => {
+            publish?.(false);
+          },
+        }),
       stage: (record, allowLocal) =>
         this.stageEntry(pending, record, slice, previewTransforms, allowLocal),
       run: (band, successor) => this.prepareRun({ band, successor }),
@@ -348,19 +378,6 @@ export class SceneVisibilityReconciler {
     });
     this.#promotedId = result.id;
     return result.reason;
-  }
-
-  private stageBands(
-    pending: PendingReconciliation,
-    slice: MountSlice,
-    previews: ReadonlyMap<string, PreviewTransform>,
-    deadline: number,
-    now: () => number,
-  ): MountYieldReason | undefined {
-    return stageVisibilityBands(pending, deadline, now, {
-      finish: () => finishReconciliationRun(pending),
-      entry: (id) => this.stageVisibleId(id, pending, slice, previews),
-    });
   }
 
   private stageVisibleId(
@@ -473,26 +490,6 @@ export class SceneVisibilityReconciler {
     run.entries[run.count] = entry;
     run.entrants[run.count] = entrant;
     run.count += 1;
-  }
-  private publishProgress(pending: PendingReconciliation): readonly string[] {
-    const partial = pending.cursor.run;
-    const successor = partial?.entries[partial.count - 1] ?? pending.cursor.successor;
-    finishReconciliationRun(pending);
-    orderDeltaPublication(pending);
-    publishVisibilityRuns({
-      runs: pending.runs,
-      count: pending.runCount,
-      options: this.options,
-      epoch: this.#orderEpoch,
-      output: this.#newlyMountedIds,
-      entrants: pending.entrants,
-    });
-    this.#publishedEntrantIds.push(...this.#newlyMountedIds);
-    completeDeltaPublication(pending, this.#newlyMountedIds, this.options);
-    pending.order.invalidate();
-    pending.runCount = 0;
-    pending.cursor.successor = successor;
-    return this.#newlyMountedIds;
   }
   private prepareRun(cursor: Pick<ReconciliationCursor, "band" | "successor">): PendingMutationRun {
     return prepareReconciliationRun(this.#pending, cursor, this.options.instrumentation);

@@ -18,9 +18,11 @@ export class SceneContentScheduler {
     deadline: number,
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
     previewElements: ReadonlyMap<string, InkElementV1>,
+    allowLatePreparedUnit = false,
   ): boolean {
     const now = () => this.scheduler.now();
     const publication: ScenePublicationBudget = {
+      allowLatePreparedUnit,
       remainingRoots: SCENE_PUBLICATION_ROOTS_PER_FRAME,
     };
     const reconcile = () =>
@@ -31,7 +33,10 @@ export class SceneContentScheduler {
         previewElements,
         publication,
       );
-    const writeMounted = () => this.content.writeMountedChanges(deadline, now, publication);
+    const writeMounted = () => {
+      publication.allowLatePreparedUnit = false;
+      return this.content.writeMountedChanges(deadline, now, publication);
+    };
     if (this.#preferVisibility || !this.content.hasMountedWork) {
       const visibilityPending = this.content.hasVisibilityWork ? reconcile() : false;
       const mountedPending = now() < deadline ? writeMounted() : this.content.hasMountedWork;

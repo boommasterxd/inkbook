@@ -5,6 +5,7 @@ import { createSceneFixture, QueryCostStore } from "../../../fixtures/rendering/
 import {
   FakeSceneStore,
   FakeScheduler,
+  fakeNode,
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
 
@@ -81,7 +82,18 @@ it("shares bounded SVG publication while both scenes advance under late host fra
   }
   const scenes = stores.map((store) => createSceneFixture(PAGE, store, VIEWPORT, {}, scheduler));
   let pathCreations = 0;
+  let publications = 0;
+  let roots = 0;
   for (const scene of scenes) {
+    const content = fakeNode(scene.renderer.svg).nodes[1]!.nodes[4]!;
+    const insert = content.insertBefore.bind(content);
+    vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
+      publications += 1;
+      roots += node.fragment ? node.nodes.length : 1;
+      const result = insert(node, successor);
+      scheduler.time += 9;
+      return result;
+    });
     const create = scene.document.createElementNS.bind(scene.document);
     vi.spyOn(scene.document, "createElementNS").mockImplementation((namespace, tag) => {
       const node = create(namespace, tag);
@@ -93,18 +105,18 @@ it("shares bounded SVG publication while both scenes advance under late host fra
     });
   }
   vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time + 12);
-  let previousMounts = 0;
   let previousPaths = 0;
   for (let frame = 0; scheduler.pendingCount > 0; frame += 1) {
     if (frame >= 100) throw new Error("Late scene work did not finish.");
     scheduler.time = frame * 16;
+    publications = 0;
+    roots = 0;
     scheduler.runNext();
-    const mounted = scenes.reduce((total, scene) => total + scene.renderer.mountedCount, 0);
-    expect(mounted - previousMounts).toBeLessThanOrEqual(1);
+    expect(publications).toBeLessThanOrEqual(1);
+    expect(roots).toBeLessThanOrEqual(64);
     expect(pathCreations - previousPaths).toBeLessThanOrEqual(1);
     if (pathCreations === 24)
       expect(scenes.every((scene) => scene.renderer.mountedCount > 0)).toBe(true);
-    previousMounts = mounted;
     previousPaths = pathCreations;
   }
   expect(scenes.map((scene) => scene.renderer.mountedCount)).toEqual([24, 24]);

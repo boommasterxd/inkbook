@@ -88,6 +88,7 @@ export function stageVisibilityBands(
   options: {
     readonly finish: () => void;
     readonly entry: (id: string | undefined) => MountYieldReason | undefined;
+    readonly publish?: () => void;
   },
 ): MountYieldReason | undefined {
   let visited = 0;
@@ -102,6 +103,7 @@ export function stageVisibilityBands(
         pending.cursor.index += 1;
         return reason;
       }
+      options.publish?.();
     }
     options.finish();
     if (pending.cursor.band === "content") return undefined;
@@ -115,6 +117,7 @@ interface VisibilityStagingOptions extends SceneVisibilityReconcilerOptions {
   readonly pendingId: () => string | undefined;
   readonly waiting: () => boolean;
   readonly promoted: () => MountYieldReason | undefined;
+  readonly publish: () => void;
   readonly bands: () => MountYieldReason | undefined;
   readonly stage: (
     record: SceneElementRecord,

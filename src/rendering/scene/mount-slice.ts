@@ -2,6 +2,8 @@ import type { MutableSceneInstrumentation } from "./types";
 
 /** Shared allowance for new live SVG roots in one scene frame. */
 export interface ScenePublicationBudget {
+  /** One already-prepared unit admitted by the existing central late content lane. */
+  allowLatePreparedUnit?: boolean;
   remainingRoots: number;
   remainingRemovals?: number;
 }
