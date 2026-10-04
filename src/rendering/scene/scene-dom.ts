@@ -4,18 +4,12 @@ import type { RenderBand } from "../../domain/commands/render-bands";
 import { createToolCursorDom, type SceneToolCursorDom } from "./tool-cursor";
 import { SVG_NAMESPACE } from "./constants";
 import type { DocumentScheme, SceneInputHandlers } from "./types";
+import { SceneSurface } from "./scene-surface";
+import { SCENE_SURFACE_STYLES } from "./scene-surface-styles";
 
 type InputEventName = keyof SceneInputHandlers;
 
 let nextBackgroundPatternId = 0;
-
-const ACTIVE_THEME_STYLESHEET =
-  ".inkbook-theme-page{fill:var(--inkbook-page)}" +
-  ".inkbook-theme-guide{stroke:var(--inkbook-guide)}" +
-  ".inkbook-theme-stroke{stroke:var(--inkbook-text)}" +
-  ".inkbook-theme-fill{fill:var(--inkbook-text)}" +
-  ".inkbook-theme-stroke-fill{stroke:var(--inkbook-text);fill:var(--inkbook-text)}" +
-  "[data-inkbook-motion]{transform-box:fill-box;transform-origin:center}";
 
 export class SceneDom {
   public readonly backgroundEdgePath: SVGPathElement;
@@ -43,6 +37,7 @@ export class SceneDom {
   #livePathBand: RenderBand = "content";
   #liveStrokeBand: RenderBand = "content";
   readonly #listeners: { name: InputEventName; listener: EventListener }[] = [];
+  readonly #surface: SceneSurface;
 
   public constructor(container: HTMLElement, accessibleName: string, handlers: SceneInputHandlers) {
     this.ownerDocument = container.ownerDocument;
@@ -105,7 +100,7 @@ export class SceneDom {
     overlayGroup.setAttribute("class", "inkbook-scene-overlays inkbook-scene-foreground");
     this.livePath.setAttribute("pointer-events", "none");
     this.configureSelectionOverlays();
-    themeStyle.textContent = ACTIVE_THEME_STYLESHEET;
+    themeStyle.textContent = SCENE_SURFACE_STYLES;
 
     this.cameraGroup.append(
       this.pageSurface,
@@ -135,7 +130,8 @@ export class SceneDom {
     this.svg.setAttribute("pointer-events", "none");
 
     this.attachHandlers(handlers);
-    container.append(this.svg, this.inputSurface);
+    this.#surface = new SceneSurface(this.svg);
+    container.append(this.#surface.host, this.inputSurface);
     this.setPageHeight(1);
   }
 
@@ -241,7 +237,7 @@ export class SceneDom {
     }
     this.#listeners.length = 0;
     this.inputSurface.remove();
-    this.svg.remove();
+    this.#surface.release();
   }
 
   private configureSelectionOverlays(): void {

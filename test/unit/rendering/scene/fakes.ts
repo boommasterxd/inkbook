@@ -26,6 +26,7 @@ export class FakeNode {
   public parent: FakeNode | undefined;
   public readonly style = new FakeStyle();
   public tabIndex = -1;
+  public shadowRoot: FakeNode | null = null;
 
   public constructor(
     public readonly ownerDocument: FakeDocument,
@@ -43,6 +44,12 @@ export class FakeNode {
 
   public get parentNode(): FakeNode | null {
     return this.parent ?? null;
+  }
+
+  public attachShadow(_options: ShadowRootInit): FakeNode {
+    if (this.shadowRoot !== null) throw new Error("Shadow root already attached.");
+    this.shadowRoot = new FakeNode(this.ownerDocument, "#shadow-root");
+    return this.shadowRoot;
   }
 
   public append(...nodes: FakeNode[]): void {

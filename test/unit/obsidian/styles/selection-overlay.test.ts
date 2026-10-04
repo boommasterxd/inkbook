@@ -1,7 +1,7 @@
-import { sys } from "typescript";
 import { describe, expect, it } from "vitest";
+import { SCENE_SURFACE_STYLES } from "../../../../src/rendering/scene/scene-surface-styles";
 
-const stylesheet = sys.readFile("src/obsidian/styles/inkbook.css") ?? "";
+const stylesheet = SCENE_SURFACE_STYLES;
 
 describe("selection overlay styles", () => {
   it("centers the frame at normal width and suppresses only a duplicate rectangle outline", () => {

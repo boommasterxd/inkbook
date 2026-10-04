@@ -312,7 +312,7 @@ describe("scene DOM ownership", () => {
     expect((label as unknown as HTMLElement).textContent).toBe("Inkbook canvas");
     expect(input.attributes.get("class")).toBe("inkbook-canvas-input");
     expect(input.listeners.get("pointerdown")?.size).toBe(1);
-    expect(container.nodes[0]?.nodes[2]?.nodes[0]?.attributes.get("fill-rule")).toBe("evenodd");
+    expect(fakeNode(renderer.svg).nodes[2]?.nodes[0]?.attributes.get("fill-rule")).toBe("evenodd");
 
     renderer.destroy();
 
@@ -321,9 +321,9 @@ describe("scene DOM ownership", () => {
   });
 
   it("updates page-surface height even when background geometry remains cached", () => {
-    const { container, renderer, scheduler } = setup();
+    const { renderer, scheduler } = setup();
     scheduler.runAll();
-    const svg = container.nodes[0]!;
+    const svg = fakeNode(renderer.svg);
     const camera = svg.nodes[1]!;
     const pageSurface = camera.nodes[0]!;
 
@@ -334,17 +334,18 @@ describe("scene DOM ownership", () => {
   });
 
   it("renders tall backgrounds through bounded geometry and an SVG pattern", () => {
-    const { container, renderer, scheduler } = setup();
+    const { renderer, scheduler } = setup();
     scheduler.runAll();
 
     renderer.setPage({ ...page, background: { spacing: 25, type: "dots" } }, 900_000);
     scheduler.runAll();
 
-    const camera = container.nodes[0]!.nodes[1]!;
+    const svg = fakeNode(renderer.svg);
+    const camera = svg.nodes[1]!;
     const background = camera.nodes[1]!;
     expect(background.attributes.get("d")?.match(/M /g)).toHaveLength(1);
     expect(background.attributes.get("fill")).toMatch(/^url\(#inkbook-background-pattern-/);
-    const pattern = container.nodes[0]!.nodes[3]!.nodes[0]!;
+    const pattern = svg.nodes[3]!.nodes[0]!;
     const patternPath = pattern.nodes[0]!;
     expect(patternPath.attributes.get("d")).toBe("M 1 1 L 1 1");
     renderer.setPage({ ...page, background: { spacing: 25, type: "squares" } }, 500);

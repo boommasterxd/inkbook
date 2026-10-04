@@ -11,7 +11,8 @@ import type { PageV1, StrokeElementV1 } from "../../../../src/domain/schema/publ
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import {
-  type FakeNode,
+  FakeDocument,
+  FakeNode,
   FakeSceneStore,
   type FakeScheduler,
   fakeNode,
@@ -51,10 +52,25 @@ describe("visible render mount complexity", () => {
   it("resumes 489 visible strokes with exactly two million points in stable band order", async ({
     annotate,
   }) => {
+    const shadowRoots = vi.spyOn(FakeNode.prototype, "attachShadow");
+    const elements = vi.spyOn(FakeDocument.prototype, "createElementNS");
     const actualBuilds = vi.spyOn(geometry, "buildElementPathParts");
     const preparations = vi.spyOn(ScenePathCache.prototype, "startPreparation");
     const fixture = createMaximumPointFixture();
     const { renderer, scheduler } = createMountScene(fixture.records);
+    const input = fakeNode(renderer.inputSurface);
+    const container = input.parent!;
+    const host = container.nodes[0]!;
+    const stylesCreated = () => elements.mock.calls.filter(([, name]) => name === "style").length;
+    const hostsCreated = () =>
+      elements.mock.calls.filter(
+        ([namespace, name]) => namespace === "http://www.w3.org/1999/xhtml" && name === "div",
+      ).length;
+    expect(shadowRoots).toHaveBeenCalledTimes(1);
+    expect(shadowRoots).toHaveBeenCalledWith({ mode: "open" });
+    expect(host.shadowRoot?.nodes).toEqual([fakeNode(renderer.svg)]);
+    expect(stylesCreated()).toBe(1);
+    expect(hostsCreated()).toBe(2); // One presentation host and one light DOM input.
     scheduler.runNext();
     const firstFrameMounts = renderer.mountedCount;
     flushBoundedScenePublication(renderer, scheduler);
@@ -93,8 +109,16 @@ describe("visible render mount complexity", () => {
       "performance",
     );
     verifyEraserFeedback(renderer, scheduler, cameraGroup, fixture);
+    expect(shadowRoots).toHaveBeenCalledTimes(1);
+    expect(stylesCreated()).toBe(1);
+    expect(hostsCreated()).toBe(2);
     renderer.destroy();
+    expect(container.nodes).toHaveLength(0);
+    expect(host.shadowRoot?.nodes).toHaveLength(0);
+    expect([...input.listeners.values()].every((listeners) => listeners.size === 0)).toBe(true);
     expect(scheduler.pendingCount).toBe(0);
+    shadowRoots.mockRestore();
+    elements.mockRestore();
   });
 });
 
