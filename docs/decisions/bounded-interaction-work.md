@@ -39,12 +39,15 @@ actual viewport before overscan and follows scroll or pan direction while final
 SVG paint order remains canonical. Ready cached candidates can pass a suspended
 cold candidate, and old-node cleanup does not precede their first preparation.
 
-Bounded detached-node reuse avoids repeated SVG creation and geometry attribute
-writes on revisits. Geometry identity and ID/version aliases share one canonical
-path-cache entry. Both caches retain independent byte and entry caps, participate
-in active-document memory pressure, and release stale geometry and deleted IDs.
-The live-root publication cap remains unchanged: node reuse cannot eliminate
-native insertion, layout, or paint costs.
+Bounded offscreen-node reuse avoids repeated SVG creation and geometry attribute
+writes on revisits. Previously visible committed roots may remain connected while
+logical viewport membership is released. This permits native-scroll return without
+another insertion; detached returns and actual reorders retain the existing live-root
+publication cap. The shared ownership and cleanup limits are defined in
+[Path Caches](../rendering-and-performance.md#path-caches). Geometry identity and
+ID/version aliases share one canonical path-cache entry. Both caches participate in
+active-document memory pressure and reject stale geometry and deleted IDs. Connected
+retention does not guarantee reuse after eviction or eliminate pan/zoom browser costs.
 
 A smaller fade-start quota was rejected: the paired selection-delete diagnostic
 did not reduce long native tasks and increased layerization work. Keep the
