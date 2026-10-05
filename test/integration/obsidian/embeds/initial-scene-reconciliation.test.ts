@@ -10,6 +10,7 @@ import {
   FakeSceneStore,
   FakeScheduler,
   asElement,
+  fakeNode,
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
 
@@ -48,15 +49,18 @@ it("keeps initial handoff hidden while final viewport reconciliation spans multi
   expect(visible).not.toHaveBeenCalled();
 
   let pathCreations = 0;
-  const create = document.createElementNS.bind(document);
-  const paths = vi.spyOn(document, "createElementNS").mockImplementation((namespace, tag) => {
-    const node = create(namespace, tag);
-    if (tag === "path") {
-      pathCreations += 1;
-      scheduler.time += 9;
-    }
-    return node;
-  });
+  const drawingDocument = fakeNode(renderer.svg).ownerDocument;
+  const create = drawingDocument.createElementNS.bind(drawingDocument);
+  const paths = vi
+    .spyOn(drawingDocument, "createElementNS")
+    .mockImplementation((namespace, tag) => {
+      const node = create(namespace, tag);
+      if (tag === "path") {
+        pathCreations += 1;
+        scheduler.time += 9;
+      }
+      return node;
+    });
 
   renderer.setCamera({ x: 0, zoom: 0.5 });
   viewport = { height: 100, left: 0, top: 0, width: 100 };

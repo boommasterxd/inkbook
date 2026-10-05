@@ -27,7 +27,6 @@ import {
   FakeSceneStore,
   FakeDocument,
   FakeNode,
-  asDocument,
   asElement,
   fakeNode,
   fakeRectangleRecord,
@@ -364,7 +363,7 @@ function retainedReorderFixture(pressure: boolean) {
   ]) {
     store.records.set(record.id, record);
     const entry = createMountedElement(
-      asDocument(document),
+      dom.ownerDocument,
       record,
       buildElementPathParts(record.element),
       instrumentation,

@@ -26,11 +26,11 @@ import {
   fakeRectangleRecord,
 } from "./fakes";
 
-function fixture(id = "retained") {
+function fixture(id = "retained", ownerDocument = asDocument(new FakeDocument())) {
   const instrumentation = createInstrumentation();
   const record = fakeRectangleRecord(id, 0, 10);
   const entry = createMountedElement(
-    asDocument(new FakeDocument()),
+    ownerDocument,
     record,
     buildElementPathParts(record.element),
     instrumentation,
@@ -196,9 +196,9 @@ it("evicts only the byte space required by the next connected entry", () => {
 it.each(["retarget", "invalidation", "pressure"] as const)(
   "keeps staged connected ownership reserved through cache admission and %s cancellation",
   (reason) => {
-    const { entry, record, instrumentation } = fixture("reserved");
-    const document = fakeNode(entry.paths[0]!.node).ownerDocument;
-    const dom = new SceneDom(asElement(new FakeNode(document, "div")), "Canvas", {});
+    const dom = new SceneDom(asElement(new FakeNode(new FakeDocument(), "div")), "Canvas", {});
+    const { entry, record, instrumentation } = fixture("reserved", dom.ownerDocument);
+    const document = fakeNode(dom.svg).ownerDocument;
     fakeNode(dom.contentGroup).append(fakeNode(entry.paths[0]!.node));
     const store = new FakeSceneStore();
     store.records.set(record.id, record);

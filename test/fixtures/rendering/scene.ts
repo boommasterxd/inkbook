@@ -15,6 +15,7 @@ import {
   FakeNode,
   FakeSceneStore,
   FakeScheduler,
+  fakeNode,
   fakeRectangleRecord,
 } from "../../unit/rendering/scene/fakes";
 
@@ -42,7 +43,7 @@ export function createSceneFixture(
   } = {},
   scheduler = new FakeScheduler(options.frameBudgetMs),
 ) {
-  const document = new FakeDocument();
+  const parentDocument = new FakeDocument();
   const renderer = new SvgSceneRenderer({
     ...(options.isInputActive === undefined ? {} : { isInputActive: options.isInputActive }),
     ...(options.deferInitialOverscan === undefined
@@ -54,13 +55,13 @@ export function createSceneFixture(
     ...(options.onResourceUsageChanged === undefined
       ? {}
       : { onResourceUsageChanged: options.onResourceUsageChanged }),
-    container: asElement(new FakeNode(document, "div")),
+    container: asElement(new FakeNode(parentDocument, "div")),
     layout: { readViewport: () => viewport },
     page,
     store,
     workScheduler: scheduler.workScheduler,
   });
-  return { document, renderer, scheduler };
+  return { document: fakeNode(renderer.svg).ownerDocument, parentDocument, renderer, scheduler };
 }
 
 export function createViewportRectangleStore(

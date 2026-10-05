@@ -61,16 +61,16 @@ describe("visible render mount complexity", () => {
     const input = fakeNode(renderer.inputSurface);
     const container = input.parent!;
     const host = container.nodes[0]!;
-    const stylesCreated = () => elements.mock.calls.filter(([, name]) => name === "style").length;
-    const hostsCreated = () =>
-      elements.mock.calls.filter(
-        ([namespace, name]) => namespace === "http://www.w3.org/1999/xhtml" && name === "div",
-      ).length;
+    const resources = () => sceneResources(elements.mock.calls, elements.mock.results);
+    const frame = host.shadowRoot!.nodes[1]!;
     expect(shadowRoots).toHaveBeenCalledTimes(1);
     expect(shadowRoots).toHaveBeenCalledWith({ mode: "open" });
-    expect(host.shadowRoot?.nodes).toEqual([fakeNode(renderer.svg)]);
-    expect(stylesCreated()).toBe(1);
-    expect(hostsCreated()).toBe(2); // One presentation host and one light DOM input.
+    expect(frame.tagName).toBe("iframe");
+    expect(frame.contentDocument?.body.nodes).toEqual([fakeNode(renderer.svg)]);
+    expect(frame.contentDocument).not.toBe(host.ownerDocument);
+    expect(fakeNode(renderer.svg).ownerDocument).toBe(frame.contentDocument);
+    expect(input.ownerDocument).toBe(host.ownerDocument);
+    expect(resources()).toEqual({ documents: 1, frames: 1, hosts: 2, styles: 3 });
     scheduler.runNext();
     const firstFrameMounts = renderer.mountedCount;
     flushBoundedScenePublication(renderer, scheduler);
@@ -109,9 +109,10 @@ describe("visible render mount complexity", () => {
       "performance",
     );
     verifyEraserFeedback(renderer, scheduler, cameraGroup, fixture);
+    verifyNavigationResources(renderer, scheduler, () => elements.mock.calls.length);
     expect(shadowRoots).toHaveBeenCalledTimes(1);
-    expect(stylesCreated()).toBe(1);
-    expect(hostsCreated()).toBe(2);
+    expect(resources()).toEqual({ documents: 1, frames: 1, hosts: 2, styles: 3 });
+    expect(ownedSceneNodes(fakeNode(renderer.svg))).toBe(true);
     renderer.destroy();
     expect(container.nodes).toHaveLength(0);
     expect(host.shadowRoot?.nodes).toHaveLength(0);
@@ -121,6 +122,42 @@ describe("visible render mount complexity", () => {
     elements.mockRestore();
   });
 });
+
+function sceneResources(
+  calls: readonly (readonly [string, string])[],
+  results: readonly { readonly value?: unknown }[],
+) {
+  const count = (name: string) => calls.filter(([, tag]) => tag === name).length;
+  const documents = new Set(
+    results.flatMap((result, index) =>
+      calls[index]?.[1] === "iframe" ? [(result.value as FakeNode).contentDocument] : [],
+    ),
+  );
+  return {
+    documents: documents.size,
+    frames: count("iframe"),
+    hosts: count("div"),
+    styles: count("style"),
+  };
+}
+
+function verifyNavigationResources(
+  renderer: SvgSceneRenderer,
+  scheduler: FakeScheduler,
+  nodesCreated: () => number,
+): void {
+  const before = nodesCreated();
+  renderer.setCamera({ x: 1, zoom: 1.01 });
+  renderer.setViewport({ height: 200, left: 0, top: 1, width: 200 });
+  scheduler.runAll();
+  expect(nodesCreated()).toBe(before);
+}
+
+function ownedSceneNodes(node: FakeNode, document = node.ownerDocument): boolean {
+  return (
+    node.ownerDocument === document && node.nodes.every((child) => ownedSceneNodes(child, document))
+  );
+}
 
 function verifyEraserFeedback(
   renderer: SvgSceneRenderer,

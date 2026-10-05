@@ -87,6 +87,8 @@ export interface SceneRendererOptions {
   readonly accessibleName?: string;
   readonly container: HTMLElement;
   readonly inputHandlers?: SceneInputHandlers;
+  readonly surfaceThemeRoot?: HTMLElement;
+  readonly onSurfaceFailure?: () => void;
   readonly layout: SceneLayoutPort;
   readonly isInputActive?: () => boolean;
   readonly page: PageV1;

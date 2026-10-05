@@ -57,13 +57,13 @@ export class SvgSceneRenderer {
   readonly #visibility: SceneVisibilityState;
   readonly #options: Scene.SceneRendererOptions;
   public constructor(options: Scene.SceneRendererOptions) {
-    const { container, accessibleName: name, inputHandlers: handlers } = (this.#options = options);
+    this.#options = options;
     this.#page = options.page;
     this.#scheduler = options.workScheduler;
-    this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, (time, scene) =>
-      this.renderFrame(time, scene),
-    );
-    this.#dom = new SceneDom(container, name ?? "Inkbook canvas", handlers ?? {});
+    const render = this.renderFrame.bind(this);
+    this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, render);
+    this.#dom = SceneDom.create(options);
+    this.#dom.onSurfaceInvalidated = this.#frames.schedule;
     this.#frameWriter = new SceneFrameWriter(this.#dom, this.#backgroundCache, this.#stats);
     this.#visibility = new SceneVisibilityState(options.store, this.#stats);
     this.#liveStroke = new SceneLiveStrokeRenderer(
@@ -154,6 +154,7 @@ export class SvgSceneRenderer {
   public get svg(): SVGSVGElement {
     return this.#dom.svg;
   }
+  public readonly revealSurface = () => this.#dom.revealSurface();
   public get mountedCount(): number {
     return this.#content.mountedCount;
   }
@@ -350,7 +351,6 @@ export class SvgSceneRenderer {
     this.assertActive();
     runtime.validateNonNegativeDuration(durationMs);
     this.#deltas.addFades(ids);
-    // Fade start is optional here; defer it when this window's shared slice is spent.
     const slice = this.#scheduler.shouldYield()
       ? undefined
       : { deadline: this.#scheduler.deadline(), now: () => this.#scheduler.now() };

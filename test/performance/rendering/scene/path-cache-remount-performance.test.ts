@@ -56,7 +56,7 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
   expect(renderer.instrumentation().pathCacheEntries).toBe(2_100);
 
   renderer.resetInstrumentation();
-  const creation = vi.spyOn(document, "createElementNS");
+  const creation = vi.spyOn(fakeNode(renderer.svg).ownerDocument, "createElementNS");
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   const insertion = vi.spyOn(content, "insertBefore");
   const originalNodes = [...content.nodes];

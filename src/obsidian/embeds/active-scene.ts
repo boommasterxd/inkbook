@@ -4,16 +4,11 @@ import { setIcon } from "obsidian";
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { StoreDelta } from "../../domain/store/public";
-import { SvgSceneRenderer, type SceneInputHandlers } from "../../rendering/scene/index";
+import { SvgSceneRenderer } from "../../rendering/scene/index";
 import { beginEditorChromeMount, type PendingEditorChrome } from "./editor-chrome-loader";
 import type { ContextMenuAction } from "../menus/index";
 import { createOwnedMenuFactory } from "../menus/index";
-import {
-  browserScrollMetrics,
-  createBrowserScrollDocumentPort,
-  resolveScrollOwner,
-  type BrowserScrollElement,
-} from "../scrolling/index";
+import type { BrowserScrollElement } from "../scrolling/index";
 import type { InkbookColorScheme } from "../theme/color-scheme";
 import { ActiveEditorController } from "./active-editor/controller";
 import { ActiveEditorLayout } from "./active-editor/layout";
@@ -22,7 +17,7 @@ import { ElementSceneStore } from "./active-editor/scene-store";
 import { ActiveScenePreviewHandoff } from "./active-scene-handoff";
 import { ActiveSceneMemoryBinding } from "./active-scene-memory";
 import { ActiveSceneTimeout } from "./active-scene-timeout";
-import { attachActiveSceneInputListeners } from "./active-scene-input";
+import { attachActiveSceneInputListeners, createSceneInputHandlers } from "./active-scene-input";
 import type { ActiveSceneScrollBinding } from "./active-scene-scroll";
 import {
   applyLockedFitLayout,
@@ -34,7 +29,11 @@ import { updateActiveSceneChrome } from "./active-scene-chrome";
 import { readActiveSceneLayout } from "./active-scene-viewport";
 import { readNavigationLayout } from "./active-editor/navigation-layout";
 import { createSceneReadiness, InitialSceneReadiness } from "./initial-scene-readiness";
-import { bindSceneScrollOwner, createInitialSceneRuntime } from "./active-scene-runtime";
+import {
+  bindSceneScrollOwner,
+  createInitialSceneRuntime,
+  resolveActiveScrollOwner,
+} from "./active-scene-runtime";
 import type { TransitionScrollStability } from "./transition-scroll-stability";
 import type { EditableDocumentModel } from "./vault-document-session";
 import type { ActiveInkbookSceneOptions } from "./active-scene-types";
@@ -64,6 +63,7 @@ export class ActiveInkbookScene {
   #chromeUpdatePending = false;
   readonly #removeViewportListeners: () => void;
   #readyForInput = false;
+  #surfaceFailed = false;
   #previewReady: Promise<void> = Promise.resolve();
   readonly #initialSceneReadiness = new InitialSceneReadiness();
   readonly #resolveReady: (ready: boolean) => void;
@@ -105,6 +105,7 @@ export class ActiveInkbookScene {
       () => controller,
       () => scrollBinding?.current() ?? scrollOwner,
     );
+    this.#previewHandoff.onSceneReveal = this.#renderer.revealSurface;
     this.#memory.attach(this.#renderer);
     this.#renderer.setScheme(options.scheme);
     this.#renderer.setSelectionHighlightsEnabled(options.selectionHighlightsEnabled ?? true);
@@ -146,7 +147,7 @@ export class ActiveInkbookScene {
     this.#unsubscribeStore = options.model.store.subscribe((delta) => this.#applyDelta(delta));
     const readiness = createSceneReadiness(
       this.#chrome,
-      () => this.#disposed,
+      () => this.#disposed || this.#surfaceFailed,
       () => this.#layout.chromeMounted(),
     );
     this.#resolveReady = readiness.resolve;
@@ -223,13 +224,13 @@ export class ActiveInkbookScene {
   }
 
   public restoreAfterFailedLock(): void {
-    if (this.#disposed) return;
+    if (this.#disposed || this.#surfaceFailed) return;
     this.#cancelLockTransition();
     this.#layout.resume();
   }
 
   public finishLock(): Promise<void> {
-    if (this.#disposed) return Promise.resolve();
+    if (this.#disposed || this.#surfaceFailed) return Promise.resolve();
     this.#beginLockTransition();
     this.#lockPromise ??= this.#finishLockTransition(this.#lockGeneration);
     return this.#lockPromise;
@@ -260,11 +261,11 @@ export class ActiveInkbookScene {
   }
 
   public executeAction(action: ContextMenuAction): void {
-    this.#controller.executeAction(action);
+    if (!this.#surfaceFailed) this.#controller.executeAction(action);
   }
 
   public isActionAvailable(action: ContextMenuAction): boolean {
-    return this.#controller.isActionAvailable(action);
+    return !this.#surfaceFailed && this.#controller.isActionAvailable(action);
   }
 
   public recordMarkdownHistory(): void {
@@ -334,6 +335,8 @@ export class ActiveInkbookScene {
   ): SvgSceneRenderer {
     return new SvgSceneRenderer({
       container: this.#container,
+      surfaceThemeRoot: this.#root,
+      onSurfaceFailure: () => this.#failSurface(options.onLock),
       workScheduler: options.workScheduler,
       deferInitialOverscan: true,
       inputHandlers: createSceneInputHandlers(controller),
@@ -353,8 +356,19 @@ export class ActiveInkbookScene {
     });
   }
 
+  #failSurface(onLock: () => void): void {
+    if (this.#disposed || this.#surfaceFailed) return;
+    this.#surfaceFailed = true;
+    this.#readyForInput = false;
+    this.#controller.setEnabled(false);
+    this.#layout.suspend();
+    this.#previewHandoff.dispose();
+    this.#resolveReady(false);
+    onLock();
+  }
+
   #beginLockTransition(): void {
-    if (this.#disposed || this.#lockStartedAt !== undefined) return;
+    if (this.#disposed || this.#surfaceFailed || this.#lockStartedAt !== undefined) return;
     const ownerWindow = this.#root.ownerDocument.defaultView;
     if (ownerWindow === null) return;
     this.#lockStartedAt = ownerWindow.performance.now();
@@ -437,10 +451,10 @@ export class ActiveInkbookScene {
   }
 
   #completePreviewHandoff(): void {
-    if (this.#disposed) return;
+    if (this.#disposed || this.#surfaceFailed) return;
     this.#previewHandoff.ready(
       () => {
-        if (this.#disposed) return;
+        if (this.#disposed || this.#surfaceFailed) return;
         this.#readyForInput = true;
         this.#controller.setEnabled(true);
         this.#renderer.inputSurface.focus({ preventScroll: true });
@@ -467,34 +481,11 @@ export class ActiveInkbookScene {
   }
 
   #sceneCommitted(): void {
+    if (this.#surfaceFailed) return;
     this.#memory.evaluate();
     this.#layout.sceneCommitted();
     this.#flushPendingChromeUpdate();
     if (!this.#renderer.hasPendingSceneCommit && this.#initialSceneReadiness.markSceneCommitted())
       this.#completePreviewHandoff();
   }
-}
-
-function createSceneInputHandlers(
-  controller: () => ActiveEditorController | undefined,
-): SceneInputHandlers {
-  return {
-    contextmenu: (event) => controller()?.handleContextMenu(event),
-    keydown: (event) => controller()?.handleKeyDown(event),
-    pointercancel: (event) => controller()?.handlePointerCancel(event),
-    pointerdown: (event) => controller()?.handlePointerDown(event),
-    pointermove: (event) => controller()?.handlePointerMove(event),
-    pointerup: (event) => controller()?.handlePointerUp(event),
-    wheel: (event) => controller()?.handleWheel(event),
-  };
-}
-
-function resolveActiveScrollOwner(root: HTMLElement): BrowserScrollElement {
-  return (
-    resolveScrollOwner(
-      root,
-      createBrowserScrollDocumentPort(root.ownerDocument),
-      browserScrollMetrics,
-    ) ?? root
-  );
 }

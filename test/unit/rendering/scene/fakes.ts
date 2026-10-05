@@ -12,6 +12,11 @@ class FakeStyle {
     this[property] = value;
   }
 
+  public getPropertyValue(property: string): string {
+    const value = this[property];
+    return typeof value === "string" ? value : "";
+  }
+
   public removeProperty(property: string): string {
     const previous = this[property];
     delete this[property];
@@ -27,6 +32,7 @@ export class FakeNode {
   public readonly style = new FakeStyle();
   public tabIndex = -1;
   public shadowRoot: FakeNode | null = null;
+  public contentDocument: FakeDocument | null = null;
 
   public constructor(
     public readonly ownerDocument: FakeDocument,
@@ -43,6 +49,10 @@ export class FakeNode {
   }
 
   public get parentNode(): FakeNode | null {
+    return this.parent ?? null;
+  }
+
+  public get parentElement(): FakeNode | null {
     return this.parent ?? null;
   }
 
@@ -109,10 +119,14 @@ export class FakeNode {
 
 export class FakeDocument {
   public readonly body = new FakeNode(this, "body");
+  public readonly head = new FakeNode(this, "head");
+  public readonly documentElement = new FakeNode(this, "html");
   public readonly defaultView = null;
 
   public createElementNS(_namespace: string, name: string): FakeNode {
-    return new FakeNode(this, name);
+    const node = new FakeNode(this, name);
+    if (name === "iframe") node.contentDocument = new FakeDocument();
+    return node;
   }
 
   public createDocumentFragment(): FakeNode {

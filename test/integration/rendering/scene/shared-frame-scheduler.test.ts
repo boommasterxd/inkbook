@@ -1,10 +1,14 @@
 import { expect, it, vi } from "vitest";
 
 import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { createSceneFixture, QueryCostStore } from "../../../fixtures/rendering/scene";
 import {
   FakeSceneStore,
   FakeScheduler,
+  FakeDocument,
+  FakeNode,
+  asElement,
   fakeNode,
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
@@ -18,6 +22,78 @@ const PAGE: PageV1 = {
 };
 
 const VIEWPORT = { height: 100, left: 0, top: 0, width: 100 };
+
+function createThemeScene() {
+  const parentDocument = new FakeDocument();
+  const scheduler = new FakeScheduler();
+  const tokens = new Map([["--interactive-accent", "#123456"]]);
+  const read = vi.fn(() => ({
+    width: "512.5px",
+    height: "900.25px",
+    getPropertyValue: (property: string) => tokens.get(property) ?? "",
+  }));
+  let mutation = (): void => undefined;
+  const disconnect = vi.fn();
+  class ThemeObserver {
+    public constructor(callback: () => void) {
+      mutation = callback;
+    }
+    public observe(): void {}
+    public readonly disconnect = disconnect;
+  }
+  Object.defineProperty(parentDocument, "defaultView", {
+    value: { getComputedStyle: read, MutationObserver: ThemeObserver },
+  });
+  const renderer = new SvgSceneRenderer({
+    container: asElement(new FakeNode(parentDocument, "div")),
+    layout: { readViewport: () => VIEWPORT },
+    page: PAGE,
+    store: new FakeSceneStore(),
+    workScheduler: scheduler.workScheduler,
+  });
+  return { renderer, scheduler, tokens, read, disconnect, mutate: () => mutation() };
+}
+
+it("coalesces host mutations and same-scheme theme refreshes through the central scene frame", () => {
+  const h = createThemeScene();
+  const drawing = fakeNode(h.renderer.svg).ownerDocument;
+  try {
+    h.scheduler.runAll();
+    expect(drawing.body.style.getPropertyValue("--interactive-accent")).toBe("#123456");
+    const writes = vi.spyOn(drawing.body.style, "setProperty");
+    const transitions = [
+      {
+        property: "--interactive-accent",
+        value: "#654321",
+        refresh: () => h.renderer.setScheme("light"),
+      },
+      {
+        property: "--inkbook-scene-foreground-visibility",
+        value: "hidden",
+        refresh: h.mutate,
+      },
+    ];
+    for (const { property, value, refresh } of transitions) {
+      writes.mockClear();
+      h.read.mockClear();
+      h.renderer.resetInstrumentation();
+      h.tokens.set(property, value);
+      for (let sample = 0; sample < 8; sample += 1) refresh();
+      expect(h.scheduler.pendingCount).toBe(1);
+      expect(h.read).not.toHaveBeenCalled();
+      h.scheduler.runAll();
+      expect(h.read).toHaveBeenCalledOnce();
+      expect(writes).toHaveBeenCalledExactlyOnceWith(property, value);
+      expect(h.renderer.instrumentation()).toMatchObject({ scheduledFrames: 1, themeWrites: 0 });
+    }
+    writes.mockRestore();
+  } finally {
+    h.renderer.destroy();
+  }
+  expect(h.disconnect).toHaveBeenCalledOnce();
+  h.mutate();
+  expect(h.scheduler.pendingCount).toBe(0);
+});
 
 class ReadCostStore extends FakeSceneStore {
   public constructor(private readonly scheduler: FakeScheduler) {

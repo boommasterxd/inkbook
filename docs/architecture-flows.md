@@ -36,6 +36,8 @@ flowchart LR
 
   editor --> chrome["React application chrome"]
   editor --> scene["Imperative SVG scene renderer"]
+  scene --> drawingSurface["One isolated decorative SVG document"]
+  scene --> inputSurface["Parent-document accessible input and cursor"]
   store --> scene
   index --> scene
   connections --> scene
@@ -49,6 +51,8 @@ flowchart LR
 ```
 
 The presentation owner releases its own DOM, React root, adaptive menu sessions, listeners, observers, timers, pointer capture, and animation frames. The coordinator owns only the authoritative session, worker, activation records, and any bounded detached-save or recovery lease. The editable session also owns the interactive-work gate described in [Rendering and Performance](rendering-and-performance.md); persistence receives its wait callback rather than importing editor state. React renders controls and coarse state, never ink elements or the pointer-to-frame render path.
+
+The scene's decorative SVG document, input surface, cursor, and central frame scheduling ownership are defined in [Rendering and Performance](rendering-and-performance.md#imperative-scene-ownership).
 
 ## Document Session Lifecycle
 

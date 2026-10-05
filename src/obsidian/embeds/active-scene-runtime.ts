@@ -1,11 +1,26 @@
 import type { SvgSceneRenderer } from "../../rendering/scene/index";
-import type { BrowserScrollElement } from "../scrolling/index";
+import {
+  browserScrollMetrics,
+  createBrowserScrollDocumentPort,
+  resolveScrollOwner,
+  type BrowserScrollElement,
+} from "../scrolling/index";
 import type { ActiveEditorController } from "./active-editor/controller";
 import { ActiveScenePreviewHandoff } from "./active-scene-handoff";
 import { createActiveSceneChromeElements } from "./active-scene-chrome";
 import { bindActiveSceneScrollOwner, type ActiveSceneScrollBinding } from "./active-scene-scroll";
 import type { ActiveInkbookSceneOptions } from "./active-scene-types";
 import { TransitionScrollStability } from "./transition-scroll-stability";
+
+export function resolveActiveScrollOwner(root: HTMLElement): BrowserScrollElement {
+  return (
+    resolveScrollOwner(
+      root,
+      createBrowserScrollDocumentPort(root.ownerDocument),
+      browserScrollMetrics,
+    ) ?? root
+  );
+}
 
 export function bindSceneScrollOwner(
   scrollOwner: BrowserScrollElement,
