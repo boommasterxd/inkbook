@@ -49,7 +49,7 @@ function remoteFixture(y = 120) {
 }
 
 it("leaves no scene frame queued while a directional worker batch is pending and wakes for cache adoption", async () => {
-  const remote = remoteFixture(330);
+  const remote = remoteFixture(550);
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, remote.store, {
     height: 100,
     left: 0,
@@ -248,7 +248,7 @@ it("cancels a suspended indexed query on reversal and rejects stale generation w
 });
 
 it("runs directional preparation after visible work and suppresses it during drawing and memory pressure", () => {
-  const { store } = fixture(50, 330);
+  const { store } = fixture(50, 550);
   let inputActive = true;
   const { renderer, scheduler } = createSceneFixture(
     NAVIGATION_PAGE,
@@ -317,7 +317,7 @@ it("finishes the retained contour before querying entrants from the replacement 
 });
 
 it("shares the background callback deadline with required input and cancels it before context changes or disposal", () => {
-  const { store } = fixture(50, 330);
+  const { store } = fixture(50, 550);
   const scheduler = new FakeScheduler();
   const { renderer } = createSceneFixture(
     NAVIGATION_PAGE,
@@ -358,7 +358,7 @@ it("shares the background callback deadline with required input and cancels it b
 });
 
 it("reports actual autonomous cache growth and immediately cancels its successor on memory pressure", () => {
-  const { store } = fixture(50, 330);
+  const { store } = fixture(50, 550);
   const scheduler = new FakeScheduler();
   let grownBytes = 0;
   let grownEntries = 0;

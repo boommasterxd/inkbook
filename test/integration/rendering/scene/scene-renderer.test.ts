@@ -135,12 +135,12 @@ function setupTransformPreview(
 }
 
 describe("imperative SVG scene renderer", () => {
-  it("mounts two fixed bands through exact 80-screen-pixel spatial overscan", () => {
+  it("mounts two fixed bands through exact horizontal and vertical spatial overscan", () => {
     const { renderer, scheduler, store } = setup();
 
     scheduler.runAll();
 
-    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 256, minX: -256, minY: -256 });
+    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 512, minX: -256, minY: -256 });
     expect(renderer.mountedIds("highlight")).toEqual(["highlight"]);
     expect(renderer.mountedIds("content")).toEqual(["a"]);
     expect(renderer.mountedCount).toBe(2);
@@ -178,7 +178,7 @@ describe("imperative SVG scene renderer", () => {
     renderer.resetInstrumentation();
     renderer.setCamera({ x: 5, zoom: 2 });
     scheduler.runAll();
-    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 256, minX: -256, minY: -256 });
+    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 512, minX: -256, minY: -256 });
     expect(renderer.instrumentation()).toMatchObject({
       contentAttributeWrites: 0,
       geometryBuilds: 0,
@@ -441,7 +441,7 @@ describe("dense scene reconciliation", () => {
 
     scheduler.runAll();
 
-    expect(store.lastQuery).toMatchObject({ maxY: 256, minY: -256 });
+    expect(store.lastQuery).toMatchObject({ maxY: 512, minY: -256 });
     expect(renderer.mountedCount).toBe(4);
   });
 

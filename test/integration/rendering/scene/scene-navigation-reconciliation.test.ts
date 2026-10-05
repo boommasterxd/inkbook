@@ -136,10 +136,10 @@ it("rejects stale staged geometry after a store delta during camera motion", () 
 
 it("cleans an obsolete delta exit while a cold entrant is suspended, then cancels it on resize", () => {
   const store = new FakeSceneStore();
-  store.records.set("old", fakeRectangleRecord("old", 0, 20, -101));
+  store.records.set("old", fakeRectangleRecord("old", 0, 20, -241));
   const stroke = {
     ...indexedStroke(100),
-    points: Array.from({ length: 2_048 }, (_, index) => [20 + (index % 2), 191, 0.5]).flat(),
+    points: Array.from({ length: 2_048 }, (_, index) => [20 + (index % 2), 351, 0.5]).flat(),
   };
   store.records.set(stroke.id, createSceneRecord(stroke, 1));
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
@@ -156,7 +156,7 @@ it("cleans an obsolete delta exit while a cold entrant is suspended, then cancel
       scheduler.time += 8;
       return complete;
     });
-  renderer.setViewport({ height: 100, left: 0, top: 50, width: 100 });
+  renderer.setViewport({ height: 100, left: 0, top: 100, width: 100 });
   let remaining = 100;
   while (renderer.mountedCount > 0 || step.mock.calls.length === 0) {
     expect(remaining--).toBeGreaterThan(0);
@@ -176,13 +176,13 @@ it("cleans an obsolete delta exit while a cold entrant is suspended, then cancel
 
 it("releases an offscreen progressive preview without waiting for another visibility delta", () => {
   const store = new FakeSceneStore();
-  const record = fakeRectangleRecord("preview", 0, 20, -101);
+  const record = fakeRectangleRecord("preview", 0, 20, -241);
   store.records.set(record.id, record);
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
   scheduler.runAll();
   renderer.setProgressiveElementPreviews([record.id], () => record.element, 1);
   scheduler.runAll();
-  renderer.setViewport({ height: 100, left: 0, top: 50, width: 100 });
+  renderer.setViewport({ height: 100, left: 0, top: 100, width: 100 });
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(1);
   renderer.clearProgressiveElementPreviews();
@@ -193,7 +193,7 @@ it("releases an offscreen progressive preview without waiting for another visibi
 });
 
 it("resumes a wide unchanged edge query before reporting a scene commit", () => {
-  const store = createViewportRectangleStore(300, () => -50);
+  const store = createViewportRectangleStore(300, () => -150);
   const onSceneCommitted = vi.fn();
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT, {
     onSceneCommitted,
@@ -204,7 +204,7 @@ it("resumes a wide unchanged edge query before reporting a scene commit", () => 
   const query = vi.spyOn(store, "query");
   const now = vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++);
   try {
-    renderer.setViewport({ ...VIEWPORT, top: 50 });
+    renderer.setViewport({ ...VIEWPORT, top: 100 });
     renderer.setPage(NAVIGATION_PAGE, 2_000);
     scheduler.runNext();
     const firstFrameReads = get.mock.calls.length;
@@ -229,12 +229,12 @@ it("resumes a wide unchanged edge query before reporting a scene commit", () => 
 });
 
 it("retargets the camera and invalidates the store while an edge query is pending", () => {
-  const store = createViewportRectangleStore(300, () => -50);
+  const store = createViewportRectangleStore(300, () => -150);
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
   scheduler.runAll(20);
   const now = vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++);
   try {
-    renderer.setViewport({ ...VIEWPORT, top: 50 });
+    renderer.setViewport({ ...VIEWPORT, top: 100 });
     scheduler.runNext();
     expect(scheduler.pendingCount).toBeGreaterThan(0);
     const next = fakeRectangleRecord("retargeted", 300, 1_020, 50);
@@ -264,7 +264,7 @@ it.each(["immediate", "progressive", "transform"] as const)(
   "releases an offscreen deferred exit when the %s preview replaces its ID",
   (kind) => {
     const store = new FakeSceneStore();
-    const old = fakeRectangleRecord("preview", 0, 20, -101);
+    const old = fakeRectangleRecord("preview", 0, 20, -241);
     const next = fakeRectangleRecord("next", 1, 20, 10_000);
     store.records.set(old.id, old);
     const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
@@ -284,7 +284,7 @@ it.each(["immediate", "progressive", "transform"] as const)(
       setPreview(old.id, 1);
       scheduler.runAll();
       expect(renderer.mountedIds("content")).toEqual([old.id]);
-      renderer.setViewport({ ...VIEWPORT, top: 50 });
+      renderer.setViewport({ ...VIEWPORT, top: 100 });
       scheduler.runAll();
       expect(renderer.mountedCount).toBe(1);
       expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(1);
@@ -305,11 +305,11 @@ it.each(["progressive", "transform"] as const)(
   "releases a deferred exit when %s preview selection changes with the viewport context",
   (kind) => {
     const store = new FakeSceneStore();
-    const old = fakeRectangleRecord("old-preview", 0, 20, -101);
+    const old = fakeRectangleRecord("old-preview", 0, 20, -241);
     store.records.set(old.id, old);
     const ids = [old.id];
     for (let rank = 1; rank <= 256; rank += 1) {
-      const record = fakeRectangleRecord(`candidate-${rank}`, rank, 200, 240);
+      const record = fakeRectangleRecord(`candidate-${rank}`, rank, 190, 400);
       store.records.set(record.id, record);
       ids.push(record.id);
     }
@@ -323,11 +323,11 @@ it.each(["progressive", "transform"] as const)(
         renderer.setPreviewTransform(ids, "translate(5 0)", 1);
       }
       scheduler.runAll();
-      renderer.setViewport({ ...VIEWPORT, top: 50 });
+      renderer.setViewport({ ...VIEWPORT, top: 100 });
       scheduler.runAll();
       expect(oldNode.parent).toBeDefined();
       if (kind === "progressive") {
-        renderer.setViewport({ ...VIEWPORT, top: 150 });
+        renderer.setViewport({ ...VIEWPORT, top: 250 });
       } else {
         renderer.setCamera({ x: -300, zoom: 1 });
       }

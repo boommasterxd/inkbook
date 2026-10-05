@@ -141,6 +141,99 @@ it("keeps bounded protocol lookahead ordered without consuming a 10,000-candidat
   get.mockRestore();
 });
 
+it.each([
+  { horizontal: false, sign: 1 },
+  { horizontal: false, sign: -1 },
+  { horizontal: true, sign: 1 },
+  { horizontal: true, sign: -1 },
+])(
+  "prepares leading overscan before trailing work and reuses bounds for %j",
+  ({ horizontal, sign }) => {
+    const store = new FakeSceneStore();
+    const candidates = [
+      { id: "inside-early", coordinate: 20 },
+      { id: "inside-late", coordinate: 70 },
+      { id: "ahead-near", coordinate: 130 },
+      { id: "ahead-far", coordinate: 160 },
+      { id: "trailing-near", coordinate: -40 },
+      { id: "trailing-far", coordinate: -80 },
+      { id: "lateral", coordinate: 110 },
+    ];
+    candidates.forEach(({ id, coordinate }, index) => {
+      const axis = sign > 0 ? coordinate : 80 - coordinate;
+      const other = id === "lateral" ? 200 : 20;
+      store.records.set(
+        id,
+        fakeRectangleRecord(id, index, horizontal ? axis : other, horizontal ? other : axis),
+      );
+    });
+    const viewport = { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+    const direction = { x: horizontal ? sign : 0, y: horizontal ? 0 : sign };
+    const stats = createInstrumentation();
+    const get = vi.spyOn(store, "get");
+    const priority = new SceneEntrantPriority(store.records.keys(), store, new Set(), stats, {
+      viewport,
+      direction,
+    });
+    const slice = () => new MountSlice(Infinity, () => 0);
+    expect(priority.build(slice())).toBeUndefined();
+    expect([...priority.upcoming(7)]).toEqual([
+      "inside-early",
+      "inside-late",
+      "lateral",
+      "ahead-near",
+      "ahead-far",
+      "trailing-far",
+      "trailing-near",
+    ]);
+    const offset = sign * 20;
+    const shifted = horizontal
+      ? { ...viewport, minX: offset, maxX: 100 + offset }
+      : { ...viewport, minY: offset, maxY: 100 + offset };
+    priority.retarget([], [], { viewport: shifted, direction });
+    expect(priority.build(slice())).toBeUndefined();
+    expect([...priority.upcoming(7)]).toEqual([
+      "inside-early",
+      "inside-late",
+      "ahead-near",
+      "ahead-far",
+      "trailing-far",
+      "trailing-near",
+      "lateral",
+    ]);
+    priority.retarget([], [], {
+      viewport: shifted,
+      direction: { x: -direction.x, y: -direction.y },
+    });
+    expect(priority.build(slice())).toBeUndefined();
+    expect([...priority.upcoming(7)]).toEqual([
+      "inside-late",
+      "inside-early",
+      "trailing-near",
+      "trailing-far",
+      "ahead-far",
+      "ahead-near",
+      "lateral",
+    ]);
+    expect(get).toHaveBeenCalledTimes(candidates.length);
+    expect(stats.visibilityReconcileVisits).toBe(candidates.length * 3);
+    expect(priority.memoryUsage()).toBeLessThanOrEqual(candidates.length * 120);
+    expect(Array.from({ length: 7 }, () => priority.take())).toEqual([
+      "inside-late",
+      "inside-early",
+      "trailing-near",
+      "trailing-far",
+      "ahead-far",
+      "ahead-near",
+      "lateral",
+    ]);
+    expect(priority.count).toBe(0);
+    for (const { id } of candidates) priority.release(id);
+    expect(priority.memoryUsage()).toBe(0);
+    get.mockRestore();
+  },
+);
+
 it("finishes logical exits without detaching cached roots behind new publication", () => {
   const store = new FakeSceneStore();
   for (let rank = 0; rank < 768; rank += 1) {

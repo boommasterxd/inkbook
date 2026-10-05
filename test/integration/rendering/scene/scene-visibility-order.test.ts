@@ -49,8 +49,8 @@ it("merges viewport entrants into band order and sorts after a rank change", () 
   const store = new FakeSceneStore();
   const first = fakeRectangleRecord("first", 10, 10);
   const last = fakeRectangleRecord("last", 30, 10);
-  const entrant = fakeRectangleRecord("entrant", 20, 10, 190);
-  const nextEntrant = fakeRectangleRecord("next-entrant", 15, 10, 260);
+  const entrant = fakeRectangleRecord("entrant", 20, 10, 380);
+  const nextEntrant = fakeRectangleRecord("next-entrant", 15, 10, 430);
   for (const record of [first, last, entrant, nextEntrant]) store.records.set(record.id, record);
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
     height: 100,
@@ -76,7 +76,7 @@ it("merges viewport entrants into band order and sorts after a rank change", () 
   store.records.set(last.id, { ...last, rank: 5 });
   renderer.resetInstrumentation();
   renderer.applyDelta({ affected: [{ id: last.id, domains: ["order"] }] });
-  renderer.setViewport({ height: 100, left: 0, top: 100, width: 100 });
+  renderer.setViewport({ height: 100, left: 0, top: 150, width: 100 });
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(["last", "next-entrant", "entrant"]);
   expect(renderer.instrumentation().domReorders).toBeGreaterThan(0);
@@ -136,13 +136,59 @@ it.each([
   expect(scheduler.pendingCount).toBe(0);
 });
 
+it.each([
+  { name: "down", horizontal: false, sign: 1 },
+  { name: "up", horizontal: false, sign: -1 },
+  { name: "right", horizontal: true, sign: 1 },
+  { name: "left", horizontal: true, sign: -1 },
+])("follows $name navigation when one clip edge stays fixed", ({ horizontal, sign }) => {
+  const store = new FakeSceneStore();
+  const ids = Array.from({ length: 384 }, (_, index) => `clipped-${index}`);
+  ids.forEach((id, index) => {
+    const coordinate = 420 + index;
+    store.records.set(
+      id,
+      fakeRectangleRecord(
+        id,
+        ids.length - index - 1,
+        horizontal ? coordinate : 20,
+        horizontal ? 20 : coordinate,
+      ),
+    );
+  });
+  const initial = sign > 0 ? 0 : 1_200;
+  const viewport = {
+    height: 100,
+    left: horizontal ? initial : 0,
+    top: horizontal ? 0 : initial,
+    width: 100,
+  };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  scheduler.runAll();
+  expect(renderer.mountedCount).toBe(0);
+  renderer.setViewport({
+    ...viewport,
+    ...(horizontal
+      ? { left: 0, width: sign > 0 ? 1_200 : 1_300 }
+      : { top: 0, height: sign > 0 ? 1_200 : 1_300 }),
+  });
+  scheduler.runNext();
+  expect(renderer.mountedIds("content")).toEqual(
+    (sign > 0 ? ids.slice(0, 192) : ids.slice(192)).reverse(),
+  );
+  scheduler.runAll();
+  expect(renderer.mountedIds("content")).toEqual([...ids].reverse());
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+});
+
 it("publishes a cached entrant while the earlier cold stroke waits for the worker", () => {
   const { store, signals } = createPendingScenePathStore();
   const warm = fakeRectangleRecord("warm", 1, 20, 110);
   const stroke = {
     ...indexedStroke(0),
-    pivot: { x: 20, y: 240 },
-    points: [20, 240, 0.5, 30, 240, 0.5],
+    pivot: { x: 20, y: 440 },
+    points: [20, 440, 0.5, 30, 440, 0.5],
   };
   store.records.set(warm.id, warm);
   store.records.set(stroke.id, createSceneRecord(stroke, 0));

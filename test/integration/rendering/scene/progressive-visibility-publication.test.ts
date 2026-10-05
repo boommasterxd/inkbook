@@ -25,7 +25,7 @@ it("inserts inside a retained rank gap and keeps original roots through reorder 
   const store = new FakeSceneStore();
   const first = fakeRectangleRecord("first", 10, 20, 20);
   const last = fakeRectangleRecord("last", 30, 30, 20);
-  const entrant = fakeRectangleRecord("entrant", 20, 40, 300);
+  const entrant = fakeRectangleRecord("entrant", 20, 40, 500);
   for (const record of [first, last, entrant]) store.records.set(record.id, record);
   const { renderer, scheduler, document, content } = createPublicationScene(store, INITIAL);
   const retained = [...content.nodes];

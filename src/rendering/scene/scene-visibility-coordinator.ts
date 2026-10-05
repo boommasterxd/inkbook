@@ -271,8 +271,15 @@ export class SceneVisibilityCoordinator {
       previous.maxY === bounds.maxY
     )
       return;
-    const x = previous === undefined || zoomChanged ? 0 : bounds.minX - previous.minX;
-    const y = previous === undefined || zoomChanged ? 0 : bounds.minY - previous.minY;
+    // Host scrolling can move only one clip edge while the other stays at the page boundary.
+    const x =
+      previous === undefined || zoomChanged
+        ? 0
+        : bounds.minX + bounds.maxX - previous.minX - previous.maxX;
+    const y =
+      previous === undefined || zoomChanged
+        ? 0
+        : bounds.minY + bounds.maxY - previous.minY - previous.maxY;
     const length = Math.hypot(x, y);
     this.#priority = {
       viewport: bounds,

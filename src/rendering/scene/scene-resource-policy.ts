@@ -3,6 +3,8 @@ import {
   DENSE_RECONCILIATION_VISIBLE_ELEMENT_THRESHOLD,
   VIEWPORT_OVERSCAN_SCREEN_PX,
   VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
+  VERTICAL_VIEWPORT_OVERSCAN_SCREEN_PX,
+  VERTICAL_VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
 } from "./constants";
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { ScenePathCache } from "./path-cache";
@@ -121,13 +123,15 @@ function visiblePageBounds(
   viewport: SceneViewport,
   camera: SceneCamera,
   overscanScreenPx: number,
+  verticalOverscanScreenPx = overscanScreenPx,
 ): Bounds {
   const overscan = overscanScreenPx / camera.zoom;
+  const verticalOverscan = verticalOverscanScreenPx / camera.zoom;
   return {
     minX: viewport.left / camera.zoom - camera.x - overscan,
-    minY: viewport.top / camera.zoom - overscan,
+    minY: viewport.top / camera.zoom - verticalOverscan,
     maxX: (viewport.left + viewport.width) / camera.zoom - camera.x + overscan,
-    maxY: (viewport.top + viewport.height) / camera.zoom + overscan,
+    maxY: (viewport.top + viewport.height) / camera.zoom + verticalOverscan,
   };
 }
 
@@ -141,7 +145,17 @@ export function visibilityPageBounds(
     return { envelope: bounds, retained: bounds };
   }
   return {
-    envelope: visiblePageBounds(viewport, camera, VIEWPORT_OVERSCAN_SCREEN_PX),
-    retained: visiblePageBounds(viewport, camera, VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX),
+    envelope: visiblePageBounds(
+      viewport,
+      camera,
+      VIEWPORT_OVERSCAN_SCREEN_PX,
+      VERTICAL_VIEWPORT_OVERSCAN_SCREEN_PX,
+    ),
+    retained: visiblePageBounds(
+      viewport,
+      camera,
+      VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
+      VERTICAL_VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
+    ),
   };
 }

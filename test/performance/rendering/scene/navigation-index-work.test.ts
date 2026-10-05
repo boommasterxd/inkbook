@@ -175,7 +175,7 @@ it("bounds directional candidates and contour ownership, reuses prepared geometr
 });
 
 it("drains directional work through one background callback without repeating spent scene frames", () => {
-  const { store, work } = directionalFixture(10_000, 330);
+  const { store, work } = directionalFixture(10_000, 550);
   const scheduler = new FakeScheduler(() => BUDGET);
   const { renderer } = createSceneFixture(
     NAVIGATION_PAGE,
@@ -219,8 +219,8 @@ it("drains directional work through one background callback without repeating sp
     // Indexed fringe acquisition and its atomic adoption use at most two required scene frames.
     expect(renderer.instrumentation().frames).toBeLessThanOrEqual(2);
     expect(renderer.instrumentation().pathCacheEntries).toBe(256);
-    // The fringe shares a grid cell with 300 future records; the leading cursor admits 256.
-    // Both regional cursor traversals include fewer than 44 cell/iterator boundary visits.
+    // The leading cursor admits at most 256 of the 300 future records.
+    // Regional traversals remain inside the existing cell/iterator work bound.
     expect(work.units).toBeLessThanOrEqual(300 + 256 + 44);
   } finally {
     now.mockRestore();
@@ -324,8 +324,8 @@ function denseDirectionalHarness() {
       return fakeRectangleRecord(`entry-${rank}`, rank, 20, rank < 1_000 ? 150 : 10_000);
     const element = {
       ...indexedStroke(rank),
-      pivot: { x: 20, y: 330 },
-      points: [20, 330, 0.5, 21, 330, 0.5],
+      pivot: { x: 20, y: 550 },
+      points: [20, 550, 0.5, 21, 550, 0.5],
     };
     const record = createSceneRecord(element, rank);
     const points = new Proxy(element.points, {
@@ -343,12 +343,12 @@ function denseDirectionalHarness() {
   const query = indexed.store.beginQuery!.bind(indexed.store);
   indexed.store.beginQuery = (bounds) => {
     const cursor = query(bounds);
-    if (bounds.minY < 230) return cursor;
+    if (bounds.minY < 390) return cursor;
     return {
       ...cursor,
       advance(limit) {
         const result = cursor.advance(limit);
-        scheduler.time += (result.workUnits * BUDGET) / 16;
+        scheduler.time += (result.workUnits * BUDGET) / 4;
         return result;
       },
     };
@@ -395,7 +395,7 @@ it("prepares dense leading contours after required work without DOM publication 
     expect(prepare).toHaveBeenCalled();
     expect(work.pointReads).toBeGreaterThan(0);
     expect(work.pointReads).toBeLessThanOrEqual(176 * 32);
-    // One fringe and one leading query can each reject the same 1,000 shared-cell records.
+    // Required fringes and leading preparation retain separate bounded indexed queries.
     expect(indexed.work.units - before).toBeLessThanOrEqual(2 * 1_000 + 2 * 176 + 64);
     expect(renderer.instrumentation()).toMatchObject({
       domEntrants: 0,
@@ -408,7 +408,7 @@ it("prepares dense leading contours after required work without DOM publication 
     work.inputActive = true;
     work.pointReads = 0;
     renderer.resetInstrumentation();
-    renderer.setViewport({ height: 100, left: 0, top: 180, width: 100 });
+    renderer.setViewport({ height: 100, left: 0, top: 230, width: 100 });
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(1_176);
     expect(renderer.instrumentation()).toMatchObject({ geometryBuilds: 0, domEntrants: 176 });

@@ -26,6 +26,7 @@ export class SceneEntrantPriority {
   #orderingPriority: SceneVisibilityPriority | undefined;
   #insideLimits: Bounds | undefined;
   #outsideLimits = { left: -Infinity, right: Infinity, above: -Infinity, below: Infinity };
+  #leadingLimits = { min: -Infinity, max: Infinity };
 
   public constructor(
     private readonly ids: Iterator<string, undefined>,
@@ -114,6 +115,7 @@ export class SceneEntrantPriority {
     this.#orderingPriority = priority;
     this.#insideLimits = undefined;
     this.#outsideLimits = { left: -Infinity, right: Infinity, above: -Infinity, below: Infinity };
+    this.#leadingLimits = { min: -Infinity, max: Infinity };
     this.#heap.length = 0;
     this.#seen.clear();
     this.#queued = this.#candidates.values();
@@ -143,6 +145,7 @@ export class SceneEntrantPriority {
     const { viewport } = priority;
     const inside = this.#insideLimits;
     const outside = this.#outsideLimits;
+    const leading = this.leadingProjection(viewport, true);
     return (
       (inside === undefined ||
         (viewport.minX <= inside.maxX &&
@@ -152,7 +155,9 @@ export class SceneEntrantPriority {
       outside.left < viewport.minX &&
       outside.right > viewport.maxX &&
       outside.above < viewport.minY &&
-      outside.below > viewport.maxY
+      outside.below > viewport.maxY &&
+      leading >= this.#leadingLimits.min &&
+      leading < this.#leadingLimits.max
     );
   }
 
@@ -174,6 +179,12 @@ export class SceneEntrantPriority {
     }
     const viewport = this.priority.viewport;
     const outside = this.#outsideLimits;
+    const direction = this.#orderingPriority!.direction;
+    if (direction.x !== 0 || direction.y !== 0) {
+      const projection = this.leadingProjection(bounds);
+      if (tier === 1) this.#leadingLimits.max = Math.min(this.#leadingLimits.max, projection);
+      else this.#leadingLimits.min = Math.max(this.#leadingLimits.min, projection);
+    }
     if (bounds.maxX < viewport.minX) outside.left = Math.max(outside.left, bounds.maxX);
     else if (bounds.minX > viewport.maxX) outside.right = Math.min(outside.right, bounds.minX);
     else if (bounds.maxY < viewport.minY) outside.above = Math.max(outside.above, bounds.maxY);
@@ -234,7 +245,12 @@ export class SceneEntrantPriority {
     const x = (bounds.minX + bounds.maxX - viewport.minX - viewport.maxX) / 2;
     const y = (bounds.minY + bounds.maxY - viewport.minY - viewport.maxY) / 2;
     const directional = direction.x !== 0 || direction.y !== 0;
-    const tier = intersects(this.priority.viewport, bounds) ? 0 : 1;
+    const tier = intersects(this.priority.viewport, bounds)
+      ? 0
+      : !directional ||
+          this.leadingProjection(bounds) > this.leadingProjection(this.priority.viewport, true)
+        ? 1
+        : 2;
     this.observeTier(bounds, tier);
     return {
       id,
@@ -242,6 +258,16 @@ export class SceneEntrantPriority {
       tier,
       distance: directional ? x * direction.x + y * direction.y : x * x + y * y,
     };
+  }
+
+  /** Signed edges classify leading overscan without changing its directional distance order. */
+  private leadingProjection(bounds: Bounds, viewport = false): number {
+    const direction = this.#orderingPriority!.direction;
+    const horizontal = Math.abs(direction.x) > Math.abs(direction.y);
+    const sign = (horizontal ? direction.x : direction.y) < 0 ? -1 : 1;
+    const min = (horizontal ? bounds.minX : bounds.minY) * sign;
+    const max = (horizontal ? bounds.maxX : bounds.maxY) * sign;
+    return viewport ? Math.max(min, max) : Math.min(min, max);
   }
 
   private earlier(left: Candidate, right: Candidate): boolean {
