@@ -21,6 +21,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
   ]),
   invariant: Object.freeze([
     "test/performance/persistence/worker-point-references.test.ts",
+    "test/performance/persistence/worker/scene-path-receiver-work.test.ts",
     "test/performance/persistence/autosave-recovery-work.test.ts",
     "test/performance/persistence/canonical-metadata-cache.test.ts",
     "test/performance/persistence/compact-stroke-samples.test.ts",
@@ -95,6 +96,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/retained-viewport-publication.test.ts",
     "test/performance/rendering/scene/worker-progress-publication.test.ts",
     "test/performance/rendering/scene/worker-visible-contours.test.ts",
+    "test/performance/rendering/scene/remote-scene-lookahead.test.ts",
     "test/performance/rendering/scene/viewport-priority.test.ts",
   ]),
 });

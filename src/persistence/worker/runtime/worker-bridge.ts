@@ -19,7 +19,6 @@ import {
   encodeRuntimeRequestChunked,
 } from "./wire-codec";
 import {
-  assertResultMatchesRequest,
   matchesUnlockBatchIdentity,
   validUnlockCompletion,
   isRequiredSceneRequest,
@@ -59,7 +58,6 @@ interface PendingBridgeRequest {
   readonly resolve: (result: DocumentRuntimeResult) => void;
   cancelTimeout: (() => void) | undefined;
 }
-
 export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   readonly #endpoint: WorkerBridgeEndpoint;
   readonly #pointReferences = new ModelPointReferences();
@@ -107,8 +105,10 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     if (this.#terminated) return Promise.reject(new Error("Document worker port is terminated."));
     const requestId = ++this.#nextRequestId;
     return new Promise((resolve, reject) => {
+      const sceneReceiver = new ScenePathReceiver(request);
+      request = sceneReceiver.request ?? request;
       const pending: PendingBridgeRequest = {
-        sceneReceiver: new ScenePathReceiver(),
+        sceneReceiver,
         acceptsUnlockBatches: request.type === "unlock",
         adoptedElementCount: 0,
         abortController: new AbortController(),
@@ -292,7 +292,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
       });
       const verificationAdmission = decodeCheckpoint();
       if (verificationAdmission !== undefined) await verificationAdmission;
-      await assertResultMatchesRequest(pending.request, result, {
+      await pending.sceneReceiver.validateResult(pending.request, result, {
         checkpoint: decodeCheckpoint,
         signal: pending.abortController.signal,
       });

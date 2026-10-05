@@ -75,6 +75,55 @@ describe("worker canonical scene contour export reuse", () => {
   );
 });
 
+it.each([false, true])(
+  "owns request IDs and identity before dispatch for streaming=%s",
+  async (streamProgress) => {
+    const harness = createWorkerBridgeHarness();
+    const port = createWorkerBridgeClient(harness.clientEndpoint);
+    const stroke = createTestStroke();
+    try {
+      await port.execute({
+        baseModelRevision: null,
+        identity,
+        modelRevision: 0,
+        snapshot: createWorkerSnapshot([stroke]),
+        type: "model-sync-full",
+      });
+      const request = {
+        type: "prepare-scene-paths" as const,
+        basisRevision: 0,
+        identity: { ...identity },
+        ids: [stroke.id],
+        streamProgress,
+      };
+      const adopted: string[] = [];
+      const pending = port.execute(request, {
+        unlockBatch: () => undefined,
+        scenePaths: (batch) => {
+          adopted.push(...batch.paths.map(({ id }) => id));
+        },
+      });
+      request.ids[0] = "unknown";
+      request.identity.operationId++;
+      request.basisRevision++;
+      const result = await pending;
+      expect(result).toMatchObject({
+        type: "prepare-scene-paths-success",
+        basisRevision: 0,
+        identity,
+      });
+      expect(
+        result.type === "prepare-scene-paths-success" && result.paths.map(({ id }) => id),
+      ).toEqual(streamProgress ? [] : [stroke.id]);
+      expect(adopted).toEqual(streamProgress ? [stroke.id] : []);
+      expect(harness.runtime.instrumentation.shapeBuilds).toBe(1);
+    } finally {
+      port.terminate();
+      harness.detach();
+    }
+  },
+);
+
 describe("worker canonical scene contour lifecycle", () => {
   it("rejects stale revisions and invalid batches before contour work, then respects model edits", async () => {
     const runtime = new DocumentWorkerRuntime(identity);

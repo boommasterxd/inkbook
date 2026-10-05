@@ -5,7 +5,6 @@ import type { SceneElementRecord, SceneStorePort } from "./types";
 interface Batch {
   retarget: ((ids: readonly string[]) => void) | undefined;
   readonly controller: AbortController;
-  readonly sequence: number;
   readonly versions: Map<string, number>;
   readonly paths: Map<string, readonly SvgPathPart[]>;
   pending: boolean;
@@ -21,7 +20,6 @@ interface RemoteScenePathOptions {
 export class RemoteScenePaths {
   #batch: Batch | undefined;
   #hasPublished = false;
-  #sequence = 0;
   public constructor(
     private readonly store: SceneStorePort,
     private readonly options: RemoteScenePathOptions = {},
@@ -52,17 +50,20 @@ export class RemoteScenePaths {
   }
 
   public cancel(retainVisible?: (id: string) => boolean): void {
-    this.#sequence += 1;
-    this.#hasPublished = false;
     const batch = this.#batch;
     if (batch === undefined) return;
+    let changed = false;
     for (const [id, version] of batch.versions) {
       if (retainVisible?.(id) === true && this.store.get(id)?.geometryVersion === version) continue;
       batch.versions.delete(id);
       batch.paths.delete(id);
+      changed = true;
     }
     if (batch.versions.size > 0) {
-      batch.retarget?.([...batch.versions.keys()]);
+      if (changed) {
+        this.#hasPublished = batch.paths.size > 0;
+        batch.retarget?.([...batch.versions.keys()]);
+      }
       return;
     }
     batch.controller.abort();
@@ -81,7 +82,6 @@ export class RemoteScenePaths {
     const batch: Batch = {
       retarget: undefined,
       controller: new AbortController(),
-      sequence: this.#sequence,
       versions: new Map([[record.id, record.geometryVersion]]),
       paths: new Map(),
       pending: true,
@@ -122,7 +122,7 @@ export class RemoteScenePaths {
       const record = this.store.get(path.id);
       if (record === undefined || batch.versions.get(path.id) !== record.geometryVersion) continue;
       batch.paths.set(path.id, path.parts);
-      if (batch.sequence === this.#sequence) this.#hasPublished = true;
+      this.#hasPublished = true;
       this.options.onPrepared?.(record, path.parts);
       ready = true;
     }

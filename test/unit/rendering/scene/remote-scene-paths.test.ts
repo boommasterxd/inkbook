@@ -55,6 +55,78 @@ it("reads complete progress while the operation waits and retargets only retaine
   expect(wake).toHaveBeenCalledTimes(2);
 });
 
+it.each([false, true])(
+  "keeps lookahead readiness from valid progress after a shrinking retarget, ready=%s",
+  async (ready) => {
+    const records = ["first", "second", "third", "fourth", "fifth"].map(record);
+    const indexed = new Map(records.map((entry) => [entry.id, entry]));
+    let observer!: ScenePathPreparationObserver;
+    let finish!: (value: readonly PreparedScenePathEntry[]) => void;
+    const requests: string[][] = [];
+    const retarget = vi.fn();
+    const remote = new RemoteScenePaths({
+      get: (id) => indexed.get(id),
+      query: () => undefined,
+      prepareScenePaths: (ids, _signal, progress) => {
+        requests.push([...ids]);
+        observer = progress!;
+        observer.setRetarget(retarget);
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    });
+    remote.read(records[0]!, () => []);
+    remote.cancel(() => true);
+    finish(paths("first"));
+    await Promise.resolve();
+    remote.read(records[0]!, () => []);
+    remote.read(records[1]!, () => ["third", "fourth"]);
+    if (ready) observer.onProgress(paths("third"));
+    remote.cancel((id) => id === "third");
+    if (!ready) observer.onProgress(paths("third"));
+    remote.read(records[2]!, () => []);
+    finish([]);
+    await Promise.resolve();
+    remote.read(records[3]!, () => ["fifth"]);
+    expect(requests).toEqual([["first"], ["second", "third", "fourth"], ["fourth", "fifth"]]);
+    expect(retarget.mock.calls).toHaveLength(4);
+    remote.cancel();
+    finish([]);
+    await Promise.resolve();
+    expect(remote.memoryUsage()).toBe(0);
+  },
+);
+
+it("resets first-contour readiness when retargeting retains no ready contour", async () => {
+  const records = ["first", "second", "third", "fourth"].map(record);
+  const indexed = new Map(records.map((entry) => [entry.id, entry]));
+  const requests: string[][] = [];
+  let finish!: (value: readonly PreparedScenePathEntry[]) => void;
+  const remote = new RemoteScenePaths({
+    get: (id) => indexed.get(id),
+    query: () => undefined,
+    prepareScenePaths: (ids) => {
+      requests.push([...ids]);
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  remote.read(records[0]!, () => []);
+  finish(paths("first"));
+  await Promise.resolve();
+  remote.read(records[0]!, () => []);
+  remote.read(records[1]!, () => ["third"]);
+  remote.cancel((id) => id === "third");
+  finish(paths("second"));
+  await Promise.resolve();
+  remote.read(records[3]!, () => ["third"]);
+  expect(requests).toEqual([["first"], ["second", "third"], ["fourth"]]);
+  remote.cancel();
+  finish([]);
+});
+
 function record(id: string): SceneElementRecord {
   return {
     id,

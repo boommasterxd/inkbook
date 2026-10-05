@@ -1,6 +1,7 @@
 import { parseSafeSvgRoot } from "../../documents/svg-envelope-root";
 import { parseOpeningTag } from "../../documents/svg-tag";
 import { validatePreparedScenePaths } from "./prepare-scene-paths";
+import type { ScenePathValidationContext, ValidatedScenePathBatch } from "./scene-path-limits";
 
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import type { DocumentRuntimeRequest, DocumentRuntimeResult, UnlockRuntimeBatch } from "./types";
@@ -49,12 +50,13 @@ export async function assertResultMatchesRequest(
   request: DocumentRuntimeRequest,
   result: DocumentRuntimeResult,
   options: RuntimeWireSliceOptions,
-): Promise<void> {
+  scenePaths?: ScenePathValidationContext,
+): Promise<ValidatedScenePathBatch | undefined> {
   if (!matchesRequestIdentity(request, result)) {
     throw new TypeError("Worker result does not match its exact request identity and purpose.");
   }
   if (request.type === "prepare-scene-paths" && result.type === "prepare-scene-paths-success") {
-    await validatePreparedScenePaths(request, result, options);
+    return validatePreparedScenePaths(request, result, options, scenePaths);
   }
   if (
     request.type !== "verify-output" ||
@@ -84,6 +86,7 @@ export async function assertResultMatchesRequest(
   ) {
     throw new TypeError("Worker verification result does not describe the exact request content.");
   }
+  return undefined;
 }
 
 function matchesRequestIdentity(
