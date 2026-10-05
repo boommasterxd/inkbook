@@ -33,21 +33,31 @@ Canonical budgets and ownership belong in
 
 Navigation distinguishes required viewport preparation from background work.
 The first required remote contour has an early response; subsequent lookahead
-excludes reusable local geometry and retains valid overlapping work. Remote
+excludes reusable local geometry and retains valid overlapping work. Readiness
+survives unchanged, versions-valid retargets and completed valid overlap when a
+request shrinks; a real shrink without completed overlap resets readiness until
+valid progress arrives. Identical retained-ID retargets are suppressed. Remote
 completion wakes the existing scene scheduler. Spatial preparation serves the
 actual viewport before overscan and follows scroll or pan direction while final
-SVG paint order remains canonical. Ready cached candidates can pass a suspended
-cold candidate, and old-node cleanup does not precede their first preparation.
+SVG paint order remains canonical. Safe camera-priority changes retain acquired
+records and heap progress only when conservative tier and direction proofs keep
+the ordering valid; otherwise the heap rebuilds under the shared deadline from
+cached bounds. Ready cached candidates can pass a suspended cold candidate, and
+old-node cleanup does not precede their first preparation.
 
 Bounded offscreen-node reuse avoids repeated SVG creation and geometry attribute
 writes on revisits. Previously visible committed roots may remain connected while
-logical viewport membership is released. This permits native-scroll return without
-another insertion; detached returns and actual reorders retain the existing live-root
-publication cap. The shared ownership and cleanup limits are defined in
+logical viewport membership is released. The cache has a 25 MiB retained-byte
+ceiling with no separate root-count cap; positive entry sizes bound cardinality,
+and memory pressure disables retention. Connected returns with valid geometry,
+paint, band, rank, order-generation, and transient state use a logical-ownership
+fast path without successor search or publication-run preparation. Detached returns
+and actual reorders retain the 64-root-per-frame publication allowance. The shared
+ownership and cleanup limits are defined in
 [Path Caches](../rendering-and-performance.md#path-caches). Geometry identity and
 ID/version aliases share one canonical path-cache entry. Both caches participate in
 active-document memory pressure and reject stale geometry and deleted IDs. Connected
-retention does not guarantee reuse after eviction or eliminate pan/zoom browser costs.
+retention does not guarantee reuse after byte eviction or eliminate pan/zoom browser costs.
 
 A smaller fade-start quota was rejected: the paired selection-delete diagnostic
 did not reduce long native tasks and increased layerization work. Keep the
@@ -70,6 +80,16 @@ capped at the existing batch charge. Expensive domain-geometry batches retain
 the conservative charge. Camera-only changes reproject retained selection geometry rather than
 fetching all selected elements again. The predicate and scheduling rules belong
 in [Editor Tools](../editor-tools.md#select).
+
+Navigation retains one fresh owning-window layout snapshot for the scene and
+cursor in each existing read phase. It suppresses camera, selection, and cursor
+feedback only when a previously applied proof still matches camera, fit zoom,
+container and owner geometry, owner/window identity, and actual scroll position.
+Input configuration changes only with zoom bounds. A zoom-owned height resize
+may skip one follow-up root-only invalidation only after scene and cursor adopt
+that full proof and the fresh measurement still matches; external or unknown
+geometry changes keep normal invalidation. The full navigation contract is in
+[Zoom](../zoom.md#atomic-zoom-frames).
 
 Reuse validation only when the authoritative owner proves the unchanged data
 identity. An internal style change does not require another scan of an exclusively
