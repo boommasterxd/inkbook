@@ -8,13 +8,67 @@ import {
   pressureShapeBoundary,
 } from "../../../src/domain/geometry/pressure-union";
 
+function denseDiskWindow() {
+  return Array.from({ length: 64 }, (_, index) => ({
+    kind: "dot" as const,
+    center: { x: index % 8, y: Math.floor(index / 8) },
+    radius: 3,
+  }));
+}
+
 describe("bounded pressure preparation work", () => {
+  it("rejects unrelated source hemispheres before exact intersection and membership probes", () => {
+    const shapes = denseDiskWindow();
+    const intersectionsProbe = vi.spyOn(intersections, "intersectPressureBoundaries");
+    const boundaryProbe = vi.spyOn(intersections, "pressureBoundaryParameter");
+    try {
+      const job = iteratePressureUnion(shapes);
+      let step;
+      do {
+        step = job.next();
+      } while (!step.done);
+      expect(intersectionsProbe).toHaveBeenCalledTimes(step.value.work.intersectionTests);
+      expect(boundaryProbe).toHaveBeenCalledTimes(step.value.work.boundaryTests);
+      // The full 64-source window must prune hemisphere carriers, rather than test full circles.
+      expect(intersectionsProbe.mock.calls.length).toBeLessThanOrEqual(8_000);
+      expect(boundaryProbe.mock.calls.length).toBeLessThanOrEqual(2_200);
+      expect(step.value.usedFallback).toBe(false);
+    } finally {
+      intersectionsProbe.mockRestore();
+      boundaryProbe.mockRestore();
+    }
+  });
+
+  it("stops source-boundary probes when a suspended union is cancelled", () => {
+    const shapes = denseDiskWindow();
+    const probes = vi.spyOn(intersections, "intersectPressureBoundaries");
+    try {
+      const job = iteratePressureUnion(shapes);
+      expect(job.next().done).toBe(false);
+      const completed = probes.mock.calls.length;
+      expect(completed).toBeGreaterThan(0);
+      job.return({
+        contours: [],
+        usedFallback: false,
+        work: {
+          intersectionTests: 0,
+          containmentTests: 0,
+          boundaryTests: 0,
+          intervalTests: 0,
+          peakIntervals: 0,
+          visibleFragments: 0,
+        },
+      });
+      expect(job.next()).toEqual({ done: true, value: undefined });
+      expect(probes).toHaveBeenCalledTimes(completed);
+      expect(iteratePressureUnion([]).next().value).toMatchObject({ contours: [] });
+    } finally {
+      probes.mockRestore();
+    }
+  });
+
   it("groups exact-union probes without widening a bounded contour step", () => {
-    const shapes = Array.from({ length: 64 }, (_, index) => ({
-      kind: "dot" as const,
-      center: { x: index % 8, y: Math.floor(index / 8) },
-      radius: 3,
-    }));
+    const shapes = denseDiskWindow();
     const probes = vi.spyOn(intersections, "intersectPressureBoundaries");
     try {
       const job = iteratePressureUnion(shapes);
@@ -42,7 +96,9 @@ describe("bounded pressure preparation work", () => {
       probes.mockRestore();
     }
   });
+});
 
+describe("pressure preparation reuse", () => {
   it.each([
     { first: 0, last: 64, stopAfterFirst: false, expectedNibs: 65, expectedPieces: 64 },
     { first: 16, last: 32, stopAfterFirst: false, expectedNibs: 17, expectedPieces: 16 },

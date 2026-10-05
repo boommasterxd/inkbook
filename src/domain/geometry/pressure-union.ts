@@ -9,6 +9,7 @@ import {
   type PressureBoundarySegment,
 } from "./pressure-boundary-intersections";
 import { pressureCapsuleContains } from "./pressure-capsule-containment";
+import { pressureArcBounds } from "./pressure-arc-bounds";
 
 export const MAX_PRESSURE_UNION_SHAPES = 64;
 /** Bounded geometry/cancellation intervals; consumers still use the shared time budget. */
@@ -104,7 +105,11 @@ export function* iteratePressureUnion(
       shape,
       boundaries,
       bounds: shapeBounds(shape),
-      boundaryBounds: boundaries.map(boundaryBounds),
+      boundaryBounds: boundaries.map((boundary) =>
+        boundary.kind === "arc"
+          ? pressureArcBounds(boundary, context.arcAngles)
+          : boundaryBounds(boundary),
+      ),
     };
   });
   const visible: PressureBoundarySegment[] = [];
