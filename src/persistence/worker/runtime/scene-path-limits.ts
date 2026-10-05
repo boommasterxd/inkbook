@@ -33,6 +33,15 @@ export function assertScenePathIds(ids: readonly string[]): void {
     throw new TypeError("Scene preparation IDs exceed the internal protocol limit.");
 }
 
+export function assertScenePathRequest(request: PrepareScenePathsRuntimeRequest): number {
+  assertScenePathIds(request.ids);
+  assertScenePathVisibleCount(request.visibleCount, request.ids.length);
+  const maxBytes = assertScenePathMaxBytes(request.maxBytes);
+  if (request.streamProgress !== undefined && typeof request.streamProgress !== "boolean")
+    throw new TypeError("Invalid scene preparation progress mode.");
+  return maxBytes;
+}
+
 /** An operation owns its validated IDs; caller mutations cannot change response admission. */
 export class ScenePathValidationContext {
   public readonly request: PrepareScenePathsRuntimeRequest;

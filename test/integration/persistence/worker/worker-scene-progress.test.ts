@@ -5,8 +5,6 @@ import {
   scenePathBytes,
 } from "../../../../src/persistence/worker/runtime/scene-path-limits";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/document-runtime";
-import type { DocumentRuntimeObserver } from "../../../../src/persistence/worker/runtime/types";
-import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/worker-host";
 import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import {
@@ -19,12 +17,12 @@ import {
   createWorkerSnapshot,
 } from "../../../fixtures/persistence/worker-snapshot";
 
-const identity = {
-  sessionId: "session-a",
-  workerEpoch: 1,
-  operationId: 2,
-  purpose: "background" as const,
-};
+import {
+  createScenePathProgressFixture as streamingFixture,
+  scenePathProgressIdentity as identity,
+  scenePathDeferred as deferred,
+  scenePathProgressCases,
+} from "../../../fixtures/persistence/scene-path-progress";
 
 it.each([false, true])(
   "publishes complete paths at a shared handoff and prunes obsolete work, bridge=%s",
@@ -61,14 +59,7 @@ it.each([false, true])(
   },
 );
 
-it.each([
-  [false, "complete"],
-  [true, "complete"],
-  [false, "cancel"],
-  [true, "cancel"],
-  [false, "error"],
-  [true, "error"],
-] as const)(
+it.each(scenePathProgressCases("complete", "cancel", "error"))(
   "continues centrally admitted geometry with one blocked ACK, bridge=%s, terminal=%s",
   async (bridge, terminal) => {
     const fixture = await streamingFixture(bridge);
@@ -330,82 +321,6 @@ it("rejects malformed fallback IDs before queue admission and permits valid foll
   ).toMatchObject({ type: "export-success" });
   runtime.terminate();
 });
-
-async function streamingFixture(bridge: boolean) {
-  let block = true;
-  const handoff = deferred();
-  const runtime = new DocumentWorkerRuntime(identity, {
-    checkpoint: (signal) => {
-      if (!block || runtime.instrumentation.shapeBuilds !== 1) return undefined;
-      return new Promise<void>((resolve, reject) => {
-        const abort = (): void => reject(new Error("cancelled"));
-        signal.addEventListener("abort", abort, { once: true });
-        void handoff.promise.then(() => {
-          signal.removeEventListener("abort", abort);
-          resolve();
-        });
-      });
-    },
-    run: async (operation, signal) => operation(signal),
-  });
-  const endpoints = createWorkerBridgeEndpoints();
-  const detach = attachDocumentWorkerHost(endpoints.hostEndpoint, runtime);
-  const rejection = deferred();
-  const observeAcknowledgement = (event: MessageEvent<unknown>): void => {
-    const message = event.data as { type: string; accepted?: boolean };
-    if (message.type === "inkbook-worker-batch-acknowledgement" && message.accepted === false)
-      rejection.resolve();
-  };
-  endpoints.hostEndpoint.addEventListener("message", observeAcknowledgement);
-  const port = bridge ? createWorkerBridgeClient(endpoints.clientEndpoint) : runtime;
-  const elements = Array.from({ length: 256 }, (_, index) => ({
-    ...createTestStroke(),
-    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-  }));
-  await port.execute({
-    baseModelRevision: null,
-    identity,
-    modelRevision: 0,
-    snapshot: createWorkerSnapshot(elements),
-    type: "model-sync-full",
-  });
-  const ids = elements.map(({ id }) => id);
-  return {
-    ids,
-    lastId: elements[elements.length - 1]!.id,
-    port,
-    runtime,
-    prepare: (scenePaths: NonNullable<DocumentRuntimeObserver["scenePaths"]>) =>
-      port.execute(
-        { basisRevision: 0, identity, ids, streamProgress: true, type: "prepare-scene-paths" },
-        { unlockBatch: () => undefined, scenePaths },
-      ),
-    rejectedAcknowledgement: rejection.promise,
-    progressMessages: () =>
-      endpoints.hostEndpoint.sentMessages.filter(
-        (message) => (message as { type: string }).type === "inkbook-worker-scene-paths",
-      ).length,
-    resume: () => {
-      block = false;
-      handoff.resolve();
-    },
-    close: () => {
-      endpoints.hostEndpoint.removeEventListener("message", observeAcknowledgement);
-      port.terminate();
-      detach();
-    },
-  };
-}
-
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<void>((ready, fail) => {
-    resolve = ready;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 function observePreparedGeometry(id: string, failAfter = false) {
   const geometry = deferred();

@@ -1,4 +1,4 @@
-import { HostTaskQueue } from "../../../domain/scheduling/host-task-queue";
+import { HostTaskQueue, createHostTaskChannel } from "../../../domain/scheduling/host-task-queue";
 import type { HostTaskChannel } from "../../../domain/scheduling/host-task-queue";
 import { SharedFrameScheduler } from "../../../domain/scheduling/shared-frame-scheduler";
 
@@ -52,15 +52,7 @@ export function createWorkerWorkScheduler(
 function openWorkerTaskChannel(receive: () => void): HostTaskChannel | undefined {
   if (typeof MessageChannel === "undefined") return undefined;
   const channel = new MessageChannel();
-  channel.port1.onmessage = receive;
-  return {
-    post: () => channel.port2.postMessage(null),
-    close: () => {
-      channel.port1.onmessage = null;
-      channel.port1.close();
-      channel.port2.close();
-    },
-  };
+  return createHostTaskChannel(channel.port1, channel.port2, receive);
 }
 
 function validateProfile(profile: WorkerSchedulingProfile): WorkerSchedulingProfile {

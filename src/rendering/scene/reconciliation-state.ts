@@ -8,6 +8,7 @@ import type { SceneVisibilityState, VisibilityResult } from "./visibility-state"
 import type { SceneEntrantPriority } from "./scene-entrant-priority";
 import type { DetachedSceneElementCache } from "./detached-element-cache";
 import type { VisibleMountOrder } from "./visible-mount-order";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 export interface SceneVisibilityReconcilerOptions {
   readonly dom: SceneDom;
@@ -20,6 +21,7 @@ export interface SceneVisibilityReconcilerOptions {
   readonly visibility: SceneVisibilityState;
   readonly onPathsReady?: () => void;
   readonly detachedCache?: DetachedSceneElementCache;
+  readonly scheduler?: WorkScheduler;
 }
 
 export interface ReconciliationCursor {

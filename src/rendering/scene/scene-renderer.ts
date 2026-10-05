@@ -57,17 +57,13 @@ export class SvgSceneRenderer {
   readonly #visibility: SceneVisibilityState;
   readonly #options: Scene.SceneRendererOptions;
   public constructor(options: Scene.SceneRendererOptions) {
-    this.#options = options;
+    const { container, accessibleName: name, inputHandlers: handlers } = (this.#options = options);
     this.#page = options.page;
     this.#scheduler = options.workScheduler;
     this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, (time, scene) =>
       this.renderFrame(time, scene),
     );
-    this.#dom = new SceneDom(
-      options.container,
-      options.accessibleName ?? "Inkbook canvas",
-      options.inputHandlers ?? {},
-    );
+    this.#dom = new SceneDom(container, name ?? "Inkbook canvas", handlers ?? {});
     this.#frameWriter = new SceneFrameWriter(this.#dom, this.#backgroundCache, this.#stats);
     this.#visibility = new SceneVisibilityState(options.store, this.#stats);
     this.#liveStroke = new SceneLiveStrokeRenderer(
@@ -82,7 +78,11 @@ export class SvgSceneRenderer {
       this.#visibility,
       this.#pathCache,
       this.#stats,
-      { detachedCache: this.#detachedCache, onPathsReady: () => this.#frames.schedule() },
+      {
+        detachedCache: this.#detachedCache,
+        onPathsReady: () => this.#frames.schedule(),
+        scheduler: this.#scheduler,
+      },
     );
     this.#contentScheduler = new SceneContentScheduler(this.#content, this.#scheduler);
     this.#motion = new SceneMotionController(

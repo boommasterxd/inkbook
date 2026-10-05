@@ -1,8 +1,6 @@
 import type { IncrementalDocumentSerializer } from "../../serialization/incremental-document-serializer";
 import {
-  assertScenePathIds,
-  assertScenePathMaxBytes,
-  assertScenePathVisibleCount,
+  assertScenePathRequest,
   MAX_SCENE_PATH_BYTES,
   scenePathBytes,
   ScenePathValidationContext,
@@ -29,11 +27,7 @@ export async function prepareScenePaths(
   assertRevision: () => void,
   progress?: ScenePathProgress,
 ): Promise<PreparedScenePathsRuntimeSuccess["paths"]> {
-  assertScenePathIds(request.ids);
-  assertScenePathVisibleCount(request.visibleCount, request.ids.length);
-  const maxBytes = assertScenePathMaxBytes(request.maxBytes);
-  if (request.streamProgress !== undefined && typeof request.streamProgress !== "boolean")
-    throw new TypeError("Invalid scene preparation progress mode.");
+  const maxBytes = assertScenePathRequest(request);
   assertRevision();
   const paths: { id: string; parts: readonly SvgPathPart[] }[] = [];
   let bytes = 0;

@@ -1,5 +1,4 @@
 import type { PendingReconciliation } from "./reconciliation-state";
-import { MAX_PREPARED_SCENE_PATH_IDS } from "../../domain/geometry/prepared-scene-paths";
 
 /** Matches both full-band and delta entrant mount order without materializing visible IDs. */
 export function* upcomingScenePathIds(
@@ -38,7 +37,13 @@ function* upcomingDeltaIds(
   for (const id of delta.deferred) {
     if (!mounted.has(id) && !pending.entrants.has(id)) yield id;
   }
-  for (const id of delta.priority?.upcoming(MAX_PREPARED_SCENE_PATH_IDS - 1) ?? []) {
-    if (!mounted.has(id) && !pending.entrants.has(id)) yield id;
+  const priority = delta.priority;
+  if (priority === undefined) return;
+  while (true) {
+    const generation = priority.heapGeneration;
+    for (const id of priority.upcoming(Infinity)) {
+      if (!mounted.has(id) && !pending.entrants.has(id)) yield id;
+    }
+    if (generation === priority.heapGeneration) return;
   }
 }

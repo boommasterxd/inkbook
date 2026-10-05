@@ -12,6 +12,7 @@ import {
   publishStableEntrantRun,
 } from "./visibility-publication";
 import type { PendingMutationRun } from "./visibility-publication";
+import { SCENE_PUBLICATION_ELEMENTS_PER_UNIT } from "./constants";
 
 interface ProgressivePublicationFrame {
   readonly deadline: number;
@@ -21,9 +22,6 @@ interface ProgressivePublicationFrame {
   readonly output: string[];
   readonly published: string[];
 }
-
-// Bounds one indivisible browser publication; remaining frame admission may publish more units.
-const MAXIMUM_PUBLICATION_ELEMENTS = 16;
 
 /** Publishes complete elements under the original shared deadline.
  * Empty work returns undefined; a completed unit returns true, even without new IDs.
@@ -43,7 +41,7 @@ export function createProgressiveVisibilityPublisher(
     if (pending.cursor.run === undefined && pending.runCount === 0) return undefined;
     if (frame.now() >= frame.deadline && !allowLatePreparedUnit) return false;
     const elements = pendingPublicationElementCount(pending);
-    if (!force && pending.delta !== undefined && elements < MAXIMUM_PUBLICATION_ELEMENTS)
+    if (!force && pending.delta !== undefined && elements < SCENE_PUBLICATION_ELEMENTS_PER_UNIT)
       return undefined;
     finishReconciliationRun(pending);
     orderDeltaPublication(pending);

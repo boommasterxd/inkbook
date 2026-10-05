@@ -5,6 +5,23 @@ export interface HostTaskChannel {
   close(): void;
 }
 
+/** Owns portable channel subscriptions and port cleanup without inspecting host events. */
+export function createHostTaskChannel<Event>(
+  receiver: { onmessage: ((event: Event) => void) | null; close(): void },
+  sender: { postMessage(value: null): void; close(): void },
+  receive: () => void,
+): HostTaskChannel {
+  receiver.onmessage = receive;
+  return {
+    post: () => sender.postMessage(null),
+    close: () => {
+      receiver.onmessage = null;
+      receiver.close();
+      sender.close();
+    },
+  };
+}
+
 export interface HostTaskPort {
   openChannel?(receive: () => void): HostTaskChannel | undefined;
   setTimer(callback: () => void, delayMs: number): number;

@@ -1,21 +1,13 @@
 import type { PurposeOperationIdentity } from "../protocol";
 import type { PrepareScenePathsRuntimeRequest, RuntimeSliceContext } from "./types";
-import {
-  assertScenePathIds,
-  assertScenePathVisibleCount,
-  assertScenePathMaxBytes,
-} from "./scene-path-limits";
+import { assertScenePathIds, assertScenePathRequest } from "./scene-path-limits";
 
 /** Retargeting only removes IDs from one admitted operation. */
 export class ScenePathOperation {
   readonly #retained: Set<string>;
   #current: { readonly id: string; readonly controller: AbortController } | undefined;
   public constructor(public readonly request: PrepareScenePathsRuntimeRequest) {
-    assertScenePathIds(request.ids);
-    assertScenePathVisibleCount(request.visibleCount, request.ids.length);
-    assertScenePathMaxBytes(request.maxBytes);
-    if (request.streamProgress !== undefined && typeof request.streamProgress !== "boolean")
-      throw new TypeError("Invalid scene preparation progress mode.");
+    assertScenePathRequest(request);
     this.#retained = new Set(request.ids);
   }
 

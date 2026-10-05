@@ -32,16 +32,6 @@ describe("exact visible prefix request validation", () => {
     },
   );
 
-  it.each([-1, 3, 0.5, NaN, Infinity, null, "1"])(
-    "rejects malformed or oversized prefix %s before worker work",
-    (visibleCount) => {
-      const candidate = { ...request, visibleCount: visibleCount as number };
-      expect(() => new ScenePathValidationContext(candidate)).toThrow(TypeError);
-      expect(() => new ScenePathOperation(candidate)).toThrow(TypeError);
-      expect(() => decodeRuntimeRequest(candidate)).toThrow(TypeError);
-    },
-  );
-
   it.each([undefined, 1, MAX_SCENE_PATH_BYTES])(
     "preserves available byte capacity %s",
     (maxBytes) => {
@@ -52,15 +42,19 @@ describe("exact visible prefix request validation", () => {
     },
   );
 
-  it.each([0, -1, MAX_SCENE_PATH_BYTES + 1, 0.5, NaN, Infinity, null, "1"])(
-    "rejects invalid capacity %s before admission",
-    (maxBytes) => {
-      const candidate = { ...request, maxBytes: maxBytes as number };
-      expect(() => new ScenePathValidationContext(candidate)).toThrow(TypeError);
-      expect(() => new ScenePathOperation(candidate)).toThrow(TypeError);
-      expect(() => decodeRuntimeRequest(candidate)).toThrow(TypeError);
-    },
-  );
+  it.each([
+    ...[-1, 3, 0.5, NaN, Infinity, null, "1"].map((visibleCount) => ({
+      visibleCount: visibleCount as number,
+    })),
+    ...[0, -1, MAX_SCENE_PATH_BYTES + 1, 0.5, NaN, Infinity, null, "1"].map((maxBytes) => ({
+      maxBytes: maxBytes as number,
+    })),
+  ])("rejects malformed priority or capacity before admission: %j", (options) => {
+    const candidate = { ...request, ...options };
+    expect(() => new ScenePathValidationContext(candidate)).toThrow(TypeError);
+    expect(() => new ScenePathOperation(candidate)).toThrow(TypeError);
+    expect(() => decodeRuntimeRequest(candidate)).toThrow(TypeError);
+  });
 });
 
 function result(paths: unknown): PreparedScenePathsRuntimeSuccess {

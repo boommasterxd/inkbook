@@ -22,6 +22,7 @@ export class SceneEntrantPriority {
   readonly #records = new Map<string, Candidate>();
   #queued: Iterator<string> = this.#candidates.values();
   #built = false;
+  #heapGeneration = 0;
   #orderingPriority: SceneVisibilityPriority | undefined;
   #insideLimits: Bounds | undefined;
   #outsideLimits = { left: -Infinity, right: Infinity, above: -Infinity, below: Infinity };
@@ -38,6 +39,10 @@ export class SceneEntrantPriority {
 
   public get count(): number {
     return this.#heap.length;
+  }
+
+  public get heapGeneration(): number {
+    return this.#heapGeneration;
   }
 
   public memoryUsage(): number {
@@ -79,6 +84,7 @@ export class SceneEntrantPriority {
   }
 
   public take(): string | undefined {
+    this.#heapGeneration++;
     const first = this.#heap[0];
     const last = this.#heap.pop();
     if (first === undefined || last === undefined) return undefined;
@@ -99,6 +105,7 @@ export class SceneEntrantPriority {
       entered.length === 0 && exited.length === 0 && this.canPreserveOrder(priority);
     this.priority = priority;
     if (preserved) return;
+    this.#heapGeneration++;
     for (const id of exited) {
       this.#candidates.delete(id);
       this.#records.delete(id);
@@ -177,9 +184,11 @@ export class SceneEntrantPriority {
   public *upcoming(limit: number): Generator<string> {
     if (this.#heap.length === 0 || limit <= 0) return;
     const frontier = [0];
+    const generation = this.#heapGeneration;
     for (let emitted = 0; emitted < limit && frontier.length > 0; emitted += 1) {
       const index = this.takeFrontier(frontier);
       yield this.#heap[index]!.id;
+      if (generation !== this.#heapGeneration) return;
       const left = index * 2 + 1;
       if (left < this.#heap.length) this.pushFrontier(frontier, left);
       if (left + 1 < this.#heap.length) this.pushFrontier(frontier, left + 1);
@@ -245,6 +254,7 @@ export class SceneEntrantPriority {
   }
 
   private push(candidate: Candidate): void {
+    this.#heapGeneration++;
     let index = this.#heap.length;
     this.#heap.push(candidate);
     while (index > 0) {

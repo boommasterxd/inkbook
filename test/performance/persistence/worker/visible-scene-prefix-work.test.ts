@@ -1,32 +1,23 @@
 import { expect, it, vi } from "vitest";
 import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/incremental-document-serializer";
-import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/document-runtime";
-import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/worker-host";
 import {
   MAX_SCENE_PATH_BYTES,
   scenePathBytes,
 } from "../../../../src/persistence/worker/runtime/scene-path-limits";
-import type { DocumentRuntimeObserver } from "../../../../src/persistence/worker/runtime/types";
 import {
-  createWorkerBridgeClient,
-  createWorkerBridgeEndpoints,
-} from "../../../fixtures/persistence/worker-bridge";
-import {
-  createTestStroke,
-  createWorkerSnapshot,
-} from "../../../fixtures/persistence/worker-snapshot";
-
-const identity = {
-  sessionId: "session-a",
-  workerEpoch: 1,
-  operationId: 2,
-  purpose: "background" as const,
-};
+  createScenePathProgressFixture,
+  scenePathProgressIdentity as identity,
+  scenePathDeferred as deferred,
+  scenePathProgressCases,
+} from "../../../fixtures/persistence/scene-path-progress";
 
 it.each([false, true])(
   "offers the exact visible prefix before any overscan geometry without a CPU yield, bridge=%s",
   async (bridge) => {
-    const fixture = await capacityFixture(bridge, false);
+    const fixture = await createScenePathProgressFixture(bridge, {
+      visibleCount: 3,
+      initiallyBlocked: false,
+    });
     const batches: string[][] = [];
     let firstPathBytes = 0;
     // eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the actual serializer through call.
@@ -70,17 +61,10 @@ it.each([false, true])(
   },
 );
 
-it.each([
-  [false, "complete"],
-  [true, "complete"],
-  [false, "cancel"],
-  [true, "cancel"],
-  [false, "retarget"],
-  [true, "retarget"],
-] as const)(
+it.each(scenePathProgressCases("complete", "cancel", "retarget"))(
   "keeps pending visible contours separate from capacity-sized overscan with one ACK, bridge=%s, terminal=%s",
   async (bridge, terminal) => {
-    const fixture = await capacityFixture(bridge, true);
+    const fixture = await createScenePathProgressFixture(bridge, { visibleCount: 3 });
     const acknowledgement = deferred();
     const first = deferred();
     const geometry = deferred();
@@ -150,7 +134,7 @@ it.each([
 it.each([false, true])(
   "admits an ACK-driven visible flush while overscan geometry is suspended, bridge=%s",
   async (bridge) => {
-    const fixture = await capacityFixture(bridge, true);
+    const fixture = await createScenePathProgressFixture(bridge, { visibleCount: 3 });
     const acknowledgement = deferred();
     const first = deferred();
     const second = deferred();
@@ -202,91 +186,3 @@ it.each([false, true])(
     expect(fixture.runtime.instrumentation.shapeCacheBytes).toBe(0);
   },
 );
-
-async function capacityFixture(bridge: boolean, initiallyBlocked: boolean) {
-  let blocked = initiallyBlocked;
-  let admissionsHeld = false;
-  let handoffs = 0;
-  const handoff = deferred();
-  const admission = deferred();
-  const admissionRequested = deferred();
-  const runtime = new DocumentWorkerRuntime(identity, {
-    checkpoint: () => {
-      if (admissionsHeld) {
-        admissionRequested.resolve();
-        return admission.promise;
-      }
-      if (!blocked || runtime.instrumentation.shapeBuilds !== 1) return undefined;
-      handoffs++;
-      return handoff.promise;
-    },
-    run: async (operation, signal) => operation(signal),
-  });
-  const endpoints = createWorkerBridgeEndpoints();
-  const detach = attachDocumentWorkerHost(endpoints.hostEndpoint, runtime);
-  const port = bridge ? createWorkerBridgeClient(endpoints.clientEndpoint) : runtime;
-  const elements = Array.from({ length: 256 }, (_, index) => ({
-    ...createTestStroke(),
-    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-  }));
-  await port.execute({
-    baseModelRevision: null,
-    identity,
-    modelRevision: 0,
-    snapshot: createWorkerSnapshot(elements),
-    type: "model-sync-full",
-  });
-  const ids = elements.map(({ id }) => id);
-  return {
-    ids,
-    port,
-    runtime,
-    admissionRequested: admissionRequested.promise,
-    holdAdmissions: () => {
-      admissionsHeld = true;
-    },
-    releaseAdmissions: () => {
-      admissionsHeld = false;
-      admission.resolve();
-    },
-    handoffs: () => handoffs,
-    prepare: (scenePaths: NonNullable<DocumentRuntimeObserver["scenePaths"]>, maxBytes?: number) =>
-      port.execute(
-        {
-          basisRevision: 0,
-          identity,
-          ids,
-          visibleCount: 3,
-          ...(maxBytes === undefined ? {} : { maxBytes }),
-          streamProgress: true,
-          type: "prepare-scene-paths",
-        },
-        { unlockBatch: () => undefined, scenePaths },
-      ),
-    sentIds: (batches: string[][]): string[] =>
-      bridge
-        ? endpoints.hostEndpoint.sentMessages.flatMap((message) => {
-            const batch = message as { type: string; batch?: { paths: readonly { id: string }[] } };
-            return batch.type === "inkbook-worker-scene-paths"
-              ? batch.batch!.paths.map(({ id }) => id)
-              : [];
-          })
-        : batches.flat(),
-    resume: () => {
-      blocked = false;
-      handoff.resolve();
-    },
-    close: () => {
-      port.terminate();
-      detach();
-    },
-  };
-}
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((ready) => {
-    resolve = ready;
-  });
-  return { promise, resolve };
-}

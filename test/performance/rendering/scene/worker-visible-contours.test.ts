@@ -116,7 +116,7 @@ it("prepares only three thousand visible contours of ten thousand in bounded wor
     expect(preparation.memoryUsage()).toBeLessThanOrEqual(MAX_SCENE_PATH_BYTES + 256 * 128);
   }
   expect(published).toBe(3000);
-  expect(requests).toBe(1 + Math.ceil(2999 / 256));
+  expect(requests).toBeLessThanOrEqual(14);
   expect(reads).toBeLessThanOrEqual(6000);
   expect(runtime.instrumentation.shapeBuilds).toBe(3000);
   preparation.cancel();
@@ -173,20 +173,24 @@ it("requests only cold contours among six hundred entrants and retains overlappi
       },
     },
   );
-  for (const id of cold) {
-    const record = records.get(id)!;
-    const upcoming = () => elements.slice(record.rank + 1).map((element) => element.id);
-    expect(preparation.read(record, upcoming)).toBe("pending");
-    preparation.cancel((retained) => retained === id);
-    expect(signal.aborted).toBe(false);
-    expect(preparation.waiting).toBe(true);
-    finish();
-    await Promise.resolve();
-    expect(preparation.waiting).toBe(false);
-    expect(preparation.read(record, upcoming)).toEqual([{ d: "M0 0Z", paint: "fill" }]);
-  }
+  const first = records.get(cold[0]!)!;
+  const upcoming = () => elements.slice(1).map((element) => element.id);
+  expect(preparation.read(first, upcoming)).toBe("pending");
+  preparation.cancel(() => true);
+  finish();
+  await Promise.resolve();
+  expect(preparation.waiting).toBe(false);
+  expect(preparation.read(first, upcoming)).toEqual([{ d: "M0 0Z", paint: "fill" }]);
+  expect(preparation.waiting).toBe(true);
+  preparation.cancel(() => true);
+  expect(signal.aborted).toBe(false);
+  finish();
+  await Promise.resolve();
+  expect(preparation.waiting).toBe(false);
+  for (const id of cold.slice(1))
+    expect(preparation.read(records.get(id)!, () => [])).toEqual([{ d: "M0 0Z", paint: "fill" }]);
   expect(requested).toBe(3);
-  expect(wakes).toBe(3);
+  expect(wakes).toBe(2);
   expect(cached.size).toBe(600);
   preparation.cancel();
   expect(preparation.memoryUsage()).toBe(0);

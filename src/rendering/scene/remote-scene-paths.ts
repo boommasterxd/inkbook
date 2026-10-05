@@ -1,32 +1,51 @@
-import { MAX_PREPARED_SCENE_PATH_IDS } from "../../domain/geometry/prepared-scene-paths";
+import {
+  MAX_PREPARED_SCENE_PATH_IDS,
+  MAX_PREPARED_SCENE_PATH_BYTES,
+  preparedScenePathBytes,
+  type PreparedScenePathEntry,
+} from "../../domain/geometry/prepared-scene-paths";
 import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { SceneElementRecord, SceneStorePort } from "./types";
+import { SCENE_PUBLICATION_ELEMENTS_PER_UNIT } from "./constants";
 
 interface Batch {
   retarget: ((ids: readonly string[]) => void) | undefined;
   readonly controller: AbortController;
   readonly versions: Map<string, number>;
   readonly paths: Map<string, readonly SvgPathPart[]>;
+  readonly viewportIds: Set<string>;
+  readonly deliveries: (readonly PreparedScenePathEntry[])[];
+  readonly maxBytes: number;
+  bytes: number;
+  receivedBytes: number;
+  processing: boolean;
+  started: boolean;
+  terminal: boolean;
   pending: boolean;
 }
 
 interface RemoteScenePathOptions {
+  readonly scheduler?: WorkScheduler;
   readonly isCached?: (record: SceneElementRecord) => boolean;
+  readonly isViewport?: (record: SceneElementRecord) => boolean;
   readonly onReady?: () => void;
   readonly onPrepared?: (record: SceneElementRecord, parts: readonly SvgPathPart[]) => void;
 }
 
-/** One visible lookahead batch owns bounded returned contours until their mount. */
+/** Two bounded batches overlap delivery with publication; only one request runs. */
 export class RemoteScenePaths {
-  #batch: Batch | undefined;
+  readonly #batches: Batch[] = [];
   #hasPublished = false;
+  #upcoming: () => Iterable<string> = () => [];
+  #lastReleased: string | undefined;
   public constructor(
     private readonly store: SceneStorePort,
     private readonly options: RemoteScenePathOptions = {},
   ) {}
 
   public get waiting(): boolean {
-    return this.#batch?.pending === true;
+    return this.#batches.some((batch) => batch.pending);
   }
 
   public read(
@@ -34,110 +53,248 @@ export class RemoteScenePaths {
     upcoming: () => Iterable<string>,
   ): readonly SvgPathPart[] | "pending" | undefined {
     if (this.store.prepareScenePaths === undefined) return undefined;
-    if (!this.#batch?.versions.has(record.id)) {
+    this.#upcoming = upcoming;
+    let batch = this.#batches.find((candidate) => candidate.versions.has(record.id));
+    if (batch === undefined) {
       if (this.waiting) return "pending";
-      this.start(record, upcoming);
+      batch = this.start(record);
+      if (batch === undefined) return undefined;
     }
-    const batch = this.#batch!;
     if (batch.pending && !batch.paths.has(record.id)) return "pending";
     const parts =
       batch.versions.get(record.id) === record.geometryVersion
         ? batch.paths.get(record.id)
         : undefined;
-    batch.versions.delete(record.id);
-    batch.paths.delete(record.id);
+    this.release(record.id);
     return parts;
   }
 
+  /** Cache adoption can bypass read; free the reservation before DOM publication. */
+  public release(id: string, upcoming?: () => Iterable<string>): void {
+    if (!this.#batches.some((batch) => batch.versions.has(id))) return;
+    this.#lastReleased = id;
+    if (upcoming !== undefined) this.#upcoming = upcoming;
+    for (const batch of this.#batches) this.releaseEntry(batch, id);
+    this.prune();
+    this.refill();
+  }
+
   public cancel(retainVisible?: (id: string) => boolean): void {
-    const batch = this.#batch;
-    if (batch === undefined) return;
+    this.#upcoming = () => [];
     let changed = false;
-    for (const [id, version] of batch.versions) {
-      if (retainVisible?.(id) === true && this.store.get(id)?.geometryVersion === version) continue;
-      batch.versions.delete(id);
-      batch.paths.delete(id);
-      changed = true;
-    }
-    if (batch.versions.size > 0) {
-      if (changed) {
-        this.#hasPublished = batch.paths.size > 0;
-        batch.retarget?.([...batch.versions.keys()]);
+    for (const batch of this.#batches) {
+      if (!batch.started) {
+        this.abort(batch);
+        changed = true;
+        continue;
       }
-      return;
+      let shrunk = false;
+      for (const [id, version] of batch.versions) {
+        if (retainVisible?.(id) === true && this.store.get(id)?.geometryVersion === version)
+          continue;
+        this.releaseEntry(batch, id);
+        shrunk = true;
+      }
+      changed ||= shrunk;
+      if (batch.versions.size === 0) this.abort(batch);
+      else if (shrunk) batch.retarget?.([...batch.versions.keys()]);
     }
-    batch.controller.abort();
-    this.#batch = undefined;
-    this.#hasPublished = false;
+    this.prune();
+    if (changed || this.#batches.length === 0)
+      this.#hasPublished = this.#batches.some((batch) => batch.paths.size > 0);
+    if (retainVisible === undefined) {
+      this.#lastReleased = undefined;
+    }
   }
 
   public memoryUsage(): number {
-    let bytes = (this.#batch?.versions.size ?? 0) * 128;
-    for (const parts of this.#batch?.paths.values() ?? [])
-      for (const part of parts) bytes += 64 + part.d.length * 2;
-    return bytes;
+    return this.#batches.reduce(
+      (bytes, batch) =>
+        bytes + (batch.pending ? batch.maxBytes : batch.bytes) + batch.versions.size * 128,
+      0,
+    );
   }
 
-  private start(record: SceneElementRecord, upcoming: () => Iterable<string>): void {
+  private abort(batch: Batch): void {
+    batch.controller.abort();
+    batch.deliveries.length = 0;
+    batch.paths.clear();
+    batch.versions.clear();
+    batch.viewportIds.clear();
+    batch.bytes = 0;
+  }
+
+  private releaseEntry(batch: Batch, id: string): void {
+    const parts = batch.paths.get(id);
+    if (parts !== undefined) batch.bytes -= preparedScenePathBytes(id, parts);
+    batch.versions.delete(id);
+    batch.paths.delete(id);
+    batch.viewportIds.delete(id);
+  }
+
+  private prune(): void {
+    for (let index = this.#batches.length - 1; index >= 0; index -= 1) {
+      const batch = this.#batches[index]!;
+      if (batch.controller.signal.aborted || (!batch.pending && batch.versions.size === 0))
+        this.#batches.splice(index, 1);
+    }
+  }
+
+  private refill(): void {
+    if (!this.#hasPublished || this.waiting || this.#batches.length >= 2) return;
+    // Protocol occupancy coalesces requests; it never limits admitted CPU work.
+    if (this.capacity() >= MAX_PREPARED_SCENE_PATH_IDS - SCENE_PUBLICATION_ELEMENTS_PER_UNIT)
+      this.start();
+  }
+
+  private capacity(): number {
+    return (
+      MAX_PREPARED_SCENE_PATH_IDS -
+      this.#batches.reduce((count, batch) => count + batch.versions.size, 0)
+    );
+  }
+
+  private start(required?: SceneElementRecord): Batch | undefined {
+    const maxBytes =
+      MAX_PREPARED_SCENE_PATH_BYTES -
+      this.#batches.reduce((bytes, batch) => bytes + batch.bytes, 0);
+    if (this.#batches.length >= 2 || this.capacity() === 0 || maxBytes <= 0) return undefined;
     const batch: Batch = {
       retarget: undefined,
       controller: new AbortController(),
-      versions: new Map([[record.id, record.geometryVersion]]),
+      versions: new Map(),
       paths: new Map(),
+      viewportIds: new Set(),
+      deliveries: [],
+      maxBytes,
+      bytes: 0,
+      receivedBytes: 0,
+      processing: false,
+      started: false,
+      terminal: false,
       pending: true,
     };
-    // The first required contour has its own response, so bulk lookahead cannot delay it.
-    if (this.#hasPublished) this.addLookahead(batch, upcoming());
-    this.#batch = batch;
-    void this.store.prepareScenePaths!([...batch.versions.keys()], batch.controller.signal, {
-      onProgress: (paths) => this.adopt(batch, paths),
+    if (required !== undefined) this.add(batch, required);
+    this.#batches.push(batch);
+    // The first contour remains independent of bulk lookahead.
+    if (!this.#hasPublished && required !== undefined) this.dispatch(batch);
+    else void this.collect(batch).catch(() => this.fail(batch));
+    return batch;
+  }
+
+  private add(batch: Batch, record: SceneElementRecord): void {
+    batch.versions.set(record.id, record.geometryVersion);
+    if (this.options.isViewport?.(record) !== false) batch.viewportIds.add(record.id);
+  }
+
+  private async collect(batch: Batch): Promise<void> {
+    const iterator = this.#upcoming()[Symbol.iterator]();
+    while (this.capacity() > 0 && !batch.controller.signal.aborted) {
+      const wait =
+        this.options.scheduler?.shouldYield() === true
+          ? this.options.scheduler.checkpoint(batch.controller.signal, "frame")
+          : undefined;
+      if (wait !== undefined) await wait;
+      if (batch.controller.signal.aborted) return;
+      const next = iterator.next();
+      if (next.done === true) break;
+      if (next.value === this.#lastReleased) continue;
+      if (this.#batches.some((candidate) => candidate.versions.has(next.value))) continue;
+      const candidate = this.store.get(next.value);
+      if (candidate?.element.kind !== "stroke" || this.options.isCached?.(candidate) === true)
+        continue;
+      this.add(batch, candidate);
+    }
+    if (batch.controller.signal.aborted) return;
+    if (batch.versions.size === 0) {
+      batch.pending = false;
+      this.prune();
+    } else this.dispatch(batch);
+  }
+
+  private dispatch(batch: Batch): void {
+    batch.started = true;
+    const visible = [...batch.versions.keys()].filter((id) => batch.viewportIds.has(id));
+    const overscan = [...batch.versions.keys()].filter((id) => !batch.viewportIds.has(id));
+    const ids = [...visible, ...overscan];
+    const versions = new Map(batch.versions);
+    batch.versions.clear();
+    for (const id of ids) batch.versions.set(id, versions.get(id)!);
+    void this.store.prepareScenePaths!(ids, batch.controller.signal, {
+      visibleCount: visible.length,
+      maxBytes: batch.maxBytes,
+      onProgress: (paths) => this.enqueue(batch, paths),
       setRetarget: (handler) => {
         batch.retarget = handler;
         if (handler !== undefined) handler([...batch.versions.keys()]);
       },
     }).then(
-      (paths) => {
-        if (this.#batch !== batch || batch.controller.signal.aborted) return;
-        this.adopt(batch, paths ?? [], false);
-        batch.pending = false;
-        this.options.onReady?.();
-      },
-      () => {
-        if (this.#batch !== batch || batch.controller.signal.aborted) return;
-        batch.pending = false;
-        this.options.onReady?.();
-      },
+      (paths) => this.enqueue(batch, paths ?? [], true),
+      () => this.fail(batch),
     );
   }
 
-  private adopt(
-    batch: Batch,
-    paths: readonly import("../../domain/geometry/prepared-scene-paths").PreparedScenePathEntry[],
-    notify = true,
-  ): void {
-    if (this.#batch !== batch || batch.controller.signal.aborted) return;
-    let ready = false;
-    for (const path of paths) {
-      if (!batch.versions.has(path.id) || batch.paths.has(path.id)) continue;
-      const record = this.store.get(path.id);
-      if (record === undefined || batch.versions.get(path.id) !== record.geometryVersion) continue;
-      batch.paths.set(path.id, path.parts);
-      this.#hasPublished = true;
-      this.options.onPrepared?.(record, path.parts);
-      ready = true;
-    }
-    if (ready && notify) this.options.onReady?.();
+  private enqueue(batch: Batch, paths: readonly PreparedScenePathEntry[], terminal = false): void {
+    if (batch.controller.signal.aborted || !this.#batches.includes(batch)) return;
+    if (paths.length > 0) batch.deliveries.push(paths);
+    batch.terminal ||= terminal;
+    if (!batch.processing) void this.adopt(batch).catch(() => this.fail(batch));
   }
 
-  private addLookahead(batch: Batch, upcoming: Iterable<string>): void {
-    let visited = 0;
-    for (const id of upcoming) {
-      if (batch.versions.has(id)) continue;
-      if (++visited > MAX_PREPARED_SCENE_PATH_IDS - 1) break;
-      const candidate = this.store.get(id);
-      if (candidate?.element.kind !== "stroke" || this.options.isCached?.(candidate) === true)
-        continue;
-      batch.versions.set(id, candidate.geometryVersion);
+  private async adopt(batch: Batch): Promise<void> {
+    batch.processing = true;
+    let ready = false;
+    while (batch.deliveries.length > 0) {
+      const delivery = batch.deliveries[0]!;
+      for (const path of delivery) {
+        const wait =
+          this.options.scheduler?.shouldYield() === true
+            ? this.options.scheduler.checkpoint(batch.controller.signal, "frame")
+            : undefined;
+        if (wait !== undefined) {
+          if (ready) this.options.onReady?.();
+          ready = false;
+          await wait;
+        }
+        if (batch.controller.signal.aborted) return;
+        ready = this.adoptPath(batch, path) || ready;
+      }
+      batch.deliveries.shift();
     }
+    batch.processing = false;
+    if (batch.terminal) {
+      batch.pending = false;
+      this.prune();
+      this.refill();
+    }
+    if (ready || batch.terminal) this.options.onReady?.();
+  }
+
+  private adoptPath(batch: Batch, path: PreparedScenePathEntry): boolean {
+    const bytes = preparedScenePathBytes(path.id, path.parts);
+    batch.receivedBytes += bytes;
+    if (batch.receivedBytes > batch.maxBytes) {
+      this.fail(batch);
+      return false;
+    }
+    if (!batch.versions.has(path.id) || batch.paths.has(path.id)) return false;
+    const record = this.store.get(path.id);
+    if (record === undefined || batch.versions.get(path.id) !== record.geometryVersion)
+      return false;
+    batch.paths.set(path.id, path.parts);
+    batch.bytes += bytes;
+    this.#hasPublished = true;
+    this.options.onPrepared?.(record, path.parts);
+    return true;
+  }
+
+  private fail(batch: Batch): void {
+    if (batch.controller.signal.aborted || !this.#batches.includes(batch)) return;
+    batch.controller.abort();
+    batch.pending = false;
+    batch.processing = false;
+    batch.deliveries.length = 0;
+    this.#hasPublished = false;
+    this.options.onReady?.();
   }
 }

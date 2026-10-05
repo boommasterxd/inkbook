@@ -7,6 +7,7 @@ import {
 } from "./visibility-publication";
 import { SceneMountPreparation, type PreviewTransform } from "./scene-mount-preparation";
 import { upcomingScenePathIds } from "./upcoming-scene-paths";
+import { intersects } from "./visibility-bounds";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { MountSlice } from "./mount-slice";
 import type { MountYieldReason, ScenePublicationBudget } from "./mount-slice";
@@ -72,6 +73,8 @@ export class SceneVisibilityReconciler {
       ...options,
       ownerDocument: options.dom.ownerDocument,
       upcomingIds: () => upcomingScenePathIds(this.#pending, this.options.mounted),
+      isViewport: (record) =>
+        this.#priority === undefined || intersects(this.#priority.viewport, record.bounds),
     });
   }
   public memoryUsage(): number {
@@ -101,7 +104,6 @@ export class SceneVisibilityReconciler {
     this.#priority = priority;
     this.#pending?.delta?.priority?.retarget([], [], priority);
   }
-
   public hasUnprotectedDeferredExit(
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
     previewElements: () => ReadonlyMap<string, InkElementV1>,
@@ -111,7 +113,6 @@ export class SceneVisibilityReconciler {
       this.#deferredExits.hasUnprotected(previewTransforms, previewElements())
     );
   }
-
   // Retargeting preserves the scan; exit eligibility is checked against the final target.
   public replace(visibility: VisibilityResult, progressive = false, delta?: VisibilityDelta): void {
     const previousDelta = this.#pending?.delta;
@@ -170,7 +171,6 @@ export class SceneVisibilityReconciler {
       visibility,
     };
   }
-
   public cancel(preservePending = false): void {
     this.#waitingForPaths = false;
     const pending = this.#pending;
@@ -210,7 +210,6 @@ export class SceneVisibilityReconciler {
       runs: this.#runs,
     });
   }
-
   public promote(id: string): boolean {
     if (
       this.options.mounted.has(id) ||

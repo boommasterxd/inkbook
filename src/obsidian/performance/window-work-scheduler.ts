@@ -1,4 +1,4 @@
-import { HostTaskQueue } from "../../domain/scheduling/host-task-queue";
+import { HostTaskQueue, createHostTaskChannel } from "../../domain/scheduling/host-task-queue";
 import type { HostTaskChannel } from "../../domain/scheduling/host-task-queue";
 import { SharedFrameScheduler } from "../../domain/scheduling/shared-frame-scheduler";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
@@ -35,13 +35,5 @@ function openWindowTaskChannel(
   ).MessageChannel;
   if (messageChannelConstructor === undefined) return undefined;
   const channel = new messageChannelConstructor();
-  channel.port1.onmessage = receive;
-  return {
-    post: () => channel.port2.postMessage(null),
-    close: () => {
-      channel.port1.onmessage = null;
-      channel.port1.close();
-      channel.port2.close();
-    },
-  };
+  return createHostTaskChannel(channel.port1, channel.port2, receive);
 }

@@ -22,7 +22,7 @@ import type { SceneVisibilityState, VisibilityResult } from "./visibility-state"
 import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
 import { markSceneOrderDirty, writeDirtySet } from "./dirty-set-work";
 import { commitVisibleBands, mountedVisibleIds } from "./visibility-order";
-import type { SceneVisibilityReconcilerOptions } from "./reconciliation-state";
+import type { SceneVisibilityReconcilerOptions as ReconcilerOptions } from "./reconciliation-state";
 import type { SceneVisibilityPriority } from "./scene-entrant-priority";
 
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
@@ -52,7 +52,7 @@ export class SceneContentRenderer {
   readonly #store: SceneStorePort;
   readonly #selectionTraces: SceneSelectionTraces;
   readonly #selectionDirty = new Set<string>();
-  readonly #detachedCache: SceneVisibilityReconcilerOptions["detachedCache"];
+  readonly #detachedCache: ReconcilerOptions["detachedCache"];
 
   public constructor(
     dom: SceneDom,
@@ -60,7 +60,7 @@ export class SceneContentRenderer {
     visibility: SceneVisibilityState,
     pathCache: ScenePathCache,
     instrumentation: MutableSceneInstrumentation,
-    options: Pick<SceneVisibilityReconcilerOptions, "onPathsReady" | "detachedCache"> = {},
+    options: Pick<ReconcilerOptions, "onPathsReady" | "detachedCache" | "scheduler"> = {},
   ) {
     this.#dom = dom;
     this.#detachedCache = options.detachedCache;

@@ -11,6 +11,7 @@ import { localPressureGeometry } from "./stroke-position";
 import { RemoteScenePaths } from "./remote-scene-paths";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
 import type { DetachedSceneElementCache } from "./detached-element-cache";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 export interface PreviewTransform {
   readonly strokeWidthScale: number | null;
@@ -32,6 +33,8 @@ interface MountPreparationOptions {
   readonly upcomingIds?: () => Iterable<string>;
   readonly onPathsReady?: () => void;
   readonly detachedCache?: DetachedSceneElementCache;
+  readonly scheduler?: WorkScheduler;
+  readonly isViewport?: (record: SceneElementRecord) => boolean;
 }
 
 /** Owns one cancellable cold stroke build, never a queue of retained documents. */
@@ -41,6 +44,8 @@ export class SceneMountPreparation {
 
   public constructor(private readonly options: MountPreparationOptions) {
     this.#remote = new RemoteScenePaths(options.store, {
+      ...(options.scheduler === undefined ? {} : { scheduler: options.scheduler }),
+      ...(options.isViewport === undefined ? {} : { isViewport: options.isViewport }),
       ...(options.onPathsReady === undefined ? {} : { onReady: options.onPathsReady }),
       isCached: (record) =>
         options.pathCache.has(record.id, record.geometryVersion) ||
@@ -142,6 +147,7 @@ export class SceneMountPreparation {
     const cached =
       pathCache.take(record.id, record.geometryVersion) ?? pathCache.read(record.element, pressure);
     if (cached !== undefined) {
+      this.#remote.release(record.id, this.options.upcomingIds);
       if (this.#pending?.id === record.id) this.cancelLocal();
       return cached;
     }

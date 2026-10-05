@@ -51,7 +51,8 @@ it("preserves capacity lookahead through repeated unchanged retargets with one a
     finish();
     await Promise.resolve();
   }
-  expect(requested.map((ids) => ids.length)).toEqual([1, 256, 256, 256]);
+  // Unreturned IDs retain their local-fallback slots instead of evicting valid overlap.
+  expect(requested.map((ids) => ids.length)).toEqual([1, 256, 1, 1]);
   expect(Math.max(...requested.map((ids) => ids.length))).toBe(MAX_PREPARED_SCENE_PATH_IDS);
   expect(retarget).toHaveBeenCalledTimes(4);
   expect(active).toBe(0);
