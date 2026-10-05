@@ -1,6 +1,8 @@
 import type { IncrementalDocumentSerializer } from "../../serialization/incremental-document-serializer";
 import {
   assertScenePathIds,
+  assertScenePathMaxBytes,
+  assertScenePathVisibleCount,
   MAX_SCENE_PATH_BYTES,
   scenePathBytes,
   ScenePathValidationContext,
@@ -28,6 +30,8 @@ export async function prepareScenePaths(
   progress?: ScenePathProgress,
 ): Promise<PreparedScenePathsRuntimeSuccess["paths"]> {
   assertScenePathIds(request.ids);
+  assertScenePathVisibleCount(request.visibleCount, request.ids.length);
+  const maxBytes = assertScenePathMaxBytes(request.maxBytes);
   if (request.streamProgress !== undefined && typeof request.streamProgress !== "boolean")
     throw new TypeError("Invalid scene preparation progress mode.");
   assertRevision();
@@ -38,12 +42,13 @@ export async function prepareScenePaths(
     publisher.check();
     const pending = context.checkpoint();
     if (pending === undefined) return undefined;
-    // Complete contours are published only at a shared scheduler handoff.
+    // Scheduler handoffs also offer complete contours between semantic boundaries.
     publisher.offer();
     return pending.then(() => publisher.check());
   };
   try {
-    for (const id of request.ids) {
+    for (const [index, id] of request.ids.entries()) {
+      if (index === request.visibleCount) publisher.prioritize();
       context.signal.throwIfAborted();
       assertRevision();
       if (progress?.operation.has(id) === false) continue;
@@ -64,7 +69,7 @@ export async function prepareScenePaths(
       if (progress?.operation.has(id) === false) continue;
       if (parts === undefined) continue;
       const nextBytes = scenePathBytes(id, parts);
-      if (bytes + nextBytes > MAX_SCENE_PATH_BYTES) continue;
+      if (bytes + nextBytes > maxBytes) continue;
       bytes += nextBytes;
       paths.push({ id, parts });
       const pending = checkpoint();
@@ -84,6 +89,7 @@ class ScenePathPublisher {
   readonly #controller = new AbortController();
   readonly #signal: AbortSignal;
   #published = 0;
+  #priorityEnd: number | undefined;
   #flight: Promise<void> | undefined;
   #failed = false;
   #failure: unknown;
@@ -101,24 +107,31 @@ class ScenePathPublisher {
   }
 
   public check(): void {
-    this.context.signal.throwIfAborted();
+    this.#signal.throwIfAborted();
     if (this.#failed) throw this.#failure;
+  }
+
+  /** Offer the completed visible prefix independently of overscan and CPU admission. */
+  public prioritize(): void {
+    this.#priorityEnd = this.paths.length;
+    this.offer();
+    this.check();
   }
 
   public offer(): void {
     if (this.#flight !== undefined || this.progress?.publish === undefined) return;
-    this.assertRevision();
-    const ready = this.paths
-      .slice(this.#published)
-      .filter(({ id }) => this.progress!.operation.has(id));
-    this.#published = this.paths.length;
-    if (ready.length === 0) return;
     try {
+      this.assertRevision();
+      const end = this.#priorityEnd ?? this.paths.length;
+      const ready = this.paths
+        .slice(this.#published, end)
+        .filter(({ id }) => this.progress!.operation.has(id));
+      this.#published = end;
+      this.#priorityEnd = undefined;
+      if (ready.length === 0) return;
       const acknowledgement = this.progress.publish(ready, this.#signal);
       this.#flight = waitScenePathAcknowledgement(acknowledgement, this.#signal).then(
-        () => {
-          this.#flight = undefined;
-        },
+        () => this.acknowledge(),
         (error: unknown) => {
           this.#failed = true;
           this.#failure = error;
@@ -128,6 +141,22 @@ class ScenePathPublisher {
     } catch (error) {
       this.#failed = true;
       this.#failure = error;
+    }
+  }
+
+  private async acknowledge(): Promise<void> {
+    try {
+      if (this.#priorityEnd !== undefined) {
+        const pending = this.context.checkpoint();
+        if (pending !== undefined) await waitScenePathAcknowledgement(pending, this.#signal);
+      }
+      this.check();
+      this.#flight = undefined;
+      if (this.#priorityEnd !== undefined) this.offer();
+    } catch (error) {
+      this.#failed = true;
+      this.#failure = error;
+      this.#flight = undefined;
     }
   }
 
@@ -212,7 +241,10 @@ export async function validatePreparedScenePaths(
     if (typeof d !== "string")
       throw new TypeError("Prepared scene path exceeds the internal geometry contract.");
     bytes += 128 + path.id.length * 2 + d.length * 2;
-    if (bytes > MAX_SCENE_PATH_BYTES || !/^[MLQAZmlqazhv0-9., e+-]*$/u.test(d))
+    if (
+      bytes > (context.request.maxBytes ?? MAX_SCENE_PATH_BYTES) ||
+      !/^[MLQAZmlqazhv0-9., e+-]*$/u.test(d)
+    )
       throw new TypeError("Prepared scene contour exceeds the internal transport contract.");
     const pending = options.checkpoint();
     if (pending !== undefined) await pending;

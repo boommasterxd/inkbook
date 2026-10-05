@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { scenePathBytes } from "../../../../src/persistence/worker/runtime/scene-path-limits";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/document-runtime";
 import {
   createWorkerBridgeClient,
@@ -94,6 +95,8 @@ it.each([false, true])(
         basisRevision: 0,
         identity: { ...identity },
         ids: [stroke.id],
+        visibleCount: 1,
+        maxBytes: scenePathBytes(stroke.id, buildElementPathParts(stroke)),
         streamProgress,
       };
       const adopted: string[] = [];
@@ -106,6 +109,8 @@ it.each([false, true])(
       request.ids[0] = "unknown";
       request.identity.operationId++;
       request.basisRevision++;
+      request.visibleCount = 0;
+      request.maxBytes = 1;
       const result = await pending;
       expect(result).toMatchObject({
         type: "prepare-scene-paths-success",

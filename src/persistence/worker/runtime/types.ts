@@ -57,6 +57,10 @@ export interface UnlockRuntimeRequest {
 
 /** IDs are in visible-first order; no source-file presentation paths are accepted. */
 export interface PrepareScenePathsRuntimeRequest {
+  /** Offer this exact-viewport prefix before preparing overscan contours. */
+  readonly visibleCount?: number;
+  /** Positive remaining contour capacity; defaults to the 4 MiB protocol limit. */
+  readonly maxBytes?: number;
   /** Complete contours go to scenePaths; the terminal paths array is then empty. */
   readonly streamProgress?: boolean;
   readonly basisRevision: number;

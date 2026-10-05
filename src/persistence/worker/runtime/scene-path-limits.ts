@@ -1,7 +1,27 @@
-import { MAX_PREPARED_SCENE_PATH_IDS as MAX_SCENE_PATH_IDS } from "../../../domain/geometry/prepared-scene-paths";
-import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
+import {
+  MAX_PREPARED_SCENE_PATH_IDS as MAX_SCENE_PATH_IDS,
+  MAX_PREPARED_SCENE_PATH_BYTES,
+} from "../../../domain/geometry/prepared-scene-paths";
+export { preparedScenePathBytes as scenePathBytes } from "../../../domain/geometry/prepared-scene-paths";
 import type { PrepareScenePathsRuntimeRequest } from "./types";
-export const MAX_SCENE_PATH_BYTES = 4 * 1024 * 1024;
+export const MAX_SCENE_PATH_BYTES = MAX_PREPARED_SCENE_PATH_BYTES;
+
+export function assertScenePathMaxBytes(maxBytes: number | undefined): number {
+  if (
+    maxBytes !== undefined &&
+    (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_SCENE_PATH_BYTES)
+  )
+    throw new TypeError("Invalid scene preparation byte capacity.");
+  return maxBytes ?? MAX_SCENE_PATH_BYTES;
+}
+
+export function assertScenePathVisibleCount(visibleCount: number | undefined, count: number): void {
+  if (
+    visibleCount !== undefined &&
+    (!Number.isSafeInteger(visibleCount) || visibleCount < 0 || visibleCount > count)
+  )
+    throw new TypeError("Invalid scene preparation visible prefix.");
+}
 
 export function assertScenePathIds(ids: readonly string[]): void {
   if (
@@ -13,10 +33,6 @@ export function assertScenePathIds(ids: readonly string[]): void {
     throw new TypeError("Scene preparation IDs exceed the internal protocol limit.");
 }
 
-export function scenePathBytes(id: string, parts: readonly SvgPathPart[]): number {
-  return 64 + id.length * 2 + parts.reduce((bytes, part) => bytes + 64 + part.d.length * 2, 0);
-}
-
 /** An operation owns its validated IDs; caller mutations cannot change response admission. */
 export class ScenePathValidationContext {
   public readonly request: PrepareScenePathsRuntimeRequest;
@@ -26,6 +42,8 @@ export class ScenePathValidationContext {
       throw new TypeError("Scene preparation IDs exceed the internal protocol limit.");
     const ids = [...(request.ids as readonly string[])];
     assertScenePathIds(ids);
+    assertScenePathVisibleCount(request.visibleCount, ids.length);
+    assertScenePathMaxBytes(request.maxBytes);
     this.request = Object.freeze({
       ...request,
       identity: Object.freeze({ ...request.identity }),

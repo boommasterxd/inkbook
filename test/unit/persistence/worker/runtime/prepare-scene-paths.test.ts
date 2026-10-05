@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { validatePreparedScenePaths } from "../../../../../src/persistence/worker/runtime/prepare-scene-paths";
-import { MAX_SCENE_PATH_BYTES } from "../../../../../src/persistence/worker/runtime/scene-path-limits";
+import {
+  MAX_SCENE_PATH_BYTES,
+  ScenePathValidationContext,
+} from "../../../../../src/persistence/worker/runtime/scene-path-limits";
+import { ScenePathOperation } from "../../../../../src/persistence/worker/runtime/scene-path-operation";
+import { decodeRuntimeRequest } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import type { PreparedScenePathsRuntimeSuccess } from "../../../../../src/persistence/worker/runtime/types";
 
 const identity = {
@@ -15,6 +20,48 @@ const request = {
   ids: ["plain", "pressure"],
   type: "prepare-scene-paths" as const,
 };
+
+describe("exact visible prefix request validation", () => {
+  it.each([undefined, 0, 1, 2])(
+    "preserves an optional bounded prefix %s across admission and wire decoding",
+    (visibleCount) => {
+      const candidate = { ...request, ...(visibleCount === undefined ? {} : { visibleCount }) };
+      expect(new ScenePathValidationContext(candidate).request.visibleCount).toBe(visibleCount);
+      expect(new ScenePathOperation(candidate).request.visibleCount).toBe(visibleCount);
+      expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
+    },
+  );
+
+  it.each([-1, 3, 0.5, NaN, Infinity, null, "1"])(
+    "rejects malformed or oversized prefix %s before worker work",
+    (visibleCount) => {
+      const candidate = { ...request, visibleCount: visibleCount as number };
+      expect(() => new ScenePathValidationContext(candidate)).toThrow(TypeError);
+      expect(() => new ScenePathOperation(candidate)).toThrow(TypeError);
+      expect(() => decodeRuntimeRequest(candidate)).toThrow(TypeError);
+    },
+  );
+
+  it.each([undefined, 1, MAX_SCENE_PATH_BYTES])(
+    "preserves available byte capacity %s",
+    (maxBytes) => {
+      const candidate = { ...request, ...(maxBytes === undefined ? {} : { maxBytes }) };
+      expect(new ScenePathValidationContext(candidate).request.maxBytes).toBe(maxBytes);
+      expect(new ScenePathOperation(candidate).request.maxBytes).toBe(maxBytes);
+      expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
+    },
+  );
+
+  it.each([0, -1, MAX_SCENE_PATH_BYTES + 1, 0.5, NaN, Infinity, null, "1"])(
+    "rejects invalid capacity %s before admission",
+    (maxBytes) => {
+      const candidate = { ...request, maxBytes: maxBytes as number };
+      expect(() => new ScenePathValidationContext(candidate)).toThrow(TypeError);
+      expect(() => new ScenePathOperation(candidate)).toThrow(TypeError);
+      expect(() => decodeRuntimeRequest(candidate)).toThrow(TypeError);
+    },
+  );
+});
 
 function result(paths: unknown): PreparedScenePathsRuntimeSuccess {
   return {

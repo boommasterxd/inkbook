@@ -1,6 +1,16 @@
-import type { ScenePathPreparation } from "../../domain/geometry/prepared-scene-paths";
+import {
+  MAX_PREPARED_SCENE_PATH_IDS,
+  type ScenePathPreparation,
+} from "../../domain/geometry/prepared-scene-paths";
 import type { PurposeOperationIdentity } from "../../persistence/worker/protocol";
-import type { DocumentRuntimePort } from "../../persistence/worker/runtime/public";
+import type {
+  DocumentRuntimePort,
+  DocumentRuntimeResult,
+} from "../../persistence/worker/runtime/public";
+import {
+  assertScenePathVisibleCount,
+  assertScenePathMaxBytes,
+} from "../../persistence/worker/runtime/scene-path-limits";
 
 interface SessionScenePathOptions {
   readonly disposed: () => boolean;
@@ -29,6 +39,12 @@ export class SessionScenePaths {
     const cancel = (): void => executor?.cancelScenePreparation?.(identity);
     signal.addEventListener("abort", cancel, { once: true });
     try {
+      if (!Array.isArray(ids) || ids.length > MAX_PREPARED_SCENE_PATH_IDS) return undefined;
+      let visibleCount = observer?.visibleCount;
+      const maxBytes = observer?.maxBytes;
+      assertScenePathVisibleCount(visibleCount, ids.length);
+      assertScenePathMaxBytes(maxBytes);
+      let retainedIds = [...(ids as readonly string[])];
       if (
         !(await this.options.synchronize(identity)) ||
         !this.isCurrent(identity, revision, signal)
@@ -36,10 +52,14 @@ export class SessionScenePaths {
         return undefined;
       executor = this.options.executor();
       if (executor === undefined) return undefined;
-      let retainedIds = ids;
       let started = false;
       observer?.setRetarget((retained) => {
-        retainedIds = retained;
+        const retainedSet = new Set(retained);
+        if (!started && visibleCount !== undefined)
+          visibleCount = retainedIds
+            .slice(0, visibleCount)
+            .filter((id) => retainedSet.has(id)).length;
+        retainedIds = retainedIds.filter((id) => retainedSet.has(id));
         if (started) executor?.retargetScenePreparation?.(identity, retained);
       });
       const requestIds = retainedIds;
@@ -48,6 +68,8 @@ export class SessionScenePaths {
           basisRevision: revision,
           identity,
           ids: requestIds,
+          ...(visibleCount === undefined ? {} : { visibleCount }),
+          ...(maxBytes === undefined ? {} : { maxBytes }),
           streamProgress: observer !== undefined,
           type: "prepare-scene-paths",
         },
@@ -62,15 +84,7 @@ export class SessionScenePaths {
       started = true;
       if (retainedIds !== requestIds) executor.retargetScenePreparation?.(identity, retainedIds);
       const result = await pending;
-      if (
-        !this.isCurrent(identity, revision, signal) ||
-        result.type !== "prepare-scene-paths-success" ||
-        result.basisRevision !== revision ||
-        result.identity.operationId !== identity.operationId ||
-        result.identity.sessionId !== identity.sessionId ||
-        result.identity.workerEpoch !== identity.workerEpoch
-      )
-        return undefined;
+      if (!this.isCurrentResult(result, identity, revision, signal)) return undefined;
       return result.paths;
     } catch {
       return undefined;
@@ -79,6 +93,22 @@ export class SessionScenePaths {
       signal.removeEventListener("abort", cancel);
     }
   };
+
+  private isCurrentResult(
+    result: DocumentRuntimeResult,
+    identity: PurposeOperationIdentity,
+    revision: number,
+    signal: AbortSignal,
+  ): result is Extract<DocumentRuntimeResult, { type: "prepare-scene-paths-success" }> {
+    return (
+      this.isCurrent(identity, revision, signal) &&
+      result.type === "prepare-scene-paths-success" &&
+      result.basisRevision === revision &&
+      result.identity.operationId === identity.operationId &&
+      result.identity.sessionId === identity.sessionId &&
+      result.identity.workerEpoch === identity.workerEpoch
+    );
+  }
 
   private isCurrent(
     identity: PurposeOperationIdentity,

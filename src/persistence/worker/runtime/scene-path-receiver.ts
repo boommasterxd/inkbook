@@ -62,7 +62,7 @@ export class ScenePathReceiver {
       throw new Error("Scene path progress repeated an ID.");
     if (validated.lastIdIndex !== -1) this.#lastIdIndex = validated.lastIdIndex;
     this.#bytes += validated.bytes;
-    if (this.#bytes > MAX_SCENE_PATH_BYTES)
+    if (this.#bytes > (this.#context?.request.maxBytes ?? MAX_SCENE_PATH_BYTES))
       throw new Error("Scene path progress exceeds its byte limit.");
   }
   public async adopt(

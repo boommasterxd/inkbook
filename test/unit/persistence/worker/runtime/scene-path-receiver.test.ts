@@ -83,6 +83,31 @@ it("bounds cumulative contour bytes across individually bounded progress message
   ).rejects.toThrow("byte limit");
 });
 
+it("enforces an owned remaining-capacity limit cumulatively across progress and terminal contours", async () => {
+  const boundedRequest = { ...request, maxBytes: 280 };
+  const receiver = new ScenePathReceiver(boundedRequest);
+  const signal = new AbortController().signal;
+  const observer = { unlockBatch: () => undefined, scenePaths: () => undefined };
+  boundedRequest.maxBytes = MAX_SCENE_PATH_BYTES;
+  await receiver.adopt(message(), boundedRequest, observer, signal, () => undefined);
+  await expect(
+    receiver.validateResult(boundedRequest, message("second", 1).batch, {
+      signal,
+      checkpoint: () => undefined,
+    }),
+  ).rejects.toThrow("byte limit");
+  expect(receiver.waiting).toBe(false);
+  await expect(
+    new ScenePathReceiver({ ...request, maxBytes: 1 }).adopt(
+      message(),
+      request,
+      observer,
+      signal,
+      () => undefined,
+    ),
+  ).rejects.toThrow("transport contract");
+});
+
 it("rejects concurrent adoption and observes cancellation after acknowledgement work", async () => {
   const receiver = new ScenePathReceiver();
   const controller = new AbortController();
