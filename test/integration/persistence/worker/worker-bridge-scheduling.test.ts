@@ -228,6 +228,73 @@ describe("document worker navigation adoption", () => {
   });
 });
 
+it.each(["required", "drawing", "navigation"] as const)(
+  "handles a failed speculative cancellation transport during %s without a synchronous exception",
+  async (action) => {
+    const harness = createWorkerBridgeHarness();
+    const failure = vi.fn();
+    const client = new WorkerDocumentRuntimePort(() => harness.clientEndpoint, {
+      workScheduler: new TestWorkScheduler(),
+      frameIntervalMilliseconds: () => 1_000 / 120,
+      onExecutorFailure: failure,
+    });
+    const post = harness.clientEndpoint.postMessage.bind(harness.clientEndpoint);
+    const intercept = vi
+      .spyOn(harness.clientEndpoint, "postMessage")
+      .mockImplementation((message, transfer) => {
+        if (
+          typeof message === "object" &&
+          message !== null &&
+          "action" in message &&
+          message.action === "cancel-scene-paths"
+        )
+          throw new Error("Cancellation transport failed.");
+        post(message, transfer);
+      });
+    const request = {
+      basisRevision: 0,
+      identity: {
+        operationId: 1,
+        purpose: "background" as const,
+        sessionId: "session-a",
+        workerEpoch: 1,
+      },
+      ids: [createOneStrokeWorkerSnapshot().elements[0]!.id],
+      speculative: true,
+      type: "prepare-scene-paths" as const,
+    };
+    const pending = client.execute(request).catch((error: unknown) => error);
+    try {
+      if (action === "required") {
+        let required: Promise<unknown> | undefined;
+        expect(() => {
+          required = client.execute({ ...request, speculative: false });
+        }).not.toThrow();
+        await expect(required).rejects.toThrow("request dispatch failed");
+        expect(failure).toHaveBeenCalledWith({
+          kind: "error",
+          request: { ...request, speculative: false },
+        });
+      } else {
+        expect(() =>
+          action === "drawing" ? client.setLiveInputActive(true) : client.setNavigationActive(true),
+        ).not.toThrow();
+        expect(failure).toHaveBeenCalledWith({ kind: "error" });
+      }
+      expect(await pending).toBeInstanceOf(Error);
+      expect(failure).toHaveBeenCalledOnce();
+      expect(harness.clientEndpoint.terminated).toBe(true);
+      await expect(client.execute({ ...request, speculative: false })).rejects.toThrow(
+        "terminated",
+      );
+    } finally {
+      intercept.mockRestore();
+      client.terminate();
+      harness.detach();
+    }
+  },
+);
+
 describe("document worker scheduling controls", () => {
   it("applies only finite positive scheduling profiles at the worker host", () => {
     const { clientEndpoint, detach, runtime } = createWorkerBridgeHarness();

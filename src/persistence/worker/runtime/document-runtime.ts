@@ -7,9 +7,10 @@ import {
 } from "../protocol";
 import { DocumentModelRuntime, RuntimeModelError } from "./document-model";
 import { runClipboardRequest } from "./runtime-clipboard";
-import { isRequiredSceneRequest } from "./request-result-validation";
+import { isRequiredSceneRequest, supersedesSpeculativeSceneRequest } from "./request-admission";
 import { emitUnlockBatches } from "./unlock-batches";
 import { ScenePathOperation } from "./scene-path-operation";
+import { runtimeSliceContext } from "./slice-scheduler";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeObserver,
@@ -79,6 +80,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     if (this.#unlockPending) {
       return Promise.reject(new Error("Unlock is exclusive until its terminal result."));
     }
+    if (supersedesSpeculativeSceneRequest(request)) this.#cancelSpeculativeScenePreparation();
     let sceneOperation: ScenePathOperation | undefined;
     try {
       if (request.type === "prepare-scene-paths") sceneOperation = new ScenePathOperation(request);
@@ -111,7 +113,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#schedulePrewarm();
   }
   public cancelScenePreparation(identity: import("../protocol").PurposeOperationIdentity): void {
-    for (const job of this.#jobs.values()) {
+    for (const [id, job] of this.#jobs) {
       if (job.request.type !== "prepare-scene-paths") continue;
       const candidate = job.request.identity;
       if (
@@ -120,7 +122,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         candidate.operationId === identity.operationId &&
         candidate.purpose === identity.purpose
       )
-        job.abortController.abort();
+        this.#abortScenePreparation(id, job);
     }
   }
 
@@ -156,16 +158,31 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
 
   public setLiveInputActive(active: boolean): void {
     this.#liveInputActive = active;
+    if (active) this.#cancelSpeculativeScenePreparation();
     this.#scheduler?.setLiveInputActive?.(active);
     if (!active) this.#schedulePrewarm();
   }
 
   public setNavigationActive(active: boolean): void {
     this.#navigationActive = active;
+    if (active) this.#cancelSpeculativeScenePreparation();
     if (!active) {
       void this.#drain();
       this.#schedulePrewarm();
     }
+  }
+
+  #cancelSpeculativeScenePreparation(): void {
+    for (const [id, job] of this.#jobs)
+      if (job.request.type === "prepare-scene-paths" && job.request.speculative === true)
+        this.#abortScenePreparation(id, job);
+  }
+
+  #abortScenePreparation(id: string, job: PendingJob): void {
+    job.abortController.abort();
+    if (!this.#queue.cancelPendingRequired(id)) return;
+    this.#jobs.delete(id);
+    job.resolve(this.#failure(job.request, new Error("Scene preparation was cancelled.")));
   }
 
   public terminate(): void {
@@ -183,7 +200,9 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   }
 
   readonly #eligibleJob = (job: import("../protocol").WorkerJob<DocumentRuntimeRequest>): boolean =>
-    !this.#navigationActive || isRequiredSceneRequest(job.payload);
+    !this.#navigationActive ||
+    this.#jobs.get(job.id)?.abortController.signal.aborted === true ||
+    isRequiredSceneRequest(job.payload);
 
   async #drain(): Promise<void> {
     if (this.#running) return;
@@ -465,23 +484,6 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       this.#schedulePrewarm();
     }
   }
-}
-
-function runtimeSliceContext(
-  scheduler: InputAwareSliceScheduler | null,
-  signal: AbortSignal,
-  request: DocumentRuntimeRequest,
-): RuntimeSliceContext | undefined {
-  if (scheduler === null) return undefined;
-  const sliceMilliseconds = scheduler.getSliceMilliseconds?.bind(scheduler);
-  const workProfile = scheduler.getSliceWorkProfile?.bind(scheduler);
-  return {
-    checkpoint: () =>
-      scheduler.checkpoint(signal, isRequiredSceneRequest(request) ? "frame" : undefined),
-    ...(sliceMilliseconds === undefined ? {} : { sliceMilliseconds }),
-    ...(workProfile === undefined ? {} : { workProfile: workProfile() }),
-    signal,
-  };
 }
 
 const DEFAULT_RUNTIME_SERVICES: DocumentRuntimeServices = Object.freeze({

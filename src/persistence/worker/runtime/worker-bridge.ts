@@ -4,7 +4,12 @@ import { ModelPointReferences } from "./model-point-references";
 import { scheduleRequestTimeout } from "./request-timeout";
 import { isBridgeResponse } from "./bridge-response-validation";
 import { ScenePathReceiver } from "./scene-path-receiver";
-import { acknowledgePathBatch, controlScenePreparation } from "./scene-bridge-control";
+import { createMainThreadRequestCheckpoint } from "./slice-scheduler";
+import {
+  acknowledgePathBatch,
+  controlScenePreparation,
+  cancelSpeculativeScenePreparations,
+} from "./scene-bridge-control";
 import type {
   DocumentRuntimeObserver,
   DocumentRuntimePort,
@@ -18,11 +23,8 @@ import {
   decodeRuntimeResultChunked,
   encodeRuntimeRequestChunked,
 } from "./wire-codec";
-import {
-  matchesUnlockBatchIdentity,
-  validUnlockCompletion,
-  isRequiredSceneRequest,
-} from "./request-result-validation";
+import { matchesUnlockBatchIdentity, validUnlockCompletion } from "./request-result-validation";
+import { supersedesSpeculativeSceneRequest } from "./request-admission";
 import type {
   BridgeControl,
   BridgeExportAcknowledgement,
@@ -105,6 +107,14 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     if (this.#terminated) return Promise.reject(new Error("Document worker port is terminated."));
     const requestId = ++this.#nextRequestId;
     return new Promise((resolve, reject) => {
+      try {
+        if (supersedesSpeculativeSceneRequest(request))
+          cancelSpeculativeScenePreparations(this.#endpoint, this.#pending);
+      } catch {
+        this.#failExecutor("error", request);
+        reject(new Error("Document worker request dispatch failed."));
+        return;
+      }
       const sceneReceiver = new ScenePathReceiver(request);
       request = sceneReceiver.request ?? request;
       const pending: PendingBridgeRequest = {
@@ -176,6 +186,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     if (!active) this.#inputGate.notifyInactive();
     if (!this.#terminated) {
       try {
+        if (active) cancelSpeculativeScenePreparations(this.#endpoint, this.#pending);
         this.#publishSchedulingProfile();
         this.#endpoint.postMessage({
           action: "set-live-input",
@@ -193,6 +204,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     this.#navigationActive = active;
     if (!active) this.#navigationGate.notifyInactive();
     try {
+      if (active) cancelSpeculativeScenePreparations(this.#endpoint, this.#pending);
       this.#endpoint.postMessage({
         action: "set-navigation",
         active,
@@ -449,31 +461,16 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     request: DocumentRuntimeRequest,
     adoption = false,
   ): () => Promise<void> | undefined {
-    const required = isRequiredSceneRequest(request);
-    const exportRequest = request.type === "export-full" || request.type === "export-incremental";
-    const priority = required || (!adoption && exportRequest) ? "frame" : "background";
-    const checkpoint = (): Promise<void> | undefined => {
-      const ready = this.#inputGate.waitUntilInactive(signal);
-      if (ready !== undefined) return ready.then(checkpoint);
-      const navigation = required ? undefined : this.#navigationGate.waitUntilInactive(signal);
-      if (navigation !== undefined) return navigation.then(checkpoint);
-      return this.#checkpointMainThread(signal, priority);
-    };
-    return checkpoint;
-  }
-
-  #checkpointMainThread(
-    signal: AbortSignal,
-    priority: "background" | "frame",
-  ): Promise<void> | undefined {
-    signal.throwIfAborted();
-    const pending =
-      priority === "background"
-        ? this.#workScheduler.checkpoint(signal)
-        : this.#workScheduler.shouldYield()
-          ? this.#workScheduler.nextFrame(signal, "frame")
-          : undefined;
-    return pending?.then(() => signal.throwIfAborted());
+    return createMainThreadRequestCheckpoint(
+      {
+        inputGate: this.#inputGate,
+        navigationGate: this.#navigationGate,
+        scheduler: this.#workScheduler,
+      },
+      signal,
+      request,
+      adoption,
+    );
   }
   #publishSchedulingProfile(): void {
     if (this.#terminated) return;

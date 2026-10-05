@@ -88,6 +88,14 @@ export class WorkerJobQueue<TPayload> {
     return pending;
   }
 
+  /** Release a cancelled queued required request without disturbing the active job. */
+  public cancelPendingRequired(id: string): boolean {
+    const index = this.#required.findIndex((job) => job.id === id);
+    if (index === -1) return false;
+    this.#required.splice(index, 1);
+    return true;
+  }
+
   #admitUnlock(job: WorkerJob<TPayload>): QueueAdmission {
     if (this.#active !== null || this.pendingCount > 0) {
       return "busy";

@@ -39,6 +39,8 @@ export function assertScenePathRequest(request: PrepareScenePathsRuntimeRequest)
   const maxBytes = assertScenePathMaxBytes(request.maxBytes);
   if (request.streamProgress !== undefined && typeof request.streamProgress !== "boolean")
     throw new TypeError("Invalid scene preparation progress mode.");
+  if (request.speculative !== undefined && typeof request.speculative !== "boolean")
+    throw new TypeError("Invalid scene preparation priority mode.");
   return maxBytes;
 }
 
@@ -50,11 +52,10 @@ export class ScenePathValidationContext {
     if (!Array.isArray(request.ids) || request.ids.length > MAX_SCENE_PATH_IDS)
       throw new TypeError("Scene preparation IDs exceed the internal protocol limit.");
     const ids = [...(request.ids as readonly string[])];
-    assertScenePathIds(ids);
-    assertScenePathVisibleCount(request.visibleCount, ids.length);
-    assertScenePathMaxBytes(request.maxBytes);
+    const owned = { ...request, ids };
+    assertScenePathRequest(owned);
     this.request = Object.freeze({
-      ...request,
+      ...owned,
       identity: Object.freeze({ ...request.identity }),
       ids: Object.freeze(ids),
     });

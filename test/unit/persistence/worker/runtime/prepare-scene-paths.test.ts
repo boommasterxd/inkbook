@@ -42,6 +42,13 @@ describe("exact visible prefix request validation", () => {
     },
   );
 
+  it.each([undefined, false, true])("preserves speculative admission %s", (speculative) => {
+    const candidate = { ...request, ...(speculative === undefined ? {} : { speculative }) };
+    expect(new ScenePathOperation(candidate).request.speculative).toBe(speculative);
+    expect(new ScenePathValidationContext(candidate).request.speculative).toBe(speculative);
+    expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
+  });
+
   it.each([
     ...[-1, 3, 0.5, NaN, Infinity, null, "1"].map((visibleCount) => ({
       visibleCount: visibleCount as number,
@@ -49,6 +56,7 @@ describe("exact visible prefix request validation", () => {
     ...[0, -1, MAX_SCENE_PATH_BYTES + 1, 0.5, NaN, Infinity, null, "1"].map((maxBytes) => ({
       maxBytes: maxBytes as number,
     })),
+    ...[null, 0, "true"].map((speculative) => ({ speculative: speculative as unknown as boolean })),
   ])("rejects malformed priority or capacity before admission: %j", (options) => {
     const candidate = { ...request, ...options };
     expect(() => new ScenePathValidationContext(candidate)).toThrow(TypeError);

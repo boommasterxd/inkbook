@@ -14,6 +14,8 @@ export function preparedScenePathBytes(id: string, parts: readonly SvgPathPart[]
 }
 
 export interface ScenePathPreparationObserver {
+  /** Directional warming yields to required viewport and live-input work. */
+  readonly speculative?: boolean;
   /** Exact-viewport prefix in the visible-first IDs, excluding overscan. */
   readonly visibleCount?: number;
   /** Available combined contour capacity, bounded by MAX_PREPARED_SCENE_PATH_BYTES. */

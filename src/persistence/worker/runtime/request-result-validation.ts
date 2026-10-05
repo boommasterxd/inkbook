@@ -6,14 +6,6 @@ import type { ScenePathValidationContext, ValidatedScenePathBatch } from "./scen
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import type { DocumentRuntimeRequest, DocumentRuntimeResult, UnlockRuntimeBatch } from "./types";
 
-export function isRequiredSceneRequest(request: DocumentRuntimeRequest): boolean {
-  return (
-    request.type === "prepare-scene-paths" ||
-    ((request.type === "model-sync-full" || request.type === "model-sync-incremental") &&
-      request.identity.purpose === "background")
-  );
-}
-
 export function validUnlockCompletion(
   result: DocumentRuntimeResult,
   pending: {

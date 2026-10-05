@@ -16,6 +16,15 @@ interface ControllableRequest {
   reject(error: Error): void;
 }
 
+export function cancelSpeculativeScenePreparations(
+  endpoint: { postMessage(message: unknown): void },
+  pending: Map<number, ControllableRequest>,
+): void {
+  for (const candidate of pending.values())
+    if (candidate.request.type === "prepare-scene-paths" && candidate.request.speculative === true)
+      controlScenePreparation(endpoint, pending, candidate.request.identity);
+}
+
 export function controlScenePreparation(
   endpoint: { postMessage(message: unknown): void },
   pending: Map<number, ControllableRequest>,

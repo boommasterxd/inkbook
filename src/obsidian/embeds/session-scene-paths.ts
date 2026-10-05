@@ -71,6 +71,7 @@ export class SessionScenePaths {
           ...(visibleCount === undefined ? {} : { visibleCount }),
           ...(maxBytes === undefined ? {} : { maxBytes }),
           streamProgress: observer !== undefined,
+          ...(observer?.speculative === true ? { speculative: true } : {}),
           type: "prepare-scene-paths",
         },
         {

@@ -72,6 +72,7 @@ export class SceneVisibilityCoordinator {
       this.#navigation = new NavigationPathPreparation(
         navigationOptions.scene.store,
         navigationOptions.cache,
+        () => this.scheduleNavigationFrame(),
       );
   }
 
@@ -95,10 +96,11 @@ export class SceneVisibilityCoordinator {
     this.#navigation?.cancel();
   }
 
-  /** Camera changes defer cancellation until the next visibility query proves a new target. */
+  /** Required camera work cancels speculation while retaining a useful local contour. */
   public invalidate(preservePending = false): void {
     this.#dirty = true;
     this.cancelNavigationFrame();
+    if (preservePending) this.#navigation?.pause();
     if (!preservePending) {
       this.#navigation?.cancel();
       this.#content.cancelPendingVisibility();

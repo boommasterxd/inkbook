@@ -8,6 +8,167 @@ import { createSceneRecord, createSceneFixture } from "../../../fixtures/renderi
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { FakeScheduler } from "./fakes";
+import type {
+  PreparedScenePathEntry,
+  ScenePathPreparationObserver,
+} from "../../../../src/domain/geometry/prepared-scene-paths";
+import { MAX_PREPARED_SCENE_PATH_BYTES } from "../../../../src/domain/geometry/prepared-scene-paths";
+
+function remoteFixture(y = 120) {
+  const local = fixture(50, y);
+  let observer: ScenePathPreparationObserver | undefined;
+  let signal!: AbortSignal;
+  let resolve!: (paths: readonly PreparedScenePathEntry[] | undefined) => void;
+  const request = vi.fn(
+    (
+      _ids: readonly string[],
+      cancellation: AbortSignal,
+      progress?: ScenePathPreparationObserver,
+    ) => {
+      signal = cancellation;
+      observer = progress;
+      return new Promise<readonly PreparedScenePathEntry[] | undefined>((ready) => {
+        resolve = ready;
+      });
+    },
+  );
+  local.store.prepareScenePaths = request;
+  const ready = vi.fn();
+  const preparation = new NavigationPathPreparation(local.store, local.cache, ready);
+  const path = { id: local.record.id, parts: [{ d: "M50 120L51 120", paint: "stroke" as const }] };
+  return {
+    ...local,
+    preparation,
+    request,
+    ready,
+    path,
+    observer: () => observer!,
+    signal: () => signal,
+    resolve: (paths: readonly PreparedScenePathEntry[] | undefined) => resolve(paths),
+  };
+}
+
+it("leaves no scene frame queued while a directional worker batch is pending and wakes for cache adoption", async () => {
+  const remote = remoteFixture(330);
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, remote.store, {
+    height: 100,
+    left: 0,
+    top: 0,
+    width: 100,
+  });
+  try {
+    scheduler.runAll();
+    renderer.setViewport({ height: 100, left: 0, top: 50, width: 100 });
+    scheduler.runAll();
+    expect(remote.request).toHaveBeenCalledOnce();
+    expect(scheduler.pendingCount).toBe(0);
+    remote.observer().onProgress([remote.path]);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.runAll();
+    expect(renderer.instrumentation().pathCacheEntries).toBe(1);
+    expect(scheduler.pendingCount).toBe(0);
+    remote.resolve([]);
+    await Promise.resolve();
+    scheduler.runAll();
+  } finally {
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("warms remote contours without polling or local geometry work and adopts within the original deadline", async () => {
+  const remote = remoteFixture();
+  const builds = vi.spyOn(remote.cache, "startPreparation");
+  remote.preparation.setTarget({ viewport: BOUNDS, direction: { x: 0, y: 1 } }, BOUNDS);
+  expect(remote.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(remote.request).toHaveBeenCalledOnce();
+  expect(remote.observer().speculative).toBe(true);
+  expect(remote.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(remote.ready).not.toHaveBeenCalled();
+  remote.observer().onProgress([remote.path]);
+  expect(remote.ready).toHaveBeenCalledOnce();
+  expect(remote.preparation.prepare(0, () => 0)).toBe(true);
+  expect(remote.cache.has(remote.record.id, 1)).toBe(false);
+  expect(remote.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(remote.cache.take(remote.record.id, 1)).toEqual(remote.path.parts);
+  expect(builds).not.toHaveBeenCalled();
+  remote.resolve([]);
+  await Promise.resolve();
+  remote.preparation.prepare(Infinity, () => 0);
+  expect(remote.preparation.memoryUsage()).toBe(0);
+  remote.preparation.cancel();
+  remote.preparation.setTarget({ viewport: BOUNDS, direction: { x: 0, y: 1 } }, BOUNDS);
+  remote.preparation.prepare(Infinity, () => 0);
+  expect(remote.request).toHaveBeenCalledOnce();
+});
+
+it.each(["pause", "reverse", "cancel"] as const)(
+  "rejects obsolete remote progress after %s",
+  async (action) => {
+    const remote = remoteFixture();
+    const priority = { viewport: BOUNDS, direction: { x: 0, y: 1 } };
+    remote.preparation.setTarget(priority, BOUNDS);
+    remote.preparation.prepare(Infinity, () => 0);
+    if (action === "reverse")
+      remote.preparation.setTarget({ ...priority, direction: { x: 0, y: -1 } }, BOUNDS);
+    else remote.preparation[action]();
+    expect(remote.signal().aborted).toBe(true);
+    remote.observer().onProgress([remote.path]);
+    remote.resolve([remote.path]);
+    await Promise.resolve();
+    expect(remote.ready).not.toHaveBeenCalled();
+    expect(remote.cache.has(remote.record.id, 1)).toBe(false);
+    expect(remote.preparation.memoryUsage()).toBe(0);
+  },
+);
+
+it("rejects outdated geometry versions and falls back locally when the remote executor is unavailable", async () => {
+  const remote = remoteFixture();
+  remote.preparation.setTarget({ viewport: BOUNDS, direction: { x: 0, y: 1 } }, BOUNDS);
+  remote.preparation.prepare(Infinity, () => 0);
+  remote.store.get = () => ({ ...remote.record, geometryVersion: 2 });
+  remote.observer().onProgress([remote.path]);
+  remote.preparation.prepare(Infinity, () => 0);
+  expect(remote.cache.has(remote.record.id, 1)).toBe(false);
+  remote.resolve(undefined);
+  await Promise.resolve();
+  expect(remote.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(remote.cache.has(remote.record.id, 2)).toBe(true);
+  expect(remote.request).toHaveBeenCalledOnce();
+  remote.preparation.cancel();
+  expect(remote.preparation.memoryUsage()).toBe(0);
+});
+
+it("falls back after a synchronously failing preparation port without retaining its reservation", () => {
+  const remote = remoteFixture();
+  remote.request.mockImplementation(() => {
+    throw new Error("unavailable");
+  });
+  remote.preparation.setTarget({ viewport: BOUNDS, direction: { x: 0, y: 1 } }, BOUNDS);
+  expect(remote.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(remote.preparation.memoryUsage()).toBe(0);
+  expect(remote.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(remote.cache.has(remote.record.id, 1)).toBe(true);
+  expect(remote.request).toHaveBeenCalledOnce();
+});
+
+it("releases an oversized remote delivery and preserves the bounded local fallback", () => {
+  const remote = remoteFixture();
+  remote.preparation.setTarget({ viewport: BOUNDS, direction: { x: 0, y: 1 } }, BOUNDS);
+  remote.preparation.prepare(Infinity, () => 0);
+  remote.observer().onProgress([
+    {
+      id: remote.path.id,
+      parts: [{ paint: "stroke", d: "0".repeat(MAX_PREPARED_SCENE_PATH_BYTES / 2) }],
+    },
+  ]);
+  expect(remote.signal().aborted).toBe(true);
+  expect(remote.preparation.memoryUsage()).toBe(0);
+  expect(remote.cache.has(remote.record.id, 1)).toBe(false);
+  remote.preparation.prepare(Infinity, () => 0);
+  expect(remote.cache.has(remote.record.id, 1)).toBe(true);
+  expect(remote.request).toHaveBeenCalledOnce();
+});
 
 const BOUNDS = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
 

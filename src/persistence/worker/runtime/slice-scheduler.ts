@@ -1,6 +1,61 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { InputActivityGate } from "./input-activity-gate";
-import type { InputAwareSliceScheduler, RuntimeSliceWorkProfile } from "./types";
+import type {
+  DocumentRuntimeRequest,
+  InputAwareSliceScheduler,
+  RuntimeSliceContext,
+  RuntimeSliceWorkProfile,
+} from "./types";
+import { isRequiredSceneRequest } from "./request-admission";
+
+export function runtimeSliceContext(
+  scheduler: InputAwareSliceScheduler | null,
+  signal: AbortSignal,
+  request: DocumentRuntimeRequest,
+): RuntimeSliceContext | undefined {
+  if (scheduler === null) return undefined;
+  const sliceMilliseconds = scheduler.getSliceMilliseconds?.bind(scheduler);
+  const workProfile = scheduler.getSliceWorkProfile?.bind(scheduler);
+  return {
+    checkpoint: () =>
+      scheduler.checkpoint(signal, isRequiredSceneRequest(request) ? "frame" : undefined),
+    ...(sliceMilliseconds === undefined ? {} : { sliceMilliseconds }),
+    ...(workProfile === undefined ? {} : { workProfile: workProfile() }),
+    signal,
+  };
+}
+
+interface RequestCheckpointOptions {
+  readonly inputGate: InputActivityGate;
+  readonly navigationGate: InputActivityGate;
+  readonly scheduler: WorkScheduler;
+}
+
+export function createMainThreadRequestCheckpoint(
+  options: RequestCheckpointOptions,
+  signal: AbortSignal,
+  request: DocumentRuntimeRequest,
+  adoption = false,
+): () => Promise<void> | undefined {
+  const required = isRequiredSceneRequest(request);
+  const exportRequest = request.type === "export-full" || request.type === "export-incremental";
+  const priority = required || (!adoption && exportRequest) ? "frame" : "background";
+  const checkpoint = (): Promise<void> | undefined => {
+    const ready = options.inputGate.waitUntilInactive(signal);
+    if (ready !== undefined) return ready.then(checkpoint);
+    const navigation = required ? undefined : options.navigationGate.waitUntilInactive(signal);
+    if (navigation !== undefined) return navigation.then(checkpoint);
+    signal.throwIfAborted();
+    const pending =
+      priority === "background"
+        ? options.scheduler.checkpoint(signal)
+        : options.scheduler.shouldYield()
+          ? options.scheduler.nextFrame(signal, "frame")
+          : undefined;
+    return pending?.then(() => signal.throwIfAborted());
+  };
+  return checkpoint;
+}
 
 export interface SliceSchedulerOptions {
   readonly isInputActive: () => boolean;
