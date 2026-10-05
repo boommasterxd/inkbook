@@ -44,15 +44,19 @@ export const NATIVE_WORK_ADAPTERS = new Set([
 // A boundary file is not a blanket exemption. Each entry names the owning
 // method and the number of native calls required by its injected host port.
 const ADAPTER_NATIVE_SITES = new Map([
-  ["src/obsidian/performance/window-work-scheduler.ts##ensureChannel#MessageChannel", 1],
-  ["src/obsidian/performance/window-work-scheduler.ts##scheduleTimeout#setTimeout", 1],
+  ["src/obsidian/performance/window-work-scheduler.ts#openWindowTaskChannel#MessageChannel", 1],
+  ["src/obsidian/performance/window-work-scheduler.ts#createWindowWorkScheduler#setTimeout", 1],
   [
     "src/obsidian/performance/window-work-scheduler.ts#createWindowWorkScheduler#requestAnimationFrame",
     1,
   ],
   [
     "src/persistence/worker/runtime/worker-work-scheduler.ts#createWorkerWorkScheduler#setTimeout",
-    3,
+    2,
+  ],
+  [
+    "src/persistence/worker/runtime/worker-work-scheduler.ts#openWorkerTaskChannel#MessageChannel",
+    1,
   ],
 ]);
 

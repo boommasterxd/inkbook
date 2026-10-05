@@ -13,6 +13,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/obsidian/selection-query-refresh-profile.test.ts",
     "test/performance/obsidian/selection-resize-frame-pipeline.test.ts",
     "test/performance/persistence/worker-fallback.test.ts",
+    "test/performance/persistence/worker-task-transport.test.ts",
     "test/performance/rendering/scene/interaction-refresh-reconciliation.test.ts",
     "test/performance/rendering/scene/live-stroke-refresh-profile.test.ts",
     "test/performance/rendering/scene/motion-frame-budget.test.ts",

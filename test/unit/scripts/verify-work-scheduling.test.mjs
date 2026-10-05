@@ -168,29 +168,27 @@ it("permits only named native call sites in exact boundary adapters", () => {
   expect(
     validateWorkScheduling([
       source(
-        `class WindowTaskQueue {
-          #ensureChannel() { new MessageChannel(); }
-          #scheduleTimeout() { ownerWindow.setTimeout(run, 0); }
-        }
-        function createWindowWorkScheduler() { ownerWindow.requestAnimationFrame(run); }`,
+        `function openWindowTaskChannel() { new MessageChannel(); }
+        function createWindowWorkScheduler() {
+          ownerWindow.setTimeout(run, 0);
+          ownerWindow.requestAnimationFrame(run);
+        }`,
         windowAdapter,
       ),
       source(
         `function createWorkerWorkScheduler() {
           self.setTimeout(run, 0);
           timing.setTimeout(run, 0);
-          timing.setTimeout(run, 0);
-        }`,
+        }
+        function openWorkerTaskChannel() { new MessageChannel(); }`,
         workerAdapter,
       ),
     ]),
   ).toEqual([]);
   const violations = validateWorkScheduling([
     source(
-      `class WindowTaskQueue {
-        #ensureChannel() { new MessageChannel(); new MessageChannel(); }
-        #post() { requestAnimationFrame(run); }
-      }
+      `function openWindowTaskChannel() { new MessageChannel(); new MessageChannel(); }
+      function unexpectedTask() { requestAnimationFrame(run); }
       function createWindowWorkScheduler() { queueMicrotask(run); }`,
       windowAdapter,
     ),

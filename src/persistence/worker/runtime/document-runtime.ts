@@ -38,6 +38,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   readonly #unacknowledgedExports = new Map<string, ExportIdentity>();
   readonly #scheduler: InputAwareSliceScheduler | null;
   readonly #services: DocumentRuntimeServices;
+  readonly #onTerminate: (() => void) | undefined;
   #nextJobId = 0;
   #liveInputActive = false;
   #navigationActive = false;
@@ -52,10 +53,12 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     scheduler: InputAwareSliceScheduler | null = null,
     services: DocumentRuntimeServices = DEFAULT_RUNTIME_SERVICES,
     ownsTransferredSamples = false,
+    onTerminate?: () => void,
   ) {
     this.#executor = executor;
     this.#scheduler = scheduler;
     this.#services = services;
+    this.#onTerminate = onTerminate;
     this.#model = new DocumentModelRuntime(services.now, ownsTransferredSamples);
   }
 
@@ -166,6 +169,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   }
 
   public terminate(): void {
+    if (this.#terminated) return;
     this.#terminated = true;
     this.#abortController.abort();
     this.#queue.clearPending();
@@ -175,6 +179,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#model.clear();
     this.#unacknowledgedExports.clear();
     this.#prewarmRequested = false;
+    this.#onTerminate?.();
   }
 
   readonly #eligibleJob = (job: import("../protocol").WorkerJob<DocumentRuntimeRequest>): boolean =>

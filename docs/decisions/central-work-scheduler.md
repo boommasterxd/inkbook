@@ -21,6 +21,16 @@ Use one injected `WorkScheduler` per owning window and the same portable
 platform-independent admission policy; window and worker adapters own native
 timing resources. Workspace composition owns lifetime and window selection.
 
+Window and worker adapters share a portable FIFO task transport with injected
+host operations. Each adapter lazily owns one reusable `MessageChannel` and at
+most one posted wakeup; cancelling a task removes it immediately. A delivered
+wakeup executes one callback, leaving admission, priorities, and absolute
+deadlines entirely with `SharedFrameScheduler`. Unavailable or failed channels
+fall back to cancellable timers. Positive-delay semantic timers keep their
+requested delays. Scheduler disposal closes both ports and clears pending tasks.
+Production document-runtime termination disposes only its worker-owned scheduler;
+main-thread fallback never disposes the shared owning-window scheduler.
+
 Keep the existing frame preferences and 55-percent cooperative work allowance.
 Every consumer shares an absolute epoch deadline. Input, frame, and background
 queues preserve priority with FIFO order within each class. A checkpoint without an
