@@ -450,8 +450,8 @@ describe("dense scene reconciliation", () => {
     const expected = replaceWithRectangles(store, "dense", 1_201, () => 10);
 
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(64);
-    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(64);
+    expect(renderer.mountedCount).toBe(192);
+    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(192);
     expect(renderer.instrumentation().geometryBuilds).toBeGreaterThan(0);
     expect(renderer.instrumentation().geometryBuilds).toBeLessThan(expected.length);
     renderer.promoteVisible(expected[0]!);

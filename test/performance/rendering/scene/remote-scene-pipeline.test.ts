@@ -63,6 +63,10 @@ it("refills the real worker before the last cached roots publish and reuses 945 
   });
   const pipeline = observePipeline(runtime, renderer, identity);
   const { requests } = pipeline;
+  // The first two requests fill the 256-ID pool; later refill starts at half-pool space.
+  const minimumRefill = MAX_PREPARED_SCENE_PATH_IDS / 2;
+  const maximumRequests =
+    2 + Math.ceil((elements.length - MAX_PREPARED_SCENE_PATH_IDS) / minimumRefill);
   store.prepareScenePaths = pipeline.prepareScenePaths;
   const get = vi.spyOn(store, "get");
   try {
@@ -76,7 +80,9 @@ it("refills the real worker before the last cached roots publish and reuses 945 
     }
     expect(renderer.mountedCount).toBe(945);
     expect(requests[0]!.count).toBe(1);
-    expect(requests.length).toBeLessThanOrEqual(5);
+    expect(requests[1]!.count).toBe(MAX_PREPARED_SCENE_PATH_IDS - 1);
+    expect(requests.slice(1, -1).every((request) => request.count >= minimumRefill)).toBe(true);
+    expect(requests.length).toBeLessThanOrEqual(maximumRequests);
     expect(requests.reduce((count, request) => count + request.count, 0)).toBe(945);
     expect(
       requests
@@ -96,7 +102,7 @@ it("refills the real worker before the last cached roots publish and reuses 945 
     renderer.setViewport({ height: 100, width: 100, left: 500, top: 0 });
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(945);
-    expect(requests.length).toBeLessThanOrEqual(5);
+    expect(requests.length).toBeLessThanOrEqual(maximumRequests);
     expect(renderer.instrumentation().geometryBuilds).toBe(builds);
     expect(pointReads).toBe(0);
     expect(pipeline.active()).toBe(0);

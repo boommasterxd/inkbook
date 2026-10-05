@@ -3,6 +3,8 @@ import type { SvgPathPart } from "../../domain/geometry/element-path";
 import { ProgressivePreviewPath } from "./progressive-preview-path";
 import type { PreviewTransform } from "./scene-visibility-reconciler";
 import type { SceneElementRecord } from "./types";
+import type { InkElementV1 } from "../../domain/schema/public";
+import type { MountedSceneElement } from "./mounted-element";
 
 interface RetainedTransform {
   readonly base: string | null;
@@ -14,6 +16,24 @@ interface RetainedTransform {
 export class CommittedPreviewGeometry {
   readonly #transforms = new Map<string, RetainedTransform>();
   #job: { id: string; version: number; path: ProgressivePreviewPath } | undefined;
+
+  public retainPreviews(
+    previews: ReadonlyMap<string, PreviewTransform>,
+    elements: ReadonlyMap<string, InkElementV1>,
+    context: {
+      readonly dirty: ReadonlySet<string>;
+      readonly mounted: ReadonlyMap<string, MountedSceneElement>;
+    },
+  ): void {
+    const ids = new Set([...previews.keys(), ...elements.keys()]);
+    for (const id of ids) {
+      if (!context.dirty.has(id) || (previews.get(id)?.transform == null && !elements.has(id)))
+        continue;
+      const entry = context.mounted.get(id);
+      if (entry !== undefined)
+        this.retain(id, entry.appliedPreviewTransform, entry.previewStrokeWidthScale);
+    }
+  }
 
   public retain(id: string, base: string | null, strokeWidthScale: number | null): void {
     this.#transforms.set(id, {

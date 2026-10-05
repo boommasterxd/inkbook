@@ -40,7 +40,7 @@ it("publishes the actual viewport before highlight overscan within a 10,000-elem
       indexedStroke(rank).id,
       rank,
       20,
-      rank < 192 ? 30 + rank / 10 : 10_000,
+      rank < 256 ? 30 + rank / 10 : 10_000,
     ).element;
   });
   const domain = new ElementStore(elements);
@@ -68,18 +68,18 @@ it("publishes the actual viewport before highlight overscan within a 10,000-elem
   const create = vi.spyOn(document, "createElementNS");
   try {
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(64);
-    expect(renderer.mountedIds("highlight")).toEqual([]);
-    expect(renderer.mountedIds("content")).toHaveLength(64);
-    flushBoundedScenePublication(renderer, scheduler);
     expect(renderer.mountedCount).toBe(192);
+    expect(renderer.mountedIds("highlight")).toEqual([]);
+    expect(renderer.mountedIds("content")).toHaveLength(192);
+    flushBoundedScenePublication(renderer, scheduler);
+    expect(renderer.mountedCount).toBe(256);
     expect(renderer.mountedIds("highlight")).toHaveLength(64);
-    expect(renderer.mountedIds("content")).toHaveLength(128);
-    expect(create.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(192);
-    expect(indexedVisits).toBeLessThanOrEqual(384);
+    expect(renderer.mountedIds("content")).toHaveLength(192);
+    expect(create.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(256);
+    expect(indexedVisits).toBeLessThanOrEqual(512);
     expect(query).toHaveBeenCalledOnce();
-    expect(get.mock.calls.length).toBeLessThanOrEqual(1_152);
-    expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(1_152);
+    expect(get.mock.calls.length).toBeLessThanOrEqual(1_536);
+    expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(1_536);
   } finally {
     renderer.destroy();
     scene.release();
@@ -168,7 +168,7 @@ it("finishes logical exits without detaching cached roots behind new publication
     expect(roots).toBeLessThanOrEqual(16);
     expect(scheduler.time).toBeLessThan(scheduler.workScheduler.deadline());
     frameRoots += roots;
-    expect(frameRoots).toBeLessThanOrEqual(64);
+    expect(frameRoots).toBeLessThanOrEqual(192);
     scheduler.time += 8;
   });
   try {
@@ -213,22 +213,22 @@ it("finishes logical exits without detaching cached roots behind new publication
 
 it("finishes partially scanned old mounts while remote geometry waits, then stops scene polling", () => {
   const { store, signals } = createPendingScenePathStore();
-  for (let rank = 0; rank < 128; rank += 1) {
+  for (let rank = 0; rank < 256; rank += 1) {
     const id = `old-${rank}`;
     store.records.set(id, fakeRectangleRecord(id, rank, 20, 20));
   }
-  store.records.set("warm", fakeRectangleRecord("warm", 128, 20, 1_010));
+  store.records.set("warm", fakeRectangleRecord("warm", 256, 20, 1_010));
   const cold = {
     ...indexedStroke(33),
     pivot: { x: 20, y: 1_020 },
     points: [20, 1_020, 0.5, 30, 1_020, 0.5],
   };
-  store.records.set(cold.id, createSceneRecord(cold, 129));
+  store.records.set(cold.id, createSceneRecord(cold, 257));
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   renderer.setReducedMotion(true);
   scheduler.runNext();
-  expect(renderer.mountedCount).toBe(64);
+  expect(renderer.mountedCount).toBe(192);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   const oldNodes = [...content.nodes];
   const restoreClock = chargeClockAfterPublication(content, scheduler);
@@ -242,9 +242,9 @@ it("finishes partially scanned old mounts while remote geometry waits, then stop
     expect(renderer.mountedIds("content")).toEqual(["warm"]);
     expect(oldNodes.every((node) => node.parent === content)).toBe(true);
     expect(renderer.instrumentation().domExits).toBe(0);
-    expect(renderer.instrumentation().detachedCacheEntries).toBe(64);
-    expect(content.nodes).toHaveLength(65);
-    expect(new Set(content.nodes).size).toBe(65);
+    expect(renderer.instrumentation().detachedCacheEntries).toBe(192);
+    expect(content.nodes).toHaveLength(193);
+    expect(new Set(content.nodes).size).toBe(193);
     expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(
       oldNodes.length * 3 + 16,
     );

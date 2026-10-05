@@ -74,6 +74,10 @@ export class SceneMountPreparation {
     return this.#pending?.id;
   }
 
+  public get readyContours(): number {
+    return this.#remote.readyCount;
+  }
+
   public get waiting(): boolean {
     return this.#pending === undefined && this.#remote.waiting;
   }

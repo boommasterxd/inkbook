@@ -143,21 +143,10 @@ export class SceneContentRenderer {
     previews: ReadonlyMap<string, PreviewTransform>,
     elements: ReadonlyMap<string, InkElementV1>,
   ): void {
-    const ids = new Set([...previews.keys(), ...elements.keys()]);
-    for (const id of ids) {
-      if (
-        !this.#geometryDirty.has(id) ||
-        (previews.get(id)?.transform == null && !elements.has(id))
-      )
-        continue;
-      const entry = this.#mounted.get(id);
-      if (entry !== undefined)
-        this.#committedGeometry.retain(
-          id,
-          entry.appliedPreviewTransform,
-          entry.previewStrokeWidthScale,
-        );
-    }
+    this.#committedGeometry.retainPreviews(previews, elements, {
+      dirty: this.#geometryDirty,
+      mounted: this.#mounted,
+    });
   }
 
   public takeCommittedPreviewIds(): readonly string[] {
@@ -216,6 +205,15 @@ export class SceneContentRenderer {
 
   public get waitingForPaths(): boolean {
     return this.#reconciler.waitingForPaths && !this.hasMountedWork;
+  }
+
+  public frameDiagnosticState(pendingQuery: boolean) {
+    return {
+      pendingQuery,
+      pendingVisibility: this.hasPendingWork,
+      ...this.#reconciler.preparationState,
+      waitingForPaths: this.waitingForPaths,
+    };
   }
 
   public setVisibilityPriority(priority: SceneVisibilityPriority): void {

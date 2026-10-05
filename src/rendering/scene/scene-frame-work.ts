@@ -5,6 +5,9 @@ import type { SceneElementPreviews } from "./scene-element-previews";
 import type { SceneContentScheduler } from "./scene-content-scheduler";
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { PreviewTransform } from "./scene-visibility-reconciler";
+import { completeSceneFrame, type SceneFrameWorkResult } from "./scene-frame-completion";
+import type { SceneCommitCoordinator } from "./scene-commit-coordinator";
+import type { SceneFrameScheduler } from "./scene-frame-scheduler";
 
 interface SceneFrameWorkPorts {
   readonly backgroundPending: () => boolean;
@@ -17,21 +20,29 @@ interface SceneFrameWorkPorts {
   readonly writeBackground: (deadline: number, allowAtomic: boolean) => boolean;
 }
 
-export interface SceneFrameWorkResult {
-  readonly backgroundDeferred: boolean;
-  readonly pendingFades: boolean;
-  readonly pendingMotion: boolean;
-  readonly pendingPreview: boolean;
-  readonly pendingVisibility: boolean;
-  readonly waitingForPaths?: boolean;
-}
-
 /** Gives an admitted scene one bounded late unit and rotates competing queues. */
 export class SceneFrameWork {
   #preferDeferred = false;
   #nextDeferredLane = 0;
 
   public constructor(private readonly ports: SceneFrameWorkPorts) {}
+
+  public complete(
+    work: SceneFrameWorkResult,
+    commits: SceneCommitCoordinator,
+    frames: SceneFrameScheduler,
+  ): void {
+    completeSceneFrame(
+      work,
+      {
+        query: this.ports.queryPending?.() === true,
+        motion: this.ports.motion.pending,
+        exits: this.ports.content.hasPendingExitCleanup,
+      },
+      commits,
+      frames,
+    );
+  }
 
   public write(
     frameTime: number,

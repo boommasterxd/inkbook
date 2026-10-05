@@ -99,9 +99,9 @@ it.each([
   { name: "left", horizontal: true, initial: 2_000, sign: -1 },
 ])("prepares entrants along $name navigation while preserving final SVG rank", (scenario) => {
   const store = new FakeSceneStore();
-  const ids = Array.from({ length: 128 }, (_, rank) => `direction-${rank}`);
+  const ids = Array.from({ length: 384 }, (_, rank) => `direction-${rank}`);
   ids.forEach((id, rank) => {
-    const coordinate = 1_020 + rank / 4;
+    const coordinate = 1_020 + rank / 8;
     store.records.set(
       id,
       fakeRectangleRecord(
@@ -126,12 +126,12 @@ it.each([
   else renderer.setViewport({ ...viewport, top: 1_000 });
   scheduler.runNext();
   expect(renderer.mountedIds("content")).toEqual(
-    scenario.sign > 0 ? ids.slice(0, 64) : ids.slice(64),
+    scenario.sign > 0 ? ids.slice(0, 192) : ids.slice(192),
   );
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(ids);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-  expect(content.nodes).toHaveLength(128);
+  expect(content.nodes).toHaveLength(384);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
 });
@@ -170,8 +170,8 @@ it("publishes a cached entrant while the earlier cold stroke waits for the worke
 
 it("prioritizes the viewport center when zoom reveals missing elements", () => {
   const store = new FakeSceneStore();
-  const ids = Array.from({ length: 128 }, (_, rank) => `zoom-${String(rank).padStart(3, "0")}`);
-  ids.forEach((id, rank) => store.records.set(id, fakeRectangleRecord(id, rank, 490, 400 + rank)));
+  const ids = Array.from({ length: 384 }, (_, rank) => `zoom-${String(rank).padStart(3, "0")}`);
+  ids.forEach((id, rank) => store.records.set(id, fakeRectangleRecord(id, rank, 490, 300 + rank)));
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
     height: 100,
     left: 0,
@@ -182,7 +182,7 @@ it("prioritizes the viewport center when zoom reveals missing elements", () => {
   expect(renderer.mountedCount).toBe(0);
   renderer.setCamera({ x: 0, zoom: 0.1 });
   scheduler.runNext();
-  expect(renderer.mountedIds("content")).toEqual(ids.slice(58, 122));
+  expect(renderer.mountedIds("content")).toEqual(ids.slice(94, 286));
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(ids);
   renderer.destroy();

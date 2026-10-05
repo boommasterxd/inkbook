@@ -7,6 +7,7 @@ import {
   MAX_SCENE_PATH_BYTES,
   scenePathBytes,
 } from "../../../../src/persistence/worker/runtime/scene-path-limits";
+import { MAX_PREPARED_SCENE_PATH_IDS } from "../../../../src/domain/geometry/prepared-scene-paths";
 import { RemoteScenePaths } from "../../../../src/rendering/scene/remote-scene-paths";
 import { SceneMountPreparation } from "../../../../src/rendering/scene/scene-mount-preparation";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
@@ -36,12 +37,7 @@ const RETARGET_IDENTITY = {
 };
 
 it("prepares only three thousand visible contours of ten thousand in bounded worker batches", async () => {
-  const identity = {
-    operationId: 1,
-    purpose: "background" as const,
-    sessionId: "session-a",
-    workerEpoch: 1,
-  };
+  const identity = RETARGET_IDENTITY;
   const runtime = new DocumentWorkerRuntime(identity);
   const elements = Array.from({ length: 10_000 }, (_, index) => ({
     ...createTestStroke(),
@@ -70,6 +66,7 @@ it("prepares only three thousand visible contours of ten thousand in bounded wor
     ]),
   );
   let requests = 0;
+  const requestSizes: number[] = [];
   let reads = 0;
   let published = 0;
   let settle: Promise<unknown> | undefined;
@@ -81,6 +78,7 @@ it("prepares only three thousand visible contours of ten thousand in bounded wor
     query: () => undefined,
     prepareScenePaths: async (ids) => {
       requests++;
+      requestSizes.push(ids.length);
       if (requests === 1) expect(ids).toHaveLength(1);
       expect(ids.length).toBeLessThanOrEqual(256);
       expect(ids.every((id) => records.get(id)!.rank < 3000)).toBe(true);
@@ -116,7 +114,13 @@ it("prepares only three thousand visible contours of ten thousand in bounded wor
     expect(preparation.memoryUsage()).toBeLessThanOrEqual(MAX_SCENE_PATH_BYTES + 256 * 128);
   }
   expect(published).toBe(3000);
-  expect(requests).toBeLessThanOrEqual(14);
+  // A singleton and its lookahead fill the pool; subsequent refills use at least half.
+  const minimumRefill = MAX_PREPARED_SCENE_PATH_IDS / 2;
+  const maximumRequests = 2 + Math.ceil((published - MAX_PREPARED_SCENE_PATH_IDS) / minimumRefill);
+  expect(requestSizes[1]).toBe(MAX_PREPARED_SCENE_PATH_IDS - 1);
+  expect(requestSizes.slice(1, -1).every((count) => count >= minimumRefill)).toBe(true);
+  expect(requestSizes.reduce((count, size) => count + size, 0)).toBe(published);
+  expect(requests).toBeLessThanOrEqual(maximumRequests);
   expect(reads).toBeLessThanOrEqual(6000);
   expect(runtime.instrumentation.shapeBuilds).toBe(3000);
   preparation.cancel();

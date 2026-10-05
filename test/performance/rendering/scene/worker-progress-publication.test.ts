@@ -61,7 +61,7 @@ it("publishes completed remote contours before terminal completion without resca
     while (scheduler.pendingCount > 0) {
       frameRoots = 0;
       scheduler.runNext();
-      expect(frameRoots).toBeLessThanOrEqual(64);
+      expect(frameRoots).toBeLessThanOrEqual(192);
     }
     expect(get.mock.calls.length).toBeLessThanOrEqual(ids.length * 6 + 8);
     expect(requests).toHaveLength(2);

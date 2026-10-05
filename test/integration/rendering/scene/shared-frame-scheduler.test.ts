@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { createSceneFixture, QueryCostStore } from "../../../fixtures/rendering/scene";
+import type { SceneFrameDiagnosticSnapshot } from "../../../../src/rendering/scene/scene-frame-diagnostics";
 import {
   FakeSceneStore,
   FakeScheduler,
@@ -22,6 +23,35 @@ const PAGE: PageV1 = {
 };
 
 const VIEWPORT = { height: 100, left: 0, top: 0, width: 100 };
+
+it("observes real SVG publication and connected viewport returns without diagnostic store reads", () => {
+  const store = new FakeSceneStore();
+  store.records.set("first", fakeRectangleRecord("first", 0, 10));
+  store.records.set("second", fakeRectangleRecord("second", 1, 10));
+  const { renderer, scheduler } = createSceneFixture(PAGE, store, VIEWPORT);
+  const samples: SceneFrameDiagnosticSnapshot[] = [];
+  renderer.observeFrames((sample) => samples.push(sample));
+  scheduler.runAll();
+  expect(samples.reduce((sum, sample) => sum + sample.newRoots, 0)).toBe(2);
+  expect(samples.reduce((sum, sample) => sum + sample.fragmentRuns, 0)).toBe(1);
+  expect(samples[samples.length - 1]).toMatchObject({
+    readyContours: 0,
+    readyElements: 0,
+    stopReasons: ["complete"],
+  });
+  renderer.setViewport({ ...VIEWPORT, top: 500 });
+  scheduler.runAll();
+  samples.length = 0;
+  renderer.setViewport(VIEWPORT);
+  scheduler.runAll();
+  expect(samples.every((sample) => sample.newRoots === 0 && sample.fragmentRuns === 0)).toBe(true);
+  renderer.observeFrames(undefined);
+  samples.length = 0;
+  renderer.setViewport({ ...VIEWPORT, top: 500 });
+  scheduler.runAll();
+  expect(samples).toEqual([]);
+  renderer.destroy();
+});
 
 function createThemeScene() {
   const parentDocument = new FakeDocument();
@@ -189,7 +219,7 @@ it("shares bounded SVG publication while both scenes advance under late host fra
     roots = 0;
     scheduler.runNext();
     expect(publications).toBeLessThanOrEqual(1);
-    expect(roots).toBeLessThanOrEqual(64);
+    expect(roots).toBeLessThanOrEqual(192);
     expect(pathCreations - previousPaths).toBeLessThanOrEqual(1);
     if (pathCreations === 24)
       expect(scenes.every((scene) => scene.renderer.mountedCount > 0)).toBe(true);

@@ -51,7 +51,9 @@ it("reads complete progress while the operation waits and retargets only retaine
   expect(remote.read(records[1]!, () => ["third", "fourth"])).toBe("pending");
   observer.onProgress(paths("second", "third"));
   expect(remote.waiting).toBe(true);
+  expect(remote.readyCount).toBe(2);
   expect(remote.read(records[1]!, () => [])).toEqual(paths("second")[0]!.parts);
+  expect(remote.readyCount).toBe(1);
   remote.cancel((id) => id === "third");
   expect(retarget).toHaveBeenLastCalledWith(["third"]);
   expect(signal.aborted).toBe(false);
@@ -60,6 +62,7 @@ it("reads complete progress while the operation waits and retargets only retaine
   expect(remote.read(records[2]!, () => [])).toEqual(paths("third")[0]!.parts);
   remote.cancel();
   expect(signal.aborted).toBe(true);
+  expect(remote.readyCount).toBe(0);
   expect(remote.memoryUsage()).toBe(0);
   finish(paths("second", "third", "fourth"));
   await Promise.resolve();
@@ -129,6 +132,31 @@ it("resets first-contour readiness when retargeting retains no ready contour", a
   provider.complete([]);
 });
 
+it("immediately removes a failed delivery while retaining another batch's ready contour", async () => {
+  const records = ["first", "second", "third"].map(record);
+  const indexed = new Map(records.map((entry) => [entry.id, entry]));
+  const provider = deferredPathRequests(indexed);
+  const remote = new RemoteScenePaths(provider.store, {
+    onPrepared: (entry) => {
+      if (entry.id === "second") throw new Error("Adoption failed.");
+    },
+  });
+  remote.read(records[0]!, () => ["second", "third"]);
+  provider.complete(paths("first"));
+  await Promise.resolve();
+  provider.complete(paths("second", "third"));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(remote.waiting).toBe(false);
+  expect(remote.readyCount).toBe(1);
+  expect(remote.read(records[1]!, () => [])).toBeUndefined();
+  expect(remote.readyCount).toBe(1);
+  expect(remote.read(records[0]!, () => [])).toEqual(paths("first")[0]!.parts);
+  expect(remote.readyCount).toBe(0);
+  expect(remote.memoryUsage()).toBe(0);
+  remote.cancel();
+});
+
 it("refills before consumption, orders the exact viewport prefix and shares contour bytes", async () => {
   const records = ["first", "overscan", "visible", "warm"].map(record);
   const indexed = new Map(records.map((entry) => [entry.id, entry]));
@@ -173,7 +201,7 @@ it("refills before consumption, orders the exact viewport prefix and shares cont
   expect(remote.memoryUsage()).toBe(0);
 });
 
-it("coalesces the next full request until one sixteen-contour publication tail remains", async () => {
+it("refills at half-pool capacity while retaining the prepared publication tail", async () => {
   const records = Array.from({ length: 602 }, (_, index) => record(String(index)));
   const indexed = new Map(records.map((entry) => [entry.id, entry]));
   const cached = new Set<string>();
@@ -193,16 +221,26 @@ it("coalesces the next full request until one sixteen-contour publication tail r
   provider.complete(paths(...requests[1]!));
   await Promise.resolve();
   remote.release("0", upcoming);
-  for (const id of requests[1]!.slice(0, 238)) remote.release(id, upcoming);
+  for (const id of requests[1]!.slice(0, 126)) remote.release(id, upcoming);
   expect(requests).toHaveLength(2);
-  remote.release(requests[1]![238]!, upcoming);
-  expect(requests.map((ids) => ids.length)).toEqual([1, 255, 240]);
+  expect(remote.readyCount).toBe(129);
+  remote.release(requests[1]![126]!, upcoming);
+  expect(requests.map((ids) => ids.length)).toEqual([1, 255, 128]);
+  expect(remote.readyCount).toBe(128);
   expect(requests[2]![0]).toBe("256");
   expect(remote.memoryUsage()).toBeLessThanOrEqual(MAX_PREPARED_SCENE_PATH_BYTES + 256 * 128);
+  for (const id of requests[1]!.slice(127)) remote.release(id, upcoming);
+  expect(requests).toHaveLength(3);
+  expect(remote.readyCount).toBe(0);
+  provider.complete(paths(...requests[2]!));
+  await Promise.resolve();
+  expect(requests.map((ids) => ids.length)).toEqual([1, 255, 128, 128]);
+  expect(remote.readyCount).toBe(128);
   remote.cancel();
   provider.complete([]);
   await Promise.resolve();
   expect(remote.memoryUsage()).toBe(0);
+  expect(remote.readyCount).toBe(0);
 });
 
 it("resumes cache-heavy collection at shared admission and rejects its cancelled cursor", async () => {

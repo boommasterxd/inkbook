@@ -5,6 +5,11 @@ import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
 import { SceneVisibilityReconciler } from "../../../../src/rendering/scene/scene-visibility-reconciler";
 import { ElementStore } from "../../../../src/domain/store/public";
+import {
+  MAX_PREPARED_SCENE_PATH_BYTES,
+  MAX_PREPARED_SCENE_PATH_IDS,
+  preparedScenePathBytes,
+} from "../../../../src/domain/geometry/prepared-scene-paths";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { FakeDocument, FakeNode, asElement } from "../../../unit/rendering/scene/fakes";
@@ -21,9 +26,14 @@ it.each([false, true])(
       return get(id);
     };
     const requestSizes: number[] = [];
-    store.prepareScenePaths = async (ids) => {
+    store.prepareScenePaths = async (ids, _signal, observer) => {
       requestSizes.push(ids.length);
-      return ids.map((id) => ({ id, parts: [{ d: "M0 0Z", paint: "fill" }] }));
+      expect(observer!.maxBytes).toBeLessThanOrEqual(MAX_PREPARED_SCENE_PATH_BYTES);
+      const paths = ids.map((id) => ({ id, parts: [{ d: "M0 0Z", paint: "fill" as const }] }));
+      expect(
+        paths.reduce((bytes, path) => bytes + preparedScenePathBytes(path.id, path.parts), 0),
+      ).toBeLessThanOrEqual(observer!.maxBytes!);
+      return paths;
     };
     const stats = createInstrumentation();
     const visibility = new SceneVisibilityState(store, stats);
@@ -49,9 +59,15 @@ it.each([false, true])(
     const target = visibility.query(bounds).visibility;
     reconciler.replace(target, true, { entered: ids, exited: [] });
     await drainReconciler(reconciler, sliced, () => now);
+    // The singleton and initial lookahead fill the pool; further refills use at least half.
+    const minimumRefill = MAX_PREPARED_SCENE_PATH_IDS / 2;
+    const maximumRequests =
+      2 + Math.ceil((ids.length - MAX_PREPARED_SCENE_PATH_IDS) / minimumRefill);
     expect(requestSizes[0]).toBe(1);
-    expect(requestSizes.length).toBeLessThanOrEqual(14);
-    expect(requestSizes.every((size) => size <= 256)).toBe(true);
+    expect(requestSizes[1]).toBeGreaterThanOrEqual(MAX_PREPARED_SCENE_PATH_IDS - 1);
+    expect(requestSizes.slice(1, -1).every((size) => size >= minimumRefill)).toBe(true);
+    expect(requestSizes.length).toBeLessThanOrEqual(maximumRequests);
+    expect(requestSizes.every((size) => size <= MAX_PREPARED_SCENE_PATH_IDS)).toBe(true);
     expect(requestSizes.reduce((total, size) => total + size, 0)).toBe(3000);
     expect(stats.geometryBuilds).toBe(0);
     expect(dom.contentGroup.childNodes.length).toBe(3000);
@@ -63,6 +79,7 @@ it.each([false, true])(
     expect(requestSizes.slice(requestCount)).toEqual([1, 3]);
     expect(dom.contentGroup.childNodes.length).toBe(3004);
     reconciler.release();
+    expect(reconciler.memoryUsage()).toBe(0);
     visibility.release();
     cache.release();
     dom.release();

@@ -104,7 +104,7 @@ function verifyPublicationSlices(
       expect(++frames).toBeLessThanOrEqual(400);
       writes = 0;
       scheduler.runNext();
-      expect(writes).toBeLessThanOrEqual(64);
+      expect(writes).toBeLessThanOrEqual(192);
       if (first) {
         expect(writes).toBeGreaterThan(0);
         if (requireSceneCommit) expect(renderer.hasPendingSceneCommit).toBe(true);
@@ -425,7 +425,7 @@ it("publishes new visible nodes while selected mounted traces remain dirty", () 
     scheduler.runNext();
     expect(insert).toHaveBeenCalled();
     expect(renderer.instrumentation().domEntrants).toBeGreaterThan(300);
-    expect(renderer.instrumentation().domEntrants).toBeLessThanOrEqual(364);
+    expect(renderer.instrumentation().domEntrants).toBeLessThanOrEqual(492);
     expect(traceWrites).toBeLessThanOrEqual(16);
     scheduler.runAll();
     expect(renderer.mountedIds("content")).toEqual(

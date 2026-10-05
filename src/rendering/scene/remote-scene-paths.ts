@@ -7,7 +7,6 @@ import {
 import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { SceneElementRecord, SceneStorePort } from "./types";
-import { SCENE_PUBLICATION_ELEMENTS_PER_UNIT } from "./constants";
 
 interface Batch {
   retarget: ((ids: readonly string[]) => void) | undefined;
@@ -39,6 +38,7 @@ export class RemoteScenePaths {
   #hasPublished = false;
   #upcoming: () => Iterable<string> = () => [];
   #lastReleased: string | undefined;
+  #readyCount = 0;
   public constructor(
     private readonly store: SceneStorePort,
     private readonly options: RemoteScenePathOptions = {},
@@ -46,6 +46,10 @@ export class RemoteScenePaths {
 
   public get waiting(): boolean {
     return this.#batches.some((batch) => batch.pending);
+  }
+
+  public get readyCount(): number {
+    return this.#readyCount;
   }
 
   public read(
@@ -117,16 +121,24 @@ export class RemoteScenePaths {
 
   private abort(batch: Batch): void {
     batch.controller.abort();
-    batch.deliveries.length = 0;
-    batch.paths.clear();
+    this.discardReadyPaths(batch);
     batch.versions.clear();
     batch.viewportIds.clear();
+  }
+
+  private discardReadyPaths(batch: Batch): void {
+    batch.deliveries.length = 0;
+    this.#readyCount -= batch.paths.size;
+    batch.paths.clear();
     batch.bytes = 0;
   }
 
   private releaseEntry(batch: Batch, id: string): void {
     const parts = batch.paths.get(id);
-    if (parts !== undefined) batch.bytes -= preparedScenePathBytes(id, parts);
+    if (parts !== undefined) {
+      batch.bytes -= preparedScenePathBytes(id, parts);
+      this.#readyCount--;
+    }
     batch.versions.delete(id);
     batch.paths.delete(id);
     batch.viewportIds.delete(id);
@@ -135,16 +147,18 @@ export class RemoteScenePaths {
   private prune(): void {
     for (let index = this.#batches.length - 1; index >= 0; index -= 1) {
       const batch = this.#batches[index]!;
-      if (batch.controller.signal.aborted || (!batch.pending && batch.versions.size === 0))
+      if (batch.controller.signal.aborted || (!batch.pending && batch.versions.size === 0)) {
+        this.#readyCount -= batch.paths.size;
         this.#batches.splice(index, 1);
+      }
     }
   }
 
   private refill(): void {
     if (!this.#hasPublished || this.waiting || this.#batches.length >= 2) return;
-    // Protocol occupancy coalesces requests; it never limits admitted CPU work.
-    if (this.capacity() >= MAX_PREPARED_SCENE_PATH_IDS - SCENE_PUBLICATION_ELEMENTS_PER_UNIT)
-      this.start();
+    // Half-pool occupancy overlaps preparation with the retained publication tail.
+    // This coalesces protocol requests without limiting admitted CPU work.
+    if (this.capacity() >= MAX_PREPARED_SCENE_PATH_IDS / 2) this.start();
   }
 
   private capacity(): number {
@@ -282,6 +296,7 @@ export class RemoteScenePaths {
     if (record === undefined || batch.versions.get(path.id) !== record.geometryVersion)
       return false;
     batch.paths.set(path.id, path.parts);
+    this.#readyCount++;
     batch.bytes += bytes;
     this.#hasPublished = true;
     this.options.onPrepared?.(record, path.parts);
@@ -291,10 +306,11 @@ export class RemoteScenePaths {
   private fail(batch: Batch): void {
     if (batch.controller.signal.aborted || !this.#batches.includes(batch)) return;
     batch.controller.abort();
+    this.discardReadyPaths(batch);
     batch.pending = false;
     batch.processing = false;
-    batch.deliveries.length = 0;
-    this.#hasPublished = false;
+    // Failed IDs retain their one-read fallback until release or cancellation.
+    this.#hasPublished = this.#batches.some((candidate) => candidate.paths.size > 0);
     this.options.onReady?.();
   }
 }

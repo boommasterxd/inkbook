@@ -99,7 +99,7 @@ it("bounds a single new stroke while page growth reveals a dense 10,000-entry do
       100,
     );
     expect(writes.some((count) => count > 0)).toBe(true);
-    expect(writes.every((count) => count <= 64)).toBe(true);
+    expect(writes.every((count) => count <= 192)).toBe(true);
     const expected = [...store.records.values()].filter(
       ({ rank }) => (rank >= 2_000 && rank < 4_000) || rank === 10_000,
     );
@@ -243,7 +243,7 @@ it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry doc
       },
     );
     expect(writes.filter((count) => count > 0).length).toBeGreaterThan(1);
-    expect(writes.every((count) => count <= 64)).toBe(true);
+    expect(writes.every((count) => count <= 192)).toBe(true);
     expect(renderer.mountedIds("content")).toEqual(
       Array.from({ length: 9_400 }, (_, index) => `entry-${index}`),
     );
@@ -297,8 +297,8 @@ it("cancels a partially published large edge delta on viewport retarget", () => 
     renderer.setViewport(viewport);
     scheduler.runAll(40);
     expect(renderer.mountedIds("content")).toEqual(["entry-400"]);
-    expect(content.nodes).toHaveLength(65);
-    expect(renderer.instrumentation().detachedCacheEntries).toBe(64);
+    expect(content.nodes).toHaveLength(193);
+    expect(renderer.instrumentation().detachedCacheEntries).toBe(192);
     renderer.setViewport({ ...viewport, top: 50 });
     scheduler.runAll(40);
     expect(renderer.mountedIds("content")).toEqual(

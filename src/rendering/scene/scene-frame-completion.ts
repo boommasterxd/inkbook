@@ -1,6 +1,14 @@
-import type { SceneFrameWorkResult } from "./scene-frame-work";
 import type { SceneFrameScheduler } from "./scene-frame-scheduler";
 import type { SceneCommitCoordinator } from "./scene-commit-coordinator";
+
+export interface SceneFrameWorkResult {
+  readonly backgroundDeferred: boolean;
+  readonly pendingFades: boolean;
+  readonly pendingMotion: boolean;
+  readonly pendingPreview: boolean;
+  readonly pendingVisibility: boolean;
+  readonly waitingForPaths?: boolean;
+}
 
 function canCompleteSceneFrame(work: SceneFrameWorkResult, pendingQuery: boolean): boolean {
   return !work.pendingVisibility && !work.backgroundDeferred && !pendingQuery;

@@ -138,6 +138,7 @@ export interface SceneInstrumentationSnapshot {
   readonly contentAttributeWrites: number;
   readonly contentGeometryWrites: number;
   readonly domEntrants: number;
+  readonly domRootsPublished: number;
   readonly detachedCacheBytes: number;
   readonly detachedCacheEntries: number;
   readonly detachedCacheEvictions: number;
@@ -186,6 +187,9 @@ export interface SceneInstrumentationSnapshot {
   readonly visibilityHysteresisHits: number;
   readonly visibilityReconcileVisits: number;
   readonly visibilitySortSkips: number;
+  readonly visibilityPathYields: number;
+  readonly visibilityPublicationYields: number;
+  readonly visibilityDeadlineYields: number;
 }
 
 export interface MutableSceneInstrumentation {
@@ -197,6 +201,7 @@ export interface MutableSceneInstrumentation {
   contentAttributeWrites: number;
   contentGeometryWrites: number;
   domEntrants: number;
+  domRootsPublished: number;
   detachedCacheBytes: number;
   detachedCacheEntries: number;
   detachedCacheEvictions: number;
@@ -245,4 +250,7 @@ export interface MutableSceneInstrumentation {
   visibilityHysteresisHits: number;
   visibilityReconcileVisits: number;
   visibilitySortSkips: number;
+  visibilityPathYields: number;
+  visibilityPublicationYields: number;
+  visibilityDeadlineYields: number;
 }

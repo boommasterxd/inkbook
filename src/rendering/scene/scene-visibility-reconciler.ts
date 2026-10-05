@@ -9,8 +9,8 @@ import { SceneMountPreparation, type PreviewTransform } from "./scene-mount-prep
 import { upcomingScenePathIds } from "./upcoming-scene-paths";
 import { intersects } from "./visibility-bounds";
 import type { InkElementV1 } from "../../domain/schema/public";
-import { MountSlice } from "./mount-slice";
-import type { MountYieldReason, ScenePublicationBudget } from "./mount-slice";
+import { MountSlice, type MountYieldReason, type ScenePublicationBudget } from "./mount-slice";
+import { recordVisibilityYield } from "./instrumentation";
 import { updatePreviewTransform, type MountedSceneElement } from "./mounted-element";
 import type { SceneElementRecord } from "./types";
 import type { VisibilityDelta, VisibilityResult } from "./visibility-state";
@@ -78,14 +78,11 @@ export class SceneVisibilityReconciler {
     });
   }
   public memoryUsage(): number {
-    return (
-      this.#preparation.memoryUsage() +
-      reconciliationMemoryUsage(
-        this.#pending,
-        this.#publishedEntrantIds.length,
-        this.#deferredExits.size,
-      )
-    );
+    return reconciliationMemoryUsage(this.#pending, {
+      preparationBytes: this.#preparation.memoryUsage(),
+      publishedEntrants: this.#publishedEntrantIds.length,
+      deferredExits: this.#deferredExits.size,
+    });
   }
   public get needsRestart(): boolean {
     return this.#cancelled;
@@ -99,6 +96,9 @@ export class SceneVisibilityReconciler {
   }
   public get waitingForPaths(): boolean {
     return this.#waitingForPaths;
+  }
+  public get preparationState() {
+    return { readyContours: this.#preparation.readyContours, readyElements: this.#entrants.size };
   }
   public setPriority(priority: SceneVisibilityPriority): void {
     this.#priority = priority;
@@ -284,6 +284,7 @@ export class SceneVisibilityReconciler {
         }) ??
         this.stageSlice(pending, slice, previewTransforms, deadline, now, publish));
     if (publish?.() === false) reason = now() < deadline ? "budget" : "deadline";
+    recordVisibilityYield(this.options.instrumentation, reason);
     this.#waitingForPaths = reason === "paths";
     slice.report(this.options.instrumentation, reason);
     if (reason !== undefined) {

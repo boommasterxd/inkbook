@@ -2,6 +2,17 @@ import type { MutableSceneInstrumentation, SceneInstrumentationSnapshot } from "
 import type { SceneBackgroundCache } from "./background-cache";
 import type { ScenePathCache } from "./path-cache";
 import type { DetachedSceneElementCache } from "./detached-element-cache";
+import type { MountYieldReason } from "./mount-slice";
+
+/** Records the reconciler's actual final blocker, including zero-element slices. */
+export function recordVisibilityYield(
+  value: MutableSceneInstrumentation,
+  reason: MountYieldReason | undefined,
+): void {
+  if (reason === "paths") value.visibilityPathYields += 1;
+  else if (reason === "budget") value.visibilityPublicationYields += 1;
+  else if (reason === "deadline") value.visibilityDeadlineYields += 1;
+}
 
 export function createInstrumentation(): MutableSceneInstrumentation {
   return {
@@ -13,6 +24,7 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     contentAttributeWrites: 0,
     contentGeometryWrites: 0,
     domEntrants: 0,
+    domRootsPublished: 0,
     detachedCacheBytes: 0,
     detachedCacheEntries: 0,
     detachedCacheEvictions: 0,
@@ -61,6 +73,9 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     visibilityHysteresisHits: 0,
     visibilityReconcileVisits: 0,
     visibilitySortSkips: 0,
+    visibilityPathYields: 0,
+    visibilityPublicationYields: 0,
+    visibilityDeadlineYields: 0,
   };
 }
 

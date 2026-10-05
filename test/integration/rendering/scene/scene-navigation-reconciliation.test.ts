@@ -79,7 +79,7 @@ it("retargets a pending viewport without recreating still-visible staged nodes",
   const { nodes, renderer, scheduler, store } = createNavigationHarness();
   store.records.set("edge", fakeRectangleRecord("edge", 1_201, 190));
   scheduler.runNext();
-  expect(renderer.mountedCount).toBe(64);
+  expect(renderer.mountedCount).toBe(192);
   const prepared = nodes.mock.calls.length;
   expect(prepared).toBeGreaterThan(0);
   expect(prepared).toBeLessThan(store.records.size);
@@ -102,7 +102,7 @@ it("drops staged entries outside the new viewport and releases an interrupted mo
   renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(0);
-  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(64);
+  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(192);
 
   renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
   scheduler.runNext();

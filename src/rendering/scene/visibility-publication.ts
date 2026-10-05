@@ -49,10 +49,12 @@ function commitPublishedEntry(
   epoch: number,
 ): boolean {
   commitMountedEntry(entry, run, options, epoch);
-  const connected = publicationRootCount(entry) === 0;
+  const roots = publicationRootCount(entry);
+  const connected = roots === 0;
   options.detachedCache?.commitReservation(entry);
   options.mounted.set(entry.id, entry);
   if (!connected) options.instrumentation.domEntrants += 1;
+  options.instrumentation.domRootsPublished += roots;
   return connected;
 }
 

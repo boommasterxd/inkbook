@@ -381,7 +381,7 @@ function drainBoundedReconciliation(
     scheduler.publishedRoots = 0;
     scheduler.runNext();
     frames += 1;
-    expect(scheduler.publishedRoots).toBeLessThanOrEqual(64);
+    expect(scheduler.publishedRoots).toBeLessThanOrEqual(192);
   }
 }
 

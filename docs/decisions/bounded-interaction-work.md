@@ -52,7 +52,7 @@ ceiling with no separate root-count cap; positive entry sizes bound cardinality,
 and memory pressure disables retention. Connected returns with valid geometry,
 paint, band, rank, order-generation, and transient state use a logical-ownership
 fast path without successor search or publication-run preparation. Detached returns
-and actual reorders retain the 64-root-per-frame publication allowance. The shared
+and actual reorders retain the 192-root-per-frame publication allowance. The shared
 ownership and cleanup limits are defined in
 [Path Caches](../rendering-and-performance.md#path-caches). Geometry identity and
 ID/version aliases share one canonical path-cache entry. Both caches participate in
@@ -163,7 +163,7 @@ The retained SVG lives in a presentation-owned shadow root so host selectors can
 match its large active subtree through ancestors; ownership and styling boundaries
 are defined in [Rendering and Performance](../rendering-and-performance.md#imperative-scene-ownership).
 Keep progressive insertion flat and element-complete. The 16-element unit bounds
-each native publication; the 64-original-root frame allowance counts multipart
+each native publication; the 192-original-root frame allowance counts multipart
 elements. An existing late-scene admission may complete one already-prepared
 queued unit, without fresh preparation, cleanup, or deadline renewal. See the
 [canonical publication contract](../rendering-and-performance.md#imperative-scene-ownership).

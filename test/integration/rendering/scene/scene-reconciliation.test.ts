@@ -253,7 +253,7 @@ describe("resumable scene reconciliation after invalidation", () => {
     const renderer = createRenderer(store, scheduler);
 
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(64);
+    expect(renderer.mountedCount).toBe(192);
     const prepared = renderer.instrumentation().geometryBuilds;
     expect(prepared).toBeGreaterThan(0);
     expect(prepared).toBeLessThan(store.records.size);

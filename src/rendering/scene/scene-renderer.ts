@@ -1,4 +1,5 @@
 import { SceneFrameScheduler } from "./scene-frame-scheduler";
+import type { SceneFrameObserver } from "./scene-frame-diagnostics";
 import type { SceneToolCursorFrameReader } from "./tool-cursor";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type * as Schema from "../../domain/schema/public";
@@ -10,7 +11,6 @@ import type { ProgressivePreviewTransform } from "./progressive-element-preview"
 import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import { SceneFrameWork } from "./scene-frame-work";
-import { completeSceneFrame } from "./scene-frame-completion";
 import * as stats from "./instrumentation";
 import { ScenePathCache, type PreparedScenePath } from "./path-cache";
 import { ScenePreviewCommitController, type PreviewCommitHandoff } from "./preview-commit-handoff";
@@ -401,6 +401,11 @@ export class SvgSceneRenderer {
   public instrumentation(): Scene.SceneInstrumentationSnapshot {
     return this.#resourcePolicy.instrumentation(this.#stats, this.#backgroundCache);
   }
+  public observeFrames(observer: SceneFrameObserver | undefined): void {
+    this.#frames.observeFrames(observer, () =>
+      this.#content.frameDiagnosticState(this.#visibilityCoordinator.hasPendingQuery),
+    );
+  }
   public resetInstrumentation(): void {
     this.#resourcePolicy.resetInstrumentation(this.#stats, this.#backgroundCache);
   }
@@ -471,16 +476,7 @@ export class SvgSceneRenderer {
       this.#motion,
       startedAt,
     );
-    completeSceneFrame(
-      work,
-      {
-        query: this.#visibilityCoordinator.hasPendingQuery,
-        motion: this.#motion.pending,
-        exits: this.#content.hasPendingExitCleanup,
-      },
-      this.#sceneCommits,
-      this.#frames,
-    );
+    this.#frameWork.complete(work, this.#sceneCommits, this.#frames);
     this.#resourcePolicy.refreshInstrumentation(this.#stats, this.#backgroundCache);
     if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
   }

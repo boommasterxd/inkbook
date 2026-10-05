@@ -6,11 +6,15 @@ import { growVisibilityCapacity } from "./visibility-markers";
 
 export function reconciliationMemoryUsage(
   pending: PendingReconciliation | undefined,
-  publishedEntrants: number,
-  deferredExits: number,
+  retained: {
+    readonly publishedEntrants: number;
+    readonly deferredExits: number;
+    readonly preparationBytes: number;
+  },
 ): number {
   return (
-    (publishedEntrants + deferredExits) * 8 +
+    retained.preparationBytes +
+    (retained.publishedEntrants + retained.deferredExits) * 8 +
     (pending?.delta?.priority?.memoryUsage() ?? 0) +
     (pending?.delta?.order?.memoryUsage() ?? 0) +
     (pending?.delta?.publishedOrder?.memoryUsage() ?? 0) +

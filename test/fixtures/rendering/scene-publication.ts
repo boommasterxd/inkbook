@@ -105,7 +105,7 @@ export function flushBoundedScenePublication(
   while (scheduler.pendingCount > 0) {
     if (frames++ >= 100) throw new Error("Frame limit exceeded.");
     scheduler.runNext();
-    expect(renderer.mountedCount - previous).toBeLessThanOrEqual(64);
+    expect(renderer.mountedCount - previous).toBeLessThanOrEqual(192);
     previous = renderer.mountedCount;
     observe?.();
   }
