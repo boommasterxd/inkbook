@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 
-import { readActiveSceneViewport } from "../../../../src/obsidian/embeds/active-scene-viewport";
+import { readActiveSceneLayout } from "../../../../src/obsidian/embeds/active-scene-viewport";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling";
 import { InitialSceneReadiness } from "../../../../src/obsidian/embeds/initial-scene-readiness";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
@@ -156,7 +156,7 @@ function growingClipHarness() {
   const committed = vi.fn();
   const renderer = new SvgSceneRenderer({
     container,
-    layout: { readViewport: () => readActiveSceneViewport(container, owner, root) },
+    layout: { readViewport: () => readActiveSceneLayout(container, owner, root).viewport },
     onSceneCommitted: committed,
     page: {
       activeBufferLines: 3,

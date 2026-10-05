@@ -54,13 +54,14 @@ export function navigationCursorFixture(tool: InputState["activeTool"], pointerT
   const fitZoom = h.bounds.width / OUTER_PAGE_WIDTH;
   h.controls.input = { ...h.controls.input, activeTool: tool, fitZoom, zoom: fitZoom };
   h.controller.record(cursorPointerEvent({ pointerType, pressure: 0.5 }), "move");
+  const container = {
+    ownerDocument: document,
+    getBoundingClientRect: h.measure,
+  } as unknown as HTMLElement;
   const navigation = new ActiveEditorNavigation({
     workScheduler: workSchedulerFromFrames(frames),
     activePageHeight: () => 2000,
-    container: {
-      ownerDocument: document,
-      getBoundingClientRect: h.measure,
-    } as unknown as HTMLElement,
+    container,
     scrollOwner: owner,
     renderer: {} as SvgSceneRenderer,
     getInput: () => h.controls.input,
@@ -81,5 +82,14 @@ export function navigationCursorFixture(tool: InputState["activeTool"], pointerT
       frame = h.read(true);
     },
   });
-  return { h, frames, events, navigation, frame: () => frame, projected: () => projected, owner };
+  return {
+    h,
+    frames,
+    events,
+    navigation,
+    frame: () => frame,
+    projected: () => projected,
+    owner,
+    container,
+  };
 }

@@ -17,16 +17,38 @@ interface ScrollOwnerWithClientWidth extends BrowserScrollElement {
   readonly clientWidth: number;
 }
 
-export function readActiveSceneViewport(
+interface ActiveSceneLayout {
+  readonly cursorLayout: {
+    readonly containerBounds: ElementContentBox;
+    readonly ownerViewport: SceneRect;
+    readonly ownerWindow: Window | null;
+    readonly scrollOwner: BrowserScrollElement;
+    readonly scrollTop: number;
+  };
+  readonly viewport: SceneViewport;
+}
+
+/** A fresh owning-window read shared by scene clipping and cursor projection. */
+export function readActiveSceneLayout(
   container: HTMLElement,
   scrollOwner: BrowserScrollElement,
   root?: HTMLElement,
-): SceneViewport {
+): ActiveSceneLayout {
   const measurement = measureElementBox(container);
-  return activeSceneViewportFromBounds(
-    { ...measurement.contentBox, height: preparedContentHeight(container, root, measurement) },
-    readScrollOwnerViewport(scrollOwner),
-  );
+  const ownerViewport = readScrollOwnerViewport(scrollOwner);
+  return {
+    cursorLayout: {
+      containerBounds: measurement.contentBox,
+      ownerViewport,
+      ownerWindow: container.ownerDocument.defaultView,
+      scrollOwner,
+      scrollTop: browserScrollMetrics.getScrollTop(scrollOwner),
+    },
+    viewport: activeSceneViewportFromBounds(
+      { ...measurement.contentBox, height: preparedContentHeight(container, root, measurement) },
+      ownerViewport,
+    ),
+  };
 }
 
 export function activeSceneViewportFromBounds(

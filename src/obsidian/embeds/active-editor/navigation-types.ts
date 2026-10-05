@@ -1,4 +1,4 @@
-import type { NavigationCursorLayout } from "./navigation-layout";
+import type { NavigationCursorLayout, NavigationLayoutRead } from "./navigation-layout";
 import type { InputState } from "../../../editor/input/index";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { BrowserScrollElement } from "../../scrolling/index";
@@ -7,6 +7,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 export interface ActiveEditorZoomLayoutUpdate {
   readonly blockSize: number;
   readonly zoom: number;
+  readonly layout?: NavigationLayoutRead;
 }
 
 export interface ActiveEditorCameraUpdate {

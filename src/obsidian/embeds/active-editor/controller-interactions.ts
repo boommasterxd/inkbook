@@ -159,6 +159,7 @@ export function createControllerNavigation(options: {
         controller.renderer.setViewport(
           activeSceneViewportFromBounds(layout.containerBounds, layout.ownerViewport),
         );
+        controller.onNavigationLayout?.(layout);
       }
       controller.renderer.setCamera(camera);
       if (camera.zoom !== appliedZoom || !options.isSelectionMoveActive()) {

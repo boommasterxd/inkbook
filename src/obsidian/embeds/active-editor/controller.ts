@@ -1,3 +1,4 @@
+import type { NavigationCursorLayout as CursorLayout } from "./navigation-layout";
 import type { GestureController, GesturePreviewStart } from "../../../editor/gestures/public";
 import * as EditorInput from "../../../editor/input/index";
 import { SelectionFrameSession } from "../../../editor/selection/public";
@@ -273,6 +274,7 @@ export class ActiveEditorController {
   public handleNativeScroll(): void {
     if (this.#availability.acceptsInput) this.#navigation.notifyScroll();
   }
+  public adoptSceneLayout = (layout: CursorLayout): void => this.#cursor.adoptSceneLayout(layout);
   public handleWheel(event: WheelEvent): void {
     if (!this.#availability.acceptsInput) return;
     if (Interactions.hasStableGeometryGesture(this.#input, this.#handles)) {

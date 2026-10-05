@@ -103,6 +103,7 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
   let scrollTop = 200;
   const activity: boolean[] = [];
   let cameraWrites = 0;
+  let inputWrites = 0;
   let layoutWrites = 0;
   let scrollWrites = 0;
   let layoutReads = 0;
@@ -156,17 +157,17 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
     container,
     getInput: () => input,
     renderer: {
-      setCamera: () => {
-        cameraWrites += 1;
-      },
+      setCamera: () => cameraWrites++,
     } as unknown as SvgSceneRenderer,
     scrollOwner: owner,
     setInput: (next) => {
+      inputWrites += 1;
       input = next;
     },
   });
   return {
     activity,
+    inputWrites: () => inputWrites,
     get cameraWrites() {
       return cameraWrites;
     },
@@ -182,6 +183,7 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
     },
     navigation,
     resetWrites: () => {
+      inputWrites = 0;
       layoutReads = 0;
       cameraWrites = 0;
       layoutWrites = 0;
@@ -287,6 +289,23 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () 
 });
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => {
+  it("reads every clamped pan frame but emits no unchanged camera or input feedback", () => {
+    const harness = createPanningHarness();
+    harness.navigation.pan(10_000);
+    harness.frames.flush();
+    harness.resetWrites();
+    runInteractionFrames(() => {
+      harness.navigation.pan(10);
+      harness.frames.flush();
+    });
+    expect(harness.layoutReads).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(harness.cameraWrites).toBe(0);
+    expect(harness.inputWrites()).toBe(0);
+    expect(harness.layoutWrites).toBe(0);
+    expect(harness.scrollWrites).toBe(0);
+    expect(harness.workReads).toEqual({ page: 0, scrollHeight: 0 });
+    disposeActiveNavigation(harness);
+  });
   it.each([0, 1, 2])("leaves native vertical wheel mode %s free of layout reads", (deltaMode) => {
     const harness = createPanningHarness();
     runInteractionFrames(() => {

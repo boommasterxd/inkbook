@@ -31,7 +31,8 @@ import {
   type LockedFitTransition,
 } from "./active-scene-lock";
 import { updateActiveSceneChrome } from "./active-scene-chrome";
-import { readActiveSceneViewport } from "./active-scene-viewport";
+import { readActiveSceneLayout } from "./active-scene-viewport";
+import { readNavigationLayout } from "./active-editor/navigation-layout";
 import { createSceneReadiness, InitialSceneReadiness } from "./initial-scene-readiness";
 import { bindSceneScrollOwner, createInitialSceneRuntime } from "./active-scene-runtime";
 import type { TransitionScrollStability } from "./transition-scroll-stability";
@@ -137,6 +138,8 @@ export class ActiveInkbookScene {
       page: () => options.model.page,
       renderer: this.#renderer,
       readResizeAnchor: () => this.#controller.readResizeAnchor(),
+      readNavigationLayout: () =>
+        readNavigationLayout(this.#container, scrollBinding?.current() ?? scrollOwner),
       root: options.root,
       storeMaximumBottom: () => options.model.store.getMaximumBottom(),
     });
@@ -157,6 +160,7 @@ export class ActiveInkbookScene {
     return new ActiveEditorController({
       workScheduler: options.workScheduler,
       applyZoomLayout: (update) => this.#layout.applyZoom(update),
+      onNavigationLayout: (layout) => this.#layout.adoptNavigationLayout(layout),
       backgroundSpacing: options.backgroundSpacing,
       container: this.#container,
       confirmEraseAll: options.confirmEraseAll,
@@ -335,7 +339,11 @@ export class ActiveInkbookScene {
       inputHandlers: createSceneInputHandlers(controller),
       isInputActive: () => options.model.isGestureActive?.() ?? true,
       layout: {
-        readViewport: () => readActiveSceneViewport(this.#container, scrollOwner(), this.#root),
+        readViewport: () => {
+          const snapshot = readActiveSceneLayout(this.#container, scrollOwner(), this.#root);
+          controller()?.adoptSceneLayout(snapshot.cursorLayout);
+          return snapshot.viewport;
+        },
       },
       page: options.model.page,
       onResourceUsageChanged: this.#memory.evaluate,

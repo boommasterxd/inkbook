@@ -17,12 +17,14 @@ export interface NavigationLayoutRead {
   readonly containerWidth: number;
   readonly embedTopInScrollContent: number;
   readonly ownerViewport: ViewportRect;
+  readonly ownerWindow: Window | null;
+  readonly scrollOwner: BrowserScrollElement;
   readonly scrollTop: number;
 }
 
 export type NavigationCursorLayout = Pick<
   NavigationLayoutRead,
-  "containerBounds" | "ownerViewport"
+  "containerBounds" | "ownerViewport" | "ownerWindow" | "scrollOwner" | "scrollTop"
 >;
 
 /** Project the measured box through our own height/scroll writes without another layout read. */
@@ -39,6 +41,9 @@ export function projectNavigationCursorLayout(
       bottom: top + applied.blockSize,
     },
     ownerViewport: layout.ownerViewport,
+    ownerWindow: layout.ownerWindow,
+    scrollOwner: layout.scrollOwner,
+    scrollTop: applied.scrollTop,
   };
 }
 
@@ -55,8 +60,32 @@ export function readNavigationLayout(
     containerWidth: containerBounds.width,
     embedTopInScrollContent: scrollTop + containerBounds.top - ownerViewport.top,
     ownerViewport,
+    ownerWindow: container.ownerDocument.defaultView,
+    scrollOwner,
     scrollTop,
   };
+}
+
+export function sameNavigationLayout(
+  left: NavigationCursorLayout | undefined,
+  right: NavigationCursorLayout,
+): boolean {
+  return (
+    left?.scrollOwner === right.scrollOwner &&
+    left.ownerWindow === right.ownerWindow &&
+    left.scrollTop === right.scrollTop &&
+    sameRect(left.containerBounds, right.containerBounds) &&
+    sameRect(left.ownerViewport, right.ownerViewport)
+  );
+}
+
+function sameRect(left: ViewportRect, right: ViewportRect): boolean {
+  return (
+    left.left === right.left &&
+    left.top === right.top &&
+    left.right === right.right &&
+    left.bottom === right.bottom
+  );
 }
 
 export function readOwnerScrollBounds(scrollOwner: BrowserScrollElement): ScrollBounds {

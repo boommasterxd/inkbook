@@ -48,6 +48,7 @@ import {
 import { resolveNavigationFrame } from "./navigation-frame";
 import { NavigationActivity } from "./navigation-activity";
 import { ActiveEditorPanMomentum } from "./navigation-momentum";
+import { NavigationFeedback } from "./navigation-feedback";
 export type {
   ActiveEditorNavigationOptions,
   ActiveEditorViewState,
@@ -64,6 +65,7 @@ export class ActiveEditorNavigation {
   readonly #getInput: () => InputState;
   readonly #workScheduler: ActiveEditorNavigationOptions["workScheduler"];
   readonly #setInput: (input: InputState) => void;
+  readonly #feedback: NavigationFeedback;
   #cameraX = 0;
   #frame: number | undefined;
   #frameState: ZoomFrameState = createZoomFrameState();
@@ -82,6 +84,11 @@ export class ActiveEditorNavigation {
     this.#scrollOwner = options.scrollOwner;
     this.#getInput = options.getInput;
     this.#setInput = options.setInput;
+    this.#feedback = new NavigationFeedback({
+      applyCamera: this.#applyCamera,
+      getInput: options.getInput,
+      setInput: options.setInput,
+    });
     const ownerWindow = options.container.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
     this.#workScheduler = options.workScheduler;
@@ -181,6 +188,7 @@ export class ActiveEditorNavigation {
     }
   }
   public revert(): void {
+    this.#feedback.reset();
     this.cancelPanMomentum();
     const origin = this.#origin;
     if (origin === undefined) {
@@ -202,6 +210,7 @@ export class ActiveEditorNavigation {
   }
   public setZoom(zoom: number): void {
     if (!Number.isFinite(zoom) || zoom <= 0) return;
+    this.#feedback.reset();
     this.cancelPanMomentum();
     this.#zoom = zoom;
     this.#cameraX = 0;
@@ -210,6 +219,7 @@ export class ActiveEditorNavigation {
   }
   public restoreViewState(state: ActiveEditorViewState): boolean {
     if (!validViewState(state)) return false;
+    this.#feedback.reset();
     this.cancelPanMomentum();
     const layout = readNavigationLayout(this.#container, this.#scrollOwner);
     if (layout === undefined) return false;
@@ -223,15 +233,13 @@ export class ActiveEditorNavigation {
     );
     const blockSize =
       this.#applyZoomLayout({ blockSize: requestedSize, zoom: this.#zoom }) ?? requestedSize;
-    this.#setInput(
-      reduceInput(this.#getInput(), { type: "configure", fitZoom, zoom: this.#zoom }).state,
-    );
-    this.#applyCamera(
+    this.#feedback.apply(
       { x: this.#cameraX, zoom: this.#zoom },
       projectNavigationCursorLayout(layout, {
         blockSize,
         scrollTop: browserScrollMetrics.getScrollTop(this.#scrollOwner),
       }),
+      fitZoom,
     );
     return true;
   }
@@ -260,6 +268,7 @@ export class ActiveEditorNavigation {
       return false;
     }
     this.cancelPanMomentum();
+    this.#feedback.reset();
     this.#cancelPendingFrame();
     this.#cameraX = update.cameraX;
     this.#zoom = update.zoom;
@@ -285,6 +294,7 @@ export class ActiveEditorNavigation {
     this.#origin = undefined;
     this.#gestureLayout = undefined;
     this.#scrollOwner = scrollOwner;
+    this.#feedback.reset();
     this.#panMomentum.transferOwnerWindow(ownerWindow);
     return true;
   }
@@ -421,25 +431,19 @@ export class ActiveEditorNavigation {
     const blockSize =
       resolved.zoom === this.#zoom
         ? layout.containerBounds.height
-        : (this.#applyZoomLayout({ blockSize: resolved.blockSize, zoom: resolved.zoom }) ??
+        : (this.#applyZoomLayout({ blockSize: resolved.blockSize, zoom: resolved.zoom, layout }) ??
           resolved.blockSize);
     const previousCameraX = this.#cameraX;
     this.#zoom = resolved.zoom;
     this.#cameraX = resolved.cameraX;
-    this.#setInput(
-      reduceInput(this.#getInput(), {
-        type: "configure",
-        fitZoom: resolved.fitZoom,
-        zoom: this.#zoom,
-      }).state,
-    );
     if (adjustsScroll) browserScrollMetrics.setScrollTop(this.#scrollOwner, resolved.scrollTop);
     const scrollTop = adjustsScroll
       ? browserScrollMetrics.getScrollTop(this.#scrollOwner)
       : layout.scrollTop;
-    this.#applyCamera(
+    this.#feedback.apply(
       { x: this.#cameraX, zoom: this.#zoom },
       projectNavigationCursorLayout(layout, { blockSize, scrollTop }),
+      resolved.fitZoom,
     );
     if (momentumDelta !== 0 && this.#cameraX === previousCameraX) {
       this.cancelPanMomentum();

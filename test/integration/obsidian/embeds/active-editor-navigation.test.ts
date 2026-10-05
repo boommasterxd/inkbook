@@ -176,7 +176,7 @@ describe("active editor navigation", () => {
     expect((harness.owner.scrollTop + 300 - embedTopInScrollContent) / newZoom).toBeCloseTo(
       oldPageY,
     );
-    expect(harness.layoutUpdates).toEqual([{ blockSize: 2_000 * newZoom, zoom: newZoom }]);
+    expect(harness.layoutUpdates).toMatchObject([{ blockSize: 2_000 * newZoom, zoom: newZoom }]);
     expect(harness.sequence).toEqual(["layout", "scroll", "camera"]);
     expect(harness.state().fitZoom).toBeCloseTo(1_000 / OUTER_PAGE_WIDTH);
   });
