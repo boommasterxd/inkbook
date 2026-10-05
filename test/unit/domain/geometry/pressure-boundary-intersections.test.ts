@@ -9,7 +9,6 @@ import {
   pressureBoundaryParameter,
   pressureBoundaryPoint,
 } from "../../../../src/domain/geometry/pressure-boundary-intersections";
-import type { PressureLineMetadataCache } from "../../../../src/domain/geometry/pressure-line-metadata";
 
 function line(x1: number, y1: number, x2: number, y2: number): PressureBoundaryLine {
   return { kind: "line", start: { x: x1, y: y1 }, end: { x: x2, y: y2 } };
@@ -201,51 +200,7 @@ describe("circular pressure boundary intersections", () => {
   });
 });
 
-describe("immutable pressure boundary metadata", () => {
-  it.each([
-    { crossing: line(-8, -4, 8, 4), circle: arc(origin, 3, 0.2), expectedLengths: 1 },
-    { crossing: line(-8, 3, 8, 3), circle: arc(origin, 3), expectedLengths: 1 },
-    { crossing: line(-8, 3.000001, 8, 3.000001), circle: arc(origin, 3), expectedLengths: 0 },
-    { crossing: line(0, 0, 0, 0), circle: arc(origin), expectedLengths: 1 },
-    {
-      crossing: line(-999_999, -999_998.65, -999_997, -999_998.65),
-      circle: arc({ x: -999_998, y: -999_999 }, 0.35, 0.3),
-      expectedLengths: 1,
-    },
-  ])(
-    "preserves exact parameters across repeated forward and reverse probes ($expectedLengths)",
-    ({ crossing, circle, expectedLengths }) => {
-      const expected = [
-        intersectPressureBoundaries(crossing, circle),
-        intersectPressureBoundaries(circle, crossing),
-      ];
-      const lines: PressureLineMetadataCache = {
-        directions: new WeakMap(),
-        carriers: new WeakMap(),
-      };
-      const angles = new WeakMap<PressureBoundaryArc, number>();
-      const lengths = vi.spyOn(Math, "hypot");
-      const dx = crossing.end.x - crossing.start.x;
-      const dy = crossing.end.y - crossing.start.y;
-      try {
-        for (let index = 0; index < 64; index += 1) {
-          expect(intersectPressureBoundaries(crossing, circle, angles, lines)).toEqual(expected[0]);
-          expect(intersectPressureBoundaries(circle, crossing, angles, lines)).toEqual(expected[1]);
-        }
-        expect(lengths.mock.calls.filter(([x, y]) => x === dx && y === dy)).toHaveLength(
-          expectedLengths,
-        );
-        expect(lines.directions.get(crossing)).toEqual({
-          dx,
-          dy,
-          lengthSquared: dx * dx + dy * dy,
-        });
-      } finally {
-        lengths.mockRestore();
-      }
-    },
-  );
-
+describe("pressure arc metadata reuse", () => {
   it("reuses arc angles for midpoint and clipped endpoint generation without rounding changes", () => {
     const boundary = arc({ x: -999_999, y: 999_999 }, 0.35, 0.4, -Math.PI);
     const fractions = [0, 1, ...Array.from({ length: 64 }, (_, index) => (index + 1) / 65)];

@@ -3,6 +3,7 @@ import { buildPressureCapsule } from "../../../../src/domain/geometry/pressure-j
 import {
   preparePressureWindows,
   pressureWindowMemoryUsage,
+  PRESSURE_WINDOW_SCRATCH_BYTES,
 } from "../../../../src/domain/geometry/pressure-window";
 import { serializePressureWindows } from "../../../../src/domain/geometry/pressure-path-serialization";
 import type { PressureWindow } from "../../../../src/domain/geometry/prepared-pressure-geometry";
@@ -44,6 +45,7 @@ describe("canonical pressure windows", () => {
     expect(second[0]).toBe(first[0]);
     expect(second[1]).toBe(first[1]);
     expect(pressureWindowMemoryUsage(first[0]!)).toBeGreaterThan(0);
+    expect(PRESSURE_WINDOW_SCRATCH_BYTES).toBe(2_441_584);
   });
 
   it("falls back to exact native arcs when approximation exceeds its emitted-command budget", () => {

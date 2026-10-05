@@ -10,7 +10,7 @@ import {
 } from "./pressure-boundary-intersections";
 import { pressureCapsuleContains } from "./pressure-capsule-containment";
 import { pressureArcBounds } from "./pressure-arc-bounds";
-import { pressureLineBounds, type PressureLineMetadataCache } from "./pressure-line-metadata";
+import { pressureLineBounds } from "./pressure-line-bounds";
 
 export const MAX_PRESSURE_UNION_SHAPES = 64;
 /** Bounded geometry/cancellation intervals; consumers still use the shared time budget. */
@@ -49,7 +49,6 @@ interface Source {
 interface UnionContext {
   readonly work: PressureUnionWork;
   readonly arcAngles: PressureArcAngleCache;
-  readonly lines: PressureLineMetadataCache;
   readonly maximumOperations: number;
   inspectedIntervals: number;
 }
@@ -98,7 +97,6 @@ export function* iteratePressureUnion(
   const context: UnionContext = {
     work,
     arcAngles: new WeakMap<PressureBoundaryArc, number>(),
-    lines: { directions: new WeakMap(), carriers: new WeakMap() },
     maximumOperations: shapes.length * PRESSURE_UNION_OPERATIONS_PER_SHAPE,
     inspectedIntervals: 0,
   };
@@ -195,7 +193,7 @@ function* clipBoundary(
   context: UnionContext,
   extent: Bounds,
 ): Generator<void, Interval[] | undefined> {
-  const { work, arcAngles, lines } = context;
+  const { work, arcAngles } = context;
   let intervals = [{ first: 0, last: 1 }];
   for (let other = 0; other < sources.length && intervals.length > 0; other += 1) {
     if (other === owner || !overlaps(extent, sources[other]!.bounds)) continue;
@@ -204,7 +202,7 @@ function* clipBoundary(
     for (const [index, edge] of source.boundaries.entries()) {
       if (!overlaps(extent, source.boundaryBounds[index]!)) continue;
       work.intersectionTests += 1;
-      for (const intersection of intersectPressureBoundaries(boundary, edge, arcAngles, lines))
+      for (const intersection of intersectPressureBoundaries(boundary, edge, arcAngles))
         cuts.push(intersection.first);
     }
     cuts.sort((a, b) => a - b);
@@ -272,11 +270,11 @@ function covered(
   earlier: boolean,
   context: UnionContext,
 ): boolean {
-  const { work, arcAngles, lines } = context;
+  const { work, arcAngles } = context;
   for (const [index, edge] of source.boundaries.entries()) {
     if (!containsPoint(source.boundaryBounds[index]!, point)) continue;
     work.boundaryTests += 1;
-    if (pressureBoundaryParameter(edge, point, arcAngles, lines) === undefined) continue;
+    if (pressureBoundaryParameter(edge, point, arcAngles) === undefined) continue;
     const incoming = tangent(boundary, point);
     const adjacent = tangent(edge, point);
     if (incoming.x * adjacent.x + incoming.y * adjacent.y < 0) return true;
