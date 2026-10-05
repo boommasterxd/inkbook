@@ -118,6 +118,7 @@ interface VisibilityStagingOptions extends SceneVisibilityReconcilerOptions {
   readonly waiting: () => boolean;
   readonly promoted: () => MountYieldReason | undefined;
   readonly publish: () => void;
+  readonly restored: (id: string) => void;
   readonly bands: () => MountYieldReason | undefined;
   readonly stage: (
     record: SceneElementRecord,

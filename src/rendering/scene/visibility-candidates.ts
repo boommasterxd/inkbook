@@ -15,6 +15,7 @@ export class VisibilityCandidates implements SpatialQuerySink {
   #key: string | undefined;
   #pendingKey: string | undefined;
   #cursor: ReturnType<NonNullable<SceneStorePort["beginQuery"]>> | undefined;
+  #generation = 0;
 
   public constructor(
     private readonly store: SceneStorePort,
@@ -27,6 +28,9 @@ export class VisibilityCandidates implements SpatialQuerySink {
   }
   public get count(): number {
     return this.#count;
+  }
+  public get generation(): number {
+    return this.#generation;
   }
 
   public memoryUsage(): number {
@@ -66,6 +70,7 @@ export class VisibilityCandidates implements SpatialQuerySink {
   }
 
   private beginRefresh(range: ReturnType<typeof cellRange>): void {
+    this.#generation += 1;
     this.#cursor?.cancel();
     this.#cursor = undefined;
     clearVisibleReferences(this.#ids, this.#count);

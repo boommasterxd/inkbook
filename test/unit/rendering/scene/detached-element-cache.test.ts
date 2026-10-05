@@ -38,6 +38,53 @@ function fixture(id = "retained") {
   return { instrumentation, record, entry };
 }
 
+describe("connected scene ownership proofs", () => {
+  it("transfers unchanged connected ownership without motion reads or order registrations", () => {
+    const { entry, record } = fixture();
+    const cache = new DetachedSceneElementCache();
+    const store = new FakeSceneStore();
+    store.records.set(record.id, record);
+    const node = fakeNode(entry.paths[0]!.node);
+    node.ownerDocument.createElementNS("", "g").append(node);
+    cache.retainConnected(entry, store);
+    const read = vi.spyOn(node, "getAttribute");
+    const register = vi.spyOn(cache, "registerMounted");
+    expect(cache.restoreConnected(record)).toBe(entry);
+    expect(cache.statistics()).toMatchObject({ entries: 0, bytes: 0, hits: 1 });
+    expect(cache.isReserved(record.id)).toBe(false);
+    expect(cache.retainConnected(entry, store)).toBe(true);
+    expect(register).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
+    cache.dispose();
+  });
+
+  it.each(["geometry", "paint", "band", "rank", "preview", "fade", "motion", "order"])(
+    "keeps %s changes on the connected repair path",
+    (change) => {
+      const { entry, record, instrumentation } = fixture();
+      const cache = new DetachedSceneElementCache();
+      const store = new FakeSceneStore();
+      const node = fakeNode(entry.paths[0]!.node);
+      node.ownerDocument.createElementNS("", "g").append(node);
+      cache.retainConnected(entry, store);
+      const current = { ...record };
+      if (change === "geometry") current.geometryVersion += 1;
+      if (change === "paint") current.paintVersion += 1;
+      if (change === "band") current.band = "highlight";
+      if (change === "rank") current.rank += 1;
+      if (change === "preview")
+        updatePreviewTransform(entry, "translate(1 0)", 1, 1, instrumentation);
+      if (change === "fade") setMountedElementFade(entry, 1);
+      if (change === "motion") setMountedElementMotion(entry, 0.4);
+      if (change === "order") cache.invalidateRanks();
+      expect(cache.restoreConnected(current)).toBeUndefined();
+      expect(cache.statistics().entries).toBe(1);
+      cache.dispose();
+    },
+  );
+});
+
 describe("detached scene node ownership", () => {
   it("keeps connected revisits in their band without insertions or paint writes", () => {
     const { instrumentation, record, entry } = fixture();
@@ -60,7 +107,7 @@ describe("detached scene node ownership", () => {
   });
 
   it("accounts queued roots until shared cleanup admission releases them", () => {
-    const cache = new DetachedSceneElementCache(200, 1024 * 1024);
+    const cache = new DetachedSceneElementCache(1024 * 1024);
     const store = new FakeSceneStore();
     const entries = Array.from({ length: 130 }, (_, rank) => {
       const result = fixture(`queued-${rank}`);
@@ -82,11 +129,15 @@ describe("detached scene node ownership", () => {
     expect(remove).toHaveBeenCalledTimes(3);
     expect(cache.retainedRoots).toBe(127);
     remove.mockClear();
+    expect(cache.flushEvictions(10, () => 10, { remainingRoots: 64 })).toBe(true);
+    expect(remove).toHaveBeenCalledOnce();
+    expect(cache.retainedRoots).toBe(126);
+    remove.mockClear();
     expect(cache.flushEvictions(10, () => 0, { remainingRoots: 64 })).toBe(true);
     expect(remove).toHaveBeenCalledTimes(64);
     remove.mockClear();
     expect(cache.flushEvictions(10, () => 0, { remainingRoots: 64 })).toBe(false);
-    expect(remove).toHaveBeenCalledTimes(63);
+    expect(remove).toHaveBeenCalledTimes(62);
     expect(entries.every((entry) => fakeNode(entry.paths[0]!.node).parent === undefined)).toBe(
       true,
     );
@@ -96,7 +147,7 @@ describe("detached scene node ownership", () => {
   });
 
   it("refuses new ownership while a capacity eviction still owns connected roots", () => {
-    const cache = new DetachedSceneElementCache(1, 1024 * 1024);
+    const cache = new DetachedSceneElementCache(1_600);
     const store = new FakeSceneStore();
     const first = fixture("first-connected");
     const next = fixture("next-connected");
@@ -117,6 +168,31 @@ describe("detached scene node ownership", () => {
   });
 });
 
+it("evicts only the byte space required by the next connected entry", () => {
+  const entries = Array.from({ length: 4 }, (_, index) => fixture(`bytes-${index}`));
+  const measure = new DetachedSceneElementCache();
+  measure.retain(entries[0]!.entry);
+  const bytes = measure.statistics().bytes;
+  measure.release();
+  const cache = new DetachedSceneElementCache(bytes * 3);
+  const store = new FakeSceneStore();
+  for (const { entry, record } of entries) {
+    const node = fakeNode(entry.paths[0]!.node);
+    node.ownerDocument.createElementNS("", "g").append(node);
+    store.records.set(record.id, record);
+  }
+  for (const { entry } of entries.slice(0, 3))
+    expect(cache.retainConnected(entry, store)).toBe(true);
+  expect(cache.retainConnected(entries[3]!.entry, store)).toBe(false);
+  expect(cache.statistics()).toMatchObject({ entries: 2, bytes: bytes * 3, evictions: 1 });
+  expect(cache.retainedRoots).toBe(3);
+  expect(cache.flushEvictions(10, () => 0, { remainingRoots: 64 })).toBe(false);
+  expect(cache.retainConnected(entries[3]!.entry, store)).toBe(true);
+  expect(cache.statistics()).toMatchObject({ entries: 3, bytes: bytes * 3, evictions: 1 });
+  cache.dispose();
+  expect(cache.memoryUsage()).toBe(0);
+});
+
 it.each(["retarget", "invalidation", "pressure"] as const)(
   "keeps staged connected ownership reserved through cache admission and %s cancellation",
   (reason) => {
@@ -126,7 +202,8 @@ it.each(["retarget", "invalidation", "pressure"] as const)(
     fakeNode(dom.contentGroup).append(fakeNode(entry.paths[0]!.node));
     const store = new FakeSceneStore();
     store.records.set(record.id, record);
-    const cache = new DetachedSceneElementCache(1, 1024 * 1024);
+    const cache = new DetachedSceneElementCache(1_600);
+    setMountedElementMotion(entry, 0.4);
     cache.retainConnected(entry, store);
     const bytes = cache.statistics().bytes;
     const visibility = new SceneVisibilityState(store, instrumentation);
@@ -240,17 +317,17 @@ describe("detached committed node reuse", () => {
     expect(cache.statistics().entries).toBe(0);
   });
 
-  it("enforces entry and byte capacities and releases deletion, pressure, and lifecycle state", () => {
+  it("enforces byte capacity and releases deletion, pressure, and lifecycle state", () => {
     const first = fixture("first");
     const second = fixture("second");
-    const bounded = new DetachedSceneElementCache(1, 1024 * 1024);
+    const bounded = new DetachedSceneElementCache(1_600);
     bounded.retain(first.entry);
     bounded.retain(second.entry);
     expect(bounded.statistics()).toMatchObject({ entries: 1, evictions: 1 });
     expect(bounded.take(first.record, first.instrumentation)).toBeUndefined();
     bounded.invalidate(second.record.id);
     expect(bounded.memoryUsage()).toBe(0);
-    const tooSmall = new DetachedSceneElementCache(10, 1);
+    const tooSmall = new DetachedSceneElementCache(1);
     tooSmall.retain(first.entry);
     expect(tooSmall.memoryUsage()).toBe(0);
     bounded.retain(first.entry);
@@ -306,9 +383,9 @@ it("bounds multipart cached ownership and keeps partial retirement until all nat
   band.append(...entry.paths.map((path) => fakeNode(path.node)));
   const store = new FakeSceneStore();
   store.records.set(current.id, current);
-  const tooSmall = new DetachedSceneElementCache(1, 1024 * 1024);
+  const tooSmall = new DetachedSceneElementCache(1_600);
   expect(tooSmall.retainConnected(entry, store)).toBe(false);
-  const cache = new DetachedSceneElementCache(parts.length, 1024 * 1024);
+  const cache = new DetachedSceneElementCache(1024 * 1024);
   expect(cache.retainConnected(entry, store)).toBe(true);
   expect(cache.retainedRoots).toBe(parts.length);
   cache.invalidate(entry.id);

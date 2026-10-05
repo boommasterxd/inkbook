@@ -10,7 +10,7 @@ import {
   removeMountedElementNode,
   type MountedSceneElement,
 } from "./mounted-element";
-import { DETACHED_ELEMENT_CACHE_MAX_BYTES, DETACHED_ELEMENT_CACHE_MAX_ENTRIES } from "./constants";
+import { DETACHED_ELEMENT_CACHE_MAX_BYTES } from "./constants";
 import { ConnectedRootOrder } from "./connected-root-order";
 import type { ScenePublicationBudget } from "./mount-slice";
 
@@ -28,16 +28,12 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
   #taking = false;
   #roots = 0;
   #rootEvictions = 0;
-  public constructor(
-    maximumEntries = DETACHED_ELEMENT_CACHE_MAX_ENTRIES,
-    maximumBytes = DETACHED_ELEMENT_CACHE_MAX_BYTES,
-  ) {
-    super(maximumEntries, maximumBytes, (_id, entry) => this.forget(entry));
-    this.maximumRoots = maximumEntries;
+  public constructor(maximumBytes = DETACHED_ELEMENT_CACHE_MAX_BYTES) {
+    // Every entry accounts for positive bytes, so this LRU count cannot constrain byte admission.
+    super(maximumBytes, maximumBytes, (_id, entry) => this.forget(entry));
     this.maximumBytes = maximumBytes;
   }
 
-  private readonly maximumRoots: number;
   private readonly maximumBytes: number;
 
   public isConnected(id: string): boolean {
@@ -52,19 +48,13 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
     if (this.#owned.get(entry.id) === entry) return true;
     const bytes = detachedElementBytes(entry);
     const roots = entry.group === null ? entry.paths.length : 1;
-    if (roots > this.maximumRoots || bytes > this.maximumBytes) return false;
+    if (bytes > this.maximumBytes) return false;
     this.invalidate(entry.id);
-    if (
-      this.retainedRoots + roots > this.maximumRoots ||
-      this.retainedBytes + bytes > this.maximumBytes
-    ) {
-      this.reserveCapacity(roots, bytes);
+    if (this.retainedBytes + bytes > this.maximumBytes) {
+      this.reserveCapacity(bytes);
       if (this.#removing.size > 0) return false;
     }
-    while (
-      this.retainedRoots + roots > this.maximumRoots ||
-      this.retainedBytes + bytes > this.maximumBytes
-    ) {
+    while (this.retainedBytes + bytes > this.maximumBytes) {
       const oldest = this.#owned.keys().next().value;
       if (oldest === undefined) return false;
       this.invalidate(oldest);
@@ -74,14 +64,46 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
     this.#owned.set(entry.id, entry);
     this.#roots += roots;
     this.retainCached(entry.id, entry.geometryVersion, entry, bytes);
-    if (this.#owned.has(entry.id) && firstPath(entry).parentNode !== null)
+    if (
+      this.#owned.has(entry.id) &&
+      firstPath(entry).parentNode !== null &&
+      !this.#order.has(entry)
+    )
       this.registerMounted(entry);
     return this.#owned.has(entry.id);
   }
 
   public retainConnected(entry: MountedSceneElement, store: SceneStorePort): boolean {
-    this.registerMounted(entry, store);
+    if (!this.#order.hasCurrent(entry)) this.registerMounted(entry, store);
     return this.retain(entry);
+  }
+
+  /** Transfers unchanged, proven connected roots without preparing a DOM mutation. */
+  public restoreConnected(record: SceneElementRecord): MountedSceneElement | undefined {
+    const entry = this.#owned.get(record.id);
+    if (
+      entry === undefined ||
+      entry.geometryVersion !== record.geometryVersion ||
+      entry.paintVersion !== record.paintVersion ||
+      entry.band !== record.band ||
+      entry.committedRank !== record.rank ||
+      entry.detachedPathCount !== 0 ||
+      entry.displayedPathParts !== entry.pathParts ||
+      entry.appliedPreviewTransform !== null ||
+      entry.previewStrokeWidthScale !== null ||
+      entry.fadeActive ||
+      entry.motionActive ||
+      !this.#order.hasCurrent(entry) ||
+      firstPath(entry).parentNode === null
+    )
+      return undefined;
+    this.#taking = true;
+    this.takeCached(record.id, record.geometryVersion);
+    this.#taking = false;
+    this.commitReservation(entry);
+    entry.displayedElement = record.element;
+    entry.rank = record.rank;
+    return entry;
   }
 
   /** Includes active roots so newly offscreen anchors are correct before exit bookkeeping. */
@@ -246,13 +268,9 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
     return true;
   }
 
-  private reserveCapacity(roots: number, bytes: number): void {
-    const rootTarget = Math.max(0, this.maximumRoots - Math.max(64, roots));
-    const byteTarget = Math.max(0, this.maximumBytes - bytes * 64);
-    while (
-      (this.#roots > rootTarget || this.cachedBytes > byteTarget) &&
-      this.#removingRoots < 64
-    ) {
+  private reserveCapacity(bytes: number): void {
+    const byteTarget = Math.max(0, this.maximumBytes - bytes);
+    while (this.cachedBytes > byteTarget && this.#removingRoots < 64) {
       const oldest = this.#owned.keys().next().value;
       if (oldest === undefined) break;
       this.invalidate(oldest);

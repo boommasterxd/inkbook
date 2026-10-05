@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import { BoundedVersionLru } from "../../../../src/domain/cache/bounded-version-lru";
 import * as geometry from "../../../../src/domain/geometry/element-path";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
@@ -66,6 +67,29 @@ describe("scene-owned immutable stroke reuse", () => {
 });
 
 describe("scene geometry identity and alias ownership", () => {
+  it("touches identical contours and versioned aliases without replacing LRU entries", () => {
+    const cache = new ScenePathCache();
+    const stroke = immutableStroke();
+    const parts = cache.build(stroke);
+    cache.retain(stroke.id, 1, parts);
+    const bytes = cache.cacheMemoryUsage();
+    const set = vi.spyOn(BoundedVersionLru.prototype, "set");
+    try {
+      cache.retain(stroke.id, 1, parts);
+      cache.retain(stroke.id, 1, parts);
+      expect(set).not.toHaveBeenCalled();
+      expect(cache.cacheMemoryUsage()).toBe(bytes);
+      cache.retain(stroke.id, 2, parts);
+      expect(set).toHaveBeenCalledOnce();
+      expect(cache.take(stroke.id, 1)).toBeUndefined();
+      expect(cache.take(stroke.id, 2)).toBe(parts);
+      cache.release();
+      expect(cache.cacheMemoryUsage()).toBe(0);
+    } finally {
+      set.mockRestore();
+    }
+  });
+
   it("retains repeated completion once and preserves the current identity through eviction", () => {
     const cache = new ScenePathCache(1, 1024 * 1024);
     const stroke = immutableStroke();

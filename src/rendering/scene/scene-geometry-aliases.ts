@@ -8,14 +8,14 @@ interface GeometryAlias {
 /** Bounded ID/version access keys; contours remain owned by the geometry cache. */
 export class SceneGeometryAliases {
   readonly #entries: BoundedVersionLru<GeometryAlias>;
-  readonly #keys = new Map<string, string>();
+  readonly #aliases = new Map<string, GeometryAlias>();
   readonly #owners = new Map<string, Set<string>>();
   readonly #maximumBytes: number;
 
   public constructor(maximumEntries: number, maximumBytes: number) {
     this.#maximumBytes = maximumBytes;
     this.#entries = new BoundedVersionLru(maximumEntries, maximumBytes, (id, alias) => {
-      this.#keys.delete(id);
+      this.#aliases.delete(id);
       const owners = this.#owners.get(alias.key);
       owners?.delete(id);
       if (owners?.size === 0) this.#owners.delete(alias.key);
@@ -28,18 +28,23 @@ export class SceneGeometryAliases {
   }
 
   public retain(id: string, version: number | undefined, key: string): void {
-    if (version === undefined && this.#keys.get(id) === key) return;
+    const previous = this.#aliases.get(id);
+    if (previous?.key === key && (version === undefined || previous.version === version)) {
+      this.#entries.get(id, 0);
+      return;
+    }
     const bytes = 128 + (id.length + key.length) * 2;
     if (bytes > this.#maximumBytes) return;
-    this.#entries.set(id, 0, { key, version }, bytes);
-    this.#keys.set(id, key);
+    const alias = { key, version };
+    this.#entries.set(id, 0, alias, bytes);
+    this.#aliases.set(id, alias);
     const owners = this.#owners.get(key) ?? new Set<string>();
     owners.add(id);
     this.#owners.set(key, owners);
   }
 
   public invalidate(id: string): string | undefined {
-    const key = this.#keys.get(id);
+    const key = this.#aliases.get(id)?.key;
     this.#entries.delete(id);
     return key;
   }

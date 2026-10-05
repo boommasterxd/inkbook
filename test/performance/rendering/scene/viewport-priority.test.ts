@@ -115,7 +115,8 @@ it("keeps bounded protocol lookahead ordered without consuming a 10,000-candidat
   expect(get).toHaveBeenCalledTimes(preparedReads);
   expect(Array.from({ length: 256 }, () => priority.take())).toEqual(preview);
   expect(priority.count).toBe(9_744);
-  expect(priority.memoryUsage()).toBeLessThanOrEqual(10_000 * 72);
+  // The priority owns cached bounds/keys until publication or membership exit.
+  expect(priority.memoryUsage()).toBeLessThanOrEqual(10_000 * 120);
   for (const id of preview) priority.release(id);
   let previous: string[] = [];
   for (let revision = 0; revision < 2_000; revision += 1) {
@@ -127,16 +128,16 @@ it("keeps bounded protocol lookahead ordered without consuming a 10,000-candidat
     // The query owns and reuses its buffer immediately after handing it off.
     entered.length = 0;
     expect(priority.count).toBe(0);
-    expect(priority.memoryUsage()).toBeLessThanOrEqual(9_745 * 32);
+    expect(priority.memoryUsage()).toBeLessThanOrEqual(9_745 * 112);
   }
   get.mockClear();
   expect(priority.build(new MountSlice(Infinity, () => 0))).toBeUndefined();
-  expect(get).toHaveBeenCalledTimes(9_745);
+  expect(get).toHaveBeenCalledOnce();
   const remaining = [...priority.upcoming(priority.count)];
   expect(new Set(remaining).size).toBe(9_745);
   expect(remaining).toContain("retarget-1999");
   expect(remaining.some((id) => id === "retarget-0")).toBe(false);
-  expect(priority.memoryUsage()).toBeLessThanOrEqual(9_745 * 72);
+  expect(priority.memoryUsage()).toBeLessThanOrEqual(9_745 * 120);
   get.mockRestore();
 });
 

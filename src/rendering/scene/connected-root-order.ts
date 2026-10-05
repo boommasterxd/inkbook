@@ -14,6 +14,7 @@ export class ConnectedRootOrder {
   readonly #bands: Record<RenderBand, RootBlock[]> = { content: [], highlight: [] };
   readonly #owners = new Map<string, RootBlock>();
   readonly #ranks = new WeakMap<MountedSceneElement, { epoch: number; rank: number }>();
+  readonly #proofs = new WeakMap<MountedSceneElement, { epoch: number; rank: number }>();
   #epoch = 0;
   #store: SceneStorePort | undefined;
 
@@ -21,10 +22,25 @@ export class ConnectedRootOrder {
     this.#epoch += 1;
   }
 
+  public hasCurrent(entry: MountedSceneElement): boolean {
+    const rank = this.#proofs.get(entry);
+    return this.has(entry) && rank?.epoch === this.#epoch && rank.rank === entry.committedRank;
+  }
+
+  public has(entry: MountedSceneElement): boolean {
+    return this.#owners.get(entry.id)?.band === entry.band && this.#proofs.has(entry);
+  }
+
   public add(entry: MountedSceneElement, store?: SceneStorePort): void {
     this.#store = store ?? this.#store;
-    if (this.#owners.has(entry.id)) return;
+    const owner = this.#owners.get(entry.id);
+    const proof = this.#proofs.get(entry);
+    if (owner !== undefined) {
+      if (owner.band === entry.band && proof?.rank === entry.rank) return;
+      this.remove(entry.id);
+    }
     this.#ranks.set(entry, { epoch: this.#epoch, rank: entry.rank });
+    this.#proofs.set(entry, { epoch: this.#epoch, rank: entry.rank });
     const blocks = this.#bands[entry.band];
     const index = this.blockIndex(entry, blocks);
     const block = blocks[index] ?? blocks[index - 1] ?? { band: entry.band, entries: [] };
@@ -42,6 +58,11 @@ export class ConnectedRootOrder {
     if (block === undefined) return;
     this.#owners.delete(id);
     const index = block.entries.findIndex((entry) => entry.id === id);
+    const entry = block.entries[index];
+    if (entry !== undefined) {
+      this.#ranks.delete(entry);
+      this.#proofs.delete(entry);
+    }
     block.entries.splice(index, 1);
     const blocks = this.#bands[block.band];
     const position = blocks.indexOf(block);
@@ -72,7 +93,7 @@ export class ConnectedRootOrder {
   }
 
   public memoryUsage(): number {
-    return this.#owners.size * 80;
+    return this.#owners.size * 112;
   }
 
   public clear(): void {

@@ -251,6 +251,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     if (!this.retentionEnabled) return;
     const key = this.#parts.get(parts);
     if (key !== undefined && this.#retainedKeys.has(key)) {
+      this.getCached(key, 0);
       this.#aliases.retain(id, geometryVersion, key);
       this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
       return;

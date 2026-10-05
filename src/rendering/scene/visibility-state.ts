@@ -1,13 +1,7 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
-import {
-  clearVisibleReferences,
-  copyVisibleReferences,
-  mergeVisibleBand,
-  refreshVisibleRanks,
-  sortVisibleBand,
-} from "./visibility-order";
+import { mergeVisibleBand, refreshVisibleRanks, sortVisibleBand } from "./visibility-order";
 import { containsBounds, envelopesOverlap } from "./visibility-bounds";
 import { VisibilityEdgeQuery } from "./visibility-edge-query";
 import type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from "./visibility-types";
@@ -19,14 +13,14 @@ export type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from ".
 export class SceneVisibilityState {
   readonly #candidates: VisibilityCandidates;
   readonly #classification: VisibilityClassification;
-  readonly #contentIds: (string | undefined)[] = [];
+  #contentIds: (string | undefined)[] = [];
   readonly #freeSlots: number[] = [];
-  readonly #highlightIds: (string | undefined)[] = [];
+  #highlightIds: (string | undefined)[] = [];
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #slotById = new Map<string, number>();
   readonly #slotIds: (string | undefined)[] = [];
-  readonly #nextContentIds: (string | undefined)[] = [];
-  readonly #nextHighlightIds: (string | undefined)[] = [];
+  #nextContentIds: (string | undefined)[] = [];
+  #nextHighlightIds: (string | undefined)[] = [];
   readonly #newContentIds: string[] = [];
   readonly #newHighlightIds: string[] = [];
   readonly #enteredIds: string[] = [];
@@ -80,6 +74,8 @@ export class SceneVisibilityState {
   }
 
   public resortCurrent(): VisibilityResult {
+    this.#highlightIds = this.#highlightIds.slice(0, this.#highlightCount);
+    this.#contentIds = this.#contentIds.slice(0, this.#contentCount);
     refreshVisibleRanks(
       this.#highlightIds,
       this.#highlightCount,
@@ -155,14 +151,16 @@ export class SceneVisibilityState {
   public release(): void {
     this.#candidates.release();
     this.#classification.release();
-    clearVisibleReferences(this.#contentIds, this.#contentCount);
-    clearVisibleReferences(this.#highlightIds, this.#highlightCount);
-    clearVisibleReferences(this.#nextContentIds, this.#nextContentCount);
-    clearVisibleReferences(this.#nextHighlightIds, this.#nextHighlightCount);
-    this.#contentIds.length = 0;
-    this.#highlightIds.length = 0;
-    this.#nextContentIds.length = 0;
-    this.#nextHighlightIds.length = 0;
+    this.#contentIds = [];
+    this.#highlightIds = [];
+    this.#nextContentIds = [];
+    this.#nextHighlightIds = [];
+    this.#contentCount = 0;
+    this.#highlightCount = 0;
+    this.#nextContentCount = 0;
+    this.#nextHighlightCount = 0;
+    this.#contentCapacity = 0;
+    this.#highlightCapacity = 0;
     this.#newContentIds.length = 0;
     this.#newHighlightIds.length = 0;
     this.#enteredIds.length = 0;
@@ -174,6 +172,7 @@ export class SceneVisibilityState {
     this.#visibleMarkers = new Uint32Array(0);
     this.#visibleBands = new Uint8Array(0);
     this.#visibleRanks = new Float64Array(0);
+    this.#visibleEpoch = 0;
     this.#visibilityEnvelope = undefined;
     this.#hasCurrentVisibility = false;
     this.#currentInvalidated = true;
@@ -183,8 +182,8 @@ export class SceneVisibilityState {
     this.#newContentIds.length = 0;
     this.#newHighlightIds.length = 0;
     this.#retainedRanksStable = true;
-    clearVisibleReferences(this.#nextContentIds, this.#nextContentCount);
-    clearVisibleReferences(this.#nextHighlightIds, this.#nextHighlightCount);
+    this.#nextContentIds.length = 0;
+    this.#nextHighlightIds.length = 0;
     this.#nextContentCount = 0;
     this.#nextHighlightCount = 0;
     if (this.#visibleEpoch === 0xffff_ffff) {
@@ -318,14 +317,14 @@ export class SceneVisibilityState {
     const deltaEligible = this.#hasCurrentVisibility && this.#retainedRanksStable;
     const incremental = deltaEligible;
     if (incremental) {
-      clearVisibleReferences(this.#nextContentIds, this.#nextContentCount);
-      clearVisibleReferences(this.#nextHighlightIds, this.#nextHighlightCount);
+      this.#nextContentIds.length = 0;
+      this.#nextHighlightIds.length = 0;
       this.#nextContentCount = mergeVisibleBand(
         this.#contentIds,
         this.#contentCount,
         this.#newContentIds,
         this.#nextContentIds,
-        (id) => this.containsInBand(id, "content"),
+        (id) => this.retainVisibleId(id, "content"),
         (left, right) => this.compare(left, right, "content"),
       );
       this.#nextHighlightCount = mergeVisibleBand(
@@ -333,24 +332,19 @@ export class SceneVisibilityState {
         this.#highlightCount,
         this.#newHighlightIds,
         this.#nextHighlightIds,
-        (id) => this.containsInBand(id, "highlight"),
+        (id) => this.retainVisibleId(id, "highlight"),
         (left, right) => this.compare(left, right, "highlight"),
       );
       for (const id of this.#newHighlightIds) this.#enteredIds.push(id);
       for (const id of this.#newContentIds) this.#enteredIds.push(id);
     }
-    this.clearCurrentBand(this.#contentIds, this.#contentCount, "content", deltaEligible);
-    this.clearCurrentBand(this.#highlightIds, this.#highlightCount, "highlight", deltaEligible);
-    this.#contentCount = copyVisibleReferences(
-      this.#nextContentIds,
-      this.#nextContentCount,
-      this.#contentIds,
-    );
-    this.#highlightCount = copyVisibleReferences(
-      this.#nextHighlightIds,
-      this.#nextHighlightCount,
-      this.#highlightIds,
-    );
+    // Published arrays remain immutable while committed/pending targets reference them.
+    this.#contentIds = this.#nextContentIds;
+    this.#contentCount = this.#nextContentCount;
+    this.#highlightIds = this.#nextHighlightIds;
+    this.#highlightCount = this.#nextHighlightCount;
+    this.#nextContentIds = [];
+    this.#nextHighlightIds = [];
     if (!incremental) {
       this.sortBand(this.#highlightIds, this.#highlightCount, "highlight");
       this.sortBand(this.#contentIds, this.#contentCount, "content");
@@ -360,23 +354,15 @@ export class SceneVisibilityState {
     return deltaEligible ? { entered: this.#enteredIds, exited: this.#exitedIds } : undefined;
   }
 
-  private clearCurrentBand(
-    ids: (string | undefined)[],
-    count: number,
-    band: RenderBand,
-    trackDelta: boolean,
-  ): void {
-    for (let index = 0; index < count; index += 1) {
-      const id = ids[index];
-      if (trackDelta && id !== undefined && !this.containsInBand(id, band))
-        this.#exitedIds.push(id);
-      ids[index] = undefined;
-    }
+  private retainVisibleId(id: string, band: RenderBand): boolean {
+    const retained = this.containsInBand(id, band);
+    if (!retained) this.#exitedIds.push(id);
+    return retained;
   }
 
   private discardNextVisibility(): void {
-    clearVisibleReferences(this.#nextContentIds, this.#nextContentCount);
-    clearVisibleReferences(this.#nextHighlightIds, this.#nextHighlightCount);
+    this.#nextContentIds.length = 0;
+    this.#nextHighlightIds.length = 0;
     this.#nextContentCount = 0;
     this.#nextHighlightCount = 0;
     this.#newContentIds.length = 0;

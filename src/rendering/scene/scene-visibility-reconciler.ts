@@ -320,7 +320,6 @@ export class SceneVisibilityReconciler {
     this.#promotedId = undefined;
     this.#deferredExits.clear();
   }
-
   private stageSlice(
     pending: PendingReconciliation,
     slice: MountSlice,
@@ -340,6 +339,10 @@ export class SceneVisibilityReconciler {
       },
       publish: () => {
         publish?.(false);
+      },
+      restored: (id) => {
+        this.#newlyMountedIds.push(id);
+        this.#publishedEntrantIds.push(id);
       },
       bands: () =>
         stageVisibilityBands(pending, deadline, now, {

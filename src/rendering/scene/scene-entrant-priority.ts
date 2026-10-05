@@ -11,6 +11,7 @@ interface Candidate {
   readonly id: string;
   readonly tier: number;
   readonly distance: number;
+  readonly bounds: Bounds;
 }
 
 /** Prepares only indexed visibility candidates; the heap order never changes paint order. */
@@ -18,8 +19,12 @@ export class SceneEntrantPriority {
   readonly #heap: Candidate[] = [];
   readonly #seen = new Set<string>();
   readonly #candidates = new Set<string>();
+  readonly #records = new Map<string, Candidate>();
   #queued: Iterator<string> = this.#candidates.values();
   #built = false;
+  #orderingPriority: SceneVisibilityPriority | undefined;
+  #insideLimits: Bounds | undefined;
+  #outsideLimits = { left: -Infinity, right: Infinity, above: -Infinity, below: Infinity };
 
   public constructor(
     private readonly ids: Iterator<string, undefined>,
@@ -27,14 +32,20 @@ export class SceneEntrantPriority {
     private readonly mounted: { has(id: string): boolean },
     private readonly instrumentation: MutableSceneInstrumentation,
     private priority: SceneVisibilityPriority | undefined,
-  ) {}
+  ) {
+    this.#orderingPriority = priority;
+  }
 
   public get count(): number {
     return this.#heap.length;
   }
 
   public memoryUsage(): number {
-    return this.#heap.length * 40 + (this.#seen.size + this.#candidates.size) * 32;
+    return (
+      this.#heap.length * 8 +
+      this.#records.size * 80 +
+      (this.#seen.size + this.#candidates.size) * 32
+    );
   }
 
   public build(slice: MountSlice): MountYieldReason | undefined {
@@ -54,12 +65,15 @@ export class SceneEntrantPriority {
       this.#seen.add(next.value);
       if (this.mounted.has(next.value)) {
         this.#candidates.delete(next.value);
+        this.#records.delete(next.value);
         continue;
       }
-      const record = this.store.get(next.value);
+      const record = this.#records.get(next.value) ?? this.store.get(next.value);
       if (record === undefined) continue;
       this.#candidates.add(next.value);
-      this.push(this.candidate(record.id, record.bounds));
+      const candidate = this.candidate(record.id, record.bounds);
+      this.#records.set(next.value, candidate);
+      this.push(candidate);
     }
     return undefined;
   }
@@ -81,9 +95,18 @@ export class SceneEntrantPriority {
     exited: readonly string[],
     priority: SceneVisibilityPriority | undefined,
   ): void {
-    for (const id of exited) this.#candidates.delete(id);
-    for (const id of entered) this.#candidates.add(id);
+    const preserved =
+      entered.length === 0 && exited.length === 0 && this.canPreserveOrder(priority);
     this.priority = priority;
+    if (preserved) return;
+    for (const id of exited) {
+      this.#candidates.delete(id);
+      this.#records.delete(id);
+    }
+    for (const id of entered) this.#candidates.add(id);
+    this.#orderingPriority = priority;
+    this.#insideLimits = undefined;
+    this.#outsideLimits = { left: -Infinity, right: Infinity, above: -Infinity, below: Infinity };
     this.#heap.length = 0;
     this.#seen.clear();
     this.#queued = this.#candidates.values();
@@ -92,6 +115,62 @@ export class SceneEntrantPriority {
 
   public release(id: string): void {
     this.#candidates.delete(id);
+    this.#records.delete(id);
+  }
+
+  /** A directional translation changes all distances by one common offset. */
+  private canPreserveOrder(priority: SceneVisibilityPriority | undefined): boolean {
+    const previous = this.#orderingPriority;
+    if (previous === undefined || priority === undefined) return previous === priority;
+    const { direction } = previous;
+    if (direction.x !== priority.direction.x || direction.y !== priority.direction.y) return false;
+    if (
+      direction.x === 0 &&
+      direction.y === 0 &&
+      (previous.viewport.minX + previous.viewport.maxX !==
+        priority.viewport.minX + priority.viewport.maxX ||
+        previous.viewport.minY + previous.viewport.maxY !==
+          priority.viewport.minY + priority.viewport.maxY)
+    )
+      return false;
+    const { viewport } = priority;
+    const inside = this.#insideLimits;
+    const outside = this.#outsideLimits;
+    return (
+      (inside === undefined ||
+        (viewport.minX <= inside.maxX &&
+          viewport.maxX >= inside.minX &&
+          viewport.minY <= inside.maxY &&
+          viewport.maxY >= inside.minY)) &&
+      outside.left < viewport.minX &&
+      outside.right > viewport.maxX &&
+      outside.above < viewport.minY &&
+      outside.below > viewport.maxY
+    );
+  }
+
+  /** Keeps a constant-size sufficient proof that every acquired candidate retains its tier. */
+  private observeTier(bounds: Bounds, tier: number): void {
+    if (this.priority === undefined) return;
+    if (tier === 0) {
+      const previous = this.#insideLimits;
+      this.#insideLimits =
+        previous === undefined
+          ? bounds
+          : {
+              minX: Math.max(previous.minX, bounds.minX),
+              maxX: Math.min(previous.maxX, bounds.maxX),
+              minY: Math.max(previous.minY, bounds.minY),
+              maxY: Math.min(previous.maxY, bounds.maxY),
+            };
+      return;
+    }
+    const viewport = this.priority.viewport;
+    const outside = this.#outsideLimits;
+    if (bounds.maxX < viewport.minX) outside.left = Math.max(outside.left, bounds.maxX);
+    else if (bounds.minX > viewport.maxX) outside.right = Math.min(outside.right, bounds.minX);
+    else if (bounds.maxY < viewport.minY) outside.above = Math.max(outside.above, bounds.maxY);
+    else outside.below = Math.min(outside.below, bounds.minY);
   }
 
   /** Bounded protocol lookahead preserves the live heap and its viewport preparation order. */
@@ -141,14 +220,17 @@ export class SceneEntrantPriority {
   }
 
   private candidate(id: string, bounds: Bounds): Candidate {
-    if (this.priority === undefined) return { id, tier: 0, distance: 0 };
-    const { viewport, direction } = this.priority;
+    if (this.priority === undefined) return { id, tier: 0, distance: 0, bounds };
+    const { viewport, direction } = this.#orderingPriority!;
     const x = (bounds.minX + bounds.maxX - viewport.minX - viewport.maxX) / 2;
     const y = (bounds.minY + bounds.maxY - viewport.minY - viewport.maxY) / 2;
     const directional = direction.x !== 0 || direction.y !== 0;
+    const tier = intersects(this.priority.viewport, bounds) ? 0 : 1;
+    this.observeTier(bounds, tier);
     return {
       id,
-      tier: intersects(viewport, bounds) ? 0 : 1,
+      bounds,
+      tier,
       distance: directional ? x * direction.x + y * direction.y : x * x + y * y,
     };
   }

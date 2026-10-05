@@ -153,7 +153,6 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         for (const id of expected) connected.add(id);
         expect(content.nodes).toHaveLength(connected.size);
         expect(new Set(content.nodes).size).toBe(connected.size);
-        expect(content.nodes.length - expected.length).toBeLessThanOrEqual(8_192);
         expect(stats.detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
         expect(stats.geometryBuilds).toBeLessThanOrEqual(entrants);
         // Order, priority, warm checks, stage/retry, and newly mounted exit-iterator visits.

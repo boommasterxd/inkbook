@@ -83,3 +83,43 @@ it("maintains interleaved band successors through insertion, rank shifts, remova
   order.add(entries[1]!);
   expect(order.successor({ id: "earlier", rank: 0, band: "highlight" })).toBe(entries[1]);
 });
+
+it("keeps stale physical proofs invalid and reindexes published rank and band moves across blocks", () => {
+  const order = new ConnectedRootOrder();
+  const store = new FakeSceneStore();
+  const document = asDocument(new FakeDocument());
+  const instrumentation = createInstrumentation();
+  const entries = Array.from({ length: 300 }, (_, rank) => {
+    const record = fakeRectangleRecord(`moved-${rank}`, rank, 10);
+    store.records.set(record.id, record);
+    const entry = createMountedElement(
+      document,
+      record,
+      buildElementPathParts(record.element),
+      instrumentation,
+    );
+    order.add(entry, store);
+    return entry;
+  });
+  const moved = entries[10]!;
+  const retained = entries[200]!;
+  order.invalidateRanks();
+  order.successor(retained);
+  order.add(retained, store);
+  expect(order.hasCurrent(retained)).toBe(false);
+  moved.rank = 250.5;
+  moved.committedRank = 250.5;
+  store.records.set(moved.id, { ...store.records.get(moved.id)!, rank: moved.rank });
+  order.add(moved, store);
+  expect(order.hasCurrent(moved)).toBe(true);
+  expect(order.successor(entries[9]!)).toBe(entries[11]);
+  expect(order.successor(entries[250]!)).toBe(moved);
+  expect(order.successor(moved)).toBe(entries[251]);
+  moved.band = "highlight";
+  order.add(moved, store);
+  expect(order.successor(entries[250]!)).toBe(entries[251]);
+  expect(order.successor({ id: "new-highlight", rank: 0, band: "highlight" })).toBe(moved);
+  order.clear();
+  expect(order.hasCurrent(moved)).toBe(false);
+  expect(order.memoryUsage()).toBe(0);
+});

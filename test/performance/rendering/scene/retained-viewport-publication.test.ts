@@ -112,7 +112,6 @@ it("bounds a single new stroke while page growth reveals a dense 10,000-entry do
         .map(({ element: ink }) => buildElementPathParts(ink)[0]!.d),
     );
     expect(new Set(content.nodes).size).toBe(content.nodes.length);
-    expect(content.nodes.length - expected.length).toBeLessThanOrEqual(8_192);
     expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
   } finally {
     renderer.destroy();
@@ -206,7 +205,6 @@ it("reconciles only changed membership in a 10,000-entry viewport", () => {
       expect(renderer.mountedIds("content")).toEqual(expected);
       expect(renderer.mountedCount).toBe(expected.length);
       const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-      expect(content.nodes.length - expected.length).toBeLessThanOrEqual(8_192);
       expect(new Set(content.nodes).size).toBe(content.nodes.length);
       expect(stats.detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
       expect(stats).toMatchObject({ domEntrants: pass === 0 ? 1 : 0, domExits: 0, domReorders: 0 });

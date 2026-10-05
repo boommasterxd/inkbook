@@ -92,10 +92,9 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
   }
   showOffset(renderer, scheduler, (batches + 1) * 1_000);
   expect(renderer.instrumentation().pathCacheEntries).toBe(PATH_CACHE_MAX_ENTRIES);
-  expect(renderer.instrumentation().detachedCacheEntries).toBeLessThanOrEqual(8_192);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(store.records.size);
   expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1_024 * 1_024);
-  expect(content.nodes.length).toBeLessThanOrEqual(8_192);
-  expect(content.nodes.length).toBeGreaterThanOrEqual(8_192 - 64);
+  expect(content.nodes).toHaveLength(store.records.size);
   renderer.destroy();
   expect(renderer.instrumentation().pathCacheEntries).toBe(0);
   expect(renderer.instrumentation().detachedCacheEntries).toBe(0);

@@ -29,7 +29,7 @@ const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
 export class SceneContentRenderer {
   readonly #dom: SceneDom;
-  readonly #committedIds: Record<RenderBand, (string | undefined)[]> = {
+  readonly #committedIds: Record<RenderBand, readonly (string | undefined)[]> = {
     content: [],
     highlight: [],
   };
@@ -410,8 +410,8 @@ export class SceneContentRenderer {
     this.#mounted.clear();
     this.#detachedCache?.dispose();
     this.#newlyMountedIds = EMPTY_IDS;
-    this.#committedIds.content.length = 0;
-    this.#committedIds.highlight.length = 0;
+    this.#committedIds.content = [];
+    this.#committedIds.highlight = [];
     this.#committedCounts.content = 0;
     this.#committedCounts.highlight = 0;
   }

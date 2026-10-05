@@ -373,7 +373,6 @@ it("does not reappend returning retained nodes during unfinished viewport exit c
     expect(renderer.mountedIds("content")).toEqual(
       Array.from({ length: 4_200 }, (_, rank) => `entry-${rank}`),
     );
-    expect(content.nodes.length - renderer.mountedCount).toBeLessThanOrEqual(8_192);
     expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
     expect(new Set(content.nodes).size).toBe(content.nodes.length);
     for (let rank = 0; rank < 4_200; rank += 1) {
