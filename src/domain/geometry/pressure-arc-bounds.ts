@@ -11,7 +11,7 @@ interface Bounds {
 const TURN = 2 * Math.PI;
 const ANGLE_ERROR = 64 * Number.EPSILON * TURN;
 
-/** Conservative source-arc rejection only; exact intersection predicates remain authoritative. */
+/** Conservative directed-arc rejection; exact intersection predicates remain authoritative. */
 export function pressureArcBounds(arc: PressureBoundaryArc, angles: PressureArcAngleCache): Bounds {
   const full = {
     minX: arc.center.x - arc.radius,

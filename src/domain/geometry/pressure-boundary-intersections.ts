@@ -1,6 +1,11 @@
 import type { PointV1 } from "../schema/types";
 import { pressureArcPoint } from "./pressure-joins";
 import type { PressureBoundaryArc, PressureBoundaryLine } from "./pressure-joins";
+import {
+  pressureLineCarrier,
+  pressureLineMetadata,
+  type PressureLineMetadataCache,
+} from "./pressure-line-metadata";
 
 export type PressureBoundarySegment = PressureBoundaryLine | PressureBoundaryArc;
 export interface PressureBoundaryIntersection {
@@ -16,8 +21,13 @@ const TURN = 2 * Math.PI;
 export function pressureBoundaryPoint(
   boundary: PressureBoundarySegment,
   fraction: number,
+  arcAngles?: PressureArcAngleCache,
 ): PointV1 {
-  if (boundary.kind === "arc") return pressureArcPoint(boundary, fraction);
+  if (boundary.kind === "arc") {
+    if (fraction === 0) return boundary.start;
+    if (fraction === 1) return boundary.end;
+    return pressureArcPoint(boundary, fraction, initialArcAngle(boundary, arcAngles));
+  }
   return {
     x: boundary.start.x + (boundary.end.x - boundary.start.x) * fraction,
     y: boundary.start.y + (boundary.end.y - boundary.start.y) * fraction,
@@ -51,14 +61,13 @@ export function pressureBoundaryParameter(
   boundary: PressureBoundarySegment,
   point: PointV1,
   arcAngles?: PressureArcAngleCache,
+  lines?: PressureLineMetadataCache,
 ): number | undefined {
   const epsilon = roundoff(boundary.start, boundary.end, point);
   if (withinRoundoff(point, boundary.start, epsilon)) return 0;
   if (withinRoundoff(point, boundary.end, epsilon)) return 1;
   if (boundary.kind === "arc") return arcParameter(boundary, point, epsilon, arcAngles);
-  const dx = boundary.end.x - boundary.start.x;
-  const dy = boundary.end.y - boundary.start.y;
-  const lengthSquared = dx * dx + dy * dy;
+  const { dx, dy, lengthSquared } = pressureLineMetadata(boundary, lines);
   if (lengthSquared === 0) return undefined;
   const fraction =
     ((point.x - boundary.start.x) * dx + (point.y - boundary.start.y) * dy) / lengthSquared;
@@ -88,15 +97,20 @@ function arcParameter(
     Math.abs(Math.hypot(dx, dy) - arc.radius) > epsilon
   )
     return undefined;
+  const initial = initialArcAngle(arc, arcAngles);
+  const angle = Math.atan2(point.y - arc.center.y, point.x - arc.center.x);
+  const travel = ((((angle - initial) * Math.sign(arc.sweep)) % TURN) + TURN) % TURN;
+  const fraction = travel / Math.abs(arc.sweep);
+  return fraction <= 1 ? fraction : undefined;
+}
+
+function initialArcAngle(arc: PressureBoundaryArc, arcAngles?: PressureArcAngleCache): number {
   let initial = arcAngles?.get(arc);
   if (initial === undefined) {
     initial = Math.atan2(arc.start.y - arc.center.y, arc.start.x - arc.center.x);
     arcAngles?.set(arc, initial);
   }
-  const angle = Math.atan2(point.y - arc.center.y, point.x - arc.center.x);
-  const travel = ((((angle - initial) * Math.sign(arc.sweep)) % TURN) + TURN) % TURN;
-  const fraction = travel / Math.abs(arc.sweep);
-  return fraction <= 1 ? fraction : undefined;
+  return initial;
 }
 
 /** Includes overlap endpoints; a coincident interval is split at every arc/line endpoint. */
@@ -104,13 +118,14 @@ export function intersectPressureBoundaries(
   first: PressureBoundarySegment,
   second: PressureBoundarySegment,
   arcAngles?: PressureArcAngleCache,
+  lines?: PressureLineMetadataCache,
 ): readonly PressureBoundaryIntersection[] {
-  if (separatedCarriers(first, second)) return [];
+  if (separatedCarriers(first, second, lines)) return [];
   const result: PressureBoundaryIntersection[] = [];
-  addEndpoints(first, second, result, arcAngles);
-  for (const point of intersectionPoints(first, second)) {
-    const a = pressureBoundaryParameter(first, point, arcAngles);
-    const b = pressureBoundaryParameter(second, point, arcAngles);
+  addEndpoints(first, second, result, arcAngles, lines);
+  for (const point of intersectionPoints(first, second, lines)) {
+    const a = pressureBoundaryParameter(first, point, arcAngles, lines);
+    const b = pressureBoundaryParameter(second, point, arcAngles, lines);
     if (a !== undefined && b !== undefined) addIntersection(result, a, b);
   }
   return result;
@@ -120,10 +135,11 @@ export function intersectPressureBoundaries(
 function separatedCarriers(
   first: PressureBoundarySegment,
   second: PressureBoundarySegment,
+  lines?: PressureLineMetadataCache,
 ): boolean {
   if (first.kind === "line")
-    return second.kind === "line" ? false : lineMissesCircle(first, second);
-  if (second.kind === "line") return lineMissesCircle(second, first);
+    return second.kind === "line" ? false : lineMissesCircle(first, second, lines);
+  if (second.kind === "line") return lineMissesCircle(second, first, lines);
   const dx = first.center.x - second.center.x;
   const dy = first.center.y - second.center.y;
   const squared = dx * dx + dy * dy;
@@ -134,10 +150,12 @@ function separatedCarriers(
   return squared > maximum * maximum + margin || squared < minimum * minimum - margin;
 }
 
-function lineMissesCircle(line: PressureBoundaryLine, arc: PressureBoundaryArc): boolean {
-  const dx = line.end.x - line.start.x;
-  const dy = line.end.y - line.start.y;
-  const lengthSquared = dx * dx + dy * dy;
+function lineMissesCircle(
+  line: PressureBoundaryLine,
+  arc: PressureBoundaryArc,
+  lines?: PressureLineMetadataCache,
+): boolean {
+  const { dx, dy, lengthSquared } = pressureLineMetadata(line, lines);
   if (lengthSquared === 0) return false;
   const cx = arc.center.x - line.start.x;
   const cy = arc.center.y - line.start.y;
@@ -163,13 +181,14 @@ function addEndpoints(
   second: PressureBoundarySegment,
   result: PressureBoundaryIntersection[],
   arcAngles?: PressureArcAngleCache,
+  lines?: PressureLineMetadataCache,
 ): void {
   for (const fraction of [0, 1]) {
     const point = fraction === 0 ? first.start : first.end;
-    const parameter = pressureBoundaryParameter(second, point, arcAngles);
+    const parameter = pressureBoundaryParameter(second, point, arcAngles, lines);
     if (parameter !== undefined) addIntersection(result, fraction, parameter);
     const other = fraction === 0 ? second.start : second.end;
-    const reverse = pressureBoundaryParameter(first, other, arcAngles);
+    const reverse = pressureBoundaryParameter(first, other, arcAngles, lines);
     if (reverse !== undefined) addIntersection(result, reverse, fraction);
   }
 }
@@ -177,17 +196,20 @@ function addEndpoints(
 function intersectionPoints(
   first: PressureBoundarySegment,
   second: PressureBoundarySegment,
+  lines?: PressureLineMetadataCache,
 ): readonly PointV1[] {
   if (first.kind === "line")
-    return second.kind === "line" ? lineLine(first, second) : lineArc(first, second);
-  return second.kind === "line" ? lineArc(second, first) : arcArc(first, second);
+    return second.kind === "line" ? lineLine(first, second, lines) : lineArc(first, second, lines);
+  return second.kind === "line" ? lineArc(second, first, lines) : arcArc(first, second);
 }
 
-function lineLine(first: PressureBoundaryLine, second: PressureBoundaryLine): readonly PointV1[] {
-  const dx = first.end.x - first.start.x;
-  const dy = first.end.y - first.start.y;
-  const ex = second.end.x - second.start.x;
-  const ey = second.end.y - second.start.y;
+function lineLine(
+  first: PressureBoundaryLine,
+  second: PressureBoundaryLine,
+  lines?: PressureLineMetadataCache,
+): readonly PointV1[] {
+  const { dx, dy } = pressureLineMetadata(first, lines);
+  const { dx: ex, dy: ey } = pressureLineMetadata(second, lines);
   const determinant = dx * ey - dy * ex;
   if (determinant === 0) return [];
   const x = second.start.x - first.start.x;
@@ -196,13 +218,13 @@ function lineLine(first: PressureBoundaryLine, second: PressureBoundaryLine): re
   return [pressureBoundaryPoint(first, fraction)];
 }
 
-function lineArc(line: PressureBoundaryLine, arc: PressureBoundaryArc): readonly PointV1[] {
-  const dx = line.end.x - line.start.x;
-  const dy = line.end.y - line.start.y;
-  const length = Math.hypot(dx, dy);
+function lineArc(
+  line: PressureBoundaryLine,
+  arc: PressureBoundaryArc,
+  lines?: PressureLineMetadataCache,
+): readonly PointV1[] {
+  const { length, ux, uy } = pressureLineCarrier(line, lines);
   if (length === 0) return [];
-  const ux = dx / length;
-  const uy = dy / length;
   const cx = arc.center.x - line.start.x;
   const cy = arc.center.y - line.start.y;
   const along = cx * ux + cy * uy;

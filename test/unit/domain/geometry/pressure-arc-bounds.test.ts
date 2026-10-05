@@ -110,15 +110,26 @@ describe("conservative source arc bounds", () => {
   });
 });
 
-describe("source arc rejection exact-output parity", () => {
-  it.each([2, 16, 64])(
-    "preserves contour coordinates and fallback for %i overlapping sources",
-    (count) => {
+describe("query and source arc rejection exact-output parity", () => {
+  it.each([
+    { count: 2, offset: 0, width: 8 },
+    { count: 16, offset: 0, width: 8 },
+    { count: 64, offset: 0, width: 8 },
+    { count: 16, offset: 999_980, width: 0.001 },
+    { count: 16, offset: -999_980, width: 0.35 },
+    { count: 16, offset: 999_980, width: 1e-10 },
+  ])(
+    "preserves contour coordinates and fallback ($count sources, $offset offset, $width width)",
+    ({ count, offset, width }) => {
       const shapes = Array.from({ length: count }, (_, index) =>
         buildPressureCapsule(
-          { x: index % 8, y: Math.floor(index / 8), pressure: (index % 5) / 4 },
-          { x: (index + 1) % 8, y: Math.floor((index + 1) / 8), pressure: ((index + 1) % 5) / 4 },
-          8,
+          { x: offset + (index % 8), y: Math.floor(index / 8), pressure: (index % 5) / 4 },
+          {
+            x: offset + ((index + 1) % 8),
+            y: Math.floor((index + 1) / 8),
+            pressure: ((index + 1) % 5) / 4,
+          },
+          width,
         ),
       );
       const actual = finishGeometrySteps(iteratePressureUnion(shapes));

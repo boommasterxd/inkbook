@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import * as intersections from "../../../src/domain/geometry/pressure-boundary-intersections";
-import { pressureArcPoint } from "../../../src/domain/geometry/pressure-joins";
+import * as arcBounds from "../../../src/domain/geometry/pressure-arc-bounds";
+import {
+  buildPressureCapsule,
+  pressureArcPoint,
+} from "../../../src/domain/geometry/pressure-joins";
 import { visitPreparedPressureOutline } from "../../../src/domain/geometry/pressure-outline";
 import * as pressureRadius from "../../../src/domain/geometry/pressure-radius";
 import {
@@ -21,6 +25,7 @@ describe("bounded pressure preparation work", () => {
     const shapes = denseDiskWindow();
     const intersectionsProbe = vi.spyOn(intersections, "intersectPressureBoundaries");
     const boundaryProbe = vi.spyOn(intersections, "pressureBoundaryParameter");
+    const boundsProbe = vi.spyOn(arcBounds, "pressureArcBounds");
     try {
       const job = iteratePressureUnion(shapes);
       let step;
@@ -29,13 +34,16 @@ describe("bounded pressure preparation work", () => {
       } while (!step.done);
       expect(intersectionsProbe).toHaveBeenCalledTimes(step.value.work.intersectionTests);
       expect(boundaryProbe).toHaveBeenCalledTimes(step.value.work.boundaryTests);
-      // The full 64-source window must prune hemisphere carriers, rather than test full circles.
-      expect(intersectionsProbe.mock.calls.length).toBeLessThanOrEqual(8_000);
+      // Each immutable source hemisphere prepares one extent reused in query direction.
+      expect(boundsProbe).toHaveBeenCalledTimes(128);
+      // Both query and source hemispheres reject unrelated full-circle comparisons.
+      expect(intersectionsProbe.mock.calls.length).toBeLessThanOrEqual(5_500);
       expect(boundaryProbe.mock.calls.length).toBeLessThanOrEqual(2_200);
       expect(step.value.usedFallback).toBe(false);
     } finally {
       intersectionsProbe.mockRestore();
       boundaryProbe.mockRestore();
+      boundsProbe.mockRestore();
     }
   });
 
@@ -94,6 +102,56 @@ describe("bounded pressure preparation work", () => {
       expect(resumptions).toBeLessThanOrEqual(512);
     } finally {
       probes.mockRestore();
+    }
+  });
+});
+
+describe("bounded pressure line metadata lifetime", () => {
+  it("bounds line metadata to the current union window and stops writes after cancellation", () => {
+    const shapes = Array.from({ length: 64 }, (_, index) =>
+      buildPressureCapsule(
+        { x: (index % 8) * 3, y: Math.floor(index / 8) * 3, pressure: 0.5 },
+        { x: (index % 8) * 3 + 2, y: Math.floor(index / 8) * 3 + 1, pressure: 0.5 },
+        8,
+      ),
+    );
+    const writes = vi.spyOn(WeakMap.prototype, "set");
+    try {
+      const cancelled = iteratePressureUnion(shapes);
+      expect(cancelled.next().done).toBe(false);
+      const suspendedWrites = writes.mock.calls.length;
+      const firstOwners = new Set(writes.mock.contexts);
+      cancelled.return({
+        contours: [],
+        usedFallback: false,
+        work: {
+          intersectionTests: 0,
+          containmentTests: 0,
+          boundaryTests: 0,
+          intervalTests: 0,
+          peakIntervals: 0,
+          visibleFragments: 0,
+        },
+      });
+      expect(cancelled.next()).toEqual({ done: true, value: undefined });
+      expect(writes).toHaveBeenCalledTimes(suspendedWrites);
+      writes.mockClear();
+      const complete = iteratePressureUnion(shapes);
+      while (!complete.next().done) {
+        /* Retain independent source state. */
+      }
+      const metadata = writes.mock.calls.filter(([, value]) => typeof value === "object");
+      const directions = metadata.filter(([, value]) => "lengthSquared" in value);
+      const carriers = metadata.filter(([, value]) => "ux" in value);
+      expect(directions.length).toBeGreaterThan(0);
+      expect(directions.length).toBeLessThanOrEqual(128);
+      expect(carriers.length).toBeLessThanOrEqual(128);
+      expect(new Set(directions.map(([line]) => line)).size).toBe(directions.length);
+      expect(new Set(carriers.map(([line]) => line)).size).toBe(carriers.length);
+      expect((directions.length + carriers.length) * 3 * 8).toBeLessThanOrEqual(6_144);
+      expect(writes.mock.contexts.every((owner) => !firstOwners.has(owner))).toBe(true);
+    } finally {
+      writes.mockRestore();
     }
   });
 });
