@@ -30,6 +30,7 @@ interface RemoteScenePathOptions {
   readonly isViewport?: (record: SceneElementRecord) => boolean;
   readonly onReady?: () => void;
   readonly onPrepared?: (record: SceneElementRecord, parts: readonly SvgPathPart[]) => void;
+  readonly ownsPrepared?: (record: SceneElementRecord, parts: readonly SvgPathPart[]) => boolean;
 }
 
 /** Two bounded batches overlap delivery with publication; only one request runs. */
@@ -204,10 +205,7 @@ export class RemoteScenePaths {
   private async collect(batch: Batch): Promise<void> {
     const iterator = this.#upcoming()[Symbol.iterator]();
     while (this.capacity() > 0 && !batch.controller.signal.aborted) {
-      const wait =
-        this.options.scheduler?.shouldYield() === true
-          ? this.options.scheduler.checkpoint(batch.controller.signal, "frame")
-          : undefined;
+      const wait = this.checkpoint(batch);
       if (wait !== undefined) await wait;
       if (batch.controller.signal.aborted) return;
       const next = iterator.next();
@@ -261,10 +259,7 @@ export class RemoteScenePaths {
     while (batch.deliveries.length > 0) {
       const delivery = batch.deliveries[0]!;
       for (const path of delivery) {
-        const wait =
-          this.options.scheduler?.shouldYield() === true
-            ? this.options.scheduler.checkpoint(batch.controller.signal, "frame")
-            : undefined;
+        const wait = this.checkpoint(batch);
         if (wait !== undefined) {
           if (ready) this.options.onReady?.();
           ready = false;
@@ -275,13 +270,48 @@ export class RemoteScenePaths {
       }
       batch.deliveries.shift();
     }
-    batch.processing = false;
     if (batch.terminal) {
+      const handoff = this.handoffPrepared(batch);
+      if (handoff !== undefined) await handoff;
+      if (batch.controller.signal.aborted) return;
       batch.pending = false;
       this.prune();
       this.refill();
     }
+    batch.processing = false;
     if (ready || batch.terminal) this.options.onReady?.();
+  }
+
+  /** Protocol membership stays intact until all deliveries have passed adoption. */
+  private handoffPrepared(
+    batch: Batch,
+    entries = batch.paths.entries(),
+    next = entries.next(),
+  ): Promise<void> | undefined {
+    if (this.options.ownsPrepared === undefined) return undefined;
+    while (!next.done && !batch.controller.signal.aborted) {
+      const wait = this.checkpoint(batch);
+      if (wait !== undefined) {
+        this.options.onReady?.();
+        return wait.then(() => this.handoffPrepared(batch, entries, next));
+      }
+      const [id, parts] = next.value;
+      const record = this.store.get(id);
+      if (
+        record !== undefined &&
+        record.geometryVersion === batch.versions.get(id) &&
+        this.options.ownsPrepared(record, parts)
+      )
+        this.releaseEntry(batch, id);
+      next = entries.next();
+    }
+    return undefined;
+  }
+
+  private checkpoint(batch: Batch): Promise<void> | undefined {
+    return this.options.scheduler?.shouldYield() === true
+      ? this.options.scheduler.checkpoint(batch.controller.signal, "frame")
+      : undefined;
   }
 
   private adoptPath(batch: Batch, path: PreparedScenePathEntry): boolean {

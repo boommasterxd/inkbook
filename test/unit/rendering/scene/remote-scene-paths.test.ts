@@ -6,7 +6,10 @@ import type {
   ScenePathPreparationObserver,
 } from "../../../../src/domain/geometry/prepared-scene-paths";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
-import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import {
+  createGatedTestWorkScheduler,
+  TestWorkScheduler,
+} from "../../../fixtures/persistence/work-scheduler";
 import {
   MAX_PREPARED_SCENE_PATH_BYTES,
   preparedScenePathBytes,
@@ -246,15 +249,7 @@ it("refills at half-pool capacity while retaining the prepared publication tail"
 it("resumes cache-heavy collection at shared admission and rejects its cancelled cursor", async () => {
   const records = Array.from({ length: 602 }, (_, index) => record(String(index)));
   const indexed = new Map(records.map((entry) => [entry.id, entry]));
-  let blocked = false;
-  let resume!: () => void;
-  const scheduler = new TestWorkScheduler({
-    shouldYield: () => blocked,
-    checkpoint: () =>
-      new Promise((resolve) => {
-        resume = resolve;
-      }),
-  });
+  const gate = createGatedTestWorkScheduler();
   let reads = 0;
   let finish!: (result: readonly PreparedScenePathEntry[]) => void;
   const prepare = vi.fn(
@@ -266,13 +261,16 @@ it("resumes cache-heavy collection at shared admission and rejects its cancelled
   const remote = new RemoteScenePaths(
     {
       get: (id) => {
-        if (++reads === 12) blocked = true;
+        if (++reads === 12) gate.block();
         return indexed.get(id);
       },
       query: () => undefined,
       prepareScenePaths: prepare,
     },
-    { scheduler, isCached: (entry) => Number(entry.id) > 0 && Number(entry.id) < 601 },
+    {
+      scheduler: gate.scheduler,
+      isCached: (entry) => Number(entry.id) > 0 && Number(entry.id) < 601,
+    },
   );
   remote.read(records[0]!, () => records.slice(1).map((entry) => entry.id));
   finish(paths("0"));
@@ -281,8 +279,7 @@ it("resumes cache-heavy collection at shared admission and rejects its cancelled
   expect(prepare).toHaveBeenCalledTimes(1);
   remote.cancel((id) => id === "0");
   const cancelledReads = reads;
-  blocked = false;
-  resume();
+  gate.resume();
   await Promise.resolve();
   expect(reads).toBe(cancelledReads);
   expect(prepare).toHaveBeenCalledTimes(1);

@@ -58,6 +58,7 @@ export class SceneMountPreparation {
         localPressureGeometry(record.element, pressure)?.publishPath?.(parts);
         options.pathCache.completePreparation(record.element, parts);
       },
+      ownsPrepared: (record, parts) => options.pathCache.ownsPrepared(record.element, parts),
     });
   }
 

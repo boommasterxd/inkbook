@@ -126,7 +126,6 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     const existingLookup = this.#identities.get(points);
     const existingKey = existingLookup?.get(signature);
     if (existingKey !== undefined && this.#retainedKeys.has(existingKey)) {
-      this.#parts.set(parts, existingKey);
       this.#aliases.retain(element.id, undefined, existingKey);
       this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
       return;
@@ -163,6 +162,19 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
 
   public cacheMemoryUsage(): number {
     return this.cachedBytes + this.#aliases.memoryUsage();
+  }
+
+  public ownsPrepared(element: InkElementV1, parts: readonly SvgPathPart[]): boolean {
+    const key = this.#parts.get(parts);
+    const signature = immutableStrokeSignature(element);
+    return (
+      this.retentionEnabled &&
+      element.kind === "stroke" &&
+      signature !== undefined &&
+      key !== undefined &&
+      this.#retainedKeys.has(key) &&
+      this.#identities.get(element.points)?.get(signature) === key
+    );
   }
 
   public override statistics(): ReturnType<VersionedCache<CachedPath>["statistics"]> {
