@@ -103,6 +103,7 @@ export function layoutHarness(
     },
     invalidateLayout,
     setCamera: vi.fn(),
+    setZoomBlockSize: zoomHeightWriter(container),
     setPage,
   } as unknown as SvgSceneRenderer;
   const onLayout = vi.fn();
@@ -166,6 +167,12 @@ export function layoutHarness(
     ...observers,
     work,
   };
+}
+
+function zoomHeightWriter(container: HTMLElement) {
+  return vi.fn((value: number) => {
+    container.style.blockSize = `${String(value)}px`;
+  });
 }
 
 function layoutResizeAnchor(

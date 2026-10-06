@@ -152,6 +152,7 @@ export class SvgSceneRenderer {
     return this.#dom.svg;
   }
   public readonly revealSurface = () => this.#dom.revealSurface();
+  public readonly setZoomBlockSize = (value: number) => this.#dom.setZoomBlockSize(value);
   public get mountedCount(): number {
     return this.#content.mountedCount;
   }
@@ -413,9 +414,7 @@ export class SvgSceneRenderer {
   public resetInstrumentation(): void {
     this.#resourcePolicy.resetInstrumentation(this.#stats, this.#backgroundCache);
   }
-  public mountedIds(band: RenderBand): readonly string[] {
-    return this.#content.mountedIds(band);
-  }
+  public readonly mountedIds = (band: RenderBand) => this.#content.mountedIds(band);
   public replaceGeneration(): void {
     this.assertActive();
     if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();

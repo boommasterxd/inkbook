@@ -159,6 +159,10 @@ export class SceneDom {
     this.#surface.read();
   }
 
+  public setZoomBlockSize(blockSize: number): void {
+    this.#surface.setZoomBlockSize(blockSize);
+  }
+
   public writeSurface(): void {
     this.#surface.write();
   }

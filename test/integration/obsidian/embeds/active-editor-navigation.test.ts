@@ -249,6 +249,9 @@ describe("active editor measured layout", () => {
     const renderer = {
       invalidateLayout: vi.fn(),
       setCamera: vi.fn(),
+      setZoomBlockSize: (value: number) => {
+        container.style.blockSize = `${String(value)}px`;
+      },
       setPage: vi.fn(),
     } as unknown as SvgSceneRenderer;
     const layout = new ActiveEditorLayout({

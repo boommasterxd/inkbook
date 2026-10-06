@@ -11,6 +11,13 @@ interface SceneSurfaceOptions {
   readonly onFailure?: () => void;
 }
 
+interface OwnZoomStyle {
+  readonly before: string | null;
+  after: string | null;
+  writes: number;
+  consistent: boolean;
+}
+
 /** Owns one decorative document outside the host document's style invalidation tree. */
 export class SceneSurface {
   public readonly host: HTMLDivElement;
@@ -22,10 +29,12 @@ export class SceneSurface {
   readonly #onFailure: (() => void) | undefined;
   readonly #resizeObserver: ResizeObserver | undefined;
   readonly #themeObserver: MutationObserver | undefined;
+  readonly #container: HTMLElement;
   readonly #load: () => void;
   readonly #tokens = new Map<string, string>();
   readonly #writtenTokens = new Map<string, string>();
   #svg: SVGSVGElement | undefined;
+  #ownZoomStyle: OwnZoomStyle | undefined;
   #themeDirty = true;
   #released = false;
   #width = "0px";
@@ -39,6 +48,7 @@ export class SceneSurface {
     options: SceneSurfaceOptions = {},
   ) {
     this.#onInvalidate = onInvalidate;
+    this.#container = container;
     this.#onFailure = options.onFailure;
     const ownerDocument = container.ownerDocument;
     this.host = ownerDocument.createElementNS(
@@ -69,7 +79,7 @@ export class SceneSurface {
       : undefined;
     this.#resizeObserver?.observe(this.host);
     this.#themeObserver = ownerWindow?.MutationObserver
-      ? new ownerWindow.MutationObserver(() => this.invalidateTheme())
+      ? new ownerWindow.MutationObserver((records) => this.observeTheme(records))
       : undefined;
     const targets = new Set([
       container,
@@ -81,6 +91,7 @@ export class SceneSurface {
       if (target !== null) {
         this.#themeObserver?.observe(target, {
           attributes: true,
+          attributeOldValue: true,
           attributeFilter: ["class", "style"],
         });
       }
@@ -96,6 +107,25 @@ export class SceneSurface {
     }
     this.#svg = svg;
     this.drawingDocument.body.append(svg);
+  }
+
+  /** Zoom height is a layout signal; only this owned write can bypass a theme read. */
+  public setZoomBlockSize(blockSize: number): void {
+    if (this.#released || !Number.isFinite(blockSize) || blockSize < 0) return;
+    const value = `${String(blockSize)}px`;
+    if (this.#container.style.blockSize === value) return;
+    const before = this.#container.getAttribute("style");
+    this.#container.style.blockSize = value;
+    const after = this.#container.getAttribute("style");
+    if (this.#themeObserver === undefined || before === after) return;
+    const pending = this.#ownZoomStyle;
+    this.#ownZoomStyle = {
+      before: pending === undefined ? before : pending.before,
+      after,
+      writes: (pending?.writes ?? 0) + 1,
+      consistent:
+        (pending?.consistent ?? true) && (pending === undefined || pending.after === before),
+    };
   }
 
   /** All host style reads precede the central frame's scene writes. */
@@ -141,6 +171,7 @@ export class SceneSurface {
     this.#released = true;
     this.#resizeObserver?.disconnect();
     this.#themeObserver?.disconnect();
+    this.#ownZoomStyle = undefined;
     this.#frame.removeEventListener("load", this.#load);
     this.#svg?.remove();
     this.#documentStyle.remove();
@@ -159,6 +190,25 @@ export class SceneSurface {
     this.#width = width;
     this.#height = height;
     this.#onInvalidate();
+  }
+
+  private observeTheme(records: readonly MutationRecord[]): void {
+    const pending = this.#ownZoomStyle;
+    this.#ownZoomStyle = undefined;
+    if (
+      pending?.consistent === true &&
+      records.length === pending.writes &&
+      records[0]?.oldValue === pending.before &&
+      this.#container.getAttribute("style") === pending.after &&
+      records.every(
+        (record) =>
+          record.type === "attributes" &&
+          record.target === this.#container &&
+          record.attributeName === "style",
+      )
+    )
+      return;
+    this.invalidateTheme();
   }
 
   private readInitialSize(): void {

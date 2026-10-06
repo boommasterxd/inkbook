@@ -250,7 +250,11 @@ describe("scene observer work and cleanup", () => {
         }
         public observe(target: Node, options: MutationObserverInit): void {
           observed.push(target);
-          expect(options).toEqual({ attributes: true, attributeFilter: ["class", "style"] });
+          expect(options).toEqual({
+            attributes: true,
+            attributeOldValue: true,
+            attributeFilter: ["class", "style"],
+          });
         }
         public disconnect = disconnectTheme;
       } as unknown as typeof MutationObserver,

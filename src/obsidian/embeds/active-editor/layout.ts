@@ -114,7 +114,7 @@ export class ActiveEditorLayout {
     }
     const blockSize = pageHeight === undefined ? update.blockSize : pageHeight * update.zoom;
     this.#ownZoomResize.record(update.layout, blockSize);
-    this.#container.style.blockSize = `${String(blockSize + this.#blockInsets)}px`;
+    this.#options.renderer.setZoomBlockSize(blockSize + this.#blockInsets);
     this.#options.renderer.invalidateLayout();
     if (retainedPageHeight !== undefined) this.scheduleMeasurement();
     return blockSize;
