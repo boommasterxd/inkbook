@@ -27,7 +27,7 @@ import {
 
 it("returns a connected multipart arrow without publication or order repair", () => {
   const store = new FakeSceneStore();
-  const target = { height: 100, left: 0, top: 100, width: 400 };
+  const target = { height: 100, left: 0, top: 120, width: 400 };
   const element = { ...arrow(500), start: { x: 200, y: 150 }, end: { x: 300, y: 150 } };
   for (let rank = 0; rank < 256; rank += 1) {
     const record =
@@ -183,7 +183,7 @@ function collectFrameWrites(
 
 it("reconciles only changed membership in a 10,000-entry viewport", () => {
   const store = createViewportRectangleStore(10_000, (rank) =>
-    rank < 9_000 ? 50 : rank === 9_000 ? -241 : rank === 9_001 ? 351 : 10_000,
+    rank < 9_000 ? 50 : rank === 9_000 ? -301 : rank === 9_001 ? 411 : 10_000,
   );
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
@@ -191,7 +191,7 @@ it("reconciles only changed membership in a 10,000-entry viewport", () => {
   const query = vi.spyOn(store, "query");
   try {
     scheduler.runAll(200);
-    for (const [pass, top] of [100, 0, 100, 0].entries()) {
+    for (const [pass, top] of [120, 0, 120, 0].entries()) {
       renderer.resetInstrumentation();
       get.mockClear();
       query.mockClear();
@@ -222,7 +222,7 @@ it("reconciles only changed membership in a 10,000-entry viewport", () => {
 
 it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry document", () => {
   const records = createViewportRectangleStore(10_000, (rank) =>
-    rank < 9_000 ? 50 : rank < 9_400 ? 351 : 10_000,
+    rank < 9_000 ? 50 : rank < 9_400 ? 411 : 10_000,
   );
   const { store, work } = indexedSceneStore(records);
   const { renderer, scheduler, viewport } = createEdgeViewportScene(store);
@@ -236,7 +236,7 @@ it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry doc
     const writes = collectFrameWrites(
       content,
       scheduler,
-      () => renderer.setViewport({ ...viewport, top: 100 }),
+      () => renderer.setViewport({ ...viewport, top: 120 }),
       30,
       (frame) => {
         if (frame === 1) renderer.promoteVisible("entry-9250");
@@ -260,12 +260,12 @@ it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry doc
 });
 
 it("resumes a long delta successor search at the shared frame deadline", () => {
-  const store = createViewportRectangleStore(601, (rank) => (rank < 600 ? 351 : 50));
+  const store = createViewportRectangleStore(601, (rank) => (rank < 600 ? 411 : 50));
   const { renderer, scheduler, viewport } = createEdgeViewportScene(store);
   scheduler.runAll(20);
   const now = vi.spyOn(scheduler, "now").mockImplementation(() => (scheduler.time += 0.25));
   try {
-    renderer.setViewport({ ...viewport, top: 100 });
+    renderer.setViewport({ ...viewport, top: 120 });
     let frames = 0;
     while (scheduler.pendingCount > 0) {
       renderer.resetInstrumentation();
@@ -285,12 +285,12 @@ it("resumes a long delta successor search at the shared frame deadline", () => {
 });
 
 it("cancels a partially published large edge delta on viewport retarget", () => {
-  const store = createViewportRectangleStore(401, (rank) => (rank < 400 ? 351 : 50));
+  const store = createViewportRectangleStore(401, (rank) => (rank < 400 ? 411 : 50));
   const { renderer, scheduler, viewport } = createEdgeViewportScene(store);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   try {
     scheduler.runAll(20);
-    renderer.setViewport({ ...viewport, top: 100 });
+    renderer.setViewport({ ...viewport, top: 120 });
     scheduler.runNext();
     expect(renderer.mountedCount).toBeGreaterThan(1);
     expect(renderer.mountedCount).toBeLessThan(store.records.size);
@@ -299,7 +299,7 @@ it("cancels a partially published large edge delta on viewport retarget", () => 
     expect(renderer.mountedIds("content")).toEqual(["entry-400"]);
     expect(content.nodes).toHaveLength(193);
     expect(renderer.instrumentation().detachedCacheEntries).toBe(192);
-    renderer.setViewport({ ...viewport, top: 100 });
+    renderer.setViewport({ ...viewport, top: 120 });
     scheduler.runAll(40);
     expect(renderer.mountedIds("content")).toEqual(
       Array.from({ length: 401 }, (_, index) => `entry-${index}`),
@@ -312,7 +312,7 @@ it("cancels a partially published large edge delta on viewport retarget", () => 
 
 it("counts real index cell visits when a narrow fringe shares a dense spatial cell", () => {
   const records = createViewportRectangleStore(10_000, (rank) =>
-    rank < 9_000 ? 270 : rank === 9_000 ? -241 : rank === 9_001 ? 521 : 10_000,
+    rank < 9_000 ? 530 : rank === 9_000 ? -301 : rank === 9_001 ? 581 : 10_000,
   );
   const { store, work } = indexedSceneStore(records);
   const viewport = { height: 271, left: 0, top: 0, width: 100 };
@@ -322,7 +322,7 @@ it("counts real index cell visits when a narrow fringe shares a dense spatial ce
     work.candidateVisits = 0;
     work.queries = 0;
     renderer.resetInstrumentation();
-    renderer.setViewport({ ...viewport, top: 100 });
+    renderer.setViewport({ ...viewport, top: 120 });
     scheduler.runAll(20);
     expect(renderer.mountedCount).toBe(9_001);
     expect(renderer.instrumentation().visibilityCandidateVisits).toBe(2);

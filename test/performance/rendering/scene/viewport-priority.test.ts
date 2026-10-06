@@ -8,6 +8,7 @@ import {
   createPendingScenePathStore,
   createSceneFixture,
   createSceneRecord,
+  observeIndexedSceneQueries,
 } from "../../../fixtures/rendering/scene";
 import {
   beginViewportPublication,
@@ -45,18 +46,7 @@ it("publishes the actual viewport before highlight overscan within a 10,000-elem
   });
   const domain = new ElementStore(elements);
   const scene = new ElementSceneStore(domain);
-  const queryOriginal = domain.beginQuery.bind(domain);
-  let indexedVisits = 0;
-  const query = vi.spyOn(domain, "beginQuery").mockImplementation((bounds) => {
-    const cursor = queryOriginal(bounds);
-    const advance = cursor.advance.bind(cursor);
-    vi.spyOn(cursor, "advance").mockImplementation((limit) => {
-      const step = advance(limit);
-      indexedVisits += step.workUnits;
-      return step;
-    });
-    return cursor;
-  });
+  const { query, work } = observeIndexedSceneQueries(domain);
   const get = vi.spyOn(scene, "get");
   const { renderer, scheduler, document } = createSceneFixture(NAVIGATION_PAGE, scene, {
     height: 100,
@@ -76,7 +66,7 @@ it("publishes the actual viewport before highlight overscan within a 10,000-elem
     expect(renderer.mountedIds("highlight")).toHaveLength(64);
     expect(renderer.mountedIds("content")).toHaveLength(192);
     expect(create.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(256);
-    expect(indexedVisits).toBeLessThanOrEqual(512);
+    expect(work.indexedVisits).toBeLessThanOrEqual(512);
     expect(query).toHaveBeenCalledOnce();
     expect(get.mock.calls.length).toBeLessThanOrEqual(1_536);
     expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(1_536);

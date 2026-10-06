@@ -43,6 +43,7 @@ function cloneDefaults<K extends keyof InkbookSettingsV4["toolDefaults"]>(
 
 export class InkbookSettingTab extends PluginSettingTab {
   private readonly controls: SettingsControlValues;
+  private readonly updateListeners = new Set<() => void>();
 
   public constructor(
     app: App,
@@ -58,6 +59,18 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   public override getControlValue(key: string): unknown {
     return this.controls.get(key as SettingsControlKey);
+  }
+
+  public override update(): void {
+    super.update();
+    for (const listener of [...this.updateListeners]) listener();
+  }
+
+  public subscribeUpdates(listener: () => void): () => void {
+    this.updateListeners.add(listener);
+    return () => {
+      this.updateListeners.delete(listener);
+    };
   }
 
   public override async setControlValue(key: string, value: unknown): Promise<void> {
@@ -79,6 +92,8 @@ export class InkbookSettingTab extends PluginSettingTab {
     };
     return [
       generalGroup({
+        get: (key) => this.controls.get(key),
+        set: (key, value) => this.controls.set(key, value),
         isCustomFolder: () => this.isCustomFolder(),
         canCreateFolder: () => this.folderPort !== undefined && this.isCustomFolder(),
         createFolder: (element) => void this.createCustomFolder(element),
@@ -149,7 +164,13 @@ export class InkbookSettingTab extends PluginSettingTab {
         refreshRatePreference: defaults.refreshRatePreference,
         filePlacement: structuredClone(defaults.filePlacement),
       }))
-      .then(() => this.update());
+      .then(() => {
+        this.store.updateDeviceSettings((settings) => ({
+          ...settings,
+          scrollPreloadMarginPx: createBuiltInDeviceSettings().scrollPreloadMarginPx,
+        }));
+        this.update();
+      });
   }
 
   private resetPageDefaults(): void {

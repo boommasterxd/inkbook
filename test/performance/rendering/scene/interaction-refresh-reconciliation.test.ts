@@ -254,7 +254,7 @@ describe("restored stroke motion work", () => {
     const restored = fixture.elements.slice(0, 2_000);
     fixture.store.remove(restored.map(({ id }) => id));
     const { renderer, scheduler } = createInteractionRenderer(fixture.store);
-    renderer.setViewport({ height: 100, left: 0, top: 200, width: 200 });
+    renderer.setViewport({ height: 100, left: 0, top: 200, width: 100 });
     scheduler.runAll();
     expect(renderer.mountedCount).toBeGreaterThan(256);
     expect(renderer.mountedCount).toBeLessThan(900);

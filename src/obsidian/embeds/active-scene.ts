@@ -290,6 +290,7 @@ export class ActiveInkbookScene {
     if (this.#disposed) return;
     this.#previewHandoff.updateMotion(settings.motion);
     this.#renderer.setReducedMotion(this.#previewHandoff.reducedMotion);
+    this.#renderer.setScrollPreloadMarginPx(settings.scrollPreloadMarginPx);
     this.#root.dataset.inkbookMotion = settings.motion;
     this.#layout.updateMotion(settings.motion);
     this.#controller.updateDeviceSettings(settings);
@@ -339,6 +340,7 @@ export class ActiveInkbookScene {
       onSurfaceFailure: () => this.#failSurface(options.onLock),
       workScheduler: options.workScheduler,
       deferInitialOverscan: true,
+      scrollPreloadMarginPx: options.deviceSettings.scrollPreloadMarginPx,
       inputHandlers: createSceneInputHandlers(controller),
       isInputActive: () => options.model.isGestureActive?.() ?? true,
       layout: {

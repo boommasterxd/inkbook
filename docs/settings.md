@@ -2,22 +2,22 @@
 
 ## Principles
 
-- Settings expose stable user preferences, not internal performance tuning.
+- Settings expose stable user preferences. The bounded device-local scroll preload margin lets users choose how much nearby content is prepared in advance; internal scheduling and cache limits remain fixed.
 - Every value available in a tool's Style menu MUST have a configurable default for that tool.
 - Changing a default affects newly created elements only. It never rewrites existing elements.
 - Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it.
-- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select and snapping defaults while preserving every existing value. A valid earlier version 4 value without snapping settings or `selectionHighlightsEnabled` loads with the corresponding built-in defaults. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 2 schema and migrate valid version 1 values.
+- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select and snapping defaults while preserving every existing value. A valid earlier version 4 value without snapping settings or `selectionHighlightsEnabled` loads with the corresponding built-in defaults. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 2 schema and migrate valid version 1 values. Supported device settings without `scrollPreloadMarginPx` receive its built-in default without an invalid-field diagnostic.
 
 ## Scope and Precedence
 
 Settings have four scopes:
 
-| Scope            | Storage                | Examples                                                                                   |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------ |
-| Vault            | Obsidian plugin data   | Tool defaults, selection highlights, snapping, page defaults, placement, refresh-rate mode |
-| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts                    |
-| File             | Editable SVG snapshot  | Current background type and spacing, element styles                                        |
-| Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position                    |
+| Scope            | Storage                | Examples                                                                                       |
+| ---------------- | ---------------------- | ---------------------------------------------------------------------------------------------- |
+| Vault            | Obsidian plugin data   | Tool defaults, selection highlights, snapping, page defaults, placement, refresh-rate mode     |
+| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts, scroll preload margin |
+| File             | Editable SVG snapshot  | Current background type and spacing, element styles                                            |
+| Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position                        |
 
 Vault settings use `Plugin.loadData()` and `Plugin.saveData()`. Device settings use `App.loadLocalStorage("inkbook:device-settings:v2")` and `App.saveLocalStorage(...)`. They are local to the current device and vault and contain preferences only, never vault paths, note content, clipboard data, or ink data.
 
@@ -74,6 +74,7 @@ interface InkbookDeviceSettingsV2 {
   leftHandedToolbar: boolean;
   motion: "system" | "full" | "reduced";
   keyboardShortcuts: KeyboardShortcutSettingsV1;
+  scrollPreloadMarginPx: number;
 }
 ```
 
@@ -321,6 +322,14 @@ Custom folders:
 
 Finger drawing and pen-tap insertion use matching toggle controls. The pen-tap toggle maps the enabled state to the persisted `"handwriting"` mode and the disabled state to `"off"`; no select menu is shown for this binary preference.
 
+### Scroll Preload Margin
+
+`scrollPreloadMarginPx` is exposed as **Scroll preload margin** in General settings. It defaults to 300 and accepts integers from 100 through 800, measured in screen pixels above and below the visible area. A slider and directly editable **Screen pixels** field expose the same integer domain. The value is stored per device and vault and is not written to Inkbook files or synchronized through vault plugin data.
+
+The description explains that strokes are prepared outside the visible area before scrolling reaches them. Larger margins can reduce visible loading during scrolling but require more memory and preparation; smaller margins prepare less in advance. Large jumps can still expose content that needs loading. It also identifies the device-and-vault storage scope.
+
+Changes update already active presentations, including pop-outs, through the existing device-settings subscription. General group reset and full reset restore the built-in value while preserving unrelated device preferences during a group reset. The open settings surface refreshes after reset while preserving its scroll position. Older supported device settings without the field receive the default; invalid present values receive an invalid-field diagnostic and fall back to the default on load. UI changes reject invalid values without saving them. Rendering, refill, and scheduler behavior follow [Viewport Culling](rendering-and-performance.md#viewport-culling).
+
 ### Finger Drawing
 
 - device-and-vault-local default: disabled
@@ -356,7 +365,7 @@ Finger drawing and pen-tap insertion use matching toggle controls. The pen-tap t
 
 The settings tab uses these logical groups and this order:
 
-1. **General**: startup tool, display refresh-rate preference, and file placement. General rows are the first rows and remain unheaded in the rendered Obsidian settings tab as required by the host contract.
+1. **General**: startup tool, selection highlights, display refresh-rate preference, scroll preload margin, and file placement. General rows are the first rows and remain unheaded in the rendered Obsidian settings tab as required by the host contract.
 2. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
 3. **Drawing tools**: Select, Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
 4. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Coordinate system, and Table. Each tool is one independently collapsible section.
@@ -391,7 +400,7 @@ The following controls are visual choices rather than plain dropdowns:
 - Table columns use the same compact stepper and retain the valid range of 1 through 12.
 - Background type uses the same None, Lines, Dots, and Squares pattern choices and previews. Background spacing uses the same padded S/M/L/XL range with the absolute values documented above.
 
-Numeric settings that benefit from continuous adjustment use a slider paired with a directly editable text field, not a dropdown. This applies to opacity, eraser radius, and active buffer lines. The slider and field update each other live, preserve the documented numeric representation and units, and commit one setting change on `change`. Opacity remains a finite normalized value from 0 through 1 even when the field presents a percentage. The field rejects incomplete, non-finite, out-of-range, or otherwise invalid input without persisting it. Background spacing retains the menu's discrete S/M/L/XL slider and visible current-size output. The table stepper remains a discrete numeric control because its bounded integer range is best communicated through increment and decrement actions.
+Numeric settings that benefit from continuous adjustment use a slider paired with a directly editable text field, not a dropdown. This applies to opacity, eraser radius, active buffer lines, and scroll preload margin. The slider and field update each other live, preserve the documented numeric representation and units, and commit one setting change on `change`. Opacity remains a finite normalized value from 0 through 1 even when the field presents a percentage. The field rejects incomplete, non-finite, out-of-range, or otherwise invalid input without persisting it. Background spacing retains the menu's discrete S/M/L/XL slider and visible current-size output. The table stepper remains a discrete numeric control because its bounded integer range is best communicated through increment and decrement actions.
 
 Dropdowns are reserved for discrete values without a meaningful visual preview, such as startup tool, file placement, display refresh rate, pen-tap insertion, and motion. A dropdown MUST NOT replace a shared swatch, width preview, outline-style button group, endpoint or dimension icon group, pattern choice, slider-plus-field control, or table stepper merely for implementation convenience.
 
@@ -411,7 +420,7 @@ Parity tests MUST enumerate every configurable Style and Background menu value a
 
 ## Settings Deliberately Not Exposed
 
-Autosave delays, culling margin, spatial-index size, cache size, worker thresholds, animation-frame batching, and serialization precision are implementation constants. Exposing them would complicate support and could undermine the required performance guarantees.
+Autosave delays, horizontal culling margin, spatial-index size, cache size, worker thresholds, animation-frame batching, and serialization precision are implementation constants. The bounded vertical [Scroll Preload Margin](#scroll-preload-margin) is the explicit user-facing preloading preference; it does not change scheduler admission or resource limits.
 
 ## Related Documentation
 

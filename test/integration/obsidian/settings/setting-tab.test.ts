@@ -138,6 +138,7 @@ describe("InkbookSettingTab definitions", () => {
       "Startup tool",
       "Selection highlights",
       "Display refresh rate",
+      "Scroll preload margin",
       "File placement",
       "Custom vault folder",
       "Create custom folder",
@@ -283,6 +284,7 @@ describe("InkbookSettingTab reset integration", () => {
     await tab.setControlValue("snapping.angles", false);
     await tab.setControlValue("device.fingerDrawingEnabled", !deviceDefaults.fingerDrawingEnabled);
     await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
+    await tab.setControlValue("device.scrollPreloadMarginPx", 800);
 
     resetGroup(tab, undefined);
     await vi.waitFor(() => expect(tab.getControlValue("startupTool")).toBe(defaults.startupTool));
@@ -293,6 +295,8 @@ describe("InkbookSettingTab reset integration", () => {
       startupTool: defaults.startupTool,
     });
     expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
+    expect(tab.getControlValue("device.scrollPreloadMarginPx")).toBe(300);
+    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(!deviceDefaults.leftHandedToolbar);
     resetGroup(tab, "Page defaults");
     await vi.waitFor(() =>
       expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(

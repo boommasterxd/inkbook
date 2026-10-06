@@ -56,6 +56,7 @@ const COLOR_VALUES = new Map<string, ColorV1 | null>([
 ]);
 
 const NUMERIC_KEY_SUFFIXES = [
+  ".scrollPreloadMarginPx",
   ".width",
   ".outlineWidth",
   ".radius",

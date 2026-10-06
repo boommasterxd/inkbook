@@ -56,8 +56,9 @@ export class SceneVisibilityState {
     allowEdge = true,
     deadline = Infinity,
     now: () => number = () => 0,
+    forceRefresh = false,
   ): VisibilityQueryResult {
-    if (this.canReuseCurrent(retainedBounds)) {
+    if (!forceRefresh && this.canReuseCurrent(retainedBounds)) {
       this.#edges.release();
       this.#classification.release();
       this.#candidates.cancelPending();

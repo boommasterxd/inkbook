@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { SceneRendererOptions } from "../../../../src/rendering/scene/types";
 import type { ActiveInkbookSceneOptions } from "../../../../src/obsidian/embeds/active-scene-types";
 import { ActiveInkbookScene } from "../../../../src/obsidian/embeds/active-scene";
+import { createBuiltInDeviceSettings } from "../../../../src/domain/settings/defaults";
 
 const ports = vi.hoisted(() => ({
   rendererOptions: undefined as SceneRendererOptions | undefined,
@@ -15,6 +16,7 @@ const ports = vi.hoisted(() => ({
   execute: vi.fn(),
   focus: vi.fn(),
   revealSurface: vi.fn(),
+  setScrollPreloadMarginPx: vi.fn(),
 }));
 
 vi.mock("../../../../src/rendering/scene", () => ({
@@ -24,6 +26,8 @@ vi.mock("../../../../src/rendering/scene", () => ({
     }
     public readonly inputSurface = { focus: ports.focus };
     public readonly setScheme = vi.fn();
+    public readonly setReducedMotion = vi.fn();
+    public readonly setScrollPreloadMarginPx = ports.setScrollPreloadMarginPx;
     public readonly revealSurface = ports.revealSurface;
     public readonly setSelectionHighlightsEnabled = vi.fn();
     public readonly invalidateLayout = vi.fn();
@@ -36,10 +40,11 @@ vi.mock("../../../../src/rendering/scene", () => ({
 vi.mock("../../../../src/obsidian/embeds/active-editor/controller", () => ({
   ActiveEditorController: class {
     public readonly setEnabled = ports.enabled;
-    public readonly chromeProps = vi.fn(() => ({}));
+    public readonly chromeProps = vi.fn(() => ({ toolbarState: {} }));
     public readonly executeAction = ports.execute;
     public readonly isActionAvailable = vi.fn(() => true);
     public readonly dispose = vi.fn();
+    public readonly updateDeviceSettings = vi.fn();
   },
 }));
 vi.mock("../../../../src/obsidian/embeds/active-editor/layout", () => ({
@@ -51,6 +56,8 @@ vi.mock("../../../../src/obsidian/embeds/active-editor/layout", () => ({
     public readonly suspend = ports.suspend;
     public readonly resume = ports.resume;
     public readonly sceneCommitted = vi.fn();
+    public readonly chromeChanged = vi.fn();
+    public readonly updateMotion = vi.fn();
     public readonly dispose = vi.fn();
   },
 }));
@@ -73,6 +80,7 @@ vi.mock("../../../../src/obsidian/embeds/active-scene-runtime", () => ({
         ports.revealReady = ready;
       },
       dispose: ports.disposeHandoff,
+      updateMotion: vi.fn(),
     },
     stability: { begin: vi.fn(), dispose: vi.fn() },
   }),
@@ -82,7 +90,11 @@ vi.mock("../../../../src/obsidian/embeds/active-scene-input", () => ({
   createSceneInputHandlers: () => ({}),
 }));
 vi.mock("../../../../src/obsidian/embeds/editor-chrome-loader", () => ({
-  beginEditorChromeMount: () => ({ ready: Promise.resolve(true), unmount: vi.fn() }),
+  beginEditorChromeMount: () => ({
+    ready: Promise.resolve(true),
+    unmount: vi.fn(),
+    update: vi.fn(),
+  }),
 }));
 
 beforeEach(() => {
@@ -93,16 +105,27 @@ beforeEach(() => {
 
 function fixture() {
   const onLock = vi.fn();
-  const root = { ownerDocument: { defaultView: {} } } as unknown as HTMLElement;
+  const root = { dataset: {}, ownerDocument: { defaultView: {} } } as unknown as HTMLElement;
   const options = {
     root,
     onLock,
     scrollOwner: () => root,
     model: { page: {}, store: { subscribe: () => vi.fn() } },
+    deviceSettings: { ...createBuiltInDeviceSettings(), scrollPreloadMarginPx: 800 },
   } as unknown as ActiveInkbookSceneOptions;
   const scene = new ActiveInkbookScene(options);
   return { scene, root, onLock };
 }
+
+it("configures the scene margin and applies live device updates only until disposal", () => {
+  const h = fixture();
+  expect(ports.rendererOptions?.scrollPreloadMarginPx).toBe(800);
+  h.scene.updateDeviceSettings({ ...createBuiltInDeviceSettings(), scrollPreloadMarginPx: 100 });
+  expect(ports.setScrollPreloadMarginPx).toHaveBeenCalledExactlyOnceWith(100);
+  h.scene.dispose();
+  h.scene.updateDeviceSettings({ ...createBuiltInDeviceSettings(), scrollPreloadMarginPx: 300 });
+  expect(ports.setScrollPreloadMarginPx).toHaveBeenCalledOnce();
+});
 
 it.each([false, true])(
   "permanently rejects interaction after drawing-document failure when ready=%s",

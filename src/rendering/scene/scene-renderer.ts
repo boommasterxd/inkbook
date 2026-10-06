@@ -20,7 +20,7 @@ import { SceneContentScheduler } from "./scene-content-scheduler";
 import { SceneDeltaCoordinator } from "./scene-delta-coordinator";
 import { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import { SceneMotionController } from "./scene-motion-controller";
-import { SceneResourcePolicy } from "./scene-resource-policy";
+import { SceneResourcePolicy, validateScrollPreloadMargin } from "./scene-resource-policy";
 import { SceneVisibilityCoordinator } from "./scene-visibility-coordinator";
 import * as runtime from "./scene-runtime";
 import type * as Scene from "./types";
@@ -57,6 +57,8 @@ export class SvgSceneRenderer {
   readonly #visibility: SceneVisibilityState;
   readonly #options: Scene.SceneRendererOptions;
   public constructor(options: Scene.SceneRendererOptions) {
+    if (options.scrollPreloadMarginPx !== undefined)
+      validateScrollPreloadMargin(options.scrollPreloadMarginPx);
     this.#options = options;
     this.#page = options.page;
     this.#scheduler = options.workScheduler;
@@ -112,7 +114,6 @@ export class SvgSceneRenderer {
       this.#elementPreviews,
       { cache: this.#pathCache, scene: options },
     );
-    this.#visibilityCoordinator.setInitialVisibleOnly(options.deferInitialOverscan ?? false);
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
     this.#frameWork = new SceneFrameWork({
@@ -176,6 +177,10 @@ export class SvgSceneRenderer {
     this.#visibilityCoordinator.setInitialVisibleOnly(false);
     this.#frames.schedule();
   }
+  public setScrollPreloadMarginPx(value: number): void {
+    this.assertActive();
+    if (this.#visibilityCoordinator.setScrollPreloadMarginPx(value)) this.#frames.schedule();
+  }
   public setActiveDocumentMemoryPressure(active: boolean): void {
     this.assertActive();
     this.#resourcePolicy.setActiveDocumentMemoryPressure(active);
@@ -218,9 +223,8 @@ export class SvgSceneRenderer {
   }
   public setPage(page: Schema.PageV1, height = this.#pageHeight): void {
     this.assertActive();
-    if (!Number.isFinite(height) || height <= 0) {
+    if (!Number.isFinite(height) || height <= 0)
       throw new RangeError("Page height must be finite and positive.");
-    }
     if (page === this.#page && height === this.#pageHeight) return;
     this.#page = page;
     this.#pageHeight = height;

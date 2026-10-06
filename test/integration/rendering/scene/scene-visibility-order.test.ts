@@ -49,8 +49,8 @@ it("merges viewport entrants into band order and sorts after a rank change", () 
   const store = new FakeSceneStore();
   const first = fakeRectangleRecord("first", 10, 10);
   const last = fakeRectangleRecord("last", 30, 10);
-  const entrant = fakeRectangleRecord("entrant", 20, 10, 380);
-  const nextEntrant = fakeRectangleRecord("next-entrant", 15, 10, 430);
+  const entrant = fakeRectangleRecord("entrant", 20, 10, 440);
+  const nextEntrant = fakeRectangleRecord("next-entrant", 15, 10, 490);
   for (const record of [first, last, entrant, nextEntrant]) store.records.set(record.id, record);
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
     height: 100,
@@ -76,7 +76,7 @@ it("merges viewport entrants into band order and sorts after a rank change", () 
   store.records.set(last.id, { ...last, rank: 5 });
   renderer.resetInstrumentation();
   renderer.applyDelta({ affected: [{ id: last.id, domains: ["order"] }] });
-  renderer.setViewport({ height: 100, left: 0, top: 150, width: 100 });
+  renderer.setViewport({ height: 100, left: 0, top: 151, width: 100 });
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(["last", "next-entrant", "entrant"]);
   expect(renderer.instrumentation().domReorders).toBeGreaterThan(0);
@@ -187,8 +187,8 @@ it("publishes a cached entrant while the earlier cold stroke waits for the worke
   const warm = fakeRectangleRecord("warm", 1, 20, 110);
   const stroke = {
     ...indexedStroke(0),
-    pivot: { x: 20, y: 440 },
-    points: [20, 440, 0.5, 30, 440, 0.5],
+    pivot: { x: 20, y: 500 },
+    points: [20, 500, 0.5, 30, 500, 0.5],
   };
   store.records.set(warm.id, warm);
   store.records.set(stroke.id, createSceneRecord(stroke, 0));

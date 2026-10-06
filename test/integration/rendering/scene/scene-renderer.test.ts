@@ -140,7 +140,7 @@ describe("imperative SVG scene renderer", () => {
 
     scheduler.runAll();
 
-    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 512, minX: -256, minY: -256 });
+    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 512, minX: -256, minY: -512 });
     expect(renderer.mountedIds("highlight")).toEqual(["highlight"]);
     expect(renderer.mountedIds("content")).toEqual(["a"]);
     expect(renderer.mountedCount).toBe(2);
@@ -178,7 +178,7 @@ describe("imperative SVG scene renderer", () => {
     renderer.resetInstrumentation();
     renderer.setCamera({ x: 5, zoom: 2 });
     scheduler.runAll();
-    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 512, minX: -256, minY: -256 });
+    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 512, minX: -256, minY: -512 });
     expect(renderer.instrumentation()).toMatchObject({
       contentAttributeWrites: 0,
       geometryBuilds: 0,
@@ -441,7 +441,7 @@ describe("dense scene reconciliation", () => {
 
     scheduler.runAll();
 
-    expect(store.lastQuery).toMatchObject({ maxY: 512, minY: -256 });
+    expect(store.lastQuery).toMatchObject({ maxY: 512, minY: -512 });
     expect(renderer.mountedCount).toBe(4);
   });
 

@@ -94,6 +94,8 @@ export interface SceneRendererOptions {
   readonly page: PageV1;
   /** The presentation explicitly releases initial exact-viewport preparation after its handoff. */
   readonly deferInitialOverscan?: boolean;
+  /** Vertical preloading distance above and below the viewport in screen pixels. */
+  readonly scrollPreloadMarginPx?: number;
   readonly onSceneCommitted?: () => void;
   readonly onResourceUsageChanged?: () => void;
   readonly reducedMotion?: boolean;

@@ -1,5 +1,6 @@
 import {
   CLOSED_SHAPE_TOOLS,
+  DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
   LINE_SPACINGS,
   OUTLINE_WIDTHS,
   OUTLINE_ONLY_TOOLS,
@@ -113,6 +114,7 @@ export function createBuiltInSettings(): InkbookSettingsV4 {
 export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV2 {
   return {
     version: 2,
+    scrollPreloadMarginPx: DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
     fingerDrawingEnabled: false,
     penTapInsertion: "off",
     leftHandedToolbar: false,

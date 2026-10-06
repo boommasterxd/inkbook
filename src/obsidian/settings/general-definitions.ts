@@ -8,6 +8,7 @@ import {
 import type { RefreshRateProfileStatus } from "../performance";
 import type { SettingsControlKey } from "./control-values";
 import { dropdown, resetAction, sentenceCaseLabel, toggle } from "./definition-helpers";
+import { scrollPreloadDefinition } from "./scroll-preload-setting";
 
 const createLabels = (values: readonly string[]): Record<string, string> =>
   Object.fromEntries(values.map((value) => [value, sentenceCaseLabel(value)]));
@@ -33,6 +34,8 @@ function customFolderDefinition(
 }
 
 export interface GeneralGroupCallbacks {
+  readonly get: (key: SettingsControlKey) => unknown;
+  readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
   readonly isCustomFolder: () => boolean;
   readonly canCreateFolder: () => boolean;
   readonly createFolder: (element: HTMLElement) => void;
@@ -69,6 +72,7 @@ export function generalGroup(
           ]),
         ),
       ),
+      scrollPreloadDefinition(callbacks),
       dropdown(
         "filePlacement.mode",
         "File placement",

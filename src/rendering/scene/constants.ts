@@ -3,8 +3,6 @@ import type { SceneCamera } from "./types";
 export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 export const VIEWPORT_OVERSCAN_SCREEN_PX = 80;
 export const VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX = 40;
-export const VERTICAL_VIEWPORT_OVERSCAN_SCREEN_PX = 240;
-export const VERTICAL_VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX = 160;
 export const PATH_CACHE_MAX_ENTRIES = 12_288;
 export const PATH_CACHE_MAX_BYTES = 25 * 1_024 * 1_024;
 export const DETACHED_ELEMENT_CACHE_MAX_BYTES = 25 * 1_024 * 1_024;

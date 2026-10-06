@@ -24,6 +24,7 @@ import {
   isIntegerInRange,
   isOneOf,
   isRecord,
+  isScrollPreloadMarginPx,
   loadToolDefaults,
   validOrDefault,
 } from "./validation";
@@ -389,7 +390,11 @@ const DEVICE_SETTINGS_V1_KEYS = [
   "motion",
 ] as const;
 
-const DEVICE_SETTINGS_V2_KEYS = [...DEVICE_SETTINGS_V1_KEYS, "keyboardShortcuts"] as const;
+const LEGACY_DEVICE_SETTINGS_V2_KEYS = [...DEVICE_SETTINGS_V1_KEYS, "keyboardShortcuts"] as const;
+const DEVICE_SETTINGS_V2_KEYS = [
+  ...LEGACY_DEVICE_SETTINGS_V2_KEYS,
+  "scrollPreloadMarginPx",
+] as const;
 
 function migrateDeviceSettingsV1(input: unknown, fallback: InkbookDeviceSettingsV2): unknown {
   return isRecord(input) && input.version === 1 && hasExactKeys(input, DEVICE_SETTINGS_V1_KEYS)
@@ -397,14 +402,26 @@ function migrateDeviceSettingsV1(input: unknown, fallback: InkbookDeviceSettings
         ...input,
         version: 2,
         keyboardShortcuts: structuredClone(fallback.keyboardShortcuts),
+        scrollPreloadMarginPx: fallback.scrollPreloadMarginPx,
       }
+    : input;
+}
+
+function addLegacyDeviceSettingsDefaults(
+  input: unknown,
+  fallback: InkbookDeviceSettingsV2,
+): unknown {
+  return isRecord(input) &&
+    input.version === 2 &&
+    hasExactKeys(input, LEGACY_DEVICE_SETTINGS_V2_KEYS)
+    ? { ...input, scrollPreloadMarginPx: fallback.scrollPreloadMarginPx }
     : input;
 }
 
 export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDeviceSettingsV2> {
   const fallback = createBuiltInDeviceSettings();
   const prepared = prepareSettingsRoot(
-    migrateDeviceSettingsV1(input, fallback),
+    addLegacyDeviceSettingsDefaults(migrateDeviceSettingsV1(input, fallback), fallback),
     fallback,
     DEVICE_SETTINGS_V2_KEYS,
     2,
@@ -416,6 +433,13 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
   return {
     value: {
       version: 2,
+      scrollPreloadMarginPx: validOrDefault(
+        value.scrollPreloadMarginPx,
+        fallback.scrollPreloadMarginPx,
+        isScrollPreloadMarginPx,
+        diagnostics,
+        "scrollPreloadMarginPx",
+      ),
       fingerDrawingEnabled: validOrDefault(
         value.fingerDrawingEnabled,
         fallback.fingerDrawingEnabled,

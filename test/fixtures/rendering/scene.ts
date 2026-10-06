@@ -1,4 +1,6 @@
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
+import { vi } from "vitest";
+import type { ElementStore } from "../../../src/domain/store/public";
 import { calculateElementBounds } from "../../../src/domain/geometry/bounds";
 import type { Bounds } from "../../../src/domain/geometry/public";
 import type { SceneElementRecord } from "../../../src/rendering/scene/types";
@@ -37,7 +39,11 @@ export function createSceneFixture(
   viewport: SceneViewport = { height: 1000, left: 0, top: 0, width: 2048 },
   options: Pick<
     SceneRendererOptions,
-    "onSceneCommitted" | "deferInitialOverscan" | "isInputActive" | "onResourceUsageChanged"
+    | "onSceneCommitted"
+    | "deferInitialOverscan"
+    | "isInputActive"
+    | "onResourceUsageChanged"
+    | "scrollPreloadMarginPx"
   > & {
     readonly frameBudgetMs?: number | (() => number);
   } = {},
@@ -45,6 +51,9 @@ export function createSceneFixture(
 ) {
   const parentDocument = new FakeDocument();
   const renderer = new SvgSceneRenderer({
+    ...(options.scrollPreloadMarginPx === undefined
+      ? {}
+      : { scrollPreloadMarginPx: options.scrollPreloadMarginPx }),
     ...(options.isInputActive === undefined ? {} : { isInputActive: options.isInputActive }),
     ...(options.deferInitialOverscan === undefined
       ? {}
@@ -96,6 +105,23 @@ export function createSceneRecord(element: InkElementV1, rank = 0): SceneElement
     band: renderBandOf(element),
     bounds: calculateElementBounds(element),
   };
+}
+
+/** Observes the actual indexed cell and candidate visits, including resumed cursors. */
+export function observeIndexedSceneQueries(store: ElementStore) {
+  const work = { indexedVisits: 0 };
+  const originalQuery = store.beginQuery.bind(store);
+  const query = vi.spyOn(store, "beginQuery").mockImplementation((bounds) => {
+    const cursor = originalQuery(bounds);
+    const advance = cursor.advance.bind(cursor);
+    cursor.advance = (limit) => {
+      const step = advance(limit);
+      work.indexedVisits += step.workUnits;
+      return step;
+    };
+    return cursor;
+  });
+  return { query, work };
 }
 
 /** A remote geometry boundary that stays pending until its lifecycle aborts it. */

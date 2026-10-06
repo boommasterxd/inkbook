@@ -3,9 +3,9 @@ import {
   DENSE_RECONCILIATION_VISIBLE_ELEMENT_THRESHOLD,
   VIEWPORT_OVERSCAN_SCREEN_PX,
   VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
-  VERTICAL_VIEWPORT_OVERSCAN_SCREEN_PX,
-  VERTICAL_VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
 } from "./constants";
+import { DEFAULT_SCROLL_PRELOAD_MARGIN_PX } from "../../domain/settings/types";
+import { isScrollPreloadMarginPx } from "../../domain/settings/validation";
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { ScenePathCache } from "./path-cache";
 import type { DetachedSceneElementCache } from "./detached-element-cache";
@@ -139,6 +139,7 @@ export function visibilityPageBounds(
   viewport: SceneViewport,
   camera: SceneCamera,
   initialVisibleOnly = false,
+  scrollPreloadMarginPx = DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
 ): { readonly envelope: Bounds; readonly retained: Bounds } {
   if (initialVisibleOnly) {
     const bounds = visiblePageBounds(viewport, camera, 0);
@@ -149,13 +150,18 @@ export function visibilityPageBounds(
       viewport,
       camera,
       VIEWPORT_OVERSCAN_SCREEN_PX,
-      VERTICAL_VIEWPORT_OVERSCAN_SCREEN_PX,
+      scrollPreloadMarginPx,
     ),
     retained: visiblePageBounds(
       viewport,
       camera,
       VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
-      VERTICAL_VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
+      (scrollPreloadMarginPx * 2) / 3,
     ),
   };
+}
+
+export function validateScrollPreloadMargin(value: unknown): void {
+  if (!isScrollPreloadMarginPx(value))
+    throw new RangeError("Scroll preload margin must be an integer from 100 to 800 pixels.");
 }

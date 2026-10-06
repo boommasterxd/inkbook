@@ -99,6 +99,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/progressive-publication-deadline.test.ts",
     "test/performance/rendering/scene/retained-viewport-publication.test.ts",
     "test/performance/rendering/scene/retained-navigation-ownership.test.ts",
+    "test/performance/rendering/scene/scroll-preload-margin.test.ts",
     "test/performance/rendering/scene/worker-progress-publication.test.ts",
     "test/performance/rendering/scene/worker-visible-contours.test.ts",
     "test/performance/rendering/scene/remote-scene-lookahead.test.ts",

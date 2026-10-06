@@ -1,5 +1,10 @@
 import type { SceneContentRenderer } from "./content-renderer";
-import { SceneResourcePolicy, visibilityPageBounds } from "./scene-resource-policy";
+import {
+  SceneResourcePolicy,
+  validateScrollPreloadMargin,
+  visibilityPageBounds,
+} from "./scene-resource-policy";
+import { DEFAULT_SCROLL_PRELOAD_MARGIN_PX } from "../../domain/settings/types";
 import type {
   MutableSceneInstrumentation,
   SceneCamera,
@@ -34,6 +39,8 @@ export class SceneVisibilityCoordinator {
   #orderDirty = false;
   #queryPending = false;
   #initialVisibleOnly = false;
+  #scrollPreloadMarginPx = DEFAULT_SCROLL_PRELOAD_MARGIN_PX;
+  #preloadMarginDirty = false;
   #priorityViewport: Bounds | undefined;
   #priorityZoom: number | undefined;
   #priority: SceneVisibilityPriority | undefined;
@@ -49,6 +56,15 @@ export class SceneVisibilityCoordinator {
     if (active === this.#initialVisibleOnly) return;
     this.#initialVisibleOnly = active;
     this.invalidate();
+  }
+
+  public setScrollPreloadMarginPx(value: number): boolean {
+    validateScrollPreloadMargin(value);
+    if (value === this.#scrollPreloadMarginPx) return false;
+    this.#scrollPreloadMarginPx = value;
+    this.#preloadMarginDirty = true;
+    this.invalidate();
+    return true;
   }
 
   public get hasPendingQuery(): boolean {
@@ -68,12 +84,17 @@ export class SceneVisibilityCoordinator {
     this.#resources = resources;
     this.#transforms = transforms;
     this.#elements = elements;
-    if (navigationOptions !== undefined)
+    if (navigationOptions !== undefined) {
       this.#navigation = new NavigationPathPreparation(
         navigationOptions.scene.store,
         navigationOptions.cache,
         () => this.scheduleNavigationFrame(),
       );
+      this.setScrollPreloadMarginPx(
+        navigationOptions.scene.scrollPreloadMarginPx ?? DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
+      );
+      this.setInitialVisibleOnly(navigationOptions.scene.deferInitialOverscan ?? false);
+    }
   }
 
   public previewMemoryUsage(): number {
@@ -186,7 +207,12 @@ export class SceneVisibilityCoordinator {
       }
       return;
     }
-    const { envelope, retained } = visibilityPageBounds(viewport, camera, this.#initialVisibleOnly);
+    const { envelope, retained } = visibilityPageBounds(
+      viewport,
+      camera,
+      this.#initialVisibleOnly,
+      this.#scrollPreloadMarginPx,
+    );
     this.#envelope = envelope;
     this.#navigation?.setTarget(this.#priority, envelope);
     const orderDirty = this.#orderDirty;
@@ -199,6 +225,7 @@ export class SceneVisibilityCoordinator {
       !orderDirty && !this.#content.needsVisibilityRestart,
       deadline,
       now,
+      this.#preloadMarginDirty,
     );
     this.#queryPending = result.pending === true;
     if (this.#queryPending) {
@@ -206,6 +233,7 @@ export class SceneVisibilityCoordinator {
       this.#orderDirty ||= orderDirty;
       return;
     }
+    this.#preloadMarginDirty = false;
     if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) return;
     const visibility =
       !result.changed && orderDirty ? this.#visibility.resortCurrent() : result.visibility;
