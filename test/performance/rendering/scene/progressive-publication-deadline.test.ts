@@ -5,9 +5,15 @@ import { SceneDom } from "../../../../src/rendering/scene/scene-dom";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import { SceneVisibilityReconciler } from "../../../../src/rendering/scene/scene-visibility-reconciler";
 import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
-import { RetainedDomOrder } from "../../../../src/rendering/scene/visibility-publication";
+import {
+  publishStableEntrantRun,
+  publishVisibilityRun,
+  RetainedDomOrder,
+  type PendingMutationRun,
+} from "../../../../src/rendering/scene/visibility-publication";
 import {
   createMountedElement,
+  firstPath,
   type MountedSceneElement,
 } from "../../../../src/rendering/scene/mounted-element";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
@@ -16,6 +22,7 @@ import { createSceneFixture, createSceneRecord } from "../../../fixtures/renderi
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import {
   createPublicationScene,
+  createDirectPublicationScene,
   createPreparedPublicationScene,
   observeSceneInsertions,
   settlePreparedPublication,
@@ -34,6 +41,72 @@ import {
 
 const INITIAL = { height: 100, left: 0, top: 0, width: 400 };
 const TARGET = { ...INITIAL, top: 1_000 };
+
+it.each(
+  [publishStableEntrantRun, publishVisibilityRun].flatMap((publish) =>
+    (["path", "pressure", "multipart", "siblings"] as const).map((kind) => ({ publish, kind })),
+  ),
+)(
+  "$publish.name publishes $kind with bounded DOM work and preserves connected revisits",
+  ({ publish, kind }) => {
+    const { document, dom, instrumentation, store, before, entry, after, entrants, content } =
+      createDirectPublicationScene(kind);
+    if (kind === "path") entry.detachedPathCount = 1;
+    const mounted = new Map<string, MountedSceneElement>();
+    const run: PendingMutationRun = {
+      band: "content",
+      capacity: entrants.length,
+      count: entrants.length,
+      entrants: entrants.map(() => true),
+      entries: entrants.slice().reverse(),
+      preserveRetainedOrder: true,
+      successor: after,
+    };
+    const fragment = vi.spyOn(document, "createDocumentFragment");
+    const append = vi.spyOn(FakeNode.prototype, "append");
+    const insert = vi.spyOn(content, "insertBefore");
+    try {
+      const roots = entrants.flatMap((item) =>
+        item.group === null
+          ? item.paths.map((path) => fakeNode(path.node))
+          : [fakeNode(item.group)],
+      );
+      const ids = entrants.map((item) => item.id);
+      const multipleRoots = kind === "multipart" || kind === "siblings";
+      expect(entry.group === null).toBe(kind !== "pressure");
+      expect(roots).toHaveLength(multipleRoots ? 2 : 1);
+      expect(publish(run, { dom, instrumentation, mounted, store }, 7, true)).toEqual(ids);
+      expect(fragment.mock.calls.length).toBe(multipleRoots ? 1 : 0);
+      expect(append.mock.calls.length).toBe(multipleRoots ? 2 : 0);
+      expect(insert).toHaveBeenCalledOnce();
+      expect(insert.mock.calls[0]![0]).toBe(
+        multipleRoots ? fragment.mock.results[0]!.value : roots[0],
+      );
+      expect(insert.mock.calls[0]![1]).toBe(fakeNode(firstPath(after)));
+      const expected = [fakeNode(firstPath(before)), ...roots, fakeNode(firstPath(after))];
+      expect(content.nodes).toEqual(expected);
+      expect(instrumentation.domRootsPublished).toBe(roots.length);
+      expect(instrumentation.domFragmentRuns).toBe(1);
+      expect(mounted.get(entry.id)).toBe(entry);
+      expect(entry.committedOrderEpoch).toBe(7);
+      expect(entry.detachedPathCount).toBe(0);
+      fragment.mockClear();
+      append.mockClear();
+      insert.mockClear();
+      expect(publish(run, { dom, instrumentation, mounted, store }, 8, true)).toEqual(ids);
+      expect(fragment).not.toHaveBeenCalled();
+      expect(append).not.toHaveBeenCalled();
+      expect(insert).not.toHaveBeenCalled();
+      expect(instrumentation.domRootsPublished).toBe(roots.length);
+      expect(content.nodes).toEqual(expected);
+    } finally {
+      fragment.mockRestore();
+      append.mockRestore();
+      insert.mockRestore();
+      dom.release();
+    }
+  },
+);
 
 it("checks the original deadline between distinct retained rank gaps in a 10,000-element store", () => {
   const store = new FakeSceneStore();

@@ -21,6 +21,7 @@ export interface SceneFrameDiagnosticSnapshot extends SceneFrameDiagnosticState 
   readonly readyContoursAtStart: number;
   readonly readyElementsAtStart: number;
   readonly newRoots: number;
+  /** Native publication units, including directly inserted singleton roots. */
   readonly fragmentRuns: number;
   readonly mountBudgetYields: number;
   readonly mountDeadlineYields: number;

@@ -274,15 +274,18 @@ it("reinstates 315 ordered entries without moving retained DOM nodes in a 10,000
   const originalInsert = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!
     .value as (this: FakeNode, node: FakeNode, reference: FakeNode | null) => FakeNode;
   const insert = vi.spyOn(FakeNode.prototype, "insertBefore");
-  let retainedAppends = 0;
   let fragmentAppends = 0;
   let publishedNodes = 0;
+  let retainedPublications = 0;
   insert.mockImplementation(function (this: FakeNode, node, reference) {
     if (this.fragment) {
       fragmentAppends += 1;
-      if (retainedNodes.has(node)) retainedAppends += 1;
     }
-    if (this === content && node.fragment) publishedNodes += node.nodes.length;
+    if (this === content) {
+      const roots = node.fragment ? node.nodes : [node];
+      publishedNodes += roots.length;
+      retainedPublications += roots.filter((root) => retainedNodes.has(root)).length;
+    }
     return originalInsert.call(this, node, reference);
   });
   try {
@@ -296,8 +299,8 @@ it("reinstates 315 ordered entries without moving retained DOM nodes in a 10,000
       })),
     });
     scheduler.runAll(200);
-    expect(fragmentAppends).toBe(removed.size);
-    expect(retainedAppends).toBe(0);
+    expect(fragmentAppends).toBe(0);
+    expect(retainedPublications).toBe(0);
     expect(publishedNodes).toBe(removed.size);
     expect(renderer.instrumentation().domReorders).toBe(0);
     expect(renderer.instrumentation().domEntrants).toBe(removed.size);

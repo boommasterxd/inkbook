@@ -29,6 +29,34 @@ interface PublicationOptions {
   readonly store: SceneStorePort;
 }
 
+/** Defers fragment allocation until a publication actually needs multiple roots. */
+class PendingPublicationNode {
+  #node: Node | undefined;
+  #fragment: DocumentFragment | undefined;
+
+  public constructor(private readonly document: Document) {}
+
+  public append(entry: MountedSceneElement): void {
+    if (this.#node === undefined && mountedRootCount(entry) === 1) {
+      this.#node = firstPath(entry);
+      entry.detachedPathCount = 0;
+      return;
+    }
+    this.#fragment ??= createFragment(this.document);
+    if (this.#node !== undefined && this.#node !== this.#fragment)
+      this.#fragment.append(this.#node);
+    appendElementToFragment(entry, this.#fragment);
+    this.#node = this.#fragment;
+  }
+
+  public flush(group: SVGGElement, successor: MountedSceneElement | undefined): boolean {
+    if (this.#node === undefined) return false;
+    group.insertBefore(this.#node, successor === undefined ? null : firstPath(successor));
+    this.#node = undefined;
+    return true;
+  }
+}
+
 function commitMountedEntry(
   entry: MountedSceneElement,
   run: PendingMutationRun,
@@ -65,21 +93,17 @@ export function publishStableEntrantRun(
   epoch: number,
 ): string[] {
   const ids: string[] = [];
-  let fragment: DocumentFragment | undefined;
+  const publication = new PendingPublicationNode(options.dom.ownerDocument);
   for (let index = run.count - 1; index >= 0; index -= 1) {
     const entry = run.entries[index];
     if (entry === undefined) continue;
     const connected = commitPublishedEntry(entry, run, options, epoch);
     ids.push(entry.id);
     if (connected) continue;
-    fragment ??= createFragment(options.dom.ownerDocument);
-    appendElementToFragment(entry, fragment);
+    publication.append(entry);
   }
-  if (fragment === undefined) return ids;
-  options.dom
-    .group(run.band)
-    .insertBefore(fragment, run.successor === undefined ? null : firstPath(run.successor));
-  options.instrumentation.domFragmentRuns += 1;
+  if (publication.flush(options.dom.group(run.band), run.successor))
+    options.instrumentation.domFragmentRuns += 1;
   return ids;
 }
 
@@ -197,15 +221,10 @@ export function publishVisibilityRun(
   retainedOrderPreserved: boolean,
 ): string[] {
   const ids: string[] = [];
-  let fragment: DocumentFragment | undefined;
-  let hasPendingNodes = false;
+  const publication = new PendingPublicationNode(options.dom.ownerDocument);
   const flush = (successor: MountedSceneElement | undefined): void => {
-    if (!hasPendingNodes || fragment === undefined) return;
-    options.dom
-      .group(run.band)
-      .insertBefore(fragment, successor === undefined ? null : firstPath(successor));
-    options.instrumentation.domFragmentRuns += 1;
-    hasPendingNodes = false;
+    if (publication.flush(options.dom.group(run.band), successor))
+      options.instrumentation.domFragmentRuns += 1;
   };
   for (let index = run.count - 1; index >= 0; index -= 1) {
     const entry = run.entries[index];
@@ -223,9 +242,7 @@ export function publishVisibilityRun(
       flush(entry);
       continue;
     }
-    fragment ??= createFragment(options.dom.ownerDocument);
-    appendElementToFragment(entry, fragment);
-    hasPendingNodes = true;
+    publication.append(entry);
     if (!run.entrants[index]) options.instrumentation.domReorders += 1;
     flushCachedSuccessor(entry, run.entries[index - 1] ?? run.successor, options, flush);
   }

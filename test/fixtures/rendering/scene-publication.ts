@@ -1,12 +1,64 @@
 import { expect, vi } from "vitest";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene";
-import type { SceneViewport } from "../../../src/rendering/scene/types";
-import type { FakeNode, FakeScheduler } from "../../unit/rendering/scene/fakes";
-import { fakeNode } from "../../unit/rendering/scene/fakes";
-import type { SceneStorePort } from "../../../src/rendering/scene/types";
+import type { SceneStorePort, SceneViewport } from "../../../src/rendering/scene/types";
+import type { FakeScheduler } from "../../unit/rendering/scene/fakes";
+import {
+  asElement,
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  fakeNode,
+  fakeRectangleRecord,
+} from "../../unit/rendering/scene/fakes";
+import { SceneDom } from "../../../src/rendering/scene/scene-dom";
+import { createInstrumentation } from "../../../src/rendering/scene/instrumentation";
+import { createMountedElement, firstPath } from "../../../src/rendering/scene/mounted-element";
+import { buildElementPathParts } from "../../../src/domain/geometry/element-path";
+import { arrow, stroke } from "../../unit/domain/schema/fixtures";
 import { SceneMountPreparation } from "../../../src/rendering/scene/scene-mount-preparation";
-import { createSceneFixture } from "./scene";
+import { createSceneFixture, createSceneRecord } from "./scene";
 import { NAVIGATION_PAGE } from "./pressure-navigation";
+
+/** Places a detached entrant run between two physically retained rank anchors. */
+export function createDirectPublicationScene(kind: "path" | "pressure" | "multipart" | "siblings") {
+  const document = new FakeDocument();
+  const dom = new SceneDom(asElement(new FakeNode(document, "div")), "Canvas", {});
+  const instrumentation = createInstrumentation();
+  const store = new FakeSceneStore();
+  const record =
+    kind === "path" || kind === "siblings"
+      ? fakeRectangleRecord("singleton", 1, 20, 10)
+      : createSceneRecord(kind === "pressure" ? stroke(40_000) : arrow(40_001), 1);
+  const entries = [
+    fakeRectangleRecord("before", 0, 10),
+    record,
+    ...(kind === "siblings" ? [fakeRectangleRecord("second", 1.5, 25, 10)] : []),
+    fakeRectangleRecord("after", 2, 30),
+  ].map((item) => {
+    store.records.set(item.id, item);
+    return createMountedElement(
+      dom.ownerDocument,
+      item,
+      buildElementPathParts(item.element),
+      instrumentation,
+    );
+  });
+  const [before, entry, after] = [entries[0]!, entries[1]!, entries[entries.length - 1]!];
+  const entrants = entries.slice(1, -1);
+  const content = fakeNode(dom.contentGroup);
+  content.append(fakeNode(firstPath(before)), fakeNode(firstPath(after)));
+  return {
+    document: content.ownerDocument,
+    dom,
+    instrumentation,
+    store,
+    before,
+    entry,
+    after,
+    entrants,
+    content,
+  };
+}
 
 /** Starts with the existing navigation scene fully settled. */
 export function createPublicationScene(store: SceneStorePort, viewport: SceneViewport) {
