@@ -56,3 +56,42 @@ describe("serialized union approximation", () => {
     },
   );
 });
+
+describe("count-only outward additions", () => {
+  it.each([0.001, 2, 8, 22])("retains exact contours and addition counts at width %s", (width) => {
+    const shapes = [
+      buildPressureCapsule({ x: 0, y: 0, pressure: 0.2 }, { x: 40, y: 0, pressure: 1 }, width),
+      buildPressureCapsule({ x: 40, y: 0, pressure: 1 }, { x: 40, y: 40, pressure: 0.6 }, width),
+    ];
+    const union = finishGeometrySteps(iteratePressureUnion(shapes));
+    const additions: (readonly PointV1[])[] = [];
+    const count = { count: 0 };
+    for (const loop of union.contours) {
+      const full = finishGeometrySteps(iteratePressureContourApproximation(loop, width, additions));
+      const path = finishGeometrySteps(iteratePressureContourApproximation(loop, width, count));
+      expect(path).toEqual(full);
+    }
+    expect(count.count).toBe(additions.length);
+  });
+
+  it("discards staged arc additions when expansion exceeds 4096 points", () => {
+    const arc = {
+      kind: "arc" as const,
+      start: { x: 100_000_000, y: 0 },
+      end: { x: 100_000_000, y: 0 },
+      center: { x: 0, y: 0 },
+      radius: 100_000_000,
+      sweep: -2 * Math.PI,
+    };
+    const additions: (readonly PointV1[])[] = [];
+    const count = { count: 7 };
+    expect(finishGeometrySteps(iteratePressureContourApproximation([arc], 2, additions))).toEqual([
+      arc,
+    ]);
+    expect(finishGeometrySteps(iteratePressureContourApproximation([arc], 2, count))).toEqual([
+      arc,
+    ]);
+    expect(additions).toEqual([]);
+    expect(count.count).toBe(7);
+  });
+});

@@ -8,6 +8,14 @@ export interface PressureWindow {
   readonly loops: readonly (readonly (PressureBoundaryLine | PressureBoundaryArc)[])[];
 }
 
+/** Path-only preparation cannot supply the selection additions owned by a full window. */
+export interface PressurePathWindow {
+  readonly kind: "path-window";
+  readonly loops: PressureWindow["loops"];
+}
+
+export type PressurePreparationMode = "full" | "path-only";
+
 export interface PressureWindowMeasurement {
   readonly window: PressureWindow;
   readonly numericBytes: number;
