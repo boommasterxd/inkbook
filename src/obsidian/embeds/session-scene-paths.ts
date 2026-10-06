@@ -1,5 +1,6 @@
 import {
   MAX_PREPARED_SCENE_PATH_IDS,
+  type ScenePathPreparationObserver,
   type ScenePathPreparation,
 } from "../../domain/geometry/prepared-scene-paths";
 import type { PurposeOperationIdentity } from "../../persistence/worker/protocol";
@@ -71,7 +72,7 @@ export class SessionScenePaths {
           ...(visibleCount === undefined ? {} : { visibleCount }),
           ...(maxBytes === undefined ? {} : { maxBytes }),
           streamProgress: observer !== undefined,
-          ...(observer?.speculative === true ? { speculative: true } : {}),
+          ...this.requestPriority(observer),
           type: "prepare-scene-paths",
         },
         {
@@ -94,6 +95,13 @@ export class SessionScenePaths {
       signal.removeEventListener("abort", cancel);
     }
   };
+
+  private requestPriority(observer: ScenePathPreparationObserver | undefined) {
+    return {
+      ...(observer?.speculative === true ? { speculative: true } : {}),
+      ...(observer?.navigationReserve === true ? { navigationReserve: true } : {}),
+    };
+  }
 
   private isCurrentResult(
     result: DocumentRuntimeResult,

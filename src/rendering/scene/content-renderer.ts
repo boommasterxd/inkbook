@@ -202,7 +202,9 @@ export class SceneContentRenderer {
   public get hasVisibilityWork(): boolean {
     return this.#reconciler.hasPendingWork;
   }
-
+  public get hasPendingViewportWork(): boolean {
+    return this.hasMountedWork || this.#reconciler.hasPendingViewportWork;
+  }
   public get waitingForPaths(): boolean {
     return this.#reconciler.waitingForPaths && !this.hasMountedWork;
   }

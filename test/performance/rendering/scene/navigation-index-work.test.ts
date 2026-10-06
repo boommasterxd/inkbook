@@ -158,15 +158,15 @@ it("bounds directional candidates and contour ownership, reuses prepared geometr
   const builds = vi.spyOn(cache, "startPreparation");
   preparation.setTarget(priority, BOUNDS);
   expect(preparation.prepare(Infinity, () => 0)).toBe(false);
-  expect(builds).toHaveBeenCalledTimes(256);
-  expect(get.mock.calls.length).toBeLessThanOrEqual(512);
-  expect(work.units).toBeLessThanOrEqual(270);
-  expect(cache.statistics().entries).toBeLessThanOrEqual(256);
+  expect(builds).toHaveBeenCalledTimes(300);
+  expect(get.mock.calls.length).toBeLessThanOrEqual(600);
+  expect(work.units).toBeLessThanOrEqual(314);
+  expect(cache.statistics().entries).toBe(300);
   expect(preparation.memoryUsage()).toBe(0);
   preparation.cancel();
   preparation.setTarget(priority, BOUNDS);
   expect(preparation.prepare(Infinity, () => 0)).toBe(false);
-  expect(builds).toHaveBeenCalledTimes(256);
+  expect(builds).toHaveBeenCalledTimes(300);
   preparation.setTarget({ ...priority, direction: { x: 0, y: -1 } }, BOUNDS);
   preparation.prepare(Infinity, () => 0);
   expect(cache.has(records[0]!.id, 1)).toBe(true);
@@ -209,7 +209,7 @@ it("drains directional work through one background callback without repeating sp
     renderer.setViewport({ height: 100, left: 0, top: 50, width: 100 });
     let frames = 0;
     while (scheduler.pendingCount > 0) {
-      expect(++frames).toBeLessThanOrEqual(256 * 3 + 64);
+      expect(++frames).toBeLessThanOrEqual(300 * 3 + 64);
       entryRead = true;
       scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
       scheduler.runNext();
@@ -218,10 +218,9 @@ it("drains directional work through one background callback without repeating sp
     expect(handles.size).toBe(0);
     // Indexed fringe acquisition and its atomic adoption use at most two required scene frames.
     expect(renderer.instrumentation().frames).toBeLessThanOrEqual(2);
-    expect(renderer.instrumentation().pathCacheEntries).toBe(256);
-    // The leading cursor admits at most 256 of the 300 future records.
-    // Regional traversals remain inside the existing cell/iterator work bound.
-    expect(work.units).toBeLessThanOrEqual(300 + 256 + 44);
+    expect(renderer.instrumentation().pathCacheEntries).toBe(300);
+    // Both visibility and preparation visit the complete 300-record region once.
+    expect(work.units).toBeLessThanOrEqual(2 * 300 + 44);
   } finally {
     now.mockRestore();
     renderer.destroy();
@@ -258,7 +257,7 @@ it("keeps directional work within the frame deadline and releases a suspended co
   preparation.cancel();
 });
 
-it("reuses the same maximum-stroke preparation across overlapping directional retargets and cancels required entrants", () => {
+it("retains maximum-stroke preparation through viewport entry and releases disjoint retargets", () => {
   const samples = Array.from({ length: 16_384 }, (_, sample) => [
     20 + sample / 2_000,
     120,
@@ -310,6 +309,9 @@ it("reuses the same maximum-stroke preparation across overlapping directional re
   }
   expect(steps).toBe(4);
   preparation.setTarget(priority, { ...BOUNDS, minY: 30, maxY: 130 });
+  expect(cancel).not.toHaveBeenCalled();
+  expect(preparation.memoryUsage()).toBeGreaterThan(0);
+  preparation.setTarget(priority, { ...BOUNDS, minY: 1_000, maxY: 1_100 });
   expect(cancel).toHaveBeenCalledOnce();
   expect(preparation.memoryUsage()).toBe(0);
   expect(cache.has(record.id, 1)).toBe(false);
@@ -436,8 +438,13 @@ it("suppresses dense leading work during gestures and releases a suspended curso
     const settledBytes = renderer.memoryUsage().pathCacheBytes;
     work.inputActive = false;
     renderer.setViewport({ height: 100, left: 0, top: 60, width: 100 });
-    scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-    scheduler.runNext();
+    let frames = 0;
+    // Earlier leading refill may first finish its admitted membership query.
+    while (prepare.mock.calls.length === 0) {
+      expect(++frames).toBeLessThanOrEqual(4);
+      scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+      scheduler.runNext();
+    }
     expect(prepare).toHaveBeenCalled();
     expect(scheduler.pendingCount).toBe(1);
     expect(renderer.memoryUsage().pathCacheBytes).toBeGreaterThan(settledBytes);

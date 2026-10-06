@@ -134,6 +134,47 @@ it.each([false, true])(
 );
 
 it.each([false, true])(
+  "releases a reserve ACK for visible demand and reuses its completed contour, bridge=%s",
+  async (bridge) => {
+    const fixture = await streamingFixture(bridge, { navigationReserve: true });
+    const ready = deferred();
+    const adoption = deferred();
+    let signal!: AbortSignal;
+    const pending = fixture
+      .prepare((_, adoptionSignal) => {
+        signal = adoptionSignal;
+        ready.resolve();
+        return adoption.promise;
+      })
+      .catch(() => undefined);
+    try {
+      await ready.promise;
+      fixture.port.setNavigationActive?.(true);
+      expect(signal.aborted).toBe(false);
+      expect(fixture.progressMessages()).toBe(bridge ? 1 : 0);
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(1);
+      const visible = fixture.port.execute({
+        basisRevision: 0,
+        identity: { ...identity, operationId: 3 },
+        ids: [fixture.ids[0]!],
+        type: "prepare-scene-paths",
+      });
+      expect((await pending)?.type).not.toBe("prepare-scene-paths-success");
+      fixture.resume();
+      expect((await visible).type).toBe("prepare-scene-paths-success");
+      expect(signal.aborted).toBe(true);
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(1);
+      expect(fixture.runtime.instrumentation.shapeCacheElements).toBe(1);
+      expect(fixture.runtime.instrumentation.fragmentBuilds).toBe(0);
+    } finally {
+      adoption.resolve();
+      fixture.close();
+    }
+    expect(fixture.runtime.instrumentation.shapeCacheBytes).toBe(0);
+  },
+);
+
+it.each([false, true])(
   "releases a blocked progress ACK after geometry failure, bridge=%s",
   async (bridge) => {
     const fixture = await streamingFixture(bridge);

@@ -26,6 +26,7 @@ import type { ScenePathCache } from "./path-cache";
 
 interface NavigationPreparationOptions {
   readonly cache: ScenePathCache;
+  readonly onPrepared: () => void;
   readonly scene: SceneRendererOptions;
 }
 
@@ -89,6 +90,9 @@ export class SceneVisibilityCoordinator {
         navigationOptions.scene.store,
         navigationOptions.cache,
         () => this.scheduleNavigationFrame(),
+        () => {
+          if (this.#content.hasPendingWork) navigationOptions.onPrepared();
+        },
       );
       this.setScrollPreloadMarginPx(
         navigationOptions.scene.scrollPreloadMarginPx ?? DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
@@ -117,11 +121,10 @@ export class SceneVisibilityCoordinator {
     this.#navigation?.cancel();
   }
 
-  /** Required camera work cancels speculation while retaining a useful local contour. */
+  /** Required camera work keeps useful directional preparation for the next target. */
   public invalidate(preservePending = false): void {
     this.#dirty = true;
     this.cancelNavigationFrame();
-    if (preservePending) this.#navigation?.pause();
     if (!preservePending) {
       this.#navigation?.cancel();
       this.#content.cancelPendingVisibility();
@@ -205,6 +208,7 @@ export class SceneVisibilityCoordinator {
         this.#content.replaceVisibility(visibility);
         this.#resources.updateVisibility(visibility);
       }
+      if (this.#content.hasPendingWork) this.prepareNavigation();
       return;
     }
     const { envelope, retained } = visibilityPageBounds(
@@ -212,6 +216,7 @@ export class SceneVisibilityCoordinator {
       camera,
       this.#initialVisibleOnly,
       this.#scrollPreloadMarginPx,
+      this.#priority?.direction,
     );
     this.#envelope = envelope;
     this.#navigation?.setTarget(this.#priority, envelope);
@@ -234,7 +239,10 @@ export class SceneVisibilityCoordinator {
       return;
     }
     this.#preloadMarginDirty = false;
-    if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) return;
+    if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) {
+      if (this.#content.hasPendingWork) this.prepareNavigation();
+      return;
+    }
     const visibility =
       !result.changed && orderDirty ? this.#visibility.resortCurrent() : result.visibility;
     this.#content.replaceVisibility(visibility, progressive, result.delta);
@@ -257,13 +265,18 @@ export class SceneVisibilityCoordinator {
       this.#dirty ||
       this.#orderDirty ||
       this.#queryPending ||
-      this.#content.hasPendingWork ||
+      this.#content.hasPendingViewportWork ||
       this.#elements.progressive.pending ||
       this.#transforms.values.size > 0 ||
       this.#elements.values.size > 0
     ) {
       this.cancelNavigationFrame();
-      this.#navigation!.pause();
+      const scheduler = options.scene.workScheduler;
+      if (
+        this.#navigation!.hasReadyPaths &&
+        this.#navigation!.adoptReady(scheduler.deadline(), () => scheduler.now())
+      )
+        this.scheduleNavigationFrame();
       return;
     }
     this.#navigation!.setTarget(this.#priority, this.#envelope);

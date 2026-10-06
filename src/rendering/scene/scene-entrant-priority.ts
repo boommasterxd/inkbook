@@ -22,6 +22,7 @@ export class SceneEntrantPriority {
   readonly #records = new Map<string, Candidate>();
   #queued: Iterator<string> = this.#candidates.values();
   #built = false;
+  readonly #viewportCandidates = new Set<string>();
   #heapGeneration = 0;
   #orderingPriority: SceneVisibilityPriority | undefined;
   #insideLimits: Bounds | undefined;
@@ -42,6 +43,11 @@ export class SceneEntrantPriority {
     return this.#heap.length;
   }
 
+  /** Unclassified candidates cannot prove that the exact viewport is complete. */
+  public get hasViewportCandidates(): boolean {
+    return !this.#built || this.#viewportCandidates.size > 0;
+  }
+
   public get heapGeneration(): number {
     return this.#heapGeneration;
   }
@@ -50,7 +56,7 @@ export class SceneEntrantPriority {
     return (
       this.#heap.length * 8 +
       this.#records.size * 80 +
-      (this.#seen.size + this.#candidates.size) * 32
+      (this.#seen.size + this.#candidates.size + this.#viewportCandidates.size) * 32
     );
   }
 
@@ -78,6 +84,7 @@ export class SceneEntrantPriority {
       if (record === undefined) continue;
       this.#candidates.add(next.value);
       const candidate = this.candidate(record.id, record.bounds);
+      if (candidate.tier === 0) this.#viewportCandidates.add(record.id);
       this.#records.set(next.value, candidate);
       this.push(candidate);
     }
@@ -117,12 +124,14 @@ export class SceneEntrantPriority {
     this.#outsideLimits = { left: -Infinity, right: Infinity, above: -Infinity, below: Infinity };
     this.#leadingLimits = { min: -Infinity, max: Infinity };
     this.#heap.length = 0;
+    this.#viewportCandidates.clear();
     this.#seen.clear();
     this.#queued = this.#candidates.values();
     this.#built = false;
   }
 
   public release(id: string): void {
+    this.#viewportCandidates.delete(id);
     this.#candidates.delete(id);
     this.#records.delete(id);
   }

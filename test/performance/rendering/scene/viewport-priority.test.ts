@@ -81,6 +81,125 @@ it("publishes the actual viewport before highlight overscan within a 10,000-elem
   expect(scheduler.pendingCount).toBe(0);
 });
 
+it("proves exact-viewport completion only after classification and publication across retargets", () => {
+  const store = new FakeSceneStore();
+  store.records.set("inside", fakeRectangleRecord("inside", 0, 20, 20));
+  store.records.set("ahead", fakeRectangleRecord("ahead", 1, 20, 140));
+  const priority = new SceneEntrantPriority(
+    store.records.keys(),
+    store,
+    new Set(),
+    createInstrumentation(),
+    {
+      viewport: { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+      direction: { x: 0, y: 1 },
+    },
+  );
+  const get = vi.spyOn(store, "get");
+  let clock = 0;
+  expect(priority.hasViewportCandidates).toBe(true);
+  expect(priority.build(new MountSlice(1, () => clock++))).toBe("deadline");
+  expect(priority.hasViewportCandidates).toBe(true);
+  expect(priority.build(new MountSlice(Infinity, () => 0))).toBeUndefined();
+  expect(priority.take()).toBe("inside");
+  expect(priority.hasViewportCandidates).toBe(true);
+  priority.release("inside");
+  priority.release("inside");
+  expect(priority.hasViewportCandidates).toBe(false);
+  expect(priority.count).toBe(1);
+  const reads = get.mock.calls.length;
+  priority.retarget([], [], {
+    viewport: { minX: 0, minY: 100, maxX: 100, maxY: 200 },
+    direction: { x: 0, y: 1 },
+  });
+  expect(priority.hasViewportCandidates).toBe(true);
+  expect(priority.build(new MountSlice(Infinity, () => 0))).toBeUndefined();
+  expect(priority.hasViewportCandidates).toBe(true);
+  expect(get.mock.calls.length).toBe(reads);
+  priority.release("ahead");
+  expect(priority.hasViewportCandidates).toBe(false);
+  priority.retarget([], [], undefined);
+  expect(priority.hasViewportCandidates).toBe(true);
+  priority.build(new MountSlice(Infinity, () => 0));
+  expect(priority.hasViewportCandidates).toBe(false);
+  expect(priority.memoryUsage()).toBe(0);
+  get.mockRestore();
+});
+
+it.each([
+  { exact: false, busy: false },
+  { exact: true, busy: false },
+  { exact: false, busy: true },
+])(
+  "admits leading reserve after exact publication before busy trailing writes: %j",
+  ({ exact, busy }) => {
+    const reserveY = exact ? 900 : 600;
+    const reserveStroke = {
+      ...indexedStroke(600),
+      pivot: { x: 20, y: reserveY },
+      points: [20, reserveY, 0.5, 21, reserveY, 0.5],
+    };
+    const domain = new ElementStore(
+      Array.from({ length: 10_000 }, (_, rank) =>
+        rank === 600
+          ? reserveStroke
+          : fakeRectangleRecord(indexedStroke(rank).id, rank, 20, rank < 600 ? 450 : 10_000)
+              .element,
+      ),
+    );
+    const store = new ElementSceneStore(domain);
+    const order: string[] = [];
+    const prepare = vi.fn<NonNullable<typeof store.prepareScenePaths>>(() => {
+      order.push("reserve");
+      return new Promise(() => undefined);
+    });
+    store.prepareScenePaths = prepare;
+    const { work } = observeIndexedSceneQueries(domain);
+    const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
+      height: 100,
+      left: 0,
+      top: 0,
+      width: 100,
+    });
+    scheduler.runAll();
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const publication = busy
+      ? observeSceneInsertions(content, (roots) => {
+          expect(roots).toBeLessThanOrEqual(16);
+          order.push("publication");
+          scheduler.time += 8;
+        })
+      : undefined;
+    try {
+      renderer.setViewport({ height: 100, left: 0, top: exact ? 400 : 100, width: 100 });
+      scheduler.runNext();
+      expect(renderer.mountedCount).toBe(busy ? 16 : 192);
+      if (exact || busy) expect(prepare).not.toHaveBeenCalled();
+      else expect(prepare).toHaveBeenCalledOnce();
+      if (busy) {
+        scheduler.runNext();
+        expect(order.slice(0, 3)).toEqual(["publication", "reserve", "publication"]);
+        expect(renderer.mountedCount).toBeLessThan(600);
+      }
+      while (renderer.mountedCount < 600) {
+        const before = renderer.instrumentation().domRootsPublished;
+        scheduler.runNext();
+        expect(renderer.instrumentation().domRootsPublished - before).toBeLessThanOrEqual(192);
+      }
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(prepare.mock.calls[0]![0]).toEqual([reserveStroke.id]);
+      expect(prepare.mock.calls[0]![2]?.navigationReserve).toBe(true);
+      expect(work.indexedVisits).toBeLessThanOrEqual(2_000);
+    } finally {
+      publication?.mockRestore();
+      renderer.destroy();
+      store.release();
+    }
+    expect(prepare.mock.calls[0]![1].aborted).toBe(true);
+    expect(scheduler.pendingCount).toBe(0);
+  },
+);
+
 it("keeps bounded protocol lookahead ordered without consuming a 10,000-candidate heap", () => {
   const store = new FakeSceneStore();
   const ids = Array.from(
@@ -106,7 +225,8 @@ it("keeps bounded protocol lookahead ordered without consuming a 10,000-candidat
   expect(Array.from({ length: 256 }, () => priority.take())).toEqual(preview);
   expect(priority.count).toBe(9_744);
   // The priority owns cached bounds/keys until publication or membership exit.
-  expect(priority.memoryUsage()).toBeLessThanOrEqual(10_000 * 120);
+  // Exact-viewport membership retains one additional bounded Set slot per candidate.
+  expect(priority.memoryUsage()).toBeLessThanOrEqual(10_000 * 152);
   for (const id of preview) priority.release(id);
   let previous: string[] = [];
   for (let revision = 0; revision < 2_000; revision += 1) {
@@ -127,7 +247,7 @@ it("keeps bounded protocol lookahead ordered without consuming a 10,000-candidat
   expect(new Set(remaining).size).toBe(9_745);
   expect(remaining).toContain("retarget-1999");
   expect(remaining.some((id) => id === "retarget-0")).toBe(false);
-  expect(priority.memoryUsage()).toBeLessThanOrEqual(9_745 * 120);
+  expect(priority.memoryUsage()).toBeLessThanOrEqual(9_745 * 152);
   get.mockRestore();
 });
 
@@ -207,7 +327,7 @@ it.each([
     ]);
     expect(get).toHaveBeenCalledTimes(candidates.length);
     expect(stats.visibilityReconcileVisits).toBe(candidates.length * 3);
-    expect(priority.memoryUsage()).toBeLessThanOrEqual(candidates.length * 120);
+    expect(priority.memoryUsage()).toBeLessThanOrEqual(candidates.length * 152);
     expect(Array.from({ length: 7 }, () => priority.take())).toEqual([
       "inside-late",
       "inside-early",

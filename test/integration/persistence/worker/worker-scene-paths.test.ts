@@ -22,18 +22,21 @@ const identity = {
 
 function createScenePreparationGate() {
   let admit!: () => void;
+  let release: (() => void) | undefined;
   const admission = new Promise<void>((resolve) => {
     admit = resolve;
   });
   const gate = {
     blocked: false,
     admission,
+    release: () => release?.(),
     checkpoint: (signal: AbortSignal) => {
       if (!gate.blocked) return undefined;
       admit();
-      return new Promise<void>((_, reject) =>
-        signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }),
-      );
+      return new Promise<void>((resolve, reject) => {
+        release = resolve;
+        signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+      });
     },
   };
   return gate;
@@ -99,13 +102,15 @@ describe("worker canonical scene contour export reuse", () => {
 
 it.each(
   [false, true].flatMap((bridge) =>
-    (["viewport", "model", "drawing", "navigation"] as const).map(
-      (action) => [bridge, action] as const,
+    [false, true].flatMap((navigationReserve) =>
+      (["viewport", "model", "drawing", ...(navigationReserve ? [] : ["navigation"])] as const).map(
+        (action) => [bridge, action, navigationReserve] as const,
+      ),
     ),
   ),
 )(
-  "preempts speculative preparation for %s/%s without losing executor usability",
-  async (bridge, action) => {
+  "preempts speculative preparation for bridge=%s/%s, reserve=%s without losing executor usability",
+  async (bridge, action, navigationReserve) => {
     const gate = createScenePreparationGate();
     const priorities: ("frame" | undefined)[] = [];
     const runtime = new DocumentWorkerRuntime(identity, {
@@ -133,11 +138,12 @@ it.each(
         identity,
         ids: [stroke.id],
         speculative: true,
+        navigationReserve,
         type: "prepare-scene-paths" as const,
       };
       const pending = port.execute(request).catch(() => undefined);
       await gate.admission;
-      expect(priorities[priorities.length - 1]).toBeUndefined();
+      expect(priorities[priorities.length - 1]).toBe(navigationReserve ? "frame" : undefined);
       gate.blocked = false;
       let successor: Promise<unknown> | undefined;
       if (action === "viewport")
@@ -145,6 +151,7 @@ it.each(
           ...request,
           identity: { ...identity, operationId: 3 },
           speculative: false,
+          navigationReserve: false,
         });
       else if (action === "model")
         successor = port.execute({
@@ -165,6 +172,7 @@ it.each(
         basisRevision: action === "model" ? 1 : 0,
         identity: { ...identity, operationId: 4 },
         speculative: false,
+        navigationReserve: false,
       });
       expect(result.type).toBe("prepare-scene-paths-success");
       expect(runtime.instrumentation.shapeBuilds).toBe(1);
@@ -218,6 +226,57 @@ it("releases repeatedly cancelled queued speculation during navigation before ad
   }
   expect(runtime.instrumentation.shapeCacheBytes).toBe(0);
 });
+
+it.each([false, true])(
+  "retargets an overlapping reserve across navigation changes, bridge=%s",
+  async (bridge) => {
+    const gate = createScenePreparationGate();
+    const runtime = new DocumentWorkerRuntime(identity, {
+      checkpoint: gate.checkpoint,
+      run: async (operation, signal) => operation(signal),
+    });
+    const endpoints = createWorkerBridgeEndpoints();
+    const detach = attachDocumentWorkerHost(endpoints.hostEndpoint, runtime);
+    const port = bridge ? createWorkerBridgeClient(endpoints.clientEndpoint) : runtime;
+    const first = createTestStroke();
+    const retained = { ...first, id: "00000000-0000-4000-8000-000000000002" };
+    try {
+      await port.execute({
+        baseModelRevision: null,
+        identity,
+        modelRevision: 0,
+        snapshot: createWorkerSnapshot([first, retained]),
+        type: "model-sync-full",
+      });
+      gate.blocked = true;
+      port.setNavigationActive?.(true);
+      const pending = port.execute({
+        basisRevision: 0,
+        identity,
+        ids: [first.id, retained.id],
+        speculative: true,
+        navigationReserve: true,
+        type: "prepare-scene-paths",
+      });
+      await gate.admission;
+      port.setNavigationActive?.(false);
+      port.setNavigationActive?.(true);
+      gate.blocked = false;
+      port.retargetScenePreparation?.(identity, [retained.id]);
+      gate.release();
+      expect(await pending).toMatchObject({
+        type: "prepare-scene-paths-success",
+        paths: [{ id: retained.id }],
+      });
+      expect(runtime.instrumentation.shapeBuilds).toBe(1);
+      expect(runtime.instrumentation.fragmentBuilds).toBe(0);
+    } finally {
+      port.terminate();
+      detach();
+    }
+    expect(runtime.instrumentation.shapeCacheBytes).toBe(0);
+  },
+);
 
 it.each([false, true])(
   "owns request IDs and identity before dispatch for streaming=%s",

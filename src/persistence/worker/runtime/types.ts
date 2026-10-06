@@ -58,6 +58,8 @@ export interface UnlockRuntimeRequest {
 /** IDs are in visible-first order; no source-file presentation paths are accepted. */
 export interface PrepareScenePathsRuntimeRequest {
   readonly speculative?: boolean;
+  /** Speculative leading contours admitted during navigation; visible work supersedes them. */
+  readonly navigationReserve?: boolean;
   /** Offer this exact-viewport prefix before preparing overscan contours. */
   readonly visibleCount?: number;
   /** Positive remaining contour capacity; defaults to the 4 MiB protocol limit. */

@@ -130,50 +130,58 @@ describe("document worker export admission", () => {
 });
 
 describe("document worker navigation admission", () => {
-  it("admits required paths during navigation while export and drawing gates stay independent", async () => {
-    const harness = createWorkerBridgeHarness();
-    const client = createWorkerBridgeClient(harness.clientEndpoint);
-    const snapshot = createOneStrokeWorkerSnapshot();
-    const identity = {
-      operationId: 1,
-      purpose: "background" as const,
-      sessionId: "session-a",
-      workerEpoch: 1,
-    };
-    client.setNavigationActive(true);
-    await client.execute({
-      baseModelRevision: null,
-      identity,
-      modelRevision: 0,
-      snapshot,
-      type: "model-sync-full",
-    });
-    client.requestPrewarm();
-    const exportRequest = fullExportRequest();
-    let exported = false;
-    const exportPending = client.execute(exportRequest).then((result) => {
-      exported = true;
-      return result;
-    });
-    const paths = await client.execute({
-      basisRevision: 0,
-      identity,
-      ids: [snapshot.elements[0]!.id],
-      type: "prepare-scene-paths",
-    });
-    expect(paths.type).toBe("prepare-scene-paths-success");
-    expect(exported).toBe(false);
-    expect(harness.runtime.instrumentation.prewarmVisitedElements).toBe(0);
-    expect(harness.clientEndpoint.sentMessages.some(isExportRequest)).toBe(false);
-    client.setLiveInputActive(true);
-    client.setNavigationActive(false);
-    await Promise.resolve();
-    expect(exported).toBe(false);
-    client.setLiveInputActive(false);
-    expect((await exportPending).type).toBe("export-success");
-    client.terminate();
-    harness.detach();
-  });
+  it.each([false, true])(
+    "admits navigation paths with reserve=%s while export and drawing gates stay independent",
+    async (navigationReserve) => {
+      const harness = createWorkerBridgeHarness();
+      const client = createWorkerBridgeClient(harness.clientEndpoint);
+      const snapshot = createOneStrokeWorkerSnapshot();
+      const identity = {
+        operationId: 1,
+        purpose: "background" as const,
+        sessionId: "session-a",
+        workerEpoch: 1,
+      };
+      client.setNavigationActive(true);
+      await client.execute({
+        baseModelRevision: null,
+        identity,
+        modelRevision: 0,
+        snapshot,
+        type: "model-sync-full",
+      });
+      client.requestPrewarm();
+      const exportRequest = fullExportRequest();
+      let exported = false;
+      const exportPending = client.execute(exportRequest).then((result) => {
+        exported = true;
+        return result;
+      });
+      client.setLiveInputActive(true);
+      const paths = client.execute({
+        basisRevision: 0,
+        identity,
+        ids: [snapshot.elements[0]!.id],
+        ...(navigationReserve ? { speculative: true, navigationReserve: true } : {}),
+        type: "prepare-scene-paths",
+      });
+      await Promise.resolve();
+      expect(harness.runtime.instrumentation.shapeBuilds).toBe(0);
+      client.setLiveInputActive(false);
+      expect((await paths).type).toBe("prepare-scene-paths-success");
+      expect(exported).toBe(false);
+      expect(harness.runtime.instrumentation.prewarmVisitedElements).toBe(0);
+      expect(harness.clientEndpoint.sentMessages.some(isExportRequest)).toBe(false);
+      client.setLiveInputActive(true);
+      client.setNavigationActive(false);
+      await Promise.resolve();
+      expect(exported).toBe(false);
+      client.setLiveInputActive(false);
+      expect((await exportPending).type).toBe("export-success");
+      client.terminate();
+      harness.detach();
+    },
+  );
 });
 
 describe("document worker navigation adoption", () => {

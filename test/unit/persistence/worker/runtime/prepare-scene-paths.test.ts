@@ -49,6 +49,22 @@ describe("exact visible prefix request validation", () => {
     expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
   });
 
+  it.each([undefined, false, true])(
+    "preserves bounded navigation reserve %s",
+    (navigationReserve) => {
+      const candidate = {
+        ...request,
+        speculative: true,
+        ...(navigationReserve === undefined ? {} : { navigationReserve }),
+      };
+      expect(new ScenePathOperation(candidate).request.navigationReserve).toBe(navigationReserve);
+      expect(new ScenePathValidationContext(candidate).request.navigationReserve).toBe(
+        navigationReserve,
+      );
+      expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
+    },
+  );
+
   it.each([
     ...[-1, 3, 0.5, NaN, Infinity, null, "1"].map((visibleCount) => ({
       visibleCount: visibleCount as number,
@@ -57,6 +73,11 @@ describe("exact visible prefix request validation", () => {
       maxBytes: maxBytes as number,
     })),
     ...[null, 0, "true"].map((speculative) => ({ speculative: speculative as unknown as boolean })),
+    ...[null, 0, "true"].map((navigationReserve) => ({
+      navigationReserve: navigationReserve as unknown as boolean,
+    })),
+    { navigationReserve: true },
+    { navigationReserve: true, speculative: false },
   ])("rejects malformed priority or capacity before admission: %j", (options) => {
     const candidate = { ...request, ...options };
     expect(() => new ScenePathValidationContext(candidate)).toThrow(TypeError);

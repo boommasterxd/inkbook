@@ -314,11 +314,15 @@ it.each([false, true])(
       const clock = cancel
         ? vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++)
         : undefined;
+      const deadline = vi.spyOn(scheduler.workScheduler, "deadline");
       let frames = 0;
       while (renderer.mountedCount === 0) {
         const before = boundary.mock.calls.length;
         renderer.setCamera({ x: 0, zoom: 1 + (frames % 2) * 0.001 });
+        deadline.mockClear();
         scheduler.runNext();
+        // Empty reserve adoption must not spend another deadline read before visible union work.
+        if (cancel) expect(deadline).toHaveBeenCalledOnce();
         // At most 64 preparation steps per slice, each with 4,096 resumptions; clipping tests
         // at most four peer boundaries between resumptions in the canonical union.
         expect(boundary.mock.calls.length - before).toBeLessThanOrEqual(64 * 4096 * 4);
@@ -326,6 +330,7 @@ it.each([false, true])(
         expect(frames).toBeLessThan(100);
         if (cancel && boundary.mock.calls.length > 0) break;
       }
+      deadline.mockRestore();
       clock?.mockRestore();
       if (cancel) expect(renderer.mountedCount).toBe(0);
       if (!cancel) {

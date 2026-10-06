@@ -7,7 +7,11 @@ import {
 } from "../protocol";
 import { DocumentModelRuntime, RuntimeModelError } from "./document-model";
 import { runClipboardRequest } from "./runtime-clipboard";
-import { isRequiredSceneRequest, supersedesSpeculativeSceneRequest } from "./request-admission";
+import {
+  cancelsSpeculativeSceneRequest,
+  isNavigationSceneRequest,
+  supersedesSpeculativeSceneRequest,
+} from "./request-admission";
 import { emitUnlockBatches } from "./unlock-batches";
 import { ScenePathOperation } from "./scene-path-operation";
 import { runtimeSliceContext } from "./slice-scheduler";
@@ -165,16 +169,16 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
 
   public setNavigationActive(active: boolean): void {
     this.#navigationActive = active;
-    if (active) this.#cancelSpeculativeScenePreparation();
+    if (active) this.#cancelSpeculativeScenePreparation(true);
     if (!active) {
       void this.#drain();
       this.#schedulePrewarm();
     }
   }
 
-  #cancelSpeculativeScenePreparation(): void {
+  #cancelSpeculativeScenePreparation(keepNavigationReserve = false): void {
     for (const [id, job] of this.#jobs)
-      if (job.request.type === "prepare-scene-paths" && job.request.speculative === true)
+      if (cancelsSpeculativeSceneRequest(job.request, keepNavigationReserve))
         this.#abortScenePreparation(id, job);
   }
 
@@ -202,7 +206,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   readonly #eligibleJob = (job: import("../protocol").WorkerJob<DocumentRuntimeRequest>): boolean =>
     !this.#navigationActive ||
     this.#jobs.get(job.id)?.abortController.signal.aborted === true ||
-    isRequiredSceneRequest(job.payload);
+    isNavigationSceneRequest(job.payload);
 
   async #drain(): Promise<void> {
     if (this.#running) return;
@@ -224,7 +228,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
             : await this.#scheduler.run(
                 (signal) => this.#run(pending.request, pending.observer, signal),
                 signal,
-                isRequiredSceneRequest(pending.request) ? "frame" : undefined,
+                isNavigationSceneRequest(pending.request) ? "frame" : undefined,
               );
         if (!this.#terminated) pending.resolve(result);
       } catch (error) {

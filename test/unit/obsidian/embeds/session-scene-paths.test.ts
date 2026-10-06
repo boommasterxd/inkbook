@@ -31,6 +31,8 @@ it.each([undefined, 2])(
         {
           ...(visibleCount === undefined ? {} : { visibleCount }),
           maxBytes: 1024,
+          speculative: true,
+          navigationReserve: true,
           onProgress,
           setRetarget,
         },
@@ -41,6 +43,8 @@ it.each([undefined, 2])(
       ids: ["visible-2", "overscan-2"],
       maxBytes: 1024,
       streamProgress: true,
+      speculative: true,
+      navigationReserve: true,
     });
     const request = execute.mock.calls[0]![0];
     expect(request.type === "prepare-scene-paths" && request.visibleCount).toBe(

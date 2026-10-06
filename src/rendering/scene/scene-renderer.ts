@@ -112,7 +112,7 @@ export class SvgSceneRenderer {
       this.#resourcePolicy,
       this.#transformPreviews,
       this.#elementPreviews,
-      { cache: this.#pathCache, scene: options },
+      { cache: this.#pathCache, onPrepared: () => this.#frames.schedule(), scene: options },
     );
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();

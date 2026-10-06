@@ -7,50 +7,55 @@ import {
 } from "../../../../../src/persistence/worker/runtime/public";
 import { executor, snapshot } from "./fixtures";
 
-it("keeps queued background fallback work outside navigation's required frame admission", async () => {
-  const workScheduler = createTestWorkScheduler({ shouldYield: () => true });
-  const nextFrame = vi.spyOn(workScheduler, "nextFrame");
-  const runtime = new DocumentWorkerRuntime(
-    executor,
-    new GestureAwareSliceScheduler({
-      isInputActive: () => false,
-      workScheduler,
-    }),
-  );
-  const document = snapshot();
-  runtime.setNavigationActive(true);
-  const exportPending = runtime.execute({
-    ...executor,
-    baseModelRevision: null,
-    exportGeneration: 1,
-    modelRevision: 0,
-    snapshot: document,
-    type: "export-full",
-  });
-  const identity = { ...executor, operationId: 1, purpose: "background" as const };
-  await runtime.execute({
-    baseModelRevision: null,
-    identity,
-    modelRevision: 0,
-    snapshot: document,
-    type: "model-sync-full",
-  });
-  expect(
-    (
-      await runtime.execute({
-        basisRevision: 0,
-        identity,
-        ids: document.elements.map((element) => element.id),
-        type: "prepare-scene-paths",
-      })
-    ).type,
-  ).toBe("prepare-scene-paths-success");
-  expect(nextFrame).toHaveBeenCalledWith(expect.any(AbortSignal), "frame");
-  expect(runtime.instrumentation.fragmentBuilds).toBe(0);
-  runtime.setNavigationActive(false);
-  expect((await exportPending).type).toBe("export-success");
-  runtime.terminate();
-});
+it.each([false, true])(
+  "keeps queued fallback work outside navigation frame admission with reserve=%s",
+  async (navigationReserve) => {
+    const workScheduler = createTestWorkScheduler({ shouldYield: () => true });
+    const nextFrame = vi.spyOn(workScheduler, "nextFrame");
+    const runtime = new DocumentWorkerRuntime(
+      executor,
+      new GestureAwareSliceScheduler({
+        isInputActive: () => false,
+        workScheduler,
+      }),
+    );
+    const document = snapshot();
+    runtime.setNavigationActive(true);
+    const exportPending = runtime.execute({
+      ...executor,
+      baseModelRevision: null,
+      exportGeneration: 1,
+      modelRevision: 0,
+      snapshot: document,
+      type: "export-full",
+    });
+    const identity = { ...executor, operationId: 1, purpose: "background" as const };
+    await runtime.execute({
+      baseModelRevision: null,
+      identity,
+      modelRevision: 0,
+      snapshot: document,
+      type: "model-sync-full",
+    });
+    runtime.setLiveInputActive(true);
+    const paths = runtime.execute({
+      basisRevision: 0,
+      identity,
+      ids: document.elements.map((element) => element.id),
+      ...(navigationReserve ? { speculative: true, navigationReserve: true } : {}),
+      type: "prepare-scene-paths",
+    });
+    await Promise.resolve();
+    expect(runtime.instrumentation.shapeBuilds).toBe(0);
+    runtime.setLiveInputActive(false);
+    expect((await paths).type).toBe("prepare-scene-paths-success");
+    expect(nextFrame).toHaveBeenCalledWith(expect.any(AbortSignal), "frame");
+    expect(runtime.instrumentation.fragmentBuilds).toBe(0);
+    runtime.setNavigationActive(false);
+    expect((await exportPending).type).toBe("export-success");
+    runtime.terminate();
+  },
+);
 
 it("pauses fallback work while a live gesture is active", async () => {
   let active = true;

@@ -1,7 +1,10 @@
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
-import { vi } from "vitest";
+import { expect, vi, type Mock } from "vitest";
 import type { ElementStore } from "../../../src/domain/store/public";
 import { calculateElementBounds } from "../../../src/domain/geometry/bounds";
+import type { ScenePathPreparation } from "../../../src/domain/geometry/prepared-scene-paths";
+import type { NavigationPathPreparation } from "../../../src/rendering/scene/navigation-path-preparation";
+import type { SceneVisibilityPriority } from "../../../src/rendering/scene/scene-entrant-priority";
 import type { Bounds } from "../../../src/domain/geometry/public";
 import type { SceneElementRecord } from "../../../src/rendering/scene/types";
 import type { InkElementV1, PageV1 } from "../../../src/domain/schema/public";
@@ -108,7 +111,7 @@ export function createSceneRecord(element: InkElementV1, rank = 0): SceneElement
 }
 
 /** Observes the actual indexed cell and candidate visits, including resumed cursors. */
-export function observeIndexedSceneQueries(store: ElementStore) {
+export function observeIndexedSceneQueries(store: Pick<ElementStore, "beginQuery">) {
   const work = { indexedVisits: 0 };
   const originalQuery = store.beginQuery.bind(store);
   const query = vi.spyOn(store, "beginQuery").mockImplementation((bounds) => {
@@ -122,6 +125,21 @@ export function observeIndexedSceneQueries(store: ElementStore) {
     return cursor;
   });
   return { query, work };
+}
+
+/** Starts one real directional request and returns the observed transport boundary. */
+export function beginNavigationPathRequest(
+  fixture: {
+    readonly preparation: NavigationPathPreparation;
+    readonly prepare: Mock<ScenePathPreparation>;
+  },
+  priority: SceneVisibilityPriority,
+  envelope: Bounds,
+) {
+  fixture.preparation.setTarget(priority, envelope);
+  expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(fixture.prepare).toHaveBeenCalledOnce();
+  return fixture.prepare.mock.calls[0]!;
 }
 
 /** A remote geometry boundary that stays pending until its lifecycle aborts it. */

@@ -7,6 +7,7 @@ import type {
 } from "./bridge-messages";
 import type { DocumentRuntimeRequest } from "./types";
 import type { ScenePathReceiver } from "./scene-path-receiver";
+import { cancelsSpeculativeSceneRequest } from "./request-admission";
 
 interface ControllableRequest {
   readonly request: DocumentRuntimeRequest;
@@ -19,9 +20,13 @@ interface ControllableRequest {
 export function cancelSpeculativeScenePreparations(
   endpoint: { postMessage(message: unknown): void },
   pending: Map<number, ControllableRequest>,
+  keepNavigationReserve = false,
 ): void {
   for (const candidate of pending.values())
-    if (candidate.request.type === "prepare-scene-paths" && candidate.request.speculative === true)
+    if (
+      candidate.request.type === "prepare-scene-paths" &&
+      cancelsSpeculativeSceneRequest(candidate.request, keepNavigationReserve)
+    )
       controlScenePreparation(endpoint, pending, candidate.request.identity);
 }
 

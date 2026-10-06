@@ -41,6 +41,11 @@ export function assertScenePathRequest(request: PrepareScenePathsRuntimeRequest)
     throw new TypeError("Invalid scene preparation progress mode.");
   if (request.speculative !== undefined && typeof request.speculative !== "boolean")
     throw new TypeError("Invalid scene preparation priority mode.");
+  if (
+    (request.navigationReserve !== undefined && typeof request.navigationReserve !== "boolean") ||
+    (request.navigationReserve === true && request.speculative !== true)
+  )
+    throw new TypeError("Invalid scene preparation navigation reserve.");
   return maxBytes;
 }
 

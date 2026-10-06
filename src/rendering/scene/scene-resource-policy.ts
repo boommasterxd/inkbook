@@ -140,10 +140,22 @@ export function visibilityPageBounds(
   camera: SceneCamera,
   initialVisibleOnly = false,
   scrollPreloadMarginPx = DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
+  direction?: SceneVisibilityDirection,
 ): { readonly envelope: Bounds; readonly retained: Bounds } {
   if (initialVisibleOnly) {
     const bounds = visiblePageBounds(viewport, camera, 0);
     return { envelope: bounds, retained: bounds };
+  }
+  const retained = visiblePageBounds(
+    viewport,
+    camera,
+    VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
+    (scrollPreloadMarginPx * 2) / 3,
+  );
+  if (direction !== undefined && Math.abs(direction.y) >= Math.abs(direction.x)) {
+    const earlierReserve = scrollPreloadMarginPx / (6 * camera.zoom);
+    if (direction.y > 0) retained.maxY += earlierReserve;
+    if (direction.y < 0) retained.minY -= earlierReserve;
   }
   return {
     envelope: visiblePageBounds(
@@ -152,13 +164,13 @@ export function visibilityPageBounds(
       VIEWPORT_OVERSCAN_SCREEN_PX,
       scrollPreloadMarginPx,
     ),
-    retained: visiblePageBounds(
-      viewport,
-      camera,
-      VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
-      (scrollPreloadMarginPx * 2) / 3,
-    ),
+    retained,
   };
+}
+
+interface SceneVisibilityDirection {
+  readonly x: number;
+  readonly y: number;
 }
 
 export function validateScrollPreloadMargin(value: unknown): void {

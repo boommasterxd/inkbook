@@ -94,6 +94,10 @@ export class SceneVisibilityReconciler {
   public get hasPendingWork(): boolean {
     return this.#pending !== undefined;
   }
+  public get hasPendingViewportWork(): boolean {
+    const pending = this.#pending;
+    return pending?.published === false && pending.delta?.priority?.hasViewportCandidates !== false;
+  }
   public get waitingForPaths(): boolean {
     return this.#waitingForPaths;
   }
@@ -358,7 +362,6 @@ export class SceneVisibilityReconciler {
       exit: (id) => this.addExit(pending, id),
     });
   }
-
   private addExit(pending: PendingReconciliation, id: string): void {
     this.#exitCapacity = recordReconciliationGrowth(
       this.#exitCapacity,
@@ -367,7 +370,6 @@ export class SceneVisibilityReconciler {
     );
     pending.exitIds.push(id);
   }
-
   private stagePromoted(
     pending: PendingReconciliation,
     slice: MountSlice,
@@ -452,14 +454,12 @@ export class SceneVisibilityReconciler {
     this.addMutation(pending.cursor, entrant, true);
     return undefined;
   }
-
   private observeRetainedOrder(pending: PendingReconciliation, entry: MountedSceneElement): void {
     if (!pending.retainedOrderPreserved || pending.order.observe(entry, pending.cursor.band))
       return;
     if (pending.progressive) finishReconciliationRun(pending);
     pending.retainedOrderPreserved = false;
   }
-
   private stageEntry(
     pending: PendingReconciliation,
     record: SceneElementRecord,

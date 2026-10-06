@@ -204,7 +204,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     this.#navigationActive = active;
     if (!active) this.#navigationGate.notifyInactive();
     try {
-      if (active) cancelSpeculativeScenePreparations(this.#endpoint, this.#pending);
+      if (active) cancelSpeculativeScenePreparations(this.#endpoint, this.#pending, true);
       this.#endpoint.postMessage({
         action: "set-navigation",
         active,

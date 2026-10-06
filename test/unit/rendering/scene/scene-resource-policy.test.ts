@@ -64,3 +64,44 @@ it.each([100, 300, 800])("derives the reserve from a %s-pixel preload margin", (
     expect(initial.retained).toEqual(initial.envelope);
   }
 });
+
+it.each([-1, 1])("refills the leading margin after one sixth of its reserve (%s)", (sign) => {
+  const viewport = { left: 0, top: 1_000, width: 100, height: 100 };
+  for (const margin of [100, 300, 800]) {
+    for (const zoom of [0.5, 1, 2]) {
+      const camera = { x: 0, zoom };
+      const direction = { x: 0, y: sign };
+      const original = visibilityPageBounds(viewport, camera, false, margin);
+      const near = { ...viewport, top: viewport.top + sign * (margin / 6 - 0.01) };
+      const far = { ...viewport, top: viewport.top + sign * (margin / 6 + 0.01) };
+      const retained = visibilityPageBounds(viewport, camera, false, margin, direction);
+      expect(containsBounds(original.envelope, retained.retained)).toBe(true);
+      expect(retained.envelope).toEqual(original.envelope);
+      expect(
+        containsBounds(
+          original.envelope,
+          visibilityPageBounds(near, camera, false, margin, direction).retained,
+        ),
+      ).toBe(true);
+      expect(
+        containsBounds(
+          original.envelope,
+          visibilityPageBounds(far, camera, false, margin, direction).retained,
+        ),
+      ).toBe(false);
+    }
+  }
+});
+
+it("keeps neutral and horizontal navigation at the ordinary vertical reserve", () => {
+  const viewport = { left: 0, top: 1_000, width: 100, height: 100 };
+  const camera = { x: 0, zoom: 1 };
+  const original = visibilityPageBounds(viewport, camera);
+  for (const direction of [
+    { x: 0, y: 0 },
+    { x: 1, y: 0.5 },
+    { x: -1, y: -0.5 },
+  ]) {
+    expect(visibilityPageBounds(viewport, camera, false, 300, direction)).toEqual(original);
+  }
+});

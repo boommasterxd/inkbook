@@ -6,7 +6,7 @@ import type {
   RuntimeSliceContext,
   RuntimeSliceWorkProfile,
 } from "./types";
-import { isRequiredSceneRequest } from "./request-admission";
+import { isNavigationSceneRequest } from "./request-admission";
 
 export function runtimeSliceContext(
   scheduler: InputAwareSliceScheduler | null,
@@ -18,7 +18,7 @@ export function runtimeSliceContext(
   const workProfile = scheduler.getSliceWorkProfile?.bind(scheduler);
   return {
     checkpoint: () =>
-      scheduler.checkpoint(signal, isRequiredSceneRequest(request) ? "frame" : undefined),
+      scheduler.checkpoint(signal, isNavigationSceneRequest(request) ? "frame" : undefined),
     ...(sliceMilliseconds === undefined ? {} : { sliceMilliseconds }),
     ...(workProfile === undefined ? {} : { workProfile: workProfile() }),
     signal,
@@ -37,7 +37,7 @@ export function createMainThreadRequestCheckpoint(
   request: DocumentRuntimeRequest,
   adoption = false,
 ): () => Promise<void> | undefined {
-  const required = isRequiredSceneRequest(request);
+  const required = isNavigationSceneRequest(request);
   const exportRequest = request.type === "export-full" || request.type === "export-incremental";
   const priority = required || (!adoption && exportRequest) ? "frame" : "background";
   const checkpoint = (): Promise<void> | undefined => {

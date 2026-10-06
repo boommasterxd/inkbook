@@ -5,7 +5,11 @@ import { NavigationPathPreparation } from "../../../../src/rendering/scene/navig
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import { SessionScenePaths } from "../../../../src/obsidian/embeds/session-scene-paths";
 import type { SceneStorePort } from "../../../../src/rendering/scene/types";
-import { createSceneRecord } from "../../../fixtures/rendering/scene";
+import {
+  beginNavigationPathRequest,
+  createSceneRecord,
+  observeIndexedSceneQueries,
+} from "../../../fixtures/rendering/scene";
 import {
   createWorkerBridgeClient,
   createWorkerBridgeHarness,
@@ -57,7 +61,7 @@ async function workerFixture(bridge: boolean) {
     workerEpoch: () => 1,
   });
   let settled: Promise<unknown> | undefined;
-  let indexedWork = 0;
+  const { query, work } = observeIndexedSceneQueries(index);
   const prepare = vi.fn<NonNullable<SceneStorePort["prepareScenePaths"]>>((...args) => {
     const pending = session.prepare(...args);
     settled = pending;
@@ -68,18 +72,7 @@ async function workerFixture(bridge: boolean) {
     query: () => {
       throw new Error("Directional work must use the real index.");
     },
-    beginQuery: (bounds) => {
-      const cursor = index.beginQuery(bounds);
-      return {
-        advance: (limit) => {
-          const step = cursor.advance(limit);
-          indexedWork += step.workUnits;
-          return step;
-        },
-        cancel: () => cursor.cancel(),
-        memoryUsage: () => cursor.memoryUsage(),
-      };
-    },
+    beginQuery: (bounds) => index.beginQuery(bounds),
     prepareScenePaths: prepare,
   };
   const cache = new ScenePathCache();
@@ -93,7 +86,7 @@ async function workerFixture(bridge: boolean) {
     prepare,
     ready,
     settle: () => settled,
-    indexedWork: () => indexedWork,
+    indexedWork: () => work.indexedVisits,
     reverse: () => {
       preparation.setTarget({ ...PRIORITY, direction: { x: 0, y: -1 } }, BOUNDS);
       preparation.prepare(Infinity, () => 0);
@@ -101,6 +94,7 @@ async function workerFixture(bridge: boolean) {
     close: () => {
       preparation.cancel();
       cache.release();
+      query.mockRestore();
       port.terminate();
       harness.detach();
     },
@@ -113,16 +107,14 @@ it.each([false, true])(
     const fixture = await workerFixture(bridge);
     const local = vi.spyOn(fixture.cache, "startPreparation");
     try {
-      fixture.preparation.setTarget(PRIORITY, BOUNDS);
-      expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
-      expect(fixture.prepare).toHaveBeenCalledOnce();
-      const [ids, , observer] = fixture.prepare.mock.calls[0]!;
+      const [ids, , observer] = beginNavigationPathRequest(fixture, PRIORITY, BOUNDS);
       expect(ids).toHaveLength(256);
       expect(observer?.speculative).toBe(true);
+      expect(observer?.navigationReserve).toBe(true);
       expect(observer?.maxBytes).toBe(MAX_PREPARED_SCENE_PATH_BYTES);
       expect(fixture.indexedWork()).toBeLessThanOrEqual(270);
       expect(fixture.preparation.memoryUsage()).toBeLessThanOrEqual(
-        MAX_PREPARED_SCENE_PATH_BYTES + 256 * 128,
+        MAX_PREPARED_SCENE_PATH_BYTES + 256 * 128 + 256 + 256 * 32,
       );
       expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
       await fixture.settle();
@@ -135,14 +127,22 @@ it.each([false, true])(
       expect(local).not.toHaveBeenCalled();
       expect(fixture.cache.statistics().entries).toBe(256);
       expect(fixture.cache.statistics().bytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+      expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
+      expect(fixture.prepare).toHaveBeenCalledTimes(2);
+      expect(fixture.prepare.mock.calls[1]![0]).toHaveLength(44);
+      await fixture.settle();
+      fixture.preparation.prepare(Infinity, () => 0);
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(300);
+      expect(fixture.cache.statistics().entries).toBe(300);
+      expect(fixture.indexedWork()).toBeLessThanOrEqual(314);
       expect(fixture.preparation.memoryUsage()).toBe(0);
       fixture.preparation.cancel();
       fixture.preparation.setTarget(PRIORITY, BOUNDS);
       fixture.preparation.prepare(Infinity, () => 0);
-      expect(fixture.prepare).toHaveBeenCalledOnce();
-      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(256);
+      expect(fixture.prepare).toHaveBeenCalledTimes(2);
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(300);
       fixture.reverse();
-      expect(fixture.prepare).toHaveBeenCalledOnce();
+      expect(fixture.prepare).toHaveBeenCalledTimes(2);
     } finally {
       fixture.close();
     }

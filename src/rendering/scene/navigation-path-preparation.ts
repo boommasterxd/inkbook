@@ -19,6 +19,7 @@ interface PendingPath {
 }
 
 interface RemotePreparation {
+  retarget: ((ids: readonly string[]) => void) | undefined;
   readonly controller: AbortController;
   readonly versions: Map<string, number>;
   readonly ready: PreparedScenePathEntry[];
@@ -34,7 +35,6 @@ export class NavigationPathPreparation {
   #target: Bounds | undefined;
   #visible: Bounds | undefined;
   #pending: PendingPath | undefined;
-  #visited = 0;
   #complete = true;
   #queryComplete = true;
   #remote: RemotePreparation | undefined;
@@ -44,6 +44,7 @@ export class NavigationPathPreparation {
     private readonly store: SceneStorePort,
     private readonly cache: ScenePathCache,
     private readonly onReady: () => void = () => undefined,
+    private readonly onPublished: () => void = () => undefined,
   ) {}
 
   public memoryUsage(): number {
@@ -54,6 +55,10 @@ export class NavigationPathPreparation {
         ? 0
         : this.#remote.versions.size * 128 + MAX_PREPARED_SCENE_PATH_BYTES)
     );
+  }
+
+  public get hasReadyPaths(): boolean {
+    return this.#remote?.started === true && this.#remote.ready.length > 0;
   }
 
   public setTarget(priority: SceneVisibilityPriority | undefined, envelope: Bounds): void {
@@ -77,26 +82,26 @@ export class NavigationPathPreparation {
             maxY: direction.y > 0 ? envelope.maxY + reserveY : envelope.minY,
           };
     if (sameBounds(this.#target, target)) return;
-    this.pause();
+    this.resetQuery();
     const pending = this.#pending;
     const record = pending === undefined ? undefined : this.store.get(pending.record.id);
     if (
       pending !== undefined &&
       (record?.geometryVersion !== pending.record.geometryVersion ||
-        !intersects(target, record.bounds) ||
-        intersects(envelope, record.bounds))
+        (!intersects(target, record.bounds) && !intersects(envelope, record.bounds)))
     ) {
       pending.path.cancel();
       this.#pending = undefined;
     }
     this.#target = target;
     this.#visible = envelope;
+    this.retainRemote(target, envelope);
     this.#remoteUnavailable = false;
     this.#complete = this.store.beginQuery === undefined;
     this.#queryComplete = this.#complete;
   }
 
-  /** Returns only unfinished work; reaching the region capacity closes this target. */
+  /** A full transport batch suspends acquisition until its contours have been adopted. */
   public prepare(deadline: number, now: () => number): boolean {
     if (this.#remote?.started === true) return this.adoptRemote(deadline, now);
     while (!this.#complete && now() < deadline) {
@@ -111,11 +116,13 @@ export class NavigationPathPreparation {
         return false;
       }
       for (const id of step.ids) this.admit(id);
-      if (step.done || this.#visited >= MAX_PREPARED_SCENE_PATH_IDS) {
-        this.#cursor.cancel();
-        this.#cursor = undefined;
-        this.#queryComplete = true;
-        this.#complete = this.#pending === undefined;
+      if (step.done || (this.#remote?.versions.size ?? 0) >= MAX_PREPARED_SCENE_PATH_IDS) {
+        this.#queryComplete = step.done;
+        if (step.done) {
+          this.#cursor.cancel();
+          this.#cursor = undefined;
+        }
+        this.#complete = step.done && this.#pending === undefined;
         if (this.#remote !== undefined) {
           void this.dispatchRemote(this.#remote);
           return false;
@@ -125,6 +132,13 @@ export class NavigationPathPreparation {
       }
     }
     return !this.#complete;
+  }
+
+  /** Finished contours can help the exact viewport without admitting more reserve work. */
+  public adoptReady(deadline: number, now: () => number): boolean {
+    if (this.#remote?.started !== true) return false;
+    this.adoptRemote(deadline, now);
+    return (this.#remote?.ready.length ?? 0) > 0;
   }
 
   public cancel(): void {
@@ -139,10 +153,18 @@ export class NavigationPathPreparation {
 
   /** Required work cancels speculation and suspends the useful local fallback contour. */
   public pause(): void {
+    this.resetQuery();
+    this.discardRemote();
+    this.#complete = this.#target === undefined || this.store.beginQuery === undefined;
+  }
+
+  private resetQuery(): void {
     this.#cursor?.cancel();
     this.#cursor = undefined;
-    this.#visited = 0;
     this.#queryComplete = false;
+  }
+
+  private discardRemote(): void {
     const remote = this.#remote;
     this.#remote = undefined;
     if (remote !== undefined) {
@@ -152,11 +174,28 @@ export class NavigationPathPreparation {
       remote.received.clear();
       remote.bytes = 0;
     }
-    this.#complete = this.#target === undefined || this.store.beginQuery === undefined;
+  }
+
+  private retainRemote(target: Bounds, envelope: Bounds): void {
+    const remote = this.#remote;
+    if (remote === undefined) return;
+    for (const [id, version] of remote.versions) {
+      const record = this.store.get(id);
+      if (
+        record?.geometryVersion === version &&
+        (intersects(target, record.bounds) || intersects(envelope, record.bounds))
+      )
+        continue;
+      remote.versions.delete(id);
+    }
+    for (let index = remote.ready.length - 1; index >= 0; index -= 1) {
+      if (!remote.versions.has(remote.ready[index]!.id)) remote.ready.splice(index, 1);
+    }
+    if (remote.versions.size === 0) this.discardRemote();
+    else remote.retarget?.([...remote.versions.keys()]);
   }
 
   private admit(id: string): void {
-    this.#visited += 1;
     const record = this.store.get(id);
     if (record?.element.kind !== "stroke" || intersects(this.#visible!, record.bounds)) return;
     const pressure = this.store.pressureGeometry?.(id, record.geometryVersion);
@@ -166,6 +205,7 @@ export class NavigationPathPreparation {
       this.#pending = { record, path: this.cache.startPreparation(record.element, pressure) };
     else {
       this.#remote ??= {
+        retarget: undefined,
         controller: new AbortController(),
         versions: new Map(),
         ready: [],
@@ -186,9 +226,13 @@ export class NavigationPathPreparation {
         remote.controller.signal,
         {
           speculative: true,
+          navigationReserve: true,
           maxBytes: MAX_PREPARED_SCENE_PATH_BYTES,
           onProgress: (paths) => this.receiveRemote(remote, paths),
-          setRetarget: () => undefined,
+          setRetarget: (handler) => {
+            remote.retarget = handler;
+            handler?.([...remote.versions.keys()]);
+          },
         },
       );
       if (this.#remote !== remote) return;
@@ -229,7 +273,8 @@ export class NavigationPathPreparation {
     if (remote.ready.length > 0) return true;
     if (remote.terminal) {
       this.#remote = undefined;
-      this.#complete = true;
+      this.#complete = this.#queryComplete;
+      return !this.#complete;
     }
     return false;
   }
@@ -237,7 +282,12 @@ export class NavigationPathPreparation {
   private failRemote(remote: RemotePreparation): void {
     if (this.#remote !== remote) return;
     this.#remoteUnavailable = true;
-    this.pause();
+    if (remote.ready.length > 0) {
+      remote.controller.abort();
+      remote.terminal = true;
+      this.resetQuery();
+      this.#complete = false;
+    } else this.pause();
     this.onReady();
   }
 
@@ -246,6 +296,7 @@ export class NavigationPathPreparation {
     localPressureGeometry(record.element, pressure)?.publishPath?.(parts);
     this.cache.completePreparation(record.element, parts);
     this.cache.retain(record.id, record.geometryVersion, parts);
+    this.onPublished();
   }
 
   private preparePending(deadline: number, now: () => number): boolean {

@@ -13,6 +13,7 @@ export const scenePathProgressIdentity = {
 
 interface ScenePathProgressFixtureOptions {
   readonly initiallyBlocked?: boolean;
+  readonly navigationReserve?: boolean;
   readonly visibleCount?: number;
 }
 
@@ -66,6 +67,7 @@ export async function createScenePathProgressFixture(
           identity: scenePathProgressIdentity,
           ids,
           streamProgress: true,
+          ...(options.navigationReserve ? { navigationReserve: true, speculative: true } : {}),
           type: "prepare-scene-paths",
           ...(options.visibleCount === undefined ? {} : { visibleCount: options.visibleCount }),
           ...(maxBytes === undefined ? {} : { maxBytes }),

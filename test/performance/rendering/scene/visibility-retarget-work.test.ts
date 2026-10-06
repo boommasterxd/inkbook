@@ -130,7 +130,8 @@ it("preserves partial heap acquisition across safe retargets without revisiting 
     priority.build(new MountSlice(1_000, () => clock));
     expect(get.mock.calls.length - acquired).toBe(1_000);
     expect(priority.count).toBe((target + 1) * 1_000);
-    expect(priority.memoryUsage()).toBeLessThanOrEqual(10_000 * 152);
+    // Partial acquisition owns seen, candidate and exact-viewport membership slots.
+    expect(priority.memoryUsage()).toBeLessThanOrEqual(10_000 * 184);
   }
   expect(priority.build(new MountSlice(Infinity, () => 0))).toBeUndefined();
   expect(new Set(get.mock.calls.map(([id]) => id)).size).toBe(10_000);
