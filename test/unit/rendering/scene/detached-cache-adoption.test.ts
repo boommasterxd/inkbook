@@ -10,6 +10,9 @@ import { SceneDom } from "../../../../src/rendering/scene/scene-dom";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import { SceneVisibilityReconciler } from "../../../../src/rendering/scene/scene-visibility-reconciler";
 import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
+import type { SceneStorePort } from "../../../../src/rendering/scene/types";
+import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
+import { arrow } from "../../domain/schema/fixtures";
 import {
   asElement,
   FakeDocument,
@@ -22,12 +25,24 @@ import {
 const TOP = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
 const END = { ...TOP, minY: 1_000, maxY: 1_100 };
 
-function adoptionScene() {
+function adoptionScene(coldRemote = false, multipartExit = false) {
   const dom = new SceneDom(asElement(new FakeNode(new FakeDocument(), "div")), "Canvas", {});
-  const store = new FakeSceneStore();
+  const store: FakeSceneStore & Pick<SceneStorePort, "prepareScenePaths"> = new FakeSceneStore();
   const instrumentation = createInstrumentation();
   const entries = Array.from({ length: 4 }, (_, rank) => {
-    const record = fakeRectangleRecord(`node-${rank}`, rank, 20, rank < 2 ? 50 : 1_050);
+    const rectangle = fakeRectangleRecord(`node-${rank}`, rank, 20, rank < 2 ? 50 : 1_050);
+    const record =
+      multipartExit && rank === 2
+        ? {
+            ...rectangle,
+            element: {
+              ...arrow(500),
+              id: rectangle.id,
+              start: { x: 20, y: 1_050 },
+              end: { x: 40, y: 1_050 },
+            },
+          }
+        : rectangle;
     store.records.set(record.id, record);
     const entry = createMountedElement(
       dom.ownerDocument,
@@ -51,9 +66,18 @@ function adoptionScene() {
       mounted.set(entry.id, entry);
     }
   }
+  if (coldRemote) {
+    const id = "cold";
+    store.records.set(id, {
+      ...fakeRectangleRecord(id, 4, 20, 50),
+      element: { ...createTestStroke(), id, points: [20, 50, 0.5, 30, 60, 1] },
+    });
+    store.prepareScenePaths = () => new Promise(() => undefined);
+  }
   const visibility = new SceneVisibilityState(store, instrumentation);
   visibility.query(END);
   const paths = new ScenePathCache();
+  const exitState = { ready: true };
   const reconciler = new SceneVisibilityReconciler({
     dom,
     store,
@@ -63,10 +87,22 @@ function adoptionScene() {
     detachedCache: cache,
     pathCache: paths,
     orderDirty: { content: new Set(), highlight: new Set() },
+    isExitReady: () => exitState.ready,
   });
   const target = visibility.query(TOP);
   reconciler.replace(target.visibility, true, target.delta);
-  return { dom, store, entries, cache, mounted, visibility, paths, reconciler, maximumBytes };
+  return {
+    dom,
+    store,
+    entries,
+    cache,
+    mounted,
+    visibility,
+    paths,
+    reconciler,
+    maximumBytes,
+    exitState,
+  };
 }
 
 function drain(fixture: ReturnType<typeof adoptionScene>) {
@@ -100,7 +136,13 @@ function pauseWarmAdoption(cache: DetachedSceneElementCache) {
     if (entry !== undefined) time = 10;
     return entry;
   });
-  return { restore, now: () => time };
+  return {
+    restore,
+    now: () => time,
+    setTime: (value: number) => {
+      time = value;
+    },
+  };
 }
 
 it("keeps needed roots when stale exits fall back to retention after physical removal", () => {
@@ -122,6 +164,70 @@ it("keeps needed roots when stale exits fall back to retention after physical re
   } finally {
     restore.mockRestore();
     targetRemoval.mockRestore();
+    release(fixture);
+  }
+});
+
+it("uses admitted warm ownership work while cold remote paths and exit retention wait", () => {
+  const fixture = adoptionScene(true);
+  const { restore, now } = pauseWarmAdoption(fixture.cache);
+  try {
+    fixture.reconciler.reconcile(10, now, new Map(), new Map(), { remainingRoots: 192 });
+    restore.mockRestore();
+    expect(fixture.mounted.has("node-1")).toBe(false);
+    for (let frame = 0; frame < 4; frame += 1)
+      fixture.reconciler.reconcile(10, now, new Map(), new Map(), {
+        remainingRoots: 192,
+        allowLatePreparedUnit: true,
+      });
+    expect(fixture.mounted.get("node-1")).toBe(fixture.entries[1]);
+    expect(fixture.reconciler.waitingForPaths).toBe(true);
+    expect(fixture.cache.statistics().evictions).toBe(0);
+  } finally {
+    restore.mockRestore();
+    release(fixture);
+  }
+});
+
+it("charges a partial physical exit before admitting another warm root under the late allowance", () => {
+  const fixture = adoptionScene(true, true);
+  const { restore, now, setTime } = pauseWarmAdoption(fixture.cache);
+  try {
+    fixture.reconciler.reconcile(10, now, new Map(), new Map(), { remainingRoots: 192 });
+    restore.mockRestore();
+    const record = fixture.store.get("node-2")!;
+    fixture.store.records.set(record.id, { ...record, geometryVersion: 2 });
+    fixture.exitState.ready = false;
+    let orderReads = 0;
+    const originalGet = fixture.mounted.get.bind(fixture.mounted);
+    const read = vi.spyOn(fixture.mounted, "get").mockImplementation((id) => {
+      if (++orderReads === 2) setTime(20);
+      return originalGet(id);
+    });
+    fixture.reconciler.reconcile(20, now, new Map(), new Map(), { remainingRoots: 192 });
+    read.mockRestore();
+    expect(fixture.mounted.has("node-1")).toBe(false);
+    fixture.exitState.ready = true;
+    const exiting = fixture.entries[2]!;
+    const exitingNode = fakeNode(exiting.paths[exiting.paths.length - 1]!.node);
+    const originalRemove = exitingNode.remove.bind(exitingNode);
+    const remove = vi.spyOn(exitingNode, "remove").mockImplementation(() => {
+      originalRemove();
+      setTime(30);
+    });
+    const publication = { remainingRoots: 192, remainingRemovals: 64, allowLatePreparedUnit: true };
+    try {
+      fixture.reconciler.reconcile(20, now, new Map(), new Map(), publication);
+      expect(remove).toHaveBeenCalledOnce();
+      expect(fixture.entries[2]!.detachedPathCount).toBe(1);
+      expect(publication.remainingRemovals).toBe(63);
+      expect(fixture.mounted.has("node-2")).toBe(true);
+      expect(fixture.mounted.has("node-1")).toBe(false);
+    } finally {
+      remove.mockRestore();
+    }
+  } finally {
+    restore.mockRestore();
     release(fixture);
   }
 });

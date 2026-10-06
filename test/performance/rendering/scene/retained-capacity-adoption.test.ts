@@ -22,6 +22,12 @@ import { DetachedSceneElementCache } from "../../../../src/rendering/scene/detac
 import { DETACHED_ELEMENT_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import type { SceneStorePort } from "../../../../src/rendering/scene/types";
+import { MountSlice } from "../../../../src/rendering/scene/mount-slice";
+import type { PendingReconciliation } from "../../../../src/rendering/scene/reconciliation-state";
+import {
+  prepareVisibilityCleanup,
+  removeOrderedVisibilityExits,
+} from "../../../../src/rendering/scene/visibility-reconciliation-commit";
 
 function capacityScene() {
   const dom = new SceneDom(asElement(new FakeNode(new FakeDocument(), "div")), "Canvas", {});
@@ -159,3 +165,67 @@ it("adopts incoming original roots before exit retention can evict them at the 2
   }
   expect(cache.memoryUsage()).toBe(0);
 });
+
+it.each(["sort", "duplicates", "skipped"] as const)(
+  "charges real %s cleanup progress before admitting another unit at the shared deadline",
+  (progress) => {
+    const count = 10_000;
+    const mounted = new Map<string, MountedSceneElement>();
+    for (let rank = 0; rank < count; rank += 1)
+      mounted.set(`exit-${rank}`, {
+        id: `exit-${rank}`,
+        band: "content",
+        committedRank: rank,
+      } as MountedSceneElement);
+    let rawReads = 0;
+    const ids =
+      progress === "duplicates"
+        ? Array<string>(count).fill("exit-0")
+        : [...mounted.keys()].reverse();
+    const pending = {
+      exitIds: new Proxy(ids, {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/.test(key)) rawReads += 1;
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      }),
+      exitIndex: 0,
+      exitScanComplete: true,
+      exitOrderPrepared: progress === "skipped",
+      cleanupFirst: true,
+    } as PendingReconciliation;
+    let clock = 0;
+    const originalGet = mounted.get.bind(mounted);
+    const read = vi.spyOn(mounted, "get").mockImplementation((id) => {
+      clock = 8;
+      return originalGet(id);
+    });
+    const now = () => clock;
+    const slice = new MountSlice(8, now);
+    const options = { mounted } as Parameters<typeof removeOrderedVisibilityExits>[1];
+    try {
+      expect(
+        prepareVisibilityCleanup(pending, slice, {
+          collect: () => undefined,
+          remove: () => {
+            expect(
+              removeOrderedVisibilityExits(pending, options, {
+                deadline: 8,
+                now,
+                isExit: () => false,
+              }),
+            ).toBe(false);
+          },
+        }),
+      ).toBe("deadline");
+      expect(slice.elements).toBe(1);
+      expect(pending.exitIndex).toBe(progress === "skipped" ? 1 : 0);
+      expect(pending.exitOrderPrepared).toBe(true);
+      expect(pending.exitIds).toHaveLength(progress === "duplicates" ? 1 : count);
+      expect(rawReads).toBe(progress === "skipped" ? 1 : count + 1);
+      expect(read.mock.calls.length).toBeLessThanOrEqual(progress === "sort" ? count * 32 + 1 : 1);
+    } finally {
+      read.mockRestore();
+    }
+  },
+);

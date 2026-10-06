@@ -89,24 +89,36 @@ export function prepareVisibilityCleanup(
   cleanup: {
     readonly collect: () => MountYieldReason | undefined;
     readonly remove: () => void;
+    readonly remainingRemovals?: () => number;
   },
 ): MountYieldReason | undefined {
   if (!pending.cleanupFirst) return undefined;
   const initialBlock = slice.blockingReason();
   if (initialBlock !== undefined) return initialBlock;
   pending.cleanupFirst = false;
+  const remove = () => {
+    const previousIndex = pending.exitIndex;
+    const previousSpan = pending.exitIds.length - previousIndex;
+    const previousOrderPrepared = pending.exitOrderPrepared;
+    const previousRemovals = cleanup.remainingRemovals?.();
+    cleanup.remove();
+    if (
+      pending.exitIndex !== previousIndex ||
+      previousRemovals !== cleanup.remainingRemovals?.() ||
+      (!previousOrderPrepared && pending.exitOrderPrepared && previousSpan > 1)
+    )
+      slice.record();
+  };
   const hasCollectedExits = pending.exitIndex < pending.exitIds.length;
   if (hasCollectedExits) {
-    cleanup.remove();
-    slice.record();
+    remove();
     const blocked = slice.blockingReason();
     if (blocked !== undefined) return blocked;
   }
   const blocked = cleanup.collect() ?? slice.blockingReason();
   if (blocked !== undefined) return blocked;
   if (!hasCollectedExits && pending.exitIndex < pending.exitIds.length) {
-    cleanup.remove();
-    slice.record();
+    remove();
   }
   return slice.blockingReason();
 }

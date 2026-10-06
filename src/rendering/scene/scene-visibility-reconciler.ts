@@ -48,7 +48,6 @@ import type {
 } from "./reconciliation-state";
 
 export type { PreviewTransform } from "./scene-mount-preparation";
-
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
 /** Publishes ordered viewport batches and removes obsolete nodes in bounded frame slices. */
@@ -285,6 +284,7 @@ export class SceneVisibilityReconciler {
               this.addExit(pending, id),
             ),
           remove: removeExits,
+          remainingRemovals: () => publication.remainingRemovals ?? 64,
         }) ??
         this.stageSlice(pending, slice, previewTransforms, deadline, now, publish));
     if (publish?.() === false) reason = now() < deadline ? "budget" : "deadline";
