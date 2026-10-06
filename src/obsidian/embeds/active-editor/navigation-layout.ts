@@ -13,6 +13,7 @@ interface ViewportRect {
 }
 
 export interface NavigationLayoutRead {
+  readonly containerBorderTop?: number;
   readonly containerBounds: ElementContentBox;
   readonly containerWidth: number;
   readonly embedTopInScrollContent: number;
@@ -51,11 +52,12 @@ export function readNavigationLayout(
   container: HTMLElement,
   scrollOwner: BrowserScrollElement,
 ): NavigationLayoutRead | undefined {
-  const { contentBox: containerBounds } = measureElementBox(container);
+  const { borderBox, contentBox: containerBounds } = measureElementBox(container);
   if (!Number.isFinite(containerBounds.width) || containerBounds.width <= 0) return undefined;
   const ownerViewport = readScrollOwnerViewport(scrollOwner);
   const scrollTop = browserScrollMetrics.getScrollTop(scrollOwner);
   return {
+    containerBorderTop: borderBox.top,
     containerBounds,
     containerWidth: containerBounds.width,
     embedTopInScrollContent: scrollTop + containerBounds.top - ownerViewport.top,
@@ -96,6 +98,17 @@ export function readOwnerScrollBounds(scrollOwner: BrowserScrollElement): Scroll
       browserScrollMetrics.getScrollHeight(scrollOwner) -
         browserScrollMetrics.getClientHeight(scrollOwner),
     ),
+  };
+}
+
+export function navigationResizeAnchor(layout: NavigationLayoutRead) {
+  return {
+    anchorViewportY: (layout.ownerViewport.bottom - layout.ownerViewport.top) / 2,
+    embedTopInScrollContent: layout.embedTopInScrollContent,
+    oldRenderedContainerHeight: layout.containerBounds.height,
+    oldScrollTop: layout.scrollTop,
+    scrollBounds: readOwnerScrollBounds(layout.scrollOwner),
+    viewportWidth: layout.containerWidth,
   };
 }
 

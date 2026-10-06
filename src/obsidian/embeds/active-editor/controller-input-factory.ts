@@ -87,7 +87,7 @@ export function createActiveEditorInputControllers(
   const gestures = createActiveEditorGestureController(
     [openContextMenu, options.beginPreview],
     [
-      () => options.navigation.begin(),
+      (anchor) => options.navigation.beginPinchScreen(anchor),
       () => options.navigation.finish(),
       (delta) => options.navigation.pan(touchPanDelta(delta)),
       (kind) => (kind === "page-pan" ? options.navigation.revert() : options.navigation.finish()),

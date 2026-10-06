@@ -5,6 +5,7 @@ import type { BrowserScrollElement } from "../../scrolling/index";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 export interface ActiveEditorZoomLayoutUpdate {
+  readonly scrollTop?: number;
   readonly blockSize: number;
   readonly zoom: number;
   readonly layout?: NavigationLayoutRead;
@@ -18,6 +19,7 @@ export interface ActiveEditorCameraUpdate {
 export interface ActiveEditorNavigationOptions {
   readonly workScheduler: WorkScheduler;
   readonly onNavigationActive?: (active: boolean) => void;
+  readonly onCancelPinch?: () => void;
   readonly activePageHeight: () => number;
   readonly applyCamera?: (
     camera: ActiveEditorCameraUpdate,

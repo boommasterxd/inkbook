@@ -1,5 +1,6 @@
 export {
   applyAnchoredZoom,
+  anchoredScrollTop,
   applyResize,
   calculateFitZoom,
   calculateZoomLimits,

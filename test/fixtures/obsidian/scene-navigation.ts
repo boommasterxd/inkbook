@@ -54,6 +54,7 @@ export function sceneNavigationFixture(
     system: "crosshair",
   }));
   const navigation = createControllerNavigation({
+    onCancelPinch: () => undefined,
     controller: {
       renderer,
       container: {

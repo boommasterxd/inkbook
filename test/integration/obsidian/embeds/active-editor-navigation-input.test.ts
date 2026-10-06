@@ -150,7 +150,7 @@ describe("active editor keyboard and wheel navigation", () => {
     expect(harness.navigation.updateWheel(zoomWheel(-4))).toBe(true);
     harness.frames.flush();
 
-    expect(harness.navigation.zoom).toBeCloseTo(oldZoom * 1.08 ** 0.625);
+    expect(harness.navigation.zoom).toBeCloseTo(oldZoom * Math.exp(0.04));
   });
 
   it.each([1, 2])("keeps line/page wheel mode %s at one discrete step", (deltaMode) => {
@@ -193,7 +193,7 @@ describe("continuous pixel-wheel response", () => {
       expect(harness.frames.callbacks.size).toBe(1);
       harness.frames.flush();
       const factor = harness.navigation.zoom / before;
-      expect(factor).toBeCloseTo(1.08 ** (magnitude / 6.4), 12);
+      expect(factor).toBeCloseTo(Math.exp(magnitude / 100), 12);
       expect(factor).toBeGreaterThan(previous);
       previous = factor;
       harness.navigation.dispose();
@@ -214,7 +214,7 @@ describe("continuous pixel-wheel response", () => {
         expect(harness.frames.callbacks.size).toBe(1);
         harness.frames.flush();
       }
-      expect(harness.navigation.zoom).toBeCloseTo(before * 1.08 ** 5, 12);
+      expect(harness.navigation.zoom).toBeCloseTo(before * Math.exp(0.32), 12);
       harness.navigation.dispose();
     }
   });
@@ -230,7 +230,7 @@ describe("continuous zoom limit and reversal handling", () => {
     ]) {
       expect(() => harness.navigation.updateWheel(zoomWheel(delta!))).not.toThrow();
       for (let frame = 0; harness.frames.callbacks.size > 0; frame += 1) {
-        expect(frame).toBeLessThanOrEqual(Math.ceil(Math.log(5 / fit) / Math.log(1.35)));
+        expect(frame).toBe(0);
         expect(harness.frames.callbacks.size).toBe(1);
         harness.frames.flush();
       }
@@ -247,7 +247,7 @@ describe("continuous zoom limit and reversal handling", () => {
     harness.navigation.updateWheel(zoomWheel(4));
     harness.frames.flush();
     expect(harness.navigation.zoom).toBeLessThan(beforeReversal);
-    expect(harness.navigation.zoom).toBeCloseTo(beforeReversal * 1.08 ** (-4 / 6.4), 12);
+    expect(harness.navigation.zoom).toBeCloseTo(beforeReversal * Math.exp(-0.04), 12);
     expect(harness.frames.callbacks.size).toBe(0);
     harness.navigation.dispose();
   });
@@ -424,6 +424,7 @@ describe("active editor gesture geometry and view transfer", () => {
     expect(harness.navigation.localPointFromPage({ x: 200, y: 100 })).toEqual({ x: 200, y: 200 });
     expect(harness.navigation.screenPoint({ x: 200, y: 100 })).toEqual({ x: 220, y: 300 });
     harness.navigation.screenPointer({ ...event, clientX: 230 });
+    harness.navigation.beginPinchScreen({ x: 200, y: 200 });
     harness.navigation.updatePinchScreen({ x: 210, y: 200 }, 1.1);
     expect(harness.readBounds).toHaveBeenCalledTimes(1);
     harness.frames.flush();

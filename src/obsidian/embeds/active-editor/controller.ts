@@ -9,7 +9,7 @@ import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./coalesced-input";
 import { createActiveEditorChromeProps, createChromeCallbacks } from "./controller-chrome";
-import { applyInputAction, configureInputTool } from "./controller-dispatch";
+import { applyInputAction, cancelHandle, configureInputTool } from "./controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import * as Interactions from "./controller-interactions";
 import * as Helpers from "./controller-helpers";
@@ -132,6 +132,7 @@ export class ActiveEditorController {
     this.#navigation = Interactions.createControllerNavigation({
       controller: options,
       getInput: () => this.#input,
+      onCancelPinch: () => this.#cancelActiveGesture(),
       isSelectionMoveActive: () => this.#input.interaction?.phase === "element-move",
       renderSelection: () => this.#handles.renderCameraSelection(),
       adoptCursorLayout: (layout) => this.#cursor?.adoptNavigationLayout(layout),
@@ -396,12 +397,7 @@ export class ActiveEditorController {
       this.#dispatch({ type: "reset" });
       return true;
     }
-    const pointerId = this.#handles.activePointerId;
-    if (pointerId === undefined || !this.#handles.cancel(pointerId)) return false;
-    this.#captures.release(pointerId);
-    this.#navigation.finish();
-    this.#penGuard.stop();
-    return true;
+    return cancelHandle(this.#handles, this.#captures, this.#navigation, this.#penGuard);
   }
   #interruptForInput(): void {
     this.#pendingSelection.cancel();

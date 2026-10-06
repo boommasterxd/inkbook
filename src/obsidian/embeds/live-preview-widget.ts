@@ -4,6 +4,7 @@ import type { InkbookDocumentRecognition } from "./document-recognition";
 import { createInkbookLockedPreview } from "./locked-preview";
 import { removeLivePreviewMarkdown } from "./live-preview-removal";
 import { LivePreviewWidgetHeight } from "./live-preview-widget-height";
+import { LivePreviewZoomScrollBinding } from "./live-preview-zoom-scroll";
 import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts } from "./presentation-port";
 import { samePreviewContentIdentity } from "./safe-preview-svg";
@@ -111,11 +112,17 @@ export class InkbookLivePreviewWidget extends WidgetType {
     );
 
     const attachmentId = `live-preview-${++nextLivePreviewAttachmentId}`;
+    const hostZoomScroll = new LivePreviewZoomScrollBinding(
+      view,
+      root,
+      this.#ports.workScheduler(root.ownerDocument.defaultView),
+    );
     const controller = new PresentationController(
       {
         attachmentId,
         attachmentGeneration: 1,
         documentId: this.#embed.resolved.documentId,
+        hostZoomScroll,
         embedReference: {
           documentId: this.#embed.resolved.documentId,
           from: this.#embed.from,
@@ -162,12 +169,14 @@ export class InkbookLivePreviewWidget extends WidgetType {
     button.addEventListener("click", activate);
     const releaseLifecycle = this.#ports.lifecycle.register(root, () => {
       releaseHeight();
+      hostZoomScroll.dispose();
       button.removeEventListener("click", activate);
       mountedControllers.delete(root);
       controller.dispose();
     });
     if (releaseLifecycle === undefined) {
       releaseHeight();
+      hostZoomScroll.dispose();
       button.removeEventListener("click", activate);
       mountedControllers.delete(root);
       controller.dispose();

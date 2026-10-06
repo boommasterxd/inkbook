@@ -1,15 +1,25 @@
 import {
   applyAnchoredZoom,
+  anchoredScrollTop,
   calculateFitZoom,
   calculateZoomLimits,
   clampCameraX,
   renderedContainerHeight,
   type ZoomFrameState,
+  type ScrollBounds,
 } from "../../../editor/zoom/index";
-import type { BrowserScrollElement } from "../../scrolling/index";
-import { applyNativePan, pagePointAnchor, visibleCenterPoint } from "./navigation-layout";
+import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
+import {
+  applyNativePan,
+  pagePointAnchor,
+  visibleCenterPoint,
+  wheelAnchor,
+  projectNavigationCursorLayout,
+} from "./navigation-layout";
 import type { NavigationLayoutRead } from "./navigation-layout";
 import { projectedScrollBounds } from "./navigation-helpers";
+import type { PinchFrameTarget } from "./navigation-pinch";
+import type { ActiveEditorNavigationOptions } from "./navigation-types";
 
 interface NavigationFrameInput {
   readonly cameraX: number;
@@ -18,14 +28,43 @@ interface NavigationFrameInput {
   readonly pageHeight: () => number;
   readonly scrollOwner: BrowserScrollElement;
   readonly zoom: number;
+  readonly pinch?: PinchFrameTarget;
 }
 
 export interface NavigationFrameResult {
+  readonly unclampedScrollTop?: number;
   readonly blockSize: number;
   readonly cameraX: number;
   readonly fitZoom: number;
   readonly scrollTop: number;
   readonly zoom: number;
+}
+
+export function applyNavigationFrameLayout(
+  resolved: NavigationFrameResult,
+  layout: NavigationLayoutRead,
+  options: Pick<ActiveEditorNavigationOptions, "applyZoomLayout" | "scrollOwner"> & {
+    readonly previousZoom: number;
+    readonly panY: number;
+    readonly pinch: boolean;
+  },
+) {
+  const adjustsScroll =
+    options.panY !== 0 || resolved.zoom !== options.previousZoom || options.pinch;
+  const blockSize =
+    resolved.zoom === options.previousZoom
+      ? layout.containerBounds.height
+      : (options.applyZoomLayout({
+          blockSize: resolved.blockSize,
+          zoom: resolved.zoom,
+          layout,
+          scrollTop: resolved.unclampedScrollTop ?? resolved.scrollTop,
+        }) ?? resolved.blockSize);
+  if (adjustsScroll) browserScrollMetrics.setScrollTop(options.scrollOwner, resolved.scrollTop);
+  const scrollTop = adjustsScroll
+    ? browserScrollMetrics.getScrollTop(options.scrollOwner)
+    : layout.scrollTop;
+  return projectNavigationCursorLayout(layout, { blockSize, scrollTop });
 }
 
 export function resolveNavigationFrame(
@@ -34,8 +73,11 @@ export function resolveNavigationFrame(
   const fitZoom = calculateFitZoom(input.layout.containerWidth);
   if (fitZoom === undefined) return undefined;
   const limits = calculateZoomLimits(fitZoom);
-  const zoom = Math.max(fitZoom, Math.min(limits.maxZoom, input.zoom * input.frame.factor));
-  if (zoom === input.zoom && input.frame.panY === 0) {
+  const zoom = Math.max(
+    fitZoom,
+    Math.min(limits.maxZoom, input.pinch?.zoom ?? input.zoom * input.frame.factor),
+  );
+  if (zoom === input.zoom && input.frame.panY === 0 && input.pinch === undefined) {
     return {
       blockSize: input.layout.containerBounds.height,
       cameraX: clampCameraX(
@@ -59,6 +101,9 @@ export function resolveNavigationFrame(
     );
   const blockSize = renderedContainerHeight(pageHeight, zoom);
   const scrollBounds = projectedScrollBounds(input.scrollOwner, input.layout, blockSize);
+  if (input.pinch !== undefined) {
+    return resolvePinchFrame(input, input.pinch, { blockSize, fitZoom, zoom }, scrollBounds);
+  }
   const anchored = applyAnchoredZoom({
     anchor,
     containerWidth: input.layout.containerWidth,
@@ -79,7 +124,38 @@ export function resolveNavigationFrame(
       anchored.camera.zoom,
     ),
     fitZoom,
+    unclampedScrollTop:
+      anchoredScrollTop(
+        input.layout.scrollTop,
+        anchor.anchorViewportY,
+        input.layout.embedTopInScrollContent,
+        input.zoom,
+        anchored.camera.zoom,
+      ) - input.frame.panY,
     scrollTop: applyNativePan(anchored.scrollTop, input.frame.panY, scrollBounds),
     zoom: anchored.camera.zoom,
+  };
+}
+
+function resolvePinchFrame(
+  input: NavigationFrameInput,
+  pinch: PinchFrameTarget,
+  metrics: Pick<NavigationFrameResult, "blockSize" | "fitZoom" | "zoom">,
+  scrollBounds: ScrollBounds,
+): NavigationFrameResult {
+  const midpoint = wheelAnchor(input.layout, pinch.clientPoint);
+  const scrollTop =
+    input.layout.embedTopInScrollContent +
+    pinch.pagePoint.y * metrics.zoom -
+    midpoint.anchorViewportY;
+  return {
+    ...metrics,
+    cameraX: clampCameraX(
+      midpoint.anchorX / metrics.zoom - pinch.pagePoint.x,
+      input.layout.containerWidth,
+      metrics.zoom,
+    ),
+    unclampedScrollTop: scrollTop - input.frame.panY,
+    scrollTop: applyNativePan(scrollTop, input.frame.panY, scrollBounds),
   };
 }

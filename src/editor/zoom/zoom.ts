@@ -178,6 +178,7 @@ export function anchoredCameraX(
 /**
  * Computes native-scroll anchoring. Vertical movement is deliberately kept out
  * of the camera: the pane scroller is the sole vertical scroll owner.
+ * Omit bounds to retain the geometric target until host layout reconciliation.
  */
 export function anchoredScrollTop(
   oldScrollTop: number,
@@ -185,7 +186,7 @@ export function anchoredScrollTop(
   embedTopInScrollContent: number,
   oldZoom: number,
   newZoom: number,
-  scrollBounds: ScrollBounds,
+  scrollBounds?: ScrollBounds,
 ): number {
   requireFinite(oldScrollTop, "oldScrollTop");
   requireFinite(anchorViewportY, "anchorViewportY");
@@ -195,7 +196,9 @@ export function anchoredScrollTop(
 
   const pageY = (oldScrollTop + anchorViewportY - embedTopInScrollContent) / oldZoom;
   const candidateScrollTop = embedTopInScrollContent + pageY * newZoom - anchorViewportY;
-  return clampScrollTop(candidateScrollTop, scrollBounds);
+  return scrollBounds === undefined
+    ? requireFinite(candidateScrollTop, "scrollTop")
+    : clampScrollTop(candidateScrollTop, scrollBounds);
 }
 
 export function clampScrollTop(scrollTop: number, scrollBounds: ScrollBounds): number {

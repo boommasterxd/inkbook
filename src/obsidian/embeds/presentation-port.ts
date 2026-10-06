@@ -8,6 +8,7 @@ import type { InkbookDocumentRecognitionPort } from "./document-recognition";
 import type { PresentationLifecycleRegistry } from "./presentation-lifecycle-registry";
 import type { PreviewContentIdentity } from "./safe-preview-svg";
 import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
+import type { HostZoomScroll } from "./live-preview-zoom-scroll";
 
 export interface ResolvedInkbookDocument {
   readonly documentId: string;
@@ -59,6 +60,7 @@ export interface PresentationRemoval {
 }
 
 export interface PresentationAttachment extends LockedPreviewPresentation {
+  readonly hostZoomScroll?: HostZoomScroll;
   readonly initialEntrance?: InitialPresentationEntrance;
   readonly removal?: PresentationRemoval;
   readonly attachmentGeneration: number;
@@ -100,6 +102,7 @@ export function presentationPreviewOptions(
   PresentationAttachment,
   | "initialEntrance"
   | "preview"
+  | "hostZoomScroll"
   | "scrollRangeReserve"
   | "setPreviewAspectRatio"
   | "refreshPreview"
@@ -108,6 +111,9 @@ export function presentationPreviewOptions(
   | "setPreviewSource"
 > {
   return {
+    ...(attachment.hostZoomScroll === undefined
+      ? {}
+      : { hostZoomScroll: attachment.hostZoomScroll }),
     ...(attachment.ensurePreviewReady === undefined
       ? {}
       : { ensurePreviewReady: attachment.ensurePreviewReady }),

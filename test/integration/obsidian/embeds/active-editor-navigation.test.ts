@@ -1,153 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createInputState, type InputState } from "../../../../src/editor/input/index";
 import { OUTER_PAGE_WIDTH } from "../../../../src/editor/zoom/zoom";
 import { ActiveEditorNavigation } from "../../../../src/obsidian/embeds/active-editor/navigation";
 import { ActiveEditorLayout } from "../../../../src/obsidian/embeds/active-editor/layout";
 import { derivePageExtent } from "../../../../src/domain/geometry/public";
 import type { PageV1 } from "../../../../src/domain/schema/public";
-import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
-
-interface MutableRect {
-  height: number;
-  left: number;
-  top: number;
-  width: number;
-}
-
-interface NavigationHarness {
-  readonly containerRect: MutableRect;
-  readonly frames: FrameHarness;
-  readonly layoutUpdates: Array<{ readonly blockSize: number; readonly zoom: number }>;
-  readonly navigation: ActiveEditorNavigation;
-  readonly owner: BrowserScrollElement;
-  readonly sequence: string[];
-  readonly setCamera: ReturnType<typeof vi.fn>;
-  readonly state: () => InputState;
-}
-
-class FrameHarness {
-  readonly #callbacks = new Map<number, FrameRequestCallback>();
-  #nextFrame = 1;
-  #time = 0;
-
-  public readonly window = {
-    cancelAnimationFrame: (frame: number): void => {
-      this.#callbacks.delete(frame);
-    },
-    innerHeight: 800,
-    innerWidth: 1200,
-    requestAnimationFrame: (callback: FrameRequestCallback): number => {
-      const frame = this.#nextFrame++;
-      this.#callbacks.set(frame, callback);
-      return frame;
-    },
-  };
-
-  public get pending(): number {
-    return this.#callbacks.size;
-  }
-
-  public get now(): number {
-    return this.#time;
-  }
-
-  public flushOne(): void {
-    const entry = this.#callbacks.entries().next().value as
-      readonly [number, FrameRequestCallback] | undefined;
-    if (entry === undefined) throw new Error("No animation frame is pending.");
-    this.#callbacks.delete(entry[0]);
-    this.#time += 16;
-    entry[1](this.#time);
-  }
-
-  public flushAll(): void {
-    while (this.#callbacks.size > 0) this.flushOne();
-  }
-}
-
-function createHarness(options?: {
-  readonly activePageHeight?: number | (() => number);
-  readonly blockInsets?: number;
-  readonly containerRect?: MutableRect;
-  readonly ownerRect?: MutableRect;
-  readonly ownerScrollHeight?: number;
-  readonly ownerScrollTop?: number;
-}): NavigationHarness {
-  const frames = new FrameHarness();
-  const sequence: string[] = [];
-  const containerRect = options?.containerRect ?? {
-    height: 1_000,
-    left: 0,
-    top: 100,
-    width: 1_000,
-  };
-  const ownerRect = options?.ownerRect ?? { height: 500, left: 0, top: 0, width: 1_000 };
-  let scrollTop = options?.ownerScrollTop ?? 200;
-  const documentPort: { defaultView: unknown; scrollingElement: unknown } = {
-    defaultView: {
-      ...frames.window,
-      getComputedStyle: () => ({
-        borderTopWidth: `${String((options?.blockInsets ?? 0) / 2)}px`,
-        borderBottomWidth: `${String((options?.blockInsets ?? 0) / 2)}px`,
-      }),
-    },
-    scrollingElement: null,
-  };
-  const owner = {
-    clientHeight: ownerRect.height,
-    getBoundingClientRect: () => domRect(ownerRect),
-    ownerDocument: documentPort,
-    scrollHeight: options?.ownerScrollHeight ?? 4_000,
-    get scrollTop() {
-      return scrollTop;
-    },
-    set scrollTop(value: number) {
-      sequence.push("scroll");
-      scrollTop = value;
-    },
-  } as unknown as BrowserScrollElement;
-  const container = {
-    getBoundingClientRect: () => domRect(containerRect),
-    ownerDocument: documentPort,
-  } as unknown as HTMLElement;
-  const fitZoom = containerRect.width / OUTER_PAGE_WIDTH;
-  let input = createInputState({ fitZoom, zoom: fitZoom });
-  const setCamera = vi.fn(() => sequence.push("camera"));
-  const layoutUpdates: Array<{ readonly blockSize: number; readonly zoom: number }> = [];
-  const navigation = new ActiveEditorNavigation({
-    workScheduler: workSchedulerFromFrames(frames.window),
-    activePageHeight: () =>
-      typeof options?.activePageHeight === "function"
-        ? options.activePageHeight()
-        : (options?.activePageHeight ?? 2_000),
-    applyZoomLayout: (update) => {
-      sequence.push("layout");
-      layoutUpdates.push(update);
-      containerRect.height = update.blockSize + (options?.blockInsets ?? 0);
-    },
-    container,
-    getInput: () => input,
-    renderer: { setCamera } as unknown as SvgSceneRenderer,
-    scrollOwner: owner,
-    setInput: (next) => {
-      input = next;
-    },
-  });
-  return {
-    containerRect,
-    frames,
-    layoutUpdates,
-    navigation,
-    owner,
-    sequence,
-    setCamera,
-    state: () => input,
-  };
-}
+import {
+  createNavigationHarness as createHarness,
+  FrameHarness,
+  type MutableRect,
+  type NavigationHarness,
+} from "../../../fixtures/obsidian/navigation";
 
 describe("active editor navigation", () => {
   it("excludes container borders from the page height used by resize anchors", () => {
@@ -181,19 +47,20 @@ describe("active editor navigation", () => {
     expect(harness.state().fitZoom).toBeCloseTo(1_000 / OUTER_PAGE_WIDTH);
   });
 
-  it("uses the gesture anchor and caps each coalesced pinch frame at 1.35", () => {
+  it("keeps the gesture's content point anchored while publishing the complete scale", () => {
     const harness = createHarness();
     const oldZoom = harness.navigation.zoom;
     const anchor = { x: 600, y: 400 };
 
-    harness.navigation.updatePinch(anchor, 4);
+    harness.navigation.beginPinchScreen(anchor);
+    harness.navigation.updatePinchScreen(anchor, 4);
     harness.frames.flushOne();
 
-    expect(harness.navigation.zoom).toBeCloseTo(oldZoom * 1.35);
-    expect((600 * oldZoom) / harness.navigation.zoom - harness.navigation.cameraX).toBeCloseTo(
-      anchor.x,
+    expect(harness.navigation.zoom).toBeCloseTo(oldZoom * 4);
+    expect(600 / harness.navigation.zoom - harness.navigation.cameraX).toBeCloseTo(
+      anchor.x / oldZoom,
     );
-    expect(harness.frames.pending).toBe(1);
+    expect(harness.frames.pending).toBe(0);
   });
 
   it("clamps sustained zoom to exactly max(5, fitZoom multiplied by five)", () => {
@@ -203,7 +70,8 @@ describe("active editor navigation", () => {
     });
     const fitZoom = 3_000 / OUTER_PAGE_WIDTH;
 
-    harness.navigation.updatePinch({ x: 1_000, y: 100 }, 100);
+    harness.navigation.beginPinchScreen({ x: 1_000, y: 100 });
+    harness.navigation.updatePinchScreen({ x: 1_000, y: 100 }, 100);
     harness.frames.flushAll();
 
     expect(harness.navigation.zoom).toBeCloseTo(fitZoom * 5);
@@ -252,7 +120,8 @@ describe("active editor navigation geometry and lifecycle", () => {
 
   it("coalesces native scrolling and covered horizontal panning and can revert them", () => {
     const harness = createHarness({ ownerScrollHeight: 4_000, ownerScrollTop: 200 });
-    harness.navigation.updatePinch({ x: 500, y: 200 }, 4);
+    harness.navigation.beginPinchScreen({ x: 500, y: 200 });
+    harness.navigation.updatePinchScreen({ x: 500, y: 200 }, 4);
     harness.frames.flushAll();
     harness.navigation.finish();
     const originScrollTop = harness.owner.scrollTop;
@@ -355,7 +224,8 @@ function releaseFlick(harness: NavigationHarness): void {
 
 function createZoomedHarness(): NavigationHarness {
   const harness = createHarness();
-  harness.navigation.updatePinch({ x: 500, y: 200 }, 2);
+  harness.navigation.beginPinchScreen({ x: 500, y: 200 });
+  harness.navigation.updatePinchScreen({ x: 500, y: 200 }, 2);
   harness.frames.flushAll();
   return harness;
 }

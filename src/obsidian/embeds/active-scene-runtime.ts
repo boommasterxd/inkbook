@@ -6,11 +6,32 @@ import {
   type BrowserScrollElement,
 } from "../scrolling/index";
 import type { ActiveEditorController } from "./active-editor/controller";
+import type { ActiveEditorLayout } from "./active-editor/layout";
+import type { ActiveEditorZoomLayoutUpdate } from "./active-editor/navigation-types";
+import type { HostZoomScroll } from "./live-preview-zoom-scroll";
 import { ActiveScenePreviewHandoff } from "./active-scene-handoff";
 import { createActiveSceneChromeElements } from "./active-scene-chrome";
 import { bindActiveSceneScrollOwner, type ActiveSceneScrollBinding } from "./active-scene-scroll";
 import type { ActiveInkbookSceneOptions } from "./active-scene-types";
 import { TransitionScrollStability } from "./transition-scroll-stability";
+
+export function applyActiveSceneZoomLayout(
+  layout: ActiveEditorLayout,
+  update: ActiveEditorZoomLayoutUpdate,
+  hostZoomScroll: HostZoomScroll | undefined,
+  container: HTMLElement,
+): number {
+  const blockSize = layout.applyZoom(update);
+  if (update.layout !== undefined && update.scrollTop !== undefined) {
+    hostZoomScroll?.retain(update.layout.scrollOwner, update.scrollTop, {
+      container,
+      contentTop:
+        (update.layout.containerBorderTop ?? update.layout.containerBounds.top) +
+        update.layout.scrollTop,
+    });
+  } else hostZoomScroll?.cancel();
+  return blockSize;
+}
 
 export function resolveActiveScrollOwner(root: HTMLElement): BrowserScrollElement {
   return (
@@ -36,7 +57,10 @@ export function bindSceneScrollOwner(
     ownerWindow,
     ...(options.scrollOwner === undefined ? {} : { provider: options.scrollOwner }),
     root: options.root,
-    transfer: (owner) => controller.transferScrollOwner(owner),
+    transfer: (owner) => {
+      options.hostZoomScroll?.cancel();
+      controller.transferScrollOwner(owner);
+    },
   });
 }
 

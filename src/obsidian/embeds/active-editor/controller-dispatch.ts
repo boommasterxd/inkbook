@@ -9,6 +9,22 @@ import type { BrowserScrollElement, PenScrollGuard } from "../../scrolling/index
 import type { EditableDocumentModel } from "../vault-document-session";
 
 import type { ActiveEditorNavigation } from "./navigation";
+import type { ActiveEditorHandleInteraction } from "./handle-interaction";
+import type { ActivePointerCaptureOwner } from "./pointer-capture";
+
+export function cancelHandle(
+  handles: ActiveEditorHandleInteraction,
+  captures: ActivePointerCaptureOwner,
+  navigation: ActiveEditorNavigation,
+  penGuard: PenScrollGuard<BrowserScrollElement>,
+): boolean {
+  const pointerId = handles.activePointerId;
+  if (pointerId === undefined || !handles.cancel(pointerId)) return false;
+  captures.release(pointerId);
+  navigation.finish();
+  penGuard.stop();
+  return true;
+}
 
 export function applyInputAction(
   input: InputState,
@@ -18,17 +34,19 @@ export function applyInputAction(
   penGuard: PenScrollGuard<BrowserScrollElement>,
   navigation: ActiveEditorNavigation,
 ): InputState {
-  if (action.type === "reset") navigation.cancelNavigation();
   const wasActive = input.interaction !== undefined;
   const reduction = reduceInput(input, action);
   gestures.apply(reduction);
+  if (action.type === "reset") navigation.cancelNavigation();
   const active = reduction.state.interaction !== undefined;
   if (active !== wasActive) model.setGestureActive(active);
   if (!active) {
     penGuard.stop();
     navigation.finish();
   }
-  return reduction.state;
+  return reduction.state.zoom === navigation.zoom
+    ? reduction.state
+    : { ...reduction.state, zoom: navigation.zoom };
 }
 
 export function configureInputTool(input: InputState, tool: EditorTool): InputState {

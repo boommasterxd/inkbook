@@ -30,9 +30,9 @@ describe("wheel normalization", () => {
   });
 
   it("turns pixel deltas into continuous zoom factors", () => {
-    expect(TRACKPAD_ZOOM_PIXELS_PER_STEP).toBe(6.4);
-    expect(continuousWheelZoomFactor(-4)).toBeCloseTo(1.08 ** 0.625);
-    expect(continuousWheelZoomFactor(4)).toBeCloseTo(1.08 ** -0.625);
+    expect(TRACKPAD_ZOOM_PIXELS_PER_STEP).toBeCloseTo(100 * Math.log(1.08));
+    expect(continuousWheelZoomFactor(-4)).toBeCloseTo(Math.exp(0.04));
+    expect(continuousWheelZoomFactor(4)).toBeCloseTo(Math.exp(-0.04));
     expect(continuousWheelZoomFactor(-TRACKPAD_ZOOM_PIXELS_PER_STEP)).toBeCloseTo(1.08);
     expect(continuousWheelZoomFactor(-50, { pixelsPerStep: 50 })).toBeCloseTo(1.08);
   });

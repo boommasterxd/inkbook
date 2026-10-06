@@ -30,6 +30,7 @@ import { readActiveSceneLayout } from "./active-scene-viewport";
 import { readNavigationLayout } from "./active-editor/navigation-layout";
 import { createSceneReadiness, InitialSceneReadiness } from "./initial-scene-readiness";
 import {
+  applyActiveSceneZoomLayout,
   bindSceneScrollOwner,
   createInitialSceneRuntime,
   resolveActiveScrollOwner,
@@ -47,6 +48,7 @@ export class ActiveInkbookScene {
   #disposed = false;
   readonly #editorChrome: HTMLDivElement;
   readonly #layout: ActiveEditorLayout;
+  readonly #hostZoomScroll: ActiveInkbookSceneOptions["hostZoomScroll"];
   readonly #removeInputListeners: () => void;
   #lockLayoutTransition: LockedFitTransition | undefined;
   readonly #lockDelay: ActiveSceneTimeout;
@@ -77,6 +79,7 @@ export class ActiveInkbookScene {
 
   public constructor(options: ActiveInkbookSceneOptions) {
     this.#root = options.root;
+    this.#hostZoomScroll = options.hostZoomScroll;
     this.#workScheduler = options.workScheduler;
     this.#model = options.model;
     this.#onFirstStrokeCommitted = options.onFirstStrokeCommitted;
@@ -134,8 +137,14 @@ export class ActiveInkbookScene {
       onReady: () => {
         if (this.#initialSceneReadiness.markLayoutReady()) this.#renderer.invalidateLayout(true);
       },
-      onResize: (update) => this.#controller.applyResize(update),
-      onZoom: (zoom) => this.#controller.setZoom(zoom),
+      onResize: (update) => {
+        this.#hostZoomScroll?.cancel();
+        return this.#controller.applyResize(update);
+      },
+      onZoom: (zoom) => {
+        this.#hostZoomScroll?.cancel();
+        this.#controller.setZoom(zoom);
+      },
       page: () => options.model.page,
       renderer: this.#renderer,
       readResizeAnchor: () => this.#controller.readResizeAnchor(),
@@ -160,7 +169,8 @@ export class ActiveInkbookScene {
   ): ActiveEditorController {
     return new ActiveEditorController({
       workScheduler: options.workScheduler,
-      applyZoomLayout: (update) => this.#layout.applyZoom(update),
+      applyZoomLayout: (update) =>
+        applyActiveSceneZoomLayout(this.#layout, update, this.#hostZoomScroll, this.#container),
       onNavigationLayout: (layout) => this.#layout.adoptNavigationLayout(layout),
       backgroundSpacing: options.backgroundSpacing,
       container: this.#container,
@@ -211,6 +221,7 @@ export class ActiveInkbookScene {
   }
 
   public disableInput(): void {
+    this.#hostZoomScroll?.cancel();
     this.#controller.setEnabled(false);
     this.#layout.suspend();
     this.#beginLockTransition();
@@ -239,6 +250,7 @@ export class ActiveInkbookScene {
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#hostZoomScroll?.cancel();
     this.#lockGeneration += 1;
     this.#readyForInput = false;
     this.#resolveReady(false);
@@ -384,9 +396,9 @@ export class ActiveInkbookScene {
       beginScrollStability: (minimumRangeReserve) =>
         this.#transitionScrollStability.begin(minimumRangeReserve),
       container: this.#container,
-      maximumBottom: this.#storeMaximumBottom(),
+      maximumBottom: this.#model.store.getMaximumBottom(),
       oldViewState: this.#preLockViewState,
-      page: this.#controllerModelPage(),
+      page: this.#model.page,
       reducedMotion: this.#previewHandoff.reducedMotion,
       restoreViewState: (state) => this.#controller.restoreViewState(state),
     });
@@ -442,14 +454,6 @@ export class ActiveInkbookScene {
       if (this.#lockLayoutTransition === transition) this.#lockLayoutTransition = undefined;
       await this.#transitionScrollStability.waitForSettlement();
     }
-  }
-
-  #controllerModelPage() {
-    return this.#model.page;
-  }
-
-  #storeMaximumBottom(): number | undefined {
-    return this.#model.store.getMaximumBottom();
   }
 
   #completePreviewHandoff(): void {

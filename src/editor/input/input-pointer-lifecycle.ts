@@ -193,7 +193,11 @@ export function beginPinch(
 ): InputReduction {
   const first = pointerFromInteraction(current);
   const second = sample(action);
-  const interaction: PinchInteraction = { phase: "pinch", pointers: [first, second] };
+  const interaction: PinchInteraction = {
+    phase: "pinch",
+    pointers: [first, second],
+    initialDistance: pointerDistance([first, second]),
+  };
   const effects = cancelledTouchEffects(current);
   return {
     state: { ...state, interaction },
@@ -231,14 +235,14 @@ export function updatePinch(
   if (index < 0) {
     return unchangedEffects(state);
   }
-  const previousDistance = pointerDistance(interaction.pointers);
   const pointers: [PointerSample, PointerSample] = [...interaction.pointers];
   pointers[index] = sample(action);
   const currentDistance = pointerDistance(pointers);
-  const factor =
-    previousDistance > 0 && currentDistance > 0 ? currentDistance / previousDistance : 1;
+  const initialDistance =
+    interaction.initialDistance > 0 ? interaction.initialDistance : currentDistance;
+  const factor = initialDistance > 0 ? currentDistance / initialDistance : 1;
   return {
-    state: { ...state, interaction: { ...interaction, pointers } },
+    state: { ...state, interaction: { ...interaction, pointers, initialDistance } },
     effects: [{ type: "update-pinch", anchor: midpoint(...pointers), factor }],
   };
 }
