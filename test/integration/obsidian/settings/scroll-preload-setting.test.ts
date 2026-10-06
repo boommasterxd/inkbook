@@ -18,9 +18,9 @@ import {
 beforeAll(() => installObsidianDomHelpers());
 
 function renderMargin(store: InkbookSettingsStore) {
-  const general = groups(createTab(store))[0];
-  if (general === undefined) throw new Error("Missing General settings group.");
-  return renderDefinition(requiredRender(renders(general), "Scroll preload margin"));
+  const performance = groups(createTab(store)).find((group) => group.heading === "Performance");
+  if (performance === undefined) throw new Error("Missing Performance settings group.");
+  return renderDefinition(requiredRender(renders(performance), "Scroll preload margin"));
 }
 
 describe("scroll preload margin setting", () => {

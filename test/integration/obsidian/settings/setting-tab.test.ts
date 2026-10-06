@@ -88,6 +88,7 @@ describe("InkbookSettingTab definitions", () => {
 
     expect(groups(tab).map((group) => group.heading)).toEqual([
       undefined,
+      "Performance",
       "Page defaults",
       "Drawing tools",
       "Shapes and structures",
@@ -136,18 +137,23 @@ describe("InkbookSettingTab definitions", () => {
     expect(general).toBeDefined();
     expect(general?.items?.map((item) => item.name)).toEqual([
       "Startup tool",
-      "Selection highlights",
-      "Display refresh rate",
-      "Scroll preload margin",
       "File placement",
       "Custom vault folder",
       "Create custom folder",
       "Reset group to defaults",
     ]);
-    expect(general?.items?.find((item) => item.name === "Selection highlights")).toMatchObject({
+    const performance = groups(tab).find((group) => group.heading === "Performance");
+    expect(performance?.items?.map((item) => item.name)).toEqual([
+      "Display refresh rate",
+      "Scroll preload margin",
+      "Selection highlights",
+      "Reset group to defaults",
+    ]);
+    const highlights = performance?.items?.find((item) => item.name === "Selection highlights");
+    expect(highlights).toMatchObject({
       control: { type: "toggle", key: "selectionHighlightsEnabled" },
-      desc: "Show inner selection edge highlights. Lines and arrows always keep their center selection trace.",
     });
+    expect(highlights?.desc).toContain("affect performance, especially for large selections");
     const customFolder = general?.items?.find((item) => item.name === "Custom vault folder");
     expect(typeof customFolder?.visible === "function" && customFolder.visible()).toBe(false);
     await tab.setControlValue("filePlacement.mode", "custom-vault-folder");
@@ -214,11 +220,11 @@ describe("InkbookSettingTab snapping and refresh definitions", () => {
   it("shows the live automatic refresh-rate result in the selected option", () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     const detectingTab = createTab(store, () => ({ kind: "detecting", refreshRate: 120 }));
-    const detectingRate = groups(detectingTab)[0]?.items?.find(
+    const detectingRate = groups(detectingTab)[1]?.items?.find(
       (item) => item.name === "Display refresh rate",
     );
     const tab = createTab(store, () => ({ kind: "detected", refreshRate: 144 }));
-    const refreshRate = groups(tab)[0]?.items?.find((item) => item.name === "Display refresh rate");
+    const refreshRate = groups(tab)[1]?.items?.find((item) => item.name === "Display refresh rate");
     if (refreshRate === undefined || !("control" in refreshRate)) {
       throw new Error("Missing display refresh-rate control.");
     }
@@ -234,9 +240,11 @@ describe("InkbookSettingTab snapping and refresh definitions", () => {
     expect(refreshRate.control?.type).toBe("dropdown");
     if (refreshRate.control?.type !== "dropdown") throw new Error("Expected dropdown control.");
     expect(refreshRate.control.options["auto"]).toBe("Auto (detected: 144 Hz)");
-    expect(refreshRate.desc).toBe(
+    expect(refreshRate.desc).toContain(
       "Detected 144 Hz for this Obsidian window. Other windows are measured independently.",
     );
+    expect(refreshRate.desc).toContain("loading can take longer");
+    expect(detectingRate.desc).toContain("120 Hz profile until detection completes");
   });
 });
 
@@ -266,16 +274,57 @@ describe("InkbookSettingTab visible labels", () => {
   });
 });
 
-describe("InkbookSettingTab reset integration", () => {
-  it("resets every logical group without changing the others", async () => {
-    const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
-    const tab = createTab(store);
-    const defaults = createBuiltInSettings();
-    const deviceDefaults = createBuiltInDeviceSettings();
+function createResetFixture() {
+  const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
+  return {
+    store,
+    tab: createTab(store),
+    defaults: createBuiltInSettings(),
+    deviceDefaults: createBuiltInDeviceSettings(),
+  };
+}
 
+describe("InkbookSettingTab General and Performance reset integration", () => {
+  it("isolates General and Performance resets across both storage scopes", async () => {
+    const { store, tab, defaults, deviceDefaults } = createResetFixture();
     await tab.setControlValue("startupTool", "arrow");
     await tab.setControlValue("selectionHighlightsEnabled", false);
+    await tab.setControlValue("refreshRatePreference", 60);
+    await tab.setControlValue("filePlacement.mode", "note-folder");
     expect(tab.getControlValue("selectionHighlightsEnabled")).toBe(false);
+    await tab.setControlValue("pageDefaults.activeBufferLines", 6);
+    await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
+    await tab.setControlValue("device.scrollPreloadMarginPx", 800);
+
+    resetGroup(tab, undefined);
+    await vi.waitFor(() => expect(tab.getControlValue("startupTool")).toBe(defaults.startupTool));
+    expect(store.getVaultSettings()).toMatchObject({
+      filePlacement: defaults.filePlacement,
+      selectionHighlightsEnabled: false,
+      refreshRatePreference: 60,
+      startupTool: defaults.startupTool,
+    });
+    expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
+    expect(tab.getControlValue("device.scrollPreloadMarginPx")).toBe(800);
+    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(!deviceDefaults.leftHandedToolbar);
+    await tab.setControlValue("startupTool", "arrow");
+    await tab.setControlValue("filePlacement.mode", "note-folder");
+    resetGroup(tab, "Performance");
+    await vi.waitFor(() => expect(tab.getControlValue("device.scrollPreloadMarginPx")).toBe(300));
+    expect(store.getVaultSettings()).toMatchObject({
+      selectionHighlightsEnabled: defaults.selectionHighlightsEnabled,
+      refreshRatePreference: defaults.refreshRatePreference,
+      startupTool: "arrow",
+      filePlacement: { mode: "note-folder" },
+    });
+    expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
+    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(!deviceDefaults.leftHandedToolbar);
+  });
+});
+
+describe("InkbookSettingTab remaining group reset integration", () => {
+  it("resets every remaining logical group without changing the others", async () => {
+    const { store, tab, defaults, deviceDefaults } = createResetFixture();
     await tab.setControlValue("pageDefaults.activeBufferLines", 6);
     await tab.setControlValue("toolDefaults.pen.width", 14);
     await tab.setControlValue("toolDefaults.select.area", "rectangle");
@@ -284,19 +333,6 @@ describe("InkbookSettingTab reset integration", () => {
     await tab.setControlValue("snapping.angles", false);
     await tab.setControlValue("device.fingerDrawingEnabled", !deviceDefaults.fingerDrawingEnabled);
     await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
-    await tab.setControlValue("device.scrollPreloadMarginPx", 800);
-
-    resetGroup(tab, undefined);
-    await vi.waitFor(() => expect(tab.getControlValue("startupTool")).toBe(defaults.startupTool));
-    expect(store.getVaultSettings()).toMatchObject({
-      filePlacement: defaults.filePlacement,
-      selectionHighlightsEnabled: true,
-      refreshRatePreference: defaults.refreshRatePreference,
-      startupTool: defaults.startupTool,
-    });
-    expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
-    expect(tab.getControlValue("device.scrollPreloadMarginPx")).toBe(300);
-    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(!deviceDefaults.leftHandedToolbar);
     resetGroup(tab, "Page defaults");
     await vi.waitFor(() =>
       expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(

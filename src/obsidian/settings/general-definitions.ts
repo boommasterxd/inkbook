@@ -1,14 +1,8 @@
 import type { SettingDefinition, SettingDefinitionGroup } from "obsidian";
 
-import {
-  REFRESH_RATE_PREFERENCES,
-  STARTUP_TOOLS,
-  validateCustomVaultFolderPath,
-} from "../../domain/settings";
-import type { RefreshRateProfileStatus } from "../performance";
+import { STARTUP_TOOLS, validateCustomVaultFolderPath } from "../../domain/settings";
 import type { SettingsControlKey } from "./control-values";
-import { dropdown, resetAction, sentenceCaseLabel, toggle } from "./definition-helpers";
-import { scrollPreloadDefinition } from "./scroll-preload-setting";
+import { dropdown, resetAction, sentenceCaseLabel } from "./definition-helpers";
 
 const createLabels = (values: readonly string[]): Record<string, string> =>
   Object.fromEntries(values.map((value) => [value, sentenceCaseLabel(value)]));
@@ -34,12 +28,9 @@ function customFolderDefinition(
 }
 
 export interface GeneralGroupCallbacks {
-  readonly get: (key: SettingsControlKey) => unknown;
-  readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
   readonly isCustomFolder: () => boolean;
   readonly canCreateFolder: () => boolean;
   readonly createFolder: (element: HTMLElement) => void;
-  readonly refreshRateStatus: () => RefreshRateProfileStatus;
   readonly reset: () => void;
 }
 
@@ -56,23 +47,6 @@ export function generalGroup(
         "Choose the tool selected when an editor opens.",
         createLabels(STARTUP_TOOLS),
       ),
-      toggle(
-        "selectionHighlightsEnabled",
-        "Selection highlights",
-        "Show inner selection edge highlights. Lines and arrows always keep their center selection trace.",
-      ),
-      dropdown(
-        "refreshRatePreference",
-        "Display refresh rate",
-        refreshRateDescription(callbacks.refreshRateStatus()),
-        Object.fromEntries(
-          REFRESH_RATE_PREFERENCES.map((value) => [
-            String(value),
-            value === "auto" ? autoRefreshRateLabel(callbacks.refreshRateStatus()) : `${value} Hz`,
-          ]),
-        ),
-      ),
-      scrollPreloadDefinition(callbacks),
       dropdown(
         "filePlacement.mode",
         "File placement",
@@ -93,22 +67,6 @@ export function generalGroup(
       resetAction("Reset group to defaults", callbacks.reset),
     ],
   };
-}
-
-function autoRefreshRateLabel(status: RefreshRateProfileStatus): string {
-  if (status.kind === "detected") return `Auto (detected: ${status.refreshRate} Hz)`;
-  if (status.kind === "detecting") return "Auto (detecting…)";
-  return "Auto";
-}
-
-function refreshRateDescription(status: RefreshRateProfileStatus): string {
-  if (status.kind === "detected") {
-    return `Detected ${status.refreshRate} Hz for this Obsidian window. Other windows are measured independently.`;
-  }
-  if (status.kind === "detecting") {
-    return "Detecting this Obsidian window. Inkbook uses the 120 Hz profile until detection completes.";
-  }
-  return "Use quick per-window detection or select a fixed frame-rate profile.";
 }
 
 export { createLabels };

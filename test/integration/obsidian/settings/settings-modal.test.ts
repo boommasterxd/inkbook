@@ -133,23 +133,39 @@ describe("Inkbook settings modal reset refresh", () => {
       const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
       const pixelSelector = '[data-control="scroll-preload-margin"]';
       const slider = required<HTMLInputElement>(`${pixelSelector} input[type="range"]`);
+      const refreshSelector = '[data-setting-name="Display refresh rate"] select';
+      const highlightSelector = '[data-setting-name="Selection highlights"] input';
+      const refresh = required<HTMLSelectElement>(refreshSelector);
+      const highlights = required<HTMLInputElement>(highlightSelector);
+      refresh.value = "60";
+      refresh.dispatchEvent(new Event("change", { bubbles: true }));
+      highlights.checked = false;
+      highlights.dispatchEvent(new Event("change", { bubbles: true }));
       slider.value = "800";
       slider.dispatchEvent(new Event("input"));
       slider.dispatchEvent(new Event("change"));
-      await vi.waitFor(() => expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(800));
+      await vi.waitFor(() => {
+        expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(800);
+        expect(store.getVaultSettings().refreshRatePreference).toBe(60);
+        expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(false);
+      });
       modalContent.scrollTop = 240;
       vi.spyOn(actionDialog, "confirmInkbookAction").mockResolvedValue(true);
       const reset =
         scope === "all"
           ? required<HTMLElement>('[data-setting-name="Reset all Inkbook settings"]')
           : required<HTMLElement>(
-              '.inkbook-settings-general-group [data-setting-name="Reset group to defaults"]',
+              '.inkbook-settings-performance-group [data-setting-name="Reset group to defaults"]',
             );
 
       reset.click();
 
       await vi.waitFor(() => {
         expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(300);
+        expect(store.getVaultSettings().refreshRatePreference).toBe("auto");
+        expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(true);
+        expect(required<HTMLSelectElement>(refreshSelector).value).toBe("auto");
+        expect(required<HTMLInputElement>(highlightSelector).checked).toBe(true);
         expect(required<HTMLInputElement>(`${pixelSelector} input[type="range"]`).value).toBe(
           "300",
         );
