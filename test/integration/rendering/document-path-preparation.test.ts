@@ -59,6 +59,11 @@ function fixture() {
     publish,
     observer: () => observer,
     signal: () => signal,
+    release: () => {
+      scene.renderer.destroy();
+      priority.dispose();
+      store.release();
+    },
   };
 }
 
@@ -95,9 +100,7 @@ it("waits for viewport handoff and the existing navigation quiet gate without po
     expect(state.domain.instrumentation.snapshotMaterializations).toBe(0);
     expect(state.scheduler.pendingCount).toBe(0);
   } finally {
-    state.renderer.destroy();
-    state.priority.dispose();
-    state.store.release();
+    state.release();
   }
   expect(state.signal().aborted).toBe(true);
   expect(state.scheduler.pendingCount).toBe(0);
@@ -141,8 +144,41 @@ it("resumes a paused file cursor when active-document memory pressure is release
     expect(state.request).toHaveBeenCalledTimes(2);
     expect(state.signal().aborted).toBe(false);
   } finally {
-    state.renderer.destroy();
-    state.priority.dispose();
-    state.store.release();
+    state.release();
   }
+});
+
+it("pauses file prewarm without blocking required scene commits and rejects late progress", () => {
+  const state = fixture();
+  try {
+    state.scheduler.runAll();
+    state.renderer.releaseInitialOverscan();
+    state.scheduler.runAll();
+    expect(state.request).toHaveBeenCalledOnce();
+    const obsoleteObserver = state.observer();
+    const obsoleteSignal = state.signal();
+    state.renderer.setDocumentPrewarmEnabled(false);
+    expect(obsoleteSignal.aborted).toBe(true);
+    state.renderer.setScheme("dark");
+    state.renderer.invalidateLayout(true);
+    state.scheduler.runAll();
+    expect(state.renderer.hasPendingSceneCommit).toBe(false);
+    expect(state.scheduler.pendingCount).toBe(0);
+    const before = state.renderer.instrumentation();
+    obsoleteObserver.onProgress([
+      { id: state.element.id, parts: buildElementPathParts(state.element) },
+    ]);
+    state.scheduler.runAll();
+    expect(state.renderer.instrumentation().pathCacheEntries).toBe(before.pathCacheEntries);
+    expect(state.request).toHaveBeenCalledOnce();
+    expect(state.scheduler.pendingCount).toBe(0);
+    state.renderer.setDocumentPrewarmEnabled(true);
+    state.renderer.setDocumentPrewarmEnabled(true);
+    state.scheduler.runAll();
+    expect(state.request).toHaveBeenCalledTimes(2);
+    expect(state.signal().aborted).toBe(false);
+  } finally {
+    state.release();
+  }
+  expect(state.scheduler.pendingCount).toBe(0);
 });

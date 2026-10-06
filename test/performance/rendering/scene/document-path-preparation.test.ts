@@ -15,6 +15,8 @@ import {
 } from "../../../fixtures/rendering/document-path-preparation";
 import { createWorkerBridgeHarness } from "../../../fixtures/persistence/worker-bridge";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
+import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 
 it("warms missing contours in a 10,006-stroke document through bounded worker batches without serialization", async () => {
   const count = 10_006;
@@ -144,4 +146,53 @@ it("retains lazy progress across input interruption and rebuilds only changed ge
   }
   expect(fixture.preparation.memoryUsage()).toBe(0);
   expect(fixture.cache.statistics().bytes).toBe(0);
+});
+
+it("does no file work while admission is closed and resumes a 10,006-stroke cursor without rescanning", async () => {
+  const count = 10_006;
+  const fixture = createDocumentPathFixture(count);
+  const remote = deferDocumentPaths(fixture);
+  const scene = createSceneFixture(
+    NAVIGATION_PAGE,
+    fixture.store,
+    { height: 1, left: 0, top: 20_000, width: 1 },
+    { scrollPreloadMarginPx: 100 },
+  );
+  try {
+    scene.scheduler.runAll();
+    expect(fixture.work.orderReads).toBe(MAX_PREPARED_SCENE_PATH_IDS);
+    scene.renderer.setDocumentPrewarmEnabled(false);
+    expect(remote.signal().aborted).toBe(true);
+    const requests = vi.mocked(fixture.store.prepareScenePaths!).mock.calls.length;
+    scene.renderer.setScheme("dark");
+    scene.renderer.invalidateLayout(true);
+    scene.scheduler.runAll();
+    expect(scene.renderer.hasPendingSceneCommit).toBe(false);
+    expect(fixture.work.orderReads).toBe(MAX_PREPARED_SCENE_PATH_IDS);
+    expect(fixture.work.builds).toBe(0);
+    expect(vi.mocked(fixture.store.prepareScenePaths!).mock.calls.length).toBe(requests);
+    expect(scene.scheduler.pendingCount).toBe(0);
+    fixture.store.prepareScenePaths = fixture.prepare;
+    scene.renderer.setDocumentPrewarmEnabled(true);
+    let frames = 0;
+    while (scene.scheduler.pendingCount > 0 && frames++ < 100) {
+      scene.scheduler.runAll();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    expect(frames).toBeLessThan(100);
+    expect(fixture.work.orderReads).toBe(count);
+    expect(fixture.work.builds).toBe(count);
+    expect(fixture.prepare.mock.calls.every(([ids]) => ids.length <= 256)).toBe(true);
+    expect(scene.renderer.instrumentation().pathCacheEntries).toBe(count);
+    expect(fixture.domain.instrumentation.snapshotMaterializations).toBe(0);
+    expect(fixture.domain.instrumentation.bandScans).toBe(0);
+    expect(scene.scheduler.pendingCount).toBe(0);
+  } finally {
+    scene.renderer.destroy();
+    fixture.preparation.release();
+    fixture.cache.release();
+    fixture.store.release();
+  }
+  expect(scene.scheduler.pendingCount).toBe(0);
 });

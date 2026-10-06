@@ -87,12 +87,8 @@ export class SvgSceneRenderer {
       },
     );
     this.#contentScheduler = new SceneContentScheduler(this.#content, this.#scheduler);
-    this.#motion = new SceneMotionController(
-      this.#dom,
-      this.#content,
-      this.#stats,
-      options.reducedMotion ?? false,
-    );
+    const reducedMotion = options.reducedMotion ?? false;
+    this.#motion = new SceneMotionController(this.#dom, this.#content, this.#stats, reducedMotion);
     this.#resourcePolicy = new SceneResourcePolicy(
       this.#pathCache,
       this.#motion,
@@ -186,6 +182,10 @@ export class SvgSceneRenderer {
     this.#resourcePolicy.setActiveDocumentMemoryPressure(active);
     this.#visibilityCoordinator.setActiveDocumentMemoryPressure(active);
     if (this.#content.hasMountedWork) this.#frames.schedule();
+  }
+  public setDocumentPrewarmEnabled(enabled: boolean): void {
+    this.assertActive();
+    this.#visibilityCoordinator.setDocumentPrewarmEnabled(enabled);
   }
   public readonly memoryUsage = () => this.#resourcePolicy.memoryUsage();
   public beginPreviewCommit(): PreviewCommitHandoff {

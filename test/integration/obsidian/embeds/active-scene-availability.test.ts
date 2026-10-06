@@ -17,6 +17,8 @@ const ports = vi.hoisted(() => ({
   focus: vi.fn(),
   revealSurface: vi.fn(),
   setScrollPreloadMarginPx: vi.fn(),
+  prewarmEnabled: vi.fn(),
+  prewarmDispose: vi.fn(),
 }));
 
 vi.mock("../../../../src/rendering/scene", () => ({
@@ -45,7 +47,24 @@ vi.mock("../../../../src/obsidian/embeds/active-editor/controller", () => ({
     public readonly isActionAvailable = vi.fn(() => true);
     public readonly dispose = vi.fn();
     public readonly updateDeviceSettings = vi.fn();
+    public readonly getViewState = vi.fn(() => ({ cameraX: 0, zoom: 1 }));
+    public readonly readResizeAnchor = vi.fn();
   },
+}));
+vi.mock("../../../../src/obsidian/embeds/active-scene-prewarm", () => ({
+  ActiveScenePrewarmBinding: class {
+    public readonly setEnabled = ports.prewarmEnabled;
+    public readonly dispose = ports.prewarmDispose;
+  },
+}));
+vi.mock("../../../../src/obsidian/embeds/active-scene-lock", () => ({
+  applyLockedFitLayout: vi.fn(() => ({
+    cancel: vi.fn(),
+    finish: vi.fn(),
+    releaseViewportStability: vi.fn(),
+  })),
+  LOCK_PRESENTATION_DURATION_MS: 240,
+  restoreActiveLayout: vi.fn(),
 }));
 vi.mock("../../../../src/obsidian/embeds/active-editor/layout", () => ({
   ActiveEditorLayout: class {
@@ -72,7 +91,11 @@ vi.mock("../../../../src/obsidian/embeds/active-scene-memory", () => ({
 vi.mock("../../../../src/obsidian/embeds/active-scene-runtime", () => ({
   bindSceneScrollOwner: () => ({ dispose: vi.fn() }),
   createInitialSceneRuntime: () => ({
-    elements: { chromeHost: {}, container: {}, editorChrome: { remove: vi.fn() } },
+    elements: {
+      chromeHost: {},
+      container: { style: { blockSize: "100px", removeProperty: vi.fn() } },
+      editorChrome: { remove: vi.fn() },
+    },
     handoff: {
       reducedMotion: true,
       onSceneReveal: undefined,
@@ -81,8 +104,13 @@ vi.mock("../../../../src/obsidian/embeds/active-scene-runtime", () => ({
       },
       dispose: ports.disposeHandoff,
       updateMotion: vi.fn(),
+      ensurePreviewReady: () => Promise.resolve(),
+      handoffToPreview: (_chrome: HTMLElement, resolve: () => void, before: () => void) => {
+        before();
+        resolve();
+      },
     },
-    stability: { begin: vi.fn(), dispose: vi.fn() },
+    stability: { begin: vi.fn(), dispose: vi.fn(), waitForSettlement: () => Promise.resolve() },
   }),
 }));
 vi.mock("../../../../src/obsidian/embeds/active-scene-input", () => ({
@@ -105,12 +133,15 @@ beforeEach(() => {
 
 function fixture() {
   const onLock = vi.fn();
-  const root = { dataset: {}, ownerDocument: { defaultView: {} } } as unknown as HTMLElement;
+  const root = {
+    dataset: {},
+    ownerDocument: { defaultView: { performance: { now: () => 0 } } },
+  } as unknown as HTMLElement;
   const options = {
     root,
     onLock,
     scrollOwner: () => root,
-    model: { page: {}, store: { subscribe: () => vi.fn() } },
+    model: { page: {}, store: { subscribe: () => vi.fn(), getMaximumBottom: () => 0 } },
     deviceSettings: { ...createBuiltInDeviceSettings(), scrollPreloadMarginPx: 800 },
   } as unknown as ActiveInkbookSceneOptions;
   const scene = new ActiveInkbookScene(options);
@@ -125,6 +156,39 @@ it("configures the scene margin and applies live device updates only until dispo
   h.scene.dispose();
   h.scene.updateDeviceSettings({ ...createBuiltInDeviceSettings(), scrollPreloadMarginPx: 300 });
   expect(ports.setScrollPreloadMarginPx).toHaveBeenCalledOnce();
+});
+
+it("pauses speculative preparation before lock work and resumes a ready scene after failure", async () => {
+  const h = fixture();
+  try {
+    await Promise.resolve();
+    ports.rendererOptions?.onSceneCommitted?.();
+    ports.revealReady?.();
+    h.scene.disableInput();
+    h.scene.disableInput();
+    expect(ports.prewarmEnabled.mock.calls).toEqual([[false], [false], [false]]);
+    expect(ports.prewarmEnabled.mock.invocationCallOrder[0]).toBeLessThan(
+      ports.suspend.mock.invocationCallOrder[0]!,
+    );
+    h.scene.restoreAfterFailedLock();
+    h.scene.enableInput();
+    expect(ports.prewarmEnabled.mock.calls.slice(-2)).toEqual([[true], [true]]);
+  } finally {
+    h.scene.dispose();
+  }
+  expect(ports.prewarmDispose).toHaveBeenCalledOnce();
+});
+
+it("pauses once when finishLock starts without an earlier input-disable call", async () => {
+  const h = fixture();
+  try {
+    const finish = h.scene.finishLock();
+    expect(h.scene.finishLock()).toBe(finish);
+    expect(ports.prewarmEnabled).toHaveBeenCalledExactlyOnceWith(false);
+    await finish;
+  } finally {
+    h.scene.dispose();
+  }
 });
 
 it.each([false, true])(

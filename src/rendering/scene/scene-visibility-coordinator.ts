@@ -49,6 +49,7 @@ export class SceneVisibilityCoordinator {
   #priority: SceneVisibilityPriority | undefined;
   readonly #navigation: NavigationPathPreparation | undefined;
   readonly #documentPaths: DocumentPathPreparation | undefined;
+  #documentPrewarmEnabled = true;
   #backgroundWait: Promise<void> | undefined;
   #released = false;
   #envelope: Bounds | undefined;
@@ -133,6 +134,17 @@ export class SceneVisibilityCoordinator {
 
   public applyDelta(delta: SceneStoreDelta): void {
     this.#documentPaths?.invalidate(delta);
+  }
+
+  public setDocumentPrewarmEnabled(enabled: boolean): void {
+    if (enabled === this.#documentPrewarmEnabled) return;
+    this.#documentPrewarmEnabled = enabled;
+    if (enabled) {
+      if (this.#documentPaths?.needsWork === true) this.scheduleNavigationFrame();
+    } else {
+      this.#documentPaths?.pause();
+      if (this.#navigation?.hasPendingPreparation !== true) this.cancelNavigationFrame();
+    }
   }
 
   public setActiveDocumentMemoryPressure(active: boolean): void {
@@ -319,6 +331,7 @@ export class SceneVisibilityCoordinator {
   private prepareDocumentPaths(): void {
     const documentPaths = this.#documentPaths!;
     if (
+      !this.#documentPrewarmEnabled ||
       !documentPaths.needsWork ||
       this.#content.hasPendingWork ||
       this.#navigation!.hasPendingPreparation
@@ -350,7 +363,12 @@ export class SceneVisibilityCoordinator {
   }
 
   private scheduleNavigationFrame(): void {
-    if (this.#released || this.#navigationHandle !== undefined) return;
+    if (
+      this.#released ||
+      this.#navigationHandle !== undefined ||
+      (!this.#documentPrewarmEnabled && this.#navigation?.hasPendingPreparation !== true)
+    )
+      return;
     this.#navigationHandle = this.navigationOptions!.scene.workScheduler.requestFrame(() => {
       this.#navigationHandle = undefined;
       this.prepareNavigation();

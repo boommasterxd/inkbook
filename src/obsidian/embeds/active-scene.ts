@@ -16,6 +16,7 @@ import type { ActiveEditorViewState } from "./active-editor/navigation";
 import { ElementSceneStore } from "./active-editor/scene-store";
 import { ActiveScenePreviewHandoff } from "./active-scene-handoff";
 import { ActiveSceneMemoryBinding } from "./active-scene-memory";
+import { ActiveScenePrewarmBinding } from "./active-scene-prewarm";
 import { ActiveSceneTimeout } from "./active-scene-timeout";
 import { attachActiveSceneInputListeners, createSceneInputHandlers } from "./active-scene-input";
 import type { ActiveSceneScrollBinding } from "./active-scene-scroll";
@@ -60,6 +61,7 @@ export class ActiveInkbookScene {
   readonly #previewHandoff: ActiveScenePreviewHandoff;
   readonly #model: EditableDocumentModel;
   readonly #memory: ActiveSceneMemoryBinding;
+  readonly #prewarm: ActiveScenePrewarmBinding;
   readonly #onFirstStrokeCommitted: (() => void) | undefined;
   #firstStrokeCommitted = false;
   #chromeUpdatePending = false;
@@ -107,6 +109,9 @@ export class ActiveInkbookScene {
       options,
       () => controller,
       () => scrollBinding?.current() ?? scrollOwner,
+    );
+    this.#prewarm = new ActiveScenePrewarmBinding(options.root, (enabled) =>
+      this.#renderer.setDocumentPrewarmEnabled(enabled),
     );
     this.#previewHandoff.onSceneReveal = this.#renderer.revealSurface;
     this.#memory.attach(this.#renderer);
@@ -221,35 +226,35 @@ export class ActiveInkbookScene {
   }
 
   public disableInput(): void {
+    this.#prewarm.setEnabled(false);
     this.#hostZoomScroll?.cancel();
     this.#controller.setEnabled(false);
     this.#layout.suspend();
     this.#beginLockTransition();
   }
-
   public enableInput(): void {
     if (!this.#readyForInput) return;
     this.#cancelLockTransition();
+    this.#prewarm.setEnabled(true);
     this.#layout.resume();
     this.#controller.setEnabled(true);
   }
-
   public restoreAfterFailedLock(): void {
     if (this.#disposed || this.#surfaceFailed) return;
     this.#cancelLockTransition();
+    this.#prewarm.setEnabled(true);
     this.#layout.resume();
   }
-
   public finishLock(): Promise<void> {
     if (this.#disposed || this.#surfaceFailed) return Promise.resolve();
     this.#beginLockTransition();
     this.#lockPromise ??= this.#finishLockTransition(this.#lockGeneration);
     return this.#lockPromise;
   }
-
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#prewarm.dispose();
     this.#hostZoomScroll?.cancel();
     this.#lockGeneration += 1;
     this.#readyForInput = false;
@@ -271,19 +276,15 @@ export class ActiveInkbookScene {
     this.#transitionScrollStability.dispose();
     this.#editorChrome.remove();
   }
-
   public executeAction(action: ContextMenuAction): void {
     if (!this.#surfaceFailed) this.#controller.executeAction(action);
   }
-
   public isActionAvailable(action: ContextMenuAction): boolean {
     return !this.#surfaceFailed && this.#controller.isActionAvailable(action);
   }
-
   public recordMarkdownHistory(): void {
     this.#controller.recordMarkdownHistory();
   }
-
   public getViewState(): ActiveEditorViewState | undefined {
     if (this.#disposed) return undefined;
     return this.#controller.getViewState();
@@ -374,6 +375,7 @@ export class ActiveInkbookScene {
   #failSurface(onLock: () => void): void {
     if (this.#disposed || this.#surfaceFailed) return;
     this.#surfaceFailed = true;
+    this.#prewarm.setEnabled(false);
     this.#readyForInput = false;
     this.#controller.setEnabled(false);
     this.#layout.suspend();
@@ -381,9 +383,9 @@ export class ActiveInkbookScene {
     this.#resolveReady(false);
     onLock();
   }
-
   #beginLockTransition(): void {
     if (this.#disposed || this.#surfaceFailed || this.#lockStartedAt !== undefined) return;
+    this.#prewarm.setEnabled(false);
     const ownerWindow = this.#root.ownerDocument.defaultView;
     if (ownerWindow === null) return;
     this.#lockStartedAt = ownerWindow.performance.now();
