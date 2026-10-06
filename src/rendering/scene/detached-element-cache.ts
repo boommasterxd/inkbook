@@ -41,7 +41,7 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
     return entry !== undefined && firstPath(entry).parentNode !== null;
   }
 
-  public retain(entry: MountedSceneElement): boolean {
+  public retain(entry: MountedSceneElement, isNeeded?: (id: string) => boolean): boolean {
     if (this.#reserved.get(entry.id) === entry) return this.returnReservation(entry);
     // Previews are transient geometry; they must never become a committed revisit.
     if (entry.displayedPathParts !== entry.pathParts || !this.retentionEnabled) return false;
@@ -51,12 +51,12 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
     if (bytes > this.maximumBytes) return false;
     this.invalidate(entry.id);
     if (this.retainedBytes + bytes > this.maximumBytes) {
-      this.reserveCapacity(bytes);
+      this.reserveCapacity(bytes, isNeeded);
       if (this.#removing.size > 0) return false;
     }
     while (this.retainedBytes + bytes > this.maximumBytes) {
       const oldest = this.#owned.keys().next().value;
-      if (oldest === undefined) return false;
+      if (oldest === undefined || isNeeded?.(oldest)) return false;
       this.invalidate(oldest);
       this.#rootEvictions += 1;
       if (this.#removing.size > 0) return false;
@@ -73,9 +73,29 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
     return this.#owned.has(entry.id);
   }
 
-  public retainConnected(entry: MountedSceneElement, store: SceneStorePort): boolean {
+  public retainConnected(
+    entry: MountedSceneElement,
+    store: SceneStorePort,
+    isNeeded?: (id: string) => boolean,
+  ): boolean {
     if (!this.#order.hasCurrent(entry)) this.registerMounted(entry, store);
-    return this.retain(entry);
+    return this.retain(entry, isNeeded);
+  }
+
+  /** Exit admission waits for needed cache ownership to transfer, without walking the LRU. */
+  public needsVisibleAdoption(
+    entry: MountedSceneElement,
+    isNeeded: (id: string) => boolean,
+  ): boolean {
+    const bytes = detachedElementBytes(entry);
+    const oldest = this.#owned.keys().next().value;
+    return (
+      this.retentionEnabled &&
+      bytes <= this.maximumBytes &&
+      this.retainedBytes + bytes > this.maximumBytes &&
+      oldest !== undefined &&
+      isNeeded(oldest)
+    );
   }
 
   /** Transfers unchanged, proven connected roots without preparing a DOM mutation. */
@@ -268,11 +288,11 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
     return true;
   }
 
-  private reserveCapacity(bytes: number): void {
+  private reserveCapacity(bytes: number, isNeeded?: (id: string) => boolean): void {
     const byteTarget = Math.max(0, this.maximumBytes - bytes);
     while (this.cachedBytes > byteTarget && this.#removingRoots < 64) {
       const oldest = this.#owned.keys().next().value;
-      if (oldest === undefined) break;
+      if (oldest === undefined || isNeeded?.(oldest)) break;
       this.invalidate(oldest);
       this.#rootEvictions += 1;
     }

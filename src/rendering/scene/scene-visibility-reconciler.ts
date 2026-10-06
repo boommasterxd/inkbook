@@ -198,7 +198,7 @@ export class SceneVisibilityReconciler {
         )
           continue;
         this.options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
-        this.options.detachedCache?.retain(entry);
+        this.options.detachedCache?.retain(entry, (id) => this.options.visibility.contains(id));
         entrants.delete(entry.id);
       }
     }

@@ -286,7 +286,7 @@ interface ExitPublication {
   exitIndex: number;
 }
 interface ExitOptions extends PublicationOptions {
-  readonly visibility: { releaseId(id: string): void };
+  readonly visibility: { contains(id: string): boolean; releaseId(id: string): void };
   readonly pathCache: {
     invalidate(id: string): void;
     retain(id: string, version: number, parts: MountedSceneElement["pathParts"]): void;
@@ -306,12 +306,15 @@ function retainVisibilityExit(
     entry.displayedPathParts !== entry.pathParts
   )
     return undefined;
-  if (options.detachedCache?.retainConnected(entry, options.store)) {
+  const isNeeded = (id: string) => options.visibility.contains(id);
+  if (options.detachedCache?.retainConnected(entry, options.store, isNeeded)) {
     options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
     options.mounted.delete(entry.id);
     return "retained";
   }
-  return options.detachedCache?.hasPendingCleanup && options.detachedCache.retentionEnabled
+  return options.detachedCache?.retentionEnabled &&
+    (options.detachedCache.hasPendingCleanup ||
+      options.detachedCache.needsVisibleAdoption(entry, isNeeded))
     ? "pending"
     : undefined;
 }
@@ -336,7 +339,7 @@ function removeVisibilityExitNode(
     options.visibility.releaseId(entry.id);
   } else {
     options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
-    options.detachedCache?.retain(entry);
+    options.detachedCache?.retain(entry, (id) => options.visibility.contains(id));
   }
   options.instrumentation.domExits += 1;
 }
