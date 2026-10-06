@@ -161,7 +161,7 @@ export class SvgSceneRenderer {
   }
   public applyDelta(delta: Scene.SceneStoreDelta): void {
     this.assertActive();
-    this.#deltas.apply(delta);
+    this.#deltas.apply(delta, this.#visibilityCoordinator);
     this.#elementPreviews.applyMounted(this.#content.takeCommittedPreviewIds());
     this.#liveStroke.settleCommits((id) => this.#options.store.get(id) === undefined);
     this.#frameWriter.livePathCommits.settle((id) => this.#options.store.get(id) === undefined);
@@ -184,7 +184,7 @@ export class SvgSceneRenderer {
   public setActiveDocumentMemoryPressure(active: boolean): void {
     this.assertActive();
     this.#resourcePolicy.setActiveDocumentMemoryPressure(active);
-    if (active) this.#visibilityCoordinator.cancelNavigationPreparation();
+    this.#visibilityCoordinator.setActiveDocumentMemoryPressure(active);
     if (this.#content.hasMountedWork) this.#frames.schedule();
   }
   public readonly memoryUsage = () => this.#resourcePolicy.memoryUsage();

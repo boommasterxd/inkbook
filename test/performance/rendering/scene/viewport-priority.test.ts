@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
+import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
 import { SceneEntrantPriority } from "../../../../src/rendering/scene/scene-entrant-priority";
 import { MountSlice } from "../../../../src/rendering/scene/mount-slice";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
@@ -155,12 +156,14 @@ it.each([
     });
     store.prepareScenePaths = prepare;
     const { work } = observeIndexedSceneQueries(domain);
-    const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
-      height: 100,
-      left: 0,
-      top: 0,
-      width: 100,
-    });
+    const input = new InteractiveWorkPriority();
+    input.setInputActive(true, "navigation");
+    const { renderer, scheduler } = createSceneFixture(
+      NAVIGATION_PAGE,
+      store,
+      { height: 100, left: 0, top: 0, width: 100 },
+      { waitForBackground: () => input.waitForBackground() },
+    );
     scheduler.runAll();
     const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
     const publication = busy
@@ -193,6 +196,7 @@ it.each([
     } finally {
       publication?.mockRestore();
       renderer.destroy();
+      input.dispose();
       store.release();
     }
     expect(prepare.mock.calls[0]![1].aborted).toBe(true);

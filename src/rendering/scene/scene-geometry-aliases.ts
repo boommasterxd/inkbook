@@ -11,9 +11,11 @@ export class SceneGeometryAliases {
   readonly #aliases = new Map<string, GeometryAlias>();
   readonly #owners = new Map<string, Set<string>>();
   readonly #maximumBytes: number;
+  readonly #maximumEntries: number;
 
   public constructor(maximumEntries: number, maximumBytes: number) {
     this.#maximumBytes = maximumBytes;
+    this.#maximumEntries = maximumEntries;
     this.#entries = new BoundedVersionLru(maximumEntries, maximumBytes, (id, alias) => {
       this.#aliases.delete(id);
       const owners = this.#owners.get(alias.key);
@@ -64,5 +66,10 @@ export class SceneGeometryAliases {
 
   public memoryUsage(): number {
     return this.#entries.retainedBytes;
+  }
+
+  public availableBytes(): number {
+    if (this.#entries.statistics().entries >= this.#maximumEntries) return 0;
+    return this.#maximumBytes - this.memoryUsage();
   }
 }

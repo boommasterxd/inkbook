@@ -44,6 +44,10 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
     return this.#store.beginQuery(bounds);
   }
 
+  public beginOrder(): ReturnType<ElementStore["beginOrder"]> {
+    return this.#store.beginOrder();
+  }
+
   public query(bounds: Bounds, sink: SpatialQuerySink): void {
     const count = this.#store.query(bounds, this.#scratch);
     for (let index = 0; index < count; index += 1) sink.add(this.#scratch.at(index));

@@ -167,6 +167,15 @@ each native publication; the 192-original-root frame allowance counts multipart
 elements. An existing late-scene admission may complete one already-prepared
 queued unit, without fresh preparation, cleanup, or deadline renewal. See the
 [canonical publication contract](../rendering-and-performance.md#imperative-scene-ownership).
+Insert a single physical root directly; use a fragment only when an ordered unit
+needs multiple roots. This avoids intermediate DOM work without enlarging the
+publication allowance. Transfer terminal remote reservations to proven cache
+ownership before refilling the worker pipeline, preserving receiver validation.
+After required scene work finishes, allow quiet document-contour preparation to
+use spare cache capacity under central admission. Keep this preparation separate
+from DOM mounting so it cannot enlarge the viewport or evict recent contours.
+The [cache contract](../rendering-and-performance.md#path-caches) defines its
+pause, capacity, and lifetime boundaries.
 Pressure-window publication shares one identity-bound
 memory measurement with its immediate consumer. Warm metadata digest assembly
 batches cooperative checkpoints while keeping output-copy slices bounded and

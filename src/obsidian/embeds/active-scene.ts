@@ -355,6 +355,7 @@ export class ActiveInkbookScene {
       scrollPreloadMarginPx: options.deviceSettings.scrollPreloadMarginPx,
       inputHandlers: createSceneInputHandlers(controller),
       isInputActive: () => options.model.isGestureActive?.() ?? true,
+      waitForBackground: () => options.model.waitForBackground?.(),
       layout: {
         readViewport: () => {
           const snapshot = readActiveSceneLayout(this.#container, scrollOwner(), this.#root);

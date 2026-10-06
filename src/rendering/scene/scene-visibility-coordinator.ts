@@ -9,6 +9,7 @@ import type {
   MutableSceneInstrumentation,
   SceneCamera,
   SceneRendererOptions,
+  SceneStoreDelta,
   SceneViewport,
 } from "./types";
 import type { SceneVisibilityState } from "./visibility-state";
@@ -23,6 +24,7 @@ import type { Bounds } from "../../domain/geometry/primitives";
 import type { SceneVisibilityPriority } from "./scene-entrant-priority";
 import { NavigationPathPreparation } from "./navigation-path-preparation";
 import type { ScenePathCache } from "./path-cache";
+import { DocumentPathPreparation } from "./document-path-preparation";
 
 interface NavigationPreparationOptions {
   readonly cache: ScenePathCache;
@@ -46,6 +48,9 @@ export class SceneVisibilityCoordinator {
   #priorityZoom: number | undefined;
   #priority: SceneVisibilityPriority | undefined;
   readonly #navigation: NavigationPathPreparation | undefined;
+  readonly #documentPaths: DocumentPathPreparation | undefined;
+  #backgroundWait: Promise<void> | undefined;
+  #released = false;
   #envelope: Bounds | undefined;
   #navigationHandle: number | undefined;
 
@@ -86,6 +91,11 @@ export class SceneVisibilityCoordinator {
     this.#transforms = transforms;
     this.#elements = elements;
     if (navigationOptions !== undefined) {
+      this.#documentPaths = new DocumentPathPreparation(
+        navigationOptions.scene.store,
+        navigationOptions.cache,
+        () => this.scheduleNavigationFrame(),
+      );
       this.#navigation = new NavigationPathPreparation(
         navigationOptions.scene.store,
         navigationOptions.cache,
@@ -107,23 +117,39 @@ export class SceneVisibilityCoordinator {
       this.#transforms.memoryUsage() +
       this.#visibility.queryMemoryUsage() +
       (this.#navigationHandle === undefined ? 0 : 128) +
+      (this.#backgroundWait === undefined ? 0 : 128) +
+      (this.#documentPaths?.memoryUsage() ?? 0) +
       (this.#navigation?.memoryUsage() ?? 0)
     );
   }
 
   public release(): void {
+    this.#released = true;
     this.cancelNavigationPreparation();
+    this.#documentPaths?.release();
+    this.#backgroundWait = undefined;
     this.#visibility.release();
+  }
+
+  public applyDelta(delta: SceneStoreDelta): void {
+    this.#documentPaths?.invalidate(delta);
+  }
+
+  public setActiveDocumentMemoryPressure(active: boolean): void {
+    if (active) this.cancelNavigationPreparation();
+    else if (this.#documentPaths?.needsWork === true) this.scheduleNavigationFrame();
   }
 
   public cancelNavigationPreparation(): void {
     this.cancelNavigationFrame();
     this.#navigation?.cancel();
+    this.#documentPaths?.pause();
   }
 
   /** Required camera work keeps useful directional preparation for the next target. */
   public invalidate(preservePending = false): void {
     this.#dirty = true;
+    this.#documentPaths?.pause();
     this.cancelNavigationFrame();
     if (!preservePending) {
       this.#navigation?.cancel();
@@ -132,6 +158,7 @@ export class SceneVisibilityCoordinator {
   }
 
   public invalidateOrder(): void {
+    this.#documentPaths?.pause();
     this.cancelNavigationFrame();
     this.#orderDirty = true;
     this.#visibility.invalidateStagedOrder();
@@ -259,6 +286,8 @@ export class SceneVisibilityCoordinator {
     ) {
       this.cancelNavigationFrame();
       this.#navigation!.cancel();
+      this.#documentPaths?.pause();
+      this.waitForQuiet();
       return;
     }
     if (
@@ -271,6 +300,7 @@ export class SceneVisibilityCoordinator {
       this.#elements.values.size > 0
     ) {
       this.cancelNavigationFrame();
+      this.#documentPaths?.pause();
       const scheduler = options.scene.workScheduler;
       if (
         this.#navigation!.hasReadyPaths &&
@@ -283,10 +313,44 @@ export class SceneVisibilityCoordinator {
     const scheduler = options.scene.workScheduler;
     if (this.#navigation!.prepare(scheduler.deadline(), () => scheduler.now()))
       this.scheduleNavigationFrame();
+    this.prepareDocumentPaths();
+  }
+
+  private prepareDocumentPaths(): void {
+    const documentPaths = this.#documentPaths!;
+    if (
+      !documentPaths.needsWork ||
+      this.#content.hasPendingWork ||
+      this.#navigation!.hasPendingPreparation
+    )
+      return;
+    if (this.waitForQuiet()) return;
+    const scheduler = this.navigationOptions!.scene.workScheduler;
+    if (documentPaths.prepare(scheduler.deadline(), () => scheduler.now()))
+      this.scheduleNavigationFrame();
+  }
+
+  private waitForQuiet(): boolean {
+    if (this.#backgroundWait !== undefined) return true;
+    const wait = this.navigationOptions?.scene.waitForBackground?.();
+    if (wait === undefined) return false;
+    this.#documentPaths?.pause();
+    this.#backgroundWait = wait;
+    void wait.then(
+      () => {
+        if (this.#released || this.#backgroundWait !== wait) return;
+        this.#backgroundWait = undefined;
+        this.scheduleNavigationFrame();
+      },
+      () => {
+        if (this.#backgroundWait === wait) this.#backgroundWait = undefined;
+      },
+    );
+    return true;
   }
 
   private scheduleNavigationFrame(): void {
-    if (this.#navigationHandle !== undefined) return;
+    if (this.#released || this.#navigationHandle !== undefined) return;
     this.#navigationHandle = this.navigationOptions!.scene.workScheduler.requestFrame(() => {
       this.#navigationHandle = undefined;
       this.prepareNavigation();

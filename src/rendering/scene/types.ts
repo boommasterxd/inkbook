@@ -49,6 +49,7 @@ export interface SceneStorePort {
     import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation | undefined;
   pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
+  beginOrder?(): import("../../domain/store/order-cursor").StoreOrderCursor;
   beginQuery?(bounds: Bounds): SceneSpatialQueryCursor;
   query(bounds: Bounds, sink: SpatialQuerySink): void;
 }
@@ -91,6 +92,7 @@ export interface SceneRendererOptions {
   readonly onSurfaceFailure?: () => void;
   readonly layout: SceneLayoutPort;
   readonly isInputActive?: () => boolean;
+  readonly waitForBackground?: () => Promise<void> | undefined;
   readonly page: PageV1;
   /** The presentation explicitly releases initial exact-viewport preparation after its handoff. */
   readonly deferInitialOverscan?: boolean;

@@ -45,6 +45,7 @@ export function createSceneFixture(
     | "onSceneCommitted"
     | "deferInitialOverscan"
     | "isInputActive"
+    | "waitForBackground"
     | "onResourceUsageChanged"
     | "scrollPreloadMarginPx"
   > & {
@@ -58,6 +59,9 @@ export function createSceneFixture(
       ? {}
       : { scrollPreloadMarginPx: options.scrollPreloadMarginPx }),
     ...(options.isInputActive === undefined ? {} : { isInputActive: options.isInputActive }),
+    ...(options.waitForBackground === undefined
+      ? {}
+      : { waitForBackground: options.waitForBackground }),
     ...(options.deferInitialOverscan === undefined
       ? {}
       : { deferInitialOverscan: options.deferInitialOverscan }),

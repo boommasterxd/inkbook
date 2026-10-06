@@ -36,6 +36,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
   readonly #retainedKeys = new Set<string>();
   readonly #aliases: SceneGeometryAliases;
   readonly #maximumBytes: number;
+  readonly #maximumEntries: number;
   #nextIdentity = 0;
   public constructor(maximumEntries = PATH_CACHE_MAX_ENTRIES, maximumBytes = PATH_CACHE_MAX_BYTES) {
     const aliasBytes = Math.max(1, Math.min(Math.floor(maximumBytes / 4), maximumEntries * 256));
@@ -45,6 +46,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
       entry.releaseLookup?.();
     });
     this.#maximumBytes = maximumBytes;
+    this.#maximumEntries = maximumEntries;
     this.#aliases = new SceneGeometryAliases(maximumEntries, aliasBytes);
   }
 
@@ -162,6 +164,32 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
 
   public cacheMemoryUsage(): number {
     return this.cachedBytes + this.#aliases.memoryUsage();
+  }
+
+  /** Speculation uses spare capacity and never displaces required or recent contours. */
+  public speculativeCapacityBytes(): number {
+    const aliasReservation = 128 + (36 + `\0path:${this.#nextIdentity}`.length) * 2;
+    if (
+      !this.retentionEnabled ||
+      this.statistics().entries >= this.#maximumEntries ||
+      this.#aliases.availableBytes() < aliasReservation
+    )
+      return 0;
+    return Math.max(0, this.#maximumBytes - this.cacheMemoryUsage() - aliasReservation);
+  }
+
+  public retainSpeculative(
+    id: string,
+    geometryVersion: number,
+    parts: readonly SvgPathPart[],
+  ): boolean {
+    if (this.has(id, geometryVersion)) return true;
+    const bytes = SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + pathBytes(parts);
+    const aliasBytes = 128 + (id.length + `\0path:${this.#nextIdentity}`.length) * 2;
+    if (bytes > this.speculativeCapacityBytes() || aliasBytes > this.#aliases.availableBytes())
+      return false;
+    this.retain(id, geometryVersion, parts);
+    return this.has(id, geometryVersion);
   }
 
   public ownsPrepared(element: InkElementV1, parts: readonly SvgPathPart[]): boolean {

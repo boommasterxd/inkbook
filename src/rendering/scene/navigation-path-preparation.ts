@@ -61,6 +61,10 @@ export class NavigationPathPreparation {
     return this.#remote?.started === true && this.#remote.ready.length > 0;
   }
 
+  public get hasPendingPreparation(): boolean {
+    return this.#remote !== undefined || !this.#complete;
+  }
+
   public setTarget(priority: SceneVisibilityPriority | undefined, envelope: Bounds): void {
     const direction = priority?.direction;
     if (direction === undefined || (direction.x === 0 && direction.y === 0)) {

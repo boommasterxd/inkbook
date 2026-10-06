@@ -3,7 +3,6 @@ import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { ResolvedShapeAnchor } from "../geometry/anchors";
 import type { InkElementV1 } from "../schema/public";
 import { SpatialQueryScratch, UniformSpatialIndex, type SpatialBounds } from "../spatial/index";
-
 import { addConnectionReferences, assertResolvedConnections } from "./connections";
 import { prepareCreatedRecords } from "./creation-planner";
 import { DeltaBuilder } from "./delta-builder";
@@ -35,6 +34,7 @@ import {
 } from "./replacement-planner";
 import { commitReplacementPlan, planElementReplacement } from "./time-sliced-element-replacement";
 import { materializeStoreSnapshot } from "./snapshot-materializer";
+import { StoreOrderCursor } from "./order-cursor";
 import { commitSynchronousReplacements } from "./synchronous-element-replacement";
 import type { TimeSlicedStoreState } from "./time-sliced-store-creation";
 import type {
@@ -411,7 +411,10 @@ export class ElementStore {
     }
     return this.#publish(delta.build(this.#geometryVersion, this.#paintVersion));
   }
-
+  public beginOrder(): StoreOrderCursor {
+    const bands = () => this.#bands;
+    return new StoreOrderCursor(bands, () => this.#mutationVersion);
+  }
   public beginQuery(bounds: SpatialBounds): ReturnType<UniformSpatialIndex<string>["beginQuery"]> {
     return this.#spatialIndex.beginQuery(bounds);
   }
@@ -472,7 +475,6 @@ export class ElementStore {
     this.#instrumentation.recordReplacements += result.replacementCount;
     return this.#publish(result.delta)!;
   }
-
   #prepareReplacementCandidates(replacements: readonly InkElementV1[]): ReplacementCandidate[] {
     return prepareReplacementCandidates(replacements, this.#replacementPorts());
   }
@@ -485,13 +487,11 @@ export class ElementStore {
       },
     };
   }
-
   #requireRecord(id: string): ElementRecord {
     const record = this.#records.get(id);
     if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
     return record;
   }
-
   #publish(delta: StoreDelta | null): StoreDelta | null {
     if (delta === null) return null;
     this.#mutationVersion += 1;

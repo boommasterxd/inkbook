@@ -17,7 +17,10 @@ export class SceneDeltaCoordinator {
 
   public constructor(private readonly options: SceneDeltaCoordinatorOptions) {}
 
-  public apply(delta: SceneStoreDelta): void {
+  public apply(
+    delta: SceneStoreDelta,
+    visibility?: { applyDelta(delta: SceneStoreDelta): void },
+  ): void {
     let fadedRemovals: string[] | undefined;
     for (const affected of delta.affected) {
       if (affected.after === null && this.#fadedIds.delete(affected.id)) {
@@ -27,6 +30,7 @@ export class SceneDeltaCoordinator {
     }
     const consumedSuppression = this.options.motion.applyDelta(delta.affected, fadedRemovals);
     routeSceneDelta(delta, this.options.routing);
+    visibility?.applyDelta(delta);
     this.options.previews.consume(consumedSuppression);
     this.options.commits.markPending();
     this.options.schedule();
