@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/incremental-document-serializer";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/document-model";
+import type { DocumentRuntimeRequest } from "../../../../src/persistence/worker/runtime/types";
 import {
   MAX_SCENE_PATH_BYTES,
   scenePathBytes,
@@ -10,6 +12,226 @@ import {
   scenePathDeferred as deferred,
   scenePathProgressCases,
 } from "../../../fixtures/persistence/scene-path-progress";
+
+it.each(
+  scenePathProgressCases(
+    "clipboard-decode",
+    "clipboard-plan-paste",
+    "preflight",
+    "read-back",
+    "export-full",
+    "model-sync-full",
+    "model-sync-incremental",
+  ),
+)(
+  "defers document contour work behind an admitted %s request, operation=%s",
+  async (bridge, operation) => {
+    const fixture = await createScenePathProgressFixture(bridge, {
+      speculative: true,
+      initiallyBlocked: false,
+    });
+    const started = deferred();
+    const released = deferred();
+    const run = vi.spyOn(fixture.scheduler, "run");
+    let admissions = 0;
+    run.mockImplementation(
+      async <T>(
+        execute: (signal: AbortSignal) => T | Promise<T>,
+        signal: AbortSignal,
+      ): Promise<T> => {
+        if (++admissions === 1) {
+          started.resolve();
+          await released.promise;
+        }
+        return execute(signal);
+      },
+    );
+    const clipboardIdentity = { ...identity, operationId: 3, purpose: "clipboard" as const };
+    let request: DocumentRuntimeRequest;
+    if (operation === "export-full")
+      request = {
+        ...identity,
+        baseModelRevision: null,
+        exportGeneration: 1,
+        modelRevision: 0,
+        snapshot: fixture.snapshot,
+        type: operation,
+      };
+    else if (operation === "model-sync-full")
+      request = {
+        baseModelRevision: null,
+        identity: clipboardIdentity,
+        modelRevision: 0,
+        snapshot: fixture.snapshot,
+        type: operation,
+      };
+    else if (operation === "model-sync-incremental")
+      request = {
+        baseModelRevision: 0,
+        identity: clipboardIdentity,
+        modelRevision: 0,
+        type: operation,
+      };
+    else if (operation === "preflight" || operation === "read-back")
+      request = {
+        identity: { ...clipboardIdentity, purpose: operation },
+        input: "<svg>",
+        type: "verify-output",
+      };
+    else
+      request = {
+        basisRevision: 0,
+        candidates: {},
+        identity: clipboardIdentity,
+        type: operation,
+        ...(operation === "clipboard-plan-paste"
+          ? {
+              commandTimestamp: 0,
+              invocation: { kind: "toolbar" as const, visibleCanvasCenter: { x: 0, y: 0 } },
+            }
+          : {}),
+      } as DocumentRuntimeRequest;
+    try {
+      const protectedRequest = fixture.port.execute(request);
+      await started.promise;
+      const prepared = fixture.prepare(() => undefined);
+      await Promise.resolve();
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(0);
+      released.resolve();
+      await protectedRequest;
+      expect(await prepared).toMatchObject({ type: "prepare-scene-paths-success" });
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(256);
+    } finally {
+      released.resolve();
+      run.mockRestore();
+      fixture.close();
+    }
+  },
+);
+
+it.each([false, true])(
+  "admits clipboard while a complete speculative batch waits for its scene ACK, bridge=%s",
+  async (bridge) => {
+    const fixture = await createScenePathProgressFixture(bridge, {
+      speculative: true,
+      initiallyBlocked: false,
+    });
+    const first = deferred();
+    const acknowledgement = deferred();
+    const batches: string[][] = [];
+    try {
+      const preparation = fixture.prepare((batch) => {
+        batches.push(batch.paths.map(({ id }) => id));
+        first.resolve();
+        return acknowledgement.promise;
+      });
+      await first.promise;
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(256);
+      expect(
+        await fixture.port.execute({
+          basisRevision: 0,
+          identity: { ...identity, operationId: 3, purpose: "clipboard" },
+          selectedIds: [fixture.ids[0]!],
+          type: "clipboard-encode",
+        }),
+      ).toMatchObject({ type: "clipboard-encode-success" });
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(256);
+      acknowledgement.resolve();
+      expect(await preparation).toMatchObject({ type: "prepare-scene-paths-success", paths: [] });
+      expect(fixture.sentIds(batches)).toEqual(fixture.ids);
+    } finally {
+      acknowledgement.resolve();
+      fixture.close();
+    }
+  },
+);
+
+it.each(scenePathProgressCases("resume", "cancel", "terminate", "model"))(
+  "suspends speculative geometry for queued clipboard and failed export work, bridge=%s, terminal=%s",
+  async (bridge, terminal) => {
+    const fixture = await createScenePathProgressFixture(bridge, { speculative: true });
+    const first = deferred();
+    const clipboardStarted = deferred();
+    const releaseClipboard = deferred();
+    const batches: string[][] = [];
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called on the actual runtime model.
+    const original = DocumentModelRuntime.prototype.encodeClipboardSliced;
+    const encode = vi.spyOn(DocumentModelRuntime.prototype, "encodeClipboardSliced");
+    encode.mockImplementation(async function (this: DocumentModelRuntime, revision, ids, context) {
+      clipboardStarted.resolve();
+      await releaseClipboard.promise;
+      return original.call(this, revision, ids, context);
+    });
+    try {
+      const preparation = fixture
+        .prepare((batch) => {
+          batches.push(batch.paths.map(({ id }) => id));
+          first.resolve();
+        })
+        .catch((error: unknown) => error);
+      await first.promise;
+      const clipboard = fixture.port
+        .execute({
+          basisRevision: 0,
+          identity: { ...identity, operationId: 3, purpose: "clipboard" },
+          selectedIds: [fixture.ids[0]!],
+          type: "clipboard-encode",
+        })
+        .catch((error: unknown) => error);
+      const exported = fixture.port
+        .execute({
+          ...identity,
+          baseModelRevision: 0,
+          exportGeneration: 1,
+          modelRevision: 0,
+          orderChanges: { content: [] },
+          type: "export-incremental",
+        })
+        .catch((error: unknown) => error);
+      const synchronized =
+        terminal === "model"
+          ? exported.then(() =>
+              fixture.port.execute({
+                baseModelRevision: 0,
+                identity: { ...identity, operationId: 4, purpose: "clipboard" },
+                modelRevision: 1,
+                type: "model-sync-incremental",
+              }),
+            )
+          : undefined;
+      fixture.resume();
+      await clipboardStarted.promise;
+      expect(fixture.runtime.instrumentation.shapeBuilds).toBe(1);
+      expect(batches.flat()).toEqual([fixture.ids[0]]);
+      if (terminal === "cancel") fixture.port.cancelScenePreparation?.(identity);
+      if (terminal === "terminate") fixture.close();
+      releaseClipboard.resolve();
+      if (terminal !== "terminate") {
+        expect(await clipboard).toMatchObject({ type: "clipboard-encode-success" });
+        expect(await exported).toMatchObject({ type: "export-failure" });
+      } else {
+        await clipboard;
+        await exported;
+      }
+      const result = await preparation;
+      if (synchronized !== undefined)
+        expect(await synchronized).toMatchObject({ type: "model-sync-success", modelRevision: 1 });
+      if (terminal === "resume") {
+        expect(result).toMatchObject({ type: "prepare-scene-paths-success", paths: [] });
+        expect(fixture.sentIds(batches)).toEqual(fixture.ids);
+        expect(fixture.runtime.instrumentation.shapeBuilds).toBe(256);
+      } else {
+        expect(result).not.toMatchObject({ type: "prepare-scene-paths-success" });
+        expect(batches.flat()).toEqual([fixture.ids[0]]);
+      }
+    } finally {
+      releaseClipboard.resolve();
+      encode.mockRestore();
+      fixture.close();
+    }
+    expect(fixture.runtime.instrumentation.shapeCacheBytes).toBe(0);
+  },
+);
 
 it.each([false, true])(
   "offers the exact visible prefix before any overscan geometry without a CPU yield, bridge=%s",

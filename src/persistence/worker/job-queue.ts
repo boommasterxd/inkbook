@@ -16,6 +16,7 @@ const PRIORITY: Readonly<Record<WorkerJobKind, number>> = {
 export class WorkerJobQueue<TPayload> {
   readonly #requiredCapacity: number;
   #active: WorkerJob<TPayload> | null = null;
+  #suspended: WorkerJob<TPayload> | null = null;
   readonly #required: WorkerJob<TPayload>[] = [];
   #clipboard: WorkerJob<TPayload> | null = null;
   #export: WorkerJob<TPayload> | null = null;
@@ -36,6 +37,7 @@ export class WorkerJobQueue<TPayload> {
   public get pendingCount(): number {
     return (
       this.#required.length +
+      Number(this.#suspended !== null) +
       Number(this.#clipboard !== null) +
       Number(this.#export !== null) +
       Number(this.#unlock !== null)
@@ -79,8 +81,25 @@ export class WorkerJobQueue<TPayload> {
     return this.#active;
   }
 
+  /** Keep one cooperative operation alive while higher-priority requests settle. */
+  public suspendActive(): void {
+    if (this.#suspended !== null || this.#active === null)
+      throw new Error("An active worker job can only be suspended once.");
+    this.#suspended = this.#active;
+    this.#active = null;
+  }
+
+  public resumeActive(): void {
+    if (this.#active !== null || this.#suspended === null)
+      throw new Error("A suspended worker job requires an empty active slot.");
+    this.#active = this.#suspended;
+    this.#suspended = null;
+  }
+
   public clearPending(): readonly WorkerJob<TPayload>[] {
     const pending = this.#orderedPending();
+    if (this.#suspended !== null) pending.push(this.#suspended);
+    this.#suspended = null;
     this.#required.length = 0;
     this.#clipboard = null;
     this.#export = null;
@@ -105,7 +124,10 @@ export class WorkerJobQueue<TPayload> {
   }
 
   #admitRequired(job: WorkerJob<TPayload>): QueueAdmission {
-    if (this.#required.length >= this.#requiredCapacity) {
+    if (
+      this.#required.length + Number(this.#suspended?.kind === "required") >=
+      this.#requiredCapacity
+    ) {
       return "full";
     }
     this.#required.push(job);
@@ -128,7 +150,11 @@ export class WorkerJobQueue<TPayload> {
   }
 
   #contains(id: string): boolean {
-    return this.#active?.id === id || this.#orderedPending().some((job) => job.id === id);
+    return (
+      this.#active?.id === id ||
+      this.#suspended?.id === id ||
+      this.#orderedPending().some((job) => job.id === id)
+    );
   }
 
   #orderedPending(): WorkerJob<TPayload>[] {

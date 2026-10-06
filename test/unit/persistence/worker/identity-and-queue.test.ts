@@ -6,6 +6,30 @@ import type { WorkerJob, WorkerJobKind } from "../../../../src/persistence/worke
 const job = (id: string, kind: WorkerJobKind): WorkerJob<string> => ({ id, kind, payload: id });
 
 describe("bounded non-preemptive worker queue", () => {
+  it("retains one suspended job within required capacity until foreground completion", () => {
+    const queue = new WorkerJobQueue<string>({ requiredCapacity: 2 });
+    queue.admit(job("speculative", "required"));
+    queue.startNext();
+    queue.suspendActive();
+    expect(queue.pendingCount).toBe(1);
+    expect(queue.admit(job("speculative", "required"))).toBe("duplicate");
+    expect(queue.admit(job("required", "required"))).toBe("accepted");
+    expect(queue.admit(job("overflow", "required"))).toBe("full");
+    expect(queue.admit(job("unlock", "unlock"))).toBe("busy");
+    expect(() => queue.suspendActive()).toThrow();
+    expect(queue.startNext()?.id).toBe("required");
+    expect(() => queue.resumeActive()).toThrow();
+    expect(queue.complete("speculative")).toBeNull();
+    expect(queue.active?.id).toBe("required");
+    queue.complete("required");
+    queue.resumeActive();
+    expect(queue.active?.id).toBe("speculative");
+    expect(queue.pendingCount).toBe(0);
+    queue.suspendActive();
+    expect(queue.clearPending()).toEqual([job("speculative", "required")]);
+    expect(queue.pendingCount).toBe(0);
+    expect(() => queue.resumeActive()).toThrow();
+  });
   it("retains ineligible queued work while eligible jobs proceed within the original capacities", () => {
     const queue = new WorkerJobQueue<string>({ requiredCapacity: 2 });
     queue.admit(job("verify", "required"));

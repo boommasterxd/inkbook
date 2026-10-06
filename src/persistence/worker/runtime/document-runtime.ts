@@ -1,15 +1,18 @@
 import { WorkerJobQueue } from "../job-queue";
-import {
-  exportIdentityKey,
-  type ExecutorIdentity,
-  type ExportIdentity,
-  type WorkerJobKind,
-} from "../protocol";
+import { exportIdentityKey, type ExecutorIdentity, type ExportIdentity } from "../protocol";
 import { DocumentModelRuntime, RuntimeModelError } from "./document-model";
+import { runtimeFailure } from "./runtime-model-error";
+import { DocumentPrewarm } from "./document-prewarm";
+import { InputActivityGate } from "./input-activity-gate";
 import { runClipboardRequest } from "./runtime-clipboard";
 import {
   cancelsSpeculativeSceneRequest,
+  blocksSpeculativeWork,
   isNavigationSceneRequest,
+  isDocumentPrewarmRequest,
+  matchesExecutorIdentity,
+  matchesRequestExecutor,
+  requestJobKind,
   supersedesSpeculativeSceneRequest,
 } from "./request-admission";
 import { emitUnlockBatches } from "./unlock-batches";
@@ -47,8 +50,9 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   #nextJobId = 0;
   #liveInputActive = false;
   #navigationActive = false;
-  #prewarmRequested = false;
-  #prewarmRunning = false;
+  readonly #navigationGate = new InputActivityGate(() => this.#navigationActive);
+  readonly #prewarm: DocumentPrewarm;
+  #foreground: Promise<void> | undefined;
   #running = false;
   #terminated = false;
   #unlockPending = false;
@@ -65,6 +69,11 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#services = services;
     this.#onTerminate = onTerminate;
     this.#model = new DocumentModelRuntime(services.now, ownsTransferredSamples);
+    this.#prewarm = new DocumentPrewarm(
+      this.#model,
+      (signal) => this.checkpoint(signal),
+      () => this.#mayPrewarm(),
+    );
   }
 
   public get instrumentation() {
@@ -80,7 +89,10 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   ): Promise<DocumentRuntimeResult> {
     if (this.#terminated)
       return Promise.reject(new Error("Document worker runtime is terminated."));
-    if (!this.#matchesExecutor(request)) return Promise.resolve(this.#staleResult(request));
+    if (!matchesRequestExecutor(request, this.#executor))
+      return Promise.resolve(
+        runtimeFailure(request, new RuntimeModelError("stale-executor", false)),
+      );
     if (this.#unlockPending) {
       return Promise.reject(new Error("Unlock is exclusive until its terminal result."));
     }
@@ -89,13 +101,15 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     try {
       if (request.type === "prepare-scene-paths") sceneOperation = new ScenePathOperation(request);
     } catch (error) {
-      return Promise.resolve(this.#failure(request, error));
+      return Promise.resolve(runtimeFailure(request, error));
     }
-    const id = `${this.#kind(request)}:${++this.#nextJobId}`;
+    const id = `${requestJobKind(request)}:${++this.#nextJobId}`;
     return new Promise((resolve, reject) => {
-      const admission = this.#queue.admit({ id, kind: this.#kind(request), payload: request });
+      const admission = this.#queue.admit({ id, kind: requestJobKind(request), payload: request });
       if (admission !== "accepted") {
-        reject(new Error(`Document worker queue rejected ${this.#kind(request)}: ${admission}.`));
+        reject(
+          new Error(`Document worker queue rejected ${requestJobKind(request)}: ${admission}.`),
+        );
         return;
       }
       if (request.type === "unlock") this.#unlockPending = true;
@@ -107,14 +121,28 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         request,
         resolve,
       });
+      this.#prewarm.interrupt();
+      const active = this.#queue.active;
+      if (
+        blocksSpeculativeWork(request) &&
+        active !== null &&
+        isDocumentPrewarmRequest(active.payload)
+      ) {
+        const activeSignal = this.#jobs.get(active.id)?.abortController.signal;
+        if (activeSignal !== undefined && !activeSignal.aborted)
+          void this.#yieldSpeculative(
+            AbortSignal.any([activeSignal, this.#abortController.signal]),
+          )?.catch(() => undefined);
+      }
       void this.#drain();
     });
   }
 
   public acknowledgeExport(identity: ExportIdentity, _accepted: boolean): void {
-    if (!this.#matchesExportIdentity(identity)) return;
+    if (!matchesExecutorIdentity(identity, this.#executor)) return;
     this.#unacknowledgedExports.delete(exportIdentityKey(identity));
-    this.#schedulePrewarm();
+    void this.#drain();
+    this.#prewarm.schedule();
   }
   public cancelScenePreparation(identity: import("../protocol").PurposeOperationIdentity): void {
     for (const [id, job] of this.#jobs) {
@@ -140,8 +168,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
 
   public requestPrewarm(): void {
     if (this.#terminated) return;
-    this.#prewarmRequested = true;
-    this.#schedulePrewarm();
+    this.#prewarm.request();
   }
 
   public checkpoint(signal: AbortSignal): Promise<void> | undefined {
@@ -164,15 +191,16 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#liveInputActive = active;
     if (active) this.#cancelSpeculativeScenePreparation();
     this.#scheduler?.setLiveInputActive?.(active);
-    if (!active) this.#schedulePrewarm();
+    if (!active) this.#prewarm.schedule();
   }
 
   public setNavigationActive(active: boolean): void {
     this.#navigationActive = active;
     if (active) this.#cancelSpeculativeScenePreparation(true);
     if (!active) {
+      this.#navigationGate.notifyInactive();
       void this.#drain();
-      this.#schedulePrewarm();
+      this.#prewarm.schedule();
     }
   }
 
@@ -186,7 +214,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     job.abortController.abort();
     if (!this.#queue.cancelPendingRequired(id)) return;
     this.#jobs.delete(id);
-    job.resolve(this.#failure(job.request, new Error("Scene preparation was cancelled.")));
+    job.resolve(runtimeFailure(job.request, new Error("Scene preparation was cancelled.")));
   }
 
   public terminate(): void {
@@ -199,30 +227,41 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#jobs.clear();
     this.#model.clear();
     this.#unacknowledgedExports.clear();
-    this.#prewarmRequested = false;
+    this.#prewarm.clear();
     this.#onTerminate?.();
   }
 
   readonly #eligibleJob = (job: import("../protocol").WorkerJob<DocumentRuntimeRequest>): boolean =>
-    !this.#navigationActive ||
-    this.#jobs.get(job.id)?.abortController.signal.aborted === true ||
-    isNavigationSceneRequest(job.payload);
+    (!this.#navigationActive ||
+      this.#jobs.get(job.id)?.abortController.signal.aborted === true ||
+      isNavigationSceneRequest(job.payload)) &&
+    (!isDocumentPrewarmRequest(job.payload) || !this.#hasProtectedJobs());
 
   async #drain(): Promise<void> {
     if (this.#running) return;
     this.#running = true;
+    await this.#drainJobs(this.#eligibleJob);
+    this.#running = false;
+    if (!this.#terminated && this.#queue.startNext(this.#eligibleJob) !== null) void this.#drain();
+    this.#prewarm.schedule();
+  }
+
+  async #drainJobs(
+    eligible: (job: import("../protocol").WorkerJob<DocumentRuntimeRequest>) => boolean,
+  ): Promise<void> {
     while (!this.#terminated) {
-      const active = this.#queue.startNext(this.#eligibleJob);
+      const active = this.#queue.startNext(eligible);
       if (active === null) break;
       const pending = this.#jobs.get(active.id);
       if (pending === undefined) break;
+      const signal = AbortSignal.any([
+        this.#abortController.signal,
+        pending.abortController.signal,
+      ]);
+      let result: DocumentRuntimeResult;
       try {
-        const signal = AbortSignal.any([
-          this.#abortController.signal,
-          pending.abortController.signal,
-        ]);
         signal.throwIfAborted();
-        const result =
+        result =
           this.#scheduler === null
             ? await this.#run(pending.request, pending.observer, signal)
             : await this.#scheduler.run(
@@ -230,16 +269,46 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
                 signal,
                 isNavigationSceneRequest(pending.request) ? "frame" : undefined,
               );
-        if (!this.#terminated) pending.resolve(result);
       } catch (error) {
-        if (!this.#terminated) pending.resolve(this.#failure(pending.request, error));
+        result = runtimeFailure(pending.request, error);
       }
+      while (isDocumentPrewarmRequest(pending.request) && this.#foreground !== undefined)
+        await this.#foreground.catch(() => undefined);
+      if (signal.aborted) result = runtimeFailure(pending.request, signal.reason);
+      if (!this.#terminated) pending.resolve(result);
       this.#jobs.delete(active.id);
-      this.#queue.complete(active.id, this.#eligibleJob);
+      this.#queue.complete(active.id, eligible);
       if (pending.request.type === "unlock") this.#unlockPending = false;
     }
-    this.#running = false;
-    this.#schedulePrewarm();
+  }
+
+  #hasProtectedJobs(): boolean {
+    return [...this.#jobs.values()].some((job) => blocksSpeculativeWork(job.request));
+  }
+
+  #yieldSpeculative(signal: AbortSignal): Promise<void> | undefined {
+    if (this.#foreground !== undefined) return this.#foreground;
+    if (!this.#hasProtectedJobs()) return undefined;
+    signal.throwIfAborted();
+    this.#queue.suspendActive();
+    this.#foreground = this.#settleForeground(signal);
+    return this.#foreground;
+  }
+
+  async #settleForeground(signal: AbortSignal): Promise<void> {
+    try {
+      do {
+        const navigation = this.#navigationGate.waitUntilInactive(signal);
+        if (navigation !== undefined) await navigation;
+        await this.#drainJobs(
+          (job) => !isDocumentPrewarmRequest(job.payload) && this.#eligibleJob(job),
+        );
+      } while (!this.#terminated && this.#hasProtectedJobs());
+    } finally {
+      this.#foreground = undefined;
+      if (!this.#terminated) this.#queue.resumeActive();
+    }
+    signal.throwIfAborted();
   }
 
   async #run(
@@ -247,43 +316,18 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     observer: DocumentRuntimeObserver | undefined,
     signal: AbortSignal,
   ): Promise<DocumentRuntimeResult> {
-    const sliceContext = runtimeSliceContext(this.#scheduler, signal, request);
+    while (isDocumentPrewarmRequest(request) && this.#foreground !== undefined)
+      await this.#foreground.catch(() => undefined);
+    signal.throwIfAborted();
+    const sliceContext = runtimeSliceContext(
+      this.#scheduler,
+      signal,
+      request,
+      isDocumentPrewarmRequest(request) ? () => this.#yieldSpeculative(signal) : undefined,
+    );
     if (request.type === "prepare-scene-paths")
       return this.#prepareScenePaths(request, sliceContext, signal, observer);
-    if (request.type === "unlock") {
-      let batchCount = 0;
-      const unlocked = await this.#model.unlock(
-        request.input,
-        sliceContext,
-        async (snapshot, derivations, adoptionSignal) => {
-          batchCount = await emitUnlockBatches(
-            request.identity,
-            snapshot.elements,
-            derivations,
-            observer,
-            adoptionSignal,
-          );
-        },
-        request.safeStaticProof,
-      );
-      const { snapshot } = unlocked;
-      return {
-        identity: request.identity,
-        lockedHeight: unlocked.lockedHeight,
-        outputHash: unlocked.outputHash,
-        requiresCanonicalRewrite: unlocked.requiresCanonicalRewrite,
-        sourceVersion: unlocked.sourceVersion,
-        snapshot: {
-          batchCount,
-          elementCount: snapshot.elements.length,
-          format: snapshot.format,
-          page: snapshot.page,
-          revision: snapshot.revision,
-          version: snapshot.version,
-        },
-        type: "unlock-success",
-      };
-    }
+    if (request.type === "unlock") return this.#unlock(request, sliceContext, observer);
     if (
       request.type === "clipboard-encode" ||
       request.type === "clipboard-decode" ||
@@ -300,22 +344,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         type: "model-sync-success",
       };
     }
-    if (request.type === "verify-output") {
-      const parsed = await this.#model.verifyOutput(request.input, sliceContext, {
-        ...(request.expectedBytes === undefined ? {} : { expectedBytes: request.expectedBytes }),
-        versionPolicy:
-          request.versionPolicy ??
-          (request.identity.purpose === "read-back" ? "current" : "editable"),
-        ...(request.identity.purpose === "preflight" && request.confirmedBase !== undefined
-          ? { confirmedBase: request.confirmedBase }
-          : {}),
-      });
-      return {
-        identity: request.identity,
-        persisted: parsed === null ? { type: "unreadable" } : { ...parsed, type: "confirmed" },
-        type: "verify-output-success",
-      };
-    }
+    if (request.type === "verify-output") return this.#verifyOutput(request, sliceContext);
     const scheduler = this.#scheduler;
     const result = await this.#model.export(request, scheduler === null ? undefined : sliceContext);
     if (result.ok) {
@@ -340,6 +369,65 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       sessionId: request.sessionId,
       type: "export-failure",
       workerEpoch: request.workerEpoch,
+    };
+  }
+
+  async #verifyOutput(
+    request: Extract<DocumentRuntimeRequest, { type: "verify-output" }>,
+    context: RuntimeSliceContext | undefined,
+  ): Promise<DocumentRuntimeResult> {
+    const parsed = await this.#model.verifyOutput(request.input, context, {
+      ...(request.expectedBytes === undefined ? {} : { expectedBytes: request.expectedBytes }),
+      versionPolicy:
+        request.versionPolicy ??
+        (request.identity.purpose === "read-back" ? "current" : "editable"),
+      ...(request.identity.purpose === "preflight" && request.confirmedBase !== undefined
+        ? { confirmedBase: request.confirmedBase }
+        : {}),
+    });
+    return {
+      identity: request.identity,
+      persisted: parsed === null ? { type: "unreadable" } : { ...parsed, type: "confirmed" },
+      type: "verify-output-success",
+    };
+  }
+
+  async #unlock(
+    request: Extract<DocumentRuntimeRequest, { type: "unlock" }>,
+    context: RuntimeSliceContext | undefined,
+    observer: DocumentRuntimeObserver | undefined,
+  ): Promise<DocumentRuntimeResult> {
+    let batchCount = 0;
+    const unlocked = await this.#model.unlock(
+      request.input,
+      context,
+      async (snapshot, derivations, adoptionSignal) => {
+        batchCount = await emitUnlockBatches(
+          request.identity,
+          snapshot.elements,
+          derivations,
+          observer,
+          adoptionSignal,
+        );
+      },
+      request.safeStaticProof,
+    );
+    const { snapshot } = unlocked;
+    return {
+      identity: request.identity,
+      lockedHeight: unlocked.lockedHeight,
+      outputHash: unlocked.outputHash,
+      requiresCanonicalRewrite: unlocked.requiresCanonicalRewrite,
+      sourceVersion: unlocked.sourceVersion,
+      snapshot: {
+        batchCount,
+        elementCount: snapshot.elements.length,
+        format: snapshot.format,
+        page: snapshot.page,
+        revision: snapshot.revision,
+        version: snapshot.version,
+      },
+      type: "unlock-success",
     };
   }
 
@@ -370,8 +458,11 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
               ...(request.streamProgress !== true || observer?.scenePaths === undefined
                 ? {}
                 : {
-                    publish: (paths, signal) =>
-                      observer.scenePaths!(
+                    publish: async (paths, signal) => {
+                      while (isDocumentPrewarmRequest(request) && this.#foreground !== undefined)
+                        await this.#foreground.catch(() => undefined);
+                      signal.throwIfAborted();
+                      return observer.scenePaths!(
                         {
                           basisRevision: request.basisRevision,
                           identity: request.identity,
@@ -379,114 +470,24 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
                           type: "prepare-scene-paths-success",
                         },
                         signal,
-                      ),
+                      );
+                    },
                   }),
             },
       ),
       type: "prepare-scene-paths-success",
     };
   }
-  #failure(request: DocumentRuntimeRequest, error: unknown): DocumentRuntimeResult {
-    if (request.type === "export-full" || request.type === "export-incremental") {
-      return {
-        error: {
-          code: error instanceof RuntimeModelError ? error.code : "runtime-failure",
-          retryable: false,
-        },
-        exportGeneration: request.exportGeneration,
-        modelRevision: request.modelRevision,
-        sessionId: request.sessionId,
-        type: "export-failure",
-        workerEpoch: request.workerEpoch,
-      };
-    }
-    return {
-      code: error instanceof RuntimeModelError ? error.code : "runtime-failure",
-      identity: request.identity,
-      retryable: error instanceof RuntimeModelError && error.retryable,
-      type: "runtime-failure",
-    };
-  }
-
-  #staleResult(request: DocumentRuntimeRequest): DocumentRuntimeResult {
-    return this.#failure(request, new RuntimeModelError("stale-executor", false));
-  }
-  #matchesExecutor(request: DocumentRuntimeRequest): boolean {
-    const identity =
-      request.type === "export-full" || request.type === "export-incremental"
-        ? request
-        : request.identity;
+  #mayPrewarm(): boolean {
     return (
-      identity.sessionId === this.#executor.sessionId &&
-      identity.workerEpoch === this.#executor.workerEpoch
+      !this.#terminated &&
+      !this.#liveInputActive &&
+      !this.#navigationActive &&
+      !this.#running &&
+      this.#unacknowledgedExports.size === 0 &&
+      this.#queue.active === null &&
+      this.#queue.pendingCount === 0
     );
-  }
-  #matchesExportIdentity(identity: ExecutorIdentity): boolean {
-    return (
-      identity.sessionId === this.#executor.sessionId &&
-      identity.workerEpoch === this.#executor.workerEpoch
-    );
-  }
-  #kind(request: DocumentRuntimeRequest): WorkerJobKind {
-    if (request.type === "unlock") return "unlock";
-    if (
-      request.type === "clipboard-decode" ||
-      request.type === "clipboard-encode" ||
-      request.type === "clipboard-plan-paste" ||
-      request.type === "model-sync-full" ||
-      request.type === "model-sync-incremental"
-    )
-      return "clipboard";
-    if (request.type === "export-full" || request.type === "export-incremental") return "export";
-    return "required";
-  }
-  #schedulePrewarm(): void {
-    if (
-      this.#terminated ||
-      this.#prewarmRunning ||
-      !this.#prewarmRequested ||
-      this.#liveInputActive ||
-      this.#navigationActive ||
-      this.#running ||
-      this.#unacknowledgedExports.size > 0 ||
-      this.#queue.active !== null ||
-      this.#queue.pendingCount > 0
-    ) {
-      return;
-    }
-    this.#prewarmRunning = true;
-    const pending = this.checkpoint(this.#abortController.signal);
-    void (pending?.then(() => this.#runPrewarm()) ?? this.#runPrewarm()).catch(() => {
-      this.#prewarmRunning = false;
-    });
-  }
-
-  async #runPrewarm(): Promise<void> {
-    try {
-      while (
-        !this.#terminated &&
-        this.#prewarmRequested &&
-        !this.#liveInputActive &&
-        !this.#navigationActive &&
-        !this.#running &&
-        this.#unacknowledgedExports.size === 0 &&
-        this.#queue.pendingCount === 0
-      ) {
-        const hasMore = await this.#model.prewarmOne({
-          checkpoint: () => this.checkpoint(this.#abortController.signal),
-          signal: this.#abortController.signal,
-        });
-        if (!hasMore) {
-          this.#prewarmRequested = false;
-          break;
-        }
-      }
-    } catch {
-      this.#prewarmRequested = false;
-    } finally {
-      this.#prewarmRunning = false;
-      this.#schedulePrewarm();
-    }
   }
 }
 

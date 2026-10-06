@@ -14,6 +14,7 @@ export const scenePathProgressIdentity = {
 interface ScenePathProgressFixtureOptions {
   readonly initiallyBlocked?: boolean;
   readonly navigationReserve?: boolean;
+  readonly speculative?: boolean;
   readonly visibleCount?: number;
 }
 
@@ -42,11 +43,12 @@ export async function createScenePathProgressFixture(
     ...createTestStroke(),
     id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
   }));
+  const snapshot = createWorkerSnapshot(elements);
   await port.execute({
     baseModelRevision: null,
     identity: scenePathProgressIdentity,
     modelRevision: 0,
-    snapshot: createWorkerSnapshot(elements),
+    snapshot,
     type: "model-sync-full",
   });
   const ids = elements.map(({ id }) => id);
@@ -57,6 +59,7 @@ export async function createScenePathProgressFixture(
   return {
     ...control,
     ids,
+    snapshot,
     lastId: ids[ids.length - 1]!,
     port,
     runtime,
@@ -68,6 +71,7 @@ export async function createScenePathProgressFixture(
           ids,
           streamProgress: true,
           ...(options.navigationReserve ? { navigationReserve: true, speculative: true } : {}),
+          ...(options.speculative ? { speculative: true } : {}),
           type: "prepare-scene-paths",
           ...(options.visibleCount === undefined ? {} : { visibleCount: options.visibleCount }),
           ...(maxBytes === undefined ? {} : { maxBytes }),
