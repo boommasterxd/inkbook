@@ -38,6 +38,8 @@ Inkbook does not intercept `![[file.svg]]` or `![label](file.svg)`. Those remain
 
 ## Widget and Resource Ownership
 
+An active presentation's owning `ActiveScene` gates only speculative document-path contour preparation. Its lifecycle binding uses the owning document's `visibilitychange` event and an `IntersectionObserver` on the presentation root; preparation is admitted only while the scene is enabled, the root remains connected and intersecting with a positive intersection rectangle, and the owning document is visible. A visible but unfocused split pane remains eligible. Until the first intersection result, preparation stays paused. If `IntersectionObserver` is unavailable, the binding uses document visibility and root connectivity. The binding does not guarantee detection of CSS-only `visibility: hidden` changes. Lock start disables speculative preparation immediately; a failed lock or re-enabled scene can resume it when visibility conditions allow. Disposal disconnects the observer and removes the listener. Required scene preparation and navigation-reserve work retain their separate priority and are not gated by this binding.
+
 Each Reading-view embed with listeners or UI owns one `MarkdownRenderChild`, registered through `MarkdownPostProcessorContext.addChild()`. Each Live Preview embed owns one `WidgetType` instance. Both attach the same editor session facade but own their presentation resources independently. One plugin-scoped `WorkspaceEditorCoordinator` is shared by the main window and every pop-out belonging to the same `App.workspace`.
 
 Every widget unload path MUST immediately:
