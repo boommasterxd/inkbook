@@ -22,7 +22,7 @@ import type { SceneVisibilityState, VisibilityResult } from "./visibility-state"
 import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
 import { markSceneOrderDirty, writeDirtySet } from "./dirty-set-work";
 import { commitVisibleBands, mountedVisibleIds } from "./visibility-order";
-import type { SceneVisibilityReconcilerOptions as ReconcilerOptions } from "./reconciliation-state";
+import type { ScenePreparationOptions as ContentOptions } from "./reconciliation-state";
 import type { SceneVisibilityPriority } from "./scene-entrant-priority";
 
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
@@ -52,7 +52,7 @@ export class SceneContentRenderer {
   readonly #store: SceneStorePort;
   readonly #selectionTraces: SceneSelectionTraces;
   readonly #selectionDirty = new Set<string>();
-  readonly #detachedCache: ReconcilerOptions["detachedCache"];
+  readonly #detachedCache: ContentOptions["detachedCache"];
 
   public constructor(
     dom: SceneDom,
@@ -60,7 +60,7 @@ export class SceneContentRenderer {
     visibility: SceneVisibilityState,
     pathCache: ScenePathCache,
     instrumentation: MutableSceneInstrumentation,
-    options: Pick<ReconcilerOptions, "onPathsReady" | "detachedCache" | "scheduler"> = {},
+    options: ContentOptions = {},
   ) {
     this.#dom = dom;
     this.#detachedCache = options.detachedCache;
@@ -207,15 +207,6 @@ export class SceneContentRenderer {
   }
   public get waitingForPaths(): boolean {
     return this.#reconciler.waitingForPaths && !this.hasMountedWork;
-  }
-
-  public frameDiagnosticState(pendingQuery: boolean) {
-    return {
-      pendingQuery,
-      pendingVisibility: this.hasPendingWork,
-      ...this.#reconciler.preparationState,
-      waitingForPaths: this.waitingForPaths,
-    };
   }
 
   public setVisibilityPriority(priority: SceneVisibilityPriority): void {

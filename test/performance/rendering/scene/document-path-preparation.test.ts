@@ -12,6 +12,7 @@ import {
   completeDocumentPaths,
   createDocumentPathFixture,
   deferDocumentPaths,
+  pauseDocumentPaths,
 } from "../../../fixtures/rendering/document-path-preparation";
 import { createWorkerBridgeHarness } from "../../../fixtures/persistence/worker-bridge";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
@@ -112,15 +113,30 @@ it("retains lazy progress across input interruption and rebuilds only changed ge
   try {
     fixture.preparation.prepare(Infinity, () => 0);
     expect(fixture.work.orderReads).toBe(MAX_PREPARED_SCENE_PATH_IDS);
-    fixture.preparation.pause();
-    expect(remote.signal().aborted).toBe(true);
+    const readyIds = fixture.elements.slice(0, 64).map(({ id }) => id);
+    const delivered = fixture.build(readyIds);
+    remote.observer().onProgress(delivered);
+    const adopt = pauseDocumentPaths(fixture, remote.signal());
     expect(fixture.preparation.memoryUsage()).toBeLessThanOrEqual(
-      MAX_PREPARED_SCENE_PATH_IDS * 128 + 128,
+      MAX_PREPARED_SCENE_PATH_BYTES + MAX_PREPARED_SCENE_PATH_IDS * 128 + 128,
     );
+    expect(fixture.preparation.prepare(0, () => 0)).toBe(true);
+    expect(adopt).not.toHaveBeenCalled();
+    const foreground = fixture.store.get(readyIds[0]!)!;
+    const get = vi.spyOn(fixture.store, "get");
+    const transferred = fixture.preparation.takeReady(foreground);
+    expect(get).toHaveBeenCalledOnce();
+    expect(transferred).toBe(delivered[0]!.parts);
+    expect(fixture.work.builds).toBe(readyIds.length);
+    fixture.cache.retain(foreground.id, foreground.geometryVersion, transferred!);
+    get.mockRestore();
     fixture.store.prepareScenePaths = fixture.prepare;
     await completeDocumentPaths(fixture);
     expect(fixture.work.orderReads).toBe(count);
     expect(fixture.work.builds).toBe(count);
+    expect(
+      fixture.prepare.mock.calls.flatMap(([ids]) => ids).filter((id) => readyIds.includes(id)),
+    ).toEqual([]);
     expect(fixture.prepare.mock.calls.every(([ids]) => ids.length <= 256)).toBe(true);
     const changed = fixture.elements[500]!;
     fixture.domain.replace(changed.id, {
@@ -151,6 +167,12 @@ it("retains lazy progress across input interruption and rebuilds only changed ge
 it("does no file work while admission is closed and resumes a 10,006-stroke cursor without rescanning", async () => {
   const count = 10_006;
   const fixture = createDocumentPathFixture(count);
+  const foreground = fixture.elements[0]!;
+  fixture.domain.replace(foreground.id, {
+    ...foreground,
+    pivot: { x: 20, y: 2000 },
+    points: [20, 2000, 0.5],
+  });
   const remote = deferDocumentPaths(fixture);
   const scene = createSceneFixture(
     NAVIGATION_PAGE,
@@ -161,15 +183,28 @@ it("does no file work while admission is closed and resumes a 10,006-stroke curs
   try {
     scene.scheduler.runAll();
     expect(fixture.work.orderReads).toBe(MAX_PREPARED_SCENE_PATH_IDS);
+    remote.observer().onProgress(fixture.build([fixture.elements[0]!.id]));
     scene.renderer.setDocumentPrewarmEnabled(false);
     expect(remote.signal().aborted).toBe(true);
     const requests = vi.mocked(fixture.store.prepareScenePaths!).mock.calls.length;
+    const before = scene.renderer.instrumentation();
+    const get = vi.spyOn(fixture.store, "get");
+    scene.renderer.setViewport({ height: 100, left: 0, top: 1990, width: 100 });
+    scene.scheduler.runAll();
+    expect(scene.renderer.mountedCount).toBe(1);
+    expect(get.mock.calls.every(([id]) => id === fixture.elements[0]!.id)).toBe(true);
+    expect(get.mock.calls.length).toBeLessThanOrEqual(32);
+    get.mockRestore();
+    const after = scene.renderer.instrumentation();
+    expect(after.geometryBuilds).toBe(before.geometryBuilds);
+    expect(after.domRootsPublished - before.domRootsPublished).toBe(1);
+    expect(vi.mocked(fixture.store.prepareScenePaths!).mock.calls.length).toBe(requests);
     scene.renderer.setScheme("dark");
     scene.renderer.invalidateLayout(true);
     scene.scheduler.runAll();
     expect(scene.renderer.hasPendingSceneCommit).toBe(false);
     expect(fixture.work.orderReads).toBe(MAX_PREPARED_SCENE_PATH_IDS);
-    expect(fixture.work.builds).toBe(0);
+    expect(fixture.work.builds).toBe(1);
     expect(vi.mocked(fixture.store.prepareScenePaths!).mock.calls.length).toBe(requests);
     expect(scene.scheduler.pendingCount).toBe(0);
     fixture.store.prepareScenePaths = fixture.prepare;

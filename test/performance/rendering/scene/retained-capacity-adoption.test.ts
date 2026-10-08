@@ -36,7 +36,7 @@ function capacityScene() {
   const mounted = new Map<string, MountedSceneElement>();
   const cache = new DetachedSceneElementCache();
   const probe = new DetachedSceneElementCache();
-  const templates = [16, 64].map((samples) => {
+  const templates = [16, 256].map((samples) => {
     const base = indexedStroke(0);
     const element = {
       ...base,
@@ -58,15 +58,10 @@ function capacityScene() {
   });
   const small = templates[0]!;
   const large = templates[1]!;
-  expect(small.bytes * 9_998).toBeLessThan(DETACHED_ELEMENT_CACHE_MAX_BYTES);
+  expect(DETACHED_ELEMENT_CACHE_MAX_BYTES).toBe(1024 * 1024);
+  const incomingEntries: MountedSceneElement[] = [];
   for (let rank = 0; rank < 10_000; rank += 1) {
-    const remaining = Math.max(0, 9_997 - rank);
-    const template =
-      rank >= 9_998 ||
-      cache.statistics().bytes + large.bytes + remaining * small.bytes <=
-        DETACHED_ELEMENT_CACHE_MAX_BYTES
-        ? large
-        : small;
+    const template = rank >= 9_998 ? large : small;
     const y = rank < 2 ? 50 : rank >= 9_998 ? 20_050 : 10_050;
     const element = {
       ...template.element,
@@ -79,13 +74,21 @@ function capacityScene() {
     const record = createSceneRecord(element, rank);
     const entry = createMountedElement(dom.ownerDocument, record, template.parts, instrumentation);
     store.records.set(record.id, record);
-    fakeNode(dom.contentGroup).append(...entry.paths.map(({ node }) => fakeNode(node)));
     if (rank >= 9_998) {
+      fakeNode(dom.contentGroup).append(...entry.paths.map(({ node }) => fakeNode(node)));
       mounted.set(record.id, entry);
       cache.registerMounted(entry, store);
-    } else expect(cache.retainConnected(entry, store)).toBe(true);
+    } else {
+      const bytes = template.bytes + 2 * (element.id.length - template.element.id.length);
+      if (cache.statistics().bytes + bytes <= DETACHED_ELEMENT_CACHE_MAX_BYTES)
+        expect(cache.retain(entry)).toBe(true);
+      if (rank < 2) incomingEntries.push(entry);
+    }
   }
-  expect(DETACHED_ELEMENT_CACHE_MAX_BYTES - cache.statistics().bytes).toBeLessThan(large.bytes);
+  expect(DETACHED_ELEMENT_CACHE_MAX_BYTES - cache.statistics().bytes).toBeLessThan(
+    small.bytes + 20,
+  );
+  expect(cache.retainedRoots).toBeLessThan(1_000);
   const index = new UniformSpatialIndex<string>();
   index.insertMany([...store.records.values()].map(({ id, bounds }) => ({ id, bounds })));
   const indexed = observeIndexedSceneQueries(index);
@@ -111,18 +114,30 @@ function capacityScene() {
   });
   const target = visibility.query({ minX: 0, minY: 0, maxX: 100, maxY: 100 });
   reconciler.replace(target.visibility, true, target.delta);
-  return { dom, store, cache, visibility, paths, reconciler, mounted, instrumentation, indexed };
+  return {
+    dom,
+    store,
+    cache,
+    visibility,
+    paths,
+    reconciler,
+    mounted,
+    instrumentation,
+    indexed,
+    incoming: incomingEntries.flatMap((entry) => entry.paths.map(({ node }) => fakeNode(node))),
+    incomingEntries,
+  };
 }
 
-it("adopts incoming original roots before exit retention can evict them at the 25 MiB limit", () => {
+it("adopts incoming detached roots before exit retention can evict them at the 1 MiB limit", () => {
   const fixture = capacityScene();
   const { cache, dom, reconciler, mounted, instrumentation } = fixture;
   const content = fakeNode(dom.contentGroup);
-  const original = [...content.nodes];
+  const outgoing = [...content.nodes];
   let clock = 0;
-  const restoreOriginal = cache.restoreConnected.bind(cache);
-  const restore = vi.spyOn(cache, "restoreConnected").mockImplementation((record) => {
-    const entry = restoreOriginal(record);
+  const takeOriginal = cache.take.bind(cache);
+  const restore = vi.spyOn(cache, "take").mockImplementation((record, stats) => {
+    const entry = takeOriginal(record, stats);
     if (entry !== undefined && clock === 0) clock = 10;
     return entry;
   });
@@ -133,7 +148,14 @@ it("adopts incoming original roots before exit retention can evict them at the 2
     expect(
       reconciler.reconcile(10, () => clock, new Map(), new Map(), { remainingRoots: 192 }).pending,
     ).toBe(true);
-    expect(mounted.size).toBe(3);
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(fixture.incomingEntries).toContain(restore.mock.results[0]?.value);
+    expect(fixture.incoming.every((node) => node.parentNode === null)).toBe(true);
+    expect(outgoing.every((node) => node.parent === content)).toBe(true);
+    expect(insert).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(mounted.size).toBe(2);
+    expect(mounted.size).toBe(content.nodes.length);
     for (let rounds = 0; reconciler.hasPendingWork || cache.hasPendingCleanup; rounds += 1) {
       expect(rounds).toBeLessThan(20);
       const publication = { remainingRoots: 192, remainingRemovals: 64 };
@@ -141,12 +163,13 @@ it("adopts incoming original roots before exit retention can evict them at the 2
       reconciler.reconcile(20, () => clock, new Map(), new Map(), publication);
       expect(cache.statistics().bytes).toBeLessThanOrEqual(DETACHED_ELEMENT_CACHE_MAX_BYTES);
     }
-    expect(remove).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-    expect(content.nodes).toHaveLength(10_000);
-    expect(content.nodes.every((node, index) => node === original[index])).toBe(true);
-    expect(cache.statistics().evictions).toBe(0);
-    expect(cache.retainedRoots).toBe(9_998);
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(outgoing.every((node) => node.parentNode === null)).toBe(true);
+    expect(insert).toHaveBeenCalled();
+    expect(content.nodes).toHaveLength(2);
+    expect(content.nodes.every((node, index) => node === fixture.incoming[index])).toBe(true);
+    expect(cache.statistics().evictions).toBeGreaterThan(0);
+    expect(cache.retainedRoots).toBeLessThan(1_000);
     expect(membership.mock.calls.length).toBeLessThanOrEqual(32);
     expect(mounted.size).toBe(2);
     expect(instrumentation.geometryBuilds).toBe(0);
@@ -176,6 +199,7 @@ it.each(["sort", "duplicates", "skipped"] as const)(
         id: `exit-${rank}`,
         band: "content",
         committedRank: rank,
+        detachedPathCount: 0,
       } as MountedSceneElement);
     let rawReads = 0;
     const ids =

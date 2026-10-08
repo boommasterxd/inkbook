@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
 import type {
   PreparedScenePathEntry,
   ScenePathPreparation,
@@ -28,16 +28,17 @@ export function createDocumentPathFixture(count = 3, cache = new ScenePathCache(
     });
     return cursor;
   });
-  const prepare = vi.fn(async (ids: readonly string[]) => {
+  const build = (ids: readonly string[]) => {
     return ids.map((id) => {
       work.builds += 1;
       return { id, parts: buildElementPathParts(store.get(id)!.element) };
     });
-  });
+  };
+  const prepare = vi.fn(async (ids: readonly string[]) => build(ids));
   store.prepareScenePaths = prepare;
   const ready = vi.fn();
   const preparation = new DocumentPathPreparation(store, cache, ready);
-  return { cache, domain, elements, store, work, prepare, ready, preparation };
+  return { cache, domain, elements, store, work, build, prepare, ready, preparation };
 }
 
 export function deferDocumentPaths(fixture: ReturnType<typeof createDocumentPathFixture>) {
@@ -56,6 +57,18 @@ export function deferDocumentPaths(fixture: ReturnType<typeof createDocumentPath
     signal: () => signal,
     finish: (paths: readonly PreparedScenePathEntry[] | undefined) => finish(paths),
   };
+}
+
+/** Observes cancellation without allowing contour adoption inside the pause call. */
+export function pauseDocumentPaths(
+  fixture: ReturnType<typeof createDocumentPathFixture>,
+  signal: AbortSignal,
+) {
+  const adopt = vi.spyOn(fixture.cache, "retainSpeculative");
+  fixture.preparation.pause();
+  expect(signal.aborted).toBe(true);
+  expect(adopt).not.toHaveBeenCalled();
+  return adopt;
 }
 
 export async function completeDocumentPaths(fixture: ReturnType<typeof createDocumentPathFixture>) {

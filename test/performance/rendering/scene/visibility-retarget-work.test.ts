@@ -1,13 +1,106 @@
 import { expect, it, vi } from "vitest";
+import { SpatialQueryCursor } from "../../../../src/domain/spatial/query-cursor";
+import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { MountSlice } from "../../../../src/rendering/scene/mount-slice";
 import { SceneEntrantPriority } from "../../../../src/rendering/scene/scene-entrant-priority";
 import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
 import { commitVisibleBands } from "../../../../src/rendering/scene/visibility-order";
-import { createViewportRectangleStore } from "../../../fixtures/rendering/scene";
+import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
+import {
+  createViewportRectangleStore,
+  observeIndexedSceneQueries,
+} from "../../../fixtures/rendering/scene";
 import { FakeSceneStore, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
+import { createInteractionFixture } from "./interaction-refresh-profile-fixture";
 
 const BOUNDS = { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+
+it.each(["minX", "maxX", "minY", "maxY"] as const)(
+  "reuses the exact current reserve boundary on %s and queries beyond it",
+  (edge) => {
+    const store = createViewportRectangleStore(1, () => 45);
+    const instrumentation = createInstrumentation();
+    const state = new SceneVisibilityState(store, instrumentation);
+    const original = state.query(BOUNDS).visibility.content.ids;
+    const query = vi.spyOn(store, "query");
+    const get = vi.spyOn(store, "get");
+    const increasing = edge === "minX" || edge === "minY";
+    const current = { ...BOUNDS, [edge]: increasing ? 20 : 80 };
+    const retained = { minX: 20, maxX: 80, minY: 20, maxY: 80 };
+    retained[edge] = current[edge] + (increasing ? 20 : -20);
+    expect(state.query(current, retained).visibility.content.ids).toBe(original);
+    expect(instrumentation.visibilityHysteresisHits).toBe(1);
+    expect(query).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    current[edge] += increasing ? 1 : -1;
+    retained[edge] += increasing ? 1 : -1;
+    state.query(current, retained);
+    expect(query).toHaveBeenCalledOnce();
+    expect(instrumentation.visibilityHysteresisHits).toBe(1);
+    state.release();
+    expect(state.queryMemoryUsage()).toBe(0);
+  },
+);
+
+it("shrinks a 10,000-member zoom envelope through bounded indexed work and cancels stale shrink work", () => {
+  const fixture = createInteractionFixture();
+  const port = new ElementSceneStore(fixture.store);
+  const instrumentation = createInstrumentation();
+  const state = new SceneVisibilityState(port, instrumentation);
+  const { query, work } = observeIndexedSceneQueries(fixture.store);
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const broad = visibilityPageBounds(viewport, { x: 0, zoom: 0.1 });
+  const original = state.query(broad.envelope, broad.retained).visibility;
+  expect(original.content.count).toBe(10_000);
+  const baselineMemory = state.queryMemoryUsage();
+  const initialVisits = work.indexedVisits;
+  const initialQueries = query.mock.calls.length;
+  const smallZoom = visibilityPageBounds(viewport, { x: 0, zoom: 0.101 });
+  expect(state.query(smallZoom.envelope, smallZoom.retained).visibility.content.ids).toBe(
+    original.content.ids,
+  );
+  expect(instrumentation.visibilityHysteresisHits).toBe(1);
+  expect(work.indexedVisits).toBe(initialVisits);
+  expect(query).toHaveBeenCalledTimes(initialQueries);
+  fixture.store.resetInstrumentation();
+  const tight = visibilityPageBounds(viewport, { x: 0, zoom: 1 });
+  const cancel = vi.spyOn(SpatialQueryCursor.prototype, "cancel");
+  const suspended = state.query(
+    tight.envelope,
+    tight.retained,
+    true,
+    8,
+    () => work.indexedVisits - initialVisits,
+  );
+  expect(suspended.pending).toBe(true);
+  expect(suspended.visibility.content.count).toBe(10_000);
+  expect(work.indexedVisits - initialVisits).toBeLessThanOrEqual(8);
+  expect(state.queryMemoryUsage()).toBeGreaterThan(baselineMemory);
+  expect(state.queryMemoryUsage()).toBeLessThanOrEqual(baselineMemory + 10_000 * 64 + 512);
+  const interruptedVisits = work.indexedVisits;
+  cancel.mockClear();
+  expect(state.query(broad.envelope, broad.retained).visibility.content.ids).toBe(
+    original.content.ids,
+  );
+  expect(work.indexedVisits).toBe(interruptedVisits);
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(state.queryMemoryUsage()).toBe(baselineMemory);
+  const complete = state.query(tight.envelope, tight.retained);
+  expect(complete.pending).toBeUndefined();
+  expect(complete.visibility.content.count).toBe(663);
+  expect(complete.delta?.entered).toEqual([]);
+  expect(complete.delta?.exited).toHaveLength(9_337);
+  // At most two interrupted fringes plus four restarted shrink fringes.
+  expect(query.mock.calls.length - initialQueries).toBeLessThanOrEqual(6);
+  expect(work.indexedVisits - initialVisits).toBeLessThanOrEqual(4 * 10_000 + 512);
+  expect(fixture.store.instrumentation).toMatchObject({ fullStoreScans: 0, bandScans: 0 });
+  expect(state.queryMemoryUsage()).toBe(baselineMemory);
+  state.release();
+  port.release();
+  expect(state.queryMemoryUsage()).toBe(0);
+  cancel.mockRestore();
+});
 
 function observeBounds(store: FakeSceneStore, onRead: () => void): void {
   for (const [id, record] of store.records) {

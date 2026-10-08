@@ -9,6 +9,7 @@ import {
 import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import { flushSceneViewport } from "../../../fixtures/rendering/scene";
 import {
@@ -178,12 +179,13 @@ describe("imperative SVG scene renderer", () => {
     renderer.resetInstrumentation();
     renderer.setCamera({ x: 5, zoom: 2 });
     scheduler.runAll();
-    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 512, minX: -256, minY: -512 });
+    // A large shrink refreshes indexed fringes without rebuilding retained geometry or paint.
+    expect(store.lastQuery).toEqual({ maxX: 85, maxY: 400, minX: -45, minY: 200 });
     expect(renderer.instrumentation()).toMatchObject({
       contentAttributeWrites: 0,
       geometryBuilds: 0,
-      spatialQueries: 0,
-      visibilityHysteresisHits: 1,
+      spatialQueries: 4,
+      visibilityHysteresisHits: 0,
     });
 
     renderer.resetInstrumentation();
@@ -450,8 +452,10 @@ describe("dense scene reconciliation", () => {
     const expected = replaceWithRectangles(store, "dense", 1_201, () => 10);
 
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(192);
-    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(192);
+    expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(
+      SCENE_PUBLICATION_ROOTS_PER_FRAME,
+    );
     expect(renderer.instrumentation().geometryBuilds).toBeGreaterThan(0);
     expect(renderer.instrumentation().geometryBuilds).toBeLessThan(expected.length);
     renderer.promoteVisible(expected[0]!);

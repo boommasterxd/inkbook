@@ -1,7 +1,11 @@
 import type { MountedSceneElement } from "./mounted-element";
 import type { MutableSceneInstrumentation } from "./types";
 import type { PendingMutationRun } from "./visibility-publication";
-import type { PendingReconciliation, ReconciliationCursor } from "./reconciliation-state";
+import type {
+  PendingReconciliation,
+  ReconciliationCursor,
+  SceneVisibilityReconcilerOptions,
+} from "./reconciliation-state";
 import { growVisibilityCapacity } from "./visibility-markers";
 
 export function reconciliationMemoryUsage(
@@ -67,8 +71,20 @@ export function prepareReconciliationRun(
   return run;
 }
 
+/** Any partial mount needs the retained-order repair after cancellation. */
+export function markPartialReconciliationExit(
+  pending: PendingReconciliation | undefined,
+  options: SceneVisibilityReconcilerOptions,
+): void {
+  const id = pending?.exitIds[pending.exitIndex];
+  const partial = id === undefined ? undefined : options.mounted.get(id);
+  if (partial !== undefined && partial.detachedPathCount > 0)
+    options.orderDirty[partial.band].add(partial.id);
+}
+
 export function resetReconciliationBuffers(state: {
   readonly preservePending: boolean;
+  readonly preserveExits: boolean;
   readonly entrants: Map<string, MountedSceneElement>;
   readonly exitIds: string[];
   readonly publishedEntrantIds: string[];
@@ -78,7 +94,7 @@ export function resetReconciliationBuffers(state: {
 }): void {
   const consumedExits = state.exitCursor?.exitIndex ?? 0;
   if (!state.preservePending) state.entrants.clear();
-  if (!state.preservePending) state.exitIds.length = 0;
+  if (!state.preserveExits) state.exitIds.length = 0;
   else if (consumedExits > 0) state.exitIds.splice(0, consumedExits);
   if (!state.preservePending) state.publishedEntrantIds.length = 0;
   state.newlyMountedIds.length = 0;

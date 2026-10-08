@@ -204,9 +204,13 @@ export class RemoteScenePaths {
 
   private async collect(batch: Batch): Promise<void> {
     const iterator = this.#upcoming()[Symbol.iterator]();
+    let deferred = false;
     while (this.capacity() > 0 && !batch.controller.signal.aborted) {
       const wait = this.checkpoint(batch);
-      if (wait !== undefined) await wait;
+      if (wait !== undefined) {
+        deferred = true;
+        await wait;
+      }
       if (batch.controller.signal.aborted) return;
       const next = iterator.next();
       if (next.done === true) break;
@@ -221,6 +225,8 @@ export class RemoteScenePaths {
     if (batch.versions.size === 0) {
       batch.pending = false;
       this.prune();
+      // Collection may have parked required mounting at a shared checkpoint.
+      if (deferred) this.options.onReady?.();
     } else this.dispatch(batch);
   }
 

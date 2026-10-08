@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
-import { PATH_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants";
+import {
+  DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  PATH_CACHE_MAX_BYTES,
+} from "../../../../src/rendering/scene/constants";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
-import { FakeScheduler, FakeNode, FakeSceneStore } from "../../../unit/rendering/scene/fakes";
+import {
+  FakeScheduler,
+  FakeNode,
+  FakeSceneStore,
+  fakeNode,
+} from "../../../unit/rendering/scene/fakes";
 import {
   createPressureNavigationHarness,
   NAVIGATION_VISIBLE_STROKES,
@@ -95,19 +103,34 @@ it("finishes cold pressure mounting during uninterrupted zoom and reuses dense o
   expect(nodes.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(
     NAVIGATION_VISIBLE_STROKES,
   );
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const original = new Set(content.nodes);
 
   flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 10_000, width: 100 });
   expect(renderer.instrumentation().pathCacheEntries).toBe(NAVIGATION_VISIBLE_STROKES);
   expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
+  expect(content.nodes).toHaveLength(0);
+  expect([...original].every((node) => node.parent === undefined)).toBe(true);
+  const retainedNodes = renderer.instrumentation().detachedCacheEntries;
+  expect(retainedNodes).toBeGreaterThan(0);
+  expect(retainedNodes).toBeLessThan(NAVIGATION_VISIBLE_STROKES);
+  expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(
+    DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  );
+  const recreated = NAVIGATION_VISIBLE_STROKES - retainedNodes;
   renderer.resetInstrumentation();
   nodes.mockClear();
   flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 0, width: 100 });
   expect(renderer.instrumentation()).toMatchObject({
     geometryBuilds: 0,
-    detachedCacheHits: NAVIGATION_VISIBLE_STROKES,
-    contentGeometryWrites: 0,
+    detachedCacheHits: retainedNodes,
+    contentGeometryWrites: recreated,
+    domRootsPublished: NAVIGATION_VISIBLE_STROKES,
   });
-  expect(nodes.mock.calls.filter(([, tag]) => tag === "path" || tag === "g")).toEqual([]);
+  expect(content.nodes).toHaveLength(NAVIGATION_VISIBLE_STROKES);
+  expect(content.nodes.filter((node) => original.has(node))).toHaveLength(retainedNodes);
+  expect(nodes.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(recreated);
+  expect(nodes.mock.calls.filter(([, tag]) => tag === "g")).toHaveLength(recreated);
   renderer.destroy();
   expect(renderer.instrumentation().pathCacheEntries).toBe(0);
   expect(scheduler.pendingCount).toBe(0);

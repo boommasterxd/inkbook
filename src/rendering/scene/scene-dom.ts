@@ -17,7 +17,7 @@ type SceneDomOptions = Pick<
 let nextBackgroundPatternId = 0;
 
 export class SceneDom {
-  public onSurfaceInvalidated: () => void = () => undefined;
+  public onSurfaceInvalidated: (themeChanged?: boolean) => void = () => undefined;
   public readonly backgroundEdgePath: SVGPathElement;
   public readonly backgroundPath: SVGPathElement;
   public readonly cameraGroup: SVGGElement;
@@ -288,7 +288,7 @@ export class SceneDom {
 
   private createSurface(container: HTMLElement, options: SurfaceOptions): SceneSurface {
     const onFailure = options.onSurfaceFailure;
-    return new SceneSurface(container, () => this.onSurfaceInvalidated(), {
+    return new SceneSurface(container, (themeChanged) => this.onSurfaceInvalidated(themeChanged), {
       ...(options.surfaceThemeRoot === undefined ? {} : { themeRoot: options.surfaceThemeRoot }),
       onFailure: () => {
         this.releaseInputSurface();

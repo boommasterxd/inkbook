@@ -20,7 +20,9 @@ export class SceneEntrantPriority {
   readonly #seen = new Set<string>();
   readonly #candidates = new Set<string>();
   readonly #records = new Map<string, Candidate>();
+  readonly #overscan: Candidate[] = [];
   #queued: Iterator<string> = this.#candidates.values();
+  #classified = false;
   #built = false;
   readonly #viewportCandidates = new Set<string>();
   #heapGeneration = 0;
@@ -45,7 +47,7 @@ export class SceneEntrantPriority {
 
   /** Unclassified candidates cannot prove that the exact viewport is complete. */
   public get hasViewportCandidates(): boolean {
-    return !this.#built || this.#viewportCandidates.size > 0;
+    return !this.#classified || this.#viewportCandidates.size > 0;
   }
 
   public get heapGeneration(): number {
@@ -54,20 +56,20 @@ export class SceneEntrantPriority {
 
   public memoryUsage(): number {
     return (
-      this.#heap.length * 8 +
+      (this.#heap.length + this.#overscan.length) * 8 +
       this.#records.size * 80 +
       (this.#seen.size + this.#candidates.size + this.#viewportCandidates.size) * 32
     );
   }
 
-  public build(slice: MountSlice): MountYieldReason | undefined {
-    while (!this.#built) {
+  public build(slice: MountSlice, allowViewportPublication = false): MountYieldReason | undefined {
+    while (!this.#classified) {
       const blocked = slice.blockingReason();
       if (blocked !== undefined) return blocked;
       const queued = this.#queued.next();
       const next = queued.done === true ? this.ids.next() : queued;
       if (next.done === true) {
-        this.#built = true;
+        this.#classified = true;
         this.#seen.clear();
         break;
       }
@@ -86,8 +88,17 @@ export class SceneEntrantPriority {
       const candidate = this.candidate(record.id, record.bounds);
       if (candidate.tier === 0) this.#viewportCandidates.add(record.id);
       this.#records.set(next.value, candidate);
-      this.push(candidate);
+      if (candidate.tier === 0) this.push(candidate);
+      else this.#overscan.push(candidate);
     }
+    if (allowViewportPublication && this.#heap[0]?.tier === 0) return undefined;
+    while (this.#overscan.length > 0) {
+      const blocked = slice.blockingReason();
+      if (blocked !== undefined) return blocked;
+      this.push(this.#overscan.pop()!);
+      slice.record();
+    }
+    this.#built = true;
     return undefined;
   }
 
@@ -124,10 +135,12 @@ export class SceneEntrantPriority {
     this.#outsideLimits = { left: -Infinity, right: Infinity, above: -Infinity, below: Infinity };
     this.#leadingLimits = { min: -Infinity, max: Infinity };
     this.#heap.length = 0;
+    this.#overscan.length = 0;
     this.#viewportCandidates.clear();
     this.#seen.clear();
     this.#queued = this.#candidates.values();
     this.#built = false;
+    this.#classified = false;
   }
 
   public release(id: string): void {
@@ -207,6 +220,8 @@ export class SceneEntrantPriority {
     const generation = this.#heapGeneration;
     for (let emitted = 0; emitted < limit && frontier.length > 0; emitted += 1) {
       const index = this.takeFrontier(frontier);
+      // Unclassified candidates may still contain viewport ink ahead of this overscan root.
+      if (!this.#built && this.#heap[index]!.tier !== 0) return;
       yield this.#heap[index]!.id;
       if (generation !== this.#heapGeneration) return;
       const left = index * 2 + 1;

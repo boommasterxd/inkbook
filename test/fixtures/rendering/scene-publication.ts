@@ -18,6 +18,7 @@ import { arrow, stroke } from "../../unit/domain/schema/fixtures";
 import { SceneMountPreparation } from "../../../src/rendering/scene/scene-mount-preparation";
 import { createSceneFixture, createSceneRecord } from "./scene";
 import { NAVIGATION_PAGE } from "./pressure-navigation";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../src/rendering/scene/constants";
 
 /** Places a detached entrant run between two physically retained rank anchors. */
 export function createDirectPublicationScene(kind: "path" | "pressure" | "multipart" | "siblings") {
@@ -65,6 +66,16 @@ export function createPublicationScene(store: SceneStorePort, viewport: SceneVie
   const fixture = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   fixture.scheduler.runAll();
   return { ...fixture, content: fakeNode(fixture.renderer.svg).nodes[1]!.nodes[4]! };
+}
+
+/** Verifies released publication queues and retained geometry/node ownership. */
+export function expectReleasedPublicationScene(
+  renderer: SvgSceneRenderer,
+  scheduler: FakeScheduler,
+): void {
+  expect(scheduler.pendingCount).toBe(0);
+  expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
 }
 
 /** Charges preparation only when an original element is completely staged. */
@@ -157,26 +168,66 @@ export function flushBoundedScenePublication(
   while (scheduler.pendingCount > 0) {
     if (frames++ >= 100) throw new Error("Frame limit exceeded.");
     scheduler.runNext();
-    expect(renderer.mountedCount - previous).toBeLessThanOrEqual(192);
+    expect(renderer.mountedCount - previous).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     previous = renderer.mountedCount;
     observe?.();
   }
 }
 
+/** Observes real band insertion and removal across centrally admitted scene frames. */
+export function collectFrameWrites(
+  content: FakeNode,
+  scheduler: FakeScheduler,
+  action: () => void,
+  frameLimit: number,
+  afterFrame?: (frame: number) => void,
+): number[] {
+  const original = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!.value as (
+    this: FakeNode,
+    node: FakeNode,
+    reference: FakeNode | null,
+  ) => FakeNode;
+  const insert = vi.spyOn(content, "insertBefore");
+  const originalRemove = Object.getOwnPropertyDescriptor(FakeNode.prototype, "remove")!.value as (
+    this: FakeNode,
+  ) => void;
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
+  let roots = 0;
+  let removals = 0;
+  remove.mockImplementation(function (this: FakeNode) {
+    if (this.parent === content) removals += 1;
+    originalRemove.call(this);
+  });
+  insert.mockImplementation(function (this: FakeNode, node, reference) {
+    roots += node.fragment ? node.nodes.length : 1;
+    return original.call(this, node, reference);
+  });
+  const writes: number[] = [];
+  try {
+    action();
+    while (scheduler.pendingCount > 0) {
+      roots = 0;
+      removals = 0;
+      scheduler.runNext();
+      expect(removals).toBeLessThanOrEqual(64);
+      writes.push(roots);
+      expect(writes.length).toBeLessThanOrEqual(frameLimit);
+      afterFrame?.(writes.length);
+    }
+  } finally {
+    insert.mockRestore();
+    remove.mockRestore();
+  }
+  return writes;
+}
+
 /** Makes subsequent work yield only after an actual DOM publication starts. */
 export function chargeClockAfterPublication(content: FakeNode, scheduler: FakeScheduler) {
-  let publicationStarted = false;
   const originalInsert = content.insertBefore.bind(content);
   const insert = vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
     const result = originalInsert(node, successor);
-    publicationStarted = true;
+    scheduler.time += 8;
     return result;
   });
-  const now = vi
-    .spyOn(scheduler, "now")
-    .mockImplementation(() => (publicationStarted ? (scheduler.time += 8) : scheduler.time));
-  return () => {
-    now.mockRestore();
-    insert.mockRestore();
-  };
+  return () => insert.mockRestore();
 }

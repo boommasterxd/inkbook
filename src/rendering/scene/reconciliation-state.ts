@@ -2,15 +2,23 @@ import type { RenderBand } from "../../domain/commands/render-bands";
 import type { MountedSceneElement } from "./mounted-element";
 import type { SceneDom } from "./scene-dom";
 import type { ScenePathCache } from "./path-cache";
-import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
+import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
 import type { PendingMutationRun, RetainedDomOrder } from "./visibility-publication";
 import type { SceneVisibilityState, VisibilityResult } from "./visibility-state";
 import type { SceneEntrantPriority } from "./scene-entrant-priority";
 import type { DetachedSceneElementCache } from "./detached-element-cache";
 import type { VisibleMountOrder } from "./visible-mount-order";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 
-export interface SceneVisibilityReconcilerOptions {
+export interface ScenePreparationOptions {
+  readonly onPathsReady?: () => void;
+  readonly detachedCache?: DetachedSceneElementCache;
+  readonly scheduler?: WorkScheduler;
+  readonly takePreparedPath?: (record: SceneElementRecord) => readonly SvgPathPart[] | undefined;
+}
+
+export interface SceneVisibilityReconcilerOptions extends ScenePreparationOptions {
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly mounted: Map<string, MountedSceneElement>;
@@ -19,9 +27,6 @@ export interface SceneVisibilityReconcilerOptions {
   readonly pathCache: ScenePathCache;
   readonly store: SceneStorePort;
   readonly visibility: SceneVisibilityState;
-  readonly onPathsReady?: () => void;
-  readonly detachedCache?: DetachedSceneElementCache;
-  readonly scheduler?: WorkScheduler;
 }
 
 export interface ReconciliationCursor {

@@ -5,14 +5,15 @@ import {
   type PreparedScenePathEntry,
 } from "../../domain/geometry/prepared-scene-paths";
 import type { StoreOrderCursor } from "../../domain/store/order-cursor";
+import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import type { ScenePathCache } from "./path-cache";
-import type { SceneStoreDelta, SceneStorePort } from "./types";
+import type { SceneElementRecord, SceneStoreDelta, SceneStorePort } from "./types";
 
 interface DocumentPathBatch {
   readonly controller: AbortController;
   readonly versions: Map<string, number>;
   readonly received: Set<string>;
-  readonly ready: PreparedScenePathEntry[];
+  readonly ready: Map<string, PreparedScenePathEntry>;
   readonly maxBytes: number;
   bytes: number;
   terminal: boolean;
@@ -53,14 +54,23 @@ export class DocumentPathPreparation {
     );
   }
 
-  /** Cursor progress survives input, navigation, and suspended worker requests. */
+  /** Delivered contours and cursor progress survive input and navigation. */
   public pause(): void {
     const batch = this.#batch;
-    this.#batch = undefined;
     if (batch !== undefined) {
       batch.controller.abort();
-      for (const id of batch.versions.keys()) this.#retry.add(id);
-      batch.ready.length = 0;
+      batch.terminal = true;
+      batch.failed = false;
+      batch.capacityRefused = false;
+      for (const id of batch.versions.keys()) {
+        if (batch.ready.has(id)) continue;
+        this.#retry.add(id);
+        batch.versions.delete(id);
+      }
+      if (batch.ready.size === 0) {
+        batch.received.clear();
+        this.#batch = undefined;
+      }
     }
     this.#unavailable = false;
   }
@@ -68,6 +78,15 @@ export class DocumentPathPreparation {
   public invalidate(delta: SceneStoreDelta): void {
     this.pause();
     for (const entry of delta.affected) {
+      if (entry.after === null || entry.domains.includes("geometry")) {
+        const batch = this.#batch;
+        if (batch !== undefined) {
+          batch.ready.delete(entry.id);
+          batch.versions.delete(entry.id);
+          batch.received.delete(entry.id);
+          if (batch.ready.size === 0) this.#batch = undefined;
+        }
+      }
       if (entry.after === null) this.#retry.delete(entry.id);
       else if (entry.domains.includes("geometry")) this.#retry.add(entry.id);
     }
@@ -75,10 +94,37 @@ export class DocumentPathPreparation {
 
   public release(): void {
     this.pause();
+    this.#batch?.ready.clear();
+    this.#batch?.versions.clear();
+    this.#batch?.received.clear();
+    this.#batch = undefined;
     this.#cursor?.cancel();
     this.#cursor = undefined;
     this.#retry.clear();
     this.#released = true;
+  }
+
+  /** Transfers complete current contours only from an admitted foreground mount slice. */
+  public takeReady(record: SceneElementRecord): readonly SvgPathPart[] | undefined {
+    if (this.#released) return undefined;
+    const batch = this.#batch;
+    const id = record.id;
+    const path = batch?.ready.get(id);
+    if (batch === undefined || path === undefined) return undefined;
+    batch.ready.delete(id);
+    const version = batch.versions.get(id);
+    batch.versions.delete(id);
+    batch.received.delete(id);
+    if (batch.terminal && batch.ready.size === 0 && batch.versions.size === 0) {
+      this.#batch = undefined;
+      this.#unavailable = batch.failed || batch.capacityRefused;
+    }
+    const current = this.store.get(id);
+    if (record.geometryVersion !== version || current?.geometryVersion !== version) {
+      if (current !== undefined) this.#retry.add(id);
+      return undefined;
+    }
+    return path.parts;
   }
 
   /** Returns true only when another admitted frame can perform synchronous work. */
@@ -103,7 +149,7 @@ export class DocumentPathPreparation {
       controller: new AbortController(),
       versions,
       received: new Set(),
-      ready: [],
+      ready: new Map(),
       maxBytes,
       bytes: 0,
       terminal: false,
@@ -150,14 +196,14 @@ export class DocumentPathPreparation {
           setRetarget: () => undefined,
         },
       );
-      if (this.#batch !== batch) return;
+      if (this.#batch !== batch || batch.controller.signal.aborted) return;
       if (paths === undefined) batch.failed = true;
       else this.receive(batch, paths);
     } catch {
-      if (this.#batch !== batch) return;
+      if (this.#batch !== batch || batch.controller.signal.aborted) return;
       batch.failed = true;
     }
-    if (this.#batch !== batch) return;
+    if (this.#batch !== batch || batch.controller.signal.aborted) return;
     batch.terminal = true;
     this.onReady();
   }
@@ -176,17 +222,22 @@ export class DocumentPathPreparation {
       }
       batch.bytes += bytes;
       batch.received.add(path.id);
-      batch.ready.push(path);
+      batch.ready.set(path.id, path);
     }
-    if (batch.ready.length > 0) this.onReady();
+    if (batch.ready.size > 0) this.onReady();
   }
 
   private adopt(deadline: number, now: () => number): boolean {
     const batch = this.#batch!;
-    while (batch.ready.length > 0 && now() < deadline) {
-      const path = batch.ready.shift()!;
+    while (batch.ready.size > 0 && now() < deadline) {
+      const path = batch.ready.values().next().value!;
+      batch.ready.delete(path.id);
       const record = this.store.get(path.id);
-      if (record === undefined || record.geometryVersion !== batch.versions.get(path.id)) continue;
+      if (record === undefined || record.geometryVersion !== batch.versions.get(path.id)) {
+        batch.versions.delete(path.id);
+        if (record !== undefined) this.#retry.add(path.id);
+        continue;
+      }
       if (!this.cache.retainSpeculative(path.id, record.geometryVersion, path.parts)) {
         batch.capacityRefused = true;
         this.#retry.add(path.id);
@@ -194,12 +245,12 @@ export class DocumentPathPreparation {
       }
       batch.versions.delete(path.id);
     }
-    if (batch.ready.length > 0) return true;
+    if (batch.ready.size > 0) return true;
     if (!batch.terminal) return false;
     this.#batch = undefined;
     for (const id of batch.versions.keys()) this.#retry.add(id);
     // A refused or empty batch waits for an explicit context change instead of polling.
-    this.#unavailable = batch.failed || batch.capacityRefused || batch.received.size === 0;
+    this.#unavailable = batch.failed || batch.capacityRefused || batch.bytes === 0;
     return this.needsWork;
   }
 }

@@ -9,6 +9,11 @@ import { ElementStore, type StoreDelta } from "../../../../src/domain/store/publ
 import { moveSelection } from "../../../../src/editor/selection/transforms";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
+import {
+  DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  PATH_CACHE_MAX_BYTES,
+  SCENE_PUBLICATION_ROOTS_PER_FRAME,
+} from "../../../../src/rendering/scene/constants";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import type { SceneCamera, SceneViewport } from "../../../../src/rendering/scene/types";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
@@ -39,6 +44,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
 
     let finalCamera: SceneCamera = DEFAULT_CAMERA;
     let finalViewport: SceneViewport = DEFAULT_VIEWPORT;
+    let entrants = 0;
+    let exits = 0;
+    const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+    const initialRemovals = scheduler.totalRemovedRoots;
     for (let frame = 0; frame < TRANSITIONS; frame += 1) {
       const phase = frame % 4;
       const viewport = {
@@ -51,10 +60,23 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
         x: phase % 2 === 0 ? 0 : -50,
         zoom: phase % 3 === 0 ? 1.05 : 1,
       } satisfies SceneCamera;
+      const previous = new Set(renderer.mountedIds("content"));
+      const envelopeIds = expectedVisibleIds(fixture.store, fixture.ids, viewport, camera);
+      const hysteresis = renderer.instrumentation().visibilityHysteresisHits;
+      const removals = scheduler.totalRemovedRoots;
       runFirstFrameAndFollowUps(scheduler, () => {
         renderer.setViewport(viewport);
         renderer.setCamera(camera);
       });
+      // Hysteresis reuses the last admitted envelope's complete membership.
+      const reused = renderer.instrumentation().visibilityHysteresisHits > hysteresis;
+      const expected = new Set(reused ? previous : envelopeIds);
+      const leaving = [...previous].filter((id) => !expected.has(id)).length;
+      entrants += [...expected].filter((id) => !previous.has(id)).length;
+      exits += leaving;
+      expect(renderer.mountedIds("content")).toEqual([...expected]);
+      expect(content.nodes).toHaveLength(expected.size);
+      expect(scheduler.totalRemovedRoots - removals).toBe(leaving);
       finalCamera = camera;
       finalViewport = viewport;
       expect(scheduler.pendingCount).toBe(0);
@@ -62,10 +84,15 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
 
     const instrumentation = renderer.instrumentation();
     expect(instrumentation.spatialQueries).toBeGreaterThan(0);
-    expect(instrumentation.domEntrants).toBeGreaterThan(0);
-    expect(instrumentation.domExits).toBe(0);
+    expect(instrumentation.domEntrants).toBe(entrants);
+    expect(instrumentation.domExits).toBe(exits);
+    expect(scheduler.totalRemovedRoots - initialRemovals).toBe(exits);
+    expect(exits).toBeGreaterThan(0);
     expect(instrumentation.detachedCacheEntries).toBeGreaterThan(0);
-    expect(instrumentation.detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+    expect(instrumentation.detachedCacheBytes).toBeLessThanOrEqual(
+      DETACHED_ELEMENT_CACHE_MAX_BYTES,
+    );
+    expect(instrumentation.pathCacheBytes).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
     expect(renderer.mountedCount).toBeLessThan(INTERACTION_ELEMENT_COUNT);
     expect(renderer.mountedIds("content")).toEqual(
       expectedVisibleIds(fixture.store, fixture.ids, finalViewport, finalCamera),
@@ -127,7 +154,6 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
     const { renderer, scheduler } = createProfileRenderer(fixture.store);
     try {
       drainPendingFrames(scheduler);
-      const connected = new Set(renderer.mountedIds("content"));
       const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
       for (let transition = 0; transition < 16; transition += 1) {
         const viewport = { ...DEFAULT_VIEWPORT, top: transition % 2 === 0 ? 800 : 0 };
@@ -135,7 +161,6 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         const previous = new Set(renderer.mountedIds("content"));
         const expected = expectedVisibleIds(fixture.store, fixture.ids, viewport, camera);
         const entrants = expected.filter((id) => !previous.has(id)).length;
-        const publications = expected.filter((id) => !connected.has(id)).length;
         const expectedSet = new Set(expected);
         const exits = [...previous].filter((id) => !expectedSet.has(id)).length;
         // Order proof and priority classification precede the existing mount/exit phases.
@@ -148,12 +173,13 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         expect(renderer.mountedIds("content")).toEqual(expected);
         const stats = renderer.instrumentation();
         expect(stats.spatialQueries).toBe(1);
-        expect(stats.domEntrants).toBe(publications);
-        expect(stats.domExits).toBe(0);
-        for (const id of expected) connected.add(id);
-        expect(content.nodes).toHaveLength(connected.size);
-        expect(new Set(content.nodes).size).toBe(connected.size);
-        expect(stats.detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+        expect(stats.domEntrants).toBe(entrants);
+        expect(stats.domRootsPublished).toBe(entrants);
+        expect(stats.domExits).toBe(exits);
+        expect(content.nodes).toHaveLength(expected.length);
+        expect(new Set(content.nodes).size).toBe(expected.length);
+        expect(stats.detachedCacheBytes).toBeLessThanOrEqual(DETACHED_ELEMENT_CACHE_MAX_BYTES);
+        expect(stats.pathCacheBytes).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
         expect(stats.geometryBuilds).toBeLessThanOrEqual(entrants);
         // Order, priority, warm checks, stage/retry, and newly mounted exit-iterator visits.
         expect(stats.visibilityReconcileVisits).toBeLessThanOrEqual(
@@ -283,10 +309,16 @@ describe("restored stroke motion work", () => {
 
 class ProfileScheduler extends FakeScheduler {
   public publishedRoots = 0;
+  public removedRoots = 0;
+  public totalRemovedRoots = 0;
 
   public override runNext(): void {
+    this.publishedRoots = 0;
+    this.removedRoots = 0;
     this.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
     super.runNext();
+    expect(this.publishedRoots).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    expect(this.removedRoots).toBeLessThanOrEqual(64);
   }
 }
 
@@ -305,6 +337,13 @@ function createProfileRenderer(store: ElementStore) {
     scheduler.publishedRoots += roots;
     scheduler.time += roots * SIMULATED_WORK_COST_MS;
     return result;
+  });
+  const originalRemove = Object.getOwnPropertyDescriptor(FakeNode.prototype, "remove")!
+    .value as FakeNode["remove"];
+  vi.spyOn(FakeNode.prototype, "remove").mockImplementation(function (this: FakeNode) {
+    scheduler.removedRoots += 1;
+    scheduler.totalRemovedRoots += 1;
+    originalRemove.call(this);
   });
   return { ...fixture, scheduler };
 }
@@ -381,7 +420,7 @@ function drainBoundedReconciliation(
     scheduler.publishedRoots = 0;
     scheduler.runNext();
     frames += 1;
-    expect(scheduler.publishedRoots).toBeLessThanOrEqual(192);
+    expect(scheduler.publishedRoots).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
   }
 }
 

@@ -2,18 +2,132 @@ import { expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { SceneFrameWork } from "../../../../src/rendering/scene/scene-frame-work";
 import { SceneContentScheduler } from "../../../../src/rendering/scene/scene-content-scheduler";
-import { createViewportRectangleStore } from "../../../fixtures/rendering/scene";
+import { removeOrderedVisibilityExits } from "../../../../src/rendering/scene/visibility-reconciliation-commit";
+import { createSceneRecord, createViewportRectangleStore } from "../../../fixtures/rendering/scene";
 import {
+  createDirectPublicationScene,
   createPublicationScene,
   createPreparedPublicationScene,
+  expectReleasedPublicationScene,
   observeCompletedMountPreparation,
   settlePreparedPublication,
   waitForPreparedMounts,
 } from "../../../fixtures/rendering/scene-publication";
 import { FakeNode, FakeSceneStore, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
+import { arrow } from "../../../unit/domain/schema/fixtures";
 
 const INITIAL = { height: 100, left: 0, top: 0, width: 1_000 };
 const TARGET = { ...INITIAL, top: 1_000 };
+
+it.each(["budget", "deadline"])("defers a protected partial repair at the shared %s", (reason) => {
+  const fixture = createDirectPublicationScene("multipart");
+  const { entry, before, after, content, dom, instrumentation, store } = fixture;
+  const roots = entry.paths.map(({ node }) => node);
+  const afterRoot = content.nodes[1]!;
+  for (const root of roots) content.insertBefore(root as unknown as FakeNode, afterRoot);
+  roots[1]!.remove();
+  entry.detachedPathCount = 1;
+  const pending = {
+    exitIds: reason === "deadline" ? ["stale", entry.id] : [entry.id],
+    exitIndex: 0,
+    exitScanComplete: true,
+    exitOrderPrepared: true,
+  };
+  const publication = { remainingRoots: 1, remainingRemovals: 64 };
+  const options = {
+    dom,
+    store,
+    instrumentation,
+    mounted: new Map([[entry.id, entry]]),
+    visibility: { contains: () => false, releaseId: vi.fn() },
+    pathCache: { invalidate: vi.fn(), retain: vi.fn() },
+  };
+  const insert = vi.spyOn(content, "insertBefore");
+  try {
+    expect(
+      removeOrderedVisibilityExits(
+        pending as Parameters<typeof removeOrderedVisibilityExits>[0],
+        options,
+        {
+          deadline: 8,
+          now: () => (reason === "deadline" ? 8 : 0),
+          isExit: () => false,
+          publication,
+        },
+      ),
+    ).toBe(false);
+    expect(pending.exitIndex).toBe(reason === "deadline" ? 1 : 0);
+    expect(entry.detachedPathCount).toBe(1);
+    expect(insert).not.toHaveBeenCalled();
+    publication.remainingRoots = 2;
+    expect(
+      removeOrderedVisibilityExits(
+        pending as Parameters<typeof removeOrderedVisibilityExits>[0],
+        options,
+        {
+          deadline: 8,
+          now: () => 0,
+          isExit: () => false,
+          publication,
+        },
+      ),
+    ).toBe(true);
+    expect(insert.mock.calls.map(([node]) => node)).toEqual([...roots].reverse());
+    expect(content.nodes).toEqual([before.paths[0]!.node, ...roots, after.paths[0]!.node]);
+    expect(entry.detachedPathCount).toBe(0);
+    expect(publication).toEqual({ remainingRoots: 0, remainingRemovals: 64 });
+    expect(instrumentation.domRootsPublished).toBe(2);
+    expect(instrumentation.domFragmentRuns).toBe(insert.mock.calls.length);
+    expect(options.mounted.get(entry.id)).toBe(entry);
+  } finally {
+    insert.mockRestore();
+  }
+});
+
+it("repairs an offscreen multipart root when a transform preview protects its interrupted exit", () => {
+  const store = createViewportRectangleStore(63, () => 20);
+  const record = createSceneRecord(arrow(), 63);
+  const next = fakeRectangleRecord("next", 64, 20, 10_000);
+  for (const item of [record, next]) store.records.set(item.id, item);
+  const viewport = { height: 500, left: 0, top: 0, width: 500 };
+  const { renderer, scheduler, content } = createPublicationScene(store, viewport);
+  renderer.setReducedMotion(true);
+  const original = [...content.nodes];
+  const roots = original.slice(-2);
+  expect(original).toHaveLength(65);
+  renderer.setViewport({ ...viewport, top: 10_000 });
+  scheduler.runNext();
+  expect(content.nodes).toHaveLength(2);
+  expect(roots[1]!.parent).toBeUndefined();
+  const nextRoot = content.nodes[1]!;
+  const insert = vi.spyOn(content, "insertBefore");
+  renderer.resetInstrumentation();
+  try {
+    renderer.setPreviewTransform([record.id], "translate(0 10000)", 1);
+    scheduler.runAll();
+    expect(insert.mock.calls.map(([node]) => node)).toEqual([...roots].reverse());
+    expect(content.nodes).toEqual([...roots, nextRoot]);
+    expect(roots.every((node) => node.attributes.get("transform") === "translate(0 10000)")).toBe(
+      true,
+    );
+    expect(renderer.mountedIds("content")).toEqual([next.id]);
+    expect(renderer.mountedCount).toBe(2);
+    expect(renderer.instrumentation()).toMatchObject({
+      domRootsPublished: 2,
+      domFragmentRuns: insert.mock.calls.length,
+      geometryBuilds: 0,
+    });
+    renderer.clearPreviewTransforms();
+    scheduler.runAll();
+    expect(content.nodes).toEqual([nextRoot]);
+    expect(roots.every((node) => node.parent === undefined)).toBe(true);
+    expect(renderer.mountedCount).toBe(1);
+  } finally {
+    insert.mockRestore();
+    renderer.destroy();
+  }
+  expectReleasedPublicationScene(renderer, scheduler);
+});
 
 function originalPaths(band: FakeNode): string[] {
   return band.nodes
@@ -45,13 +159,21 @@ it("inserts inside a retained rank gap and keeps original roots through reorder 
   const physical = [...content.nodes];
   renderer.setViewport(TARGET);
   scheduler.runAll();
+  expect(content.nodes).toHaveLength(0);
+  expect(physical.every((node) => node.parent === undefined)).toBe(true);
   renderer.resetInstrumentation();
   const fragments = vi.spyOn(document, "createDocumentFragment");
   renderer.setViewport({ ...INITIAL, height: 400 });
   scheduler.runAll();
   expect(content.nodes).toEqual(physical);
-  expect(renderer.instrumentation()).toMatchObject({ domEntrants: 0, domReorders: 0 });
-  expect(fragments).not.toHaveBeenCalled();
+  expect(renderer.instrumentation()).toMatchObject({
+    domEntrants: 3,
+    domRootsPublished: 3,
+    domReorders: 0,
+    geometryBuilds: 0,
+    detachedCacheHits: 3,
+  });
+  expect(fragments).toHaveBeenCalledOnce();
   fragments.mockRestore();
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);

@@ -25,7 +25,7 @@ export class SceneSurface {
   readonly #frame: HTMLIFrameElement;
   readonly #frameStyle: HTMLStyleElement;
   readonly #documentStyle: HTMLStyleElement;
-  readonly #onInvalidate: () => void;
+  readonly #onInvalidate: (themeChanged?: boolean) => void;
   readonly #onFailure: (() => void) | undefined;
   readonly #resizeObserver: ResizeObserver | undefined;
   readonly #themeObserver: MutationObserver | undefined;
@@ -44,7 +44,7 @@ export class SceneSurface {
 
   public constructor(
     container: HTMLElement,
-    onInvalidate: () => void,
+    onInvalidate: (themeChanged?: boolean) => void,
     options: SceneSurfaceOptions = {},
   ) {
     this.#onInvalidate = onInvalidate;
@@ -155,9 +155,9 @@ export class SceneSurface {
   }
 
   public invalidateTheme(): void {
-    if (this.#released || this.#themeDirty) return;
+    if (this.#released) return;
     this.#themeDirty = true;
-    this.#onInvalidate();
+    this.#onInvalidate(true);
   }
 
   public reveal(): void {

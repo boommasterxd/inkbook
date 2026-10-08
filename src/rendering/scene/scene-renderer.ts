@@ -1,5 +1,4 @@
 import { SceneFrameScheduler } from "./scene-frame-scheduler";
-import type { SceneFrameObserver } from "./scene-frame-diagnostics";
 import type { SceneToolCursorFrameReader } from "./tool-cursor";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type * as Schema from "../../domain/schema/public";
@@ -41,6 +40,7 @@ export class SvgSceneRenderer {
   readonly #deltas: SceneDeltaCoordinator;
   readonly #stats: Scene.MutableSceneInstrumentation = stats.createInstrumentation();
   #layoutDirty = true;
+  #layoutInvalidationVersion = 0;
   readonly #liveStroke: SceneLiveStrokeRenderer;
   readonly #motion: SceneMotionController;
   #page: Schema.PageV1;
@@ -65,7 +65,8 @@ export class SvgSceneRenderer {
     const render = this.renderFrame.bind(this);
     this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, render);
     this.#dom = SceneDom.create(options);
-    this.#dom.onSurfaceInvalidated = this.#frames.schedule;
+    this.#dom.onSurfaceInvalidated = (themeChanged) =>
+      themeChanged === true ? this.invalidateLayout() : this.#frames.schedule();
     this.#frameWriter = new SceneFrameWriter(this.#dom, this.#backgroundCache, this.#stats);
     this.#visibility = new SceneVisibilityState(options.store, this.#stats);
     this.#liveStroke = new SceneLiveStrokeRenderer(
@@ -84,6 +85,7 @@ export class SvgSceneRenderer {
         detachedCache: this.#detachedCache,
         onPathsReady: () => this.#frames.schedule(),
         scheduler: this.#scheduler,
+        takePreparedPath: (record) => this.#visibilityCoordinator.takePreparedPath(record),
       },
     );
     this.#contentScheduler = new SceneContentScheduler(this.#content, this.#scheduler);
@@ -216,6 +218,7 @@ export class SvgSceneRenderer {
   }
   public invalidateLayout(requestCommit = false): void {
     this.assertActive();
+    this.#layoutInvalidationVersion += 1;
     this.#layoutDirty = true;
     this.#frameWriter.invalidateCursorLayout();
     if (requestCommit || this.#visibilityCoordinator.initialVisibleOnly)
@@ -406,10 +409,8 @@ export class SvgSceneRenderer {
   public instrumentation(): Scene.SceneInstrumentationSnapshot {
     return this.#resourcePolicy.instrumentation(this.#stats, this.#backgroundCache);
   }
-  public observeFrames(observer: SceneFrameObserver | undefined): void {
-    this.#frames.observeFrames(observer, () =>
-      this.#content.frameDiagnosticState(this.#visibilityCoordinator.hasPendingQuery),
-    );
+  public get layoutInvalidationVersion(): number {
+    return this.#layoutInvalidationVersion;
   }
   public resetInstrumentation(): void {
     this.#resourcePolicy.resetInstrumentation(this.#stats, this.#backgroundCache);
@@ -480,7 +481,6 @@ export class SvgSceneRenderer {
       startedAt,
     );
     this.#frameWork.complete(work, this.#sceneCommits, this.#frames);
-    this.#resourcePolicy.refreshInstrumentation(this.#stats, this.#backgroundCache);
     if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
   }
   private writeBackground(deadline: number, allowAtomic = false): boolean {

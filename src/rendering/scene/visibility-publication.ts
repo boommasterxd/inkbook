@@ -311,31 +311,6 @@ interface ExitOptions extends PublicationOptions {
   readonly isExitReady?: (id: string, now: number) => boolean;
 }
 
-function retainVisibilityExit(
-  entry: MountedSceneElement,
-  record: ReturnType<SceneStorePort["get"]>,
-  options: ExitOptions,
-): "retained" | "pending" | undefined {
-  if (
-    record === undefined ||
-    entry.geometryVersion !== record.geometryVersion ||
-    entry.detachedPathCount > 0 ||
-    entry.displayedPathParts !== entry.pathParts
-  )
-    return undefined;
-  const isNeeded = (id: string) => options.visibility.contains(id);
-  if (options.detachedCache?.retainConnected(entry, options.store, isNeeded)) {
-    options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
-    options.mounted.delete(entry.id);
-    return "retained";
-  }
-  return options.detachedCache?.retentionEnabled &&
-    (options.detachedCache.hasPendingCleanup ||
-      options.detachedCache.needsVisibleAdoption(entry, isNeeded))
-    ? "pending"
-    : undefined;
-}
-
 function removeVisibilityExitNode(
   entry: MountedSceneElement,
   record: ReturnType<SceneStorePort["get"]>,
@@ -361,6 +336,29 @@ function removeVisibilityExitNode(
   options.instrumentation.domExits += 1;
 }
 
+/** Repairs protected multipart roots at their existing anchor within frame publication admission. */
+function restoreProtectedExit(
+  entry: MountedSceneElement,
+  options: ExitOptions,
+  publication: ScenePublicationBudget | undefined,
+): boolean {
+  if (entry.detachedPathCount === 0) return true;
+  const roots = mountedRootCount(entry);
+  if ((publication?.remainingRoots ?? Infinity) < roots) return false;
+  let anchor = firstPath(entry);
+  const group = options.dom.group(entry.band);
+  for (let index = entry.paths.length - 1; index >= 0; index -= 1) {
+    const node = entry.paths[index]!.node;
+    group.insertBefore(node, anchor);
+    anchor = node;
+  }
+  entry.detachedPathCount = 0;
+  if (publication !== undefined) publication.remainingRoots -= roots;
+  options.instrumentation.domRootsPublished += roots;
+  options.instrumentation.domFragmentRuns += roots;
+  return true;
+}
+
 /** Removes old paths incrementally, rechecking visibility after every retarget. */
 export function removeVisibilityExits(
   pending: ExitPublication,
@@ -372,7 +370,6 @@ export function removeVisibilityExits(
     readonly onSkipped?: (id: string) => void;
     readonly onRemoved?: (id: string) => void;
     readonly publication?: ScenePublicationBudget;
-    readonly retainedOnly?: boolean;
   },
 ): boolean {
   let visitedNodes = 0;
@@ -387,20 +384,14 @@ export function removeVisibilityExits(
     const entry = id === undefined ? undefined : options.mounted.get(id);
     visitedNodes += 1;
     if (entry === undefined || !frame.isExit(entry.id)) {
+      if (entry !== undefined && !restoreProtectedExit(entry, options, frame.publication))
+        return false;
       if (id !== undefined) frame.onSkipped?.(id);
       pending.exitIndex += 1;
       continue;
     }
     if (options.isExitReady?.(entry.id, frame.now()) === false) return false;
     const record = options.store.get(entry.id);
-    const retention = retainVisibilityExit(entry, record, options);
-    if (retention === "retained") {
-      pending.exitIndex += 1;
-      frame.onRemoved?.(entry.id);
-      continue;
-    }
-    if (retention === "pending") return false;
-    if (frame.retainedOnly) return false;
     removedNodes += 1;
     if (frame.publication !== undefined)
       frame.publication.remainingRemovals = (frame.publication.remainingRemovals ?? 64) - 1;

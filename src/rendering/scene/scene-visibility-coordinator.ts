@@ -7,6 +7,7 @@ import {
 import { DEFAULT_SCROLL_PRELOAD_MARGIN_PX } from "../../domain/settings/types";
 import type {
   MutableSceneInstrumentation,
+  SceneElementRecord,
   SceneCamera,
   SceneRendererOptions,
   SceneStoreDelta,
@@ -134,6 +135,10 @@ export class SceneVisibilityCoordinator {
 
   public applyDelta(delta: SceneStoreDelta): void {
     this.#documentPaths?.invalidate(delta);
+  }
+
+  public takePreparedPath(record: SceneElementRecord) {
+    return this.#documentPaths?.takeReady(record);
   }
 
   public setDocumentPrewarmEnabled(enabled: boolean): void {

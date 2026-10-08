@@ -37,6 +37,7 @@ import {
   prepareReconciliationRun,
   recordReconciliationGrowth,
   resetReconciliationBuffers,
+  markPartialReconciliationExit,
   reconciliationMemoryUsage,
   finishReconciliationRun,
 } from "./reconciliation-buffers";
@@ -99,9 +100,6 @@ export class SceneVisibilityReconciler {
   }
   public get waitingForPaths(): boolean {
     return this.#waitingForPaths;
-  }
-  public get preparationState() {
-    return { readyContours: this.#preparation.readyContours, readyElements: this.#entrants.size };
   }
   public setPriority(priority: SceneVisibilityPriority): void {
     this.#priority = priority;
@@ -177,21 +175,17 @@ export class SceneVisibilityReconciler {
   public cancel(preservePending = false): void {
     this.#waitingForPaths = false;
     const pending = this.#pending;
-    preservePending &&= pending?.published === false;
+    const preserveEntrants = preservePending && pending?.published === false;
     this.#preparation.cancel(
-      preservePending ? (id) => this.options.visibility.contains(id) : undefined,
+      preserveEntrants ? (id) => this.options.visibility.contains(id) : undefined,
     );
     this.#cancelled ||= pending !== undefined;
-    const partialId = pending?.exitIds[pending.exitIndex];
-    const partial = partialId === undefined ? undefined : this.options.mounted.get(partialId);
-    if (partial !== undefined && partial.detachedPathCount > 0) {
-      this.options.orderDirty[partial.band].add(partial.id);
-    }
+    markPartialReconciliationExit(pending, this.options);
     const entrants = pending?.published === true ? undefined : pending?.entrants;
     if (entrants !== undefined) {
       for (const entry of entrants.values()) {
         if (
-          preservePending &&
+          preserveEntrants &&
           this.options.visibility.contains(entry.id) &&
           this.#preparation.isCurrent(entry)
         )
@@ -204,7 +198,8 @@ export class SceneVisibilityReconciler {
     pending?.order.release();
     this.#pending = undefined;
     resetReconciliationBuffers({
-      preservePending,
+      preservePending: preserveEntrants,
+      preserveExits: preservePending && pending !== undefined,
       exitCursor: pending,
       entrants: this.#entrants,
       exitIds: this.#exitIds,

@@ -2,13 +2,13 @@ import { expect, it, vi } from "vitest";
 import { UniformSpatialIndex } from "../../../../src/domain/spatial";
 import type { Bounds } from "../../../../src/domain/geometry/primitives";
 import { NavigationPathPreparation } from "../../../../src/rendering/scene/navigation-path-preparation";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import type { SceneStorePort } from "../../../../src/rendering/scene/types";
 import { createSceneRecord, createSceneFixture } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
-import { FakeScheduler } from "./fakes";
-import { fakeRectangleRecord } from "./fakes";
+import { FakeScheduler, fakeRectangleRecord } from "./fakes";
 import type {
   PreparedScenePathEntry,
   ScenePathPreparationObserver,
@@ -431,18 +431,18 @@ it("reports actual autonomous cache growth and immediately cancels its successor
 
 it("retains overlapping remote work and buffered contours as they enter the mounting envelope", async () => {
   const remote = remoteFixture();
-  const priority = { viewport: BOUNDS, direction: { x: 0, y: 1 } };
-  remote.preparation.setTarget(priority, BOUNDS);
+  remote.preparation.setTarget(PRIORITY, BOUNDS);
   remote.preparation.prepare(Infinity, () => 0);
   const retarget = vi.fn();
   remote.observer().setRetarget(retarget);
-  remote.preparation.setTarget(priority, { ...BOUNDS, minY: 5, maxY: 105 });
+  retarget.mockClear();
+  remote.preparation.setTarget(PRIORITY, { ...BOUNDS, minY: 5, maxY: 105 });
   expect(remote.signal().aborted).toBe(false);
-  expect(retarget).toHaveBeenLastCalledWith([remote.record.id]);
+  expect(retarget).not.toHaveBeenCalled();
   remote.observer().onProgress([remote.path]);
-  remote.preparation.setTarget(priority, { ...BOUNDS, minY: 30, maxY: 130 });
+  remote.preparation.setTarget(PRIORITY, { ...BOUNDS, minY: 30, maxY: 130 });
   expect(remote.signal().aborted).toBe(false);
-  // A visible request may preempt this batch after its useful contour was delivered.
+  expect(retarget).not.toHaveBeenCalled();
   remote.resolve(undefined);
   await Promise.resolve();
   expect(remote.signal().aborted).toBe(true);
@@ -487,7 +487,7 @@ it("starts the leading worker reserve while only overscan publication is unfinis
     scheduler.runAll();
     renderer.setViewport({ height: 100, left: 0, top: 100, width: 100 });
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(192);
+    expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     expect(scheduler.pendingCount).toBeGreaterThan(0);
     expect(remote.request).toHaveBeenCalledOnce();
     expect(remote.request.mock.calls[0]![0]).toEqual([remote.record.id]);

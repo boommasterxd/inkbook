@@ -63,8 +63,30 @@ function fixture() {
       scene.renderer.destroy();
       priority.dispose();
       store.release();
+      domain.releasePreparedPressureGeometry();
     },
   };
+}
+
+function startDocumentPaths(state: ReturnType<typeof fixture>): void {
+  state.scheduler.runAll();
+  state.renderer.releaseInitialOverscan();
+  state.scheduler.runAll();
+  expect(state.request).toHaveBeenCalledOnce();
+}
+
+async function releaseNavigationQuietGate(state: ReturnType<typeof fixture>): Promise<void> {
+  state.priority.setInputActive(false, "navigation");
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function pauseForNavigation(state: ReturnType<typeof fixture>, top = 1): void {
+  state.priority.setInputActive(true, "navigation");
+  state.renderer.setViewport({ height: 100, left: 0, top, width: 100 });
+  expect(state.signal().aborted).toBe(true);
+  state.scheduler.runAll();
 }
 
 it("waits for viewport handoff and the existing navigation quiet gate without polling", async () => {
@@ -77,10 +99,7 @@ it("waits for viewport handoff and the existing navigation quiet gate without po
     state.scheduler.runAll();
     expect(state.scheduler.pendingCount).toBe(0);
     expect(state.request).not.toHaveBeenCalled();
-    state.priority.setInputActive(false, "navigation");
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await releaseNavigationQuietGate(state);
     state.scheduler.runAll();
     expect(state.request).toHaveBeenCalledOnce();
     expect(state.observer().speculative).toBe(true);
@@ -108,34 +127,69 @@ it("waits for viewport handoff and the existing navigation quiet gate without po
 
 it("cancels idle worker ownership on camera activity and ignores a waiter after disposal", async () => {
   const state = fixture();
-  state.scheduler.runAll();
-  state.renderer.releaseInitialOverscan();
-  state.scheduler.runAll();
-  expect(state.request).toHaveBeenCalledOnce();
-  const obsolete = state.signal();
-  state.priority.setInputActive(true, "navigation");
-  state.renderer.setViewport({ height: 100, left: 0, top: 1, width: 100 });
-  expect(obsolete.aborted).toBe(true);
-  state.scheduler.runAll();
+  startDocumentPaths(state);
+  pauseForNavigation(state);
   expect(state.scheduler.pendingCount).toBe(0);
   state.renderer.destroy();
-  state.priority.setInputActive(false, "navigation");
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  await releaseNavigationQuietGate(state);
   expect(state.scheduler.pendingCount).toBe(0);
   expect(state.request).toHaveBeenCalledOnce();
   state.priority.dispose();
   state.store.release();
 });
 
+it("keeps delivered contours across a navigation pause and adopts them after quiet admission", async () => {
+  const state = fixture();
+  try {
+    startDocumentPaths(state);
+    const obsoleteObserver = state.observer();
+    const paths = [{ id: state.element.id, parts: buildElementPathParts(state.element) }];
+    obsoleteObserver.onProgress(paths);
+    const before = state.renderer.instrumentation();
+    pauseForNavigation(state);
+    expect(state.renderer.instrumentation().pathCacheEntries).toBe(before.pathCacheEntries);
+    expect(state.scheduler.pendingCount).toBe(0);
+    obsoleteObserver.onProgress(paths);
+    await releaseNavigationQuietGate(state);
+    state.scheduler.runAll();
+    expect(state.request).toHaveBeenCalledOnce();
+    expect(state.renderer.instrumentation().pathCacheEntries).toBe(before.pathCacheEntries + 1);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(state.scheduler.pendingCount).toBe(0);
+  } finally {
+    state.release();
+  }
+});
+
+it("mounts a delivered offscreen contour during navigation without another worker request or local build", async () => {
+  const state = fixture();
+  startDocumentPaths(state);
+  const obsoleteObserver = state.observer();
+  const parts = buildElementPathParts(state.element);
+  obsoleteObserver.onProgress([{ id: state.element.id, parts }]);
+  const before = state.renderer.instrumentation();
+  pauseForNavigation(state, 1990);
+  const after = state.renderer.instrumentation();
+  expect(state.renderer.mountedCount).toBe(1);
+  expect(state.request).toHaveBeenCalledOnce();
+  expect(state.publish).toHaveBeenCalledOnce();
+  expect(state.publish.mock.calls[0]![0]).toBe(parts);
+  expect(after.geometryBuilds).toBe(before.geometryBuilds);
+  expect(after.domEntrants - before.domEntrants).toBe(1);
+  expect(after.domRootsPublished - before.domRootsPublished).toBe(1);
+  expect(state.scheduler.pendingCount).toBe(0);
+  state.release();
+  obsoleteObserver.onProgress([{ id: state.element.id, parts }]);
+  await Promise.resolve();
+  expect(state.publish).toHaveBeenCalledOnce();
+  expect(state.store.memoryUsage().pressurePathCacheBytes).toBe(0);
+  expect(state.scheduler.pendingCount).toBe(0);
+});
+
 it("resumes a paused file cursor when active-document memory pressure is released", () => {
   const state = fixture();
   try {
-    state.scheduler.runAll();
-    state.renderer.releaseInitialOverscan();
-    state.scheduler.runAll();
-    expect(state.request).toHaveBeenCalledOnce();
+    startDocumentPaths(state);
     state.renderer.setActiveDocumentMemoryPressure(true);
     expect(state.signal().aborted).toBe(true);
     expect(state.scheduler.pendingCount).toBe(0);
@@ -151,10 +205,7 @@ it("resumes a paused file cursor when active-document memory pressure is release
 it("pauses file prewarm without blocking required scene commits and rejects late progress", () => {
   const state = fixture();
   try {
-    state.scheduler.runAll();
-    state.renderer.releaseInitialOverscan();
-    state.scheduler.runAll();
-    expect(state.request).toHaveBeenCalledOnce();
+    startDocumentPaths(state);
     const obsoleteObserver = state.observer();
     const obsoleteSignal = state.signal();
     state.renderer.setDocumentPrewarmEnabled(false);

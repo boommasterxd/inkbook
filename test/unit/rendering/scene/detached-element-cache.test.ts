@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { DETACHED_ELEMENT_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants";
 import { DetachedSceneElementCache } from "../../../../src/rendering/scene/detached-element-cache";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { SceneMountPreparation } from "../../../../src/rendering/scene/scene-mount-preparation";
@@ -270,6 +271,30 @@ it.each(["retarget", "invalidation", "pressure"] as const)(
 );
 
 describe("detached committed node reuse", () => {
+  it("bounds default detached ownership and immediately releases evicted entries", () => {
+    const cache = new DetachedSceneElementCache();
+    const document = asDocument(new FakeDocument());
+    const first = fixture("capacity-0", document);
+    cache.retain(first.entry);
+    let latest = first;
+    for (let index = 1; index < 1_000; index += 1) {
+      latest = fixture(`capacity-${index}`, document);
+      cache.retain(latest.entry);
+      expect(cache.memoryUsage()).toBeLessThanOrEqual(DETACHED_ELEMENT_CACHE_MAX_BYTES);
+    }
+    expect(cache.statistics().evictions).toBeGreaterThan(0);
+    expect(cache.retainedRoots).toBeLessThan(1_000);
+    expect(cache.take(first.record, first.instrumentation)).toBeUndefined();
+    expect(cache.successor(first.record)).toBeUndefined();
+    expect(cache.take(latest.record, latest.instrumentation)).toBe(latest.entry);
+    expect(fakeNode(latest.entry.paths[0]!.node).parent).toBeUndefined();
+    cache.release();
+    expect(cache.statistics()).toMatchObject({ entries: 0, bytes: 0 });
+    expect(cache.retainedRoots).toBe(0);
+    expect(cache.memoryUsage()).toBe(0);
+    cache.dispose();
+  });
+
   it("reuses the same nodes without geometry or paint writes and refreshes ordering", () => {
     const { instrumentation, record, entry } = fixture();
     const cache = new DetachedSceneElementCache();

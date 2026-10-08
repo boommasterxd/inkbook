@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
@@ -32,7 +33,9 @@ function drainBoundedPublication(fixture: ReturnType<typeof createIndexedMarginF
     expect(remaining--).toBeGreaterThan(0);
     const before = fixture.renderer.instrumentation().domRootsPublished;
     fixture.scheduler.runNext();
-    expect(fixture.renderer.instrumentation().domRootsPublished - before).toBeLessThanOrEqual(192);
+    expect(fixture.renderer.instrumentation().domRootsPublished - before).toBeLessThanOrEqual(
+      SCENE_PUBLICATION_ROOTS_PER_FRAME,
+    );
   }
 }
 

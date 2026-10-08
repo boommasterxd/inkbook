@@ -1,10 +1,11 @@
 import { expect, it, vi } from "vitest";
-import { BoundedVersionLru } from "../../../../src/domain/cache/bounded-version-lru";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { SpatialQueryScratch, UniformSpatialIndex } from "../../../../src/domain/spatial";
 import type { SceneStorePort } from "../../../../src/rendering/scene/types";
-import { ConnectedRootOrder } from "../../../../src/rendering/scene/connected-root-order";
-import { DETACHED_ELEMENT_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants";
+import {
+  DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  SCENE_PUBLICATION_ROOTS_PER_FRAME,
+} from "../../../../src/rendering/scene/constants";
 import { DetachedSceneElementCache } from "../../../../src/rendering/scene/detached-element-cache";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { createMountedElement } from "../../../../src/rendering/scene/mounted-element";
@@ -14,6 +15,7 @@ import {
   createSceneFixture,
   createSceneRecord,
   createViewportRectangleStore,
+  createIndexedSceneStore,
 } from "../../../fixtures/rendering/scene";
 import {
   asDocument,
@@ -23,6 +25,70 @@ import {
   fakeNode,
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
+
+it.each([false, true])(
+  "retains published cleanup across repeated indexed delta targets with return=%s",
+  (returns) => {
+    const records = createViewportRectangleStore(10_000, (rank) =>
+      rank < 300 ? 50 : rank === 300 ? 1_200 : rank === 301 ? 2_200 : 20_000,
+    );
+    const { store, work, fallback } = createIndexedSceneStore(records);
+    const viewport = { height: 100, left: 0, top: 0, width: 100 };
+    const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+    scheduler.runAll();
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const original = [...content.nodes];
+    const scans = vi.spyOn(records.records, "values");
+    const removal = vi.spyOn(FakeNode.prototype, "remove");
+    renderer.resetInstrumentation();
+    work.indexedVisits = 0;
+    const frame = () => {
+      const roots = renderer.instrumentation().domRootsPublished;
+      removal.mockClear();
+      scheduler.runNext();
+      expect(removal.mock.calls.length).toBeLessThanOrEqual(64);
+      expect(renderer.instrumentation().domRootsPublished - roots).toBeLessThanOrEqual(
+        SCENE_PUBLICATION_ROOTS_PER_FRAME,
+      );
+    };
+    try {
+      renderer.setViewport({ ...viewport, top: 1_000 });
+      frame();
+      expect(renderer.mountedIds("content")).toEqual(["entry-300"]);
+      expect(renderer.mountedCount).toBe(237);
+      expect(removal).toHaveBeenCalledTimes(64);
+      for (const top of [2_000, 1_000, 2_000]) {
+        renderer.setViewport({ ...viewport, top });
+        frame();
+      }
+      expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(24);
+      if (returns) renderer.setViewport(viewport);
+      let frames = 0;
+      while (scheduler.pendingCount > 0) {
+        frame();
+        expect(++frames).toBeLessThanOrEqual(20);
+      }
+      expect(renderer.mountedCount).toBe(returns ? 300 : 1);
+      expect(content.nodes).toHaveLength(renderer.mountedCount);
+      expect(renderer.mountedIds("content")).toEqual(
+        returns ? Array.from({ length: 300 }, (_, rank) => `entry-${rank}`) : ["entry-301"],
+      );
+      if (returns) expect(content.nodes).toEqual(original);
+      else expect(original.every((node) => node.parent === undefined)).toBe(true);
+      expect(work.indexedVisits).toBeLessThanOrEqual(1_000);
+      expect(fallback).not.toHaveBeenCalled();
+      expect(scans).not.toHaveBeenCalled();
+      expect(renderer.hasPendingSceneCommit).toBe(false);
+    } finally {
+      removal.mockRestore();
+      scans.mockRestore();
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+    expect(renderer.memoryUsage()).toMatchObject({ pathCacheBytes: 0, motionCacheBytes: 0 });
+    expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
+  },
+);
 
 it("mounts nearby offscreen strokes before scrolling into them and reuses their original roots", () => {
   const records = new FakeSceneStore();
@@ -54,23 +120,29 @@ it("mounts nearby offscreen strokes before scrolling into them and reuses their 
     while (scheduler.pendingCount > 0) {
       renderer.resetInstrumentation();
       scheduler.runNext();
-      expect(renderer.instrumentation().domRootsPublished).toBeLessThanOrEqual(192);
+      expect(renderer.instrumentation().domRootsPublished).toBeLessThanOrEqual(
+        SCENE_PUBLICATION_ROOTS_PER_FRAME,
+      );
       expect(++frames).toBeLessThanOrEqual(20);
     }
     expect(renderer.mountedCount).toBe(1_000);
     const original = [...content.nodes];
+    const originalSet = new Set(original);
     expect(original).toHaveLength(1_000);
     const insert = vi.spyOn(content, "insertBefore");
     for (const top of [1_180, 800, 1_000]) {
       renderer.resetInstrumentation();
       renderer.setViewport({ ...viewport, top });
       scheduler.runAll(20);
-      expect(renderer.instrumentation()).toMatchObject({ geometryBuilds: 0, domRootsPublished: 0 });
-      expect(insert).not.toHaveBeenCalled();
-      expect(content.nodes).toEqual(original);
+      expect(renderer.instrumentation().geometryBuilds).toBe(0);
+      expect(content.nodes).toHaveLength(renderer.mountedCount);
+      expect(content.nodes.every((node) => originalSet.has(node))).toBe(true);
     }
     expect(indexedVisits).toBeLessThanOrEqual(4_000);
-    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThan(25 * 1024 * 1024);
+    expect(insert).toHaveBeenCalled();
+    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(
+      DETACHED_ELEMENT_CACHE_MAX_BYTES,
+    );
     renderer.setViewport({ ...viewport, top: 10_000 });
     renderer.destroy();
     expect(scheduler.pendingCount).toBe(0);
@@ -81,8 +153,9 @@ it("mounts nearby offscreen strokes before scrolling into them and reuses their 
   }
 });
 
-it("retains 20,000 original roots below the byte limit without an independent count eviction", () => {
-  const cache = new DetachedSceneElementCache();
+it("honors an explicit larger byte limit without an independent count eviction", () => {
+  const maximumBytes = 25 * 1_024 * 1_024;
+  const cache = new DetachedSceneElementCache(maximumBytes);
   const document = new FakeDocument();
   const band = document.createElementNS("", "g");
   const store = new FakeSceneStore();
@@ -102,7 +175,7 @@ it("retains 20,000 original roots below the byte limit without an independent co
     }
     expect(parts).toHaveLength(1);
     expect(cache.statistics()).toMatchObject({ entries: 20_000, evictions: 0 });
-    expect(cache.statistics().bytes).toBeLessThan(DETACHED_ELEMENT_CACHE_MAX_BYTES);
+    expect(cache.statistics().bytes).toBeLessThan(maximumBytes);
     expect(cache.retainedRoots).toBe(20_000);
     expect(band.nodes).toHaveLength(20_000);
     expect(remove).not.toHaveBeenCalled();
@@ -123,7 +196,7 @@ it("retains 20,000 original roots below the byte limit without an independent co
   }
 });
 
-it("transfers 10,000 warm connected roots without successor searches, LRU replacements, or DOM publication", () => {
+it("keeps only the current envelope connected across 10,000 contour-warm visits", () => {
   const store = createViewportRectangleStore(10_000, (rank) => (rank < 5_000 ? 50 : 1_000));
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
@@ -135,39 +208,40 @@ it("transfers 10,000 warm connected roots without successor searches, LRU replac
   renderer.setViewport({ ...viewport, top: 1_000 });
   scheduler.runAll(200);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-  const nodes = [...content.nodes];
-  const successor = vi.spyOn(ConnectedRootOrder.prototype, "successor");
-  const add = vi.spyOn(ConnectedRootOrder.prototype, "add");
-  const set = vi.spyOn(BoundedVersionLru.prototype, "set");
-  const read = vi.spyOn(FakeNode.prototype, "getAttribute");
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
+  const create = vi.spyOn(content.ownerDocument, "createElementNS");
   const insert = vi.spyOn(content, "insertBefore");
   try {
     for (const top of [0, 1_000, 100_000, 0, 1_000]) {
       renderer.resetInstrumentation();
       renderer.setViewport({ ...viewport, top });
-      scheduler.runAll(200);
-      expect(renderer.instrumentation()).toMatchObject({
-        domEntrants: 0,
-        domExits: 0,
-        contentAttributeWrites: 0,
-        geometryBuilds: 0,
-      });
+      let frames = 0;
+      while (scheduler.pendingCount > 0) {
+        remove.mockClear();
+        renderer.resetInstrumentation();
+        scheduler.runNext();
+        expect(remove.mock.calls.length).toBeLessThanOrEqual(64);
+        expect(renderer.instrumentation().domRootsPublished).toBeLessThanOrEqual(
+          SCENE_PUBLICATION_ROOTS_PER_FRAME,
+        );
+        expect(renderer.instrumentation().geometryBuilds).toBe(0);
+        expect(++frames).toBeLessThanOrEqual(200);
+      }
       expect(renderer.mountedCount).toBe(top === 100_000 ? 0 : 5_000);
-      expect(content.nodes).toEqual(nodes);
+      expect(content.nodes).toHaveLength(renderer.mountedCount);
+      expect(renderer.instrumentation().detachedCacheEntries).toBeLessThan(1_000);
       expect(renderer.instrumentation().detachedCacheBytes).toBeLessThan(
         DETACHED_ELEMENT_CACHE_MAX_BYTES,
       );
     }
-    expect(successor).not.toHaveBeenCalled();
-    expect(add).not.toHaveBeenCalled();
-    expect(set.mock.calls.filter(([key]) => key.startsWith("\0"))).toHaveLength(0);
-    expect(read).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
+    expect(create.mock.calls.filter(([, tag]) => tag === "path").length).toBeGreaterThan(0);
+    expect(create.mock.calls.filter(([, tag]) => tag === "path").length).toBeLessThanOrEqual(
+      20_000,
+    );
+    expect(insert).toHaveBeenCalled();
   } finally {
-    successor.mockRestore();
-    add.mockRestore();
-    set.mockRestore();
-    read.mockRestore();
+    remove.mockRestore();
+    create.mockRestore();
     insert.mockRestore();
     renderer.destroy();
   }

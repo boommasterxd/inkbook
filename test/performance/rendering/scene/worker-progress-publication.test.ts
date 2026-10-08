@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import type {
   PreparedScenePathEntry,
   ScenePathPreparationObserver,
@@ -47,6 +48,9 @@ it("publishes completed remote contours before terminal completion without resca
   scheduler.runAll();
   expect(requests.map((ids) => ids.length)).toEqual([1, 129]);
   expect(renderer.mountedCount).toBe(1);
+  expect(content.nodes).toHaveLength(1);
+  expect(renderer.instrumentation().domExits).toBe(1_000);
+  expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(1024 * 1024);
   expect(scheduler.pendingCount).toBe(0);
   const get = vi.spyOn(store, "get");
   let frameRoots = 0;
@@ -61,7 +65,7 @@ it("publishes completed remote contours before terminal completion without resca
     while (scheduler.pendingCount > 0) {
       frameRoots = 0;
       scheduler.runNext();
-      expect(frameRoots).toBeLessThanOrEqual(192);
+      expect(frameRoots).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     }
     expect(get.mock.calls.length).toBeLessThanOrEqual(ids.length * 6 + 8);
     expect(requests).toHaveLength(2);
@@ -78,9 +82,7 @@ it("publishes completed remote contours before terminal completion without resca
     expect(scheduler.pendingCount).toBe(0);
     expect(pointReads()).toBe(0);
     expect(
-      content.nodes
-        .slice(1_000)
-        .map((node) => node.nodes[0]?.attributes.get("d") ?? node.attributes.get("d")),
+      content.nodes.map((node) => node.nodes[0]?.attributes.get("d") ?? node.attributes.get("d")),
     ).toEqual(Array.from({ length: 130 }, (_, index) => `M${1_000 + index} 0Z`));
     complete();
     await Promise.resolve();

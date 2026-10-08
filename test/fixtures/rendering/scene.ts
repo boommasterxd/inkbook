@@ -1,4 +1,5 @@
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
+import { UniformSpatialIndex } from "../../../src/domain/spatial";
 import { expect, vi, type Mock } from "vitest";
 import type { ElementStore } from "../../../src/domain/store/public";
 import { calculateElementBounds } from "../../../src/domain/geometry/bounds";
@@ -129,6 +130,22 @@ export function observeIndexedSceneQueries(store: Pick<ElementStore, "beginQuery
     return cursor;
   });
   return { query, work };
+}
+
+/** Owns a real scene index and observes cursors while rejecting scan-based fallback. */
+export function createIndexedSceneStore(records: FakeSceneStore) {
+  const index = new UniformSpatialIndex<string>();
+  index.insertMany([...records.records.values()].map(({ id, bounds }) => ({ id, bounds })));
+  const { work } = observeIndexedSceneQueries(index);
+  const fallback = vi.fn(() => {
+    throw new Error("Use the spatial cursor.");
+  });
+  const store: SceneStorePort = {
+    get: (id) => records.get(id),
+    beginQuery: (bounds) => index.beginQuery(bounds),
+    query: fallback,
+  };
+  return { store, work, fallback };
 }
 
 /** Starts one real directional request and returns the observed transport boundary. */

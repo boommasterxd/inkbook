@@ -58,7 +58,7 @@ export class SceneVisibilityState {
     now: () => number = () => 0,
     forceRefresh = false,
   ): VisibilityQueryResult {
-    if (!forceRefresh && this.canReuseCurrent(retainedBounds)) {
+    if (!forceRefresh && this.canReuseCurrent(bounds, retainedBounds)) {
       this.#edges.release();
       this.#classification.release();
       this.#candidates.cancelPending();
@@ -370,12 +370,18 @@ export class SceneVisibilityState {
     this.#newHighlightIds.length = 0;
   }
 
-  private canReuseCurrent(retainedBounds: Bounds): boolean {
+  private canReuseCurrent(bounds: Bounds, retainedBounds: Bounds): boolean {
+    const previous = this.#visibilityEnvelope;
     return (
       this.#hasCurrentVisibility &&
       !this.#currentInvalidated &&
-      this.#visibilityEnvelope !== undefined &&
-      containsBounds(this.#visibilityEnvelope, retainedBounds)
+      previous !== undefined &&
+      containsBounds(previous, retainedBounds) &&
+      // Bound retained ownership by one additional current reserve on each edge.
+      previous.minX >= bounds.minX - (retainedBounds.minX - bounds.minX) &&
+      previous.minY >= bounds.minY - (retainedBounds.minY - bounds.minY) &&
+      previous.maxX <= bounds.maxX + (bounds.maxX - retainedBounds.maxX) &&
+      previous.maxY <= bounds.maxY + (bounds.maxY - retainedBounds.maxY)
     );
   }
 

@@ -82,7 +82,7 @@ describe("visible render mount complexity", () => {
     const instrumentation = renderer.instrumentation();
     const cameraGroup = fakeNode(renderer.svg).nodes[1]!;
     expect(fixture.pointCount).toBe(TOTAL_POINTS);
-    expect(firstFrameMounts).toBe(192);
+    expect(firstFrameMounts).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     expect(renderer.mountedCount).toBe(STROKES);
     expect(renderer.mountedIds("highlight")).toEqual(fixture.highlightIds);
     expect(renderer.mountedIds("content")).toEqual(fixture.contentIds);

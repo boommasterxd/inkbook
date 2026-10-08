@@ -121,73 +121,77 @@ it("defers native removal when many repeated exits spend the preparation deadlin
 });
 
 describe("deduplicated scene cleanup", () => {
-  it("coalesces repeated retarget exits without losing the partial head or skipped lifecycle", () => {
-    const document = asDocument(new FakeDocument());
-    const instrumentation = createInstrumentation();
-    const records = [...rectangles(2), createSceneRecord(arrow(500), 2)];
-    const entries = records.map((record) =>
-      createMountedElement(
-        document,
-        record,
-        buildElementPathParts(record.element),
+  it.each([false, true])(
+    "preserves deduplicated exits and the partial head with pending entrants=%s",
+    (preservePending) => {
+      const document = asDocument(new FakeDocument());
+      const instrumentation = createInstrumentation();
+      const records = [...rectangles(2), createSceneRecord(arrow(500), 2)];
+      const entries = records.map((record) =>
+        createMountedElement(
+          document,
+          record,
+          buildElementPathParts(record.element),
+          instrumentation,
+        ),
+      );
+      const partial = entries[2]!;
+      partial.paths[1]!.node.remove();
+      partial.detachedPathCount = 1;
+      const removals = entries.flatMap((entry) =>
+        entry.paths.map(({ node }) => vi.spyOn(node, "remove")),
+      );
+      const pending = {
+        exitIds: ["consumed", partial.id, "r-1", "r-0", partial.id, "r-1", "r-0", "stale"],
+        exitIndex: 1,
+        exitScanComplete: true,
+        exitOrderPrepared: false,
+      } as PendingReconciliation;
+      const removed = vi.fn<(id: string) => void>();
+      const skipped = vi.fn();
+      const releaseId = vi.fn();
+      const options = {
+        mounted: new Map(entries.map((entry) => [entry.id, entry])),
+        store: new FakeSceneStore(),
         instrumentation,
-      ),
-    );
-    const partial = entries[2]!;
-    partial.paths[1]!.node.remove();
-    partial.detachedPathCount = 1;
-    const removals = entries.flatMap((entry) =>
-      entry.paths.map(({ node }) => vi.spyOn(node, "remove")),
-    );
-    const pending = {
-      exitIds: ["consumed", partial.id, "r-1", "r-0", partial.id, "r-1", "r-0", "stale"],
-      exitIndex: 1,
-      exitScanComplete: true,
-      exitOrderPrepared: false,
-    } as PendingReconciliation;
-    const removed = vi.fn<(id: string) => void>();
-    const skipped = vi.fn();
-    const releaseId = vi.fn();
-    const options = {
-      mounted: new Map(entries.map((entry) => [entry.id, entry])),
-      store: new FakeSceneStore(),
-      instrumentation,
-      visibility: { releaseId },
-      pathCache: { invalidate: vi.fn(), retain: vi.fn() },
-    } as unknown as Parameters<typeof removeOrderedVisibilityExits>[1];
-    const get = vi.spyOn(options.mounted, "get");
-    resetReconciliationBuffers({
-      preservePending: true,
-      exitCursor: pending,
-      entrants: new Map(),
-      exitIds: pending.exitIds,
-      publishedEntrantIds: [],
-      newlyMountedIds: [],
-      runs: [],
-    });
-    pending.exitIndex = 0;
-    try {
-      expect(
-        removeOrderedVisibilityExits(pending, options, {
-          deadline: 8,
-          now: () => 0,
-          isExit: () => true,
-          onRemoved: removed,
-          onSkipped: skipped,
-        }),
-      ).toBe(true);
-      expect(pending.exitIds).toEqual([partial.id, "r-0", "r-1", "stale"]);
-      expect(removed.mock.calls.map(([id]) => id)).toEqual([partial.id, "r-0", "r-1"]);
-      expect(removals.map((spy) => spy.mock.calls.length)).toEqual([1, 1, 1, 0]);
-      expect(skipped).toHaveBeenCalledExactlyOnceWith("stale");
-      expect(releaseId).toHaveBeenCalledTimes(3);
-      expect(options.mounted.size).toBe(0);
-      expect(get.mock.calls.every(([id]) => id !== "consumed")).toBe(true);
-      expect(get.mock.calls.length).toBeLessThanOrEqual(32);
-    } finally {
-      for (const spy of removals) spy.mockRestore();
-    }
-  });
+        visibility: { releaseId },
+        pathCache: { invalidate: vi.fn(), retain: vi.fn() },
+      } as unknown as Parameters<typeof removeOrderedVisibilityExits>[1];
+      const get = vi.spyOn(options.mounted, "get");
+      resetReconciliationBuffers({
+        preservePending,
+        preserveExits: true,
+        exitCursor: pending,
+        entrants: new Map(),
+        exitIds: pending.exitIds,
+        publishedEntrantIds: [],
+        newlyMountedIds: [],
+        runs: [],
+      });
+      pending.exitIndex = 0;
+      try {
+        expect(
+          removeOrderedVisibilityExits(pending, options, {
+            deadline: 8,
+            now: () => 0,
+            isExit: () => true,
+            onRemoved: removed,
+            onSkipped: skipped,
+          }),
+        ).toBe(true);
+        expect(pending.exitIds).toEqual([partial.id, "r-0", "r-1", "stale"]);
+        expect(removed.mock.calls.map(([id]) => id)).toEqual([partial.id, "r-0", "r-1"]);
+        expect(removals.map((spy) => spy.mock.calls.length)).toEqual([1, 1, 1, 0]);
+        expect(skipped).toHaveBeenCalledExactlyOnceWith("stale");
+        expect(releaseId).toHaveBeenCalledTimes(3);
+        expect(options.mounted.size).toBe(0);
+        expect(get.mock.calls.every(([id]) => id !== "consumed")).toBe(true);
+        expect(get.mock.calls.length).toBeLessThanOrEqual(32);
+      } finally {
+        for (const spy of removals) spy.mockRestore();
+      }
+    },
+  );
 });
 
 describe("sliced scene exit cleanup", () => {
@@ -266,23 +270,25 @@ describe("sliced scene exit cleanup", () => {
     harness.renderer.destroy();
   });
 
-  it("publishes the new viewport while retaining obsolete offscreen roots", () => {
+  it("publishes the new viewport before detaching obsolete roots in bounded cleanup", () => {
     const next = fakeRectangleRecord("new-visible", 200, 10, 1_000);
     const harness = setup([...rectangles(200), next]);
     expect(harness.renderer.mountedCount).toBe(200);
     harness.renderer.setViewport({ height: 500, left: 0, top: 1_000, width: 500 });
     harness.scheduler.runNext();
-    expect(harness.renderer.mountedIds("content")).toEqual([next.id]);
-    expect(harness.renderer.mountedCount).toBe(1);
-    expect(harness.scheduler.pendingCount).toBe(0);
+    expect(harness.renderer.mountedIds("content")).toContain(next.id);
+    expect(harness.renderer.mountedCount).toBeGreaterThan(1);
+    expect(harness.renderer.mountedCount).toBeLessThanOrEqual(201);
+    expect(harness.scheduler.pendingCount).toBeGreaterThan(0);
     const newNode = harness.content.nodes.find((node) =>
       node.attributes.get("d")?.includes("1000"),
     );
     expect(newNode).toBeDefined();
     harness.scheduler.runAll();
-    expect(harness.content.nodes).toHaveLength(201);
-    expect(harness.content.nodes[200]).toBe(newNode);
-    expect(harness.renderer.instrumentation().domExits).toBe(0);
+    expect(harness.content.nodes).toEqual([newNode]);
+    expect(harness.renderer.mountedIds("content")).toEqual([next.id]);
+    expect(harness.renderer.instrumentation().domExits).toBe(200);
+    expect(harness.renderer.instrumentation().detachedCacheEntries).toBe(200);
     harness.renderer.destroy();
   });
 });
@@ -394,6 +400,39 @@ describe("interrupted scene exit cleanup", () => {
     if (undo) expect(harness.content.nodes.slice(-2)).toEqual(original.slice(-2));
     harness.renderer.destroy();
   });
+
+  it.each([false, true])(
+    "retargets partially detached multipart culling with return=%s",
+    (returns) => {
+      const record = createSceneRecord(arrow(), 63);
+      const next = fakeRectangleRecord("next", 64, 10, 10_000);
+      const final = fakeRectangleRecord("final", 65, 10, 20_000);
+      const records = [...rectangles(63), record];
+      const harness = setup([...records, next, final]);
+      const original = [...harness.content.nodes];
+      expect(original).toHaveLength(65);
+      harness.renderer.resetInstrumentation();
+      harness.renderer.setViewport({ height: 500, left: 0, top: 10_000, width: 500 });
+      harness.scheduler.runNext();
+      expect(harness.content.nodes).toHaveLength(2);
+      expect(harness.renderer.mountedCount).toBe(2);
+      expect(harness.renderer.mountedIds("content")).toEqual([next.id]);
+      expect(harness.renderer.instrumentation().detachedCacheEntries).toBe(63);
+      if (returns) harness.renderer.setViewport({ height: 500, left: 0, top: 0, width: 500 });
+      else harness.renderer.setViewport({ height: 500, left: 0, top: 20_000, width: 500 });
+      harness.scheduler.runAll();
+      if (returns) expect(harness.content.nodes).toEqual(original);
+      else expect(original.every((node) => node.parent === undefined)).toBe(true);
+      expect(harness.renderer.mountedCount).toBe(returns ? 64 : 1);
+      expect(harness.renderer.mountedIds("content")).toEqual(
+        returns ? records.map(({ id }) => id) : [final.id],
+      );
+      expect(harness.renderer.instrumentation().geometryBuilds).toBe(returns ? 1 : 2);
+      harness.renderer.destroy();
+      expect(harness.scheduler.pendingCount).toBe(0);
+      expect(harness.renderer.memoryUsage().pathCacheBytes).toBe(0);
+    },
+  );
 });
 
 describe("retained DOM order after rank changes", () => {

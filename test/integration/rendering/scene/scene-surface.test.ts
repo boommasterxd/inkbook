@@ -7,6 +7,7 @@ import { SceneSurface } from "../../../../src/rendering/scene/scene-surface";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import { PORTABLE_PALETTE_V1 } from "../../../../src/domain/schema/public";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { sceneSurfaceZoomFixture } from "../../../fixtures/rendering/scene-surface-zoom";
 
 const scenes: SceneDom[] = [];
 const surfaces: SceneSurface[] = [];
@@ -227,6 +228,38 @@ describe("scene theme and local presentation styles", () => {
   });
 });
 
+it("invalidates each foreign theme change while coalescing reads and preserving owned zoom", () => {
+  const h = sceneSurfaceZoomFixture();
+  const initialVersion = h.renderer.layoutInvalidationVersion;
+  try {
+    h.foreignStyle(h.container, "padding-top", "12px");
+    h.deliver();
+    expect(h.renderer.layoutInvalidationVersion).toBe(initialVersion + 1);
+    h.foreignClass(h.root);
+    h.deliver();
+    expect(h.renderer.layoutInvalidationVersion).toBe(initialVersion + 2);
+    h.renderer.setScheme("light");
+    h.renderer.setScheme("light");
+    expect(h.renderer.layoutInvalidationVersion).toBe(initialVersion + 4);
+    expect(h.read).not.toHaveBeenCalled();
+    expect(h.scheduler.pendingCount).toBe(1);
+    h.scheduler.runAll();
+    expect(h.read).toHaveBeenCalledOnce();
+    h.read.mockClear();
+    h.zoom(200);
+    h.zoom(300);
+    h.deliver();
+    expect(h.renderer.layoutInvalidationVersion).toBe(initialVersion + 4);
+    expect(h.scheduler.pendingCount).toBe(0);
+    h.resize(300);
+    h.scheduler.runAll();
+    expect(h.renderer.layoutInvalidationVersion).toBe(initialVersion + 4);
+    expect(h.read).not.toHaveBeenCalled();
+  } finally {
+    h.release();
+  }
+});
+
 describe("scene observer work and cleanup", () => {
   it("writes only changed fractional content sizes and bridged tokens in the central write phase", () => {
     let resize: ResizeObserverCallback = () => undefined;
@@ -292,6 +325,7 @@ describe("scene observer work and cleanup", () => {
     expect(propertyWrites("height")).toBe(1);
     mutation([], {} as MutationObserver);
     mutation([], {} as MutationObserver);
+    expect(invalidate.mock.calls).toEqual([[], [true], [true]]);
     surface.read();
     surface.write();
     expect(hostReads).toHaveBeenCalledTimes(1);
@@ -306,7 +340,7 @@ describe("scene observer work and cleanup", () => {
     surface.write();
     expect(disconnectResize).toHaveBeenCalledTimes(1);
     expect(disconnectTheme).toHaveBeenCalledTimes(1);
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledTimes(3);
     expect(failure).not.toHaveBeenCalled();
   });
 });
@@ -362,7 +396,7 @@ describe("owned root publication and input failure", () => {
     const reads = vi.spyOn(window, "getComputedStyle");
     reads.mockClear();
     const invalidated = new Promise<void>((resolve) => {
-      scene.onSurfaceInvalidated = resolve;
+      scene.onSurfaceInvalidated = () => resolve();
     });
     root.classList.remove("inkbook-active-preparing");
     scene.revealSurface();

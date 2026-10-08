@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
 import { DetachedSceneElementCache } from "../../../../src/rendering/scene/detached-element-cache";
 import { SceneDom } from "../../../../src/rendering/scene/scene-dom";
@@ -174,7 +175,12 @@ it.each([0, 8])(
                 },
                 rank,
               )
-            : fakeRectangleRecord(`publication-${rank}`, rank, 20, rank < 192 ? 1_030 : 10_000);
+            : fakeRectangleRecord(
+                `publication-${rank}`,
+                rank,
+                20,
+                rank < SCENE_PUBLICATION_ROOTS_PER_FRAME ? 1_030 : 10_000,
+              );
       store.records.set(record.id, record);
     }
     const { renderer, scheduler, content } = createPublicationScene(store, INITIAL);
@@ -200,20 +206,24 @@ it.each([0, 8])(
         steps = 0;
         scheduler.runNext();
         frames.push(roots);
-        expect(roots).toBeLessThanOrEqual(192);
+        expect(roots).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
         if (cost > 0) expect(steps).toBeLessThanOrEqual(1);
         const arrowNodes = content.nodes.filter((node) =>
           arrowPaths.has(node.attributes.get("d") ?? ""),
         );
         expect([0, 2]).toContain(arrowNodes.length);
       }
-      expect(frames.reduce((sum, count) => sum + count, 0)).toBe(193);
+      expect(frames.reduce((sum, count) => sum + count, 0)).toBe(
+        SCENE_PUBLICATION_ROOTS_PER_FRAME + 1,
+      );
       const pressureRoot = content.nodes.find((node) => node.tagName === "g");
       expect(pressureRoot?.attributes.get("opacity")).toBe("0.25");
       expect(Math.max(...publicationCounts)).toBeLessThanOrEqual(17);
       expect(Math.max(...publicationCounts)).toBeGreaterThan(1);
-      if (cost === 0) expect(frames).toContain(192);
-      expect(renderer.mountedIds("content")).toEqual([...store.records.keys()].slice(0, 192));
+      if (cost === 0) expect(frames).toContain(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+      expect(renderer.mountedIds("content")).toEqual(
+        [...store.records.keys()].slice(0, SCENE_PUBLICATION_ROOTS_PER_FRAME),
+      );
     } finally {
       insert.mockRestore();
       renderer.destroy();

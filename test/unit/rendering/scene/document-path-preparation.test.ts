@@ -10,6 +10,7 @@ import {
   completeDocumentPaths,
   createDocumentPathFixture,
   deferDocumentPaths,
+  pauseDocumentPaths,
 } from "../../../fixtures/rendering/document-path-preparation";
 
 it("walks the current band order lazily and skips cached contours without local construction", async () => {
@@ -62,17 +63,106 @@ it("preserves cursor progress through input cancellation and rejects late worker
   expect(fixture.work.orderReads).toBe(MAX_PREPARED_SCENE_PATH_IDS);
   remote.observer().onProgress([path]);
   fixture.ready.mockClear();
+  pauseDocumentPaths(fixture, remote.signal());
   fixture.preparation.pause();
-  expect(remote.signal().aborted).toBe(true);
-  remote.observer().onProgress([path]);
-  remote.finish([path]);
+  const late = { ...path, id: fixture.elements[1]!.id };
+  remote.observer().onProgress([path, late]);
+  remote.finish([path, late]);
   await Promise.resolve();
   expect(fixture.ready).not.toHaveBeenCalled();
   expect(fixture.cache.has(path.id, fixture.store.get(path.id)!.geometryVersion)).toBe(false);
   fixture.store.prepareScenePaths = fixture.prepare;
   await completeDocumentPaths(fixture);
   expect(fixture.work.orderReads).toBe(MAX_PREPARED_SCENE_PATH_IDS + 1);
-  expect(fixture.work.builds).toBe(MAX_PREPARED_SCENE_PATH_IDS + 1);
+  expect(fixture.work.builds).toBe(MAX_PREPARED_SCENE_PATH_IDS);
+  expect(fixture.prepare.mock.calls.flatMap(([ids]) => ids)).not.toContain(path.id);
+  expect(fixture.cache.has(path.id, fixture.store.get(path.id)!.geometryVersion)).toBe(true);
+  fixture.preparation.release();
+  fixture.store.release();
+});
+
+it.each(["geometry", "delete", "paint"] as const)(
+  "invalidates only the affected delivered contour after a paused %s change",
+  async (change) => {
+    const fixture = createDocumentPathFixture();
+    const remote = deferDocumentPaths(fixture);
+    fixture.preparation.prepare(Infinity, () => 0);
+    remote
+      .observer()
+      .onProgress(
+        fixture.elements.map(({ id }) => ({ id, parts: [{ d: "M0 0", paint: "fill" as const }] })),
+      );
+    fixture.preparation.pause();
+    const element = fixture.elements[1]!;
+    if (change === "delete") fixture.domain.remove([element.id]);
+    else if (change === "geometry")
+      fixture.domain.replace(element.id, { ...element, style: { ...element.style, width: 4 } });
+    fixture.preparation.invalidate({
+      affected: [
+        {
+          id: element.id,
+          domains: [change === "delete" ? "geometry" : change],
+          ...(change === "delete" ? { after: null } : {}),
+        },
+      ],
+    });
+    fixture.store.prepareScenePaths = fixture.prepare;
+    await completeDocumentPaths(fixture);
+    expect(fixture.prepare.mock.calls.flatMap(([ids]) => ids)).toEqual(
+      change === "geometry" ? [element.id] : [],
+    );
+    for (const unchanged of [fixture.elements[0]!, fixture.elements[2]!])
+      expect(
+        fixture.cache.has(unchanged.id, fixture.store.get(unchanged.id)!.geometryVersion),
+      ).toBe(true);
+    expect(fixture.preparation.memoryUsage()).toBe(0);
+    fixture.preparation.release();
+    fixture.store.release();
+  },
+);
+
+it("adopts retained delivery only within the admitted deadline and releases it without late callbacks", async () => {
+  const fixture = createDocumentPathFixture();
+  const remote = deferDocumentPaths(fixture);
+  fixture.preparation.prepare(Infinity, () => 0);
+  const paths = fixture.elements.map(({ id }) => ({
+    id,
+    parts: [{ d: "M0 0", paint: "fill" as const }],
+  }));
+  remote.observer().onProgress(paths);
+  const get = vi.spyOn(fixture.store, "get");
+  const adopt = vi.spyOn(fixture.cache, "retainSpeculative");
+  fixture.ready.mockClear();
+  fixture.preparation.pause();
+  expect(get).not.toHaveBeenCalled();
+  expect(fixture.preparation.prepare(0, () => 0)).toBe(true);
+  expect(adopt).not.toHaveBeenCalled();
+  let time = 0;
+  expect(fixture.preparation.prepare(1, () => time++)).toBe(true);
+  expect(adopt).toHaveBeenCalledOnce();
+  fixture.preparation.release();
+  expect(fixture.preparation.memoryUsage()).toBe(0);
+  remote.observer().onProgress(paths);
+  remote.finish(paths);
+  await Promise.resolve();
+  expect(fixture.ready).not.toHaveBeenCalled();
+  expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(adopt).toHaveBeenCalledOnce();
+  fixture.store.release();
+});
+
+it("drops a retained contour when it becomes stale without a delivered mutation delta", async () => {
+  const fixture = createDocumentPathFixture(1);
+  const remote = deferDocumentPaths(fixture);
+  fixture.preparation.prepare(Infinity, () => 0);
+  const element = fixture.elements[0]!;
+  remote.observer().onProgress([{ id: element.id, parts: [{ d: "M0 0", paint: "fill" }] }]);
+  fixture.preparation.pause();
+  fixture.domain.replace(element.id, { ...element, style: { ...element.style, width: 4 } });
+  fixture.store.prepareScenePaths = fixture.prepare;
+  await completeDocumentPaths(fixture);
+  expect(fixture.prepare.mock.calls.map(([ids]) => ids)).toEqual([[element.id]]);
+  expect(fixture.cache.has(element.id, fixture.store.get(element.id)!.geometryVersion)).toBe(true);
   fixture.preparation.release();
   fixture.store.release();
 });
@@ -187,6 +277,31 @@ it("stops when a nonempty cache budget cannot retain the returned contour", asyn
   expect(fixture.cache.speculativeCapacityBytes()).toBeGreaterThan(0);
   expect(fixture.cache.statistics().entries).toBe(0);
   expect(fixture.work.orderReads).toBe(1);
+  fixture.preparation.release();
+  fixture.store.release();
+});
+
+it("keeps current cache owners when foreground work consumes a paused contour's spare capacity", async () => {
+  const cache = new ScenePathCache(2, 4096);
+  const fixture = createDocumentPathFixture(1, cache);
+  const remote = deferDocumentPaths(fixture);
+  fixture.preparation.prepare(Infinity, () => 0);
+  const path = fixture.build([fixture.elements[0]!.id]);
+  remote.observer().onProgress(path);
+  fixture.preparation.pause();
+  const owners = [indexedStroke(1).id, indexedStroke(2).id];
+  for (const id of owners) cache.retain(id, 1, [{ d: "M0 0", paint: "fill" }]);
+  const before = cache.statistics();
+  expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(fixture.preparation.needsWork).toBe(false);
+  expect(cache.statistics()).toEqual(before);
+  expect(owners.every((id) => cache.has(id, 1))).toBe(true);
+  expect(fixture.preparation.memoryUsage()).toBe(128);
+  for (const id of owners) cache.invalidate(id);
+  fixture.preparation.pause();
+  fixture.store.prepareScenePaths = fixture.prepare;
+  await completeDocumentPaths(fixture);
+  expect(fixture.prepare.mock.calls.map(([ids]) => ids)).toEqual([[fixture.elements[0]!.id]]);
   fixture.preparation.release();
   fixture.store.release();
 });

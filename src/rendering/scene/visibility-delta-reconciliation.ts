@@ -165,18 +165,23 @@ function stageDeltaCandidates(
 ): MountYieldReason | undefined {
   const delta = pending.delta;
   if (delta === undefined) return undefined;
-  const building = delta.priority?.build(slice);
-  if (building !== undefined) return building;
-  while (delta.index < delta.ids.length || (delta.priority?.count ?? 0) > 0) {
+  while (true) {
     const blocked = slice.blockingReason();
     if (blocked !== undefined) return blocked;
-    if (delta.index === delta.ids.length) delta.ids.push(delta.priority!.take()!);
+    if (delta.index === delta.ids.length) {
+      const building = delta.priority?.build(slice, true);
+      if (building !== undefined) return building;
+      const blockedAfterBuild = slice.blockingReason();
+      if (blockedAfterBuild !== undefined) return blockedAfterBuild;
+      const next = delta.priority?.take();
+      if (next === undefined) return undefined;
+      delta.ids.push(next);
+    }
     const id = delta.ids[delta.index]!;
     const reason = stageDeltaEntry(id, pending, slice, previews, options);
     if (reason !== undefined) return reason;
     delta.index += 1;
   }
-  return undefined;
 }
 
 function stageDeltaEntry(

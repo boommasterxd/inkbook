@@ -183,6 +183,7 @@ export class NavigationPathPreparation {
   private retainRemote(target: Bounds, envelope: Bounds): void {
     const remote = this.#remote;
     if (remote === undefined) return;
+    let shrunk = false;
     for (const [id, version] of remote.versions) {
       const record = this.store.get(id);
       if (
@@ -191,12 +192,13 @@ export class NavigationPathPreparation {
       )
         continue;
       remote.versions.delete(id);
+      shrunk = true;
     }
     for (let index = remote.ready.length - 1; index >= 0; index -= 1) {
       if (!remote.versions.has(remote.ready[index]!.id)) remote.ready.splice(index, 1);
     }
     if (remote.versions.size === 0) this.discardRemote();
-    else remote.retarget?.([...remote.versions.keys()]);
+    else if (shrunk) remote.retarget?.([...remote.versions.keys()]);
   }
 
   private admit(id: string): void {

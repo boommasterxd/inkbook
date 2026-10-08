@@ -2,6 +2,10 @@ import { expect, it, vi } from "vitest";
 
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
+import { ViewportPreviewSelection } from "../../../../src/rendering/scene/preview-transform-selection";
+import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
+import type { SceneElementRecord } from "../../../../src/rendering/scene/types";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import {
   createSceneFixture,
@@ -9,6 +13,7 @@ import {
   createViewportRectangleStore,
 } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
+import { expectReleasedPublicationScene } from "../../../fixtures/rendering/scene-publication";
 import {
   FakeNode,
   FakeSceneStore,
@@ -18,7 +23,68 @@ import {
 
 const VIEWPORT = { height: 100, left: 0, top: 0, width: 100 };
 
-it("retires invalidated cached roots before fresh publication on an immediate return", () => {
+function setNavigationPreview(
+  renderer: SvgSceneRenderer,
+  record: SceneElementRecord,
+  kind: "immediate" | "progressive" | "transform",
+  version: number,
+): void {
+  if (kind === "transform") renderer.setPreviewTransform([record.id], "translate(5 0)", version);
+  else if (kind === "progressive")
+    renderer.setProgressiveElementPreviews([record.id], () => record.element, version);
+  else renderer.setElementPreviews([record.element], version);
+}
+
+it.each(["immediate", "progressive", "transform"] as const)(
+  "rechecks an active %s preview across published cleanup targets and its return",
+  (kind) => {
+    const store = createViewportRectangleStore(300, () => 50);
+    const protectedRecord = fakeRectangleRecord("protected", 300, 20, -301);
+    const middle = fakeRectangleRecord("middle", 301, 20, 1_200);
+    const final = fakeRectangleRecord("final", 302, 20, 2_200);
+    for (const record of [protectedRecord, middle, final]) store.records.set(record.id, record);
+    const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
+    scheduler.runAll();
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const protectedNode = content.nodes[content.nodes.length - 1]!;
+    const removal = vi.spyOn(protectedNode, "remove");
+    try {
+      setNavigationPreview(renderer, protectedRecord, kind, 1);
+      scheduler.runAll();
+      renderer.setViewport({ ...VIEWPORT, top: 1_000 });
+      scheduler.runNext();
+      expect(renderer.mountedIds("content")).toEqual([middle.id]);
+      expect(renderer.mountedCount).toBe(238);
+      renderer.setViewport({ ...VIEWPORT, top: 2_000 });
+      scheduler.runAll();
+      expect(renderer.mountedIds("content")).toEqual([final.id]);
+      expect(renderer.mountedCount).toBe(2);
+      expect(protectedNode.parent).toBe(content);
+      expect(removal).not.toHaveBeenCalled();
+      renderer.setViewport(VIEWPORT);
+      scheduler.runAll();
+      expect(renderer.mountedIds("content")).toContain(protectedRecord.id);
+      expect(renderer.mountedCount).toBe(301);
+      expect(protectedNode.parent).toBe(content);
+      expect(removal).not.toHaveBeenCalled();
+      renderer.setViewport({ ...VIEWPORT, top: 2_000 });
+      scheduler.runAll();
+      setNavigationPreview(renderer, final, kind, 2);
+      scheduler.runAll();
+      expect(removal).toHaveBeenCalledOnce();
+      expect(protectedNode.parent).toBeUndefined();
+      expect(renderer.mountedIds("content")).toEqual([final.id]);
+      expect(renderer.mountedCount).toBe(1);
+      expect(content.nodes).toHaveLength(1);
+    } finally {
+      removal.mockRestore();
+      renderer.destroy();
+    }
+    expectReleasedPublicationScene(renderer, scheduler);
+  },
+);
+
+it("releases invalidated detached roots before fresh publication on an immediate return", () => {
   const store = new FakeSceneStore();
   const original = Array.from({ length: 130 }, (_, rank) =>
     fakeRectangleRecord(`stale-${rank}`, rank, 10 + rank * 25),
@@ -28,11 +94,11 @@ it("retires invalidated cached roots before fresh publication on an immediate re
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   scheduler.runAll();
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const oldPaths = content.nodes.map((node) => node.attributes.get("d")!);
   renderer.setViewport({ ...viewport, top: 10_000 });
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(0);
-  expect(content.nodes).toHaveLength(130);
-  const oldPaths = content.nodes.map((node) => node.attributes.get("d")!);
+  expect(content.nodes).toHaveLength(0);
   const replacements = original.map((record) => {
     if (record.element.kind !== "rectangle") throw new Error("Expected a rectangle.");
     const next = { ...record, geometryVersion: 2, element: { ...record.element, width: 21 } };
@@ -79,7 +145,7 @@ it("retargets a pending viewport without recreating still-visible staged nodes",
   const { nodes, renderer, scheduler, store } = createNavigationHarness();
   store.records.set("edge", fakeRectangleRecord("edge", 1_201, 190));
   scheduler.runNext();
-  expect(renderer.mountedCount).toBe(192);
+  expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
   const prepared = nodes.mock.calls.length;
   expect(prepared).toBeGreaterThan(0);
   expect(prepared).toBeLessThan(store.records.size);
@@ -102,7 +168,7 @@ it("drops staged entries outside the new viewport and releases an interrupted mo
   renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(0);
-  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(192);
+  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(0);
 
   renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
   scheduler.runNext();
@@ -168,8 +234,8 @@ it("cleans an obsolete delta exit while a cold entrant is suspended, then cancel
   renderer.setViewport({ height: 100, left: 0, top: 0, width: 120 });
   scheduler.runAll(30);
   expect(renderer.mountedIds("content")).toEqual(["old"]);
-  expect(renderer.instrumentation().domExits).toBe(0);
-  expect(renderer.instrumentation().domEntrants).toBe(1);
+  expect(renderer.instrumentation().domExits).toBe(1);
+  expect(renderer.instrumentation().domEntrants).toBe(2);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
 });
@@ -268,20 +334,10 @@ it.each(["immediate", "progressive", "transform"] as const)(
     const next = fakeRectangleRecord("next", 1, 20, 10_000);
     store.records.set(old.id, old);
     const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
-    const setPreview = (id: string, version: number) => {
-      const element = id === old.id ? old.element : next.element;
-      if (kind === "transform") {
-        renderer.setPreviewTransform([id], "translate(5 0)", version);
-      } else if (kind === "progressive") {
-        renderer.setProgressiveElementPreviews([id], () => element, version);
-      } else {
-        renderer.setElementPreviews([element], version);
-      }
-    };
     try {
       scheduler.runAll();
       expect(renderer.mountedIds("content")).toEqual([old.id]);
-      setPreview(old.id, 1);
+      setNavigationPreview(renderer, old, kind, 1);
       scheduler.runAll();
       expect(renderer.mountedIds("content")).toEqual([old.id]);
       renderer.setViewport({ ...VIEWPORT, top: 120 });
@@ -289,10 +345,10 @@ it.each(["immediate", "progressive", "transform"] as const)(
       expect(renderer.mountedCount).toBe(1);
       expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(1);
       store.records.set(next.id, next);
-      setPreview(next.id, 2);
+      setNavigationPreview(renderer, next, kind, 2);
       scheduler.runAll();
       expect(renderer.mountedCount).toBe(0);
-      expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(1);
+      expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(0);
       expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
     } finally {
       renderer.destroy();
@@ -305,45 +361,55 @@ it.each(["progressive", "transform"] as const)(
   "releases a deferred exit when %s preview selection changes with the viewport context",
   (kind) => {
     const store = new FakeSceneStore();
-    const old = fakeRectangleRecord("old-preview", 0, 20, -301);
+    const old = fakeRectangleRecord("old-preview", 0, 20, 50);
     store.records.set(old.id, old);
     const ids = [old.id];
     for (let rank = 1; rank <= 256; rank += 1) {
-      const record = fakeRectangleRecord(`candidate-${rank}`, rank, 190, 400);
+      const record = fakeRectangleRecord(`candidate-${rank}`, rank, 190, 800);
       store.records.set(record.id, record);
       ids.push(record.id);
     }
     const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
+    const selection = vi.spyOn(ViewportPreviewSelection.prototype, "select");
+    const selectedIds = (): readonly string[] | undefined =>
+      selection.mock.results[selection.mock.results.length - 1]?.value as
+        readonly string[] | undefined;
     try {
       scheduler.runAll();
-      const oldNode = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
       if (kind === "progressive") {
         renderer.setProgressiveElementPreviews(ids, (id) => store.get(id)?.element, 1);
       } else {
         renderer.setPreviewTransform(ids, "translate(5 0)", 1);
       }
       scheduler.runAll();
-      renderer.setViewport({ ...VIEWPORT, top: 120 });
+      expect(renderer.mountedIds("content")).toEqual([old.id]);
+      expect(selectedIds()).toEqual([old.id]);
+      const oldNode = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
+      if (kind === "transform") expect(oldNode.attributes.get("transform")).toBe("translate(5 0)");
+      renderer.setViewport({ ...VIEWPORT, top: 500 });
       scheduler.runAll();
+      expect(selectedIds()).toEqual([old.id]);
+      expect(renderer.mountedIds("content")).toEqual([]);
+      expect(renderer.mountedCount).toBe(1);
       expect(oldNode.parent).toBeDefined();
-      if (kind === "progressive") {
-        renderer.setViewport({ ...VIEWPORT, top: 250 });
-      } else {
-        renderer.setCamera({ x: -300, zoom: 1 });
-      }
+      renderer.setViewport({ ...VIEWPORT, top: 650 });
+      if (kind === "transform") renderer.setCamera({ x: -300, zoom: 1 });
       scheduler.runAll(20);
+      expect(selectedIds()).toHaveLength(256);
+      expect(selectedIds()).not.toContain(old.id);
       expect({
         domExits: renderer.instrumentation().domExits,
         mountedCount: renderer.mountedCount,
         pendingFrames: scheduler.pendingCount,
       }).toEqual({
-        domExits: 0,
+        domExits: 1,
         mountedCount: 0,
         pendingFrames: 0,
       });
-      expect(oldNode.parent).toBeDefined();
+      expect(oldNode.parent).toBeUndefined();
       expect(oldNode.attributes.has("transform")).toBe(false);
     } finally {
+      selection.mockRestore();
       renderer.destroy();
     }
     expect(scheduler.pendingCount).toBe(0);

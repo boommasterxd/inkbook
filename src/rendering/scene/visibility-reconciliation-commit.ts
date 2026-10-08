@@ -47,10 +47,6 @@ export function removeOrderedVisibilityExits(
   options: Parameters<typeof removeVisibilityExits>[1],
   frame: Parameters<typeof removeVisibilityExits>[2],
 ): boolean {
-  // Ownership-only exits need no physical sorting; admit their existing bounded cursor first.
-  if (!pending.exitOrderPrepared && options.detachedCache?.retentionEnabled) {
-    if (removeVisibilityExits(pending, options, { ...frame, retainedOnly: true })) return true;
-  }
   if (
     !pending.exitOrderPrepared &&
     pending.exitScanComplete &&

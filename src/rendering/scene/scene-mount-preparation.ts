@@ -1,4 +1,5 @@
 import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
+import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
 import {
   createMountedElement,
   updatePreviewTransform,
@@ -35,6 +36,7 @@ interface MountPreparationOptions {
   readonly detachedCache?: DetachedSceneElementCache;
   readonly scheduler?: WorkScheduler;
   readonly isViewport?: (record: SceneElementRecord) => boolean;
+  readonly takePreparedPath?: (record: SceneElementRecord) => readonly SvgPathPart[] | undefined;
 }
 
 /** Owns one cancellable cold stroke build, never a queue of retained documents. */
@@ -73,10 +75,6 @@ export class SceneMountPreparation {
 
   public get pendingId(): string | undefined {
     return this.#pending?.id;
-  }
-
-  public get readyContours(): number {
-    return this.#remote.readyCount;
   }
 
   public get waiting(): boolean {
@@ -149,8 +147,7 @@ export class SceneMountPreparation {
   ): readonly SvgPathPart[] | undefined {
     const { pathCache, store } = this.options;
     const pressure = store.pressureGeometry?.(record.id, record.geometryVersion);
-    const cached =
-      pathCache.take(record.id, record.geometryVersion) ?? pathCache.read(record.element, pressure);
+    const cached = this.cachedPath(record, pressure);
     if (cached !== undefined) {
       this.#remote.release(record.id, this.options.upcomingIds);
       if (this.#pending?.id === record.id) this.cancelLocal();
@@ -178,5 +175,21 @@ export class SceneMountPreparation {
     pathCache.completePreparation(record.element, parts);
     this.#pending = undefined;
     return parts;
+  }
+
+  private cachedPath(
+    record: SceneElementRecord,
+    pressure: PreparedPressureGeometryPort | undefined,
+  ): readonly SvgPathPart[] | undefined {
+    const { pathCache } = this.options;
+    const cached =
+      pathCache.take(record.id, record.geometryVersion) ?? pathCache.read(record.element, pressure);
+    if (cached !== undefined) return cached;
+    const prepared = this.options.takePreparedPath?.(record);
+    if (prepared !== undefined) {
+      localPressureGeometry(record.element, pressure)?.publishPath?.(prepared);
+      pathCache.completePreparation(record.element, prepared);
+    }
+    return prepared;
   }
 }

@@ -4,6 +4,7 @@ import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor
 import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
 import { SceneEntrantPriority } from "../../../../src/rendering/scene/scene-entrant-priority";
 import { MountSlice } from "../../../../src/rendering/scene/mount-slice";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import {
   createPendingScenePathStore,
@@ -42,7 +43,9 @@ it("publishes the actual viewport before highlight overscan within a 10,000-elem
       indexedStroke(rank).id,
       rank,
       20,
-      rank < 256 ? 30 + rank / 10 : 10_000,
+      rank < SCENE_PUBLICATION_ROOTS_PER_FRAME + 64
+        ? 36 + Math.floor(((rank - 64) * 19) / (SCENE_PUBLICATION_ROOTS_PER_FRAME - 1))
+        : 10_000,
     ).element;
   });
   const domain = new ElementStore(elements);
@@ -59,18 +62,22 @@ it("publishes the actual viewport before highlight overscan within a 10,000-elem
   const create = vi.spyOn(document, "createElementNS");
   try {
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(192);
+    expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     expect(renderer.mountedIds("highlight")).toEqual([]);
-    expect(renderer.mountedIds("content")).toHaveLength(192);
+    expect(renderer.mountedIds("content")).toHaveLength(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     flushBoundedScenePublication(renderer, scheduler);
-    expect(renderer.mountedCount).toBe(256);
+    expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME + 64);
     expect(renderer.mountedIds("highlight")).toHaveLength(64);
-    expect(renderer.mountedIds("content")).toHaveLength(192);
-    expect(create.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(256);
-    expect(work.indexedVisits).toBeLessThanOrEqual(512);
+    expect(renderer.mountedIds("content")).toHaveLength(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    expect(create.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(
+      SCENE_PUBLICATION_ROOTS_PER_FRAME + 64,
+    );
+    expect(work.indexedVisits).toBeLessThanOrEqual((SCENE_PUBLICATION_ROOTS_PER_FRAME + 64) * 2);
     expect(query).toHaveBeenCalledOnce();
-    expect(get.mock.calls.length).toBeLessThanOrEqual(1_536);
-    expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(1_536);
+    expect(get.mock.calls.length).toBeLessThanOrEqual((SCENE_PUBLICATION_ROOTS_PER_FRAME + 64) * 6);
+    expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(
+      (SCENE_PUBLICATION_ROOTS_PER_FRAME + 64) * 6,
+    );
   } finally {
     renderer.destroy();
     scene.release();
@@ -176,7 +183,7 @@ it.each([
     try {
       renderer.setViewport({ height: 100, left: 0, top: exact ? 400 : 100, width: 100 });
       scheduler.runNext();
-      expect(renderer.mountedCount).toBe(busy ? 16 : 192);
+      expect(renderer.mountedCount).toBe(busy ? 16 : SCENE_PUBLICATION_ROOTS_PER_FRAME);
       if (exact || busy) expect(prepare).not.toHaveBeenCalled();
       else expect(prepare).toHaveBeenCalledOnce();
       if (busy) {
@@ -187,7 +194,9 @@ it.each([
       while (renderer.mountedCount < 600) {
         const before = renderer.instrumentation().domRootsPublished;
         scheduler.runNext();
-        expect(renderer.instrumentation().domRootsPublished - before).toBeLessThanOrEqual(192);
+        expect(renderer.instrumentation().domRootsPublished - before).toBeLessThanOrEqual(
+          SCENE_PUBLICATION_ROOTS_PER_FRAME,
+        );
       }
       expect(prepare).toHaveBeenCalledOnce();
       expect(prepare.mock.calls[0]![0]).toEqual([reserveStroke.id]);
@@ -348,7 +357,7 @@ it.each([
   },
 );
 
-it("finishes logical exits without detaching cached roots behind new publication", () => {
+it("detaches exits in bounded frames after the first new publication", () => {
   const store = new FakeSceneStore();
   for (let rank = 0; rank < 768; rank += 1) {
     const id = `cleanup-${rank}`;
@@ -375,7 +384,7 @@ it("finishes logical exits without detaching cached roots behind new publication
     expect(roots).toBeLessThanOrEqual(16);
     expect(scheduler.time).toBeLessThan(scheduler.workScheduler.deadline());
     frameRoots += roots;
-    expect(frameRoots).toBeLessThanOrEqual(192);
+    expect(frameRoots).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     scheduler.time += 8;
   });
   try {
@@ -393,23 +402,29 @@ it("finishes logical exits without detaching cached roots behind new publication
         mountedCount: renderer.mountedCount,
         pendingCount: scheduler.pendingCount,
       }),
-    ).toBe(256);
-    expect(oldRemovals).toBe(0);
+    ).toBe(64);
+    expect(oldRemovals).toBe(64);
     expect(renderer.instrumentation().domExits).toBe(oldRemovals);
     expect(renderer.instrumentation().domEntrants).toBeLessThanOrEqual(66);
-    expect([...oldNodes].filter((node) => node.parent === content)).toHaveLength(256);
-    insertion.mockRestore();
-    remove.mockRestore();
-    scheduler.runAll();
+    expect([...oldNodes].filter((node) => node.parent === content)).toHaveLength(192);
+    for (let frames = 0; scheduler.pendingCount > 0; frames += 1) {
+      expect(frames).toBeLessThan(400);
+      frameRoots = 0;
+      const before = oldRemovals;
+      scheduler.runNext();
+      expect(oldRemovals - before).toBeLessThanOrEqual(64);
+    }
     expect(renderer.mountedCount).toBe(512);
     expect(renderer.mountedIds("content")).toEqual(
       Array.from({ length: 512 }, (_, rank) => `cleanup-${rank + 256}`),
     );
-    expect(renderer.instrumentation().domExits).toBe(0);
+    expect(oldRemovals).toBe(256);
+    expect([...oldNodes].every((node) => node.parentNode === null)).toBe(true);
+    expect(renderer.instrumentation().domExits).toBe(256);
     expect(renderer.instrumentation().detachedCacheEntries).toBe(256);
-    expect(content.nodes).toHaveLength(768);
-    expect(new Set(content.nodes).size).toBe(768);
-    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+    expect(content.nodes).toHaveLength(512);
+    expect(new Set(content.nodes).size).toBe(512);
+    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(1024 * 1024);
   } finally {
     insertion.mockRestore();
     remove.mockRestore();
@@ -420,22 +435,23 @@ it("finishes logical exits without detaching cached roots behind new publication
 
 it("finishes partially scanned old mounts while remote geometry waits, then stops scene polling", () => {
   const { store, signals } = createPendingScenePathStore();
-  for (let rank = 0; rank < 256; rank += 1) {
+  const oldCount = SCENE_PUBLICATION_ROOTS_PER_FRAME + 64;
+  for (let rank = 0; rank < oldCount; rank += 1) {
     const id = `old-${rank}`;
     store.records.set(id, fakeRectangleRecord(id, rank, 20, 20));
   }
-  store.records.set("warm", fakeRectangleRecord("warm", 256, 20, 1_010));
+  store.records.set("warm", fakeRectangleRecord("warm", oldCount, 20, 1_010));
   const cold = {
     ...indexedStroke(33),
     pivot: { x: 20, y: 1_020 },
     points: [20, 1_020, 0.5, 30, 1_020, 0.5],
   };
-  store.records.set(cold.id, createSceneRecord(cold, 257));
+  store.records.set(cold.id, createSceneRecord(cold, oldCount + 1));
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   renderer.setReducedMotion(true);
   scheduler.runNext();
-  expect(renderer.mountedCount).toBe(192);
+  expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   const oldNodes = [...content.nodes];
   const restoreClock = chargeClockAfterPublication(content, scheduler);
@@ -447,11 +463,11 @@ it("finishes partially scanned old mounts while remote geometry waits, then stop
     expect(signals).toHaveLength(1);
     expect(signals[0]!.aborted).toBe(false);
     expect(renderer.mountedIds("content")).toEqual(["warm"]);
-    expect(oldNodes.every((node) => node.parent === content)).toBe(true);
-    expect(renderer.instrumentation().domExits).toBe(0);
-    expect(renderer.instrumentation().detachedCacheEntries).toBe(192);
-    expect(content.nodes).toHaveLength(193);
-    expect(new Set(content.nodes).size).toBe(193);
+    expect(oldNodes.every((node) => node.parentNode === null)).toBe(true);
+    expect(renderer.instrumentation().domExits).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    expect(renderer.instrumentation().detachedCacheEntries).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    expect(content.nodes).toHaveLength(1);
+    expect(new Set(content.nodes).size).toBe(1);
     expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(
       oldNodes.length * 3 + 16,
     );

@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 
 import {
   createSceneFixture,
@@ -6,6 +7,10 @@ import {
   createViewportRectangleStore,
 } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
+import {
+  collectFrameWrites,
+  createDirectPublicationScene,
+} from "../../../fixtures/rendering/scene-publication";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { boundsIntersect, type Bounds } from "../../../../src/domain/geometry/public";
@@ -17,19 +22,14 @@ import { removeOrderedVisibilityExits } from "../../../../src/rendering/scene/vi
 import type { PendingReconciliation } from "../../../../src/rendering/scene/reconciliation-state";
 import type { MountedSceneElement } from "../../../../src/rendering/scene/mounted-element";
 import { arrow } from "../../../unit/domain/schema/fixtures";
-import {
-  FakeNode,
-  FakeSceneStore,
-  type FakeScheduler,
-  fakeNode,
-  fakeRectangleRecord,
-} from "../../../unit/rendering/scene/fakes";
+import { FakeSceneStore, fakeNode, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
 
-it("returns a connected multipart arrow without publication or order repair", () => {
+it("reuses detached multipart arrow roots with bounded publication and no order repair", () => {
   const store = new FakeSceneStore();
   const target = { height: 100, left: 0, top: 120, width: 400 };
   const element = { ...arrow(500), start: { x: 200, y: 150 }, end: { x: 300, y: 150 } };
-  for (let rank = 0; rank < 256; rank += 1) {
+  const count = SCENE_PUBLICATION_ROOTS_PER_FRAME + 64;
+  for (let rank = 0; rank < count; rank += 1) {
     const record =
       rank === 63
         ? createSceneRecord(element, rank)
@@ -40,23 +40,25 @@ it("returns a connected multipart arrow without publication or order repair", ()
   scheduler.runAll(20);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   const originalNodes = [...content.nodes];
-  expect(originalNodes).toHaveLength(257);
+  expect(originalNodes).toHaveLength(count + 1);
   const arrowTail = content.nodes[64]!;
-  const remove = vi.spyOn(arrowTail, "remove");
   renderer.setViewport({ ...target, top: 1_000 });
-  scheduler.runNext();
-  expect(remove).not.toHaveBeenCalled();
-  expect(arrowTail.parent).toBe(content);
-  remove.mockRestore();
+  collectFrameWrites(content, scheduler, () => undefined, 20);
+  expect(arrowTail.parentNode).toBeNull();
+  expect(originalNodes.every((node) => node.parentNode === null)).toBe(true);
+  expect(content.nodes).toHaveLength(0);
 
   try {
     renderer.resetInstrumentation();
     const writes = collectFrameWrites(content, scheduler, () => renderer.setViewport(target), 20);
-    expect(writes.every((count) => count === 0)).toBe(true);
+    expect(writes.reduce((total, count) => total + count, 0)).toBe(count + 1);
+    expect(writes.filter((count) => count > 0).length).toBeGreaterThan(1);
+    expect(writes.every((count) => count <= SCENE_PUBLICATION_ROOTS_PER_FRAME)).toBe(true);
+    expect(renderer.instrumentation().geometryBuilds).toBe(0);
     expect(renderer.instrumentation().domReorders).toBe(0);
     expect(renderer.mountedIds("content")).toEqual([...store.records.keys()]);
     expect(content.nodes).toEqual(originalNodes);
-    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(1024 * 1024);
   } finally {
     renderer.destroy();
   }
@@ -99,20 +101,16 @@ it("bounds a single new stroke while page growth reveals a dense 10,000-entry do
       100,
     );
     expect(writes.some((count) => count > 0)).toBe(true);
-    expect(writes.every((count) => count <= 192)).toBe(true);
+    expect(writes.every((count) => count <= SCENE_PUBLICATION_ROOTS_PER_FRAME)).toBe(true);
     const expected = [...store.records.values()].filter(
       ({ rank }) => (rank >= 2_000 && rank < 4_000) || rank === 10_000,
     );
     expect(renderer.mountedIds("content")).toEqual(expected.map(({ id }) => id));
     expect(
       content.nodes.map((node) => node.nodes[0]?.attributes.get("d") ?? node.attributes.get("d")),
-    ).toEqual(
-      [...store.records.values()]
-        .filter(({ rank }) => rank < 4_000 || rank === 10_000)
-        .map(({ element: ink }) => buildElementPathParts(ink)[0]!.d),
-    );
+    ).toEqual(expected.map(({ element: ink }) => buildElementPathParts(ink)[0]!.d));
     expect(new Set(content.nodes).size).toBe(content.nodes.length);
-    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(1024 * 1024);
   } finally {
     renderer.destroy();
   }
@@ -147,40 +145,6 @@ it("keeps the completed reorder proof across later full reconciliations", () => 
   expect(scheduler.pendingCount).toBe(0);
 });
 
-function collectFrameWrites(
-  content: FakeNode,
-  scheduler: FakeScheduler,
-  action: () => void,
-  frameLimit: number,
-  afterFrame?: (frame: number) => void,
-): number[] {
-  const original = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!.value as (
-    this: FakeNode,
-    node: FakeNode,
-    reference: FakeNode | null,
-  ) => FakeNode;
-  const insert = vi.spyOn(content, "insertBefore");
-  let roots = 0;
-  insert.mockImplementation(function (this: FakeNode, node, reference) {
-    roots += node.fragment ? node.nodes.length : 1;
-    return original.call(this, node, reference);
-  });
-  const writes: number[] = [];
-  try {
-    action();
-    while (scheduler.pendingCount > 0) {
-      roots = 0;
-      scheduler.runNext();
-      writes.push(roots);
-      expect(writes.length).toBeLessThanOrEqual(frameLimit);
-      afterFrame?.(writes.length);
-    }
-  } finally {
-    insert.mockRestore();
-  }
-  return writes;
-}
-
 it("reconciles only changed membership in a 10,000-entry viewport", () => {
   const store = createViewportRectangleStore(10_000, (rank) =>
     rank < 9_000 ? 50 : rank === 9_000 ? -301 : rank === 9_001 ? 411 : 10_000,
@@ -191,7 +155,7 @@ it("reconciles only changed membership in a 10,000-entry viewport", () => {
   const query = vi.spyOn(store, "query");
   try {
     scheduler.runAll(200);
-    for (const [pass, top] of [120, 0, 120, 0].entries()) {
+    for (const top of [120, 0, 120, 0]) {
       renderer.resetInstrumentation();
       get.mockClear();
       query.mockClear();
@@ -206,8 +170,9 @@ it("reconciles only changed membership in a 10,000-entry viewport", () => {
       expect(renderer.mountedCount).toBe(expected.length);
       const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
       expect(new Set(content.nodes).size).toBe(content.nodes.length);
-      expect(stats.detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
-      expect(stats).toMatchObject({ domEntrants: pass === 0 ? 1 : 0, domExits: 0, domReorders: 0 });
+      expect(content.nodes).toHaveLength(expected.length);
+      expect(stats.detachedCacheBytes).toBeLessThanOrEqual(1024 * 1024);
+      expect(stats).toMatchObject({ domEntrants: 1, domExits: 1, domReorders: 0 });
       expect(stats.visibilityCandidateVisits).toBeLessThanOrEqual(4);
       expect(stats.visibilityReconcileVisits).toBeLessThanOrEqual(24);
       expect(query.mock.calls.length).toBeGreaterThan(0);
@@ -243,7 +208,7 @@ it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry doc
       },
     );
     expect(writes.filter((count) => count > 0).length).toBeGreaterThan(1);
-    expect(writes.every((count) => count <= 192)).toBe(true);
+    expect(writes.every((count) => count <= SCENE_PUBLICATION_ROOTS_PER_FRAME)).toBe(true);
     expect(renderer.mountedIds("content")).toEqual(
       Array.from({ length: 9_400 }, (_, index) => `entry-${index}`),
     );
@@ -290,17 +255,25 @@ it("cancels a partially published large edge delta on viewport retarget", () => 
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   try {
     scheduler.runAll(20);
+    const stable = content.nodes[0]!;
     renderer.setViewport({ ...viewport, top: 120 });
     scheduler.runNext();
     expect(renderer.mountedCount).toBeGreaterThan(1);
     expect(renderer.mountedCount).toBeLessThan(store.records.size);
-    renderer.setViewport(viewport);
-    scheduler.runAll(40);
+    const partial = content.nodes.filter((node) => node !== stable);
+    collectFrameWrites(content, scheduler, () => renderer.setViewport(viewport), 40);
     expect(renderer.mountedIds("content")).toEqual(["entry-400"]);
-    expect(content.nodes).toHaveLength(193);
-    expect(renderer.instrumentation().detachedCacheEntries).toBe(192);
-    renderer.setViewport({ ...viewport, top: 120 });
-    scheduler.runAll(40);
+    expect(content.nodes).toHaveLength(1);
+    expect(partial.every((node) => node.parentNode === null)).toBe(true);
+    expect(renderer.instrumentation().detachedCacheEntries).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    const writes = collectFrameWrites(
+      content,
+      scheduler,
+      () => renderer.setViewport({ ...viewport, top: 120 }),
+      40,
+    );
+    expect(writes.every((count) => count <= SCENE_PUBLICATION_ROOTS_PER_FRAME)).toBe(true);
+    expect(partial.every((node) => content.nodes.includes(node))).toBe(true);
     expect(renderer.mountedIds("content")).toEqual(
       Array.from({ length: 401 }, (_, index) => `entry-${index}`),
     );
@@ -418,6 +391,14 @@ it("scans exit candidates until the shared deadline instead of a fixed visit quo
 
 it("orders the document-capacity cleanup once while keeping its partial cursor", () => {
   const count = 20_000;
+  const fixture = createDirectPublicationScene("multipart");
+  const partial = fixture.entry;
+  partial.committedRank = count;
+  partial.detachedPathCount = 1;
+  fixture.content.insertBefore(
+    fakeNode(partial.paths[0]!.node),
+    fakeNode(fixture.after.paths[0]!.node),
+  );
   const ids = Array.from({ length: count }, (_, rank) => `exit-${rank}`);
   const mounted = new Map<string, MountedSceneElement>();
   for (let rank = 0; rank < count; rank += 1) {
@@ -428,36 +409,38 @@ it("orders the document-capacity cleanup once while keeping its partial cursor",
       detachedPathCount: 0,
     } as MountedSceneElement);
   }
-  mounted.set("partial", {
-    id: "partial",
-    committedRank: count,
-    band: "content",
-    detachedPathCount: 1,
-  } as MountedSceneElement);
+  mounted.set(partial.id, partial);
   const reverse = [...ids].reverse();
   const pending = {
-    exitIds: ["consumed", "partial", ...reverse, "partial", ...reverse],
+    exitIds: ["consumed", partial.id, ...reverse, partial.id, ...reverse],
     exitIndex: 1,
     exitScanComplete: true,
     exitOrderPrepared: false,
   } as PendingReconciliation;
   const get = vi.spyOn(mounted, "get");
-  const options = { mounted } as unknown as Parameters<typeof removeVisibilityExits>[1];
-  const frame = { deadline: 8, now: () => 8, isExit: () => false };
+  const options = { ...fixture, mounted } as unknown as Parameters<typeof removeVisibilityExits>[1];
+  const publication = { remainingRoots: partial.paths.length, remainingRemovals: 64 };
+  const frame = { deadline: 8, now: () => 8, isExit: () => false, publication };
   expect(removeOrderedVisibilityExits(pending, options, frame)).toBe(false);
   expect(get).not.toHaveBeenCalled();
   expect(pending.exitOrderPrepared).toBe(false);
-  expect(pending.exitIds).toEqual(["consumed", "partial", ...reverse, "partial", ...reverse]);
+  expect(pending.exitIds).toEqual(["consumed", partial.id, ...reverse, partial.id, ...reverse]);
   let clockReads = 0;
   const admitted = { ...frame, now: () => (clockReads++ === 0 ? 0 : 8) };
   expect(removeOrderedVisibilityExits(pending, options, admitted)).toBe(false);
-  expect(pending.exitIds).toEqual(["consumed", "partial", ...ids]);
+  expect(pending.exitIds).toEqual(["consumed", partial.id, ...ids]);
   expect(pending.exitIndex).toBe(1);
   expect(get.mock.calls.length).toBeGreaterThan(count);
   expect(get.mock.calls.length).toBeLessThanOrEqual(count * 32 + 1);
   get.mockClear();
   expect(removeOrderedVisibilityExits(pending, options, frame)).toBe(false);
-  expect(get).toHaveBeenCalledExactlyOnceWith("partial");
+  expect(get).toHaveBeenCalledExactlyOnceWith(partial.id);
+  expect(partial.detachedPathCount).toBe(0);
+  expect(partial.paths.every(({ node }) => node.parentNode === fixture.dom.contentGroup)).toBe(
+    true,
+  );
+  expect(fixture.instrumentation.domRootsPublished).toBe(partial.paths.length);
+  expect(publication.remainingRoots).toBe(0);
   expect(pending.exitIndex).toBe(2);
   pending.exitOrderPrepared = false;
   for (let index = 0; index < count; index += 1) {
@@ -466,9 +449,10 @@ it("orders the document-capacity cleanup once while keeping its partial cursor",
   get.mockClear();
   clockReads = 0;
   expect(removeOrderedVisibilityExits(pending, options, admitted)).toBe(false);
-  expect(pending.exitIds).toEqual(["consumed", "partial", ...ids]);
+  expect(pending.exitIds).toEqual(["consumed", partial.id, ...ids]);
   expect(pending.exitIndex).toBe(2);
   expect(get.mock.calls.length).toBeLessThanOrEqual(count * 32 + 1);
+  fixture.dom.release();
 });
 
 it("checks the deadline while a full fallback visits stable mounted elements", () => {

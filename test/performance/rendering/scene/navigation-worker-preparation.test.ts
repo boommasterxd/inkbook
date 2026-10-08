@@ -39,6 +39,7 @@ async function workerFixture(bridge: boolean) {
   index.insertMany([...records.values()].map(({ id, bounds }) => ({ id, bounds })));
   const harness = createWorkerBridgeHarness();
   const port = bridge ? createWorkerBridgeClient(harness.clientEndpoint) : harness.runtime;
+  const retarget = vi.spyOn(port, "retargetScenePreparation");
   const identity = {
     sessionId: "session-a",
     workerEpoch: 1,
@@ -81,6 +82,8 @@ async function workerFixture(bridge: boolean) {
   return {
     ...harness,
     store,
+    records,
+    retarget,
     cache,
     preparation,
     prepare,
@@ -169,5 +172,48 @@ it("cancels the reserved remote payload before retargeting and rejects late comp
   } finally {
     fixture.close();
   }
+  expect(fixture.runtime.instrumentation.shapeCacheBytes).toBe(0);
+});
+
+it("sends retarget messages only for removed reservations in a full directional worker batch", async () => {
+  const fixture = await workerFixture(true);
+  const reads = vi.spyOn(fixture.store, "get");
+  try {
+    const [ids, signal] = beginNavigationPathRequest(fixture, PRIORITY, BOUNDS);
+    expect(ids).toHaveLength(256);
+    // Synchronization installs the transport handler before the pending worker finishes.
+    await Promise.resolve();
+    fixture.retarget.mockClear();
+    reads.mockClear();
+    for (const offset of [1, 2, 3]) {
+      fixture.preparation.setTarget(PRIORITY, { ...BOUNDS, minY: offset, maxY: 100 + offset });
+    }
+    expect(reads).toHaveBeenCalledTimes(3 * ids.length);
+    expect(fixture.retarget).not.toHaveBeenCalled();
+    expect(signal.aborted).toBe(false);
+    const stale = fixture.records.get(ids[0]!)!;
+    fixture.records.set(stale.id, { ...stale, geometryVersion: 2 });
+    fixture.records.delete(ids[1]!);
+    const departed = fixture.records.get(ids[2]!)!;
+    fixture.records.set(departed.id, {
+      ...departed,
+      bounds: { minX: 0, maxX: 10, minY: 1_000, maxY: 1_010 },
+    });
+    reads.mockClear();
+    fixture.preparation.setTarget(PRIORITY, { ...BOUNDS, minY: 4, maxY: 104 });
+    expect(reads).toHaveBeenCalledTimes(ids.length);
+    expect(fixture.retarget).toHaveBeenCalledOnce();
+    expect(fixture.retarget.mock.calls[0]![1]).toEqual(ids.slice(3));
+    await fixture.settle();
+    fixture.preparation.prepare(Infinity, () => 0);
+    expect(fixture.cache.statistics().entries).toBe(ids.length - 3);
+    expect(fixture.cache.has(stale.id, 1)).toBe(false);
+    expect(fixture.cache.has(departed.id, 1)).toBe(false);
+    fixture.preparation.cancel();
+    expect(fixture.preparation.memoryUsage()).toBe(0);
+  } finally {
+    fixture.close();
+  }
+  expect(fixture.cache.statistics().bytes).toBe(0);
   expect(fixture.runtime.instrumentation.shapeCacheBytes).toBe(0);
 });

@@ -1,4 +1,5 @@
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
 import { mergeVisibleBand } from "../../../../src/rendering/scene/visibility-order";
 import {
@@ -17,8 +18,8 @@ import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { arrow } from "../../../unit/domain/schema/fixtures";
 import { selectionTraceNodes } from "../../../fixtures/rendering/selection-traces";
+import { createPublicationScene } from "../../../fixtures/rendering/scene-publication";
 import { describe, expect, it, vi } from "vitest";
-
 import {
   DENSE_VIEWPORT_PROFILES,
   createDenseViewportFixture,
@@ -92,7 +93,15 @@ function verifyPublicationSlices(
     reference: FakeNode | null,
   ) => FakeNode;
   const insert = vi.spyOn(FakeNode.prototype, "insertBefore");
+  const originalRemove = Object.getOwnPropertyDescriptor(FakeNode.prototype, "remove")!
+    .value as FakeNode["remove"];
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
   let writes = 0;
+  let removals = 0;
+  remove.mockImplementation(function (this: FakeNode) {
+    if (this.parent === camera.nodes[3] || this.parent === camera.nodes[4]) removals += 1;
+    originalRemove.call(this);
+  });
   insert.mockImplementation(function (this: FakeNode, node, reference) {
     if (groups.has(this)) writes += node.fragment ? node.nodes.length : 1;
     return original.call(this, node, reference);
@@ -103,8 +112,10 @@ function verifyPublicationSlices(
     while (scheduler.pendingCount > 0) {
       expect(++frames).toBeLessThanOrEqual(400);
       writes = 0;
+      removals = 0;
       scheduler.runNext();
-      expect(writes).toBeLessThanOrEqual(192);
+      expect(writes).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+      expect(removals).toBeLessThanOrEqual(64);
       if (first) {
         expect(writes).toBeGreaterThan(0);
         if (requireSceneCommit) expect(renderer.hasPendingSceneCommit).toBe(true);
@@ -114,6 +125,7 @@ function verifyPublicationSlices(
     }
   } finally {
     insert.mockRestore();
+    remove.mockRestore();
   }
 }
 
@@ -172,7 +184,7 @@ it("bounds combined ink and selection publication when 6,081 selected entries re
   expect(renderer.mountedIds("content")).toEqual([...selected]);
   expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(selected.size);
   expect(renderer.instrumentation()).toMatchObject({
-    domEntrants: 0,
+    domEntrants: selected.size,
     domReorders: 0,
     selectionTraceNodesCreated: selected.size,
   });
@@ -183,7 +195,7 @@ it("bounds combined ink and selection publication when 6,081 selected entries re
 it("serves both selected centers and new ink after a page and viewport growth", () => {
   const store = new FakeSceneStore();
   const selected = new Set<string>();
-  for (let rank = 0; rank < 256; rank += 1) {
+  for (let rank = 0; rank < SCENE_PUBLICATION_ROOTS_PER_FRAME + 64; rank += 1) {
     const record = fakeRectangleRecord(`grown-${rank}`, rank, 20 + rank / 100_000, 1_000);
     store.records.set(record.id, record);
     selected.add(record.id);
@@ -232,6 +244,12 @@ it("bounds live writes when a multi-root arrow joins selected single-root ink", 
   expect(scheduler.pendingCount).toBe(0);
 });
 
+function createOriginalRootScene(store: FakeSceneStore) {
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const fixture = createPublicationScene(store, viewport);
+  return { ...fixture, viewport, originalNodes: [...fixture.content.nodes] };
+}
+
 it("reinstates 315 ordered entries without moving retained DOM nodes in a 10,000-entry document", () => {
   const store = new FakeSceneStore();
   const ids = Array.from({ length: 10_000 }, (_, rank) => `entry-${rank}`);
@@ -239,15 +257,7 @@ it("reinstates 315 ordered entries without moving retained DOM nodes in a 10,000
   for (const [rank, id] of ids.entries()) {
     store.records.set(id, fakeRectangleRecord(id, rank, 20, rank < 4_220 ? 10 : 10_000));
   }
-  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
-    height: 100,
-    left: 0,
-    top: 0,
-    width: 100,
-  });
-  scheduler.runAll(200);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-  const originalNodes = [...content.nodes];
+  const { renderer, scheduler, content, originalNodes } = createOriginalRootScene(store);
   const retainedNodes = new Set(originalNodes.filter((_, rank) => !removed.has(ids[rank]!)));
   expect(originalNodes).toHaveLength(4_220);
 
@@ -316,15 +326,11 @@ it("reinstates 315 ordered entries without moving retained DOM nodes in a 10,000
   expect(scheduler.pendingCount).toBe(0);
 });
 
-it("does not reappend returning retained nodes during unfinished viewport exit cleanup", () => {
+it("reinserts detached roots without moving connected roots during unfinished viewport exit cleanup", () => {
   const store = createViewportRectangleStore(10_000, (rank) =>
     rank < 4_200 ? 10 : rank < 8_400 ? 1_000 : 10_000,
   );
-  const viewport = { height: 100, left: 0, top: 0, width: 100 };
-  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
-  scheduler.runAll(200);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-  const originalNodes = [...content.nodes];
+  const { renderer, scheduler, content, originalNodes, viewport } = createOriginalRootScene(store);
   const originalSet = new Set(originalNodes);
   expect(originalNodes).toHaveLength(4_200);
 
@@ -337,50 +343,43 @@ it("does not reappend returning retained nodes during unfinished viewport exit c
   }
   expect(renderer.instrumentation().domEntrants).toBeGreaterThan(4_200);
   expect(renderer.instrumentation().domEntrants).toBeLessThan(8_400);
-  expect(renderer.instrumentation().domExits).toBe(0);
+  expect(renderer.instrumentation().domExits).toBe(64);
   const retained = new Set(content.nodes.filter((node) => originalSet.has(node)));
-  expect(retained.size).toBe(4_200);
+  expect(retained.size).toBe(4_136);
+  const detached = new Set(originalNodes.filter((node) => !retained.has(node)));
+  expect([...detached].every((node) => node.parentNode === null)).toBe(true);
 
   const originalInsert = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!
     .value as (this: FakeNode, node: FakeNode, reference: FakeNode | null) => FakeNode;
   const insert = vi.spyOn(FakeNode.prototype, "insertBefore");
   let retainedAppends = 0;
+  let detachedPublications = 0;
   let siblingScans = 0;
-  let siblingVisits = 0;
-  let siblingVisitBudget = 0;
   const childNodes = vi.spyOn(FakeNode.prototype, "childNodes", "get");
   childNodes.mockImplementation(function (this: FakeNode) {
-    if (this !== content) return this.nodes;
-    siblingScans += 1;
-    siblingVisitBudget += this.nodes.length;
-    if (siblingScans === 1) scheduler.time += 8;
-    return new Proxy(this.nodes, {
-      get(target, key) {
-        if (typeof key === "string" && /^\d+$/.test(key)) siblingVisits += 1;
-        const value: unknown = Reflect.get(target, key);
-        return value;
-      },
-    });
+    if (this === content) siblingScans += 1;
+    return this.nodes;
   });
   insert.mockImplementation(function (this: FakeNode, node, reference) {
-    if (this.fragment && retained.has(node)) retainedAppends += 1;
+    if ((this.fragment || this === content) && retained.has(node)) retainedAppends += 1;
+    if (this === content)
+      detachedPublications += (node.fragment ? node.nodes : [node]).filter((root) =>
+        detached.has(root),
+      ).length;
     return originalInsert.call(this, node, reference);
   });
   try {
     renderer.setViewport(viewport);
     scheduler.runAll(200);
     expect(retainedAppends).toBe(0);
+    expect(detachedPublications).toBe(64);
     expect(siblingScans).toBe(0);
-    expect(siblingVisits).toBe(0);
-    expect(siblingVisitBudget).toBe(0);
     expect(renderer.mountedIds("content")).toEqual(
       Array.from({ length: 4_200 }, (_, rank) => `entry-${rank}`),
     );
-    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
-    expect(new Set(content.nodes).size).toBe(content.nodes.length);
-    for (let rank = 0; rank < 4_200; rank += 1) {
-      if (retained.has(originalNodes[rank]!)) expect(content.nodes[rank]).toBe(originalNodes[rank]);
-    }
+    expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(1024 * 1024);
+    expect(content.nodes).toHaveLength(originalNodes.length);
+    content.nodes.forEach((node, rank) => expect(node).toBe(originalNodes[rank]));
   } finally {
     childNodes.mockRestore();
     insert.mockRestore();
@@ -392,7 +391,7 @@ it("does not reappend returning retained nodes during unfinished viewport exit c
 it("publishes new visible nodes while selected mounted traces remain dirty", () => {
   const store = new FakeSceneStore();
   const selected = new Set<string>();
-  for (let index = 0; index < 300; index++) {
+  for (let index = 0; index < SCENE_PUBLICATION_ROOTS_PER_FRAME + 64; index++) {
     const old = fakeRectangleRecord(`old-${index}`, index, 10 + index / 100_000);
     const next = fakeRectangleRecord(`next-${index}`, index, 10 + index / 100_000, 1_000);
     store.records.set(old.id, old);
@@ -423,12 +422,13 @@ it("publishes new visible nodes while selected mounted traces remain dirty", () 
     renderer.setViewport({ height: 100, left: 0, top: 1_000, width: 100 });
     scheduler.runNext();
     expect(traceWrites).toBeGreaterThan(0);
-    expect(traceWrites).toBeLessThan(300);
+    expect(traceWrites).toBeLessThan(selected.size);
     expect(insert).not.toHaveBeenCalled();
     scheduler.runNext();
     expect(insert).toHaveBeenCalled();
-    expect(renderer.instrumentation().domEntrants).toBeGreaterThan(300);
-    expect(renderer.instrumentation().domEntrants).toBeLessThanOrEqual(492);
+    const { domEntrants } = renderer.instrumentation();
+    expect(domEntrants - selected.size).toBeGreaterThan(0);
+    expect(domEntrants - selected.size).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     expect(traceWrites).toBeLessThanOrEqual(16);
     scheduler.runAll();
     expect(renderer.mountedIds("content")).toEqual(

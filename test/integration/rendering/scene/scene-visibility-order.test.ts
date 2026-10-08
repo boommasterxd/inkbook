@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 
 import {
   createPendingScenePathStore,
@@ -99,9 +100,12 @@ it.each([
   { name: "left", horizontal: true, initial: 2_000, sign: -1 },
 ])("prepares entrants along $name navigation while preserving final SVG rank", (scenario) => {
   const store = new FakeSceneStore();
-  const ids = Array.from({ length: 384 }, (_, rank) => `direction-${rank}`);
+  const ids = Array.from(
+    { length: SCENE_PUBLICATION_ROOTS_PER_FRAME * 2 },
+    (_, rank) => `direction-${rank}`,
+  );
   ids.forEach((id, rank) => {
-    const coordinate = 1_020 + rank / 8;
+    const coordinate = 1_020 + (rank * 48) / ids.length;
     store.records.set(
       id,
       fakeRectangleRecord(
@@ -126,12 +130,14 @@ it.each([
   else renderer.setViewport({ ...viewport, top: 1_000 });
   scheduler.runNext();
   expect(renderer.mountedIds("content")).toEqual(
-    scenario.sign > 0 ? ids.slice(0, 192) : ids.slice(192),
+    scenario.sign > 0
+      ? ids.slice(0, SCENE_PUBLICATION_ROOTS_PER_FRAME)
+      : ids.slice(SCENE_PUBLICATION_ROOTS_PER_FRAME),
   );
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(ids);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-  expect(content.nodes).toHaveLength(384);
+  expect(content.nodes).toHaveLength(ids.length);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
 });
@@ -143,9 +149,12 @@ it.each([
   { name: "left", horizontal: true, sign: -1 },
 ])("follows $name navigation when one clip edge stays fixed", ({ horizontal, sign }) => {
   const store = new FakeSceneStore();
-  const ids = Array.from({ length: 384 }, (_, index) => `clipped-${index}`);
+  const ids = Array.from(
+    { length: SCENE_PUBLICATION_ROOTS_PER_FRAME * 2 },
+    (_, index) => `clipped-${index}`,
+  );
   ids.forEach((id, index) => {
-    const coordinate = 420 + index;
+    const coordinate = 420 + (index * 384) / ids.length;
     store.records.set(
       id,
       fakeRectangleRecord(
@@ -174,7 +183,10 @@ it.each([
   });
   scheduler.runNext();
   expect(renderer.mountedIds("content")).toEqual(
-    (sign > 0 ? ids.slice(0, 192) : ids.slice(192)).reverse(),
+    (sign > 0
+      ? ids.slice(0, SCENE_PUBLICATION_ROOTS_PER_FRAME)
+      : ids.slice(SCENE_PUBLICATION_ROOTS_PER_FRAME)
+    ).reverse(),
   );
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual([...ids].reverse());
@@ -199,7 +211,9 @@ it("publishes a cached entrant while the earlier cold stroke waits for the worke
   const retained = content.nodes[0]!;
   renderer.setViewport({ ...viewport, top: 1_000 });
   scheduler.runAll();
-  expect(retained.parent).toBe(content);
+  expect(retained.parent).toBeUndefined();
+  expect(content.nodes).toHaveLength(0);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
   renderer.resetInstrumentation();
   const create = vi.spyOn(document, "createElementNS");
   renderer.setViewport({ ...viewport, height: 200 });
@@ -207,7 +221,13 @@ it("publishes a cached entrant while the earlier cold stroke waits for the worke
   expect(signals).toHaveLength(1);
   expect(renderer.mountedIds("content")).toEqual([warm.id]);
   expect(content.nodes[0]).toBe(retained);
-  expect(renderer.instrumentation()).toMatchObject({ geometryBuilds: 0, detachedCacheHits: 1 });
+  expect(retained.parent).toBe(content);
+  expect(renderer.instrumentation()).toMatchObject({
+    geometryBuilds: 0,
+    detachedCacheHits: 1,
+    domEntrants: 1,
+    domRootsPublished: 1,
+  });
   expect(create.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(0);
   expect(scheduler.pendingCount).toBe(0);
   renderer.destroy();
@@ -216,8 +236,14 @@ it("publishes a cached entrant while the earlier cold stroke waits for the worke
 
 it("prioritizes the viewport center when zoom reveals missing elements", () => {
   const store = new FakeSceneStore();
-  const ids = Array.from({ length: 384 }, (_, rank) => `zoom-${String(rank).padStart(3, "0")}`);
-  ids.forEach((id, rank) => store.records.set(id, fakeRectangleRecord(id, rank, 490, 300 + rank)));
+  const ids = Array.from(
+    { length: SCENE_PUBLICATION_ROOTS_PER_FRAME * 2 },
+    (_, rank) => `zoom-${String(rank).padStart(3, "0")}`,
+  );
+  const spacing = 384 / ids.length;
+  ids.forEach((id, rank) =>
+    store.records.set(id, fakeRectangleRecord(id, rank, 490, 300 + rank * spacing)),
+  );
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
     height: 100,
     left: 0,
@@ -228,7 +254,10 @@ it("prioritizes the viewport center when zoom reveals missing elements", () => {
   expect(renderer.mountedCount).toBe(0);
   renderer.setCamera({ x: 0, zoom: 0.1 });
   scheduler.runNext();
-  expect(renderer.mountedIds("content")).toEqual(ids.slice(94, 286));
+  const first = Math.ceil((500 - 310) / spacing - SCENE_PUBLICATION_ROOTS_PER_FRAME / 2);
+  expect(renderer.mountedIds("content")).toEqual(
+    ids.slice(first, first + SCENE_PUBLICATION_ROOTS_PER_FRAME),
+  );
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(ids);
   renderer.destroy();
