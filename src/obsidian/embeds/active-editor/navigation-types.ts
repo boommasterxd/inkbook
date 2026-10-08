@@ -39,6 +39,8 @@ export interface ActiveEditorViewState {
 }
 
 export interface ActiveEditorWheelInput {
+  readonly cancelable?: boolean;
+  readonly timeStamp?: number;
   readonly clientX: number;
   readonly clientY: number;
   readonly ctrlKey?: boolean;

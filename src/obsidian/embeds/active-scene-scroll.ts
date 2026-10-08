@@ -6,6 +6,7 @@ interface ActiveSceneScrollBindingOptions {
   readonly onScroll?: () => void;
   readonly ownerWindow: Window;
   readonly provider?: () => BrowserScrollElement | null;
+  readonly reuseOwnScroll?: (owner: BrowserScrollElement) => boolean;
   readonly root: HTMLElement;
   readonly transfer: (owner: BrowserScrollElement) => void;
 }
@@ -21,8 +22,10 @@ export function bindActiveSceneScrollOwner(
   let owner = options.initialOwner;
   applyToolbarScrollportPadding(options.root, owner, options.ownerWindow);
   const handleScroll = (): void => {
+    synchronize();
+    const reused = options.reuseOwnScroll?.(owner) === true;
     options.onScroll?.();
-    options.invalidate();
+    if (!reused) options.invalidate();
   };
   let removeScrollListener = browserScrollListeners.listen(owner, handleScroll);
   const synchronize = (): void => {
@@ -31,6 +34,7 @@ export function bindActiveSceneScrollOwner(
     removeScrollListener();
     owner = current;
     options.transfer(current);
+    options.invalidate();
     applyToolbarScrollportPadding(options.root, owner, options.ownerWindow);
     removeScrollListener = browserScrollListeners.listen(current, handleScroll);
   };

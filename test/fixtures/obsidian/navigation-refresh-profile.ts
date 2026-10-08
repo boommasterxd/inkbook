@@ -92,7 +92,7 @@ export function startNavigationFlick(
 
 function createProfileOwner(
   frames: FrameQueue,
-  observe: (boundary: "viewport" | "bounds" | "height" | "scroll") => void,
+  observe: (boundary: "viewport" | "bounds" | "height" | "scroll" | "scroll-read") => void,
 ): BrowserScrollElement {
   let scrollTop = 200;
   return {
@@ -116,6 +116,7 @@ function createProfileOwner(
       return 10_000;
     },
     get scrollTop() {
+      observe("scroll-read");
       return scrollTop;
     },
     set scrollTop(value: number) {
@@ -134,6 +135,7 @@ export function buildNavigationHarness(api: NavigationProfileApi, refreshRate: n
   let inputWrites = 0;
   let layoutWrites = 0;
   let scrollWrites = 0;
+  let scrollReads = 0;
   let layoutReads = 0;
   let containerBoundsReads = 0;
   let ownerBoundsReads = 0;
@@ -147,6 +149,7 @@ export function buildNavigationHarness(api: NavigationProfileApi, refreshRate: n
     if (boundary === "viewport") layoutReads += 1;
     else if (boundary === "bounds") ownerBoundsReads += 1;
     else if (boundary === "height") scrollHeightReads += 1;
+    else if (boundary === "scroll-read") scrollReads += 1;
     else scrollWrites += 1;
   });
   const container = {
@@ -198,6 +201,7 @@ export function buildNavigationHarness(api: NavigationProfileApi, refreshRate: n
       return { container: containerBoundsReads, owner: ownerBoundsReads };
     },
     navigation,
+    owner,
     resetWrites: () => {
       inputWrites = 0;
       layoutReads = 0;
@@ -206,11 +210,15 @@ export function buildNavigationHarness(api: NavigationProfileApi, refreshRate: n
       cameraWrites = 0;
       layoutWrites = 0;
       scrollWrites = 0;
+      scrollReads = 0;
       scrollHeightReads = 0;
       pageReads = 0;
     },
     get scrollWrites() {
       return scrollWrites;
+    },
+    get scrollReads() {
+      return scrollReads;
     },
   };
 }

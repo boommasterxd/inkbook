@@ -89,6 +89,17 @@ describe("active editor navigation bordered scrolling", () => {
   });
 });
 
+it("captures a fresh cancel origin when gesture geometry was measured before native scrolling", () => {
+  const harness = createHarness();
+  expect(harness.navigation.beginGestureGeometry()).toBe(true);
+  harness.owner.scrollTop = 350;
+  harness.navigation.begin();
+  harness.owner.scrollTop = 500;
+  harness.navigation.revert();
+  expect(harness.owner.scrollTop).toBe(350);
+  harness.navigation.dispose();
+});
+
 describe("active editor navigation geometry and lifecycle", () => {
   it("uses a live selection reservation when it projects native scroll bounds", () => {
     let activePageHeight = 2_000;
@@ -190,7 +201,12 @@ describe("active editor touch pan momentum", () => {
 
     releaseFlick(harness);
 
-    expect(harness.navigation.cameraX).toBeLessThan(before);
+    // The harness starts at 16 ms, leaving two valid 12-pixel movement samples.
+    const decayPerSecond = -Math.log(0.96) * 60;
+    const expectedScreenTravel = (750 * (1 - Math.exp(-decayPerSecond * 0.016))) / decayPerSecond;
+    expect(before - harness.navigation.cameraX).toBeCloseTo(
+      expectedScreenTravel / harness.navigation.zoom,
+    );
     expect(harness.frames.pending).toBe(1);
   });
 
@@ -206,6 +222,22 @@ describe("active editor touch pan momentum", () => {
 
     expect(harness.navigation.cameraX).toBe(atBound);
     expect(harness.frames.pending).toBe(0);
+  });
+
+  it("releases in the final touch direction instead of replaying earlier movement", () => {
+    const harness = createZoomedHarness();
+    const now = harness.frames.now;
+    harness.navigation.recordTouchPan(12, now - 12);
+    harness.navigation.recordTouchPan(12, now - 8);
+    harness.navigation.recordTouchPan(-1, now);
+    const before = harness.navigation.cameraX;
+    const scrollTop = harness.owner.scrollTop;
+    harness.navigation.releaseTouchPan(now);
+    harness.frames.flushOne();
+
+    expect(harness.navigation.cameraX).toBeLessThan(before);
+    expect(harness.owner.scrollTop).toBe(scrollTop);
+    harness.navigation.dispose();
   });
 });
 

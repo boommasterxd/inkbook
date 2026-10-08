@@ -86,12 +86,12 @@ describe("active scene scroll ownership", () => {
     expect(properties.get("--inkbook-toolbar-scrollport-padding")).toBe("16px");
     first.dispatchEvent(new Event("scroll"));
     second.dispatchEvent(new Event("scroll"));
-    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledTimes(4);
     expect(onScroll).toHaveBeenCalledTimes(2);
 
     binding.dispose();
     second.dispatchEvent(new Event("scroll"));
-    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledTimes(4);
     expect(onScroll).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,5 +1,4 @@
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
-import { setIcon } from "obsidian";
 
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
 import type { InkElementV1 } from "../../domain/schema/public";
@@ -7,13 +6,13 @@ import type { StoreDelta } from "../../domain/store/public";
 import { SvgSceneRenderer } from "../../rendering/scene/index";
 import { beginEditorChromeMount, type PendingEditorChrome } from "./editor-chrome-loader";
 import type { ContextMenuAction } from "../menus/index";
-import { createOwnedMenuFactory } from "../menus/index";
 import type { BrowserScrollElement } from "../scrolling/index";
 import type { InkbookColorScheme } from "../theme/color-scheme";
-import { ActiveEditorController } from "./active-editor/controller";
+import type { ActiveEditorController } from "./active-editor/controller";
 import { ActiveEditorLayout } from "./active-editor/layout";
 import type { ActiveEditorViewState } from "./active-editor/navigation";
-import { ElementSceneStore } from "./active-editor/scene-store";
+import type { ElementSceneStore } from "./active-editor/scene-store";
+import { createActiveSceneController } from "./active-scene-controller";
 import { ActiveScenePreviewHandoff } from "./active-scene-handoff";
 import { ActiveSceneMemoryBinding } from "./active-scene-memory";
 import { ActiveScenePrewarmBinding } from "./active-scene-prewarm";
@@ -31,7 +30,6 @@ import { readActiveSceneLayout } from "./active-scene-viewport";
 import { readNavigationLayout } from "./active-editor/navigation-layout";
 import { createSceneReadiness, InitialSceneReadiness } from "./initial-scene-readiness";
 import {
-  applyActiveSceneZoomLayout,
   bindSceneScrollOwner,
   createInitialSceneRuntime,
   resolveActiveScrollOwner,
@@ -117,13 +115,21 @@ export class ActiveInkbookScene {
     this.#memory.attach(this.#renderer);
     this.#renderer.setScheme(options.scheme);
     this.#renderer.setSelectionHighlightsEnabled(options.selectionHighlightsEnabled ?? true);
-    this.#controller = controller = this.#createController(options, scrollOwner);
+    this.#controller = controller = createActiveSceneController(options, {
+      container: this.#container,
+      layout: () => this.#layout,
+      renderer: this.#renderer,
+      scrollOwner,
+      store: this.#store,
+      updateChrome: () => this.#updateChrome(),
+    });
     scrollBinding = bindSceneScrollOwner(
       scrollOwner,
       ownerWindow,
       options,
       this.#renderer,
       this.#controller,
+      (owner) => this.#layout.consumeOwnZoomScroll(owner),
     );
     this.#removeViewportListeners = () => scrollBinding?.dispose();
     this.#controller.setEnabled(false);
@@ -135,6 +141,7 @@ export class ActiveInkbookScene {
     );
     this.#layout = new ActiveEditorLayout({
       workScheduler: options.workScheduler,
+      readHostGeometryRevision: () => options.hostZoomScroll?.geometryRevision ?? 0,
       beginScrollStability: () => this.#transitionScrollStability.begin(),
       chromeHost: this.#chromeHost,
       container: this.#container,
@@ -166,63 +173,6 @@ export class ActiveInkbookScene {
     );
     this.#resolveReady = readiness.resolve;
     this.ready = readiness.ready;
-  }
-
-  #createController(
-    options: ActiveInkbookSceneOptions,
-    scrollOwner: BrowserScrollElement,
-  ): ActiveEditorController {
-    return new ActiveEditorController({
-      workScheduler: options.workScheduler,
-      applyZoomLayout: (update) =>
-        applyActiveSceneZoomLayout(this.#layout, update, this.#hostZoomScroll, this.#container),
-      onNavigationLayout: (layout) => this.#layout.adoptNavigationLayout(layout),
-      backgroundSpacing: options.backgroundSpacing,
-      container: this.#container,
-      confirmEraseAll: options.confirmEraseAll,
-      defaults: options.defaults,
-      deviceSettings: options.deviceSettings,
-      history: options.history,
-      interruptLayoutForInput: () => this.#layout.interruptForInput(),
-      ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
-      ...(options.createPhoneSheetHost === undefined
-        ? {}
-        : { createPhoneSheetHost: options.createPhoneSheetHost }),
-      menuFactory:
-        options.menuFactory ??
-        createOwnedMenuFactory({
-          workScheduler: options.workScheduler,
-          anchor: options.root,
-          ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
-          ...(options.createPhoneSheetHost === undefined
-            ? {}
-            : { createPhoneSheetHost: options.createPhoneSheetHost }),
-        }),
-      model: options.model,
-      onLock: options.onLock,
-      onFeedback: options.onFeedback,
-      onCopyEmbed: options.onCopyEmbed,
-      onDeleteEmbed: options.onDeleteEmbed,
-      onOpenSettings: options.onOpenSettings,
-      onOpenShortcuts: options.onOpenShortcuts,
-      onPageChanged: () => this.#layout.pageChanged(),
-      onPagePreviewFinish: (committed) => this.#layout.finishPagePreview(committed),
-      onPagePreview: (page) => this.#layout.previewPage(page),
-      onStateChanged: () => this.#updateChrome(),
-      renderIcon: (element, icon) => setIcon(element, icon),
-      renderer: this.#renderer,
-      sceneStore: this.#store,
-      selectionMoveLayout: {
-        begin: () => this.#layout.beginSelectionMove(),
-        currentHeight: () => this.#layout.currentPageHeight(),
-        finish: (committed, previewMaximumBottom) =>
-          this.#layout.finishSelectionMove(committed, previewMaximumBottom),
-        updateBottom: (maximumBottom) => this.#layout.updateSelectionMoveBottom(maximumBottom),
-      },
-      scrollOwner,
-      snapping: options.snapping,
-      startupTool: options.startupTool,
-    });
   }
 
   public disableInput(): void {

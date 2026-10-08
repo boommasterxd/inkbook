@@ -14,7 +14,7 @@ import type { ToolbarLayoutStage } from "../../../rendering/ui/index";
 import type { ActiveEditorLayoutOptions } from "./layout-contracts";
 import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import { calculateActiveEditorResize, type ActiveEditorResizeAnchor } from "./layout-resize";
-import { ActivePageLayout, type PageHeightUpdate } from "./page-layout";
+import { ActivePageLayout, maximumHeight, type PageHeightUpdate } from "./page-layout";
 import { ToolbarResizeObservation } from "./toolbar-resize-observation";
 import { measureToolbarLayout } from "./toolbar-measurement";
 import {
@@ -26,13 +26,11 @@ import { measureElementBox } from "./element-content-box";
 import { ActiveHeightTransition } from "./height-transition";
 import { OwnZoomResize } from "./own-zoom-resize";
 import type { NavigationCursorLayout } from "./navigation-layout";
+import { OwnZoomScrollProof } from "./own-zoom-scroll";
+import type { BrowserScrollElement } from "../../scrolling/index";
 
 export type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
 export type { ActiveEditorLayoutOptions } from "./layout-contracts";
-
-interface HeightFrameRead {
-  readonly renderedHeight: number;
-}
 
 export class ActiveEditorLayout {
   readonly #chromeObserver: MutationObserver | undefined;
@@ -60,10 +58,12 @@ export class ActiveEditorLayout {
   #toolbarLayoutDirty = true;
   readonly #resizeObservation = new ToolbarResizeObservation();
   readonly #ownZoomResize = new OwnZoomResize();
+  readonly #ownZoomScroll: OwnZoomScrollProof;
   #zoom: number | undefined;
 
   public constructor(options: ActiveEditorLayoutOptions) {
     this.#options = options;
+    this.#ownZoomScroll = new OwnZoomScrollProof(options);
     this.#container = options.container;
     const ownerWindow = options.root.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
@@ -116,11 +116,17 @@ export class ActiveEditorLayout {
     this.#ownZoomResize.record(update.layout, blockSize);
     this.#options.renderer.setZoomBlockSize(blockSize + this.#blockInsets);
     this.#options.renderer.invalidateLayout();
+    this.#ownZoomScroll.record(update.layout, blockSize);
     if (retainedPageHeight !== undefined) this.scheduleMeasurement();
     return blockSize;
   }
   public adoptNavigationLayout(layout: NavigationCursorLayout): void {
     this.#ownZoomResize.adopt(layout);
+    this.#ownZoomScroll.adopt(layout);
+  }
+
+  public consumeOwnZoomScroll(owner: BrowserScrollElement): boolean {
+    return this.#ownZoomScroll.consume(owner);
   }
 
   public chromeChanged(layoutKey?: string): void {
@@ -151,6 +157,7 @@ export class ActiveEditorLayout {
   }
 
   public dispose(): void {
+    this.#ownZoomScroll.clear();
     this.#chromeObserver?.disconnect();
     this.#observer?.disconnect();
     this.#motion.dispose();
@@ -173,7 +180,7 @@ export class ActiveEditorLayout {
     this.#selectionMoveActive = false;
     const storeMaximumBottom = this.#options.storeMaximumBottom();
     const maximumBottom = committed
-      ? maximumFiniteBottom(storeMaximumBottom, previewMaximumBottom)
+      ? maximumHeight(storeMaximumBottom, previewMaximumBottom)
       : storeMaximumBottom;
     this.#applyHeightUpdate(
       this.#pageLayout.finishSelectionMove(committed, this.#options.page(), maximumBottom),
@@ -218,6 +225,7 @@ export class ActiveEditorLayout {
 
   public suspend(): void {
     if (this.#suspended) return;
+    this.#ownZoomScroll.clear();
     this.#cancelHeightTransitionAtBoundary(true);
     this.#suspended = true;
     if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
@@ -441,7 +449,7 @@ export class ActiveEditorLayout {
     this.#options.renderer.invalidateLayout();
   }
 
-  #readHeightFrame(): HeightFrameRead | undefined {
+  #readHeightFrame(): { readonly renderedHeight: number } | undefined {
     const renderedHeight = Math.max(0, this.#container.getBoundingClientRect().height);
     if (!Number.isFinite(renderedHeight)) return undefined;
     return { renderedHeight };
@@ -488,12 +496,4 @@ export class ActiveEditorLayout {
       this.#options.onReady();
     });
   }
-}
-
-function maximumFiniteBottom(
-  first: number | undefined,
-  second: number | undefined,
-): number | undefined {
-  const values = [first, second].filter((value): value is number => Number.isFinite(value));
-  return values.length === 0 ? undefined : Math.max(...values);
 }

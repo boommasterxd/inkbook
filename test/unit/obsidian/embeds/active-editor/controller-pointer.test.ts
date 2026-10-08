@@ -270,31 +270,6 @@ describe("active editor pointer gesture ownership", () => {
   });
 });
 
-describe("active editor pointer momentum", () => {
-  it("records touch pan velocity and releases it into momentum", () => {
-    let input = { ...createInputState({ fitZoom: 1, zoom: 2 }), interaction: pagePanInteraction() };
-    const navigation = navigationPort();
-    const controller = horizontalPanController({
-      coalescedDispatch: () => {
-        input = {
-          ...input,
-          interaction: { ...pagePanInteraction(), current: { x: 32, y: 30 } },
-        };
-        return true;
-      },
-      getInput: () => input,
-      navigation: navigation.value,
-    });
-
-    controller.handlePointerMove(pointerEvent("touch", { timeStamp: 24 }));
-    controller.handlePointerUp(pointerEvent("touch", { timeStamp: 32 }));
-
-    expect(navigation.recordTouchPan.mock.calls[0]?.[0]).toBeCloseTo(14.4);
-    expect(navigation.recordTouchPan.mock.calls[0]?.[1]).toBe(24);
-    expect(navigation.releaseTouchPan).toHaveBeenCalledWith(32);
-  });
-});
-
 describe("active editor pointer recovery", () => {
   it("releases a stale captured pointer during terminal recovery", () => {
     const releasePointer = vi.fn();
@@ -341,7 +316,6 @@ function navigationPort() {
 }
 
 function horizontalPanController(overrides?: {
-  readonly coalescedDispatch?: (event: PointerEvent) => boolean;
   readonly dispatch?: (action: unknown) => void;
   readonly finishHandlePointer?: () => void;
   readonly getInput?: () => InputState;
@@ -358,7 +332,7 @@ function horizontalPanController(overrides?: {
     beginHandlePointer: vi.fn(),
     capturePointer: vi.fn(),
     coalesced: {
-      dispatch: vi.fn(overrides?.coalescedDispatch ?? (() => true)),
+      dispatch: vi.fn(() => true),
     } as unknown as CoalescedPointerInput,
     dispatch: overrides?.dispatch ?? vi.fn(),
     finishHandlePointer: overrides?.finishHandlePointer ?? vi.fn(),

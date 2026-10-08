@@ -145,6 +145,7 @@ export function layoutHarness(
     onResize,
     onZoom,
     rect,
+    renderer,
     releaseScrollStability,
     rendererPageHeight: () => rendererPageHeight,
     setMaximumBottom: (value: number | undefined) => {

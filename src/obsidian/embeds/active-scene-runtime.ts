@@ -49,11 +49,13 @@ export function bindSceneScrollOwner(
   options: ActiveInkbookSceneOptions,
   renderer: SvgSceneRenderer,
   controller: ActiveEditorController,
+  reuseOwnScroll?: (owner: BrowserScrollElement) => boolean,
 ): ActiveSceneScrollBinding {
   return bindActiveSceneScrollOwner({
     initialOwner: scrollOwner,
     invalidate: () => renderer.invalidateLayout(),
     onScroll: () => controller.handleNativeScroll(),
+    ...(reuseOwnScroll === undefined ? {} : { reuseOwnScroll }),
     ownerWindow,
     ...(options.scrollOwner === undefined ? {} : { provider: options.scrollOwner }),
     root: options.root,

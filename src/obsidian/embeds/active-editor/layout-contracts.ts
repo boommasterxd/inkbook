@@ -17,6 +17,7 @@ export interface ActiveEditorLayoutOptions {
   readonly page: () => PageV1;
   readonly readResizeAnchor?: () => ActiveEditorResizeAnchor | undefined;
   readonly readNavigationLayout?: () => NavigationLayoutRead | undefined;
+  readonly readHostGeometryRevision?: () => number;
   readonly renderer: SvgSceneRenderer;
   readonly root: HTMLElement;
   readonly storeMaximumBottom: () => number | undefined;

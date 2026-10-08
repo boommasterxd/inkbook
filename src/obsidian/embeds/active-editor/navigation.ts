@@ -6,17 +6,9 @@ import {
   calculateFitZoom,
   calculateZoomLimits,
   clampCameraX,
-  consumeWheelFrame,
-  consumeZoomFrame,
   continuousWheelZoomFactor,
-  createWheelZoomState,
-  createZoomFrameState,
   renderedContainerHeight,
   zoomFactorForSteps,
-  zoomFrameHasPending,
-  type WheelZoomState,
-  type ZoomAnchor,
-  type ZoomFrameState,
 } from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
 import { pointerSampleFromEvent } from "./controller-helpers";
@@ -47,7 +39,8 @@ import { applyNavigationFrameLayout, resolveNavigationFrame } from "./navigation
 import { NavigationActivity } from "./navigation-activity";
 import { ActiveEditorPanMomentum } from "./navigation-momentum";
 import { NavigationFeedback } from "./navigation-feedback";
-import { NavigationPinch, validPinchSample } from "./navigation-pinch";
+import { validPinchSample } from "./navigation-pinch";
+import { NavigationPendingInput } from "./navigation-pending";
 export type {
   ActiveEditorNavigationOptions,
   ActiveEditorViewState,
@@ -60,6 +53,7 @@ export class ActiveEditorNavigation {
   readonly #applyCamera: NonNullable<ActiveEditorNavigationOptions["applyCamera"]>;
   readonly #applyZoomLayout: ActiveEditorNavigationOptions["applyZoomLayout"];
   readonly #container: HTMLElement;
+  #ownerWindow: Window;
   #scrollOwner: BrowserScrollElement;
   readonly #getInput: () => InputState;
   readonly #workScheduler: ActiveEditorNavigationOptions["workScheduler"];
@@ -67,16 +61,11 @@ export class ActiveEditorNavigation {
   readonly #feedback: NavigationFeedback;
   #cameraX = 0;
   #frame: number | undefined;
-  #frameState: ZoomFrameState = createZoomFrameState();
   #gestureLayout: NavigationLayoutRead | undefined;
-  #latestAnchor: ZoomAnchor | undefined;
   #origin: { cameraX: number; scrollTop: number; zoom: number } | undefined;
-  readonly #pinch = new NavigationPinch();
-  #continuousFrameState: ZoomFrameState = createZoomFrameState();
-  #anchorSource: ((layout: NavigationLayoutRead) => ZoomAnchor) | undefined;
+  readonly #pending = new NavigationPendingInput();
   readonly #panMomentum: ActiveEditorPanMomentum;
   readonly #onCancelPinch: ActiveEditorNavigationOptions["onCancelPinch"];
-  #wheelState: WheelZoomState = createWheelZoomState();
   #zoom: number;
   public constructor(options: ActiveEditorNavigationOptions) {
     this.#activePageHeight = options.activePageHeight;
@@ -94,9 +83,13 @@ export class ActiveEditorNavigation {
     });
     const ownerWindow = options.container.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
+    this.#ownerWindow = ownerWindow;
     this.#workScheduler = options.workScheduler;
     this.#activity = new NavigationActivity(ownerWindow, options.onNavigationActive);
-    this.#panMomentum = new ActiveEditorPanMomentum(ownerWindow, () => this.#scheduleFrame());
+    this.#panMomentum = new ActiveEditorPanMomentum(
+      () => this.#scheduleFrame(),
+      () => this.#ownerWindow.performance?.now() ?? this.#workScheduler.now(),
+    );
     this.#zoom = positiveOr(options.getInput().zoom, 1);
   }
   public get cameraX(): number {
@@ -106,17 +99,21 @@ export class ActiveEditorNavigation {
     return this.#zoom;
   }
   public begin(): void {
-    this.#gestureLayout ??= readNavigationLayout(this.#container, this.#scrollOwner);
+    const layout =
+      this.#gestureLayout === undefined
+        ? readNavigationLayout(this.#container, this.#scrollOwner)
+        : undefined;
+    this.#gestureLayout ??= layout;
     this.#origin ??= {
       cameraX: this.#cameraX,
-      scrollTop: browserScrollMetrics.getScrollTop(this.#scrollOwner),
+      scrollTop: layout?.scrollTop ?? browserScrollMetrics.getScrollTop(this.#scrollOwner),
       zoom: this.#zoom,
     };
   }
   public finish(): void {
     this.#origin = undefined;
     this.#gestureLayout = undefined;
-    this.#pinch.finish();
+    this.#pending.pinch.finish();
   }
   public dispose(): void {
     this.cancelNavigation();
@@ -162,7 +159,7 @@ export class ActiveEditorNavigation {
   public pan(screenDeltaX: number): void {
     if (!Number.isFinite(screenDeltaX)) return;
     this.begin();
-    this.#frameState = accumulateZoomInput(this.#frameState, { panX: screenDeltaX });
+    this.#pending.frame = accumulateZoomInput(this.#pending.frame, { panX: screenDeltaX });
     this.#scheduleFrame();
   }
   public recordTouchPan(screenDeltaX: number, timestamp: number): void {
@@ -172,7 +169,7 @@ export class ActiveEditorNavigation {
     this.#panMomentum.releaseTouch(timestamp, this.#zoom > this.#getInput().fitZoom);
   }
   public cancelNavigation(): void {
-    const activePinch = this.#pinch.active;
+    const activePinch = this.#pending.pinch.active;
     this.#cancelPendingFrame();
     this.finish();
     if (activePinch) this.#onCancelPinch?.();
@@ -215,7 +212,7 @@ export class ActiveEditorNavigation {
   public scroll(screenDeltaY: number): void {
     if (!Number.isFinite(screenDeltaY)) return;
     this.begin();
-    this.#frameState = accumulateZoomInput(this.#frameState, { panY: screenDeltaY });
+    this.#pending.frame = accumulateZoomInput(this.#pending.frame, { panY: screenDeltaY });
     this.#scheduleFrame();
   }
   public setZoom(zoom: number): void {
@@ -305,23 +302,21 @@ export class ActiveEditorNavigation {
     this.#origin = undefined;
     this.#gestureLayout = undefined;
     this.#scrollOwner = scrollOwner;
+    this.#ownerWindow = ownerWindow;
     this.#feedback.reset();
-    this.#panMomentum.transferOwnerWindow(ownerWindow);
     return true;
   }
   public updateKeyboardStep(step: -1 | 1, lastScreenPointer: InputPoint | null): boolean {
-    return this.#queueKeyboardZoom(zoomFactorForSteps(step), lastScreenPointer);
-  }
-
-  #queueKeyboardZoom(factor: number, lastScreenPointer: InputPoint | null): boolean {
     this.cancelPanMomentum();
-    this.#anchorSource =
+    this.#pending.anchorSource =
       lastScreenPointer !== null &&
       Number.isFinite(lastScreenPointer.x) &&
       Number.isFinite(lastScreenPointer.y)
         ? (layout) => localScreenPointAnchor(layout, lastScreenPointer)
         : undefined;
-    this.#frameState = accumulateZoomInput(this.#frameState, { factor });
+    this.#pending.frame = accumulateZoomInput(this.#pending.frame, {
+      factor: zoomFactorForSteps(step),
+    });
     this.#scheduleFrame();
     return true;
   }
@@ -331,12 +326,12 @@ export class ActiveEditorNavigation {
     this.begin();
     const layout = this.#gestureLayout;
     if (layout === undefined) return;
-    this.#pinch.begin(anchor, this.getViewState(), layout);
+    this.#pending.pinch.begin(anchor, this.getViewState(), layout);
   }
   public updatePinchScreen(anchor: InputPoint, factor: number): void {
-    if (!this.#pinch.active || !validPinchSample(anchor, factor)) return;
-    this.#anchorSource = undefined;
-    this.#pinch.update(anchor, factor);
+    if (!this.#pending.pinch.active || !validPinchSample(anchor, factor)) return;
+    this.#pending.anchorSource = undefined;
+    this.#pending.pinch.update(anchor, factor);
     this.#scheduleFrame();
   }
   public notifyScroll(): void {
@@ -346,36 +341,31 @@ export class ActiveEditorNavigation {
   public updateWheel(event: ActiveEditorWheelInput): boolean {
     if (!Number.isFinite(event.deltaY) || !Number.isFinite(event.deltaX ?? 0)) return false;
     if (event.deltaY !== 0 || (event.deltaX ?? 0) !== 0) this.#activity.pulse();
-    this.#panMomentum.prepareWheel(isZoomWheel(event));
     if (isZoomWheel(event)) {
+      this.cancelPanMomentum();
       if (event.deltaY === 0) return true;
       const point = { clientX: event.clientX, clientY: event.clientY };
-      this.#anchorSource = (layout) => wheelAnchor(layout, point);
+      this.#pending.anchorSource = (layout) => wheelAnchor(layout, point);
       if (isContinuousZoomWheel(event)) {
-        this.#continuousFrameState = accumulateZoomInput(this.#continuousFrameState, {
+        this.#pending.continuous = accumulateZoomInput(this.#pending.continuous, {
           factor: continuousWheelZoomFactor(event.deltaY),
         });
       } else {
-        this.#wheelState = accumulateWheelSteps(this.#wheelState, -Math.sign(event.deltaY));
+        this.#pending.wheel = accumulateWheelSteps(this.#pending.wheel, -Math.sign(event.deltaY));
       }
       this.#scheduleFrame();
       return true;
     }
-    if (this.#zoom <= this.#getInput().fitZoom) {
-      this.#panMomentum.cancelTrackpad();
-      return false;
-    }
     const horizontal = horizontalPanWheel(event, {});
-    if (horizontal === undefined) {
-      this.#panMomentum.cancelTrackpad();
+    if (this.#zoom <= this.#getInput().fitZoom || horizontal === undefined) {
+      this.cancelPanMomentum();
       return false;
     }
     const pageHeight =
       event.deltaMode === 2 ? browserScrollMetrics.getClientHeight(this.#scrollOwner) : 0;
     const panX = pageHeight > 0 ? horizontalPanWheel(event, { pageHeight })! : horizontal;
-    const trackpadPanX = this.#panMomentum.trackpadWheelDelta(panX, event);
-    this.#frameState = accumulateZoomInput(this.#frameState, { panX: trackpadPanX ?? panX });
-    if (trackpadPanX === undefined) this.#panMomentum.cancelTrackpad();
+    this.#panMomentum.recordWheel(panX, event);
+    this.#pending.frame = accumulateZoomInput(this.#pending.frame, { panX });
     this.#scheduleFrame();
     return true;
   }
@@ -395,23 +385,12 @@ export class ActiveEditorNavigation {
   #applyFrame(timestamp: number): void {
     const momentumDelta = this.#panMomentum.advance(timestamp);
     if (momentumDelta !== 0) {
-      this.#frameState = accumulateZoomInput(this.#frameState, {
+      this.#pending.frame = accumulateZoomInput(this.#pending.frame, {
         panX: momentumDelta,
       });
     }
-    const wheel = consumeWheelFrame(this.#wheelState);
-    this.#wheelState = wheel.state;
-    if (wheel.frame.factor !== 1) {
-      this.#frameState = accumulateZoomInput(this.#frameState, {
-        factor: wheel.frame.factor,
-        ...(this.#latestAnchor === undefined ? {} : { anchor: this.#latestAnchor }),
-      });
-    }
-    const reduction = consumeZoomFrame(this.#frameState);
-    this.#frameState = reduction.state;
-    const frame = accumulateZoomInput(reduction.frame, this.#continuousFrameState);
-    this.#continuousFrameState = createZoomFrameState();
-    const pinch = this.#pinch.take();
+    const frame = this.#pending.consumeFrame();
+    const pinch = this.#pending.pinch.take();
     if (frame.factor === 1 && frame.panX === 0 && frame.panY === 0 && pinch === undefined) return;
     const layout = readNavigationLayout(this.#container, this.#scrollOwner);
     if (layout === undefined) {
@@ -421,9 +400,9 @@ export class ActiveEditorNavigation {
     const resolved = resolveNavigationFrame({
       cameraX: this.#cameraX,
       frame:
-        this.#anchorSource === undefined
+        this.#pending.anchorSource === undefined
           ? frame
-          : { ...frame, anchor: (this.#latestAnchor = this.#anchorSource(layout)) },
+          : { ...frame, anchor: (this.#pending.latestAnchor = this.#pending.anchorSource(layout)) },
       layout,
       pageHeight: this.#activePageHeight,
       scrollOwner: this.#scrollOwner,
@@ -445,7 +424,7 @@ export class ActiveEditorNavigation {
     this.#zoom = resolved.zoom;
     this.#cameraX = resolved.cameraX;
     this.#feedback.apply({ x: this.#cameraX, zoom: this.#zoom }, appliedLayout, resolved.fitZoom);
-    if (momentumDelta !== 0 && this.#cameraX === previousCameraX) {
+    if (frame.panX !== 0 && this.#cameraX === previousCameraX) {
       this.cancelPanMomentum();
     }
   }
@@ -471,29 +450,14 @@ export class ActiveEditorNavigation {
   }
 
   #hasPendingFrame(): boolean {
-    return (
-      this.#panMomentum.active ||
-      this.#pinch.pending ||
-      zoomFrameHasPending(this.#continuousFrameState) ||
-      Math.abs(this.#wheelState.pendingSteps) >= 1 ||
-      zoomFrameHasPending(this.#frameState)
-    );
+    return this.#panMomentum.active || this.#pending.pending;
   }
 
   #cancelPendingFrame(): void {
     this.#activity.reset();
     if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
-    this.#clearPendingFrame();
-  }
-
-  #clearPendingFrame(): void {
-    this.#pinch.reset();
-    this.#continuousFrameState = createZoomFrameState();
     this.#panMomentum.cancel();
-    this.#wheelState = createWheelZoomState();
-    this.#frameState = createZoomFrameState();
-    this.#latestAnchor = undefined;
-    this.#anchorSource = undefined;
+    this.#pending.clear();
   }
 }

@@ -6,7 +6,6 @@ import {
   ActiveEditorNavigation,
   type ActiveEditorWheelInput,
 } from "../../../../src/obsidian/embeds/active-editor/navigation";
-import { responsiveTrackpadPanDelta } from "../../../../src/obsidian/embeds/active-editor/trackpad-pan-momentum";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
@@ -36,10 +35,6 @@ class Frames {
     this.callbacks.delete(entry[0]);
     this.#now = timestamp;
     entry[1](timestamp);
-  }
-
-  setNow(timestamp: number): void {
-    this.#now = timestamp;
   }
 }
 
@@ -300,60 +295,6 @@ describe("active editor navigation input ordering", () => {
   });
 });
 
-describe("active editor horizontal wheel routing", () => {
-  it("claims horizontal trackpad and Shift-wheel input only above fit", () => {
-    const harness = createHarness();
-    expect(harness.navigation.updateWheel(horizontalWheel())).toBe(false);
-    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
-
-    expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 1, deltaY: 20 }))).toBe(false);
-    harness.frames.setNow(0);
-    expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 20, deltaY: 18 }))).toBe(true);
-    harness.frames.setNow(16);
-    expect(harness.navigation.updateWheel(horizontalWheel())).toBe(true);
-    harness.frames.setNow(32);
-    expect(
-      harness.navigation.updateWheel(
-        horizontalWheel({ deltaMode: 1, deltaX: 0, deltaY: 2, shiftKey: true }),
-      ),
-    ).toBe(true);
-    harness.frames.flush();
-
-    expect(harness.navigation.cameraX).toBeCloseTo(
-      -100 + responsiveTrackpadPanDelta(-20, undefined) + responsiveTrackpadPanDelta(-80, 16) - 32,
-    );
-  });
-
-  it("continues a horizontal pixel-wheel burst after its native inertial tail ends", () => {
-    const harness = createHarness();
-    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
-    for (const [timestamp, deltaX, deltaY] of [
-      [0, 10, 2],
-      [16, 8, 2],
-      [32, 5, 3],
-      [48, 3, 2],
-    ] as const) {
-      harness.frames.setNow(timestamp);
-      expect(harness.navigation.updateWheel(horizontalWheel({ deltaX, deltaY }))).toBe(true);
-      harness.frames.flush(timestamp);
-    }
-
-    const directPan = [-10, -8, -5, -3]
-      .map((delta, index) => responsiveTrackpadPanDelta(delta, index === 0 ? undefined : 16))
-      .reduce((total, delta) => total + delta, 0);
-    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
-    expect(harness.frames.callbacks.size).toBe(1);
-    harness.frames.flush(64);
-    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
-    harness.frames.flush(72);
-    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
-    harness.frames.flush(88);
-
-    expect(harness.navigation.cameraX).toBeLessThan(-100 + directPan);
-    expect(harness.sequence).not.toContain("scroll-write");
-  });
-});
-
 describe("active editor pointer-anchored keyboard navigation", () => {
   it("anchors keyboard zoom to the last screen position after pan and resize", () => {
     const harness = createHarness();
@@ -451,20 +392,6 @@ describe("active editor gesture geometry and view transfer", () => {
     expect(harness.navigation.getViewState()).toEqual({ cameraX: -300, zoom: 1 });
   });
 });
-
-function horizontalWheel(overrides: Partial<ActiveEditorWheelInput> = {}): ActiveEditorWheelInput {
-  return {
-    clientX: 100,
-    clientY: 100,
-    ctrlKey: false,
-    deltaMode: 0,
-    deltaX: 80,
-    deltaY: 10,
-    metaKey: false,
-    shiftKey: false,
-    ...overrides,
-  };
-}
 
 function zoomWheel(deltaY: number): ActiveEditorWheelInput {
   return {

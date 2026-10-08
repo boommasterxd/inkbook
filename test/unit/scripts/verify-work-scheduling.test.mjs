@@ -131,6 +131,29 @@ it("permits only exact semantic host turn and microtask sites", () => {
   ).toHaveLength(1);
 });
 
+it("permits one host measurement throttle timer without admitting other native work", () => {
+  const path = "src/obsidian/embeds/host-zoom-measure-throttle.ts";
+  const permitted =
+    "class HostZoomMeasureThrottle { #armTimer() { ownerWindow.setTimeout(() => scheduler.requestFrame(measure), 150); } }";
+  expect(validateWorkScheduling([source(permitted, path)])).toEqual([]);
+  expect(
+    validateWorkScheduling([
+      source(
+        permitted.replace("scheduler.requestFrame", "ownerWindow.requestAnimationFrame"),
+        path,
+      ),
+    ]),
+  ).toHaveLength(1);
+  expect(
+    validateWorkScheduling([
+      source(
+        "class HostZoomMeasureThrottle { #armTimer() { setTimeout(one, 150); setTimeout(two, 150); } }",
+        path,
+      ),
+    ]),
+  ).toHaveLength(1);
+});
+
 it("rejects private work deadlines while allowing the shared scheduler deadline", () => {
   const violations = validateWorkScheduling([
     source(`

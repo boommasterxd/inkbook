@@ -16,7 +16,6 @@ import type { ActiveEditorNavigation } from "./navigation";
 import type { ActivePointerCaptureOwner } from "./pointer-capture";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { InkbookFeedbackCode } from "../../feedback";
-import { touchPanDelta } from "./controller-touch";
 
 interface ActiveEditorInputFactoryOptions {
   readonly actions: ActiveEditorActions;
@@ -89,7 +88,7 @@ export function createActiveEditorInputControllers(
     [
       (anchor) => options.navigation.beginPinchScreen(anchor),
       () => options.navigation.finish(),
-      (delta) => options.navigation.pan(touchPanDelta(delta)),
+      (delta) => options.navigation.pan(delta),
       (kind) => (kind === "page-pan" ? options.navigation.revert() : options.navigation.finish()),
       () => options.navigation.revert(),
       (anchor, factor) => options.navigation.updatePinchScreen(anchor, factor),

@@ -60,8 +60,13 @@ export function applyNavigationFrameLayout(
           layout,
           scrollTop: resolved.unclampedScrollTop ?? resolved.scrollTop,
         }) ?? resolved.blockSize);
-  if (adjustsScroll) browserScrollMetrics.setScrollTop(options.scrollOwner, resolved.scrollTop);
-  const scrollTop = adjustsScroll
+  // A height write can clamp or anchor native scrolling even when the requested
+  // offset is unchanged. Only skip a proven no-op on the measured geometry.
+  const writesScroll =
+    adjustsScroll &&
+    (resolved.zoom !== options.previousZoom || resolved.scrollTop !== layout.scrollTop);
+  if (writesScroll) browserScrollMetrics.setScrollTop(options.scrollOwner, resolved.scrollTop);
+  const scrollTop = writesScroll
     ? browserScrollMetrics.getScrollTop(options.scrollOwner)
     : layout.scrollTop;
   return projectNavigationCursorLayout(layout, { blockSize, scrollTop });

@@ -6,6 +6,32 @@ import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { layoutHarness } from "../../integration/obsidian/embeds/active-editor-layout-fixture";
 import { ownZoomResizeFixture } from "../../fixtures/obsidian/own-zoom-resize";
 import { sceneSurfaceZoomFixture } from "../../fixtures/rendering/scene-surface-zoom";
+import { ownZoomScrollFixture } from "../../fixtures/obsidian/own-zoom-scroll";
+
+it("bounds own-scroll proof reads without repeating complete scene measurements", () => {
+  const h = ownZoomScrollFixture();
+  try {
+    for (let index = 0; index < INTERACTION_REFRESH_PROFILE.sampleCount; index += 1) {
+      h.zoom(index % 2 === 0 ? 200 : 400, index % 2 === 0 ? 200 : 100);
+      h.scroll();
+    }
+    const count = INTERACTION_REFRESH_PROFILE.sampleCount;
+    expect(h.fullRead).not.toHaveBeenCalled();
+    expect(h.style).toHaveBeenCalledTimes(count);
+    expect(h.box).toHaveBeenCalledTimes(count * 2);
+    expect(h.ownerBox).toHaveBeenCalledTimes(count * 2);
+    expect(h.onScroll).toHaveBeenCalledTimes(count);
+    h.h.renderer.invalidateLayout();
+    h.scroll();
+    expect(h.fullRead).toHaveBeenCalledOnce();
+    expect(h.style).toHaveBeenCalledTimes(count + 1);
+    h.binding.dispose();
+    h.scroll();
+    expect(h.fullRead).toHaveBeenCalledOnce();
+  } finally {
+    h.dispose();
+  }
+});
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz layout profile`, () => {
   it("bounds owned style writes, resize frames, and foreign theme reads independently", () => {

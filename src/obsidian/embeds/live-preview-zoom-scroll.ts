@@ -1,8 +1,10 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { BrowserScrollElement } from "../scrolling/index";
+import { HostZoomMeasureThrottle } from "./host-zoom-measure-throttle";
 
 export interface HostZoomScroll {
+  readonly geometryRevision?: number;
   retain(owner: BrowserScrollElement, scrollTop: number, anchor?: HostZoomScrollAnchor): void;
   cancel(): void;
   dispose(): void;
@@ -15,6 +17,11 @@ export interface HostZoomScrollAnchor {
 
 class LivePreviewZoomScroll {
   #pending: LivePreviewZoomScrollBinding | undefined;
+  geometryRevision = 0;
+
+  invalidateGeometry(): void {
+    this.geometryRevision += 1;
+  }
 
   retain(binding: LivePreviewZoomScrollBinding): void {
     if (this.#pending !== binding) this.#pending?.cancel();
@@ -26,6 +33,8 @@ class LivePreviewZoomScroll {
   }
 
   settle(update: ViewUpdate): void {
+    if (update.docChanged || update.geometryChanged || update.viewportChanged)
+      this.invalidateGeometry();
     if (update.docChanged) this.#pending?.cancel();
     else this.#pending?.settle();
   }
@@ -47,6 +56,7 @@ export class LivePreviewZoomScrollBinding implements HostZoomScroll {
   readonly #view: EditorView;
   readonly #root: HTMLElement;
   readonly #scheduler: WorkScheduler;
+  readonly #throttle: HostZoomMeasureThrottle;
   #owner: BrowserScrollElement | undefined;
   #anchor: HostZoomScrollAnchor | undefined;
   #scrollTop = 0;
@@ -60,19 +70,48 @@ export class LivePreviewZoomScrollBinding implements HostZoomScroll {
     this.#view = view;
     this.#root = root;
     this.#scheduler = scheduler;
+    const ownerWindow = root.ownerDocument.defaultView;
+    if (ownerWindow === null) throw new Error("Missing zoom-scroll owner window.");
+    this.#throttle = new HostZoomMeasureThrottle(ownerWindow, scheduler);
+  }
+
+  get geometryRevision(): number {
+    return this.#view.plugin(zoomScrollPlugin)?.geometryRevision ?? -1;
   }
 
   retain(owner: BrowserScrollElement, scrollTop: number, anchor?: HostZoomScrollAnchor): void {
-    this.cancel();
     const coordinator = this.#view.plugin(zoomScrollPlugin);
-    if (this.#disposed || owner !== this.#view.scrollDOM || !Number.isFinite(scrollTop)) return;
-    if (coordinator === null) return;
+    if (
+      this.#disposed ||
+      owner !== this.#view.scrollDOM ||
+      !Number.isFinite(scrollTop) ||
+      coordinator === null
+    ) {
+      this.cancel();
+      return;
+    }
+    this.#epoch += 1;
+    this.#clearMeasurement();
+    if (this.#owner !== owner) {
+      if (this.#owner !== undefined) this.#listen(this.#owner, false);
+      this.#listen(owner, true);
+    }
     this.#owner = owner;
     this.#scrollTop = scrollTop;
     this.#anchor = anchor;
     coordinator.retain(this);
-    this.#listen(owner, true);
-    if (this.#measureQueued) return;
+    if (!this.#measureQueued) this.#throttle.request(this.#requestMeasure);
+  }
+
+  readonly #requestMeasure = (): void => {
+    if (
+      this.#owner !== this.#view.scrollDOM ||
+      !this.#root.isConnected ||
+      !(this.#anchor?.container.isConnected ?? true)
+    ) {
+      this.cancel();
+      return;
+    }
     this.#measureQueued = true;
     this.#view.requestMeasure({
       key: this,
@@ -82,12 +121,13 @@ export class LivePreviewZoomScrollBinding implements HostZoomScroll {
       },
       write: (measuredEpoch) => {
         if (measuredEpoch !== this.#epoch || this.#owner === undefined) return;
+        this.#view.plugin(zoomScrollPlugin)?.invalidateGeometry();
         this.#measured = true;
-        // Empty measurements have no update listener. Expire after this host measurement frame.
-        this.#expiryFrame = this.#scheduler.requestFrame(() => this.cancel());
+        // Empty measurements have no update listener. Reconcile once in the next admitted frame.
+        this.#expiryFrame = this.#scheduler.requestFrame(() => this.settle());
       },
     });
-  }
+  };
 
   settle(): void {
     const owner = this.#owner;
@@ -97,26 +137,32 @@ export class LivePreviewZoomScrollBinding implements HostZoomScroll {
       this.#root.isConnected &&
       owner === this.#view.scrollDOM &&
       (anchor?.container.isConnected ?? true);
+    const currentScrollTop = attached ? owner.scrollTop : 0;
     const originDelta =
       !attached || anchor === undefined
         ? 0
-        : anchor.container.getBoundingClientRect().top + owner.scrollTop - anchor.contentTop;
+        : anchor.container.getBoundingClientRect().top + currentScrollTop - anchor.contentTop;
     const desired = this.#scrollTop + originDelta;
     this.cancel();
-    if (attached && Number.isFinite(desired) && Math.abs(owner.scrollTop - desired) > 0.5) {
+    if (attached && Number.isFinite(desired) && Math.abs(currentScrollTop - desired) > 0.5) {
       owner.scrollTop = desired;
     }
   }
 
   cancel(): void {
     this.#epoch += 1;
-    this.#measured = false;
-    if (this.#expiryFrame !== undefined) this.#scheduler.cancelFrame(this.#expiryFrame);
-    this.#expiryFrame = undefined;
+    this.#clearMeasurement();
+    this.#throttle.cancel();
     if (this.#owner !== undefined) this.#listen(this.#owner, false);
     this.#owner = undefined;
     this.#anchor = undefined;
     this.#view.plugin(zoomScrollPlugin)?.release(this);
+  }
+
+  #clearMeasurement(): void {
+    this.#measured = false;
+    if (this.#expiryFrame !== undefined) this.#scheduler.cancelFrame(this.#expiryFrame);
+    this.#expiryFrame = undefined;
   }
 
   dispose(): void {

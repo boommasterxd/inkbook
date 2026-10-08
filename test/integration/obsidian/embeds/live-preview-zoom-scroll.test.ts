@@ -9,7 +9,40 @@ import { applyActiveSceneZoomLayout } from "../../../../src/obsidian/embeds/acti
 import { readNavigationLayout } from "../../../../src/obsidian/embeds/active-editor/navigation-layout";
 import { LivePreviewZoomScrollBinding } from "../../../../src/obsidian/embeds/live-preview-zoom-scroll";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
-import { createLivePreviewZoomScrollFixture } from "../../../fixtures/obsidian/live-preview-zoom-scroll";
+import {
+  cancelZoomScrollForReason,
+  createLivePreviewZoomScrollFixture,
+  ZOOM_SCROLL_CANCELLATION_REASONS,
+} from "../../../fixtures/obsidian/live-preview-zoom-scroll";
+
+it("invalidates projected geometry before a host measurement or relayout can restore scrolling", () => {
+  const h = createLivePreviewZoomScrollFixture();
+  try {
+    const initial = h.binding.geometryRevision;
+    h.notify();
+    expect(h.binding.geometryRevision).toBe(initial);
+    h.binding.retain(h.owner, 812);
+    h.measure();
+    expect(h.binding.geometryRevision).toBe(initial + 1);
+    const revisions: number[] = [];
+    h.scrollWrite.mockImplementation(() => {
+      revisions.push(h.binding.geometryRevision);
+      return 812;
+    });
+    h.notify(false, true);
+    expect(revisions).toEqual([initial + 2]);
+    h.notify(false, false, true);
+    expect(h.binding.geometryRevision).toBe(initial + 3);
+    h.notify(true);
+    expect(h.binding.geometryRevision).toBe(initial + 4);
+    h.binding.retain(h.owner, 900);
+    h.binding.cancel();
+    h.measure();
+    expect(h.binding.geometryRevision).toBe(initial + 4);
+  } finally {
+    h.destroy();
+  }
+});
 
 it("owns at most one widget target per host view", () => {
   const h = createLivePreviewZoomScrollFixture();
@@ -47,7 +80,9 @@ it("restores the latest input anchor after the host height measurement", () => {
     expect(h.owner.scrollTop).toBe(812.36977);
     h.measure();
     h.owner.scrollTop = 1917;
+    h.scrollRead.mockClear();
     h.notify();
+    expect(h.scrollRead).toHaveBeenCalledOnce();
     expect(h.owner.scrollTop).toBe(812.36977);
     expect(h.frames.pending).toBe(0);
     h.owner.scrollTop = 900;
@@ -148,26 +183,17 @@ it.each([
   },
 );
 
-it.each(["wheel", "touchmove", "pointerdown", "keydown", "resize", "edit", "detach", "dispose"])(
-  "gives up the old zoom anchor on %s",
-  (reason) => {
-    const h = createLivePreviewZoomScrollFixture();
-    try {
-      h.binding.retain(h.owner, 812);
-      h.measure();
-      if (reason === "edit") h.notify(true);
-      else if (reason === "detach") h.root.remove();
-      else if (reason === "dispose") h.binding.dispose();
-      else {
-        const target = reason === "keydown" ? document : reason === "resize" ? window : h.owner;
-        target.dispatchEvent(new Event(reason));
-      }
-      expectNativeControl(h);
-    } finally {
-      h.destroy();
-    }
-  },
-);
+it.each(ZOOM_SCROLL_CANCELLATION_REASONS)("gives up the old zoom anchor on %s", (reason) => {
+  const h = createLivePreviewZoomScrollFixture();
+  try {
+    h.binding.retain(h.owner, 812);
+    h.measure();
+    cancelZoomScrollForReason(h, reason);
+    expectNativeControl(h);
+  } finally {
+    h.destroy();
+  }
+});
 
 it("expires a request whose host measure has no changed geometry", () => {
   const h = createLivePreviewZoomScrollFixture();
@@ -189,6 +215,8 @@ it("replaces an already measured epoch before its expiry and ignores canceled wo
     h.measure();
     h.binding.retain(h.owner, 900);
     expect(h.frames.pending).toBe(0);
+    h.advance(150);
+    h.frames.flushOne();
     h.measure();
     h.owner.scrollTop = 900.25;
     h.scrollWrite.mockClear();
@@ -250,6 +278,8 @@ it.each(["revert", "restore", "revert at original scale"])(
       const expected = h.owner.scrollTop;
       if (action.startsWith("revert")) expect(expected).toBe(200);
       expect(navigation.zoom).toBe(1);
+      h.advance(150);
+      h.frames.flushOne();
       h.measure();
       h.owner.scrollTop = 0;
       h.notify();

@@ -15,6 +15,7 @@ function expectSingleZoomPublication(harness: ReturnType<typeof buildNavigationH
   expect(harness.inputWrites()).toBe(1);
   expect(harness.layoutWrites).toBe(1);
   expect(harness.scrollWrites).toBe(1);
+  expect(harness.scrollReads).toBe(2);
   expect(harness.layoutReads).toBe(1);
   expect(harness.hostBoundsReads).toEqual({ container: 1, owner: 1 });
   expect(harness.workReads).toEqual({ page: 1, scrollHeight: 1 });
@@ -62,7 +63,8 @@ function navigationFrame(mode: number, harness: ReturnType<typeof buildNavigatio
     } else if (harness.frames.pending === 0) {
       startNavigationFlick(harness, frame % 2 === 0 ? 1 : -1);
     }
-    harness.frames.flush();
+    if (harness.frames.pending > 0) harness.frames.flush();
+    else harness.frames.advanceQuiet(harness.frames.frameDurationMs);
     return claimed;
   };
 }
@@ -202,6 +204,17 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz direct zoom work`, () =>
     disposeActiveNavigation(harness);
   });
 
+  it("reuses the gesture scroll snapshot and skips stationary touch scroll work", () => {
+    const harness = createPanningHarness();
+    const midpoint = { x: 500, y: 200 };
+    harness.navigation.beginPinchScreen(midpoint);
+    expect(harness.scrollReads).toBe(1);
+    expectMeasuredScrollNoOp(harness, () => harness.navigation.updatePinchScreen(midpoint, 1));
+    expect(harness.cameraWrites).toBe(0);
+    expect(harness.frames.maxPending).toBe(1);
+    disposeActiveNavigation(harness);
+  });
+
   it("discards canceled touch targets before any host writes", () => {
     const harness = createPanningHarness();
     harness.navigation.beginPinchScreen({ x: 500, y: 200 });
@@ -214,6 +227,17 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz direct zoom work`, () =>
     harness.navigation.dispose();
     expect(harness.frames.pendingTimers).toBe(0);
   });
+});
+
+it("keeps repeated native pan at the boundary free of scroll writes and readbacks", () => {
+  const harness = createPanningHarness();
+  harness.navigation.scroll(10_000);
+  harness.frames.flush();
+  expectMeasuredScrollNoOp(harness, () => harness.navigation.scroll(10));
+  // The adapter keeps a fixed container top after the first projected scroll;
+  // the next fresh measurement therefore applies that external geometry once.
+  expect(harness.cameraWrites).toBe(1);
+  disposeActiveNavigation(harness);
 });
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => {
@@ -266,6 +290,8 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => 
     expect(harness.layoutReads).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.workReads.scrollHeight).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.workReads.page).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    // Keep the post-height-write read: browsers may clamp the requested offset.
+    expect(harness.scrollReads).toBe(INTERACTION_REFRESH_PROFILE.sampleCount * 2);
 
     disposeActiveNavigation(harness);
   });
@@ -282,9 +308,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => 
   });
 
   it.each([
-    { input: "trackpad handoff", mode: 2 },
+    { input: "trackpad", mode: 2 },
     { input: "touch", mode: 3 },
-  ])("keeps horizontal $input momentum with coalesced work", ({ mode }) => {
+  ])("keeps horizontal $input movement with coalesced work", ({ mode }) => {
     const harness = createPanningHarness();
     let claimedEvents = 0;
     const update = navigationFrame(mode, harness);
@@ -294,9 +320,12 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => 
 
     if (mode === 2) {
       expect(claimedEvents).toBe((INTERACTION_REFRESH_PROFILE.sampleCount / 4) * 3);
-      expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-      expect(harness.frames.maxPending).toBe(1);
+      expect(harness.cameraWrites).toBe(claimedEvents);
+      expect(harness.layoutReads).toBe(claimedEvents);
+      expect(harness.frames.pending).toBe(1);
     } else expect(harness.cameraWrites).toBeGreaterThan(0);
+    expect(harness.frames.maxPending).toBe(1);
+    expect(harness.cameraWrites).toBeLessThanOrEqual(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.scrollWrites).toBe(0);
     expect(harness.workReads.scrollHeight).toBe(0);
     expect(harness.workReads.page).toBe(0);
@@ -306,6 +335,121 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => 
     disposeActiveNavigation(harness);
   });
 });
+
+it("preserves native horizontal deltas across bursts and gaps with one quiet frame queued", () => {
+  const harness = createPanningHarness();
+  const initialCamera = harness.navigation.cameraX;
+  let screenTravel = 0;
+  runInteractionFrames((frame) => {
+    const deltaX = frame % 2 === 0 ? 20 : -20;
+    for (let event = 0; event < 4; event += 1) {
+      expect(
+        harness.navigation.updateWheel({
+          clientX: 500,
+          clientY: 300,
+          deltaMode: 0,
+          deltaX,
+          deltaY: 0,
+          ctrlKey: false,
+          metaKey: false,
+          shiftKey: false,
+        }),
+      ).toBe(true);
+      screenTravel -= deltaX;
+    }
+    expect(harness.frames.pending).toBe(1);
+    harness.frames.flush();
+    expect(harness.navigation.cameraX).toBeCloseTo(initialCamera + screenTravel);
+    expect(harness.frames.pending).toBe(1);
+    harness.frames.advanceQuiet(80);
+  });
+  expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+  expect(harness.layoutReads).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+  expect(harness.frames.maxPending).toBe(1);
+  expect(harness.scrollWrites).toBe(0);
+  expect(harness.layoutWrites).toBe(0);
+  expect(harness.workReads).toEqual({ page: 0, scrollHeight: 0 });
+  disposeActiveNavigation(harness);
+});
+
+it.each([3, 0.05])("bounds host work for %s px trackpad release", (deltaX) => {
+  const harness = createPanningHarness();
+  const initialCamera = harness.navigation.cameraX;
+  for (let sample = 0; sample < 3; sample += 1) {
+    harness.navigation.updateWheel({
+      clientX: 500,
+      clientY: 300,
+      deltaMode: 0,
+      deltaX,
+      deltaY: 0,
+    });
+    harness.frames.flush();
+    expect(harness.navigation.cameraX).toBeCloseTo(initialCamera - deltaX * (sample + 1));
+  }
+  expect(harness.cameraWrites).toBe(3);
+  expect(harness.layoutReads).toBe(3);
+  const releaseDeadline =
+    harness.frames.now -
+    harness.frames.frameDurationMs +
+    Math.max(32, harness.frames.frameDurationMs * 3);
+  harness.resetWrites();
+  while (harness.frames.now + harness.frames.frameDurationMs < releaseDeadline - 1e-9) {
+    harness.frames.flush();
+    expect(harness.frames.pending).toBe(1);
+    expectNoNavigationWrites(harness);
+    expect(harness.layoutReads).toBe(0);
+    expect(harness.scrollReads).toBe(0);
+    expect(harness.hostBoundsReads).toEqual({ container: 0, owner: 0 });
+  }
+  // A release exactly on a frame boundary may publish its first movement next frame.
+  harness.frames.flush();
+  if (harness.frames.pending > 0 && harness.cameraWrites === 0) harness.frames.flush();
+  if (deltaX === 3) {
+    expect(harness.cameraWrites).toBe(1);
+    expect(harness.layoutReads).toBe(1);
+    expect(harness.scrollReads).toBe(1);
+    expect(harness.hostBoundsReads).toEqual({ container: 1, owner: 1 });
+    expect(harness.navigation.cameraX).toBeLessThan(initialCamera - deltaX * 3);
+    expect(harness.frames.pending).toBe(1);
+  } else {
+    expect(harness.frames.pending).toBe(0);
+    expect(harness.cameraWrites).toBe(0);
+    expect(harness.layoutReads).toBe(0);
+    expect(harness.scrollReads).toBe(0);
+    expect(harness.hostBoundsReads).toEqual({ container: 0, owner: 0 });
+  }
+  expect(harness.scrollWrites).toBe(0);
+  expect(harness.layoutWrites).toBe(0);
+  expect(harness.workReads).toEqual({ page: 0, scrollHeight: 0 });
+  expect(harness.frames.maxPending).toBe(1);
+  harness.navigation.cancelNavigation();
+  harness.resetWrites();
+  harness.frames.advanceQuiet(1_000);
+  expect(harness.frames.pending).toBe(0);
+  expect(harness.frames.pendingTimers).toBe(0);
+  expectNoNavigationWrites(harness);
+  expect(harness.layoutReads).toBe(0);
+  expect(harness.hostBoundsReads).toEqual({ container: 0, owner: 0 });
+  harness.navigation.dispose();
+});
+
+function expectMeasuredScrollNoOp(
+  harness: ReturnType<typeof createNavigationHarness>,
+  queueInput: () => void,
+): void {
+  harness.resetWrites();
+  runInteractionFrames(() => {
+    queueInput();
+    harness.frames.flush();
+  });
+  expect(harness.scrollReads).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+  expect(harness.scrollWrites).toBe(0);
+  expect(harness.layoutWrites).toBe(0);
+  expect(harness.hostBoundsReads).toEqual({
+    container: INTERACTION_REFRESH_PROFILE.sampleCount,
+    owner: INTERACTION_REFRESH_PROFILE.sampleCount,
+  });
+}
 
 function createPanningHarness(): ReturnType<typeof createNavigationHarness> {
   const harness = createNavigationHarness();

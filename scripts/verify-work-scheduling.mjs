@@ -73,6 +73,7 @@ const SEMANTIC_TIMER_SITES = new Map([
   ["src/obsidian/embeds/active-scene-timeout.ts#wait", 1],
   ["src/obsidian/embeds/canvas-touch-boundary.ts##handlePointerTerminal", 1],
   ["src/obsidian/embeds/editor-chrome-loader.ts##startLoad", 1],
+  ["src/obsidian/embeds/host-zoom-measure-throttle.ts##armTimer", 1],
   ["src/obsidian/embeds/presentation-operation-feedback.ts#begin", 1],
   ["src/obsidian/embeds/workspace-runtime-lifecycle.ts##armAutoActivationTimeout", 1],
   ["src/obsidian/embeds/workspace-runtime-workers.ts#createWorkspaceDocumentRuntimes", 1],
