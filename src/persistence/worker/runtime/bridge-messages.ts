@@ -18,6 +18,7 @@ export interface BridgeSuccess {
 
 export interface BridgeFailure {
   readonly code: "executor-failed";
+  readonly phase?: "host-decoding" | "host-execution" | "host-encoding";
   readonly requestId: number;
   readonly type: "inkbook-worker-error";
 }

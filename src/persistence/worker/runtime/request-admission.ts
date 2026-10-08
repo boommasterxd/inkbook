@@ -79,6 +79,14 @@ export function isNavigationSceneRequest(request: DocumentRuntimeRequest): boole
   );
 }
 
+export function isWorkerRequestPaused(
+  request: DocumentRuntimeRequest,
+  liveInputActive: boolean,
+  navigationActive: boolean,
+): boolean {
+  return liveInputActive || (navigationActive && !isNavigationSceneRequest(request));
+}
+
 export function cancelsSpeculativeSceneRequest(
   request: DocumentRuntimeRequest,
   keepNavigationReserve: boolean,

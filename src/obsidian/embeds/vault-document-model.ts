@@ -28,10 +28,20 @@ import { changedElementDerivations, changedElements } from "./vault-document-mod
 import type { EditableDocumentModel } from "./document-model-port";
 import { attachEditableDocumentState } from "./editable-document-state";
 import { SessionClipboardCoordinator } from "./session-clipboard";
+import { SessionScenePaths } from "./session-scene-paths";
 import type { VaultDocumentPersistedEvent } from "./vault-document-recovery";
 
 type EditableActions = Parameters<typeof attachEditableDocumentState>[0];
 type EditableState = Parameters<typeof attachEditableDocumentState>[1];
+
+export function isVaultPersistencePending(autosave: AutosaveCoordinator | undefined): boolean {
+  return (
+    autosave !== undefined &&
+    (autosave.status === "debouncing" ||
+      autosave.status === "saving" ||
+      autosave.status === "waiting-for-gesture")
+  );
+}
 
 export function createVaultEditableModel(options: {
   readonly actions: Omit<EditableActions, "store">;
@@ -61,6 +71,7 @@ export function createVaultAutosaveSession(
     confirmed: options.confirmed,
     ...(options.statusChanged ? { statusChanged: options.statusChanged } : {}),
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),
+    ...(options.createReplacement ? { createReplacement: options.createReplacement } : {}),
     currentRevision: options.currentRevision,
     executor: options.executor,
     initialSnapshot: options.initialSnapshot,
@@ -124,6 +135,32 @@ export function createVaultClipboardCoordinator(options: {
     sessionId: options.sessionId,
     workerEpoch: options.workerEpoch,
   });
+}
+
+export function createVaultSessionScenePaths(
+  options: Omit<Parameters<typeof createVaultClipboardCoordinator>[0], "now">,
+): SessionScenePaths {
+  return new SessionScenePaths({
+    ...options,
+    recoverExecutorFailure: () => options.autosave()?.recoverWorkerExecutor() ?? false,
+    synchronize: (identity) =>
+      options.autosave()?.synchronizeWorkerBaseline(identity) ?? Promise.resolve(false),
+  });
+}
+
+export function createVaultInputActivityActions(
+  priority: InteractiveWorkPriority,
+  executor: () => DocumentRuntimePort | undefined,
+): Pick<EditableActions, "setGestureActive" | "setNavigationActive"> {
+  const update = (active: boolean, source: "gesture" | "navigation"): void => {
+    if (!priority.setInputActive(active, source)) return;
+    if (source === "navigation") executor()?.setNavigationActive?.(active);
+    else executor()?.setLiveInputActive?.(active);
+  };
+  return {
+    setGestureActive: (active) => update(active, "gesture"),
+    setNavigationActive: (active) => update(active, "navigation"),
+  };
 }
 
 export function createConfirmedPersistenceObserver(options: {

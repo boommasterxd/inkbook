@@ -94,6 +94,7 @@ function matchesRequestIdentity(
       result.modelRevision === request.modelRevision
     );
   }
+  if (result.type === "runtime-failure") return sameIdentity(request.identity, result.identity);
   if (request.type === "model-sync-full" || request.type === "model-sync-incremental") {
     return (
       result.type === "model-sync-success" &&
@@ -101,7 +102,6 @@ function matchesRequestIdentity(
       sameIdentity(request.identity, result.identity)
     );
   }
-  if (result.type === "runtime-failure") return sameIdentity(request.identity, result.identity);
   const expectedType = SUCCESS_TYPE_BY_REQUEST[request.type];
   return result.type === expectedType && sameIdentity(request.identity, result.identity);
 }

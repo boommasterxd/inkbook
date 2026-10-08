@@ -18,7 +18,7 @@ export function runtimeFailure(
     return {
       error: {
         code: error instanceof RuntimeModelError ? error.code : "runtime-failure",
-        retryable: false,
+        retryable: error instanceof RuntimeModelError && error.retryable,
       },
       exportGeneration: request.exportGeneration,
       modelRevision: request.modelRevision,

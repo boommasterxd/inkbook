@@ -18,6 +18,12 @@ import { serializeSvgNumber } from "../../persistence/documents/svg-number";
 import { verifyVaultUnlockIntegrity } from "./vault-unlock-integrity";
 import { readVaultPreviewProofCandidate } from "./vault-preview-proof";
 import type { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
+import { nextSafeCounter } from "../../persistence/worker/identity";
+
+export interface VaultExecutorReplacementOutcome {
+  readonly executor: DocumentRuntimePort;
+  readonly fallbackUsed: boolean;
+}
 
 interface VaultUnlockFilePort {
   readBinaryForUnlock(path: string, maximumBytes: number): Promise<UnlockFile>;
@@ -45,6 +51,7 @@ interface ExecutorFactoryPort {
 }
 
 export async function createVaultDocumentExecutor(options: {
+  readonly createReplacement?: (epoch: number) => Promise<VaultExecutorReplacementOutcome>;
   readonly disposed: () => boolean;
   readonly documentId: string;
   readonly fallbackUsed: boolean;
@@ -59,22 +66,32 @@ export async function createVaultDocumentExecutor(options: {
   readonly workerEpoch: number;
 }> {
   if (options.disposed()) throw new Error("The document session has been disposed.");
+  let candidate: DocumentRuntimePort | undefined;
   try {
     const executor = await options.runtimes.create(
       options.sessionId,
       options.workerEpoch,
       options.documentId,
     );
+    candidate = executor;
     if (options.disposed()) {
-      executor.terminate();
       throw new Error("The document session has been disposed.");
     }
     initializeExecutorActivity(executor, options);
     return { executor, fallbackUsed: options.fallbackUsed, workerEpoch: options.workerEpoch };
   } catch {
+    candidate?.terminate();
     if (options.disposed()) throw new Error("The document session has been disposed.");
     if (options.fallbackUsed) throw new Error("The document fallback executor already failed.");
-    const workerEpoch = options.workerEpoch + 1;
+    const workerEpoch = nextSafeCounter(options.workerEpoch, "workerEpoch");
+    if (options.createReplacement !== undefined) {
+      const replacement = await options.createReplacement(workerEpoch);
+      if (options.disposed()) {
+        replacement.executor.terminate();
+        throw new Error("The document session has been disposed.");
+      }
+      return { ...replacement, workerEpoch };
+    }
     return {
       executor: createVaultFallbackExecutor({ ...options, workerEpoch }),
       fallbackUsed: true,
@@ -99,8 +116,13 @@ function createVaultFallbackExecutor(options: {
     options.isGestureActive,
     options.documentId,
   );
-  initializeExecutorActivity(executor, options);
-  return executor;
+  try {
+    initializeExecutorActivity(executor, options);
+    return executor;
+  } catch (error) {
+    executor.terminate();
+    throw error;
+  }
 }
 
 function initializeExecutorActivity(
@@ -149,6 +171,7 @@ interface VaultDocumentLoaderOptions {
 }
 
 interface RecoveringVaultDocumentLoaderOptions {
+  readonly createReplacement?: (epoch: number) => Promise<VaultExecutorReplacementOutcome>;
   readonly cancelled: () => boolean;
   readonly createFallback: (workerEpoch: number) => DocumentRuntimePort;
   readonly executor: DocumentRuntimePort;
@@ -168,21 +191,28 @@ export async function loadVaultDocumentWithExecutorRecovery(
   readonly loaded: LoadedVaultDocument | undefined;
   readonly workerEpoch: number;
 }> {
-  try {
-    const loaded = await options.load(options.executor, options.workerEpoch);
-    return {
-      executor: options.executor,
-      fallbackUsed: options.fallbackUsed,
-      loaded,
-      workerEpoch: options.workerEpoch,
-    };
-  } catch (error) {
-    options.executor.terminate();
-    if (options.cancelled() || options.fallbackUsed) throw error;
-    const workerEpoch = options.workerEpoch + 1;
-    const executor = options.createFallback(workerEpoch);
-    const loaded = await options.load(executor, workerEpoch);
-    return { executor, fallbackUsed: true, loaded, workerEpoch };
+  let executor = options.executor;
+  let workerEpoch = options.workerEpoch;
+  let fallbackUsed = options.fallbackUsed;
+  for (let replacementCount = 0; ; replacementCount += 1) {
+    try {
+      const loaded = await options.load(executor, workerEpoch);
+      return { executor, fallbackUsed, loaded, workerEpoch };
+    } catch (error) {
+      executor.terminate();
+      if (options.cancelled() || fallbackUsed || replacementCount >= 2) throw error;
+      workerEpoch = nextSafeCounter(workerEpoch, "workerEpoch");
+      const replacement =
+        options.createReplacement === undefined
+          ? { executor: options.createFallback(workerEpoch), fallbackUsed: true }
+          : await options.createReplacement(workerEpoch);
+      executor = replacement.executor;
+      fallbackUsed = replacement.fallbackUsed;
+      if (options.cancelled()) {
+        executor.terminate();
+        throw error;
+      }
+    }
   }
 }
 

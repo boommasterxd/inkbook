@@ -37,6 +37,7 @@ interface RequestCheckpointOptions {
   readonly inputGate: InputActivityGate;
   readonly navigationGate: InputActivityGate;
   readonly scheduler: WorkScheduler;
+  readonly waitForAdmission?: (pending: Promise<void>) => Promise<void>;
 }
 
 export function createMainThreadRequestCheckpoint(
@@ -62,7 +63,10 @@ export function createMainThreadRequestCheckpoint(
           : undefined;
     return pending?.then(() => signal.throwIfAborted());
   };
-  return checkpoint;
+  return () => {
+    const pending = checkpoint();
+    return pending === undefined ? undefined : (options.waitForAdmission?.(pending) ?? pending);
+  };
 }
 
 export interface SliceSchedulerOptions {

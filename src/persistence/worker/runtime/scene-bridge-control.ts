@@ -5,7 +5,7 @@ import type {
   BridgeScenePaths,
   BridgeUnlockBatch,
 } from "./bridge-messages";
-import type { DocumentRuntimeRequest } from "./types";
+import type { DocumentRuntimeRequest, DocumentRuntimeResult } from "./types";
 import type { ScenePathReceiver } from "./scene-path-receiver";
 import { cancelsSpeculativeSceneRequest } from "./request-admission";
 
@@ -15,6 +15,7 @@ interface ControllableRequest {
   readonly abortController: AbortController;
   cancelTimeout: (() => void) | undefined;
   reject(error: Error): void;
+  resolve(result: DocumentRuntimeResult): void;
 }
 
 export function cancelSpeculativeScenePreparations(
@@ -35,6 +36,7 @@ export function controlScenePreparation(
   pending: Map<number, ControllableRequest>,
   identity: PurposeOperationIdentity,
   ids?: readonly string[],
+  onTransportFailure?: () => void,
 ): void {
   for (const [id, candidate] of pending) {
     const request = candidate.request;
@@ -47,14 +49,24 @@ export function controlScenePreparation(
     candidate.cancelTimeout?.();
     candidate.cancelTimeout = undefined;
     candidate.abortController.abort();
-    candidate.reject(new Error("Scene preparation was cancelled."));
+    candidate.resolve({
+      code: "scene-preparation-cancelled",
+      identity: request.identity,
+      retryable: true,
+      type: "runtime-failure",
+    });
   }
-  endpoint.postMessage({
-    action: ids === undefined ? "cancel-scene-paths" : "retarget-scene-paths",
-    identity,
-    ...(ids === undefined ? {} : { ids }),
-    type: "inkbook-worker-control",
-  } satisfies BridgeControl);
+  try {
+    endpoint.postMessage({
+      action: ids === undefined ? "cancel-scene-paths" : "retarget-scene-paths",
+      identity,
+      ...(ids === undefined ? {} : { ids }),
+      type: "inkbook-worker-control",
+    } satisfies BridgeControl);
+  } catch (error) {
+    if (onTransportFailure === undefined) throw error;
+    onTransportFailure();
+  }
 }
 
 function matches(candidate: PurposeOperationIdentity, identity: PurposeOperationIdentity): boolean {

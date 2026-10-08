@@ -281,15 +281,21 @@ it.each(["required", "drawing", "navigation"] as const)(
         await expect(required).rejects.toThrow("request dispatch failed");
         expect(failure).toHaveBeenCalledWith({
           kind: "error",
+          phase: "dispatch",
           request: { ...request, speculative: false },
         });
       } else {
         expect(() =>
           action === "drawing" ? client.setLiveInputActive(true) : client.setNavigationActive(true),
         ).not.toThrow();
-        expect(failure).toHaveBeenCalledWith({ kind: "error" });
+        expect(failure).toHaveBeenCalledWith({ kind: "error", phase: "dispatch" });
       }
-      expect(await pending).toBeInstanceOf(Error);
+      expect(await pending).toMatchObject({
+        code: "scene-preparation-cancelled",
+        identity: request.identity,
+        retryable: true,
+        type: "runtime-failure",
+      });
       expect(failure).toHaveBeenCalledOnce();
       expect(harness.clientEndpoint.terminated).toBe(true);
       await expect(client.execute({ ...request, speculative: false })).rejects.toThrow(

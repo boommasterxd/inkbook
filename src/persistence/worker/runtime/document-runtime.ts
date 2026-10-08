@@ -79,6 +79,8 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   public get instrumentation() {
     return {
       ...this.#model.instrumentation,
+      retainedJobs: this.#jobs.size,
+      queuedJobs: this.#queue.pendingCount,
       unacknowledgedExports: this.#unacknowledgedExports.size,
     };
   }
@@ -94,7 +96,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         runtimeFailure(request, new RuntimeModelError("stale-executor", false)),
       );
     if (this.#unlockPending) {
-      return Promise.reject(new Error("Unlock is exclusive until its terminal result."));
+      return Promise.resolve(runtimeFailure(request, new RuntimeModelError("queue-busy", true)));
     }
     if (supersedesSpeculativeSceneRequest(request)) this.#cancelSpeculativeScenePreparation();
     let sceneOperation: ScenePathOperation | undefined;
@@ -107,9 +109,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     return new Promise((resolve, reject) => {
       const admission = this.#queue.admit({ id, kind: requestJobKind(request), payload: request });
       if (admission !== "accepted") {
-        reject(
-          new Error(`Document worker queue rejected ${requestJobKind(request)}: ${admission}.`),
-        );
+        resolve(runtimeFailure(request, new RuntimeModelError(`queue-${admission}`, true)));
         return;
       }
       if (request.type === "unlock") this.#unlockPending = true;

@@ -15,7 +15,7 @@ import type {
 interface SessionClipboardOptions {
   readonly disposed: () => boolean;
   readonly executor: () => DocumentRuntimePort | undefined;
-  readonly recoverExecutorFailure: () => boolean;
+  readonly recoverExecutorFailure: () => boolean | Promise<boolean>;
   readonly synchronizeWorkerBaseline: (identity: PurposeOperationIdentity) => Promise<boolean>;
   readonly now: () => number;
   readonly revision: () => number;
@@ -97,7 +97,7 @@ export class SessionClipboardCoordinator {
           basisRevision,
         );
       } catch {
-        if (attempt === 0 && this.#options.recoverExecutorFailure()) continue;
+        if (attempt === 0 && (await this.#options.recoverExecutorFailure())) continue;
         return null;
       }
     }
@@ -126,6 +126,7 @@ export class SessionClipboardCoordinator {
       result.operationId === expected.operationId &&
       result.sessionId === expected.sessionId &&
       result.workerEpoch === expected.workerEpoch &&
+      this.#options.workerEpoch() === expected.workerEpoch &&
       this.#options.revision() === basisRevision &&
       !this.#options.disposed()
     );

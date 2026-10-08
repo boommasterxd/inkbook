@@ -132,8 +132,10 @@ export function matchesExportResult(
 export function matchesModelSyncResult(
   request: ModelSyncRuntimeRequest,
   result: DocumentRuntimeResult,
+  currentEpoch = request.identity.workerEpoch,
 ): result is ModelSyncRuntimeSuccess {
   return (
+    currentEpoch === request.identity.workerEpoch &&
     result.type === "model-sync-success" &&
     result.modelRevision === request.modelRevision &&
     sameOperationIdentity(result.identity, request.identity)

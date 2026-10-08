@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
 import { SchedulerDisposedError } from "../../../../src/domain/scheduling/work-scheduler";
 import { createWorkspaceDocumentRuntimes } from "../../../../src/obsidian/embeds/workspace-runtime-workers";
+import * as documentRuntime from "../../../../src/persistence/worker/runtime/public";
 import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
 
 function windowHarness() {
@@ -118,6 +119,62 @@ describe("workspace document runtime scheduling", () => {
     expect(store.shouldYield()).toBe(false);
     first.scheduler.dispose();
     second.scheduler.dispose();
+  });
+});
+
+describe("document worker warning boundaries", () => {
+  it.each([
+    { error: new TypeError("private-document-content"), name: "TypeError" },
+    { error: new DOMException("private-document-content", "SecurityError"), name: "SecurityError" },
+    {
+      error: new DOMException("private-document-content", "InvalidStateError"),
+      name: "InvalidStateError",
+    },
+    {
+      error: Object.assign(new Error("private-document-content"), { name: "private-document.svg" }),
+      name: "unknown",
+    },
+    { error: { name: "TypeError", message: "private-document-content" }, name: "unknown" },
+  ])("limits construction warning details to a safe error name: $name", async ({ error, name }) => {
+    const h = windowHarness();
+    const create = vi.spyOn(documentRuntime, "createDocumentRuntime").mockRejectedValue(error);
+    const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(h));
+    try {
+      await expect(runtimes.create("session", 1, "private-document.svg")).rejects.toBe(error);
+      expect(h.warn).toHaveBeenCalledOnce();
+      expect(h.warn.mock.calls[0]?.[0]).toContain(`error=${name}.`);
+      expect(JSON.stringify(h.warn.mock.calls)).not.toContain("private-document");
+    } finally {
+      create.mockRestore();
+      h.scheduler.dispose();
+    }
+  });
+
+  it("warns on construction failure and fallback without leaking document content", async () => {
+    const h = windowHarness();
+    const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(h));
+    await expect(runtimes.create("session", 1, "private-document.svg")).rejects.toThrow(
+      "Worker and Blob URL APIs",
+    );
+    const fallback = runtimes.createFallback("session", 2, () => false, "private-document.svg");
+    expect(h.warn.mock.calls[0]?.[0]).toContain("session=session; epoch=1; phase=construction");
+    expect(h.warn.mock.calls[0]?.[0]).toContain("kind=error; request=none; error=Error");
+    expect(h.warn.mock.calls[1]?.[0]).toContain("main-thread fallback");
+    expect(JSON.stringify(h.warn.mock.calls)).not.toContain("private-document");
+    fallback.terminate();
+    h.scheduler.dispose();
+  });
+
+  it("keeps the original factory failure even if the console rejects warnings", async () => {
+    const h = windowHarness();
+    h.warn.mockImplementation(() => {
+      throw new Error("console unavailable");
+    });
+    const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(h));
+    await expect(runtimes.create("session", 1, "drawing.svg")).rejects.toThrow(
+      "Worker and Blob URL APIs",
+    );
+    h.scheduler.dispose();
   });
 });
 

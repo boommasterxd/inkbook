@@ -126,7 +126,7 @@ function dispatchHostedRequest(
         : undefined;
     request = decodeRuntimeRequest(wire, resolvePoints);
   } catch {
-    postExecutorFailure(endpoint, requestId);
+    postExecutorFailure(endpoint, requestId, "host-decoding");
     return;
   }
   if (request.type === "unlock") pointReferences.clear();
@@ -154,7 +154,7 @@ function dispatchHostedRequest(
       pointReferences.accept(request, result);
       return postHostedResult(endpoint, runtime, exportAcknowledgements, requestId, result);
     },
-    () => postExecutorFailure(endpoint, requestId),
+    () => postExecutorFailure(endpoint, requestId, "host-execution"),
   );
 }
 
@@ -200,13 +200,18 @@ async function postHostedResult(
       exportAcknowledgements.delete(requestId);
       runtime.acknowledgeExport?.(pending.identity, false);
     }
-    postExecutorFailure(endpoint, requestId);
+    postExecutorFailure(endpoint, requestId, "host-encoding");
   }
 }
 
-function postExecutorFailure(endpoint: WorkerHostEndpoint, requestId: number): void {
+function postExecutorFailure(
+  endpoint: WorkerHostEndpoint,
+  requestId: number,
+  phase: NonNullable<BridgeFailure["phase"]>,
+): void {
   endpoint.postMessage({
     code: "executor-failed",
+    phase,
     requestId,
     type: "inkbook-worker-error",
   } satisfies BridgeFailure);

@@ -93,7 +93,7 @@ it("pauses fallback work while a live gesture is active", async () => {
   expect(yields).toBeGreaterThan(0);
 });
 
-it("rejects additional paused exports and releases blocked work on termination", async () => {
+it("returns retryable backpressure for additional paused exports and releases work on termination", async () => {
   const runtime = new DocumentWorkerRuntime(executor);
   runtime.setNavigationActive(true);
   const request = {
@@ -106,9 +106,11 @@ it("rejects additional paused exports and releases blocked work on termination",
   };
   const blocked = runtime.execute(request);
   const settled = blocked.catch((error: unknown) => error);
-  await expect(runtime.execute({ ...request, exportGeneration: 2 })).rejects.toThrow(
-    "queue rejected export: busy",
-  );
+  await expect(runtime.execute({ ...request, exportGeneration: 2 })).resolves.toMatchObject({
+    error: { code: "queue-busy", retryable: true },
+    exportGeneration: 2,
+    type: "export-failure",
+  });
   runtime.terminate();
   expect(await settled).toBeInstanceOf(Error);
   runtime.setNavigationActive(false);

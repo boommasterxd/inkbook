@@ -18,6 +18,7 @@ interface SessionScenePathOptions {
   readonly executor: () => DocumentRuntimePort | undefined;
   readonly revision: () => number;
   readonly sessionId: string;
+  readonly recoverExecutorFailure?: () => boolean | Promise<boolean>;
   readonly synchronize: (identity: PurposeOperationIdentity) => Promise<boolean>;
   readonly workerEpoch: () => number;
 }
@@ -89,12 +90,20 @@ export class SessionScenePaths {
       if (!this.isCurrentResult(result, identity, revision, signal)) return undefined;
       return result.paths;
     } catch {
+      await this.recoverFailure(executor, () => this.isCurrent(identity, revision, signal));
       return undefined;
     } finally {
       observer?.setRetarget(undefined);
       signal.removeEventListener("abort", cancel);
     }
   };
+
+  private async recoverFailure(
+    executor: DocumentRuntimePort | undefined,
+    current: () => boolean,
+  ): Promise<void> {
+    if (executor !== undefined && current()) await this.options.recoverExecutorFailure?.();
+  }
 
   private requestPriority(observer: ScenePathPreparationObserver | undefined) {
     return {

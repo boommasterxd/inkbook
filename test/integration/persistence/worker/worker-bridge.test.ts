@@ -258,7 +258,7 @@ describe("document worker bridge timeout controls", () => {
 
     await expect(client.execute(request)).rejects.toThrow("timed out");
     expect(clientEndpoint.terminated).toBe(true);
-    expect(failures).toEqual([{ kind: "timeout", request }]);
+    expect(failures).toEqual([{ kind: "timeout", phase: "timeout", request }]);
 
     hostEndpoint.postMessage({
       requestId: 1,
@@ -322,7 +322,12 @@ describe("document worker scene cancellation", () => {
     expect(settled).toHaveBeenCalledOnce();
     client.setLiveInputActive(true);
     const cancelled = client.execute(request);
-    const cancellation = expect(cancelled).rejects.toThrow("Scene preparation was cancelled.");
+    const cancellation = expect(cancelled).resolves.toEqual({
+      code: "scene-preparation-cancelled",
+      identity,
+      retryable: true,
+      type: "runtime-failure",
+    });
     client.cancelScenePreparation(identity);
     await cancellation;
     client.terminate();

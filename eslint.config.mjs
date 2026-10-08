@@ -357,6 +357,11 @@ export default [
     },
   },
   {
+    // This semantic I/O adapter is shared with workers, where Window is unavailable.
+    files: ["src/persistence/worker/runtime/request-timeout.ts"],
+    rules: { "obsidianmd/prefer-window-timers": "off" },
+  },
+  {
     files: toolingFiles,
     languageOptions: {
       globals: {

@@ -7,6 +7,7 @@ import type { DocumentRuntimePort } from "../../persistence/worker/runtime/publi
 import {
   loadVaultDocumentWithExecutorRecovery,
   type LoadedVaultDocument,
+  type VaultExecutorReplacementOutcome,
 } from "./vault-document-loader";
 import type { TrustedVaultDocumentRejection } from "./trusted-vault-document-loader";
 import {
@@ -18,6 +19,7 @@ interface TrustedUnlockOptions {
   readonly cancelled: () => boolean;
   readonly consumeCancellation: () => boolean;
   readonly createFallback: (workerEpoch: number) => DocumentRuntimePort;
+  readonly createReplacement?: (epoch: number) => Promise<VaultExecutorReplacementOutcome>;
   readonly executor: DocumentRuntimePort;
   readonly fallbackUsed: boolean;
   readonly load: (
@@ -61,6 +63,9 @@ export async function loadTrustedDocumentForUnlock(
   const recovered = await loadVaultDocumentWithExecutorRecovery({
     cancelled: options.cancelled,
     createFallback: options.createFallback,
+    ...(options.createReplacement === undefined
+      ? {}
+      : { createReplacement: options.createReplacement }),
     executor: options.executor,
     fallbackUsed: options.fallbackUsed,
     load: (executor, workerEpoch) =>

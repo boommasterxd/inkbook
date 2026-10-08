@@ -75,6 +75,10 @@ describe("SessionClipboardCoordinator result adoption", () => {
       mutate: (harness: ReturnType<typeof createHarness>) => harness.setRevision(8),
       name: "stale revision",
     },
+    {
+      mutate: (harness: ReturnType<typeof createHarness>) => harness.switchEpoch(),
+      name: "stale worker epoch",
+    },
   ])("rejects a successful result for a $name", async ({ mutate }) => {
     let harness: ReturnType<typeof createHarness>;
     harness = createHarness(async (request) => {

@@ -189,7 +189,7 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
     session.dispose();
   });
 
-  it("retries a failed worker unlock exactly once in the bounded fallback", async () => {
+  it("uses one bounded fallback when unlock fails and native restart construction fails", async () => {
     const terminate = vi.fn();
     const primary: DocumentRuntimePort = {
       execute: vi.fn(() => Promise.reject(new Error("worker timed out"))),
@@ -200,7 +200,10 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
         new DocumentWorkerRuntime({ sessionId, workerEpoch: epoch }),
     );
     const { session } = documentSessionHarness({
-      create: async () => primary,
+      create: async (_sessionId, epoch) => {
+        if (epoch !== 1) throw new Error("restart bootstrap failed");
+        return primary;
+      },
       createFallback,
     });
 
@@ -231,7 +234,8 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
       terminate: vi.fn(),
     };
     const factory = createFactory({
-      create: async () => primary,
+      create: async (sessionId, workerEpoch) =>
+        workerEpoch === 1 ? primary : new DocumentWorkerRuntime({ sessionId, workerEpoch }),
       vault: { getFileByPath: () => file, readBinary },
     });
     const session = factory.create({ documentId: file.path, sessionId: "session-1" });
@@ -366,7 +370,10 @@ describe("VaultDocumentSession clipboard executor recovery", () => {
         new DocumentWorkerRuntime({ sessionId, workerEpoch: epoch }),
     );
     const { factory, session } = documentSessionHarness({
-      create: async () => primary,
+      create: async (_sessionId, epoch) => {
+        if (epoch !== 1) throw new Error("restart bootstrap failed");
+        return primary;
+      },
       createFallback,
     });
     const model = await unlockWithRectangle(factory, session);

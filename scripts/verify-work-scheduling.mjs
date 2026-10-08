@@ -88,6 +88,7 @@ const SEMANTIC_TIMER_SITES = new Map([
   ["src/obsidian/settings/settings-panel-motion.ts##listenForCompletion", 1],
   ["src/persistence/saving/autosave/timer.ts#schedule", 1],
   ["src/persistence/worker/runtime/worker-host.ts#postHostedResult", 1],
+  ["src/persistence/worker/runtime/request-timeout.ts#scheduleRequestTimeout", 1],
 ]);
 
 // Refresh detection samples raw browser frames, outside the cooperative work queue.

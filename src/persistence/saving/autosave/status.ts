@@ -1,4 +1,4 @@
-import type { AutosaveStatus, FlushOutcome } from "./types";
+import type { AutosaveStatus, FlushOutcome, FlushWaiter } from "./types";
 
 export function isAutosaveSuspended(status: AutosaveStatus): boolean {
   return (
@@ -12,4 +12,14 @@ export function terminalAutosaveOutcome(dirty: boolean, status: AutosaveStatus):
   if (status === "executor-failed") return "executor-failed";
   if (status === "retryable-error") return "retryable-error";
   return "verification-required";
+}
+
+export function resolveAutosaveWaiters(
+  dirty: boolean,
+  status: AutosaveStatus,
+  waiters: FlushWaiter[],
+): void {
+  if (dirty && !isAutosaveSuspended(status) && status !== "retryable-error") return;
+  const outcome = terminalAutosaveOutcome(dirty, status);
+  for (const waiter of waiters.splice(0)) waiter.resolve(outcome);
 }
