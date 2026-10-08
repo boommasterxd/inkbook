@@ -45,19 +45,27 @@ the ordering valid; otherwise the heap rebuilds under the shared deadline from
 cached bounds. Ready cached candidates can pass a suspended cold candidate, and
 old-node cleanup does not precede their first preparation.
 
+Viewport-first heap construction avoids prioritizing the preload margin before
+visible publication without weakening global scroll-direction order. Physical
+exit ownership survives a retarget after visible publication, independently of
+unpublished entrant ownership. The canonical rules are in
+[Viewport Culling](../rendering-and-performance.md#viewport-culling).
+
 Bounded offscreen-node reuse avoids repeated SVG creation and geometry attribute
-writes on revisits. Previously visible committed roots may remain connected while
-logical viewport membership is released. The cache has a 25 MiB retained-byte
-ceiling with no separate root-count cap; positive entry sizes bound cardinality,
-and memory pressure disables retention. Connected returns with valid geometry,
-paint, band, rank, order-generation, and transient state use a logical-ownership
-fast path without successor search or publication-run preparation. Detached returns
-and actual reorders retain the 192-root-per-frame publication allowance. The shared
-ownership and cleanup limits are defined in
-[Path Caches](../rendering-and-performance.md#path-caches). Geometry identity and
-ID/version aliases share one canonical path-cache entry. Both caches participate in
-active-document memory pressure and reject stale geometry and deleted IDs. Connected
-retention does not guarantee reuse after byte eviction or eliminate pan/zoom browser costs.
+writes while nodes remain cached. The minimal-DOM experiment replaces connected
+offscreen retention with physical removal outside the mounting envelope. A 1 MiB
+detached-node cache keeps recent roots, separately from the 25 MiB contour cache;
+neither has a separate root-count cap. Positive entry sizes bound cardinality,
+and memory pressure disables retention. Returns before pending removal can still
+use the connected-ownership fast path. Fully detached returns and actual reorders
+retain the 384-root-per-frame publication allowance; node eviction permits DOM
+recreation without contour recomputation. The shared ownership and cleanup limits
+are defined in [Path Caches](../rendering-and-performance.md#path-caches). Geometry
+identity and ID/version aliases share one canonical path-cache entry. Both caches
+participate in active-document memory pressure and reject stale geometry and deleted
+IDs. Detached retention does not guarantee an instant revisit or eliminate browser
+publication costs. The smaller node budget is an experimental value, not an established
+optimum.
 
 A smaller fade-start quota was rejected: the paired selection-delete diagnostic
 did not reduce long native tasks and increased layerization work. Keep the
@@ -163,7 +171,7 @@ The retained SVG lives in a presentation-owned shadow root so host selectors can
 match its large active subtree through ancestors; ownership and styling boundaries
 are defined in [Rendering and Performance](../rendering-and-performance.md#imperative-scene-ownership).
 Keep progressive insertion flat and element-complete. The 16-element unit bounds
-each native publication; the 192-original-root frame allowance counts multipart
+each native publication; the 384-original-root frame allowance counts multipart
 elements. An existing late-scene admission may complete one already-prepared
 queued unit, without fresh preparation, cleanup, or deadline renewal. See the
 [canonical publication contract](../rendering-and-performance.md#imperative-scene-ownership).
