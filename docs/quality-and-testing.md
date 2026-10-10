@@ -441,7 +441,7 @@ CI MUST run:
 - the project-wide coverage thresholds above
 - `jscpd` with `minTokens: 50`
 - `knip`, including a fatal production-only pass for unused files, exports, and types so source code reachable exclusively from tests cannot survive the gate; `ignoreExportsUsedInFile` keeps internally consumed module exports valid while still rejecting exports with no production caller
-- dependency security audit
+- dependency security audit, including the [temporary braces backport retirement check](decisions/braces-security-backport.md)
 - production build and release-artifact verification
 - deterministic schema fixture and performance benchmark suites
 - a renderer-scoped lint restriction that rejects `querySelector`, `querySelectorAll`, and descendant selector walks in scene reconciliation

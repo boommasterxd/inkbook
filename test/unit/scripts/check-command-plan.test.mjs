@@ -31,7 +31,8 @@ describe("check command plan", () => {
       "test:coverage",
       "duplication",
       "dead-code",
-      "audit",
+      "audit:braces",
+      "audit:dependencies",
       "build",
       "package:verify",
       "test:performance",
@@ -43,7 +44,7 @@ describe("check command plan", () => {
       "test/integration",
       "--coverage",
     ]);
-    expect(plan.find(({ label }) => label === "audit").args).toEqual([
+    expect(plan.find(({ label }) => label === "audit:dependencies").args).toEqual([
       "/npm-cli.js",
       "audit",
       "--audit-level=high",

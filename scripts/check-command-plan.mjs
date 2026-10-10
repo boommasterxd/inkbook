@@ -13,7 +13,8 @@ const tasks = {
     ".dependency-cruiser.mjs",
     "src",
   ),
-  audit: { npm: true, args: ["audit", "--audit-level=high"] },
+  "audit:braces": nodeTask("scripts/verify-braces-backport.mjs"),
+  "audit:dependencies": { npm: true, args: ["audit", "--audit-level=high"] },
   build: nodeTask("scripts/build.mjs"),
   "dead-code": nodeTask("scripts/run-dead-code-checks.mjs"),
   duplication: nodeTask(fileURLToPath(import.meta.resolve("jscpd/run-jscpd.js"))),
@@ -59,6 +60,7 @@ const tasks = {
 };
 
 const groups = {
+  audit: ["audit:braces", "audit:dependencies"],
   benchmark: ["test:performance"],
   ci: ["ci:quality", "benchmark"],
   "ci:quality": [
