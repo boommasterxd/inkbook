@@ -8,7 +8,8 @@ import {
 } from "./mounted-element";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
-import type { MountSlice, MountYieldReason } from "./mount-slice";
+import type { MountSlice, MountYieldReason, ScenePublicationBudget } from "./mount-slice";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
 
 export interface PendingMutationRun {
   band: RenderBand;
@@ -21,14 +22,97 @@ export interface PendingMutationRun {
 }
 
 interface PublicationOptions {
+  readonly detachedCache?: DetachedSceneElementCache | undefined;
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly mounted: Map<string, MountedSceneElement>;
   readonly store: SceneStorePort;
 }
 
+/** Defers fragment allocation until a publication actually needs multiple roots. */
+class PendingPublicationNode {
+  #node: Node | undefined;
+  #fragment: DocumentFragment | undefined;
+
+  public constructor(private readonly document: Document) {}
+
+  public append(entry: MountedSceneElement): void {
+    if (this.#node === undefined && mountedRootCount(entry) === 1) {
+      this.#node = firstPath(entry);
+      entry.detachedPathCount = 0;
+      return;
+    }
+    this.#fragment ??= createFragment(this.document);
+    if (this.#node !== undefined && this.#node !== this.#fragment)
+      this.#fragment.append(this.#node);
+    appendElementToFragment(entry, this.#fragment);
+    this.#node = this.#fragment;
+  }
+
+  public flush(group: SVGGElement, successor: MountedSceneElement | undefined): boolean {
+    if (this.#node === undefined) return false;
+    group.insertBefore(this.#node, successor === undefined ? null : firstPath(successor));
+    this.#node = undefined;
+    return true;
+  }
+}
+
+function commitMountedEntry(
+  entry: MountedSceneElement,
+  run: PendingMutationRun,
+  options: PublicationOptions,
+  epoch: number,
+): void {
+  entry.rank = options.store.get(entry.id)?.rank ?? Number.MAX_SAFE_INTEGER;
+  entry.committedRank = entry.rank;
+  entry.committedOrderEpoch = epoch;
+  entry.band = run.band;
+  options.detachedCache?.registerMounted(entry, options.store);
+}
+
+function commitPublishedEntry(
+  entry: MountedSceneElement,
+  run: PendingMutationRun,
+  options: PublicationOptions,
+  epoch: number,
+): boolean {
+  commitMountedEntry(entry, run, options, epoch);
+  const roots = publicationRootCount(entry);
+  const connected = roots === 0;
+  options.mounted.set(entry.id, entry);
+  if (!connected) options.instrumentation.domEntrants += 1;
+  options.instrumentation.domRootsPublished += roots;
+  return connected;
+}
+
+/** A stable delta run has one exact mounted physical successor. */
+export function publishStableEntrantRun(
+  run: PendingMutationRun,
+  options: PublicationOptions,
+  epoch: number,
+): string[] {
+  const ids: string[] = [];
+  const publication = new PendingPublicationNode(options.dom.ownerDocument);
+  for (let index = run.count - 1; index >= 0; index -= 1) {
+    const entry = run.entries[index];
+    if (entry === undefined) continue;
+    const connected = commitPublishedEntry(entry, run, options, epoch);
+    ids.push(entry.id);
+    if (connected) continue;
+    publication.append(entry);
+  }
+  if (publication.flush(options.dom.group(run.band), run.successor))
+    options.instrumentation.domFragmentRuns += 1;
+  return ids;
+}
+
 export function mountedRootCount(entry: MountedSceneElement): number {
   return entry.group === null ? entry.paths.length : 1;
+}
+
+/** Existing mounted roots have already paid their browser publication cost. */
+export function publicationRootCount(entry: MountedSceneElement): number {
+  return firstPath(entry).parentNode === null ? mountedRootCount(entry) : 0;
 }
 
 export function scanVisibilityExits(
@@ -128,39 +212,49 @@ export function publishVisibilityRun(
   retainedOrderPreserved: boolean,
 ): string[] {
   const ids: string[] = [];
-  let fragment: DocumentFragment | undefined;
-  let hasPendingNodes = false;
+  const publication = new PendingPublicationNode(options.dom.ownerDocument);
   const flush = (successor: MountedSceneElement | undefined): void => {
-    if (!hasPendingNodes || fragment === undefined) return;
-    options.dom
-      .group(run.band)
-      .insertBefore(fragment, successor === undefined ? null : firstPath(successor));
-    options.instrumentation.domFragmentRuns += 1;
-    hasPendingNodes = false;
+    if (publication.flush(options.dom.group(run.band), successor))
+      options.instrumentation.domFragmentRuns += 1;
   };
   for (let index = run.count - 1; index >= 0; index -= 1) {
     const entry = run.entries[index];
     if (entry === undefined) continue;
-    entry.rank = options.store.get(entry.id)?.rank ?? Number.MAX_SAFE_INTEGER;
-    entry.committedRank = entry.rank;
-    entry.committedOrderEpoch = epoch;
-    entry.band = run.band;
-    if (retainedOrderPreserved && !run.entrants[index]) {
+    const connectedRevisit = run.entrants[index]
+      ? commitPublishedEntry(entry, run, options, epoch)
+      : false;
+    if (run.entrants[index]) {
+      ids.push(entry.id);
+    } else {
+      commitMountedEntry(entry, run, options, epoch);
+    }
+    if (connectedRevisit || (retainedOrderPreserved && !run.entrants[index])) {
       // Rank shifts can mark retained nodes dirty without changing their relative DOM order.
       flush(entry);
       continue;
     }
-    fragment ??= createFragment(options.dom.ownerDocument);
-    appendElementToFragment(entry, fragment);
-    hasPendingNodes = true;
-    if (run.entrants[index]) {
-      options.mounted.set(entry.id, entry);
-      ids.push(entry.id);
-      options.instrumentation.domEntrants += 1;
-    } else options.instrumentation.domReorders += 1;
+    publication.append(entry);
+    if (!run.entrants[index]) options.instrumentation.domReorders += 1;
+    flushCachedSuccessor(entry, run.entries[index - 1] ?? run.successor, options, flush);
   }
   flush(run.successor);
   return ids;
+}
+
+function flushCachedSuccessor(
+  entry: MountedSceneElement,
+  next: MountedSceneElement | undefined,
+  options: PublicationOptions,
+  flush: (successor: MountedSceneElement) => void,
+): void {
+  const successor = options.detachedCache?.successor(entry);
+  if (
+    successor !== undefined &&
+    (next === undefined ||
+      (options.store.get(successor.id)?.rank ?? successor.rank) <
+        (options.store.get(next.id)?.rank ?? next.rank))
+  )
+    flush(successor);
 }
 
 export function publishVisibilityRuns(frame: {
@@ -200,12 +294,60 @@ interface ExitPublication {
   exitIndex: number;
 }
 interface ExitOptions extends PublicationOptions {
-  readonly visibility: { releaseId(id: string): void };
+  readonly visibility: { contains(id: string): boolean; releaseId(id: string): void };
   readonly pathCache: {
     invalidate(id: string): void;
     retain(id: string, version: number, parts: MountedSceneElement["pathParts"]): void;
   };
   readonly isExitReady?: (id: string, now: number) => boolean;
+}
+
+function removeVisibilityExitNode(
+  entry: MountedSceneElement,
+  record: ReturnType<SceneStorePort["get"]>,
+  options: ExitOptions,
+  finalization: {
+    readonly pending: ExitPublication;
+    readonly onRemoved: ((id: string) => void) | undefined;
+  },
+): void {
+  if (!removeMountedElementNode(entry)) return;
+  finalization.pending.exitIndex += 1;
+  options.mounted.delete(entry.id);
+  options.detachedCache?.unregisterMounted(entry.id);
+  finalization.onRemoved?.(entry.id);
+  if (record === undefined) {
+    options.detachedCache?.invalidate(entry.id);
+    options.pathCache.invalidate(entry.id);
+    options.visibility.releaseId(entry.id);
+  } else {
+    options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
+    options.detachedCache?.retain(entry, (id) => options.visibility.contains(id));
+  }
+  options.instrumentation.domExits += 1;
+}
+
+/** Repairs protected multipart roots at their existing anchor within frame publication admission. */
+function restoreProtectedExit(
+  entry: MountedSceneElement,
+  options: ExitOptions,
+  publication: ScenePublicationBudget | undefined,
+): boolean {
+  if (entry.detachedPathCount === 0) return true;
+  const roots = mountedRootCount(entry);
+  if ((publication?.remainingRoots ?? Infinity) < roots) return false;
+  let anchor = firstPath(entry);
+  const group = options.dom.group(entry.band);
+  for (let index = entry.paths.length - 1; index >= 0; index -= 1) {
+    const node = entry.paths[index]!.node;
+    group.insertBefore(node, anchor);
+    anchor = node;
+  }
+  entry.detachedPathCount = 0;
+  if (publication !== undefined) publication.remainingRoots -= roots;
+  options.instrumentation.domRootsPublished += roots;
+  options.instrumentation.domFragmentRuns += roots;
+  return true;
 }
 
 /** Removes old paths incrementally, rechecking visibility after every retarget. */
@@ -218,32 +360,33 @@ export function removeVisibilityExits(
     readonly isExit: (id: string) => boolean;
     readonly onSkipped?: (id: string) => void;
     readonly onRemoved?: (id: string) => void;
+    readonly publication?: ScenePublicationBudget;
   },
 ): boolean {
   let visitedNodes = 0;
   let removedNodes = 0;
   while (pending.exitIndex < pending.exitIds.length) {
-    if (removedNodes >= 64 || (visitedNodes > 0 && frame.now() >= frame.deadline)) return false;
+    if (
+      (frame.publication?.remainingRemovals ?? 64 - removedNodes) <= 0 ||
+      (visitedNodes > 0 && frame.now() >= frame.deadline)
+    )
+      return false;
     const id = pending.exitIds[pending.exitIndex];
     const entry = id === undefined ? undefined : options.mounted.get(id);
     visitedNodes += 1;
     if (entry === undefined || !frame.isExit(entry.id)) {
+      if (entry !== undefined && !restoreProtectedExit(entry, options, frame.publication))
+        return false;
       if (id !== undefined) frame.onSkipped?.(id);
       pending.exitIndex += 1;
       continue;
     }
     if (options.isExitReady?.(entry.id, frame.now()) === false) return false;
-    removedNodes += 1;
-    if (!removeMountedElementNode(entry)) continue;
-    pending.exitIndex += 1;
-    options.mounted.delete(entry.id);
-    frame.onRemoved?.(entry.id);
     const record = options.store.get(entry.id);
-    if (record === undefined) {
-      options.pathCache.invalidate(entry.id);
-      options.visibility.releaseId(entry.id);
-    } else options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
-    options.instrumentation.domExits += 1;
+    removedNodes += 1;
+    if (frame.publication !== undefined)
+      frame.publication.remainingRemovals = (frame.publication.remainingRemovals ?? 64) - 1;
+    removeVisibilityExitNode(entry, record, options, { pending, onRemoved: frame.onRemoved });
   }
   return true;
 }

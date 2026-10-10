@@ -1,4 +1,7 @@
-import type { PreparedPressureGeometryPort } from "./prepared-pressure-geometry";
+import type {
+  PreparedPressureGeometryPort,
+  PressurePathWindow,
+} from "./prepared-pressure-geometry";
 import { pressureShapeBoundary } from "./pressure-union";
 import type { PointV1 } from "../schema/types";
 import { pressureArcPoint, type PressureBoundaryArc } from "./pressure-joins";
@@ -31,7 +34,9 @@ export function serializePressureCapsules(pieces: readonly PressureOutlinePiece[
     },
   ]);
 }
-export function serializePressureWindows(windows: readonly PressureWindow[]): string {
+export function serializePressureWindows(
+  windows: readonly (PressureWindow | PressurePathWindow)[],
+): string {
   const commands: string[] = [];
   for (const window of windows) {
     for (const loop of window.loops) {

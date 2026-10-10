@@ -1,6 +1,7 @@
 import { navigationCursorFixture } from "../../fixtures/obsidian/navigation-cursor";
 import { describe, expect, it, vi } from "vitest";
 import { domRect } from "../../fixtures/obsidian/active-editor";
+import { readActiveSceneLayout } from "../../../src/obsidian/embeds/active-scene-viewport";
 import {
   timedCursorPointerEvent as sample,
   toolCursorHarness as harness,
@@ -8,6 +9,27 @@ import {
 
 // The controller boundary uses retained renderer methods; dense scene work is
 // independently bounded by the 10,000-element scene cursor contract.
+it("shares each native-scroll layout read across scene and cursor without another frame request", () => {
+  const { h, events, container, owner, navigation } = navigationCursorFixture("select", "mouse");
+  h.read();
+  h.measure.mockClear();
+  h.window.getComputedStyle.mockClear();
+  h.request.mockClear();
+  events.length = 0;
+  for (const top of [10, -90, 30, -40]) {
+    h.bounds.top = top;
+    const snapshot = readActiveSceneLayout(container, owner);
+    h.controller.adoptSceneLayout(snapshot.cursorLayout);
+    expect(h.read(true).cursor).toMatchObject({ x: 120, y: 80 });
+    expect(h.read().cursor).toMatchObject({ x: 120, y: 80 });
+  }
+  expect(h.measure).toHaveBeenCalledTimes(4);
+  expect(h.window.getComputedStyle).toHaveBeenCalledTimes(4);
+  expect(events.filter((event) => event === "owner-box")).toHaveLength(4);
+  expect(h.request).not.toHaveBeenCalled();
+  navigation.dispose();
+  h.controller.dispose();
+});
 describe("raw tool cursor input work bounds", () => {
   it.each(["mouse", "pen"])(
     "moves the retained %s decoration without frame, layout, icon, or session work",

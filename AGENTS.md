@@ -84,6 +84,8 @@ Detailed rendering, cache, scheduling, memory, and latency contracts are canonic
 
 ## Testing and Acceptance
 
+- During local implementation, run only checks affected by the current changes. Once the integrated result is stable, run the complete verification prescribed for that change type once. After later edits, rerun only checks whose evidence those edits actually invalidate; retain unaffected passing results. This local workflow preserves the complete CI gate at its required triggers.
+- If verification stops at a failed stage, diagnose and fix or report that failure, then complete the remaining required checks without restarting already valid stages. Expand verification only for a concrete gap or unresolved concern, stating which evidence it affects. Missing or failed required checks remain failures.
 - Use Unit and focused Integration tests only. End-to-end and smoke suites are explicitly excluded.
 - For every new or changed test, follow the [shared test-authoring rules](docs/quality-and-testing.md#automated-test-strategy): reuse existing coverage, fixtures, and helpers; eliminate redundant setup and execution while preserving independent state, meaningful cases, assertions, and coverage.
 - Add deterministic regression coverage for every relevant behavior change. Across executable source, maintain at least 85 percent lines, statements, and functions plus at least 80 percent branches.
@@ -122,6 +124,10 @@ The complete test matrix, performance budgets, and acceptance requirements are c
 
 ## Manual Obsidian Display Verification
 
+Apply the [local verification workflow](#testing-and-acceptance) to real UI checks as well. During implementation, use focused reproductions in the affected mode and interaction. Once the UI is stable, complete the required modes and scenarios once. Record artifact hashes, platform, fixture, interaction, and result so later changes invalidate only the evidence they actually affect.
+
+Confirm vault identity, plugin readiness, and fixture syntax before interaction checks. Distinguish test-setup failures from product failures. Correct profile initialization, plugin enablement, fixture syntax, selectors, or assertions and resume the failed scenario; retain passed scenarios unless the same fault invalidates them. Reuse a working isolated profile, display, and shared setup across required modes. Restart or recapture only for a concrete verification need, then perform the required cleanup once when the verification session ends.
+
 1. Use the dedicated QA vault and locally installed Flatpak build of Obsidian. Install the exact production artifacts under test and confirm that their hashes match `dist/`.
 2. Start an isolated X11 display with at least a 1920 by 1200, 24-bit framebuffer:
 
@@ -130,7 +136,7 @@ The complete test matrix, performance budgets, and acceptance requirements are c
    ```
 
 3. Electron may restore a small window despite the framebuffer size. Before evaluating layout, use `xdotool` on the X display selected by `xvfb-run` to resize and position Obsidian to at least 1600 by 1000 pixels. Verify through the DevTools protocol that `window.innerWidth >= 1500` and `window.innerHeight >= 900`.
-4. Drive the real Obsidian page through the DevTools protocol. Wait for the relevant locked or active Inkbook state, capture uncaught errors and unhandled rejections, exercise the requested interaction, and take a screenshot for visual inspection. Close the temporary Obsidian process afterward.
+4. Drive the real Obsidian page through the DevTools protocol. Wait for the relevant locked or active Inkbook state, capture uncaught errors and unhandled rejections, exercise the requested interaction, and take a screenshot for visual inspection. Keep the working instance for the remaining required modes; perform final cleanup in step 10.
 5. For every UI layout, styling, or interaction change that can affect shared platform code, verify all three real-Obsidian presentation modes: desktop, tablet, and phone. A single-mode verification is sufficient only when the changed selectors and runtime branch are proven exclusive to that mode. State that scope explicitly; shared components, tokens, or control flow always require all three modes.
 6. Verify desktop mode after calling `Emulation.clearDeviceMetricsOverride`, removing the platform flag with `localStorage.removeItem("EmulateMobile")`, reloading Obsidian, and resizing the real window as described above. Confirm that the body is neither `is-mobile` nor `is-phone`. Never accept a default 640 by 480 capture as desktop evidence for toolbar, adaptive-panel, embed-width, sticky-position, or transition behavior.
 7. Verify tablet mode with Obsidian's own mobile emulation by calling `localStorage.setItem("EmulateMobile", "1")`, reloading, and retaining a wide viewport. Confirm through the DevTools protocol that the body is `is-mobile` and `is-tablet`, but not `is-phone`; do not simulate tablet behavior by manually adding CSS classes.
@@ -187,6 +193,8 @@ Keep CodeMirror and Lezer external to the production bundle. Add direct CodeMirr
 | [`docs/decisions/compact-stroke-contours.md`](docs/decisions/compact-stroke-contours.md)                   | Records compact pressure contours, constant-width simplification, reference output budgets, and verification boundaries.                                              |
 | [`docs/decisions/compact-stroke-metadata.md`](docs/decisions/compact-stroke-metadata.md)                   | Records exact compact stroke metadata, reader compatibility, integrity binding, and verification boundaries.                                                          |
 | [`docs/decisions/deterministic-performance-checks.md`](docs/decisions/deterministic-performance-checks.md) | Records removal of timing gates, retained work/resource checks, and the accepted speed-coverage gap.                                                                  |
+| [`docs/decisions/document-worker-recovery.md`](docs/decisions/document-worker-recovery.md)                 | Records bounded native replacement, active-time watchdogs, authoritative resynchronization, and local failure diagnostics.                                            |
+| [`docs/decisions/isolated-scene-document.md`](docs/decisions/isolated-scene-document.md)                   | Records isolation of the retained decorative SVG document and its ownership boundary.                                                                                 |
 | [`docs/decisions/performance-base-comparison.md`](docs/decisions/performance-base-comparison.md)           | Historically records PR-base-only performance comparisons and the accepted cumulative-regression limitation.                                                          |
 | [`docs/decisions/performance-bounded-measurements.md`](docs/decisions/performance-bounded-measurements.md) | Historically records scenario-level timing selection, fixed measurement populations, six-pair decisions and the two-runner workload partition, and validation limits. |
 | [`docs/decisions/performance-comparison-profiles.md`](docs/decisions/performance-comparison-profiles.md)   | Historically records 120-Hz cadence comparisons, preserved multi-profile contracts, and the accepted timing coverage gap.                                             |

@@ -1,4 +1,5 @@
 import type { NavigationCursorLayout } from "./navigation-layout";
+import { activeSceneViewportFromBounds } from "../active-scene-viewport";
 import * as Scrolling from "../../scrolling/index";
 import { createInputState, type InputState } from "../../../editor/input/index";
 import type { PointerSample } from "../../../editor/input/index";
@@ -137,6 +138,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
 export function createControllerNavigation(options: {
   readonly controller: ActiveEditorControllerOptions;
   readonly getInput: ActiveEditorNavigationOptions["getInput"];
+  readonly onCancelPinch: () => void;
   readonly isSelectionMoveActive: () => boolean;
   readonly renderSelection: () => void;
   readonly adoptCursorLayout?: (layout: NavigationCursorLayout) => void;
@@ -147,13 +149,20 @@ export function createControllerNavigation(options: {
   let appliedZoom = options.getInput().zoom;
   return new ActiveEditorNavigation({
     workScheduler: controller.workScheduler,
+    onCancelPinch: options.onCancelPinch,
     onNavigationActive: (active) => controller.model.setNavigationActive?.(active),
     activePageHeight: () =>
       controller.selectionMoveLayout.currentHeight?.() ??
       derivePageExtent(controller.model.page, controller.model.store.getMaximumBottom() ?? null)
         .activeHeight,
     applyCamera: (camera, layout) => {
-      if (layout !== undefined) options.adoptCursorLayout?.(layout);
+      if (layout !== undefined) {
+        options.adoptCursorLayout?.(layout);
+        controller.renderer.setViewport(
+          activeSceneViewportFromBounds(layout.containerBounds, layout.ownerViewport),
+        );
+        controller.onNavigationLayout?.(layout);
+      }
       controller.renderer.setCamera(camera);
       if (camera.zoom !== appliedZoom || !options.isSelectionMoveActive()) {
         options.renderSelection();

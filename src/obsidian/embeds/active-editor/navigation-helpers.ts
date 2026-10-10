@@ -1,11 +1,4 @@
-import type { ZoomInputEvent } from "../../../editor/zoom/wheel";
-import {
-  accumulateZoomInput,
-  calculateZoomLimits,
-  normalizeWheelVector,
-  type WheelDeltaMode,
-  type ZoomFrameState,
-} from "../../../editor/zoom/index";
+import { normalizeWheelVector, type WheelDeltaMode } from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
 
 import type { ActiveEditorViewState, ActiveEditorWheelInput } from "./navigation-types";
@@ -61,31 +54,13 @@ export function isContinuousZoomWheel(event: ActiveEditorWheelInput): boolean {
   );
 }
 
-/** Bound queued motion to reachable camera limits and honor a new direction immediately. */
-export function accumulateContinuousZoomInput(
-  state: ZoomFrameState,
-  input: ZoomInputEvent,
-  zoom: number,
-  fitZoom: number,
-): ZoomFrameState {
-  if (!Number.isFinite(zoom) || zoom <= 0) throw new RangeError("zoom must be positive and finite");
-  const factor = input.factor ?? 1;
-  const reverse = (state.factor > 1 && factor < 1) || (state.factor < 1 && factor > 1);
-  const accumulated = accumulateZoomInput(reverse ? { ...state, factor: 1 } : state, input);
-  const limits = calculateZoomLimits(fitZoom);
-  return {
-    ...accumulated,
-    factor: Math.max(limits.minZoom / zoom, Math.min(limits.maxZoom / zoom, accumulated.factor)),
-  };
-}
-
 export function projectedScrollBounds(
   owner: BrowserScrollElement,
   layout: NavigationLayoutRead,
   blockSize: number,
 ) {
   const currentScrollHeight = browserScrollMetrics.getScrollHeight(owner);
-  const clientHeight = browserScrollMetrics.getClientHeight(owner);
+  const clientHeight = layout.ownerViewport.bottom - layout.ownerViewport.top;
   const heightDelta = blockSize - layout.containerBounds.height;
   return {
     min: 0,

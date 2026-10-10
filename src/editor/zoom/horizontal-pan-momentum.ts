@@ -1,10 +1,14 @@
+import { estimateTouchPanVelocity } from "./touch-pan-velocity";
+
 const SAMPLE_CAPACITY = 32;
 const SAMPLE_WINDOW_MS = 120;
-const MIN_RELEASE_SPEED_PX_PER_SECOND = 100;
-const MAX_RELEASE_SPEED_PX_PER_SECOND = 4_000;
+const MAX_STATIONARY_MS = 40;
+const MIN_RELEASE_SPEED_PX_PER_SECOND = 50;
+const MAX_RELEASE_SPEED_PX_PER_SECOND = 8_000;
 const STOP_SPEED_PX_PER_SECOND = 15;
-const FRICTION_PER_60_HZ_FRAME = 0.935;
+const TOUCH_FRICTION_PER_60_HZ_FRAME = 0.96;
 const SIXTY_HZ_FRAME_MS = 1_000 / 60;
+const DECAY_PER_SECOND = (-Math.log(TOUCH_FRICTION_PER_60_HZ_FRAME) * 1_000) / SIXTY_HZ_FRAME_MS;
 const MAX_FRAME_GAP_MS = 100;
 
 /**
@@ -12,12 +16,15 @@ const MAX_FRAME_GAP_MS = 100;
  * animation-frame hot paths. Scheduling and camera clamping remain adapter-owned.
  */
 export class HorizontalPanMomentum {
-  readonly #deltas = new Float64Array(SAMPLE_CAPACITY);
+  readonly #positions = new Float64Array(SAMPLE_CAPACITY);
   readonly #times = new Float64Array(SAMPLE_CAPACITY);
   #active = false;
   #count = 0;
+  #direction = 0;
   #lastFrameTime = 0;
+  #lastMotionTime: number | undefined;
   #next = 0;
+  #position = 0;
   #velocity = 0;
 
   public get active(): boolean {
@@ -26,19 +33,36 @@ export class HorizontalPanMomentum {
 
   public cancel(): void {
     this.#active = false;
-    this.#count = 0;
-    this.#next = 0;
+    this.#resetSamples();
     this.#velocity = 0;
   }
 
   public record(screenDeltaX: number, timestamp: number): void {
-    if (!Number.isFinite(screenDeltaX) || screenDeltaX === 0 || !validTime(timestamp)) return;
+    if (!Number.isFinite(screenDeltaX) || !validTime(timestamp)) return;
     const previous = this.#latestTime();
     if (previous !== undefined && timestamp < previous) {
-      this.#count = 0;
-      this.#next = 0;
+      this.#resetSamples();
     }
-    this.#deltas[this.#next] = screenDeltaX;
+    const direction = Math.sign(screenDeltaX);
+    if (direction !== 0 && this.#direction !== 0 && direction !== this.#direction) {
+      this.#resetSamples();
+      if (previous !== undefined && previous <= timestamp) {
+        this.#positions[0] = 0;
+        this.#times[0] = previous;
+        this.#count = 1;
+        this.#next = 1;
+      }
+    }
+    if (direction !== 0) {
+      this.#direction = direction;
+      this.#lastMotionTime = timestamp;
+    }
+    this.#position += screenDeltaX;
+    if (this.#count > 0 && this.#latestTime() === timestamp) {
+      this.#positions[(this.#next - 1 + SAMPLE_CAPACITY) % SAMPLE_CAPACITY] = this.#position;
+      return;
+    }
+    this.#positions[this.#next] = this.#position;
     this.#times[this.#next] = timestamp;
     this.#next = (this.#next + 1) % SAMPLE_CAPACITY;
     this.#count = Math.min(this.#count + 1, SAMPLE_CAPACITY);
@@ -51,8 +75,7 @@ export class HorizontalPanMomentum {
       return false;
     }
     const velocity = this.#releaseVelocity(sampleTimestamp);
-    this.#count = 0;
-    this.#next = 0;
+    this.#resetSamples();
     if (velocity === undefined) {
       this.#velocity = 0;
       return false;
@@ -75,12 +98,16 @@ export class HorizontalPanMomentum {
       return 0;
     }
     this.#lastFrameTime = timestamp;
-    this.#velocity *= Math.pow(FRICTION_PER_60_HZ_FRAME, elapsed / SIXTY_HZ_FRAME_MS);
-    if (Math.abs(this.#velocity) < STOP_SPEED_PX_PER_SECOND) {
+    const seconds = Math.min(
+      elapsed / 1_000,
+      Math.log(Math.abs(this.#velocity) / STOP_SPEED_PX_PER_SECOND) / DECAY_PER_SECOND,
+    );
+    const decay = Math.exp(-DECAY_PER_SECOND * seconds);
+    const distance = (this.#velocity * (1 - decay)) / DECAY_PER_SECOND;
+    this.#velocity *= decay;
+    if (seconds < elapsed / 1_000 || Math.abs(this.#velocity) <= STOP_SPEED_PX_PER_SECOND)
       this.cancel();
-      return 0;
-    }
-    return this.#velocity * (elapsed / 1_000);
+    return distance;
   }
 
   #latestTime(): number | undefined {
@@ -88,23 +115,37 @@ export class HorizontalPanMomentum {
     return this.#times[(this.#next - 1 + SAMPLE_CAPACITY) % SAMPLE_CAPACITY];
   }
 
+  #resetSamples(): void {
+    this.#count = 0;
+    this.#direction = 0;
+    this.#lastMotionTime = undefined;
+    this.#next = 0;
+    this.#position = 0;
+  }
+
   #releaseVelocity(now: number): number | undefined {
+    const lastMotion = this.#lastMotionTime;
+    if (
+      lastMotion === undefined ||
+      now < (this.#latestTime() ?? now) ||
+      now - lastMotion > MAX_STATIONARY_MS
+    ) {
+      return undefined;
+    }
     const start = (this.#next - this.#count + SAMPLE_CAPACITY) % SAMPLE_CAPACITY;
-    let firstTime: number | undefined;
-    let lastTime: number | undefined;
-    let distance = 0;
+    let first = start;
+    let count = 0;
     for (let offset = 0; offset < this.#count; offset += 1) {
       const index = (start + offset) % SAMPLE_CAPACITY;
       const time = this.#times[index] ?? 0;
-      if (time > now || now - time > SAMPLE_WINDOW_MS) continue;
-      distance += this.#deltas[index] ?? 0;
-      firstTime ??= time;
-      lastTime = time;
+      if (time > lastMotion || lastMotion - time > SAMPLE_WINDOW_MS) continue;
+      if (count === 0) first = index;
+      count += 1;
     }
-    if (firstTime === undefined || lastTime === undefined || lastTime <= firstTime)
-      return undefined;
-    const velocity = (distance * 1_000) / (lastTime - firstTime);
-    return Math.abs(velocity) >= MIN_RELEASE_SPEED_PX_PER_SECOND ? velocity : undefined;
+    const velocity = estimateTouchPanVelocity(this.#positions, this.#times, first, count);
+    // Allow only machine-rounding error at the inclusive release-speed boundary.
+    const minimum = MIN_RELEASE_SPEED_PX_PER_SECOND * (1 - Number.EPSILON * 8);
+    return velocity !== undefined && velocity * this.#direction >= minimum ? velocity : undefined;
   }
 }
 

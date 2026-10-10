@@ -1,3 +1,4 @@
+import type { NavigationCursorLayout as CursorLayout } from "./navigation-layout";
 import type { GestureController, GesturePreviewStart } from "../../../editor/gestures/public";
 import * as EditorInput from "../../../editor/input/index";
 import { SelectionFrameSession } from "../../../editor/selection/public";
@@ -8,7 +9,7 @@ import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./coalesced-input";
 import { createActiveEditorChromeProps, createChromeCallbacks } from "./controller-chrome";
-import { applyInputAction, configureInputTool } from "./controller-dispatch";
+import { applyInputAction, cancelHandle, configureInputTool } from "./controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import * as Interactions from "./controller-interactions";
 import * as Helpers from "./controller-helpers";
@@ -131,6 +132,7 @@ export class ActiveEditorController {
     this.#navigation = Interactions.createControllerNavigation({
       controller: options,
       getInput: () => this.#input,
+      onCancelPinch: () => this.#cancelActiveGesture(),
       isSelectionMoveActive: () => this.#input.interaction?.phase === "element-move",
       renderSelection: () => this.#handles.renderCameraSelection(),
       adoptCursorLayout: (layout) => this.#cursor?.adoptNavigationLayout(layout),
@@ -273,6 +275,7 @@ export class ActiveEditorController {
   public handleNativeScroll(): void {
     if (this.#availability.acceptsInput) this.#navigation.notifyScroll();
   }
+  public adoptSceneLayout = (layout: CursorLayout): void => this.#cursor.adoptSceneLayout(layout);
   public handleWheel(event: WheelEvent): void {
     if (!this.#availability.acceptsInput) return;
     if (Interactions.hasStableGeometryGesture(this.#input, this.#handles)) {
@@ -394,12 +397,7 @@ export class ActiveEditorController {
       this.#dispatch({ type: "reset" });
       return true;
     }
-    const pointerId = this.#handles.activePointerId;
-    if (pointerId === undefined || !this.#handles.cancel(pointerId)) return false;
-    this.#captures.release(pointerId);
-    this.#navigation.finish();
-    this.#penGuard.stop();
-    return true;
+    return cancelHandle(this.#handles, this.#captures, this.#navigation, this.#penGuard);
   }
   #interruptForInput(): void {
     this.#pendingSelection.cancel();

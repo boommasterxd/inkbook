@@ -91,10 +91,12 @@ export class SceneFrameWriter {
 
   public flushToolCursor(): void {
     this.readToolCursor();
+    this.#dom.writeSurface();
     this.writeToolCursor();
   }
 
   public readToolCursor(refreshLayout = false): void {
+    this.#dom.readSurface();
     if (refreshLayout) this.invalidateCursorLayout();
     if (!this.#cursorLayoutDirty && !this.#cursorReadPending) return;
     const frame = this.#cursorReader?.(this.#cursorLayoutDirty);
@@ -169,6 +171,7 @@ export class SceneFrameWriter {
   }
 
   public setScheme(scheme: DocumentScheme): void {
+    this.#dom.invalidateSurfaceTheme();
     this.#scheme = scheme;
     this.#themeDirty = true;
   }
@@ -180,6 +183,7 @@ export class SceneFrameWriter {
     deadline: number,
     now: () => number,
   ): void {
+    this.#dom.writeSurface();
     this.writeLivePath();
     this.writeToolCursor();
     if (this.#cameraDirty) {

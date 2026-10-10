@@ -36,6 +36,7 @@ export interface MountedSceneElement {
   committedOrderEpoch: number;
   detachedPathCount: number;
   fadeActive: boolean;
+  motionActive: boolean;
   displayedElement: SceneElementRecord["element"];
   displayedPathParts: readonly SvgPathPart[];
   group: SVGGElement | null;
@@ -68,6 +69,7 @@ export function createMountedElement(
     committedOrderEpoch: 0,
     detachedPathCount: 0,
     fadeActive: false,
+    motionActive: false,
     displayedElement: record.element,
     displayedPathParts: parts,
     group,
@@ -223,20 +225,15 @@ export function updateMountedElementPreview(
     readonly parent: SVGGElement;
   },
 ): void {
-  const original = {
-    geometryVersion: entry.geometryVersion,
-    paintVersion: entry.paintVersion,
-    pathParts: entry.pathParts,
-    rank: entry.rank,
-  };
+  const { geometryVersion, paintVersion, pathParts, rank } = entry;
   updateMountedPreviewGeometry(entry, { ...record, element: previewElement }, parts, options);
   entry.displayedElement = previewElement;
   refreshPosition(entry, options.instrumentation);
   entry.displayedPathParts = parts;
-  entry.geometryVersion = original.geometryVersion;
-  entry.paintVersion = original.paintVersion;
-  entry.pathParts = original.pathParts;
-  entry.rank = original.rank;
+  entry.geometryVersion = geometryVersion;
+  entry.paintVersion = paintVersion;
+  entry.pathParts = pathParts;
+  entry.rank = rank;
 }
 
 function updateMountedPreviewGeometry(
@@ -298,11 +295,12 @@ export function setMountedElementMotion(
   opacity: number | null,
   scale = 1,
 ): void {
+  if (opacity === null && !entry.motionActive) return;
+  entry.motionActive = opacity !== null;
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
-  for (const node of nodes) {
+  for (const node of nodes)
     if (opacity === null) clearMotionStyle(node);
     else writeMotionStyle(node, opacity * entry.groupOpacity, scale);
-  }
 }
 
 export function firstPath(entry: MountedSceneElement): SVGElement {
@@ -355,6 +353,7 @@ function replacePathTopology(
   removeMountedElement(entry);
   entry.detachedPathCount = 0;
   entry.group = group;
+  entry.motionActive = false;
   entry.groupOpacity = pressureGroupOpacity(record);
   entry.appliedPreviewTransform = null;
   entry.appliedTransform = null;

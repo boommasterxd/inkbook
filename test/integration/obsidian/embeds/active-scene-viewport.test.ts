@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { readActiveSceneViewport } from "../../../../src/obsidian/embeds/active-scene-viewport";
+import { readActiveSceneLayout } from "../../../../src/obsidian/embeds/active-scene-viewport";
+import { readNavigationLayout } from "../../../../src/obsidian/embeds/active-editor/navigation-layout";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling";
 
 interface RectOptions {
@@ -49,7 +50,7 @@ describe("active scene viewport", () => {
       { clientHeight: 500, clientWidth: 800, document },
     );
 
-    expect(readActiveSceneViewport(container, owner)).toEqual({
+    expect(readActiveSceneLayout(container, owner).viewport).toEqual({
       height: 400,
       left: 50,
       top: 0,
@@ -75,11 +76,18 @@ describe("active scene viewport", () => {
       ownerDocument: document,
     } as unknown as HTMLElement;
 
-    expect(readActiveSceneViewport(container, owner)).toEqual({
+    expect(readActiveSceneLayout(container, owner).viewport).toEqual({
       height: 400,
       left: 0,
       top: 300,
       width: 1100,
+    });
+    expect(ownerRead).not.toHaveBeenCalled();
+    expect(readNavigationLayout(container, owner)?.ownerViewport).toEqual({
+      bottom: 700,
+      left: 0,
+      right: 1100,
+      top: 0,
     });
     expect(ownerRead).not.toHaveBeenCalled();
   });
@@ -111,7 +119,7 @@ describe("active scene viewport", () => {
       { clientHeight: 2000, clientWidth: 2000, document },
     );
 
-    expect(readActiveSceneViewport(container, owner)).toEqual({
+    expect(readActiveSceneLayout(container, owner).viewport).toEqual({
       height: 480,
       left: 0,
       top: 0,
@@ -139,7 +147,7 @@ function unlockViewportFixture(phase: string, blockSize = "602px") {
     { clientHeight: 800, clientWidth: 1000, document },
   );
   return {
-    read: () => readActiveSceneViewport(container, owner, root),
+    read: () => readActiveSceneLayout(container, owner, root).viewport,
     resize: (height: number) => {
       bounds = { ...bounds, height };
     },

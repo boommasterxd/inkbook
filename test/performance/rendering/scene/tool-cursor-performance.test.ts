@@ -21,10 +21,10 @@ afterEach(() => vi.restoreAllMocks());
 it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz cursor bursts retain decorations and icons and avoid document work with 10,000 strokes`, () => {
   const { store, renderer, scheduler, root, cursor } = createCursorFixture();
   const before = [...root.nodes];
-  const icons = [0, 1].map(() => root.ownerDocument.createElementNS(SVG_NAMESPACE, "svg"));
+  const icons = [0, 1].map(() => cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "svg"));
   for (const icon of icons) {
-    const nested = root.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
-    nested.append(root.ownerDocument.createElementNS(SVG_NAMESPACE, "path"));
+    const nested = cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
+    nested.append(cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "path"));
     icon.append(nested);
   }
   const observations = observeWork(store, root, renderer.inputSurface);
@@ -103,7 +103,7 @@ it.each(["tool", "eraser"] as const)(
   "direct %s movement writes only retained translations",
   (kind) => {
     const { store, renderer, scheduler, root, cursor } = createCursorFixture();
-    const icon = root.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
+    const icon = cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
     let position = 0;
     const read = vi.fn<SceneToolCursorFrameReader>(() => ({
       cursor:
@@ -162,8 +162,8 @@ it.each(["tool", "eraser"] as const)(
 );
 
 it("direct cursor movement respects invalid layout and the latest hidden frame", () => {
-  const { renderer, scheduler, root, cursor } = createCursorFixture();
-  const icon = root.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
+  const { renderer, scheduler, cursor } = createCursorFixture();
+  const icon = cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
   const read = vi.fn<SceneToolCursorFrameReader>(() => ({
     cursor: cursorState(10, icon),
     system: "crosshair",
@@ -204,7 +204,7 @@ it("direct cursor movement respects invalid layout and the latest hidden frame",
 
 it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation feedback projects once before paint without extra scene frames`, () => {
   const { store, renderer, scheduler, root, cursor } = createCursorFixture();
-  const icon = root.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
+  const icon = cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
   let position = 40;
   const read = vi.fn<SceneToolCursorFrameReader>(() => ({
     cursor: cursorState(position, icon),
@@ -401,7 +401,8 @@ function observeWork(
     content: [
       vi.spyOn(root.ownerDocument, "createElementNS"),
       vi.spyOn(root.ownerDocument, "createDocumentFragment"),
-
+      vi.spyOn(fakeNode(inputSurface).ownerDocument, "createElementNS"),
+      vi.spyOn(fakeNode(inputSurface).ownerDocument, "createDocumentFragment"),
       vi.spyOn(store, "get"),
       vi.spyOn(store, "query"),
       vi.spyOn(store, "beginQuery"),
@@ -487,6 +488,6 @@ function createCursorFixture() {
   const { renderer, scheduler } = createInteractionRenderer(store);
   scheduler.runAll();
   const root = fakeNode(renderer.svg);
-  const cursor = root.ownerDocument.body.nodes[0]!.nodes[0]!;
+  const cursor = fakeNode(renderer.inputSurface).ownerDocument.body.nodes[0]!.nodes[0]!;
   return { store, renderer, scheduler, root, cursor };
 }

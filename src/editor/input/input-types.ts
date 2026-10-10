@@ -135,6 +135,7 @@ interface ToolInteraction extends SinglePointerInteraction {
 export interface PinchInteraction {
   readonly phase: "pinch";
   readonly pointers: readonly [PointerSample, PointerSample];
+  readonly initialDistance: number;
 }
 
 export type InputInteraction =

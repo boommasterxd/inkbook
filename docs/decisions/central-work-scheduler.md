@@ -21,6 +21,16 @@ Use one injected `WorkScheduler` per owning window and the same portable
 platform-independent admission policy; window and worker adapters own native
 timing resources. Workspace composition owns lifetime and window selection.
 
+Window and worker adapters share a portable FIFO task transport with injected
+host operations. Each adapter lazily owns one reusable `MessageChannel` and at
+most one posted wakeup; cancelling a task removes it immediately. A delivered
+wakeup executes one callback, leaving admission, priorities, and absolute
+deadlines entirely with `SharedFrameScheduler`. Unavailable or failed channels
+fall back to cancellable timers. Positive-delay semantic timers keep their
+requested delays. Scheduler disposal closes both ports and clears pending tasks.
+Production document-runtime termination disposes only its worker-owned scheduler;
+main-thread fallback never disposes the shared owning-window scheduler.
+
 Keep the existing frame preferences and 55-percent cooperative work allowance.
 Every consumer shares an absolute epoch deadline. Input, frame, and background
 queues preserve priority with FIFO order within each class. A checkpoint without an
@@ -44,8 +54,12 @@ and camera `input` still precede both; other asynchronous preparation keeps its
 default `background` priority. The main-thread encoding and dispatch of a pending
 worker export also use `frame` admission, preserving overlap between export and
 scene work instead of holding the worker idle until rendering finishes. The
-input-active gate and autosave debounce remain unchanged; other worker requests
-and result adoption retain background admission. This changes admission order,
+autosave debounce remains unchanged. Required viewport contour preparation and
+its background-purpose model synchronization use frame admission during
+navigation; drawing still gates them. Other requests and result adoption retain
+background admission and defer during navigation. An already running worker
+export may finish within the central budget, with main-thread adoption deferred.
+This changes admission order,
 not the shared budget or the requirement to yield only when necessary.
 
 Remove count-based CPU slice quotas and forced handoffs while the shared budget remains. Preserve bounded indivisible work units, frame publication caps, input-priority gates,

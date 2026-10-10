@@ -63,8 +63,15 @@ export class CoalescedPointerInput {
     this.#project = options.project;
   }
 
-  /** Terminal pen drawing filters noncontact release samples after validating the complete batch. */
-  public dispatch(event: PointerEvent, penContactOnly = false): boolean {
+  /**
+   * Validates the complete batch before dispatch, including filtered terminal pen samples.
+   * The synchronous observer borrows projected samples after the latest-sample move dispatch.
+   */
+  public dispatch(
+    event: PointerEvent,
+    penContactOnly = false,
+    observeSamples?: (samples: readonly CoalescedCreationSample[]) => void,
+  ): boolean {
     const source = coalescedEvents(event);
     if (source === null) return false;
     const expected = this.#projectSample(event);
@@ -80,6 +87,7 @@ export class CoalescedPointerInput {
     const pointer = this.#pending[this.#pending.length - 1];
     try {
       if (pointer !== undefined) this.#dispatchMove(pointer);
+      observeSamples?.(pending);
     } finally {
       this.#pending = undefined;
     }

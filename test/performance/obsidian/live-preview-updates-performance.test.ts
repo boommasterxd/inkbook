@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import { EditorView } from "@codemirror/view";
 import { expect, it, vi } from "vitest";
 
@@ -9,6 +11,7 @@ import { editorInfoField, editorLivePreviewField } from "obsidian";
 import type { InkbookDocumentRecognition } from "../../../src/obsidian/embeds/document-recognition";
 import type { EmbedIntegrationPorts } from "../../../src/obsidian/embeds/presentation-port";
 import { configureTestEditorState } from "../../adapters/obsidian/plugin";
+import { createLivePreviewZoomScrollFixture } from "../../fixtures/obsidian/live-preview-zoom-scroll";
 
 function livePreviewUpdatesFixture(
   extension: typeof createLivePreviewExtension,
@@ -101,3 +104,39 @@ for (const operation of ["text edit", "recognition burst"] as const) {
     }
   });
 }
+
+it("coalesces delayed host zoom measures and bounds anchor reconciliation work", () => {
+  const h = createLivePreviewZoomScrollFixture();
+  const rootRead = vi
+    .spyOn(h.root, "getBoundingClientRect")
+    .mockImplementation(() => new DOMRect(0, -h.owner.scrollTop, 800, 1_000));
+  const ownerRead = vi.spyOn(h.owner, "getBoundingClientRect");
+  try {
+    for (let target = 0; target < 1_000; target += 1) {
+      h.binding.retain(h.owner, target, { container: h.root, contentTop: 0 });
+    }
+    expect(h.request).toHaveBeenCalledOnce();
+    expect(rootRead).not.toHaveBeenCalled();
+    h.measure();
+    expect(h.frames.pending).toBe(1);
+    h.owner.scrollTop = 1917;
+    h.scrollWrite.mockClear();
+    h.notify();
+    expect(h.owner.scrollTop).toBe(999);
+    expect(h.scrollWrite).toHaveBeenCalledExactlyOnceWith(999);
+    expect(h.frames.pending).toBe(0);
+    h.notify();
+    expect(h.scrollWrite).toHaveBeenCalledOnce();
+    expect(rootRead).toHaveBeenCalledOnce();
+    expect(ownerRead).not.toHaveBeenCalled();
+    h.binding.retain(h.owner, 500);
+    h.binding.dispose();
+    h.measure();
+    expect(h.frames.pending).toBe(0);
+    expect(h.scrollWrite).toHaveBeenCalledOnce();
+  } finally {
+    h.destroy();
+    rootRead.mockRestore();
+    ownerRead.mockRestore();
+  }
+});

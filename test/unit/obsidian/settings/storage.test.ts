@@ -113,6 +113,7 @@ describe("InkbookSettingsStore device migration", () => {
     expect(store.getDeviceSettings()).toEqual({
       ...legacy,
       version: 2,
+      scrollPreloadMarginPx: 300,
       keyboardShortcuts: createBuiltInDeviceSettings().keyboardShortcuts,
     });
     expect(device.saves).toEqual([
@@ -247,5 +248,60 @@ describe("InkbookSettingsStore vault subscriptions", () => {
       ...createBuiltInSettings(),
       refreshRatePreference: 144,
     });
+  });
+});
+
+describe("InkbookSettingsStore preload margin persistence", () => {
+  it("notifies on margin changes, persists under the existing key, reloads, and resets", async () => {
+    const vault = new VaultFake(createBuiltInSettings());
+    const device = new DeviceFake(createBuiltInDeviceSettings());
+    const store = new InkbookSettingsStore(vault, device);
+    await store.load();
+    const listener = vi.fn();
+    store.subscribeDeviceSettings(listener);
+
+    store.updateDeviceSettings((settings) => ({ ...settings, scrollPreloadMarginPx: 800 }));
+    store.updateDeviceSettings((settings) => settings);
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith({
+      ...createBuiltInDeviceSettings(),
+      scrollPreloadMarginPx: 800,
+    });
+    expect(device.saves[0]).toEqual({
+      key: DEVICE_SETTINGS_STORAGE_KEY,
+      data: store.getDeviceSettings(),
+    });
+    expect(vault.saves).toEqual([]);
+    const reloaded = new InkbookSettingsStore(
+      new VaultFake(createBuiltInSettings()),
+      new DeviceFake(device.saves[0]?.data),
+    );
+    await reloaded.load();
+    expect(reloaded.getDeviceSettings().scrollPreloadMarginPx).toBe(800);
+
+    await store.resetAll();
+    expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(300);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the prior margin and emits nothing when device storage fails", async () => {
+    const device = new DeviceFake(createBuiltInDeviceSettings());
+    const store = new InkbookSettingsStore(new VaultFake(createBuiltInSettings()), device);
+    await store.load();
+    const listener = vi.fn();
+    store.subscribeDeviceSettings(listener);
+    vi.spyOn(device, "saveLocalStorage").mockImplementation(() => {
+      throw new Error("Storage unavailable");
+    });
+
+    expect(() =>
+      store.updateDeviceSettings((settings) => ({
+        ...settings,
+        scrollPreloadMarginPx: 100,
+      })),
+    ).toThrow("Storage unavailable");
+    expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(300);
+    expect(listener).not.toHaveBeenCalled();
   });
 });

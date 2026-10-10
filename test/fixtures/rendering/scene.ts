@@ -1,5 +1,11 @@
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
+import { UniformSpatialIndex } from "../../../src/domain/spatial";
+import { expect, vi, type Mock } from "vitest";
+import type { ElementStore } from "../../../src/domain/store/public";
 import { calculateElementBounds } from "../../../src/domain/geometry/bounds";
+import type { ScenePathPreparation } from "../../../src/domain/geometry/prepared-scene-paths";
+import type { NavigationPathPreparation } from "../../../src/rendering/scene/navigation-path-preparation";
+import type { SceneVisibilityPriority } from "../../../src/rendering/scene/scene-entrant-priority";
 import type { Bounds } from "../../../src/domain/geometry/public";
 import type { SceneElementRecord } from "../../../src/rendering/scene/types";
 import type { InkElementV1, PageV1 } from "../../../src/domain/schema/public";
@@ -15,6 +21,7 @@ import {
   FakeNode,
   FakeSceneStore,
   FakeScheduler,
+  fakeNode,
   fakeRectangleRecord,
 } from "../../unit/rendering/scene/fakes";
 
@@ -34,26 +41,44 @@ export function createSceneFixture(
   page: PageV1,
   store: SceneStorePort,
   viewport: SceneViewport = { height: 1000, left: 0, top: 0, width: 2048 },
-  options: Pick<SceneRendererOptions, "onSceneCommitted" | "deferInitialOverscan"> & {
+  options: Pick<
+    SceneRendererOptions,
+    | "onSceneCommitted"
+    | "deferInitialOverscan"
+    | "isInputActive"
+    | "waitForBackground"
+    | "onResourceUsageChanged"
+    | "scrollPreloadMarginPx"
+  > & {
     readonly frameBudgetMs?: number | (() => number);
   } = {},
   scheduler = new FakeScheduler(options.frameBudgetMs),
 ) {
-  const document = new FakeDocument();
+  const parentDocument = new FakeDocument();
   const renderer = new SvgSceneRenderer({
+    ...(options.scrollPreloadMarginPx === undefined
+      ? {}
+      : { scrollPreloadMarginPx: options.scrollPreloadMarginPx }),
+    ...(options.isInputActive === undefined ? {} : { isInputActive: options.isInputActive }),
+    ...(options.waitForBackground === undefined
+      ? {}
+      : { waitForBackground: options.waitForBackground }),
     ...(options.deferInitialOverscan === undefined
       ? {}
       : { deferInitialOverscan: options.deferInitialOverscan }),
     ...(options.onSceneCommitted === undefined
       ? {}
       : { onSceneCommitted: options.onSceneCommitted }),
-    container: asElement(new FakeNode(document, "div")),
+    ...(options.onResourceUsageChanged === undefined
+      ? {}
+      : { onResourceUsageChanged: options.onResourceUsageChanged }),
+    container: asElement(new FakeNode(parentDocument, "div")),
     layout: { readViewport: () => viewport },
     page,
     store,
     workScheduler: scheduler.workScheduler,
   });
-  return { document, renderer, scheduler };
+  return { document: fakeNode(renderer.svg).ownerDocument, parentDocument, renderer, scheduler };
 }
 
 export function createViewportRectangleStore(
@@ -68,6 +93,16 @@ export function createViewportRectangleStore(
   return store;
 }
 
+/** Applies a viewport and drains its coalesced scene publication and cleanup. */
+export function flushSceneViewport(
+  renderer: SvgSceneRenderer,
+  scheduler: FakeScheduler,
+  viewport: SceneViewport,
+): void {
+  renderer.setViewport(viewport);
+  scheduler.runAll();
+}
+
 export function createSceneRecord(element: InkElementV1, rank = 0): SceneElementRecord {
   return {
     id: element.id,
@@ -78,4 +113,65 @@ export function createSceneRecord(element: InkElementV1, rank = 0): SceneElement
     band: renderBandOf(element),
     bounds: calculateElementBounds(element),
   };
+}
+
+/** Observes the actual indexed cell and candidate visits, including resumed cursors. */
+export function observeIndexedSceneQueries(store: Pick<ElementStore, "beginQuery">) {
+  const work = { indexedVisits: 0 };
+  const originalQuery = store.beginQuery.bind(store);
+  const query = vi.spyOn(store, "beginQuery").mockImplementation((bounds) => {
+    const cursor = originalQuery(bounds);
+    const advance = cursor.advance.bind(cursor);
+    cursor.advance = (limit) => {
+      const step = advance(limit);
+      work.indexedVisits += step.workUnits;
+      return step;
+    };
+    return cursor;
+  });
+  return { query, work };
+}
+
+/** Owns a real scene index and observes cursors while rejecting scan-based fallback. */
+export function createIndexedSceneStore(records: FakeSceneStore) {
+  const index = new UniformSpatialIndex<string>();
+  index.insertMany([...records.records.values()].map(({ id, bounds }) => ({ id, bounds })));
+  const { work } = observeIndexedSceneQueries(index);
+  const fallback = vi.fn(() => {
+    throw new Error("Use the spatial cursor.");
+  });
+  const store: SceneStorePort = {
+    get: (id) => records.get(id),
+    beginQuery: (bounds) => index.beginQuery(bounds),
+    query: fallback,
+  };
+  return { store, work, fallback };
+}
+
+/** Starts one real directional request and returns the observed transport boundary. */
+export function beginNavigationPathRequest(
+  fixture: {
+    readonly preparation: NavigationPathPreparation;
+    readonly prepare: Mock<ScenePathPreparation>;
+  },
+  priority: SceneVisibilityPriority,
+  envelope: Bounds,
+) {
+  fixture.preparation.setTarget(priority, envelope);
+  expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
+  expect(fixture.prepare).toHaveBeenCalledOnce();
+  return fixture.prepare.mock.calls[0]!;
+}
+
+/** A remote geometry boundary that stays pending until its lifecycle aborts it. */
+export function createPendingScenePathStore() {
+  const store: FakeSceneStore & Pick<SceneStorePort, "prepareScenePaths"> = new FakeSceneStore();
+  const signals: AbortSignal[] = [];
+  store.prepareScenePaths = (_ids, signal) => {
+    signals.push(signal);
+    return new Promise<undefined>((resolve) => {
+      signal.addEventListener("abort", () => resolve(undefined), { once: true });
+    });
+  };
+  return { store, signals };
 }

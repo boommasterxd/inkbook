@@ -25,7 +25,7 @@ export interface WorkScheduler {
   shouldYield(): boolean;
   requestFrame(callback: (timestamp: number) => void, priority?: WorkPriority): number;
   cancelFrame(handle: number): void;
-  checkpoint(signal?: FrameCancellation): Promise<void> | undefined;
+  checkpoint(signal?: FrameCancellation, priority?: WorkPriority): Promise<void> | undefined;
   nextFrame(signal?: FrameCancellation, priority?: WorkPriority): Promise<void>;
   dispose(): void;
 }

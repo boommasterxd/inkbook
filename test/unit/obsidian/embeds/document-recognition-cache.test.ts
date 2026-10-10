@@ -5,7 +5,7 @@ import { createRecognitionWorkScheduler } from "../../../../src/obsidian/embeds/
 import { inspectPreviewSvg } from "../../../../src/obsidian/embeds/safe-preview-svg";
 import { createConfirmedOutputFixture } from "../../../fixtures/obsidian/confirmed-output";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
-import type { WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
+import type { WorkPriority, WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
 import { SchedulerDisposedError } from "../../../../src/domain/scheduling/work-scheduler";
 import { SafeStaticProof } from "../../../../src/persistence/serialization/safe-static-proof";
 
@@ -35,9 +35,9 @@ function previewWithSize(size: number) {
   };
 }
 
-function inspectAfterCheckpoint(): void {
+function inspectAfterCheckpoint(priority?: WorkPriority): void {
   vi.mocked(inspectPreviewSvg).mockImplementationOnce(async (_source, options) => {
-    await options.workScheduler.checkpoint();
+    await options.workScheduler.checkpoint(undefined, priority);
     return previewWithSize(1);
   });
 }
@@ -255,16 +255,18 @@ it("moves an in-flight checkpoint to a visible requester", async () => {
   const popoutScheduler = immediateWorkScheduler();
   const mainCancelled = vi.fn();
   const mainScheduler = blockedScheduler(mainCancelled);
+  const mainCheckpoint = vi.spyOn(mainScheduler, "checkpoint");
   const popoutCheckpoint = vi.spyOn(popoutScheduler, "checkpoint");
   const recognition = cacheHarness((owner) => (owner === popout ? popoutScheduler : mainScheduler));
-  inspectAfterCheckpoint();
+  inspectAfterCheckpoint("frame");
 
   const first = recognition.recognize("a.svg", main);
   await vi.waitFor(() => expect(inspectPreviewSvg).toHaveBeenCalledOnce());
   expect(recognition.recognize("a.svg", popout)).toBe(first);
   await expect(first).resolves.toMatchObject({ safeSvg: "x" });
   expect(mainCancelled).toHaveBeenCalledOnce();
-  expect(popoutCheckpoint).toHaveBeenCalledOnce();
+  expect(mainCheckpoint).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal), "frame");
+  expect(popoutCheckpoint).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal), "frame");
   recognition.invalidate("a.svg");
   recognition.dispose();
 });

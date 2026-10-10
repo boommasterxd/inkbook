@@ -141,7 +141,7 @@ describe("vault document migration persistence", () => {
       status: "confirmed",
     });
 
-    expect(createRuntime).toHaveBeenCalledOnce();
+    expect(createRuntime).toHaveBeenCalledTimes(2);
     expect(harness.copies.get("drawings/ink.backup-v0.svg")?.text).toBe(harness.original.svg);
     expect(harness.process).toHaveBeenCalledOnce();
   });

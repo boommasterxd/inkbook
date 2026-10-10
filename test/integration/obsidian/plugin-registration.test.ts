@@ -7,6 +7,7 @@ import {
   editorLivePreviewField,
   type Editor,
   type MarkdownView,
+  type Command,
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
@@ -21,6 +22,18 @@ import { InkbookLoadingPreviewWidget } from "../../../src/obsidian/embeds/live-p
 import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
 
 const TestTFile = TFile as unknown as new (path: string) => TFile;
+
+function expectRegisteredCommands(commands: readonly Pick<Command, "id">[]): void {
+  expect(commands.map((command) => command.id)).toEqual([
+    "lock-active-embed",
+    "copy-embed",
+    "erase-all",
+    "delete-embed",
+    "insert-handwriting",
+  ]);
+  expect(commands).toHaveLength(5);
+  for (const command of commands) expect(command).not.toHaveProperty("hotkeys");
+}
 
 function createApp() {
   const cssChange = vi.fn();
@@ -179,15 +192,7 @@ describe("plugin host registration", () => {
     expect(statusItems[0]?.children[0]?.dataset.saveStatus).toBe("inactive");
     expect(workspaceEvents.has("active-leaf-change")).toBe(true);
     expect(workspaceEvents.has("layout-change")).toBe(false);
-    expect(registrations.commands.map((command) => command.id)).toEqual([
-      "lock-active-embed",
-      "copy-embed",
-      "erase-all",
-      "delete-embed",
-      "insert-handwriting",
-    ]);
-    expect(registrations.commands).toHaveLength(5);
-    for (const command of registrations.commands) expect(command).not.toHaveProperty("hotkeys");
+    expectRegisteredCommands(registrations.commands);
     expect(cssChange).toHaveBeenCalledTimes(0);
     expect([...metadataEvents.keys()]).toEqual(["changed", "resolved"]);
     expect(workspaceEvents.has("quit")).toBe(true);

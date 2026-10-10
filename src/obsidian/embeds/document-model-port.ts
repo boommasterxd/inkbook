@@ -56,6 +56,7 @@ export interface EditableDocumentModel {
   prepareScenePaths?: import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation;
   beginInteractiveOperation?(): () => void;
   waitForBackground?(): Promise<void> | undefined;
+  isGestureActive?(): boolean;
   readonly mutationAvailability: DocumentMutationAvailability;
   readonly page: InkSnapshotV1["page"];
   readonly revision: number;

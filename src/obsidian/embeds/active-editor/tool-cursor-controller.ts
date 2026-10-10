@@ -172,8 +172,13 @@ export class ActiveToolCursorController {
   }
 
   public adoptNavigationLayout(layout: NavigationCursorLayout): void {
-    this.#navigationLayout = layout;
+    this.adoptSceneLayout(layout);
     this.refresh();
+  }
+
+  public adoptSceneLayout(layout: NavigationCursorLayout): void {
+    if (this.#pointer === undefined) return;
+    this.#navigationLayout = layout;
   }
 
   public refresh(): void {

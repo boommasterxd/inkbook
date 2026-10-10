@@ -32,6 +32,7 @@ export interface AutosaveSessionBaseOptions {
   readonly confirmed: (persistence: ConfirmedPersistence) => void;
   readonly statusChanged?: (status: AutosaveStatus) => void;
   readonly createFallback?: (workerEpoch: number) => DocumentRuntimePort;
+  readonly createReplacement?: (workerEpoch: number) => Promise<DocumentRuntimePort>;
   readonly currentRevision: () => number;
   readonly executor: DocumentRuntimePort;
   readonly initialSnapshot: InkSnapshotV1;
@@ -77,6 +78,7 @@ export interface AutosaveCoordinatorOptions {
   readonly clock: AutosaveClock;
   readonly confirmedBase: VaultBase;
   readonly createFallback?: (workerEpoch: number) => DocumentRuntimePort;
+  readonly createReplacement?: (workerEpoch: number) => Promise<DocumentRuntimePort>;
   readonly documentSource: AutosaveDocumentSource;
   readonly executor: DocumentRuntimePort;
   readonly initialSnapshot: InkSnapshotV1;

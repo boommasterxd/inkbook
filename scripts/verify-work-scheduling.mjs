@@ -44,15 +44,19 @@ export const NATIVE_WORK_ADAPTERS = new Set([
 // A boundary file is not a blanket exemption. Each entry names the owning
 // method and the number of native calls required by its injected host port.
 const ADAPTER_NATIVE_SITES = new Map([
-  ["src/obsidian/performance/window-work-scheduler.ts##ensureChannel#MessageChannel", 1],
-  ["src/obsidian/performance/window-work-scheduler.ts##scheduleTimeout#setTimeout", 1],
+  ["src/obsidian/performance/window-work-scheduler.ts#openWindowTaskChannel#MessageChannel", 1],
+  ["src/obsidian/performance/window-work-scheduler.ts#createWindowWorkScheduler#setTimeout", 1],
   [
     "src/obsidian/performance/window-work-scheduler.ts#createWindowWorkScheduler#requestAnimationFrame",
     1,
   ],
   [
     "src/persistence/worker/runtime/worker-work-scheduler.ts#createWorkerWorkScheduler#setTimeout",
-    3,
+    2,
+  ],
+  [
+    "src/persistence/worker/runtime/worker-work-scheduler.ts#openWorkerTaskChannel#MessageChannel",
+    1,
   ],
 ]);
 
@@ -69,6 +73,7 @@ const SEMANTIC_TIMER_SITES = new Map([
   ["src/obsidian/embeds/active-scene-timeout.ts#wait", 1],
   ["src/obsidian/embeds/canvas-touch-boundary.ts##handlePointerTerminal", 1],
   ["src/obsidian/embeds/editor-chrome-loader.ts##startLoad", 1],
+  ["src/obsidian/embeds/host-zoom-measure-throttle.ts##armTimer", 1],
   ["src/obsidian/embeds/presentation-operation-feedback.ts#begin", 1],
   ["src/obsidian/embeds/workspace-runtime-lifecycle.ts##armAutoActivationTimeout", 1],
   ["src/obsidian/embeds/workspace-runtime-workers.ts#createWorkspaceDocumentRuntimes", 1],
@@ -84,6 +89,7 @@ const SEMANTIC_TIMER_SITES = new Map([
   ["src/obsidian/settings/settings-panel-motion.ts##listenForCompletion", 1],
   ["src/persistence/saving/autosave/timer.ts#schedule", 1],
   ["src/persistence/worker/runtime/worker-host.ts#postHostedResult", 1],
+  ["src/persistence/worker/runtime/request-timeout.ts#scheduleRequestTimeout", 1],
 ]);
 
 // Refresh detection samples raw browser frames, outside the cooperative work queue.

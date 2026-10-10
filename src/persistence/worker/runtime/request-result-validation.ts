@@ -1,9 +1,29 @@
 import { parseSafeSvgRoot } from "../../documents/svg-envelope-root";
 import { parseOpeningTag } from "../../documents/svg-tag";
 import { validatePreparedScenePaths } from "./prepare-scene-paths";
+import type { ScenePathValidationContext, ValidatedScenePathBatch } from "./scene-path-limits";
 
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import type { DocumentRuntimeRequest, DocumentRuntimeResult, UnlockRuntimeBatch } from "./types";
+
+export function validUnlockCompletion(
+  result: DocumentRuntimeResult,
+  pending: {
+    readonly acceptsUnlockBatches: boolean;
+    readonly batchAdoptionPending: boolean;
+    readonly nextUnlockBatchIndex: number;
+    readonly adoptedElementCount: number;
+  },
+): boolean {
+  if (!pending.acceptsUnlockBatches) return result.type !== "unlock-success";
+  if (result.type === "runtime-failure") return true;
+  return (
+    result.type === "unlock-success" &&
+    !pending.batchAdoptionPending &&
+    result.snapshot.batchCount === pending.nextUnlockBatchIndex &&
+    result.snapshot.elementCount === pending.adoptedElementCount
+  );
+}
 
 export function matchesUnlockBatchIdentity(
   batch: Pick<UnlockRuntimeBatch, "identity">,
@@ -22,12 +42,13 @@ export async function assertResultMatchesRequest(
   request: DocumentRuntimeRequest,
   result: DocumentRuntimeResult,
   options: RuntimeWireSliceOptions,
-): Promise<void> {
+  scenePaths?: ScenePathValidationContext,
+): Promise<ValidatedScenePathBatch | undefined> {
   if (!matchesRequestIdentity(request, result)) {
     throw new TypeError("Worker result does not match its exact request identity and purpose.");
   }
   if (request.type === "prepare-scene-paths" && result.type === "prepare-scene-paths-success") {
-    await validatePreparedScenePaths(request, result, options);
+    return validatePreparedScenePaths(request, result, options, scenePaths);
   }
   if (
     request.type !== "verify-output" ||
@@ -57,6 +78,7 @@ export async function assertResultMatchesRequest(
   ) {
     throw new TypeError("Worker verification result does not describe the exact request content.");
   }
+  return undefined;
 }
 
 function matchesRequestIdentity(
@@ -72,6 +94,7 @@ function matchesRequestIdentity(
       result.modelRevision === request.modelRevision
     );
   }
+  if (result.type === "runtime-failure") return sameIdentity(request.identity, result.identity);
   if (request.type === "model-sync-full" || request.type === "model-sync-incremental") {
     return (
       result.type === "model-sync-success" &&
@@ -79,7 +102,6 @@ function matchesRequestIdentity(
       sameIdentity(request.identity, result.identity)
     );
   }
-  if (result.type === "runtime-failure") return sameIdentity(request.identity, result.identity);
   const expectedType = SUCCESS_TYPE_BY_REQUEST[request.type];
   return result.type === expectedType && sameIdentity(request.identity, result.identity);
 }

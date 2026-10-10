@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PointV1 } from "../../../../src/domain/schema/types";
 import type {
   PressureBoundaryArc,
@@ -196,6 +196,26 @@ describe("circular pressure boundary intersections", () => {
     for (const hit of hits) {
       const point = pressureBoundaryPoint(circle, hit.second);
       expect(point.y).toBeCloseTo(center.y + 0.35, 8);
+    }
+  });
+});
+
+describe("pressure arc metadata reuse", () => {
+  it("reuses arc angles for midpoint and clipped endpoint generation without rounding changes", () => {
+    const boundary = arc({ x: -999_999, y: 999_999 }, 0.35, 0.4, -Math.PI);
+    const fractions = [0, 1, ...Array.from({ length: 64 }, (_, index) => (index + 1) / 65)];
+    const expected = fractions.map((fraction) => pressureBoundaryPoint(boundary, fraction));
+    const angles = vi.spyOn(Math, "atan2");
+    try {
+      const cache = new WeakMap<PressureBoundaryArc, number>();
+      expect(fractions.map((fraction) => pressureBoundaryPoint(boundary, fraction, cache))).toEqual(
+        expected,
+      );
+      expect(angles).toHaveBeenCalledTimes(1);
+      expect(pressureBoundaryPoint(boundary, 0, cache)).toBe(boundary.start);
+      expect(pressureBoundaryPoint(boundary, 1, cache)).toBe(boundary.end);
+    } finally {
+      angles.mockRestore();
     }
   });
 });

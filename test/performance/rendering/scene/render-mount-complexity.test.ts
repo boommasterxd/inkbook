@@ -1,15 +1,18 @@
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import * as geometry from "../../../../src/domain/geometry/element-path";
 import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import { flushBoundedScenePublication } from "../../../fixtures/rendering/scene-publication";
 import { observePointReads } from "../../../fixtures/rendering/point-reads";
 
 import type { PageV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import {
-  type FakeNode,
+  FakeDocument,
+  FakeNode,
   FakeSceneStore,
   type FakeScheduler,
   fakeNode,
@@ -39,7 +42,8 @@ describe("visible render mount complexity", () => {
     expect(renderer.mountedCount).toBe(2);
     const work = renderer.instrumentation();
     expect(work.geometryBuilds).toBe(2);
-    expect(work.maximumMountSliceElements).toBe(2);
+    // Priority, retained-order proof, readiness, and publication each visit at most once.
+    expect(work.maximumMountSliceElements).toBeLessThanOrEqual(records.length * 4);
     expect(work.mountBudgetYields).toBe(0);
     renderer.destroy();
     expect(scheduler.pendingCount).toBe(0);
@@ -48,13 +52,28 @@ describe("visible render mount complexity", () => {
   it("resumes 489 visible strokes with exactly two million points in stable band order", async ({
     annotate,
   }) => {
+    const shadowRoots = vi.spyOn(FakeNode.prototype, "attachShadow");
+    const elements = vi.spyOn(FakeDocument.prototype, "createElementNS");
     const actualBuilds = vi.spyOn(geometry, "buildElementPathParts");
     const preparations = vi.spyOn(ScenePathCache.prototype, "startPreparation");
     const fixture = createMaximumPointFixture();
     const { renderer, scheduler } = createMountScene(fixture.records);
+    const input = fakeNode(renderer.inputSurface);
+    const container = input.parent!;
+    const host = container.nodes[0]!;
+    const resources = () => sceneResources(elements.mock.calls, elements.mock.results);
+    const frame = host.shadowRoot!.nodes[1]!;
+    expect(shadowRoots).toHaveBeenCalledTimes(1);
+    expect(shadowRoots).toHaveBeenCalledWith({ mode: "open" });
+    expect(frame.tagName).toBe("iframe");
+    expect(frame.contentDocument?.body.nodes).toEqual([fakeNode(renderer.svg)]);
+    expect(frame.contentDocument).not.toBe(host.ownerDocument);
+    expect(fakeNode(renderer.svg).ownerDocument).toBe(frame.contentDocument);
+    expect(input.ownerDocument).toBe(host.ownerDocument);
+    expect(resources()).toEqual({ documents: 1, frames: 1, hosts: 2, styles: 3 });
     scheduler.runNext();
     const firstFrameMounts = renderer.mountedCount;
-    while (scheduler.pendingCount > 0) scheduler.runNext();
+    flushBoundedScenePublication(renderer, scheduler);
 
     expect(actualBuilds).toHaveBeenCalledTimes(0);
     expect(preparations).toHaveBeenCalledTimes(3);
@@ -63,7 +82,7 @@ describe("visible render mount complexity", () => {
     const instrumentation = renderer.instrumentation();
     const cameraGroup = fakeNode(renderer.svg).nodes[1]!;
     expect(fixture.pointCount).toBe(TOTAL_POINTS);
-    expect(firstFrameMounts).toBe(64);
+    expect(firstFrameMounts).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     expect(renderer.mountedCount).toBe(STROKES);
     expect(renderer.mountedIds("highlight")).toEqual(fixture.highlightIds);
     expect(renderer.mountedIds("content")).toEqual(fixture.contentIds);
@@ -75,7 +94,11 @@ describe("visible render mount complexity", () => {
       spatialQueries: 1,
     });
     expect(instrumentation.domFragmentRuns).toBeGreaterThan(0);
-    expect(instrumentation.maximumMountSliceElements).toBeLessThanOrEqual(64);
+    // Candidate/proof/readiness bookkeeping uses the shared deadline; only live roots
+    // have a fixed browser-publication capacity, checked above at the actual mount boundary.
+    expect(instrumentation.maximumMountSliceElements).toBeLessThanOrEqual(
+      STROKES * 3 + SCENE_PUBLICATION_ROOTS_PER_FRAME,
+    );
     expect(instrumentation.mountBudgetYields).toBeGreaterThan(0);
     expect(instrumentation.pathCacheHits).toBeGreaterThanOrEqual(STROKES - 3);
     expect(fixture.pointReads()).toBeGreaterThan(0);
@@ -86,10 +109,55 @@ describe("visible render mount complexity", () => {
       "performance",
     );
     verifyEraserFeedback(renderer, scheduler, cameraGroup, fixture);
+    verifyNavigationResources(renderer, scheduler, () => elements.mock.calls.length);
+    expect(shadowRoots).toHaveBeenCalledTimes(1);
+    expect(resources()).toEqual({ documents: 1, frames: 1, hosts: 2, styles: 3 });
+    expect(ownedSceneNodes(fakeNode(renderer.svg))).toBe(true);
     renderer.destroy();
+    expect(container.nodes).toHaveLength(0);
+    expect(host.shadowRoot?.nodes).toHaveLength(0);
+    expect([...input.listeners.values()].every((listeners) => listeners.size === 0)).toBe(true);
     expect(scheduler.pendingCount).toBe(0);
+    shadowRoots.mockRestore();
+    elements.mockRestore();
   });
 });
+
+function sceneResources(
+  calls: readonly (readonly [string, string])[],
+  results: readonly { readonly value?: unknown }[],
+) {
+  const count = (name: string) => calls.filter(([, tag]) => tag === name).length;
+  const documents = new Set(
+    results.flatMap((result, index) =>
+      calls[index]?.[1] === "iframe" ? [(result.value as FakeNode).contentDocument] : [],
+    ),
+  );
+  return {
+    documents: documents.size,
+    frames: count("iframe"),
+    hosts: count("div"),
+    styles: count("style"),
+  };
+}
+
+function verifyNavigationResources(
+  renderer: SvgSceneRenderer,
+  scheduler: FakeScheduler,
+  nodesCreated: () => number,
+): void {
+  const before = nodesCreated();
+  renderer.setCamera({ x: 1, zoom: 1.01 });
+  renderer.setViewport({ height: 200, left: 0, top: 1, width: 200 });
+  scheduler.runAll();
+  expect(nodesCreated()).toBe(before);
+}
+
+function ownedSceneNodes(node: FakeNode, document = node.ownerDocument): boolean {
+  return (
+    node.ownerDocument === document && node.nodes.every((child) => ownedSceneNodes(child, document))
+  );
+}
 
 function verifyEraserFeedback(
   renderer: SvgSceneRenderer,

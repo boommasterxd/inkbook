@@ -33,6 +33,25 @@ it.each(["solid", "dashed", "dotted"] as const)(
 );
 
 describe("cached element fragment byte counts", () => {
+  it("accounts for owned stroke range descriptors and releases their cache entry", () => {
+    const stroke = createTestStroke();
+    const fragment = buildElementFragments(stroke);
+    const cache = new ElementFragmentCache();
+    expect(fragment.strokePaths).toHaveLength(1);
+    expect(fragment.retainedBytes).toBe(
+      fragment.bytes +
+        (fragment.metadataUtf8 === fragment.canonicalMetadataUtf8
+          ? 0
+          : fragment.canonicalMetadataBytes) +
+        48 +
+        64 * fragment.strokePaths!.length,
+    );
+    cache.replace(stroke.id, fragment);
+    expect(cache.retainedBytes).toBe(fragment.retainedBytes);
+    cache.remove(stroke.id);
+    expect(cache.retainedBytes).toBe(0);
+  });
+
   it.each(["ascii", 'äß漢字😀<&>"', "\ud800"])(
     "counts canonical and XML-escaped UTF-8 bytes exactly for %j",
     (id) => {
@@ -50,7 +69,8 @@ describe("cached element fragment byte counts", () => {
       expect(fragment.bytes).toBe(encoder.encode(fragment.metadata + fragment.svg).byteLength);
       expect(fragment.retainedBytes).toBe(
         fragment.bytes +
-          (fragment.metadata === fragment.canonicalMetadata ? 0 : fragment.canonicalMetadataBytes),
+          (fragment.metadata === fragment.canonicalMetadata ? 0 : fragment.canonicalMetadataBytes) +
+          (fragment.strokePaths === undefined ? 0 : 48 + 64 * fragment.strokePaths.length),
       );
       expect(fragment.metadataUtf8 === fragment.canonicalMetadataUtf8).toBe(
         fragment.metadata === fragment.canonicalMetadata,

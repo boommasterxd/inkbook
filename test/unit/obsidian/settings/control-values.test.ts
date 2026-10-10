@@ -34,19 +34,19 @@ class DeviceFake implements DeviceSettingsPort {
   }
 }
 
+let values: SettingsControlValues;
+let vault: VaultFake;
+let device: DeviceFake;
+
+beforeEach(async () => {
+  vault = new VaultFake();
+  device = new DeviceFake();
+  const store = new InkbookSettingsStore(vault, device);
+  await store.load();
+  values = new SettingsControlValues(store);
+});
+
 describe("SettingsControlValues", () => {
-  let values: SettingsControlValues;
-  let vault: VaultFake;
-  let device: DeviceFake;
-
-  beforeEach(async () => {
-    vault = new VaultFake();
-    device = new DeviceFake();
-    const store = new InkbookSettingsStore(vault, device);
-    await store.load();
-    values = new SettingsControlValues(store);
-  });
-
   it("reads and writes nested vault values without flattened state", async () => {
     await values.set("toolDefaults.pen.width", "14");
     await values.set("toolDefaults.pen.color", "#6B7280FF");
@@ -131,4 +131,26 @@ describe("SettingsControlValues", () => {
       folder: "Notes/Inkbook",
     });
   });
+});
+
+describe("SettingsControlValues preload margin", () => {
+  it("parses and persists preload margins only in device storage", async () => {
+    expect(values.get("device.scrollPreloadMarginPx")).toBe(300);
+    await values.set("device.scrollPreloadMarginPx", "799");
+
+    expect(values.get("device.scrollPreloadMarginPx")).toBe(799);
+    expect(device.saved.scrollPreloadMarginPx).toBe(799);
+    expect(vault.saved).toEqual(createBuiltInSettings());
+  });
+
+  it.each([99, 801, 300.5, Number.NaN, Infinity, "", "invalid"])(
+    "rejects invalid preload margin %s without persisting it",
+    async (value) => {
+      await expect(values.set("device.scrollPreloadMarginPx", value)).rejects.toThrow(
+        "Invalid setting value",
+      );
+      expect(values.get("device.scrollPreloadMarginPx")).toBe(300);
+      expect(device.saved).toEqual(createBuiltInDeviceSettings());
+    },
+  );
 });

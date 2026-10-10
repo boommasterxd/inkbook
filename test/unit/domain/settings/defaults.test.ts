@@ -98,6 +98,7 @@ describe("settings palette and device defaults", () => {
   it("exposes the exact device defaults", () => {
     expect(createBuiltInDeviceSettings()).toEqual({
       version: 2,
+      scrollPreloadMarginPx: 300,
       fingerDrawingEnabled: false,
       penTapInsertion: "off",
       leftHandedToolbar: false,

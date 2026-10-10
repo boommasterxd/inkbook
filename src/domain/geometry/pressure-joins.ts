@@ -86,11 +86,16 @@ export function buildPressureCapsuleFromNibs(
 }
 
 /** Sampling and serialization share the same directed circle, including major arcs. */
-export function pressureArcPoint(boundary: PressureBoundaryArc, fraction: number): PointV1 {
+export function pressureArcPoint(
+  boundary: PressureBoundaryArc,
+  fraction: number,
+  initial?: number,
+): PointV1 {
   if (fraction === 0) return boundary.start;
   if (fraction === 1) return boundary.end;
   const angle =
-    Math.atan2(boundary.start.y - boundary.center.y, boundary.start.x - boundary.center.x) +
+    (initial ??
+      Math.atan2(boundary.start.y - boundary.center.y, boundary.start.x - boundary.center.x)) +
     boundary.sweep * fraction;
   return {
     x: boundary.center.x + boundary.radius * Math.cos(angle),

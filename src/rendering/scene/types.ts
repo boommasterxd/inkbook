@@ -33,6 +33,13 @@ export interface SpatialQuerySink {
   add(id: string): void;
 }
 
+interface SceneSpatialQueryCursor extends Pick<
+  import("../../domain/spatial/query-cursor").SpatialQueryCursor<string>,
+  "advance" | "cancel"
+> {
+  memoryUsage?(): number;
+}
+
 /**
  * Read-only view of the authoritative element store and its spatial index.
  * `query` must perform exact conservative-bounds rejection before publishing IDs.
@@ -42,6 +49,8 @@ export interface SceneStorePort {
     import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation | undefined;
   pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
+  beginOrder?(): import("../../domain/store/order-cursor").StoreOrderCursor;
+  beginQuery?(bounds: Bounds): SceneSpatialQueryCursor;
   query(bounds: Bounds, sink: SpatialQuerySink): void;
 }
 
@@ -79,10 +88,16 @@ export interface SceneRendererOptions {
   readonly accessibleName?: string;
   readonly container: HTMLElement;
   readonly inputHandlers?: SceneInputHandlers;
+  readonly surfaceThemeRoot?: HTMLElement;
+  readonly onSurfaceFailure?: () => void;
   readonly layout: SceneLayoutPort;
+  readonly isInputActive?: () => boolean;
+  readonly waitForBackground?: () => Promise<void> | undefined;
   readonly page: PageV1;
   /** The presentation explicitly releases initial exact-viewport preparation after its handoff. */
   readonly deferInitialOverscan?: boolean;
+  /** Vertical preloading distance above and below the viewport in screen pixels. */
+  readonly scrollPreloadMarginPx?: number;
   readonly onSceneCommitted?: () => void;
   readonly onResourceUsageChanged?: () => void;
   readonly reducedMotion?: boolean;
@@ -127,6 +142,11 @@ export interface SceneInstrumentationSnapshot {
   readonly contentAttributeWrites: number;
   readonly contentGeometryWrites: number;
   readonly domEntrants: number;
+  readonly domRootsPublished: number;
+  readonly detachedCacheBytes: number;
+  readonly detachedCacheEntries: number;
+  readonly detachedCacheEvictions: number;
+  readonly detachedCacheHits: number;
   readonly domExits: number;
   readonly domFragmentRuns: number;
   readonly domReorders: number;
@@ -171,6 +191,9 @@ export interface SceneInstrumentationSnapshot {
   readonly visibilityHysteresisHits: number;
   readonly visibilityReconcileVisits: number;
   readonly visibilitySortSkips: number;
+  readonly visibilityPathYields: number;
+  readonly visibilityPublicationYields: number;
+  readonly visibilityDeadlineYields: number;
 }
 
 export interface MutableSceneInstrumentation {
@@ -182,6 +205,11 @@ export interface MutableSceneInstrumentation {
   contentAttributeWrites: number;
   contentGeometryWrites: number;
   domEntrants: number;
+  domRootsPublished: number;
+  detachedCacheBytes: number;
+  detachedCacheEntries: number;
+  detachedCacheEvictions: number;
+  detachedCacheHits: number;
   domExits: number;
   domFragmentRuns: number;
   domReorders: number;
@@ -226,4 +254,7 @@ export interface MutableSceneInstrumentation {
   visibilityHysteresisHits: number;
   visibilityReconcileVisits: number;
   visibilitySortSkips: number;
+  visibilityPathYields: number;
+  visibilityPublicationYields: number;
+  visibilityDeadlineYields: number;
 }

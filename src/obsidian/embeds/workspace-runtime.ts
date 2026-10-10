@@ -40,9 +40,9 @@ import {
   recordWorkspaceMarkdownHistory,
 } from "./workspace-runtime-editor";
 import { WorkspaceDocumentStatus } from "./workspace-document-status";
-import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
+import { createWorkspaceSessionFactory } from "./workspace-runtime-workers";
 import { showWorkspaceHeadlessRecovery } from "./workspace-recovery-actions";
-import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
+import type { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
 import {
   createWorkspaceMountedPresentation,
@@ -113,21 +113,18 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       workScheduler: (ownerWindow) => this.refreshRateProfiles.workScheduler(ownerWindow),
       vault,
     });
-    this.#sessions = new VaultDocumentSessionFactory(
+    this.#sessions = createWorkspaceSessionFactory({
       vault,
       fileManager,
-      createWorkspaceDocumentRuntimes({
-        subscribeSchedulingProfile: (listener) => this.refreshRateProfiles.subscribe(listener),
-        fallbackWindow: () => this.#fallbackWindow(),
-        owningWindow: (documentId) => this.#owningWindow(documentId),
-        workScheduler: (ownerWindow) => this.refreshRateProfiles.workScheduler(ownerWindow),
-      }),
-      {
+      profiles: this.refreshRateProfiles,
+      fallbackWindow: this.#fallbackWindow,
+      owningWindow: (documentId) => this.#owningWindow(documentId),
+      hooks: {
         persisted: (event) => this.#lifecycle.handlePersisted(event),
         safeStaticProof: (documentId) => this.#safeStaticProof?.(documentId),
         ...(trustedHeads === undefined ? {} : { trustedHeads }),
       },
-    );
+    });
     const presentations: PresentationLifecyclePort = {
       cancelGesture: (attachment) =>
         this.#mounted.get(presentationAttachmentKey(attachment))?.scene?.disableInput(),
@@ -261,7 +258,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       })
       .finally(activation.release);
   }
-
   detach(attachment: PresentationAttachment): void {
     this.#coordinator.detachAttachment(attachment);
     this.#releaseScene(attachment);
@@ -304,7 +300,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       mounted.scene?.updateSelectionHighlights(settings.selectionHighlightsEnabled);
     }
   }
-
   queueAutoActivation(
     documentId: string,
     ownerWindow: Window,
@@ -315,7 +310,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
   readonly abortAutoActivation = (documentId: string): void =>
     this.#lifecycle.abortAutoActivation(documentId);
-
   readonly handleVaultModification = (documentId: string, resolved?: HostWriteResolved): void => {
     this.#sessions.noteVaultModification(documentId);
     this.#lifecycle.handleVaultModification(documentId, resolved);
@@ -355,14 +349,12 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     };
     void persistenceDrained.then(releaseScheduling, releaseScheduling);
   }
-
   #reloadPresentation(documentId: string): void {
     const current = this.#coordinator.getSnapshot().current;
     if (current?.documentId !== documentId || current.attachment === undefined) return;
     const mounted = this.#mounted.get(presentationAttachmentKey(current.attachment));
     if (mounted !== undefined) this.activate(mounted.attachment);
   }
-
   #releaseScene(attachment: AttachmentIdentity): void {
     this.documentStatus.detach(attachment);
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
@@ -397,7 +389,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     mounted.scene = undefined;
     this.#setState(attachment, "locked");
   }
-
   #showAttachedRecovery(notice: {
     readonly attachmentGeneration: number;
     readonly attachmentId: string;
@@ -454,7 +445,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     );
     mounted.recovery = recovery;
   }
-
   #showLoadError(
     mounted: WorkspaceMountedPresentation,
     code: WorkspaceLoadFeedbackCode = "drawing-load-failed",
@@ -484,11 +474,9 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       openRecovery: this.#host.openRecovery,
     });
   }
-
   #owningWindow(documentId: string): Window {
     return this.#ownerWindows.require(documentId, this.#mounted.values(), this.#fallbackWindow);
   }
-
   readonly #fallbackWindow = (): Window | undefined =>
     resolveFallbackWindow(
       this.#coordinator.getSnapshot().current?.documentId,

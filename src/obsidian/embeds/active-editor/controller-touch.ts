@@ -1,7 +1,5 @@
 import type { InputState } from "../../../editor/input/index";
 
-const TOUCH_PAN_RESPONSE = 1.2;
-
 export function isTouchInteraction(interaction: InputState["interaction"]): boolean {
   return (
     interaction?.phase === "pinch" ||
@@ -28,8 +26,4 @@ export function touchInteractionBlocksNativeScroll(
     interaction.phase !== "touch-pending" &&
     interaction.phase !== "note-scroll"
   );
-}
-
-export function touchPanDelta(screenDeltaX: number): number {
-  return screenDeltaX * TOUCH_PAN_RESPONSE;
 }

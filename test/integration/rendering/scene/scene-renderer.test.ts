@@ -9,7 +9,9 @@ import {
 import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
+import { flushSceneViewport } from "../../../fixtures/rendering/scene";
 import {
   FakeDocument,
   FakeNode,
@@ -134,12 +136,12 @@ function setupTransformPreview(
 }
 
 describe("imperative SVG scene renderer", () => {
-  it("mounts two fixed bands through exact 80-screen-pixel spatial overscan", () => {
+  it("mounts two fixed bands through exact horizontal and vertical spatial overscan", () => {
     const { renderer, scheduler, store } = setup();
 
     scheduler.runAll();
 
-    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 256, minX: -256, minY: -256 });
+    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 512, minX: -256, minY: -512 });
     expect(renderer.mountedIds("highlight")).toEqual(["highlight"]);
     expect(renderer.mountedIds("content")).toEqual(["a"]);
     expect(renderer.mountedCount).toBe(2);
@@ -177,12 +179,13 @@ describe("imperative SVG scene renderer", () => {
     renderer.resetInstrumentation();
     renderer.setCamera({ x: 5, zoom: 2 });
     scheduler.runAll();
-    expect(store.lastQuery).toEqual({ maxX: 256, maxY: 256, minX: -256, minY: -256 });
+    // A large shrink refreshes indexed fringes without rebuilding retained geometry or paint.
+    expect(store.lastQuery).toEqual({ maxX: 85, maxY: 400, minX: -45, minY: 200 });
     expect(renderer.instrumentation()).toMatchObject({
       contentAttributeWrites: 0,
       geometryBuilds: 0,
-      spatialQueries: 0,
-      visibilityHysteresisHits: 1,
+      spatialQueries: 4,
+      visibilityHysteresisHits: 0,
     });
 
     renderer.resetInstrumentation();
@@ -311,7 +314,7 @@ describe("scene DOM ownership", () => {
     expect((label as unknown as HTMLElement).textContent).toBe("Inkbook canvas");
     expect(input.attributes.get("class")).toBe("inkbook-canvas-input");
     expect(input.listeners.get("pointerdown")?.size).toBe(1);
-    expect(container.nodes[0]?.nodes[2]?.nodes[0]?.attributes.get("fill-rule")).toBe("evenodd");
+    expect(fakeNode(renderer.svg).nodes[2]?.nodes[0]?.attributes.get("fill-rule")).toBe("evenodd");
 
     renderer.destroy();
 
@@ -320,9 +323,9 @@ describe("scene DOM ownership", () => {
   });
 
   it("updates page-surface height even when background geometry remains cached", () => {
-    const { container, renderer, scheduler } = setup();
+    const { renderer, scheduler } = setup();
     scheduler.runAll();
-    const svg = container.nodes[0]!;
+    const svg = fakeNode(renderer.svg);
     const camera = svg.nodes[1]!;
     const pageSurface = camera.nodes[0]!;
 
@@ -333,17 +336,18 @@ describe("scene DOM ownership", () => {
   });
 
   it("renders tall backgrounds through bounded geometry and an SVG pattern", () => {
-    const { container, renderer, scheduler } = setup();
+    const { renderer, scheduler } = setup();
     scheduler.runAll();
 
     renderer.setPage({ ...page, background: { spacing: 25, type: "dots" } }, 900_000);
     scheduler.runAll();
 
-    const camera = container.nodes[0]!.nodes[1]!;
+    const svg = fakeNode(renderer.svg);
+    const camera = svg.nodes[1]!;
     const background = camera.nodes[1]!;
     expect(background.attributes.get("d")?.match(/M /g)).toHaveLength(1);
     expect(background.attributes.get("fill")).toMatch(/^url\(#inkbook-background-pattern-/);
-    const pattern = container.nodes[0]!.nodes[3]!.nodes[0]!;
+    const pattern = svg.nodes[3]!.nodes[0]!;
     const patternPath = pattern.nodes[0]!;
     expect(patternPath.attributes.get("d")).toBe("M 1 1 L 1 1");
     renderer.setPage({ ...page, background: { spacing: 25, type: "squares" } }, 500);
@@ -399,13 +403,16 @@ describe("mounted scene updates", () => {
     scheduler.runAll();
     expect(renderer.instrumentation().contentGeometryWrites).toBe(2);
 
-    renderer.setViewport({ height: 100, left: 0, top: 1000, width: 100 });
-    scheduler.runAll();
+    flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 1000, width: 100 });
     expect(renderer.mountedCount).toBe(0);
     renderer.resetInstrumentation();
-    renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
-    scheduler.runAll();
-    expect(renderer.instrumentation()).toMatchObject({ geometryBuilds: 0, pathCacheHits: 2 });
+    flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 0, width: 100 });
+    expect(renderer.instrumentation()).toMatchObject({
+      geometryBuilds: 0,
+      detachedCacheHits: 2,
+      contentGeometryWrites: 0,
+      contentAttributeWrites: 0,
+    });
   });
 
   it("replaces direct sibling path topology when arrow paint semantics change", () => {
@@ -436,7 +443,7 @@ describe("dense scene reconciliation", () => {
 
     scheduler.runAll();
 
-    expect(store.lastQuery).toMatchObject({ maxY: 256, minY: -256 });
+    expect(store.lastQuery).toMatchObject({ maxY: 512, minY: -512 });
     expect(renderer.mountedCount).toBe(4);
   });
 
@@ -445,8 +452,10 @@ describe("dense scene reconciliation", () => {
     const expected = replaceWithRectangles(store, "dense", 1_201, () => 10);
 
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(64);
-    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(64);
+    expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(
+      SCENE_PUBLICATION_ROOTS_PER_FRAME,
+    );
     expect(renderer.instrumentation().geometryBuilds).toBeGreaterThan(0);
     expect(renderer.instrumentation().geometryBuilds).toBeLessThan(expected.length);
     renderer.promoteVisible(expected[0]!);

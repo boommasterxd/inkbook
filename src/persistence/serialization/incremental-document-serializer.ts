@@ -1,4 +1,5 @@
 import { StrokeShapeCache } from "./stroke-shape-cache";
+import { readStrokeFragmentPaths } from "./stroke-fragment-paths";
 import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 import { pressureShapeKey } from "./prepared-pressure-hints";
@@ -115,8 +116,20 @@ export class IncrementalDocumentSerializer {
     id: string,
     context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
   ): Promise<readonly SvgPathPart[] | undefined> {
+    context.signal.throwIfAborted();
     const element = this.#elements.get(id);
     if (element?.kind !== "stroke") return undefined;
+    const shape = this.#shapeCache.read(element);
+    if (shape !== undefined) return shape;
+    const fragment = this.#cache.current(element);
+    if (fragment?.strokePaths !== undefined) {
+      const parts = await readStrokeFragmentPaths(fragment, context);
+      context.signal.throwIfAborted();
+      if (this.#elements.get(id) !== element)
+        throw new Error("The scene path model changed during preparation.");
+      this.#cache.touch(id);
+      return parts;
+    }
     return this.#shapeCache.prepare(element, context);
   }
   public currentElementCount(): number {

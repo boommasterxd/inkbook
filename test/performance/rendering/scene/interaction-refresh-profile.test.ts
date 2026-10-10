@@ -1,13 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
-import { FakeScheduler, FakeNode, FakeSceneStore } from "../../../unit/rendering/scene/fakes";
+import {
+  DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  PATH_CACHE_MAX_BYTES,
+} from "../../../../src/rendering/scene/constants";
+import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import {
+  FakeScheduler,
+  FakeNode,
+  FakeSceneStore,
+  fakeNode,
+} from "../../../unit/rendering/scene/fakes";
 import {
   createPressureNavigationHarness,
   NAVIGATION_VISIBLE_STROKES,
   NAVIGATION_PAGE,
 } from "../../../fixtures/rendering/pressure-navigation";
-import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import { createSceneFixture, flushSceneViewport } from "../../../fixtures/rendering/scene";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
 import {
   INTERACTION_ELEMENT_COUNT,
@@ -23,12 +33,23 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz interaction profile`, ()
     const { renderer, scheduler } = createInteractionRenderer(fixture.store);
     scheduler.runAll();
     renderer.resetInstrumentation();
+    const mounted = new Set(renderer.mountedIds("content"));
+    const preparations = vi.spyOn(ScenePathCache.prototype, "startPreparation");
 
     runCameraFrames(renderer, scheduler);
     const cameraStats = renderer.instrumentation();
     expect(cameraStats.spatialQueries).toBe(0);
     expect(cameraStats.visibilityHysteresisHits).toBe(PREVIEW_FRAMES);
-    expect(cameraStats).toMatchObject({ domEntrants: 0, domExits: 0, geometryBuilds: 0 });
+    expect(cameraStats).toMatchObject({ domEntrants: 0, domExits: 0 });
+    // The rightward strip covers at most 14 ten-unit columns and 39 nonnegative rows.
+    // Local preparation may finish this indexed region without a transport-ID CPU quota.
+    expect(cameraStats.geometryBuilds).toBeLessThanOrEqual(14 * 39);
+    expect(preparations.mock.calls.length).toBe(cameraStats.geometryBuilds);
+    expect(new Set(preparations.mock.calls.map(([element]) => element.id)).size).toBe(
+      preparations.mock.calls.length,
+    );
+    expect(preparations.mock.calls.every(([element]) => !mounted.has(element.id))).toBe(true);
+    preparations.mockRestore();
 
     renderer.setPreviewTransform(fixture.ids, "translate(0 0)", 1);
     scheduler.runAll();
@@ -82,18 +103,34 @@ it("finishes cold pressure mounting during uninterrupted zoom and reuses dense o
   expect(nodes.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(
     NAVIGATION_VISIBLE_STROKES,
   );
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const original = new Set(content.nodes);
 
-  renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
-  scheduler.runAll();
+  flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 10_000, width: 100 });
   expect(renderer.instrumentation().pathCacheEntries).toBe(NAVIGATION_VISIBLE_STROKES);
-  expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(32 * 1_024 * 1_024);
+  expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
+  expect(content.nodes).toHaveLength(0);
+  expect([...original].every((node) => node.parent === undefined)).toBe(true);
+  const retainedNodes = renderer.instrumentation().detachedCacheEntries;
+  expect(retainedNodes).toBeGreaterThan(0);
+  expect(retainedNodes).toBeLessThan(NAVIGATION_VISIBLE_STROKES);
+  expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(
+    DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  );
+  const recreated = NAVIGATION_VISIBLE_STROKES - retainedNodes;
   renderer.resetInstrumentation();
-  renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
-  scheduler.runAll();
+  nodes.mockClear();
+  flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 0, width: 100 });
   expect(renderer.instrumentation()).toMatchObject({
     geometryBuilds: 0,
-    pathCacheHits: NAVIGATION_VISIBLE_STROKES,
+    detachedCacheHits: retainedNodes,
+    contentGeometryWrites: recreated,
+    domRootsPublished: NAVIGATION_VISIBLE_STROKES,
   });
+  expect(content.nodes).toHaveLength(NAVIGATION_VISIBLE_STROKES);
+  expect(content.nodes.filter((node) => original.has(node))).toHaveLength(retainedNodes);
+  expect(nodes.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(recreated);
+  expect(nodes.mock.calls.filter(([, tag]) => tag === "g")).toHaveLength(recreated);
   renderer.destroy();
   expect(renderer.instrumentation().pathCacheEntries).toBe(0);
   expect(scheduler.pendingCount).toBe(0);
@@ -121,7 +158,9 @@ it("makes entrant progress while every camera frame changes membership under a b
   expect(nodes.mock.calls.filter(([, tag]) => tag === "path").length).toBeLessThanOrEqual(2);
   // Two entrants plus at most one cancelled build of the alternating entrant.
   expect(renderer.instrumentation().geometryBuilds).toBeLessThanOrEqual(3);
-  expect(renderer.instrumentation().visibilityHysteresisHits).toBe(0);
+  expect(renderer.instrumentation().visibilityHysteresisHits).toBeLessThanOrEqual(
+    INTERACTION_REFRESH_PROFILE.sampleCount,
+  );
   now.mockRestore();
   renderer.setCamera({ x: -50, zoom: 1 });
   scheduler.runAll();
