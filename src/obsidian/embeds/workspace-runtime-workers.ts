@@ -211,11 +211,11 @@ function createDocumentScheduler(current: () => WorkScheduler): WorkScheduler {
   };
   return {
     ...forwarding,
-    checkpoint: (signal) => {
+    checkpoint: (signal, priority) => {
       const original = current();
-      return original.checkpoint(signal)?.catch(async (error: unknown) => {
+      return original.checkpoint(signal, priority)?.catch(async (error: unknown) => {
         await resumeAfterTransfer(error, original, signal, (replacement) =>
-          replacement.checkpoint(signal),
+          replacement.checkpoint(signal, priority),
         );
       });
     },

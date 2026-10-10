@@ -197,15 +197,20 @@ describe("document scheduler transfer and fallback", () => {
 
   it("retries a checkpoint only after transfer and preserves abort errors", async () => {
     const { first, second, documentScheduler, moveToSecond } = documentTransferHarness();
+    const firstCheckpoint = vi.spyOn(first.scheduler, "checkpoint");
+    const secondCheckpoint = vi.spyOn(second.scheduler, "checkpoint");
+    const caller = new AbortController();
     expect(documentScheduler.checkpoint()).toBeUndefined();
     first.host.time = first.host.budget;
-    const pending = documentScheduler.checkpoint();
+    const pending = documentScheduler.checkpoint(caller.signal, "frame");
     expect(pending).toBeDefined();
+    expect(firstCheckpoint).toHaveBeenLastCalledWith(caller.signal, "frame");
     moveToSecond();
     first.scheduler.dispose();
     await Promise.resolve();
     expect(second.host.pendingFrames).toBe(0);
     await pending;
+    expect(secondCheckpoint).toHaveBeenCalledExactlyOnceWith(caller.signal, "frame");
 
     const aborted = new AbortController();
     const rejected = documentScheduler.nextFrame(aborted.signal);

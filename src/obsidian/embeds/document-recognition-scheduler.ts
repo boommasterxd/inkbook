@@ -52,7 +52,7 @@ export function createRecognitionWorkScheduler(
 
   return {
     ...createWindowSchedulerForwarding(current),
-    checkpoint: (signal) => {
+    checkpoint: (signal, priority) => {
       cancellation.throwIfAborted();
       if (signal !== undefined) {
         if (signal.aborted)
@@ -61,7 +61,7 @@ export function createRecognitionWorkScheduler(
           );
         if (!current().shouldYield()) return undefined;
       }
-      return wait((scheduler, active) => scheduler.checkpoint(active), signal);
+      return wait((scheduler, active) => scheduler.checkpoint(active, priority), signal);
     },
     nextFrame: (signal, priority) =>
       wait((scheduler, active) => scheduler.nextFrame(active, priority), signal) ??
