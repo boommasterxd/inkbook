@@ -75,7 +75,6 @@ it("reuses worker-runtime geometry while exporting moved, undone, and redone str
           modelRevision: revision,
           changedElements: [moved],
         },
-        undefined,
         true,
       ).ok,
     ).toBe(true);
@@ -164,6 +163,8 @@ it("reuses retired pressure geometry after Undo transfers a new point buffer", (
       orderChanges: { content: [removedId] },
     }).ok,
   ).toBe(true);
+  expect(serializer.instrumentation.shapeBuilds).toBe(1);
+  expect(serializer.serialize().ok).toBe(true);
   expect(serializer.instrumentation.shapeBuilds).toBe(2);
   expect(serializer.instrumentation.retiredPointComparisons).toBe(restored.points.length + 1);
   serializer.clear();

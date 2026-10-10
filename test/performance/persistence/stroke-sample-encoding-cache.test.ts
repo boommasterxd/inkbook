@@ -50,7 +50,6 @@ it("avoids encoding point reads on cold loaded export and header changes across 
           changedElements: [moved],
           modelRevision: fixture.revision + 1,
         },
-        undefined,
         true,
       ).ok,
     ).toBe(true);
@@ -65,10 +64,11 @@ it("avoids encoding point reads on cold loaded export and header changes across 
           changedElements: [{ ...moved, points: adoptTransferredStrokeSamples(points) }],
           modelRevision: fixture.revision + 2,
         },
-        undefined,
         true,
       ).ok,
     ).toBe(true);
+    expect(pointReads).toBe(0);
+    expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
     expect(pointReads).toBe(points.length);
     expect(
       serializer.applyDelta(
@@ -77,10 +77,11 @@ it("avoids encoding point reads on cold loaded export and header changes across 
           changedElements: [first],
           modelRevision: fixture.revision + 3,
         },
-        undefined,
         true,
       ).ok,
     ).toBe(true);
+    expect(pointReads).toBe(points.length);
+    expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
     expect(pointReads).toBe(points.length + first.points.length);
     expect(serializer.instrumentation.sampleEncodingCacheBytes).toBeLessThanOrEqual(
       32 * 1024 * 1024,

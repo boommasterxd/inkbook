@@ -95,10 +95,11 @@ describe("stroke fragment model lifetime", () => {
     const changed = { ...stroke, points: [...stroke.points] };
     changed.points[0] = changed.points[0]! + 5;
     expect(
-      fixture.serializer.applyDelta(
-        { baseModelRevision: 0, modelRevision: 1, changedElements: [changed] },
-        new Set([stroke.id]),
-      ).ok,
+      fixture.serializer.applyDelta({
+        baseModelRevision: 0,
+        modelRevision: 1,
+        changedElements: [changed],
+      }).ok,
     ).toBe(true);
     const parts = await fixture.serializer.prepareScenePath(stroke.id, context());
     expect(parts).not.toEqual(fixture.parts);

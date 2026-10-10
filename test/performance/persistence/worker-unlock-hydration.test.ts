@@ -243,6 +243,7 @@ describe("complete translated stroke delta work", () => {
   it("bounds canonical capacity and fragment rebuilding for a complete translated stroke delta", () => {
     const serializer = new IncrementalDocumentSerializer();
     expect(serializer.reset(snapshot).ok).toBe(true);
+    expect(serializer.serialize().ok).toBe(true);
     const strokes = snapshot.elements.filter((element) => element.kind === "stroke");
     expect(strokes).toHaveLength(10_000);
     const changedElements = strokes.map((element) =>
@@ -276,9 +277,14 @@ describe("complete translated stroke delta work", () => {
       }),
     ).toEqual({ ok: true, value: undefined });
     expect(bounds).toHaveBeenCalledTimes(10_000);
+    expect(builds).not.toHaveBeenCalled();
+    expect(serializer.instrumentation.fragmentBuilds).toBe(fragmentsBefore);
+    expect(serializer.serialize().ok).toBe(true);
+    expect(bounds).toHaveBeenCalledTimes(10_000);
     // Bound the actual pressure-window unions for the shared 500,000-point fixture.
     expect(builds.mock.calls.length).toBeLessThanOrEqual(10_001);
     expect(serializer.instrumentation.fragmentBuilds - fragmentsBefore).toBe(10_000);
     expect(serializer.currentSnapshot()?.revision).toBe(snapshot.revision + 1);
+    serializer.clear();
   });
 });

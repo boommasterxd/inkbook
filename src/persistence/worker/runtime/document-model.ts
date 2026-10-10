@@ -181,7 +181,7 @@ export class DocumentModelRuntime {
       const update =
         request.type === "export-full"
           ? this.#resetForExport(request.snapshot, request.modelRevision)
-          : this.#applyIncremental(request, preparedPaths.preparedPressurePathIds(request));
+          : this.#applyIncremental(request);
       if (!update.ok) return failure(update.error.code, true);
       await preparedPaths.acceptPreparedPressurePaths(request, this.#serializer, sliceContext);
       const serialized = await this.#serializeRuntimeChunked(sliceContext);
@@ -368,7 +368,7 @@ export class DocumentModelRuntime {
     return this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot), true);
   }
 
-  #applyIncremental(request: IncrementalModelRequest, deferredFragmentIds?: ReadonlySet<string>) {
+  #applyIncremental(request: IncrementalModelRequest) {
     const ownsSamples = this.ownsTransferredSamples;
     const changedElements =
       request.changedElements === undefined
@@ -379,7 +379,6 @@ export class DocumentModelRuntime {
         ...request,
         ...(changedElements === undefined ? {} : { changedElements }),
       },
-      deferredFragmentIds,
       true,
     );
   }

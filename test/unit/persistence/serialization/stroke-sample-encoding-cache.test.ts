@@ -8,8 +8,31 @@ import {
   createTestStroke,
   createWorkerSnapshot,
 } from "../../../fixtures/persistence/worker-snapshot";
+import { rectangle } from "../worker/runtime/fixtures";
 
 describe("session-owned sample encodings", () => {
+  it("reconciles only changed sample identities and kinds without encoding", () => {
+    const stroke = createTestStroke();
+    const cache = new StrokeSampleEncodingCache(() => true);
+    const encoding = cache.resolve(stroke);
+    cache.reconcileElement({ ...stroke, style: { ...stroke.style, opacity: 0.5 } });
+    expect(cache.resolve(stroke)).toBe(encoding);
+    expect(cache.instrumentation).toMatchObject({
+      sampleEncodingBuilds: 1,
+      sampleEncodingHits: 1,
+      sampleEncodingCacheElements: 1,
+    });
+    cache.reconcileElement({ ...stroke, points: [...stroke.points] });
+    expect(cache.instrumentation.sampleEncodingCacheElements).toBe(0);
+    cache.retainDecoded(stroke.id, stroke.points, encoding);
+    cache.reconcileElement({ ...rectangle(), id: stroke.id });
+    expect(cache.instrumentation).toMatchObject({
+      sampleEncodingBuilds: 1,
+      sampleEncodingCacheElements: 0,
+      sampleEncodingCacheBytes: 0,
+    });
+  });
+
   it("never reuses mutable unowned samples, including same-length mutation", () => {
     const stroke = createTestStroke();
     const cache = new StrokeSampleEncodingCache();

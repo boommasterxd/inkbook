@@ -11,6 +11,96 @@ import {
 } from "../../../src/persistence/worker/runtime/wire-codec";
 import type { DocumentExportRequest } from "../../../src/persistence/worker/runtime/types";
 import { SampleBase64Writer } from "../../../src/persistence/serialization/sample-base64";
+describe("runtime model synchronization performance", () => {
+  it("synchronizes and restores 10,000 pressure strokes without export work", async () => {
+    const stroke = createTestStroke();
+    Object.freeze(stroke.points);
+    const elements = Array.from({ length: 10_000 }, (_, index) => ({
+      ...stroke,
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    }));
+    const model = new DocumentModelRuntime();
+    const identity = {
+      sessionId: "lazy-sync-capacity",
+      workerEpoch: 1,
+      operationId: 1,
+      purpose: "background" as const,
+    };
+    model.synchronize({
+      baseModelRevision: null,
+      identity,
+      modelRevision: 0,
+      snapshot: createWorkerSnapshot(elements),
+      type: "model-sync-full",
+    });
+    const append = vi.spyOn(SampleBase64Writer.prototype, "append");
+    try {
+      for (const [index, changedElements] of [
+        elements.map((element) => ({ ...element, style: { ...element.style, opacity: 0.5 } })),
+        elements,
+      ].entries()) {
+        model.synchronize({
+          baseModelRevision: index,
+          changedElements,
+          identity,
+          modelRevision: index + 1,
+          type: "model-sync-incremental",
+        });
+        expect(model.instrumentation).toMatchObject({
+          cacheElements: 0,
+          fragmentBuilds: 0,
+          sampleEncodingBuilds: 0,
+          shapeBuilds: 0,
+        });
+        expect(append).not.toHaveBeenCalled();
+      }
+      const request = {
+        sessionId: identity.sessionId,
+        workerEpoch: identity.workerEpoch,
+        baseModelRevision: 2,
+        modelRevision: 2,
+        exportGeneration: 1,
+        type: "export-incremental" as const,
+      };
+      const cold = await model.export(request);
+      expect(cold.ok).toBe(true);
+      const warmed = model.instrumentation;
+      append.mockClear();
+      model.synchronize({
+        baseModelRevision: 2,
+        identity,
+        modelRevision: 3,
+        removedIds: elements.map((element) => element.id),
+        type: "model-sync-incremental",
+      });
+      model.synchronize({
+        baseModelRevision: 3,
+        identity,
+        modelRevision: 4,
+        changedElements: elements,
+        orderChanges: { content: elements.map((element) => element.id) },
+        type: "model-sync-incremental",
+      });
+      expect(model.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds);
+      expect(model.instrumentation.shapeBuilds).toBe(warmed.shapeBuilds);
+      expect(model.instrumentation.sampleEncodingCacheElements).toBe(0);
+      expect(append).not.toHaveBeenCalled();
+      expect((await model.export({ ...request, baseModelRevision: 4, modelRevision: 4 })).ok).toBe(
+        true,
+      );
+      expect(model.instrumentation.shapeBuilds).toBe(warmed.shapeBuilds);
+    } finally {
+      append.mockRestore();
+      model.clear();
+    }
+    expect(model.instrumentation).toMatchObject({
+      cacheBytes: 0,
+      sampleEncodingCacheBytes: 0,
+      shapeCacheBytes: 0,
+    });
+  }, 120_000);
+});
+
 describe("runtime export cache performance", () => {
   it("bounds warm and one-element-change UTF-8 encoding across the 11,000-element fixture", async () => {
     const snapshot = createStandardPersistenceFixture();
@@ -24,14 +114,24 @@ describe("runtime export cache performance", () => {
         encode.mockClear();
         encodeInto.mockClear();
         decode.mockClear();
-        if (changed !== undefined)
+        if (changed !== undefined) {
           expect(
             serializer.applyDelta({
               baseModelRevision: snapshot.revision,
-              changedElements: [changed],
+              changedElements: [{ ...changed, style: { ...changed.style, opacity: 0.5 } }],
               modelRevision: snapshot.revision + 1,
             }).ok,
           ).toBe(true);
+          expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds);
+          expect(
+            serializer.applyDelta({
+              baseModelRevision: snapshot.revision + 1,
+              changedElements: [changed],
+              modelRevision: snapshot.revision + 2,
+            }).ok,
+          ).toBe(true);
+          expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds);
+        }
         const result = await serializer.serializeRuntimeChunked({});
         if (!result.ok) throw new Error(result.error.code);
         if (changed === undefined) {
@@ -53,7 +153,7 @@ describe("runtime export cache performance", () => {
         if (changed !== undefined) {
           expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds + 1);
           expect(result.value.hash).not.toBe(cold.value.hash);
-          expect(result.value.snapshot.revision).toBe(snapshot.revision + 1);
+          expect(result.value.snapshot.revision).toBe(snapshot.revision + 2);
           // Verify parity outside the observed encoding window using the existing cache.
           encode.mockRestore();
           encodeInto.mockRestore();

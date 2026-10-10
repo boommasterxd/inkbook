@@ -70,9 +70,15 @@ it("updates retained serializer capacity without rescanning unchanged geometry",
   expect(serializer.instrumentation).toMatchObject({
     fullValidationRuns: 1,
     incrementalValidationRuns: 100,
-    fragmentBuilds: 100,
+    fragmentBuilds: 0,
+    cacheElements: 0,
+  });
+  expect(serializer.prewarmElement(target.id, 1024 * 1024)).not.toBeNull();
+  expect(serializer.instrumentation).toMatchObject({
+    fragmentBuilds: 1,
     cacheElements: 1,
   });
+  serializer.clear();
 });
 
 it.each([1_000, 20_000])(
@@ -122,9 +128,15 @@ it.each([1_000, 20_000])(
     expect(serializer.instrumentation).toMatchObject({
       fullValidationRuns: 1,
       incrementalValidationRuns: 3,
-      fragmentBuilds: 3,
+      fragmentBuilds: 0,
+      cacheElements: 0,
+    });
+    expect(serializer.prewarmElement(elements[0]!.id, 1024 * 1024)).not.toBeNull();
+    expect(serializer.instrumentation).toMatchObject({
+      fragmentBuilds: 1,
       cacheElements: 1,
     });
+    serializer.clear();
   },
 );
 

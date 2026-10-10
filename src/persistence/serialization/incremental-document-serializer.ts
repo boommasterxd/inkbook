@@ -244,9 +244,9 @@ export class IncrementalDocumentSerializer {
     this.#aggregateFacts = incrementalValidation.aggregateElementFacts(this.#facts.values());
     return { ok: true, value: undefined };
   }
+  /** Publish validated model facts; export and prewarming resolve invalidated fragments lazily. */
   public applyDelta(
     delta: DocumentSerializationDelta,
-    deferredFragmentIds?: ReadonlySet<string>,
     ownsSamples = false,
   ): DocumentCodecResult<void> {
     if (this.#revision === null || delta.baseModelRevision !== this.#revision) {
@@ -284,20 +284,8 @@ export class IncrementalDocumentSerializer {
       if (ownsSamples) this.#cache.retainRuntimeOwnership(element);
       this.#elements.set(element.id, element);
       this.#facts.set(element.id, facts.value.changed.get(element.id)!);
-      if (deferredFragmentIds?.has(element.id)) {
-        this.#cache.remove(element.id);
-      } else {
-        this.#cache.replace(
-          element.id,
-          buildElementFragments(
-            element,
-            facts.value.changed.get(element.id)!.bottom,
-            this.#shapeCache,
-            this.sampleEncodingCache,
-          ),
-        );
-        this.#fragmentBuilds += 1;
-      }
+      this.#cache.remove(element.id);
+      this.sampleEncodingCache.reconcileElement(element);
     }
     this.#orders.highlight = prepared.value.orders.highlight;
     this.#orders.content = prepared.value.orders.content;

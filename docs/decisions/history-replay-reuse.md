@@ -22,6 +22,8 @@ The scene removes deleted ID/version aliases immediately. Immutable canonical st
 
 Optional removal visuals can use existing mounted canonical path parts instead of reconstructing their geometry. The visual still owns its own bounded nodes and preserves the stroke's local-to-world placement.
 
+Worker model synchronization applies validated element facts and invalidates changed export fragments without generating their SVG, metadata, or sample encoding. Export and explicit prewarming resolve those fragments through the existing serializer and bounded caches. Obsolete sample-encoding identities are removed during model adoption; unchanged exclusively owned sample buffers remain reusable. Revision-bound prepared pressure paths are adopted before lazy export resolution, without a separate deferred-fragment implementation. Native workers and the main-thread fallback share this behavior.
+
 Eviction, memory pressure, disabled retention, and disposal release aliases, identity lookups, and contour ownership through the existing cache lifecycle. Main-thread and worker ownership remain independent. Cooperative preparation continues to use the injected central `WorkScheduler`; reuse introduces no scheduling loop or deadline.
 
 ## Verification

@@ -15,13 +15,16 @@ it("retains worker-owned shape points through hosted move and undo requests", as
   const hostEndpoint = new TestWorkerEndpoint();
   clientEndpoint.peer = hostEndpoint;
   hostEndpoint.peer = clientEndpoint;
+  clientEndpoint.cloneTransfers = true;
+  hostEndpoint.cloneTransfers = true;
   const identity = {
     sessionId: "point-reuse",
     workerEpoch: 1,
     operationId: 1,
     purpose: "background" as const,
   };
-  const runtime = new DocumentWorkerRuntime(identity);
+  const runtime = new DocumentWorkerRuntime(identity, null, undefined, true);
+  const fallback = new DocumentWorkerRuntime(identity);
   const execute = vi.spyOn(runtime, "execute");
   const detach = attachDocumentWorkerHost(hostEndpoint, runtime);
   const client = new WorkerDocumentRuntimePort(() => clientEndpoint, {
@@ -40,6 +43,9 @@ it("retains worker-owned shape points through hosted move and undo requests", as
         type: "model-sync-full",
       }),
     ).toMatchObject({ type: "model-sync-success" });
+    expect(await fallback.execute(execute.mock.calls[0]![0])).toMatchObject({
+      type: "model-sync-success",
+    });
     const original = requestStroke(execute.mock.calls[0]![0]);
     for (const [index, offset] of [
       { x: 5, y: 7 },
@@ -61,10 +67,42 @@ it("retains worker-owned shape points through hosted move and undo requests", as
           type: "model-sync-incremental",
         }),
       ).toMatchObject({ type: "model-sync-success" });
+      expect(await fallback.execute(execute.mock.calls[index + 1]![0])).toMatchObject({
+        type: "model-sync-success",
+      });
       expect(clientEndpoint.transfers.flat().length).toBe(transferredBefore);
       expect(requestStroke(execute.mock.calls[index + 1]![0]).points).toBe(original.points);
+      for (const model of [runtime, fallback]) {
+        expect(model.instrumentation).toMatchObject({
+          fragmentBuilds: 0,
+          sampleEncodingBuilds: 0,
+          shapeBuilds: 0,
+        });
+      }
     }
+    const request = {
+      sessionId: identity.sessionId,
+      workerEpoch: identity.workerEpoch,
+      baseModelRevision: 2,
+      modelRevision: 2,
+      exportGeneration: 1,
+      type: "export-incremental" as const,
+    };
+    const [nativeOutput, fallbackOutput] = await Promise.all([
+      client.execute(request),
+      fallback.execute(request),
+    ]);
+    expect(nativeOutput.type).toBe("export-success");
+    if (nativeOutput.type !== "export-success" || fallbackOutput.type !== "export-success")
+      throw new Error("Expected exports.");
+    const outputBytes = (output: string | Uint8Array) =>
+      typeof output === "string" ? new TextEncoder().encode(output) : output;
+    expect({ ...nativeOutput, output: outputBytes(nativeOutput.output) }).toEqual({
+      ...fallbackOutput,
+      output: outputBytes(fallbackOutput.output),
+    });
   } finally {
+    fallback.terminate();
     client.terminate();
     detach();
   }

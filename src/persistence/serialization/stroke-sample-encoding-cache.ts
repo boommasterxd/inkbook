@@ -1,4 +1,4 @@
-import type { InkSnapshotV1, StrokeElementV1 } from "../../domain/schema/public";
+import type { InkElementV1, InkSnapshotV1, StrokeElementV1 } from "../../domain/schema/public";
 import { encodeStrokeSamples } from "./stroke-sample-codec";
 
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
@@ -77,6 +77,11 @@ export class StrokeSampleEncodingCache {
       const element = active.get(id);
       if (element?.kind !== "stroke" || element.points !== entry.points) this.remove(id);
     }
+  }
+
+  public reconcileElement(element: InkElementV1): void {
+    const entry = this.#entries.get(element.id);
+    if (element.kind !== "stroke" || element.points !== entry?.points) this.remove(element.id);
   }
 
   public remove(id: string): void {

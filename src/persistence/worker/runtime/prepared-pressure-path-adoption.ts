@@ -8,19 +8,6 @@ import {
 import type { IncrementalDocumentSerializer } from "../../serialization/incremental-document-serializer";
 import type { DocumentExportRequest, RuntimeSliceContext } from "./types";
 
-/** Defers only changed fragments whose optional paths may replace a contour build. */
-export function preparedPressurePathIds(request: DocumentExportRequest): ReadonlySet<string> {
-  const candidates: unknown = request.preparedPressurePaths;
-  const ids = new Set<string>();
-  if (!Array.isArray(candidates)) return ids;
-  for (let index = 0; index < Math.min(candidates.length, MAX_PREPARED_PRESSURE_HINTS); index++) {
-    const candidate: unknown = candidates[index];
-    if (isPreparedPressurePathHint(candidate) && candidate.modelRevision === request.modelRevision)
-      ids.add(candidate.id);
-  }
-  return ids;
-}
-
 /** Accepts only bounded, revision-bound paths from the active Store's scene cache. */
 export async function acceptPreparedPressurePaths(
   request: DocumentExportRequest,

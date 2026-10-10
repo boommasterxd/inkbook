@@ -238,6 +238,7 @@ describe("runtime fragment ownership", () => {
         modelRevision: runtime.revision + 1,
       }).ok,
     ).toBe(true);
+    expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
     const append = vi.spyOn(SampleBase64Writer.prototype, "append");
     try {
       expect(serializer.resetRuntime(serializer.currentSnapshot()!, true).ok).toBe(true);
@@ -379,8 +380,8 @@ describe("incremental document delta validation", () => {
 
   it("rejects stale, overlapping, and schema-invalid deltas without changing state", () => {
     const snapshot = createAllElementSnapshot();
-    const serializer = new IncrementalDocumentSerializer();
-    serializer.reset(snapshot);
+    const { serializer, buildsBefore } = warmedSerializer(snapshot);
+    const retainedBytes = serializer.instrumentation.cacheBytes;
     const element = snapshot.elements[1]!;
 
     expect(serializer.applyDelta({ baseModelRevision: 6, modelRevision: 8 })).toMatchObject({
@@ -397,8 +398,17 @@ describe("incremental document delta validation", () => {
     ).toMatchObject({ ok: false, error: { code: "invalid-delta" } });
     const invalid = { ...element, unexpected: true };
     expect(
-      serializer.applyDelta({ baseModelRevision: 7, changedElements: [invalid], modelRevision: 8 }),
+      serializer.applyDelta({
+        baseModelRevision: 7,
+        changedElements: [snapshot.elements[0]!, invalid],
+        modelRevision: 8,
+      }),
     ).toMatchObject({ ok: false, error: { code: "snapshot-invalid" } });
+    expect(serializer.instrumentation).toMatchObject({
+      cacheBytes: retainedBytes,
+      cacheElements: snapshot.elements.length,
+      fragmentBuilds: buildsBefore,
+    });
     expect(serializer.serialize()).toMatchObject({
       ok: true,
       value: { snapshot: { revision: 7 } },

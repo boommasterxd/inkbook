@@ -28,12 +28,14 @@ it("defers complete snapshot creation until clipboard needs it after sync", asyn
   try {
     synchronizeOnce(model);
     expect(model.modelRevision).toBe(1);
+    expect(model.instrumentation).toMatchObject({ cacheElements: 0, fragmentBuilds: 0 });
     expect(
       await model.prewarmOne({
         checkpoint: async () => undefined,
         signal: new AbortController().signal,
       }),
     ).toBe(false);
+    expect(model.instrumentation).toMatchObject({ cacheElements: 1, fragmentBuilds: 1 });
     expect(materialize).not.toHaveBeenCalled();
     expect(model.encodeClipboard(1, [rectangle().id]).ok).toBe(true);
     expect(model.encodeClipboard(1, [rectangle().id]).ok).toBe(true);
@@ -98,6 +100,7 @@ it("rejects clipboard access after an unconfirmed export changes serializer stat
     { checkpoint: async () => undefined, signal: cancelled.signal },
   );
   expect(failed.ok).toBe(false);
+  expect(model.instrumentation).toMatchObject({ cacheElements: 0, fragmentBuilds: 0 });
   expect(model.modelRevision).toBe(1);
   for (const revision of [1, 2]) {
     expect(() => model.encodeClipboard(revision, [rectangle().id])).toThrow(
