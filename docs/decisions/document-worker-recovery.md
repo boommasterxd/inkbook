@@ -14,6 +14,8 @@ Separate retryable operation failures and deliberate speculative cancellation fr
 
 Attempt bounded native replacement before fallback. Share the replacement budget across opening and later operations, and serialize recovery so two failures cannot create parallel executors. Rebuild from the authoritative model instead of copying a potentially failed worker baseline. Preserve dirty state and active save proofs; executor recovery cannot repeat an indeterminate Vault write.
 
+External reload, baseline restoration, recovery-copy export, and verification use the same replacement policy. Only rejected executor requests retry; validated operation failures and host I/O do not. A recovery copy is created once, and replacement verification inspects that same artifact against its immutable export proof. External-change ports keep string outcomes compatible and return an operation-bound final-epoch result after their own replacement; the coordinator requires exact operation lineage, current session, workspace token, attachment state, and final executor epoch before adoption.
+
 Report failures through bounded, content-free console warnings. Do not retain the temporary worker-event ledger or zoom recordings. Avoid arbitrary error text and document payloads. A constructed port and a completed request are distinct evidence.
 
 ## Consequences and Verification

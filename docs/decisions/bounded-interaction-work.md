@@ -52,8 +52,8 @@ unpublished entrant ownership. The canonical rules are in
 [Viewport Culling](../rendering-and-performance.md#viewport-culling).
 
 Bounded offscreen-node reuse avoids repeated SVG creation and geometry attribute
-writes while nodes remain cached. The minimal-DOM experiment replaces connected
-offscreen retention with physical removal outside the mounting envelope. A 1 MiB
+writes while nodes remain cached. Remove connected offscreen roots physically
+outside the mounting envelope under the shared cleanup budget. A 1 MiB
 detached-node cache keeps recent roots, separately from the 25 MiB contour cache;
 neither has a separate root-count cap. Positive entry sizes bound cardinality,
 and memory pressure disables retention. Returns before pending removal can still
@@ -64,8 +64,8 @@ are defined in [Path Caches](../rendering-and-performance.md#path-caches). Geome
 identity and ID/version aliases share one canonical path-cache entry. Both caches
 participate in active-document memory pressure and reject stale geometry and deleted
 IDs. Detached retention does not guarantee an instant revisit or eliminate browser
-publication costs. The smaller node budget is an experimental value, not an established
-optimum.
+publication costs. This byte budget bounds retained ownership; it does not establish
+an optimum for browser memory or revisit speed.
 
 A smaller fade-start quota was rejected: the paired selection-delete diagnostic
 did not reduce long native tasks and increased layerization work. Keep the
