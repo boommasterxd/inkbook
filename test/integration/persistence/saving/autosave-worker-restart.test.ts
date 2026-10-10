@@ -9,7 +9,7 @@ import { createTestWorkScheduler } from "../../../fixtures/persistence/work-sche
 import { rectangle, snapshot } from "../../../unit/persistence/worker/runtime/fixtures";
 import { AutosaveDocumentFixture, FakeClock, MemoryVault, serializeSnapshot } from "./fixtures";
 
-async function harness(failure: "export" | "active-write" | "sync") {
+async function harness(failure: "export" | "active-write" | "sync" | "external") {
   const initial = serializeSnapshot();
   const document = new AutosaveDocumentFixture();
   const vault = new MemoryVault(initial.svg);
@@ -49,9 +49,10 @@ async function harness(failure: "export" | "active-write" | "sync") {
     }),
     terminate: vi.fn(() => core.terminate()),
   };
+  const clock = new FakeClock();
   const coordinator = new AutosaveCoordinator({
     workScheduler: createTestWorkScheduler(),
-    clock: new FakeClock(),
+    clock,
     documentSource: document,
     confirmedBase: { type: "confirmed", revision: 0, outputHash: initial.hash },
     executor: primary,
@@ -71,6 +72,7 @@ async function harness(failure: "export" | "active-write" | "sync") {
   }
   return {
     coordinator,
+    clock,
     commit,
     vault,
     primary,
@@ -81,6 +83,81 @@ async function harness(failure: "export" | "active-write" | "sync") {
     release: () => release(replacement),
   };
 }
+
+describe("autosave external worker restart", () => {
+  it("allows host recovery to defer persistence after bootstrap", async () => {
+    const fixture = await harness("external");
+    try {
+      fixture.commit(1);
+      const recovery = fixture.coordinator.recoverWorkerExecutor(false);
+      await fixture.restarting;
+      fixture.clock.advance(1_000);
+      fixture.release();
+      expect(await recovery).toBe(true);
+      expect(fixture.replacementRequests).toEqual([]);
+      expect(fixture.vault.processCount).toBe(0);
+      expect(fixture.coordinator.dirty).toBe(true);
+    } finally {
+      fixture.coordinator.dispose();
+    }
+  });
+
+  it.each(["timer", "flush"] as const)(
+    "resumes an external restart after %s requested a save during bootstrap",
+    async (trigger) => {
+      const fixture = await harness("external");
+      try {
+        fixture.commit(1);
+        const recovery = fixture.coordinator.recoverWorkerExecutor();
+        await fixture.restarting;
+        fixture.commit(2);
+        const flush = trigger === "flush" ? fixture.coordinator.flush("lock") : undefined;
+        if (trigger === "timer") fixture.clock.advance(1_000);
+        expect(fixture.replacementRequests).toEqual([]);
+        expect(fixture.vault.processCount).toBe(0);
+        fixture.release();
+        expect(await recovery).toBe(true);
+        expect(fixture.replacementRequests).toEqual([
+          expect.objectContaining({ type: "export-full", workerEpoch: 2, modelRevision: 2 }),
+        ]);
+        if (flush !== undefined) expect(await flush).toBe("clean");
+        else {
+          await fixture.vault.waitForProcessCount(1);
+          await fixture.coordinator.currentSaveSettlement;
+        }
+        expect(fixture.vault.processCount).toBe(1);
+        expect(fixture.coordinator.dirty).toBe(false);
+      } finally {
+        fixture.coordinator.dispose();
+      }
+      expect(fixture.createReplacement).toHaveBeenCalledOnce();
+      expect(fixture.replacement.terminate).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("preserves an unexpired debounce after external restart", async () => {
+    const fixture = await harness("external");
+    try {
+      fixture.commit(1);
+      const recovery = fixture.coordinator.recoverWorkerExecutor();
+      await fixture.restarting;
+      fixture.clock.advance(999);
+      fixture.release();
+      expect(await recovery).toBe(true);
+      expect(fixture.replacementRequests).toEqual([]);
+      fixture.clock.advance(1);
+      expect(fixture.replacementRequests).toEqual([
+        expect.objectContaining({ type: "export-full", workerEpoch: 2, modelRevision: 1 }),
+      ]);
+      await fixture.vault.waitForProcessCount(1);
+      await fixture.coordinator.currentSaveSettlement;
+      expect(fixture.vault.processCount).toBe(1);
+      expect(fixture.coordinator.dirty).toBe(false);
+    } finally {
+      fixture.coordinator.dispose();
+    }
+  });
+});
 
 describe("autosave native worker restart", () => {
   it("exports the latest dirty revision once after pending bootstrap without losing flush waiters", async () => {

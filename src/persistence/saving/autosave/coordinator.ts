@@ -153,7 +153,12 @@ export class AutosaveCoordinator {
       }
     }
   }
-  public readonly recoverWorkerExecutor = (): Promise<boolean> => this.#switchToFallback();
+  public readonly recoverWorkerExecutor = async (resumePersistence = true): Promise<boolean> => {
+    if (!(await this.#switchToFallback())) return false;
+    if (!resumePersistence) return true;
+    if (this.#savePromise === null && (this.#forced || !this.#timer.hasPending)) this.#kick();
+    return true;
+  };
   public flush(_reason: Autosave.FlushReason): Promise<Autosave.FlushOutcome> {
     if (this.#disposed) return Promise.resolve(terminalAutosaveOutcome(this.dirty, this.#status));
     if (!this.dirty) return Promise.resolve("clean");
@@ -251,13 +256,8 @@ export class AutosaveCoordinator {
     this.#startPreparedSave();
   }
   #dispatchExport(): void {
-    if (
-      this.#disposed ||
-      this.#recovery.pending ||
-      this.#exportInFlight !== null ||
-      this.#modelSyncInFlight !== null
-    )
-      return;
+    if (this.#disposed || this.#recovery.pending) return;
+    if (this.#exportInFlight !== null || this.#modelSyncInFlight !== null) return;
     const plan = this.#workerModel.takePlan(this.#document);
     if (plan === null) return;
     this.#exportGeneration = nextSafeCounter(this.#exportGeneration, "exportGeneration");

@@ -3,6 +3,8 @@ import { expect, vi } from "vitest";
 import type {
   DocumentSessionPort,
   DocumentSessionSnapshot,
+  ExternalChangeOutcome,
+  ExternalChangeResult,
   RecoveryOperationIdentity,
   RecoveryCompletionPort,
   RecoveryResult,
@@ -85,9 +87,9 @@ export class FakeSession implements DocumentSessionPort {
     return pending.promise;
   }
 
-  notifyExternalChange(): Promise<
-    "conflict" | "reload-failed" | "reload-required" | "reloaded" | "unchanged"
-  > {
+  notifyExternalChange(
+    _operation?: SessionOperationIdentity,
+  ): Promise<ExternalChangeOutcome | ExternalChangeResult> {
     return Promise.resolve(this.externalChangeOutcome);
   }
 

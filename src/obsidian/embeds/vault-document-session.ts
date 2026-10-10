@@ -35,6 +35,8 @@ import { InteractiveWorkPriority } from "../../editor/session/interactive-work-p
 import { ActiveEditorHistory } from "./active-editor/history";
 import { DocumentSaveStatusSource } from "./document-save-status";
 import { createVaultExecutorReplacement } from "./vault-executor-replacement";
+import type { VaultRecoveryExecutorAccess } from "./vault-recovery-executor";
+import { reloadVaultSessionDocument } from "./vault-session-recovery";
 export type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
 export interface ActiveDocumentEditorContext {
   readonly history: ActiveEditorHistory;
@@ -61,6 +63,10 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   #page: InkSnapshotV1["page"] | undefined;
   #pendingTrustedExternalVersion: Session.PersistedDocumentIdentity | undefined;
   #recoveryOperation: Session.RecoveryOperationIdentity | undefined;
+  readonly #recoveryExecutor: VaultRecoveryExecutorAccess = {
+    current: () => this.#executor && { executor: this.#executor, workerEpoch: this.#workerEpoch },
+    recover: async () => (await this.#autosave?.recoverWorkerExecutor(false)) === true,
+  };
   #revision = 0;
   #workerEpoch = 1;
   constructor(
@@ -144,7 +150,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   }
   async notifyExternalChange(
     operation?: Session.SessionOperationIdentity,
-  ): Promise<recovery.SessionExternalChangeOutcome> {
+  ): Promise<recovery.SessionExternalChangeOutcome | Session.ExternalChangeResult> {
     if (
       this.#lifecycle.disposed ||
       this.#lifecycle.preparingForUnload ||
@@ -157,18 +163,17 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       baseRevision: () => this.#revision,
       notify: () => this.#autosave!.notifyExternalChange(),
       ...(operation === undefined ? {} : { operation }),
-      reload: (recovery) => this.#runExternalReload(recovery),
+      reload: async (operation) => {
+        this.#recoveryOperation = operation;
+        const result = await this.#reloadExternal(operation, false);
+        if (this.#recoveryOperation === operation) this.#recoveryOperation = undefined;
+        return result;
+      },
     });
     if (this.#autosave) this.#saveStatus.update(this.#autosave);
-    return outcome;
-  }
-  async #runExternalReload(
-    operation: Session.RecoveryOperationIdentity,
-  ): Promise<Session.RecoveryResult> {
-    this.#recoveryOperation = operation;
-    const result = await this.#reloadExternal(operation, false);
-    if (this.#recoveryOperation === operation) this.#recoveryOperation = undefined;
-    return result;
+    return operation !== undefined && this.#workerEpoch !== operation.workerEpoch
+      ? { ...operation, outcome, workerEpoch: this.#workerEpoch }
+      : outcome;
   }
   getSnapshot(): Session.DocumentSessionSnapshot {
     const autosave = this.#autosave;
@@ -216,7 +221,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       : this.#saveLocalCopy(operation, completion));
     if (this.#recoveryOperation === operation) this.#recoveryOperation = undefined;
     this.#cancelled.delete(operation.operationId);
-    return result;
+    return { ...result, workerEpoch: this.#workerEpoch };
   }
   async unlock(operation: Session.SessionOperationIdentity): Promise<Session.UnlockResult> {
     if (this.#lifecycle.preparingForUnload || this.#model !== undefined)
@@ -434,12 +439,13 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     operation: Session.RecoveryOperationIdentity,
     acceptExternalVersion: boolean,
   ): Promise<Session.RecoveryResult> {
-    const executor = this.#executor;
-    if (executor === undefined) return { ...operation, status: "failed" };
-    const confirmed = await recovery.reloadExternalDocument({
-      adopt: (loaded: LoadedVaultDocument) => this.#adoptLoadedDocument(loaded, executor),
-      load: () =>
-        this.#loadDocument(operation, executor, "recovery", this.#workerEpoch, {
+    const stopped = () => this.#recoveryStopped(operation);
+    const confirmed = await reloadVaultSessionDocument({
+      access: this.#recoveryExecutor,
+      adopt: (loaded, executor) => this.#adoptLoadedDocument(loaded, executor),
+      identity: this.#identity,
+      load: (executor, workerEpoch) =>
+        this.#loadDocument(operation, executor, "recovery", workerEpoch, {
           ...(acceptExternalVersion ? { acceptExternalVersion: "validated-current" as const } : {}),
         }),
       releaseAutosave: () => {
@@ -447,18 +453,12 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         this.#autosave = undefined;
         autosave?.dispose("preserve-executor");
       },
-      restore: () => {
+      snapshot: () => {
         const model = this.#model;
-        if (this.#lifecycle.disposed || model === undefined) return Promise.resolve();
-        return recovery.restoreWorkerBaseline({
-          executor,
-          identity: this.#identity,
-          revision: this.#revision,
-          snapshot: model.store.materializeSnapshot({ page: model.page, revision: this.#revision }),
-          workerEpoch: this.#workerEpoch,
-        });
+        return model?.store.materializeSnapshot({ page: model.page, revision: this.#revision });
       },
-      stopped: () => this.#recoveryStopped(operation),
+      restoreStopped: () => this.#lifecycle.disposed || this.#recoveryOperation !== operation,
+      stopped,
     });
     return { ...operation, status: confirmed ? "confirmed" : "failed" };
   }
@@ -483,6 +483,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       },
       stopped: () => this.#recoveryStopped(operation),
       workerEpoch: this.#workerEpoch,
+      recoveryExecutor: this.#recoveryExecutor,
     });
   }
   #recoveryStopped(operation: Session.RecoveryOperationIdentity): boolean {
