@@ -16,8 +16,13 @@ const TURN = 2 * Math.PI;
 export function pressureBoundaryPoint(
   boundary: PressureBoundarySegment,
   fraction: number,
+  arcAngles?: PressureArcAngleCache,
 ): PointV1 {
-  if (boundary.kind === "arc") return pressureArcPoint(boundary, fraction);
+  if (boundary.kind === "arc") {
+    if (fraction === 0) return boundary.start;
+    if (fraction === 1) return boundary.end;
+    return pressureArcPoint(boundary, fraction, initialArcAngle(boundary, arcAngles));
+  }
   return {
     x: boundary.start.x + (boundary.end.x - boundary.start.x) * fraction,
     y: boundary.start.y + (boundary.end.y - boundary.start.y) * fraction,
@@ -88,15 +93,20 @@ function arcParameter(
     Math.abs(Math.hypot(dx, dy) - arc.radius) > epsilon
   )
     return undefined;
+  const initial = initialArcAngle(arc, arcAngles);
+  const angle = Math.atan2(point.y - arc.center.y, point.x - arc.center.x);
+  const travel = ((((angle - initial) * Math.sign(arc.sweep)) % TURN) + TURN) % TURN;
+  const fraction = travel / Math.abs(arc.sweep);
+  return fraction <= 1 ? fraction : undefined;
+}
+
+function initialArcAngle(arc: PressureBoundaryArc, arcAngles?: PressureArcAngleCache): number {
   let initial = arcAngles?.get(arc);
   if (initial === undefined) {
     initial = Math.atan2(arc.start.y - arc.center.y, arc.start.x - arc.center.x);
     arcAngles?.set(arc, initial);
   }
-  const angle = Math.atan2(point.y - arc.center.y, point.x - arc.center.x);
-  const travel = ((((angle - initial) * Math.sign(arc.sweep)) % TURN) + TURN) % TURN;
-  const fraction = travel / Math.abs(arc.sweep);
-  return fraction <= 1 ? fraction : undefined;
+  return initial;
 }
 
 /** Includes overlap endpoints; a coincident interval is split at every arc/line endpoint. */

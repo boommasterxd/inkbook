@@ -25,6 +25,7 @@ interface PreviewHandoffOptions {
 }
 
 export class ActiveScenePreviewHandoff {
+  public onSceneReveal: (() => void) | undefined;
   readonly #beginScrollStability: (() => () => void) | undefined;
   readonly #initialEntrance: InitialPresentationEntrance | undefined;
   readonly #container: HTMLElement;
@@ -92,6 +93,7 @@ export class ActiveScenePreviewHandoff {
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.onSceneReveal = undefined;
     this.#onDispose?.();
     this.#initialRevealPending = false;
     this.#onReady = undefined;
@@ -177,8 +179,9 @@ export class ActiveScenePreviewHandoff {
       return;
     }
     this.#releaseScrollStability ??= this.#beginScrollStability?.();
-    if (this.#preview !== undefined) this.#preview.hidden = true;
     this.#root.classList.remove("inkbook-active-preparing");
+    this.onSceneReveal?.();
+    if (this.#preview !== undefined) this.#preview.hidden = true;
     this.#root.classList.add("inkbook-active-transitioning");
     this.#container.style.blockSize = activeBlockSize;
     this.#notifyReady();
@@ -365,8 +368,10 @@ export class ActiveScenePreviewHandoff {
   #complete(): void {
     if (this.#disposed) return;
     this.#clearTimer();
+    const preparing = this.#root.classList.contains("inkbook-active-preparing");
     this.#root.classList.remove("inkbook-active-preparing", "inkbook-active-transitioning");
     this.#root.classList.add("inkbook-active-ready");
+    if (preparing) this.onSceneReveal?.();
     this.#container.style.removeProperty(ACTIVE_SCENE_BLOCK_SIZE_PROPERTY);
     this.#container.style.removeProperty(LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY);
     if (this.#preview !== undefined) {

@@ -3,6 +3,24 @@ import { describe, expect, it, vi } from "vitest";
 import { BoundedVersionLru } from "../../../../src/domain/cache/bounded-version-lru";
 
 describe("BoundedVersionLru", () => {
+  it("shares its byte budget with another owned index without reserving unused bytes", () => {
+    const removed = vi.fn();
+    const cache = new BoundedVersionLru<string>(3, 100, removed);
+    cache.set("a", 1, "a", 30);
+    cache.set("b", 1, "b", 30);
+    cache.set("c", 1, "c", 30);
+    cache.get("a", 1);
+    cache.trimToBytes(60);
+    expect(cache.statistics()).toMatchObject({ bytes: 60, entries: 2, evictions: 1 });
+    expect(removed).toHaveBeenLastCalledWith("b", "b");
+    cache.trimToBytes(0);
+    expect(cache.retainedBytes).toBe(0);
+    expect(removed).toHaveBeenCalledTimes(3);
+    expect(() => cache.trimToBytes(-1)).toThrow(RangeError);
+    cache.set("d", 1, "d", 90);
+    cache.trimToBytes(200);
+    expect(cache.retainedBytes).toBe(90);
+  });
   it("enforces both LRU limits and immediately releases stale versions", () => {
     const cache = new BoundedVersionLru<string>(2, 100);
     cache.set("a", 1, "a", 4);

@@ -69,7 +69,7 @@ describe("parser sample cache publication", () => {
   if (!serialized.ok) throw new Error(serialized.error.code);
 
   it("injects loaded encodings into the runtime and releases them on disposal", async () => {
-    const runtime = new DocumentModelRuntime(undefined, true);
+    const runtime = new DocumentModelRuntime(true);
     const unlocked = await runtime.unlock(serialized.value.svg);
     expect(runtime.instrumentation.sampleEncodingCacheElements).toBe(1);
     const result = await runtime.export({

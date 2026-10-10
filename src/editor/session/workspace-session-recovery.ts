@@ -1,5 +1,6 @@
 import type {
   ExternalChangeOutcome,
+  ExternalChangeResult,
   PresentationLifecyclePort,
   RecoveryOperationIdentity,
   RecoveryResult,
@@ -9,6 +10,7 @@ import type {
 import { isAttachedSession, transitionSession } from "./session-state";
 import {
   canResolveRecovery,
+  cancelRecoveryOperation,
   notifyAttachedRecovery,
   notifyHeadlessRecovery,
   projectRecoveryResolution,
@@ -28,19 +30,60 @@ export async function requestExternalChange(
   request: ExternalChangeRequest,
 ): Promise<ExternalChangeOutcome | "ignored"> {
   if (request.current.port.notifyExternalChange === undefined) return "ignored";
-  let outcome: ExternalChangeOutcome;
+  const state = request.current.state;
+  cancelRecoveryOperation(request.current);
+  const operation: RecoveryOperationIdentity = {
+    ...request.operation,
+    ...(isAttachedSession(state) ? { attachment: state.attachment } : {}),
+    baseRevision: request.current.port.getSnapshot().revision,
+  };
+  request.current.recoveryOperation = operation;
   try {
-    outcome = await request.current.port.notifyExternalChange(request.operation);
-  } catch {
-    outcome = "reload-failed";
+    let outcome: ExternalChangeOutcome;
+    let completed: SessionOperationIdentity = operation;
+    try {
+      const result = await request.current.port.notifyExternalChange(operation);
+      if (typeof result === "string") outcome = result;
+      else {
+        if (!matchesExternalReplacement(operation, result)) return "ignored";
+        completed = result;
+        outcome = result.outcome;
+      }
+    } catch {
+      outcome = "reload-failed";
+    }
+    if (
+      request.current.recoveryOperation !== operation ||
+      request.current.state !== state ||
+      !request.isCurrent(completed)
+    )
+      return "ignored";
+    if (outcome === "reloaded") {
+      if (isAttachedSession(request.current.state)) request.releasePresentation();
+    } else if (outcome === "conflict" || outcome === "reload-failed") {
+      enterExternalChangeRecovery(request);
+    }
+    return outcome;
+  } finally {
+    if (request.current.recoveryOperation === operation)
+      request.current.recoveryOperation = undefined;
   }
-  if (!request.isCurrent(request.operation)) return "ignored";
-  if (outcome === "reloaded") {
-    if (isAttachedSession(request.current.state)) request.releasePresentation();
-  } else if (outcome === "conflict" || outcome === "reload-failed") {
-    enterExternalChangeRecovery(request);
-  }
-  return outcome;
+}
+
+function matchesExternalReplacement(
+  operation: SessionOperationIdentity,
+  result: ExternalChangeResult,
+): boolean {
+  return (
+    result.documentId === operation.documentId &&
+    result.sessionId === operation.sessionId &&
+    result.operationId === operation.operationId &&
+    result.workspaceToken === operation.workspaceToken &&
+    result.expectedSourceIdentity?.outputHash === operation.expectedSourceIdentity?.outputHash &&
+    result.expectedSourceIdentity?.revision === operation.expectedSourceIdentity?.revision &&
+    Number.isSafeInteger(result.workerEpoch) &&
+    result.workerEpoch > operation.workerEpoch
+  );
 }
 
 export function isCurrentExternalOperation(

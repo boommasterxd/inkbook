@@ -4,10 +4,7 @@ import { normalizePath, TFile, TFolder } from "obsidian";
 import type { SessionFactory, SessionIdentity } from "../../editor/session/session-port";
 import type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
 import { ObsidianVaultFileAdapter } from "../vault/file-adapter";
-import {
-  type SessionExternalChangeOutcome,
-  type VaultDocumentSessionHooks,
-} from "./vault-document-recovery";
+import type { VaultDocumentSessionHooks } from "./vault-document-recovery";
 import { VaultDocumentSession, type ActiveDocumentEditorContext } from "./vault-document-session";
 
 export class VaultDocumentSessionFactory implements SessionFactory {
@@ -81,7 +78,7 @@ export class VaultDocumentSessionFactory implements SessionFactory {
   async notifyExternalChange(
     documentId: string,
     operation?: Parameters<VaultDocumentSession["notifyExternalChange"]>[0],
-  ): Promise<SessionExternalChangeOutcome> {
+  ): ReturnType<VaultDocumentSession["notifyExternalChange"]> {
     const sessions = [...this.#sessions.values()].filter(
       (session) => session.getSnapshot().documentId === documentId,
     );

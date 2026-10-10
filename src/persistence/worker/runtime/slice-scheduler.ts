@@ -1,6 +1,77 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { InputActivityGate } from "./input-activity-gate";
-import type { InputAwareSliceScheduler, RuntimeSliceWorkProfile } from "./types";
+import type {
+  DocumentRuntimeRequest,
+  InputAwareSliceScheduler,
+  RuntimeSliceContext,
+  RuntimeSliceWorkProfile,
+} from "./types";
+import { isNavigationSceneRequest } from "./request-admission";
+
+export function runtimeSliceContext(
+  scheduler: InputAwareSliceScheduler | null,
+  signal: AbortSignal,
+  request: DocumentRuntimeRequest,
+  waitForAdmission?: () => Promise<void> | undefined,
+): RuntimeSliceContext | undefined {
+  if (scheduler === null && waitForAdmission === undefined) return undefined;
+  const sliceMilliseconds = scheduler?.getSliceMilliseconds?.bind(scheduler);
+  const workProfile = scheduler?.getSliceWorkProfile?.bind(scheduler);
+  const checkpoint = (): Promise<void> | undefined => {
+    const admission = waitForAdmission?.();
+    if (admission !== undefined) return admission.then(checkpoint);
+    const pending = scheduler?.checkpoint(
+      signal,
+      isNavigationSceneRequest(request) ? "frame" : undefined,
+    );
+    return pending?.then(() => {
+      const resumedAdmission = waitForAdmission?.();
+      return resumedAdmission?.then(checkpoint);
+    });
+  };
+  return {
+    checkpoint,
+    ...(sliceMilliseconds === undefined ? {} : { sliceMilliseconds }),
+    ...(workProfile === undefined ? {} : { workProfile: workProfile() }),
+    signal,
+  };
+}
+
+interface RequestCheckpointOptions {
+  readonly inputGate: InputActivityGate;
+  readonly navigationGate: InputActivityGate;
+  readonly scheduler: WorkScheduler;
+  readonly waitForAdmission?: (pending: Promise<void>) => Promise<void>;
+}
+
+export function createMainThreadRequestCheckpoint(
+  options: RequestCheckpointOptions,
+  signal: AbortSignal,
+  request: DocumentRuntimeRequest,
+  adoption = false,
+): () => Promise<void> | undefined {
+  const required = isNavigationSceneRequest(request);
+  const exportRequest = request.type === "export-full" || request.type === "export-incremental";
+  const priority = required || (!adoption && exportRequest) ? "frame" : "background";
+  const checkpoint = (): Promise<void> | undefined => {
+    const ready = options.inputGate.waitUntilInactive(signal);
+    if (ready !== undefined) return ready.then(checkpoint);
+    const navigation = required ? undefined : options.navigationGate.waitUntilInactive(signal);
+    if (navigation !== undefined) return navigation.then(checkpoint);
+    signal.throwIfAborted();
+    const pending =
+      priority === "background"
+        ? options.scheduler.checkpoint(signal)
+        : options.scheduler.shouldYield()
+          ? options.scheduler.nextFrame(signal, "frame")
+          : undefined;
+    return pending?.then(() => signal.throwIfAborted());
+  };
+  return () => {
+    const pending = checkpoint();
+    return pending === undefined ? undefined : (options.waitForAdmission?.(pending) ?? pending);
+  };
+}
 
 export interface SliceSchedulerOptions {
   readonly isInputActive: () => boolean;
@@ -75,10 +146,15 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
     return runtimeSliceWorkProfile(this.getSliceMilliseconds());
   }
 
-  public checkpoint(signal: AbortSignal): Promise<void> | undefined {
+  public checkpoint(signal: AbortSignal, priority?: "frame"): Promise<void> | undefined {
     const ready = this.#inputGate.waitUntilInactive(signal);
-    if (ready !== undefined) return ready.then(() => this.checkpoint(signal));
-    const pending = this.#workScheduler.checkpoint(signal);
+    if (ready !== undefined) return ready.then(() => this.checkpoint(signal, priority));
+    const pending =
+      priority === "frame"
+        ? this.#workScheduler.shouldYield()
+          ? this.#workScheduler.nextFrame(signal, "frame")
+          : undefined
+        : this.#workScheduler.checkpoint(signal);
     if (pending !== undefined) return pending.then(() => signal.throwIfAborted());
     signal.throwIfAborted();
     return undefined;
@@ -87,8 +163,9 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
   public async run<T>(
     operation: (signal: AbortSignal) => T | Promise<T>,
     signal: AbortSignal,
+    priority?: "frame",
   ): Promise<T> {
-    const pending = this.checkpoint(signal);
+    const pending = this.checkpoint(signal, priority);
     if (pending !== undefined) await pending;
     return operation(signal);
   }

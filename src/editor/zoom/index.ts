@@ -1,5 +1,6 @@
 export {
   applyAnchoredZoom,
+  anchoredScrollTop,
   applyResize,
   calculateFitZoom,
   calculateZoomLimits,
@@ -20,6 +21,6 @@ export {
   normalizeWheelVector,
   zoomFrameHasPending,
 } from "./wheel";
-export type { WheelDeltaMode, WheelZoomState, ZoomFrameState } from "./wheel";
+export type { WheelDeltaMode, ZoomFrameState } from "./wheel";
 export { createStableWidthState, observeStableWidth } from "./resize";
 export { HorizontalPanMomentum } from "./horizontal-pan-momentum";

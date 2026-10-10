@@ -6,7 +6,6 @@ import {
   ActiveEditorNavigation,
   type ActiveEditorWheelInput,
 } from "../../../../src/obsidian/embeds/active-editor/navigation";
-import { responsiveTrackpadPanDelta } from "../../../../src/obsidian/embeds/active-editor/trackpad-pan-momentum";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
@@ -37,13 +36,9 @@ class Frames {
     this.#now = timestamp;
     entry[1](timestamp);
   }
-
-  setNow(timestamp: number): void {
-    this.#now = timestamp;
-  }
 }
 
-function createHarness() {
+function createHarness(activePageHeight = () => 2000) {
   const frames = new Frames();
   const sequence: string[] = [];
   const rect = { height: 1_000, left: 20, top: 100, width: 1_000 };
@@ -76,7 +71,7 @@ function createHarness() {
   } as unknown as HTMLElement;
   const navigation = new ActiveEditorNavigation({
     workScheduler: workSchedulerFromFrames(frames.window),
-    activePageHeight: () => 2_000,
+    activePageHeight,
     applyZoomLayout: ({ blockSize }) => {
       sequence.push("layout-write");
       rect.height = blockSize;
@@ -95,6 +90,54 @@ function createHarness() {
 }
 
 describe("active editor keyboard and wheel navigation", () => {
+  it.each(["wheel", "keyboard"])(
+    "measures %s anchors after intervening native layout changes",
+    (source) => {
+      const harness = createHarness();
+      const oldZoom = harness.navigation.zoom;
+      if (source === "wheel") harness.navigation.updateWheel(zoomWheel(-4));
+      else harness.navigation.updateKeyboardStep(1, { x: 400, y: 200 });
+      expect(harness.readBounds).not.toHaveBeenCalled();
+      harness.owner.scrollTop = 280;
+      Object.assign(harness.rect, { left: 50, top: 20 });
+      const anchorX = source === "wheel" ? 500 - 50 : 400;
+      const anchorViewportY = source === "wheel" ? 300 : 220;
+      const oldPageY = (280 + anchorViewportY - 300) / oldZoom;
+
+      harness.frames.flush();
+
+      expect(harness.readBounds).toHaveBeenCalledOnce();
+      expect(anchorX / harness.navigation.zoom - harness.navigation.cameraX).toBeCloseTo(
+        anchorX / oldZoom,
+      );
+      expect(
+        (harness.owner.scrollTop + anchorViewportY - 300) / harness.navigation.zoom,
+      ).toBeCloseTo(oldPageY);
+      harness.navigation.dispose();
+    },
+  );
+
+  it("pans horizontally without deriving page height or reading native scroll range", () => {
+    const pageHeight = vi.fn(() => 2000);
+    const harness = createHarness(pageHeight);
+    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
+    pageHeight.mockClear();
+    const readScrollHeight = vi.fn(() => 4000);
+    Object.defineProperty(harness.owner, "scrollHeight", { get: readScrollHeight });
+    const previousScrollTop = harness.owner.scrollTop;
+    harness.sequence.length = 0;
+
+    harness.navigation.pan(-30);
+    harness.frames.flush();
+
+    expect(harness.navigation.cameraX).toBe(-130);
+    expect(harness.owner.scrollTop).toBe(previousScrollTop);
+    expect(harness.sequence).toEqual(["layout-read", "layout-read", "camera-write"]);
+    expect(pageHeight).not.toHaveBeenCalled();
+    expect(readScrollHeight).not.toHaveBeenCalled();
+    harness.navigation.dispose();
+  });
+
   it("applies magnitude-proportional trackpad pinch zoom in the next animation frame", () => {
     const harness = createHarness();
     const oldZoom = harness.navigation.zoom;
@@ -102,7 +145,7 @@ describe("active editor keyboard and wheel navigation", () => {
     expect(harness.navigation.updateWheel(zoomWheel(-4))).toBe(true);
     harness.frames.flush();
 
-    expect(harness.navigation.zoom).toBeCloseTo(oldZoom * 1.08 ** 0.625);
+    expect(harness.navigation.zoom).toBeCloseTo(oldZoom * Math.exp(0.04));
   });
 
   it.each([1, 2])("keeps line/page wheel mode %s at one discrete step", (deltaMode) => {
@@ -145,7 +188,7 @@ describe("continuous pixel-wheel response", () => {
       expect(harness.frames.callbacks.size).toBe(1);
       harness.frames.flush();
       const factor = harness.navigation.zoom / before;
-      expect(factor).toBeCloseTo(1.08 ** (magnitude / 6.4), 12);
+      expect(factor).toBeCloseTo(Math.exp(magnitude / 100), 12);
       expect(factor).toBeGreaterThan(previous);
       previous = factor;
       harness.navigation.dispose();
@@ -166,7 +209,7 @@ describe("continuous pixel-wheel response", () => {
         expect(harness.frames.callbacks.size).toBe(1);
         harness.frames.flush();
       }
-      expect(harness.navigation.zoom).toBeCloseTo(before * 1.08 ** 5, 12);
+      expect(harness.navigation.zoom).toBeCloseTo(before * Math.exp(0.32), 12);
       harness.navigation.dispose();
     }
   });
@@ -182,7 +225,7 @@ describe("continuous zoom limit and reversal handling", () => {
     ]) {
       expect(() => harness.navigation.updateWheel(zoomWheel(delta!))).not.toThrow();
       for (let frame = 0; harness.frames.callbacks.size > 0; frame += 1) {
-        expect(frame).toBeLessThanOrEqual(Math.ceil(Math.log(5 / fit) / Math.log(1.35)));
+        expect(frame).toBe(0);
         expect(harness.frames.callbacks.size).toBe(1);
         harness.frames.flush();
       }
@@ -199,7 +242,7 @@ describe("continuous zoom limit and reversal handling", () => {
     harness.navigation.updateWheel(zoomWheel(4));
     harness.frames.flush();
     expect(harness.navigation.zoom).toBeLessThan(beforeReversal);
-    expect(harness.navigation.zoom).toBeCloseTo(beforeReversal * 1.08 ** (-4 / 6.4), 12);
+    expect(harness.navigation.zoom).toBeCloseTo(beforeReversal * Math.exp(-0.04), 12);
     expect(harness.frames.callbacks.size).toBe(0);
     harness.navigation.dispose();
   });
@@ -249,60 +292,6 @@ describe("active editor navigation input ordering", () => {
     expect(
       (wheelLast.owner.scrollTop + wheelClient.y - 300) / wheelLast.navigation.zoom,
     ).toBeCloseTo(wheelPageY);
-  });
-});
-
-describe("active editor horizontal wheel routing", () => {
-  it("claims horizontal trackpad and Shift-wheel input only above fit", () => {
-    const harness = createHarness();
-    expect(harness.navigation.updateWheel(horizontalWheel())).toBe(false);
-    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
-
-    expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 1, deltaY: 20 }))).toBe(false);
-    harness.frames.setNow(0);
-    expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 20, deltaY: 18 }))).toBe(true);
-    harness.frames.setNow(16);
-    expect(harness.navigation.updateWheel(horizontalWheel())).toBe(true);
-    harness.frames.setNow(32);
-    expect(
-      harness.navigation.updateWheel(
-        horizontalWheel({ deltaMode: 1, deltaX: 0, deltaY: 2, shiftKey: true }),
-      ),
-    ).toBe(true);
-    harness.frames.flush();
-
-    expect(harness.navigation.cameraX).toBeCloseTo(
-      -100 + responsiveTrackpadPanDelta(-20, undefined) + responsiveTrackpadPanDelta(-80, 16) - 32,
-    );
-  });
-
-  it("continues a horizontal pixel-wheel burst after its native inertial tail ends", () => {
-    const harness = createHarness();
-    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
-    for (const [timestamp, deltaX, deltaY] of [
-      [0, 10, 2],
-      [16, 8, 2],
-      [32, 5, 3],
-      [48, 3, 2],
-    ] as const) {
-      harness.frames.setNow(timestamp);
-      expect(harness.navigation.updateWheel(horizontalWheel({ deltaX, deltaY }))).toBe(true);
-      harness.frames.flush(timestamp);
-    }
-
-    const directPan = [-10, -8, -5, -3]
-      .map((delta, index) => responsiveTrackpadPanDelta(delta, index === 0 ? undefined : 16))
-      .reduce((total, delta) => total + delta, 0);
-    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
-    expect(harness.frames.callbacks.size).toBe(1);
-    harness.frames.flush(64);
-    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
-    harness.frames.flush(72);
-    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
-    harness.frames.flush(88);
-
-    expect(harness.navigation.cameraX).toBeLessThan(-100 + directPan);
-    expect(harness.sequence).not.toContain("scroll-write");
   });
 });
 
@@ -376,6 +365,7 @@ describe("active editor gesture geometry and view transfer", () => {
     expect(harness.navigation.localPointFromPage({ x: 200, y: 100 })).toEqual({ x: 200, y: 200 });
     expect(harness.navigation.screenPoint({ x: 200, y: 100 })).toEqual({ x: 220, y: 300 });
     harness.navigation.screenPointer({ ...event, clientX: 230 });
+    harness.navigation.beginPinchScreen({ x: 200, y: 200 });
     harness.navigation.updatePinchScreen({ x: 210, y: 200 }, 1.1);
     expect(harness.readBounds).toHaveBeenCalledTimes(1);
     harness.frames.flush();
@@ -402,20 +392,6 @@ describe("active editor gesture geometry and view transfer", () => {
     expect(harness.navigation.getViewState()).toEqual({ cameraX: -300, zoom: 1 });
   });
 });
-
-function horizontalWheel(overrides: Partial<ActiveEditorWheelInput> = {}): ActiveEditorWheelInput {
-  return {
-    clientX: 100,
-    clientY: 100,
-    ctrlKey: false,
-    deltaMode: 0,
-    deltaX: 80,
-    deltaY: 10,
-    metaKey: false,
-    shiftKey: false,
-    ...overrides,
-  };
-}
 
 function zoomWheel(deltaY: number): ActiveEditorWheelInput {
   return {

@@ -1,17 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { createInputState } from "../../../../../src/editor/input/index";
-import {
-  touchInteractionBlocksNativeScroll,
-  touchPanDelta,
-} from "../../../../../src/obsidian/embeds/active-editor/controller-touch";
+import { touchInteractionBlocksNativeScroll } from "../../../../../src/obsidian/embeds/active-editor/controller-touch";
 
 describe("active editor touch routing", () => {
-  it("increases horizontal camera response without changing direction", () => {
-    expect(touchPanDelta(10)).toBe(12);
-    expect(touchPanDelta(-10)).toBe(-12);
-  });
-
   it("leaves pending and vertical touches native but blocks claimed gestures", () => {
     const base = touchInteraction();
 

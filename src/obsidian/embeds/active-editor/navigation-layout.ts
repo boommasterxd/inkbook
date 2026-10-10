@@ -2,6 +2,7 @@ import type { InputPoint } from "../../../editor/input/index";
 import type { ZoomAnchor } from "../../../editor/zoom/index";
 import { clampScrollTop, type ScrollBounds } from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
+import { readScrollOwnerViewport } from "../active-scene-viewport";
 import { measureElementBox, type ElementContentBox } from "./element-content-box";
 
 interface ViewportRect {
@@ -12,16 +13,20 @@ interface ViewportRect {
 }
 
 export interface NavigationLayoutRead {
+  readonly containerBorderBounds?: ElementContentBox;
+  readonly containerBorderTop?: number;
   readonly containerBounds: ElementContentBox;
   readonly containerWidth: number;
   readonly embedTopInScrollContent: number;
   readonly ownerViewport: ViewportRect;
+  readonly ownerWindow: Window | null;
+  readonly scrollOwner: BrowserScrollElement;
   readonly scrollTop: number;
 }
 
 export type NavigationCursorLayout = Pick<
   NavigationLayoutRead,
-  "containerBounds" | "ownerViewport"
+  "containerBounds" | "ownerViewport" | "ownerWindow" | "scrollOwner" | "scrollTop"
 >;
 
 /** Project the measured box through our own height/scroll writes without another layout read. */
@@ -38,6 +43,9 @@ export function projectNavigationCursorLayout(
       bottom: top + applied.blockSize,
     },
     ownerViewport: layout.ownerViewport,
+    ownerWindow: layout.ownerWindow,
+    scrollOwner: layout.scrollOwner,
+    scrollTop: applied.scrollTop,
   };
 }
 
@@ -45,17 +53,43 @@ export function readNavigationLayout(
   container: HTMLElement,
   scrollOwner: BrowserScrollElement,
 ): NavigationLayoutRead | undefined {
-  const { contentBox: containerBounds } = measureElementBox(container);
+  const { borderBox, contentBox: containerBounds } = measureElementBox(container);
   if (!Number.isFinite(containerBounds.width) || containerBounds.width <= 0) return undefined;
-  const ownerViewport = readOwnerViewport(scrollOwner);
+  const ownerViewport = readScrollOwnerViewport(scrollOwner);
   const scrollTop = browserScrollMetrics.getScrollTop(scrollOwner);
   return {
+    containerBorderBounds: borderBox,
+    containerBorderTop: borderBox.top,
     containerBounds,
     containerWidth: containerBounds.width,
     embedTopInScrollContent: scrollTop + containerBounds.top - ownerViewport.top,
     ownerViewport,
+    ownerWindow: container.ownerDocument.defaultView,
+    scrollOwner,
     scrollTop,
   };
+}
+
+export function sameNavigationLayout(
+  left: NavigationCursorLayout | undefined,
+  right: NavigationCursorLayout,
+): boolean {
+  return (
+    left?.scrollOwner === right.scrollOwner &&
+    left.ownerWindow === right.ownerWindow &&
+    left.scrollTop === right.scrollTop &&
+    sameRect(left.containerBounds, right.containerBounds) &&
+    sameRect(left.ownerViewport, right.ownerViewport)
+  );
+}
+
+function sameRect(left: ViewportRect, right: ViewportRect): boolean {
+  return (
+    left.left === right.left &&
+    left.top === right.top &&
+    left.right === right.right &&
+    left.bottom === right.bottom
+  );
 }
 
 export function readOwnerScrollBounds(scrollOwner: BrowserScrollElement): ScrollBounds {
@@ -66,6 +100,17 @@ export function readOwnerScrollBounds(scrollOwner: BrowserScrollElement): Scroll
       browserScrollMetrics.getScrollHeight(scrollOwner) -
         browserScrollMetrics.getClientHeight(scrollOwner),
     ),
+  };
+}
+
+export function navigationResizeAnchor(layout: NavigationLayoutRead) {
+  return {
+    anchorViewportY: (layout.ownerViewport.bottom - layout.ownerViewport.top) / 2,
+    embedTopInScrollContent: layout.embedTopInScrollContent,
+    oldRenderedContainerHeight: layout.containerBounds.height,
+    oldScrollTop: layout.scrollTop,
+    scrollBounds: readOwnerScrollBounds(layout.scrollOwner),
+    viewportWidth: layout.containerWidth,
   };
 }
 
@@ -130,19 +175,6 @@ export function applyNativePan(
   bounds: ScrollBounds,
 ): number {
   return clampScrollTop(scrollTop - screenDeltaY, bounds);
-}
-
-function readOwnerViewport(scrollOwner: BrowserScrollElement): ViewportRect {
-  const document = scrollOwner.ownerDocument;
-  if (document.scrollingElement === scrollOwner) {
-    const view = document.defaultView;
-    const width = view?.innerWidth ?? scrollOwner.getBoundingClientRect().width;
-    const height = view?.innerHeight ?? browserScrollMetrics.getClientHeight(scrollOwner);
-    return { bottom: height, left: 0, right: width, top: 0 };
-  }
-  const bounds = scrollOwner.getBoundingClientRect();
-  const bottom = bounds.top + browserScrollMetrics.getClientHeight(scrollOwner);
-  return { bottom, left: bounds.left, right: bounds.right, top: bounds.top };
 }
 
 function intersectionCenter(

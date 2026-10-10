@@ -1,6 +1,8 @@
 import {
   ARROW_NODES,
   CLOSED_SHAPE_TOOLS,
+  MIN_SCROLL_PRELOAD_MARGIN_PX,
+  MAX_SCROLL_PRELOAD_MARGIN_PX,
   OUTLINE_ONLY_TOOLS,
   OUTLINE_STYLES,
   OUTLINE_WIDTHS,
@@ -49,6 +51,10 @@ export function hasExactKeys(value: unknown, keys: readonly string[]): value is 
 
 export function isOneOf<T>(value: unknown, allowed: readonly T[]): value is T {
   return allowed.includes(value as T);
+}
+
+export function isScrollPreloadMarginPx(value: unknown): value is number {
+  return isIntegerInRange(value, MIN_SCROLL_PRELOAD_MARGIN_PX, MAX_SCROLL_PRELOAD_MARGIN_PX);
 }
 
 function isNumberInRange(value: unknown, minimum: number, maximum: number): value is number {

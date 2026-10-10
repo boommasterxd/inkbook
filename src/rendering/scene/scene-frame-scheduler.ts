@@ -14,7 +14,7 @@ export class SceneFrameScheduler {
     private readonly render: (time: number, scene: boolean) => void,
   ) {}
 
-  public schedule(scene = true): void {
+  public readonly schedule = (scene = true): void => {
     if (this.#disposed) return;
     this.#scenePending ||= scene;
     if (this.#handle !== undefined) return;
@@ -33,7 +33,7 @@ export class SceneFrameScheduler {
     });
     this.#handle = handle;
     this.instrumentation.scheduledFrames += 1;
-  }
+  };
 
   public replaceGeneration(): void {
     this.#generation += 1;

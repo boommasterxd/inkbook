@@ -131,6 +131,29 @@ it("permits only exact semantic host turn and microtask sites", () => {
   ).toHaveLength(1);
 });
 
+it("permits one host measurement throttle timer without admitting other native work", () => {
+  const path = "src/obsidian/embeds/host-zoom-measure-throttle.ts";
+  const permitted =
+    "class HostZoomMeasureThrottle { #armTimer() { ownerWindow.setTimeout(() => scheduler.requestFrame(measure), 150); } }";
+  expect(validateWorkScheduling([source(permitted, path)])).toEqual([]);
+  expect(
+    validateWorkScheduling([
+      source(
+        permitted.replace("scheduler.requestFrame", "ownerWindow.requestAnimationFrame"),
+        path,
+      ),
+    ]),
+  ).toHaveLength(1);
+  expect(
+    validateWorkScheduling([
+      source(
+        "class HostZoomMeasureThrottle { #armTimer() { setTimeout(one, 150); setTimeout(two, 150); } }",
+        path,
+      ),
+    ]),
+  ).toHaveLength(1);
+});
+
 it("rejects private work deadlines while allowing the shared scheduler deadline", () => {
   const violations = validateWorkScheduling([
     source(`
@@ -168,29 +191,27 @@ it("permits only named native call sites in exact boundary adapters", () => {
   expect(
     validateWorkScheduling([
       source(
-        `class WindowTaskQueue {
-          #ensureChannel() { new MessageChannel(); }
-          #scheduleTimeout() { ownerWindow.setTimeout(run, 0); }
-        }
-        function createWindowWorkScheduler() { ownerWindow.requestAnimationFrame(run); }`,
+        `function openWindowTaskChannel() { new MessageChannel(); }
+        function createWindowWorkScheduler() {
+          ownerWindow.setTimeout(run, 0);
+          ownerWindow.requestAnimationFrame(run);
+        }`,
         windowAdapter,
       ),
       source(
         `function createWorkerWorkScheduler() {
           self.setTimeout(run, 0);
           timing.setTimeout(run, 0);
-          timing.setTimeout(run, 0);
-        }`,
+        }
+        function openWorkerTaskChannel() { new MessageChannel(); }`,
         workerAdapter,
       ),
     ]),
   ).toEqual([]);
   const violations = validateWorkScheduling([
     source(
-      `class WindowTaskQueue {
-        #ensureChannel() { new MessageChannel(); new MessageChannel(); }
-        #post() { requestAnimationFrame(run); }
-      }
+      `function openWindowTaskChannel() { new MessageChannel(); new MessageChannel(); }
+      function unexpectedTask() { requestAnimationFrame(run); }
       function createWindowWorkScheduler() { queueMicrotask(run); }`,
       windowAdapter,
     ),

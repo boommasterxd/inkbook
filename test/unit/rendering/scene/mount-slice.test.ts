@@ -50,6 +50,8 @@ it("waits for a fresh publication allowance when a two-root element cannot fit",
   const partial = new MountSlice(10, () => 0, 1);
   expect(partial.claimPublicationNodes(2)).toBe(false);
   expect(partial.publicationNodes).toBe(0);
+  expect(partial.claimPublicationNodes(0)).toBe(true);
+  expect(new MountSlice(0, () => 1, 0).claimPublicationNodes(0)).toBe(true);
   const fresh = new MountSlice(10, () => 0, 64);
   expect(fresh.claimPublicationNodes(2)).toBe(true);
   expect(fresh.claimPublicationNodes(63)).toBe(false);

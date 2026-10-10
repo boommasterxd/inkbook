@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ExternalChangeResult } from "../../../../src/editor/session/session-port";
 
 import {
   activate,
@@ -19,7 +20,109 @@ async function prepareAttachedRecovery(harness: ReturnType<typeof createHarness>
   return { activation, session };
 }
 
+async function prepareExternalReplacement(changed: Partial<ExternalChangeResult> = {}) {
+  const harness = createHarness();
+  const session = await activate(harness, documentA);
+  vi.spyOn(session, "notifyExternalChange").mockImplementation(async (operation) => {
+    session.snapshot = { ...session.snapshot, workerEpoch: 2 };
+    return { ...operation!, outcome: "reloaded", workerEpoch: 2, ...changed };
+  });
+  return { harness, session };
+}
+
 describe("WorkspaceEditorCoordinator recovery outcomes", () => {
+  it("accepts an operation-bound external reload after its own executor replacement", async () => {
+    const { harness, session } = await prepareExternalReplacement();
+    expect(await harness.coordinator.notifyExternalChange(documentA.documentId)).toBe("reloaded");
+    expect(harness.release).toHaveBeenCalledOnce();
+    expect(harness.coordinator.getSnapshot().current?.phase).toBe("active");
+    await harness.coordinator.requestActivation(documentA).outcome;
+    expect(session.cancelled).toEqual([]);
+  });
+
+  it.each([
+    { workerEpoch: 3 },
+    { workerEpoch: 1 },
+    { sessionId: "foreign" },
+    { documentId: "foreign.svg" },
+    { operationId: 99 },
+    { workspaceToken: 99 },
+    { expectedSourceIdentity: { outputHash: "foreign", revision: 99 } },
+  ])("rejects an unrelated or stale external replacement proof: %j", async (changed) => {
+    const { harness, session } = await prepareExternalReplacement(changed);
+    expect(await harness.coordinator.notifyExternalChange(documentA.documentId)).toBe("ignored");
+    expect(harness.release).not.toHaveBeenCalled();
+    expect(harness.attachedRecoveryRequired).not.toHaveBeenCalled();
+    await harness.coordinator.requestActivation(documentA).outcome;
+    expect(session.cancelled).toEqual([]);
+  });
+
+  it("rejects an unproved string outcome after an executor epoch changes", async () => {
+    const harness = createHarness();
+    const session = await activate(harness, documentA);
+    vi.spyOn(session, "notifyExternalChange").mockImplementation(async () => {
+      session.snapshot = { ...session.snapshot, workerEpoch: 2 };
+      return "reloaded";
+    });
+    expect(await harness.coordinator.notifyExternalChange(documentA.documentId)).toBe("ignored");
+    expect(harness.release).not.toHaveBeenCalled();
+  });
+
+  it("rejects a replacement proof after the presentation attachment changes", async () => {
+    const harness = createHarness();
+    const session = await activate(harness, documentA);
+    let complete!: () => void;
+    vi.spyOn(session, "notifyExternalChange").mockImplementation(
+      (operation) =>
+        new Promise((resolve) => {
+          complete = () => resolve({ ...operation!, outcome: "reloaded", workerEpoch: 2 });
+        }),
+    );
+    const reloading = harness.coordinator.notifyExternalChange(documentA.documentId);
+    session.snapshot = { ...session.snapshot, workerEpoch: 2 };
+    harness.coordinator.mountAttachment(documentASecondView);
+    await harness.coordinator.requestActivation(documentASecondView).outcome;
+    expect(session.cancelled).toEqual([
+      expect.objectContaining({
+        attachment: {
+          attachmentId: documentA.attachmentId,
+          attachmentGeneration: documentA.attachmentGeneration,
+        },
+      }),
+    ]);
+    const releaseCount = harness.release.mock.calls.length;
+    complete();
+    expect(await reloading).toBe("ignored");
+    expect(harness.release).toHaveBeenCalledTimes(releaseCount);
+  });
+});
+
+describe("WorkspaceEditorCoordinator external reload ownership", () => {
+  it("does not let an older result clear or adopt a newer reload", async () => {
+    const harness = createHarness();
+    const session = await activate(harness, documentA);
+    const completions: (() => void)[] = [];
+    vi.spyOn(session, "notifyExternalChange").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          completions.push(() => resolve("reloaded"));
+        }),
+    );
+    const older = harness.coordinator.notifyExternalChange(documentA.documentId);
+    const newer = harness.coordinator.notifyExternalChange(documentA.documentId);
+    expect(session.cancelled).toHaveLength(1);
+    completions[0]!();
+    expect(await older).toBe("ignored");
+    expect(harness.release).not.toHaveBeenCalled();
+    completions[1]!();
+    expect(await newer).toBe("reloaded");
+    expect(harness.release).toHaveBeenCalledOnce();
+    await harness.coordinator.requestActivation(documentA).outcome;
+    expect(session.cancelled).toHaveLength(1);
+  });
+});
+
+describe("WorkspaceEditorCoordinator unchanged recovery outcomes", () => {
   it("remounts a clean external reload and enters recovery for a dirty conflict", async () => {
     const cleanHarness = createHarness();
     const clean = await activate(cleanHarness, documentA);

@@ -110,7 +110,7 @@ it("adopts full-reset samples without encoding or decoding stroke metadata at do
         }
       : element,
   );
-  const runtime = new DocumentModelRuntime(undefined, true);
+  const runtime = new DocumentModelRuntime(true);
   const cold = await runtime.export(same);
   if (!cold.ok) throw new Error(cold.code);
   const warmed = runtime.instrumentation;

@@ -60,6 +60,29 @@ export function createTestWorkScheduler(options: TestWorkSchedulerOptions = {}):
   return new TestWorkScheduler(options);
 }
 
+/** Holds one checkpoint until a test explicitly restores shared admission. */
+export function createGatedTestWorkScheduler() {
+  let blocked = false;
+  let resume!: () => void;
+  const scheduler = new TestWorkScheduler({
+    shouldYield: () => blocked,
+    checkpoint: () =>
+      new Promise((resolve) => {
+        resume = resolve;
+      }),
+  });
+  return {
+    scheduler,
+    block: () => {
+      blocked = true;
+    },
+    resume: () => {
+      blocked = false;
+      resume();
+    },
+  };
+}
+
 function abortReason(signal: FrameCancellation): Error {
   return signal.reason instanceof Error ? signal.reason : new Error("Test scheduler aborted.");
 }

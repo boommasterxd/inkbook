@@ -37,6 +37,10 @@ export interface ExportIdentity extends ExecutorIdentity {
   readonly modelRevision: DocumentRevision;
 }
 
+export function exportIdentityKey(identity: ExportIdentity): string {
+  return `${identity.sessionId}:${identity.workerEpoch}:${identity.exportGeneration}:${identity.modelRevision}`;
+}
+
 interface FullExportRequest<TSnapshot> extends ExportIdentity {
   readonly baseModelRevision: null;
   readonly preparedPressurePaths?: readonly PreparedPressurePathHint[];

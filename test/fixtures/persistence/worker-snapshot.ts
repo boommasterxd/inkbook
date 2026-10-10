@@ -23,6 +23,14 @@ export function createTestStroke(): StrokeElementV1 {
   };
 }
 
+/** Spans multiple pressure windows so cancellation can interrupt contour preparation. */
+export function createMultiWindowPressureStroke(): StrokeElementV1 {
+  return {
+    ...createTestStroke(),
+    points: Array.from({ length: 192 }, (_, index) => [index, index % 7, (index % 9) / 10]).flat(),
+  };
+}
+
 export function createWorkerSnapshot(elements: InkElementV1[], revision = 0): InkSnapshotV1 {
   return {
     elements,

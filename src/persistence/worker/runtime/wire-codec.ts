@@ -55,7 +55,7 @@ import {
 } from "./export-output-wire";
 import { adoptOwnedSvgOutput, adoptOwnedSvgOutputSync } from "../../scheduling/owned-svg-output";
 import { isDocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
-import { assertScenePathIds } from "./scene-path-limits";
+import { assertScenePathRequest } from "./scene-path-limits";
 
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
 interface FullExportWireRequest extends Omit<
@@ -215,7 +215,7 @@ export function decodeRuntimeRequest(
   }
   if (request.type === "unlock") return decodeUnlockRequest(request);
   if (request.type === "prepare-scene-paths") {
-    assertScenePathIds(request.ids);
+    assertScenePathRequest(request);
     if (!Number.isSafeInteger(request.basisRevision) || request.basisRevision < 0)
       throw new TypeError("Invalid scene preparation revision.");
   }

@@ -19,6 +19,7 @@ export class VisibilityEdgeQuery {
   #queryCursor = 0;
   #cursor = 0;
   #current: Bounds | undefined;
+  #spatialCursor: ReturnType<NonNullable<SceneStorePort["beginQuery"]>> | undefined;
 
   public constructor(
     private readonly store: SceneStorePort,
@@ -49,8 +50,26 @@ export class VisibilityEdgeQuery {
     };
     while (this.#queryCursor < this.#fringes.length) {
       if (now() >= deadline) return "pending";
-      this.store.query(this.#fringes[this.#queryCursor++]!, sink);
-      this.instrumentation.spatialQueries += 1;
+      if (this.store.beginQuery === undefined) {
+        this.store.query(this.#fringes[this.#queryCursor++]!, sink);
+        this.instrumentation.spatialQueries += 1;
+        continue;
+      }
+      if (this.#spatialCursor === undefined) {
+        this.#spatialCursor = this.store.beginQuery(this.#fringes[this.#queryCursor]!);
+        this.instrumentation.spatialQueries += 1;
+      }
+      // One indexed visit is indivisible; the owning frame deadline admits all further work.
+      const step = this.#spatialCursor.advance(1);
+      if (step.stale) {
+        this.release();
+        return "pending";
+      }
+      for (const id of step.ids) sink.add(id);
+      if (step.done) {
+        this.#spatialCursor = undefined;
+        this.#queryCursor += 1;
+      }
     }
     while (this.#cursor < this.#ids.length) {
       if (now() >= deadline) return "pending";
@@ -66,6 +85,8 @@ export class VisibilityEdgeQuery {
   }
 
   public release(): void {
+    this.#spatialCursor?.cancel();
+    this.#spatialCursor = undefined;
     this.#ids.length = 0;
     this.#seen.clear();
     this.#entered.length = 0;
@@ -80,6 +101,16 @@ export class VisibilityEdgeQuery {
     return (
       this.#current !== undefined &&
       (this.#queryCursor < this.#fringes.length || this.#cursor < this.#ids.length)
+    );
+  }
+
+  public memoryUsage(): number {
+    return (
+      this.#ids.length * 16 +
+      this.#seen.size * 32 +
+      this.#entered.length * 8 +
+      this.#exited.length * 16 +
+      (this.#spatialCursor?.memoryUsage?.() ?? 0)
     );
   }
 }

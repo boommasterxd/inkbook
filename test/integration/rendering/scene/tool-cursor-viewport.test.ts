@@ -10,16 +10,18 @@ function setup() {
   const h = createSceneFixture(createAllElementSnapshot().page, new FakeSceneStore());
   h.scheduler.runAll();
   const scene = fakeNode(h.renderer.svg);
-  const document = scene.ownerDocument;
+  const document = h.parentDocument;
   const surface = document.body.nodes[0]!;
   const cursor = surface.nodes[0]!;
   return { ...h, scene, document, surface, cursor };
 }
 
 describe("viewport tool cursor surface", () => {
-  it("owns an isolated inert surface in the scene's document and removes it on disposal", () => {
+  it("owns an inert cursor in the presentation document and removes it on disposal", () => {
     const h = setup();
     expect(h.surface.parent).toBe(h.document.body);
+    expect(h.scene.ownerDocument).not.toBe(h.document);
+    expect(h.renderer.inputSurface.ownerDocument).toBe(h.document);
     expect(h.cursor.parent).toBe(h.surface);
     expect(h.scene.nodes).not.toContain(h.cursor);
     expect(h.surface.attributes.get("class")).toBe("inkbook-tool-cursor-surface");

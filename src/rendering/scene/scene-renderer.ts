@@ -3,13 +3,13 @@ import type { SceneToolCursorFrameReader } from "./tool-cursor";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type * as Schema from "../../domain/schema/public";
 import { SceneBackgroundCache } from "./background-cache";
+import { DetachedSceneElementCache } from "./detached-element-cache";
 import { DEFAULT_CAMERA } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import type { ProgressivePreviewTransform } from "./progressive-element-preview";
 import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import { SceneFrameWork } from "./scene-frame-work";
-import { completeSceneFrame } from "./scene-frame-completion";
 import * as stats from "./instrumentation";
 import { ScenePathCache, type PreparedScenePath } from "./path-cache";
 import { ScenePreviewCommitController, type PreviewCommitHandoff } from "./preview-commit-handoff";
@@ -19,7 +19,7 @@ import { SceneContentScheduler } from "./scene-content-scheduler";
 import { SceneDeltaCoordinator } from "./scene-delta-coordinator";
 import { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import { SceneMotionController } from "./scene-motion-controller";
-import { SceneResourcePolicy } from "./scene-resource-policy";
+import { SceneResourcePolicy, validateScrollPreloadMargin } from "./scene-resource-policy";
 import { SceneVisibilityCoordinator } from "./scene-visibility-coordinator";
 import * as runtime from "./scene-runtime";
 import type * as Scene from "./types";
@@ -40,6 +40,7 @@ export class SvgSceneRenderer {
   readonly #deltas: SceneDeltaCoordinator;
   readonly #stats: Scene.MutableSceneInstrumentation = stats.createInstrumentation();
   #layoutDirty = true;
+  #layoutInvalidationVersion = 0;
   readonly #liveStroke: SceneLiveStrokeRenderer;
   readonly #motion: SceneMotionController;
   #page: Schema.PageV1;
@@ -47,6 +48,7 @@ export class SvgSceneRenderer {
   readonly #previewCommits: ScenePreviewCommitController;
   readonly #resourcePolicy: SceneResourcePolicy;
   readonly #pathCache = new ScenePathCache();
+  readonly #detachedCache = new DetachedSceneElementCache();
   readonly #elementPreviews: SceneElementPreviews;
   readonly #transformPreviews: SceneTransformPreviewController;
   readonly #scheduler: Scene.SceneRendererOptions["workScheduler"];
@@ -55,17 +57,16 @@ export class SvgSceneRenderer {
   readonly #visibility: SceneVisibilityState;
   readonly #options: Scene.SceneRendererOptions;
   public constructor(options: Scene.SceneRendererOptions) {
+    if (options.scrollPreloadMarginPx !== undefined)
+      validateScrollPreloadMargin(options.scrollPreloadMarginPx);
     this.#options = options;
     this.#page = options.page;
     this.#scheduler = options.workScheduler;
-    this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, (time, scene) =>
-      this.renderFrame(time, scene),
-    );
-    this.#dom = new SceneDom(
-      options.container,
-      options.accessibleName ?? "Inkbook canvas",
-      options.inputHandlers ?? {},
-    );
+    const render = this.renderFrame.bind(this);
+    this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, render);
+    this.#dom = SceneDom.create(options);
+    this.#dom.onSurfaceInvalidated = (themeChanged) =>
+      themeChanged === true ? this.invalidateLayout() : this.#frames.schedule();
     this.#frameWriter = new SceneFrameWriter(this.#dom, this.#backgroundCache, this.#stats);
     this.#visibility = new SceneVisibilityState(options.store, this.#stats);
     this.#liveStroke = new SceneLiveStrokeRenderer(
@@ -80,19 +81,22 @@ export class SvgSceneRenderer {
       this.#visibility,
       this.#pathCache,
       this.#stats,
+      {
+        detachedCache: this.#detachedCache,
+        onPathsReady: () => this.#frames.schedule(),
+        scheduler: this.#scheduler,
+        takePreparedPath: (record) => this.#visibilityCoordinator.takePreparedPath(record),
+      },
     );
     this.#contentScheduler = new SceneContentScheduler(this.#content, this.#scheduler);
-    this.#motion = new SceneMotionController(
-      this.#dom,
-      this.#content,
-      this.#stats,
-      options.reducedMotion ?? false,
-    );
+    const reducedMotion = options.reducedMotion ?? false;
+    this.#motion = new SceneMotionController(this.#dom, this.#content, this.#stats, reducedMotion);
     this.#resourcePolicy = new SceneResourcePolicy(
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
-      () => this.#elementPreviews.memoryUsage() + this.#transformPreviews.memoryUsage(),
+      () => this.#visibilityCoordinator.previewMemoryUsage(),
+      this.#detachedCache,
     );
     this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
     this.#transformPreviews = new SceneTransformPreviewController(
@@ -106,12 +110,13 @@ export class SvgSceneRenderer {
       this.#resourcePolicy,
       this.#transformPreviews,
       this.#elementPreviews,
+      { cache: this.#pathCache, onPrepared: () => this.#frames.schedule(), scene: options },
     );
-    this.#visibilityCoordinator.setInitialVisibleOnly(options.deferInitialOverscan ?? false);
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
     this.#frameWork = new SceneFrameWork({
       backgroundPending: () => this.#backgroundDirty && this.#viewport !== undefined,
+      queryPending: () => this.#visibilityCoordinator.hasPendingQuery,
       content: this.#content,
       contentScheduler: this.#contentScheduler,
       elements: this.#elementPreviews,
@@ -131,6 +136,7 @@ export class SvgSceneRenderer {
       previews: this.#previewCommits,
       routing: {
         content: this.#content,
+        detachedCache: this.#detachedCache,
         invalidateVisibility: () => this.#visibilityCoordinator.invalidate(),
         markOrderVisibilityDirty: () => this.#visibilityCoordinator.invalidateOrder(),
         pathCache: this.#pathCache,
@@ -147,12 +153,14 @@ export class SvgSceneRenderer {
   public get svg(): SVGSVGElement {
     return this.#dom.svg;
   }
+  public readonly revealSurface = () => this.#dom.revealSurface();
+  public readonly setZoomBlockSize = (value: number) => this.#dom.setZoomBlockSize(value);
   public get mountedCount(): number {
     return this.#content.mountedCount;
   }
   public applyDelta(delta: Scene.SceneStoreDelta): void {
     this.assertActive();
-    this.#deltas.apply(delta);
+    this.#deltas.apply(delta, this.#visibilityCoordinator);
     this.#elementPreviews.applyMounted(this.#content.takeCommittedPreviewIds());
     this.#liveStroke.settleCommits((id) => this.#options.store.get(id) === undefined);
     this.#frameWriter.livePathCommits.settle((id) => this.#options.store.get(id) === undefined);
@@ -168,12 +176,21 @@ export class SvgSceneRenderer {
     this.#visibilityCoordinator.setInitialVisibleOnly(false);
     this.#frames.schedule();
   }
+  public setScrollPreloadMarginPx(value: number): void {
+    this.assertActive();
+    if (this.#visibilityCoordinator.setScrollPreloadMarginPx(value)) this.#frames.schedule();
+  }
   public setActiveDocumentMemoryPressure(active: boolean): void {
     this.assertActive();
     this.#resourcePolicy.setActiveDocumentMemoryPressure(active);
+    this.#visibilityCoordinator.setActiveDocumentMemoryPressure(active);
+    if (this.#content.hasMountedWork) this.#frames.schedule();
   }
-  public readonly memoryUsage = (): ReturnType<SceneResourcePolicy["memoryUsage"]> =>
-    this.#resourcePolicy.memoryUsage();
+  public setDocumentPrewarmEnabled(enabled: boolean): void {
+    this.assertActive();
+    this.#visibilityCoordinator.setDocumentPrewarmEnabled(enabled);
+  }
+  public readonly memoryUsage = () => this.#resourcePolicy.memoryUsage();
   public beginPreviewCommit(): PreviewCommitHandoff {
     this.assertActive();
     return this.#previewCommits.begin();
@@ -191,16 +208,17 @@ export class SvgSceneRenderer {
   }
   public setViewport(viewport: Scene.SceneViewport): void {
     runtime.validateViewport(viewport);
+    this.#layoutDirty = false;
     if (runtime.sameViewport(this.#viewport, viewport)) return;
     if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
     this.#viewport = viewport;
     this.#frameWriter.invalidateCursorLayout();
     this.#visibilityCoordinator.setContext(this.#camera, viewport);
-    this.#layoutDirty = false;
     this.#frames.schedule();
   }
   public invalidateLayout(requestCommit = false): void {
     this.assertActive();
+    this.#layoutInvalidationVersion += 1;
     this.#layoutDirty = true;
     this.#frameWriter.invalidateCursorLayout();
     if (requestCommit || this.#visibilityCoordinator.initialVisibleOnly)
@@ -209,9 +227,8 @@ export class SvgSceneRenderer {
   }
   public setPage(page: Schema.PageV1, height = this.#pageHeight): void {
     this.assertActive();
-    if (!Number.isFinite(height) || height <= 0) {
+    if (!Number.isFinite(height) || height <= 0)
       throw new RangeError("Page height must be finite and positive.");
-    }
     if (page === this.#page && height === this.#pageHeight) return;
     this.#page = page;
     this.#pageHeight = height;
@@ -342,7 +359,6 @@ export class SvgSceneRenderer {
     this.assertActive();
     runtime.validateNonNegativeDuration(durationMs);
     this.#deltas.addFades(ids);
-    // Fade start is optional here; defer it when this window's shared slice is spent.
     const slice = this.#scheduler.shouldYield()
       ? undefined
       : { deadline: this.#scheduler.deadline(), now: () => this.#scheduler.now() };
@@ -391,19 +407,15 @@ export class SvgSceneRenderer {
     if (this.#content.promoteVisible(id)) this.#frames.schedule();
   }
   public instrumentation(): Scene.SceneInstrumentationSnapshot {
-    stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
-    this.#motion.refreshInstrumentation();
-    return stats.snapshotInstrumentation(this.#stats);
+    return this.#resourcePolicy.instrumentation(this.#stats, this.#backgroundCache);
+  }
+  public get layoutInvalidationVersion(): number {
+    return this.#layoutInvalidationVersion;
   }
   public resetInstrumentation(): void {
-    stats.resetInstrumentation(this.#stats);
-    this.#pathCache.resetStatistics();
-    this.#backgroundCache.resetStatistics();
-    this.#motion.refreshInstrumentation();
+    this.#resourcePolicy.resetInstrumentation(this.#stats, this.#backgroundCache);
   }
-  public mountedIds(band: RenderBand): readonly string[] {
-    return this.#content.mountedIds(band);
-  }
+  public readonly mountedIds = (band: RenderBand) => this.#content.mountedIds(band);
   public replaceGeneration(): void {
     this.assertActive();
     if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
@@ -415,6 +427,7 @@ export class SvgSceneRenderer {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#frames.dispose();
+    this.#visibilityCoordinator.release();
     this.#liveStroke.dispose();
     this.#frameWriter.release();
     this.#previewCommits.release();
@@ -422,11 +435,10 @@ export class SvgSceneRenderer {
     this.#deltas.release();
     this.#dom.release();
     this.#backgroundCache.clear();
-    this.#visibility.release();
     this.#content.release();
     this.#transformPreviews.release();
     this.#elementPreviews.release();
-    this.#pathCache.release();
+    this.#resourcePolicy.releaseCaches();
     this.#sceneCommits.release();
   }
   private renderFrame(frameTime: number, scene: boolean): void {
@@ -448,15 +460,12 @@ export class SvgSceneRenderer {
     }
     this.#frameWriter.readToolCursor();
     this.#visibilityCoordinator.releaseCommittedPreview(this.#previewCommits);
-    this.#visibilityCoordinator.prepare(this.#viewport, this.#camera, deadline, () =>
-      this.#scheduler.now(),
-    );
+    this.#visibilityCoordinator.prepare(this.#viewport, this.#camera, deadline);
     this.#transformPreviews.refreshContext();
     this.#visibilityCoordinator.releaseLostPreviews(
       this.#transformPreviews.values,
       () => this.#elementPreviews.values,
     );
-    // Pointer completion is indivisible input feedback; it still uses the shared deadline.
     this.flushPointerFeedbackFrame(deadline);
     this.#motion.writeSelectionFeedback(startedAt);
     const work = this.#frameWork.write(
@@ -471,17 +480,7 @@ export class SvgSceneRenderer {
       this.#motion,
       startedAt,
     );
-    completeSceneFrame(
-      work,
-      {
-        query: this.#visibilityCoordinator.hasPendingQuery,
-        motion: this.#motion.pending,
-        exits: this.#content.hasPendingExitCleanup,
-      },
-      this.#sceneCommits,
-      this.#frames,
-    );
-    stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
+    this.#frameWork.complete(work, this.#sceneCommits, this.#frames);
     if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
   }
   private writeBackground(deadline: number, allowAtomic = false): boolean {

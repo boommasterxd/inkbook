@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { QueryCostStore } from "../../../fixtures/rendering/scene";
 import type { SceneViewport } from "../../../../src/rendering/scene/types";
 import {
@@ -101,7 +102,7 @@ describe("resumable scene reconciliation", () => {
     });
   });
 
-  it("allows one bounded mount when a query consumes the shared frame deadline", () => {
+  it("defers viewport classification when a query consumes the shared frame deadline", () => {
     const scheduler = new AdvancingScheduler();
     const store = new QueryCostStore(scheduler);
     const expected = populateRectangles(store, 12);
@@ -109,10 +110,11 @@ describe("resumable scene reconciliation", () => {
 
     scheduler.runNext();
 
-    expect(renderer.mountedCount).toBe(1);
+    expect(renderer.mountedCount).toBe(0);
     expect(renderer.instrumentation()).toMatchObject({
-      mountSlices: 1,
+      mountSlices: 0,
       spatialQueries: 1,
+      visibilityReconcileVisits: 0,
     });
 
     scheduler.runAll();
@@ -252,7 +254,7 @@ describe("resumable scene reconciliation after invalidation", () => {
     const renderer = createRenderer(store, scheduler);
 
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(64);
+    expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
     const prepared = renderer.instrumentation().geometryBuilds;
     expect(prepared).toBeGreaterThan(0);
     expect(prepared).toBeLessThan(store.records.size);
@@ -266,7 +268,7 @@ describe("resumable scene reconciliation after invalidation", () => {
     expect(renderer.mountedCount).toBe(store.records.size);
     expect(renderer.instrumentation()).toMatchObject({
       pathCacheEvictions: 0,
-      pathCacheHits: prepared,
+      detachedCacheHits: prepared,
       spatialQueries: 1,
     });
   });
@@ -339,15 +341,20 @@ describe("pending scene state replacement", () => {
     const committedOrder = [...ids].reverse();
     expect(renderer.mountedIds("content")).toEqual(committedOrder);
     expect(renderer.instrumentation().domFragmentRuns).toBe(1);
+    const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const roots = [...contentGroup.nodes];
 
     renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
     scheduler.runNext();
     expect(renderer.mountedCount).toBeGreaterThan(0);
     expect(renderer.mountedCount).toBeLessThan(ids.length);
-    const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
     expect(contentGroup.nodes).toHaveLength(renderer.mountedCount);
+    expect(renderer.instrumentation().domExits).toBe(ids.length - contentGroup.nodes.length);
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(0);
+    expect(contentGroup.nodes).toHaveLength(0);
+    expect(roots.every((node) => node.parent === undefined)).toBe(true);
+    expect(renderer.instrumentation()).toMatchObject({ domExits: 20, detachedCacheEntries: 20 });
   });
 
   it("replaces pending work after store additions, removals, and geometry changes", () => {

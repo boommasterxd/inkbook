@@ -20,6 +20,7 @@ import { SettingsControlValues, type SettingsControlKey } from "./control-values
 import { dropdown, resetAction, settingsAction, toggle } from "./definition-helpers";
 import { createLabels, generalGroup } from "./general-definitions";
 import { pageDefaultsGroup } from "./page-defaults";
+import { performanceGroup } from "./performance-definitions";
 import { createObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
 import { snappingGroup } from "./snapping-definitions";
 import { shortcutGroup } from "./shortcut-definitions";
@@ -43,6 +44,7 @@ function cloneDefaults<K extends keyof InkbookSettingsV4["toolDefaults"]>(
 
 export class InkbookSettingTab extends PluginSettingTab {
   private readonly controls: SettingsControlValues;
+  private readonly updateListeners = new Set<() => void>();
 
   public constructor(
     app: App,
@@ -58,6 +60,18 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   public override getControlValue(key: string): unknown {
     return this.controls.get(key as SettingsControlKey);
+  }
+
+  public override update(): void {
+    super.update();
+    for (const listener of [...this.updateListeners]) listener();
+  }
+
+  public subscribeUpdates(listener: () => void): () => void {
+    this.updateListeners.add(listener);
+    return () => {
+      this.updateListeners.delete(listener);
+    };
   }
 
   public override async setControlValue(key: string, value: unknown): Promise<void> {
@@ -82,12 +96,17 @@ export class InkbookSettingTab extends PluginSettingTab {
         isCustomFolder: () => this.isCustomFolder(),
         canCreateFolder: () => this.folderPort !== undefined && this.isCustomFolder(),
         createFolder: (element) => void this.createCustomFolder(element),
+        reset: () => this.resetGeneral(),
+      }),
+      performanceGroup({
+        get: (key) => this.controls.get(key),
+        set: (key, value) => this.controls.set(key, value),
         refreshRateStatus: () =>
           this.refreshRateStatus?.() ?? {
             kind: "detecting",
             refreshRate: DEFAULT_REFRESH_RATE,
           },
-        reset: () => this.resetGeneral(),
+        reset: () => this.resetPerformance(),
       }),
       pageDefaultsGroup(pageValues, () => this.resetPageDefaults()),
       drawingToolsGroup(toolValues, () => this.resetDrawingTools()),
@@ -145,11 +164,26 @@ export class InkbookSettingTab extends PluginSettingTab {
       .updateVaultSettings((settings) => ({
         ...settings,
         startupTool: defaults.startupTool,
-        selectionHighlightsEnabled: defaults.selectionHighlightsEnabled,
-        refreshRatePreference: defaults.refreshRatePreference,
         filePlacement: structuredClone(defaults.filePlacement),
       }))
       .then(() => this.update());
+  }
+
+  private resetPerformance(): void {
+    const defaults = createBuiltInSettings();
+    void this.store
+      .updateVaultSettings((settings) => ({
+        ...settings,
+        selectionHighlightsEnabled: defaults.selectionHighlightsEnabled,
+        refreshRatePreference: defaults.refreshRatePreference,
+      }))
+      .then(() => {
+        this.store.updateDeviceSettings((settings) => ({
+          ...settings,
+          scrollPreloadMarginPx: createBuiltInDeviceSettings().scrollPreloadMarginPx,
+        }));
+        this.update();
+      });
   }
 
   private resetPageDefaults(): void {

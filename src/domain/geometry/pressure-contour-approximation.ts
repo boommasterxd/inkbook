@@ -4,6 +4,7 @@ import type { PressureBoundarySegment } from "./pressure-boundary-intersections"
 import { iteratePressureBoundarySimplification } from "./pressure-boundary-simplification";
 import { iteratePressureContourQuantization } from "./pressure-contour-quantization";
 import { PRESSURE_PREPARATION_CHECK_INTERVAL } from "./pressure-union";
+import type { PressureAdditions } from "./pressure-additions";
 
 export function pressureContourOutwardError(width: number): number {
   return Math.min(0.5, width / 32);
@@ -13,25 +14,26 @@ export function pressureContourOutwardError(width: number): number {
 export function* iteratePressureContourApproximation(
   loop: readonly PressureBoundarySegment[],
   width: number,
-  additions: (readonly PointV1[])[],
+  additions: PressureAdditions,
 ): Generator<void, PressureBoundarySegment[]> {
   if (loop.length === 0) return [];
   const grid = width >= 10 ? 0.1 : width >= 1 ? 0.01 : 0.001;
   const tolerance = (pressureContourOutwardError(width) - Math.SQRT2 * (grid + 0.0005)) / 2;
   if (tolerance <= 0) return [...loop];
   const triangles: (readonly PointV1[])[] = [];
+  const triangleCount = { count: 0 };
+  const staged = Array.isArray(additions) ? triangles : triangleCount;
   const points = [loop[0]!.start];
   for (const edge of loop) {
     if (edge.kind === "line") points.push(edge.end);
-    else yield* appendArc(points, edge, tolerance, triangles);
+    else yield* appendArc(points, edge, tolerance, staged);
     if (points.length > 4096) return [...loop];
     if (points.length % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   }
-  const reduced = yield* iteratePressureBoundarySimplification(points, tolerance, (triangle) =>
-    additions.push(triangle),
-  );
-  const rounded = yield* iteratePressureContourQuantization(reduced, grid, triangles);
-  additions.push(...triangles);
+  const reduced = yield* iteratePressureBoundarySimplification(points, tolerance, additions);
+  const rounded = yield* iteratePressureContourQuantization(reduced, grid, staged);
+  if (Array.isArray(additions)) additions.push(...triangles);
+  else additions.count += triangleCount.count;
   return rounded.slice(1).map((end, index) => ({ kind: "line", start: rounded[index]!, end }));
 }
 
@@ -39,7 +41,7 @@ function* appendArc(
   points: PointV1[],
   arc: PressureBoundaryArc,
   tolerance: number,
-  additions: (readonly PointV1[])[],
+  additions: PressureAdditions,
 ): Generator<void> {
   const angle = Math.atan2(arc.start.y - arc.center.y, arc.start.x - arc.center.x);
   const stop = angle + arc.sweep;
@@ -61,8 +63,6 @@ function* appendArc(
     for (let part = 0; part < count; part += 1) {
       const from = first + ((last - first) * part) / count;
       const to = first + ((last - first) * (part + 1)) / count;
-      const start = pressureArcPoint(arc, from);
-      const end = pressureArcPoint(arc, to);
       const middle = angle + (arc.sweep * (from + to)) / 2;
       const radius = arc.radius / Math.cos((arc.sweep * (to - from)) / 2);
       const support = {
@@ -70,7 +70,9 @@ function* appendArc(
         y: clamp(arc.center.y + Math.sin(middle) * radius, arc.center.y, arc.radius),
       };
       points.push(support);
-      additions.push([start, support, end]);
+      if (Array.isArray(additions))
+        additions.push([pressureArcPoint(arc, from), support, pressureArcPoint(arc, to)]);
+      else additions.count += 1;
       if (points.length % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
       if (points.length > 4096) return;
     }

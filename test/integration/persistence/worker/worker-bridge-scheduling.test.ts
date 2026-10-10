@@ -4,6 +4,7 @@ import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-f
 import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
 import {
   createOneStrokeWorkerSnapshot,
+  createWorkerBridgeClient,
   createWorkerBridgeHarness,
 } from "../../../fixtures/persistence/worker-bridge";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
@@ -20,6 +21,18 @@ function fullExportRequest() {
     type: "export-full" as const,
     workerEpoch: 1,
   };
+}
+
+function isExportRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    "request" in message &&
+    typeof message.request === "object" &&
+    message.request !== null &&
+    "type" in message.request &&
+    message.request.type === "export-full"
+  );
 }
 
 describe("document worker export admission", () => {
@@ -115,6 +128,186 @@ describe("document worker export admission", () => {
     expect(host.pendingTimers).toBe(0);
   });
 });
+
+describe("document worker navigation admission", () => {
+  it.each([false, true])(
+    "admits navigation paths with reserve=%s while export and drawing gates stay independent",
+    async (navigationReserve) => {
+      const harness = createWorkerBridgeHarness();
+      const client = createWorkerBridgeClient(harness.clientEndpoint);
+      const snapshot = createOneStrokeWorkerSnapshot();
+      const identity = {
+        operationId: 1,
+        purpose: "background" as const,
+        sessionId: "session-a",
+        workerEpoch: 1,
+      };
+      client.setNavigationActive(true);
+      await client.execute({
+        baseModelRevision: null,
+        identity,
+        modelRevision: 0,
+        snapshot,
+        type: "model-sync-full",
+      });
+      client.requestPrewarm();
+      const exportRequest = fullExportRequest();
+      let exported = false;
+      const exportPending = client.execute(exportRequest).then((result) => {
+        exported = true;
+        return result;
+      });
+      client.setLiveInputActive(true);
+      const paths = client.execute({
+        basisRevision: 0,
+        identity,
+        ids: [snapshot.elements[0]!.id],
+        ...(navigationReserve ? { speculative: true, navigationReserve: true } : {}),
+        type: "prepare-scene-paths",
+      });
+      await Promise.resolve();
+      expect(harness.runtime.instrumentation.shapeBuilds).toBe(0);
+      client.setLiveInputActive(false);
+      expect((await paths).type).toBe("prepare-scene-paths-success");
+      expect(exported).toBe(false);
+      expect(harness.runtime.instrumentation.prewarmVisitedElements).toBe(0);
+      expect(harness.clientEndpoint.sentMessages.some(isExportRequest)).toBe(false);
+      client.setLiveInputActive(true);
+      client.setNavigationActive(false);
+      await Promise.resolve();
+      expect(exported).toBe(false);
+      client.setLiveInputActive(false);
+      expect((await exportPending).type).toBe("export-success");
+      client.terminate();
+      harness.detach();
+    },
+  );
+});
+
+describe("document worker navigation adoption", () => {
+  it("holds a completed export on the main thread while required navigation paths can settle", async () => {
+    const harness = createWorkerBridgeHarness();
+    const client = createWorkerBridgeClient(harness.clientEndpoint);
+    const post = harness.hostEndpoint.postMessage.bind(harness.hostEndpoint);
+    const intercept = vi
+      .spyOn(harness.hostEndpoint, "postMessage")
+      .mockImplementation((message, transfer) => {
+        if (
+          typeof message === "object" &&
+          message !== null &&
+          "result" in message &&
+          typeof message.result === "object" &&
+          message.result !== null &&
+          "type" in message.result &&
+          message.result.type === "export-success-wire"
+        )
+          client.setNavigationActive(true);
+        post(message, transfer);
+      });
+    let adopted = false;
+    const pending = client.execute(fullExportRequest()).then((result) => {
+      adopted = true;
+      return result;
+    });
+    await vi.waitFor(() => expect(harness.runtime.instrumentation.unacknowledgedExports).toBe(1));
+    await Promise.resolve();
+    expect(adopted).toBe(false);
+    expect(
+      (
+        await client.execute({
+          basisRevision: 0,
+          identity: {
+            operationId: 1,
+            purpose: "background",
+            sessionId: "session-a",
+            workerEpoch: 1,
+          },
+          ids: [createOneStrokeWorkerSnapshot().elements[0]!.id],
+          type: "prepare-scene-paths",
+        })
+      ).type,
+    ).toBe("prepare-scene-paths-success");
+    expect(adopted).toBe(false);
+    client.setNavigationActive(false);
+    expect((await pending).type).toBe("export-success");
+    intercept.mockRestore();
+    client.terminate();
+    harness.detach();
+  });
+});
+
+it.each(["required", "drawing", "navigation"] as const)(
+  "handles a failed speculative cancellation transport during %s without a synchronous exception",
+  async (action) => {
+    const harness = createWorkerBridgeHarness();
+    const failure = vi.fn();
+    const client = new WorkerDocumentRuntimePort(() => harness.clientEndpoint, {
+      workScheduler: new TestWorkScheduler(),
+      frameIntervalMilliseconds: () => 1_000 / 120,
+      onExecutorFailure: failure,
+    });
+    const post = harness.clientEndpoint.postMessage.bind(harness.clientEndpoint);
+    const intercept = vi
+      .spyOn(harness.clientEndpoint, "postMessage")
+      .mockImplementation((message, transfer) => {
+        if (
+          typeof message === "object" &&
+          message !== null &&
+          "action" in message &&
+          message.action === "cancel-scene-paths"
+        )
+          throw new Error("Cancellation transport failed.");
+        post(message, transfer);
+      });
+    const request = {
+      basisRevision: 0,
+      identity: {
+        operationId: 1,
+        purpose: "background" as const,
+        sessionId: "session-a",
+        workerEpoch: 1,
+      },
+      ids: [createOneStrokeWorkerSnapshot().elements[0]!.id],
+      speculative: true,
+      type: "prepare-scene-paths" as const,
+    };
+    const pending = client.execute(request).catch((error: unknown) => error);
+    try {
+      if (action === "required") {
+        let required: Promise<unknown> | undefined;
+        expect(() => {
+          required = client.execute({ ...request, speculative: false });
+        }).not.toThrow();
+        await expect(required).rejects.toThrow("request dispatch failed");
+        expect(failure).toHaveBeenCalledWith({
+          kind: "error",
+          phase: "dispatch",
+          request: { ...request, speculative: false },
+        });
+      } else {
+        expect(() =>
+          action === "drawing" ? client.setLiveInputActive(true) : client.setNavigationActive(true),
+        ).not.toThrow();
+        expect(failure).toHaveBeenCalledWith({ kind: "error", phase: "dispatch" });
+      }
+      expect(await pending).toMatchObject({
+        code: "scene-preparation-cancelled",
+        identity: request.identity,
+        retryable: true,
+        type: "runtime-failure",
+      });
+      expect(failure).toHaveBeenCalledOnce();
+      expect(harness.clientEndpoint.terminated).toBe(true);
+      await expect(client.execute({ ...request, speculative: false })).rejects.toThrow(
+        "terminated",
+      );
+    } finally {
+      intercept.mockRestore();
+      client.terminate();
+      harness.detach();
+    }
+  },
+);
 
 describe("document worker scheduling controls", () => {
   it("applies only finite positive scheduling profiles at the worker host", () => {

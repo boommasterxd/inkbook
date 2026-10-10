@@ -18,10 +18,12 @@ import type { ActiveEditorHistory } from "./history";
 import type { Keymap } from "obsidian";
 import type { EditorChromeOpenings } from "../editor-chrome-openings";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import type { NavigationCursorLayout } from "./navigation-layout";
 
 export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly container: HTMLElement;
   readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => number | void;
+  readonly onNavigationLayout?: (layout: NavigationCursorLayout) => void;
   readonly backgroundSpacing: () => BackgroundSpacingDefaults;
   readonly defaults: ToolDefaultsV1;
   readonly deviceSettings: InkbookDeviceSettingsV2;

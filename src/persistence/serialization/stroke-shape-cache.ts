@@ -57,12 +57,13 @@ export class StrokeShapeCache {
   ): Promise<readonly SvgPathPart[]> {
     const cached = this.read(stroke);
     if (cached !== undefined) return cached;
-    const job = new CanonicalElementPathPreparation(stroke);
+    const job = new CanonicalElementPathPreparation(stroke, undefined, "path-only");
     try {
       for (;;) {
         context.signal.throwIfAborted();
         const pending = context.checkpoint();
         if (pending !== undefined) await pending;
+        context.signal.throwIfAborted();
         if (job.stepOperation()) break;
       }
       context.signal.throwIfAborted();

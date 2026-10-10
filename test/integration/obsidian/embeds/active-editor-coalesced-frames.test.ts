@@ -1,12 +1,81 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { GesturePreview } from "../../../../src/editor/gestures/public";
+import type { PointerSample } from "../../../../src/editor/input/index";
 import {
   CoalescedPointerInput,
   type CoalescedCreationSample,
   type CoalescedFrameSampleMode,
 } from "../../../../src/obsidian/embeds/active-editor/coalesced-input";
 import { ManualFrameScheduler } from "../../../fixtures/obsidian/manual-frame-scheduler";
+
+describe("active editor validated input observers", () => {
+  it("observes the validated ordered batch after one latest-sample dispatch without rereading", () => {
+    const fixture = setup("preserve");
+    const samples = [sample(10, 1), sample(20, 2)];
+    const getCoalescedEvents = vi.fn(() => samples);
+    const observer = vi.fn((batch: readonly CoalescedCreationSample[]) => {
+      expect(fixture.dispatchMove).toHaveBeenCalledExactlyOnceWith(batch[1]);
+      expect(fixture.project).toHaveBeenCalledTimes(3);
+    });
+
+    fixture.input.dispatch({ ...samples[1], getCoalescedEvents } as PointerEvent, false, observer);
+    fixture.scheduler.runNext();
+
+    expect(observer).toHaveBeenCalledOnce();
+    expect(observer.mock.calls[0]?.[0].map(({ x, time }) => [x, time])).toEqual([
+      [10, 1],
+      [20, 2],
+    ]);
+    expect(getCoalescedEvents).toHaveBeenCalledOnce();
+    expect(fixture.project).toHaveBeenCalledTimes(3);
+    expect(fixture.updateSamples.mock.calls[0]?.[0][0]).toBe(observer.mock.calls[0]?.[0][0]);
+  });
+
+  it.each(["invalid-time", "throwing-projection"])(
+    "never observes a batch with later %s",
+    (failure) => {
+      const fixture = setup("preserve");
+      const observer = vi.fn();
+      const later = sample(20, failure === "invalid-time" ? 1 : 3);
+      if (failure === "throwing-projection") {
+        Object.defineProperty(later, "pressure", {
+          get: () => {
+            throw new Error("Invalid sample");
+          },
+        });
+      }
+
+      expect(
+        fixture.input.dispatch(event([sample(10, 2), later, sample(30, 4)]), false, observer),
+      ).toBe(false);
+
+      expect(observer).not.toHaveBeenCalled();
+      expect(fixture.dispatchMove).not.toHaveBeenCalled();
+      expect(fixture.scheduler.pendingCount).toBe(0);
+    },
+  );
+
+  it("releases the dispatch batch when an observer fails", () => {
+    const fixture = setup("latest");
+    const observer = () => {
+      throw new Error("Observer failure");
+    };
+
+    expect(() =>
+      fixture.input.dispatch(event([sample(10, 1), sample(20, 2)]), false, observer),
+    ).toThrow("Observer failure");
+    fixture.routed.commit();
+    fixture.updateSamples.mockClear();
+    fixture.routed.update({ pointerId: 1, pointerType: "pen", pressure: 0.5, x: 99, y: 99 });
+    fixture.scheduler.runNext();
+
+    expect(fixture.updateSamples).toHaveBeenCalledExactlyOnceWith([
+      expect.objectContaining({ x: 99, time: 0 }),
+    ]);
+    expect(fixture.scheduler.pendingCount).toBe(0);
+  });
+});
 
 describe("active editor coalesced input frames", () => {
   it("preserves ordered stylus samples while publishing once per frame", () => {
@@ -82,20 +151,22 @@ function setup(frameSampleMode: CoalescedFrameSampleMode) {
     updateSamples(samples: readonly CoalescedCreationSample[]): void;
   };
   let routed: GesturePreview = preview;
+  const dispatchMove = vi.fn((pointer: PointerSample) => routed.update(pointer));
+  const project = vi.fn((pointer: PointerEvent) => ({
+    pointerId: pointer.pointerId,
+    pointerType: pointer.pointerType === "pen" ? ("pen" as const) : ("mouse" as const),
+    pressure: pointer.pressure,
+    x: pointer.clientX,
+    y: pointer.clientY,
+  }));
   const input = new CoalescedPointerInput({
-    dispatchMove: (pointer) => routed.update(pointer),
+    dispatchMove,
     frameScheduler: scheduler,
     now: () => 0,
-    project: (pointer) => ({
-      pointerId: pointer.pointerId,
-      pointerType: pointer.pointerType === "pen" ? "pen" : "mouse",
-      pressure: pointer.pressure,
-      x: pointer.clientX,
-      y: pointer.clientY,
-    }),
+    project,
   });
   routed = input.wrap(preview);
-  return { commit, input, revert, routed, scheduler, updateSamples };
+  return { commit, dispatchMove, input, project, revert, routed, scheduler, updateSamples };
 }
 
 function event(samples: readonly PointerEvent[]): PointerEvent {

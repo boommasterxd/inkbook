@@ -18,7 +18,7 @@ interface AutosaveVerifierOptions {
   readonly executor: () => DocumentRuntimePort;
   readonly isDisposed: () => boolean;
   readonly sessionId: string;
-  readonly switchToFallback: () => boolean;
+  readonly switchToFallback: () => boolean | Promise<boolean>;
   readonly workerEpoch: () => number;
 }
 
@@ -69,7 +69,7 @@ export class AutosavePersistedOutputVerifier {
     } catch {
       this.#assertLive();
       assertCurrentRead(read);
-      if (!this.#options.switchToFallback()) {
+      if (!(await this.#options.switchToFallback())) {
         throw new Error("Persisted output verification failed.");
       }
       return verify(this.#operationIdentity(purpose));

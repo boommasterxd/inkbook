@@ -33,6 +33,7 @@ function deviceSettingsEqual(
   right: InkbookDeviceSettingsV2,
 ): boolean {
   return (
+    left.scrollPreloadMarginPx === right.scrollPreloadMarginPx &&
     left.fingerDrawingEnabled === right.fingerDrawingEnabled &&
     left.penTapInsertion === right.penTapInsertion &&
     left.leftHandedToolbar === right.leftHandedToolbar &&

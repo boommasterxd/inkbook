@@ -35,6 +35,9 @@ export const LINE_SPACINGS = [25, 33.333333333333336, 50, 100] as const;
 export const PEN_TAP_INSERTIONS = ["off", "handwriting"] as const;
 export const MOTION_PREFERENCES = ["system", "full", "reduced"] as const;
 export const REFRESH_RATE_PREFERENCES = ["auto", 60, 90, 120, 144, 240] as const;
+export const DEFAULT_SCROLL_PRELOAD_MARGIN_PX = 300;
+export const MIN_SCROLL_PRELOAD_MARGIN_PX = 100;
+export const MAX_SCROLL_PRELOAD_MARGIN_PX = 800;
 export const SELECTION_AREAS = ["rectangle", "lasso"] as const;
 export const SELECTION_INCLUSIONS = ["fully-enclosed", "touched"] as const;
 export const CONFIGURABLE_SHORTCUT_ACTIONS = [
@@ -156,6 +159,7 @@ export interface InkbookSettingsV4 {
 
 export interface InkbookDeviceSettingsV2 {
   version: 2;
+  scrollPreloadMarginPx: number;
   fingerDrawingEnabled: boolean;
   penTapInsertion: (typeof PEN_TAP_INSERTIONS)[number];
   leftHandedToolbar: boolean;

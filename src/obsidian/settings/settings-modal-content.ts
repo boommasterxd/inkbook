@@ -27,16 +27,24 @@ export class SettingsModalContent {
   readonly #options: SettingsModalContentOptions;
   #definitionRenderer: SettingDefinitionRenderer | undefined;
   #shortcutView: ShortcutSettingsView | undefined;
+  readonly #unsubscribeUpdates: (() => void) | undefined;
   #disposed = false;
 
   public constructor(container: HTMLElement, options: SettingsModalContentOptions) {
     this.#container = container;
     this.#options = options;
     this.#render();
+    this.#unsubscribeUpdates =
+      options.view === "settings"
+        ? options.settingTab.subscribeUpdates(() => {
+            if (!this.#disposed) this.#renderPreservingScroll();
+          })
+        : undefined;
   }
 
   public dispose(): void {
     this.#disposed = true;
+    this.#unsubscribeUpdates?.();
     this.#disposeControls();
   }
 

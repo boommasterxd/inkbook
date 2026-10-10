@@ -10,7 +10,7 @@ import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import { hasPenContact } from "../../../editor/input/pointer-validation";
 
 import type { ActiveToolCursorController } from "./tool-cursor-controller";
-import type { CoalescedPointerInput } from "./coalesced-input";
+import type { CoalescedCreationSample, CoalescedPointerInput } from "./coalesced-input";
 import { selectionTargetAt } from "./controller-elements";
 import { isMacPlatform, normalizePointerType } from "./controller-helpers";
 import type { ActiveEditorHandleInteraction } from "./handle-interaction";
@@ -18,7 +18,7 @@ import type { ActiveEditorMenuController } from "./controller-menu";
 import type { ActiveEditorNavigation } from "./navigation";
 import type { ElementSceneStore } from "./scene-store";
 import type { SelectionFrameSession } from "../../../editor/selection/public";
-import { touchInteractionBlocksNativeScroll, touchPanDelta } from "./controller-touch";
+import { touchInteractionBlocksNativeScroll } from "./controller-touch";
 
 export interface ActiveEditorPointerOptions {
   readonly coalesced: CoalescedPointerInput;
@@ -178,6 +178,12 @@ export class ActiveEditorPointerController {
           ...(target === undefined ? {} : { target }),
         }),
     );
+    if (
+      event.pointerType === "touch" &&
+      ownsTouchPan(this.#options.getInput().interaction, event.pointerId)
+    ) {
+      this.#options.navigation.recordTouchPan(0, event.timeStamp);
+    }
     if (!interactionOwnsPointer(this.#options.getInput().interaction, event.pointerId)) {
       this.#setSnappingInverted(event.pointerId, null);
     }
@@ -209,9 +215,15 @@ export class ActiveEditorPointerController {
       if (event.cancelable) event.preventDefault();
       return;
     }
-    if (!this.#options.coalesced.dispatch(event)) this.handlePointerCancel(event);
+    if (
+      !this.#options.coalesced.dispatch(event, false, (samples) =>
+        this.#recordTouchPan(event, previous, samples),
+      )
+    ) {
+      this.handlePointerCancel(event);
+      return;
+    }
     const interaction = this.#options.getInput().interaction;
-    this.#recordTouchPan(event, previous);
     if (event.cancelable && claimsPointerGesture(event, interaction)) event.preventDefault();
     if (event.pointerType === "touch" && interaction?.phase === "page-pan") {
       event.stopPropagation();
@@ -226,18 +238,24 @@ export class ActiveEditorPointerController {
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
     if (this.#finishHandleRelease(event, pointer)) return;
-    const blocksHostGesture =
-      event.pointerType === "touch" && this.#options.getInput().interaction?.phase === "page-pan";
     const penContactOnly =
       (previous?.phase === "eraser-gesture" ||
         (previous?.phase === "tool-gesture" && previous.tool === "draw")) &&
       previous.pointerId === event.pointerId &&
       event.pointerType === "pen";
-    if (!this.#options.coalesced.dispatch(event, penContactOnly)) {
+    if (
+      !this.#options.coalesced.dispatch(event, penContactOnly, (samples) =>
+        this.#recordTouchPan(event, previous, samples, true),
+      )
+    ) {
       this.handlePointerCancel(event);
       return;
     }
-    this.#recordTouchPan(event, previous);
+    const interaction = this.#options.getInput().interaction;
+    const blocksHostGesture =
+      event.pointerType === "touch" &&
+      ownsTouchPan(interaction, event.pointerId) &&
+      interaction.phase === "page-pan";
     this.#options.dispatch({
       type: "pointer-up",
       pointerId: event.pointerId,
@@ -343,21 +361,28 @@ export class ActiveEditorPointerController {
     return undefined;
   }
 
-  #recordTouchPan(event: PointerEvent, previous: InputState["interaction"]): void {
+  #recordTouchPan(
+    event: PointerEvent,
+    previous: InputState["interaction"],
+    samples: readonly CoalescedCreationSample[],
+    terminal = false,
+  ): void {
     const current = this.#options.getInput().interaction;
     if (
       event.pointerType !== "touch" ||
-      current?.phase !== "page-pan" ||
-      previous === undefined ||
-      previous.phase === "pinch" ||
-      previous.pointerId !== event.pointerId
+      !ownsTouchPan(current, event.pointerId) ||
+      !ownsTouchPan(previous, event.pointerId)
     ) {
       return;
     }
-    this.#options.navigation.recordTouchPan(
-      touchPanDelta(current.current.x - previous.current.x),
-      event.timeStamp,
-    );
+    let previousX = previous.current.x;
+    for (const sample of samples) {
+      const delta = current.phase === "page-pan" ? sample.x - previousX : 0;
+      if (!(terminal && sample === samples[samples.length - 1] && delta === 0)) {
+        this.#options.navigation.recordTouchPan(delta, sample.time);
+      }
+      previousX = sample.x;
+    }
   }
 
   #isForeignHandlePointer(pointerId: number): boolean {
@@ -372,6 +397,20 @@ export class ActiveEditorPointerController {
   #setSnappingInverted(pointerId: number, inverted: boolean | null): void {
     this.#options.setSnappingInverted?.(pointerId, inverted);
   }
+}
+
+function ownsTouchPan(
+  interaction: InputState["interaction"],
+  pointerId: number,
+): interaction is Extract<
+  NonNullable<InputState["interaction"]>,
+  { readonly phase: "page-pan" | "touch-pending" }
+> {
+  return (
+    (interaction?.phase === "page-pan" || interaction?.phase === "touch-pending") &&
+    interaction.pointerType === "touch" &&
+    interaction.pointerId === pointerId
+  );
 }
 
 function interactionOwnsPointer(

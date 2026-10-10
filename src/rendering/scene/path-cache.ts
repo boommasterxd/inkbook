@@ -11,6 +11,7 @@ import { VersionedCache } from "../../domain/cache/versioned-cache";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { PATH_CACHE_MAX_BYTES, PATH_CACHE_MAX_ENTRIES } from "./constants";
+import { SceneGeometryAliases } from "./scene-geometry-aliases";
 
 const PATH_PART_OVERHEAD_BYTES = 48;
 const SHARED_LOOKUP_OVERHEAD_BYTES = 128;
@@ -22,21 +23,36 @@ export interface PreparedScenePath {
 }
 
 interface CachedPath {
+  readonly prepared?: boolean;
   readonly parts: readonly SvgPathPart[];
   readonly windows?: readonly PressureWindow[] | undefined;
   readonly pressureGeometry?: PreparedPressureGeometryPort | undefined;
   readonly releaseLookup?: () => void;
 }
 
+interface PathIdentity {
+  readonly key: string;
+  readonly ownsParts: boolean;
+}
+
 export class ScenePathCache extends VersionedCache<CachedPath> {
   readonly #identities = new WeakMap<object, Map<string, string>>();
+  readonly #parts = new WeakMap<readonly SvgPathPart[], PathIdentity>();
+  readonly #retainedKeys = new Set<string>();
+  readonly #aliases: SceneGeometryAliases;
   readonly #maximumBytes: number;
+  readonly #maximumEntries: number;
   #nextIdentity = 0;
   public constructor(maximumEntries = PATH_CACHE_MAX_ENTRIES, maximumBytes = PATH_CACHE_MAX_BYTES) {
-    super(maximumEntries, maximumBytes, (_id, entry) => {
+    const aliasBytes = Math.max(1, Math.min(Math.floor(maximumBytes / 4), maximumEntries * 256));
+    super(maximumEntries, maximumBytes, (id, entry) => {
+      this.#retainedKeys.delete(id);
+      this.#aliases.invalidateKey(id);
       entry.releaseLookup?.();
     });
     this.#maximumBytes = maximumBytes;
+    this.#maximumEntries = maximumEntries;
+    this.#aliases = new SceneGeometryAliases(maximumEntries, aliasBytes);
   }
 
   public read(
@@ -55,6 +71,8 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     const key = signature === undefined ? undefined : lookup?.get(signature);
     const cached = key === undefined ? undefined : this.getCached(key, 0);
     if (cached !== undefined) {
+      this.#aliases.retain(element.id, undefined, key!);
+      this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
       cached.windows?.forEach((window, index) => pressureGeometry?.publishWindow(index, window));
       return cached.parts;
     }
@@ -72,7 +90,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
   public completePreparation(element: InkElementV1, parts: readonly SvgPathPart[]): void {
     const signature = immutableStrokeSignature(element);
     if (signature !== undefined && element.kind === "stroke")
-      this.retainShared(element.points, signature, parts, []);
+      this.retainShared(element, signature, parts, []);
   }
 
   public build(
@@ -100,25 +118,30 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
         pressureGeometry?.publishWindow(index, window);
       },
     });
-    this.retainShared(points, signature, parts, windows);
+    this.retainShared(element, signature, parts, windows);
     return parts;
   }
 
   private retainShared(
-    points: object & { readonly length: number },
+    element: InkElementV1,
     signature: string,
     parts: readonly SvgPathPart[],
     windows: readonly PressureWindow[],
   ): void {
-    if (!this.retentionEnabled) return;
-    const bytes =
-      SHARED_LOOKUP_OVERHEAD_BYTES +
-      points.length * 8 +
-      signature.length * 2 +
-      pathBytes(parts) +
-      windows.reduce((total, window) => total + pressureWindowRetainedBytes(window), 0);
+    if (!this.retentionEnabled || element.kind !== "stroke") return;
+    const points = element.points;
+    const existingLookup = this.#identities.get(points);
+    const existingKey = existingLookup?.get(signature);
+    if (existingKey !== undefined && this.#retainedKeys.has(existingKey)) {
+      if (this.#parts.get(parts)?.key !== existingKey)
+        this.#parts.set(parts, { key: existingKey, ownsParts: false });
+      this.#aliases.retain(element.id, undefined, existingKey);
+      this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
+      return;
+    }
+    const bytes = sharedPathBytes(points, signature, parts, windows);
     if (bytes > this.#maximumBytes) return;
-    const lookup = this.#identities.get(points) ?? new Map<string, string>();
+    const lookup = existingLookup ?? new Map<string, string>();
     const key = `\0stroke-geometry:${this.#nextIdentity++}`;
     this.retainCached(
       key,
@@ -127,29 +150,113 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
         parts,
         windows,
         releaseLookup: () => {
-          lookup.delete(signature);
+          if (lookup.get(signature) === key) lookup.delete(signature);
           if (lookup.size === 0) this.#identities.delete(points);
         },
       },
       bytes,
     );
+    this.#retainedKeys.add(key);
+    this.#parts.set(parts, { key, ownsParts: true });
     lookup.set(signature, key);
     this.#identities.set(points, lookup);
+    this.#aliases.retain(element.id, undefined, key);
+    this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
   }
 
   public cacheMemoryUsage(): number {
-    return this.cachedBytes;
+    return this.cachedBytes + this.#aliases.memoryUsage();
+  }
+
+  /** Speculation uses spare capacity and never displaces required or recent contours. */
+  public speculativeCapacityBytes(): number {
+    const aliasReservation = 128 + (36 + `\0path:${this.#nextIdentity}`.length) * 2;
+    if (
+      !this.retentionEnabled ||
+      this.statistics().entries >= this.#maximumEntries ||
+      this.#aliases.availableBytes() < aliasReservation
+    )
+      return 0;
+    return Math.max(0, this.#maximumBytes - this.cacheMemoryUsage() - aliasReservation);
+  }
+
+  public retainSpeculative(
+    id: string,
+    geometryVersion: number,
+    parts: readonly SvgPathPart[],
+    element?: InkElementV1,
+  ): boolean {
+    if (this.has(id, geometryVersion)) return true;
+    const signature = element === undefined ? undefined : immutableStrokeSignature(element);
+    const shared = signature !== undefined && element?.kind === "stroke";
+    const existingKey = shared ? this.#identities.get(element.points)?.get(signature) : undefined;
+    const retained = existingKey !== undefined && this.#retainedKeys.has(existingKey);
+    const key = retained
+      ? existingKey
+      : `\0${shared ? "stroke-geometry" : "path"}:${this.#nextIdentity}`;
+    const bytes = retained
+      ? 0
+      : shared
+        ? sharedPathBytes(element.points, signature, parts, [])
+        : SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + pathBytes(parts);
+    const aliasBytes = 128 + (id.length + key.length) * 2;
+    if (bytes > this.speculativeCapacityBytes() || aliasBytes > this.#aliases.availableBytes())
+      return false;
+    if (bytes + aliasBytes > this.#maximumBytes - this.cacheMemoryUsage()) return false;
+    if (shared) this.completePreparation(element, parts);
+    this.retain(id, geometryVersion, parts);
+    return this.has(id, geometryVersion);
+  }
+
+  public ownsPrepared(element: InkElementV1, parts: readonly SvgPathPart[]): boolean {
+    const identity = this.#parts.get(parts);
+    const key = identity?.key;
+    const signature = immutableStrokeSignature(element);
+    return (
+      this.retentionEnabled &&
+      element.kind === "stroke" &&
+      signature !== undefined &&
+      identity?.ownsParts === true &&
+      key !== undefined &&
+      this.#retainedKeys.has(key) &&
+      this.#identities.get(element.points)?.get(signature) === key
+    );
+  }
+
+  public override statistics(): ReturnType<VersionedCache<CachedPath>["statistics"]> {
+    return { ...super.statistics(), bytes: this.cacheMemoryUsage() };
+  }
+
+  public override release(): void {
+    super.release();
+    this.#aliases.release();
+  }
+
+  public override invalidate(id: string): void {
+    const key = this.#aliases.invalidate(id);
+    if (key !== undefined && !this.#aliases.hasOwners(key)) super.invalidate(key);
+    super.invalidate(id);
   }
 
   public take(id: string, geometryVersion: number): readonly SvgPathPart[] | undefined {
-    const cached = this.takeCached(id, geometryVersion);
+    const key = this.#aliases.read(id, geometryVersion);
+    const cached = key === undefined ? this.getCached(id, geometryVersion) : this.getCached(key, 0);
     if (cached === undefined) return undefined;
+    // A lazy live handoff owns its builder until first use; release that owner immediately.
+    if (cached.prepared === true && key !== undefined) this.takeCached(key, 0);
     if (cached.pressureGeometry !== undefined) {
       cached.windows?.forEach((window, index) =>
         cached.pressureGeometry!.publishWindow(index, window),
       );
     }
-    return cached.parts;
+    const parts = cached.parts;
+    this.#parts.set(parts, { key: key ?? id, ownsParts: true });
+    return parts;
+  }
+
+  public has(id: string, geometryVersion: number): boolean {
+    const key = this.#aliases.read(id, geometryVersion);
+    return key !== undefined && this.#retainedKeys.has(key);
   }
 
   public retainPreparedFromStore(
@@ -173,10 +280,15 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     prepared: PreparedScenePath,
     pressureGeometry?: PreparedPressureGeometryPort,
   ): void {
+    if (!this.retentionEnabled) return;
+    const bytes = SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + prepared.geometryMemoryBytes;
+    if (bytes > this.#maximumBytes) return;
+    const key = `\0prepared:${this.#nextIdentity++}`;
     this.retainCached(
-      id,
-      geometryVersion,
+      key,
+      0,
       {
+        prepared: true,
         // Preserve the lazy live-stroke handoff: taking the entry finalizes its geometry.
         get parts() {
           return prepared.geometry;
@@ -186,18 +298,50 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
         },
         pressureGeometry,
       },
-      id.length * 2 + prepared.geometryMemoryBytes,
+      bytes,
     );
+    this.#retainedKeys.add(key);
+    this.#aliases.retain(id, geometryVersion, key);
+    this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
   }
 
   public retain(id: string, geometryVersion: number, parts: readonly SvgPathPart[]): void {
-    const bytes = id.length * 2 + pathBytes(parts);
-    this.retainCached(id, geometryVersion, { parts }, bytes);
+    if (!this.retentionEnabled) return;
+    const key = this.#parts.get(parts)?.key;
+    if (key !== undefined && this.#retainedKeys.has(key)) {
+      this.getCached(key, 0);
+      this.#aliases.retain(id, geometryVersion, key);
+      this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
+      return;
+    }
+    const bytes = SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + pathBytes(parts);
+    if (bytes > this.#maximumBytes) return;
+    const canonical = `\0path:${this.#nextIdentity++}`;
+    this.retainCached(canonical, 0, { parts }, bytes);
+    this.#retainedKeys.add(canonical);
+    this.#parts.set(parts, { key: canonical, ownsParts: true });
+    this.#aliases.retain(id, geometryVersion, canonical);
+    this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
   }
 }
 
 function pathBytes(parts: readonly SvgPathPart[]): number {
   return parts.reduce((total, part) => total + part.d.length * 2 + PATH_PART_OVERHEAD_BYTES, 0);
+}
+
+function sharedPathBytes(
+  points: { readonly length: number },
+  signature: string,
+  parts: readonly SvgPathPart[],
+  windows: readonly PressureWindow[],
+): number {
+  return (
+    SHARED_LOOKUP_OVERHEAD_BYTES +
+    points.length * 8 +
+    signature.length * 2 +
+    pathBytes(parts) +
+    windows.reduce((total, window) => total + pressureWindowRetainedBytes(window), 0)
+  );
 }
 
 function immutableStrokeSignature(element: InkElementV1): string | undefined {

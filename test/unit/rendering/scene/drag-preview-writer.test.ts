@@ -42,6 +42,10 @@ describe("drag preview path writer", () => {
       "inkbook-scene-foreground",
     );
     expect(liveGroup.nodes).toHaveLength(2);
+    expect(liveGroup.ownerDocument).not.toBe(document);
+    expect(liveGroup.nodes.every((node) => node.ownerDocument === liveGroup.ownerDocument)).toBe(
+      true,
+    );
     expect(liveGroup.nodes[0]?.attributes.get("stroke")).toBe("#112233FF");
     expect(liveGroup.nodes[1]?.attributes.get("fill")).toBe("#112233FF");
     expect(liveGroup.nodes[1]?.attributes.get("stroke")).toBe("none");

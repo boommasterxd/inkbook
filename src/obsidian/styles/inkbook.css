@@ -27,6 +27,7 @@
   --inkbook-surface-shadow: 0 4px 14px rgb(0 0 0 / 14%), 0 1px 2px rgb(0 0 0 / 18%);
   --inkbook-toolbar-overlay-block-size: 68px;
   --inkbook-toolbar-scrollport-padding: 0px;
+  --inkbook-scene-foreground-visibility: visible;
 
   box-sizing: border-box;
   inline-size: 100%;
@@ -126,12 +127,14 @@
 }
 
 .inkbook-root .inkbook-scene {
+  block-size: 100%;
   contain: layout;
   display: block;
   inset-block: 0 auto;
   inset-inline: 0 auto;
   inline-size: 100%;
   overflow: visible;
+  pointer-events: none;
   position: absolute;
   transform-origin: top left;
   vertical-align: top;
@@ -152,13 +155,6 @@
   height: 18px;
   opacity: 1;
   width: 18px;
-}
-
-.inkbook-root .inkbook-scene,
-.inkbook-root .inkbook-scene-content,
-.inkbook-root .inkbook-scene-highlights,
-.inkbook-root .inkbook-scene-overlays {
-  pointer-events: none;
 }
 
 .inkbook-root.inkbook-embed-root.inkbook-active-transitioning .inkbook-preview-handoff,
@@ -362,52 +358,13 @@
   touch-action: none !important;
 }
 
+.inkbook-root.inkbook-active-preparing {
+  --inkbook-scene-foreground-visibility: hidden;
+}
+
 .inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,
-.inkbook-root.inkbook-active-preparing .inkbook-canvas-input,
-.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground {
+.inkbook-root.inkbook-active-preparing .inkbook-canvas-input {
   visibility: hidden;
-}
-
-.inkbook-root .inkbook-selection-center-trace {
-  fill: none;
-  stroke: var(--interactive-accent);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.5;
-}
-
-.inkbook-root .inkbook-scene-overlays path {
-  fill: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
-  stroke: var(--interactive-accent);
-  stroke-width: 1.5;
-}
-
-.inkbook-root .inkbook-scene-overlays .inkbook-selection-area-preview {
-  stroke-dasharray: 3 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay[data-center-outline="true"] {
-  stroke: none;
-}
-
-.inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay[data-selection-fill="none"] {
-  fill: none;
-}
-
-.inkbook-root .inkbook-scene-overlays .inkbook-selection-handles {
-  fill: var(--interactive-accent);
-  stroke: var(--interactive-accent);
-}
-
-.inkbook-root .inkbook-scene-overlays .inkbook-snap-guide {
-  fill: none;
-  stroke: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-normal));
-  stroke-dasharray: 3 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.5;
 }
 
 .inkbook-root .inkbook-canvas-input:focus {

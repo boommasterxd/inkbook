@@ -2,6 +2,8 @@ import { strokeLocalGeometry } from "./stroke-position";
 import type {
   PreparedPressureGeometryPort,
   PressureWindowMeasurement,
+  PressurePathWindow,
+  PressurePreparationMode,
 } from "./prepared-pressure-geometry";
 import { buildElementPathParts, type SvgPathPart } from "./element-path";
 import { iterateTransformedStrokeCenters, buildCenterline, type StrokeCenter } from "./stroke-path";
@@ -22,10 +24,10 @@ export class CanonicalElementPathPreparation {
   #centers: StrokeCenter[] | undefined;
   #centerJob: Generator<StrokeCenter> | undefined;
   readonly #selected: ReturnType<typeof simplifyStrokeCenters> = [];
-  readonly #windows: PressureWindow[] = [];
+  readonly #windows: (PressureWindow | PressurePathWindow)[] = [];
   readonly #pendingPieces: PressureOutlinePiece[] = [];
   #windowBytes = 0;
-  #windowJob: Generator<void, PressureWindow> | undefined;
+  #windowJob: Generator<void, PressureWindow | PressurePathWindow> | undefined;
   #geometryPrepared = false;
   readonly #chunks: string[] = [];
   #prepared = 0;
@@ -36,7 +38,10 @@ export class CanonicalElementPathPreparation {
   public constructor(
     element: InkElementV1,
     private pressureGeometry?: PreparedPressureGeometryPort,
+    private readonly mode: PressurePreparationMode = "full",
   ) {
+    if (mode === "path-only" && pressureGeometry !== undefined)
+      throw new TypeError("Path-only preparation cannot publish selection geometry.");
     element = element.kind === "stroke" ? strokeLocalGeometry(element) : element;
     this.#element = element;
     if (element.kind === "stroke") {
@@ -56,10 +61,14 @@ export class CanonicalElementPathPreparation {
     const geometry =
       this.#parts?.reduce((bytes, part) => bytes + part.d.length * 2, 0) ??
       this.#chunks.reduce((bytes, chunk) => bytes + chunk.length * 2, 0);
+    const windowBytes =
+      this.mode === "path-only"
+        ? this.#windows.reduce((bytes, window) => bytes + pressureWindowMemoryUsage(window), 0)
+        : this.#windowBytes;
     return (
       geometry +
       ((this.#centers?.length ?? 0) + this.#selected.length) * 32 +
-      this.#windowBytes +
+      windowBytes +
       (this.#windowJob === undefined ? 0 : PRESSURE_WINDOW_SCRATCH_BYTES) +
       this.#pendingPieces.reduce(
         (bytes, piece) => bytes + pressureOutlinePieceMemoryUsage(piece),
@@ -207,21 +216,27 @@ export class CanonicalElementPathPreparation {
       this.acceptWindow(cached, count);
       return this.#pendingPieces.length === 0;
     }
-    this.#windowJob ??= preparePressureWindowSteps(this.#pendingPieces.slice(0, count));
+    this.#windowJob ??=
+      this.mode === "path-only"
+        ? preparePressureWindowSteps(this.#pendingPieces.slice(0, count), "path-only")
+        : preparePressureWindowSteps(this.#pendingPieces.slice(0, count));
     let started = false;
     for (;;) {
       if (started && (singleOperation || now() >= deadline)) return false;
       started = true;
       const step = this.#windowJob.next();
       if (!step.done) continue;
-      const measurement = this.pressureGeometry?.publishWindow(this.#windows.length, step.value);
+      const measurement =
+        step.value.kind === "window"
+          ? this.pressureGeometry?.publishWindow(this.#windows.length, step.value)
+          : undefined;
       this.acceptWindow(step.value, count, measurement);
       return this.#pendingPieces.length === 0;
     }
   }
 
   private acceptWindow(
-    window: PressureWindow,
+    window: PressureWindow | PressurePathWindow,
     count: number,
     measurement?: PressureWindowMeasurement | void,
   ): void {
@@ -231,7 +246,9 @@ export class CanonicalElementPathPreparation {
       Number.isSafeInteger(measurement.numericBytes) &&
       measurement.numericBytes >= 0
         ? measurement.numericBytes
-        : pressureWindowMemoryUsage(window);
+        : window.kind === "window"
+          ? pressureWindowMemoryUsage(window)
+          : 0;
     this.#pendingPieces.splice(0, count);
     this.#windowJob = undefined;
   }

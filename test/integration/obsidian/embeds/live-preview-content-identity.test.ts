@@ -42,6 +42,7 @@ describe("Live Preview widget content identity", () => {
     const ports = createPorts();
     const mounted = new InkbookLivePreviewWidget(embed(), ports);
     const root = mounted.toDOM({
+      plugin: () => null,
       dom: { createDiv: () => new FakePresentationElement() },
     } as never);
     const changed = new InkbookLivePreviewWidget({ ...embed(), from: 5 }, ports);
@@ -59,6 +60,7 @@ describe("Live Preview widget content identity", () => {
     const reconciled = new InkbookLivePreviewWidget(embed(), ports);
     const ownerDocument = new FakePresentationElement().ownerDocument;
     const root = mounted.toDOM({
+      plugin: () => null,
       dom: {
         ownerDocument,
         createDiv: () => new FakePresentationElement(ownerDocument),

@@ -1,4 +1,5 @@
 import * as strokeGeometry from "../../../../src/domain/geometry/stroke-path";
+import * as elementGeometry from "../../../../src/domain/geometry/element-path";
 import * as intersections from "../../../../src/domain/geometry/pressure-boundary-intersections";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { PRESSURE_REFERENCE } from "../../../fixtures/domain/pressure-reference";
@@ -9,6 +10,11 @@ import { expect, it, vi } from "vitest";
 import type { PageV1 } from "../../../../src/domain/schema/public";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
+import {
+  DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  PATH_CACHE_MAX_ENTRIES,
+} from "../../../../src/rendering/scene/constants";
+import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import {
   FakeDocument,
   FakeNode,
@@ -53,27 +59,113 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
   expect(renderer.instrumentation().pathCacheEntries).toBe(2_100);
 
   renderer.resetInstrumentation();
+  const creation = vi.spyOn(fakeNode(renderer.svg).ownerDocument, "createElementNS");
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const insertion = vi.spyOn(content, "insertBefore");
+  expect(content.nodes).toHaveLength(0);
   showOffset(renderer, scheduler, 0);
 
   expect(renderer.instrumentation()).toMatchObject({
     geometryBuilds: 0,
-    pathCacheHits: BATCH_SIZE,
+    detachedCacheHits: 0,
+    contentGeometryWrites: BATCH_SIZE,
+    contentAttributeWrites: BATCH_SIZE * 8,
+    domEntrants: BATCH_SIZE,
+    domExits: 0,
   });
-  await annotate("2,100 retained paths, 700 remount hits, 0 geometry builds", "performance");
+  expect(insertion).toHaveBeenCalled();
+  expect(content.nodes).toHaveLength(BATCH_SIZE);
+  insertion.mockRestore();
+  expect(creation.mock.calls.filter(([, tag]) => tag === "path" || tag === "g")).toHaveLength(
+    BATCH_SIZE,
+  );
+  creation.mockRestore();
+  await annotate("2,100 retained contours, 700 new roots, 0 contour rebuilds", "performance");
 
   // Cross the documented entry capacity and verify eviction through renderer ownership.
-  for (let batch = 3; batch < 6; batch += 1) {
+  const batches = Math.ceil(PATH_CACHE_MAX_ENTRIES / BATCH_SIZE);
+  for (let batch = 3; batch <= batches; batch += 1) {
     const offset = batch * 1_000;
     populateBatch(store, batch, offset);
     showOffset(renderer, scheduler, offset);
     expect(renderer.mountedCount).toBe(BATCH_SIZE);
-    expect(renderer.instrumentation().pathCacheEntries).toBeLessThanOrEqual(4_096);
-    expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(32 * 1_024 * 1_024);
+    expect(renderer.instrumentation().pathCacheEntries).toBeLessThanOrEqual(PATH_CACHE_MAX_ENTRIES);
+    expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(25 * 1_024 * 1_024);
   }
-  showOffset(renderer, scheduler, 6_000);
-  expect(renderer.instrumentation().pathCacheEntries).toBe(4_096);
+  showOffset(renderer, scheduler, (batches + 1) * 1_000);
+  expect(renderer.instrumentation().pathCacheEntries).toBe(PATH_CACHE_MAX_ENTRIES);
+  // Every entry accounts for at least 576 bytes plus 512 bytes for its first root.
+  expect(renderer.instrumentation().detachedCacheEntries).toBeLessThanOrEqual(
+    Math.floor(DETACHED_ELEMENT_CACHE_MAX_BYTES / 1_088),
+  );
+  expect(renderer.instrumentation().detachedCacheBytes).toBeLessThanOrEqual(
+    DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  );
+  expect(content.nodes).toHaveLength(0);
   renderer.destroy();
   expect(renderer.instrumentation().pathCacheEntries).toBe(0);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("retains 2,500 immutable contours once across scene ID and geometry identity", () => {
+  const cache = new ScenePathCache(4_096);
+  const elements = Array.from({ length: 2_500 }, (_, index) => {
+    const element = indexedStroke(index);
+    const points = Array.from(element.points);
+    Object.freeze(points);
+    return { ...element, points };
+  });
+  const build = vi.spyOn(elementGeometry, "buildElementPathParts");
+  try {
+    const parts = elements.map((element) => cache.build(element));
+    const geometryWork = build.mock.calls.length;
+    expect(geometryWork).toBeGreaterThan(0);
+    elements.forEach((element, index) => cache.retain(element.id, 1, parts[index]!));
+    expect(cache.statistics()).toMatchObject({ entries: 2_500, evictions: 0 });
+    for (const element of elements) {
+      expect(cache.take(element.id, 1)).toBe(cache.read(element));
+      expect(cache.build(element)).toBe(cache.read(element));
+    }
+    expect(build).toHaveBeenCalledTimes(geometryWork);
+    cache.release();
+    expect(cache.cacheMemoryUsage()).toBe(0);
+  } finally {
+    build.mockRestore();
+  }
+});
+
+it("invalidates detached nodes and releases them without additional DOM removals", () => {
+  const store = new FakeSceneStore();
+  const first = fakeRectangleRecord("delete", 0, 10);
+  const second = fakeRectangleRecord("change", 1, 20);
+  store.records.set(first.id, first);
+  store.records.set(second.id, second);
+  const { renderer, scheduler } = createSceneFixture(PAGE, store);
+  scheduler.runAll();
+  showOffset(renderer, scheduler, 3_000);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(2);
+  store.records.delete(first.id);
+  renderer.applyDelta({ affected: [{ id: first.id, domains: ["geometry"] }] });
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
+  store.records.set(second.id, { ...second, geometryVersion: 2 });
+  renderer.applyDelta({ affected: [{ id: second.id, domains: ["geometry"] }] });
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
+  scheduler.runAll();
+  showOffset(renderer, scheduler, 0);
+  showOffset(renderer, scheduler, 3_000);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
+  renderer.setActiveDocumentMemoryPressure(true);
+  expect(remove).not.toHaveBeenCalled();
+  expect(renderer.instrumentation().detachedCacheBytes).toBe(0);
+  scheduler.runAll();
+  expect(renderer.instrumentation().detachedCacheBytes).toBe(0);
+  remove.mockRestore();
+  showOffset(renderer, scheduler, 0);
+  showOffset(renderer, scheduler, 3_000);
+  expect(renderer.instrumentation().detachedCacheEntries).toBe(0);
+  renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
 });
 
@@ -184,7 +276,18 @@ it("builds a height-invariant spacing preview once and reuses its final geometry
 
 function showOffset(renderer: SvgSceneRenderer, scheduler: FakeScheduler, offset: number): void {
   renderer.setCamera({ x: -offset, zoom: 1 });
-  scheduler.runAll();
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
+  try {
+    let frames = 0;
+    while (scheduler.pendingCount > 0) {
+      expect(frames++).toBeLessThan(100);
+      remove.mockClear();
+      scheduler.runNext();
+      expect(remove.mock.calls.length).toBeLessThanOrEqual(64);
+    }
+  } finally {
+    remove.mockRestore();
+  }
 }
 
 function populateBatch(store: FakeSceneStore, batch: number, offset: number): void {
@@ -205,6 +308,7 @@ it.each([false, true])(
       points: reference.points,
       style: { ...base.style, width: 22 as const },
     };
+    const intersectPressureBoundaries = intersections.intersectPressureBoundaries;
     const boundary = vi.spyOn(intersections, "intersectPressureBoundaries");
     try {
       const expected = buildElementPathParts(element);
@@ -214,15 +318,23 @@ it.each([false, true])(
       const store = new FakeSceneStore();
       store.records.set(element.id, createSceneRecord(element));
       const { renderer, scheduler } = createSceneFixture(PAGE, store);
-      // Force cooperative pauses inside real union work, independently of step-count policy.
-      const clock = cancel
-        ? vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++)
-        : undefined;
+      // Charge real union intersections; extra scheduler observations must not consume work.
+      if (cancel) {
+        boundary.mockImplementation((...args) => {
+          const result = intersectPressureBoundaries(...args);
+          scheduler.time += 1;
+          return result;
+        });
+      }
+      const deadline = vi.spyOn(scheduler.workScheduler, "deadline");
       let frames = 0;
       while (renderer.mountedCount === 0) {
         const before = boundary.mock.calls.length;
         renderer.setCamera({ x: 0, zoom: 1 + (frames % 2) * 0.001 });
+        deadline.mockClear();
         scheduler.runNext();
+        // Empty reserve adoption must not spend another deadline read before visible union work.
+        if (cancel) expect(deadline).toHaveBeenCalledOnce();
         // At most 64 preparation steps per slice, each with 4,096 resumptions; clipping tests
         // at most four peer boundaries between resumptions in the canonical union.
         expect(boundary.mock.calls.length - before).toBeLessThanOrEqual(64 * 4096 * 4);
@@ -230,8 +342,12 @@ it.each([false, true])(
         expect(frames).toBeLessThan(100);
         if (cancel && boundary.mock.calls.length > 0) break;
       }
-      clock?.mockRestore();
-      if (cancel) expect(renderer.mountedCount).toBe(0);
+      deadline.mockRestore();
+      if (cancel) {
+        expect(renderer.mountedCount).toBe(0);
+        expect(boundary.mock.calls.length).toBeGreaterThan(0);
+        expect(boundary.mock.calls.length).toBeLessThan(canonicalIntersections);
+      }
       if (!cancel) {
         expect(boundary.mock.calls.length).toBe(canonicalIntersections);
         expect(renderer.instrumentation().geometryBuilds).toBe(1);

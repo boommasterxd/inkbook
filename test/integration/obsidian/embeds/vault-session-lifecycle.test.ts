@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { StoreSliceScheduler } from "../../../../src/domain/store/public";
 import { VaultDocumentSessionFactory } from "../../../../src/obsidian/embeds/vault-document-session-factory";
 import {
+  createVaultDocumentExecutor,
+  createVaultFallbackFactory,
+} from "../../../../src/obsidian/embeds/vault-document-loader";
+import {
   DocumentWorkerRuntime,
   type DocumentRuntimePort,
 } from "../../../../src/persistence/worker/runtime/public";
@@ -185,7 +189,7 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
     session.dispose();
   });
 
-  it("retries a failed worker unlock exactly once in the bounded fallback", async () => {
+  it("uses one bounded fallback when unlock fails and native restart construction fails", async () => {
     const terminate = vi.fn();
     const primary: DocumentRuntimePort = {
       execute: vi.fn(() => Promise.reject(new Error("worker timed out"))),
@@ -196,7 +200,10 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
         new DocumentWorkerRuntime({ sessionId, workerEpoch: epoch }),
     );
     const { session } = documentSessionHarness({
-      create: async () => primary,
+      create: async (_sessionId, epoch) => {
+        if (epoch !== 1) throw new Error("restart bootstrap failed");
+        return primary;
+      },
       createFallback,
     });
 
@@ -227,7 +234,8 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
       terminate: vi.fn(),
     };
     const factory = createFactory({
-      create: async () => primary,
+      create: async (sessionId, workerEpoch) =>
+        workerEpoch === 1 ? primary : new DocumentWorkerRuntime({ sessionId, workerEpoch }),
       vault: { getFileByPath: () => file, readBinary },
     });
     const session = factory.create({ documentId: file.path, sessionId: "session-1" });
@@ -243,24 +251,52 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
 });
 
 describe("VaultDocumentSession live executor lifecycle", () => {
+  it.each([false, true])(
+    "inherits live navigation and gesture state when constructing fallback=%s",
+    async (fallback) => {
+      const core = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
+      const gesture = vi.spyOn(core, "setLiveInputActive");
+      const navigation = vi.spyOn(core, "setNavigationActive");
+      const options = {
+        disposed: () => false,
+        documentId: "drawings/ink.svg",
+        isGestureActive: () => true,
+        isNavigationActive: () => true,
+        runtimes: { create: async () => core, createFallback: () => core },
+        sessionId: "session-1",
+      };
+      const executor = fallback
+        ? createVaultFallbackFactory({ ...options, adopt: () => undefined })(2)
+        : (await createVaultDocumentExecutor({ ...options, fallbackUsed: false, workerEpoch: 1 }))
+            .executor;
+      expect(executor).toBe(core);
+      expect(gesture).toHaveBeenCalledExactlyOnceWith(true);
+      expect(navigation).toHaveBeenCalledExactlyOnceWith(true);
+      core.terminate();
+    },
+  );
+
   it("avoids eager export prewarming and mirrors live gesture state", async () => {
     const core = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
     const requestPrewarm = vi.fn(() => core.requestPrewarm());
     const setLiveInputActive = vi.fn((active: boolean) => core.setLiveInputActive(active));
+    const setNavigationActive = vi.fn((active: boolean) => core.setNavigationActive(active));
     const runtime: DocumentRuntimePort = {
       execute: (request, observer) => core.execute(request, observer),
       requestPrewarm,
       setLiveInputActive,
+      setNavigationActive,
       terminate: () => core.terminate(),
     };
     const { factory, session } = documentSessionHarness({
       create: async () => runtime,
     });
-
     await expect(session.unlock(operation())).resolves.toMatchObject({ status: "active" });
     const model = factory.getDocumentModel("session-1");
+    expect(model?.isGestureActive?.()).toBe(false);
     model?.setGestureActive(true);
     model?.setNavigationActive?.(true);
+    expect(model?.isGestureActive?.()).toBe(true);
     model?.setNavigationActive?.(true);
     const resumed = vi.fn();
     const pending = model?.waitForBackground?.();
@@ -269,14 +305,17 @@ describe("VaultDocumentSession live executor lifecycle", () => {
     await Promise.resolve();
     expect(resumed).not.toHaveBeenCalled();
     model?.setGestureActive(false);
+    expect(model?.isGestureActive?.()).toBe(false);
+    expect(setLiveInputActive).toHaveBeenLastCalledWith(false);
+    expect(setNavigationActive).toHaveBeenLastCalledWith(true);
     await Promise.resolve();
     expect(resumed).not.toHaveBeenCalled();
     model?.setNavigationActive?.(false);
     await waiting;
     expect(resumed).toHaveBeenCalledOnce();
-
     expect(requestPrewarm).not.toHaveBeenCalled();
     expect(setLiveInputActive.mock.calls).toEqual([[true], [false]]);
+    expect(setNavigationActive.mock.calls).toEqual([[true], [false]]);
   });
 
   it("does not construct a fallback after disposal wins worker failure", async () => {
@@ -331,7 +370,10 @@ describe("VaultDocumentSession clipboard executor recovery", () => {
         new DocumentWorkerRuntime({ sessionId, workerEpoch: epoch }),
     );
     const { factory, session } = documentSessionHarness({
-      create: async () => primary,
+      create: async (_sessionId, epoch) => {
+        if (epoch !== 1) throw new Error("restart bootstrap failed");
+        return primary;
+      },
       createFallback,
     });
     const model = await unlockWithRectangle(factory, session);

@@ -1,34 +1,44 @@
 import {
-  publishVisibilityRuns,
-  removeVisibilityExits,
   mountedRootCount,
-  scanVisibilityExits,
+  publicationRootCount,
   RetainedDomOrder,
   type PendingMutationRun,
 } from "./visibility-publication";
 import { SceneMountPreparation, type PreviewTransform } from "./scene-mount-preparation";
 import { upcomingScenePathIds } from "./upcoming-scene-paths";
+import { intersects } from "./visibility-bounds";
 import type { InkElementV1 } from "../../domain/schema/public";
-import { MountSlice } from "./mount-slice";
-import type { MountYieldReason, ScenePublicationBudget } from "./mount-slice";
+import { MountSlice, type MountYieldReason, type ScenePublicationBudget } from "./mount-slice";
+import { recordVisibilityYield } from "./instrumentation";
 import { updatePreviewTransform, type MountedSceneElement } from "./mounted-element";
 import type { SceneElementRecord } from "./types";
 import type { VisibilityDelta, VisibilityResult } from "./visibility-state";
-import { firstMountedSuccessor } from "./visibility-order";
+import type { SceneVisibilityPriority } from "./scene-entrant-priority";
+import { stagePromotedVisibility } from "./promoted-visibility-entry";
+import { createProgressiveVisibilityPublisher } from "./progressive-visibility-publication";
 import {
-  invalidateDeltaSuccessor,
-  prepareVisibilityDelta,
-  stageVisibilityDelta,
-} from "./visibility-delta-reconciliation";
-import {
+  removeOrderedVisibilityExits,
+  collectPendingVisibilityExits,
+  hasPendingVisibilityCleanup,
   commitVisibilityReconciliation,
   completedVisibilityReconciliation,
+  publishPendingVisibility,
+  prepareVisibilityCleanup,
 } from "./visibility-reconciliation-commit";
 import { DeferredVisibilityExits } from "./deferred-visibility-exits";
+import {
+  canRetargetVisibilityDelta,
+  createProgressiveVisibilityDelta,
+  stageVisibilityBands,
+  stageVisibilitySlice,
+} from "./visibility-staging";
 import {
   prepareReconciliationRun,
   recordReconciliationGrowth,
   resetReconciliationBuffers,
+  markPartialReconciliationExit,
+  reconciliationMemoryUsage,
+  finishReconciliationRun,
 } from "./reconciliation-buffers";
 import type {
   PendingReconciliation,
@@ -38,7 +48,6 @@ import type {
 } from "./reconciliation-state";
 
 export type { PreviewTransform } from "./scene-mount-preparation";
-
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
 /** Publishes ordered viewport batches and removes obsolete nodes in bounded frame slices. */
@@ -56,33 +65,45 @@ export class SceneVisibilityReconciler {
   readonly #runs: PendingMutationRun[] = [];
   readonly #publishedEntrantIds: string[] = [];
   readonly #preparation: SceneMountPreparation;
+  #priority: SceneVisibilityPriority | undefined;
+  #waitingForPaths = false;
   public constructor(private readonly options: SceneVisibilityReconcilerOptions) {
     this.#preparation = new SceneMountPreparation({
       ...options,
       ownerDocument: options.dom.ownerDocument,
       upcomingIds: () => upcomingScenePathIds(this.#pending, this.options.mounted),
+      isViewport: (record) =>
+        this.#priority === undefined || intersects(this.#priority.viewport, record.bounds),
     });
   }
   public memoryUsage(): number {
-    return (
-      this.#preparation.memoryUsage() +
-      (this.#publishedEntrantIds.length + this.#deferredExits.size) * 8 +
-      (this.#pending?.order.memoryUsage() ?? 0)
-    );
+    return reconciliationMemoryUsage(this.#pending, {
+      preparationBytes: this.#preparation.memoryUsage(),
+      publishedEntrants: this.#publishedEntrantIds.length,
+      deferredExits: this.#deferredExits.size,
+    });
   }
-
   public get needsRestart(): boolean {
     return this.#cancelled;
   }
-
   public get hasPendingCleanup(): boolean {
-    return this.#pending?.published === true;
+    const pending = this.#pending;
+    return pending !== undefined && hasPendingVisibilityCleanup(pending);
   }
-
   public get hasPendingWork(): boolean {
     return this.#pending !== undefined;
   }
-
+  public get hasPendingViewportWork(): boolean {
+    const pending = this.#pending;
+    return pending?.published === false && pending.delta?.priority?.hasViewportCandidates !== false;
+  }
+  public get waitingForPaths(): boolean {
+    return this.#waitingForPaths;
+  }
+  public setPriority(priority: SceneVisibilityPriority): void {
+    this.#priority = priority;
+    this.#pending?.delta?.priority?.retarget([], [], priority);
+  }
   public hasUnprotectedDeferredExit(
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
     previewElements: () => ReadonlyMap<string, InkElementV1>,
@@ -92,27 +113,40 @@ export class SceneVisibilityReconciler {
       this.#deferredExits.hasUnprotected(previewTransforms, previewElements())
     );
   }
-
   // Retargeting preserves the scan; exit eligibility is checked against the final target.
   public replace(visibility: VisibilityResult, progressive = false, delta?: VisibilityDelta): void {
-    const useDelta =
-      progressive &&
-      this.#pending === undefined &&
-      !this.#cancelled &&
-      this.options.orderDirty.content.size === 0 &&
-      this.options.orderDirty.highlight.size === 0 &&
-      delta !== undefined;
+    const previousDelta = this.#pending?.delta;
+    let useDelta = canRetargetVisibilityDelta(
+      this.#pending,
+      progressive,
+      this.#cancelled,
+      this.options,
+      delta,
+    );
     const exits =
       this.#pending?.published === false ? this.#pending.exits : this.options.mounted.entries();
     for (const id of this.#publishedEntrantIds) this.#exitIds.push(id);
     this.#publishedEntrantIds.length = 0;
     this.cancel(true);
+    useDelta &&=
+      this.options.orderDirty.content.size === 0 && this.options.orderDirty.highlight.size === 0;
     this.#deferredExits.drainInto(this.#exitIds);
     this.#promotedId ??= this.#preparation.pendingId;
     this.#cancelled = false;
-    if (useDelta) for (const id of delta.exited) this.#exitIds.push(id);
+    this.#waitingForPaths = false;
+    if (useDelta && delta !== undefined) for (const id of delta.exited) this.#exitIds.push(id);
+    const nextDelta = progressive
+      ? createProgressiveVisibilityDelta(
+          visibility,
+          useDelta ? delta : undefined,
+          this.options,
+          this.#priority,
+          this.#orderEpoch,
+          useDelta ? previousDelta : undefined,
+        )
+      : undefined;
     this.#pending = {
-      ...(useDelta ? { delta: prepareVisibilityDelta(delta) } : {}),
+      ...(nextDelta === undefined ? {} : { delta: nextDelta }),
       cursor: {
         band: "highlight",
         index: visibility.highlight.count - 1,
@@ -127,42 +161,45 @@ export class SceneVisibilityReconciler {
       targetPublished: false,
       retainedOrderPreserved: true,
       exits,
+      scanExits: !useDelta,
+      exitScanComplete: useDelta,
+      exitOrderPrepared: false,
+      cleanupFirst: false,
       runs: this.#runs,
       runCount: 0,
       order: new RetainedDomOrder(this.options.dom, this.#orderEpoch),
       visibility,
     };
   }
-
   public cancel(preservePending = false): void {
+    this.#waitingForPaths = false;
     const pending = this.#pending;
-    preservePending &&= pending?.published === false;
+    const preserveEntrants = preservePending && pending?.published === false;
     this.#preparation.cancel(
-      preservePending ? (id) => this.options.visibility.contains(id) : undefined,
+      preserveEntrants ? (id) => this.options.visibility.contains(id) : undefined,
     );
     this.#cancelled ||= pending !== undefined;
-    const partialId = pending?.exitIds[pending.exitIndex];
-    const partial = partialId === undefined ? undefined : this.options.mounted.get(partialId);
-    if (partial !== undefined && partial.detachedPathCount > 0) {
-      this.options.orderDirty[partial.band].add(partial.id);
-    }
+    markPartialReconciliationExit(pending, this.options);
     const entrants = pending?.published === true ? undefined : pending?.entrants;
     if (entrants !== undefined) {
       for (const entry of entrants.values()) {
         if (
-          preservePending &&
+          preserveEntrants &&
           this.options.visibility.contains(entry.id) &&
           this.#preparation.isCurrent(entry)
         )
           continue;
         this.options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
+        this.options.detachedCache?.retain(entry, (id) => this.options.visibility.contains(id));
         entrants.delete(entry.id);
       }
     }
     pending?.order.release();
     this.#pending = undefined;
     resetReconciliationBuffers({
-      preservePending,
+      preservePending: preserveEntrants,
+      preserveExits: preservePending && pending !== undefined,
+      exitCursor: pending,
       entrants: this.#entrants,
       exitIds: this.#exitIds,
       publishedEntrantIds: this.#publishedEntrantIds,
@@ -170,7 +207,6 @@ export class SceneVisibilityReconciler {
       runs: this.#runs,
     });
   }
-
   public promote(id: string): boolean {
     if (
       this.options.mounted.has(id) ||
@@ -197,10 +233,11 @@ export class SceneVisibilityReconciler {
       previewTransforms.get(id)?.transform == null &&
       !previewElements.has(id);
     const removeExits = () =>
-      removeVisibilityExits(pending, this.options, {
+      removeOrderedVisibilityExits(pending, this.options, {
         deadline,
         now,
         isExit,
+        publication,
         onSkipped: (id) =>
           this.#deferredExits.skipped(
             id,
@@ -213,36 +250,60 @@ export class SceneVisibilityReconciler {
       if (removeExits()) this.#pending = undefined;
       return { newlyMountedIds: EMPTY_IDS, pending: false };
     }
+    const publish = createProgressiveVisibilityPublisher(pending, this.options, {
+      deadline,
+      now,
+      epoch: this.#orderEpoch,
+      budget: publication,
+      output: this.#newlyMountedIds,
+      published: this.#publishedEntrantIds,
+    });
+    const initialPublication = publish?.();
+    const publicationBlocked = initialPublication === false;
     const slice = new MountSlice(
       deadline,
       now,
       pending.progressive ? publication.remainingRoots : Infinity,
     );
-    const reason = this.stageSlice(pending, slice, previewTransforms, deadline, now);
+    // A retained reorder also spends admission even though it reports no new IDs.
+    if (initialPublication === true) slice.record();
+    let reason: MountYieldReason | undefined = publicationBlocked
+      ? now() < deadline
+        ? "budget"
+        : "deadline"
+      : (slice.blockingReason() ??
+        prepareVisibilityCleanup(pending, slice, {
+          collect: () =>
+            collectPendingVisibilityExits(pending, slice, this.options.instrumentation, (id) =>
+              this.addExit(pending, id),
+            ),
+          remove: removeExits,
+          remainingRemovals: () => publication.remainingRemovals ?? 64,
+        }) ??
+        this.stageSlice(pending, slice, previewTransforms, deadline, now, publish));
+    if (publish?.() === false) reason = now() < deadline ? "budget" : "deadline";
+    recordVisibilityYield(this.options.instrumentation, reason);
+    this.#waitingForPaths = reason === "paths";
     slice.report(this.options.instrumentation, reason);
-    if (pending.progressive)
-      publication.remainingRoots = Math.max(0, publication.remainingRoots - slice.publicationNodes);
     if (reason !== undefined) {
-      const newlyMountedIds = pending.progressive ? this.publishProgress(pending) : EMPTY_IDS;
-      if (pending.delta !== undefined && pending.exitIndex < pending.exitIds.length) {
-        removeExits();
-      }
-      const committedVisibility = pending.targetPublished ? undefined : pending.visibility;
-      pending.targetPublished ||= newlyMountedIds.length > 0;
-      return {
-        ...(newlyMountedIds.length === 0 || committedVisibility === undefined
-          ? {}
-          : { committedVisibility }),
-        newlyMountedIds,
-        pending: true,
-      };
+      const newlyMountedIds = pending.progressive ? this.#newlyMountedIds : EMPTY_IDS;
+      return publishPendingVisibility(pending, newlyMountedIds, {
+        collect: () => {
+          collectPendingVisibilityExits(pending, slice, this.options.instrumentation, (id) =>
+            this.addExit(pending, id),
+          );
+        },
+        remove: removeExits,
+        canWork: () => now() < deadline,
+        waitingForPreparation: this.#preparation.waitingForPreparation,
+      });
     }
-    // Prepared publication is one atomic DOM operation after its bounded preparation.
+    // Initial and unproved order changes retain their atomic publication contract.
     this.#orderEpoch = commitVisibilityReconciliation(
       pending,
       this.options,
       this.#orderEpoch,
-      this.#newlyMountedIds,
+      pending.progressive ? [] : this.#newlyMountedIds,
     );
     const newlyMountedIds = this.#newlyMountedIds;
     pending.published = true;
@@ -257,107 +318,61 @@ export class SceneVisibilityReconciler {
     this.#promotedId = undefined;
     this.#deferredExits.clear();
   }
-
   private stageSlice(
     pending: PendingReconciliation,
     slice: MountSlice,
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
     deadline: number,
     now: () => number,
+    publish: ((force?: boolean) => boolean | undefined) | undefined,
   ): MountYieldReason | undefined {
-    let reason =
-      pending.delta === undefined
-        ? scanVisibilityExits(pending.exits, slice, this.options.instrumentation, (id) => {
-            this.#exitCapacity = recordReconciliationGrowth(
-              this.#exitCapacity,
-              pending.exitIds.length + 1,
-              this.options.instrumentation,
-            );
-            pending.exitIds.push(id);
-          })
-        : undefined;
-    if (reason === undefined && slice.elements > 0 && now() >= deadline) return "deadline";
-    if (reason === undefined) reason = this.stagePromoted(pending, slice, previewTransforms);
-    if (reason === undefined && slice.elements > 0 && now() >= deadline) return "deadline";
-    return (
-      reason ??
-      (pending.delta === undefined
-        ? this.stageBands(pending, slice, previewTransforms, deadline, now)
-        : stageVisibilityDelta(pending, slice, previewTransforms, {
-            ...this.options,
-            stage: (target, record, work, previews) =>
-              this.stageEntry(target, record, work, previews),
-            run: (band, successor) =>
-              this.prepareRun({ band, index: 0, run: undefined, successor }),
-          }))
-    );
+    return stageVisibilitySlice(pending, slice, previewTransforms, {
+      ...this.options,
+      pendingId: () => this.#preparation.pendingId,
+      waiting: () => this.#preparation.waiting,
+      promoted: () => {
+        const reason = this.stagePromoted(pending, slice, previewTransforms);
+        publish?.(false);
+        return reason;
+      },
+      publish: () => {
+        publish?.(false);
+      },
+      bands: () =>
+        stageVisibilityBands(pending, deadline, now, {
+          finish: () => finishReconciliationRun(pending),
+          entry: (id) => this.stageVisibleId(id, pending, slice, previewTransforms),
+          publish: () => {
+            publish?.(false);
+          },
+        }),
+      stage: (record, allowLocal) =>
+        this.stageEntry(pending, record, slice, previewTransforms, allowLocal),
+      run: (band, successor) => this.prepareRun({ band, successor }),
+      exit: (id) => this.addExit(pending, id),
+    });
   }
-
+  private addExit(pending: PendingReconciliation, id: string): void {
+    this.#exitCapacity = recordReconciliationGrowth(
+      this.#exitCapacity,
+      pending.exitIds.length + 1,
+      this.options.instrumentation,
+    );
+    pending.exitIds.push(id);
+  }
   private stagePromoted(
     pending: PendingReconciliation,
     slice: MountSlice,
     previews: ReadonlyMap<string, PreviewTransform>,
   ): MountYieldReason | undefined {
-    const id = this.#promotedId;
-    if (id === undefined) return;
-    this.#promotedId = undefined;
-    const record = this.options.store.get(id);
-    if (record === undefined || !this.options.visibility.contains(id)) return;
-    if (pending.progressive && !slice.canPublish) {
-      this.#promotedId = id;
-      return "budget";
-    }
-    const entry = pending.entrants.get(id) ?? this.stageEntry(pending, record, slice, previews);
-    if (entry === undefined) this.#promotedId = id;
-    slice.record();
-    if (entry === undefined) return "budget";
-    if (!pending.progressive) return undefined;
-    if (!slice.claimPublicationNodes(mountedRootCount(entry))) {
-      this.#promotedId = id;
-      return "budget";
-    }
-    const run = this.prepareRun({
-      band: entry.band,
-      index: 0,
-      run: undefined,
-      successor: firstMountedSuccessor(pending.visibility[entry.band], id, this.options.mounted),
+    const result = stagePromotedVisibility(this.#promotedId, pending, slice, {
+      ...this.options,
+      waiting: () => this.#preparation.waiting,
+      stage: (record) => this.stageEntry(pending, record, slice, previews),
+      run: (entry, successor) => this.prepareRun({ band: entry.band, successor }),
     });
-    run.entries[0] = entry;
-    run.entrants[0] = true;
-    run.count = 1;
-    pending.runCount += 1;
-    invalidateDeltaSuccessor(pending, entry.band);
-    return "budget";
-  }
-
-  private stageBands(
-    pending: PendingReconciliation,
-    slice: MountSlice,
-    previews: ReadonlyMap<string, PreviewTransform>,
-    deadline: number,
-    now: () => number,
-  ): MountYieldReason | undefined {
-    let visited = 0;
-    while (true) {
-      const visible = pending.visibility[pending.cursor.band];
-      while (pending.cursor.index >= 0) {
-        if (visited > 0 && now() >= deadline) return "deadline";
-        visited += 1;
-        const index = pending.cursor.index;
-        pending.cursor.index -= 1;
-        const id = visible.ids[index];
-        const reason = this.stageVisibleId(id, pending, slice, previews);
-        if (reason !== undefined) {
-          pending.cursor.index += 1;
-          return reason;
-        }
-      }
-      this.finishRun(pending);
-      if (pending.cursor.band === "content") return undefined;
-      pending.cursor.band = "content";
-      pending.cursor.index = pending.visibility.content.count - 1;
-      pending.cursor.successor = undefined;
-    }
+    this.#promotedId = result.id;
+    return result.reason;
   }
 
   private stageVisibleId(
@@ -379,7 +394,7 @@ export class SceneVisibilityReconciler {
       ) {
         this.observeRetainedOrder(pending, mounted);
         if (pending.retainedOrderPreserved) {
-          this.finishRun(pending);
+          finishReconciliationRun(pending);
           pending.cursor.successor = mounted;
           return undefined;
         }
@@ -405,7 +420,7 @@ export class SceneVisibilityReconciler {
     if (pending.progressive && !slice.canPublish) return "budget";
     const entry = this.stageEntry(pending, record, slice, previews);
     if (entry === undefined) return "budget";
-    if (!slice.claimPublicationNodes(mountedRootCount(entry))) return "budget";
+    if (!slice.claimPublicationNodes(publicationRootCount(entry))) return "budget";
     this.addMutation(pending.cursor, entry, true);
     slice.record();
     return undefined;
@@ -424,25 +439,24 @@ export class SceneVisibilityReconciler {
       preview?.strokeWidthScale ?? null,
       this.options.instrumentation,
     );
-    if (!slice.claimPublicationNodes(mountedRootCount(entrant))) return "budget";
+    if (!slice.claimPublicationNodes(publicationRootCount(entrant))) return "budget";
     this.addMutation(pending.cursor, entrant, true);
     return undefined;
   }
-
   private observeRetainedOrder(pending: PendingReconciliation, entry: MountedSceneElement): void {
     if (!pending.retainedOrderPreserved || pending.order.observe(entry, pending.cursor.band))
       return;
-    if (pending.progressive) this.finishRun(pending);
+    if (pending.progressive) finishReconciliationRun(pending);
     pending.retainedOrderPreserved = false;
   }
-
   private stageEntry(
     pending: PendingReconciliation,
     record: SceneElementRecord,
     slice: MountSlice,
     previews: ReadonlyMap<string, PreviewTransform>,
+    allowLocal = true,
   ): MountedSceneElement | undefined {
-    const entry = this.#preparation.stage(record, slice, previews.get(record.id));
+    const entry = this.#preparation.stage(record, slice, previews.get(record.id), allowLocal);
     if (entry === undefined) return undefined;
     pending.entrants.set(record.id, entry);
     this.#entrantCapacity = recordReconciliationGrowth(
@@ -469,32 +483,7 @@ export class SceneVisibilityReconciler {
     run.entrants[run.count] = entrant;
     run.count += 1;
   }
-  private finishRun(pending: PendingReconciliation): void {
-    const run = pending.cursor.run;
-    if (run === undefined) return;
-    pending.cursor.successor = run.entries[run.count - 1] ?? pending.cursor.successor;
-    pending.runCount += 1;
-    pending.cursor.run = undefined;
-  }
-  private publishProgress(pending: PendingReconciliation): readonly string[] {
-    const partial = pending.cursor.run;
-    const successor = partial?.entries[partial.count - 1] ?? pending.cursor.successor;
-    this.finishRun(pending);
-    publishVisibilityRuns({
-      runs: pending.runs,
-      count: pending.runCount,
-      options: this.options,
-      epoch: this.#orderEpoch,
-      output: this.#newlyMountedIds,
-      entrants: pending.entrants,
-    });
-    this.#publishedEntrantIds.push(...this.#newlyMountedIds);
-    pending.order.invalidate();
-    pending.runCount = 0;
-    pending.cursor.successor = successor;
-    return this.#newlyMountedIds;
-  }
-  private prepareRun(cursor: ReconciliationCursor): PendingMutationRun {
+  private prepareRun(cursor: Pick<ReconciliationCursor, "band" | "successor">): PendingMutationRun {
     return prepareReconciliationRun(this.#pending, cursor, this.options.instrumentation);
   }
 }

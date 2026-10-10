@@ -93,6 +93,12 @@ export class BoundedVersionLru<T> {
     this.#hits = 0;
   }
 
+  /** Evicts owned entries to leave room for another bounded index sharing this byte budget. */
+  public trimToBytes(maximumBytes: number): void {
+    assertNonNegativeSafeInteger(maximumBytes, "maximumBytes");
+    this.evictToLimits(Math.min(maximumBytes, this.#maximumBytes));
+  }
+
   public statistics(): LruStatistics {
     return {
       bytes: this.#bytes,
@@ -102,8 +108,8 @@ export class BoundedVersionLru<T> {
     };
   }
 
-  private evictToLimits(): void {
-    while (this.#entries.size > this.#maximumEntries || this.#bytes > this.#maximumBytes) {
+  private evictToLimits(maximumBytes = this.#maximumBytes): void {
+    while (this.#entries.size > this.#maximumEntries || this.#bytes > maximumBytes) {
       const oldest = this.#entries.entries().next().value;
       if (oldest === undefined) return;
       this.delete(oldest[0]);

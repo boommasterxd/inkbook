@@ -4,9 +4,11 @@ import type { SceneContentRenderer } from "./content-renderer";
 import type { ScenePathCache } from "./path-cache";
 import type { SceneDeltaEntry, SceneStoreDelta, SceneStorePort } from "./types";
 import type { SceneVisibilityState } from "./visibility-state";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
 
 export interface SceneDeltaRoutingPorts {
   readonly content: SceneContentRenderer;
+  readonly detachedCache?: DetachedSceneElementCache;
   readonly invalidateVisibility: () => void;
   readonly markOrderVisibilityDirty: () => void;
   readonly pathCache: ScenePathCache;
@@ -51,6 +53,16 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
   }
   if (firstVisibilityChange !== undefined) {
     invalidateVisibility(firstVisibilityChange, hasMultipleVisibilityChanges, ports);
+  }
+  invalidateDetachedElements(delta, ports);
+}
+
+function invalidateDetachedElements(delta: SceneStoreDelta, ports: SceneDeltaRoutingPorts): void {
+  if (ports.detachedCache === undefined) return;
+  for (const affected of delta.affected) {
+    if (affected.domains.includes("geometry") || ports.store.get(affected.id) === undefined) {
+      ports.detachedCache.invalidate(affected.id);
+    }
   }
 }
 

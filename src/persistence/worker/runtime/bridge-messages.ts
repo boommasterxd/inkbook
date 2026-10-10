@@ -18,6 +18,7 @@ export interface BridgeSuccess {
 
 export interface BridgeFailure {
   readonly code: "executor-failed";
+  readonly phase?: "host-decoding" | "host-execution" | "host-encoding";
   readonly requestId: number;
   readonly type: "inkbook-worker-error";
 }
@@ -26,6 +27,13 @@ export interface BridgeUnlockBatch {
   readonly batch: DocumentRuntimeWireUnlockBatch;
   readonly requestId: number;
   readonly type: "inkbook-worker-unlock-batch";
+}
+
+export interface BridgeScenePaths {
+  readonly batch: import("./types").PreparedScenePathsRuntimeSuccess;
+  readonly batchIndex: number;
+  readonly requestId: number;
+  readonly type: "inkbook-worker-scene-paths";
 }
 
 export interface BridgeBatchAcknowledgement {
@@ -46,7 +54,14 @@ export interface BridgeExportAcknowledgement {
 }
 
 export interface BridgeControl {
-  readonly action: "cancel-scene-paths" | "prewarm" | "set-live-input" | "set-profile";
+  readonly action:
+    | "cancel-scene-paths"
+    | "retarget-scene-paths"
+    | "prewarm"
+    | "set-live-input"
+    | "set-navigation"
+    | "set-profile";
+  readonly ids?: readonly string[];
   readonly identity?: import("../protocol").PurposeOperationIdentity;
   readonly active?: boolean;
   readonly frameIntervalMilliseconds?: number;
@@ -54,4 +69,4 @@ export interface BridgeControl {
   readonly type: "inkbook-worker-control";
 }
 
-export type BridgeResponse = BridgeFailure | BridgeSuccess | BridgeUnlockBatch;
+export type BridgeResponse = BridgeFailure | BridgeSuccess | BridgeUnlockBatch | BridgeScenePaths;

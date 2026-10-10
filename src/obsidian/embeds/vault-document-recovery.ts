@@ -21,6 +21,10 @@ import {
   deriveDocumentIntegrityManifest,
   sameDocumentIntegrityManifest,
 } from "../../persistence/serialization/public";
+import {
+  runVaultRecoveryOperation,
+  type VaultRecoveryExecutorAccess,
+} from "./vault-recovery-executor";
 
 export interface RecoveryCompletionOptions {
   readonly replaceMarkdownTarget?: (
@@ -67,6 +71,7 @@ interface SaveRecoveryCopyOptions {
   readonly workScheduler: WorkScheduler;
   readonly stopped: () => boolean;
   readonly workerEpoch: number;
+  readonly recoveryExecutor?: VaultRecoveryExecutorAccess;
 }
 
 export async function saveSessionRecoveryCopy(
@@ -171,27 +176,29 @@ export async function saveRecoveryCopy(options: SaveRecoveryCopyOptions): Promis
 async function exportRecovery(
   options: SaveRecoveryCopyOptions,
 ): Promise<Extract<DocumentRuntimeResult, { type: "export-success" }> | null> {
-  const result = await options.executor.execute({
-    baseModelRevision: null,
-    exportGeneration: 1,
-    modelRevision: options.operation.baseRevision,
-    sessionId: options.operation.sessionId,
-    snapshot: options.snapshot,
-    type: "export-full",
-    workerEpoch: options.workerEpoch,
-  });
-  return !options.stopped() &&
-    result.type === "export-success" &&
-    result.exportGeneration === 1 &&
-    result.modelRevision === options.operation.baseRevision &&
-    result.sessionId === options.operation.sessionId &&
-    result.workerEpoch === options.workerEpoch &&
-    sameDocumentIntegrityManifest(
-      result.integrityManifest,
-      deriveDocumentIntegrityManifest(options.snapshot),
-    )
-    ? result
-    : null;
+  return runRecovery(options, async (executor, workerEpoch) => {
+    const result = await executor.execute({
+      baseModelRevision: null,
+      exportGeneration: 1,
+      modelRevision: options.operation.baseRevision,
+      sessionId: options.operation.sessionId,
+      snapshot: options.snapshot,
+      type: "export-full",
+      workerEpoch,
+    });
+    return !options.stopped() &&
+      result.type === "export-success" &&
+      result.exportGeneration === 1 &&
+      result.modelRevision === options.operation.baseRevision &&
+      result.sessionId === options.operation.sessionId &&
+      result.workerEpoch === workerEpoch &&
+      sameDocumentIntegrityManifest(
+        result.integrityManifest,
+        deriveDocumentIntegrityManifest(options.snapshot),
+      )
+      ? result
+      : null;
+  }).then((result) => result ?? null);
 }
 
 async function verifyRecovery(
@@ -199,21 +206,37 @@ async function verifyRecovery(
   exported: Extract<DocumentRuntimeResult, { type: "export-success" }>,
   content: string,
 ): Promise<boolean> {
-  const verified = await options.executor.execute({
-    identity: recoveryVerificationIdentity(options.operation, options.workerEpoch),
-    input: content,
-    type: "verify-output",
+  return runRecovery(options, async (executor, workerEpoch) => {
+    const verified = await executor.execute({
+      identity: recoveryVerificationIdentity(options.operation, workerEpoch),
+      input: content,
+      type: "verify-output",
+    });
+    return (
+      !options.stopped() &&
+      verified.type === "verify-output-success" &&
+      verified.identity.operationId === options.operation.operationId &&
+      verified.identity.sessionId === options.operation.sessionId &&
+      verified.identity.workerEpoch === workerEpoch &&
+      verified.persisted.type === "confirmed" &&
+      verified.persisted.outputHash === exported.outputHash &&
+      verified.persisted.revision === options.operation.baseRevision
+    );
+  }).then((result) => result ?? false);
+}
+
+function runRecovery<Value>(
+  options: SaveRecoveryCopyOptions,
+  run: (executor: DocumentRuntimePort, workerEpoch: number) => Promise<Value>,
+): Promise<Value | undefined> {
+  return runVaultRecoveryOperation({
+    access: options.recoveryExecutor ?? {
+      current: () => ({ executor: options.executor, workerEpoch: options.workerEpoch }),
+      recover: () => Promise.resolve(false),
+    },
+    run,
+    stopped: options.stopped,
   });
-  return (
-    !options.stopped() &&
-    verified.type === "verify-output-success" &&
-    verified.identity.operationId === options.operation.operationId &&
-    verified.identity.sessionId === options.operation.sessionId &&
-    verified.identity.workerEpoch === options.workerEpoch &&
-    verified.persisted.type === "confirmed" &&
-    verified.persisted.outputHash === exported.outputHash &&
-    verified.persisted.revision === options.operation.baseRevision
-  );
 }
 
 async function completeRecovery(
@@ -287,16 +310,26 @@ export async function restoreWorkerBaseline(options: {
   readonly revision: number;
   readonly snapshot: InkSnapshotV1;
   readonly workerEpoch: number;
+  readonly recoveryExecutor?: VaultRecoveryExecutorAccess;
+  readonly stopped?: () => boolean;
 }): Promise<void> {
   try {
-    await options.executor.execute({
-      baseModelRevision: null,
-      exportGeneration: Number.MAX_SAFE_INTEGER,
-      modelRevision: options.revision,
-      sessionId: options.identity.sessionId,
-      snapshot: options.snapshot,
-      type: "export-full",
-      workerEpoch: options.workerEpoch,
+    await runVaultRecoveryOperation({
+      access: options.recoveryExecutor ?? {
+        current: () => ({ executor: options.executor, workerEpoch: options.workerEpoch }),
+        recover: () => Promise.resolve(false),
+      },
+      stopped: options.stopped ?? (() => false),
+      run: (executor, workerEpoch) =>
+        executor.execute({
+          baseModelRevision: null,
+          exportGeneration: Number.MAX_SAFE_INTEGER,
+          modelRevision: options.revision,
+          sessionId: options.identity.sessionId,
+          snapshot: options.snapshot,
+          type: "export-full",
+          workerEpoch,
+        }),
     });
   } catch {
     // The retained dirty model remains authoritative; a later recovery must replace the session.

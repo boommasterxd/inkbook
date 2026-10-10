@@ -99,10 +99,13 @@ export class SharedFrameScheduler implements WorkScheduler {
   }
 
   /** No promise is created while the current shared epoch still has budget. */
-  public checkpoint(signal?: FrameCancellation): Promise<void> | undefined {
+  public checkpoint(
+    signal?: FrameCancellation,
+    priority: WorkPriority = "background",
+  ): Promise<void> | undefined {
     if (signal?.aborted) return Promise.reject(cancelReason(signal));
     if (this.#disposed) return Promise.reject(disposedError());
-    return this.shouldYield() ? this.#waitForFrame(signal, "background") : undefined;
+    return this.shouldYield() ? this.#waitForFrame(signal, priority) : undefined;
   }
 
   /** An intentional paint boundary always waits for a later host frame. */

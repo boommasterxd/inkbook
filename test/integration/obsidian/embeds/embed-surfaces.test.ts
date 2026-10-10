@@ -349,6 +349,7 @@ describe("Live Preview widget lifecycle", () => {
     const ownerDocument = new FakeElement().ownerDocument;
     const widget = new InkbookLivePreviewWidget(livePreviewEmbed(), ports);
     const root = widget.toDOM({
+      plugin: () => null,
       dom: {
         ownerDocument,
         createDiv: () => {

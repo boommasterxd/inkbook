@@ -60,12 +60,18 @@ export interface RecoveryCompletionPort {
 export type ExternalChangeOutcome =
   "conflict" | "reload-failed" | "reload-required" | "reloaded" | "unchanged";
 
+export interface ExternalChangeResult extends SessionOperationIdentity {
+  readonly outcome: ExternalChangeOutcome;
+}
+
 export interface DocumentSessionPort {
   cancelOperation(operation: SessionOperationIdentity): void;
   dispose(): void;
   getSnapshot(): DocumentSessionSnapshot;
   lockLatest(operation: SessionOperationIdentity): Promise<SaveResult>;
-  notifyExternalChange?(operation: SessionOperationIdentity): Promise<ExternalChangeOutcome>;
+  notifyExternalChange?(
+    operation: SessionOperationIdentity,
+  ): Promise<ExternalChangeOutcome | ExternalChangeResult>;
   prepareForUnload?(): Promise<void>;
   resolveRecovery(
     action: "reload-external" | "save-local-copy",

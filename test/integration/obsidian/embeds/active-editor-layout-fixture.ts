@@ -10,6 +10,7 @@ import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
 import { FakeClassList } from "../../../fixtures/obsidian/class-list";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
+import type { NavigationLayoutRead } from "../../../../src/obsidian/embeds/active-editor/navigation-layout";
 
 class ScheduledWork {
   readonly frames = new Map<number, FrameRequestCallback>();
@@ -72,12 +73,14 @@ export function layoutHarness(
   motion: "full" | "reduced" | "system" = "full",
   horizontalInset = 0,
   blockInsets = 0,
+  readNavigationLayout?: () => NavigationLayoutRead | undefined,
 ) {
   const work = new ScheduledWork();
   const observers = installLayoutObservers(work.window, horizontalInset, blockInsets);
   const rect = { height: 0, width: 1_000 };
   const styleProperties = new Map<string, string>();
   const ownerDocument = { defaultView: work.window };
+  const root = { dataset: { inkbookMotion: motion }, ownerDocument } as unknown as HTMLElement;
   const classList = new FakeClassList();
   const container = {
     classList,
@@ -100,6 +103,7 @@ export function layoutHarness(
     },
     invalidateLayout,
     setCamera: vi.fn(),
+    setZoomBlockSize: zoomHeightWriter(container),
     setPage,
   } as unknown as SvgSceneRenderer;
   const onLayout = vi.fn();
@@ -125,12 +129,15 @@ export function layoutHarness(
     onZoom,
     page: readPage,
     readResizeAnchor: () => layoutResizeAnchor(rect, blockInsets, horizontalInset),
+    ...(readNavigationLayout === undefined ? {} : { readNavigationLayout }),
     renderer,
-    root: { dataset: { inkbookMotion: motion }, ownerDocument } as unknown as HTMLElement,
+    root,
     storeMaximumBottom: () => maximumBottom,
   });
   return {
     beginScrollStability,
+    container,
+    root,
     classList,
     invalidateLayout,
     layout,
@@ -138,6 +145,7 @@ export function layoutHarness(
     onResize,
     onZoom,
     rect,
+    renderer,
     releaseScrollStability,
     rendererPageHeight: () => rendererPageHeight,
     setMaximumBottom: (value: number | undefined) => {
@@ -160,6 +168,12 @@ export function layoutHarness(
     ...observers,
     work,
   };
+}
+
+function zoomHeightWriter(container: HTMLElement) {
+  return vi.fn((value: number) => {
+    container.style.blockSize = `${String(value)}px`;
+  });
 }
 
 function layoutResizeAnchor(
@@ -205,7 +219,7 @@ function installLayoutObservers(
   });
   return {
     triggerChromeMutation: () => chromeMutation?.([], {} as MutationObserver),
-    triggerResize: () => resize?.([], {} as ResizeObserver),
+    triggerResize: (entries: ResizeObserverEntry[] = []) => resize?.(entries, {} as ResizeObserver),
   };
 }
 

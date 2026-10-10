@@ -3,21 +3,21 @@ import { PAGE_WIDTH, PORTABLE_PALETTE_V1, type BackgroundV1 } from "../../domain
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { createToolCursorDom, type SceneToolCursorDom } from "./tool-cursor";
 import { SVG_NAMESPACE } from "./constants";
-import type { DocumentScheme, SceneInputHandlers } from "./types";
+import type { DocumentScheme, SceneInputHandlers, SceneRendererOptions } from "./types";
+import { SceneSurface } from "./scene-surface";
+import { SCENE_SURFACE_STYLES } from "./scene-surface-styles";
 
 type InputEventName = keyof SceneInputHandlers;
+type SurfaceOptions = Pick<SceneRendererOptions, "surfaceThemeRoot" | "onSurfaceFailure">;
+type SceneDomOptions = Pick<
+  SceneRendererOptions,
+  "container" | "accessibleName" | "inputHandlers" | "surfaceThemeRoot" | "onSurfaceFailure"
+>;
 
 let nextBackgroundPatternId = 0;
 
-const ACTIVE_THEME_STYLESHEET =
-  ".inkbook-theme-page{fill:var(--inkbook-page)}" +
-  ".inkbook-theme-guide{stroke:var(--inkbook-guide)}" +
-  ".inkbook-theme-stroke{stroke:var(--inkbook-text)}" +
-  ".inkbook-theme-fill{fill:var(--inkbook-text)}" +
-  ".inkbook-theme-stroke-fill{stroke:var(--inkbook-text);fill:var(--inkbook-text)}" +
-  "[data-inkbook-motion]{transform-box:fill-box;transform-origin:center}";
-
 export class SceneDom {
+  public onSurfaceInvalidated: (themeChanged?: boolean) => void = () => undefined;
   public readonly backgroundEdgePath: SVGPathElement;
   public readonly backgroundPath: SVGPathElement;
   public readonly cameraGroup: SVGGElement;
@@ -43,11 +43,27 @@ export class SceneDom {
   #livePathBand: RenderBand = "content";
   #liveStrokeBand: RenderBand = "content";
   readonly #listeners: { name: InputEventName; listener: EventListener }[] = [];
+  readonly #surface: SceneSurface;
 
-  public constructor(container: HTMLElement, accessibleName: string, handlers: SceneInputHandlers) {
-    this.ownerDocument = container.ownerDocument;
+  public static create(options: SceneDomOptions): SceneDom {
+    return new SceneDom(
+      options.container,
+      options.accessibleName ?? "Inkbook canvas",
+      options.inputHandlers ?? {},
+      options,
+    );
+  }
+
+  public constructor(
+    container: HTMLElement,
+    accessibleName: string,
+    handlers: SceneInputHandlers,
+    options: SurfaceOptions = {},
+  ) {
+    this.#surface = this.createSurface(container, options);
+    this.ownerDocument = this.#surface.drawingDocument;
     this.svg = this.createSvg("svg");
-    this.toolCursor = createToolCursorDom(this.ownerDocument);
+    this.toolCursor = createToolCursorDom(container.ownerDocument);
     this.cameraGroup = this.createSvg("g");
     this.pageSurface = this.createSvg("path");
     this.backgroundPath = this.createSvg("path");
@@ -69,11 +85,10 @@ export class SceneDom {
     this.selectionHandlePath = this.createSvg("path");
     this.snapMarkerPath = this.createSvg("path");
     const themeStyle = this.createSvg("style");
-    this.inputSurface = this.ownerDocument.createElementNS(
+    this.inputSurface = container.ownerDocument.createElementNS(
       "http://www.w3.org/1999/xhtml",
       "div",
     ) as HTMLDivElement;
-
     this.svg.setAttribute("aria-hidden", "true");
     this.svg.setAttribute("class", "inkbook-scene");
     this.svg.setAttribute("preserveAspectRatio", "none");
@@ -105,7 +120,7 @@ export class SceneDom {
     overlayGroup.setAttribute("class", "inkbook-scene-overlays inkbook-scene-foreground");
     this.livePath.setAttribute("pointer-events", "none");
     this.configureSelectionOverlays();
-    themeStyle.textContent = ACTIVE_THEME_STYLESHEET;
+    themeStyle.textContent = SCENE_SURFACE_STYLES;
 
     this.cameraGroup.append(
       this.pageSurface,
@@ -135,8 +150,29 @@ export class SceneDom {
     this.svg.setAttribute("pointer-events", "none");
 
     this.attachHandlers(handlers);
-    container.append(this.svg, this.inputSurface);
+    this.#surface.attach(this.svg);
+    container.append(this.inputSurface);
     this.setPageHeight(1);
+  }
+
+  public readSurface(): void {
+    this.#surface.read();
+  }
+
+  public setZoomBlockSize(blockSize: number): void {
+    this.#surface.setZoomBlockSize(blockSize);
+  }
+
+  public writeSurface(): void {
+    this.#surface.write();
+  }
+
+  public invalidateSurfaceTheme(): void {
+    this.#surface.invalidateTheme();
+  }
+
+  public revealSurface(): void {
+    this.#surface.reveal();
   }
 
   public replaceLivePath(): void {
@@ -236,12 +272,29 @@ export class SceneDom {
   }
 
   public release(): void {
+    this.releaseInputSurface();
+    this.#surface.release();
+  }
+
+  private releaseInputSurface(): void {
+    this.inputSurface.setAttribute("inert", "");
+    this.inputSurface.tabIndex = -1;
     for (const { listener, name } of this.#listeners) {
       this.inputSurface.removeEventListener(name, listener);
     }
     this.#listeners.length = 0;
     this.inputSurface.remove();
-    this.svg.remove();
+  }
+
+  private createSurface(container: HTMLElement, options: SurfaceOptions): SceneSurface {
+    const onFailure = options.onSurfaceFailure;
+    return new SceneSurface(container, (themeChanged) => this.onSurfaceInvalidated(themeChanged), {
+      ...(options.surfaceThemeRoot === undefined ? {} : { themeRoot: options.surfaceThemeRoot }),
+      onFailure: () => {
+        this.releaseInputSurface();
+        onFailure?.();
+      },
+    });
   }
 
   private configureSelectionOverlays(): void {
@@ -264,7 +317,10 @@ export class SceneDom {
   }
 
   private configureInputSurface(accessibleName: string): void {
-    const label = this.ownerDocument.createElementNS("http://www.w3.org/1999/xhtml", "span");
+    const label = this.inputSurface.ownerDocument.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "span",
+    );
     const labelId = `${this.#backgroundPatternId}-input-label`;
     label.setAttribute("id", labelId);
     label.setAttribute("hidden", "");

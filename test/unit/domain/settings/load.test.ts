@@ -331,6 +331,7 @@ describe("device settings loading", () => {
       value: {
         ...input,
         version: 2,
+        scrollPreloadMarginPx: 300,
         keyboardShortcuts: createBuiltInKeyboardShortcuts(),
       },
       diagnostics: [],
@@ -348,6 +349,7 @@ describe("device settings loading", () => {
 
     expect(result.value).toEqual({
       version: 2,
+      scrollPreloadMarginPx: 300,
       fingerDrawingEnabled: false,
       penTapInsertion: "off",
       leftHandedToolbar: true,

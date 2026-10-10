@@ -16,6 +16,7 @@ const PRIORITY: Readonly<Record<WorkerJobKind, number>> = {
 export class WorkerJobQueue<TPayload> {
   readonly #requiredCapacity: number;
   #active: WorkerJob<TPayload> | null = null;
+  readonly #suspended: WorkerJob<TPayload>[] = [];
   readonly #required: WorkerJob<TPayload>[] = [];
   #clipboard: WorkerJob<TPayload> | null = null;
   #export: WorkerJob<TPayload> | null = null;
@@ -36,6 +37,7 @@ export class WorkerJobQueue<TPayload> {
   public get pendingCount(): number {
     return (
       this.#required.length +
+      this.#suspended.length +
       Number(this.#clipboard !== null) +
       Number(this.#export !== null) +
       Number(this.#unlock !== null)
@@ -58,29 +60,58 @@ export class WorkerJobQueue<TPayload> {
     return this.#admitSingle(job, "export");
   }
 
-  public complete(activeJobId: string): WorkerJob<TPayload> | null {
+  public complete(
+    activeJobId: string,
+    eligible: (job: WorkerJob<TPayload>) => boolean = () => true,
+  ): WorkerJob<TPayload> | null {
     if (this.#active?.id !== activeJobId) {
       return null;
     }
     this.#active = null;
-    return this.startNext();
+    return this.startNext(eligible);
   }
 
-  public startNext(): WorkerJob<TPayload> | null {
+  public startNext(
+    eligible: (job: WorkerJob<TPayload>) => boolean = () => true,
+  ): WorkerJob<TPayload> | null {
     if (this.#active !== null) {
       return this.#active;
     }
-    this.#active = this.#takeHighestPriority();
+    this.#active = this.#takeHighestPriority(eligible);
     return this.#active;
+  }
+
+  /** A speculative owner and its foreground successor may each yield to navigation. */
+  public suspendActive(): void {
+    if (this.#suspended.length >= 2 || this.#active === null)
+      throw new Error("Worker suspension capacity is exhausted or no job is active.");
+    this.#suspended.push(this.#active);
+    this.#active = null;
+  }
+
+  public resumeActive(): void {
+    if (this.#active !== null || this.#suspended.length === 0)
+      throw new Error("A suspended worker job requires an empty active slot.");
+    this.#active = this.#suspended.pop()!;
   }
 
   public clearPending(): readonly WorkerJob<TPayload>[] {
     const pending = this.#orderedPending();
+    pending.push(...this.#suspended);
+    this.#suspended.length = 0;
     this.#required.length = 0;
     this.#clipboard = null;
     this.#export = null;
     this.#unlock = null;
     return pending;
+  }
+
+  /** Release a cancelled queued required request without disturbing the active job. */
+  public cancelPendingRequired(id: string): boolean {
+    const index = this.#required.findIndex((job) => job.id === id);
+    if (index === -1) return false;
+    this.#required.splice(index, 1);
+    return true;
   }
 
   #admitUnlock(job: WorkerJob<TPayload>): QueueAdmission {
@@ -92,7 +123,10 @@ export class WorkerJobQueue<TPayload> {
   }
 
   #admitRequired(job: WorkerJob<TPayload>): QueueAdmission {
-    if (this.#required.length >= this.#requiredCapacity) {
+    if (
+      this.#required.length + this.#suspended.filter((job) => job.kind === "required").length >=
+      this.#requiredCapacity
+    ) {
       return "full";
     }
     this.#required.push(job);
@@ -102,6 +136,7 @@ export class WorkerJobQueue<TPayload> {
   #admitSingle(job: WorkerJob<TPayload>, kind: "clipboard" | "export"): QueueAdmission {
     const occupied =
       this.#active?.kind === kind ||
+      this.#suspended.some((pending) => pending.kind === kind) ||
       (kind === "clipboard" ? this.#clipboard : this.#export) !== null;
     if (occupied) {
       return "busy";
@@ -115,7 +150,11 @@ export class WorkerJobQueue<TPayload> {
   }
 
   #contains(id: string): boolean {
-    return this.#active?.id === id || this.#orderedPending().some((job) => job.id === id);
+    return (
+      this.#active?.id === id ||
+      this.#suspended.some((pending) => pending.id === id) ||
+      this.#orderedPending().some((job) => job.id === id)
+    );
   }
 
   #orderedPending(): WorkerJob<TPayload>[] {
@@ -127,22 +166,26 @@ export class WorkerJobQueue<TPayload> {
     ].sort((left, right) => PRIORITY[left.kind] - PRIORITY[right.kind]);
   }
 
-  #takeHighestPriority(): WorkerJob<TPayload> | null {
-    if (this.#unlock !== null) {
+  #takeHighestPriority(
+    eligible: (job: WorkerJob<TPayload>) => boolean,
+  ): WorkerJob<TPayload> | null {
+    if (this.#unlock !== null && eligible(this.#unlock)) {
       const job = this.#unlock;
       this.#unlock = null;
       return job;
     }
-    const required = this.#required.shift();
+    const index = this.#required.findIndex(eligible);
+    const required = index === -1 ? undefined : this.#required.splice(index, 1)[0];
     if (required !== undefined) {
       return required;
     }
-    if (this.#clipboard !== null) {
+    if (this.#clipboard !== null && eligible(this.#clipboard)) {
       const job = this.#clipboard;
       this.#clipboard = null;
       return job;
     }
     const job = this.#export;
+    if (job === null || !eligible(job)) return null;
     this.#export = null;
     return job;
   }
