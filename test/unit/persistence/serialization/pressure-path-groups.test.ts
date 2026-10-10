@@ -45,7 +45,7 @@ describe("canonical pressure path groups", () => {
     expect(stroke?.kind).toBe("stroke");
     if (stroke?.kind !== "stroke") return;
     expect(stroke.points).toEqual(new Float64Array([100, 100, 0, 150, 100, 0.5, 200, 100, 1]));
-    const model = new DocumentModelRuntime(() => 0);
+    const model = new DocumentModelRuntime();
     await expect(model.verifyOutput(document.current)).resolves.toMatchObject({ revision: 7 });
     await expect(model.unlock(document.current)).resolves.toMatchObject({
       requiresCanonicalRewrite: false,
@@ -70,7 +70,7 @@ describe("canonical pressure path groups", () => {
     "enforces safe unlock and strict output rules for changed %s",
     async (_label, safe, change) => {
       const document = pressureDocument();
-      const model = new DocumentModelRuntime(() => 0);
+      const model = new DocumentModelRuntime();
       await expect(model.verifyOutput(change(document.current))).resolves.toBeNull();
       if (safe) {
         await expect(model.unlock(change(document.current))).resolves.toMatchObject({
@@ -91,7 +91,7 @@ describe("canonical pressure path groups", () => {
       /<g opacity="1">.*?<\/g>/u,
       '<path d="M100 104L200 104A4 4 0 0 0 200 96L100 96A4 4 0 0 0 100 104Z" class="inkbook-theme-fill" fill="#222222FF"/>',
     );
-    const model = new DocumentModelRuntime(() => 0);
+    const model = new DocumentModelRuntime();
     await expect(model.unlock(legacy)).resolves.toMatchObject({ requiresCanonicalRewrite: false });
     await expect(model.verifyOutput(legacy)).resolves.toBeNull();
     model.clear();

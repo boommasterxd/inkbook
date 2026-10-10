@@ -18,6 +18,7 @@ import {
 import { emitUnlockBatches } from "./unlock-batches";
 import { ScenePathOperation } from "./scene-path-operation";
 import { runtimeSliceContext } from "./slice-scheduler";
+import { NavigationJobSuspension } from "./navigation-job-suspension";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeObserver,
@@ -51,12 +52,17 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   #liveInputActive = false;
   #navigationActive = false;
   readonly #navigationGate = new InputActivityGate(() => this.#navigationActive);
+  readonly #navigationSuspension = new NavigationJobSuspension({
+    active: () => this.#navigationActive,
+    drain: this.#drainJobs.bind(this),
+    queue: this.#queue,
+    terminated: () => this.#terminated,
+  });
   readonly #prewarm: DocumentPrewarm;
   #foreground: Promise<void> | undefined;
   #running = false;
   #terminated = false;
   #unlockPending = false;
-
   public constructor(
     executor: ExecutorIdentity,
     scheduler: InputAwareSliceScheduler | null = null,
@@ -68,14 +74,13 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#scheduler = scheduler;
     this.#services = services;
     this.#onTerminate = onTerminate;
-    this.#model = new DocumentModelRuntime(services.now, ownsTransferredSamples);
+    this.#model = new DocumentModelRuntime(ownsTransferredSamples);
     this.#prewarm = new DocumentPrewarm(
       this.#model,
       (signal) => this.checkpoint(signal),
       () => this.#mayPrewarm(),
     );
   }
-
   public get instrumentation() {
     return {
       ...this.#model.instrumentation,
@@ -84,7 +89,6 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       unacknowledgedExports: this.#unacknowledgedExports.size,
     };
   }
-
   public execute(
     request: DocumentRuntimeRequest,
     observer?: DocumentRuntimeObserver,
@@ -121,6 +125,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         request,
         resolve,
       });
+      this.#navigationSuspension.notify();
       this.#prewarm.interrupt();
       const active = this.#queue.active;
       if (
@@ -137,7 +142,6 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       void this.#drain();
     });
   }
-
   public acknowledgeExport(identity: ExportIdentity, _accepted: boolean): void {
     if (!matchesExecutorIdentity(identity, this.#executor)) return;
     this.#unacknowledgedExports.delete(exportIdentityKey(identity));
@@ -165,12 +169,10 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     for (const job of this.#jobs.values())
       if (job.sceneOperation?.matches(identity)) job.sceneOperation.retarget(ids);
   }
-
   public requestPrewarm(): void {
     if (this.#terminated) return;
     this.#prewarm.request();
   }
-
   public checkpoint(signal: AbortSignal): Promise<void> | undefined {
     signal.throwIfAborted();
     const pending = this.#scheduler?.checkpoint(
@@ -182,20 +184,18 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     signal.throwIfAborted();
     return undefined;
   }
-
   public setSchedulingProfile(sliceMilliseconds: number, frameIntervalMilliseconds: number): void {
     this.#scheduler?.setSchedulingProfile?.(sliceMilliseconds, frameIntervalMilliseconds);
   }
-
   public setLiveInputActive(active: boolean): void {
     this.#liveInputActive = active;
     if (active) this.#cancelSpeculativeScenePreparation();
     this.#scheduler?.setLiveInputActive?.(active);
     if (!active) this.#prewarm.schedule();
   }
-
   public setNavigationActive(active: boolean): void {
     this.#navigationActive = active;
+    this.#navigationSuspension.notify();
     if (active) this.#cancelSpeculativeScenePreparation(true);
     if (!active) {
       this.#navigationGate.notifyInactive();
@@ -323,7 +323,11 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       this.#scheduler,
       signal,
       request,
-      isDocumentPrewarmRequest(request) ? () => this.#yieldSpeculative(signal) : undefined,
+      () =>
+        (!isNavigationSceneRequest(request)
+          ? this.#navigationSuspension.wait(signal)
+          : undefined) ??
+        (isDocumentPrewarmRequest(request) ? this.#yieldSpeculative(signal) : undefined),
     );
     if (request.type === "prepare-scene-paths")
       return this.#prepareScenePaths(request, sliceContext, signal, observer);
@@ -493,5 +497,4 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
 
 const DEFAULT_RUNTIME_SERVICES: DocumentRuntimeServices = Object.freeze({
   createId: () => crypto.randomUUID(),
-  now: () => performance.now(),
 });

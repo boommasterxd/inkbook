@@ -214,7 +214,6 @@ export interface DocumentRuntimePort {
 
 export interface DocumentRuntimeServices {
   createId(): string;
-  now?(this: void): number;
 }
 
 export interface InputAwareSliceScheduler {

@@ -12,21 +12,25 @@ export function runtimeSliceContext(
   scheduler: InputAwareSliceScheduler | null,
   signal: AbortSignal,
   request: DocumentRuntimeRequest,
-  waitForForeground?: () => Promise<void> | undefined,
+  waitForAdmission?: () => Promise<void> | undefined,
 ): RuntimeSliceContext | undefined {
-  if (scheduler === null && waitForForeground === undefined) return undefined;
+  if (scheduler === null && waitForAdmission === undefined) return undefined;
   const sliceMilliseconds = scheduler?.getSliceMilliseconds?.bind(scheduler);
   const workProfile = scheduler?.getSliceWorkProfile?.bind(scheduler);
+  const checkpoint = (): Promise<void> | undefined => {
+    const admission = waitForAdmission?.();
+    if (admission !== undefined) return admission.then(checkpoint);
+    const pending = scheduler?.checkpoint(
+      signal,
+      isNavigationSceneRequest(request) ? "frame" : undefined,
+    );
+    return pending?.then(() => {
+      const resumedAdmission = waitForAdmission?.();
+      return resumedAdmission?.then(checkpoint);
+    });
+  };
   return {
-    checkpoint: () => {
-      const pending = scheduler?.checkpoint(
-        signal,
-        isNavigationSceneRequest(request) ? "frame" : undefined,
-      );
-      return pending === undefined
-        ? waitForForeground?.()
-        : pending.then(() => waitForForeground?.());
-    },
+    checkpoint,
     ...(sliceMilliseconds === undefined ? {} : { sliceMilliseconds }),
     ...(workProfile === undefined ? {} : { workProfile: workProfile() }),
     signal,

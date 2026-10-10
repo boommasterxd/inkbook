@@ -5,6 +5,29 @@ import type { WorkerJob, WorkerJobKind } from "../../../../src/persistence/worke
 
 const job = (id: string, kind: WorkerJobKind): WorkerJob<string> => ({ id, kind, payload: id });
 
+it("bounds nested speculative and navigation suspension and resumes their owners in order", () => {
+  const queue = new WorkerJobQueue<string>();
+  queue.admit(job("speculative", "required"));
+  queue.startNext();
+  queue.suspendActive();
+  queue.admit(job("export", "export"));
+  queue.startNext();
+  queue.suspendActive();
+  expect(queue.admit(job("other-export", "export"))).toBe("busy");
+  queue.admit(job("viewport", "required"));
+  queue.startNext();
+  expect(() => queue.suspendActive()).toThrow();
+  expect(queue.pendingCount).toBe(2);
+  queue.complete("viewport");
+  queue.resumeActive();
+  expect(queue.active?.id).toBe("export");
+  queue.complete("export");
+  queue.resumeActive();
+  expect(queue.active?.id).toBe("speculative");
+  queue.complete("speculative");
+  expect(queue.pendingCount).toBe(0);
+});
+
 describe("bounded non-preemptive worker queue", () => {
   it("retains one suspended job within required capacity until foreground completion", () => {
     const queue = new WorkerJobQueue<string>({ requiredCapacity: 2 });
