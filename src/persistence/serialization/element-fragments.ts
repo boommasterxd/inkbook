@@ -1,5 +1,8 @@
 import type { StrokeShapeCache } from "./stroke-shape-cache";
 import type { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
+import type { StrokeFragmentPathRange } from "./stroke-fragment-paths";
+import { buildElementPathParts } from "../../domain/geometry/element-path";
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { isHighlightElement } from "../../domain/commands/render-bands";
 import { calculateElementBounds } from "../../domain/geometry/public";
 import type { InkElementV1 } from "../../domain/schema/public";
@@ -23,6 +26,7 @@ export interface ElementFragments {
   readonly retainedBytes: number;
   readonly svg: string;
   readonly svgUtf8: Uint8Array<ArrayBuffer>;
+  readonly strokePaths: readonly StrokeFragmentPathRange[] | undefined;
 }
 
 export type RenderBand = "content" | "highlight";
@@ -39,19 +43,20 @@ export function buildElementFragments(
 ): ElementFragments {
   const canonicalMetadata = serializeCanonicalElementMetadata(element, sampleCache);
   const metadata = escapeXmlText(canonicalMetadata);
+  const parts =
+    element.kind === "stroke"
+      ? (shapeCache?.resolve(element) ?? buildElementPathParts(strokeLocalGeometry(element)))
+      : undefined;
   const svg = (
-    element.kind === "stroke" && shapeCache !== undefined
-      ? serializeParts(element, shapeCache.resolve(element))
-      : serializeElementPaths(element)
+    parts === undefined ? serializeElementPaths(element) : serializeParts(element, parts)
   ).join("");
-  return elementFragments(
-    element,
-    canonicalMetadata,
-    metadata,
-    svg,
-    serializedPathDataByteLength(svg),
-    bottom,
-  );
+  const offsets = parts === undefined ? undefined : ([] as number[]);
+  const bytes = serializedPathDataByteLength(svg, offsets);
+  const ranges = parts?.map((part, index): StrokeFragmentPathRange => {
+    if (part.paint === "fill-and-stroke") throw new Error("Invalid stroke path paint.");
+    return { start: offsets![index * 2]!, end: offsets![index * 2 + 1]!, paint: part.paint };
+  });
+  return elementFragments(element, canonicalMetadata, metadata, svg, { bytes, ranges }, bottom);
 }
 
 function elementFragments(
@@ -59,7 +64,10 @@ function elementFragments(
   canonicalMetadata: string,
   metadata: string,
   svg: string,
-  pathDataBytes: number,
+  paths: {
+    readonly bytes: number;
+    readonly ranges: readonly StrokeFragmentPathRange[] | undefined;
+  },
   bottom: number,
 ): ElementFragments {
   const encoder = new TextEncoder();
@@ -84,11 +92,15 @@ function elementFragments(
     },
     metadataBytes,
     metadataUtf8,
-    pathDataBytes,
-    retainedBytes: bytes + (metadataUtf8 === canonicalMetadataUtf8 ? 0 : canonicalMetadataBytes),
+    pathDataBytes: paths.bytes,
+    retainedBytes:
+      bytes +
+      (metadataUtf8 === canonicalMetadataUtf8 ? 0 : canonicalMetadataBytes) +
+      (paths.ranges === undefined ? 0 : 48 + paths.ranges.length * 64),
     get svg() {
       return decoder.decode(svgUtf8);
     },
     svgUtf8,
+    strokePaths: paths.ranges,
   };
 }

@@ -300,5 +300,6 @@ function oversizedFragment(
     retainedBytes: metadata.length + svg.length,
     svg,
     svgUtf8: textEncoder.encode(svg),
+    strokePaths: undefined,
   };
 }
