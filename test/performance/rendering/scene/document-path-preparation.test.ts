@@ -88,6 +88,13 @@ it("warms missing contours in a 10,006-stroke document through bounded worker ba
     expect(fixture.cache.statistics().entries).toBe(count);
     expect(fixture.cache.statistics().bytes).toBeLessThanOrEqual(25 * 1024 * 1024);
     expect(fixture.cache.statistics().evictions).toBe(0);
+    const adopted = fixture.store.get(fixture.elements[count - 1]!.id)!;
+    const contour = fixture.cache.take(adopted.id, adopted.geometryVersion);
+    expect(contour).toBeDefined();
+    expect(fixture.cache.read(adopted.element)).toBe(contour);
+    expect(
+      fixture.store.pressureGeometry(adopted.id, adopted.geometryVersion).readPath?.(),
+    ).toEqual(contour);
     const requests = prepare.mock.calls.length;
     const reused = new DocumentPathPreparation(fixture.store, fixture.cache, vi.fn());
     expect(reused.prepare(Infinity, () => 0)).toBe(false);

@@ -33,6 +33,48 @@ it("walks the current band order lazily and skips cached contours without local 
   store.release();
 });
 
+it("registers quietly adopted contours for immutable reuse and pressure-path consumers", async () => {
+  const fixture = createDocumentPathFixture(1);
+  await completeDocumentPaths(fixture);
+  const record = fixture.store.get(fixture.elements[0]!.id)!;
+  const parts = fixture.cache.take(record.id, record.geometryVersion);
+  expect(parts).toBeDefined();
+  expect(fixture.cache.read({ ...record.element, id: "copy" })).toBe(parts);
+  expect(fixture.store.pressureGeometry(record.id, record.geometryVersion).readPath?.()).toEqual(
+    parts,
+  );
+  expect(fixture.cache.statistics()).toMatchObject({ entries: 1, evictions: 0 });
+  fixture.preparation.release();
+  fixture.cache.release();
+  fixture.store.release();
+});
+
+it("refuses speculative identity storage without evicting required contours or publishing pressure", async () => {
+  const cache = new ScenePathCache(4, 4096);
+  const fixture = createDocumentPathFixture(1, cache);
+  const element = fixture.elements[0]!;
+  fixture.domain.replace(element.id, {
+    ...element,
+    points: Array.from({ length: 300 }, () => [20, 20, 0.5]).flat(),
+  });
+  const required = indexedStroke(1).id;
+  const requiredParts = [{ d: "M0 0", paint: "fill" as const }];
+  cache.retain(required, 1, requiredParts);
+  const before = cache.statistics();
+  await completeDocumentPaths(fixture);
+  expect(cache.statistics()).toEqual(before);
+  expect(cache.take(required, 1)).toBe(requiredParts);
+  expect(fixture.preparation.needsWork).toBe(false);
+  expect(fixture.work.builds).toBe(1);
+  const record = fixture.store.get(element.id)!;
+  expect(
+    fixture.store.pressureGeometry(record.id, record.geometryVersion).readPath?.(),
+  ).toBeUndefined();
+  fixture.preparation.release();
+  cache.release();
+  fixture.store.release();
+});
+
 it("respects the injected deadline for lazy record admission and leaves no polling while pending", () => {
   const fixture = createDocumentPathFixture();
   const remote = deferDocumentPaths(fixture);

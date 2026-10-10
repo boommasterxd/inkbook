@@ -8,6 +8,7 @@ import type { StoreOrderCursor } from "../../domain/store/order-cursor";
 import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import type { ScenePathCache } from "./path-cache";
 import type { SceneElementRecord, SceneStoreDelta, SceneStorePort } from "./types";
+import { localPressureGeometry } from "./stroke-position";
 
 interface DocumentPathBatch {
   readonly controller: AbortController;
@@ -238,11 +239,15 @@ export class DocumentPathPreparation {
         if (record !== undefined) this.#retry.add(path.id);
         continue;
       }
-      if (!this.cache.retainSpeculative(path.id, record.geometryVersion, path.parts)) {
+      if (
+        !this.cache.retainSpeculative(path.id, record.geometryVersion, path.parts, record.element)
+      ) {
         batch.capacityRefused = true;
         this.#retry.add(path.id);
         continue;
       }
+      const pressure = this.store.pressureGeometry?.(record.id, record.geometryVersion);
+      localPressureGeometry(record.element, pressure)?.publishPath?.(path.parts);
       batch.versions.delete(path.id);
     }
     if (batch.ready.size > 0) return true;

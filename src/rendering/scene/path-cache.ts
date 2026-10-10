@@ -30,9 +30,14 @@ interface CachedPath {
   readonly releaseLookup?: () => void;
 }
 
+interface PathIdentity {
+  readonly key: string;
+  readonly ownsParts: boolean;
+}
+
 export class ScenePathCache extends VersionedCache<CachedPath> {
   readonly #identities = new WeakMap<object, Map<string, string>>();
-  readonly #parts = new WeakMap<readonly SvgPathPart[], string>();
+  readonly #parts = new WeakMap<readonly SvgPathPart[], PathIdentity>();
   readonly #retainedKeys = new Set<string>();
   readonly #aliases: SceneGeometryAliases;
   readonly #maximumBytes: number;
@@ -128,16 +133,13 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     const existingLookup = this.#identities.get(points);
     const existingKey = existingLookup?.get(signature);
     if (existingKey !== undefined && this.#retainedKeys.has(existingKey)) {
+      if (this.#parts.get(parts)?.key !== existingKey)
+        this.#parts.set(parts, { key: existingKey, ownsParts: false });
       this.#aliases.retain(element.id, undefined, existingKey);
       this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
       return;
     }
-    const bytes =
-      SHARED_LOOKUP_OVERHEAD_BYTES +
-      points.length * 8 +
-      signature.length * 2 +
-      pathBytes(parts) +
-      windows.reduce((total, window) => total + pressureWindowRetainedBytes(window), 0);
+    const bytes = sharedPathBytes(points, signature, parts, windows);
     if (bytes > this.#maximumBytes) return;
     const lookup = existingLookup ?? new Map<string, string>();
     const key = `\0stroke-geometry:${this.#nextIdentity++}`;
@@ -155,7 +157,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
       bytes,
     );
     this.#retainedKeys.add(key);
-    this.#parts.set(parts, key);
+    this.#parts.set(parts, { key, ownsParts: true });
     lookup.set(signature, key);
     this.#identities.set(points, lookup);
     this.#aliases.retain(element.id, undefined, key);
@@ -182,23 +184,39 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     id: string,
     geometryVersion: number,
     parts: readonly SvgPathPart[],
+    element?: InkElementV1,
   ): boolean {
     if (this.has(id, geometryVersion)) return true;
-    const bytes = SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + pathBytes(parts);
-    const aliasBytes = 128 + (id.length + `\0path:${this.#nextIdentity}`.length) * 2;
+    const signature = element === undefined ? undefined : immutableStrokeSignature(element);
+    const shared = signature !== undefined && element?.kind === "stroke";
+    const existingKey = shared ? this.#identities.get(element.points)?.get(signature) : undefined;
+    const retained = existingKey !== undefined && this.#retainedKeys.has(existingKey);
+    const key = retained
+      ? existingKey
+      : `\0${shared ? "stroke-geometry" : "path"}:${this.#nextIdentity}`;
+    const bytes = retained
+      ? 0
+      : shared
+        ? sharedPathBytes(element.points, signature, parts, [])
+        : SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + pathBytes(parts);
+    const aliasBytes = 128 + (id.length + key.length) * 2;
     if (bytes > this.speculativeCapacityBytes() || aliasBytes > this.#aliases.availableBytes())
       return false;
+    if (bytes + aliasBytes > this.#maximumBytes - this.cacheMemoryUsage()) return false;
+    if (shared) this.completePreparation(element, parts);
     this.retain(id, geometryVersion, parts);
     return this.has(id, geometryVersion);
   }
 
   public ownsPrepared(element: InkElementV1, parts: readonly SvgPathPart[]): boolean {
-    const key = this.#parts.get(parts);
+    const identity = this.#parts.get(parts);
+    const key = identity?.key;
     const signature = immutableStrokeSignature(element);
     return (
       this.retentionEnabled &&
       element.kind === "stroke" &&
       signature !== undefined &&
+      identity?.ownsParts === true &&
       key !== undefined &&
       this.#retainedKeys.has(key) &&
       this.#identities.get(element.points)?.get(signature) === key
@@ -232,7 +250,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
       );
     }
     const parts = cached.parts;
-    this.#parts.set(parts, key ?? id);
+    this.#parts.set(parts, { key: key ?? id, ownsParts: true });
     return parts;
   }
 
@@ -289,7 +307,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
 
   public retain(id: string, geometryVersion: number, parts: readonly SvgPathPart[]): void {
     if (!this.retentionEnabled) return;
-    const key = this.#parts.get(parts);
+    const key = this.#parts.get(parts)?.key;
     if (key !== undefined && this.#retainedKeys.has(key)) {
       this.getCached(key, 0);
       this.#aliases.retain(id, geometryVersion, key);
@@ -301,7 +319,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     const canonical = `\0path:${this.#nextIdentity++}`;
     this.retainCached(canonical, 0, { parts }, bytes);
     this.#retainedKeys.add(canonical);
-    this.#parts.set(parts, canonical);
+    this.#parts.set(parts, { key: canonical, ownsParts: true });
     this.#aliases.retain(id, geometryVersion, canonical);
     this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
   }
@@ -309,6 +327,21 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
 
 function pathBytes(parts: readonly SvgPathPart[]): number {
   return parts.reduce((total, part) => total + part.d.length * 2 + PATH_PART_OVERHEAD_BYTES, 0);
+}
+
+function sharedPathBytes(
+  points: { readonly length: number },
+  signature: string,
+  parts: readonly SvgPathPart[],
+  windows: readonly PressureWindow[],
+): number {
+  return (
+    SHARED_LOOKUP_OVERHEAD_BYTES +
+    points.length * 8 +
+    signature.length * 2 +
+    pathBytes(parts) +
+    windows.reduce((total, window) => total + pressureWindowRetainedBytes(window), 0)
+  );
 }
 
 function immutableStrokeSignature(element: InkElementV1): string | undefined {

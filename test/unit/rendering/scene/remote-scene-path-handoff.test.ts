@@ -41,6 +41,11 @@ it("does not claim a replacement array when the same geometry keeps its earlier 
   expect(cache.read(entry.element)).toBe(original);
   expect(cache.ownsPrepared(entry.element, original)).toBe(true);
   expect(cache.ownsPrepared(entry.element, replacement)).toBe(false);
+  cache.retain(entry.id, entry.geometryVersion, replacement);
+  expect(cache.take(entry.id, entry.geometryVersion)).toBe(original);
+  expect(cache.statistics().entries).toBe(1);
+  expect(cache.ownsPrepared(entry.element, original)).toBe(true);
+  expect(cache.ownsPrepared(entry.element, replacement)).toBe(false);
   cache.release();
 });
 

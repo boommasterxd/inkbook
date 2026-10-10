@@ -4,6 +4,9 @@ import { BoundedVersionLru } from "../../../../src/domain/cache/bounded-version-
 import * as geometry from "../../../../src/domain/geometry/element-path";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
+import { UniformSpatialIndex } from "../../../../src/domain/spatial";
+import { NavigationPathPreparation } from "../../../../src/rendering/scene/navigation-path-preparation";
+import { createSceneRecord } from "../../../fixtures/rendering/scene";
 import {
   pressureWindowRetainedBytes,
   type PressureWindow,
@@ -67,6 +70,36 @@ describe("scene-owned immutable stroke reuse", () => {
 });
 
 describe("scene geometry identity and alias ownership", () => {
+  it("shares separately delivered navigation contours for the same immutable shape", async () => {
+    const stroke = immutableStroke();
+    const elements = [stroke, { ...stroke, id: "copy" }];
+    const records = new Map(elements.map((element) => [element.id, createSceneRecord(element)]));
+    const index = new UniformSpatialIndex<string>();
+    for (const record of records.values()) index.insert(record.id, record.bounds);
+    const parts = geometry.buildElementPathParts(stroke);
+    const cache = new ScenePathCache();
+    const preparation = new NavigationPathPreparation(
+      {
+        get: (id) => records.get(id),
+        query: vi.fn(),
+        beginQuery: (bounds) => index.beginQuery(bounds),
+        prepareScenePaths: async (ids) => ids.map((id) => ({ id, parts: [...parts] })),
+      },
+      cache,
+    );
+    const bounds = { minX: 0, maxX: 100, minY: -100, maxY: 0 };
+    preparation.setTarget({ viewport: bounds, direction: { x: 0, y: 1 } }, bounds);
+    preparation.prepare(Infinity, () => 0);
+    await Promise.resolve();
+    preparation.prepare(Infinity, () => 0);
+    expect(cache.statistics()).toMatchObject({ entries: 1, evictions: 0 });
+    expect(cache.take(stroke.id, 1)).toBe(cache.take("copy", 1));
+    expect(cache.read(stroke)).toBe(cache.take("copy", 1));
+    preparation.cancel();
+    cache.release();
+    expect(cache.cacheMemoryUsage()).toBe(0);
+  });
+
   it("touches identical contours and versioned aliases without replacing LRU entries", () => {
     const cache = new ScenePathCache();
     const stroke = immutableStroke();

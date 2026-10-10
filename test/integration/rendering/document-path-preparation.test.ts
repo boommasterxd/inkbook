@@ -106,16 +106,18 @@ it("waits for viewport handoff and the existing navigation quiet gate without po
     expect(state.observer().navigationReserve).toBe(false);
     expect(state.scheduler.pendingCount).toBe(0);
     const before = state.renderer.instrumentation();
-    state
-      .observer()
-      .onProgress([{ id: state.element.id, parts: buildElementPathParts(state.element) }]);
+    const parts = buildElementPathParts(state.element);
+    state.observer().onProgress([{ id: state.element.id, parts }]);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(state.store.memoryUsage().pressurePathCacheBytes).toBe(0);
     state.scheduler.runAll();
     const after = state.renderer.instrumentation();
     expect(after.pathCacheEntries).toBeGreaterThan(before.pathCacheEntries);
     expect(after.contentAttributeWrites).toBe(before.contentAttributeWrites);
     expect(after.domRootsPublished).toBe(before.domRootsPublished);
-    expect(state.publish).not.toHaveBeenCalled();
-    expect(state.store.memoryUsage().pressurePathCacheBytes).toBe(0);
+    expect(state.publish).toHaveBeenCalledOnce();
+    expect(state.publish).toHaveBeenCalledWith(parts);
+    expect(state.store.memoryUsage().pressurePathCacheBytes).toBeGreaterThan(0);
     expect(state.domain.instrumentation.snapshotMaterializations).toBe(0);
     expect(state.scheduler.pendingCount).toBe(0);
   } finally {
@@ -123,6 +125,7 @@ it("waits for viewport handoff and the existing navigation quiet gate without po
   }
   expect(state.signal().aborted).toBe(true);
   expect(state.scheduler.pendingCount).toBe(0);
+  expect(state.store.memoryUsage().pressurePathCacheBytes).toBe(0);
 });
 
 it("cancels idle worker ownership on camera activity and ignores a waiter after disposal", async () => {
@@ -148,17 +151,22 @@ it("keeps delivered contours across a navigation pause and adopts them after qui
     const before = state.renderer.instrumentation();
     pauseForNavigation(state);
     expect(state.renderer.instrumentation().pathCacheEntries).toBe(before.pathCacheEntries);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(state.store.memoryUsage().pressurePathCacheBytes).toBe(0);
     expect(state.scheduler.pendingCount).toBe(0);
     obsoleteObserver.onProgress(paths);
     await releaseNavigationQuietGate(state);
     state.scheduler.runAll();
     expect(state.request).toHaveBeenCalledOnce();
     expect(state.renderer.instrumentation().pathCacheEntries).toBe(before.pathCacheEntries + 1);
-    expect(state.publish).not.toHaveBeenCalled();
+    expect(state.publish).toHaveBeenCalledOnce();
+    expect(state.publish).toHaveBeenCalledWith(paths[0]!.parts);
+    expect(state.store.memoryUsage().pressurePathCacheBytes).toBeGreaterThan(0);
     expect(state.scheduler.pendingCount).toBe(0);
   } finally {
     state.release();
   }
+  expect(state.store.memoryUsage().pressurePathCacheBytes).toBe(0);
 });
 
 it("mounts a delivered offscreen contour during navigation without another worker request or local build", async () => {
