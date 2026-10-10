@@ -10,6 +10,11 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    allow:
+      - dependency-type: "direct"
+      # Keep the indirect Moment security override updateable through its lockfile.
+      - dependency-name: "moment"
+        dependency-type: "all"
     ignore:
       - dependency-name: "@codemirror/state"
       - dependency-name: "@codemirror/view"
