@@ -71,6 +71,24 @@ export default [
   },
   ...obsidian.configs.recommended,
   {
+    files: ["package.json"],
+    rules: {
+      "depend/ban-dependencies": [
+        "error",
+        { presets: ["native", "microutilities", "preferred"], allowed: ["moment"] },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            'Document > Object > Member[name.value=/^(dependencies|optionalDependencies)$/] > Object > Member[name.value="moment"]',
+          message:
+            "Moment is allowed only as a development dependency tracking Obsidian's security override.",
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.{js,mjs,cjs,ts,mts,cts,tsx,jsx}"],
     languageOptions: {
       globals: {

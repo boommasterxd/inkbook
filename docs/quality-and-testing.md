@@ -446,7 +446,7 @@ CI MUST run:
 - deterministic schema fixture and performance benchmark suites
 - a renderer-scoped lint restriction that rejects `querySelector`, `querySelectorAll`, and descendant selector walks in scene reconciliation
 
-No gate may be bypassed through broad exclusions, empty assertions, raised limits, or disabled rules.
+No gate may be bypassed through broad exclusions, empty assertions, raised limits, or disabled rules. The root manifest allows Moment only as a direct development dependency tracking the `$moment` security override for Obsidian's pinned dependency. This keeps native npm and Dependabot updates available, including resolvable major-update proposals. Manifest lint rejects production and optional Moment dependencies, retains other dependency-replacement checks, and preserves the runtime rule requiring Obsidian's host export instead of a direct Moment value import.
 
 ## Manual Release Checks
 

@@ -1,9 +1,49 @@
-import { Linter } from "eslint";
+import { ESLint, Linter } from "eslint";
 import { describe, expect, it } from "vitest";
 
 import eslintConfig from "../../../eslint.config.mjs";
 
 const linter = new Linter({ configType: "flat" });
+const eslint = new ESLint();
+
+describe("dependency lint boundaries", () => {
+  it("allows the development-only Moment security override", async () => {
+    const [result] = await eslint.lintText(
+      JSON.stringify({ devDependencies: { moment: "^2.31.0" }, overrides: { moment: "$moment" } }),
+      { filePath: "package.json" },
+    );
+
+    expect(result.messages).toEqual([]);
+  });
+
+  it.each(["dependencies", "optionalDependencies"])("rejects Moment in %s", async (section) => {
+    const [result] = await eslint.lintText(JSON.stringify({ [section]: { moment: "^2.31.0" } }), {
+      filePath: "package.json",
+    });
+
+    expect(result.messages.map(({ ruleId }) => ruleId)).toContain("no-restricted-syntax");
+  });
+
+  it("preserves the ban on other replaceable development dependencies", async () => {
+    const [result] = await eslint.lintText(
+      JSON.stringify({ devDependencies: { "is-number": "7.0.0" } }),
+      { filePath: "package.json" },
+    );
+
+    expect(result.messages.map(({ ruleId }) => ruleId)).toContain("depend/ban-dependencies");
+  });
+
+  it("preserves the ban on direct runtime Moment imports", async () => {
+    const config = await eslint.calculateConfigForFile("src/main.ts");
+    const ruleId = "@typescript-eslint/no-restricted-imports";
+    const messages = linter.verify('import moment from "moment";\nvoid moment;', {
+      plugins: { "@typescript-eslint": config.plugins["@typescript-eslint"] },
+      rules: { [ruleId]: config.rules[ruleId] },
+    });
+
+    expect(messages.map((message) => message.ruleId)).toContain(ruleId);
+  });
+});
 
 describe("rendering ESLint boundaries", () => {
   it.each(["scene", "motion"])("rejects relative UI imports from %s", (area) => {
