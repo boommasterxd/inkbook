@@ -5,7 +5,12 @@ import {
 } from "./element-mutation";
 import { createRemovalMutationTimeSliced } from "./removal-mutation";
 import { createRemovalTransition } from "./removal-transition";
-import { captureOwnedMutationHistory, type OwnedMutationHistory } from "./owned-mutation-history";
+import {
+  captureOwnedMutationHistory,
+  STABLE_RELATIVE_ORDER,
+  type OwnedMutationHistory,
+  type OwnedMutationReplay,
+} from "./owned-mutation-history";
 import type {
   AppliedElementMutation,
   ElementMutation,
@@ -30,6 +35,7 @@ export class PreparedElementMutations {
   readonly #readSource: () => VersionedMutationSource;
   readonly #trustedRemovalVersions = new WeakMap<ElementMutation, number>();
   readonly #ownedHistory = new WeakMap<AppliedElementMutation, OwnedMutationHistory>();
+  readonly #trustedReplayVersions = new WeakMap<ElementMutation, number>();
 
   public constructor(
     readSource: () => VersionedMutationSource,
@@ -76,7 +82,7 @@ export class PreparedElementMutations {
       },
       replay,
       replay === undefined && this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
-      replay === undefined ? undefined : this.#ownedHistory.get(replay),
+      this.#replayProof(mutation, replay, source.mutationVersion),
     );
     if (plan === "cancelled" || source.mutationVersion !== this.#readVersion()) {
       return { status: "cancelled", token: null };
@@ -96,6 +102,7 @@ export class PreparedElementMutations {
     const result = this.#adopt(prepared.plan);
     if (result.transition !== null && prepared.plan.ownedHistory !== undefined) {
       this.#ownedHistory.set(result.transition, prepared.plan.ownedHistory);
+      this.#trustNextDirection(result.transition, prepared.plan.requested);
     }
     return result;
   }
@@ -106,12 +113,31 @@ export class PreparedElementMutations {
     afterBands: ElementMutation["bands"],
   ): AppliedElementMutation {
     const transition = createRemovalTransition(delta, beforeBands, afterBands);
-    const owned = captureOwnedMutationHistory(delta);
+    const owned = captureOwnedMutationHistory(delta, STABLE_RELATIVE_ORDER);
     const retained = Object.freeze({
       ...transition,
       payloadBytes: transition.payloadBytes + owned.payloadBytes,
     });
     this.#ownedHistory.set(retained, owned);
+    this.#trustNextDirection(retained, retained.forward);
     return retained;
+  }
+
+  #replayProof(
+    mutation: ElementMutation,
+    replay: AppliedElementMutation | undefined,
+    version: number,
+  ): OwnedMutationReplay | undefined {
+    if (replay === undefined) return undefined;
+    const history = this.#ownedHistory.get(replay);
+    if (history === undefined) return undefined;
+    return { history, bandsTrusted: this.#trustedReplayVersions.get(mutation) === version };
+  }
+
+  #trustNextDirection(transition: AppliedElementMutation, requested: ElementMutation): void {
+    this.#trustedReplayVersions.delete(transition.forward);
+    this.#trustedReplayVersions.delete(transition.reverse);
+    const next = requested === transition.reverse ? transition.forward : transition.reverse;
+    this.#trustedReplayVersions.set(next, this.#readVersion());
   }
 }

@@ -16,6 +16,86 @@ import {
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
 
+it.each([false, true])(
+  "merges batched entrants at distinct ranks and keeps true reorder atomic (%s)",
+  (reorder) => {
+    const store = new FakeSceneStore();
+    const retained = ["a", "b", "c"].map((id, rank) => fakeRectangleRecord(id, rank, 10));
+    for (const record of retained) store.records.set(record.id, record);
+    const { renderer, scheduler, document } = createSceneFixture(NAVIGATION_PAGE, store, {
+      height: 100,
+      left: 0,
+      top: 0,
+      width: 100,
+    });
+    scheduler.runAll();
+    renderer.setReducedMotion(true);
+    const create = document.createElementNS.bind(document);
+    const creation = vi.spyOn(document, "createElementNS").mockImplementation((...args) => {
+      const node = create(...args);
+      if (args[1] === "path") scheduler.time += 6 / SCENE_PUBLICATION_ROOTS_PER_FRAME;
+      return node;
+    });
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const previousRoots = [...content.nodes];
+    const entrants = Array.from({ length: SCENE_PUBLICATION_ROOTS_PER_FRAME * 2 }, (_, rank) =>
+      fakeRectangleRecord(`new-${rank}`, rank, 10),
+    );
+    const survivors = reorder ? [...retained].reverse() : retained;
+    const segment = Math.ceil(entrants.length / 3);
+    const final = [
+      ...entrants.slice(0, segment),
+      survivors[0]!,
+      ...entrants.slice(segment, segment * 2),
+      survivors[1]!,
+      ...entrants.slice(segment * 2),
+      survivors[2]!,
+    ];
+    final.forEach((record, rank) => store.records.set(record.id, { ...record, rank }));
+    renderer.resetInstrumentation();
+    renderer.applyDelta({
+      affected: [
+        ...entrants.map((record) => ({
+          id: record.id,
+          before: null,
+          after: record.element,
+          beforeBounds: null,
+          afterBounds: record.bounds,
+          domains: ["order" as const, "visibility" as const],
+        })),
+        ...(reorder
+          ? retained.map((record) => ({
+              id: record.id,
+              before: record.element,
+              after: record.element,
+              domains: ["order" as const],
+            }))
+          : []),
+      ],
+    });
+    scheduler.runNext();
+    if (reorder) {
+      expect(renderer.mountedIds("content")).toEqual(retained.map(({ id }) => id));
+      expect(content.nodes).toEqual(previousRoots);
+    } else {
+      expect(renderer.mountedCount).toBe(retained.length + SCENE_PUBLICATION_ROOTS_PER_FRAME);
+      const mounted = new Set(renderer.mountedIds("content"));
+      expect(renderer.mountedIds("content")).toEqual(
+        final.filter(({ id }) => mounted.has(id)).map(({ id }) => id),
+      );
+      expect(renderer.instrumentation().domReorders).toBe(0);
+    }
+    scheduler.runAll();
+    expect(renderer.mountedIds("content")).toEqual(final.map(({ id }) => id));
+    expect(content.nodes).toHaveLength(final.length);
+    expect(new Set(content.nodes).size).toBe(final.length);
+    if (!reorder) expect(renderer.instrumentation().domReorders).toBe(0);
+    creation.mockRestore();
+    renderer.destroy();
+    expect(scheduler.pendingCount).toBe(0);
+  },
+);
+
 it("restarts staged immutable ranks after an order-only change during classification", () => {
   const scheduler = new FakeScheduler();
   const store = createViewportRectangleStore(20, () => 10);

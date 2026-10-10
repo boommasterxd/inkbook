@@ -19,9 +19,9 @@ Progressive retained-node reordering shares the live-root allowance with entrant
 and new selection indicators. A discovered order mismatch ends the already proven
 run while preserving its successor anchor; it must not retroactively reparent an
 unbounded earlier run. Unchanged retained anchors consume no publication capacity.
-One explicitly new order entry does not disable progressive viewport work when
-no existing element changes order. The element still publishes completely;
-unproved deltas, multiple insertions, and actual reorders retain atomic publication.
+Complete membership changes matching the current Store do not disable progressive
+viewport work when no surviving element changes relative order. Each entrant still
+publishes completely; unproved deltas and actual reorders retain atomic publication.
 When mounted updates and viewport reconciliation compete for the frame budget,
 each receives the first available slice on alternating frames. Selection-edge
 autoscroll resolves the current owner viewport once per frame before preview
@@ -118,7 +118,8 @@ state atomically. Small patches keep local updates. This trades temporary index
 structure duplication and a retained-entry traversal for bounded publication; it
 does not make every Store commit operation constant-time. Generation and
 cancellation checks protect the preparation and its final adoption. External band orders receive
-full validation; only Store-produced version-bound removals reuse proven order.
+full validation; Store-produced version-bound removals and privately proved history
+directions may reuse proven order as defined in [History Replay Reuse](history-replay-reuse.md).
 The worker reuses confirmed
 order arrays for ordinary element changes, and Paste uses revision-matched model
 facts and direct ID queries rather than rebuilding the existing document.

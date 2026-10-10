@@ -185,7 +185,7 @@ describe("delta-aware visibility candidates", () => {
       ],
     });
     scheduler.runAll();
-    expect(renderer.instrumentation().spatialQueries).toBe(1);
+    expect(renderer.instrumentation().spatialQueries).toBe(0);
     expect(renderer.mountedIds("content")).toEqual([]);
   });
 });

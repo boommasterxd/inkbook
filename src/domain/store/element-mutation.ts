@@ -1,4 +1,4 @@
-import { renderBandOf, type RenderBand } from "../commands/render-bands";
+import type { RenderBand } from "../commands/render-bands";
 import type { InkElementV1 } from "../schema/public";
 import type { UniformSpatialIndex } from "../spatial/index";
 
@@ -15,7 +15,12 @@ import { classifyReplacement, elementsEqual, hasConnections } from "./element-co
 import type { DocumentCapacity, DocumentCapacityPatch } from "./document-capacity";
 import type { PreparedSpatialMutation } from "../spatial/mutation-preparation";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
-import { validateTrustedRemovalOrder } from "./trusted-removal-order";
+import {
+  prepareMutationOrder,
+  collectMutationAffectedIds,
+  mutationOrderPreserved,
+  type MutationOrder,
+} from "./mutation-order";
 import { prepareMutationHistory } from "./mutation-history";
 import {
   ownedHistoryPayloadBytes,
@@ -23,6 +28,7 @@ import {
   prepareOwnedMutationHistory,
   restoreOwnedRecord,
   type OwnedMutationHistory,
+  type OwnedMutationReplay,
 } from "./owned-mutation-history";
 import {
   assignRecordVersions,
@@ -56,6 +62,7 @@ export interface ElementMutationPlan {
   readonly ranks: Map<string, ElementRank>;
   readonly records: Map<string, ElementRecord | null>;
   readonly ownedHistory: OwnedMutationHistory | undefined;
+  readonly requested: ElementMutation;
 }
 
 export interface MutationSource {
@@ -75,7 +82,7 @@ export async function planElementMutation(
   sourceScheduler: StoreSliceScheduler,
   replay?: AppliedElementMutation,
   trustedRemoval = false,
-  ownedReplay?: OwnedMutationHistory,
+  ownedReplay?: OwnedMutationReplay,
 ): Promise<ElementMutationPlan | "cancelled" | null> {
   if (replay !== undefined && requested !== replay.forward && requested !== replay.reverse) {
     throw new RangeError("History replay must use a retained transition direction.");
@@ -92,15 +99,18 @@ export async function planElementMutation(
     scheduler,
   );
   if (desired === "cancelled") return desired;
-  const ownedRecords = ownedReplayRecords(requested, replay, ownedReplay);
+  const ownedRecords = ownedReplayRecords(requested, replay, ownedReplay?.history);
   const records = await buildRecords(source, desired, removeIds, scheduler, ownedRecords);
   if (records === "cancelled") return records;
-  const order = trustedRemoval
-    ? await validateTrustedRemovalOrder(requested, source, sourceRanks, removeIds, scheduler)
-    : await validateBands(requested.bands, source, records, sourceRanks, scheduler);
+  const order = await prepareMutationOrder(source, requested, records, sourceRanks, scheduler, {
+    trustedRemoval,
+    ownedReplay,
+    ownedRecords,
+    removeIds,
+  });
   if (order === "cancelled") return order;
-  const { bands, ranks, dirtyBands } = order;
-  const delta = await buildDelta(source, sourceRanks, records, ranks, dirtyBands, scheduler);
+  const { bands, ranks } = order;
+  const delta = await buildDelta(source, sourceRanks, records, order, scheduler);
   if (delta === "cancelled") return delta;
   if (delta === null) return null;
   const derived = await buildDerivedState(source, records, delta, sourceScheduler);
@@ -109,8 +119,9 @@ export async function planElementMutation(
   const ownedHistory = await prepareOwnedMutationHistory(
     delta,
     scheduler,
-    ownedReplay,
+    ownedReplay?.history,
     replay !== undefined,
+    order.relativeOrderPreserved,
   );
   if (ownedHistory === "cancelled") return ownedHistory;
   const applied = await prepareMutationHistory(
@@ -135,6 +146,7 @@ export async function planElementMutation(
     ranks,
     records,
     ownedHistory,
+    requested,
   };
 }
 
@@ -284,59 +296,6 @@ function updatedRecord(
   );
 }
 
-async function validateBands(
-  requested: Readonly<Record<RenderBand, readonly string[]>>,
-  source: MutationSource,
-  records: ReadonlyMap<string, ElementRecord | null>,
-  sourceRanks: ReadonlyMap<string, ElementRank>,
-  scheduler: MutationPreparationScheduler,
-): Promise<
-  | {
-      bands: Record<RenderBand, string[]>;
-      ranks: Map<string, ElementRank>;
-      dirtyBands: Record<RenderBand, boolean>;
-    }
-  | "cancelled"
-> {
-  const seen = new Set<string>();
-  const ranks = new Map<string, ElementRank>();
-  const dirtyBands = {
-    content: requested.content.length !== source.bands.content.length,
-    highlight: requested.highlight.length !== source.bands.highlight.length,
-  };
-  let resultingSize = source.records.size;
-  for (const [id, record] of records) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    if (record === null) resultingSize -= 1;
-    else if (!source.records.has(id)) resultingSize += 1;
-  }
-  const bands: Record<RenderBand, string[]> = {
-    content: new Array<string>(requested.content.length),
-    highlight: new Array<string>(requested.highlight.length),
-  };
-  for (const band of ["highlight", "content"] as const) {
-    for (let index = 0; index < requested[band].length; index += 1) {
-      if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-      const id = requested[band][index]!;
-      const record = records.has(id) ? records.get(id) : source.records.get(id);
-      if (record == null || renderBandOf(record.element) !== band || seen.has(id)) {
-        throw new RangeError(
-          "Mutation band order must contain each resulting element exactly once.",
-        );
-      }
-      seen.add(id);
-      bands[band][index] = id;
-      if (source.bands[band][index] !== id) dirtyBands[band] = true;
-      const prior = sourceRanks.get(id);
-      if (prior?.band !== band || prior.rank !== index) ranks.set(id, { band, rank: index });
-    }
-  }
-  if (seen.size !== resultingSize) {
-    throw new RangeError("Mutation band order must contain each resulting element exactly once.");
-  }
-  return { bands, ranks, dirtyBands };
-}
-
 async function buildRanks(
   bands: Readonly<Record<RenderBand, readonly string[]>>,
   scheduler: MutationPreparationScheduler,
@@ -355,22 +314,14 @@ async function buildDelta(
   source: MutationSource,
   sourceRanks: ReadonlyMap<string, ElementRank>,
   records: ReadonlyMap<string, ElementRecord | null>,
-  ranks: ReadonlyMap<string, ElementRank>,
-  dirtyBands: Readonly<Record<RenderBand, boolean>>,
+  order: MutationOrder,
   scheduler: MutationPreparationScheduler,
 ): Promise<StoreDelta | "cancelled" | null> {
   const changes: Array<StoreDelta["changes"][number]> = [];
   let geometryVersion = source.geometryVersion;
   let paintVersion = source.paintVersion;
-  const affected = new Set<string>();
-  for (const id of records.keys()) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    affected.add(id);
-  }
-  for (const id of ranks.keys()) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    affected.add(id);
-  }
+  const affected = await collectMutationAffectedIds(records, order, scheduler);
+  if (affected === "cancelled") return affected;
   for (const id of affected) {
     const before = source.records.get(id) ?? null;
     const after = records.has(id) ? (records.get(id) ?? null) : before;
@@ -379,7 +330,8 @@ async function buildDelta(
       before,
       after,
       sourceRanks.get(id),
-      ranks.get(id) ?? sourceRanks.get(id),
+      order.ranks.get(id) ?? sourceRanks.get(id),
+      mutationOrderPreserved(order, sourceRanks, id),
     );
     if (domains.length === 0) continue;
     if (after !== null) {
@@ -391,7 +343,7 @@ async function buildDelta(
   if (changes.length === 0) return null;
   return Object.freeze({
     changes: Object.freeze(changes),
-    dirtyBands: Object.freeze(dirtyBands),
+    dirtyBands: Object.freeze(order.dirtyBands),
     geometryVersion,
     paintVersion,
   });
@@ -402,6 +354,7 @@ function mutationDomains(
   after: ElementRecord | null,
   previousRank: ElementRank | undefined,
   nextRank: ElementRank | undefined,
+  relativeOrderPreserved: boolean,
 ): DeltaDomain[] {
   if (before === null && after !== null) {
     const domains: DeltaDomain[] = ["geometry", "paint", "order", "visibility"];
@@ -418,9 +371,8 @@ function mutationDomains(
   const domains =
     before === after ? [] : classifyReplacement(before.element, after.element as InkElementV1);
   if (
-    previousRank === undefined ||
-    previousRank.band !== nextRank.band ||
-    previousRank.rank !== nextRank.rank
+    previousRank?.band !== nextRank.band ||
+    (!relativeOrderPreserved && previousRank.rank !== nextRank.rank)
   ) {
     domains.push("order");
   }

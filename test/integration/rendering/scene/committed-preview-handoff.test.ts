@@ -181,8 +181,9 @@ it("drops committed preparation when its element is removed before publication",
   scheduler.runAll();
   expect(step).not.toHaveBeenCalled();
   expect(renderer.mountedIds("content")).toEqual([]);
-  expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
+  // Reusable visibility-position markers remain until presentation disposal.
   renderer.destroy();
+  expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
 });
 
 it("finishes selection dismissal on schedule while canonical commit geometry remains pending", () => {

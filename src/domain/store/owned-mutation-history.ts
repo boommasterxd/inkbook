@@ -2,6 +2,7 @@ import { elementMutationPayloadBytes } from "./mutation-payload";
 import { classifyReplacement, elementsEqual } from "./element-comparison";
 import { assignRecordVersions } from "./record-factory";
 import type { InkElementV1 } from "../schema/public";
+import type { RenderBand } from "../commands/render-bands";
 import type { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import type { AppliedElementMutation, ElementMutation, ElementRecord, StoreDelta } from "./types";
 
@@ -9,7 +10,23 @@ export interface OwnedMutationHistory {
   readonly forward: ReadonlyMap<string, ElementRecord>;
   readonly reverse: ReadonlyMap<string, ElementRecord>;
   readonly payloadBytes: number;
+  readonly dirtyBands: Readonly<Record<RenderBand, boolean>>;
+  readonly relativeOrderPreserved: Readonly<Record<RenderBand, boolean>>;
 }
+
+export interface OwnedMutationReplay {
+  readonly history: OwnedMutationHistory;
+  readonly bandsTrusted: boolean;
+}
+
+export const STABLE_RELATIVE_ORDER: Readonly<Record<RenderBand, boolean>> = Object.freeze({
+  content: true,
+  highlight: true,
+});
+const UNKNOWN_RELATIVE_ORDER: Readonly<Record<RenderBand, boolean>> = Object.freeze({
+  content: false,
+  highlight: false,
+});
 
 export function ownedReplayRecords(
   requested: ElementMutation,
@@ -39,11 +56,14 @@ export function restoreOwnedRecord(
   );
 }
 
-function historyBuilder() {
+function historyBuilder(
+  delta: StoreDelta,
+  relativeOrderPreserved: Readonly<Record<RenderBand, boolean>>,
+) {
   const forward = new Map<string, ElementRecord>();
   const reverse = new Map<string, ElementRecord>();
   const retained = new Set<ElementRecord>();
-  let payloadBytes = 0;
+  let payloadBytes = 64;
   const add = (records: Map<string, ElementRecord>, record: ElementRecord | null) => {
     if (record === null) return;
     records.set(record.element.id, record);
@@ -60,12 +80,21 @@ function historyBuilder() {
       add(forward, after);
       add(reverse, before);
     },
-    finish: (): OwnedMutationHistory => ({ forward, reverse, payloadBytes }),
+    finish: (): OwnedMutationHistory => ({
+      forward,
+      reverse,
+      payloadBytes,
+      dirtyBands: delta.dirtyBands,
+      relativeOrderPreserved: Object.freeze(relativeOrderPreserved),
+    }),
   };
 }
 
-export function captureOwnedMutationHistory(delta: StoreDelta): OwnedMutationHistory {
-  const builder = historyBuilder();
+export function captureOwnedMutationHistory(
+  delta: StoreDelta,
+  relativeOrderPreserved = UNKNOWN_RELATIVE_ORDER,
+): OwnedMutationHistory {
+  const builder = historyBuilder(delta, relativeOrderPreserved);
   for (const change of delta.changes) builder.append(change);
   return builder.finish();
 }
@@ -75,9 +104,10 @@ export async function prepareOwnedMutationHistory(
   scheduler: MutationPreparationScheduler,
   retained?: OwnedMutationHistory,
   replaying = false,
+  relativeOrderPreserved = UNKNOWN_RELATIVE_ORDER,
 ): Promise<OwnedMutationHistory | "cancelled" | undefined> {
   if (retained !== undefined || replaying) return retained;
-  const builder = historyBuilder();
+  const builder = historyBuilder(delta, relativeOrderPreserved);
   for (const change of delta.changes) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     builder.append(change);

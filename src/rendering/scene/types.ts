@@ -20,7 +20,9 @@ export interface SceneElementRecord {
 
 export interface SceneDeltaEntry {
   readonly after?: InkElementV1 | null;
+  readonly afterBounds?: Bounds | null;
   readonly before?: InkElementV1 | null;
+  readonly beforeBounds?: Bounds | null;
   readonly domains: readonly SceneDirtyDomain[];
   readonly id: string;
 }

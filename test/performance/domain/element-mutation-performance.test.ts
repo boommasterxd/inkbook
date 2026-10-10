@@ -17,6 +17,12 @@ import { planElementMutation } from "../../../src/domain/store/element-mutation"
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
 import * as renderBands from "../../../src/domain/commands/render-bands";
 import type { ElementRank } from "../../../src/domain/store/types";
+import { restoreOwnedReplayBands } from "../../../src/domain/store/mutation-order";
+import {
+  captureOwnedMutationHistory,
+  STABLE_RELATIVE_ORDER,
+} from "../../../src/domain/store/owned-mutation-history";
+import { MutationPreparationScheduler } from "../../../src/domain/store/mutation-preparation-scheduler";
 
 import { CheckpointSliceScheduler } from "./domain-scenarios";
 import {
@@ -267,6 +273,73 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
     if (replay !== undefined) expect(committed.transition).toBe(replay);
     return committed.transition;
   }
+});
+
+it("publishes local membership deltas and replays without validating unchanged 10,000-stroke bands", async () => {
+  const elements = createStandardDomainFixture().elements.slice(0, 10_000);
+  const store = new ElementStore(elements);
+  const stroke = elements[0]!;
+  if (stroke.kind !== "stroke") throw new Error("Expected stroke fixture.");
+  const highlightId = "00000000-0000-4000-8000-000000020000";
+  store.create({
+    ...stroke,
+    id: highlightId,
+    tool: "highlighter",
+    style: { ...stroke.style, pressureEnabled: false },
+  });
+  const initialEntries = store.instrumentation.deltaEntries;
+  const removed = store.removeWithHistory([stroke.id])!;
+  expect(removed.delta.changes).toHaveLength(1);
+  expect(store.getRank(elements[9_999]!.id)?.rank).toBe(9_998);
+  const bandCheck = vi.spyOn(renderBands, "renderBandOf");
+  try {
+    for (const mutation of [
+      removed.transition.reverse,
+      removed.transition.forward,
+      removed.transition.reverse,
+    ]) {
+      const prepared = await store.prepareElementMutation(
+        mutation,
+        { shouldYield: () => false, yieldControl: async () => undefined },
+        removed.transition,
+      );
+      if (prepared.token === null) throw new Error("Expected prepared replay.");
+      expect(store.commitPreparedElementMutation(prepared.token).delta?.changes).toHaveLength(1);
+    }
+    expect(store.instrumentation.deltaEntries - initialEntries).toBe(4);
+    expect(
+      bandCheck.mock.calls.some(([element]) => "id" in element && element.id === highlightId),
+    ).toBe(false);
+    expect(
+      bandCheck.mock.calls.filter(([element]) => !("id" in element && element.id === stroke.id)),
+    ).toHaveLength(0);
+  } finally {
+    bandCheck.mockRestore();
+  }
+  const highlightRemoval = store.removeWithHistory([highlightId])!;
+  const retained = captureOwnedMutationHistory(highlightRemoval.delta, STABLE_RELATIVE_ORDER);
+  let bandReads = 0;
+  const content = new Proxy([...store.materializeBandOrder("content")], {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) bandReads += 1;
+      return Reflect.get(target, property, receiver) as unknown;
+    },
+  });
+  expect(content.length).toBe(10_000);
+  const restored = await restoreOwnedReplayBands(
+    { content, highlight: [highlightId] },
+    { bands: { content, highlight: [] }, records: new Map() },
+    new Map(),
+    retained,
+    new MutationPreparationScheduler({
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    }),
+  );
+  if (restored === "cancelled") throw new Error("Expected restored bands.");
+  expect(restored.bands.content).toBe(content);
+  expect(bandReads).toBe(0);
+  expect(Object.isFrozen(restored.bands.highlight)).toBe(false);
 });
 
 it("stages a 10,000-entry spatial cut and publishes it with bounded commit work", async () => {

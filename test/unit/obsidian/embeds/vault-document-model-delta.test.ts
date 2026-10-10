@@ -7,9 +7,41 @@ import {
   removedElementIds,
 } from "../../../../src/obsidian/embeds/vault-document-model-delta";
 import { CoalescedExportTarget } from "../../../../src/persistence/worker/coalesced-export";
-import { connectedLine, IDS, rectangle } from "../../domain/store/fixtures";
+import { connectedLine, highlighter, IDS, rectangle } from "../../domain/store/fixtures";
 
 describe("vault document model deltas", () => {
+  it.each(["tail", "whole-band"] as const)(
+    "preserves the complete worker order update for %s removal",
+    (scope) => {
+      const first = rectangle();
+      const last = rectangle(IDS.other, 500, 100);
+      const highlight = highlighter();
+      const store = new ElementStore([highlight, first, last]);
+      const removed = scope === "tail" ? [last.id] : [first.id, last.id];
+      const delta = store.remove(removed);
+      if (delta === null) throw new Error("Expected a removal delta.");
+      const target = new CoalescedExportTarget(7, ({ id }: { readonly id: string }) => id);
+      target.record({
+        changedElements: changedElements(delta),
+        dirtyBands: (["highlight", "content"] as const).filter((band) => delta.dirtyBands[band]),
+        modelRevision: 8,
+        removedIds: removedElementIds(delta),
+      });
+      const plan = target.materialize({
+        orderByBand: { content: store.materializeBandOrder("content") },
+      });
+
+      expect(delta.dirtyBands).toEqual({ content: true, highlight: false });
+      expect(plan).toMatchObject({
+        changedElements: [],
+        orderChanges: { content: scope === "tail" ? [first.id] : [] },
+        removedIds: removed,
+        type: "incremental",
+      });
+      expect(store.materializeBandOrder("highlight")).toEqual([highlight.id]);
+    },
+  );
+
   it("keeps removal rank shifts order-only through export planning", () => {
     const first = rectangle();
     const second = rectangle(IDS.other, 500, 100);

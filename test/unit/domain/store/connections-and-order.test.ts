@@ -81,7 +81,6 @@ describe("ElementStore connection transactions", () => {
     expect(remaining.element.start).toEqual({ x: 100, y: 100 });
     expect(delta?.changes.find(({ id }) => id === line.id)?.domains).toEqual([
       "geometry",
-      "order",
       "connection",
     ]);
     expect(delta?.changes.find(({ id }) => id === target.id)?.after).toBeNull();
@@ -326,7 +325,7 @@ describe("ElementStore atomic band reorder", () => {
 });
 
 describe("ElementStore order insertion and removal", () => {
-  it("inserts at the back while reporting shifted ranks without replacing records", () => {
+  it("inserts at the back without publishing numerically shifted survivors", () => {
     const first = rectangle();
     const store = new ElementStore([first]);
     const previous = store.get(first.id)!;
@@ -335,7 +334,9 @@ describe("ElementStore order insertion and removal", () => {
     const delta = store.create(second, { placement: "back" });
 
     expect(store.materializeBandOrder("content")).toEqual([second.id, first.id]);
-    expect(delta?.changes.find(({ id }) => id === first.id)?.domains).toEqual(["order"]);
+    expect(delta?.changes.map(({ id }) => id)).toEqual([second.id]);
+    expect(delta?.dirtyBands).toEqual({ content: true, highlight: false });
+    expect(store.getRank(first.id)).toEqual({ band: "content", rank: 1 });
     expect(store.get(first.id)).toBe(previous);
   });
 
