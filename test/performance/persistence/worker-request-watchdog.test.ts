@@ -35,6 +35,7 @@ it("releases every internally cancelled speculative request without killing the 
         speculative: true,
         type: "prepare-scene-paths",
       });
+      await vi.advanceTimersByTimeAsync(0);
       expect(vi.getTimerCount()).toBe(1);
       client.setNavigationActive(true);
       await expect(pending).resolves.toMatchObject({

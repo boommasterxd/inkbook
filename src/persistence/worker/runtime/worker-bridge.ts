@@ -118,10 +118,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
         resolve,
         cancelTimeout: undefined,
       };
-      pending.watchdog = this.#createWatchdog(() => this.#timeoutRequest(requestId, pending));
-      pending.cancelTimeout = () => pending.watchdog?.cancel();
       this.#pending.set(requestId, pending);
-      this.#updateRequestGate(pending);
       void this.#dispatch(requestId, request, pending);
     });
   }
@@ -263,6 +260,9 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
       });
       pending.abortController.signal.throwIfAborted();
       this.#publishSchedulingProfile();
+      pending.watchdog = this.#createWatchdog(() => this.#timeoutRequest(requestId, pending));
+      pending.cancelTimeout = () => pending.watchdog?.cancel();
+      this.#updateRequestGate(pending);
       this.#endpoint.postMessage(
         {
           request: encoded.value,

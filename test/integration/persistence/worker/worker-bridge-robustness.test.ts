@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 
+import * as strokeSamples from "../../../../src/domain/elements/stroke-samples";
 import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
 import { encodeUnlockBatch } from "../../../../src/persistence/worker/runtime/wire-codec";
 import { SessionScenePaths } from "../../../../src/obsidian/embeds/session-scene-paths";
@@ -25,6 +26,27 @@ const verification = {
   input: "not-svg",
   type: "verify-output" as const,
 };
+
+function watchdogFixture(workScheduler = new TestWorkScheduler({ now: () => Date.now() })) {
+  const endpoint = new TestWorkerEndpoint();
+  const client = new WorkerDocumentRuntimePort(() => endpoint, {
+    workScheduler,
+    frameIntervalMilliseconds: () => 1000 / 60,
+    requestTimeoutMilliseconds: 100,
+  });
+  return { endpoint, client };
+}
+
+async function expectCompleteWatchdogBudget(
+  endpoint: TestWorkerEndpoint,
+  pending: Promise<unknown>,
+) {
+  await vi.advanceTimersByTimeAsync(99);
+  expect(endpoint.terminated).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(await pending).toEqual(new Error("Document worker request timed out."));
+  expect(vi.getTimerCount()).toBe(0);
+}
 
 it("keeps the worker alive after exact-identity model conflicts and recovers through a full sync", async () => {
   const harness = createWorkerBridgeHarness();
@@ -94,7 +116,7 @@ it.each(["navigation", "drawing", "required"] as const)(
       });
       const speculative = session.prepare(ids, controller.signal, observer);
       await Promise.resolve();
-      expect(vi.getTimerCount()).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
       if (action === "navigation") client.setNavigationActive(true);
       else if (action === "drawing") client.setLiveInputActive(true);
       const required = client.execute({
@@ -140,6 +162,7 @@ it.each(["cancel", "retarget"] as const)(
       type: "prepare-scene-paths" as const,
     };
     const pending = client.execute(request).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(1);
     const post = endpoint.postMessage.bind(endpoint);
     vi.spyOn(endpoint, "postMessage").mockImplementation((message, transfer) => {
@@ -272,23 +295,49 @@ it("excludes waiting for central scheduler admission without changing its work p
   let resume!: () => void;
   const admission = new Promise<void>((resolve) => (resume = resolve));
   const checkpoint = vi.fn(() => (blocked ? admission : undefined));
-  const endpoint = new TestWorkerEndpoint();
-  const client = new WorkerDocumentRuntimePort(() => endpoint, {
-    workScheduler: new TestWorkScheduler({ now: () => Date.now(), checkpoint }),
-    frameIntervalMilliseconds: () => 1000 / 60,
-    requestTimeoutMilliseconds: 100,
-  });
+  const { endpoint, client } = watchdogFixture(
+    new TestWorkScheduler({ now: () => Date.now(), checkpoint }),
+  );
   const pending = client.execute(verification).catch((error: unknown) => error);
   await vi.advanceTimersByTimeAsync(500);
   expect(endpoint.terminated).toBe(false);
   expect(vi.getTimerCount()).toBe(0);
   blocked = false;
   resume();
-  await vi.advanceTimersByTimeAsync(99);
-  expect(endpoint.terminated).toBe(false);
-  await vi.advanceTimersByTimeAsync(1);
-  expect(await pending).toEqual(new Error("Document worker request timed out."));
-  expect(vi.getTimerCount()).toBe(0);
+  await expectCompleteWatchdogBudget(endpoint, pending);
+});
+
+it("starts the complete watchdog budget after slow request encoding", async () => {
+  vi.useFakeTimers();
+  const { endpoint, client } = watchdogFixture();
+  const copySamples = strokeSamples.copyStrokeSamplesToRuntime;
+  const encoding = vi
+    .spyOn(strokeSamples, "copyStrokeSamplesToRuntime")
+    .mockImplementation((samples) => {
+      vi.advanceTimersByTime(500);
+      return copySamples(samples);
+    });
+  try {
+    const pending = client
+      .execute({
+        identity,
+        snapshot: createOneStrokeWorkerSnapshot(),
+        baseModelRevision: null,
+        modelRevision: 0,
+        type: "model-sync-full",
+      })
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(encoding).toHaveBeenCalledOnce();
+    expect(endpoint.sentMessages).toContainEqual(
+      expect.objectContaining({ requestId: 1, type: "inkbook-worker-request" }),
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    await expectCompleteWatchdogBudget(endpoint, pending);
+  } finally {
+    encoding.mockRestore();
+    client.terminate();
+  }
 });
 
 it("reports a hosted execution failure with its request phase exactly once", async () => {
@@ -344,14 +393,9 @@ it.each(["SyntaxError", "private document content", undefined])(
 
 it("keeps a hung unlock observer subject to the bounded watchdog", async () => {
   vi.useFakeTimers();
-  const endpoint = new TestWorkerEndpoint();
+  const { endpoint, client } = watchdogFixture();
   const sender = new TestWorkerEndpoint();
   sender.peer = endpoint;
-  const client = new WorkerDocumentRuntimePort(() => endpoint, {
-    workScheduler: new TestWorkScheduler({ now: () => Date.now() }),
-    frameIntervalMilliseconds: () => 1000 / 60,
-    requestTimeoutMilliseconds: 100,
-  });
   const request = createWorkerUnlockRequest(new Uint8Array());
   const observer = { unlockBatch: vi.fn(() => new Promise<void>(() => undefined)) };
   const pending = client.execute(request, observer).catch((error: unknown) => error);
@@ -372,12 +416,7 @@ it("keeps a hung unlock observer subject to the bounded watchdog", async () => {
 
 it("keeps required scene geometry subject to the watchdog during navigation", async () => {
   vi.useFakeTimers();
-  const endpoint = new TestWorkerEndpoint();
-  const client = new WorkerDocumentRuntimePort(() => endpoint, {
-    workScheduler: new TestWorkScheduler({ now: () => Date.now() }),
-    frameIntervalMilliseconds: () => 1000 / 60,
-    requestTimeoutMilliseconds: 100,
-  });
+  const { endpoint, client } = watchdogFixture();
   client.setNavigationActive(true);
   const pending = client
     .execute({ identity, basisRevision: 0, ids: [], type: "prepare-scene-paths" })
