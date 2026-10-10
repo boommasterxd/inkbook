@@ -1,7 +1,6 @@
 import {
   mountedRootCount,
   publicationRootCount,
-  canPublishCachedElement,
   RetainedDomOrder,
   type PendingMutationRun,
 } from "./visibility-publication";
@@ -339,10 +338,6 @@ export class SceneVisibilityReconciler {
       publish: () => {
         publish?.(false);
       },
-      restored: (id) => {
-        this.#newlyMountedIds.push(id);
-        this.#publishedEntrantIds.push(id);
-      },
       bands: () =>
         stageVisibilityBands(pending, deadline, now, {
           finish: () => finishReconciliationRun(pending),
@@ -422,8 +417,7 @@ export class SceneVisibilityReconciler {
     if (record === undefined || record.band !== pending.cursor.band) return undefined;
     const reason = slice.blockingReason();
     if (reason !== undefined) return reason;
-    if (pending.progressive && !canPublishCachedElement(slice, this.options.detachedCache, id))
-      return "budget";
+    if (pending.progressive && !slice.canPublish) return "budget";
     const entry = this.stageEntry(pending, record, slice, previews);
     if (entry === undefined) return "budget";
     if (!slice.claimPublicationNodes(publicationRootCount(entry))) return "budget";

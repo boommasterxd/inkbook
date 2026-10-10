@@ -112,14 +112,8 @@ export class SceneMountPreparation {
     preview: PreviewTransform | undefined,
     allowLocal = true,
   ): MountedSceneElement | undefined {
-    if (
-      this.options.detachedCache?.isPendingRemoval(record.id) ||
-      this.options.detachedCache?.isReserved(record.id)
-    )
-      return undefined;
     let entry = this.options.detachedCache?.take(record, this.options.instrumentation);
     if (entry === undefined) {
-      if (this.options.detachedCache?.isPendingRemoval(record.id)) return undefined;
       const parts = this.prepare(record, slice, allowLocal);
       if (parts === undefined) return undefined;
       entry = createMountedElement(

@@ -84,7 +84,7 @@ it("maintains interleaved band successors through insertion, rank shifts, remova
   expect(order.successor({ id: "earlier", rank: 0, band: "highlight" })).toBe(entries[1]);
 });
 
-it("keeps stale physical proofs invalid and reindexes published rank and band moves across blocks", () => {
+it("keeps registration idempotent and reindexes published rank and band moves across blocks", () => {
   const order = new ConnectedRootOrder();
   const store = new FakeSceneStore();
   const document = asDocument(new FakeDocument());
@@ -104,14 +104,13 @@ it("keeps stale physical proofs invalid and reindexes published rank and band mo
   const moved = entries[10]!;
   const retained = entries[200]!;
   order.invalidateRanks();
-  order.successor(retained);
+  expect(order.successor(retained)).toBe(entries[201]);
   order.add(retained, store);
-  expect(order.hasCurrent(retained)).toBe(false);
+  expect(order.successor(retained)).toBe(entries[201]);
   moved.rank = 250.5;
   moved.committedRank = 250.5;
   store.records.set(moved.id, { ...store.records.get(moved.id)!, rank: moved.rank });
   order.add(moved, store);
-  expect(order.hasCurrent(moved)).toBe(true);
   expect(order.successor(entries[9]!)).toBe(entries[11]);
   expect(order.successor(entries[250]!)).toBe(moved);
   expect(order.successor(moved)).toBe(entries[251]);
@@ -120,6 +119,6 @@ it("keeps stale physical proofs invalid and reindexes published rank and band mo
   expect(order.successor(entries[250]!)).toBe(entries[251]);
   expect(order.successor({ id: "new-highlight", rank: 0, band: "highlight" })).toBe(moved);
   order.clear();
-  expect(order.hasCurrent(moved)).toBe(false);
+  expect(order.successor(moved)).toBeUndefined();
   expect(order.memoryUsage()).toBe(0);
 });

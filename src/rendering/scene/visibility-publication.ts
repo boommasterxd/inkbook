@@ -79,14 +79,13 @@ function commitPublishedEntry(
   commitMountedEntry(entry, run, options, epoch);
   const roots = publicationRootCount(entry);
   const connected = roots === 0;
-  options.detachedCache?.commitReservation(entry);
   options.mounted.set(entry.id, entry);
   if (!connected) options.instrumentation.domEntrants += 1;
   options.instrumentation.domRootsPublished += roots;
   return connected;
 }
 
-/** A stable delta run has one exact physical successor, including cached offscreen anchors. */
+/** A stable delta run has one exact mounted physical successor. */
 export function publishStableEntrantRun(
   run: PendingMutationRun,
   options: PublicationOptions,
@@ -111,17 +110,9 @@ export function mountedRootCount(entry: MountedSceneElement): number {
   return entry.group === null ? entry.paths.length : 1;
 }
 
-/** Connected revisits have already paid their browser publication cost. */
+/** Existing mounted roots have already paid their browser publication cost. */
 export function publicationRootCount(entry: MountedSceneElement): number {
   return firstPath(entry).parentNode === null ? mountedRootCount(entry) : 0;
-}
-
-export function canPublishCachedElement(
-  slice: MountSlice,
-  cache: DetachedSceneElementCache | undefined,
-  id: string,
-): boolean {
-  return slice.canPublish || cache?.isConnected(id) === true;
 }
 
 export function scanVisibilityExits(

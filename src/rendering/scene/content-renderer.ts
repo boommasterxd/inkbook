@@ -161,7 +161,6 @@ export class SceneContentRenderer {
     now: () => number,
     publication: ScenePublicationBudget,
   ): boolean {
-    if (this.#detachedCache?.flushEvictions(deadline, now, publication)) return true;
     if (this.#geometryDirty.size > 0) {
       if (
         writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
@@ -192,10 +191,7 @@ export class SceneContentRenderer {
 
   public get hasMountedWork(): boolean {
     return (
-      this.#detachedCache?.hasPendingCleanup === true ||
-      this.#geometryDirty.size > 0 ||
-      this.#paintDirty.size > 0 ||
-      this.#selectionDirty.size > 0
+      this.#geometryDirty.size > 0 || this.#paintDirty.size > 0 || this.#selectionDirty.size > 0
     );
   }
 

@@ -157,8 +157,6 @@ it("honors an explicit larger byte limit without an independent count eviction",
   const maximumBytes = 25 * 1_024 * 1_024;
   const cache = new DetachedSceneElementCache(maximumBytes);
   const document = new FakeDocument();
-  const band = document.createElementNS("", "g");
-  const store = new FakeSceneStore();
   const stats = createInstrumentation();
   const base = createTestStroke();
   const element = { ...base, style: { ...base.style, pressureEnabled: false } };
@@ -169,27 +167,17 @@ it("honors an explicit larger byte limit without an independent count eviction",
       const id = `00000000-0000-4000-8000-${String(rank).padStart(12, "0")}`;
       const record = createSceneRecord({ ...element, id }, rank);
       const entry = createMountedElement(asDocument(document), record, parts, stats);
-      store.records.set(record.id, record);
-      band.append(...entry.paths.map((path) => fakeNode(path.node)));
-      expect(cache.retainConnected(entry, store)).toBe(true);
+      expect(cache.retain(entry)).toBe(true);
     }
     expect(parts).toHaveLength(1);
     expect(cache.statistics()).toMatchObject({ entries: 20_000, evictions: 0 });
     expect(cache.statistics().bytes).toBeLessThan(maximumBytes);
     expect(cache.retainedRoots).toBe(20_000);
-    expect(band.nodes).toHaveLength(20_000);
     expect(remove).not.toHaveBeenCalled();
     cache.setRetentionEnabled(false);
-    let rounds = 0;
-    while (cache.hasPendingCleanup) {
-      remove.mockClear();
-      cache.flushEvictions(10, () => 0, { remainingRoots: 64 });
-      expect(remove.mock.calls.length).toBeLessThanOrEqual(64);
-      rounds += 1;
-    }
-    expect(rounds).toBe(Math.ceil(20_000 / 64));
+    expect(cache.retainedRoots).toBe(0);
+    expect(remove).not.toHaveBeenCalled();
     expect(cache.memoryUsage()).toBe(0);
-    expect(band.nodes).toHaveLength(0);
   } finally {
     cache.dispose();
     remove.mockRestore();

@@ -28,14 +28,16 @@ export function stagePromotedVisibility(
   if (id === undefined) return {};
   const record = options.store.get(id);
   if (record === undefined || !options.visibility.contains(id)) return {};
-  if (pending.progressive && !slice.canPublish && !options.detachedCache?.isConnected(id))
-    return { id, reason: "budget" };
+  if (pending.progressive && !slice.canPublish) return { id, reason: "budget" };
   const entry = pending.entrants.get(id) ?? options.stage(record);
   slice.record();
   if (entry === undefined) return options.waiting() ? { id } : { id, reason: "budget" };
   if (!pending.progressive) return {};
   if (!slice.claimPublicationNodes(publicationRootCount(entry))) return { id, reason: "budget" };
-  const successor = firstMountedSuccessor(pending.visibility[entry.band], id, options.mounted);
+  const successor =
+    options.detachedCache === undefined
+      ? firstMountedSuccessor(pending.visibility[entry.band], id, options.mounted)
+      : options.detachedCache.successor(record);
   const run = options.run(entry, successor);
   run.entries[0] = entry;
   run.entrants[0] = true;

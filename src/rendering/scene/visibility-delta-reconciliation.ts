@@ -49,7 +49,6 @@ interface DeltaStageOptions {
   readonly visibility: { contains(id: string): boolean };
   readonly waiting: () => boolean;
   readonly publish: () => void;
-  readonly restored: (id: string) => void;
   readonly prepareDeferred: () => string | undefined;
   readonly stage: (
     pending: PendingReconciliation,
@@ -203,11 +202,7 @@ function stageDeltaEntry(
   }
   const reason = slice.blockingReason();
   if (reason !== undefined) return reason;
-  if (restoreConnectedEntry(record, pending, previews, options)) {
-    slice.record();
-    return undefined;
-  }
-  if (!slice.canPublish && !options.detachedCache?.isConnected(id)) return "budget";
+  if (!slice.canPublish) return "budget";
   const entry = pending.entrants.get(id) ?? options.stage(pending, record, slice, previews);
   if (entry === undefined) {
     pending.delta!.deferred.push(id);
@@ -233,21 +228,6 @@ function stageDeltaEntry(
   slice.record();
   options.publish();
   return undefined;
-}
-
-function restoreConnectedEntry(
-  record: SceneElementRecord,
-  pending: PendingReconciliation,
-  previews: ReadonlyMap<string, PreviewTransform>,
-  options: DeltaStageOptions,
-): boolean {
-  if (previews.has(record.id) || pending.entrants.has(record.id)) return false;
-  const entry = options.detachedCache?.restoreConnected(record);
-  if (entry === undefined) return false;
-  options.mounted.set(record.id, entry);
-  pending.delta?.priority?.release(record.id);
-  options.restored(record.id);
-  return true;
 }
 
 function deltaSuccessor(

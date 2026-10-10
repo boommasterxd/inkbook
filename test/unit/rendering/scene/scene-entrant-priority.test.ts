@@ -102,7 +102,6 @@ it("defers candidate reads when the final overscan heap push consumes the shared
     visibility: { contains: () => true },
     waiting: () => true,
     publish: () => undefined,
-    restored: () => undefined,
     prepareDeferred: () => undefined,
     stage,
     run: () => {

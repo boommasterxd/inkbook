@@ -156,10 +156,9 @@ it("adopts incoming detached roots before exit retention can evict them at the 1
     expect(remove).not.toHaveBeenCalled();
     expect(mounted.size).toBe(2);
     expect(mounted.size).toBe(content.nodes.length);
-    for (let rounds = 0; reconciler.hasPendingWork || cache.hasPendingCleanup; rounds += 1) {
+    for (let rounds = 0; reconciler.hasPendingWork; rounds += 1) {
       expect(rounds).toBeLessThan(20);
       const publication = { remainingRoots: 192, remainingRemovals: 64 };
-      cache.flushEvictions(20, () => clock, publication);
       reconciler.reconcile(20, () => clock, new Map(), new Map(), publication);
       expect(cache.statistics().bytes).toBeLessThanOrEqual(DETACHED_ELEMENT_CACHE_MAX_BYTES);
     }
