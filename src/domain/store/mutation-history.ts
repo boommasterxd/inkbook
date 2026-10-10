@@ -17,6 +17,7 @@ interface HistoryPreparation {
   readonly source: HistorySource;
   readonly desired: ReadonlyMap<string, InkElementV1>;
   readonly removeIds: ReadonlySet<string>;
+  readonly ownedPayloadBytes?: number;
 }
 
 export async function prepareMutationHistory(
@@ -30,7 +31,7 @@ export async function prepareMutationHistory(
     if (forwardBytes === "cancelled") return forwardBytes;
     const reverseBytes = await estimateReverseBytes(state, scheduler);
     if (reverseBytes === "cancelled") return reverseBytes;
-    assertPayloadLimit(forwardBytes + reverseBytes);
+    assertPayloadLimit(forwardBytes + reverseBytes + (state.ownedPayloadBytes ?? 0));
     return replay;
   }
   const forward = trustedRemoval
@@ -43,7 +44,7 @@ export async function prepareMutationHistory(
   if (forwardBytes === "cancelled") return forwardBytes;
   const reverseBytes = await estimateMutationBytes(reverse, scheduler);
   if (reverseBytes === "cancelled") return reverseBytes;
-  const payloadBytes = forwardBytes + reverseBytes;
+  const payloadBytes = forwardBytes + reverseBytes + (state.ownedPayloadBytes ?? 0);
   assertPayloadLimit(payloadBytes);
   return Object.freeze({ forward, payloadBytes, reverse });
 }

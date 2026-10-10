@@ -38,11 +38,12 @@ interface PathIdentity {
 export class ScenePathCache extends VersionedCache<CachedPath> {
   readonly #identities = new WeakMap<object, Map<string, string>>();
   readonly #parts = new WeakMap<readonly SvgPathPart[], PathIdentity>();
-  readonly #retainedKeys = new Set<string>();
+  readonly #retainedKeys = new Map<string, boolean>();
   readonly #aliases: SceneGeometryAliases;
   readonly #maximumBytes: number;
   readonly #maximumEntries: number;
   #nextIdentity = 0;
+  #generation = 0;
   public constructor(maximumEntries = PATH_CACHE_MAX_ENTRIES, maximumBytes = PATH_CACHE_MAX_BYTES) {
     const aliasBytes = Math.max(1, Math.min(Math.floor(maximumBytes / 4), maximumEntries * 256));
     super(maximumEntries, maximumBytes, (id, entry) => {
@@ -102,6 +103,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     if (cached !== undefined) return cached;
     const signature = immutableStrokeSignature(element);
     const points = element.kind === "stroke" ? element.points : undefined;
+    const generation = this.#generation;
     this.recordBuild();
     element = element.kind === "stroke" ? strokeLocalGeometry(element) : element;
     if (signature === undefined || points === undefined || !this.retentionEnabled)
@@ -118,7 +120,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
         pressureGeometry?.publishWindow(index, window);
       },
     });
-    this.retainShared(element, signature, parts, windows);
+    if (generation === this.#generation) this.retainShared(element, signature, parts, windows);
     return parts;
   }
 
@@ -156,7 +158,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
       },
       bytes,
     );
-    this.#retainedKeys.add(key);
+    this.#retainedKeys.set(key, true);
     this.#parts.set(parts, { key, ownsParts: true });
     lookup.set(signature, key);
     this.#identities.set(points, lookup);
@@ -228,13 +230,16 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
   }
 
   public override release(): void {
+    this.#generation += 1;
     super.release();
     this.#aliases.release();
   }
 
   public override invalidate(id: string): void {
     const key = this.#aliases.invalidate(id);
-    if (key !== undefined && !this.#aliases.hasOwners(key)) super.invalidate(key);
+    // Retire immutable shapes in the same bounded LRU; deleted IDs lose access immediately.
+    if (key !== undefined && !this.#retainedKeys.get(key) && !this.#aliases.hasOwners(key))
+      super.invalidate(key);
     super.invalidate(id);
   }
 
@@ -300,7 +305,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
       },
       bytes,
     );
-    this.#retainedKeys.add(key);
+    this.#retainedKeys.set(key, false);
     this.#aliases.retain(id, geometryVersion, key);
     this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());
   }
@@ -318,7 +323,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     if (bytes > this.#maximumBytes) return;
     const canonical = `\0path:${this.#nextIdentity++}`;
     this.retainCached(canonical, 0, { parts }, bytes);
-    this.#retainedKeys.add(canonical);
+    this.#retainedKeys.set(canonical, false);
     this.#parts.set(parts, { key: canonical, ownsParts: true });
     this.#aliases.retain(id, geometryVersion, canonical);
     this.trimCachedToBytes(this.#maximumBytes - this.#aliases.memoryUsage());

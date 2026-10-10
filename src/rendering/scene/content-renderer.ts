@@ -1,4 +1,5 @@
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { sameStrokeShape } from "./stroke-position";
 import { CommittedPreviewGeometry } from "./committed-preview-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
@@ -301,6 +302,16 @@ export class SceneContentRenderer {
         ? entry.displayedPathParts
         : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);
     return this.applyCanonicalElementPreview(element, parts);
+  }
+
+  public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
+    const entry = this.#mounted.get(element.id);
+    return element.kind === "stroke" &&
+      (Object.isFrozen(element.points) || isStoredStroke(element)) &&
+      entry !== undefined &&
+      sameStrokeShape(entry.displayedElement, element)
+      ? entry.displayedPathParts
+      : undefined;
   }
 
   public applyCanonicalElementPreview(

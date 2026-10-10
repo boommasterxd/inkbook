@@ -352,6 +352,7 @@ export class SceneMotionController {
       elements,
       MAX_MOTION_PATHS - this.#instrumentation.motionCacheEntries,
       MAX_MOTION_BYTES - this.#instrumentation.motionCacheBytes,
+      (element) => this.#content.readCanonicalStrokePath(element),
     );
     this.#instrumentation.motionCacheEntries += visual.nodes.length;
     this.#instrumentation.motionCacheBytes += visual.bytes;

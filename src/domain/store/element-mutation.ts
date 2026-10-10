@@ -18,6 +18,13 @@ import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import { validateTrustedRemovalOrder } from "./trusted-removal-order";
 import { prepareMutationHistory } from "./mutation-history";
 import {
+  ownedHistoryPayloadBytes,
+  ownedReplayRecords,
+  prepareOwnedMutationHistory,
+  restoreOwnedRecord,
+  type OwnedMutationHistory,
+} from "./owned-mutation-history";
+import {
   assignRecordVersions,
   createInitialRecord,
   createReplacementRecord,
@@ -48,6 +55,7 @@ export interface ElementMutationPlan {
   readonly indexPatch: PreparedSpatialMutation;
   readonly ranks: Map<string, ElementRank>;
   readonly records: Map<string, ElementRecord | null>;
+  readonly ownedHistory: OwnedMutationHistory | undefined;
 }
 
 export interface MutationSource {
@@ -67,6 +75,7 @@ export async function planElementMutation(
   sourceScheduler: StoreSliceScheduler,
   replay?: AppliedElementMutation,
   trustedRemoval = false,
+  ownedReplay?: OwnedMutationHistory,
 ): Promise<ElementMutationPlan | "cancelled" | null> {
   if (replay !== undefined && requested !== replay.forward && requested !== replay.reverse) {
     throw new RangeError("History replay must use a retained transition direction.");
@@ -83,7 +92,8 @@ export async function planElementMutation(
     scheduler,
   );
   if (desired === "cancelled") return desired;
-  const records = await buildRecords(source, desired, removeIds, scheduler);
+  const ownedRecords = ownedReplayRecords(requested, replay, ownedReplay);
+  const records = await buildRecords(source, desired, removeIds, scheduler, ownedRecords);
   if (records === "cancelled") return records;
   const order = trustedRemoval
     ? await validateTrustedRemovalOrder(requested, source, sourceRanks, removeIds, scheduler)
@@ -96,8 +106,21 @@ export async function planElementMutation(
   const derived = await buildDerivedState(source, records, delta, sourceScheduler);
   if (derived === "cancelled") return derived;
   const { capacityPatch, indexPatch } = derived;
+  const ownedHistory = await prepareOwnedMutationHistory(
+    delta,
+    scheduler,
+    ownedReplay,
+    replay !== undefined,
+  );
+  if (ownedHistory === "cancelled") return ownedHistory;
   const applied = await prepareMutationHistory(
-    { requested, source, desired, removeIds },
+    {
+      requested,
+      source,
+      desired,
+      removeIds,
+      ownedPayloadBytes: ownedHistoryPayloadBytes(ownedHistory),
+    },
     scheduler,
     replay,
     trustedRemoval,
@@ -111,6 +134,7 @@ export async function planElementMutation(
     indexPatch,
     ranks,
     records,
+    ownedHistory,
   };
 }
 
@@ -184,6 +208,7 @@ async function buildRecords(
   desired: ReadonlyMap<string, InkElementV1>,
   removeIds: ReadonlySet<string>,
   scheduler: MutationPreparationScheduler,
+  ownedRecords?: ReadonlyMap<string, ElementRecord>,
 ): Promise<Map<string, ElementRecord | null> | "cancelled"> {
   const records = new Map<string, ElementRecord | null>();
   for (const id of removeIds) {
@@ -197,6 +222,11 @@ async function buildRecords(
   for (const [id, element] of desired) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     const current = source.records.get(id);
+    const restored = restoreOwnedRecord(element, current, ownedRecords?.get(id), versions);
+    if (restored !== undefined) {
+      if (restored !== current) records.set(id, restored);
+      continue;
+    }
     if (current === undefined) {
       records.set(
         id,

@@ -9,6 +9,8 @@ import {
 import * as cellMembership from "../../../src/domain/spatial/cell-membership";
 import * as immutability from "../../../src/domain/store/immutability";
 import * as recordFactory from "../../../src/domain/store/record-factory";
+import * as bounds from "../../../src/domain/geometry/bounds";
+import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../src/domain/commands/history";
 import { SpatialQueryScratch, UniformSpatialIndex } from "../../../src/domain/spatial/index";
 import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
 import { planElementMutation } from "../../../src/domain/store/element-mutation";
@@ -175,7 +177,7 @@ function remainingBand(
 it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, and Redo", async () => {
   const fixture = createStandardRuntimeDomainFixture();
   const elements = fixture.elements.slice(0, 10_000);
-  const removed = new Set(elements.slice(0, 2_000).map(({ id }) => id));
+  const removed = new Set(elements.map(({ id }) => id));
   const builder = ElementStore.createBuilder({
     shouldYield: () => false,
     yieldControl: async () => undefined,
@@ -183,12 +185,15 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
   await builder.appendOwnedRuntime(elements);
   const store = await builder.finalize();
   if (store === null) throw new Error("Expected hydrated store.");
+  const originalRecords = new Map(elements.map(({ id }) => [id, store.get(id)!]));
   const publications = vi.fn();
   store.subscribe(publications);
   const recordBuild = vi.spyOn(recordFactory, "createInitialRecord");
   const cloneElement = vi.spyOn(immutability, "mutableElement");
   const indexInsert = vi.spyOn(UniformSpatialIndex.prototype, "insert");
   const cellRange = vi.spyOn(cellMembership, "createCellRange");
+  const deriveBounds = vi.spyOn(bounds, "calculateElementBounds");
+  const copyElement = vi.spyOn(immutability, "immutableElement");
   try {
     const deletion = await prepareAndApply({
       bands: {
@@ -197,11 +202,16 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
       },
       removeIds: [...removed],
     });
-    expect(store.size).toBe(8_000);
+    expect(store.size).toBe(0);
+    expect(deletion.payloadBytes).toBeLessThanOrEqual(DEFAULT_HISTORY_BYTE_LIMIT);
     await prepareAndApply(deletion.reverse, deletion);
     expect(store.size).toBe(10_000);
+    for (const [id, original] of originalRecords) {
+      expect(store.get(id)?.element).toBe(original.element);
+      expect(store.get(id)?.bounds).toBe(original.bounds);
+    }
     await prepareAndApply(deletion.forward, deletion);
-    expect(store.size).toBe(8_000);
+    expect(store.size).toBe(0);
     expect(publications).toHaveBeenCalledTimes(3);
     expect(cloneElement.mock.calls.every(([element]) => removed.has(element.id))).toBe(true);
   } finally {
@@ -209,14 +219,19 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
     cloneElement.mockRestore();
     indexInsert.mockRestore();
     cellRange.mockRestore();
+    deriveBounds.mockRestore();
+    copyElement.mockRestore();
   }
 
   async function prepareAndApply(mutation: ElementMutation, replay?: AppliedElementMutation) {
     const previousClones = cloneElement.mock.calls.length;
+    deriveBounds.mockClear();
+    copyElement.mockClear();
     cellRange.mockClear();
     let yields = 0;
     const previousSize = store!.size;
     const assertSlice = () => {
+      if (replay !== undefined) expect(recordBuild).not.toHaveBeenCalled();
       expect(recordBuild.mock.calls.length).toBeLessThanOrEqual(128);
       expect(indexInsert.mock.calls.length).toBeLessThanOrEqual(128);
       recordBuild.mockClear();
@@ -238,6 +253,9 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
     assertSlice();
     if (replay !== undefined) {
       expect(cloneElement.mock.calls.length - previousClones).toBe(0);
+      expect(recordBuild).not.toHaveBeenCalled();
+      expect(deriveBounds).not.toHaveBeenCalled();
+      expect(copyElement).not.toHaveBeenCalled();
     }
     // Retained band-order validation still visits cheap IDs; unaffected geometry stays untouched.
     expect(yields).toBeLessThanOrEqual(190);

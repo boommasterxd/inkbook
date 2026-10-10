@@ -108,30 +108,52 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
   expect(scheduler.pendingCount).toBe(0);
 });
 
-it("retains 2,500 immutable contours once across scene ID and geometry identity", () => {
-  const cache = new ScenePathCache(4_096);
-  const elements = Array.from({ length: 2_500 }, (_, index) => {
+it("retires and restores 10,000 immutable contours within the existing cache without rebuilding", () => {
+  const cache = new ScenePathCache();
+  const elements = Array.from({ length: 10_000 }, (_, index) => {
     const element = indexedStroke(index);
-    const points = Array.from(element.points);
+    const points =
+      index === 0
+        ? [...PRESSURE_REFERENCE[3]!.points]
+        : [...element.points, element.pivot.x + 10, element.pivot.y + 10, 1];
     Object.freeze(points);
-    return { ...element, points };
+    return {
+      ...element,
+      points,
+      style: { ...element.style, width: index === 0 ? (22 as const) : (2 as const) },
+    };
   });
   const build = vi.spyOn(elementGeometry, "buildElementPathParts");
+  const contour = vi.spyOn(intersections, "intersectPressureBoundaries");
   try {
     const parts = elements.map((element) => cache.build(element));
     const geometryWork = build.mock.calls.length;
     expect(geometryWork).toBeGreaterThan(0);
     elements.forEach((element, index) => cache.retain(element.id, 1, parts[index]!));
-    expect(cache.statistics()).toMatchObject({ entries: 2_500, evictions: 0 });
+    expect(cache.statistics()).toMatchObject({ entries: 10_000, evictions: 0 });
+    expect(contour.mock.calls.length).toBeGreaterThan(0);
+    contour.mockClear();
     for (const element of elements) {
-      expect(cache.take(element.id, 1)).toBe(cache.read(element));
+      cache.invalidate(element.id);
+      expect(cache.take(element.id, 1)).toBeUndefined();
+    }
+    expect(cache.statistics()).toMatchObject({ entries: 10_000, evictions: 0 });
+    expect(cache.cacheMemoryUsage()).toBeLessThanOrEqual(25 * 1_024 * 1_024);
+    elements.forEach((element, index) => {
+      expect(cache.read(element)).toBe(parts[index]);
+      cache.retain(element.id, 2, parts[index]!);
+    });
+    for (const element of elements) {
+      expect(cache.take(element.id, 2)).toBe(cache.read(element));
       expect(cache.build(element)).toBe(cache.read(element));
     }
+    expect(contour).not.toHaveBeenCalled();
     expect(build).toHaveBeenCalledTimes(geometryWork);
     cache.release();
     expect(cache.cacheMemoryUsage()).toBe(0);
   } finally {
     build.mockRestore();
+    contour.mockRestore();
   }
 });
 

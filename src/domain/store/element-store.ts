@@ -24,7 +24,6 @@ import {
 } from "./replacement-plan";
 import { PreparedElementMutations } from "./prepared-element-mutations";
 import type { PreparedReplacementState } from "./replacement-types";
-import { createRemovalTransition } from "./removal-transition";
 import { assignRecordVersions, createInitialRecord, nextRecordVersion } from "./record-factory";
 import {
   assertValidElement,
@@ -368,16 +367,14 @@ export class ElementStore {
   public removeWithHistory(
     ids: ReadonlySet<string> | readonly string[],
   ): AppliedRemovalResult | null {
-    const beforeBands = {
+    const before = {
       content: [...this.#bands.content],
       highlight: [...this.#bands.highlight],
     };
     const delta = this.remove(ids);
     if (delta === null) return null;
-    return Object.freeze({
-      delta,
-      transition: createRemovalTransition(delta, beforeBands, this.#bands),
-    });
+    const transition = this.#preparedElementMutations.retainRemoval(delta, before, this.#bands);
+    return Object.freeze({ delta, transition });
   }
 
   public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): StoreDelta | null {
