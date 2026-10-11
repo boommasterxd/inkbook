@@ -6,7 +6,7 @@ import { createTestStroke, createWorkerSnapshot } from "../../fixtures/persisten
 import { createStandardPersistenceFixture, replaceFirstStroke, STANDARD_POINTS } from "./fixtures";
 import { DocumentModelRuntime } from "../../../src/persistence/worker/runtime/document-model";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
 } from "../../../src/persistence/worker/runtime/wire-codec";
 import type { DocumentExportRequest } from "../../../src/persistence/worker/runtime/types";
@@ -206,8 +206,14 @@ it("adopts full-reset samples without encoding or decoding stroke metadata at do
     type: "export-full",
     workerEpoch: 1,
   };
-  const same = decodeRuntimeRequest(encodeRuntimeRequest(full).value);
-  const fresh = decodeRuntimeRequest(encodeRuntimeRequest({ ...full, exportGeneration: 2 }).value);
+  const same = await decodeRuntimeRequestChunked(encodeRuntimeRequest(full).value, {
+    checkpoint: () => undefined,
+    signal: new AbortController().signal,
+  });
+  const fresh = await decodeRuntimeRequestChunked(
+    encodeRuntimeRequest({ ...full, exportGeneration: 2 }).value,
+    { checkpoint: () => undefined, signal: new AbortController().signal },
+  );
   if (same.type !== "export-full" || fresh.type !== "export-full")
     throw new Error("Expected full export.");
   let retainedPointReads = 0;

@@ -5,7 +5,7 @@ import {
   ScenePathValidationContext,
 } from "../../../../../src/persistence/worker/runtime/scene-path-limits";
 import { ScenePathOperation } from "../../../../../src/persistence/worker/runtime/scene-path-operation";
-import { decodeRuntimeRequest } from "../../../../../src/persistence/worker/runtime/wire-codec";
+import { decodeRuntimeRequestChunked } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import type { PreparedScenePathsRuntimeSuccess } from "../../../../../src/persistence/worker/runtime/types";
 
 const identity = {
@@ -24,34 +24,49 @@ const request = {
 describe("exact visible prefix request validation", () => {
   it.each([undefined, 0, 1, 2])(
     "preserves an optional bounded prefix %s across admission and wire decoding",
-    (visibleCount) => {
+    async (visibleCount) => {
       const candidate = { ...request, ...(visibleCount === undefined ? {} : { visibleCount }) };
       expect(new ScenePathValidationContext(candidate).request.visibleCount).toBe(visibleCount);
       expect(new ScenePathOperation(candidate).request.visibleCount).toBe(visibleCount);
-      expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
+      expect(
+        await decodeRuntimeRequestChunked(candidate, {
+          checkpoint: () => undefined,
+          signal: new AbortController().signal,
+        }),
+      ).toEqual(candidate);
     },
   );
 
   it.each([undefined, 1, MAX_SCENE_PATH_BYTES])(
     "preserves available byte capacity %s",
-    (maxBytes) => {
+    async (maxBytes) => {
       const candidate = { ...request, ...(maxBytes === undefined ? {} : { maxBytes }) };
       expect(new ScenePathValidationContext(candidate).request.maxBytes).toBe(maxBytes);
       expect(new ScenePathOperation(candidate).request.maxBytes).toBe(maxBytes);
-      expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
+      expect(
+        await decodeRuntimeRequestChunked(candidate, {
+          checkpoint: () => undefined,
+          signal: new AbortController().signal,
+        }),
+      ).toEqual(candidate);
     },
   );
 
-  it.each([undefined, false, true])("preserves speculative admission %s", (speculative) => {
+  it.each([undefined, false, true])("preserves speculative admission %s", async (speculative) => {
     const candidate = { ...request, ...(speculative === undefined ? {} : { speculative }) };
     expect(new ScenePathOperation(candidate).request.speculative).toBe(speculative);
     expect(new ScenePathValidationContext(candidate).request.speculative).toBe(speculative);
-    expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
+    expect(
+      await decodeRuntimeRequestChunked(candidate, {
+        checkpoint: () => undefined,
+        signal: new AbortController().signal,
+      }),
+    ).toEqual(candidate);
   });
 
   it.each([undefined, false, true])(
     "preserves bounded navigation reserve %s",
-    (navigationReserve) => {
+    async (navigationReserve) => {
       const candidate = {
         ...request,
         speculative: true,
@@ -61,7 +76,12 @@ describe("exact visible prefix request validation", () => {
       expect(new ScenePathValidationContext(candidate).request.navigationReserve).toBe(
         navigationReserve,
       );
-      expect(decodeRuntimeRequest(candidate)).toEqual(candidate);
+      expect(
+        await decodeRuntimeRequestChunked(candidate, {
+          checkpoint: () => undefined,
+          signal: new AbortController().signal,
+        }),
+      ).toEqual(candidate);
     },
   );
 
@@ -78,11 +98,16 @@ describe("exact visible prefix request validation", () => {
     })),
     { navigationReserve: true },
     { navigationReserve: true, speculative: false },
-  ])("rejects malformed priority or capacity before admission: %j", (options) => {
+  ])("rejects malformed priority or capacity before admission: %j", async (options) => {
     const candidate = { ...request, ...options };
     expect(() => new ScenePathValidationContext(candidate)).toThrow(TypeError);
     expect(() => new ScenePathOperation(candidate)).toThrow(TypeError);
-    expect(() => decodeRuntimeRequest(candidate)).toThrow(TypeError);
+    await expect(
+      decodeRuntimeRequestChunked(candidate, {
+        checkpoint: () => undefined,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(TypeError);
   });
 });
 

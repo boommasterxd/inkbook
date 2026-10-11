@@ -51,13 +51,6 @@ export interface ValidatedDeltaFacts {
   readonly changed: ReadonlyMap<string, ElementFacts>;
 }
 
-export function elementFacts(
-  element: InkElementV1,
-  derivation?: ElementValidationDerivation,
-): ElementFacts {
-  return completeFacts(elementFactsSteps(element, derivation, Infinity));
-}
-
 export function* elementFactsSteps(
   element: InkElementV1,
   derivation?: ElementValidationDerivation,
@@ -96,14 +89,6 @@ function* validatedStrokeFacts(
   )
     throw new TypeError("Stroke local bounds do not match their validated placement.");
   return { ...factsFromBounds(stroke, worldBounds), strokeGeometry: { local, bounds } };
-}
-
-export function validatedDeltaElementFacts(
-  element: InkElementV1,
-  derivation?: ElementValidationDerivation,
-  previous?: ElementFacts,
-): ElementFacts {
-  return completeFacts(validatedDeltaElementFactsSteps(element, derivation, previous, Infinity));
 }
 
 export function* validatedDeltaElementFactsSteps(
@@ -164,10 +149,6 @@ function factsFromBounds(element: InkElementV1, bounds: Readonly<SpatialBounds>)
   };
 }
 
-export function aggregateElementFacts(facts: Iterable<ElementFacts>): AggregateFacts {
-  return completeFacts(aggregateElementFactsSteps(facts, Infinity));
-}
-
 export function* aggregateElementFactsSteps(
   facts: Iterable<ElementFacts>,
   nodesPerStep = 256,
@@ -183,15 +164,6 @@ export function* aggregateElementFactsSteps(
 
 export function emptyAggregateFacts(): AggregateFacts {
   return mutableAggregate();
-}
-
-export function updateAggregateFacts(
-  current: AggregateFacts,
-  existing: ReadonlyMap<string, ElementFacts>,
-  changed: ReadonlyMap<string, ElementFacts>,
-  removed: ReadonlySet<string>,
-): AggregateFacts {
-  return completeFacts(updateAggregateFactsSteps(current, existing, changed, removed, Infinity));
 }
 
 export function* updateAggregateFactsSteps(
@@ -225,16 +197,6 @@ export function* updateAggregateFactsSteps(
     aggregate.maximumBottom = null;
   }
   return aggregate;
-}
-
-export function connectionRelationsAffected(
-  currentElements: ReadonlyMap<string, InkElementV1>,
-  changed: ReadonlyMap<string, InkElementV1>,
-  removed: ReadonlySet<string>,
-): boolean {
-  return completeFacts(
-    connectionRelationsAffectedSteps(currentElements, changed, removed, Infinity),
-  );
 }
 
 export function* connectionRelationsAffectedSteps(
@@ -424,12 +386,6 @@ function* boundsSteps(element: InkElementV1, samplesPerStep: number) {
   return Number.isFinite(samplesPerStep)
     ? yield* calculateElementBoundsSteps(element, samplesPerStep)
     : calculateElementBounds(element);
-}
-
-function completeFacts<T>(steps: Generator<void, T>): T {
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
 }
 
 function hasEndpointConnection(element: InkElementV1): boolean {

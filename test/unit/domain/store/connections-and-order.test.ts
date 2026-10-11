@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  CoordinateSystemElementV1,
-  TableElementV1,
-} from "../../../../src/domain/schema/public";
+import type { CoordinateSystemElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { type ElementRecord } from "../../../../src/domain/store/types";
 
@@ -14,6 +11,7 @@ import {
   highlighter,
   IDS,
   rectangle,
+  tableFromRectangle,
 } from "./fixtures";
 
 describe("ElementStore collapsed connections", () => {
@@ -134,25 +132,7 @@ describe("ElementStore connection transactions", () => {
 describe("ElementStore table separator transactions", () => {
   it("updates internal separators without visiting unchanged outer-anchor dependents", () => {
     const box = rectangle();
-    const table: TableElementV1 = {
-      columnWidth: 100,
-      columns: 2,
-      createdAt: box.createdAt,
-      headerHeight: 30,
-      height: box.height,
-      id: box.id,
-      kind: "table",
-      pivot: box.pivot,
-      rotation: box.rotation,
-      style: {
-        outlineColor: box.style.outlineColor,
-        outlineOpacity: box.style.outlineOpacity,
-        outlineStyle: box.style.outlineStyle,
-        outlineWidth: box.style.outlineWidth,
-      },
-      x: box.x,
-      y: box.y,
-    };
+    const table = tableFromRectangle(box);
     const line = connectedLine(box);
     const store = new ElementStore([table, line]);
     const lineRecord = store.get(line.id);

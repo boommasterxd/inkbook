@@ -6,6 +6,7 @@ import { ActiveDocumentHistory } from "../../../../../src/obsidian/embeds/active
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
+import { invalidatePendingHistory } from "../../../../fixtures/obsidian/active-editor";
 import { elementMutationPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 
@@ -114,9 +115,7 @@ describe("removal collection cancellation and failure", () => {
       expect(fixture.pending).toEqual([true]);
       expect(reads).not.toHaveBeenCalled();
       expect(scheduler.checkpoint).toHaveBeenCalledOnce();
-      if (reason === "selection") current = false;
-      if (reason === "revision") fixture.advanceRevision();
-      if (reason === "dispose") fixture.documentHistory.dispose();
+      current = invalidatePendingHistory(reason, fixture.documentHistory, fixture.advanceRevision);
       resume();
       await expect(result).resolves.toBe("stale");
       expect(collected).not.toHaveBeenCalled();
@@ -128,32 +127,12 @@ describe("removal collection cancellation and failure", () => {
     },
   );
 
-  it.each(["empty", "missing"] as const)(
-    "returns a %s no-op without starting a fade",
-    async (kind) => {
-      const fixture = removalFixture();
-      const collected = vi.fn();
-      await expect(
-        fixture.documentHistory.removeSelection(
-          new Set(kind === "empty" ? [] : ["missing"]),
-          immediateWorkScheduler(),
-          () => true,
-          collected,
-        ),
-      ).resolves.toBe("noop");
-      expect(collected).not.toHaveBeenCalled();
-      expect(fixture.prepare).not.toHaveBeenCalled();
-      expect(fixture.history.commandCount).toBe(0);
-      expect(fixture.release).toHaveBeenCalledOnce();
-      expect(fixture.pending).toEqual([true, false]);
-    },
-  );
-
-  it.each(["checkpoint", "preparation"] as const)(
-    "releases ownership after %s failure",
+  it.each(["empty", "missing", "checkpoint", "preparation"] as const)(
+    "releases ownership without mutation at the %s boundary",
     async (boundary) => {
       const fixture = removalFixture();
       const collected = vi.fn();
+      const noop = boundary === "empty" || boundary === "missing";
       const scheduler = {
         ...immediateWorkScheduler(),
         checkpoint: () =>
@@ -161,14 +140,12 @@ describe("removal collection cancellation and failure", () => {
       };
       if (boundary === "preparation")
         fixture.prepare.mockRejectedValue(new Error("preparation failed"));
+      const ids =
+        boundary === "empty" ? [] : [boundary === "missing" ? "missing" : fixture.elements[0]!.id];
       await expect(
-        fixture.documentHistory.removeSelection(
-          new Set([fixture.elements[0]!.id]),
-          scheduler,
-          () => true,
-          collected,
-        ),
-      ).resolves.toBe("failed");
+        fixture.documentHistory.removeSelection(new Set(ids), scheduler, () => true, collected),
+      ).resolves.toBe(noop ? "noop" : "failed");
+      if (noop) expect(fixture.prepare).not.toHaveBeenCalled();
       expect(fixture.release).toHaveBeenCalledOnce();
       expect(fixture.pending).toEqual([true, false]);
       expect(collected).toHaveBeenCalledTimes(boundary === "preparation" ? 1 : 0);

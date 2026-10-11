@@ -122,14 +122,6 @@ function assertHeaderArray(value: unknown[]): void {
   }
 }
 
-export function copyStrokeSamplesSteps(
-  points: SampleSource,
-  samplesPerStep = DEFAULT_SAMPLE_COPY_STEP,
-): Generator<void, SampleBuffer> {
-  const length = assertSampleCopyInput(points, samplesPerStep);
-  return copySamplesSteps(points, length, samplesPerStep * 3, points instanceof Float64Array);
-}
-
 export function copyStrokeSamplesToRuntimeSteps(
   points: SampleSource,
   samplesPerStep = DEFAULT_SAMPLE_COPY_STEP,
@@ -241,22 +233,4 @@ function* finishStrokeHeader<T extends object>(
 ): Generator<void, T> {
   header.points = yield* samples;
   return header as T;
-}
-
-export function copyRuntimeElement<T extends object>(element: T, ownedPoints?: SampleSource): T {
-  return drainCopySteps(copyRuntimeElementSteps(element, ownedPoints));
-}
-
-export function copyStrokeSamples(points: SampleSource): SampleBuffer {
-  return drainCopySteps(copyStrokeSamplesSteps(points));
-}
-
-export function copyStrokeSamplesToRuntime(points: SampleSource): Float64Array {
-  return drainCopySteps(copyStrokeSamplesToRuntimeSteps(points));
-}
-
-function drainCopySteps<T>(steps: Generator<void, T>): T {
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
 }

@@ -13,12 +13,18 @@ import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-e
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
+import { invalidatePendingHistory } from "../../../../fixtures/obsidian/active-editor";
 import {
   elementMutationPorts,
   elementReplacementPorts,
 } from "../../../../fixtures/obsidian/element-mutation-ports";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
-import { axisConnectedLine, coordinateSystem, rectangle } from "../../../domain/store/fixtures";
+import {
+  axisConnectedLine,
+  coordinateSystem,
+  rectangle,
+  tableFromRectangle,
+} from "../../../domain/store/fixtures";
 
 function documentFixture(elements: readonly InkElementV1[]) {
   const store = new ElementStore(elements);
@@ -186,24 +192,8 @@ describe("prepared style document history", () => {
   it("commits table dimensions and restores its complete prior structure", async () => {
     const box = rectangle();
     const table: TableElementV1 = {
-      columnWidth: 100,
-      columns: 2,
+      ...tableFromRectangle(box),
       columnOffsets: [120],
-      headerHeight: 30,
-      createdAt: box.createdAt,
-      height: box.height,
-      id: box.id,
-      kind: "table",
-      pivot: box.pivot,
-      rotation: box.rotation,
-      style: {
-        outlineColor: box.style.outlineColor,
-        outlineOpacity: box.style.outlineOpacity,
-        outlineStyle: box.style.outlineStyle,
-        outlineWidth: box.style.outlineWidth,
-      },
-      x: box.x,
-      y: box.y,
     };
     const fixture = styleFixture([table]);
 
@@ -481,9 +471,7 @@ describe("prepared arrangement history", () => {
           () => true,
         ),
       ).resolves.toBe("busy");
-      if (reason === "selection") current = false;
-      if (reason === "revision") fixture.advanceRevision();
-      if (reason === "dispose") fixture.documentHistory.dispose();
+      current = invalidatePendingHistory(reason, fixture.documentHistory, fixture.advanceRevision);
       resume();
       await expect(result).resolves.toBe(reason === "failure" ? "failed" : "stale");
       expect(fixture.documentHistory.pending).toBe(false);

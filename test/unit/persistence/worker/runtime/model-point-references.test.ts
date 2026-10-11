@@ -5,7 +5,7 @@ import {
   copyElementsToRuntime,
 } from "../../../../../src/persistence/worker/runtime/runtime-elements";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
   encodeRuntimeRequestChunked,
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
@@ -63,7 +63,11 @@ describe("acknowledged worker point references", () => {
       };
       const encoded = await encode(cache, request);
       expect(encoded.transfer).toEqual([]);
-      const decoded = decodeRuntimeRequest(encoded.value, cache.resolver(index, executor));
+      const decoded = await decodeRuntimeRequestChunked(
+        encoded.value,
+        { checkpoint: () => undefined, signal: new AbortController().signal },
+        cache.resolver(index, executor),
+      );
       expect("changedElements" in decoded && decoded.changedElements?.[0]).toEqual(element);
       expect(
         "changedElements" in decoded &&
@@ -86,13 +90,26 @@ describe("acknowledged worker point references", () => {
     };
     expect((await encode(cache, replacement)).transfer).toHaveLength(1);
     const encoded = await encode(cache);
-    expect(() => decodeRuntimeRequest(encoded.value)).toThrow("index");
-    expect(() => decodeRuntimeRequest(encoded.value, cache.resolver(1, executor))).toThrow(
-      "acknowledged",
-    );
-    expect(() =>
-      decodeRuntimeRequest(encoded.value, cache.resolver(0, { ...executor, workerEpoch: 4 })),
-    ).toThrow("acknowledged");
+    await expect(
+      decodeRuntimeRequestChunked(encoded.value, {
+        checkpoint: () => undefined,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow("index");
+    await expect(
+      decodeRuntimeRequestChunked(
+        encoded.value,
+        { checkpoint: () => undefined, signal: new AbortController().signal },
+        cache.resolver(1, executor),
+      ),
+    ).rejects.toThrow("acknowledged");
+    await expect(
+      decodeRuntimeRequestChunked(
+        encoded.value,
+        { checkpoint: () => undefined, signal: new AbortController().signal },
+        cache.resolver(0, { ...executor, workerEpoch: 4 }),
+      ),
+    ).rejects.toThrow("acknowledged");
     cache.accept(
       { ...incremental, changedElements: [], removedIds: [STROKE.id] },
       { identity: unlockIdentity, modelRevision: 1, type: "model-sync-success" },
@@ -152,7 +169,10 @@ describe("worker point ownership", () => {
     points[0] = 11;
     const encoded = await encode(cache, { ...incremental, changedElements: [stroke] });
     expect(encoded.transfer).toHaveLength(1);
-    const decoded = decodeRuntimeRequest(encoded.value);
+    const decoded = await decodeRuntimeRequestChunked(encoded.value, {
+      checkpoint: () => undefined,
+      signal: new AbortController().signal,
+    });
     expect(
       decoded.type === "model-sync-incremental" &&
         decoded.changedElements?.[0]?.kind === "stroke" &&

@@ -8,7 +8,7 @@ import {
 } from "../../../../src/domain/schema/public";
 import { validateRuntimeInkSnapshotV1 } from "../../../../src/domain/schema/snapshot-validation";
 import {
-  immutableElement,
+  immutableElementSteps,
   mutableElement,
   takeImmutableElementOwnership,
 } from "../../../../src/domain/store/immutability";
@@ -19,6 +19,7 @@ import {
   hydrateRuntimeStroke,
   runtimeStrokeHydrationFixture,
 } from "../../../fixtures/domain/runtime-stroke-store";
+import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../fixtures/editor/selection-transform-reference";
 import { highlighter, rectangle } from "./fixtures";
@@ -86,7 +87,7 @@ describe("runtime element ownership", () => {
     const points = new Float64Array(source.points);
     const runtime = { ...source, points } as unknown as InkElementV1;
 
-    const copied = immutableElement(runtime);
+    const copied = finishGeometrySteps(immutableElementSteps(runtime));
     if (copied.kind !== "stroke") throw new Error("Expected stroke record.");
     expect(copied.points).toBeInstanceOf(Float64Array);
     expect(copied.points).not.toBe(points);

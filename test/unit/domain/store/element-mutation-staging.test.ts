@@ -10,17 +10,14 @@ import type {
   PreparedElementMutationResult,
 } from "../../../../src/domain/store/types";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
-import { highlighter, IDS, rectangle } from "./fixtures";
+import { maximumLengthHighlighter, IDS, rectangle } from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
 type MutationMode = "insertion" | "replacement" | "owned-undo";
 
 async function stagingFixture(mode: MutationMode) {
-  const source = highlighter();
-  source.points = Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
-    index % 3 === 2 ? 0.5 : 100 + (Math.floor(index / 3) % 100),
-  );
+  const source = maximumLengthHighlighter();
   const { store, points } = await hydrateRuntimeStroke(source);
   const original = store.get(source.id)!;
   const removal = mode === "owned-undo" ? store.removeWithHistory([source.id]) : null;

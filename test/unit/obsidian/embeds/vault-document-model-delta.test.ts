@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ElementStore } from "../../../../src/domain/store/public";
+import { ElementStore, type StoreDelta } from "../../../../src/domain/store/public";
 import {
   changedElementDerivations,
   changedElements,
@@ -8,6 +8,17 @@ import {
 } from "../../../../src/obsidian/embeds/vault-document-model-delta";
 import { CoalescedExportTarget } from "../../../../src/persistence/worker/coalesced-export";
 import { connectedLine, highlighter, IDS, rectangle } from "../../domain/store/fixtures";
+
+function removalExportTarget(delta: StoreDelta) {
+  const target = new CoalescedExportTarget(7, ({ id }: { readonly id: string }) => id);
+  target.record({
+    changedElements: changedElements(delta),
+    dirtyBands: (["highlight", "content"] as const).filter((band) => delta.dirtyBands[band]),
+    modelRevision: 8,
+    removedIds: removedElementIds(delta),
+  });
+  return target;
+}
 
 describe("vault document model deltas", () => {
   it.each(["tail", "whole-band"] as const)(
@@ -20,13 +31,7 @@ describe("vault document model deltas", () => {
       const removed = scope === "tail" ? [last.id] : [first.id, last.id];
       const delta = store.remove(removed);
       if (delta === null) throw new Error("Expected a removal delta.");
-      const target = new CoalescedExportTarget(7, ({ id }: { readonly id: string }) => id);
-      target.record({
-        changedElements: changedElements(delta),
-        dirtyBands: (["highlight", "content"] as const).filter((band) => delta.dirtyBands[band]),
-        modelRevision: 8,
-        removedIds: removedElementIds(delta),
-      });
+      const target = removalExportTarget(delta);
       const plan = target.materialize({
         orderByBand: { content: store.materializeBandOrder("content") },
       });
@@ -49,13 +54,7 @@ describe("vault document model deltas", () => {
     const delta = store.remove([first.id]);
     if (delta === null) throw new Error("Expected a removal delta.");
 
-    const target = new CoalescedExportTarget(7, ({ id }: { readonly id: string }) => id);
-    target.record({
-      changedElements: changedElements(delta),
-      dirtyBands: ["content"],
-      modelRevision: 8,
-      removedIds: removedElementIds(delta),
-    });
+    const target = removalExportTarget(delta);
     const plan = target.materialize({ orderByBand: { content: [second.id] } });
 
     expect(plan).toMatchObject({

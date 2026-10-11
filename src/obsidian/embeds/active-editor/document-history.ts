@@ -86,11 +86,7 @@ export class ActiveDocumentHistory {
     isCurrent: () => boolean,
   ): Promise<DocumentMutationOutcome> {
     return this.#run(async (isCancelled) => {
-      const bands = await collectDocumentBandOrder(this.#model.store, {
-        isCancelled,
-        shouldYield: () => scheduler.shouldYield(),
-        yieldControl: () => scheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
-      });
+      const bands = await this.#collectBandOrder(scheduler, isCancelled);
       if (bands === "cancelled") return { status: "cancelled", token: null };
       const ids = (function* () {
         yield* bands.highlight;
@@ -119,17 +115,21 @@ export class ActiveDocumentHistory {
     return this.#model.prepareElementRemoval(ids, { isCancelled });
   }
 
+  #collectBandOrder(scheduler: WorkScheduler, isCancelled: () => boolean) {
+    return collectDocumentBandOrder(this.#model.store, {
+      isCancelled,
+      shouldYield: () => scheduler.shouldYield(),
+      yieldControl: () => scheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
+    });
+  }
+
   async #prepareArrange(
     action: ArrangeAction,
     selection: ReadonlySet<string>,
     scheduler: WorkScheduler,
     isCancelled: () => boolean,
   ): Promise<ElementMutation | "cancelled" | null> {
-    const bands = await collectDocumentBandOrder(this.#model.store, {
-      isCancelled,
-      shouldYield: () => scheduler.shouldYield(),
-      yieldControl: () => scheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
-    });
+    const bands = await this.#collectBandOrder(scheduler, isCancelled);
     if (bands === "cancelled") return bands;
     let changed = false;
     for (const band of ["highlight", "content"] as const) {

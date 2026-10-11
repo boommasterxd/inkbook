@@ -7,33 +7,36 @@ import {
   STABLE_RELATIVE_ORDER,
 } from "../../../../src/domain/store/owned-mutation-history";
 import { MutationPreparationScheduler } from "../../../../src/domain/store/mutation-preparation-scheduler";
+import { ElementStore } from "../../../../src/domain/store/public";
 import {
-  ElementStore,
-  type AppliedElementMutation,
-  type ElementMutation,
-} from "../../../../src/domain/store/public";
+  applyElementMutation as apply,
+  uninterruptedMutationScheduler as scheduler,
+} from "../../../fixtures/domain/element-mutation";
 import { highlighter, IDS, rectangle } from "./fixtures";
 
-const scheduler = { shouldYield: () => false, yieldControl: async () => undefined };
 const rectangles = () => [rectangle(), rectangle(IDS.other), rectangle(IDS.line)];
 const bands = (store: ElementStore) => ({
   content: store.materializeBandOrder("content"),
   highlight: store.materializeBandOrder("highlight"),
 });
 
-async function apply(
-  store: ElementStore,
-  mutation: ElementMutation,
-  replay?: AppliedElementMutation,
-) {
-  const prepared = await store.prepareElementMutation(mutation, scheduler, replay);
-  if (prepared.token === null) throw new Error("Expected prepared mutation.");
-  const result = store.commitPreparedElementMutation(prepared.token);
-  if (result.transition === null || result.delta === null)
-    throw new Error("Expected committed mutation.");
-  return result as typeof result & {
-    transition: AppliedElementMutation;
-    delta: NonNullable<typeof result.delta>;
+function ownedRemoval() {
+  const elements = rectangles();
+  const store = new ElementStore([...elements, highlighter()]);
+  const removed = store.removeWithHistory([elements[0]!.id])!;
+  return { elements, store, removed };
+}
+
+function observeHighlightValidation() {
+  const check = vi.spyOn(renderBands, "renderBandOf");
+  return {
+    expectVisited(expected: boolean) {
+      expect(
+        check.mock.calls.some(([element]) => "id" in element && element.id === IDS.highlight),
+      ).toBe(expected);
+      check.mockClear();
+    },
+    restore: () => check.mockRestore(),
   };
 }
 
@@ -85,28 +88,18 @@ describe("structural membership order deltas", () => {
 
 describe("private replay band proof", () => {
   it("skips unaffected band validation only for current exact owned directions", async () => {
-    const elements = rectangles();
-    const store = new ElementStore([...elements, highlighter()]);
-    const removed = store.removeWithHistory([elements[0]!.id])!;
-    const bandCheck = vi.spyOn(renderBands, "renderBandOf");
+    const { elements, store, removed } = ownedRemoval();
+    const bandCheck = observeHighlightValidation();
     try {
       await apply(store, removed.transition.reverse, removed.transition);
-      expect(
-        bandCheck.mock.calls.some(([element]) => "id" in element && element.id === IDS.highlight),
-      ).toBe(false);
-      bandCheck.mockClear();
+      bandCheck.expectVisited(false);
       await apply(store, removed.transition.forward, removed.transition);
-      expect(
-        bandCheck.mock.calls.some(([element]) => "id" in element && element.id === IDS.highlight),
-      ).toBe(false);
+      bandCheck.expectVisited(false);
       store.updateStyle(elements[1]!.id, { ...elements[1]!.style, outlineOpacity: 0.5 });
-      bandCheck.mockClear();
       await apply(store, removed.transition.reverse, removed.transition);
-      expect(
-        bandCheck.mock.calls.some(([element]) => "id" in element && element.id === IDS.highlight),
-      ).toBe(true);
+      bandCheck.expectVisited(true);
     } finally {
-      bandCheck.mockRestore();
+      bandCheck.restore();
     }
     // The adopted unchanged band remains writable by later ordinary insertions.
     store.create({ ...highlighter(), id: "00000000-0000-4000-8000-000000000090" });
@@ -114,41 +107,30 @@ describe("private replay band proof", () => {
   });
 
   it("fully validates public element mutations instead of trusting frozen direction arrays", async () => {
-    const elements = rectangles();
-    const store = new ElementStore([...elements, highlighter()]);
-    const removed = store.removeWithHistory([elements[0]!.id])!;
+    const { store, removed } = ownedRemoval();
     const retained = removed.transition.reverse.elements![0]!;
     if (retained.kind !== "rectangle") throw new Error("Expected retained rectangle.");
     Object.assign(retained.style, { outlineOpacity: 0.5 });
-    const bandCheck = vi.spyOn(renderBands, "renderBandOf");
+    const bandCheck = observeHighlightValidation();
     try {
       await apply(store, removed.transition.reverse, removed.transition);
-      expect(
-        bandCheck.mock.calls.some(([element]) => "id" in element && element.id === IDS.highlight),
-      ).toBe(true);
+      bandCheck.expectVisited(true);
     } finally {
-      bandCheck.mockRestore();
+      bandCheck.restore();
     }
   });
 
   it("does not admit frozen foreign directions or unfrozen cloned directions", async () => {
-    const elements = rectangles();
-    const owner = new ElementStore([...elements, highlighter()]);
-    const removed = owner.removeWithHistory([elements[0]!.id])!;
+    const { elements, store: owner, removed } = ownedRemoval();
     const other = new ElementStore([...elements.slice(1), highlighter()]);
-    const bandCheck = vi.spyOn(renderBands, "renderBandOf");
+    const bandCheck = observeHighlightValidation();
     try {
       await apply(other, removed.transition.reverse, removed.transition);
-      expect(
-        bandCheck.mock.calls.some(([element]) => "id" in element && element.id === IDS.highlight),
-      ).toBe(true);
-      bandCheck.mockClear();
+      bandCheck.expectVisited(true);
       await apply(owner, { ...removed.transition.reverse });
-      expect(
-        bandCheck.mock.calls.some(([element]) => "id" in element && element.id === IDS.highlight),
-      ).toBe(true);
+      bandCheck.expectVisited(true);
     } finally {
-      bandCheck.mockRestore();
+      bandCheck.restore();
     }
   });
 });

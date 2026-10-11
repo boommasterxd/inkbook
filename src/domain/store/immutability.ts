@@ -5,10 +5,6 @@ import { copyRuntimeElementSteps } from "../elements/runtime-element-copy";
 
 import type { DeepReadonly, ImmutableInkElement } from "./types";
 
-export function immutableElement(element: InkElementV1): ImmutableInkElement {
-  return drainSteps(immutableElementSteps(element));
-}
-
 export function* immutableElementSteps(
   element: InkElementV1,
 ): Generator<void, ImmutableInkElement> {
@@ -29,13 +25,6 @@ export function* immutableElementSteps(
 }
 
 /** Preserve an unchanged owned sample buffer while copying all replaceable fields. */
-export function immutableReplacement(
-  element: InkElementV1,
-  source: ImmutableInkElement,
-): ImmutableInkElement {
-  return drainSteps(immutableReplacementSteps(element, source));
-}
-
 export function* immutableReplacementSteps(
   element: InkElementV1,
   source: ImmutableInkElement,

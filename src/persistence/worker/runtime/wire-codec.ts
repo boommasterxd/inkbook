@@ -12,7 +12,6 @@ import {
 import { packClipboardPayload } from "./clipboard-wire-payload";
 import {
   packElements,
-  packValidatedElements,
   packValidatedElementsChunked,
   packElementsChunked,
   type PackedElements,
@@ -49,11 +48,7 @@ import type {
   FullExportWireRequest,
   IncrementalExportWireRequest,
 } from "./request-wire-decoding";
-export {
-  decodeRuntimeRequest,
-  decodeRuntimeRequestChunked,
-  isDocumentRuntimeWireRequest,
-} from "./request-wire-decoding";
+export { decodeRuntimeRequestChunked, isDocumentRuntimeWireRequest } from "./request-wire-decoding";
 export type { DocumentRuntimeWireRequest } from "./request-wire-decoding";
 
 type PackedPastePlan = Omit<PastePlan, "elements"> & { readonly elements: PackedElements };
@@ -331,13 +326,6 @@ function unpackPastePlan(result: ClipboardResult<PackedPastePlan>): ClipboardRes
   assertClipboardElementWireLimits(result.value.elements);
   const elements = copyElementsFromRuntime(unpackElements(result.value.elements));
   return { ok: true, value: { ...result.value, elements } };
-}
-
-export function encodeUnlockBatch(
-  batch: UnlockRuntimeBatch,
-): StructuredTransfer<DocumentRuntimeWireUnlockBatch> {
-  const elements = packValidatedElements(batch.elements, batch.derivations);
-  return encodedUnlockBatch(batch, elements);
 }
 
 export async function encodeUnlockBatchChunked(

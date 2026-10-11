@@ -81,15 +81,6 @@ export function validateInkPageV1(value: unknown): ValidationResult<PageV1> {
   }
 }
 
-export function validateInkConnectionRelationsV1(
-  elements: readonly InkElementV1[],
-): ValidationResult<void> {
-  const steps = validateInkConnectionRelationsV1Steps(elements);
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
-}
-
 export function* validateInkConnectionRelationsV1Steps(
   elements: readonly InkElementV1[],
 ): Generator<void, ValidationResult<void>> {

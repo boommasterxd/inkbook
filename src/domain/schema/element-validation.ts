@@ -126,17 +126,6 @@ function* validateElementSteps(
   }
 }
 
-export function assertInkElement(
-  value: unknown,
-  path: string,
-  context: ValidationContext,
-): asserts value is InkElementV1 {
-  const steps = assertInkElementSteps(value, path, context);
-  while (!steps.next().done) {
-    // Synchronous callers drain the same bounded validation producer.
-  }
-}
-
 export function* assertInkElementSteps(
   value: unknown,
   path: string,

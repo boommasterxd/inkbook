@@ -5,7 +5,9 @@ import type {
   CoordinateSystemElementV1,
   InkElementV1,
   StrokeElementV1,
+  TableElementV1,
 } from "../../../../src/domain/schema/public";
+import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 
 export const IDS = {
   highlight: "00000000-0000-4000-8000-000000000001",
@@ -81,6 +83,37 @@ export function highlighter(): StrokeElementV1 {
       width: 8,
     },
     tool: "highlighter",
+  };
+}
+
+export function maximumLengthHighlighter(): StrokeElementV1 {
+  return {
+    ...highlighter(),
+    points: Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
+      index % 3 === 2 ? 0.5 : 100 + (Math.floor(index / 3) % 100),
+    ),
+  };
+}
+
+export function tableFromRectangle(box: BoxShapeElementV1 = rectangle()): TableElementV1 {
+  return {
+    columnWidth: 100,
+    columns: 2,
+    createdAt: box.createdAt,
+    headerHeight: 30,
+    height: box.height,
+    id: box.id,
+    kind: "table",
+    pivot: box.pivot,
+    rotation: box.rotation,
+    style: {
+      outlineColor: box.style.outlineColor,
+      outlineOpacity: box.style.outlineOpacity,
+      outlineStyle: box.style.outlineStyle,
+      outlineWidth: box.style.outlineWidth,
+    },
+    x: box.x,
+    y: box.y,
   };
 }
 

@@ -9,9 +9,11 @@ import {
   type ElementMutation,
 } from "../../../../src/domain/store/public";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
+import {
+  applyElementMutation,
+  uninterruptedMutationScheduler as scheduler,
+} from "../../../fixtures/domain/element-mutation";
 import { highlighter, rectangle } from "./fixtures";
-
-const scheduler = { shouldYield: () => false, yieldControl: async () => undefined };
 
 async function removedStroke() {
   const source = highlighter();
@@ -28,11 +30,7 @@ async function apply(
   mutation: ElementMutation,
   replay?: AppliedElementMutation,
 ) {
-  const prepared = await store.prepareElementMutation(mutation, scheduler, replay);
-  if (prepared.token === null) throw new Error("Expected prepared mutation.");
-  const result = store.commitPreparedElementMutation(prepared.token);
-  if (result.transition === null) throw new Error("Expected applied mutation.");
-  return result.transition;
+  return (await applyElementMutation(store, mutation, replay)).transition;
 }
 
 describe("owned history replay", () => {

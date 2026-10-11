@@ -85,14 +85,3 @@ export function* arrangeRenderBandSteps<T>(
   }
   return { elements, changed: false };
 }
-
-export function arrangeRenderBand<T>(
-  elements: readonly T[],
-  selected: SelectionPredicate<T>,
-  action: ArrangeAction,
-): ArrangeResult<T> {
-  const steps = arrangeRenderBandSteps(elements, selected, action);
-  let result = steps.next();
-  while (!result.done) result = steps.next();
-  return result.value;
-}

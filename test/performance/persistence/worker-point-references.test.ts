@@ -10,7 +10,6 @@ import { ModelPointReferences } from "../../../src/persistence/worker/runtime/mo
 import { copySnapshotToRuntimeSliced } from "../../../src/persistence/worker/runtime/runtime-elements";
 import {
   encodeRuntimeRequestChunked,
-  decodeRuntimeRequest,
   decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
 } from "../../../src/persistence/worker/runtime/wire-codec";
@@ -250,7 +249,11 @@ describe("worker translation sample work", () => {
       reusePoints: cache.encoder(moved),
     });
     expect(encoded.transfer).toHaveLength(0);
-    const decoded = decodeRuntimeRequest(encoded.value, cache.resolver(0, executor));
+    const decoded = await decodeRuntimeRequestChunked(
+      encoded.value,
+      { checkpoint: () => undefined, signal: new AbortController().signal },
+      cache.resolver(0, executor),
+    );
     expect(decoded.type).toBe("model-sync-incremental");
     if (decoded.type !== "model-sync-incremental") throw new Error("Unexpected request.");
     expect(decoded.changedElements).toHaveLength(10_000);
@@ -259,8 +262,12 @@ describe("worker translation sample work", () => {
     }
     expect(work.indexedReads).toBe(0);
     cache.clear();
-    expect(() => decodeRuntimeRequest(encoded.value, cache.resolver(0, executor))).toThrow(
-      "acknowledged",
-    );
+    await expect(
+      decodeRuntimeRequestChunked(
+        encoded.value,
+        { checkpoint: () => undefined, signal: new AbortController().signal },
+        cache.resolver(0, executor),
+      ),
+    ).rejects.toThrow("acknowledged");
   });
 });

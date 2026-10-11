@@ -12,6 +12,7 @@ import {
 } from "../../../../src/domain/store/owned-mutation-history";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import type { ElementRecord } from "../../../../src/domain/store/types";
+import { finishGeometrySteps as drain } from "../../../fixtures/domain/geometry-steps";
 import { connectedLine, highlighter } from "./fixtures";
 
 function record(element: InkElementV1): ElementRecord {
@@ -21,12 +22,6 @@ function record(element: InkElementV1): ElementRecord {
     geometryVersion: 5,
     paintVersion: 6,
   });
-}
-
-function drain<T>(steps: Generator<void, T>): T {
-  let result = steps.next();
-  while (!result.done) result = steps.next();
-  return result.value;
 }
 
 describe("owned mutation history retention", () => {

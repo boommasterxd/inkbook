@@ -11,6 +11,10 @@ import {
   type StrokeSamplesV1,
 } from "../../../domain/schema/public";
 import { validateRuntimeSamplesSteps } from "./runtime-elements";
+import {
+  completeSerializationSteps,
+  consumeSerializationSteps,
+} from "../../serialization/serialization-model-preparation";
 
 type NonStrokeElement = Exclude<InkElementV1, StrokeElementV1>;
 type PackedStroke = Omit<StrokeElementV1, "points"> & { readonly pointsBufferIndex: number };
@@ -28,30 +32,23 @@ export interface RuntimeWireSliceOptions {
 }
 
 export function packElements(elements: readonly InkElementV1[]): PackedElements {
-  return drainSteps(packElementsSteps(elements));
-}
-
-/** The hosted unlock producer has already completed semantic sample validation. */
-export function packValidatedElements(
-  elements: readonly InkElementV1[],
-  derivations: readonly ElementValidationDerivation[],
-): PackedElements {
-  return drainSteps(packElementsSteps(elements, undefined, derivations));
+  return completeSerializationSteps(packElementsSteps(elements));
 }
 
 export function packElementsChunked(
   elements: readonly InkElementV1[],
   options: RuntimeWireSliceOptions,
 ): Promise<PackedElements> {
-  return runSteps(packElementsSteps(elements, options.reusePoints), options);
+  return consumeSerializationSteps(packElementsSteps(elements, options.reusePoints), options);
 }
 
+/** The hosted unlock producer has already completed semantic sample validation. */
 export function packValidatedElementsChunked(
   elements: readonly InkElementV1[],
   derivations: readonly ElementValidationDerivation[],
   options: RuntimeWireSliceOptions,
 ): Promise<PackedElements> {
-  return runSteps(packElementsSteps(elements, undefined, derivations), options);
+  return consumeSerializationSteps(packElementsSteps(elements, undefined, derivations), options);
 }
 
 function* packElementsSteps(
@@ -87,7 +84,7 @@ export function unpackElements(
   packed: PackedElements,
   resolvePoints?: (id: string) => StrokeSamplesV1,
 ): InkElementV1[] {
-  return drainSteps(unpackElementsSteps(packed, resolvePoints));
+  return completeSerializationSteps(unpackElementsSteps(packed, resolvePoints));
 }
 
 /** Only the identity-checked owned unlock channel may bypass repeated sample scans. */
@@ -95,7 +92,7 @@ export function unpackValidatedElements(
   packed: PackedElements,
   derivations: readonly ElementValidationDerivation[],
 ): InkElementV1[] {
-  const elements = drainSteps(unpackElementBuffersSteps(packed, undefined, true));
+  const elements = completeSerializationSteps(unpackElementBuffersSteps(packed, undefined, true));
   if (elements.length !== derivations.length)
     throw new TypeError("Validated element derivations are incomplete.");
   for (let index = 0; index < elements.length; index += 1)
@@ -172,25 +169,4 @@ function assertMatchingDerivation(
   validatedElementDerivationBounds(element, derivation);
   if (element.kind === "stroke" && derivation.strokeSampleExtrema === undefined)
     throw new TypeError("Validated stroke sample extrema are missing.");
-}
-
-function drainSteps<T>(steps: Generator<void, T>): T {
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
-}
-
-async function runSteps<T>(
-  steps: Generator<void, T>,
-  options: RuntimeWireSliceOptions,
-): Promise<T> {
-  options.signal.throwIfAborted();
-  let step = steps.next();
-  while (!step.done) {
-    const pending = options.checkpoint();
-    if (pending !== undefined) await pending;
-    options.signal.throwIfAborted();
-    step = steps.next();
-  }
-  return step.value;
 }

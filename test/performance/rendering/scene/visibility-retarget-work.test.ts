@@ -19,6 +19,15 @@ import { createInteractionFixture, INTERACTION_PAGE } from "./interaction-refres
 
 const BOUNDS = { minX: 0, maxX: 100, minY: 0, maxY: 100 };
 
+function createIndexedVisibilityState() {
+  const fixture = createInteractionFixture();
+  const port = new ElementSceneStore(fixture.store);
+  const instrumentation = createInstrumentation();
+  const state = new SceneVisibilityState(port, instrumentation);
+  const { query, work } = observeIndexedSceneQueries(fixture.store);
+  return { fixture, port, instrumentation, state, query, work };
+}
+
 it("clears candidate positions when a freed slot receives a different ID", () => {
   const store = createViewportRectangleStore(3, () => 10);
   const state = new SceneVisibilityState(store, createInstrumentation());
@@ -123,11 +132,7 @@ it.each([false, true])(
 );
 
 it("restarts a suspended candidate query when membership changes its indexed generation", () => {
-  const fixture = createInteractionFixture();
-  const port = new ElementSceneStore(fixture.store);
-  const instrumentation = createInstrumentation();
-  const state = new SceneVisibilityState(port, instrumentation);
-  const { query, work } = observeIndexedSceneQueries(fixture.store);
+  const { fixture, port, state, query, work } = createIndexedVisibilityState();
   const cancel = vi.spyOn(SpatialQueryCursor.prototype, "cancel");
   try {
     expect(state.query(BOUNDS, BOUNDS, false, 8, () => work.indexedVisits).pending).toBe(true);
@@ -181,11 +186,7 @@ it.each(["minX", "maxX", "minY", "maxY"] as const)(
 );
 
 it("shrinks a 10,000-member zoom envelope through bounded indexed work and cancels stale shrink work", () => {
-  const fixture = createInteractionFixture();
-  const port = new ElementSceneStore(fixture.store);
-  const instrumentation = createInstrumentation();
-  const state = new SceneVisibilityState(port, instrumentation);
-  const { query, work } = observeIndexedSceneQueries(fixture.store);
+  const { fixture, port, instrumentation, state, query, work } = createIndexedVisibilityState();
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const broad = visibilityPageBounds(viewport, { x: 0, zoom: 0.1 });
   const original = state.query(broad.envelope, broad.retained).visibility;
@@ -237,6 +238,7 @@ it("shrinks a 10,000-member zoom envelope through bounded indexed work and cance
   port.release();
   expect(state.queryMemoryUsage()).toBe(0);
   cancel.mockRestore();
+  query.mockRestore();
 });
 
 function observeBounds(store: FakeSceneStore, onRead: () => void): void {

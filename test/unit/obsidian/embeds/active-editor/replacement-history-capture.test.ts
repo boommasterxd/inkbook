@@ -57,6 +57,16 @@ function synchronousHistory(data: ElementReplacementHistoryData, supported = tru
   return { effect, history, notification, replaceElements };
 }
 
+function expectCapturedCommand(
+  fixture: Pick<ReturnType<typeof synchronousHistory>, "history" | "notification" | "effect">,
+  data: ElementReplacementHistoryData,
+): void {
+  expect(fixture.history.commandCount).toBe(1);
+  expect(fixture.history.retainedPayloadBytes).toBe(data.payloadBytes);
+  expect(fixture.notification).toHaveBeenCalledOnce();
+  expect(fixture.effect.apply).toHaveBeenCalledOnce();
+}
+
 describe("replacement capture ownership", () => {
   it("reads only captured arrays and payload after the requested arrays become inaccessible", () => {
     const data = replacementData();
@@ -128,10 +138,7 @@ describe("synchronous replacement history capture", () => {
     const fixture = synchronousHistory(data.actual);
     expect(fixture.history.replace(data.previous, data.replacements, fixture.effect)).toBe(true);
     expect(fixture.replaceElements).toHaveBeenCalledOnce();
-    expect(fixture.history.commandCount).toBe(1);
-    expect(fixture.history.retainedPayloadBytes).toBe(data.actual.payloadBytes);
-    expect(fixture.notification).toHaveBeenCalledOnce();
-    expect(fixture.effect.apply).toHaveBeenCalledOnce();
+    expectCapturedCommand(fixture, data.actual);
 
     expect(fixture.history.undo()).toBe(true);
     expect(fixture.replaceElements.mock.calls[1]![0]).toBe(data.actual.previous);
@@ -256,10 +263,7 @@ describe("prepared replacement history capture", () => {
     ).toBe(true);
     await vi.waitFor(() => expect(fixture.completed).toHaveBeenCalledWith(true));
     expect(fixture.commit).toHaveBeenCalledOnce();
-    expect(fixture.history.commandCount).toBe(1);
-    expect(fixture.history.retainedPayloadBytes).toBe(data.actual.payloadBytes);
-    expect(fixture.notification).toHaveBeenCalledOnce();
-    expect(fixture.effect.apply).toHaveBeenCalledOnce();
+    expectCapturedCommand(fixture, data.actual);
     await expect(fixture.history.undoAsync()).resolves.toBe(true);
     expect(fixture.requests[1]).toBe(data.actual.previous);
     expect(fixture.effect.revert).toHaveBeenCalledOnce();

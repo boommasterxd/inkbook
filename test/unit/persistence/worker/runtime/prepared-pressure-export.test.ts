@@ -22,7 +22,7 @@ import {
   type DocumentRuntimeResult,
 } from "../../../../../src/persistence/worker/runtime/public";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
@@ -125,7 +125,10 @@ it.each([undefined, { x: 0, y: 0 }])(
     expect(request.preparedPressurePaths).toHaveLength(1);
     expect(store.instrumentation.fullStoreScans).toBe(0);
     const encoded = encodeRuntimeRequest(request);
-    const decoded = decodeRuntimeRequest(encoded.value);
+    const decoded = await decodeRuntimeRequestChunked(encoded.value, {
+      checkpoint: () => undefined,
+      signal: new AbortController().signal,
+    });
     if (decoded.type !== "export-full") throw new Error("Expected full export.");
     // The wire decoder supplies receiver-owned samples, as in production worker composition.
     const runtime = new DocumentWorkerRuntime(identity, null, undefined, true);

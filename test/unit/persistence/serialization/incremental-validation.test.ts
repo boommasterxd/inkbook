@@ -8,9 +8,10 @@ import {
   type SpatialBounds,
 } from "../../../../src/domain/spatial/index";
 import {
-  elementFacts,
-  validatedDeltaElementFacts,
+  elementFactsSteps,
+  validatedDeltaElementFactsSteps,
 } from "../../../../src/persistence/serialization/incremental-validation";
+import { completeSerializationSteps } from "../../../../src/persistence/serialization/serialization-model-preparation";
 import { describe, expect, it, vi } from "vitest";
 import * as geometry from "../../../../src/domain/geometry/public";
 import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
@@ -37,18 +38,20 @@ describe("incremental serializer validation", () => {
     const derivation = validation.derivations.elements[0]!;
     const builds = vi.spyOn(geometry, "calculateElementBounds");
     try {
-      const facts = elementFacts(placed, derivation);
+      const facts = completeSerializationSteps(elementFactsSteps(placed, derivation));
       expect(builds).not.toHaveBeenCalled();
       expect(facts.strokeGeometry?.bounds).toBe(derivation.strokeLocalBounds);
       expect(facts.bottom).toBe(derivation.bounds.maxY);
       expect(() =>
-        elementFacts(placed, {
-          ...derivation,
-          strokeLocalBounds: {
-            ...derivation.strokeLocalBounds!,
-            minX: derivation.strokeLocalBounds!.minX + 1,
-          },
-        }),
+        completeSerializationSteps(
+          elementFactsSteps(placed, {
+            ...derivation,
+            strokeLocalBounds: {
+              ...derivation.strokeLocalBounds!,
+              minX: derivation.strokeLocalBounds!.minX + 1,
+            },
+          }),
+        ),
       ).toThrow("placement");
     } finally {
       builds.mockRestore();
@@ -276,9 +279,11 @@ describe("recomputed delta bounds", () => {
       maxY: before.maxY + 12,
     };
     expect(hint).toEqual(calculateElementBounds(moved));
-    expect(validatedDeltaElementFacts(moved, derivation(moved.id, hint))).toEqual(
-      elementFacts(moved),
-    );
+    expect(
+      completeSerializationSteps(
+        validatedDeltaElementFactsSteps(moved, derivation(moved.id, hint)),
+      ),
+    ).toEqual(completeSerializationSteps(elementFactsSteps(moved)));
     const serializer = initialized(createSnapshot([original]));
     expect(
       serializer.applyDelta({
@@ -293,8 +298,12 @@ describe("recomputed delta bounds", () => {
   it("uses actual capacity and height for grossly understated but self-consistent hints", () => {
     const actual = capacityRectangle(1, 256);
     const hint = derivation(actual.id, { minX: 1, maxX: 2, minY: 1, maxY: 2 });
-    expect(validatedDeltaElementFacts(actual, hint)).toEqual(elementFacts(actual));
-    expect(validatedDeltaElementFacts(actual, hint).spatialMemberships).toBeGreaterThan(1);
+    expect(completeSerializationSteps(validatedDeltaElementFactsSteps(actual, hint))).toEqual(
+      completeSerializationSteps(elementFactsSteps(actual)),
+    );
+    expect(
+      completeSerializationSteps(validatedDeltaElementFactsSteps(actual, hint)).spatialMemberships,
+    ).toBeGreaterThan(1);
     const dense = Array.from({ length: 1024 }, (_, index) => capacityRectangle(index + 1, 256));
     const target = capacityRectangle(1025, 1);
     const serializer = initialized(

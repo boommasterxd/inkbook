@@ -39,12 +39,6 @@ interface ValidateDeltaOptions {
   readonly runtimeStrokeBuffers: boolean;
 }
 
-export function prepareDocumentDelta(
-  options: PrepareDeltaOptions,
-): DocumentCodecResult<PreparedDelta> {
-  return completeDelta(prepareDocumentDeltaSteps(options, Infinity));
-}
-
 export function* prepareDocumentDeltaSteps(
   options: PrepareDeltaOptions,
   nodesPerStep = 256,
@@ -86,12 +80,6 @@ export function* prepareDocumentDeltaSteps(
       page,
     },
   };
-}
-
-export function validateDocumentDelta(
-  options: ValidateDeltaOptions,
-): DocumentCodecResult<incrementalValidation.ValidatedDeltaFacts> {
-  return completeDelta(validateDocumentDeltaSteps(options, Infinity));
 }
 
 export function* validateDocumentDeltaSteps(
@@ -303,10 +291,4 @@ function* validateRuntimeChange(
   return Number.isFinite(nodesPerStep)
     ? yield* validateRuntimeInkElementV1Steps(replacement, {}, nodesPerStep, nodesPerStep)
     : validateRuntimeInkElementV1(replacement);
-}
-
-function completeDelta<T>(steps: Generator<unknown, T>): T {
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
 }

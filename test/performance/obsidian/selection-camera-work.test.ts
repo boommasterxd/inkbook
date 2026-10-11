@@ -1,5 +1,4 @@
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
-import { PreparedElementHistory } from "../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import * as transforms from "../../../src/editor/selection/transforms";
 import { expect, it, vi } from "vitest";
 import { ElementStore } from "../../../src/domain/store/public";
@@ -17,6 +16,7 @@ import {
   selectionOverlayGeometry,
 } from "../../../src/editor/selection/public";
 import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
+import { activeEditorPreparedHistory } from "../../fixtures/obsidian/active-editor";
 import {
   elementMutationPorts,
   elementReplacementPorts,
@@ -162,14 +162,7 @@ it.each(
     const elements = originals.map(({ element }) => element) as InkElementV1[];
     const model = { store, ...elementReplacementPorts(store) } as EditableDocumentModel;
     const history = new ActiveEditorHistory(model);
-    const prepared = new PreparedElementHistory({
-      history,
-      model,
-      isAttached: () => true,
-      onPendingChanged: () => undefined,
-      motion: { beginPreviewCommit: () => ({ arm: () => true, cancel: () => undefined }) },
-      workScheduler: immediateWorkScheduler(),
-    });
+    const prepared = activeEditorPreparedHistory(model, history);
     let pointBuilds = 0;
     const actualPoint = strokePosition.strokeWorldPoint;
     const geometry = vi.spyOn(strokePosition, "strokeWorldPoint").mockImplementation((...args) => {
@@ -358,14 +351,7 @@ async function scheduledDocumentFixture(maximum = false) {
     ...elementReplacementPorts(store, committed, preparationWork),
   } as unknown as EditableDocumentModel;
   const history = new ActiveEditorHistory(model);
-  const prepared = new PreparedElementHistory({
-    history,
-    model,
-    isAttached: () => true,
-    onPendingChanged: () => undefined,
-    motion: { beginPreviewCommit: () => ({ arm: () => true, cancel: () => undefined }) },
-    workScheduler: scheduler,
-  });
+  const prepared = activeEditorPreparedHistory(model, history, scheduler);
   const documentHistory = new ActiveDocumentHistory({ history, model });
   return {
     store,

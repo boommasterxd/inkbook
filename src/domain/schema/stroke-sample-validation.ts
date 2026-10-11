@@ -1,4 +1,5 @@
 import type { PointV1 } from "./types";
+import { unionBounds } from "../geometry/primitives";
 import { retainValidatedSampleExtrema, type StrokeSampleExtrema } from "./stroke-sample-extrema";
 import { assertStrokeSampleRange } from "./stroke-sample-range-validation";
 import { fail, type ValidationContext } from "./validation-internals";
@@ -29,21 +30,15 @@ export function* assertStrokeSamplesSteps(
     retainValidatedSampleExtrema(value, decodedExtrema);
     return;
   }
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  let extrema = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const sampleInterval = samplesPerStep > 0 ? Math.max(1, Math.floor(samplesPerStep)) : 256;
   for (let start = 0; start < value.length; start += sampleInterval * 3) {
     const end = Math.min(start + sampleInterval * 3, value.length);
     const bounds = assertStrokeSampleRange(value, path, context, offset, { start, end });
-    minX = Math.min(minX, bounds.minX);
-    minY = Math.min(minY, bounds.minY);
-    maxX = Math.max(maxX, bounds.maxX);
-    maxY = Math.max(maxY, bounds.maxY);
+    extrema = unionBounds(extrema, bounds);
     if ((end / 3) % sampleInterval === 0) yield true;
   }
-  retainValidatedSampleExtrema(value, { minX, minY, maxX, maxY });
+  retainValidatedSampleExtrema(value, extrema);
 }
 
 function assertDecodedExtrema(

@@ -21,6 +21,10 @@ import type {
 } from "../../../domain/schema/public";
 import { runtimeSliceWorkProfile } from "./slice-scheduler";
 import { assertStagedSampleCapacity } from "../../serialization/serialization-input-preparation";
+import {
+  completeSerializationSteps,
+  consumeSerializationSteps,
+} from "../../serialization/serialization-model-preparation";
 import type { RuntimeSliceContext } from "./types";
 
 export type RuntimeStrokeSamples = StrokeSamplesV1 & Readonly<Float64Array>;
@@ -45,7 +49,7 @@ export function* validateRuntimeSamplesSteps(
 }
 
 export function adoptTransferredStrokeSamples(points: Float64Array): RuntimeStrokeSamples {
-  return drainSteps(validateRuntimeSamplesSteps(points));
+  return completeSerializationSteps(validateRuntimeSamplesSteps(points));
 }
 
 export function copySnapshotToRuntime(
@@ -57,7 +61,7 @@ export function copySnapshotToRuntime(
   return {
     ...snapshot,
     page: { ...snapshot.page, background: { ...snapshot.page.background } },
-    elements: drainSteps(
+    elements: completeSerializationSteps(
       copyElementsSteps(snapshot.elements, pointCopies, derivations, ownsSamples),
     ),
   };
@@ -87,7 +91,7 @@ export async function copySnapshotToRuntimeSliced(
   };
   return {
     ...header,
-    elements: await runSteps(
+    elements: await consumeSerializationSteps(
       copyElementsSteps(
         snapshot.elements,
         pointCopies,
@@ -105,7 +109,9 @@ export function copyElementsToRuntime(
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
   ownsSamples = false,
 ): RuntimeInkElement[] {
-  return drainSteps(copyElementsSteps(elements, pointCopies, undefined, ownsSamples));
+  return completeSerializationSteps(
+    copyElementsSteps(elements, pointCopies, undefined, ownsSamples),
+  );
 }
 
 export function copyElementsToRuntimeSliced(
@@ -114,7 +120,7 @@ export function copyElementsToRuntimeSliced(
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
   ownsSamples = false,
 ): Promise<RuntimeInkElement[]> {
-  return runSteps(
+  return consumeSerializationSteps(
     copyElementsSteps(elements, pointCopies, undefined, ownsSamples, sampleStep(context)),
     context,
   );
@@ -176,24 +182,6 @@ function* copyStrokeSteps(
 function sampleStep(context: RuntimeSliceContext): number {
   const profile = context.workProfile ?? runtimeSliceWorkProfile(context.sliceMilliseconds?.());
   return Math.max(1, Math.floor(profile.inputByteLimit / 24));
-}
-
-function drainSteps<T>(steps: Generator<void, T>): T {
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
-}
-
-async function runSteps<T>(steps: Generator<void, T>, context: RuntimeSliceContext): Promise<T> {
-  context.signal.throwIfAborted();
-  let step = steps.next();
-  while (!step.done) {
-    const pending = context.checkpoint();
-    if (pending !== undefined) await pending;
-    context.signal.throwIfAborted();
-    step = steps.next();
-  }
-  return step.value;
 }
 
 function assertValidatedStrokeSource(

@@ -37,10 +37,6 @@ export function* createInitialRecordSteps(
   return yield* initialRecordSteps(immutable, undefined, pointsPerStep);
 }
 
-export function createOwnedInitialRecord(element: InkElementV1): ElementRecord {
-  return drainRecordSteps(createOwnedInitialRecordSteps(element));
-}
-
 export function* createOwnedInitialRecordSteps(
   element: InkElementV1,
   pointsPerStep = 256,
@@ -110,17 +106,6 @@ export function* createReplacementRecordSteps(
     paintVersion,
     undefined,
     pointsPerStep,
-  );
-}
-
-export function createOwnedReplacementRecord(
-  element: InkElementV1,
-  current: ElementRecord,
-  geometryVersion: number,
-  paintVersion: number,
-): ElementRecord {
-  return drainRecordSteps(
-    createOwnedReplacementRecordSteps(element, current, geometryVersion, paintVersion),
   );
 }
 

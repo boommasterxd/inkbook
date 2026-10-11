@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  assembleAndHashChunkedOutput,
   assembleAndHashPreparedUtf8Output,
   ChunkedOutputCancelledError,
   ChunkedOutputLimitError,
@@ -26,86 +25,34 @@ async function expectCancellationAfterCheckpoint(
   expect(checkpoints).toBe(1);
 }
 
-describe("chunked output assembly", () => {
-  it("assembles byte-identical output and hash from reusable fragments", async () => {
-    const fragments = ["<svg>", "<metadata>Ink &amp; book</metadata>", "</svg>"];
-    const expected = fragments.join("");
-
-    await expect(assembleAndHashChunkedOutput(fragments)).resolves.toEqual({
-      hash: sha256Hex(expected),
-      output: expected,
-      totalBytes: new TextEncoder().encode(expected).byteLength,
-    });
-  });
-
-  it("preserves UTF-8 hashing when a surrogate pair crosses fragment and slice boundaries", async () => {
-    const fragments = ["before \ud83d", "\udd8b after ä"];
-    const expected = fragments.join("");
-    const result = await assembleAndHashChunkedOutput(fragments, { sliceByteLimit: 3 });
-
-    expect(result.output).toBe(expected);
-    expect(result.hash).toBe(sha256Hex(expected));
-    expect(result.totalBytes).toBe(new TextEncoder().encode(expected).byteLength);
-  });
-
-  it("checks cancellation before consuming fragments", async () => {
+describe("prepared UTF-8 output assembly", () => {
+  it("checks cancellation before consuming prepared fragments", async () => {
     const controller = new AbortController();
     controller.abort();
-    let consumed = false;
-    const fragments = {
-      *[Symbol.iterator](): Iterator<string> {
-        consumed = true;
-        yield "unreachable";
-      },
-    };
+    const fragments = { [Symbol.iterator]: vi.fn(() => [new Uint8Array(4)][Symbol.iterator]()) };
 
     await expect(
-      assembleAndHashChunkedOutput(fragments, { signal: controller.signal }),
+      assembleAndHashPreparedUtf8Output(fragments, 4, { signal: controller.signal }),
     ).rejects.toBeInstanceOf(ChunkedOutputCancelledError);
-    expect(consumed).toBe(false);
+    expect(fragments[Symbol.iterator]).not.toHaveBeenCalled();
   });
 
-  it("rejects before retaining an output that exceeds the encoded byte budget", async () => {
-    let consumed = 0;
-    const fragments = {
-      *[Symbol.iterator](): Iterator<string> {
-        consumed += 1;
-        yield "ab";
-        consumed += 1;
-        yield "cd";
-      },
-    };
+  it.each(["plain ASCII", "Grüße 東京", "before 🖋 after", "lone \ud83d"])(
+    "preserves exact prepared UTF-8 bytes across fragment and copy boundaries for %j",
+    async (text) => {
+      const bytes = new TextEncoder().encode(text);
+      const result = await assembleAndHashPreparedUtf8Output(
+        [bytes.subarray(0, 8), bytes.subarray(8)],
+        bytes.byteLength,
+        { checkpoint: () => undefined, sliceByteLimit: 3 },
+      );
 
-    await expect(
-      assembleAndHashChunkedOutput(fragments, { maximumBytes: 3 }),
-    ).rejects.toBeInstanceOf(ChunkedOutputLimitError);
-    expect(consumed).toBe(2);
-  });
-});
-
-describe("chunked Unicode hashing parity", () => {
-  it.each([
-    { fragments: ["plain ASCII"], name: "ASCII" },
-    { fragments: ["Grüße ", "東京"], name: "multibyte text" },
-    {
-      fragments: [`before ${String.fromCharCode(0xd83d)}`, `${String.fromCharCode(0xdd8b)} after`],
-      name: "split surrogate pair",
+      expect(result.output).toEqual(bytes);
+      expect(result.hash).toBe(sha256Hex(bytes));
+      expect(result.totalBytes).toBe(bytes.byteLength);
     },
-    { fragments: [`lone ${String.fromCharCode(0xd83d)}`], name: "lone surrogate" },
-  ])("matches canonical TextEncoder hashing for $name", async ({ fragments }) => {
-    const expected = new TextEncoder().encode(fragments.join(""));
-    const result = await assembleAndHashChunkedOutput(fragments, {
-      checkpoint: async () => undefined,
-      sliceByteLimit: 5,
-    });
+  );
 
-    expect(result.output).toBe(fragments.join(""));
-    expect(result.hash).toBe(sha256Hex(expected));
-    expect(result.totalBytes).toBe(expected.byteLength);
-  });
-});
-
-describe("prepared UTF-8 output assembly", () => {
   it("copies exact prepared Unicode bytes without encoding or mutating the fragments", async () => {
     const text = "Grüße 東京 😀<&>";
     const bytes = new TextEncoder().encode(text);
@@ -166,35 +113,19 @@ describe("prepared UTF-8 output assembly", () => {
   });
 });
 
-describe("chunked output checkpoints", () => {
-  it("invokes the injected checkpoint after bounded slices", async () => {
+describe("prepared output checkpoints", () => {
+  it("invokes the injected checkpoint after bounded byte copies", async () => {
     let checkpoints = 0;
-    const output = "abcdefghijklmno";
-    const result = await assembleAndHashChunkedOutput([output], {
+    const output = new TextEncoder().encode("abcdefghijklmno");
+    const result = await assembleAndHashPreparedUtf8Output([output], output.byteLength, {
       checkpoint: async () => {
         checkpoints += 1;
       },
       sliceByteLimit: 5,
     });
 
-    expect(result.output).toBe(output);
+    expect(result.output).toEqual(output);
     expect(checkpoints).toBe(3);
-  });
-
-  it("cancels deterministically after an input-aware checkpoint", async () => {
-    await expectCancellationAfterCheckpoint((checkpoint, signal) =>
-      assembleAndHashChunkedOutput(["a".repeat(20)], {
-        checkpoint,
-        signal,
-        sliceByteLimit: 4,
-      }),
-    );
-  });
-
-  it("rejects invalid slice limits before consuming fragments", async () => {
-    await expect(assembleAndHashChunkedOutput(["content"], { sliceByteLimit: 0 })).rejects.toThrow(
-      RangeError,
-    );
   });
 });
 

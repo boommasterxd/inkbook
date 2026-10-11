@@ -4,15 +4,12 @@ import * as sampleCopy from "../../../../src/domain/elements/runtime-sample-copy
 import * as strokePosition from "../../../../src/domain/geometry/stroke-position";
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
-import { highlighter } from "./fixtures";
+import { maximumLengthHighlighter } from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
 async function longStrokeReplacement() {
-  const source = highlighter();
-  source.points = Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
-    index % 3 === 2 ? 0.5 : 100 + (Math.floor(index / 3) % 100),
-  );
+  const source = maximumLengthHighlighter();
   const { store, points } = await hydrateRuntimeStroke(source);
   const replacement = {
     ...source,

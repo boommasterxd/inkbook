@@ -1,10 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
-import {
-  arrangeRenderBand,
-  arrangeRenderBandSteps,
-  type ArrangeAction,
-} from "../../../src/domain/commands/arrange";
+import { arrangeRenderBandSteps, type ArrangeAction } from "../../../src/domain/commands/arrange";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
 
@@ -96,9 +92,12 @@ describe("arrange command work bounds", () => {
         } while (!result.done);
         expect(reads).toBeLessThanOrEqual(ELEMENT_COUNT * 2);
         expect(predicateCalls).toBe(ELEMENT_COUNT);
-        expect(result.value).toEqual(arrangeRenderBand(source, (id) => selection.has(id), action));
-        if (selection.size !== selected.size) expect(result.value.elements).toBe(counted);
-        else expect(result.value.elements).toEqual(alternatingOrder(action));
+        if (selection.size !== selected.size) {
+          expect(result.value).toEqual({ elements: counted, changed: false });
+          expect(result.value.elements).toBe(counted);
+        } else {
+          expect(result.value).toEqual({ elements: alternatingOrder(action), changed: true });
+        }
       }
     }
     expect(source).toEqual(originalOrder);

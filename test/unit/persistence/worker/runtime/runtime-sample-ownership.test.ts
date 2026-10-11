@@ -7,7 +7,7 @@ import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/run
 import { createProductionDocumentRuntime } from "../../../../../src/persistence/worker/runtime/production-document-runtime";
 import { adoptTransferredStrokeSamples } from "../../../../../src/persistence/worker/runtime/runtime-elements";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import { hydrateRuntimeStroke } from "../../../../fixtures/domain/runtime-stroke-store";
@@ -132,8 +132,9 @@ it.each([false, true])(
       type: "export-full" as const,
     };
     const packed = encodeRuntimeRequest(request);
-    const decoded = decodeRuntimeRequest(
+    const decoded = await decodeRuntimeRequestChunked(
       structuredClone(packed.value, { transfer: [...packed.transfer] }),
+      { checkpoint: () => undefined, signal: new AbortController().signal },
     );
     if (decoded.type !== "export-full") throw new Error("Missing full request.");
     const source = decoded.snapshot.elements[0]!;

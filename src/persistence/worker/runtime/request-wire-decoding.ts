@@ -6,6 +6,7 @@ import { isRuntimeWireRequestType } from "./wire-message-types";
 import { decodeUnlockRequest, type UnlockWireRequest } from "./unlock-request-wire";
 import type { ModelSyncWireRequest } from "./model-sync-wire";
 import type { DocumentRuntimeRequest, RuntimeSliceContext } from "./types";
+import { consumeSerializationSteps } from "../../serialization/serialization-model-preparation";
 
 export interface FullExportWireRequest extends Omit<
   Extract<DocumentRuntimeRequest, { type: "export-full" }>,
@@ -40,31 +41,12 @@ export type DocumentRuntimeWireRequest =
   | ModelSyncWireRequest
   | UnlockWireRequest;
 
-export function decodeRuntimeRequest(
-  request: unknown,
-  resolvePoints?: (id: string) => StrokeSamplesV1,
-): DocumentRuntimeRequest {
-  const steps = decodeRuntimeRequestSteps(request, resolvePoints);
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
-}
-
-export async function decodeRuntimeRequestChunked(
+export function decodeRuntimeRequestChunked(
   request: unknown,
   context: RuntimeSliceContext,
   resolvePoints?: (id: string) => StrokeSamplesV1,
 ): Promise<DocumentRuntimeRequest> {
-  context.signal.throwIfAborted();
-  const steps = decodeRuntimeRequestSteps(request, resolvePoints);
-  let step = steps.next();
-  while (!step.done) {
-    const pending = context.checkpoint();
-    if (pending !== undefined) await pending;
-    context.signal.throwIfAborted();
-    step = steps.next();
-  }
-  return step.value;
+  return consumeSerializationSteps(decodeRuntimeRequestSteps(request, resolvePoints), context);
 }
 
 function* decodeRuntimeRequestSteps(
