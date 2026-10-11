@@ -15,6 +15,60 @@ const bounds = (id: number) => ({
 });
 const insertions = Array.from({ length: ELEMENT_COUNT }, (_, id) => ({ id, bounds: bounds(id) }));
 
+it("bounds marker allocation and eliminates copies while an indexed 10K document grows", () => {
+  const MarkerArray = Uint32Array;
+  let allocatedBytes = 0;
+  let allocations = 0;
+  const construct = new Proxy(MarkerArray, {
+    construct(target, args, newTarget) {
+      const array = Reflect.construct(target, args, newTarget) as Uint32Array;
+      if (array.byteLength !== 0) {
+        allocatedBytes += array.byteLength;
+        allocations += 1;
+      }
+      return array;
+    },
+  });
+  const copy = vi.spyOn(MarkerArray.prototype, "set");
+  let copiedBytes = 0;
+  vi.stubGlobal("Uint32Array", construct);
+  const index = new UniformSpatialIndex<number>();
+  const scratch = new SpatialQueryScratch<number>();
+  try {
+    for (const { id, bounds: entryBounds } of insertions) {
+      index.insert(id, entryBounds);
+      expect(index.query(entryBounds, scratch)).toBe(1);
+      expect(scratch.at(0)).toBe(id);
+      for (const [source] of copy.mock.calls) copiedBytes += source.length * 4;
+      copy.mockClear();
+    }
+    // Starting at 16 slots, doubling reaches 16,384 in eleven allocations.
+    expect(allocations).toBeLessThanOrEqual(11);
+    expect(allocatedBytes).toBeLessThanOrEqual(ELEMENT_COUNT * 16);
+    expect(copiedBytes).toBe(0);
+    expect(scratch.markerCapacity).toBeGreaterThanOrEqual(ELEMENT_COUNT);
+    expect(scratch.markerCapacity).toBeLessThan(ELEMENT_COUNT * 2);
+    const warmed = { allocations, allocatedBytes };
+    expect(index.remove(ELEMENT_COUNT - 1)).toBe(true);
+    index.insert(ELEMENT_COUNT, bounds(ELEMENT_COUNT - 1));
+    expect(index.query(bounds(ELEMENT_COUNT - 1), scratch)).toBe(1);
+    expect(scratch.at(0)).toBe(ELEMENT_COUNT);
+    expect({ allocations, allocatedBytes }).toEqual(warmed);
+    scratch.release();
+    expect(scratch.markerCapacity).toBe(0);
+    expect(scratch.resultCapacity).toBe(0);
+    expect(scratch.count).toBe(0);
+    expect(index.query(bounds(0), scratch)).toBe(1);
+    expect(scratch.at(0)).toBe(0);
+    expect(allocations).toBe(warmed.allocations + 1);
+    expect(copy.mock.calls.length).toBe(0);
+  } finally {
+    scratch.release();
+    copy.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
+
 function observeMutationWork(index: UniformSpatialIndex<number>) {
   const entries = (index as unknown as { entries: Map<number, unknown> }).entries;
   const originalGet = entries.get.bind(entries);
