@@ -282,15 +282,18 @@ async function buildDelta(
     if (id === null) continue;
     const before = source.records.get(id) ?? null;
     const after = records.has(id) ? (records.get(id) ?? null) : before;
-    const pendingDomains = scheduler.run(
-      mutationDomains(
-        before,
-        after,
-        sourceRanks.get(id),
-        order.ranks.get(id) ?? sourceRanks.get(id),
-        mutationOrderPreserved(order, sourceRanks, id),
-      ),
-    );
+    const pendingDomains =
+      before === null || after === null
+        ? membershipDomains(before, after)
+        : scheduler.run(
+            mutationDomains(
+              before,
+              after,
+              sourceRanks.get(id),
+              order.ranks.get(id) ?? sourceRanks.get(id),
+              mutationOrderPreserved(order, sourceRanks, id),
+            ),
+          );
     const domains = pendingDomains instanceof Promise ? await pendingDomains : pendingDomains;
     if (domains === "cancelled") return domains;
     if (domains.length === 0) continue;
@@ -309,13 +312,11 @@ async function buildDelta(
   });
 }
 
-function* mutationDomains(
+/** Membership changes need neither rank comparisons nor a cooperative producer. */
+function membershipDomains(
   before: ElementRecord | null,
   after: ElementRecord | null,
-  previousRank: ElementRank | undefined,
-  nextRank: ElementRank | undefined,
-  relativeOrderPreserved: boolean,
-): Generator<void, DeltaDomain[]> {
+): DeltaDomain[] {
   if (before === null && after !== null) {
     const domains: DeltaDomain[] = ["geometry", "paint", "order", "visibility"];
     if (hasConnections(after.element)) domains.push("connection");
@@ -327,7 +328,17 @@ function* mutationDomains(
       domains.push("connection");
     return domains;
   }
-  if (before === null || after === null || nextRank === undefined) return [];
+  return [];
+}
+
+function* mutationDomains(
+  before: ElementRecord,
+  after: ElementRecord,
+  previousRank: ElementRank | undefined,
+  nextRank: ElementRank | undefined,
+  relativeOrderPreserved: boolean,
+): Generator<void, DeltaDomain[]> {
+  if (nextRank === undefined) return [];
   const domains =
     before === after
       ? []

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { PreparedElementMutations } from "../../../../src/domain/store/prepared-element-mutations";
 import { planElementMutation } from "../../../../src/domain/store/element-mutation";
+import * as mutationOrder from "../../../../src/domain/store/mutation-order";
+import { ElementStore } from "../../../../src/domain/store/public";
 import {
   assertOverflowCapacity,
   createInitialRecord,
@@ -92,6 +94,50 @@ describe("element mutation algorithm bounds", () => {
       ),
     ).toThrow("The spatial-index overflow element limit was exceeded.");
   });
+});
+
+describe("element mutation delta cancellation", () => {
+  it.each(["insertion", "removal"] as const)(
+    "cancels structural %s delta preparation at its shared checkpoint",
+    async (kind) => {
+      const element = rectangle();
+      const added = rectangle("00000000-0000-4000-8000-000000000090");
+      const store = new ElementStore([element]);
+      const original = store.get(element.id);
+      const published = vi.fn();
+      store.subscribe(published);
+      let deltaWork = false;
+      let cancelled = false;
+      const affectedIds = mutationOrder.mutationAffectedIds;
+      const delta = vi.spyOn(mutationOrder, "mutationAffectedIds").mockImplementation(function* (
+        ...args
+      ) {
+        deltaWork = true;
+        yield* affectedIds(...args);
+      });
+      try {
+        const prepared = await store.prepareElementMutation(
+          kind === "insertion"
+            ? { bands: { content: [element.id, added.id], highlight: [] }, elements: [added] }
+            : { bands: { content: [], highlight: [] }, removeIds: [element.id] },
+          {
+            shouldYield: () => deltaWork,
+            isCancelled: () => cancelled,
+            yieldControl: async () => {
+              cancelled = true;
+            },
+          },
+        );
+        expect(prepared).toEqual({ status: "cancelled", token: null });
+        expect(delta).toHaveBeenCalledOnce();
+        expect(store.get(element.id)).toBe(original);
+        expect(store.get(added.id)).toBeUndefined();
+        expect(published).not.toHaveBeenCalled();
+      } finally {
+        delta.mockRestore();
+      }
+    },
+  );
 });
 
 function overflowRecord(id: string) {

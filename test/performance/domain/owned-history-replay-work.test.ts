@@ -8,6 +8,7 @@ import * as payload from "../../../src/domain/store/mutation-payload";
 import * as connections from "../../../src/domain/store/connections";
 import * as anchors from "../../../src/domain/geometry/anchors";
 import * as ownedHistory from "../../../src/domain/store/owned-mutation-history";
+import * as mutationOrder from "../../../src/domain/store/mutation-order";
 import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
 import type { ElementRecord } from "../../../src/domain/store/types";
 import { MutationPreparationScheduler } from "../../../src/domain/store/mutation-preparation-scheduler";
@@ -65,6 +66,7 @@ it("replays 10,000 privately retained strokes without public staging, point scan
   const payloadBytes = vi.spyOn(payload, "elementMutationPayloadBytes");
   const compare = vi.spyOn(equality, "elementsEqualSteps");
   const preparationRuns = vi.spyOn(MutationPreparationScheduler.prototype, "run");
+  const orderComparisons = vi.spyOn(mutationOrder, "mutationOrderPreserved");
   const retainedLookups = observeRetainedRecordLookups();
   const capacity = vi.spyOn(DocumentCapacity.prototype, "prepareTimeSliced");
   const capacityReferences = vi.spyOn(connections, "connectionReferences");
@@ -109,6 +111,10 @@ it("replays 10,000 privately retained strokes without public staging, point scan
       ),
     ).toBe(true);
     expect(yielded).toBe(1);
+    // Only the two record restorations and three retained-direction producers
+    // need generators. Membership delta classification adds no producer/rank work.
+    expect(preparationRuns.mock.calls.length).toBeLessThanOrEqual(fixture.strokeCount * 2 + 3);
+    expect(orderComparisons.mock.calls.length).toBe(0);
     expect(
       preparationRuns.mock.results.filter(({ value }) => value instanceof Promise).length,
     ).toBe(1);
@@ -125,6 +131,7 @@ it("replays 10,000 privately retained strokes without public staging, point scan
     compare.mockRestore();
     payloadBytes.mockRestore();
     preparationRuns.mockRestore();
+    orderComparisons.mockRestore();
     retainedLookups.restore();
     capacity.mockRestore();
     capacityReferences.mockRestore();

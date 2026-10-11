@@ -12,7 +12,7 @@ import {
   applyElementMutation as apply,
   uninterruptedMutationScheduler as scheduler,
 } from "../../../fixtures/domain/element-mutation";
-import { highlighter, IDS, rectangle } from "./fixtures";
+import { connectedLine, highlighter, IDS, rectangle } from "./fixtures";
 
 const rectangles = () => [rectangle(), rectangle(IDS.other), rectangle(IDS.line)];
 const bands = (store: ElementStore) => ({
@@ -83,6 +83,38 @@ describe("structural membership order deltas", () => {
     expect(bands(store).content).toEqual(elements.map(({ id }) => id));
     await apply(store, result.transition.forward, result.transition);
     expect(bands(store).content).toEqual([elements[2]!.id, elements[1]!.id]);
+  });
+
+  it("classifies membership, replacements and survivor reorders in the same delta", async () => {
+    const elements = rectangles();
+    const target = elements[1]!;
+    const replacement = {
+      ...target,
+      x: target.x + 100,
+      pivot: { ...target.pivot, x: target.pivot.x + 100 },
+      style: { ...target.style, outlineOpacity: 0.5 },
+    };
+    const inserted = {
+      ...connectedLine(replacement),
+      id: "00000000-0000-4000-8000-000000000099",
+    };
+    const store = new ElementStore([...elements, highlighter()]);
+    const result = await apply(store, {
+      bands: { content: [elements[2]!.id, target.id, inserted.id], highlight: [IDS.highlight] },
+      removeIds: [elements[0]!.id],
+      elements: [replacement, inserted],
+    });
+    expect(result.delta.changes.map(({ id, domains }) => ({ id, domains }))).toEqual([
+      { id: elements[0]!.id, domains: ["order", "visibility", "connection"] },
+      { id: target.id, domains: ["geometry", "paint"] },
+      { id: inserted.id, domains: ["geometry", "paint", "order", "visibility", "connection"] },
+      { id: elements[2]!.id, domains: ["order"] },
+    ]);
+    expect(result.delta.dirtyBands).toEqual({ content: true, highlight: false });
+    await apply(store, result.transition.reverse, result.transition);
+    expect(bands(store).content).toEqual(elements.map(({ id }) => id));
+    expect(store.get(target.id)?.element).toEqual(target);
+    expect(store.get(inserted.id)).toBeUndefined();
   });
 });
 
