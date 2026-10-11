@@ -150,6 +150,48 @@ it("bounds real fade publication and replay interruption across 10,000 mounted m
   expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
 
+it("interrupts 600 geometry entries in one pass without cache recounts", () => {
+  const harness = motionHarness(600);
+  const originalValues = Object.getOwnPropertyDescriptor(Map.prototype, "values")!.value as (
+    this: Map<unknown, unknown>,
+  ) => MapIterator<unknown>;
+  let visits = 0;
+  const values = vi.spyOn(Map.prototype, "values").mockImplementation(function (
+    this: Map<unknown, unknown>,
+  ) {
+    const iterator = originalValues.call(this);
+    const next = iterator.next.bind(iterator);
+    iterator.next = () => {
+      const result = next();
+      if (
+        !result.done &&
+        typeof result.value === "object" &&
+        result.value !== null &&
+        "kind" in result.value &&
+        "id" in result.value &&
+        typeof result.value.id === "number"
+      )
+        visits += 1;
+      return result;
+    };
+    return iterator;
+  });
+  try {
+    harness.motion.refreshInstrumentation();
+    expect(visits).toBe(0);
+    harness.motion.interruptForPointerDown();
+    expect(visits).toBe(600);
+    expect(harness.content.clearElementPreview).toHaveBeenCalledTimes(600);
+    harness.motion.refreshInstrumentation();
+    harness.motion.release();
+    expect(visits).toBe(600);
+    expect(harness.motion.cacheMemoryUsage()).toBe(0);
+  } finally {
+    values.mockRestore();
+    harness.motion.release();
+  }
+});
+
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz optional scene work`, () => {
   it("defers exhausted frames and visits every motion fairly before revisiting", () => {
     const harness = motionHarness(600);
