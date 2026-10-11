@@ -442,7 +442,7 @@ export class SceneContentRenderer {
       (sameStrokeShape(entry.displayedElement, record.element)
         ? entry.displayedPathParts
         : undefined) ??
-      this.#pathCache.read(record.element, pressure) ??
+      this.#pathCache.read(record.element, pressure, record.geometryVersion) ??
       (pending
         ? this.#committedGeometry.prepare(record, deadline, now, pressure)
         : this.#pathCache.build(record.element, pressure));

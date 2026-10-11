@@ -171,6 +171,69 @@ it("retains lazy progress across input interruption and rebuilds only changed ge
   expect(fixture.cache.statistics().bytes).toBe(0);
 });
 
+it("reuses current contour aliases after a 10,006-stroke version change without pressure ports or reads", () => {
+  const fixture = createDocumentPathFixture(10_006);
+  const records = fixture.elements.map(({ id }) => fixture.store.get(id)!);
+  for (const record of records) {
+    const parts = fixture.cache.build(record.element);
+    fixture.cache.retain(record.id, record.geometryVersion, parts);
+  }
+  const pressure = vi.spyOn(fixture.store, "pressureGeometry");
+  const read = vi.spyOn(fixture.cache, "read");
+  const restored = new DocumentPathPreparation(fixture.store, fixture.cache, vi.fn());
+  const repeat = new DocumentPathPreparation(fixture.store, fixture.cache, vi.fn());
+  try {
+    expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
+    expect(pressure.mock.calls.length).toBe(0);
+    expect(read.mock.calls.length).toBe(0);
+    fixture.domain.replaceMany(
+      records.map(({ element }) => ({
+        ...element,
+        offset: { x: 20, y: 0 },
+        pivot: { x: element.pivot.x + 20, y: element.pivot.y },
+      })),
+    );
+    for (const { id } of records) fixture.cache.invalidate(id);
+    expect(restored.prepare(Infinity, () => 0)).toBe(false);
+    expect(pressure).toHaveBeenCalledTimes(records.length);
+    expect(read).toHaveBeenCalledTimes(records.length);
+    for (const { id } of records)
+      expect(fixture.cache.has(id, fixture.store.get(id)!.geometryVersion)).toBe(true);
+    expect(repeat.prepare(Infinity, () => 0)).toBe(false);
+    expect(pressure).toHaveBeenCalledTimes(records.length);
+    expect(read).toHaveBeenCalledTimes(records.length);
+    expect(fixture.work.orderReads).toBe(records.length * 3);
+    expect(fixture.work.builds).toBe(0);
+    expect(fixture.prepare).not.toHaveBeenCalled();
+    expect(fixture.cache.statistics()).toMatchObject({ entries: records.length, evictions: 0 });
+    expect(fixture.cache.cacheMemoryUsage()).toBeLessThanOrEqual(25 * 1024 * 1024);
+    const changed = fixture.store.get(records[0]!.id)!.element;
+    if (changed.kind !== "stroke") throw new Error("Expected a stroke.");
+    fixture.domain.replace(changed.id, {
+      ...changed,
+      style: { ...changed.style, width: 4 },
+    });
+    fixture.cache.invalidate(changed.id);
+    restored.invalidate({ affected: [{ id: changed.id, domains: ["geometry"] }] });
+    restored.prepare(Infinity, () => 0);
+    expect(fixture.prepare.mock.calls.map(([ids]) => ids)).toEqual([[changed.id]]);
+    restored.pause();
+    fixture.cache.setRetentionEnabled(false);
+    fixture.cache.setRetentionEnabled(true);
+    expect(fixture.cache.statistics().entries).toBe(0);
+    expect(fixture.cache.cacheMemoryUsage()).toBe(0);
+  } finally {
+    pressure.mockRestore();
+    read.mockRestore();
+    fixture.preparation.release();
+    restored.release();
+    repeat.release();
+    fixture.cache.release();
+    fixture.store.release();
+  }
+  expect(restored.memoryUsage()).toBe(0);
+});
+
 it("does no file work while admission is closed and resumes a 10,006-stroke cursor without rescanning", async () => {
   const count = 10_006;
   const fixture = createDocumentPathFixture(count);

@@ -6,6 +6,7 @@ import { rectangle } from "../../../unit/domain/store/fixtures";
 import { afterEach, expect, it, vi } from "vitest";
 import * as elementPath from "../../../../src/domain/geometry/element-path";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
+import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
@@ -27,6 +28,8 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
     ...indexedStroke(1),
     points: Array.from({ length: 4096 }, (_, i) => [i / 10, 20 + (i % 7), 0.5]).flat(),
   };
+  // Match the authoritative Store's immutable samples for contour identity reuse.
+  Object.freeze(element.points);
   const elements = [element, ...extras];
   const ids = elements.map(({ id }) => id);
   for (const [rank, value] of elements.entries())
@@ -92,8 +95,18 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
 }
 
 it("keeps committed feedback while preparing geometry and composes a subsequent gesture", () => {
-  const { renderer, scheduler, element, moved, group, fullBuild, step, pressureGeometry } =
-    pendingCommit();
+  const {
+    renderer,
+    scheduler,
+    element,
+    moved,
+    group,
+    original,
+    fullBuild,
+    step,
+    pressureGeometry,
+    store,
+  } = pendingCommit();
   renderer.setPreviewTransform([element.id], "translate(5 0)", 2);
   renderer.flushPointerFeedbackFrame();
   expect(group.attributes.get("transform")).toBe("translate(5 0) scale(1.1 1)");
@@ -118,6 +131,25 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   renderer.clearPreviewTransforms();
   scheduler.runAll();
   expect(group.attributes.has("transform")).toBe(false);
+  const read = vi.spyOn(ScenePathCache.prototype, "read");
+  store.records.set(element.id, {
+    ...store.records.get(element.id)!,
+    element,
+    geometryVersion: 3,
+  });
+  renderer.applyDelta({
+    affected: [{ id: element.id, before: moved, after: element, domains: ["geometry"] }],
+  });
+  scheduler.runAll();
+  const access = read.mock.calls.findIndex(([value]) => value === element);
+  expect(access).toBeGreaterThanOrEqual(0);
+  expect(read.mock.calls[access]![2]).toBe(3);
+  expect(read.mock.results[access]!.value).toBeDefined();
+  const cache = read.mock.contexts[access]!;
+  if (!(cache instanceof ScenePathCache)) throw new Error("Expected the scene contour cache.");
+  expect(cache.has(element.id, 3)).toBe(true);
+  expect(cache.has(element.id, 2)).toBe(false);
+  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
   expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
