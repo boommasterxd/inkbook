@@ -102,8 +102,10 @@ async function collectConnectionDetachments(
   scheduler: MutationPreparationScheduler,
 ): Promise<Map<string, InkElementV1> | "cancelled"> {
   const detached = new Map<string, InkElementV1>();
+  if (source.reverseConnections.size === 0) return detached;
   for (const targetId of removeIds) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    if (!source.reverseConnections.has(targetId)) continue;
     const additions = prepareConnectionDetachments(
       new Set([targetId]),
       source.reverseConnections,

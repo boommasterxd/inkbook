@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PreparedElementMutations } from "../../../../src/domain/store/prepared-element-mutations";
 import { planElementMutation } from "../../../../src/domain/store/element-mutation";
 import * as mutationOrder from "../../../../src/domain/store/mutation-order";
+import * as mutationElements from "../../../../src/domain/store/mutation-elements";
 import { ElementStore } from "../../../../src/domain/store/public";
 import {
   assertOverflowCapacity,
@@ -135,6 +136,61 @@ describe("element mutation delta cancellation", () => {
         expect(published).not.toHaveBeenCalled();
       } finally {
         delta.mockRestore();
+      }
+    },
+  );
+});
+
+describe("empty reverse connection preparation", () => {
+  it("rejects an unknown removal ID after skipping unnecessary detachment work", async () => {
+    const element = rectangle();
+    const store = new ElementStore([element]);
+    const original = store.get(element.id);
+    await expect(
+      store.prepareElementMutation(
+        { bands: { content: [element.id], highlight: [] }, removeIds: ["missing"] },
+        scheduler,
+      ),
+    ).rejects.toThrow("Unknown element ID: missing");
+    expect(store.get(element.id)).toBe(original);
+    expect(store.instrumentation.publishedDeltas).toBe(0);
+  });
+
+  it.each(["cancellation", "staleness"] as const)(
+    "checks %s at the first real work after empty detachment collection",
+    async (kind) => {
+      const element = rectangle();
+      const added = rectangle("00000000-0000-4000-8000-000000000090");
+      const store = new ElementStore([element]);
+      const original = store.get(element.id);
+      let collected = false;
+      let cancelled = false;
+      const collect = mutationElements.collectDesiredElements;
+      const collection = vi
+        .spyOn(mutationElements, "collectDesiredElements")
+        .mockImplementation(async (...args) => {
+          const result = await collect(...args);
+          collected = true;
+          return result;
+        });
+      try {
+        const prepared = await store.prepareElementMutation(
+          { bands: { content: [], highlight: [] }, removeIds: [element.id] },
+          {
+            shouldYield: () => collected,
+            isCancelled: () => cancelled,
+            yieldControl: async () => {
+              if (kind === "cancellation") cancelled = true;
+              else store.create(added);
+            },
+          },
+        );
+        expect(prepared).toEqual({ status: "cancelled", token: null });
+        expect(collection).toHaveBeenCalledOnce();
+        expect(store.get(element.id)).toBe(original);
+        expect(store.instrumentation.publishedDeltas).toBe(kind === "staleness" ? 1 : 0);
+      } finally {
+        collection.mockRestore();
       }
     },
   );
