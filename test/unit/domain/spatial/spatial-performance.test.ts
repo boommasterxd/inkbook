@@ -121,7 +121,6 @@ describe("resumable spatial query work", () => {
         [1, new Map([[0, bucket]])],
       ]),
       generation: () => 0,
-      occupiedCellCount: 2,
       overflowSlots: new Set<number>(),
       slots: new Proxy(slots, {
         get(target, key, receiver) {

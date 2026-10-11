@@ -228,7 +228,6 @@ export class UniformSpatialIndex<Id> {
       {
         cells: this.cells,
         generation: () => this.mutationGeneration,
-        occupiedCellCount: this.occupiedCellCount,
         overflowSlots: this.overflowSlots,
         slots: this.slots,
       },
@@ -242,7 +241,7 @@ export class UniformSpatialIndex<Id> {
     scratch.begin(this.slots.length);
 
     if (this.occupiedCellCount > 0)
-      visitSpatialCells(this.cells, this.slots, this.occupiedCellCount, range, bounds, scratch);
+      visitSpatialCells(this.cells, this.slots, range, bounds, scratch);
     visitOverflowEntries(this.overflowSlots, this.slots, bounds, scratch);
     return scratch.count;
   }

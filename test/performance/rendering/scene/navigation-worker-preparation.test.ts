@@ -117,7 +117,7 @@ it.each([false, true])(
       expect(observer?.maxBytes).toBe(MAX_PREPARED_SCENE_PATH_BYTES);
       expect(fixture.indexedWork()).toBeLessThanOrEqual(270);
       expect(fixture.preparation.memoryUsage()).toBeLessThanOrEqual(
-        MAX_PREPARED_SCENE_PATH_BYTES + 256 * 128 + 256 + 256 * 32,
+        MAX_PREPARED_SCENE_PATH_BYTES + 256 * 128 + 512 + 256 * 32,
       );
       expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
       await fixture.settle();

@@ -173,8 +173,8 @@ it("rebinds 10,000 retained leading contours once and skips all pressure ports o
     const [ids, signal] = beginNavigationPathRequest(fixture, PRIORITY, BOUNDS);
     expect(ids).toHaveLength(MAX_PREPARED_SCENE_PATH_IDS);
     expect(fixture.preparation.memoryUsage()).toBeLessThanOrEqual(
-      // One transport batch plus its equally sized query deduplication and iterator.
-      4 * 1024 * 1024 + MAX_PREPARED_SCENE_PATH_IDS * (128 + 32) + 256,
+      // One transport batch plus query deduplication and two reusable axis states.
+      4 * 1024 * 1024 + MAX_PREPARED_SCENE_PATH_IDS * (128 + 32) + 512,
     );
     fixture.preparation.cancel();
     expect(signal.aborted).toBe(true);

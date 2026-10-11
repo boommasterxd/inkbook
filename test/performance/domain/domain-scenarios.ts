@@ -1,6 +1,8 @@
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
+import type { UniformSpatialIndex } from "../../../src/domain/spatial/index";
+import type { CellColumns, IndexedEntry } from "../../../src/domain/spatial/index-state";
 import {
   ActiveEditorHistory,
   type ActiveEditorHistoryModel,
@@ -142,4 +144,71 @@ export function requireStroke(store: ElementStore, id: string): StrokeElementV1 
 
 function isStroke(element: InkElementV1): element is StrokeElementV1 {
   return element.kind === "stroke";
+}
+
+/** Count real grid lookups/iterator entries and indexed slot reads, excluding fixture setup. */
+export function observeSpatialQueryWork(
+  index: UniformSpatialIndex<number>,
+  spyOn: typeof import("vitest").vi.spyOn,
+) {
+  const source = index as unknown as {
+    cells: CellColumns;
+    slots: (IndexedEntry<number> | undefined)[];
+  };
+  const maps = new WeakSet<object>([source.cells, ...source.cells.values()]);
+  const originalSlots = source.slots;
+  const counts = { columns: 0, cells: 0, slots: 0 };
+  const visit = (map: object) => {
+    if (map === source.cells) counts.columns += 1;
+    else if (maps.has(map)) counts.cells += 1;
+  };
+  const originalGet = Reflect.get(Map.prototype, "get") as (
+    this: Map<unknown, unknown>,
+    key: unknown,
+  ) => unknown;
+  const get = spyOn(Map.prototype, "get").mockImplementation(function (
+    this: Map<unknown, unknown>,
+    key: unknown,
+  ) {
+    visit(this);
+    return originalGet.call(this, key);
+  });
+  const entries = observeSpatialMapEntries(visit, spyOn);
+  source.slots = new Proxy(originalSlots, {
+    get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/u.test(key)) counts.slots += 1;
+      return Reflect.get(target, key, receiver) as unknown;
+    },
+  });
+  return {
+    counts,
+    reset: () => Object.assign(counts, { columns: 0, cells: 0, slots: 0 }),
+    restore: () => {
+      source.slots = originalSlots;
+      get.mockRestore();
+      entries.forEach((spy) => spy.mockRestore());
+    },
+  };
+}
+
+function observeSpatialMapEntries(
+  visit: (map: object) => void,
+  spyOn: typeof import("vitest").vi.spyOn,
+) {
+  const original = Reflect.get(Map.prototype, "entries") as (
+    this: Map<unknown, unknown>,
+  ) => MapIterator<[unknown, unknown]>;
+  const observed = function* (
+    this: Map<unknown, unknown>,
+  ): Generator<[unknown, unknown], undefined> {
+    for (const entry of original.call(this)) {
+      visit(this);
+      yield entry;
+    }
+    return undefined;
+  };
+  return [
+    spyOn(Map.prototype, "entries").mockImplementation(observed),
+    spyOn(Map.prototype, Symbol.iterator).mockImplementation(observed),
+  ];
 }
