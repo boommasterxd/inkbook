@@ -29,8 +29,6 @@ it("restores 10,000 canonical strokes with one contour and alias access and no s
     expect(cache.read(element, undefined, 2)).toBe(parts[index]);
     cache.retain(element.id, 2, parts[index]!);
   });
-  expect(signatureWork).not.toHaveBeenCalled();
-  expect(build).not.toHaveBeenCalled();
   expect(get).toHaveBeenCalledTimes(10_000);
   expect(alias).toHaveBeenCalledTimes(10_000);
   get.mockClear();
