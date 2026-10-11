@@ -88,6 +88,10 @@ describe("runtime model synchronization performance", () => {
         removedIds: elements.map((element) => element.id),
         type: "model-sync-incremental",
       });
+      expect(model.instrumentation.cacheElements).toBe(0);
+      expect(model.instrumentation.sampleEncodingCacheElements).toBe(10_000);
+      expect(model.instrumentation.sampleEncodingCacheBytes).toBe(warmed.sampleEncodingCacheBytes);
+      expect(model.instrumentation.sampleEncodingCacheBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
       model.synchronize({
         baseModelRevision: 3,
         identity,
@@ -98,7 +102,7 @@ describe("runtime model synchronization performance", () => {
       });
       expect(model.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds);
       expect(model.instrumentation.shapeBuilds).toBe(warmed.shapeBuilds);
-      expect(model.instrumentation.sampleEncodingCacheElements).toBe(0);
+      expect(model.instrumentation.sampleEncodingCacheElements).toBe(10_000);
       expect(append).not.toHaveBeenCalled();
       expect((await model.export({ ...request, baseModelRevision: 4, modelRevision: 4 })).ok).toBe(
         true,
