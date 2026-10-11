@@ -242,11 +242,11 @@ it.each(["scroll", "zoom"] as const)(
       replaySceneMembership(renderer, store, records, "exit");
       expect(writes).not.toHaveBeenCalled();
       scheduler.runNext();
-      const animated = writes.mock.calls.filter((call) => call[1] === 400);
+      const animated = writes.mock.calls.filter((call) => call[1] === 150);
       expect(animated).toHaveLength(1);
       expect(animated[0]![0]).toBe(roots[context === "scroll" ? 1 : 0]);
       expect(writes.mock.calls.filter((call) => call[1] === 0)).toHaveLength(1);
-      scheduler.time = 400;
+      scheduler.time = 150;
       scheduler.runAll();
       expect(renderer.mountedCount).toBe(0);
     } finally {

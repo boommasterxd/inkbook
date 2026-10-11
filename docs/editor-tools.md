@@ -173,6 +173,7 @@ This means:
 - The movement between two input points is checked as a continuous sweep so that thin lines cannot slip through gaps between sample points.
 - The effect radius can be configured in the Style menu.
 - Touched elements preview an opacity fade over 150 milliseconds using the [`erase` easing](quality-and-testing.md#animation-tokens), but remain in the model until pointer release removes them together. The fade preserves the element's starting opacity and applies no blur or filter. Cancellation restores them immediately. Eraser and Selection Delete use the same [retained-node fade](rendering-and-performance.md#imperative-scene-ownership).
+- The gesture reports candidate membership; its presentation adapter reads the shared motion token and owns the fade duration.
 - One erasing gesture creates one undo step.
 
 The eraser can also be activated temporarily:

@@ -14,6 +14,7 @@ import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
 import type { CoalescedCreationSample } from "./coalesced-input";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { TRANSITION_DURATIONS } from "../../../rendering/motion/transitions";
 
 interface EraserPreviewRenderer {
   clearElementFade(ids: readonly string[]): void;
@@ -185,11 +186,11 @@ function createFeedback(renderer: EraserPreviewRenderer): EraserFeedbackPort {
     clearCandidateFade: (ids) => {
       renderer.clearElementFade([...ids]);
     },
-    addCandidateFade: (ids, durationMs) => {
-      renderer.setElementFade(ids, durationMs);
+    addCandidateFade: (ids) => {
+      renderer.setElementFade(ids, TRANSITION_DURATIONS.eraserPendingRemoval);
     },
-    setCandidateFade: (ids, durationMs) => {
-      renderer.setElementFade([...ids], durationMs);
+    setCandidateFade: (ids) => {
+      renderer.setElementFade([...ids], TRANSITION_DURATIONS.eraserPendingRemoval);
     },
   };
 }
