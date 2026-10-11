@@ -107,10 +107,10 @@ it("bounds real fade publication and replay interruption across 10,000 mounted m
     const targets = collectReplayFadeTargets(frame, "exit");
     expect(targets.size).toBe(10_000);
     expect(removals).not.toHaveBeenCalled();
-    scheduler.time = 399;
+    scheduler.time = 149;
     frame();
     expect(renderer.mountedCount).toBe(10_000);
-    scheduler.time = 400;
+    scheduler.time = 150;
     for (let frames = 0; scheduler.pendingCount > 0; frames += 1) {
       expect(frames).toBeLessThan(200);
       frame();
@@ -119,7 +119,7 @@ it("bounds real fade publication and replay interruption across 10,000 mounted m
     replay(false);
     expect(collectReplayFadeTargets(frame, "enter").size).toBe(10_000);
     expect(renderer.mountedCount).toBe(10_000);
-    scheduler.time = 799;
+    scheduler.time = 299;
     frame();
     expect(content.nodes.every((node) => Boolean(node.style.animation))).toBe(true);
     const propertyWrites = properties.mock.calls.length;
@@ -129,7 +129,7 @@ it("bounds real fade publication and replay interruption across 10,000 mounted m
     expect(properties.mock.calls.length - propertyWrites).toBe(2);
     expect(styles.mock.calls).toHaveLength(interruptedWrites);
     expect(fades.mock.calls).toHaveLength(interruptedStarts);
-    scheduler.time = 800;
+    scheduler.time = 300;
     for (let frames = 0; scheduler.pendingCount > 0; frames += 1) {
       expect(frames).toBeLessThan(100);
       frame();
@@ -298,7 +298,7 @@ function collectReplayFadeTargets(
   for (let batch = 0; targets.size < 10_000; batch += 1) {
     expect(batch).toBeLessThan(100);
     for (const call of frame()) {
-      expect(call[1]).toBe(400);
+      expect(call[1]).toBe(150);
       expect(call[3]).toBe(direction);
       targets.add(call[0]);
     }

@@ -76,7 +76,7 @@ it("removes completed opacity exits while a lower-rank opacity exit is still run
   expect(fixture.renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
 
-it("fades actual replay removal and progressive restoration for 400ms without generic motion", () => {
+it("fades actual replay removal and progressive restoration for 150ms without generic motion", () => {
   const fixture = setup();
   try {
     fixture.remove(true);
@@ -84,13 +84,13 @@ it("fades actual replay removal and progressive restoration for 400ms without ge
     expect(fixture.renderer.mountedCount).toBe(260);
     expect(fixture.content.nodes.filter((node) => Boolean(node.style.animation))).toHaveLength(128);
     expect(fixture.content.nodes[0]!.style.animation).toContain("opacity-exit");
-    expect(fixture.content.nodes[0]!.style.animation).toContain("400ms)");
-    fixture.scheduler.time = 399;
+    expect(fixture.content.nodes[0]!.style.animation).toContain("150ms)");
+    fixture.scheduler.time = 149;
     fixture.scheduler.runNext();
     expect(fixture.renderer.mountedCount).toBe(260);
     fixture.scheduler.runNext();
     fixture.scheduler.runNext();
-    fixture.scheduler.time = 800;
+    fixture.scheduler.time = 300;
     fixture.scheduler.runAll();
     expect(fixture.renderer.mountedCount).toBe(0);
     fixture.restore(true);
@@ -106,16 +106,16 @@ it("fades actual replay removal and progressive restoration for 400ms without ge
       entering.every(
         (node) =>
           String(node.style.animation).includes("opacity-enter") &&
-          String(node.style.animation).includes("400ms)"),
+          String(node.style.animation).includes("150ms)"),
       ),
     ).toBe(true);
     expect(entering.every((node) => !node.style.transform && !node.style.filter)).toBe(true);
     fixture.scheduler.runNext();
     fixture.scheduler.runNext();
-    fixture.scheduler.time = 1_199;
+    fixture.scheduler.time = 449;
     fixture.scheduler.runNext();
     expect(fixture.content.nodes.every((node) => Boolean(node.style.animation))).toBe(true);
-    fixture.scheduler.time = 1_200;
+    fixture.scheduler.time = 450;
     fixture.scheduler.runAll();
     expect(fixture.renderer.mountedIds("content")).toEqual(fixture.records.map(({ id }) => id));
     expect(
@@ -197,7 +197,7 @@ it.each(["pointer", "reduced"] as const)(
       expect(fixture.renderer.mountedCount).toBe(0);
       startReplayEntrance(fixture);
       expect(
-        fixture.content.nodes.some((node) => String(node.style.animation).includes("400ms)")),
+        fixture.content.nodes.some((node) => String(node.style.animation).includes("150ms)")),
       ).toBe(true);
       fixture.scheduler.runNext();
       fixture.scheduler.runNext();

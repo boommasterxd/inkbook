@@ -10,7 +10,7 @@ export const MOTION_TOKENS = Object.freeze({
   fast: 120,
   surface: 220,
   standard: 180,
-  erase: 400,
+  erase: 150,
   layout: 240,
 } as const);
 
