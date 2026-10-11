@@ -2,6 +2,8 @@ import type { UniformSpatialIndex } from "../spatial/index";
 
 import { DeltaBuilder } from "./delta-builder";
 import type { DocumentCapacity } from "./document-capacity";
+import { restoreOwnedRecord } from "./owned-mutation-history";
+import type { ReplacementHistory } from "./replacement-history";
 import {
   createReplacementRecord,
   createOwnedTranslatedReplacementRecord,
@@ -13,7 +15,12 @@ import {
   createReverseConnectionPatches,
 } from "./replacement-reverse-patch";
 import type { ReplacementCandidate } from "./replacement-planner";
-import type { ElementRecord, EndpointReference, StoreDelta } from "./types";
+import type {
+  ElementRecord,
+  ElementReplacementHistoryData,
+  EndpointReference,
+  StoreDelta,
+} from "./types";
 
 interface ReplacementState {
   readonly capacity: DocumentCapacity;
@@ -30,11 +37,13 @@ export interface SynchronousReplacementResult {
   readonly overflowCount: number;
   readonly paintVersion: number;
   readonly replacementCount: number;
+  readonly history: ElementReplacementHistoryData;
 }
 
 export function commitSynchronousReplacements(
   state: ReplacementState,
   candidates: readonly ReplacementCandidate[],
+  history: ReplacementHistory,
 ): SynchronousReplacementResult {
   const changesGeometry = candidates.some(({ domains }) => domains.includes("geometry"));
   const changesPaint = candidates.some(({ domains }) => domains.includes("paint"));
@@ -44,14 +53,21 @@ export function commitSynchronousReplacements(
   const paintVersion = changesPaint
     ? nextRecordVersion(state.paintVersion, "paintVersion")
     : state.paintVersion;
-  const records = candidates.map(({ current, domains, element }) =>
-    replacementRecord(
-      element,
-      current,
-      domains.includes("geometry") ? geometryVersion : current.geometryVersion,
-      domains.includes("paint") ? paintVersion : current.paintVersion,
-    ),
-  );
+  const historyBuilder = history.createBuilder();
+  const records = candidates.map(({ current, domains, element, retainedRecord }) => {
+    const nextGeometryVersion = domains.includes("geometry")
+      ? geometryVersion
+      : current.geometryVersion;
+    const nextPaintVersion = domains.includes("paint") ? paintVersion : current.paintVersion;
+    const record =
+      restoreOwnedRecord(element, current, retainedRecord, {
+        geometryVersion: nextGeometryVersion,
+        paintVersion: nextPaintVersion,
+      }) ?? replacementRecord(element, current, nextGeometryVersion, nextPaintVersion);
+    historyBuilder.append(current, record);
+    return record;
+  });
+  const historyData = historyBuilder.finish();
   const capacityPatch = state.capacity.prepare(
     candidates.map(({ current }) => current),
     records,
@@ -83,6 +99,7 @@ export function commitSynchronousReplacements(
     overflowCount: state.spatialIndex.overflowCount,
     paintVersion,
     replacementCount: candidates.length,
+    history: historyData,
   };
 }
 

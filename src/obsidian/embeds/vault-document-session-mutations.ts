@@ -3,6 +3,7 @@ import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 import type {
   AppliedElementMutation,
   ElementStore,
+  ElementReplacementHistoryData,
   PreparedElementMutation,
   PreparedElementReplacement,
   StoreDelta,
@@ -86,11 +87,13 @@ export class VaultDocumentSessionMutations {
 
   public commitPreparedElementReplacement(
     token: PreparedElementReplacement,
+    capture?: (history: ElementReplacementHistoryData) => void,
   ): "cancelled" | "committed" | "noop" {
     const context = this.#requireContext();
     if (context === undefined) return "cancelled";
     return commitVaultElementReplacement({
       active: true,
+      ...(capture === undefined ? {} : { capture }),
       recordDelta: (delta) => this.#recordDelta(context, delta, []),
       store: context.store,
       token,
@@ -106,11 +109,20 @@ export class VaultDocumentSessionMutations {
     }
   }
 
-  public replaceElements(elements: readonly InkElementV1[]): void {
+  public replaceElements(
+    elements: readonly InkElementV1[],
+    capture?: (history: ElementReplacementHistoryData) => void,
+  ): void {
     const context = this.#requireContext();
     if (context === undefined) return;
-    const delta = context.store.replaceMany(elements);
-    if (delta !== null) this.#recordDelta(context, delta, []);
+    let history: ElementReplacementHistoryData | undefined;
+    const delta = context.store.replaceMany(elements, (committed) => {
+      history = committed;
+    });
+    if (delta !== null) {
+      this.#recordDelta(context, delta, []);
+      if (history !== undefined) capture?.(history);
+    }
   }
 
   #recordDelta(

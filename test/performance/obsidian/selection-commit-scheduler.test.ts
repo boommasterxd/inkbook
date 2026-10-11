@@ -76,11 +76,7 @@ function selectionUnderBusyScene() {
   } as unknown as EditableDocumentModel;
   const registered: { undo?: () => Promise<boolean> } = {};
   const history = {
-    registerAppliedReplacement: (
-      _previous: readonly InkElementV1[],
-      _replacements: readonly InkElementV1[],
-      transition: Omit<AppliedAsyncHistoryTransition, "payloadBytes">,
-    ) => {
+    registerApplied: (transition: AppliedAsyncHistoryTransition) => {
       registered.undo = transition.undo;
       return true;
     },

@@ -376,9 +376,9 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
           clipboard.planPaste(candidates, invocation, previousRepeat),
         arrangeElements: (ids, action) => mutations.arrangeElements(ids, action),
         removeElements: (ids) => mutations.removeElements(ids),
-        replaceElements: (elements) => mutations.replaceElements(elements),
-        commitPreparedElementReplacement: (token) =>
-          mutations.commitPreparedElementReplacement(token),
+        replaceElements: (elements, capture) => mutations.replaceElements(elements, capture),
+        commitPreparedElementReplacement: (token, capture) =>
+          mutations.commitPreparedElementReplacement(token, capture),
         ...createVaultInputActivityActions(this.#workPriority, () => this.#executor),
       },
       state: {

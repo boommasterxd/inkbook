@@ -11,6 +11,7 @@ import type {
   ElementStore,
   PreparedElementReplacement,
   PreparedElementReplacementResult,
+  ElementReplacementHistoryData,
   StoreSliceScheduler,
 } from "../../domain/store/public";
 import type {
@@ -82,13 +83,17 @@ export interface EditableDocumentModel {
   ): Promise<PastePlan | null>;
   arrangeElements(ids: ReadonlySet<string>, action: ArrangeAction): void;
   removeElements(ids: readonly string[]): void;
-  replaceElements(elements: readonly InkElementV1[]): void;
+  replaceElements(
+    elements: readonly InkElementV1[],
+    capture?: (history: ElementReplacementHistoryData) => void,
+  ): void;
   prepareElementReplacement(
     replacements: readonly InkElementV1[],
     cancellation: { isCancelled(): boolean },
   ): Promise<PreparedElementReplacementResult>;
   commitPreparedElementReplacement(
     token: PreparedElementReplacement,
+    capture?: (history: ElementReplacementHistoryData) => void,
   ): "cancelled" | "committed" | "noop";
   setGestureActive(active: boolean): void;
   setNavigationActive?(active: boolean): void;

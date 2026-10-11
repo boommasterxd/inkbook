@@ -1,9 +1,9 @@
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../src/obsidian/embeds/active-editor/prepared-element-history";
-import { moveSelection } from "../../../src/editor/selection/transforms";
+import * as transforms from "../../../src/editor/selection/transforms";
 import { expect, it, vi } from "vitest";
 import { ElementStore } from "../../../src/domain/store/public";
-import type { InkElementV1 } from "../../../src/domain/schema/public";
+import { MAX_STROKE_POINTS, type InkElementV1 } from "../../../src/domain/schema/public";
 import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
 import type { HandleInteractionRenderer } from "../../../src/obsidian/embeds/active-editor/handle-presentation";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
@@ -12,12 +12,16 @@ import { indexedStroke } from "../../fixtures/editor/stroke";
 import { ManualFrameScheduler } from "../../fixtures/obsidian/manual-frame-scheduler";
 import { createSelectionPreviewRenderer } from "../../fixtures/obsidian/selection-preview-renderer";
 import * as bounds from "../../../src/domain/geometry/bounds";
-import { selectionOverlayGeometry } from "../../../src/editor/selection/public";
-import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
+import {
+  SelectionHandleSession,
+  selectionOverlayGeometry,
+} from "../../../src/editor/selection/public";
 import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
-import { elementMutationPorts } from "../../fixtures/obsidian/element-mutation-ports";
+import {
+  elementMutationPorts,
+  elementReplacementPorts,
+} from "../../fixtures/obsidian/element-mutation-ports";
 import { createStandardRuntimeDomainFixture } from "../domain/standard-domain-fixture";
-import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { ActiveDocumentHistory } from "../../../src/obsidian/embeds/active-editor/document-history";
 import { arrangeSelectionAvailability } from "../../../src/obsidian/embeds/active-editor/controller-elements";
 import * as strokePosition from "../../../src/domain/geometry/stroke-position";
@@ -147,39 +151,16 @@ it("reuses a rotated stroke outline for camera changes without recalculating sam
   }
 });
 
-it.each([false, true])(
-  "retains 10,000 stroke shapes through real history replay: async=%s",
-  async (asynchronous) => {
-    const builder = ElementStore.createBuilder({
-      shouldYield: () => false,
-      yieldControl: async () => undefined,
-    });
-    await builder.appendOwnedRuntime(
-      Array.from({ length: 10_000 }, (_, index) => {
-        const source = indexedStroke(index);
-        return { ...source, points: new Float64Array(source.points) } as unknown as InkElementV1;
-      }),
-    );
-    const store = await builder.finalize();
-    if (store === null) throw new Error("Expected runtime store");
-    const originals = store
-      .materializeBandOrder("content")
-      .map((id) => store.get(id)!.element) as unknown as InkElementV1[];
-    const model = {
-      ...({} as EditableDocumentModel),
-      store,
-      replaceElements: (elements: readonly InkElementV1[]) => {
-        store.replaceMany(elements);
-      },
-      prepareElementReplacement: (elements: readonly InkElementV1[]) =>
-        store.prepareElementReplacement(elements, {
-          shouldYield: () => false,
-          yieldControl: async () => undefined,
-        }),
-      commitPreparedElementReplacement: (
-        token: Parameters<typeof store.commitPreparedElementReplacement>[0],
-      ) => store.commitPreparedElementReplacement(token).status,
-    } as EditableDocumentModel;
+it.each(
+  [false, true].flatMap((asynchronous) =>
+    (["move", "rotate", "scale"] as const).map((kind) => ({ asynchronous, kind })),
+  ),
+)(
+  "reuses 10,000 owned stroke records through $kind history: async=$asynchronous",
+  async ({ asynchronous, kind }) => {
+    const { store, originals } = await hydratedStandardStrokes(false);
+    const elements = originals.map(({ element }) => element) as InkElementV1[];
+    const model = { store, ...elementReplacementPorts(store) } as EditableDocumentModel;
     const history = new ActiveEditorHistory(model);
     const prepared = new PreparedElementHistory({
       history,
@@ -187,43 +168,72 @@ it.each([false, true])(
       isAttached: () => true,
       onPendingChanged: () => undefined,
       motion: { beginPreviewCommit: () => ({ arm: () => true, cancel: () => undefined }) },
-      workScheduler: workSchedulerFromFrames({
-        cancelAnimationFrame: () => undefined,
-        requestAnimationFrame: (callback: FrameRequestCallback) => {
-          queueMicrotask(() => callback(0));
-          return 1;
-        },
-      }),
+      workScheduler: immediateWorkScheduler(),
     });
-    const geometry = vi.spyOn(bounds, "calculateElementBounds");
+    let pointBuilds = 0;
+    const actualPoint = strokePosition.strokeWorldPoint;
+    const geometry = vi.spyOn(strokePosition, "strokeWorldPoint").mockImplementation((...args) => {
+      pointBuilds += 1;
+      geometry.mockClear();
+      return actualPoint(...args);
+    });
+    const materialize = vi.spyOn(store, "materializeBandOrder");
     try {
       if (asynchronous) {
+        const session = new SelectionHandleSession({
+          action:
+            kind === "move"
+              ? { kind }
+              : kind === "rotate"
+                ? { kind, center: { x: 0, y: 0 }, opposite: { x: 1, y: 0 }, referenceRotation: 0 }
+                : { kind, anchor: { x: 0, y: 0 }, position: "bottom-right", rotation: 0 },
+          elements,
+          planner: store,
+          startPointer: { x: 1, y: 1 },
+        });
+        session.update(kind === "rotate" ? { x: -1, y: 1 } : { x: 3, y: 4 });
         const completed = new Promise<boolean>((resolve) => {
-          expect(prepared.commitMove(originals, { x: 2, y: 3 }, resolve)).toBe(true);
+          expect(prepared.commitHandle(session, resolve)).toBe(true);
         });
         expect(await completed).toBe(true);
       } else {
-        expect(history.replace(originals, moveSelection(originals, { x: 2, y: 3 }))).toBe(true);
+        const replacements =
+          kind === "move"
+            ? transforms.moveSelection(elements, { x: 2, y: 3 })
+            : kind === "rotate"
+              ? transforms.rotateSelection(elements, { x: 0, y: 0 }, 90)
+              : elements.map((element) =>
+                  transforms.scaleElement(element, { x: 0, y: 0 }, { x: 2, y: 2 }),
+                );
+        expect(history.replace(elements, replacements)).toBe(true);
       }
+      const changed = originals.map(({ element }) => store.get(element.id)!);
+      const committedPointBuilds = pointBuilds;
       expect(await history.undoAsync()).toBe(true);
       for (const original of originals) {
-        const restored = store.get(original.id)!.element;
-        if (restored.kind !== "stroke" || original.kind !== "stroke")
-          throw new Error("Expected stroke");
-        expect(restored.points).toBe(original.points);
-        expect(restored.offset?.x ?? 0).toBe(0);
+        const restored = store.get(original.element.id)!;
+        expect(restored.element).toBe(original.element);
+        expect(restored.bounds).toBe(original.bounds);
+        expect(restored.geometryVersion).toBeGreaterThan(changed[0]!.geometryVersion);
       }
       expect(await history.redoAsync()).toBe(true);
-      for (const original of originals) {
-        const moved = store.get(original.id)!.element;
-        if (moved.kind !== "stroke" || original.kind !== "stroke")
-          throw new Error("Expected stroke");
-        expect(moved.points).toBe(original.points);
-        expect(moved.offset).toEqual({ x: 2, y: 3 });
+      for (const record of changed) {
+        const restored = store.get(record.element.id)!;
+        expect(restored.element).toBe(record.element);
+        expect(restored.bounds).toBe(record.bounds);
+        expect(restored.geometryVersion).toBeGreaterThan(record.geometryVersion + 1);
       }
-      expect(geometry).not.toHaveBeenCalled();
+      // Scale also measures the preview frame and stabilized anchor before Store geometry.
+      const boundsPasses = kind === "move" ? 0 : kind === "scale" && asynchronous ? 3 : 1;
+      expect(committedPointBuilds).toBe(boundsPasses * 500_000);
+      expect(pointBuilds).toBe(committedPointBuilds);
+      expect(materialize).not.toHaveBeenCalled();
+      expect(store.instrumentation.bandScans).toBe(0);
+      expect(store.instrumentation.snapshotMaterializations).toBe(0);
+      expect(history.commandCount).toBe(1);
     } finally {
       geometry.mockRestore();
+      materialize.mockRestore();
       prepared.dispose();
       history.dispose();
     }
@@ -326,6 +336,13 @@ async function scheduledDocumentFixture(maximum = false) {
     work.maxReads = Math.max(work.maxReads, work.reads);
     return ElementStore.prototype.getRank.call(store, id);
   });
+  const committed = () => {
+    revision += 1;
+  };
+  const preparationWork = {
+    shouldYield,
+    yieldControl: () => scheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
+  };
   const model = {
     store,
     get revision() {
@@ -337,16 +354,8 @@ async function scheduledDocumentFixture(maximum = false) {
         leaseDepth -= 1;
       };
     },
-    ...elementMutationPorts(
-      store,
-      () => {
-        revision += 1;
-      },
-      {
-        shouldYield,
-        yieldControl: () => scheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
-      },
-    ),
+    ...elementMutationPorts(store, committed, preparationWork),
+    ...elementReplacementPorts(store, committed, preparationWork),
   } as unknown as EditableDocumentModel;
   const history = new ActiveEditorHistory(model);
   const prepared = new PreparedElementHistory({
@@ -358,7 +367,6 @@ async function scheduledDocumentFixture(maximum = false) {
     workScheduler: scheduler,
   });
   const documentHistory = new ActiveDocumentHistory({ history, model });
-  const inspect = (id: string) => ElementStore.prototype.get.call(store, id)!;
   return {
     store,
     originals,
@@ -368,7 +376,7 @@ async function scheduledDocumentFixture(maximum = false) {
     scheduler,
     work,
     priorities,
-    inspect,
+    inspect: (id: string) => ElementStore.prototype.get.call(store, id)!,
     cleanup: () => {
       prepared.dispose();
       documentHistory.dispose();
@@ -430,6 +438,8 @@ it.each([
         expect(test.inspect(record.element.id).bounds).toBe(record.bounds);
       }
       expect(test.work.totalPoints).toBe(initialPoints);
+      expect(test.store.instrumentation.bandScans).toBe(0);
+      expect(test.store.instrumentation.snapshotMaterializations).toBe(0);
       expect(initialPoints).toBe(
         controlId === "opacity" ? 0 : maximum ? MAX_STROKE_POINTS : 500_000,
       );

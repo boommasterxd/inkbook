@@ -77,17 +77,11 @@ function historyBuilder(
 ) {
   const forward = new Map<string, ElementRecord>();
   const reverse = new Map<string, ElementRecord>();
-  const retained = new Set<ElementRecord>();
-  let payloadBytes = 64;
+  const payload = createRetainedRecordPayload();
   const add = (records: Map<string, ElementRecord>, record: ElementRecord | null) => {
     if (record === null) return;
     records.set(record.element.id, record);
-    // Each directional map entry and each unique record, bounds and sample buffer
-    // count toward the existing history cap, including buffers shared with the Store.
-    payloadBytes += 80;
-    if (retained.has(record)) return;
-    retained.add(record);
-    payloadBytes += 128 + elementMutationPayloadBytes(record.element);
+    payload.add(record);
   };
   return {
     append: ({ before, after }: StoreDelta["changes"][number]) => {
@@ -98,10 +92,28 @@ function historyBuilder(
     finish: (): OwnedMutationHistory => ({
       forward,
       reverse,
-      payloadBytes,
+      payloadBytes: payload.bytes,
       dirtyBands: delta.dirtyBands,
       relativeOrderPreserved: Object.freeze(relativeOrderPreserved),
     }),
+  };
+}
+
+/** Count directional references and unique retained records, including shared sample buffers. */
+export function createRetainedRecordPayload() {
+  const retained = new Set<ElementRecord>();
+  let bytes = 64;
+  return {
+    add(record: ElementRecord | null): void {
+      if (record === null) return;
+      bytes += 80;
+      if (retained.has(record)) return;
+      retained.add(record);
+      bytes += 128 + elementMutationPayloadBytes(record.element);
+    },
+    get bytes(): number {
+      return bytes;
+    },
   };
 }
 

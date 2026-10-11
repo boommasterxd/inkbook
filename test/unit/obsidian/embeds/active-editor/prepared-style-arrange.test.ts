@@ -1,14 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ArrangeAction } from "../../../../../src/domain/commands/arrange";
+import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../../../src/domain/commands/history";
 import type { InkElementV1, TableElementV1 } from "../../../../../src/domain/schema/public";
-import { ElementStore } from "../../../../../src/domain/store/public";
+import {
+  ElementStore,
+  type ElementReplacementHistoryData,
+} from "../../../../../src/domain/store/public";
+import * as mutationPayload from "../../../../../src/domain/store/mutation-payload";
 import { ActiveDocumentHistory } from "../../../../../src/obsidian/embeds/active-editor/document-history";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
-import { elementMutationPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
+import {
+  elementMutationPorts,
+  elementReplacementPorts,
+} from "../../../../fixtures/obsidian/element-mutation-ports";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { axisConnectedLine, coordinateSystem, rectangle } from "../../../domain/store/fixtures";
 
@@ -30,6 +38,9 @@ function documentFixture(elements: readonly InkElementV1[]) {
     beginInteractiveOperation,
     store,
     ...elementMutationPorts(store, () => {
+      revision += 1;
+    }),
+    ...elementReplacementPorts(store, () => {
       revision += 1;
     }),
   } as unknown as EditableDocumentModel;
@@ -122,6 +133,20 @@ describe("prepared style document history", () => {
     const fixture = styleFixture([target, dependent]);
     const deltas = vi.fn();
     fixture.store.subscribe(deltas);
+    const originalTarget = fixture.inspect(target.id);
+    const originalDependent = fixture.inspect(dependent.id);
+    const prepare = vi.spyOn(fixture.model, "prepareElementReplacement");
+    const prepareMutation = vi.spyOn(fixture.model, "prepareElementMutation");
+    const collectOrder = vi.spyOn(fixture.store, "beginOrder");
+    const originalCommit = fixture.model.commitPreparedElementReplacement.bind(fixture.model);
+    let captured: ElementReplacementHistoryData | undefined;
+    vi.spyOn(fixture.model, "commitPreparedElementReplacement").mockImplementation(
+      (token, capture) =>
+        originalCommit(token, (data) => {
+          captured ??= data;
+          capture?.(data);
+        }),
+    );
 
     expect(fixture.start("coordinate-dimension", "2d")).toBe(true);
     expect(fixture.pending).toEqual([true]);
@@ -137,12 +162,24 @@ describe("prepared style document history", () => {
     });
     expect(deltas).toHaveBeenCalledOnce();
     expect(fixture.history.commandCount).toBe(1);
+    const changedTarget = fixture.inspect(target.id);
+    const changedDependent = fixture.inspect(dependent.id);
+    expect(captured?.previous.map(({ id }) => id)).toEqual([target.id, dependent.id]);
+    expect(fixture.history.retainedPayloadBytes).toBe(captured!.payloadBytes);
 
     await expect(fixture.history.undoAsync()).resolves.toBe(true);
     expect(fixture.inspect(target.id)).toEqual(target);
     expect(fixture.inspect(dependent.id)).toEqual(dependent);
+    expect(fixture.inspect(target.id)).toBe(originalTarget);
+    expect(fixture.inspect(dependent.id)).toBe(originalDependent);
+    expect(prepare.mock.calls[1]![0]).toBe(captured!.previous);
     await expect(fixture.history.redoAsync()).resolves.toBe(true);
     expect(fixture.inspect(dependent.id)).toMatchObject({ startConnection: null });
+    expect(fixture.inspect(target.id)).toBe(changedTarget);
+    expect(fixture.inspect(dependent.id)).toBe(changedDependent);
+    expect(prepare.mock.calls[2]![0]).toBe(captured!.replacements);
+    expect(prepareMutation).not.toHaveBeenCalled();
+    expect(collectOrder).not.toHaveBeenCalled();
     expect(deltas).toHaveBeenCalledTimes(3);
   });
 
@@ -179,6 +216,47 @@ describe("prepared style document history", () => {
   });
 });
 
+it.each([-2, 0, 2])(
+  "admits Style at history capacity offset %i before publication",
+  async (offset) => {
+    const fixture = styleFixture([indexedStroke(0)]);
+    const publications = vi.fn();
+    fixture.store.subscribe(publications);
+    const effect = { apply: vi.fn(), revert: vi.fn() };
+    const prepare = vi.spyOn(fixture.model, "prepareElementReplacement");
+    const commit = vi.spyOn(fixture.model, "commitPreparedElementReplacement");
+    const payload = vi
+      .spyOn(mutationPayload, "elementMutationPayloadBytes")
+      .mockReturnValue((DEFAULT_HISTORY_BYTE_LIMIT - 480 + offset) / 2);
+    try {
+      fixture.prepared.commitStyle({
+        selection: new Set([indexedStroke(0).id]),
+        controlId: "opacity",
+        value: 0.5,
+        isCurrent: () => true,
+        frameEffect: async () => effect,
+        onCompleted: fixture.completed,
+      });
+      await finished(fixture);
+      expect(await prepare.mock.results[0]!.value).toMatchObject({
+        historyPayloadBytes: DEFAULT_HISTORY_BYTE_LIMIT + offset,
+      });
+      const accepted = offset <= 0;
+      expect(fixture.completed).toHaveBeenCalledWith(accepted);
+      expect(commit).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(publications).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(effect.apply).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(fixture.history.commandCount).toBe(accepted ? 1 : 0);
+      expect(fixture.model.revision).toBe(accepted ? 1 : 0);
+      expect(fixture.history.retainedPayloadBytes).toBe(
+        accepted ? DEFAULT_HISTORY_BYTE_LIMIT + offset : 0,
+      );
+    } finally {
+      payload.mockRestore();
+    }
+  },
+);
+
 it("rejects a style preparation overtaken by history traversal before any publication", async () => {
   const fixture = styleFixture([indexedStroke(0)], true);
   let finishUndo = () => undefined as void;
@@ -214,7 +292,7 @@ describe("prepared style cancellation and failure", () => {
     async (reason) => {
       const stroke = indexedStroke(0);
       const fixture = styleFixture([stroke], true);
-      const commit = vi.spyOn(fixture.model, "commitPreparedElementMutation");
+      const commit = vi.spyOn(fixture.model, "commitPreparedElementReplacement");
       expect(fixture.start()).toBe(true);
       expect(fixture.start()).toBe(false);
       expect(fixture.scheduler.checkpoint).toHaveBeenCalledOnce();
@@ -246,7 +324,7 @@ describe("prepared style cancellation and failure", () => {
       const stroke = indexedStroke(0);
       const fixture = styleFixture([stroke]);
       if (reason === "failure") {
-        vi.spyOn(fixture.model, "prepareElementMutation").mockRejectedValue(new Error("failed"));
+        vi.spyOn(fixture.model, "prepareElementReplacement").mockRejectedValue(new Error("failed"));
       }
       const value = reason === "noop" ? 1 : 0.5;
       const ids = reason === "missing" ? ["missing"] : [stroke.id];
@@ -258,15 +336,15 @@ describe("prepared style cancellation and failure", () => {
     },
   );
 
-  it("rejects a completed mutation token when its selection becomes stale", async () => {
+  it("rejects a completed replacement token when its selection becomes stale", async () => {
     const stroke = indexedStroke(0);
     const fixture = styleFixture([stroke]);
-    const original = fixture.model.prepareElementMutation.bind(fixture.model);
+    const original = fixture.model.prepareElementReplacement.bind(fixture.model);
     let resume = () => undefined as void;
     const gate = new Promise<void>((resolve) => {
       resume = resolve;
     });
-    const prepare = vi.spyOn(fixture.model, "prepareElementMutation");
+    const prepare = vi.spyOn(fixture.model, "prepareElementReplacement");
     prepare.mockImplementation(async (...args) => {
       const result = await original(...args);
       expect(result.status).toBe("prepared");
@@ -274,7 +352,7 @@ describe("prepared style cancellation and failure", () => {
       await gate;
       return result;
     });
-    const commit = vi.spyOn(fixture.model, "commitPreparedElementMutation");
+    const commit = vi.spyOn(fixture.model, "commitPreparedElementReplacement");
 
     expect(fixture.start()).toBe(true);
     await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());

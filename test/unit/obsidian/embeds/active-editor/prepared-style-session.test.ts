@@ -10,7 +10,7 @@ import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-edi
 import { ActiveEditorStyleSession } from "../../../../../src/obsidian/embeds/active-editor/style-session";
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
-import { elementMutationPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
+import { elementReplacementPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { createMaximumStroke } from "../../../../performance/domain/standard-domain-fixture";
 
@@ -63,7 +63,7 @@ function sessionFixture(elements: readonly InkElementV1[]) {
       return revision;
     },
     store,
-    ...elementMutationPorts(
+    ...elementReplacementPorts(
       store,
       () => {
         revision += 1;
@@ -240,7 +240,7 @@ describe("prepared style session cancellation", () => {
         fixture.pause();
         return original(...args);
       });
-      const commit = vi.spyOn(fixture.model, "commitPreparedElementMutation");
+      const commit = vi.spyOn(fixture.model, "commitPreparedElementReplacement");
 
       fixture.styles.apply("select", "stroke-width", "4");
       await vi.waitFor(() => expect(rebase).toHaveBeenCalledOnce());
@@ -275,9 +275,9 @@ describe("prepared style session cancellation", () => {
     const points = fixture.store.get(stroke.id)!.element;
     if (points.kind !== "stroke") throw new TypeError("Expected stroke.");
     const ownedSamples = points.points;
-    const original = fixture.model.prepareElementMutation.bind(fixture.model);
+    const original = fixture.model.prepareElementReplacement.bind(fixture.model);
     const prepare = vi
-      .spyOn(fixture.model, "prepareElementMutation")
+      .spyOn(fixture.model, "prepareElementReplacement")
       .mockImplementationOnce((...args) => {
         fixture.pause();
         return original(...args);
@@ -293,9 +293,11 @@ describe("prepared style session cancellation", () => {
     fixture.styles.apply("select", "stroke-width", "4");
     await vi.waitFor(() => expect(fixture.geometryChanged).toHaveBeenCalledOnce());
     expect(fixture.history.commandCount).toBe(1);
+    const committedElement = fixture.store.get(stroke.id)!.element;
     for (const replay of [undefined, "undoAsync", "redoAsync"] as const) {
       if (replay !== undefined) await expect(fixture.history[replay]()).resolves.toBe(true);
       const current = fixture.store.get(stroke.id)!.element;
+      expect(current).toBe(replay === "undoAsync" ? points : committedElement);
       expect(current.kind === "stroke" && current.points).toBe(ownedSamples);
       expect(current.style).toMatchObject({ width: replay === "undoAsync" ? 8 : 4 });
     }

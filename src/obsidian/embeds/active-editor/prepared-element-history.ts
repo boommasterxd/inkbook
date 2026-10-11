@@ -7,10 +7,11 @@ import type { TransformSliceScheduler } from "../../../editor/selection/transfor
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import type { ElementReplacementHistoryData } from "../../../domain/store/public";
+import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../domain/commands/history";
 
-import type { ActiveEditorHistory } from "./history";
+import { captureElementReplacementHistory, type ActiveEditorHistory } from "./history";
 import { createSelectionStyleReplacementSteps } from "./controller-styles";
-import { applyDocumentHistoryMutation, collectDocumentBandOrder } from "./document-history";
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 export interface PreparedElementHistoryOptions {
@@ -30,6 +31,11 @@ export interface PreparedElementHistoryOptions {
 type SelectionFrameEffectFactory = (
   replacements: readonly InkElementV1[],
 ) => SelectionFrameHistoryEffect | undefined;
+
+interface ReplacementCommitConditions {
+  readonly isCancelled?: () => boolean;
+  readonly maxHistoryPayloadBytes?: number;
+}
 
 export interface PreparedStyleChange {
   readonly selection: ReadonlySet<string>;
@@ -113,7 +119,17 @@ export class PreparedElementHistory {
         styleScheduler,
       );
       if (styleScheduler.isCancelled()) return false;
-      return this.#commitStyleApplied(plan.elements, styleScheduler, effect);
+      return this.#commitApplied(
+        step.value.previous,
+        plan.elements,
+        generation,
+        undefined,
+        effect,
+        {
+          isCancelled: styleScheduler.isCancelled,
+          maxHistoryPayloadBytes: DEFAULT_HISTORY_BYTE_LIMIT,
+        },
+      );
     }, change.onCompleted);
     return true;
   }
@@ -124,41 +140,6 @@ export class PreparedElementHistory {
       if (record === undefined) throw new RangeError("Style selection is stale.");
       yield record.element as InkElementV1;
     }
-  }
-
-  async #commitStyleApplied(
-    replacements: readonly InkElementV1[],
-    scheduler: TransformSliceScheduler,
-    effect?: SelectionFrameHistoryEffect,
-  ): Promise<boolean> {
-    const bands = await collectDocumentBandOrder(this.#model.store, scheduler);
-    if (bands === "cancelled") return false;
-    const prepared = await this.#model.prepareElementMutation(
-      { bands, elements: replacements },
-      {
-        isCancelled: () => scheduler.isCancelled?.() ?? false,
-      },
-    );
-    if (prepared.status !== "prepared" || prepared.token === null || scheduler.isCancelled?.())
-      return false;
-    const applied = this.#model.commitPreparedElementMutation(prepared.token);
-    if (applied === null) return false;
-    const replay = (mutation: typeof applied.forward) =>
-      applyDocumentHistoryMutation(
-        this.#model,
-        mutation,
-        applied,
-        () => this.#disposed || !this.#isAttached(),
-      );
-    this.#history.registerApplied(
-      {
-        payloadBytes: applied.payloadBytes,
-        redo: () => replay(applied.forward),
-        undo: () => replay(applied.reverse),
-      },
-      effect,
-    );
-    return true;
   }
 
   public commitHandle(
@@ -214,31 +195,37 @@ export class PreparedElementHistory {
     previous: readonly InkElementV1[],
     replacements: readonly InkElementV1[],
     generation: number,
-    previewCommit: ReturnType<PreparedElementHistoryOptions["motion"]["beginPreviewCommit"]>,
+    previewCommit:
+      ReturnType<PreparedElementHistoryOptions["motion"]["beginPreviewCommit"]> | undefined,
     effect?: SelectionFrameHistoryEffect,
+    conditions?: ReplacementCommitConditions,
   ): Promise<boolean> {
+    const captured = captureElementReplacementHistory(previous, replacements);
     const committed = await this.#replace(
       replacements,
       generation,
-      previous.map(({ id }) => id),
+      previewCommit === undefined ? undefined : previous.map(({ id }) => id),
       previewCommit,
+      captured.capture,
+      conditions,
     );
     if (!committed) return false;
-    this.#registerApplied(previous, replacements, effect);
+    this.#registerApplied(captured, effect);
     return true;
   }
 
   #registerApplied(
-    previous: readonly InkElementV1[],
-    replacements: readonly InkElementV1[],
+    applied: ElementReplacementHistoryData,
     effect?: SelectionFrameHistoryEffect,
   ): void {
-    this.#history.registerAppliedReplacement(
-      previous,
-      replacements,
+    if (applied.previous.length === 0 || applied.previous.length !== applied.replacements.length)
+      return;
+    this.#history.registerApplied(
       {
-        redo: () => this.#replace(replacements, this.#generation),
-        undo: () => this.#replace(previous, this.#generation),
+        payloadBytes: applied.payloadBytes,
+        redo: () =>
+          this.#replace(applied.replacements as readonly InkElementV1[], this.#generation),
+        undo: () => this.#replace(applied.previous as readonly InkElementV1[], this.#generation),
       },
       effect,
     );
@@ -249,14 +236,26 @@ export class PreparedElementHistory {
     generation: number,
     suppressMotionIds?: readonly string[],
     previewCommit?: ReturnType<PreparedElementHistoryOptions["motion"]["beginPreviewCommit"]>,
+    capture?: (history: ElementReplacementHistoryData) => void,
+    conditions?: ReplacementCommitConditions,
   ): Promise<boolean> {
     const basisRevision = this.#model.revision;
     const cancellation = {
-      isCancelled: () => this.#isCancelled(generation) || this.#model.revision !== basisRevision,
+      isCancelled: () =>
+        this.#isCancelled(generation) ||
+        this.#model.revision !== basisRevision ||
+        (conditions?.isCancelled?.() ?? false),
     };
     const preparation = await this.#model.prepareElementReplacement(elements, cancellation);
     if (preparation.status !== "prepared" || preparation.token === null) return false;
     if (cancellation.isCancelled()) return false;
+    if (
+      conditions?.maxHistoryPayloadBytes !== undefined &&
+      preparation.historyPayloadBytes !== undefined &&
+      preparation.historyPayloadBytes > conditions.maxHistoryPayloadBytes
+    ) {
+      throw new RangeError("Element mutation exceeds the retained history payload limit.");
+    }
     if (
       previewCommit !== undefined &&
       suppressMotionIds !== undefined &&
@@ -264,7 +263,7 @@ export class PreparedElementHistory {
     ) {
       return false;
     }
-    return this.#model.commitPreparedElementReplacement(preparation.token) === "committed";
+    return this.#model.commitPreparedElementReplacement(preparation.token, capture) === "committed";
   }
 
   #run(

@@ -18,10 +18,13 @@ import {
 } from "./record-factory";
 import { requireElementRecord } from "./record-access";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import { restoreOwnedRecordSteps } from "./owned-mutation-history";
+import type { ReplacementHistory } from "./replacement-history";
 import { cancelled, ReplacementCheckpoint, yieldWhenRequested } from "./replacement-scheduler";
 import {
   prepareReplacementCandidatesTimeSliced,
   type ReplacementCandidate,
+  type ReplacementPlannerPorts,
 } from "./replacement-planner";
 import type {
   ElementReplacementPlan,
@@ -34,12 +37,6 @@ import type {
   ImmutableInkElement,
   StoreSliceScheduler,
 } from "./types";
-
-interface ReplacementPorts {
-  readonly getRecord: (id: string) => ElementRecord;
-  readonly getReferences: (targetId: string) => readonly EndpointReference[] | undefined;
-  readonly onReverseVisit: () => void;
-}
 
 interface PreparedCandidateRecords extends PreparedReplacementRecords {
   readonly connectionCandidates: ReplacementCandidate[];
@@ -58,12 +55,13 @@ export async function planElementReplacement(
   if (canonical === "cancelled" || canonical === null || !("status" in canonical)) return canonical;
   const fallbackYields = canonical.yields;
   let reverseVisits = 0;
-  const ports: ReplacementPorts = {
+  const ports: ReplacementPlannerPorts = {
     getRecord: (id) => requireElementRecord(source.records, id),
     getReferences: (id) => source.reverseConnections.get(id),
     onReverseVisit: () => {
       reverseVisits += 1;
     },
+    getRetainedRecord: (element) => source.history.retainedRecord(element),
   };
   const preparedCandidates = await prepareReplacementCandidatesTimeSliced(
     replacements,
@@ -81,6 +79,7 @@ export async function planElementReplacement(
     source.paintVersion,
     source.capacity,
     scheduler,
+    source.history,
   );
   if (preparedRecords === "cancelled") return preparedRecords;
   const {
@@ -90,6 +89,7 @@ export async function planElementReplacement(
     connectionCandidates,
     connectionRecords,
     geometryVersion: nextGeometryVersion,
+    history,
     paintVersion: nextPaintVersion,
     records,
     spatialReplacements,
@@ -131,6 +131,7 @@ export async function planElementReplacement(
       paintVersion: nextPaintVersion,
     }),
     geometryVersion: nextGeometryVersion,
+    history,
     indexPatch,
     indexVisitCount: spatialReplacements.length + reverseVisits,
     paintVersion: nextPaintVersion,
@@ -188,6 +189,7 @@ async function prepareCandidateRecords(
   currentPaintVersion: number,
   capacity: DocumentCapacity,
   scheduler: StoreSliceScheduler,
+  history: ReplacementHistory,
 ): Promise<PreparedCandidateRecords | "cancelled"> {
   const records: ElementRecord[] = [];
   const capacityPreviousRecords: ElementRecord[] = [];
@@ -198,6 +200,7 @@ async function prepareCandidateRecords(
   const changes: PreparedReplacementRecords["changes"] = [];
   let geometryVersion = currentGeometryVersion;
   let paintVersion = currentPaintVersion;
+  const historyBuilder = history.createBuilder();
   let recordYields = 0;
   const trackedScheduler: StoreSliceScheduler = {
     ...scheduler,
@@ -224,6 +227,7 @@ async function prepareCandidateRecords(
     );
     if (record === "cancelled") return record;
     records.push(record);
+    historyBuilder.append(candidate.current, record);
     if (candidate.domains.includes("geometry")) {
       capacity.validateReplacementBounds(record);
       spatialReplacements.push({ bounds: record.bounds, id: record.element.id });
@@ -254,6 +258,7 @@ async function prepareCandidateRecords(
     connectionCandidates,
     connectionRecords,
     geometryVersion,
+    history: historyBuilder.finish(),
     paintVersion,
     records,
     spatialReplacements,
@@ -295,6 +300,13 @@ async function createCandidateRecord(
   const nextPaintVersion = candidate.domains.includes("paint")
     ? paintVersion
     : candidate.current.paintVersion;
+  const restored = await work.run(
+    restoreOwnedRecordSteps(candidate.element, candidate.current, candidate.retainedRecord, {
+      geometryVersion: nextGeometryVersion,
+      paintVersion: nextPaintVersion,
+    }),
+  );
+  if (restored !== undefined) return restored;
   const translation = canonicalStrokeTranslation(candidate.current.element, candidate.element);
   return translation === null
     ? work.run(

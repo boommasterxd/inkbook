@@ -5,6 +5,7 @@ import { elementMutationPayloadBytes } from "../../../../src/domain/store/mutati
 import { MutationPreparationScheduler } from "../../../../src/domain/store/mutation-preparation-scheduler";
 import {
   captureOwnedMutationHistory,
+  createRetainedRecordPayload,
   prepareOwnedMutationHistory,
   restoreOwnedRecord,
   restoreOwnedRecordSteps,
@@ -29,6 +30,19 @@ function drain<T>(steps: Generator<void, T>): T {
 }
 
 describe("owned mutation history retention", () => {
+  it("counts nullable references and actual record identity with the shared accumulator", () => {
+    const retained = record(highlighter());
+    const payload = createRetainedRecordPayload();
+    expect(payload.bytes).toBe(64);
+    payload.add(null);
+    expect(payload.bytes).toBe(64);
+    payload.add(retained);
+    payload.add(retained);
+    expect(payload.bytes).toBe(64 + 160 + 128 + elementMutationPayloadBytes(retained.element));
+    payload.add({ ...retained, paintVersion: 7 });
+    expect(payload.bytes).toBe(64 + 240 + 256 + 2 * elementMutationPayloadBytes(retained.element));
+  });
+
   it("accounts for private records and leaves order-only records unretained", () => {
     const element = highlighter();
     const store = new ElementStore([element]);

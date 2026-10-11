@@ -18,6 +18,7 @@ import type { SessionIdentity } from "../../editor/session/session-port";
 import type { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import type {
   ElementStore,
+  ElementReplacementHistoryData,
   PreparedElementReplacement,
   PreparedElementReplacementResult,
   StoreDelta,
@@ -276,13 +277,17 @@ export function prepareVaultElementReplacement(options: {
 
 export function commitVaultElementReplacement(options: {
   readonly active: boolean;
+  readonly capture?: (history: ElementReplacementHistoryData) => void;
   readonly recordDelta: (delta: StoreDelta) => void;
   readonly store: ElementStore | undefined;
   readonly token: PreparedElementReplacement;
 }): "cancelled" | "committed" | "noop" {
   if (options.store === undefined || !options.active) return "cancelled";
   const result = options.store.commitPreparedElementReplacement(options.token);
-  if (result.delta !== null) options.recordDelta(result.delta);
+  if (result.delta !== null) {
+    options.recordDelta(result.delta);
+    if (result.history !== null) options.capture?.(result.history);
+  }
   return result.status;
 }
 

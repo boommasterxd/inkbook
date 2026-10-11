@@ -14,7 +14,7 @@ export function activeEditorStoreHistory(store: ElementStore): ActiveEditorHisto
     commitElements: (elements) => void store.create(elements),
     commitPage: vi.fn(),
     removeElements: (ids) => void store.remove(ids),
-    replaceElements: (elements) => void store.replaceMany(elements),
+    replaceElements: (elements, capture) => void store.replaceMany(elements, capture),
   });
 }
 

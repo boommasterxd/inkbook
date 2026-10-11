@@ -3,6 +3,7 @@ import type { RenderBand } from "../../../domain/commands/render-bands";
 import type { InkElementV1, PageV1 } from "../../../domain/schema/public";
 import type { DocumentMutationAvailability } from "../document-model-port";
 import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
+import type { ElementReplacementHistoryData } from "../../../domain/store/public";
 
 export type ActiveEditorBandOrder = Readonly<Record<RenderBand, readonly string[]>>;
 
@@ -13,7 +14,10 @@ export interface ActiveEditorHistoryModel {
   commitElements(elements: readonly InkElementV1[]): void;
   commitPage(page: PageV1): void;
   removeElements(ids: readonly string[]): void;
-  replaceElements(elements: readonly InkElementV1[]): void;
+  replaceElements(
+    elements: readonly InkElementV1[],
+    capture?: (history: ElementReplacementHistoryData) => void,
+  ): void;
 }
 
 interface SynchronousEditorMutation {
@@ -83,16 +87,26 @@ export class ActiveEditorHistory {
     effect?: SelectionFrameHistoryEffect,
   ): boolean {
     if (previous.length === 0 || previous.length !== replacements.length) return false;
+    const captured = captureElementReplacementHistory(previous, replacements);
+    let initialCommit = true;
     return this.#execute({
       apply: () => {
-        this.#model.replaceElements(replacements);
+        if (initialCommit) {
+          this.#model.replaceElements(
+            captured.replacements as readonly InkElementV1[],
+            captured.capture,
+          );
+          initialCommit = false;
+        } else {
+          this.#model.replaceElements(captured.replacements as readonly InkElementV1[]);
+        }
         effect?.apply();
       },
-      payloadBytes:
-        estimateElementHistoryPayloadBytes(previous) +
-        estimateElementHistoryPayloadBytes(replacements),
+      get payloadBytes() {
+        return captured.payloadBytes;
+      },
       revert: () => {
-        this.#model.replaceElements(previous);
+        this.#model.replaceElements(captured.previous as readonly InkElementV1[]);
         effect?.revert();
       },
     });
@@ -214,11 +228,44 @@ export class ActiveEditorHistory {
   }
 }
 
-function estimateElementHistoryPayloadBytes(elements: readonly InkElementV1[]): number {
+export function captureElementReplacementHistory(
+  previous: readonly InkElementV1[],
+  replacements: readonly InkElementV1[],
+) {
+  let retainedPrevious: ElementReplacementHistoryData["previous"] = previous;
+  let retainedReplacements: ElementReplacementHistoryData["replacements"] = replacements;
+  let capturedPayload: number | undefined;
+  return {
+    capture: (history: ElementReplacementHistoryData) => {
+      retainedPrevious = history.previous;
+      retainedReplacements = history.replacements;
+      capturedPayload = history.payloadBytes;
+    },
+    get previous() {
+      return retainedPrevious;
+    },
+    get replacements() {
+      return retainedReplacements;
+    },
+    get payloadBytes() {
+      return (
+        capturedPayload ??
+        estimateElementHistoryPayloadBytes(retainedPrevious) +
+          estimateElementHistoryPayloadBytes(retainedReplacements)
+      );
+    },
+  };
+}
+
+function estimateElementHistoryPayloadBytes(
+  elements: ElementReplacementHistoryData["previous"],
+): number {
   return elements.reduce((total, element) => total + estimateElementPayloadBytes(element), 0);
 }
 
-function estimateElementPayloadBytes(element: InkElementV1): number {
+function estimateElementPayloadBytes(
+  element: ElementReplacementHistoryData["previous"][number],
+): number {
   const structuralBytes = 256 + element.id.length * 2;
   switch (element.kind) {
     case "stroke":
