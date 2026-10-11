@@ -415,7 +415,6 @@ export class SceneContentRenderer {
     this.#committedCounts.content = 0;
     this.#committedCounts.highlight = 0;
   }
-
   private writeGeometry(
     id: string,
     deadline: number,
@@ -459,7 +458,8 @@ export class SceneContentRenderer {
     parts: readonly SvgPathPart[],
     publication?: ScenePublicationBudget,
   ): void {
-    if (!this.#pathCache.has(record.id, record.geometryVersion))
+    const geometryChanged = entry.geometryVersion !== record.geometryVersion;
+    if (geometryChanged && !this.#pathCache.has(record.id, record.geometryVersion))
       this.#pathCache.completePreparation(record.element, parts, record.geometryVersion);
     updateMountedGeometry(
       entry,

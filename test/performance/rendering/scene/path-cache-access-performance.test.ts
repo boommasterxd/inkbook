@@ -11,8 +11,62 @@ import { indexedStroke } from "../../../fixtures/editor/stroke";
 import * as pressureOutline from "../../../../src/domain/geometry/pressure-outline";
 import { translatedStroke } from "../../../../src/domain/geometry/stroke-position";
 import { createHistoryContourScene, drainHistoryFrames } from "../../../fixtures/rendering/scene";
+import { fakeNode } from "../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
+
+it("clears previews after cache release without retaining unchanged canonical contours", () => {
+  const fixture = createHistoryContourScene();
+  const { store, renderer, scheduler } = fixture;
+  const ids = renderer.mountedIds("content").slice(0, 10);
+  expect(ids).toHaveLength(10);
+  const records = ids.map((id) => store.get(id)!);
+  const groups = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes.slice(0, ids.length);
+  expect(groups).toHaveLength(ids.length);
+  const canonical = groups.map((group) => ({
+    attributes: [...group.attributes],
+    paths: group.nodes.map((path) => [...path.attributes]),
+  }));
+  renderer.setActiveDocumentMemoryPressure(true);
+  renderer.setActiveDocumentMemoryPressure(false);
+  expect(renderer.instrumentation().pathCacheEntries).toBe(0);
+  const probe = vi.spyOn(ScenePathCache.prototype, "has");
+  const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
+  const alias = vi.spyOn(SceneGeometryAliases.prototype, "retain");
+  const outline = vi.spyOn(pressureOutline, "visitPreparedPressureOutline");
+  const build = vi.spyOn(geometry, "buildElementPathParts");
+  try {
+    renderer.setElementPreviews(
+      records.map((record) => {
+        const element = record.element as InkElementV1;
+        if (element.kind !== "stroke") throw new Error("Expected a stroke fixture.");
+        return translatedStroke(element, { x: 2, y: 3 });
+      }),
+      1,
+    );
+    renderer.flushPointerFeedbackFrame();
+    for (const group of groups) expect(group.attributes.get("transform")).toBe("translate(2 3)");
+    renderer.clearElementPreviews();
+    scheduler.runAll();
+    expect(probe).not.toHaveBeenCalled();
+    expect(complete.mock.calls.length).toBe(0);
+    expect(alias.mock.calls.length).toBe(0);
+    expect(outline).not.toHaveBeenCalled();
+    expect(build).not.toHaveBeenCalled();
+    expect(renderer.instrumentation().pathCacheEntries).toBe(0);
+    ids.forEach((id, index) => expect(store.get(id)).toBe(records[index]));
+    expect(
+      groups.map((group) => ({
+        attributes: [...group.attributes],
+        paths: group.nodes.map((path) => [...path.attributes]),
+      })),
+    ).toEqual(canonical);
+  } finally {
+    fixture.dispose();
+  }
+  expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+  expect(scheduler.pendingCount).toBe(0);
+});
 
 it.each([false, true])(
   "retains edited contours once in a 10,000-stroke store (Store prepared: %s)",
