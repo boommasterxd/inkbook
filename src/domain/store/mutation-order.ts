@@ -54,7 +54,10 @@ async function prepareReplayOrder(
 ): Promise<MutationOrder | "cancelled" | undefined> {
   if (proof.ownedReplay === undefined || proof.ownedRecords === undefined) return undefined;
   const { bandsTrusted, retainedMutation } = proof.ownedReplay;
-  if (bandsTrusted || retainedMutation !== undefined) {
+  if (!bandsTrusted) return undefined;
+  // Private canonical membership is proved by the desired-connection producer.
+  // Public replay retains its complete resulting-record check.
+  if (retainedMutation === undefined) {
     const valid = await validateOwnedReplayMembership(
       source,
       records,
@@ -62,19 +65,15 @@ async function prepareReplayOrder(
       scheduler,
     );
     if (valid === "cancelled") return valid;
-    if (!valid && retainedMutation !== undefined) {
-      throw new RangeError("Retained history resulting membership no longer matches.");
-    }
-    if (valid && bandsTrusted)
-      return restoreOwnedReplayBands(
-        requested.bands,
-        source,
-        sourceRanks,
-        proof.ownedReplay.history,
-        scheduler,
-      );
+    if (!valid) return undefined;
   }
-  return undefined;
+  return restoreOwnedReplayBands(
+    requested.bands,
+    source,
+    sourceRanks,
+    proof.ownedReplay.history,
+    scheduler,
+  );
 }
 
 export async function validateMutationBands(
@@ -165,23 +164,17 @@ export function mutationOrderPreserved(
   return rank !== undefined && order.relativeOrderPreserved[rank.band];
 }
 
-export async function collectMutationAffectedIds(
+export function* mutationAffectedIds(
   records: ReadonlyMap<string, ElementRecord | null>,
   order: MutationOrder,
-  scheduler: MutationPreparationScheduler,
-): Promise<Set<string> | "cancelled"> {
-  const affected = new Set<string>();
-  for (const id of records.keys()) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    affected.add(id);
-  }
+): Generator<string | null> {
+  yield* records.keys();
   if (!order.relativeOrderPreserved.content || !order.relativeOrderPreserved.highlight) {
     for (const [id, rank] of order.ranks) {
-      if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-      if (!order.relativeOrderPreserved[rank.band]) affected.add(id);
+      // Retain a checkpoint slot for duplicates and unaffected ranks as well.
+      yield !order.relativeOrderPreserved[rank.band] && !records.has(id) ? id : null;
     }
   }
-  return affected;
 }
 
 export async function validateOwnedReplayMembership(

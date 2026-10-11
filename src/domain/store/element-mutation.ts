@@ -15,7 +15,7 @@ import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import { buildIdSet, collectDesiredElements } from "./mutation-elements";
 import {
   prepareMutationOrder,
-  collectMutationAffectedIds,
+  mutationAffectedIds,
   mutationOrderPreserved,
   type MutationOrder,
 } from "./mutation-order";
@@ -92,6 +92,7 @@ export async function planElementMutation(
     removeIds,
     scheduler,
     ownedRecords,
+    ownedReplay?.retainedMutation !== undefined,
   );
   if (collected === "cancelled") return collected;
   const { desired, explicit } = collected;
@@ -121,7 +122,10 @@ export async function planElementMutation(
   if (ownedHistory === "cancelled") return ownedHistory;
   const applied = await prepareMutationHistory(
     {
-      requested: historyDirection(requested, bands, explicit, removeIds, trustedRemoval),
+      requested:
+        ownedReplay?.retainedMutation !== undefined
+          ? requested
+          : historyDirection(requested, bands, explicit, removeIds, trustedRemoval),
       source,
       desired,
       removeIds,
@@ -259,12 +263,11 @@ async function buildDelta(
   const changes: Array<StoreDelta["changes"][number]> = [];
   let geometryVersion = source.geometryVersion;
   let paintVersion = source.paintVersion;
-  const affected = await collectMutationAffectedIds(records, order, scheduler);
-  if (affected === "cancelled") return affected;
-  for (const id of affected) {
+  for (const id of mutationAffectedIds(records, order)) {
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    if (id === null) continue;
     const before = source.records.get(id) ?? null;
     const after = records.has(id) ? (records.get(id) ?? null) : before;
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     const pendingDomains = scheduler.run(
       mutationDomains(
         before,
@@ -333,8 +336,6 @@ async function buildDerivedState(
   { capacityPatch: DocumentCapacityPatch; indexPatch: PreparedSpatialMutation } | "cancelled"
 > {
   const work = new MutationPreparationScheduler(scheduler);
-  const previous: ElementRecord[] = [];
-  const next: ElementRecord[] = [];
   const removed: string[] = [];
   const inserted: Array<{ id: string; bounds: ElementRecord["bounds"] }> = [];
   const lookup = (id: string) =>
@@ -342,9 +343,7 @@ async function buildDerivedState(
   for (const change of delta.changes) {
     if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
     if (change.before === change.after) continue;
-    if (change.before !== null) previous.push(change.before);
     if (change.after !== null) {
-      next.push(change.after);
       assertAffectedConnections(change.id, change.after, source, records, lookup);
     }
     if (change.before !== null && (change.after === null || change.domains.includes("geometry"))) {
@@ -354,7 +353,11 @@ async function buildDerivedState(
       inserted.push({ id: change.id, bounds: change.after.bounds });
     }
   }
-  const capacity = await source.capacity.prepareTimeSliced(previous, next, scheduler);
+  const capacity = await source.capacity.prepareTimeSliced(
+    records.size === 0 ? [] : mutationCapacityRecords(delta, "before"),
+    records.size === 0 ? [] : mutationCapacityRecords(delta, "after"),
+    scheduler,
+  );
   if (capacity === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
   const indexPatch = await source.index.prepareMutationTimeSliced(removed, inserted, scheduler);
   if (indexPatch === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
@@ -362,6 +365,17 @@ async function buildDerivedState(
     capacityPatch: capacity.patch,
     indexPatch,
   };
+}
+
+/** Capacity keeps its removal-before-insertion semantics without staging record arrays. */
+function* mutationCapacityRecords(
+  delta: StoreDelta,
+  direction: "before" | "after",
+): Generator<ElementRecord | null> {
+  for (const change of delta.changes) {
+    // Null slots preserve shared-budget admission for absent and order-only records.
+    yield change.before === change.after ? null : change[direction];
+  }
 }
 
 function assertAffectedConnections(

@@ -22,6 +22,7 @@ export async function collectDesiredElements(
   removeIds: ReadonlySet<string>,
   scheduler: MutationPreparationScheduler,
   ownedRecords?: ReadonlyMap<string, ElementRecord>,
+  retainedReplay = false,
 ): Promise<{ desired: Map<string, InkElementV1>; explicit: InkElementV1[] } | "cancelled"> {
   const desired = await collectConnectionDetachments(source, removeIds, scheduler);
   if (desired === "cancelled") return desired;
@@ -41,11 +42,17 @@ export async function collectDesiredElements(
       throw new RangeError(`Mutation cannot remove and set: ${element.id}`);
     if (current !== undefined) assertReplacementIdentity(current.element, element);
     desired.set(element.id, element);
-    explicit.push(element);
+    if (!retainedReplay) explicit.push(element);
   }
   if (
-    (await resolveDesiredConnections(source, desired, removeIds, scheduler, ownedRecords)) ===
-    "cancelled"
+    (await resolveDesiredConnections(
+      source,
+      desired,
+      removeIds,
+      scheduler,
+      ownedRecords,
+      retainedReplay,
+    )) === "cancelled"
   )
     return "cancelled";
   return { desired, explicit };
@@ -57,15 +64,23 @@ async function resolveDesiredConnections(
   removeIds: ReadonlySet<string>,
   scheduler: MutationPreparationScheduler,
   ownedRecords?: ReadonlyMap<string, ElementRecord>,
+  retainedReplay = false,
 ): Promise<void | "cancelled"> {
   const lookup = (id: string) =>
     removeIds.has(id) ? undefined : (desired.get(id) ?? source.records.get(id)?.element);
+  let membershipMatches = desired.size === ownedRecords?.size;
   for (const [id, element] of desired) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (isConnectable(element)) {
       if (ownedRecords?.get(id)?.element === element) assertResolvedConnections(element, lookup);
       else desired.set(id, resolveConnections(element, lookup));
     }
+    if (retainedReplay) membershipMatches &&= element === ownedRecords?.get(id)?.element;
+  }
+  // The private replay producer supplies every retained destination and only
+  // source-only removals. The same connection pass also sees extra detachments.
+  if (retainedReplay && !membershipMatches) {
+    throw new RangeError("Retained history resulting membership no longer matches.");
   }
 }
 
