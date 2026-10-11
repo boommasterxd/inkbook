@@ -19,9 +19,10 @@ function setup() {
   scene.scheduler.runAll();
   scene.renderer.setReducedMotion(false);
   const content = fakeNode(scene.renderer.svg).nodes[1]!.nodes[4]!;
-  const remove = () => {
+  const remove = (historyReplay = false) => {
     store.records.clear();
     scene.renderer.applyDelta({
+      historyReplay,
       affected: records.map(({ id, element }) => ({
         id,
         domains: ["visibility"],
@@ -31,9 +32,10 @@ function setup() {
     });
     scene.renderer.clearElementFade(records.map(({ id }) => id));
   };
-  const restore = () => {
+  const restore = (historyReplay = false) => {
     for (const record of records) store.records.set(record.id, record);
     scene.renderer.applyDelta({
+      historyReplay,
       affected: records.map(({ id, element }) => ({
         id,
         domains: ["visibility"],
@@ -73,6 +75,148 @@ it("removes completed opacity exits while a lower-rank opacity exit is still run
   expect(fixture.scheduler.pendingCount).toBe(0);
   expect(fixture.renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
+
+it("fades actual replay removal and progressive restoration for 400ms without generic motion", () => {
+  const fixture = setup();
+  try {
+    fixture.remove(true);
+    fixture.scheduler.runNext();
+    expect(fixture.renderer.mountedCount).toBe(260);
+    expect(fixture.content.nodes.filter((node) => Boolean(node.style.animation))).toHaveLength(128);
+    expect(fixture.content.nodes[0]!.style.animation).toContain("opacity-exit");
+    expect(fixture.content.nodes[0]!.style.animation).toContain("400ms)");
+    fixture.scheduler.time = 399;
+    fixture.scheduler.runNext();
+    expect(fixture.renderer.mountedCount).toBe(260);
+    fixture.scheduler.runNext();
+    fixture.scheduler.runNext();
+    fixture.scheduler.time = 800;
+    fixture.scheduler.runAll();
+    expect(fixture.renderer.mountedCount).toBe(0);
+    fixture.restore(true);
+    fixture.scheduler.runNext();
+    expect(fixture.content.nodes.length).toBeGreaterThan(0);
+    expect(
+      fixture.content.nodes.every((node) => String(node.style.visibility).includes(", hidden)")),
+    ).toBe(true);
+    fixture.scheduler.runNext();
+    const entering = fixture.content.nodes.filter((node) => Boolean(node.style.animation));
+    expect(entering).toHaveLength(128);
+    expect(
+      entering.every(
+        (node) =>
+          String(node.style.animation).includes("opacity-enter") &&
+          String(node.style.animation).includes("400ms)"),
+      ),
+    ).toBe(true);
+    expect(entering.every((node) => !node.style.transform && !node.style.filter)).toBe(true);
+    fixture.scheduler.runNext();
+    fixture.scheduler.runNext();
+    fixture.scheduler.time = 1_199;
+    fixture.scheduler.runNext();
+    expect(fixture.content.nodes.every((node) => Boolean(node.style.animation))).toBe(true);
+    fixture.scheduler.time = 1_200;
+    fixture.scheduler.runAll();
+    expect(fixture.renderer.mountedIds("content")).toEqual(fixture.records.map(({ id }) => id));
+    expect(
+      fixture.content.nodes.every((node) => !node.style.animation && !node.style.opacity),
+    ).toBe(true);
+    expect(fixture.renderer.instrumentation()).toMatchObject({
+      motionTombstones: 0,
+      motionEntrances: 0,
+    });
+  } finally {
+    fixture.renderer.destroy();
+  }
+  expect(fixture.scheduler.pendingCount).toBe(0);
+});
+
+it("cancels replay restoration before publication and reverses an admitted entrance batch", () => {
+  const fixture = setup();
+  try {
+    fixture.renderer.setReducedMotion(true);
+    fixture.remove(true);
+    fixture.scheduler.runAll();
+    fixture.renderer.setReducedMotion(false);
+    fixture.restore(true);
+    fixture.remove(true);
+    fixture.scheduler.runAll();
+    expect(fixture.renderer.mountedCount).toBe(0);
+    fixture.restore(true);
+    fixture.scheduler.runNext();
+    fixture.scheduler.runNext();
+    expect(fixture.content.nodes.filter((node) => Boolean(node.style.animation))).toHaveLength(128);
+    fixture.remove(true);
+    fixture.scheduler.runNext();
+    fixture.scheduler.runNext();
+    fixture.scheduler.runNext();
+    expect(
+      fixture.content.nodes.some((node) => String(node.style.animation).includes("opacity-enter")),
+    ).toBe(false);
+    expect(fixture.content.nodes.every((node) => node.style.visibility !== "hidden")).toBe(true);
+    fixture.scheduler.time += 400;
+    fixture.scheduler.runAll();
+    expect(fixture.renderer.mountedCount).toBe(0);
+  } finally {
+    fixture.renderer.destroy();
+  }
+});
+
+it.each(["pointer", "reduced"] as const)(
+  "settles replay entrance and indexed exits on %s interruption without changing eraser feedback",
+  (kind) => {
+    const fixture = setup();
+    const interrupt = () =>
+      kind === "pointer"
+        ? fixture.renderer.interruptMotionForPointerDown()
+        : fixture.renderer.setReducedMotion(true);
+    try {
+      fixture.remove(true);
+      fixture.scheduler.runNext();
+      interrupt();
+      fixture.scheduler.runAll();
+      expect(fixture.renderer.mountedCount).toBe(0);
+      startReplayEntrance(fixture);
+      interrupt();
+      fixture.scheduler.runAll();
+      expect(fixture.renderer.mountedCount).toBe(260);
+      expect(
+        fixture.content.nodes.every((node) => !node.style.animation && !node.style.visibility),
+      ).toBe(true);
+      expect(
+        fakeNode(fixture.renderer.svg).style.getPropertyValue("--inkbook-history-duration-1"),
+      ).toBe("");
+      fixture.renderer.setReducedMotion(false);
+      fixture.renderer.setElementFade([fixture.records[0]!.id], 400);
+      interrupt();
+      expect(fixture.content.nodes[0]!.style.animation).toContain("opacity-exit 400ms");
+      fixture.renderer.clearElementFade([fixture.records[0]!.id]);
+      fixture.remove(true);
+      fixture.renderer.setReducedMotion(true);
+      fixture.scheduler.runAll();
+      expect(fixture.renderer.mountedCount).toBe(0);
+      startReplayEntrance(fixture);
+      expect(
+        fixture.content.nodes.some((node) => String(node.style.animation).includes("400ms)")),
+      ).toBe(true);
+      fixture.scheduler.runNext();
+      fixture.scheduler.runNext();
+      fixture.scheduler.time += 400;
+      fixture.scheduler.runAll();
+      expect(fixture.content.nodes.every((node) => !node.style.animation)).toBe(true);
+    } finally {
+      fixture.renderer.destroy();
+    }
+    expect(fixture.scheduler.pendingCount).toBe(0);
+  },
+);
+
+function startReplayEntrance(fixture: ReturnType<typeof setup>): void {
+  fixture.renderer.setReducedMotion(false);
+  fixture.restore(true);
+  fixture.scheduler.runNext();
+  fixture.scheduler.runNext();
+}
 
 it("cancels queued, running and completed opacity exits on Undo, then cleans a subsequent Redo", () => {
   const fixture = setup();

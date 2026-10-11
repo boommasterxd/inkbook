@@ -32,6 +32,7 @@ describe("motion tokens", () => {
       toolActiveState: 120,
       selectionHandlesEnterExit: 120,
       eraserPendingRemoval: 400,
+      historyMembership: 400,
       committedEntrance: 120,
       commandRemovalExit: 120,
       styleChange: 120,

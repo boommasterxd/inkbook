@@ -103,6 +103,11 @@ export class SceneVisibilityReconciler {
   public updateExitReadiness(id: string, finish: number): void {
     this.#pending?.exitReadiness?.update(id, finish);
   }
+  public invalidateExitReadiness(): void {
+    if (this.#pending === undefined) return;
+    this.#pending.exitReadiness?.release();
+    delete this.#pending.exitReadiness;
+  }
   public setPriority(priority: SceneVisibilityPriority): void {
     this.#priority = priority;
     this.#pending?.delta?.priority?.retarget([], [], priority);

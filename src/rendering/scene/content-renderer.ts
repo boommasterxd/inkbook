@@ -16,6 +16,7 @@ import {
 import type { ScenePathCache } from "./path-cache";
 import type { ScenePublicationBudget } from "./mount-slice";
 import { SceneElementFades, type FadeSlice } from "./scene-element-fades";
+import { setHistoryFadeGate, type ElementFadeDirection } from "./element-fade-style";
 import { SceneSelectionTraces } from "./selection-traces";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
@@ -41,8 +42,10 @@ export class SceneContentRenderer {
   #committedPreviewIds: string[] = [];
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #mounted = new Map<string, MountedSceneElement>();
-  readonly #fades = new SceneElementFades(this.#mounted, (id, finish) =>
-    this.#reconciler.updateExitReadiness(id, finish),
+  readonly #fades = new SceneElementFades(
+    this.#mounted,
+    (id, finish) => this.#reconciler.updateExitReadiness(id, finish),
+    (generation, interrupted) => setHistoryFadeGate(this.#dom.svg, generation, interrupted),
   );
   #newlyMountedIds: readonly string[] = EMPTY_IDS;
   readonly #orderDirty: Record<RenderBand, Set<string>> = {
@@ -82,6 +85,8 @@ export class SceneContentRenderer {
       isExitReady: (id, now) => this.#fades.isExitReady(id, now),
       exitReadyAt: (id) => this.#fades.readyAt(id),
       mounted: this.#mounted,
+      onMount: (entry) => this.#fades.bindMounted(entry),
+      onUnmount: (id) => this.#fades.releaseMounted(id),
       orderDirty: this.#orderDirty,
       pathCache,
       store,
@@ -106,6 +111,7 @@ export class SceneContentRenderer {
       this.#selectionTraces.memoryUsage() +
       this.#committedGeometry.memoryUsage() +
       this.#reconciler.memoryUsage() +
+      this.#fades.memoryUsage() +
       (this.#deferredPreviews.size + this.#committedPreviewIds.length) * 8
     );
   }
@@ -131,11 +137,9 @@ export class SceneContentRenderer {
   public markPaint(id: string): void {
     this.#paintDirty.add(id);
   }
-
   public markOrder(id: string): void {
     this.markOrders([id]);
   }
-
   public markOrders(ids: readonly string[]): void {
     for (const id of ids) {
       markSceneOrderDirty(id, this.#store, this.#orderDirty, this.#detachedCache);
@@ -188,17 +192,14 @@ export class SceneContentRenderer {
       publication,
     );
   }
-
   public get hasPendingExitCleanup(): boolean {
     return this.#reconciler.hasPendingCleanup;
   }
-
   public get hasMountedWork(): boolean {
     return (
       this.#geometryDirty.size > 0 || this.#paintDirty.size > 0 || this.#selectionDirty.size > 0
     );
   }
-
   public get hasVisibilityWork(): boolean {
     return this.#reconciler.hasPendingWork;
   }
@@ -208,33 +209,26 @@ export class SceneContentRenderer {
   public get waitingForPaths(): boolean {
     return this.#reconciler.waitingForPaths && !this.hasMountedWork;
   }
-
   public setVisibilityPriority(priority: SceneVisibilityPriority): void {
     this.#reconciler.setPriority(priority);
   }
-
   public hasUnprotectedDeferredExit(
     ...args: Parameters<SceneVisibilityReconciler["hasUnprotectedDeferredExit"]>
   ): boolean {
     return this.#reconciler.hasUnprotectedDeferredExit(...args);
   }
-
   public get hasPendingWork(): boolean {
     return this.hasMountedWork || this.hasVisibilityWork;
   }
-
   public get needsVisibilityRestart(): boolean {
     return this.#reconciler.needsRestart;
   }
-
   public replaceVisibility(...args: Parameters<SceneVisibilityReconciler["replace"]>): void {
     this.#reconciler.replace(...args);
   }
-
   public cancelPendingVisibility(): void {
     this.#reconciler.cancel();
   }
-
   public reconcileVisibility(
     deadline: number,
     now: () => number,
@@ -265,7 +259,6 @@ export class SceneContentRenderer {
     );
     return result.pending || this.#selectionDirty.size > 0;
   }
-
   public promoteVisible(id: string): boolean {
     return this.#reconciler.promote(id);
   }
@@ -372,15 +365,25 @@ export class SceneContentRenderer {
   ): void {
     this.#fades.set(ids, durationMs, slice);
   }
-
   public prepareElementRemoval(id: string): void {
-    if (this.#mounted.get(id)?.fadeActive !== true) this.#fades.set([id], 0);
+    if (this.#mounted.get(id)?.fadeActive !== true && this.#fades.readyAt(id) === 0)
+      this.#fades.set([id], 0);
   }
-
+  public setMembershipFade(id: string, direction: ElementFadeDirection, durationMs: number): void {
+    const entry = this.#mounted.get(id);
+    if (entry !== undefined) setMountedElementMotion(entry, null);
+    this.#fades.setMembership(id, direction, durationMs);
+  }
+  public settleMembershipVisibility(contains: (id: string) => boolean): void {
+    this.#fades.settleVisibility(contains);
+  }
+  public interruptMembershipFades(): void {
+    this.#fades.interruptMembership();
+    this.#reconciler.invalidateExitReadiness();
+  }
   public get pendingElementFades(): boolean {
     return this.#fades.pending;
   }
-
   public flushElementFades(deadline: number, now: () => number): boolean {
     return this.#fades.flush(deadline, now);
   }

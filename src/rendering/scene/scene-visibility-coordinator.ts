@@ -283,6 +283,7 @@ export class SceneVisibilityCoordinator {
       return;
     }
     this.#preloadMarginDirty = false;
+    this.#content.settleMembershipVisibility((id) => this.#visibility.contains(id));
     if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) {
       if (this.#content.hasPendingWork) this.prepareNavigation();
       return;

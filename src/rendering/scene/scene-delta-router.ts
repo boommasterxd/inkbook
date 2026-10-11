@@ -22,10 +22,7 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
   let onlyNewOrder = true;
   for (const affected of delta.affected) {
     const localMembership = completeMembershipChange(affected, ports.store);
-    if (affected.before === null && affected.after != null) {
-      ports.content.setElementFade([affected.id], null);
-    }
-    if (affected.after === null) ports.content.prepareElementRemoval(affected.id);
+    prepareMembershipFade(affected, delta.historyReplay, ports.content);
     let geometryDirty = false;
     let visibilityDirty = false;
     for (const domain of affected.domains) {
@@ -56,6 +53,16 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
     invalidateVisibility(visibilityChanges, ports);
   }
   invalidateDetachedElements(delta, ports);
+}
+
+function prepareMembershipFade(
+  affected: SceneDeltaEntry,
+  historyReplay: boolean | undefined,
+  content: SceneContentRenderer,
+): void {
+  if (affected.before === null && affected.after != null && historyReplay !== true)
+    content.setElementFade([affected.id], null);
+  if (affected.after === null) content.prepareElementRemoval(affected.id);
 }
 
 function invalidateDetachedElements(delta: SceneStoreDelta, ports: SceneDeltaRoutingPorts): void {

@@ -82,6 +82,8 @@ Each such gesture is exactly one undo step.
 
 The Undo and Redo toolbar buttons operate directly on the canvas history. Both remain visible in stable toolbar positions and are disabled when the corresponding action is unavailable.
 
+Membership replay uses the [shared history fade](quality-and-testing.md#animation-contract): an action that removes elements fades them out, and an action that restores elements fades them in. The direction follows the resulting membership, so Redo of erasing fades out while Undo of erasing fades in. The same rule applies to toolbar and keyboard traversal.
+
 Within the unlocked embed, `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` use an additional unified history maintained separately for each Obsidian pane. This history can chronologically combine canvas actions with changes to the surrounding Markdown.
 
 Automatic changes to the handwriting height do not create undo steps.

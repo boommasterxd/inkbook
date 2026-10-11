@@ -23,6 +23,8 @@ export interface PendingMutationRun {
 }
 
 interface PublicationOptions {
+  readonly onMount?: (entry: MountedSceneElement) => void;
+  readonly onUnmount?: (id: string) => void;
   readonly detachedCache?: DetachedSceneElementCache | undefined;
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
@@ -81,6 +83,7 @@ function commitPublishedEntry(
   const roots = publicationRootCount(entry);
   const connected = roots === 0;
   options.mounted.set(entry.id, entry);
+  options.onMount?.(entry);
   if (!connected) options.instrumentation.domEntrants += 1;
   options.instrumentation.domRootsPublished += roots;
   return connected;
@@ -318,6 +321,7 @@ function removeVisibilityExitNode(
   finalization.pending.exitIndex += 1;
   finalization.pending.exitReadiness?.consume(entry.id);
   options.mounted.delete(entry.id);
+  options.onUnmount?.(entry.id);
   options.detachedCache?.unregisterMounted(entry.id);
   finalization.onRemoved?.(entry.id);
   if (record === undefined) {

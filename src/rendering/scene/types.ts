@@ -29,6 +29,8 @@ export interface SceneDeltaEntry {
 
 export interface SceneStoreDelta {
   readonly affected: readonly SceneDeltaEntry[];
+  /** Captured at commit time; only membership changes use history fade feedback. */
+  readonly historyReplay?: boolean;
 }
 
 export interface SpatialQuerySink {

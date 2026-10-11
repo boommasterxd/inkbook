@@ -195,6 +195,7 @@ Every user-visible state change animates unless listed as immediate or reduced m
 | Selection frame and handles                                         | 0 ms enter; 120 ms exit | immediately visible independently of pending highlights; opacity-only exit    |
 | Eraser pending-removal feedback                                     |                  400 ms | opacity fade preserving the element's starting opacity                        |
 | Selection Delete pending-removal feedback                           |                  400 ms | opacity fade preserving the element's starting opacity                        |
+| Undo or Redo removing or restoring elements                         |                  400 ms | shared opacity fade; restoration reverses removal without blur or scale       |
 | Committed shape or pasted-element entrance                          |                  120 ms | opacity, scale from 0.96 to 1                                                 |
 | Cut or other command-removal exit                                   |                  120 ms | retained visual tombstone opacity, scale to 0.96                              |
 | Background type or spacing change                                   |                    0 ms | atomic pattern and coverage replacement                                       |
@@ -226,8 +227,8 @@ Implementation rules:
 - Live ink paths, eraser sweeps, and selection transform previews update immediately and are never tweened behind the pointer.
 - Connected endpoints update with their target in the same live frame and are never tweened behind it.
 - Committing a live stroke or gesture transform is immediate because the committed path exactly replaces an already visible preview. It MUST NOT flash, fade, or move during handoff.
-- Undo uses the inverse transition of its command; Redo uses the forward transition. Reinserted or removed geometry uses the 120-millisecond entrance or exit. Move, scale, rotate, bend, and axis edits interpolate their preview transform from current to restored geometry over 120 milliseconds, then materialize the exact target.
-- Model removal is atomic. An exit animation uses a non-interactive visual tombstone that is excluded from hit testing, bounds, history, export, and accessibility state.
+- Undo uses the inverse transition of its command; Redo uses the forward transition. Membership removal uses the shared 400-millisecond opacity fade, and restoration runs its reverse from hidden to the original paint opacity over 400 milliseconds. Direction follows the resulting membership rather than the button: Redo of erasing fades out, while Undo of erasing fades in. These transitions add neither blur nor scale. Move, scale, rotate, bend, and axis edits interpolate their preview transform from current to restored geometry over 120 milliseconds, then materialize the exact target.
+- Model removal is atomic. Removal feedback retains non-interactive scene nodes or a bounded visual tombstone, excluded from hit testing, bounds, history, export, and accessibility state.
 - Any discrete user-visible UI or canvas change not named in the table uses the 120-millisecond opacity fallback. Immediate behavior is permitted only for live input, exact preview-to-commit handoff, focus and accessibility state, reduced motion, or a recovery action whose delay could risk data.
 
 ## Reduced Motion

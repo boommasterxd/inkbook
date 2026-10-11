@@ -37,6 +37,7 @@ type CommitListener = () => void;
 export class ActiveEditorHistory {
   readonly #committedListeners = new Set<CommitListener>();
   #history = new AppliedCommandHistory();
+  #replayDepth = 0;
   readonly #model: ActiveEditorHistoryModel;
 
   public constructor(model: ActiveEditorHistoryModel) {
@@ -57,6 +58,10 @@ export class ActiveEditorHistory {
 
   public get isTraversing(): boolean {
     return this.#history.isTraversing;
+  }
+
+  public get isReplaying(): boolean {
+    return this.#replayDepth > 0;
   }
 
   public get retainedPayloadBytes(): number {
@@ -139,23 +144,21 @@ export class ActiveEditorHistory {
       throw new Error("Applied history cannot be registered during an Undo or Redo operation.");
     }
     effect?.apply();
-    this.#history.registerApplied(
-      effect === undefined
-        ? transition
-        : {
-            payloadBytes: transition.payloadBytes,
-            redo: async () => {
-              const applied = await transition.redo();
-              if (applied) effect.apply();
-              return applied;
-            },
-            undo: async () => {
-              const applied = await transition.undo();
-              if (applied) effect.revert();
-              return applied;
-            },
-          },
-    );
+    this.#history.registerApplied({
+      get payloadBytes() {
+        return transition.payloadBytes;
+      },
+      redo: () =>
+        this.#replayAsync(
+          () => transition.redo(),
+          () => effect?.apply(),
+        ),
+      undo: () =>
+        this.#replayAsync(
+          () => transition.undo(),
+          () => effect?.revert(),
+        ),
+    });
     this.#notifyCommitted();
     return true;
   }
@@ -208,6 +211,27 @@ export class ActiveEditorHistory {
     }
   }
 
+  async #replayAsync(operation: () => Promise<boolean>, effect: () => void): Promise<boolean> {
+    this.#replayDepth += 1;
+    try {
+      const applied = await operation();
+      if (applied) effect();
+      return applied;
+    } finally {
+      this.#replayDepth -= 1;
+    }
+  }
+
+  #replaySync(operation: () => void): boolean {
+    this.#replayDepth += 1;
+    try {
+      operation();
+      return true;
+    } finally {
+      this.#replayDepth -= 1;
+    }
+  }
+
   #execute(mutation: SynchronousEditorMutation): boolean {
     if (this.isTraversing) {
       throw new Error("Editor history cannot commit during an Undo or Redo operation.");
@@ -216,8 +240,8 @@ export class ActiveEditorHistory {
     mutation.apply();
     this.#history.registerAppliedSync({
       payloadBytes: mutation.payloadBytes,
-      redo: () => (mutation.apply(), true),
-      undo: () => (mutation.revert(), true),
+      redo: () => this.#replaySync(mutation.apply),
+      undo: () => this.#replaySync(mutation.revert),
     });
     this.#notifyCommitted();
     return true;

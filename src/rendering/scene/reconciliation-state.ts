@@ -17,6 +17,8 @@ export interface ScenePreparationOptions {
   readonly detachedCache?: DetachedSceneElementCache;
   readonly scheduler?: WorkScheduler;
   readonly takePreparedPath?: (record: SceneElementRecord) => readonly SvgPathPart[] | undefined;
+  readonly onMount?: (entry: MountedSceneElement) => void;
+  readonly onUnmount?: (id: string) => void;
 }
 
 export interface SceneVisibilityReconcilerOptions extends ScenePreparationOptions {

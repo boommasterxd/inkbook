@@ -328,10 +328,12 @@ export class SvgSceneRenderer {
   public interruptMotionForPointerDown(): void {
     this.assertActive();
     this.#motion.interruptForPointerDown();
+    this.#content.interruptMembershipFades();
   }
   public setReducedMotion(reduced: boolean): void {
     this.assertActive();
     this.#motion.setReducedMotion(reduced);
+    if (reduced) this.#content.interruptMembershipFades();
     this.#frames.schedule();
   }
   public flushPointerFeedbackFrame(

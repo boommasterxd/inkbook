@@ -49,4 +49,13 @@ export const SCENE_SURFACE_STYLES = `
 @keyframes inkbook-element-stroke-exit {
   to { stroke-opacity: 0; }
 }
+@keyframes inkbook-element-opacity-enter {
+  to { opacity: 0; }
+}
+@keyframes inkbook-element-fill-enter {
+  to { fill-opacity: 0; }
+}
+@keyframes inkbook-element-stroke-enter {
+  to { stroke-opacity: 0; }
+}
 `;

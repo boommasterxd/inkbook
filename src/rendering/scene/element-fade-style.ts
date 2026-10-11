@@ -8,6 +8,7 @@ interface ElementFadeTargets {
 }
 
 export type ElementFadePresentation = "opacity" | "fill" | "stroke";
+export type ElementFadeDirection = "enter" | "exit";
 
 export function elementFadePresentation(entry: ElementFadeTargets): ElementFadePresentation {
   const element = entry.displayedElement;
@@ -39,15 +40,39 @@ export function setElementFadeNode(
   node: SVGElement,
   durationMs: number | null,
   presentation: ElementFadePresentation,
+  direction: ElementFadeDirection = "exit",
+  generation?: number,
 ): void {
   const animated = durationMs !== null && durationMs > 0;
+  const duration =
+    generation === undefined
+      ? `${String(durationMs)}ms`
+      : `var(--inkbook-history-duration-${String(generation)}, ${String(durationMs)}ms)`;
   node.style.animation = animated
-    ? `inkbook-element-${presentation}-exit ${String(durationMs)}ms ${EASING_TOKENS.erase} forwards`
+    ? `inkbook-element-${presentation}-${direction} ${duration} ${EASING_TOKENS.erase} ${direction === "enter" ? "reverse both" : "forwards"}`
     : "";
   // Start from the existing paint alpha or root opacity; pressure group alpha remains intact.
-  node.style.opacity = durationMs === 0 ? "0" : "";
+  node.style.opacity = durationMs === 0 && direction === "exit" ? "0" : "";
 }
 
 function usesPaintOpacity(presentation: ElementFadePresentation): boolean {
   return presentation === "fill" || presentation === "stroke";
+}
+
+export function setHistoryFadeGate(
+  node: SVGElement,
+  generation: number,
+  interrupted: boolean,
+): void {
+  const duration = `--inkbook-history-duration-${String(generation)}`;
+  const visibility = `--inkbook-history-visibility-${String(generation)}`;
+  if (interrupted) {
+    const interruptedDuration = "0ms";
+    const interruptedVisibility = "visible";
+    node.style.setProperty(duration, interruptedDuration);
+    node.style.setProperty(visibility, interruptedVisibility);
+  } else {
+    node.style.removeProperty(duration);
+    node.style.removeProperty(visibility);
+  }
 }
