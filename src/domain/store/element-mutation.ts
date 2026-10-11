@@ -7,6 +7,7 @@ import {
   removeConnectionReferences,
   assertResolvedConnections,
   isAnchorTarget,
+  isConnectable,
 } from "./connections";
 import { classifyReplacementSteps, elementsEqualSteps, hasConnections } from "./element-comparison";
 import type { DocumentCapacity, DocumentCapacityPatch } from "./document-capacity";
@@ -109,7 +110,13 @@ export async function planElementMutation(
   const delta = await buildDelta(source, sourceRanks, records, order, scheduler);
   if (delta === "cancelled") return delta;
   if (delta === null) return null;
-  const derived = await buildDerivedState(source, records, delta, sourceScheduler);
+  const derived = await buildDerivedState(
+    source,
+    records,
+    delta,
+    sourceScheduler,
+    retainedConnectionProof(ownedReplay, ownedRecords),
+  );
   if (derived === "cancelled") return derived;
   const { capacityPatch, indexPatch } = derived;
   const ownedHistory = await prepareOwnedMutationHistory(
@@ -158,6 +165,13 @@ function historyDirection(
   trustedRemoval: boolean,
 ): ElementMutation {
   return trustedRemoval ? requested : { bands, elements, removeIds: [...removeIds] };
+}
+
+function retainedConnectionProof(
+  replay: OwnedMutationReplay | undefined,
+  records: ReadonlyMap<string, ElementRecord> | undefined,
+): ReadonlyMap<string, ElementRecord> | undefined {
+  return replay?.retainedMutation === undefined ? undefined : records;
 }
 
 async function buildRecords(
@@ -332,6 +346,7 @@ async function buildDerivedState(
   records: ReadonlyMap<string, ElementRecord | null>,
   delta: StoreDelta,
   scheduler: StoreSliceScheduler,
+  ownedRecords?: ReadonlyMap<string, ElementRecord>,
 ): Promise<
   { capacityPatch: DocumentCapacityPatch; indexPatch: PreparedSpatialMutation } | "cancelled"
 > {
@@ -344,7 +359,7 @@ async function buildDerivedState(
     if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
     if (change.before === change.after) continue;
     if (change.after !== null) {
-      assertAffectedConnections(change.id, change.after, source, records, lookup);
+      assertAffectedConnections(change.id, change.after, source, records, lookup, ownedRecords);
     }
     if (change.before !== null && (change.after === null || change.domains.includes("geometry"))) {
       removed.push(change.id);
@@ -384,11 +399,26 @@ function assertAffectedConnections(
   source: MutationSource,
   records: ReadonlyMap<string, ElementRecord | null>,
   lookup: (id: string) => ElementRecord["element"] | undefined,
+  ownedRecords?: ReadonlyMap<string, ElementRecord>,
 ): void {
-  assertResolvedConnections(after.element, lookup);
+  assertUnverifiedConnections(after, lookup, ownedRecords);
   for (const { linearId } of source.reverseConnections.get(id) ?? []) {
     const dependent = records.has(linearId) ? records.get(linearId) : source.records.get(linearId);
-    if (dependent != null) assertResolvedConnections(dependent.element, lookup);
+    if (dependent != null) assertUnverifiedConnections(dependent, lookup, ownedRecords);
+  }
+}
+
+function assertUnverifiedConnections(
+  record: ElementRecord,
+  lookup: (id: string) => ElementRecord["element"] | undefined,
+  ownedRecords: ReadonlyMap<string, ElementRecord> | undefined,
+): void {
+  const element = record.element;
+  if (!isConnectable(element)) return;
+  // Collection already checked this exact immutable destination against the
+  // final membership. Record preparation only wraps it with current versions.
+  if (ownedRecords?.get(element.id)?.element !== element) {
+    assertResolvedConnections(element, lookup);
   }
 }
 

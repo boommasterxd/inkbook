@@ -6,6 +6,7 @@ import * as validation from "../../../src/domain/elements/runtime-replacement-va
 import * as equality from "../../../src/domain/store/element-comparison";
 import * as payload from "../../../src/domain/store/mutation-payload";
 import * as connections from "../../../src/domain/store/connections";
+import * as anchors from "../../../src/domain/geometry/anchors";
 import * as ownedHistory from "../../../src/domain/store/owned-mutation-history";
 import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
 import type { ElementRecord } from "../../../src/domain/store/types";
@@ -67,6 +68,7 @@ it("replays 10,000 privately retained strokes without public staging, point scan
   const retainedLookups = observeRetainedRecordLookups();
   const capacity = vi.spyOn(DocumentCapacity.prototype, "prepareTimeSliced");
   const capacityReferences = vi.spyOn(connections, "connectionReferences");
+  const resolvedConnections = vi.spyOn(connections, "assertResolvedConnections");
   const published = vi.fn();
   store.subscribe(published);
   let interrupted = false;
@@ -99,6 +101,7 @@ it("replays 10,000 privately retained strokes without public staging, point scan
     // Capacity and reverse-map maintenance each inspect every changed record,
     // but no document-sized record arrays cross the capacity boundary.
     expect(capacityReferences.mock.calls.length).toBe(fixture.strokeCount * 6);
+    expect(resolvedConnections).not.toHaveBeenCalled();
     expect(capacity).toHaveBeenCalledTimes(3);
     expect(
       capacity.mock.calls.every(
@@ -125,5 +128,60 @@ it("replays 10,000 privately retained strokes without public staging, point scan
     retainedLookups.restore();
     capacity.mockRestore();
     capacityReferences.mockRestore();
+    resolvedConnections.mockRestore();
+  }
+});
+
+it("validates canonical connected destinations once in a 10,000-stroke document", async () => {
+  const fixture = createStandardRuntimeDomainFixture();
+  const builder = ElementStore.createBuilder(scheduler);
+  await builder.appendOwnedRuntime(fixture.elements);
+  const store = await builder.finalize();
+  if (store === null) throw new Error("Expected hydrated store.");
+  const targetId = fixture.connectedTargetId;
+  const original = store.get(targetId)!;
+  const referenceCount = store.countReverseDependencies([targetId], 513);
+  expect(referenceCount).toBe(512);
+  const removal = await store.prepareElementMutation(
+    {
+      bands: {
+        content: store.materializeBandOrder("content").filter((id) => id !== targetId),
+        highlight: store.materializeBandOrder("highlight"),
+      },
+      removeIds: [targetId],
+    },
+    scheduler,
+  );
+  if (removal.token === null) throw new Error("Expected removal token.");
+  const transition = store.commitPreparedElementMutation(removal.token).transition;
+  if (transition === null) throw new Error("Expected transition.");
+  const resolveAnchor = vi.spyOn(anchors, "resolveShapeAnchor");
+  const validateConnections = vi.spyOn(connections, "assertResolvedConnections");
+  const retainedLookups = observeRetainedRecordLookups();
+  try {
+    for (const direction of ["reverse", "forward", "reverse"] as const) {
+      const prepared = await store.prepareHistoryReplay(
+        transition[direction],
+        scheduler,
+        transition,
+      );
+      if (prepared.token === null) throw new Error("Expected replay token.");
+      expect(store.commitPreparedElementMutation(prepared.token).status).toBe("committed");
+    }
+    // Both restorations resolve every retained endpoint exactly once. Removal
+    // destinations are detached and need no anchor lookup; derived-state work
+    // must not repeat the already completed canonical connection proof.
+    expect(resolveAnchor).toHaveBeenCalledTimes(referenceCount * 2);
+    expect(validateConnections).toHaveBeenCalledTimes((referenceCount / 2) * 3);
+    // Collection, connection/membership checks, restoration and derived-state
+    // proof identity together need at most five retained reads per destination.
+    expect(retainedLookups.count()).toBeLessThanOrEqual((1 + referenceCount / 2) * 5 * 3);
+    expect(store.get(targetId)?.element).toBe(original.element);
+    expect(store.countReverseDependencies([targetId], 513)).toBe(referenceCount);
+    expect(store.size).toBe(fixture.elements.length);
+  } finally {
+    resolveAnchor.mockRestore();
+    validateConnections.mockRestore();
+    retainedLookups.restore();
   }
 });

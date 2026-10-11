@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ElementStore, type AppliedElementMutation } from "../../../../src/domain/store/public";
 import { DocumentCapacity } from "../../../../src/domain/store/document-capacity";
+import * as connections from "../../../../src/domain/store/connections";
 import {
   applyElementMutation,
   uninterruptedMutationScheduler as scheduler,
@@ -93,19 +94,83 @@ describe("private retained history replay", () => {
   it("preserves canonical endpoint detachments and restoration in both directions", async () => {
     const target = rectangle();
     const line = connectedLine(target);
-    const store = new ElementStore([target, line]);
+    const dependent = {
+      ...line,
+      id: "00000000-0000-4000-8000-000000000098",
+      startConnection: {
+        targetId: line.id,
+        anchor: { kind: "linear-endpoint" as const, endpoint: "start" as const },
+      },
+    };
+    const store = new ElementStore([target, line, dependent]);
     const originalLine = store.get(line.id)!;
     const { transition } = await applyElementMutation(store, {
-      bands: { content: [line.id], highlight: [] },
+      bands: { content: [line.id, dependent.id], highlight: [] },
       removeIds: [target.id],
     });
     const detached = store.get(line.id)!;
-    await replay(store, transition, "reverse");
-    expect(store.get(line.id)?.element).toBe(originalLine.element);
-    await replay(store, transition, "forward");
-    expect(store.get(line.id)?.element).toBe(detached.element);
-    expect(store.get(line.id)?.element).toMatchObject({ startConnection: null });
+    const validate = vi.spyOn(connections, "assertResolvedConnections");
+    try {
+      await replay(store, transition, "reverse");
+      expect(store.get(line.id)?.element).toBe(originalLine.element);
+      expect(validate.mock.calls.map(([element]) => element.id)).toEqual([line.id, dependent.id]);
+      validate.mockClear();
+      await replay(store, transition, "forward");
+      expect(store.get(line.id)?.element).toBe(detached.element);
+      expect(store.get(line.id)?.element).toMatchObject({ startConnection: null });
+      expect(validate.mock.calls.map(([element]) => element.id)).toEqual([line.id, dependent.id]);
+    } finally {
+      validate.mockRestore();
+    }
   });
+});
+
+describe("public connection replay validation", () => {
+  it.each([false, true])(
+    "validates changed public connection copies before publication (foreign store: %s)",
+    async (foreign) => {
+      const target = rectangle();
+      const line = connectedLine(target);
+      const owner = new ElementStore([target, line]);
+      const canonical = owner.get(line.id)?.element;
+      const { transition } = await applyElementMutation(owner, {
+        bands: { content: [target.id], highlight: [] },
+        removeIds: [line.id],
+      });
+      const store = foreign ? new ElementStore([target]) : owner;
+      const copy = transition.reverse.elements![0]!;
+      if (copy.kind !== "line" || copy.startConnection === null) throw new Error("Expected line.");
+      const validate = vi.spyOn(connections, "assertResolvedConnections");
+      try {
+        await applyElementMutation(store, transition.reverse, transition);
+        expect(validate).toHaveBeenCalledOnce();
+        if (!foreign) expect(store.get(line.id)?.element).toBe(canonical);
+        await applyElementMutation(store, transition.forward, transition);
+        validate.mockClear();
+        copy.startConnection.anchor = { kind: "box", position: "top-center" };
+        const prepared = await store.prepareElementMutation(
+          transition.reverse,
+          scheduler,
+          transition,
+        );
+        if (prepared.token === null) throw new Error("Expected public replay token.");
+        expect(validate).toHaveBeenCalledOnce();
+        expect(validate.mock.calls[0]?.[0]).not.toBe(canonical);
+        expect(store.commitPreparedElementMutation(prepared.token).status).toBe("committed");
+        expect(store.get(line.id)?.element).toMatchObject({
+          start: { x: target.x + target.width / 2, y: target.y },
+        });
+        await applyElementMutation(store, transition.forward, transition);
+        copy.style.outlineOpacity = NaN;
+        await expect(
+          store.prepareElementMutation(transition.reverse, scheduler, transition),
+        ).rejects.toThrow(RangeError);
+        expect(store.get(line.id)).toBeUndefined();
+      } finally {
+        validate.mockRestore();
+      }
+    },
+  );
 });
 
 describe("retained replay transaction boundaries", () => {
