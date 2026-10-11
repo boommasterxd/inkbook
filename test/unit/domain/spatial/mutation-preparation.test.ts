@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import * as bottomHeap from "../../../../src/domain/spatial/max-bottom-heap";
 
 import {
   MAX_OVERFLOW_ELEMENTS,
@@ -71,6 +72,104 @@ describe("prepared spatial mutations", () => {
   });
 });
 
+describe("shadow heap cancellation", () => {
+  it.each(["cancelled", "stale"])("discards %s preparation during the heap build", async (mode) => {
+    const index = new UniformSpatialIndex<number>();
+    const inserted = Array.from({ length: 1_200 }, (_, id) => ({
+      id,
+      bounds: { ...near, minY: id, maxY: id + 10 },
+    }));
+    index.insertMany(inserted);
+    const heapify = vi.spyOn(bottomHeap, "heapifyBottomAt");
+    let cancelled = false;
+    try {
+      const result = await index.prepareMutationTimeSliced(
+        inserted.map(({ id }) => id),
+        inserted,
+        {
+          isCancelled: () => cancelled,
+          shouldYield: () => heapify.mock.calls.length > 0,
+          yieldControl: async () => {
+            expect(index.size).toBe(1_200);
+            expect(index.getMaximumBottom()).toBe(1_209);
+            if (mode === "cancelled") cancelled = true;
+            else index.insert(1_200, far);
+          },
+        },
+      );
+      expect(result).toBe("cancelled");
+      expect(heapify).toHaveBeenCalledTimes(1);
+      expect(index.size).toBe(mode === "cancelled" ? 1_200 : 1_201);
+      expect(index.getMaximumBottom()).toBe(1_209);
+      expect(query(index, near)).toContain(0);
+    } finally {
+      heapify.mockRestore();
+    }
+  });
+});
+
+describe("sliced spatial capacity and full-removal validation", () => {
+  it("validates full-removal IDs before skipping enumeration and retains insertion order", async () => {
+    const index = new UniformSpatialIndex<number>();
+    const ids = Array.from({ length: 1_200 }, (_, id) => id);
+    index.insertMany(ids.map((id) => ({ id, bounds: near })));
+    const scheduler = { shouldYield: () => false, yieldControl: async () => undefined };
+    await expect(
+      index.prepareMutationTimeSliced([...ids.slice(1), 1], [], scheduler),
+    ).rejects.toThrow("Duplicate");
+    await expect(
+      index.prepareMutationTimeSliced([...ids.slice(1), 1_200], [], scheduler),
+    ).rejects.toThrow("does not contain");
+    expect(query(index, near)).toEqual(ids);
+    const entries = (index as unknown as { entries: Map<number, unknown> }).entries;
+    const scan = vi.spyOn(entries, "values");
+    try {
+      const restored = await index.prepareMutationTimeSliced(
+        ids,
+        [...ids].reverse().map((id) => ({ id, bounds: near })),
+        scheduler,
+      );
+      if (restored === "cancelled") throw new Error("Expected a complete replacement.");
+      expect(scan).toHaveBeenCalledTimes(1);
+      expect(query(index, near)).toEqual(ids);
+      restored.commit();
+      expect(query(index, near)).toEqual([...ids].reverse());
+      expect(index.getMaximumBottom()).toBe(10);
+    } finally {
+      scan.mockRestore();
+    }
+  });
+
+  it("preflights sliced overflow capacity and restores mixed grid and overflow extents", async () => {
+    const index = createOverflowIndex(30);
+    const huge = { ...near, maxX: 1_000_000, maxY: 30 };
+    const scheduler = { shouldYield: () => false, yieldControl: async () => undefined };
+    await expect(
+      index.prepareMutationTimeSliced([], [{ id: -1, bounds: huge }], scheduler),
+    ).rejects.toThrow(RangeError);
+    expect(index.overflowCount).toBe(MAX_OVERFLOW_ELEMENTS);
+    const plan = await index.prepareMutationTimeSliced(
+      [0, 1, 2],
+      [
+        { id: 0, bounds: far },
+        { id: 1, bounds: near },
+      ],
+      scheduler,
+    );
+    if (plan === "cancelled") throw new Error("Expected a mixed shadow.");
+    plan.commit();
+    expect(index.overflowCount).toBe(MAX_OVERFLOW_ELEMENTS - 3);
+    expect(index.membershipCount).toBe(2);
+    expect(index.extentHeapEntryCount).toBe(2);
+    expect(index.getMaximumBottom()).toBe(1_010);
+    const removal = await index.prepareMutationTimeSliced([0], [], scheduler);
+    if (removal === "cancelled") throw new Error("Expected extent removal.");
+    removal.commit();
+    expect(index.getMaximumBottom()).toBe(30);
+    expect(query(index, near)).not.toContain(2);
+  });
+});
+
 describe("time-sliced spatial mutations", () => {
   it("keeps a small edit local and cancels before publishing staged work", async () => {
     const index = new UniformSpatialIndex<string>();
@@ -98,11 +197,7 @@ describe("time-sliced spatial mutations", () => {
   });
 
   it("rejects a stale bulk plan and restores overflow extent after publication", async () => {
-    const index = new UniformSpatialIndex<number>();
-    const huge = { ...near, maxX: 1_000_000 };
-    index.insertMany(
-      Array.from({ length: MAX_OVERFLOW_ELEMENTS }, (_, id) => ({ id, bounds: huge })),
-    );
+    const index = createOverflowIndex();
     const scheduler = { shouldYield: () => false, yieldControl: async () => undefined };
     const stale = await index.prepareMutationTimeSliced([0, 1, 2], [], scheduler);
     if (stale === "cancelled") throw new Error("Expected a bulk plan.");
@@ -160,6 +255,13 @@ describe("time-sliced spatial mutations", () => {
     }
   });
 });
+
+function createOverflowIndex(maxY = near.maxY): UniformSpatialIndex<number> {
+  const index = new UniformSpatialIndex<number>();
+  const bounds = { ...near, maxX: 1_000_000, maxY };
+  index.insertMany(Array.from({ length: MAX_OVERFLOW_ELEMENTS }, (_, id) => ({ id, bounds })));
+  return index;
+}
 
 function query<Id>(index: UniformSpatialIndex<Id>, bounds: typeof near): Id[] {
   const scratch = new SpatialQueryScratch<Id>();
