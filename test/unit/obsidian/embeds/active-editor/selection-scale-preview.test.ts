@@ -76,7 +76,6 @@ describe("selection scale preview", () => {
     };
 
     expect(plan.resolve(preview).elements).toEqual([]);
-    expect(plan.progressiveIds).toEqual([stroke.id, axes.id, directed.id, box.id, plain.id]);
     const materialize = plan.materializer((element) => ({ ...element, rotation: 30 }));
     expect(materialize(stroke.id)).toEqual({ ...stroke, rotation: 30 });
     expect(materialize(box.id)).toEqual({ ...box, rotation: 30 });

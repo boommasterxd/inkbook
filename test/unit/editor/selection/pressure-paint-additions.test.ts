@@ -14,13 +14,11 @@ import * as pressureUnion from "../../../../src/domain/geometry/pressure-union";
 import { simplifyStrokeCenters } from "../../../../src/domain/geometry/stroke-simplification";
 import { pressurePaintAdditionSteps } from "../../../../src/editor/selection/pressure-paint-additions";
 import { elementContainsPoint } from "../../../../src/editor/selection/hit-test";
-import {
-  createRectangleSelectionArea,
-  elementMatchesSelectionAreaSteps,
-} from "../../../../src/editor/selection/selection-area";
+import { elementMatchesSelectionAreaSteps } from "../../../../src/editor/selection/selection-area";
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
 import { strokeSvgContainsPoint } from "../../../fixtures/domain/svg-path-fill";
 import { stroke } from "../../domain/schema/fixtures";
+import { rectangleSelectionAround } from "../../../fixtures/editor/selection-query";
 
 function fixture() {
   const target = {
@@ -130,10 +128,7 @@ describe("shared painted pressure windows", () => {
     const prepare = vi.spyOn(pressureUnion, "iteratePressureUnion");
     try {
       expect(elementContainsPoint(target, point, 0, prepared)).toBe(true);
-      const area = createRectangleSelectionArea(
-        { x: point.x - 0.001, y: point.y - 0.001 },
-        { x: point.x + 0.001, y: point.y + 0.001 },
-      );
+      const area = rectangleSelectionAround(point, 0.001);
       const steps = elementMatchesSelectionAreaSteps(
         area,
         target,
@@ -159,10 +154,7 @@ describe("shared painted pressure windows", () => {
       const offset = { x, y: x + 0.002 };
       const moved = translatedStroke(target, offset);
       const worldPoint = { x: point.x + offset.x, y: point.y + offset.y };
-      const area = createRectangleSelectionArea(
-        { x: worldPoint.x - 0.001, y: worldPoint.y - 0.001 },
-        { x: worldPoint.x + 0.001, y: worldPoint.y + 0.001 },
-      );
+      const area = rectangleSelectionAround(worldPoint, 0.001);
       const readWindow = vi.spyOn(prepared, "readWindow");
       const publishWindow = vi.spyOn(prepared, "publishWindow");
       publishWindow.mockClear();

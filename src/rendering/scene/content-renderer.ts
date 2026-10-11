@@ -25,6 +25,8 @@ import type { SceneVisibilityState, VisibilityResult } from "./visibility-state"
 import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
 import { markSceneOrderDirty, writeDirtySet } from "./dirty-set-work";
 import { commitVisibleBands, mountedVisibleIds } from "./visibility-order";
+import { mountedPreviewIds } from "./preview-transform-selection";
+import type { PreviewMembershipContext } from "./types";
 import type { ScenePreparationOptions as ContentOptions } from "./reconciliation-state";
 import type { SceneVisibilityPriority } from "./scene-entrant-priority";
 
@@ -57,10 +59,10 @@ export class SceneContentRenderer {
   readonly #pathCache: ScenePathCache;
   readonly #reconciler: SceneVisibilityReconciler;
   readonly #store: SceneStorePort;
+  readonly #visibility: SceneVisibilityState;
   readonly #selectionTraces: SceneSelectionTraces;
   readonly #selectionDirty = new Set<string>();
   readonly #detachedCache: ContentOptions["detachedCache"];
-
   public constructor(
     dom: SceneDom,
     store: SceneStorePort,
@@ -77,6 +79,7 @@ export class SceneContentRenderer {
       dom.selectionOverlayPath,
     );
     this.#store = store;
+    this.#visibility = visibility;
     this.#pathCache = pathCache;
     this.#instrumentation = instrumentation;
     this.#reconciler = new SceneVisibilityReconciler({
@@ -117,6 +120,9 @@ export class SceneContentRenderer {
   public get mountedCount(): number {
     return this.#mounted.size;
   }
+  public previewMountedIds(context?: PreviewMembershipContext): Iterable<string> {
+    return mountedPreviewIds(this.#mounted, this.#visibility, context);
+  }
   public hasMounted(id: string): boolean {
     return this.#mounted.has(id);
   }
@@ -136,16 +142,12 @@ export class SceneContentRenderer {
   public markPaint(id: string): void {
     this.#paintDirty.add(id);
   }
-  public markOrder(id: string): void {
-    this.markOrders([id]);
-  }
   public markOrders(ids: readonly string[]): void {
     for (const id of ids) {
       markSceneOrderDirty(id, this.#store, this.#orderDirty, this.#detachedCache);
     }
     this.#reconciler.cancel();
   }
-
   public materializePreviewGeometry(
     previews: ReadonlyMap<string, PreviewTransform>,
     elements: ReadonlyMap<string, InkElementV1>,
@@ -155,14 +157,12 @@ export class SceneContentRenderer {
       mounted: this.#mounted,
     });
   }
-
   public takeCommittedPreviewIds(): readonly string[] {
     if (this.#committedPreviewIds.length === 0) return EMPTY_IDS;
     const ids = this.#committedPreviewIds;
     this.#committedPreviewIds = [];
     return ids;
   }
-
   public writeMountedChanges(
     deadline: number,
     now: () => number,

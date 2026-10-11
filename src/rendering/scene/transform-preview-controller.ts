@@ -1,9 +1,16 @@
 import type { SceneContentRenderer } from "./content-renderer";
 import { ViewportPreviewSelection } from "./preview-transform-selection";
 import type { PreviewTransform } from "./scene-visibility-reconciler";
-import type { PreviewStrokeWidth, SceneCamera, SceneStorePort, SceneViewport } from "./types";
+import type {
+  PreviewBoundsTransform,
+  PreviewStrokeWidth,
+  SceneCamera,
+  SceneViewport,
+} from "./types";
+import type { Bounds } from "../../domain/geometry/public";
 
 interface PreviewRequest {
+  readonly transformBounds: PreviewBoundsTransform | undefined;
   readonly strokeWidth: PreviewStrokeWidth;
   readonly transform: string | null;
   readonly version: number;
@@ -12,7 +19,7 @@ interface PreviewRequest {
 export class SceneTransformPreviewController {
   readonly #content: SceneContentRenderer;
   readonly #dirty = new Set<string>();
-  readonly #store: SceneStorePort;
+  readonly #active = new Set<string>();
   readonly #candidates = new ViewportPreviewSelection();
   readonly #transforms = new Map<string, PreviewTransform>();
   #camera: SceneCamera;
@@ -20,16 +27,22 @@ export class SceneTransformPreviewController {
   #contextDirty = false;
   #preview: PreviewRequest | undefined;
   #source: readonly string[] | undefined;
-  #viewport: SceneViewport | undefined;
+  #envelope: Bounds | undefined;
 
-  public constructor(content: SceneContentRenderer, store: SceneStorePort, camera: SceneCamera) {
+  public constructor(content: SceneContentRenderer, camera: SceneCamera) {
     this.#content = content;
-    this.#store = store;
     this.#camera = camera;
   }
 
   public memoryUsage(): number {
-    return this.#candidates.memoryUsage();
+    let bytes =
+      this.#candidates.memoryUsage() +
+      this.#ids.length * 8 +
+      (this.#dirty.size + this.#active.size) * 40;
+    for (const [id, preview] of this.#transforms) {
+      bytes += 80 + id.length * 2 + (preview.transform?.length ?? 0) * 2;
+    }
+    return bytes;
   }
 
   public get values(): ReadonlyMap<string, PreviewTransform> {
@@ -40,9 +53,13 @@ export class SceneTransformPreviewController {
     return this.#ids;
   }
 
-  public setContext(camera: SceneCamera, viewport: SceneViewport | undefined): void {
+  public setContext(
+    camera: SceneCamera,
+    _viewport: SceneViewport | undefined,
+    envelope?: Bounds,
+  ): void {
     this.#camera = camera;
-    this.#viewport = viewport;
+    this.#envelope = envelope;
     this.#contextDirty = true;
   }
 
@@ -51,9 +68,10 @@ export class SceneTransformPreviewController {
     transform: string | null,
     version: number,
     strokeWidth: PreviewStrokeWidth,
+    transformBounds?: PreviewBoundsTransform,
   ): void {
+    this.#preview = { strokeWidth, transform, version, transformBounds };
     if (ids !== this.#source || this.#contextDirty) this.replaceSelection(ids, version);
-    this.#preview = { strokeWidth, transform, version };
     const preview = this.resolvePreview(this.#preview);
     for (const id of this.#ids) {
       this.#transforms.set(id, preview);
@@ -87,6 +105,7 @@ export class SceneTransformPreviewController {
       this.#dirty.add(id);
     }
     this.#ids = [];
+    this.#active.clear();
     this.#contextDirty = false;
     this.#preview = undefined;
     this.#source = undefined;
@@ -104,6 +123,7 @@ export class SceneTransformPreviewController {
           preview.version,
           preview.strokeWidthScale,
         );
+        if (preview.transform === null) this.#transforms.delete(id);
       }
     }
     this.#dirty.clear();
@@ -113,10 +133,29 @@ export class SceneTransformPreviewController {
     this.#dirty.clear();
     this.#transforms.clear();
     this.#ids = [];
+    this.#active.clear();
     this.#contextDirty = false;
     this.#preview = undefined;
     this.#source = undefined;
     this.#candidates.clear();
+  }
+
+  public applyMounted(ids: readonly string[]): void {
+    if (this.#preview === undefined) return;
+    const additions = ids.filter((id) => this.#candidates.includes(id) && !this.#active.has(id));
+    if (additions.length === 0) return;
+    this.#ids = [...this.#ids, ...additions];
+    const preview = this.resolvePreview(this.#preview);
+    for (const id of additions) {
+      this.#active.add(id);
+      this.#transforms.set(id, preview);
+      this.#content.applyPreviewTransform(
+        id,
+        preview.transform,
+        preview.version,
+        preview.strokeWidthScale,
+      );
+    }
   }
 
   private replaceSelection(ids: readonly string[], version: number): void {
@@ -124,7 +163,15 @@ export class SceneTransformPreviewController {
       this.#transforms.set(id, { strokeWidthScale: null, transform: null, version });
       this.#dirty.add(id);
     }
-    this.#ids = this.#candidates.select(ids, this.#store, this.#viewport, this.#camera);
+    this.#ids = this.#candidates.select(
+      ids,
+      this.#content.previewMountedIds({
+        transformBounds: this.#preview?.transformBounds,
+        envelope: this.#envelope,
+      }),
+    );
+    this.#active.clear();
+    for (const id of this.#ids) this.#active.add(id);
     this.#source = ids;
   }
 

@@ -4,6 +4,7 @@ import { ElementStore } from "../../../../src/domain/store/public";
 import { moveSelection } from "../../../../src/editor/selection/transforms";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { stroke } from "../schema/fixtures";
+import { isolatedStrokePreparationStores } from "../../../fixtures/domain/runtime-stroke-store";
 
 const centers = [{ x: 100, y: 100, pressure: 0.5 }];
 
@@ -73,10 +74,7 @@ describe("store-owned local stroke centers", () => {
 
   it("isolates stores, clears under memory pressure, removes ownership and closes ports", () => {
     const source = stroke();
-    const first = new ElementStore([source]);
-    const second = new ElementStore([source]);
-    const version = first.get(source.id)!.geometryVersion;
-    const port = first.pressureGeometry(source.id, version);
+    const { first, second, version, port } = isolatedStrokePreparationStores(source);
     port.publishCenters!(0, centers);
     expect(second.pressureGeometry(source.id, version).readCenters!(0)).toBeUndefined();
     first.setActiveDocumentMemoryPressure(true);

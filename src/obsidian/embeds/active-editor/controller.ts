@@ -355,6 +355,7 @@ export class ActiveEditorController {
     return this.#coalesced.wrapProjected(
       createActiveEditorPreview(pageStart, {
         selectionSignal: this.#pendingSelection.signal,
+        selectionGeometry: () => this.#handles.selectionGeometry(),
         defaults: this.#styles.defaults,
         history: this.#history,
         model: this.#model,

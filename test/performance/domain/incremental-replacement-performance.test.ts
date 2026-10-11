@@ -93,24 +93,24 @@ it("reuses synchronous candidate planning without preparing commit resources dur
   const capacity = vi.spyOn(DocumentCapacity.prototype, "prepare");
   const index = vi.spyOn(UniformSpatialIndex.prototype, "prepareReplacements");
   const history = vi.spyOn(ReplacementHistory.prototype, "createBuilder");
-  try {
-    store.resetInstrumentation();
-    const plan = store.planReplacements(moveSelection([target], { x: 0.001, y: 0.001 }))!;
-    expect(plan.elements).toHaveLength(257);
+  const expectOnePlanningPass = () => {
     expect(validation).toHaveBeenCalledTimes(257);
     expect(graph).toHaveBeenCalledTimes(1);
     expect(resolution).toHaveBeenCalledTimes(512);
     expect(store.instrumentation.reverseDependencyVisits).toBe(512);
+  };
+  try {
+    store.resetInstrumentation();
+    const plan = store.planReplacements(moveSelection([target], { x: 0.001, y: 0.001 }))!;
+    expect(plan.elements).toHaveLength(257);
+    expectOnePlanningPass();
     expect(geometry).not.toHaveBeenCalled();
     expect(capacity).not.toHaveBeenCalled();
     expect(index).not.toHaveBeenCalled();
     expect(history).not.toHaveBeenCalled();
     const capture = vi.fn<(history: ElementReplacementHistoryData) => void>();
     expect(store.replaceMany(plan.replacements, capture)?.changes).toHaveLength(257);
-    expect(validation).toHaveBeenCalledTimes(257);
-    expect(graph).toHaveBeenCalledTimes(1);
-    expect(resolution).toHaveBeenCalledTimes(512);
-    expect(store.instrumentation.reverseDependencyVisits).toBe(512);
+    expectOnePlanningPass();
     expect(geometry).toHaveBeenCalledTimes(257);
     expect(capacity).toHaveBeenCalledOnce();
     expect(index).toHaveBeenCalledOnce();

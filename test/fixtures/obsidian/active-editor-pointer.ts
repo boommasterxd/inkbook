@@ -1,17 +1,29 @@
-import { vi } from "vitest";
+import { onTestFinished, vi } from "vitest";
+import { ElementStore } from "../../../src/domain/store/public";
 import { reduceInput, type InputAction, type PointerSample } from "../../../src/editor/input";
 import type { InputEffect } from "../../../src/editor/input/input-types";
 import { ActiveEditorPointerController } from "../../../src/obsidian/embeds/active-editor/controller-pointer";
 import { CoalescedPointerInput } from "../../../src/obsidian/embeds/active-editor/coalesced-input";
-import type { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
+import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
 import type { ActiveEditorMenuController } from "../../../src/obsidian/embeds/active-editor/controller-menu";
 import type { ActiveEditorNavigation } from "../../../src/obsidian/embeds/active-editor/navigation";
-import type { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
+import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene";
 import { toolCursorHarness } from "./tool-cursor";
+import { ManualFrameScheduler } from "./manual-frame-scheduler";
+import { createSelectionPreviewRenderer } from "./selection-preview-renderer";
 
 export function activeEditorPointerHarness() {
   const h = toolCursorHarness();
+  const store = new ElementStore();
+  const sceneStore = new ElementSceneStore(store);
+  const selection = new Set<string>();
+  const handles = pointerHandles(store, sceneStore, selection);
+  onTestFinished(() => {
+    handles.dispose();
+    sceneStore.release();
+    store.releasePreparedPressureGeometry();
+  });
   const effects: InputEffect[] = [];
   const capture = vi.fn();
   const release = vi.fn();
@@ -19,7 +31,7 @@ export function activeEditorPointerHarness() {
   const cancelPanMomentum = vi.fn();
   const recordTouchPan = vi.fn();
   const releaseTouchPan = vi.fn();
-  const hit = vi.fn(() => null);
+  const hit = vi.spyOn(sceneStore, "hit");
   const dispatch = vi.fn((action: InputAction) => {
     const result = reduceInput(h.controls.input, action);
     h.controls.input = result.state;
@@ -54,19 +66,14 @@ export function activeEditorPointerHarness() {
     finishHandlePointer: vi.fn(),
     interruptForInput: vi.fn(),
     isEnabled: () => h.controls.enabled,
-    selection: () => new Set(),
+    selection: () => selection,
     setLastPointer: h.controller.recordSessionPointer,
     ownerWindow: h.window as unknown as Window,
     renderer: {
       inputSurface: { focus: vi.fn() },
       interruptMotionForPointerDown: vi.fn(),
     } as unknown as SvgSceneRenderer,
-    handles: {
-      pointerDown: () => false,
-      pointerMove: () => false,
-      pointerUp: () => false,
-      cancel: () => false,
-    } as unknown as ActiveEditorHandleInteraction,
+    handles,
     menus: {
       dispatchFromEvent: (_event: unknown, run: () => void) => run(),
     } as ActiveEditorMenuController,
@@ -80,7 +87,7 @@ export function activeEditorPointerHarness() {
       recordTouchPan,
       releaseTouchPan,
     } as unknown as ActiveEditorNavigation,
-    sceneStore: { hit } as unknown as ElementSceneStore,
+    sceneStore,
   });
   return {
     ...h,
@@ -97,4 +104,30 @@ export function activeEditorPointerHarness() {
     coalesced,
     dispatch,
   };
+}
+
+/** Real empty-selection handling keeps pointer composition aligned with the production port. */
+function pointerHandles(
+  store: ElementStore,
+  sceneStore: ElementSceneStore,
+  selection: ReadonlySet<string>,
+): ActiveEditorHandleInteraction {
+  return new ActiveEditorHandleInteraction({
+    frameScheduler: new ManualFrameScheduler(),
+    history: {} as never,
+    preparedHistory: {} as never,
+    model: { store, revision: 0 } as never,
+    pageToScreen: (point) => point,
+    renderer: {
+      ...createSelectionPreviewRenderer(),
+      clearElementPreviews: vi.fn(),
+      flushPointerFeedbackFrame: vi.fn(),
+      setElementPreviews: vi.fn(),
+      setSelectionOverlayPath: vi.fn(),
+      setSnapMarkerPath: vi.fn(),
+    },
+    sceneStore,
+    selection: () => selection,
+    zoom: () => 1,
+  });
 }

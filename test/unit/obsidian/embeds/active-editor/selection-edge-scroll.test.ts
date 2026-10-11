@@ -309,7 +309,13 @@ describe("selection edge-scroll frame arbitration", () => {
     preview.update({ pointerId: 1, pointerType: "pen", x: 500, y });
     expect(frames.callbacks.size).toBe(2);
     frames.flush();
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([], `translate(0 ${String(y - 300)})`, 3);
+    expect(setPreviewTransform).toHaveBeenLastCalledWith(
+      [],
+      `translate(0 ${String(y - 300)})`,
+      3,
+      "scale",
+      expect.any(Function),
+    );
     if (y === 300) {
       expect(onScroll).toHaveBeenCalledOnce();
       expect(frames.callbacks.size).toBe(0);

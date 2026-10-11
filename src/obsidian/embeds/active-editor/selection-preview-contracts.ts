@@ -2,8 +2,12 @@ import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { ToolDefaultsV1 } from "../../../domain/settings/types";
 import type { ElementStore } from "../../../domain/store/public";
 import type { GesturePreviewStart } from "../../../editor/gestures/public";
-import type { SelectionFrameSession } from "../../../editor/selection/public";
+import type {
+  SelectionFrameSession,
+  SelectedElementGeometry,
+} from "../../../editor/selection/public";
 import type { WorkPriority, WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import type { PreviewBoundsTransform, PreviewStrokeWidth } from "../../../rendering/scene/types";
 
 import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
@@ -25,7 +29,13 @@ interface SelectionPreviewRenderer {
     handles?: string | null,
   ): void;
   setSnapMarkerPath?(d: string | null): void;
-  setPreviewTransform(ids: readonly string[], transform: string | null, version: number): void;
+  setPreviewTransform(
+    ids: readonly string[],
+    transform: string | null,
+    version: number,
+    strokeWidth?: PreviewStrokeWidth,
+    transformBounds?: PreviewBoundsTransform,
+  ): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }
 
@@ -52,6 +62,7 @@ export interface SelectionPreviewOptions {
   readonly sceneStore: ElementSceneStore;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionGeometry?: () => readonly SelectedElementGeometry[];
   readonly selectionSignal?: AbortSignal;
   readonly workScheduler?: WorkScheduler;
   readonly selectionFrames?: SelectionFrameSession;

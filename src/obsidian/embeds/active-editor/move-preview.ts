@@ -18,8 +18,11 @@ import { commitPreviewReplacement } from "./preview-replacement-commit";
 import { selectionOverlayFill, selectionOverlayPaths } from "./selection-overlay-path";
 import type { SelectionPreviewOptions } from "./selection-preview-contracts";
 import { snapMarkerPath } from "./snap-marker-path";
+import { selectionPreviewBounds } from "./selection-preview-bounds";
+import { ConnectionPreviewPreparation } from "./connection-preview-preparation";
 
 export class MovePreview implements GesturePreview {
+  readonly #connectionPreparation: ConnectionPreviewPreparation;
   readonly #connectedPreview: ConnectedSelectionPreviewSession;
   readonly #elements: readonly InkElementV1[];
   readonly #frameScheduler: SelectionPreviewOptions["frameScheduler"];
@@ -45,16 +48,8 @@ export class MovePreview implements GesturePreview {
     this.#options = options;
     this.#frameScheduler = options.frameScheduler;
     this.#selectedIds = options.selection();
-    const elements: InkElementV1[] = [];
-    const selectedGeometry: SelectedElementGeometry[] = [];
-    for (const id of this.#selectedIds) {
-      const record = options.store.get(id);
-      if (record === undefined) continue;
-      const element = record.element as InkElementV1;
-      elements.push(element);
-      selectedGeometry.push({ bounds: record.bounds, element });
-    }
-    this.#elements = elements;
+    const selectedGeometry = options.selectionGeometry?.() ?? this.#readSelectedGeometry();
+    this.#elements = selectedGeometry.map(({ element }) => element);
     this.#selectedGeometry = selectedGeometry;
     this.#selectedMaximumBottom = selectedGeometry.reduce(
       (maximum, selected) => Math.max(maximum, selected.bounds.maxY),
@@ -74,12 +69,29 @@ export class MovePreview implements GesturePreview {
     this.#lastPointer = options.start.pointer;
     this.#currentViewport = (options.pageToViewport ?? options.pageToScreen)(options.start.pointer);
     options.selectionEdgeDrag?.begin(() => this.#refreshAfterViewportChange());
+    this.#connectionPreparation = new ConnectionPreviewPreparation(
+      {
+        store: options.store,
+        sceneStore: options.sceneStore,
+        ...(options.workScheduler === undefined ? {} : { scheduler: options.workScheduler }),
+      },
+      this.#elements.length === 1 ? this.#elements[0] : undefined,
+      () => {
+        if (
+          !this.#finished &&
+          (this.#pendingPointer !== undefined || this.#lastPointer !== options.start.pointer)
+        ) {
+          this.update(this.#pendingPointer ?? this.#lastPointer);
+        }
+      },
+    );
   }
 
   public commit(): boolean {
     this.#assertActive();
     this.#flushPendingPointer();
     this.#finished = true;
+    this.#connectionPreparation.dispose();
     let committed = false;
     let prepared = false;
     try {
@@ -118,10 +130,22 @@ export class MovePreview implements GesturePreview {
     return committed;
   }
 
+  #readSelectedGeometry(): SelectedElementGeometry[] {
+    const geometry: SelectedElementGeometry[] = [];
+    for (const id of this.#selectedIds) {
+      const record = this.#options.store.get(id);
+      if (record !== undefined) {
+        geometry.push({ bounds: record.bounds, element: record.element as InkElementV1 });
+      }
+    }
+    return geometry;
+  }
+
   public revert(): void {
     if (this.#finished) return;
     this.#discardPendingPointer();
     this.#finished = true;
+    this.#connectionPreparation.dispose();
     this.#options.renderer.clearPreviewTransforms();
     this.#options.renderer.clearElementPreviews?.();
     this.#options.renderer.setSnapMarkerPath?.(null);
@@ -168,6 +192,8 @@ export class MovePreview implements GesturePreview {
       this.#transformIds,
       `translate(${String(this.#current.x)} ${String(this.#current.y)})`,
       this.#version,
+      "scale",
+      selectionPreviewBounds(transform),
     );
     this.#renderSelectionOverlay(transform, connected);
     this.#options.renderer.setSnapMarkerPath?.(
@@ -275,6 +301,7 @@ export class MovePreview implements GesturePreview {
   }
 
   #resolveMoveSnap(rawDelta: PointV1): SelectionMoveSnap | null {
+    this.#connectionPreparation.ensure();
     if (this.#selectedIds.size !== 1) return null;
     const configured = this.#options.connectionSnapping;
     if (typeof configured === "function" ? !configured() : configured === false) return null;

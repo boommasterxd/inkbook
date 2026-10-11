@@ -4,7 +4,6 @@ import type { SceneContentRenderer } from "../../../../src/rendering/scene/conte
 import { SceneElementPreviewController } from "../../../../src/rendering/scene/element-preview-controller";
 import { SceneElementPreviews } from "../../../../src/rendering/scene/scene-element-previews";
 import { SceneTransformPreviewController } from "../../../../src/rendering/scene/transform-preview-controller";
-import type { SceneStorePort } from "../../../../src/rendering/scene/types";
 
 import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
 
@@ -14,10 +13,12 @@ describe("progressive scene preview candidate selection", () => {
       fakeRectangleRecord(String(index), index, index * 10),
     );
     const store = new FakeSceneStore();
+    let mounted = ["0"];
     for (const record of records) store.records.set(record.id, record);
     const previews = new SceneElementPreviews(
       {
         promoteVisible: vi.fn(),
+        previewMountedIds: () => mounted,
       } as unknown as SceneContentRenderer,
       store,
     );
@@ -33,6 +34,7 @@ describe("progressive scene preview candidate selection", () => {
       },
     );
     expect(set.mock.lastCall?.[0].ids).not.toContain("256");
+    mounted = ["0", "256"];
     previews.refreshProgressiveContext(viewport, { x: -2560, zoom: 1 });
     expect(set.mock.lastCall?.[0].ids).toContain("256");
     expect(set.mock.lastCall?.[0].ids.length).toBeLessThanOrEqual(256);
@@ -46,22 +48,25 @@ describe("progressive scene preview candidate selection", () => {
   it("reuses progressive viewport candidates until the selection or camera context changes", () => {
     const record = fakeRectangleRecord("shape", 0, 10);
     const get = vi.fn(() => record);
-    const previews = new SceneElementPreviews({} as SceneContentRenderer, {
-      get,
-      query: vi.fn(),
-    });
+    const previews = new SceneElementPreviews(
+      { previewMountedIds: () => [record.id] } as unknown as SceneContentRenderer,
+      {
+        get,
+        query: vi.fn(),
+      },
+    );
     const ids = [record.id];
     const camera = { x: 0, zoom: 1 };
     const selected = previews.selectProgressiveIds(ids, undefined, camera);
     expect(previews.selectProgressiveIds(ids, undefined, camera)).toBe(selected);
-    expect(get).toHaveBeenCalledOnce();
+    expect(get).not.toHaveBeenCalled();
 
     const moved = { x: 20, zoom: 1 };
     previews.selectProgressiveIds(ids, undefined, moved);
-    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).not.toHaveBeenCalled();
     previews.release();
     previews.selectProgressiveIds(ids, undefined, moved);
-    expect(get).toHaveBeenCalledTimes(3);
+    expect(get).not.toHaveBeenCalled();
   });
 });
 
@@ -72,18 +77,15 @@ describe("scene preview controller regressions", () => {
     const content = {
       applyPreviewTransform: vi.fn(),
       promoteVisible: vi.fn(() => false),
+      previewMountedIds: () => [record.id],
     } as unknown as SceneContentRenderer;
-    const controller = new SceneTransformPreviewController(
-      content,
-      { get, query: vi.fn() } satisfies SceneStorePort,
-      { x: 0, zoom: 1 },
-    );
+    const controller = new SceneTransformPreviewController(content, { x: 0, zoom: 1 });
     const ids = [record.id];
 
     controller.set(ids, "translate(1 0)", 1, "scale");
     controller.set(ids, "translate(2 0)", 2, "scale");
 
-    expect(get).toHaveBeenCalledOnce();
+    expect(get).not.toHaveBeenCalled();
   });
 
   it("reuses stable pressure fallback geometry and checks only newly mounted ids", () => {
@@ -159,8 +161,8 @@ describe("transformed preview candidate retention", () => {
         applyPreviewTransform,
         flushSelectionContext: vi.fn(),
         promoteVisible: vi.fn(),
+        previewMountedIds: () => ["0", "1"],
       } as unknown as SceneContentRenderer,
-      store,
       { x: 0, zoom: 1 },
     );
     const viewport = { height: 100, left: 0, top: 0, width: 100 };

@@ -5,6 +5,7 @@ import { PreparedPressureWindowCache } from "../../../../src/domain/store/prepar
 import { pressureWindowMemoryUsage } from "../../../../src/domain/geometry/pressure-window";
 import type { PressureWindow } from "../../../../src/domain/geometry/pressure-window";
 import { stroke } from "../schema/fixtures";
+import { isolatedStrokePreparationStores } from "../../../fixtures/domain/runtime-stroke-store";
 
 function window(segments = 1): PressureWindow {
   return {
@@ -117,10 +118,7 @@ describe("store-owned prepared pressure windows", () => {
 
   it("isolates stores, disables retention under pressure, and permanently revokes closed-store ports", () => {
     const source = stroke();
-    const first = new ElementStore([source]);
-    const second = new ElementStore([source]);
-    const version = first.get(source.id)!.geometryVersion;
-    const port = first.pressureGeometry(source.id, version);
+    const { first, second, version, port } = isolatedStrokePreparationStores(source);
     const value = window();
     port.publishWindow(0, value);
     expect(second.pressureGeometry(source.id, version).readWindow(0)).toBeUndefined();

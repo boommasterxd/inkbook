@@ -1,9 +1,9 @@
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { InkElementV1 } from "../schema/public";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
-import type { MutationOrder } from "./mutation-order";
+import { createUnchangedMutationOrder, type MutationOrder } from "./mutation-order";
 import { prepareInsertionElementSteps } from "./prepared-insertion-element";
-import type { ElementMutation, ElementRank, ElementRecord, StoreSliceScheduler } from "./types";
+import type { ElementMutation, ElementRecord, StoreSliceScheduler } from "./types";
 
 interface AppendSource {
   readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
@@ -34,12 +34,8 @@ export async function prepareAppendMutation(
     inserted[renderBandOf(element)].push(element.id);
   }
   if (elements.length === 0) return null;
-  const bands = {
-    content: source.bands.content as string[],
-    highlight: source.bands.highlight as string[],
-  };
-  const ranks = new Map<string, ElementRank>();
-  const dirtyBands = { content: false, highlight: false };
+  const order = createUnchangedMutationOrder(source.bands);
+  const { bands, ranks, dirtyBands } = order;
   for (const band of ["highlight", "content"] as const) {
     if (inserted[band].length === 0) continue;
     const next: string[] = [];
@@ -58,6 +54,6 @@ export async function prepareAppendMutation(
   if (scheduler.isCancelled?.()) return "cancelled";
   return {
     mutation: { bands, elements: Object.freeze(elements) },
-    order: { bands, ranks, dirtyBands, relativeOrderPreserved: { content: true, highlight: true } },
+    order,
   };
 }

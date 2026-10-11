@@ -14,6 +14,7 @@ import { selectionOverlayGeometry } from "../../../src/editor/selection/overlay-
 import { moveSelection } from "../../../src/editor/selection/transforms";
 import { strokePrimitiveSteps } from "../../../src/editor/selection/stroke-selection-geometry";
 import { maximumStroke } from "./maximum-stroke-fixture";
+import { rectangleSelectionAround } from "../../fixtures/editor/selection-query";
 
 function fixture(pressureEnabled: boolean, positioned: boolean) {
   const source = maximumStroke(0);
@@ -37,6 +38,14 @@ function completeQuery(steps: Generator<number | void, boolean>): boolean {
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
+}
+
+function frameFixture(rotation: number) {
+  const source = { ...maximumStroke(0), rotation };
+  const store = new ElementStore([source]);
+  const record = store.get(source.id)!;
+  const selected = [{ element: record.element as StrokeElementV1, bounds: record.bounds }];
+  return { store, selected, session: new SelectionFrameSession() };
 }
 
 it.each(
@@ -137,10 +146,7 @@ it.each([0.003, -1000.007])(
     const build = vi.spyOn(pressureUnion, "iteratePressureUnion");
     try {
       expect(elementContainsPoint(moved.element as StrokeElementV1, point, 0, port)).toBe(true);
-      const area = createRectangleSelectionArea(
-        { x: point.x - 0.001, y: point.y - 0.001 },
-        { x: point.x + 0.001, y: point.y + 0.001 },
-      );
+      const area = rectangleSelectionAround(point, 0.001);
       expect(
         completeQuery(
           elementMatchesSelectionAreaSteps(
@@ -165,11 +171,7 @@ it.each([0.003, -1000.007])(
 it.each([0, 37])(
   "resolves one single-stroke frame for outline, handles and repeated access at %s degrees",
   (rotation) => {
-    const source = { ...maximumStroke(0), rotation };
-    const store = new ElementStore([source]);
-    const record = store.get(source.id)!;
-    const selected = [{ element: record.element as StrokeElementV1, bounds: record.bounds }];
-    const session = new SelectionFrameSession();
+    const { store, selected, session } = frameFixture(rotation);
     const calculate = vi.spyOn(position, "strokeWorldPoint");
     try {
       const frame = session.current(selected)!;
@@ -195,11 +197,7 @@ it.each([0, 37])(
 );
 
 it("cancels a cold rotated frame within one bounds batch without retaining partial work", async () => {
-  const source = { ...maximumStroke(0), rotation: 37 };
-  const store = new ElementStore([source]);
-  const record = store.get(source.id)!;
-  const selected = [{ element: record.element as StrokeElementV1, bounds: record.bounds }];
-  const session = new SelectionFrameSession();
+  const { store, selected, session } = frameFixture(37);
   const read = vi.spyOn(position, "strokeWorldPoint");
   let cancelled = false;
   try {

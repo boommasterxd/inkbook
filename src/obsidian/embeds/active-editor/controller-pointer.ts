@@ -3,6 +3,7 @@ import {
   isValidInputPoint,
   isValidPointerSample,
   type InputAction,
+  type InputPoint,
   type InputState,
   type PointerSample,
 } from "../../../editor/input/index";
@@ -69,14 +70,7 @@ export class ActiveEditorPointerController {
       pressure: 0,
     };
     this.#options.setLastPointer({ ...point, ...pointer }, { ...screenPoint, ...pointer });
-    const target = selectionTargetAt(
-      this.#options.sceneStore,
-      this.#options.selection(),
-      point,
-      "mouse",
-      this.#options.navigation.zoom,
-      this.#options.selectionFrames,
-    );
+    const target = this.#selectionTarget(point, "mouse");
     this.#options.menus.dispatchFromEvent(event, () =>
       this.#options.dispatch({
         type: "context-menu",
@@ -154,14 +148,7 @@ export class ActiveEditorPointerController {
       if (event.cancelable) event.preventDefault();
       return;
     }
-    const target = selectionTargetAt(
-      this.#options.sceneStore,
-      this.#options.selection(),
-      pagePointer,
-      pointer.pointerType,
-      this.#options.navigation.zoom,
-      this.#options.selectionFrames,
-    );
+    const target = this.#selectionTarget(pagePointer, pointer.pointerType);
     this.#options.menus.dispatchFromEvent(
       classification.isPlatformContextClick ? event : undefined,
       () =>
@@ -190,6 +177,22 @@ export class ActiveEditorPointerController {
     if (event.cancelable && claimsPointerGesture(event, this.#options.getInput().interaction)) {
       event.preventDefault();
     }
+  }
+
+  #selectionTarget(point: InputPoint, pointerType: PointerSample["pointerType"]) {
+    return selectionTargetAt(
+      this.#options.sceneStore,
+      this.#options.selection(),
+      point,
+      pointerType,
+      this.#options.navigation.zoom,
+      {
+        ...(this.#options.selectionFrames === undefined
+          ? {}
+          : { frames: this.#options.selectionFrames }),
+        geometry: () => this.#options.handles.selectionGeometry(),
+      },
+    );
   }
 
   public handlePointerMove(event: PointerEvent): void {

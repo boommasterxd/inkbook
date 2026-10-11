@@ -85,9 +85,21 @@ export function selectionTargetAt(
   point: InputPoint,
   pointerType: PointerSample["pointerType"],
   zoom: number,
-  selectionFrames?: SelectionFrameSession,
+  selectionContext?:
+    | SelectionFrameSession
+    | {
+        readonly frames?: SelectionFrameSession;
+        readonly geometry: () => readonly SelectedElementGeometry[];
+      },
 ): { readonly elementId: string; readonly isSelected: boolean } | undefined {
-  const selected = selectedGeometry(store, selection);
+  const selectionFrames =
+    selectionContext !== undefined && "current" in selectionContext
+      ? selectionContext
+      : selectionContext?.frames;
+  const selected =
+    selectionContext !== undefined && "geometry" in selectionContext
+      ? selectionContext.geometry()
+      : selectedGeometry(store, selection);
   if (selectionOverlayContainsPoint(selected, point, selectionFrames?.current(selected) ?? null)) {
     return { elementId: selected[0]!.element.id, isSelected: true };
   }

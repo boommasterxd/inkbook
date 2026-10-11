@@ -179,7 +179,7 @@ function* createSingleStrokeFrameSteps(
       : yield* calculateElementBoundsSteps({ ...element, rotation: 0 });
   const bounds = selectionCenterlineBounds({ ...element, rotation: 0 }, painted);
   return {
-    points: framePoints(bounds).map((point) =>
+    points: selectionFrameBoundsPoints(bounds).map((point) =>
       rotatePointClockwise(point, element.pivot, element.rotation),
     ) as unknown as OrientedSelectionFrame["points"],
     rotation: element.rotation,
@@ -214,7 +214,7 @@ export function selectionFrameFromLocalBounds(
   rotation: number,
 ): OrientedSelectionFrame {
   return {
-    points: framePoints(bounds).map((point) =>
+    points: selectionFrameBoundsPoints(bounds).map((point) =>
       rotatePointClockwise(point, { x: 0, y: 0 }, rotation),
     ) as unknown as OrientedSelectionFrame["points"],
     rotation,
@@ -262,7 +262,7 @@ function* createSelectionFrameSteps(
   }
   if (bounds === null) return null;
   return {
-    points: framePoints(bounds),
+    points: selectionFrameBoundsPoints(bounds),
     rotation: 0,
   };
 }
@@ -309,7 +309,7 @@ export function selectionFramePoint(frame: OrientedSelectionFrame, position: Box
   return points[position];
 }
 
-function framePoints(bounds: Bounds): OrientedSelectionFrame["points"] {
+export function selectionFrameBoundsPoints(bounds: Bounds): OrientedSelectionFrame["points"] {
   return [
     { x: bounds.minX, y: bounds.minY },
     { x: bounds.maxX, y: bounds.minY },

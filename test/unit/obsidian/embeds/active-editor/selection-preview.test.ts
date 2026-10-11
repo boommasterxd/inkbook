@@ -160,12 +160,12 @@ describe("selection move edge-scroll projection", () => {
     });
 
     preview.update(pointer(30, 50));
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([], "translate(20 30)", 1);
+    expect(setPreviewTransform.mock.lastCall?.slice(0, 3)).toEqual([[], "translate(20 30)", 1]);
 
     scrollOffset = 40;
     refreshViewport?.();
 
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([], "translate(20 70)", 2);
+    expect(setPreviewTransform.mock.lastCall?.slice(0, 3)).toEqual([[], "translate(20 70)", 2]);
     expect(flushPointerFeedbackFrame).toHaveBeenCalledTimes(2);
     preview.revert();
   });
@@ -287,8 +287,8 @@ describe("selection move connected geometry", () => {
     });
 
     preview.update(pointer(30, 50));
-
-    expect(setPreviewTransform).toHaveBeenCalledWith([element.id], "translate(20 30)", 1);
+    const transformCall = setPreviewTransform.mock.lastCall;
+    expect(transformCall?.slice(0, 3)).toEqual([[element.id], "translate(20 30)", 1]);
     expect(setSelectionOverlayPath.mock.lastCall?.[0]).toContain(
       "M 120 130 L 320 130 L 320 230 L 120 230 Z",
     );
@@ -333,7 +333,7 @@ describe("selection move connected geometry", () => {
     expect(setElementPreviews.mock.calls[0]?.[0]).toMatchObject([
       { end: { x: 430, y: 140 }, id: line.id, start: { x: 100, y: 100 } },
     ]);
-    expect(setPreviewTransform).toHaveBeenCalledWith([], "translate(30 40)", 1);
+    expect(setPreviewTransform.mock.lastCall?.slice(0, 3)).toEqual([[], "translate(30 40)", 1]);
     expect(setSelectionOverlayPath.mock.calls[0]?.slice(0, 2)).toEqual([null, "none"]);
     expect(setSelectionOverlayPath.mock.calls[0]?.[2]).toContain("M 425 140 a 5 5");
   });

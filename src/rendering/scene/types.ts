@@ -75,6 +75,11 @@ export interface SceneCamera {
 }
 
 export type PreviewStrokeWidth = "preserve" | "scale";
+export type PreviewBoundsTransform = (bounds: Bounds, paintPadding?: number) => Bounds;
+export interface PreviewMembershipContext {
+  readonly transformBounds?: PreviewBoundsTransform | undefined;
+  readonly envelope?: Bounds | undefined;
+}
 
 export type DocumentScheme = "dark" | "light";
 

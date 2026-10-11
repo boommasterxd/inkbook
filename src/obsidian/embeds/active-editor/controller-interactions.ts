@@ -127,6 +127,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     }),
     handles: new ActiveEditorHandleInteraction({
       frameScheduler: controller.workScheduler,
+      workScheduler: controller.workScheduler,
       history: options.history,
       layout: controller.selectionMoveLayout,
       model: controller.model,

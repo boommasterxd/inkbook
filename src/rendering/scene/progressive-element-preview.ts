@@ -2,10 +2,13 @@ import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { SceneContentRenderer } from "./content-renderer";
+import type { PreviewTransform } from "./scene-visibility-reconciler";
+import type { PreviewBoundsTransform } from "./types";
 import { PATH_CACHE_MAX_BYTES } from "./constants";
 import { ProgressivePreviewPath } from "./progressive-preview-path";
 
 export interface ProgressivePreviewTransform {
+  readonly transformBounds?: PreviewBoundsTransform;
   readonly transform: string;
   readonly inverse: string;
 }
@@ -13,6 +16,7 @@ export interface ProgressivePreviewTransform {
 interface PreviewRequest {
   readonly feedback?: ProgressivePreviewTransform | undefined;
   readonly ids: readonly string[];
+  readonly feedbackIds?: readonly string[];
   readonly isImmediate?: (id: string) => boolean;
   readonly affineElement?: ((id: string) => InkElementV1 | undefined) | undefined;
   readonly materialize: (id: string) => InkElementV1 | undefined;
@@ -40,6 +44,7 @@ export class ProgressiveElementPreview {
   readonly #versions = new Map<string, number>();
   readonly #replayIds = new Set<string>();
   readonly #feedbackIds = new Set<string>();
+  readonly #transforms = new Map<string, PreviewTransform>();
   readonly #snapshotFeedback = new Map<string, ProgressivePreviewTransform>();
   readonly #renderedFeedback = new Map<string, ProgressivePreviewTransform>();
   #zoom = 1;
@@ -60,22 +65,32 @@ export class ProgressiveElementPreview {
     return this.#elements;
   }
 
+  public get transforms(): ReadonlyMap<string, PreviewTransform> {
+    return this.#transforms;
+  }
+
   public get pending(): boolean {
     return this.#hasPending();
   }
 
   public memoryUsage(): number {
     let bytes = this.#completedBytes + (this.#pending?.path.memoryUsage() ?? 0);
+    bytes += (this.#request?.ids.length ?? 0) * 8 + (this.#request?.feedbackIds?.length ?? 0) * 8;
+    bytes += (this.#versions.size + this.#replayIds.size + this.#feedbackIds.size) * 40;
+    for (const [id, feedback] of this.#snapshotFeedback) bytes += feedbackBytes(id, feedback);
+    for (const [id, feedback] of this.#renderedFeedback) bytes += feedbackBytes(id, feedback);
+    for (const [id, preview] of this.#transforms)
+      bytes += 80 + (id.length + (preview.transform?.length ?? 0)) * 2;
     if (this.#pending !== undefined) bytes += elementBytes(this.#pending.element);
     for (const element of this.#elements.values()) bytes += elementBytes(element);
     return bytes;
   }
 
   public set(request: PreviewRequest): void {
-    request = { ...request, ids: request.ids.slice(0, 256) };
     const retained = new Set(request.ids);
+    const feedbackIds = new Set(request.feedbackIds ?? request.ids);
     for (const id of this.#feedbackIds) {
-      if (!retained.has(id)) this.#clearFeedback(id);
+      if (!feedbackIds.has(id)) this.#clearFeedback(id);
     }
     for (const id of this.#versions.keys()) {
       if (!retained.has(id)) {
@@ -110,10 +125,13 @@ export class ProgressiveElementPreview {
     this.#zoom = zoom;
     this.#appliedRequest = request;
     const start = this.#immediateCursor;
-    for (let offset = 0; offset < request.ids.length; offset += 1) {
-      const index = (start + offset) % request.ids.length;
-      const id = request.ids[index]!;
-      if (now() < deadline && this.#writeImmediate(id, request)) this.#immediateCursor = index + 1;
+    const ids = request.feedbackIds ?? request.ids;
+    const snapshots = new Set(request.ids);
+    for (let offset = 0; offset < ids.length; offset += 1) {
+      const index = (start + offset) % ids.length;
+      const id = ids[index]!;
+      if (snapshots.has(id) && now() < deadline && this.#writeImmediate(id, request))
+        this.#immediateCursor = index + 1;
       else this.#applyFeedback(id);
     }
   }
@@ -165,7 +183,8 @@ export class ProgressiveElementPreview {
           continue;
         }
         if (this.#elements.has(id)) this.#replayIds.add(id);
-        if (this.#request?.ids.includes(id)) this.#applyFeedback(id);
+        if ((this.#request?.feedbackIds ?? this.#request?.ids)?.includes(id))
+          this.#applyFeedback(id);
       }
     }
   }
@@ -178,6 +197,7 @@ export class ProgressiveElementPreview {
 
   public release(): void {
     this.#feedbackIds.clear();
+    this.#transforms.clear();
     this.#snapshotFeedback.clear();
     this.#renderedFeedback.clear();
     this.#request = undefined;
@@ -312,17 +332,25 @@ export class ProgressiveElementPreview {
         ? null
         : `${feedback.transform}${basis === undefined ? "" : ` ${basis.inverse}`}`;
     this.#feedbackIds.add(id);
+    const preview = {
+      transform,
+      version: request?.version ?? 0,
+      strokeWidthScale: transform === null ? null : this.#zoom,
+    };
+    if (transform === null) this.#transforms.delete(id);
+    else this.#transforms.set(id, preview);
     this.#content.applyPreviewTransform(
       id,
-      transform,
-      request?.version ?? 0,
-      transform === null ? null : this.#zoom,
+      preview.transform,
+      preview.version,
+      preview.strokeWidthScale,
     );
   }
 
   #clearFeedback(id: string): void {
     this.#content.applyPreviewTransform(id, null, Number.MAX_SAFE_INTEGER, null);
     this.#feedbackIds.delete(id);
+    this.#transforms.delete(id);
     this.#renderedFeedback.delete(id);
   }
 
@@ -341,4 +369,8 @@ function elementBytes(element: InkElementV1): number {
 
 function pathBytes(parts: readonly SvgPathPart[]): number {
   return parts.reduce((bytes, part) => bytes + part.d.length * 2, 0);
+}
+
+function feedbackBytes(id: string, feedback: ProgressivePreviewTransform): number {
+  return 64 + (id.length + feedback.transform.length + feedback.inverse.length) * 2;
 }

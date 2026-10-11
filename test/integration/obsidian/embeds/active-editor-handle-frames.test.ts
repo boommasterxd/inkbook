@@ -95,6 +95,7 @@ describe("active editor handle frames", () => {
       expect.any(String),
       expect.any(Number),
       "preserve",
+      expect.any(Function),
     );
     const captured = materialize(stroke.id);
     expect(captured).not.toEqual(stroke);

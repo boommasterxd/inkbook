@@ -358,7 +358,7 @@ it.each(["immediate", "progressive", "transform"] as const)(
 );
 
 it.each(["progressive", "transform"] as const)(
-  "releases a deferred exit when %s preview selection changes with the viewport context",
+  "releases a deferred exit when %s preview bounds leave the viewport context",
   (kind) => {
     const store = new FakeSceneStore();
     const old = fakeRectangleRecord("old-preview", 0, 20, 50);
@@ -377,9 +377,17 @@ it.each(["progressive", "transform"] as const)(
     try {
       scheduler.runAll();
       if (kind === "progressive") {
-        renderer.setProgressiveElementPreviews(ids, (id) => store.get(id)?.element, 1);
+        renderer.setProgressiveElementPreviews(ids, (id) => store.get(id)?.element, 1, {
+          transform: "translate(0 0)",
+          inverse: "translate(0 0)",
+          transformBounds: (bounds) => bounds,
+        });
       } else {
-        renderer.setPreviewTransform(ids, "translate(5 0)", 1);
+        renderer.setPreviewTransform(ids, "translate(5 0)", 1, "scale", (bounds) => ({
+          ...bounds,
+          minX: bounds.minX + 5,
+          maxX: bounds.maxX + 5,
+        }));
       }
       scheduler.runAll();
       expect(renderer.mountedIds("content")).toEqual([old.id]);
@@ -388,14 +396,14 @@ it.each(["progressive", "transform"] as const)(
       if (kind === "transform") expect(oldNode.attributes.get("transform")).toBe("translate(5 0)");
       renderer.setViewport({ ...VIEWPORT, top: 500 });
       scheduler.runAll();
-      expect(selectedIds()).toEqual([old.id]);
+      expect(selectedIds()).toEqual([]);
       expect(renderer.mountedIds("content")).toEqual([]);
-      expect(renderer.mountedCount).toBe(1);
-      expect(oldNode.parent).toBeDefined();
+      expect(renderer.mountedCount).toBe(0);
+      expect(oldNode.parent).toBeUndefined();
       renderer.setViewport({ ...VIEWPORT, top: 650 });
       if (kind === "transform") renderer.setCamera({ x: -300, zoom: 1 });
       scheduler.runAll(20);
-      expect(selectedIds()).toHaveLength(256);
+      expect(selectedIds()).toEqual([]);
       expect(selectedIds()).not.toContain(old.id);
       expect({
         domExits: renderer.instrumentation().domExits,

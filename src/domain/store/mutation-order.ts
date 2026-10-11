@@ -11,6 +11,18 @@ export interface MutationOrder {
   readonly relativeOrderPreserved: Readonly<Record<RenderBand, boolean>>;
 }
 
+/** Private producers borrow untouched authoritative bands until an atomic replacement is ready. */
+export function createUnchangedMutationOrder(
+  bands: Readonly<Record<RenderBand, readonly string[]>>,
+) {
+  return {
+    bands: { content: bands.content as string[], highlight: bands.highlight as string[] },
+    ranks: new Map<string, ElementRank>(),
+    dirtyBands: { content: false, highlight: false },
+    relativeOrderPreserved: { content: true, highlight: true },
+  };
+}
+
 interface OrderSource {
   readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
   readonly records: ReadonlyMap<string, ElementRecord>;

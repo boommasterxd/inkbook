@@ -1,7 +1,7 @@
 import { arrangeRenderBandSteps, type ArrangeAction } from "../commands/arrange";
 import type { RenderBand } from "../commands/render-bands";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
-import type { MutationOrder } from "./mutation-order";
+import { createUnchangedMutationOrder, type MutationOrder } from "./mutation-order";
 import type { ElementMutation, ElementRank, StoreSliceScheduler } from "./types";
 
 interface ArrangementSource {
@@ -39,13 +39,8 @@ export async function prepareArrangementMutation(
   const pendingRanges = work.run(selectedArrangementRanges(source, selection));
   const ranges = pendingRanges instanceof Promise ? await pendingRanges : pendingRanges;
   if (ranges === "cancelled") return ranges;
-  const bands = {
-    content: source.bands.content as string[],
-    highlight: source.bands.highlight as string[],
-  };
-  const ranks = new Map<string, ElementRank>();
-  const dirtyBands = { content: false, highlight: false };
-  const relativeOrderPreserved = { content: true, highlight: true };
+  const order = createUnchangedMutationOrder(source.bands);
+  const { bands, ranks, dirtyBands, relativeOrderPreserved } = order;
   for (const [band, selected] of ranges) {
     const [start, end] = arrangementRange(source.bands[band].length, selected, action);
     const prepared = await prepareArrangedBand(
@@ -62,7 +57,7 @@ export async function prepareArrangementMutation(
   }
   if (scheduler.isCancelled?.()) return "cancelled";
   if (!dirtyBands.content && !dirtyBands.highlight) return null;
-  return { mutation: { bands }, order: { bands, ranks, dirtyBands, relativeOrderPreserved } };
+  return { mutation: { bands }, order };
 }
 
 function* selectedArrangementRanges(source: ArrangementSource, selection: ReadonlySet<string>) {

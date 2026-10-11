@@ -7,16 +7,20 @@ import { HitTestScratch } from "../../../editor/selection/public";
 import type { SnapTarget } from "../../../editor/snapping/snap-candidate";
 import type { SceneStorePort, SpatialQuerySink } from "../../../rendering/scene/index";
 import type { ActiveDocumentMemoryStorePort } from "../../../editor/session/active-document-memory-coordinator";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { ConnectionCycleCache } from "./connection-cycle-cache";
 
 export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemoryStorePort {
   readonly #hitScratch = new HitTestScratch();
   readonly #hitSink: SpatialQuerySink = { add: (id) => this.#considerHit(id) };
   readonly #scratch = new SpatialQueryScratch<string>();
   readonly #store: ElementStore;
+  readonly #connections: ConnectionCycleCache;
   readonly #unsubscribeMemoryUsage: () => void;
 
   public constructor(store: ElementStore, onMemoryUsageChanged: () => void = () => undefined) {
     this.#store = store;
+    this.#connections = new ConnectionCycleCache(store, onMemoryUsageChanged);
     this.#unsubscribeMemoryUsage = store.subscribeMemoryUsage(onMemoryUsageChanged);
   }
   public prepareScenePaths: SceneStorePort["prepareScenePaths"];
@@ -65,31 +69,34 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
   }
 
   public canConnect(sourceId: string, targetId: string): boolean {
-    const pending = [targetId];
-    const visited = new Set<string>();
-    while (pending.length > 0) {
-      const id = pending.pop()!;
-      if (id === sourceId) return false;
-      if (visited.has(id)) continue;
-      visited.add(id);
-      const target = this.#store.get(id)?.element;
-      if (target?.kind !== "line" && target?.kind !== "arrow") continue;
-      if (target.startConnection !== null) pending.push(target.startConnection.targetId);
-      if (target.endConnection !== null) pending.push(target.endConnection.targetId);
-    }
-    return true;
+    return this.#connections.canConnect(sourceId, targetId);
+  }
+
+  public prepareConnections(
+    sourceId: string,
+    scheduler: WorkScheduler,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    return this.#connections.prepare(sourceId, scheduler, signal);
+  }
+
+  public clearConnections(): void {
+    this.#connections.clear();
   }
 
   public memoryUsage(): ReturnType<ActiveDocumentMemoryStorePort["memoryUsage"]> {
     const usage = this.#store.activeDocumentMemoryUsage();
     return {
       ...usage,
+      selectionGeometryCacheBytes:
+        (usage.selectionGeometryCacheBytes ?? 0) + this.#connections.memoryUsage(),
       pressurePathCacheBytes: usage.pressurePathCacheBytes,
     };
   }
 
   public setActiveDocumentMemoryPressure(active: boolean): void {
     this.#store.setActiveDocumentMemoryPressure(active);
+    this.#connections.setMemoryPressure(active);
   }
 
   public materializeBandOrder(band: "content" | "highlight"): readonly string[] {
@@ -129,6 +136,7 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
   }
 
   public release(): void {
+    this.#connections.release();
     this.#unsubscribeMemoryUsage();
     this.#scratch.release();
   }
