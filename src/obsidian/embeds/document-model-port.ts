@@ -68,7 +68,11 @@ export interface EditableDocumentModel {
   commitPage(page: InkSnapshotV1["page"]): void;
   prepareElementMutation(
     mutation: ElementMutation,
-    cancellation: { isCancelled(): boolean; readonly replay?: AppliedElementMutation },
+    cancellation: {
+      isCancelled(): boolean;
+      readonly replay?: AppliedElementMutation;
+      readonly replaySource?: "retained";
+    },
   ): Promise<PreparedElementMutationResult>;
   prepareElementRemoval(
     ids: ReadonlySet<string> | readonly string[],

@@ -17,6 +17,7 @@ export interface OwnedMutationHistory {
 export interface OwnedMutationReplay {
   readonly history: OwnedMutationHistory;
   readonly bandsTrusted: boolean;
+  readonly retainedMutation?: ElementMutation;
 }
 
 export const STABLE_RELATIVE_ORDER: Readonly<Record<RenderBand, boolean>> = Object.freeze({

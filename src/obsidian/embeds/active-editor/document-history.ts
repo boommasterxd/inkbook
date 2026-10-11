@@ -235,6 +235,7 @@ export async function applyDocumentHistoryMutation(
   try {
     const prepared = await model.prepareElementMutation(mutation, {
       replay,
+      replaySource: "retained",
       isCancelled: cancelled,
     });
     if (prepared.status !== "prepared" || prepared.token === null || cancelled()) return false;

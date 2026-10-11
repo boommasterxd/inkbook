@@ -49,16 +49,16 @@ export function elementMutationPorts(
       if (result.status === "committed") committed();
       return result.transition;
     },
-    prepareElementMutation: (mutation, cancellation) =>
-      store.prepareElementMutation(
-        mutation,
-        {
-          isCancelled: () => cancellation.isCancelled(),
-          shouldYield: () => work.shouldYield(),
-          yieldControl: () => work.yieldControl(),
-        },
-        cancellation.replay,
-      ),
+    prepareElementMutation: (mutation, cancellation) => {
+      const scheduler = {
+        isCancelled: () => cancellation.isCancelled(),
+        shouldYield: () => work.shouldYield(),
+        yieldControl: () => work.yieldControl(),
+      };
+      return cancellation.replaySource === "retained" && cancellation.replay !== undefined
+        ? store.prepareHistoryReplay(mutation, scheduler, cancellation.replay)
+        : store.prepareElementMutation(mutation, scheduler, cancellation.replay);
+    },
     prepareElementRemoval: async (ids, cancellation) => {
       const scheduler = {
         isCancelled: () => cancellation.isCancelled(),

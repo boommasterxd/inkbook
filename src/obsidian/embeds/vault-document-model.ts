@@ -190,6 +190,16 @@ export function prepareVaultElementMutation(options: {
   readonly store: ElementStore;
 }): ReturnType<EditableDocumentModel["prepareElementMutation"]> {
   if (!options.active) return Promise.resolve({ status: "cancelled", token: null });
+  if (
+    options.cancellation.replaySource === "retained" &&
+    options.cancellation.replay !== undefined
+  ) {
+    return options.store.prepareHistoryReplay(
+      options.mutation,
+      options.scheduler(() => options.cancellation.isCancelled()),
+      options.cancellation.replay,
+    );
+  }
   return options.store.prepareElementMutation(
     options.mutation,
     options.scheduler(() => options.cancellation.isCancelled()),

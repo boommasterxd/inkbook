@@ -7,14 +7,12 @@ import {
   removeConnectionReferences,
   assertResolvedConnections,
   isAnchorTarget,
-  isConnectable,
-  prepareConnectionDetachments,
-  resolveConnections,
 } from "./connections";
 import { classifyReplacementSteps, elementsEqualSteps, hasConnections } from "./element-comparison";
 import type { DocumentCapacity, DocumentCapacityPatch } from "./document-capacity";
 import type { PreparedSpatialMutation } from "../spatial/mutation-preparation";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import { buildIdSet, collectDesiredElements } from "./mutation-elements";
 import {
   prepareMutationOrder,
   collectMutationAffectedIds,
@@ -24,7 +22,6 @@ import {
 import { prepareMutationHistory } from "./mutation-history";
 import {
   ownedHistoryPayloadBytes,
-  ownedReplayRecords,
   prepareOwnedMutationHistory,
   restoreOwnedRecordSteps,
   type OwnedMutationHistory,
@@ -37,8 +34,7 @@ import {
   nextRecordVersion,
 } from "./record-factory";
 import { requireElementRecord } from "./record-access";
-import { assertReplacementIdentity } from "./replacement-planner";
-import { prepareRuntimeElement } from "./runtime-element-preparation";
+import { resolveHistoryReplay } from "./owned-history-replay";
 import type {
   AppliedElementMutation,
   DeltaDomain,
@@ -81,15 +77,15 @@ export async function planElementMutation(
   trustedRemoval = false,
   ownedReplay?: OwnedMutationReplay,
 ): Promise<ElementMutationPlan | "cancelled" | null> {
-  if (replay !== undefined && requested !== replay.forward && requested !== replay.reverse) {
-    throw new RangeError("History replay must use a retained transition direction.");
-  }
   const scheduler = new MutationPreparationScheduler(sourceScheduler);
+  const direction = requested;
+  const resolved = resolveHistoryReplay(direction, replay, ownedReplay);
+  const ownedRecords = resolved.records;
+  requested = resolved.requested;
   const sourceRanks = source.ranks ?? (await buildRanks(source.bands, scheduler));
   if (sourceRanks === "cancelled") return sourceRanks;
   const removeIds = await buildIdSet(requested.removeIds ?? [], scheduler);
   if (removeIds === "cancelled") return removeIds;
-  const ownedRecords = ownedReplayRecords(requested, replay, ownedReplay?.history);
   const collected = await collectDesiredElements(
     source,
     requested.elements ?? [],
@@ -130,6 +126,7 @@ export async function planElementMutation(
       desired,
       removeIds,
       ownedPayloadBytes: ownedHistoryPayloadBytes(ownedHistory),
+      retainedReplay: ownedReplay?.retainedMutation !== undefined,
     },
     scheduler,
     replay,
@@ -145,7 +142,7 @@ export async function planElementMutation(
     ranks,
     records,
     ownedHistory,
-    requested,
+    requested: direction,
   };
 }
 
@@ -157,77 +154,6 @@ function historyDirection(
   trustedRemoval: boolean,
 ): ElementMutation {
   return trustedRemoval ? requested : { bands, elements, removeIds: [...removeIds] };
-}
-
-async function collectDesiredElements(
-  source: MutationSource,
-  elements: readonly InkElementV1[],
-  removeIds: ReadonlySet<string>,
-  scheduler: MutationPreparationScheduler,
-  ownedRecords?: ReadonlyMap<string, ElementRecord>,
-): Promise<{ desired: Map<string, InkElementV1>; explicit: InkElementV1[] } | "cancelled"> {
-  const desired = await collectConnectionDetachments(source, removeIds, scheduler);
-  if (desired === "cancelled") return desired;
-  const explicit: InkElementV1[] = [];
-  for (const input of elements) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    const current = source.records.get(input.id);
-    const element = await prepareRuntimeElement(
-      input,
-      current,
-      ownedRecords?.get(input.id),
-      scheduler,
-    );
-    if (element === "cancelled") return element;
-    if (desired.has(element.id) && !removeIds.has(element.id)) {
-      throw new RangeError(`Duplicate mutation element ID: ${element.id}`);
-    }
-    if (removeIds.has(element.id))
-      throw new RangeError(`Mutation cannot remove and set: ${element.id}`);
-    if (current !== undefined) assertReplacementIdentity(current.element, element);
-    desired.set(element.id, element);
-    explicit.push(element);
-  }
-  const lookup = (id: string) =>
-    removeIds.has(id) ? undefined : (desired.get(id) ?? source.records.get(id)?.element);
-  for (const [id, element] of desired) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    if (isConnectable(element)) desired.set(id, resolveConnections(element, lookup));
-  }
-  return { desired, explicit };
-}
-
-async function buildIdSet(
-  ids: readonly string[],
-  scheduler: MutationPreparationScheduler,
-): Promise<Set<string> | "cancelled"> {
-  const result = new Set<string>();
-  for (const id of ids) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    result.add(id);
-  }
-  return result;
-}
-
-async function collectConnectionDetachments(
-  source: MutationSource,
-  removeIds: ReadonlySet<string>,
-  scheduler: MutationPreparationScheduler,
-): Promise<Map<string, InkElementV1> | "cancelled"> {
-  const detached = new Map<string, InkElementV1>();
-  for (const targetId of removeIds) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    const additions = prepareConnectionDetachments(
-      new Set([targetId]),
-      source.reverseConnections,
-      (id) => detached.get(id) ?? requireElementRecord(source.records, id).element,
-      () => undefined,
-    );
-    for (const [id, element] of additions) {
-      if (!removeIds.has(id)) detached.set(id, element);
-    }
-  }
-  return detached;
 }
 
 async function buildRecords(

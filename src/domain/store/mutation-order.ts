@@ -32,7 +32,29 @@ export async function prepareMutationOrder(
   if (proof.trustedRemoval) {
     return validateTrustedRemovalOrder(requested, source, sourceRanks, proof.removeIds, scheduler);
   }
-  if (proof.ownedReplay?.bandsTrusted && proof.ownedRecords !== undefined) {
+  const replayOrder = await prepareReplayOrder(
+    source,
+    requested,
+    records,
+    sourceRanks,
+    scheduler,
+    proof,
+  );
+  if (replayOrder !== undefined) return replayOrder;
+  return validateMutationBands(requested.bands, source, records, sourceRanks, scheduler);
+}
+
+async function prepareReplayOrder(
+  source: OrderSource,
+  requested: ElementMutation,
+  records: ReadonlyMap<string, ElementRecord | null>,
+  sourceRanks: ReadonlyMap<string, ElementRank>,
+  scheduler: MutationPreparationScheduler,
+  proof: Parameters<typeof prepareMutationOrder>[5],
+): Promise<MutationOrder | "cancelled" | undefined> {
+  if (proof.ownedReplay === undefined || proof.ownedRecords === undefined) return undefined;
+  const { bandsTrusted, retainedMutation } = proof.ownedReplay;
+  if (bandsTrusted || retainedMutation !== undefined) {
     const valid = await validateOwnedReplayMembership(
       source,
       records,
@@ -40,7 +62,10 @@ export async function prepareMutationOrder(
       scheduler,
     );
     if (valid === "cancelled") return valid;
-    if (valid)
+    if (!valid && retainedMutation !== undefined) {
+      throw new RangeError("Retained history resulting membership no longer matches.");
+    }
+    if (valid && bandsTrusted)
       return restoreOwnedReplayBands(
         requested.bands,
         source,
@@ -49,7 +74,7 @@ export async function prepareMutationOrder(
         scheduler,
       );
   }
-  return validateMutationBands(requested.bands, source, records, sourceRanks, scheduler);
+  return undefined;
 }
 
 export async function validateMutationBands(

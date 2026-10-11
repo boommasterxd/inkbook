@@ -9,6 +9,7 @@ import {
 import type { EditableDocumentModel } from "../vault-document-session";
 
 import { EraserFrameScheduler } from "./eraser-scheduler";
+import { applyDocumentHistoryMutation } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
 import type { CoalescedCreationSample } from "./coalesced-input";
@@ -170,18 +171,8 @@ export class EraserPreview implements GesturePreview {
     return true;
   }
 
-  async #applyMutation(
-    mutation: ElementMutation,
-    replay: AppliedElementMutation,
-  ): Promise<boolean> {
-    const expectedRevision = this.#model.revision;
-    const cancelled = () => this.#model.revision !== expectedRevision;
-    const prepared = await this.#model.prepareElementMutation(mutation, {
-      replay,
-      isCancelled: cancelled,
-    });
-    if (prepared.token === null || cancelled()) return false;
-    return this.#model.commitPreparedElementMutation(prepared.token) !== null;
+  #applyMutation(mutation: ElementMutation, replay: AppliedElementMutation): Promise<boolean> {
+    return applyDocumentHistoryMutation(this.#model, mutation, replay, () => false);
   }
 
   #assertActive(): void {

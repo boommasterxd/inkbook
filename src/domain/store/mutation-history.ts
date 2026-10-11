@@ -18,6 +18,7 @@ interface HistoryPreparation {
   readonly desired: ReadonlyMap<string, InkElementV1>;
   readonly removeIds: ReadonlySet<string>;
   readonly ownedPayloadBytes?: number;
+  readonly retainedReplay?: boolean;
 }
 
 export async function prepareMutationHistory(
@@ -27,6 +28,7 @@ export async function prepareMutationHistory(
   trustedRemoval = false,
 ): Promise<AppliedElementMutation | "cancelled"> {
   if (replay !== undefined) {
+    if (state.retainedReplay) return replay;
     const forwardBytes = await estimateMutationBytes(state.requested, scheduler);
     if (forwardBytes === "cancelled") return forwardBytes;
     const reverseBytes = await estimateReverseBytes(state, scheduler);

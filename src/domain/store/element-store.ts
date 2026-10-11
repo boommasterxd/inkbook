@@ -309,6 +309,9 @@ export class ElementStore {
     this.#preparedElementMutations.createRemovalMutationTimeSliced.bind(
       this.#preparedElementMutations,
     );
+  public readonly prepareHistoryReplay = this.#preparedElementMutations.prepareHistoryReplay.bind(
+    this.#preparedElementMutations,
+  );
   public commitPreparedElementMutation(
     token: PreparedElementMutation,
   ): ElementMutationCommitResult {

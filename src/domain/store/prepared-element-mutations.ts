@@ -5,6 +5,8 @@ import {
 } from "./element-mutation";
 import { createRemovalMutationTimeSliced } from "./removal-mutation";
 import { createRemovalTransition } from "./removal-transition";
+import { ownedHistoryReplaySteps } from "./owned-history-replay";
+import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import {
   captureOwnedMutationHistory,
   STABLE_RELATIVE_ORDER,
@@ -65,24 +67,54 @@ export class PreparedElementMutations {
     return mutation;
   }
 
-  public async prepare(
+  public prepare(
     mutation: ElementMutation,
     scheduler: StoreSliceScheduler,
     replay?: AppliedElementMutation,
   ): Promise<PreparedElementMutationResult> {
+    return this.#prepare(mutation, scheduler, replay);
+  }
+
+  /** Only transitions retained by this store can select private canonical replay values. */
+  public prepareHistoryReplay(
+    mutation: ElementMutation,
+    scheduler: StoreSliceScheduler,
+    replay: AppliedElementMutation,
+  ): Promise<PreparedElementMutationResult> {
+    return this.#prepare(mutation, scheduler, replay, true);
+  }
+
+  async #prepare(
+    mutation: ElementMutation,
+    scheduler: StoreSliceScheduler,
+    replay?: AppliedElementMutation,
+    retained = false,
+  ): Promise<PreparedElementMutationResult> {
     const source = this.#readSource();
+    const work = {
+      isCancelled: () =>
+        source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
+      shouldYield: scheduler.shouldYield,
+      yieldControl: scheduler.yieldControl,
+    };
+    let proof = this.#replayProof(mutation, replay, source.mutationVersion);
+    if (retained) {
+      if (proof === undefined || replay === undefined) {
+        throw new RangeError("History transition is not retained by this store.");
+      }
+      const retainedMutation = await new MutationPreparationScheduler(work).run(
+        ownedHistoryReplaySteps(mutation, replay, proof.history, source.records),
+      );
+      if (retainedMutation === "cancelled") return { status: "cancelled", token: null };
+      proof = { ...proof, retainedMutation };
+    }
     const plan = await planElementMutation(
       source,
       mutation,
-      {
-        isCancelled: () =>
-          source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
-        shouldYield: scheduler.shouldYield,
-        yieldControl: scheduler.yieldControl,
-      },
+      work,
       replay,
       replay === undefined && this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
-      this.#replayProof(mutation, replay, source.mutationVersion),
+      proof,
     );
     if (plan === "cancelled" || source.mutationVersion !== this.#readVersion()) {
       return { status: "cancelled", token: null };
