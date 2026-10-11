@@ -76,6 +76,26 @@ function opacityControl(fixture: ReturnType<typeof cacheFixture>) {
   return fixture.styles.presentation("select").controls.find(({ id }) => id === "opacity");
 }
 
+describe("style presentation demand", () => {
+  it("keeps icon-only presentation lazy and each resolved control snapshot stable", () => {
+    const fixture = cacheFixture();
+    const unopened = fixture.styles.presentation("select");
+    expect(unopened.selectionArea).toBe("lasso");
+    expect(unopened.icon).toBeDefined();
+    expect(unopened.shapeIcon).toBeDefined();
+    expect(fixture.reads).not.toHaveBeenCalled();
+    expect(fixture.summary).not.toHaveBeenCalled();
+    fixture.setSelection([fixture.second.id]);
+    const controls = unopened.controls;
+    expect(controls.find(({ id }) => id === "opacity")).toMatchObject({ value: 0.5 });
+    fixture.setSelection([fixture.first.id]);
+    expect(unopened.controls).toBe(controls);
+    expect(opacityControl(fixture)).toMatchObject({ value: 1 });
+    expect(fixture.summary).toHaveBeenCalledTimes(2);
+    expect(fixture.reads).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("selected style presentation cache", () => {
   it("reuses canonical controls across tools without rereading or summarizing selected records", () => {
     const fixture = cacheFixture();
@@ -209,6 +229,6 @@ describe("style presentation cache lifecycle", () => {
     fixture.summary.mockClear();
     expect(fixture.styles.presentation("select").controls).not.toBe(initial);
     fixture.styles.presentation("select");
-    expect(fixture.summary).toHaveBeenCalledTimes(2);
+    expect(fixture.summary).toHaveBeenCalledOnce();
   });
 });

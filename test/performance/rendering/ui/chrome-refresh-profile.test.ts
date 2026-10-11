@@ -47,7 +47,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz React chrome profile`, (
   });
 
   it(
-    "reuses the 10K selected-style summary through pending chrome feedback and history",
+    "defers the 10K selected-style summary until controls are read after history updates",
     verifySelectedStyleCache,
   );
 });
@@ -101,8 +101,10 @@ async function verifySelectedStyleCache(): Promise<void> {
     reads.mockClear();
     summaries.mockClear();
   };
-  assertWork(10_000);
+  expect(reads).not.toHaveBeenCalled();
+  expect(summaries).not.toHaveBeenCalled();
   const retained = styles.presentation("select").controls;
+  assertWork(10_000);
   for (const [canUndo, canRedo] of [
     [false, false],
     [true, false],
@@ -124,6 +126,9 @@ async function verifySelectedStyleCache(): Promise<void> {
     reads.mockClear();
     summaries.mockClear();
     mounted.update(refresh(history.canUndo, history.canRedo));
+    expect(reads).not.toHaveBeenCalled();
+    expect(summaries).not.toHaveBeenCalled();
+    expect(styles.presentation("select").controls).toHaveLength(3);
     assertWork(10_000);
     mounted.update(refresh(false));
     expect(reads).not.toHaveBeenCalled();
@@ -132,6 +137,9 @@ async function verifySelectedStyleCache(): Promise<void> {
   selection = new Set(source.strokeIds.slice(0, 1));
   styles.invalidateSelection();
   mounted.update(refresh(true));
+  expect(reads).not.toHaveBeenCalled();
+  expect(summaries).not.toHaveBeenCalled();
+  expect(styles.presentation("select").controls).toHaveLength(3);
   assertWork(1);
   styles.dispose();
   mounted.unmount();

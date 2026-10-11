@@ -94,8 +94,12 @@ export class ActiveEditorStyleSession {
     readonly selectionArea: ToolDefaultsV1["select"]["area"];
     readonly shapeIcon: ActiveShapeIconState;
   } {
+    const resolveControls = () => this.#controls(tool);
+    let controls: readonly StyleControl[] | undefined;
     return {
-      controls: this.#controls(tool),
+      get controls() {
+        return (controls ??= resolveControls());
+      },
       icon: createActiveEditorStyleIcon(this.#defaults, tool),
       selectionArea: this.#defaults.select.area,
       shapeIcon: createActiveShapeIcon(this.#defaults),
