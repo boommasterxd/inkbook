@@ -3,6 +3,7 @@ import * as primitives from "../../../../src/domain/geometry/primitives";
 import * as geometry from "../../../../src/domain/geometry/element-path";
 import { BoundedVersionLru } from "../../../../src/domain/cache/bounded-version-lru";
 import { ElementStore } from "../../../../src/domain/store/public";
+import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import { SceneGeometryAliases } from "../../../../src/rendering/scene/scene-geometry-aliases";
 import { PATH_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants";
@@ -13,7 +14,7 @@ afterEach(() => vi.restoreAllMocks());
 it("restores 10,000 canonical strokes with one contour and alias access and no signature work", () => {
   const sources = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
   const store = new ElementStore(sources);
-  const elements = sources.map(({ id }) => store.get(id)!.element);
+  const elements = sources.map(({ id }) => store.get(id)!.element as InkElementV1);
   const cache = new ScenePathCache();
   const parts = elements.map((element) => cache.build(element));
   elements.forEach((element, index) => cache.retain(element.id, 1, parts[index]!));
