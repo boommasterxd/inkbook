@@ -4,6 +4,9 @@ import { cellMembershipCount } from "./cell-membership";
 import type { CellRange, IndexedEntry, SpatialReplacement } from "./index-state";
 import type { SpatialReplacementPreparationScheduler } from "./replacement-preparation";
 
+// This selects the synchronous local patch; it does not impose a scheduler handoff.
+export const MAX_ATOMIC_MUTATION_WORK = 1_024;
+
 export interface PreparedSpatialMutation {
   readonly commit: () => void;
 }
@@ -41,7 +44,7 @@ interface MutationState<Id> {
   readonly inserted: StagedSpatialInsertion<Id>[];
   memberships: number;
   overflow: number;
-  atomicWork: number;
+  atomicWork: number | undefined;
 }
 
 /** Validate the final aggregate before changing any live cells, including remove-and-insert swaps. */
@@ -63,7 +66,7 @@ export async function stageSpatialMutationTimeSliced<Id>(
   scheduler: SpatialReplacementPreparationScheduler,
 ): Promise<StagedSpatialMutation<Id> | "cancelled"> {
   const generation = ports.generation();
-  const stage = createStage(ports);
+  const stage = createStage(ports, true);
   for (const id of removals) {
     const admission = spatialMutationCheckpoint(scheduler);
     if (
@@ -94,7 +97,7 @@ export async function stageSpatialMutationTimeSliced<Id>(
   return finishStage(stage, ports, generation);
 }
 
-function createStage<Id>(ports: MutationPorts<Id>): MutationState<Id> {
+function createStage<Id>(ports: MutationPorts<Id>, estimateAtomicWork = false): MutationState<Id> {
   return {
     removedIds: new Set(),
     removed: [],
@@ -102,7 +105,7 @@ function createStage<Id>(ports: MutationPorts<Id>): MutationState<Id> {
     inserted: [],
     memberships: ports.memberships,
     overflow: ports.overflow,
-    atomicWork: 0,
+    atomicWork: estimateAtomicWork ? 0 : undefined,
   };
 }
 
@@ -115,7 +118,9 @@ function stageRemoval<Id>(id: Id, state: MutationState<Id>, ports: MutationPorts
   const cells = entry.cellKeys.length / 2;
   state.memberships -= cells;
   state.overflow -= Number(entry.overflow);
-  state.atomicWork += cells + (entry.overflow ? ports.overflow : 0);
+  if (state.atomicWork !== undefined && state.atomicWork <= MAX_ATOMIC_MUTATION_WORK) {
+    state.atomicWork += cells + (entry.overflow ? ports.overflow : 0);
+  }
 }
 
 function stageInsertion<Id>(
@@ -134,7 +139,10 @@ function stageInsertion<Id>(
   const cells = cellMembershipCount(range);
   state.memberships += cells;
   state.overflow += Number(range.overflow);
-  state.atomicWork += cells + Math.ceil(Math.log2(ports.heapEntries + state.inserted.length + 1));
+  // Once the shadow is required, later estimates cannot change the selected algorithm.
+  if (state.atomicWork !== undefined && state.atomicWork <= MAX_ATOMIC_MUTATION_WORK) {
+    state.atomicWork += cells + Math.ceil(Math.log2(ports.heapEntries + state.inserted.length + 1));
+  }
 }
 
 function finishStage<Id>(
@@ -153,7 +161,7 @@ function finishStage<Id>(
     removed: state.removed,
     removedIds: state.removedIds,
     inserted: state.inserted,
-    atomicWork: state.atomicWork,
+    atomicWork: state.atomicWork ?? 0,
     commitWith: (apply) => ({
       commit: () => {
         if (consumed || generation !== ports.generation())

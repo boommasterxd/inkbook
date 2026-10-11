@@ -3,12 +3,15 @@ import * as bottomHeap from "../../../../src/domain/spatial/max-bottom-heap";
 
 import {
   MAX_OVERFLOW_ELEMENTS,
+  MAX_SPATIAL_MEMBERSHIPS,
   SpatialQueryScratch,
   UniformSpatialIndex,
 } from "../../../../src/domain/spatial/index";
+import type { SpatialBounds } from "../../../../src/domain/spatial/bounds";
 
 const near = { minX: 0, minY: 0, maxX: 10, maxY: 10 };
 const far = { minX: 1000, minY: 1000, maxX: 1010, maxY: 1010 };
+const maximumGrid = { ...near, maxX: 65_535 };
 
 describe("prepared spatial mutations", () => {
   it("keeps removal and replacement private until atomic commit", () => {
@@ -130,7 +133,7 @@ describe("sliced spatial capacity and full-removal validation", () => {
         scheduler,
       );
       if (restored === "cancelled") throw new Error("Expected a complete replacement.");
-      expect(scan).toHaveBeenCalledTimes(1);
+      expect(scan).not.toHaveBeenCalled();
       expect(query(index, near)).toEqual(ids);
       restored.commit();
       expect(query(index, near)).toEqual([...ids].reverse());
@@ -168,6 +171,101 @@ describe("sliced spatial capacity and full-removal validation", () => {
     expect(index.getMaximumBottom()).toBe(30);
     expect(query(index, near)).not.toContain(2);
   });
+});
+
+describe("atomic spatial mutation selection", () => {
+  it.each([1_024, 1_025])(
+    "preserves the atomic selection boundary at %i memberships",
+    async (work) => {
+      const index = new UniformSpatialIndex<number>();
+      index.insertMany([
+        ...Array.from({ length: 4 }, (_, id) => ({ id, bounds: maximumGrid })),
+        { id: 4, bounds: near },
+        { id: 5, bounds: far },
+      ]);
+      const entries = (index as unknown as { entries: Map<number, unknown> }).entries;
+      const scan = vi.spyOn(entries, "values");
+      try {
+        const removed = Array.from({ length: work === 1_024 ? 4 : 5 }, (_, id) => id);
+        const plan = await index.prepareMutationTimeSliced(removed, [], {
+          shouldYield: () => false,
+          yieldControl: async () => undefined,
+        });
+        if (plan === "cancelled") throw new Error("Expected a prepared boundary removal.");
+        expect(index.size).toBe(6);
+        expect(scan).toHaveBeenCalledTimes(work === 1_024 ? 0 : 1);
+        plan.commit();
+        expect(index.membershipCount).toBe(1_026 - work);
+        expect(query(index, near)).toEqual(work === 1_024 ? [4] : []);
+        expect(query(index, far)).toEqual([5]);
+        expect(index.getMaximumBottom()).toBe(1_010);
+      } finally {
+        scan.mockRestore();
+      }
+    },
+  );
+});
+
+describe("saturated spatial mutation validation", () => {
+  it.each(["duplicate", "bounds", "membership", "overflow", "version"])(
+    "rejects late %s failures after the shadow estimate is established",
+    async (failure) => {
+      const index = new UniformSpatialIndex<number>();
+      index.insert(-1, far);
+      const additions = invalidShadowInsertions(failure);
+      if (failure === "version") {
+        (index as unknown as { recordVersion: number }).recordVersion =
+          Number.MAX_SAFE_INTEGER - additions.length + 1;
+      }
+      await expect(
+        index.prepareMutationTimeSliced([], additions, {
+          shouldYield: () => false,
+          yieldControl: async () => undefined,
+        }),
+      ).rejects.toThrow();
+      expect(index.size).toBe(1);
+      expect(index.membershipCount).toBe(1);
+      expect(index.overflowCount).toBe(0);
+      expect(query(index, far)).toEqual([-1]);
+      expect(index.getMaximumBottom()).toBe(1_010);
+    },
+  );
+});
+
+describe("saturated spatial mutation cancellation", () => {
+  it.each(["cancelled", "stale"])(
+    "stops %s staging after the shadow estimate is established",
+    async (mode) => {
+      const index = new UniformSpatialIndex<number>();
+      index.insert(-1, far);
+      const range = vi.spyOn(
+        index as unknown as { prepareRange: (bounds: SpatialBounds) => unknown },
+        "prepareRange",
+      );
+      let cancelled = false;
+      try {
+        const result = await index.prepareMutationTimeSliced(
+          [],
+          Array.from({ length: 1_200 }, (_, id) => ({ id, bounds: near })),
+          {
+            isCancelled: () => cancelled,
+            shouldYield: () => range.mock.calls.length === 200,
+            yieldControl: async () => {
+              if (mode === "cancelled") cancelled = true;
+              else index.insert(-2, near);
+            },
+          },
+        );
+        expect(result).toBe("cancelled");
+        expect(range).toHaveBeenCalledTimes(mode === "cancelled" ? 200 : 201);
+        expect(index.size).toBe(mode === "cancelled" ? 1 : 2);
+        expect(query(index, far)).toEqual([-1]);
+        expect(query(index, near)).toEqual(mode === "cancelled" ? [] : [-2]);
+      } finally {
+        range.mockRestore();
+      }
+    },
+  );
 });
 
 describe("time-sliced spatial mutations", () => {
@@ -255,6 +353,29 @@ describe("time-sliced spatial mutations", () => {
     }
   });
 });
+
+function invalidShadowInsertions(failure: string) {
+  if (failure === "membership") {
+    return Array.from({ length: MAX_SPATIAL_MEMBERSHIPS / 256 + 1 }, (_, id) => ({
+      id,
+      bounds: maximumGrid,
+    }));
+  }
+  if (failure === "overflow") {
+    return Array.from({ length: MAX_OVERFLOW_ELEMENTS + 1 }, (_, id) => ({
+      id,
+      bounds: { ...near, maxX: 1_000_000 },
+    }));
+  }
+  const prefix = Array.from({ length: 200 }, (_, id) => ({ id, bounds: near }));
+  return [
+    ...prefix,
+    {
+      id: failure === "duplicate" ? 0 : 200,
+      bounds: failure === "bounds" ? { ...near, maxX: NaN } : near,
+    },
+  ];
+}
 
 function createOverflowIndex(maxY = near.maxY): UniformSpatialIndex<number> {
   const index = new UniformSpatialIndex<number>();

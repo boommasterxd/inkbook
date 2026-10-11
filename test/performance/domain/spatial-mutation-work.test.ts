@@ -54,9 +54,15 @@ function observeMutationWork(index: UniformSpatialIndex<number>) {
     return work;
   });
   const push = vi.spyOn(bottomHeap, "pushBottom");
+  const originalLog2 = Math.log2;
+  const estimate = vi.spyOn(Math, "log2").mockImplementation((value) => {
+    sliceWork += 1;
+    return originalLog2(value);
+  });
   const liveSize = index.size;
   return {
     attach,
+    estimate,
     get,
     heapify,
     push,
@@ -65,6 +71,7 @@ function observeMutationWork(index: UniformSpatialIndex<number>) {
       attaches: attach.mock.calls.length,
       comparisons,
       enumerations,
+      estimates: estimate.mock.calls.length,
       heapBuilds: heapify.mock.calls.length,
       pushes: push.mock.calls.length,
       sliceWork,
@@ -80,7 +87,7 @@ function observeMutationWork(index: UniformSpatialIndex<number>) {
       },
     },
     restore: () => {
-      for (const spy of [get, values, attach, heapify, push]) spy.mockRestore();
+      for (const spy of [get, values, attach, heapify, push, estimate]) spy.mockRestore();
     },
   };
 }
@@ -130,7 +137,13 @@ it("builds the retained spatial shadow with linear heap comparisons before atomi
 
 it("clears 10,000 validated entries without a second enumeration and restores the linear heap", async () => {
   const index = new UniformSpatialIndex<number>();
-  index.insertMany(insertions);
+  const synchronousEstimate = vi.spyOn(Math, "log2");
+  try {
+    index.insertMany(insertions);
+    expect(synchronousEstimate).not.toHaveBeenCalled();
+  } finally {
+    synchronousEstimate.mockRestore();
+  }
   const observedClear = observeMutationWork(index);
   try {
     const cleared = await index.prepareMutationTimeSliced(
@@ -143,6 +156,7 @@ it("clears 10,000 validated entries without a second enumeration and restores th
     expect(observedClear.values).not.toHaveBeenCalled();
     expect(observedClear.counts().enumerations).toBe(0);
     expect(observedClear.heapify).not.toHaveBeenCalled();
+    expect(observedClear.estimate).not.toHaveBeenCalled();
     expect(observedClear.push).not.toHaveBeenCalled();
     cleared.commit();
     expect(index.size).toBe(0);
@@ -161,6 +175,10 @@ it("clears 10,000 validated entries without a second enumeration and restores th
     );
     if (restored === "cancelled") throw new Error("Expected a prepared restore.");
     expect(observedRestore.attach).toHaveBeenCalledTimes(ELEMENT_COUNT);
+    // For one-cell entries in an empty heap, the unchanged estimate exceeds 1,024 at entry 142.
+    expect(observedRestore.estimate.mock.calls.length).toBeGreaterThan(0);
+    expect(observedRestore.estimate.mock.calls.length).toBeLessThanOrEqual(142);
+    expect(observedRestore.values).not.toHaveBeenCalled();
     expect(observedRestore.heapify).toHaveBeenCalledTimes(ELEMENT_COUNT / 2);
     expect(observedRestore.counts().comparisons).toBeGreaterThan(ELEMENT_COUNT);
     expect(observedRestore.counts().comparisons).toBeLessThanOrEqual(2 * ELEMENT_COUNT);
@@ -174,5 +192,48 @@ it("clears 10,000 validated entries without a second enumeration and restores th
     expect(index.getMaximumBottom()).toBe(bounds(ELEMENT_COUNT - 1).maxY);
   } finally {
     observedRestore.restore();
+  }
+});
+
+it("replaces every indexed entry without enumerating removed entries or repeating settled estimates", async () => {
+  const index = new UniformSpatialIndex<number>();
+  index.insertMany(insertions);
+  const replacements = insertions.map(({ id, bounds: original }) => ({
+    id,
+    bounds: { ...original, minY: original.minY + 128, maxY: original.maxY + 128 },
+  }));
+  const observed = observeMutationWork(index);
+  const cursor = index.beginQuery(bounds(0));
+  const scratch = new SpatialQueryScratch<number>();
+  try {
+    const replaced = await index.prepareMutationTimeSliced(
+      insertions.map(({ id }) => id),
+      replacements,
+      observed.scheduler,
+    );
+    if (replaced === "cancelled") throw new Error("Expected a prepared full replacement.");
+    expect(observed.get).toHaveBeenCalledTimes(ELEMENT_COUNT);
+    expect(observed.counts().enumerations).toBe(0);
+    expect(observed.values).not.toHaveBeenCalled();
+    expect(observed.estimate).not.toHaveBeenCalled();
+    expect(observed.attach).toHaveBeenCalledTimes(ELEMENT_COUNT);
+    expect(observed.heapify).toHaveBeenCalledTimes(ELEMENT_COUNT / 2);
+    expect(observed.counts().comparisons).toBeLessThanOrEqual(2 * ELEMENT_COUNT);
+    expect(observed.counts().sliceWork).toBeLessThanOrEqual(MAX_SLICE_WORK);
+    expect(observed.push).not.toHaveBeenCalled();
+    expect(index.query(bounds(0), scratch)).toBe(1);
+    const workBeforeCommit = observed.counts();
+    replaced.commit();
+    expect(observed.counts()).toEqual(workBeforeCommit);
+    expect(() => replaced.commit()).toThrow("stale");
+    expect(index.size).toBe(ELEMENT_COUNT);
+    expect(index.membershipCount).toBe(ELEMENT_COUNT);
+    expect(index.extentHeapEntryCount).toBe(ELEMENT_COUNT);
+    expect(index.query(bounds(0), scratch)).toBe(0);
+    expect(index.query(replacements[0]!.bounds, scratch)).toBe(1);
+    expect(index.getMaximumBottom()).toBe(replacements[ELEMENT_COUNT - 1]!.bounds.maxY);
+    expect(cursor.advance(1).stale).toBe(true);
+  } finally {
+    observed.restore();
   }
 });

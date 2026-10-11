@@ -3,6 +3,7 @@ import { bottomHeapEntry, heapifyBottomAt, type BottomHeapEntry } from "./max-bo
 import {
   stageSpatialMutationTimeSliced,
   spatialMutationCheckpoint,
+  MAX_ATOMIC_MUTATION_WORK,
   type MutationPorts,
   type PreparedSpatialMutation,
   type StagedSpatialInsertion,
@@ -26,9 +27,6 @@ export interface SpatialMutationShadowPorts<Id, Shadow> {
     extentHeap: BottomHeapEntry<Id>[],
   ) => void;
 }
-
-// This bounds the synchronous local patch; it does not impose a scheduler handoff.
-const MAX_ATOMIC_MUTATION_WORK = 1_024;
 
 export async function prepareSpatialMutationTimeSliced<Id, Shadow>(
   removals: readonly Id[],
@@ -78,11 +76,9 @@ async function buildShadow<Id, Shadow>(
 ): Promise<{ shadow: Shadow; extentHeap: BottomHeapEntry<Id>[] } | "cancelled"> {
   const shadow = ports.createShadow();
   const extentHeap: BottomHeapEntry<Id>[] = [];
-  // Validated distinct removals cover every entry only in the insertion-free clear case.
+  // Validated distinct removals cover every old entry, including a complete replacement.
   const retainedEntries =
-    stage.removedIds.size === ports.entries.size && stage.inserted.length === 0
-      ? []
-      : ports.entries.values();
+    stage.removedIds.size === ports.entries.size ? [] : ports.entries.values();
   for (const entry of retainedEntries) {
     const admission = shadowCheckpoint(scheduler, ports.mutation.generation, generation);
     if (admission === false || (admission !== true && !(await admission))) return "cancelled";
