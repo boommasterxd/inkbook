@@ -7,7 +7,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import * as elementPath from "../../../../src/domain/geometry/element-path";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
-import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
+import {
+  commitSceneGeometry,
+  createSceneFixture,
+  createSceneRecord,
+} from "../../../fixtures/rendering/scene";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
@@ -132,14 +136,7 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   scheduler.runAll();
   expect(group.attributes.has("transform")).toBe(false);
   const read = vi.spyOn(ScenePathCache.prototype, "read");
-  store.records.set(element.id, {
-    ...store.records.get(element.id)!,
-    element,
-    geometryVersion: 3,
-  });
-  renderer.applyDelta({
-    affected: [{ id: element.id, before: moved, after: element, domains: ["geometry"] }],
-  });
+  commitSceneGeometry({ store, renderer }, moved, element, 3);
   scheduler.runAll();
   const access = read.mock.calls.findIndex(([value]) => value === element);
   expect(access).toBeGreaterThanOrEqual(0);
@@ -225,14 +222,7 @@ it("drops committed preparation when its element is removed before publication",
 it("discards unfinished edited contours when a newer commit restores the cached shape", () => {
   const { renderer, scheduler, store, element, moved, step, group, original } = pendingCommit();
   const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
-  store.records.set(element.id, {
-    ...store.records.get(element.id)!,
-    element,
-    geometryVersion: 3,
-  });
-  renderer.applyDelta({
-    affected: [{ id: element.id, before: moved, after: element, domains: ["geometry"] }],
-  });
+  commitSceneGeometry({ store, renderer }, moved, element, 3);
   step.mockClear();
   scheduler.runAll();
   expect(step).not.toHaveBeenCalled();

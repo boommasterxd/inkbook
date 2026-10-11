@@ -73,12 +73,7 @@ it.each([false, true])(
       const deletion = store.removeWithHistory(ids);
       if (deletion === null) throw new Error("Expected a removal transition.");
       scheduler.runAll();
-      fixture.setHistoryReplay(true);
-      const restored = await store.prepareElementMutation(
-        deletion.transition.reverse,
-        { shouldYield: () => false, yieldControl: async () => undefined },
-        deletion.transition,
-      );
+      const restored = await fixture.prepareReplay(deletion.transition, "reverse");
       expect(restored.status).toBe("prepared");
       store.commitPreparedElementMutation(restored.token!);
       drainHistoryFrames(scheduler);

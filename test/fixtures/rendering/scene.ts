@@ -1,7 +1,7 @@
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
 import { UniformSpatialIndex } from "../../../src/domain/spatial";
 import { expect, vi, type Mock } from "vitest";
-import { ElementStore } from "../../../src/domain/store/public";
+import { ElementStore, type AppliedElementMutation } from "../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import { indexedStroke } from "../editor/stroke";
 import { createWorkerSnapshot } from "../persistence/worker-snapshot";
@@ -121,8 +121,13 @@ export function createHistoryContourScene() {
   return {
     ...scene,
     store,
-    setHistoryReplay: (enabled: boolean) => {
-      historyReplay = enabled;
+    prepareReplay: (transition: AppliedElementMutation, direction: "forward" | "reverse") => {
+      historyReplay = true;
+      return store.prepareElementMutation(
+        transition[direction],
+        { shouldYield: () => false, yieldControl: async () => undefined },
+        transition,
+      );
     },
     dispose: () => {
       unsubscribe();
@@ -130,6 +135,23 @@ export function createHistoryContourScene() {
       sceneStore.release();
     },
   };
+}
+
+/** Publishes a versioned geometry replacement through the matching committed scene delta. */
+export function commitSceneGeometry(
+  fixture: { readonly store: FakeSceneStore; readonly renderer: SvgSceneRenderer },
+  before: InkElementV1,
+  after: InkElementV1,
+  geometryVersion: number,
+): void {
+  fixture.store.records.set(after.id, {
+    ...fixture.store.records.get(after.id)!,
+    element: after,
+    geometryVersion,
+  });
+  fixture.renderer.applyDelta({
+    affected: [{ id: after.id, before, after, domains: ["geometry"] }],
+  });
 }
 
 /** Advances animation time while draining the existing coalesced frame queue. */

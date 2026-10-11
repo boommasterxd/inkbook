@@ -50,23 +50,14 @@ it.each([
       scheduler.runAll();
       expect(renderer.mountedCount).toBe(count - ids.length);
       expect(build).not.toHaveBeenCalled();
-      fixture.setHistoryReplay(true);
-      const restored = await store.prepareElementMutation(
-        deletion.transition.reverse,
-        { shouldYield: () => false, yieldControl: async () => undefined },
-        deletion.transition,
-      );
+      const restored = await fixture.prepareReplay(deletion.transition, "reverse");
       expect(restored.status).toBe("prepared");
       store.commitPreparedElementMutation(restored.token!);
       drainHistoryFrames(scheduler);
       expect(renderer.mountedCount).toBe(count);
       expect(ids.map((id) => store.get(id)!.element)).toEqual(original);
       ids.forEach((id, index) => expect(store.get(id)!.element).toBe(original[index]));
-      const replay = await store.prepareElementMutation(
-        deletion.transition.forward,
-        { shouldYield: () => false, yieldControl: async () => undefined },
-        deletion.transition,
-      );
+      const replay = await fixture.prepareReplay(deletion.transition, "forward");
       expect(replay.status).toBe("prepared");
       store.commitPreparedElementMutation(replay.token!);
       drainHistoryFrames(scheduler);
