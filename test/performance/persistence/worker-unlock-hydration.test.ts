@@ -10,7 +10,7 @@ import * as canonical from "../../../src/persistence/serialization/canonical-sna
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../src/domain/store/public";
-import { changedElementDerivations } from "../../../src/obsidian/embeds/vault-document-model-delta";
+import { prepareVaultStoreDelta } from "../../../src/obsidian/embeds/vault-document-model-delta";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
@@ -166,8 +166,7 @@ describe("validated worker export work", () => {
     const reusesBefore = runtime.instrumentation.derivedBoundsReuses;
     const exported = await runtime.execute({
       baseModelRevision: 1,
-      changedElementDerivations: changedElementDerivations(delta),
-      changedElements: [changed],
+      ...prepareVaultStoreDelta(delta),
       exportGeneration: 1,
       modelRevision: 2,
       sessionId: "phases",

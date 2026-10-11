@@ -24,7 +24,7 @@ import type {
   StoreDelta,
   StoreSliceScheduler,
 } from "../../domain/store/public";
-import { changedElementDerivations, changedElements } from "./vault-document-model-delta";
+import { prepareVaultStoreDelta } from "./vault-document-model-delta";
 
 import type { EditableDocumentModel } from "./document-model-port";
 import { attachEditableDocumentState } from "./editable-document-state";
@@ -304,18 +304,15 @@ export function commitVaultElementReplacement(options: {
 export function recordVaultStoreDelta(options: {
   readonly autosave: AutosaveCoordinator | undefined;
   readonly delta: StoreDelta;
-  readonly removedIds: readonly string[];
   readonly revision: number;
 }): void {
   if (options.autosave === undefined) return;
   options.autosave.recordCommit({
-    changedElementDerivations: changedElementDerivations(options.delta),
-    changedElements: changedElements(options.delta),
+    ...prepareVaultStoreDelta(options.delta),
     dirtyBands: (Object.keys(options.delta.dirtyBands) as Array<"content" | "highlight">).filter(
       (band) => options.delta.dirtyBands[band],
     ),
     modelRevision: options.revision,
-    removedIds: options.removedIds,
   });
 }
 
