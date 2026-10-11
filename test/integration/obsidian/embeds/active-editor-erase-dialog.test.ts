@@ -134,12 +134,16 @@ describe("erase-all Obsidian confirmation", () => {
 });
 
 describe("selection delete feedback", () => {
-  it("starts dissolution before preparing the atomic removal and clears selection on success", async () => {
+  it("starts opacity feedback before preparing the atomic removal and clears selection on success", async () => {
     const fixture = eraseFixture();
     const pending = createDeferredPreparation();
     fixture.prepare.mockReturnValueOnce(pending.promise);
     fixture.actions.execute("delete");
-    expect(fixture.renderer.setElementFade).toHaveBeenCalledWith([fixture.element.id], 400);
+    expect(fixture.renderer.setElementFade).toHaveBeenCalledWith(
+      [fixture.element.id],
+      400,
+      "opacity",
+    );
     await vi.waitFor(() => expect(fixture.prepare).toHaveBeenCalledOnce());
     expect(fixture.renderer.setElementFade.mock.invocationCallOrder[0]).toBeLessThan(
       fixture.prepare.mock.invocationCallOrder[0]!,
@@ -165,6 +169,11 @@ describe("selection delete feedback", () => {
       if (outcome === "failed") fixture.prepare.mockRejectedValueOnce(new Error("save failed"));
       else fixture.prepare.mockReturnValueOnce(pending.promise);
       fixture.actions.execute("delete");
+      expect(fixture.renderer.setElementFade).toHaveBeenCalledWith(
+        [fixture.element.id],
+        400,
+        "opacity",
+      );
       if (outcome === "stale") fixture.state.revision += 1;
       if (outcome === "detached") {
         fixture.state.attached = false;

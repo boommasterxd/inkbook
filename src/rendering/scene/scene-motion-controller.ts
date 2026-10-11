@@ -40,7 +40,7 @@ export class SceneMotionController {
     dom: SceneDom,
     content: SceneContentRenderer,
     instrumentation: MutableSceneInstrumentation,
-    reducedMotion: boolean,
+    reducedMotion = false,
   ) {
     this.#dom = dom;
     this.#content = content;

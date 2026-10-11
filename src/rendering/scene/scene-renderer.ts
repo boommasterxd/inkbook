@@ -8,6 +8,7 @@ import { DEFAULT_CAMERA } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import type { ProgressivePreviewTransform } from "./progressive-element-preview";
 import { SceneElementPreviews } from "./scene-element-previews";
+import { createFadeActions, type SceneElementFadeController } from "./element-fade-controller";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import { SceneFrameWork } from "./scene-frame-work";
 import * as stats from "./instrumentation";
@@ -38,6 +39,8 @@ export class SvgSceneRenderer {
   readonly #frames: SceneFrameScheduler;
   readonly #sceneCommits: SceneCommitCoordinator;
   readonly #deltas: SceneDeltaCoordinator;
+  public readonly setElementFade: SceneElementFadeController["set"];
+  public readonly clearElementFade: SceneElementFadeController["clear"];
   readonly #stats: Scene.MutableSceneInstrumentation = stats.createInstrumentation();
   #layoutDirty = true;
   #layoutInvalidationVersion = 0;
@@ -89,7 +92,7 @@ export class SvgSceneRenderer {
       },
     );
     this.#contentScheduler = new SceneContentScheduler(this.#content, this.#scheduler);
-    const reducedMotion = options.reducedMotion ?? false;
+    const { reducedMotion } = options;
     this.#motion = new SceneMotionController(this.#dom, this.#content, this.#stats, reducedMotion);
     this.#resourcePolicy = new SceneResourcePolicy(
       this.#pathCache,
@@ -143,6 +146,14 @@ export class SvgSceneRenderer {
         store: this.#options.store,
         visibility: this.#visibility,
       },
+      schedule: () => this.#frames.schedule(),
+    });
+    [this.setElementFade, this.clearElementFade] = createFadeActions({
+      assertActive: () => this.assertActive(),
+      content: this.#content,
+      deltas: this.#deltas,
+      motion: this.#motion,
+      scheduler: this.#scheduler,
       schedule: () => this.#frames.schedule(),
     });
     this.#frames.schedule();
@@ -354,20 +365,6 @@ export class SvgSceneRenderer {
     this.#transformPreviews.clear();
     this.#visibilityCoordinator.releasePreviews();
     this.#frames.schedule();
-  }
-  public setElementFade(ids: readonly string[], durationMs: number): void {
-    this.assertActive();
-    runtime.validateNonNegativeDuration(durationMs);
-    this.#deltas.addFades(ids);
-    const slice = this.#scheduler.shouldYield()
-      ? undefined
-      : { deadline: this.#scheduler.deadline(), now: () => this.#scheduler.now() };
-    this.#content.setElementFade(ids, this.#motion.duration(durationMs), slice);
-    if (this.#content.pendingElementFades) this.#frames.schedule();
-  }
-  public clearElementFade(ids: readonly string[]): void {
-    this.assertActive();
-    this.#content.setElementFade(this.#deltas.removeFades(ids), null);
   }
   public setElementPreviews(items: readonly Schema.InkElementV1[], frame: number): void {
     this.assertActive();

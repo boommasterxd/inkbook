@@ -1,4 +1,5 @@
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import type { ElementFadeMode } from "../motion/transitions";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { sameStrokeShape } from "./stroke-position";
 import { CommittedPreviewGeometry } from "./committed-preview-geometry";
@@ -41,7 +42,9 @@ export class SceneContentRenderer {
   #committedPreviewIds: string[] = [];
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #mounted = new Map<string, MountedSceneElement>();
-  readonly #fades = new SceneElementFades(this.#mounted);
+  readonly #fades = new SceneElementFades(this.#mounted, (id, finish) =>
+    this.#reconciler.updateExitReadiness(id, finish),
+  );
   #newlyMountedIds: readonly string[] = EMPTY_IDS;
   readonly #orderDirty: Record<RenderBand, Set<string>> = {
     content: new Set(),
@@ -77,7 +80,8 @@ export class SceneContentRenderer {
       ...options,
       dom,
       instrumentation,
-      isExitReady: (id, now) => this.isElementFadeExitReady(id, now),
+      isExitReady: (id, now) => this.#fades.isExitReady(id, now),
+      exitReadyAt: (id) => this.#fades.readyAt(id),
       mounted: this.#mounted,
       orderDirty: this.#orderDirty,
       pathCache,
@@ -366,8 +370,9 @@ export class SceneContentRenderer {
     ids: readonly string[],
     durationMs: number | null,
     slice?: FadeSlice,
+    mode: ElementFadeMode = "blur",
   ): void {
-    this.#fades.set(ids, durationMs, slice);
+    this.#fades.set(ids, durationMs, slice, mode);
   }
 
   public prepareElementRemoval(id: string): void {
@@ -380,10 +385,6 @@ export class SceneContentRenderer {
 
   public flushElementFades(deadline: number, now: () => number): boolean {
     return this.#fades.flush(deadline, now);
-  }
-
-  public isElementFadeExitReady(id: string, now: number): boolean {
-    return !this.#fades.pending && this.#fades.isExitReady(id, now);
   }
 
   public setElementMotion(ids: readonly string[], opacity: number | null, scale = 1): void {

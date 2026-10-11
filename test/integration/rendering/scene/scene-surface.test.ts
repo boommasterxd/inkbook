@@ -225,6 +225,19 @@ describe("scene theme and local presentation styles", () => {
       "",
       "0",
     ]);
+    for (const [name, property] of [
+      ["inkbook-element-opacity-exit", "opacity"],
+      ["inkbook-element-fill-exit", "fill-opacity"],
+      ["inkbook-element-stroke-exit", "stroke-opacity"],
+    ]) {
+      const animation = [...style.sheet!.cssRules].find(
+        (rule) => "name" in rule && rule.name === name,
+      ) as CSSKeyframesRule;
+      const frames = [...animation.cssRules].map((rule) => (rule as CSSKeyframeRule).style);
+      expect(frames.map((frame) => frame.getPropertyValue(property!))).toEqual(["0"]);
+      expect(frames.every((frame) => !frame.filter)).toBe(true);
+      if (property !== "opacity") expect(frames.every((frame) => !frame.opacity)).toBe(true);
+    }
   });
 });
 

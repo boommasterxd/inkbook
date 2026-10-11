@@ -72,6 +72,8 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     visibilityCandidateVisits: 0,
     visibilityHysteresisHits: 0,
     visibilityReconcileVisits: 0,
+    exitReadinessVisits: 0,
+    exitReadinessComparisons: 0,
     visibilitySortSkips: 0,
     visibilityPathYields: 0,
     visibilityPublicationYields: 0,

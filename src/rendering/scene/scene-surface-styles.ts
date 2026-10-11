@@ -45,4 +45,13 @@ export const SCENE_SURFACE_STYLES = `
   /* The final filter uses the element's width-dependent inline value. */
   to { opacity: 0; }
 }
+@keyframes inkbook-element-opacity-exit {
+  to { opacity: 0; }
+}
+@keyframes inkbook-element-fill-exit {
+  to { fill-opacity: 0; }
+}
+@keyframes inkbook-element-stroke-exit {
+  to { stroke-opacity: 0; }
+}
 `;

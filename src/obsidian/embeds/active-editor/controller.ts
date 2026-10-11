@@ -18,7 +18,7 @@ import type { ActiveEditorHistory } from "./history";
 import type { ActiveEditorHistoryTraversal } from "./history-traversal";
 import type { ActiveEditorHandleInteraction } from "./handle-interaction";
 import { ActiveEditorNavigation, type ActiveEditorViewState } from "./navigation";
-import { ActiveEditorStyleSession } from "./style-session";
+import type { ActiveEditorStyleSession } from "./style-session";
 import type { ActiveEditorBackgroundSession } from "./background-session";
 import { ActiveEditorLongPressScheduler } from "./long-press";
 import type { PreparedElementHistory } from "./prepared-element-history";
@@ -160,15 +160,11 @@ export class ActiveEditorController {
       interactions.menus,
       interactions.preparedHistory,
     ];
-    this.#styles = new ActiveEditorStyleSession({
-      defaults: options.defaults,
-      history: this.#history,
+    this.#styles = Interactions.createControllerStyleSession(options, {
       onSelectionGeometryChanged: () => this.#handles.renderSelection(),
       onStateChanged: this.#onStateChanged,
-      sceneStore: this.#sceneStore,
       selection: () => this.#selection,
       selectionFrames: this.#selectionFrames,
-      store: this.#model.store,
       preparedHistory: this.#preparedHistory,
       isEnabled: () => this.#availability.acceptsInput,
     });
@@ -202,6 +198,7 @@ export class ActiveEditorController {
   public dispose(): void {
     this.#pendingSelection.cancel();
     this.#cursor.dispose();
+    this.#styles.dispose();
     this.#availability.setEnabled(false);
     this.#captures.releaseAll();
     this.#actions.dispose();
@@ -492,6 +489,7 @@ export class ActiveEditorController {
     this.#preparedHistory.cancel();
     if (!Helpers.sameSelectionMembers(selection, this.#selection)) this.#selectionFrames.reset();
     this.#selection = selection;
+    this.#styles.invalidateSelection();
     this.#renderer.setSelectedElements(selection);
     this.#input = { ...this.#input, hasSelection: selection.size > 0 };
     this.#handles.renderSelection();

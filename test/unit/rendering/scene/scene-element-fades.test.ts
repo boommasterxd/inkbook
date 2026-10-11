@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { createMountedElement } from "../../../../src/rendering/scene/mounted-element";
 import { SceneElementFades } from "../../../../src/rendering/scene/scene-element-fades";
+import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { FakeDocument, fakeNode, fakeRectangleRecord } from "./fakes";
 
 function setup(count: number, parts = 1) {
@@ -45,6 +46,47 @@ it("shares the initial deadline across calls and timestamps real transition star
   expect(writes).toBe(4);
   fades.set(ids, null);
   expect(fades.pending).toBe(false);
+});
+
+it("targets pressure paths and restores queued feedback before default blur reuse", () => {
+  const owner = new FakeDocument() as unknown as Document;
+  const element = createTestStroke();
+  const entries = Array.from({ length: 130 }, (_, rank) => {
+    const record = {
+      ...fakeRectangleRecord(`pressure-${String(rank)}`, rank, 0),
+      element: {
+        ...element,
+        id: `pressure-${String(rank)}`,
+        style: { ...element.style, pressureEnabled: true },
+      },
+    };
+    return createMountedElement(
+      owner,
+      record,
+      [{ d: "M0 0L10 10Z", paint: "fill" }],
+      createInstrumentation(),
+    );
+  });
+  const ids = entries.map((entry) => entry.id);
+  const fades = new SceneElementFades(new Map(entries.map((entry) => [entry.id, entry])));
+  fades.set(ids, 160, { deadline: 8, now: () => 0 }, "opacity");
+  expect(entries.filter((entry) => entry.fadeActive)).toHaveLength(128);
+  expect(entries.every((entry) => !fakeNode(entry.group!).style.animation)).toBe(true);
+  expect(fakeNode(entries[0]!.paths[0]!.node).style.animation).toContain(
+    "inkbook-element-fill-exit",
+  );
+  fades.set(ids, null);
+  expect(fades.pending).toBe(false);
+  expect(entries.every((entry) => !entry.fadeActive)).toBe(true);
+  expect(entries.every((entry) => !fakeNode(entry.paths[0]!.node).style.animation)).toBe(true);
+  expect(ids.every((id) => fades.isExitReady(id, 0))).toBe(true);
+  fades.flush(Infinity, () => 20);
+  fades.set([ids[0]!], 50, { deadline: 28, now: () => 20 });
+  expect(fakeNode(entries[0]!.group!).style.animation).toContain("inkbook-element-erase 50ms");
+  expect(fakeNode(entries[0]!.paths[0]!.node).style.animation).toBe("");
+  expect(fades.isExitReady(ids[0]!, 69)).toBe(false);
+  expect(fades.isExitReady(ids[0]!, 70)).toBe(true);
+  fades.release();
 });
 
 describe("bounded element fades", () => {

@@ -1,6 +1,6 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
-import { TRANSITION_DURATIONS } from "../../../rendering/motion/transitions";
+import { TRANSITION_DURATIONS, type ElementFadeMode } from "../../../rendering/motion/transitions";
 import type { PasteInvocation } from "../../../persistence/clipboard/public";
 import {
   TOOLBAR_ACTION_CONFIRMATION_MS,
@@ -34,7 +34,7 @@ export interface ActiveEditorActionsOptions {
   readonly ownerWindow: Window;
   readonly workScheduler: WorkScheduler;
   readonly renderer: {
-    setElementFade(ids: readonly string[], durationMs: number): void;
+    setElementFade(ids: readonly string[], durationMs: number, mode?: ElementFadeMode): void;
     clearElementFade(ids: readonly string[]): void;
   };
   readonly sceneStore: ElementSceneStore;
@@ -318,7 +318,7 @@ export class ActiveEditorActions {
         () => this.#isAttached() && sameSelection(selection, this.#currentSelection()),
         (collected) => {
           ids = collected;
-          this.#renderer.setElementFade(ids, TRANSITION_DURATIONS.eraserPendingRemoval);
+          this.#renderer.setElementFade(ids, TRANSITION_DURATIONS.eraserPendingRemoval, "opacity");
         },
       );
       if (outcome === "applied") this.#setSelection(new Set());

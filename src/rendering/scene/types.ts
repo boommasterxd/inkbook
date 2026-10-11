@@ -192,6 +192,8 @@ export interface SceneInstrumentationSnapshot {
   readonly visibilityCandidateVisits: number;
   readonly visibilityHysteresisHits: number;
   readonly visibilityReconcileVisits: number;
+  readonly exitReadinessVisits: number;
+  readonly exitReadinessComparisons: number;
   readonly visibilitySortSkips: number;
   readonly visibilityPathYields: number;
   readonly visibilityPublicationYields: number;
@@ -255,6 +257,8 @@ export interface MutableSceneInstrumentation {
   visibilityCandidateVisits: number;
   visibilityHysteresisHits: number;
   visibilityReconcileVisits: number;
+  exitReadinessVisits: number;
+  exitReadinessComparisons: number;
   visibilitySortSkips: number;
   visibilityPathYields: number;
   visibilityPublicationYields: number;

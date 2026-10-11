@@ -345,7 +345,10 @@ describe("pending scene state replacement", () => {
     const roots = [...contentGroup.nodes];
 
     renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
-    scheduler.runNext();
+    for (let frame = 0; renderer.instrumentation().domExits === 0; frame += 1) {
+      expect(frame).toBeLessThan(ids.length + 2);
+      scheduler.runNext();
+    }
     expect(renderer.mountedCount).toBeGreaterThan(0);
     expect(renderer.mountedCount).toBeLessThan(ids.length);
     expect(contentGroup.nodes).toHaveLength(renderer.mountedCount);

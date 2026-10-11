@@ -10,6 +10,7 @@ import type { DetachedSceneElementCache } from "./detached-element-cache";
 import type { VisibleMountOrder } from "./visible-mount-order";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
+import type { VisibilityExitReadiness } from "./visibility-exit-readiness";
 
 export interface ScenePreparationOptions {
   readonly onPathsReady?: () => void;
@@ -23,6 +24,7 @@ export interface SceneVisibilityReconcilerOptions extends ScenePreparationOption
   readonly instrumentation: MutableSceneInstrumentation;
   readonly mounted: Map<string, MountedSceneElement>;
   readonly isExitReady?: (id: string, now: number) => boolean;
+  readonly exitReadyAt?: (id: string) => number;
   readonly orderDirty: Record<RenderBand, Set<string>>;
   readonly pathCache: ScenePathCache;
   readonly store: SceneStorePort;
@@ -62,6 +64,7 @@ export interface PendingReconciliation {
   readonly scanExits: boolean;
   exitScanComplete: boolean;
   exitOrderPrepared: boolean;
+  exitReadiness?: VisibilityExitReadiness;
   cleanupFirst: boolean;
   readonly runs: PendingMutationRun[];
   runCount: number;

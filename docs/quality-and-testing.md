@@ -193,7 +193,8 @@ Every user-visible state change animates unless listed as immediate or reduced m
 | Phone Inkbook dialog open or close                                  |                  220 ms | shared adaptive bottom-sheet translate                                        |
 | Operational feedback open or close                                  |                  220 ms | fixed-surface scale between 0 and 1                                           |
 | Selection frame and handles                                         | 0 ms enter; 120 ms exit | immediately visible independently of pending highlights; opacity-only exit    |
-| Eraser and selection Delete pending-removal feedback                |                  400 ms | opacity and expanding blur                                                    |
+| Eraser pending-removal feedback                                     |                  400 ms | opacity and expanding blur                                                    |
+| Selection Delete pending-removal feedback                           |                  400 ms | opacity fade preserving the element's starting opacity                        |
 | Committed shape or pasted-element entrance                          |                  120 ms | opacity, scale from 0.96 to 1                                                 |
 | Cut or other command-removal exit                                   |                  120 ms | retained visual tombstone opacity, scale to 0.96                              |
 | Background type or spacing change                                   |                    0 ms | atomic pattern and coverage replacement                                       |

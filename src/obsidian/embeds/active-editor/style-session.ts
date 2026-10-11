@@ -30,6 +30,8 @@ export interface ActiveEditorStyleSessionOptions {
   readonly onStateChanged: () => void;
   readonly sceneStore: ElementSceneStore;
   readonly selection: () => ReadonlySet<string>;
+  /** Supply only when membership changes replace the owner's selection identity. */
+  readonly selectionIdentity?: () => object;
   readonly selectionFrames?: SelectionFrameSession;
   readonly store: ElementStore;
   readonly preparedHistory?: PreparedElementHistory;
@@ -43,6 +45,11 @@ export class ActiveEditorStyleSession {
   readonly #onStateChanged: () => void;
   readonly #sceneStore: ElementSceneStore;
   readonly #selection: () => ReadonlySet<string>;
+  readonly #selectionIdentity: (() => object) | undefined;
+  readonly #unsubscribeStore: (() => void) | undefined;
+  #selectedControls:
+    { readonly identity: object; readonly controls: readonly StyleControl[] } | undefined;
+  #disposed = false;
   readonly #selectionFrames: SelectionFrameSession | undefined;
   readonly #store: ElementStore;
   readonly #preparedHistory: PreparedElementHistory | undefined;
@@ -55,10 +62,26 @@ export class ActiveEditorStyleSession {
     this.#onStateChanged = options.onStateChanged;
     this.#sceneStore = options.sceneStore;
     this.#selection = options.selection;
+    this.#selectionIdentity = options.selectionIdentity;
     this.#selectionFrames = options.selectionFrames;
     this.#store = options.store;
     this.#preparedHistory = options.preparedHistory;
     this.#isEnabled = options.isEnabled ?? (() => true);
+    this.#unsubscribeStore =
+      options.selectionIdentity === undefined
+        ? undefined
+        : this.#store.subscribe(() => this.invalidateSelection());
+  }
+
+  public dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#unsubscribeStore?.();
+    this.invalidateSelection();
+  }
+
+  public invalidateSelection(): void {
+    this.#selectedControls = undefined;
   }
 
   public get defaults(): ToolDefaultsV1 {
@@ -72,19 +95,36 @@ export class ActiveEditorStyleSession {
     readonly shapeIcon: ActiveShapeIconState;
   } {
     return {
-      controls: createActiveEditorStyleControls({
-        defaults: this.#defaults,
-        selection: selectedElements(this.#sceneStore, this.#selection()),
-        tool,
-      }),
+      controls: this.#controls(tool),
       icon: createActiveEditorStyleIcon(this.#defaults, tool),
       selectionArea: this.#defaults.select.area,
       shapeIcon: createActiveShapeIcon(this.#defaults),
     };
   }
 
+  #controls(tool: EditorTool): readonly StyleControl[] {
+    const selection = this.#selection();
+    const identity = this.#disposed ? undefined : this.#selectionIdentity?.();
+    if (
+      selection.size > 0 &&
+      identity !== undefined &&
+      this.#selectedControls?.identity === identity
+    )
+      return this.#selectedControls.controls;
+    this.invalidateSelection();
+    const elements = selectedElements(this.#sceneStore, selection);
+    const controls = createActiveEditorStyleControls({
+      defaults: this.#defaults,
+      selection: elements,
+      tool,
+    });
+    if (identity !== undefined && elements.length > 0)
+      this.#selectedControls = { identity, controls };
+    return controls;
+  }
+
   public apply(tool: EditorTool, id: string, value: boolean | number | string): void {
-    if (!this.#isEnabled()) return;
+    if (this.#disposed || !this.#isEnabled()) return;
     const selection = this.#selection();
     if (selection.size > 0 && this.#preparedHistory !== undefined) {
       if (tool === "select" && (id === "selection-area" || id === "selection-inclusion")) return;

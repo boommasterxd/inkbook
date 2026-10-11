@@ -42,6 +42,7 @@ export const TRANSITION_DURATIONS = Object.freeze({
 } as const);
 
 export type MotionPreference = "system" | "full" | "reduced";
+export type ElementFadeMode = "blur" | "opacity";
 export type TransitionName = keyof typeof TRANSITION_DURATIONS;
 
 /** Resolve a persisted motion preference against the host's system setting. */
