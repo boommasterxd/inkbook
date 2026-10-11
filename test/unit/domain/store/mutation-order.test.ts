@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import * as renderBands from "../../../../src/domain/commands/render-bands";
+import { DocumentCapacity } from "../../../../src/domain/store/document-capacity";
+import type { ElementRecord } from "../../../../src/domain/store/types";
 import { restoreOwnedReplayBands } from "../../../../src/domain/store/mutation-order";
 import {
   captureOwnedMutationHistory,
@@ -38,6 +40,30 @@ function observeHighlightValidation() {
     },
     restore: () => check.mockRestore(),
   };
+}
+
+function observeCapacityDirections() {
+  const directions: Array<{ before: Array<string | null>; after: Array<string | null> }> = [];
+  const prepare = Object.getOwnPropertyDescriptor(DocumentCapacity.prototype, "prepareTimeSliced")!
+    .value as DocumentCapacity["prepareTimeSliced"];
+  const spy = vi.spyOn(DocumentCapacity.prototype, "prepareTimeSliced");
+  function* observe(records: Iterable<ElementRecord | null>, output: Array<string | null>) {
+    for (const record of records) {
+      output.push(record?.element.id ?? null);
+      yield record;
+    }
+  }
+  spy.mockImplementation(function (this: DocumentCapacity, previous, next, scheduler) {
+    const direction = { before: [] as Array<string | null>, after: [] as Array<string | null> };
+    directions.push(direction);
+    return prepare.call(
+      this,
+      observe(previous, direction.before),
+      observe(next, direction.after),
+      scheduler,
+    );
+  });
+  return { directions, restore: () => spy.mockRestore() };
 }
 
 describe("structural membership order deltas", () => {
@@ -99,22 +125,52 @@ describe("structural membership order deltas", () => {
       id: "00000000-0000-4000-8000-000000000099",
     };
     const store = new ElementStore([...elements, highlighter()]);
-    const result = await apply(store, {
-      bands: { content: [elements[2]!.id, target.id, inserted.id], highlight: [IDS.highlight] },
-      removeIds: [elements[0]!.id],
-      elements: [replacement, inserted],
-    });
-    expect(result.delta.changes.map(({ id, domains }) => ({ id, domains }))).toEqual([
-      { id: elements[0]!.id, domains: ["order", "visibility", "connection"] },
-      { id: target.id, domains: ["geometry", "paint"] },
-      { id: inserted.id, domains: ["geometry", "paint", "order", "visibility", "connection"] },
-      { id: elements[2]!.id, domains: ["order"] },
-    ]);
-    expect(result.delta.dirtyBands).toEqual({ content: true, highlight: false });
-    await apply(store, result.transition.reverse, result.transition);
-    expect(bands(store).content).toEqual(elements.map(({ id }) => id));
-    expect(store.get(target.id)?.element).toEqual(target);
-    expect(store.get(inserted.id)).toBeUndefined();
+    const capacity = observeCapacityDirections();
+    try {
+      const result = await apply(store, {
+        bands: { content: [elements[2]!.id, target.id, inserted.id], highlight: [IDS.highlight] },
+        removeIds: [elements[0]!.id],
+        elements: [replacement, inserted],
+      });
+      expect(capacity.directions[0]).toEqual({
+        before: [elements[0]!.id, target.id, null, null],
+        after: [null, target.id, inserted.id, null],
+      });
+      expect(result.delta.changes.map(({ id, domains }) => ({ id, domains }))).toEqual([
+        { id: elements[0]!.id, domains: ["order", "visibility", "connection"] },
+        { id: target.id, domains: ["geometry", "paint"] },
+        { id: inserted.id, domains: ["geometry", "paint", "order", "visibility", "connection"] },
+        { id: elements[2]!.id, domains: ["order"] },
+      ]);
+      expect(result.delta.dirtyBands).toEqual({ content: true, highlight: false });
+      await apply(store, result.transition.reverse, result.transition);
+      expect(bands(store).content).toEqual(elements.map(({ id }) => id));
+      expect(store.get(target.id)?.element).toEqual(target);
+      expect(store.get(inserted.id)).toBeUndefined();
+    } finally {
+      capacity.restore();
+    }
+  });
+});
+
+describe("order-only capacity projections", () => {
+  it("prepares both capacity directions empty while retaining every source record", async () => {
+    const elements = rectangles();
+    const store = new ElementStore(elements);
+    const originals = elements.map(({ id }) => store.get(id));
+    const capacity = observeCapacityDirections();
+    try {
+      const result = await apply(store, {
+        bands: { content: elements.map(({ id }) => id).reverse(), highlight: [] },
+      });
+      expect(capacity.directions).toEqual([{ before: [], after: [] }]);
+      expect(result.delta.changes.map(({ domains }) => domains)).toEqual([["order"], ["order"]]);
+      for (let index = 0; index < elements.length; index += 1) {
+        expect(store.get(elements[index]!.id)).toBe(originals[index]);
+      }
+    } finally {
+      capacity.restore();
+    }
   });
 });
 

@@ -364,24 +364,28 @@ async function buildDerivedState(
   const work = new MutationPreparationScheduler(scheduler);
   const removed: string[] = [];
   const inserted: Array<{ id: string; bounds: ElementRecord["bounds"] }> = [];
+  let hasPrevious = false;
+  let hasNext = false;
   const lookup = (id: string) =>
     (records.has(id) ? records.get(id) : source.records.get(id))?.element;
   for (const change of delta.changes) {
     if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
     if (change.before === change.after) continue;
     if (change.after !== null) {
+      hasNext = true;
       assertAffectedConnections(change.id, change.after, source, records, lookup, ownedRecords);
+      if (change.before === null || change.domains.includes("geometry")) {
+        inserted.push({ id: change.id, bounds: change.after.bounds });
+      }
     }
-    if (change.before !== null && (change.after === null || change.domains.includes("geometry"))) {
-      removed.push(change.id);
-    }
-    if (change.after !== null && (change.before === null || change.domains.includes("geometry"))) {
-      inserted.push({ id: change.id, bounds: change.after.bounds });
+    if (change.before !== null) {
+      hasPrevious = true;
+      if (change.after === null || change.domains.includes("geometry")) removed.push(change.id);
     }
   }
   const capacity = await source.capacity.prepareTimeSliced(
-    records.size === 0 ? [] : mutationCapacityRecords(delta, "before"),
-    records.size === 0 ? [] : mutationCapacityRecords(delta, "after"),
+    hasPrevious ? mutationCapacityRecords(delta, "before") : [],
+    hasNext ? mutationCapacityRecords(delta, "after") : [],
     scheduler,
   );
   if (capacity === "cancelled" || scheduler.isCancelled?.()) return "cancelled";

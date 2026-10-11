@@ -75,6 +75,43 @@ function observeDetachmentWork() {
   };
 }
 
+function observeCapacityWork() {
+  const prepare = Object.getOwnPropertyDescriptor(DocumentCapacity.prototype, "prepareTimeSliced")!
+    .value as DocumentCapacity["prepareTimeSliced"];
+  const spy = vi.spyOn(DocumentCapacity.prototype, "prepareTimeSliced");
+  let slots = 0;
+  let checkpoints = 0;
+  function* observe(records: Iterable<ElementRecord | null>) {
+    for (const record of records) {
+      slots += 1;
+      yield record;
+    }
+  }
+  spy.mockImplementation(function (this: DocumentCapacity, previous, next, scheduler) {
+    return prepare.call(this, observe(previous), observe(next), {
+      ...scheduler,
+      shouldYield: () => {
+        checkpoints += 1;
+        return scheduler.shouldYield();
+      },
+    });
+  });
+  return {
+    expectVisits(expected: number) {
+      expect(slots).toBe(expected);
+      expect(checkpoints).toBe(expected);
+      expect(spy).toHaveBeenCalledTimes(3);
+      // Nonempty capacity directions stay lazy; only entirely empty phases use arrays.
+      expect(
+        spy.mock.calls
+          .flatMap(([previous, next]) => [previous, next])
+          .every((records) => !Array.isArray(records) || records.length === 0),
+      ).toBe(true);
+    },
+    restore: () => spy.mockRestore(),
+  };
+}
+
 it.each([false, true])(
   "replays 10,000 privately retained strokes without public staging, point scans or payload recounts (external connections: %s)",
   async (connected) => {
@@ -107,7 +144,7 @@ it.each([false, true])(
     const orderComparisons = vi.spyOn(mutationOrder, "mutationOrderPreserved");
     const retainedLookups = observeRetainedRecordLookups();
     const detachments = observeDetachmentWork();
-    const capacity = vi.spyOn(DocumentCapacity.prototype, "prepareTimeSliced");
+    const capacity = observeCapacityWork();
     const capacityReferences = vi.spyOn(connections, "connectionReferences");
     const resolvedConnections = vi.spyOn(connections, "assertResolvedConnections");
     const published = vi.fn();
@@ -143,12 +180,7 @@ it.each([false, true])(
       // but no document-sized record arrays cross the capacity boundary.
       expect(capacityReferences.mock.calls.length).toBe(fixture.strokeCount * 6);
       expect(resolvedConnections).not.toHaveBeenCalled();
-      expect(capacity).toHaveBeenCalledTimes(3);
-      expect(
-        capacity.mock.calls.every(
-          ([previous, next]) => !Array.isArray(previous) && !Array.isArray(next),
-        ),
-      ).toBe(true);
+      capacity.expectVisits(fixture.strokeCount * 3);
       expect(yielded).toBe(1);
       // Only the two record restorations and three retained-direction producers
       // need generators. Membership delta classification adds no producer/rank work.
@@ -172,7 +204,7 @@ it.each([false, true])(
         spy.mockRestore();
       retainedLookups.restore();
       detachments.restore();
-      capacity.mockRestore();
+      capacity.restore();
       capacityReferences.mockRestore();
       resolvedConnections.mockRestore();
     }

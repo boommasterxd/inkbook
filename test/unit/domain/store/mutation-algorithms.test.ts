@@ -196,6 +196,52 @@ describe("empty reverse connection preparation", () => {
   );
 });
 
+describe("structural capacity preparation cancellation", () => {
+  it.each([
+    ["insertion", "cancellation"],
+    ["removal", "cancellation"],
+    ["insertion", "staleness"],
+    ["removal", "staleness"],
+  ] as const)("rejects %s %s during its nonempty capacity phase", async (kind, interruption) => {
+    const element = rectangle();
+    const inserted = rectangle("00000000-0000-4000-8000-000000000090");
+    const interleaved = rectangle("00000000-0000-4000-8000-000000000091");
+    const store = new ElementStore([element]);
+    const original = store.get(element.id);
+    let cancelled = false;
+    const prepare = Object.getOwnPropertyDescriptor(
+      DocumentCapacity.prototype,
+      "prepareTimeSliced",
+    )!.value as DocumentCapacity["prepareTimeSliced"];
+    const capacity = vi.spyOn(DocumentCapacity.prototype, "prepareTimeSliced");
+    capacity.mockImplementation(function (this: DocumentCapacity, previous, next, work) {
+      return prepare.call(this, previous, next, {
+        ...work,
+        shouldYield: () => true,
+        yieldControl: async () => {
+          if (interruption === "cancellation") cancelled = true;
+          else store.create(interleaved);
+        },
+      });
+    });
+    try {
+      const result = await store.prepareElementMutation(
+        kind === "insertion"
+          ? { bands: { content: [element.id, inserted.id], highlight: [] }, elements: [inserted] }
+          : { bands: { content: [], highlight: [] }, removeIds: [element.id] },
+        { ...scheduler, isCancelled: () => cancelled },
+      );
+      expect(result).toEqual({ status: "cancelled", token: null });
+      expect(capacity).toHaveBeenCalledOnce();
+      expect(store.get(element.id)).toBe(original);
+      expect(store.get(inserted.id)).toBeUndefined();
+      expect(store.instrumentation.publishedDeltas).toBe(interruption === "staleness" ? 1 : 0);
+    } finally {
+      capacity.mockRestore();
+    }
+  });
+});
+
 function overflowRecord(id: string) {
   return createInitialRecord({ ...rectangle(id), width: 100_000 });
 }
