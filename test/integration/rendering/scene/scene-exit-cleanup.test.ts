@@ -278,8 +278,8 @@ describe("deferred scene exit cleanup", () => {
     const path = harness.content.nodes[0]!;
     remove(harness, records);
     harness.renderer.clearElementFade(records.map(({ id }) => id));
-    expect(path.style.animation).toContain("inkbook-element-erase 220ms");
-    expect(path.style.filter).toBe("blur(20px)");
+    expect(path.style.animation).toContain("inkbook-element-opacity-exit 220ms");
+    expect(path.style.filter).toBeUndefined();
     expect(harness.renderer.instrumentation().motionTombstones).toBe(0);
     harness.scheduler.runNext();
     expect(harness.renderer.mountedCount).toBe(1);
@@ -290,7 +290,7 @@ describe("deferred scene exit cleanup", () => {
     harness.renderer.destroy();
   });
 
-  it("restores a selection deleted with blur when Undo arrives before the transition finishes", () => {
+  it("restores a selection deleted with opacity feedback when Undo arrives before the transition finishes", () => {
     const records = rectangles(2);
     const harness = setup(records);
     harness.renderer.setReducedMotion(false);
@@ -301,10 +301,16 @@ describe("deferred scene exit cleanup", () => {
     harness.renderer.clearElementFade(ids);
     harness.scheduler.runNext();
     expect(harness.content.nodes).toEqual(original);
-    expect(original.every((node) => node.style.filter === "blur(20px)")).toBe(true);
+    expect(
+      original.every((node) =>
+        node.style.getPropertyValue("animation").startsWith("inkbook-element-opacity-exit"),
+      ),
+    ).toBe(true);
     harness.scheduler.time += 150;
     restore(harness, records);
-    expect(original.every((node) => node.style.filter === "")).toBe(true);
+    expect(
+      original.every((node) => node.style.animation === "" && node.style.filter === undefined),
+    ).toBe(true);
     harness.scheduler.time += 300;
     harness.scheduler.runAll();
     expect(harness.content.nodes).toEqual(original);

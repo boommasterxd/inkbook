@@ -27,7 +27,7 @@ it("shares the initial deadline across calls and timestamps real transition star
   let writes = 0;
   for (const entry of entries) {
     for (const path of entry.paths) {
-      Object.defineProperty(fakeNode(path.node).style, "filter", {
+      Object.defineProperty(fakeNode(path.node).style, "animation", {
         set: () => {
           time += 5;
           writes += 1;
@@ -48,7 +48,7 @@ it("shares the initial deadline across calls and timestamps real transition star
   expect(fades.pending).toBe(false);
 });
 
-it("targets pressure paths and restores queued feedback before default blur reuse", () => {
+it("targets pressure paths and restores queued feedback before reuse", () => {
   const owner = new FakeDocument() as unknown as Document;
   const element = createTestStroke();
   const entries = Array.from({ length: 130 }, (_, rank) => {
@@ -69,7 +69,7 @@ it("targets pressure paths and restores queued feedback before default blur reus
   });
   const ids = entries.map((entry) => entry.id);
   const fades = new SceneElementFades(new Map(entries.map((entry) => [entry.id, entry])));
-  fades.set(ids, 160, { deadline: 8, now: () => 0 }, "opacity");
+  fades.set(ids, 160, { deadline: 8, now: () => 0 });
   expect(entries.filter((entry) => entry.fadeActive)).toHaveLength(128);
   expect(entries.every((entry) => !fakeNode(entry.group!).style.animation)).toBe(true);
   expect(fakeNode(entries[0]!.paths[0]!.node).style.animation).toContain(
@@ -82,8 +82,10 @@ it("targets pressure paths and restores queued feedback before default blur reus
   expect(ids.every((id) => fades.isExitReady(id, 0))).toBe(true);
   fades.flush(Infinity, () => 20);
   fades.set([ids[0]!], 50, { deadline: 28, now: () => 20 });
-  expect(fakeNode(entries[0]!.group!).style.animation).toContain("inkbook-element-erase 50ms");
-  expect(fakeNode(entries[0]!.paths[0]!.node).style.animation).toBe("");
+  expect(fakeNode(entries[0]!.group!).style.animation).toBeUndefined();
+  expect(fakeNode(entries[0]!.paths[0]!.node).style.animation).toContain(
+    "inkbook-element-fill-exit 50ms",
+  );
   expect(fades.isExitReady(ids[0]!, 69)).toBe(false);
   expect(fades.isExitReady(ids[0]!, 70)).toBe(true);
   fades.release();
@@ -103,7 +105,11 @@ describe("bounded element fades", () => {
       fades.flush(Infinity, () => time);
     }
     expect(
-      entries.every((entry) => fakeNode(entry.paths[0]!.node).style.filter === "blur(20px)"),
+      entries.every((entry) =>
+        fakeNode(entry.paths[0]!.node)
+          .style.getPropertyValue("animation")
+          .startsWith("inkbook-element-opacity-exit"),
+      ),
     ).toBe(true);
     expect(fades.isExitReady(ids[1999]!, time + 159)).toBe(false);
     expect(fades.isExitReady(ids[1999]!, time + 160)).toBe(true);

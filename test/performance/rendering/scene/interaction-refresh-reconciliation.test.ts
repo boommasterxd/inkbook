@@ -202,13 +202,13 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () 
     const { renderer, scheduler } = createFullyVisibleRenderer(fixture.store, () => budget);
     let starts = 0;
     const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
-    for (const node of content.nodes) {
-      let filter = node.style.filter;
-      Object.defineProperty(node.style, "filter", {
-        get: () => filter,
+    for (const node of content.nodes.flatMap((root) => [root, ...root.nodes])) {
+      let animation = node.style.animation;
+      Object.defineProperty(node.style, "animation", {
+        get: () => animation,
         set: (value: string) => {
-          filter = value;
-          if (value.startsWith("blur(")) {
+          animation = value;
+          if (value.startsWith("inkbook-element-")) {
             starts += 1;
             scheduler.time += 1;
           }

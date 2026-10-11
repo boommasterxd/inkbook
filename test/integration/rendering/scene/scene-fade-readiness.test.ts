@@ -45,7 +45,7 @@ function setup() {
   return { ...scene, records, store, content, remove, restore };
 }
 
-it("removes completed opacity exits while a lower-rank blur exit is still running", () => {
+it("removes completed opacity exits while a lower-rank opacity exit is still running", () => {
   const fixture = setup();
   const head = fixture.content.nodes[0]!;
   try {
@@ -53,7 +53,6 @@ it("removes completed opacity exits while a lower-rank blur exit is still runnin
     fixture.renderer.setElementFade(
       fixture.records.slice(1).map(({ id }) => id),
       10,
-      "opacity",
     );
     fixture.remove();
     for (let frame = 0; fixture.renderer.mountedCount > 1; frame += 1) {
@@ -61,7 +60,7 @@ it("removes completed opacity exits while a lower-rank blur exit is still runnin
       fixture.scheduler.time += 20;
       fixture.scheduler.runNext();
       expect(head.parent).toBe(fixture.content);
-      expect(head.style.animation).toContain("inkbook-element-erase");
+      expect(head.style.animation).toContain("inkbook-element-opacity-exit");
     }
     expect(fixture.renderer.instrumentation().domExits).toBe(259);
     expect(fixture.renderer.instrumentation().motionTombstones).toBe(0);
@@ -80,7 +79,7 @@ it("cancels queued, running and completed opacity exits on Undo, then cleans a s
   const original = [...fixture.content.nodes];
   const ids = fixture.records.map(({ id }) => id);
   try {
-    fixture.renderer.setElementFade(ids, 10, "opacity");
+    fixture.renderer.setElementFade(ids, 10);
     fixture.remove();
     fixture.scheduler.time += 20;
     fixture.scheduler.runNext();
@@ -100,7 +99,7 @@ it("cancels queued, running and completed opacity exits on Undo, then cleans a s
       expect(node.style.opacity || "").toBe("");
     }
     fixture.renderer.setReducedMotion(true);
-    fixture.renderer.setElementFade(ids, 10, "opacity");
+    fixture.renderer.setElementFade(ids, 10);
     fixture.remove();
     fixture.scheduler.runAll();
     expect(fixture.renderer.mountedCount).toBe(0);
@@ -117,11 +116,10 @@ it("repairs a protected readiness classification before it can block other ready
   const head = fixture.content.nodes[0]!;
   const exits = vi.spyOn(FakeNode.prototype, "remove");
   try {
-    fixture.renderer.setElementFade([id], 5_000, "opacity");
+    fixture.renderer.setElementFade([id], 5_000);
     fixture.renderer.setElementFade(
       fixture.records.slice(1).map(({ id: next }) => next),
       0,
-      "opacity",
     );
     fixture.renderer.setPreviewTransform([id], "translate(1 0)", 1);
     fixture.remove();
@@ -147,7 +145,6 @@ it("drops indexed waiting exits on disposal without late publication", () => {
   fixture.renderer.setElementFade(
     fixture.records.map(({ id }) => id),
     10_000,
-    "opacity",
   );
   fixture.remove();
   fixture.scheduler.runNext();

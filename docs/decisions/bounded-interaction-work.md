@@ -69,7 +69,10 @@ an optimum for browser memory or revisit speed.
 
 A smaller fade-start quota was rejected: the paired selection-delete diagnostic
 did not reduce long native tasks and increased layerization work. Keep the
-existing deadline-checked fade allowance, full duration, and width-dependent blur.
+existing deadline-checked fade allowance and full duration. Eraser and selection
+Delete share retained-node opacity feedback without blur. Avoid filter work that
+the central scheduler cannot interrupt inside browser rendering; preserve the
+paint and group composition rules in the [canonical fade contract](../rendering-and-performance.md#imperative-scene-ownership).
 
 For area selection, use proven whole-bounds exclusion as well as acceptance.
 Reuse a bounded edge index only for factory-owned immutable lasso points. Use
@@ -153,8 +156,7 @@ Avoid asynchronous continuations for synchronous checkpoint decisions. Large
 handle commits and the clipboard fallback await only actual scheduler handoffs;
 canonical serialization and cancellation boundaries remain unchanged. Exhausted
 motion-path or byte capacity is checked before constructing replacement geometry.
-The existing eraser blur feedback is retained. Handle cancellation reuses unchanged
-selection geometry, and zero-displacement correction does not schedule per-element
+Handle cancellation reuses unchanged selection geometry, and zero-displacement correction does not schedule per-element
 work. Large decorative selection-trace removals operate on a temporarily detached
 group while preserving retained nodes and sibling order; content publication
 limits remain unchanged. After a complete reconciliation scan proves retained

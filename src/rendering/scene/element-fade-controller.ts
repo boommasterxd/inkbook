@@ -1,5 +1,4 @@
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
-import type { ElementFadeMode } from "../motion/transitions";
 import type { SceneContentRenderer } from "./content-renderer";
 import type { SceneDeltaCoordinator } from "./scene-delta-coordinator";
 import type { SceneMotionController } from "./scene-motion-controller";
@@ -18,7 +17,7 @@ interface FadeControllerOptions {
 export class SceneElementFadeController {
   public constructor(private readonly options: FadeControllerOptions) {}
 
-  public set(ids: readonly string[], durationMs: number, mode: ElementFadeMode = "blur"): void {
+  public set(ids: readonly string[], durationMs: number): void {
     this.options.assertActive();
     validateNonNegativeDuration(durationMs);
     const { content, deltas, motion, scheduler } = this.options;
@@ -26,7 +25,7 @@ export class SceneElementFadeController {
     const slice = scheduler.shouldYield()
       ? undefined
       : { deadline: scheduler.deadline(), now: () => scheduler.now() };
-    content.setElementFade(ids, motion.duration(durationMs), slice, mode);
+    content.setElementFade(ids, motion.duration(durationMs), slice);
     if (content.pendingElementFades) this.options.schedule();
   }
 

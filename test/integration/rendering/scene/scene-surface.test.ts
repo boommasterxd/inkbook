@@ -218,13 +218,7 @@ describe("scene theme and local presentation styles", () => {
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--text-normal")).toBe("#fedcba");
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--inkbook-page")).toBe("");
     const style = scene.svg.querySelector("style") as unknown as HTMLStyleElement;
-    const erase = [...style.sheet!.cssRules].find(
-      (rule) => "name" in rule && rule.name === "inkbook-element-erase",
-    ) as CSSKeyframesRule;
-    expect([...erase.cssRules].map((rule) => (rule as CSSKeyframeRule).style.opacity)).toEqual([
-      "",
-      "0",
-    ]);
+    expect([...style.sheet!.cssRules].filter((rule) => "name" in rule)).toHaveLength(3);
     for (const [name, property] of [
       ["inkbook-element-opacity-exit", "opacity"],
       ["inkbook-element-fill-exit", "fill-opacity"],

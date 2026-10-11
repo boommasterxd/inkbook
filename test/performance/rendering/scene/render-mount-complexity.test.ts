@@ -165,31 +165,39 @@ function verifyEraserFeedback(
   fixture: ReturnType<typeof createMaximumPointFixture>,
 ): void {
   const nodes = [...cameraGroup.nodes[3]!.nodes, ...cameraGroup.nodes[4]!.nodes];
-  const styleWrites = observeFadeWrites(nodes);
+  const styleWrites = observeFadeWrites(nodes.flatMap((node) => [node, ...node.nodes]));
   const before = renderer.instrumentation();
   const ids = [...fixture.contentIds, ...fixture.highlightIds];
   renderer.setElementFade(ids, 160);
-  expect(styleWrites()).toBe(128 * 3);
+  expect(styleWrites()).toBe(128 * 2);
   expect(scheduler.pendingCount).toBe(1);
   scheduler.runNext();
-  expect(styleWrites()).toBe(128 * 3);
+  expect(styleWrites()).toBe(128 * 2);
   while (scheduler.pendingCount > 0) {
     const beforeFrame = styleWrites();
     scheduler.runNext();
-    expect(styleWrites() - beforeFrame).toBeLessThanOrEqual(128 * 3);
+    expect(styleWrites() - beforeFrame).toBeLessThanOrEqual(128 * 2);
     expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
   }
-  expect(styleWrites()).toBe(STROKES * 3);
-  expect(cameraGroup.nodes[3]!.nodes.every((node) => node.style.filter === "blur(50px)")).toBe(
-    true,
-  );
-  expect(cameraGroup.nodes[4]!.nodes.every((node) => node.style.filter === "blur(20px)")).toBe(
-    true,
-  );
+  expect(styleWrites()).toBe(STROKES * 2);
+  expect(
+    cameraGroup.nodes[3]!.nodes.every((node) =>
+      node.style.getPropertyValue("animation").startsWith("inkbook-element-stroke-exit"),
+    ),
+  ).toBe(true);
+  expect(
+    cameraGroup.nodes[4]!.nodes.every((node) =>
+      node.nodes[0]!.style.getPropertyValue("animation").startsWith("inkbook-element-fill-exit"),
+    ),
+  ).toBe(true);
   expect(scheduler.pendingCount).toBe(0);
   renderer.clearElementFade(ids);
-  expect(styleWrites()).toBe(STROKES * 6);
-  expect(nodes.every((node) => node.style.filter === "")).toBe(true);
+  expect(styleWrites()).toBe(STROKES * 4);
+  expect(
+    nodes
+      .flatMap((node) => [node, ...node.nodes])
+      .every((node) => !node.style.animation && node.style.filter === undefined),
+  ).toBe(true);
   const fadeFrames = Math.ceil(STROKES / 128);
   expect(renderer.instrumentation()).toEqual({
     ...before,
@@ -290,7 +298,7 @@ it.each(["rank", "reverse"] as const)(
     try {
       const before = renderer.instrumentation();
       const ids = records.map(({ id }) => id);
-      renderer.setElementFade(order === "reverse" ? [...ids].reverse() : ids, 300, "opacity");
+      renderer.setElementFade(order === "reverse" ? [...ids].reverse() : ids, 300);
       expect(work.starts).toBe(128);
       store.records.clear();
       renderer.applyDelta({
@@ -322,7 +330,6 @@ it.each(["rank", "reverse"] as const)(
       expect(work.starts).toBe(records.length);
       expect(work.removals).toBe(records.length);
       expect(work.filterWrites).toBe(0);
-      expect(work.positiveBlurWrites).toBe(0);
       expect(builds).not.toHaveBeenCalled();
       expect(creations).not.toHaveBeenCalled();
       expect(renderer.mountedCount).toBe(0);
@@ -359,7 +366,6 @@ function observeSelectedFadeWork(nodes: readonly FakeNode[]) {
     removals: 0,
     removedRanks: [] as number[],
     filterWrites: 0,
-    positiveBlurWrites: 0,
     firstRemovalStarts: Infinity,
     firstRemovalProtectedRankZero: false,
   };
@@ -371,7 +377,6 @@ function observeSelectedFadeWork(nodes: readonly FakeNode[]) {
         expect(value).toContain("inkbook-element-fill-exit");
         work.starts += 1;
       }
-      if (property === "filter" && /blur\((?!0(?:px)?\))/.test(value)) work.positiveBlurWrites += 1;
       if (property === "filter") work.filterWrites += 1;
     },
   );

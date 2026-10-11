@@ -5,7 +5,6 @@ import {
   elementFadeTargetCount,
   setElementFadeNode,
 } from "./element-fade-style";
-import type { ElementFadeMode } from "../motion/transitions";
 
 const FADE_NODES_PER_FRAME = 128;
 
@@ -16,7 +15,6 @@ export interface FadeSlice {
 
 interface PendingFade {
   readonly durationMs: number;
-  readonly mode: ElementFadeMode;
   index: number;
 }
 
@@ -32,12 +30,7 @@ export class SceneElementFades {
     private readonly onReadinessChanged?: (id: string, finish: number) => void,
   ) {}
 
-  public set(
-    ids: readonly string[],
-    durationMs: number | null,
-    slice?: FadeSlice,
-    mode: ElementFadeMode = "blur",
-  ): void {
+  public set(ids: readonly string[], durationMs: number | null, slice?: FadeSlice): void {
     for (const id of ids) {
       if (durationMs === null) {
         this.#pending.delete(id);
@@ -46,7 +39,7 @@ export class SceneElementFades {
         const entry = this.mounted.get(id);
         if (entry?.fadeActive === true) setMountedElementFade(entry, null);
       } else if (!this.#pending.has(id) && !this.#finishes.has(id) && this.mounted.has(id)) {
-        this.#pending.set(id, { durationMs, mode, index: 0 });
+        this.#pending.set(id, { durationMs, index: 0 });
         this.onReadinessChanged?.(id, Infinity);
       }
     }
@@ -97,7 +90,7 @@ export class SceneElementFades {
         continue;
       }
       if (fade.index === 0) {
-        const presentation = elementFadePresentation(entry, fade.mode);
+        const presentation = elementFadePresentation(entry);
         if (entry.fadeActive && entry.fadePresentation !== presentation)
           setMountedElementFade(entry, null);
         entry.fadePresentation = presentation;
@@ -107,8 +100,7 @@ export class SceneElementFades {
       const count = elementFadeTargetCount(entry, presentation);
       do {
         const node = elementFadeTarget(entry, fade.index, presentation);
-        if (node !== undefined)
-          setElementFadeNode(node, fade.durationMs, entry.displayedElement, presentation);
+        if (node !== undefined) setElementFadeNode(node, fade.durationMs, presentation);
         fade.index += 1;
         this.#remaining -= 1;
         this.#finishes.set(id, now() + fade.durationMs);

@@ -1,5 +1,4 @@
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
-import type { ElementFadeMode } from "../motion/transitions";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { sameStrokeShape } from "./stroke-position";
 import { CommittedPreviewGeometry } from "./committed-preview-geometry";
@@ -370,9 +369,8 @@ export class SceneContentRenderer {
     ids: readonly string[],
     durationMs: number | null,
     slice?: FadeSlice,
-    mode: ElementFadeMode = "blur",
   ): void {
-    this.#fades.set(ids, durationMs, slice, mode);
+    this.#fades.set(ids, durationMs, slice);
   }
 
   public prepareElementRemoval(id: string): void {

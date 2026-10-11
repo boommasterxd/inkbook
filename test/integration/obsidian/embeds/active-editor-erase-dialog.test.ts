@@ -139,11 +139,7 @@ describe("selection delete feedback", () => {
     const pending = createDeferredPreparation();
     fixture.prepare.mockReturnValueOnce(pending.promise);
     fixture.actions.execute("delete");
-    expect(fixture.renderer.setElementFade).toHaveBeenCalledWith(
-      [fixture.element.id],
-      400,
-      "opacity",
-    );
+    expect(fixture.renderer.setElementFade).toHaveBeenCalledWith([fixture.element.id], 400);
     await vi.waitFor(() => expect(fixture.prepare).toHaveBeenCalledOnce());
     expect(fixture.renderer.setElementFade.mock.invocationCallOrder[0]).toBeLessThan(
       fixture.prepare.mock.invocationCallOrder[0]!,
@@ -169,11 +165,7 @@ describe("selection delete feedback", () => {
       if (outcome === "failed") fixture.prepare.mockRejectedValueOnce(new Error("save failed"));
       else fixture.prepare.mockReturnValueOnce(pending.promise);
       fixture.actions.execute("delete");
-      expect(fixture.renderer.setElementFade).toHaveBeenCalledWith(
-        [fixture.element.id],
-        400,
-        "opacity",
-      );
+      expect(fixture.renderer.setElementFade).toHaveBeenCalledWith([fixture.element.id], 400);
       if (outcome === "stale") fixture.state.revision += 1;
       if (outcome === "detached") {
         fixture.state.attached = false;

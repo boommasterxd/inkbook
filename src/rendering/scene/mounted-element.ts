@@ -11,7 +11,6 @@ import {
   type PresentationAttribute,
 } from "./element-presentation";
 import type { MutableSceneInstrumentation, SceneElementRecord } from "./types";
-import type { ElementFadeMode } from "../motion/transitions";
 import {
   elementFadePresentation,
   elementFadeTarget,
@@ -264,12 +263,8 @@ function updateMountedPreviewGeometry(
   updateMountedPaint(entry, record, parts, options.instrumentation);
 }
 
-export function setMountedElementFade(
-  entry: MountedSceneElement,
-  durationMs: number | null,
-  mode: ElementFadeMode = "blur",
-): void {
-  const presentation = elementFadePresentation(entry, mode);
+export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
+  const presentation = elementFadePresentation(entry);
   const previousPresentation = entry.fadePresentation ?? presentation;
   if (durationMs !== null && entry.fadeActive && previousPresentation !== presentation)
     setMountedElementFade(entry, null);
@@ -278,8 +273,7 @@ export function setMountedElementFade(
   entry.fadePresentation = durationMs === null ? null : presentation;
   for (let index = 0; index < elementFadeTargetCount(entry, targetPresentation); index += 1) {
     const node = elementFadeTarget(entry, index, targetPresentation);
-    if (node !== undefined)
-      setElementFadeNode(node, durationMs, entry.displayedElement, targetPresentation);
+    if (node !== undefined) setElementFadeNode(node, durationMs, targetPresentation);
   }
 }
 

@@ -103,7 +103,7 @@ function setupOpacityFade(kind: "pressure" | "flat" | "highlighter" | "straight-
 }
 
 describe("mounted pressure stroke groups", () => {
-  it("composites continuous pressure ink once and fades the group", () => {
+  it("composites continuous pressure ink once and fades its fill paint", () => {
     const { entry, record, parent } = setup();
     const group = fakeNode(firstPath(entry));
     const opacity = normalizeStrokePaint(record.element.style).opacity;
@@ -122,18 +122,18 @@ describe("mounted pressure stroke groups", () => {
     expect(group.style.opacity).toBeUndefined();
     setMountedElementFade(entry, 100);
     expect(entry.fadeActive).toBe(true);
-    expect(group.style.opacity).toBe("");
+    expect(group.style.opacity).toBeUndefined();
     expect(group.attributes.get("opacity")).toBe(String(opacity));
-    expect(group.style.filter).toBe("blur(20px)");
-    expect(group.style.animation).toBe(
-      "inkbook-element-erase 100ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards",
+    expect(group.style.filter).toBeUndefined();
+    expect(group.nodes[0]!.style.animation).toBe(
+      "inkbook-element-fill-exit 100ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards",
     );
     expect(group.nodes.every((node) => node.style.filter === undefined)).toBe(true);
     setMountedElementFade(entry, null);
     expect(entry.fadeActive).toBe(false);
-    expect(group.style.opacity).toBe("");
-    expect(group.style.filter).toBe("");
-    expect(group.style.animation).toBe("");
+    expect(group.style.opacity).toBeUndefined();
+    expect(group.style.filter).toBeUndefined();
+    expect(group.nodes[0]!.style.animation).toBe("");
     expect(removeMountedElementNode(entry)).toBe(true);
     expect(parent.nodes).toHaveLength(0);
   });
@@ -214,35 +214,6 @@ describe("mounted pressure paint", () => {
   });
 });
 
-describe("width-dependent erase blur", () => {
-  it.each([
-    [true, 2, "pen", 20],
-    [false, 2, "pen", 20],
-    [true, 4, "pen", 40],
-    [true, 8, "pen", 50],
-    [false, 22, "pen", 50],
-    [false, 2, "highlighter", 50],
-  ] as const)("scales blur for pressure=%s width=%s tool=%s", (pressure, width, tool, radius) => {
-    const { entry } = setup(pressure, width, tool);
-    setMountedElementFade(entry, 400);
-    const node = fakeNode(firstPath(entry));
-    const writeFilter = observeFilterWrites(node);
-    expect(node.style.filter).toBe(`blur(${String(radius)}px)`);
-    setMountedElementFade(entry, null);
-    expect(node.style.filter).toBe("");
-    setMountedElementFade(entry, 0);
-    expect(node.style.filter).toBe("");
-    expect(node.style.opacity).toBe("0");
-    expect(writeFilter).toHaveBeenCalledExactlyOnceWith("");
-  });
-
-  it("preserves full blur for filled shapes", () => {
-    const entry = createFilledShapeEntry();
-    setMountedElementFade(entry, 400);
-    expect(fakeNode(firstPath(entry)).style.filter).toBe("blur(50px)");
-  });
-});
-
 it.each(["kind", "pressure-style"] as const)(
   "cancels original pressure-paint feedback after the displayed %s changes",
   (change) => {
@@ -255,7 +226,7 @@ it.each(["kind", "pressure-style"] as const)(
     setMountedElementMotion(entry, 0.5, 1.2);
     const motionOpacity = group.style.opacity;
     const motionTransform = group.style.transform;
-    setMountedElementFade(entry, 400, "opacity");
+    setMountedElementFade(entry, 400);
     expect(path.style.animation).toContain("inkbook-element-fill-exit 400ms");
     entry.displayedElement =
       change === "kind"
@@ -294,7 +265,7 @@ it("fades multipart pressure at the group to preserve overlapping-path compositi
         path.style.opacity === undefined &&
         path.style.filter === undefined,
     );
-  setMountedElementFade(entry, 400, "opacity");
+  setMountedElementFade(entry, 400);
   expect(group.style.animation).toBe(
     "inkbook-element-opacity-exit 400ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards",
   );
@@ -321,7 +292,7 @@ describe("opacity-only removal feedback", () => {
       const attribute = kind === "pressure" ? "fill-opacity" : "stroke-opacity";
       const opacity = node.attributes.get(attribute);
       expect(opacity).toBe(kind === "pressure" ? "1" : String(record.element.style.opacity));
-      setMountedElementFade(entry, 400, "opacity");
+      setMountedElementFade(entry, 400);
       expect(entry.fadeActive).toBe(true);
       expect(node.style.animation).toBe(
         `inkbook-element-${kind === "pressure" ? "fill" : "stroke"}-exit 400ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards`,
@@ -342,7 +313,7 @@ describe("opacity-only removal feedback", () => {
       expect(node.style.animation).toBe("");
       expect(node.style.filter || "").toBe("");
       expect(node.style.opacity).toBe("");
-      setMountedElementFade(entry, 0, "opacity");
+      setMountedElementFade(entry, 0);
       expect(node.style.animation).toBe("");
       expect(node.style.filter || "").toBe("");
       expect(node.style.opacity).toBe("0");
@@ -355,35 +326,42 @@ describe("opacity-only removal feedback", () => {
     },
   );
 
-  it("moves pressure blur feedback from the group to original fill paint", () => {
-    const { entry } = setup();
-    const group = fakeNode(entry.group!);
+  it("clears the original fill fade before restarting on a changed element kind", () => {
+    const { entry, record } = setup();
     const path = fakeNode(entry.paths[0]!.node);
-    const writePathFilter = observeFilterWrites(path);
+    const group = fakeNode(entry.group!);
+    const groupOpacity = group.attributes.get("opacity");
     setMountedElementFade(entry, 400);
-    const writeGroupFilter = observeFilterWrites(group);
-    expect(group.style.filter).toBe("blur(20px)");
-    setMountedElementFade(entry, 400, "opacity");
-    expect(group.style.animation).toBe("");
-    expect(group.style.filter).toBe("");
-    expect(path.style.animation).toContain("inkbook-element-fill-exit 400ms");
-    setMountedElementFade(entry, null);
+    entry.displayedElement = fakeRectangleRecord(record.id, 0, 0).element;
+    setMountedElementFade(entry, 200);
     expect(path.style.animation).toBe("");
-    expect(writeGroupFilter).toHaveBeenCalledExactlyOnceWith("");
-    expect(writePathFilter).not.toHaveBeenCalled();
+    expect(group.style.animation).toContain("inkbook-element-opacity-exit 200ms");
+    expect(group.attributes.get("opacity")).toBe(groupOpacity);
+    expect(path.style.filter).toBeUndefined();
+    expect(group.style.filter).toBeUndefined();
+    setMountedElementFade(entry, null);
+    expect(group.style.animation).toBe("");
+    expect(group.style.opacity).toBe("");
   });
 
-  it("replaces blur feedback with an opacity-only animation on filled shapes", () => {
+  it("fades filled shapes from their original root opacity without filter writes", () => {
     const entry = createFilledShapeEntry();
-    setMountedElementFade(entry, 400);
     const node = fakeNode(firstPath(entry));
-    expect(node.style.filter).toBe("blur(50px)");
     const writeFilter = observeFilterWrites(node);
-    setMountedElementFade(entry, 400, "opacity");
-    expect(node.style.filter).toBe("");
+    const paint = [...node.attributes];
+    setMountedElementFade(entry, 400);
+    expect(node.style.filter).toBeUndefined();
     expect(node.style.animation).toContain("inkbook-element-opacity-exit 400ms");
     expect(node.style.opacity).toBe("");
-    setMountedElementFade(entry, null, "opacity");
-    expect(writeFilter).toHaveBeenCalledExactlyOnceWith("");
+    expect([...node.attributes]).toEqual(paint);
+    setMountedElementFade(entry, null);
+    expect(node.style.animation).toBe("");
+    setMountedElementFade(entry, 0);
+    expect(node.style.animation).toBe("");
+    expect(node.style.opacity).toBe("0");
+    setMountedElementFade(entry, null);
+    expect(node.style.opacity).toBe("");
+    expect([...node.attributes]).toEqual(paint);
+    expect(writeFilter).not.toHaveBeenCalled();
   });
 });

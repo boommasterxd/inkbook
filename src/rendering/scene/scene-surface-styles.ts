@@ -40,11 +40,6 @@ export const SCENE_SURFACE_STYLES = `
   stroke: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-normal));
   stroke-dasharray: 3 3; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5;
 }
-@keyframes inkbook-element-erase {
-  from { filter: blur(0); }
-  /* The final filter uses the element's width-dependent inline value. */
-  to { opacity: 0; }
-}
 @keyframes inkbook-element-opacity-exit {
   to { opacity: 0; }
 }
