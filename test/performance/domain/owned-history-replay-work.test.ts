@@ -66,8 +66,9 @@ it("replays 10,000 privately retained strokes without public staging, point scan
     expect(store.size).toBe(fixture.strokeCount);
     for (const original of originals) {
       const restored = store.get(original.element.id)!;
-      expect(restored.element).toBe(original.element);
-      expect(restored.bounds).toBe(original.bounds);
+      expect(restored.element === original.element && restored.bounds === original.bounds).toBe(
+        true,
+      );
     }
   } finally {
     for (const spy of spies) spy.mockRestore();

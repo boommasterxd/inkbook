@@ -50,18 +50,23 @@ export async function prepareSpatialMutationTimeSliced<Id, Shadow>(
   )
     return "cancelled";
   if (stage.atomicWork <= MAX_ATOMIC_MUTATION_WORK) {
-    return stage.commitWith(() => ports.mutation.commit(stage.removed, stage.inserted));
+    const commit = ports.mutation.commit;
+    return stage.commitWith(() => commit(stage.removed, stage.inserted));
   }
   const prepared = await buildShadow(stage, ports, scheduler, generation);
   if (prepared === "cancelled") return prepared;
   const admission = shadowCheckpoint(scheduler, ports.mutation.generation, generation);
   if (admission === false || (admission !== true && !(await admission))) return "cancelled";
   let pendingShadow: Shadow | undefined = prepared.shadow;
+  let pendingExtentHeap: BottomHeapEntry<Id>[] | undefined = prepared.extentHeap;
+  const adoptShadow = ports.adoptShadow;
   return stage.commitWith(() => {
     const ready = pendingShadow!;
+    const extentHeap = pendingExtentHeap!;
     pendingShadow = undefined;
+    pendingExtentHeap = undefined;
     // Publish all instance-owned state together; old cursors observe the new generation.
-    ports.adoptShadow(ready, generation, prepared.extentHeap);
+    adoptShadow(ready, generation, extentHeap);
   });
 }
 
