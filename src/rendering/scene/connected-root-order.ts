@@ -55,13 +55,13 @@ export class ConnectedRootOrder {
       this.#proofs.delete(entry);
     }
     block.entries.splice(index, 1);
+    if (block.entries.length >= MAXIMUM_BLOCK_ENTRIES / 4) return;
     const blocks = this.#bands[block.band];
     const position = blocks.indexOf(block);
     if (block.entries.length === 0) {
       blocks.splice(position, 1);
       return;
     }
-    if (block.entries.length >= MAXIMUM_BLOCK_ENTRIES / 4) return;
     const neighbor = blocks[position + 1] ?? blocks[position - 1];
     if (
       neighbor === undefined ||
