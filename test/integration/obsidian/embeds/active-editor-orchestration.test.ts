@@ -341,6 +341,8 @@ function documentModel(
     },
     planClipboardPaste,
     prepareElementMutation: vi.fn(async () => ({ status: "noop" as const, token: null })),
+    prepareElementAppend: vi.fn(async () => ({ status: "noop" as const, token: null })),
+    prepareElementArrangement: vi.fn(async () => ({ status: "noop" as const, token: null })),
     async prepareElementRemoval(ids, cancellation) {
       const mutation = await store.createRemovalMutationTimeSliced(ids, {
         isCancelled: () => cancellation.isCancelled(),
