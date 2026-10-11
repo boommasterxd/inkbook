@@ -307,7 +307,6 @@ export class SceneContentRenderer {
       ? entry.displayedPathParts
       : undefined;
   }
-
   public applyCanonicalElementPreview(
     element: InkElementV1,
     parts: readonly SvgPathPart[],
@@ -454,13 +453,14 @@ export class SceneContentRenderer {
       this.applyPreviewTransform(id, desired.transform, desired.version, desired.strokeWidthScale);
     return true;
   }
-
   private updateGeometry(
     entry: MountedSceneElement,
     record: SceneElementRecord,
     parts: readonly SvgPathPart[],
     publication?: ScenePublicationBudget,
   ): void {
+    if (!this.#pathCache.has(record.id, record.geometryVersion))
+      this.#pathCache.completePreparation(record.element, parts, record.geometryVersion);
     updateMountedGeometry(
       entry,
       record,

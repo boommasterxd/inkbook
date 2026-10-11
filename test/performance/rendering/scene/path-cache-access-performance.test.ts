@@ -8,8 +8,92 @@ import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import { SceneGeometryAliases } from "../../../../src/rendering/scene/scene-geometry-aliases";
 import { PATH_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
+import * as pressureOutline from "../../../../src/domain/geometry/pressure-outline";
+import { translatedStroke } from "../../../../src/domain/geometry/stroke-position";
+import { createHistoryContourScene, drainHistoryFrames } from "../../../fixtures/rendering/scene";
 
 afterEach(() => vi.restoreAllMocks());
+
+it.each([false, true])(
+  "retains edited contours once in a 10,000-stroke store (Store prepared: %s)",
+  async (storePrepared) => {
+    const fixture = createHistoryContourScene();
+    const { store, renderer, scheduler } = fixture;
+    const ids = renderer.mountedIds("content").slice(0, 10);
+    expect(ids).toHaveLength(10);
+    const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
+    const alias = vi.spyOn(SceneGeometryAliases.prototype, "retain");
+    const outline = vi.spyOn(pressureOutline, "visitPreparedPressureOutline");
+    try {
+      for (const id of ids) {
+        const element = store.get(id)!.element as InkElementV1;
+        if (element.kind !== "stroke") throw new Error("Expected a stroke fixture.");
+        store.replace(id, { ...element, style: { ...element.style, width: 8 } });
+        if (storePrepared) {
+          const record = store.get(id)!;
+          store.pressureGeometry(id, record.geometryVersion).publishPath!(
+            geometry.buildElementPathParts(record.element as InkElementV1),
+          );
+        }
+      }
+      scheduler.runAll();
+      expect(outline).toHaveBeenCalledTimes(storePrepared ? 0 : ids.length);
+      expect(complete).toHaveBeenCalledTimes(ids.length);
+      expect(alias).toHaveBeenCalledTimes(ids.length);
+      complete.mockClear();
+      alias.mockClear();
+      outline.mockClear();
+      const moved = ids.map((id) => store.get(id)!.element as InkElementV1);
+      for (const element of moved) {
+        if (element.kind !== "stroke") throw new Error("Expected a stroke fixture.");
+        store.replace(element.id, { ...element, style: { ...element.style, width: 2 } });
+      }
+      scheduler.runAll();
+      expect(complete).not.toHaveBeenCalled();
+      expect(alias).toHaveBeenCalledTimes(ids.length);
+      alias.mockClear();
+      for (const element of moved) store.replace(element.id, element);
+      scheduler.runAll();
+      expect(outline).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+      expect(alias).toHaveBeenCalledTimes(ids.length);
+      alias.mockClear();
+      outline.mockClear();
+      for (const id of ids) {
+        const element = store.get(id)!.element as InkElementV1;
+        if (element.kind !== "stroke") throw new Error("Expected a stroke fixture.");
+        store.replace(id, translatedStroke(element, { x: 1, y: 1 }));
+      }
+      scheduler.runAll();
+      expect(outline).not.toHaveBeenCalled();
+      expect(complete).toHaveBeenCalledTimes(ids.length);
+      expect(alias).toHaveBeenCalledTimes(ids.length);
+      complete.mockClear();
+      alias.mockClear();
+      const deletion = store.removeWithHistory(ids);
+      if (deletion === null) throw new Error("Expected a removal transition.");
+      scheduler.runAll();
+      fixture.setHistoryReplay(true);
+      const restored = await store.prepareElementMutation(
+        deletion.transition.reverse,
+        { shouldYield: () => false, yieldControl: async () => undefined },
+        deletion.transition,
+      );
+      expect(restored.status).toBe("prepared");
+      store.commitPreparedElementMutation(restored.token!);
+      drainHistoryFrames(scheduler);
+      expect(outline).not.toHaveBeenCalled();
+      // Restoration probes and final mount share the contour; each ID owns one versioned alias.
+      expect(complete).not.toHaveBeenCalled();
+      expect(alias.mock.calls.length).toBeLessThanOrEqual(ids.length * 2);
+      expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
+    } finally {
+      fixture.dispose();
+    }
+    expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+    expect(scheduler.pendingCount).toBe(0);
+  },
+);
 
 it("restores 10,000 canonical strokes with one contour and alias access and no signature work", () => {
   const sources = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));

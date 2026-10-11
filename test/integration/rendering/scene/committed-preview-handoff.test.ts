@@ -177,10 +177,12 @@ it("defers a new canonical preview until the committed geometry basis is current
 
 it("releases pending committed work when the renderer is destroyed", () => {
   const { renderer, scheduler } = pendingCommit();
+  const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
   expect(renderer.memoryUsage().pathCacheBytes).toBeGreaterThan(0);
   renderer.destroy();
   expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
   expect(scheduler.pendingCount).toBe(0);
+  expect(complete).not.toHaveBeenCalled();
 });
 
 it("retains mixed constant-width ink and shapes while the preceding pressure job is pending", () => {
@@ -203,6 +205,7 @@ it("retains mixed constant-width ink and shapes while the preceding pressure job
 
 it("drops committed preparation when its element is removed before publication", () => {
   const { renderer, scheduler, store, element, moved, step } = pendingCommit();
+  const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
   store.records.delete(element.id);
   step.mockClear();
   renderer.applyDelta({
@@ -212,10 +215,33 @@ it("drops committed preparation when its element is removed before publication",
   });
   scheduler.runAll();
   expect(step).not.toHaveBeenCalled();
+  expect(complete).not.toHaveBeenCalled();
   expect(renderer.mountedIds("content")).toEqual([]);
   // Reusable visibility-position markers remain until presentation disposal.
   renderer.destroy();
   expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
+});
+
+it("discards unfinished edited contours when a newer commit restores the cached shape", () => {
+  const { renderer, scheduler, store, element, moved, step, group, original } = pendingCommit();
+  const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
+  store.records.set(element.id, {
+    ...store.records.get(element.id)!,
+    element,
+    geometryVersion: 3,
+  });
+  renderer.applyDelta({
+    affected: [{ id: element.id, before: moved, after: element, domains: ["geometry"] }],
+  });
+  step.mockClear();
+  scheduler.runAll();
+  expect(step).not.toHaveBeenCalled();
+  const published = complete.mock.calls.filter(([value]) => value === moved);
+  expect(published).toHaveLength(0);
+  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+  expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
 
 it("finishes selection dismissal on schedule while canonical commit geometry remains pending", () => {

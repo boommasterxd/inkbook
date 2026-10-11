@@ -1,8 +1,12 @@
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
 import { UniformSpatialIndex } from "../../../src/domain/spatial";
 import { expect, vi, type Mock } from "vitest";
-import type { ElementStore } from "../../../src/domain/store/public";
+import { ElementStore } from "../../../src/domain/store/public";
+import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
+import { indexedStroke } from "../editor/stroke";
+import { createWorkerSnapshot } from "../persistence/worker-snapshot";
 import { calculateElementBounds } from "../../../src/domain/geometry/bounds";
+import { roundCanonical } from "../../../src/domain/geometry/primitives";
 import type { ScenePathPreparation } from "../../../src/domain/geometry/prepared-scene-paths";
 import type { NavigationPathPreparation } from "../../../src/rendering/scene/navigation-path-preparation";
 import type { SceneVisibilityPriority } from "../../../src/rendering/scene/scene-entrant-priority";
@@ -79,6 +83,62 @@ export function createSceneFixture(
     workScheduler: scheduler.workScheduler,
   });
   return { document: fakeNode(renderer.svg).ownerDocument, parentDocument, renderer, scheduler };
+}
+
+/** Real committed Store deltas in a 10,000-stroke document, including history provenance. */
+export function createHistoryContourScene() {
+  const elements = Array.from({ length: 10_000 }, (_, index) => {
+    const element = indexedStroke(index);
+    return {
+      ...element,
+      points: Array.from({ length: 20 + (index % 61) }, (_, sample) => [
+        roundCanonical(element.pivot.x + sample / 10),
+        roundCanonical(element.pivot.y + Math.sin(sample / 5) * 2),
+        roundCanonical(0.3 + ((index + sample) % 7) / 10),
+      ]).flat(),
+    };
+  });
+  const store = new ElementStore(elements);
+  const sceneStore = new ElementSceneStore(store);
+  const scene = createSceneFixture(createWorkerSnapshot([]).page, sceneStore, {
+    height: 100,
+    left: 0,
+    top: 0,
+    width: 100,
+  });
+  scene.scheduler.runAll();
+  let historyReplay = false;
+  const unsubscribe = store.subscribe((delta) =>
+    scene.renderer.applyDelta({
+      historyReplay,
+      affected: delta.changes.map((change) => ({
+        ...change,
+        before: (change.before?.element as InkElementV1 | undefined) ?? null,
+        after: (change.after?.element as InkElementV1 | undefined) ?? null,
+      })),
+    }),
+  );
+  return {
+    ...scene,
+    store,
+    setHistoryReplay: (enabled: boolean) => {
+      historyReplay = enabled;
+    },
+    dispose: () => {
+      unsubscribe();
+      scene.renderer.destroy();
+      sceneStore.release();
+    },
+  };
+}
+
+/** Advances animation time while draining the existing coalesced frame queue. */
+export function drainHistoryFrames(scheduler: FakeScheduler): void {
+  for (let frame = 0; scheduler.pendingCount > 0; frame += 1) {
+    expect(frame).toBeLessThan(100);
+    scheduler.time += 16;
+    scheduler.runNext();
+  }
 }
 
 export function createViewportRectangleStore(
