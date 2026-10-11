@@ -119,13 +119,15 @@ function* unpackElementBuffersSteps(
   const elements: InkElementV1[] = [];
   for (let recordIndex = 0; recordIndex < packed.records.length; recordIndex += 1) {
     const record = packed.records[recordIndex]!;
-    const { pointsBufferIndex: _bufferIndex, ...header } = captureRuntimeElementHeader(record);
-    if (record.kind !== "stroke") elements.push(header as unknown as NonStrokeElement);
-    else
+    const captured = captureRuntimeElementHeader(record);
+    if (record.kind !== "stroke") elements.push(captured as unknown as NonStrokeElement);
+    else {
+      const { pointsBufferIndex: _bufferIndex, ...header } = captured;
       elements.push({
         ...header,
         points: yield* unpackStrokePointsSteps(record, packed, used, resolvePoints, validated),
       } as unknown as StrokeElementV1);
+    }
     if ((recordIndex + 1) % 64 === 0) yield;
   }
   if (used.size !== packed.pointBuffers.length)
