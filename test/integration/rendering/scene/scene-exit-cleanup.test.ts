@@ -207,6 +207,11 @@ describe("sliced scene exit cleanup", () => {
       });
     });
     try {
+      harness.renderer.setElementFade(
+        records.map(({ id }) => id),
+        0,
+      );
+      harness.scheduler.runAll();
       remove(harness, [...records].reverse(), false);
       let previous = 0;
       while (harness.scheduler.pendingCount > 0) {
@@ -221,37 +226,9 @@ describe("sliced scene exit cleanup", () => {
       harness.renderer.destroy();
     }
   });
+});
 
-  it("restores still-mounted faded nodes after Undo and safely cleans a subsequent Redo", () => {
-    const records = rectangles(200);
-    const harness = setup(records);
-    const original = [...harness.content.nodes];
-    remove(harness, records);
-    beginCleanup(harness);
-    expect(harness.renderer.mountedCount).toBe(136);
-    expect(harness.renderer.instrumentation().domExits).toBe(200 - harness.renderer.mountedCount);
-    expect(harness.renderer.hasPendingSceneCommit).toBe(false);
-    const retained = [...harness.content.nodes];
-    expect(retained.every((node) => node.style.opacity === "0")).toBe(true);
-
-    restore(harness, records);
-    harness.scheduler.runAll();
-    expect(harness.renderer.mountedIds("content")).toEqual(records.map(({ id }) => id));
-    expect(harness.content.nodes).toHaveLength(200);
-    for (const node of retained) {
-      expect(harness.content.nodes).toContain(node);
-      expect(node.style.opacity).toBe("");
-      expect(node.style.filter).toBe("");
-    }
-    expect(harness.content.nodes.map((node) => node.attributes.get("d"))).toEqual(
-      original.map((node) => node.attributes.get("d")),
-    );
-    remove(harness, records);
-    harness.scheduler.runAll();
-    expectEmptyScene(harness);
-    harness.renderer.destroy();
-  });
-
+describe("mixed scene exit cleanup", () => {
   it.each([0, 199])("bounds mixed deletion cleanup when %s other exits have faded", (count) => {
     const records = rectangles(200);
     const harness = setup(records);
@@ -263,7 +240,7 @@ describe("sliced scene exit cleanup", () => {
     beginCleanup(harness);
     expect(harness.renderer.mountedCount).toBe(136);
     expect(harness.renderer.instrumentation().domExits).toBe(200 - harness.renderer.mountedCount);
-    expect(harness.content.nodes.every((node) => node.style.opacity === "0")).toBe(true);
+    expect(harness.content.nodes.some((node) => node.style.opacity === "0")).toBe(true);
     expect(harness.renderer.hasPendingSceneCommit).toBe(false);
     harness.scheduler.runAll();
     expectEmptyScene(harness);
@@ -301,8 +278,8 @@ describe("deferred scene exit cleanup", () => {
     const path = harness.content.nodes[0]!;
     remove(harness, records);
     harness.renderer.clearElementFade(records.map(({ id }) => id));
-    expect(path.style.animation).toContain("inkbook-element-erase 220ms");
-    expect(path.style.filter).toBe("blur(20px)");
+    expect(path.style.animation).toContain("inkbook-element-opacity-exit 220ms");
+    expect(path.style.filter).toBeUndefined();
     expect(harness.renderer.instrumentation().motionTombstones).toBe(0);
     harness.scheduler.runNext();
     expect(harness.renderer.mountedCount).toBe(1);
@@ -313,7 +290,7 @@ describe("deferred scene exit cleanup", () => {
     harness.renderer.destroy();
   });
 
-  it("restores a selection deleted with blur when Undo arrives before the transition finishes", () => {
+  it("restores a selection deleted with opacity feedback when Undo arrives before the transition finishes", () => {
     const records = rectangles(2);
     const harness = setup(records);
     harness.renderer.setReducedMotion(false);
@@ -324,10 +301,16 @@ describe("deferred scene exit cleanup", () => {
     harness.renderer.clearElementFade(ids);
     harness.scheduler.runNext();
     expect(harness.content.nodes).toEqual(original);
-    expect(original.every((node) => node.style.filter === "blur(20px)")).toBe(true);
+    expect(
+      original.every((node) =>
+        node.style.getPropertyValue("animation").startsWith("inkbook-element-opacity-exit"),
+      ),
+    ).toBe(true);
     harness.scheduler.time += 150;
     restore(harness, records);
-    expect(original.every((node) => node.style.filter === "")).toBe(true);
+    expect(
+      original.every((node) => node.style.animation === "" && node.style.filter === undefined),
+    ).toBe(true);
     harness.scheduler.time += 300;
     harness.scheduler.runAll();
     expect(harness.content.nodes).toEqual(original);

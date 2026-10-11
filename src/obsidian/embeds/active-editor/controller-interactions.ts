@@ -21,6 +21,7 @@ import type { SelectionFrameSession } from "../../../editor/selection/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { ActiveEditorBackgroundSession } from "./background-session";
 import { ActiveEditorHistoryTraversal } from "./history-traversal";
+import { ActiveEditorStyleSession, type ActiveEditorStyleSessionOptions } from "./style-session";
 
 export interface ActiveEditorInteractionsOptions {
   readonly controller: ActiveEditorControllerOptions;
@@ -37,6 +38,28 @@ export interface ActiveEditorInteractionsOptions {
   readonly selectionFrames: SelectionFrameSession;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
   readonly snapping: () => ActiveEditorControllerOptions["snapping"];
+}
+
+export function createControllerStyleSession(
+  controller: ActiveEditorControllerOptions,
+  options: Pick<
+    ActiveEditorStyleSessionOptions,
+    | "onSelectionGeometryChanged"
+    | "onStateChanged"
+    | "selection"
+    | "selectionFrames"
+    | "preparedHistory"
+    | "isEnabled"
+  >,
+): ActiveEditorStyleSession {
+  return new ActiveEditorStyleSession({
+    ...options,
+    defaults: controller.defaults,
+    history: controller.history,
+    sceneStore: controller.sceneStore,
+    selectionIdentity: options.selection,
+    store: controller.model.store,
+  });
 }
 
 export function createControllerHistorySessions(options: {
@@ -87,6 +110,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     onPendingChanged: options.onPendingChanged,
     onStateChanged: controller.onStateChanged,
     ownerWindow: options.ownerWindow,
+    workScheduler: controller.workScheduler,
     renderer: controller.renderer,
     sceneStore: controller.sceneStore,
     setSelection: options.setSelection,

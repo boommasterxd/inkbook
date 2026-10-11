@@ -40,9 +40,22 @@ export const SCENE_SURFACE_STYLES = `
   stroke: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-normal));
   stroke-dasharray: 3 3; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5;
 }
-@keyframes inkbook-element-erase {
-  from { filter: blur(0); }
-  /* The final filter uses the element's width-dependent inline value. */
+@keyframes inkbook-element-opacity-exit {
   to { opacity: 0; }
+}
+@keyframes inkbook-element-fill-exit {
+  to { fill-opacity: 0; }
+}
+@keyframes inkbook-element-stroke-exit {
+  to { stroke-opacity: 0; }
+}
+@keyframes inkbook-element-opacity-enter {
+  to { opacity: 0; }
+}
+@keyframes inkbook-element-fill-enter {
+  to { fill-opacity: 0; }
+}
+@keyframes inkbook-element-stroke-enter {
+  to { stroke-opacity: 0; }
 }
 `;

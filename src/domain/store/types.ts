@@ -93,6 +93,16 @@ export interface TimeSlicedStoreResult {
   readonly status: "cancelled" | "committed" | "noop";
 }
 
+export interface ElementReplacementHistoryData {
+  readonly previous: readonly ImmutableInkElement[];
+  readonly replacements: readonly ImmutableInkElement[];
+  readonly payloadBytes: number;
+}
+
+export interface ElementReplacementCommitResult extends TimeSlicedStoreResult {
+  readonly history: ElementReplacementHistoryData | null;
+}
+
 declare const PREPARED_ELEMENT_REPLACEMENT: unique symbol;
 
 export interface PreparedElementReplacement {
@@ -102,6 +112,7 @@ export interface PreparedElementReplacement {
 export interface PreparedElementReplacementResult {
   readonly status: "cancelled" | "noop" | "prepared";
   readonly token: PreparedElementReplacement | null;
+  readonly historyPayloadBytes?: number;
 }
 
 export interface ElementMutation {

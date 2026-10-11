@@ -7,7 +7,6 @@ import {
   assertExactKeys,
   assertGeometryNumber,
   assertIntegerRange,
-  assertJsonTree,
   assertJsonTreeSteps,
   assertLiteral,
   assertOneOf,
@@ -55,21 +54,48 @@ export function validateInkElementV1(
   value: unknown,
   options: ElementValidationOptions = {},
 ): ValidationResult<InkElementV1> {
-  return validateElement(value, options, false);
+  const steps = validateInkElementV1Steps(value, options, 2048, 256);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
 }
 
 export function validateRuntimeInkElementV1(
   value: unknown,
   options: ElementValidationOptions = {},
 ): ValidationResult<InkElementV1> {
-  return validateElement(value, options, true);
+  const steps = validateRuntimeInkElementV1Steps(value, options, 2048, 256);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
 }
 
-export function* validateInkElementV1Steps(
+export function validateInkElementV1Steps(
   value: unknown,
   options: ElementValidationOptions,
   nodesPerStep: number,
   samplesPerStep: number,
+): Generator<boolean | void, ValidationResult<InkElementV1>> {
+  return validateElementSteps(value, options, nodesPerStep, samplesPerStep, false);
+}
+
+// The caller must keep the candidate unchanged until the producer finishes or is closed.
+// Validation does not establish ownership of the candidate or its sample buffer.
+export function validateRuntimeInkElementV1Steps(
+  value: unknown,
+  options: ElementValidationOptions,
+  nodesPerStep: number,
+  samplesPerStep: number,
+): Generator<boolean | void, ValidationResult<InkElementV1>> {
+  return validateElementSteps(value, options, nodesPerStep, samplesPerStep, true);
+}
+
+function* validateElementSteps(
+  value: unknown,
+  options: ElementValidationOptions,
+  nodesPerStep: number,
+  samplesPerStep: number,
+  allowRuntimeStrokeBuffers: boolean,
 ): Generator<boolean | void, ValidationResult<InkElementV1>> {
   const statistics = createStatistics();
   try {
@@ -78,7 +104,7 @@ export function* validateInkElementV1Steps(
       value,
       jsonNodeBudget(limits),
       nodesPerStep,
-      false,
+      allowRuntimeStrokeBuffers,
       jsonContainerBudget(limits),
     );
     let step = tree.next();
@@ -87,11 +113,12 @@ export function* validateInkElementV1Steps(
       step = tree.next();
     }
     statistics.maximumDepth = step.value;
-    const context = { allowRuntimeStrokeBuffers: false, limits, statistics };
-    if (typeof value === "object" && value !== null && "kind" in value && value.kind === "stroke") {
-      yield* assertStrokeElementSteps(value, "$", context, samplesPerStep);
-    } else {
-      assertInkElement(value, "$", context);
+    const context = { allowRuntimeStrokeBuffers, limits, statistics };
+    const element = assertInkElementSteps(value, "$", context, samplesPerStep);
+    let elementStep = element.next();
+    while (!elementStep.done) {
+      yield true;
+      elementStep = element.next();
     }
     return { ok: true, value: value as InkElementV1, statistics };
   } catch (error: unknown) {
@@ -99,41 +126,12 @@ export function* validateInkElementV1Steps(
   }
 }
 
-function validateElement(
-  value: unknown,
-  options: ElementValidationOptions,
-  allowRuntimeStrokeBuffers: boolean,
-): ValidationResult<InkElementV1> {
-  const statistics = createStatistics();
-  try {
-    const limits = options.limits ?? FILE_SCHEMA_LIMITS;
-    statistics.maximumDepth = allowRuntimeStrokeBuffers
-      ? consumeRuntimeJsonTree(value, jsonNodeBudget(limits), jsonContainerBudget(limits))
-      : assertJsonTree(value, jsonNodeBudget(limits), jsonContainerBudget(limits));
-    const context = { allowRuntimeStrokeBuffers, limits, statistics };
-    assertInkElement(value, "$", context);
-    return { ok: true, value, statistics };
-  } catch (error: unknown) {
-    return { ok: false, error: toValidationError(error) };
-  }
-}
-
-function consumeRuntimeJsonTree(
-  value: unknown,
-  maximumNodes: number,
-  maximumContainerEntries: number,
-): number {
-  const steps = assertJsonTreeSteps(value, maximumNodes, 2048, true, maximumContainerEntries);
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
-}
-
-export function assertInkElement(
+export function* assertInkElementSteps(
   value: unknown,
   path: string,
   context: ValidationContext,
-): asserts value is InkElementV1 {
+  samplesPerStep = 256,
+): Generator<void, void> {
   assertRecord(value, path);
   context.statistics.elements += 1;
   if (context.statistics.elements > context.limits.elements) {
@@ -141,7 +139,10 @@ export function assertInkElement(
   }
   switch (value.kind) {
     case "stroke":
-      assertStroke(value, path, context);
+      {
+        const steps = assertStrokeSteps(value, path, context, samplesPerStep);
+        while (!steps.next().done) yield;
+      }
       return;
     case "line":
       assertLine(value, path, context);
@@ -187,27 +188,6 @@ function assertPoint(
   assertExactKeys(value, ["x", "y"], path);
   assertGeometryNumber(value.x, `${path}.x`, context.limits.absoluteCoordinate);
   assertGeometryNumber(value.y, `${path}.y`, context.limits.absoluteCoordinate);
-}
-
-function assertStroke(value: UnknownRecord, path: string, context: ValidationContext): void {
-  const steps = assertStrokeSteps(value, path, context, Number.POSITIVE_INFINITY);
-  while (!steps.next().done) {
-    // Synchronous callers retain the same complete validation boundary.
-  }
-}
-
-function* assertStrokeElementSteps(
-  value: unknown,
-  path: string,
-  context: ValidationContext,
-  samplesPerStep: number,
-): Generator<boolean, void> {
-  assertRecord(value, path);
-  context.statistics.elements += 1;
-  if (context.statistics.elements > context.limits.elements) {
-    fail("element-limit-exceeded", path, "Element count exceeds the configured limit.");
-  }
-  yield* assertStrokeSteps(value, path, context, samplesPerStep);
 }
 
 function* assertStrokeSteps(

@@ -7,11 +7,12 @@ import type {
   UnlockRuntimeBatch,
 } from "./types";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeResultChunked,
-  encodeUnlockBatch,
+  encodeUnlockBatchChunked,
   isDocumentRuntimeWireRequest,
 } from "./wire-codec";
+import { runtimeRequestAdmissionHeader } from "./request-wire-decoding";
 import type {
   BridgeBatchAcknowledgement,
   BridgeControl,
@@ -116,20 +117,12 @@ function dispatchHostedRequest(
   const { requestId } = message;
   let request: DocumentRuntimeRequest;
   try {
-    const wire = message.request;
-    const resolvePoints =
-      "baseModelRevision" in wire
-        ? pointReferences.resolver(
-            wire.baseModelRevision,
-            "identity" in wire ? wire.identity : wire,
-          )
-        : undefined;
-    request = decodeRuntimeRequest(wire, resolvePoints);
+    request = runtimeRequestAdmissionHeader(message.request);
   } catch {
     postExecutorFailure(endpoint, requestId, "host-decoding");
     return;
   }
-  if (request.type === "unlock") pointReferences.clear();
+  let decodingFailed = false;
   let sceneBatchIndex = 0;
   const observer: DocumentRuntimeObserver = {
     scenePaths: (batch, signal) =>
@@ -145,17 +138,40 @@ function dispatchHostedRequest(
         signal,
       ),
     unlockBatch: async (batch, signal) => {
-      await postUnlockBatch(endpoint, acknowledgements, requestId, batch, signal);
+      await postUnlockBatch(endpoint, acknowledgements, requestId, batch, signal, runtime);
       pointReferences.stageUnlock(batch);
     },
   };
-  void runtime.execute(request, observer).then(
-    (result) => {
-      pointReferences.accept(request, result);
-      return postHostedResult(endpoint, runtime, exportAcknowledgements, requestId, result);
-    },
-    () => postExecutorFailure(endpoint, requestId, "host-execution"),
-  );
+  void runtime
+    .execute(request, observer, async (context) => {
+      try {
+        const wire = message.request;
+        const resolvePoints =
+          "baseModelRevision" in wire
+            ? pointReferences.resolver(
+                wire.baseModelRevision,
+                "identity" in wire ? wire.identity : wire,
+              )
+            : undefined;
+        request = await decodeRuntimeRequestChunked(wire, context, resolvePoints);
+        if (request.type === "unlock") pointReferences.clear();
+        return request;
+      } catch (error) {
+        decodingFailed = !context.signal.aborted;
+        throw error;
+      }
+    })
+    .then(
+      (result) => {
+        if (decodingFailed) {
+          postExecutorFailure(endpoint, requestId, "host-decoding");
+          return;
+        }
+        pointReferences.accept(request, result);
+        return postHostedResult(endpoint, runtime, exportAcknowledgements, requestId, result);
+      },
+      () => postExecutorFailure(endpoint, requestId, "host-execution"),
+    );
 }
 
 async function postHostedResult(
@@ -217,15 +233,20 @@ function postExecutorFailure(
   } satisfies BridgeFailure);
 }
 
-function postUnlockBatch(
+async function postUnlockBatch(
   endpoint: WorkerHostEndpoint,
   acknowledgements: Map<string, PendingAcknowledgement>,
   requestId: number,
   batch: UnlockRuntimeBatch,
   signal: AbortSignal,
+  runtime: DocumentRuntimePort,
 ): Promise<void> {
   signal.throwIfAborted();
-  const encoded = encodeUnlockBatch(batch);
+  const encoded = await encodeUnlockBatchChunked(batch, {
+    checkpoint: () => runtime.checkpoint?.(signal),
+    signal,
+  });
+  signal.throwIfAborted();
   const key = acknowledgementKey(requestId, batch.batchIndex);
   return new Promise((resolve, reject) => {
     const abort = (): void => {

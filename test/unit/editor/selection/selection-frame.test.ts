@@ -87,7 +87,7 @@ describe("multi-selection frame geometry", () => {
     });
   });
 
-  it("rebases coarse geometry changes without losing orientation and restores them on undo", () => {
+  it("rebases coarse geometry changes synchronously and in slices with exact undo", async () => {
     const first = rectangle();
     const second = rectangle("second", 500, 300);
     const geometry = [selected(first), selected(second)];
@@ -116,5 +116,43 @@ describe("multi-selection frame geometry", () => {
     expect(applied?.rotation).toBe(rotated.rotation);
     effect.revert();
     expect(session.current(geometry)).toEqual(rotated);
+
+    const sliced = await session.rebaseTimeSliced(rotated, [first, widened], {
+      shouldYield: () => false,
+      yieldControl: () => Promise.resolve(),
+    });
+    expect(sliced).toBeDefined();
+    sliced!.apply();
+    expect(session.current(geometry)).toEqual(expected);
+    sliced!.revert();
+    expect(session.current(geometry)).toEqual(rotated);
+  });
+});
+
+describe("selection frame rebase cancellation", () => {
+  it("discards a sliced rebase after reset before publishing an effect", async () => {
+    const first = rectangle();
+    const second = rectangle("second", 500, 300);
+    const geometry = [selected(first), selected(second)];
+    const changed = vi.fn();
+    const session = new SelectionFrameSession(changed);
+    const initial = session.current(geometry)!;
+    const widened = { ...second, width: 350, pivot: { x: 675, y: 350 } };
+    let yielding = true;
+    const yieldControl = vi.fn(async () => {
+      yielding = false;
+      session.reset();
+    });
+
+    await expect(
+      session.rebaseTimeSliced(initial, [first, widened], {
+        shouldYield: () => yielding,
+        yieldControl,
+      }),
+    ).resolves.toBeUndefined();
+    expect(yieldControl).toHaveBeenCalledOnce();
+    expect(changed).not.toHaveBeenCalled();
+    expect(session.current(geometry)).toEqual(initial);
+    expect(session.current(geometry)).not.toBe(initial);
   });
 });

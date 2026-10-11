@@ -14,6 +14,7 @@ export async function validateTrustedRemovalOrder(
       bands: Record<RenderBand, string[]>;
       ranks: Map<string, ElementRank>;
       dirtyBands: Record<RenderBand, boolean>;
+      relativeOrderPreserved: Record<RenderBand, boolean>;
     }
   | "cancelled"
 > {
@@ -36,5 +37,5 @@ export async function validateTrustedRemovalOrder(
       if (index >= firstChanged) ranks.set(id, { band, rank: index });
     }
   }
-  return { bands, ranks, dirtyBands };
+  return { bands, ranks, dirtyBands, relativeOrderPreserved: { content: true, highlight: true } };
 }

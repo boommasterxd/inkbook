@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
+import { rectangle } from "../../../domain/store/fixtures";
 
 const model = {
   commitBandOrder: vi.fn(),
@@ -9,6 +10,84 @@ const model = {
   removeElements: vi.fn(),
   replaceElements: vi.fn(),
 };
+
+describe("history replay origin", () => {
+  it.each(["sync", "async"] as const)(
+    "marks only executed %s replay callbacks and preserves traversal availability",
+    async (mode) => {
+      const observed: boolean[] = [];
+      const observe = () => observed.push(history.isReplaying);
+      const history = new ActiveEditorHistory({
+        ...model,
+        commitElements: observe,
+        removeElements: observe,
+      });
+      expect(history.create([rectangle()])).toBe(true);
+      expect(observed).toEqual([false]);
+      if (mode === "sync") {
+        expect(history.undo()).toBe(true);
+        expect(history.redo()).toBe(true);
+      } else {
+        const pending = history.undoAsync();
+        expect(history.isTraversing).toBe(true);
+        expect(history.isReplaying).toBe(false);
+        await expect(pending).resolves.toBe(true);
+        await expect(history.redoAsync()).resolves.toBe(true);
+      }
+      expect(observed).toEqual([false, true, true]);
+      expect(history.isReplaying).toBe(false);
+      expect(history.isTraversing).toBe(false);
+    },
+  );
+
+  it("clears replay origin when a synchronous mutation throws", () => {
+    const history = new ActiveEditorHistory({
+      ...model,
+      removeElements: () => {
+        expect(history.isReplaying).toBe(true);
+        throw new Error("failed replay");
+      },
+    });
+    history.create([rectangle()]);
+    expect(() => history.undo()).toThrow("failed replay");
+    expect(history.isReplaying).toBe(false);
+    expect(history.canUndo).toBe(true);
+  });
+
+  it.each([true, false, "throw", "reject"] as const)(
+    "scopes async replay and effects through completion %s",
+    async (result) => {
+      const effects: boolean[] = [];
+      const effect = () => effects.push(history.isReplaying);
+      const history = new ActiveEditorHistory(model);
+      const transition = () => {
+        expect(history.isReplaying).toBe(true);
+        if (result === "throw") throw new Error("failed replay");
+        return Promise.resolve().then(() => {
+          expect(history.isReplaying).toBe(true);
+          if (result === "reject") throw new Error("failed replay");
+          return result;
+        });
+      };
+      history.registerApplied(
+        { payloadBytes: 1, redo: transition, undo: transition },
+        { apply: effect, revert: effect },
+      );
+      expect(effects).toEqual([false]);
+      const replay = history.undoAsync();
+      expect(history.isReplaying).toBe(false);
+      if (typeof result === "string") await expect(replay).rejects.toThrow("failed replay");
+      else await expect(replay).resolves.toBe(result);
+      expect(history.isReplaying).toBe(false);
+      expect(effects).toEqual(result === true ? [false, true] : [false]);
+      if (result === true) {
+        await expect(history.redoAsync()).resolves.toBe(true);
+        expect(effects).toEqual([false, true, true]);
+        expect(history.isReplaying).toBe(false);
+      }
+    },
+  );
+});
 
 describe("ActiveEditorHistory applied async transitions", () => {
   it("publishes new Canvas commits for a pane history adapter", () => {

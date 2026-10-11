@@ -14,6 +14,7 @@ import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import type { MenuItemPort, MenuPort } from "../../../../src/obsidian/menus/index";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
 import {
   createClipboardDocumentModel,
   createEncodedClipboardFixture,
@@ -261,12 +262,12 @@ describe("active editor arrange and menu bridge", () => {
     const store = new ElementStore([first, second]);
     const initialOrder = store.materializeBandOrder("content");
     const selectedId = initialOrder[0]!;
+    const selection = new Set([selectedId]);
     const model = clipboardModel(
       store,
       {
-        commitPreparedElementMutation: vi.fn(() => null),
+        ...elementMutationPorts(store, () => undefined),
         planClipboardPaste: vi.fn(async () => null),
-        prepareElementMutation: vi.fn(async () => ({ status: "noop" as const, token: null })),
       },
       createEncodedClipboardFixture(),
     );
@@ -276,7 +277,7 @@ describe("active editor arrange and menu bridge", () => {
     const unsubscribe = store.subscribe(() => void stateChanged());
     const actions = new ActiveEditorActions({
       renderer: { setElementFade: vi.fn(), clearElementFade: vi.fn() },
-      currentSelection: () => new Set([selectedId]),
+      currentSelection: () => selection,
       history,
       isAttached: () => true,
       isEnabled: () => true,
@@ -288,13 +289,15 @@ describe("active editor arrange and menu bridge", () => {
       onPendingChanged: vi.fn(),
       onStateChanged: stateChanged,
       ownerWindow: clipboardWindow(),
+      workScheduler: immediateWorkScheduler(),
       sceneStore,
       setSelection: vi.fn(),
       visibleCenter: () => ({ x: 100, y: 100 }),
     });
 
     actions.execute("bring-to-front");
-    expect(stateChanged).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(history.commandCount).toBe(1));
+    expect(stateChanged).toHaveBeenCalledTimes(2);
     expect(store.materializeBandOrder("content")).toEqual([initialOrder[1], selectedId]);
     expect(history.commandCount).toBe(1);
     await expect(history.undoAsync()).resolves.toBe(true);

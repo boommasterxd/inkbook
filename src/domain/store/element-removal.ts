@@ -144,16 +144,12 @@ function removeBandIds(
     const firstChanged = ranks[ranks.length - 1]!;
     for (const rank of ranks) state.bands[band].splice(rank, 1);
     for (const id of removedIds) if (state.ranks.get(id)?.band === band) state.ranks.delete(id);
-    refreshRanks(state, band, firstChanged, delta);
+    delta.dirtyBand(band);
+    refreshRanks(state, band, firstChanged);
   }
 }
 
-function refreshRanks(
-  state: RemovalState,
-  band: RenderBand,
-  start: number,
-  delta: DeltaBuilder,
-): void {
+function refreshRanks(state: RemovalState, band: RenderBand, start: number): void {
   for (let rank = start; rank < state.bands[band].length; rank += 1) {
     const id = state.bands[band][rank]!;
     const previous = state.ranks.get(id);
@@ -163,8 +159,5 @@ function refreshRanks(
       previous.band = band;
       previous.rank = rank;
     }
-    const record = requireElementRecord(state.records, id);
-    delta.add(id, record, record, ["order"]);
-    delta.dirtyBand(band);
   }
 }

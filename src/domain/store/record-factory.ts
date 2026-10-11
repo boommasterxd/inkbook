@@ -4,7 +4,7 @@ import {
   validatedSampleExtrema,
 } from "../schema/stroke-sample-extrema";
 import { assertSpatialBounds } from "../spatial/bounds";
-import { calculateElementBounds } from "../geometry/bounds";
+import { calculateElementBoundsSteps } from "../geometry/bounds";
 import { markStoredStroke } from "../elements/stroke-replacement-proof";
 import {
   validatedElementDerivationBounds,
@@ -19,19 +19,33 @@ import {
 } from "../spatial/index";
 
 import {
-  immutableElement,
-  immutableReplacement,
+  immutableElementSteps,
+  immutableReplacementSteps,
   takeImmutableElementOwnership,
 } from "./immutability";
 import type { ElementRecord } from "./types";
 
 export function createInitialRecord(element: InkElementV1): ElementRecord {
-  const immutable = immutableElement(element);
-  return initialRecord(immutable);
+  return drainRecordSteps(createInitialRecordSteps(element));
 }
 
-export function createOwnedInitialRecord(element: InkElementV1): ElementRecord {
-  return initialRecord(takeImmutableElementOwnership(element));
+export function* createInitialRecordSteps(
+  element: InkElementV1,
+  pointsPerStep = 256,
+): Generator<void, ElementRecord> {
+  const immutable = yield* immutableElementSteps(element);
+  return yield* initialRecordSteps(immutable, undefined, pointsPerStep);
+}
+
+export function* createOwnedInitialRecordSteps(
+  element: InkElementV1,
+  pointsPerStep = 256,
+): Generator<void, ElementRecord> {
+  return yield* initialRecordSteps(
+    takeImmutableElementOwnership(element),
+    undefined,
+    pointsPerStep,
+  );
 }
 
 export function createOwnedValidatedInitialRecord(
@@ -48,16 +62,22 @@ export function createOwnedValidatedInitialRecord(
       if (!validation.ok) throw new TypeError("Invalid stroke samples in runtime derivation.");
     }
   }
-  return initialRecord(takeImmutableElementOwnership(element), Object.freeze({ ...bounds }));
+  return drainRecordSteps(
+    initialRecordSteps(takeImmutableElementOwnership(element), Object.freeze({ ...bounds })),
+  );
 }
 
-function initialRecord(
+function* initialRecordSteps(
   immutable: ElementRecord["element"],
   validatedBounds?: Readonly<SpatialBounds>,
-): ElementRecord {
+  pointsPerStep = 256,
+): Generator<void, ElementRecord> {
   if (immutable.kind === "stroke") markStoredStroke(immutable);
   const bounds =
-    validatedBounds ?? Object.freeze(calculateElementBounds(immutable as unknown as InkElementV1));
+    validatedBounds ??
+    Object.freeze(
+      yield* calculateElementBoundsSteps(immutable as unknown as InkElementV1, pointsPerStep),
+    );
   return Object.freeze({ bounds, element: immutable, geometryVersion: 0, paintVersion: 0 });
 }
 
@@ -67,25 +87,42 @@ export function createReplacementRecord(
   geometryVersion: number,
   paintVersion: number,
 ): ElementRecord {
-  return replacementRecord(
-    immutableReplacement(element, current.element),
-    current,
-    geometryVersion,
-    paintVersion,
+  return drainRecordSteps(
+    createReplacementRecordSteps(element, current, geometryVersion, paintVersion),
   );
 }
 
-export function createOwnedReplacementRecord(
+export function* createReplacementRecordSteps(
   element: InkElementV1,
   current: ElementRecord,
   geometryVersion: number,
   paintVersion: number,
-): ElementRecord {
-  return replacementRecord(
+  pointsPerStep = 256,
+): Generator<void, ElementRecord> {
+  return yield* replacementRecordSteps(
+    yield* immutableReplacementSteps(element, current.element),
+    current,
+    geometryVersion,
+    paintVersion,
+    undefined,
+    pointsPerStep,
+  );
+}
+
+export function* createOwnedReplacementRecordSteps(
+  element: InkElementV1,
+  current: ElementRecord,
+  geometryVersion: number,
+  paintVersion: number,
+  pointsPerStep = 256,
+): Generator<void, ElementRecord> {
+  return yield* replacementRecordSteps(
     takeImmutableElementOwnership(element),
     current,
     geometryVersion,
     paintVersion,
+    undefined,
+    pointsPerStep,
   );
 }
 
@@ -96,34 +133,45 @@ export function createOwnedTranslatedReplacementRecord(
   paintVersion: number,
   translation: Readonly<{ x: number; y: number }>,
 ): ElementRecord {
-  return replacementRecord(
-    takeImmutableElementOwnership(element),
-    current,
-    geometryVersion,
-    paintVersion,
-    Object.freeze({
-      maxX: current.bounds.maxX + translation.x,
-      maxY: current.bounds.maxY + translation.y,
-      minX: current.bounds.minX + translation.x,
-      minY: current.bounds.minY + translation.y,
-    }),
+  return drainRecordSteps(
+    replacementRecordSteps(
+      takeImmutableElementOwnership(element),
+      current,
+      geometryVersion,
+      paintVersion,
+      Object.freeze({
+        maxX: current.bounds.maxX + translation.x,
+        maxY: current.bounds.maxY + translation.y,
+        minX: current.bounds.minX + translation.x,
+        minY: current.bounds.minY + translation.y,
+      }),
+    ),
   );
 }
 
-function replacementRecord(
+function* replacementRecordSteps(
   immutable: ElementRecord["element"],
   current: ElementRecord,
   geometryVersion: number,
   paintVersion: number,
   replacementBounds?: Readonly<SpatialBounds>,
-): ElementRecord {
+  pointsPerStep = 256,
+): Generator<void, ElementRecord> {
   if (immutable.kind === "stroke") markStoredStroke(immutable);
   const bounds =
     replacementBounds ??
     (geometryVersion === current.geometryVersion
       ? current.bounds
-      : Object.freeze(calculateElementBounds(immutable as unknown as InkElementV1)));
+      : Object.freeze(
+          yield* calculateElementBoundsSteps(immutable as unknown as InkElementV1, pointsPerStep),
+        ));
   return Object.freeze({ bounds, element: immutable, geometryVersion, paintVersion });
+}
+
+function drainRecordSteps(steps: Generator<void, ElementRecord>): ElementRecord {
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
 }
 
 export function assignRecordVersions(

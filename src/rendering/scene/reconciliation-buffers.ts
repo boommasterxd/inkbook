@@ -16,14 +16,17 @@ export function reconciliationMemoryUsage(
     readonly preparationBytes: number;
   },
 ): number {
+  const retainedBytes =
+    retained.preparationBytes + (retained.publishedEntrants + retained.deferredExits) * 8;
+  if (pending === undefined) return retainedBytes;
   return (
-    retained.preparationBytes +
-    (retained.publishedEntrants + retained.deferredExits) * 8 +
-    (pending?.delta?.priority?.memoryUsage() ?? 0) +
-    (pending?.delta?.order?.memoryUsage() ?? 0) +
-    (pending?.delta?.publishedOrder?.memoryUsage() ?? 0) +
-    (pending?.delta?.publicationPositions?.size ?? 0) * 32 +
-    (pending?.order.memoryUsage() ?? 0)
+    retainedBytes +
+    (pending.delta?.priority?.memoryUsage() ?? 0) +
+    (pending.delta?.order?.memoryUsage() ?? 0) +
+    (pending.delta?.publishedOrder?.memoryUsage() ?? 0) +
+    (pending.delta?.publicationPositions?.size ?? 0) * 32 +
+    (pending.exitReadiness?.memoryUsage() ?? 0) +
+    pending.order.memoryUsage()
   );
 }
 

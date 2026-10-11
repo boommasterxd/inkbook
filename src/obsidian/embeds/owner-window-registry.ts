@@ -1,12 +1,18 @@
 export class OwnerWindowRegistry {
   readonly #windows = new Map<string, WeakRef<Window>>();
 
+  constructor(private readonly isAvailable: (ownerWindow: Window) => boolean = () => true) {}
+
+  isLive(ownerWindow: Window | undefined): ownerWindow is Window {
+    return isLiveOwnerWindow(ownerWindow) && this.isAvailable(ownerWindow);
+  }
+
   clear(): void {
     this.#windows.clear();
   }
 
   observe(documentId: string, ownerWindow: Window | null): void {
-    if (ownerWindow === null || !isLiveOwnerWindow(ownerWindow)) {
+    if (ownerWindow === null || !this.isLive(ownerWindow)) {
       this.#windows.delete(documentId);
       return;
     }
@@ -21,7 +27,7 @@ export class OwnerWindowRegistry {
 
   resolve(documentId: string): Window | undefined {
     const ownerWindow = this.#windows.get(documentId)?.deref();
-    if (ownerWindow === undefined || !isLiveOwnerWindow(ownerWindow)) {
+    if (!this.isLive(ownerWindow)) {
       this.#windows.delete(documentId);
       return undefined;
     }
@@ -33,7 +39,9 @@ export class OwnerWindowRegistry {
     presentations: Iterable<OwnedPresentation>,
     fallback: () => Window | undefined,
   ): Window {
-    const mounted = resolvePresentationWindow(documentId, presentations);
+    const mounted = resolvePresentationWindow(documentId, presentations, (owner) =>
+      this.isLive(owner),
+    );
     if (mounted !== undefined) return mounted;
     const retained = this.resolve(documentId);
     if (retained !== undefined) return retained;
@@ -64,11 +72,12 @@ interface OwnedPresentation {
 export function resolvePresentationWindow(
   documentId: string,
   presentations: Iterable<OwnedPresentation>,
+  isLive: (ownerWindow: Window | undefined) => boolean = isLiveOwnerWindow,
 ): Window | undefined {
   for (const mounted of presentations) {
     if (mounted.attachment.documentId !== documentId) continue;
     const ownerWindow = mounted.attachment.root.ownerDocument.defaultView ?? undefined;
-    if (isLiveOwnerWindow(ownerWindow)) return ownerWindow;
+    if (isLive(ownerWindow)) return ownerWindow;
   }
   return undefined;
 }
@@ -81,17 +90,19 @@ export function resolveFallbackWindow(
 ): Window | undefined {
   const mounted = [...presentations];
   if (currentDocumentId !== undefined) {
-    const current = resolvePresentationWindow(currentDocumentId, mounted);
+    const current = resolvePresentationWindow(currentDocumentId, mounted, (owner) =>
+      registry.isLive(owner),
+    );
     if (current !== undefined) return current;
     const retained = registry.resolve(currentDocumentId);
     if (retained !== undefined) return retained;
   }
   for (const presentation of mounted) {
     const ownerWindow = presentation.attachment.root.ownerDocument.defaultView ?? undefined;
-    if (isLiveOwnerWindow(ownerWindow)) return ownerWindow;
+    if (registry.isLive(ownerWindow)) return ownerWindow;
   }
   const candidate = fallback();
-  return isLiveOwnerWindow(candidate) ? candidate : undefined;
+  return registry.isLive(candidate) ? candidate : undefined;
 }
 
 export function pruneOwnerWindowRegistry(

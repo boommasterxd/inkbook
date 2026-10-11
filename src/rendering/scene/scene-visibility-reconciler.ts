@@ -100,6 +100,14 @@ export class SceneVisibilityReconciler {
   public get waitingForPaths(): boolean {
     return this.#waitingForPaths;
   }
+  public updateExitReadiness(id: string, finish: number): void {
+    this.#pending?.exitReadiness?.update(id, finish);
+  }
+  public invalidateExitReadiness(): void {
+    if (this.#pending === undefined) return;
+    this.#pending.exitReadiness?.release();
+    delete this.#pending.exitReadiness;
+  }
   public setPriority(priority: SceneVisibilityPriority): void {
     this.#priority = priority;
     this.#pending?.delta?.priority?.retarget([], [], priority);
@@ -195,6 +203,7 @@ export class SceneVisibilityReconciler {
       }
     }
     pending?.order.release();
+    pending?.exitReadiness?.release();
     this.#pending = undefined;
     resetReconciliationBuffers({
       preservePending: preserveEntrants,

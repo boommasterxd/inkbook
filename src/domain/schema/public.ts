@@ -45,11 +45,7 @@ export {
 } from "./constants";
 export { validateInkElementV1 } from "./element-validation";
 export { validatedElementDerivationBounds } from "./derivation-validation";
-export {
-  validateInkConnectionRelationsV1,
-  validateInkPageV1,
-  validateInkSnapshotV1,
-} from "./snapshot-validation";
+export { validateInkPageV1, validateInkSnapshotV1 } from "./snapshot-validation";
 export type {
   ElementValidationDerivation,
   SnapshotValidationDerivations,

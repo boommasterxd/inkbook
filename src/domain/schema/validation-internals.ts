@@ -139,6 +139,7 @@ function* visitArrayValues(
     if (enumerableEntries > options.maximumContainerEntries || !isArrayIndex(key, value.length)) {
       fail("invalid-json-value", path, "Arrays must contain indexed values only.");
     }
+    if (enumerableEntries % options.nodesPerStep === 0) yield;
   }
   for (let index = value.length - 1; index >= 0; index -= 1) {
     if (!Object.prototype.hasOwnProperty.call(value, index)) {
@@ -152,6 +153,7 @@ function* visitArrayValues(
         "Array entries must be enumerable data values.",
       );
     }
+    if ((value.length - index) % options.nodesPerStep === 0) yield;
   }
   for (let index = 0; index < value.length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(index))!;

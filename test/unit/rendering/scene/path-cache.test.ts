@@ -166,7 +166,7 @@ describe("scene geometry identity and alias ownership", () => {
 });
 
 describe("scene geometry alias invalidation", () => {
-  it("releases the final ID owner synchronously while preserving contours shared by another ID", () => {
+  it("removes ID aliases synchronously and retires the final immutable contour owner", () => {
     const cache = new ScenePathCache();
     const stroke = immutableStroke();
     const copied = { ...stroke, id: "copy" };
@@ -182,25 +182,65 @@ describe("scene geometry alias invalidation", () => {
     expect(cache.statistics().entries).toBe(1);
     expect(cache.take(copied.id, 1)).toBe(parts);
     cache.invalidate(copied.id);
-    expect(cache.statistics().entries).toBe(0);
+    expect(cache.statistics().entries).toBe(1);
+    expect(cache.take(copied.id, 1)).toBeUndefined();
+    expect(cache.take(stroke.id, 1)).toBeUndefined();
+    expect(cache.read(copied)).toBe(parts);
+    cache.retain(copied.id, 2, parts);
+    expect(cache.take(copied.id, 2)).toBe(parts);
+    cache.release();
     expect(cache.cacheMemoryUsage()).toBe(0);
-    expect(cache.read(copied)).toBeUndefined();
   });
 
-  it("releases a completed stroke before any viewport exit and after stale-version probes", () => {
+  it("retires completed immutable strokes while clearing aliases after stale-version probes", () => {
     const cache = new ScenePathCache();
     const stroke = immutableStroke();
     const parts = geometry.buildElementPathParts(stroke);
     cache.completePreparation(stroke, parts);
     cache.invalidate(stroke.id);
-    expect(cache.statistics().entries).toBe(0);
-    expect(cache.cacheMemoryUsage()).toBe(0);
+    expect(cache.statistics().entries).toBe(1);
+    expect(cache.has(stroke.id, 1)).toBe(false);
     cache.retain(stroke.id, 2, parts);
     expect(cache.has(stroke.id, 1)).toBe(false);
     expect(cache.take(stroke.id, 1)).toBeUndefined();
     cache.invalidate(stroke.id);
+    expect(cache.statistics().entries).toBe(1);
+    expect(cache.take(stroke.id, 2)).toBeUndefined();
+    expect(cache.read(stroke)).toBe(parts);
+  });
+
+  it("releases generic and mutable paths when their last ID alias is removed", () => {
+    const cache = new ScenePathCache();
+    const stroke = createTestStroke();
+    const parts = cache.build(stroke);
+    cache.retain(stroke.id, 1, parts);
+    cache.invalidate(stroke.id);
     expect(cache.statistics().entries).toBe(0);
     expect(cache.cacheMemoryUsage()).toBe(0);
+    stroke.points[3] = 40;
+    expect(cache.build(stroke)).not.toEqual(parts);
+  });
+
+  it("evicts retired contours and rejects changed shape headers and new sample buffers", () => {
+    const cache = new ScenePathCache(2, 1024 * 1024);
+    const stroke = immutableStroke();
+    const parts = cache.build(stroke);
+    cache.retain(stroke.id, 1, parts);
+    cache.invalidate(stroke.id);
+    expect(cache.read({ ...stroke, rotation: 45 })).toBeUndefined();
+    expect(
+      cache.read({ ...stroke, points: Object.freeze([...stroke.points]) as number[] }),
+    ).toBeUndefined();
+    for (const width of [4, 8] as const)
+      cache.build({ ...stroke, style: { ...stroke.style, width } });
+    expect(cache.statistics()).toMatchObject({ entries: 2, evictions: 1 });
+    expect(cache.read(stroke)).toBeUndefined();
+    expect(cache.cacheMemoryUsage()).toBeLessThanOrEqual(1024 * 1024);
+    cache.setRetentionEnabled(false);
+    expect(cache.cacheMemoryUsage()).toBe(0);
+    cache.setRetentionEnabled(true);
+    expect(cache.build(stroke)).not.toBe(parts);
+    cache.release();
   });
 });
 
@@ -251,6 +291,15 @@ describe("scene stroke reuse resource ownership", () => {
     } finally {
       lookups.mockRestore();
     }
+  });
+
+  it("does not retain a build after a publication callback releases the cache", () => {
+    const cache = new ScenePathCache();
+    const stroke = immutableStroke();
+    cache.build(stroke, { readWindow: () => undefined, publishWindow: () => cache.release() });
+    expect(cache.statistics().entries).toBe(0);
+    expect(cache.cacheMemoryUsage()).toBe(0);
+    expect(cache.read(stroke)).toBeUndefined();
   });
 
   it("accepts store-owned packed points but rejects mutable external typed arrays", async () => {

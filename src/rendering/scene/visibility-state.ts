@@ -1,7 +1,12 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
-import { mergeVisibleBand, refreshVisibleRanks, sortVisibleBand } from "./visibility-order";
+import {
+  mergeVisibleBand,
+  refreshVisibleRanks,
+  sortVisibleBand,
+  retainedVisibleOrderStable,
+} from "./visibility-order";
 import { containsBounds, envelopesOverlap } from "./visibility-bounds";
 import { VisibilityEdgeQuery } from "./visibility-edge-query";
 import type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from "./visibility-types";
@@ -140,13 +145,14 @@ export class SceneVisibilityState {
   public invalidateForChanges(
     before: Bounds | null | undefined,
     after: Bounds | null | undefined,
+    id?: string,
   ): void;
   public invalidateForChanges(): void;
-  public invalidateForChanges(before?: Bounds | null, after?: Bounds | null): void {
+  public invalidateForChanges(before?: Bounds | null, after?: Bounds | null, id?: string): void {
     this.#currentInvalidated = true;
     this.#edges.release();
     this.#classification.release();
-    this.#candidates.invalidateForChanges(before, after);
+    this.#candidates.invalidateForChanges(before, after, id);
   }
 
   public release(): void {
@@ -282,8 +288,6 @@ export class SceneVisibilityState {
         this.#visibleBands[slot] === bandCode;
       if (!retained) {
         (record.band === "highlight" ? this.#newHighlightIds : this.#newContentIds).push(id);
-      } else if (this.#visibleRanks[slot] !== record.rank) {
-        this.#retainedRanksStable = false;
       }
       if (previousEpoch === undefined || !retained) {
         unchanged = false;
@@ -293,10 +297,23 @@ export class SceneVisibilityState {
       this.#visibleRanks[slot] = record.rank;
       this.pushNextBand(record.band, id);
     }
+    this.#retainedRanksStable = this.retainedOrderStable();
     return (
+      this.#retainedRanksStable &&
       unchanged &&
       this.#nextContentCount === this.#contentCount &&
       this.#nextHighlightCount === this.#highlightCount
+    );
+  }
+
+  private retainedOrderStable(): boolean {
+    return (["content", "highlight"] as const).every((band) =>
+      retainedVisibleOrderStable(
+        band === "content" ? this.#contentIds : this.#highlightIds,
+        band === "content" ? this.#contentCount : this.#highlightCount,
+        (id) => this.containsInBand(id, band),
+        (id) => this.rank(id, band),
+      ),
     );
   }
 

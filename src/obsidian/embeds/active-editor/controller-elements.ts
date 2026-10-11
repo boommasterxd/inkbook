@@ -53,18 +53,23 @@ export function arrangeSelectionAvailability(
 ): Readonly<Record<ArrangeAction, boolean>> {
   let canMoveForward = false;
   let canMoveBackward = false;
+  const selectedBands = {
+    highlight: { count: 0, minRank: Number.POSITIVE_INFINITY, maxRank: -1 },
+    content: { count: 0, minRank: Number.POSITIVE_INFINITY, maxRank: -1 },
+  };
+  for (const id of selection) {
+    const record = store.get(id);
+    if (record === undefined) continue;
+    const selected = selectedBands[record.band];
+    selected.count += 1;
+    selected.minRank = Math.min(selected.minRank, record.rank);
+    selected.maxRank = Math.max(selected.maxRank, record.rank);
+  }
   for (const band of ["highlight", "content"] as const) {
-    let selectedSeen = false;
-    let unselectedSeen = false;
-    for (const id of store.materializeBandOrder(band)) {
-      if (selection.has(id)) {
-        selectedSeen = true;
-        if (unselectedSeen) canMoveBackward = true;
-      } else {
-        unselectedSeen = true;
-        if (selectedSeen) canMoveForward = true;
-      }
-    }
+    const selected = selectedBands[band];
+    if (selected.count === 0) continue;
+    if (selected.minRank + selected.count < store.bandSize(band)) canMoveForward = true;
+    if (selected.maxRank + 1 > selected.count) canMoveBackward = true;
   }
   return {
     "bring-forward": canMoveForward,

@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  CoordinateSystemElementV1,
-  TableElementV1,
-} from "../../../../src/domain/schema/public";
+import type { CoordinateSystemElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { type ElementRecord } from "../../../../src/domain/store/types";
 
@@ -14,6 +11,7 @@ import {
   highlighter,
   IDS,
   rectangle,
+  tableFromRectangle,
 } from "./fixtures";
 
 describe("ElementStore collapsed connections", () => {
@@ -81,7 +79,6 @@ describe("ElementStore connection transactions", () => {
     expect(remaining.element.start).toEqual({ x: 100, y: 100 });
     expect(delta?.changes.find(({ id }) => id === line.id)?.domains).toEqual([
       "geometry",
-      "order",
       "connection",
     ]);
     expect(delta?.changes.find(({ id }) => id === target.id)?.after).toBeNull();
@@ -135,25 +132,7 @@ describe("ElementStore connection transactions", () => {
 describe("ElementStore table separator transactions", () => {
   it("updates internal separators without visiting unchanged outer-anchor dependents", () => {
     const box = rectangle();
-    const table: TableElementV1 = {
-      columnWidth: 100,
-      columns: 2,
-      createdAt: box.createdAt,
-      headerHeight: 30,
-      height: box.height,
-      id: box.id,
-      kind: "table",
-      pivot: box.pivot,
-      rotation: box.rotation,
-      style: {
-        outlineColor: box.style.outlineColor,
-        outlineOpacity: box.style.outlineOpacity,
-        outlineStyle: box.style.outlineStyle,
-        outlineWidth: box.style.outlineWidth,
-      },
-      x: box.x,
-      y: box.y,
-    };
+    const table = tableFromRectangle(box);
     const line = connectedLine(box);
     const store = new ElementStore([table, line]);
     const lineRecord = store.get(line.id);
@@ -326,7 +305,7 @@ describe("ElementStore atomic band reorder", () => {
 });
 
 describe("ElementStore order insertion and removal", () => {
-  it("inserts at the back while reporting shifted ranks without replacing records", () => {
+  it("inserts at the back without publishing numerically shifted survivors", () => {
     const first = rectangle();
     const store = new ElementStore([first]);
     const previous = store.get(first.id)!;
@@ -335,7 +314,9 @@ describe("ElementStore order insertion and removal", () => {
     const delta = store.create(second, { placement: "back" });
 
     expect(store.materializeBandOrder("content")).toEqual([second.id, first.id]);
-    expect(delta?.changes.find(({ id }) => id === first.id)?.domains).toEqual(["order"]);
+    expect(delta?.changes.map(({ id }) => id)).toEqual([second.id]);
+    expect(delta?.dirtyBands).toEqual({ content: true, highlight: false });
+    expect(store.getRank(first.id)).toEqual({ band: "content", rank: 1 });
     expect(store.get(first.id)).toBe(previous);
   });
 

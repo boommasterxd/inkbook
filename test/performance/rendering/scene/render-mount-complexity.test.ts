@@ -16,7 +16,6 @@ import {
   FakeSceneStore,
   type FakeScheduler,
   fakeNode,
-  fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
 
 const STROKES = 489;
@@ -166,31 +165,39 @@ function verifyEraserFeedback(
   fixture: ReturnType<typeof createMaximumPointFixture>,
 ): void {
   const nodes = [...cameraGroup.nodes[3]!.nodes, ...cameraGroup.nodes[4]!.nodes];
-  const styleWrites = observeFadeWrites(nodes);
+  const styleWrites = observeFadeWrites(nodes.flatMap((node) => [node, ...node.nodes]));
   const before = renderer.instrumentation();
   const ids = [...fixture.contentIds, ...fixture.highlightIds];
   renderer.setElementFade(ids, 160);
-  expect(styleWrites()).toBe(128 * 3);
+  expect(styleWrites()).toBe(128);
   expect(scheduler.pendingCount).toBe(1);
   scheduler.runNext();
-  expect(styleWrites()).toBe(128 * 3);
+  expect(styleWrites()).toBe(128);
   while (scheduler.pendingCount > 0) {
     const beforeFrame = styleWrites();
     scheduler.runNext();
-    expect(styleWrites() - beforeFrame).toBeLessThanOrEqual(128 * 3);
+    expect(styleWrites() - beforeFrame).toBeLessThanOrEqual(128);
     expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
   }
-  expect(styleWrites()).toBe(STROKES * 3);
-  expect(cameraGroup.nodes[3]!.nodes.every((node) => node.style.filter === "blur(50px)")).toBe(
-    true,
-  );
-  expect(cameraGroup.nodes[4]!.nodes.every((node) => node.style.filter === "blur(20px)")).toBe(
-    true,
-  );
+  expect(styleWrites()).toBe(STROKES);
+  expect(
+    cameraGroup.nodes[3]!.nodes.every((node) =>
+      node.style.getPropertyValue("animation").startsWith("inkbook-element-stroke-exit"),
+    ),
+  ).toBe(true);
+  expect(
+    cameraGroup.nodes[4]!.nodes.every((node) =>
+      node.nodes[0]!.style.getPropertyValue("animation").startsWith("inkbook-element-fill-exit"),
+    ),
+  ).toBe(true);
   expect(scheduler.pendingCount).toBe(0);
   renderer.clearElementFade(ids);
-  expect(styleWrites()).toBe(STROKES * 6);
-  expect(nodes.every((node) => node.style.filter === "")).toBe(true);
+  expect(styleWrites()).toBe(STROKES * 2);
+  expect(
+    nodes
+      .flatMap((node) => [node, ...node.nodes])
+      .every((node) => !node.style.animation && node.style.filter === undefined),
+  ).toBe(true);
   const fadeFrames = Math.ceil(STROKES / 128);
   expect(renderer.instrumentation()).toEqual({
     ...before,
@@ -271,50 +278,133 @@ function strokePoints(count: number): number[] {
   return points;
 }
 
-it("bounds selected deletion filter writes for 10,000 mounted elements", () => {
-  const records = Array.from({ length: 10_000 }, (_, index) =>
-    fakeRectangleRecord(`selected-${index}`, index, 10),
-  );
-  const { renderer, scheduler, store } = createMountScene(records);
-  scheduler.runAll(500);
-  expect(renderer.mountedCount).toBe(records.length);
-  const nodes = [...fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes];
-  const writes = observeFadeWrites(nodes);
-  const before = renderer.instrumentation();
-  const ids = records.map(({ id }) => id);
-  renderer.setElementFade(ids, 300);
-  expect(writes()).toBe(128 * 3);
-  store.records.clear();
-  renderer.applyDelta({
-    affected: records.map(({ id, element }) => ({
-      id,
-      before: element,
-      after: null,
-      domains: ["visibility"],
-    })),
-  });
-  renderer.clearElementFade(ids);
-  expect(writes()).toBe(128 * 3);
-  for (let frame = 0; scheduler.pendingCount > 0; frame += 1) {
-    expect(frame).toBeLessThan(400);
-    const previous = writes();
-    scheduler.time += 1000 / 120;
-    scheduler.runNext();
-    expect(writes() - previous).toBeLessThanOrEqual(128 * 3);
-    expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
-  }
-  expect(writes()).toBe(records.length * 3);
-  expect(renderer.mountedCount).toBe(0);
-  expect(renderer.instrumentation()).toMatchObject({
-    geometryBuilds: before.geometryBuilds,
-    motionTombstones: 0,
-    motionCacheEntries: 0,
-  });
-  renderer.destroy();
-  expect(scheduler.pendingCount).toBe(0);
-});
+it.each(["rank", "reverse"] as const)(
+  "removes ready opacity exits while %s fade starts remain",
+  (order) => {
+    const points = strokePoints(2);
+    const records = Array.from({ length: 10_000 }, (_, index) => ({
+      ...strokeRecord(index * 2, points),
+      rank: index,
+    }));
+    const { renderer, scheduler, store } = createMountScene(records);
+    scheduler.runAll(500);
+    expect(renderer.mountedCount).toBe(records.length);
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const nodes = [...content.nodes];
+    expect(nodes).toHaveLength(records.length);
+    const work = observeSelectedFadeWork(nodes);
+    const builds = vi.spyOn(geometry, "buildElementPathParts");
+    const creations = vi.spyOn(FakeDocument.prototype, "createElementNS");
+    try {
+      const before = renderer.instrumentation();
+      const ids = records.map(({ id }) => id);
+      renderer.setElementFade(order === "reverse" ? [...ids].reverse() : ids, 300);
+      expect(work.starts).toBe(128);
+      store.records.clear();
+      renderer.applyDelta({
+        affected: records.map(({ id, element, bounds }) => ({
+          id,
+          before: element,
+          after: null,
+          beforeBounds: bounds,
+          afterBounds: null,
+          domains: ["visibility"],
+        })),
+      });
+      renderer.clearElementFade(ids);
+      expect(work.starts).toBe(128);
+      let frames = 0;
+      while (scheduler.pendingCount > 0) {
+        expect(frames++).toBeLessThan(400);
+        const previous = { starts: work.starts, removals: work.removals };
+        scheduler.time += 1000 / 120;
+        scheduler.runNext();
+        expect(work.starts - previous.starts).toBeLessThanOrEqual(128);
+        expect(work.removals - previous.removals).toBeLessThanOrEqual(64);
+        const removedRanks = work.removedRanks.slice(previous.removals);
+        expect(removedRanks).toEqual([...removedRanks].sort((left, right) => left - right));
+        expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
+      }
+      expect(work.firstRemovalStarts).toBeLessThan(records.length);
+      if (order === "reverse") expect(work.firstRemovalProtectedRankZero).toBe(true);
+      expect(work.starts).toBe(records.length);
+      expect(work.removals).toBe(records.length);
+      expect(work.filterWrites).toBe(0);
+      expect(builds).not.toHaveBeenCalled();
+      expect(creations).not.toHaveBeenCalled();
+      expect(renderer.mountedCount).toBe(0);
+      expect(content.nodes).toHaveLength(0);
+      const after = renderer.instrumentation();
+      expect(after).toMatchObject({
+        geometryBuilds: before.geometryBuilds,
+        motionTombstones: 0,
+        motionCacheEntries: 0,
+      });
+      // Each exit is classified and updated a bounded number of times; indexed heap
+      // ordering adds logarithmic comparisons without rescanning the waiting prefix.
+      expect(after.exitReadinessVisits).toBeGreaterThanOrEqual(records.length);
+      expect(after.exitReadinessComparisons).toBeGreaterThan(0);
+      expect(after.exitReadinessVisits).toBeLessThanOrEqual(records.length * 8 + frames * 2);
+      expect(after.exitReadinessComparisons).toBeLessThanOrEqual(
+        records.length * 8 * Math.ceil(Math.log2(records.length)),
+      );
+      renderer.destroy();
+      expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+      expect(scheduler.pendingCount).toBe(0);
+    } finally {
+      work.remove.mockRestore();
+      builds.mockRestore();
+      creations.mockRestore();
+      renderer.destroy();
+    }
+  },
+);
 
-function observeFadeWrites(nodes: readonly FakeNode[]): () => number {
+function observeSelectedFadeWork(nodes: readonly FakeNode[]) {
+  const work = {
+    starts: 0,
+    removals: 0,
+    removedRanks: [] as number[],
+    filterWrites: 0,
+    firstRemovalStarts: Infinity,
+    firstRemovalProtectedRankZero: false,
+  };
+  observeFadeWrites(
+    nodes.flatMap((node) => [node, ...node.nodes]),
+    (node, property, value) => {
+      if (property === "animation" && value !== "") {
+        expect(node.tagName).toBe("path");
+        expect(value).toContain("inkbook-element-fill-exit");
+        work.starts += 1;
+      }
+      if (property === "filter") work.filterWrites += 1;
+    },
+  );
+  const ranks = new Map(nodes.map((node, rank) => [node, rank]));
+  const original = Object.getOwnPropertyDescriptor(FakeNode.prototype, "remove")!.value as (
+    this: FakeNode,
+  ) => void;
+  const remove = vi.spyOn(FakeNode.prototype, "remove").mockImplementation(function (
+    this: FakeNode,
+  ) {
+    const rank = ranks.get(this);
+    if (rank !== undefined && this.parent !== undefined) {
+      if (work.removals === 0) {
+        work.firstRemovalStarts = work.starts;
+        work.firstRemovalProtectedRankZero = nodes[0]?.parent !== undefined;
+      }
+      work.removals += 1;
+      work.removedRanks.push(rank);
+    }
+    original.call(this);
+  });
+  return Object.assign(work, { remove });
+}
+
+function observeFadeWrites(
+  nodes: readonly FakeNode[],
+  observe?: (node: FakeNode, property: string, value: string) => void,
+): () => number {
   let writes = 0;
   for (const node of nodes) {
     for (const property of ["animation", "filter", "opacity"]) {
@@ -324,6 +414,7 @@ function observeFadeWrites(nodes: readonly FakeNode[]): () => number {
         set: (next: string) => {
           value = next;
           writes += 1;
+          observe?.(node, property, next);
         },
       });
     }

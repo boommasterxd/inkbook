@@ -1,9 +1,68 @@
 import { describe, expect, it } from "vitest";
 
 import { ElementStore } from "../../../../../src/domain/store/public";
-import { selectionTargetAt } from "../../../../../src/obsidian/embeds/active-editor/controller-elements";
+import {
+  arrangeSelectionAvailability,
+  canArrangeSelection,
+  selectionTargetAt,
+} from "../../../../../src/obsidian/embeds/active-editor/controller-elements";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
-import { connectedLine, IDS, rectangle } from "../../../domain/store/fixtures";
+import { connectedLine, highlighter, IDS, rectangle } from "../../../domain/store/fixtures";
+import { indexedStroke } from "../../../../fixtures/editor/stroke";
+
+describe("active editor arrange availability", () => {
+  it("uses only selected ranks within each render band, ignoring missing IDs", () => {
+    const content = Array.from({ length: 3 }, (_, index) => indexedStroke(index));
+    const highlights = Array.from({ length: 3 }, (_, index) => ({
+      ...highlighter(),
+      id: indexedStroke(index + 3).id,
+    }));
+    const fixture = scene([...content, ...highlights]);
+    const ids = [...content, ...highlights].map(({ id }) => id);
+    const cases = [
+      { selected: [], forward: false, backward: false },
+      { selected: ["missing"], forward: false, backward: false },
+      { selected: [ids[0]!, "missing"], forward: true, backward: false },
+      { selected: [ids[2]!], forward: false, backward: true },
+      { selected: [ids[1]!], forward: true, backward: true },
+      { selected: [ids[0]!, ids[2]!], forward: true, backward: true },
+      { selected: [ids[3]!], forward: true, backward: false },
+      { selected: [ids[5]!], forward: false, backward: true },
+      { selected: [ids[3]!, ids[5]!], forward: true, backward: true },
+      { selected: [ids[0]!, ids[5]!], forward: true, backward: true },
+      { selected: ids.slice(0, 3), forward: false, backward: false },
+      { selected: ids, forward: false, backward: false },
+    ];
+    try {
+      for (const { selected, forward, backward } of cases) {
+        expect(arrangeSelectionAvailability(fixture.store, new Set(selected))).toEqual({
+          "bring-forward": forward,
+          "bring-to-front": forward,
+          "send-backward": backward,
+          "send-to-back": backward,
+        });
+      }
+      expect(canArrangeSelection(fixture.store, new Set([ids[0]!]), "bring-forward")).toBe(true);
+      expect(canArrangeSelection(fixture.store, new Set(ids), "send-to-back")).toBe(false);
+    } finally {
+      fixture.release();
+    }
+  });
+
+  it("disables every arrange action for an empty store with stale selection", () => {
+    const fixture = scene([]);
+    try {
+      expect(arrangeSelectionAvailability(fixture.store, new Set([IDS.other]))).toEqual({
+        "bring-forward": false,
+        "bring-to-front": false,
+        "send-backward": false,
+        "send-to-back": false,
+      });
+    } finally {
+      fixture.release();
+    }
+  });
+});
 
 describe("active editor selection targets", () => {
   it.each(["mouse", "pen", "touch"] as const)(

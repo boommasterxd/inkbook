@@ -1,4 +1,5 @@
-import { arrangeRenderBand, type ArrangeAction } from "../../../domain/commands/arrange";
+import type { ArrangeAction } from "../../../domain/commands/arrange";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { TRANSITION_DURATIONS } from "../../../rendering/motion/transitions";
 import type { PasteInvocation } from "../../../persistence/clipboard/public";
 import {
@@ -12,11 +13,7 @@ import type { EditableDocumentModel } from "../vault-document-session";
 import { ActiveEditorClipboardController } from "./controller-clipboard";
 import { probeClipboardCandidate, type SynchronousClipboardData } from "./clipboard-reader";
 import { isClipboardAction } from "./controller-helpers";
-import {
-  arrangeSelectionAvailability,
-  canArrangeSelection,
-  selectedElements,
-} from "./controller-elements";
+import { arrangeSelectionAvailability, canArrangeSelection } from "./controller-elements";
 import { ActiveDocumentHistory } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
@@ -35,6 +32,7 @@ export interface ActiveEditorActionsOptions {
   readonly onPendingChanged: (pending: boolean) => void;
   readonly onStateChanged: () => void;
   readonly ownerWindow: Window;
+  readonly workScheduler: WorkScheduler;
   readonly renderer: {
     setElementFade(ids: readonly string[], durationMs: number): void;
     clearElementFade(ids: readonly string[]): void;
@@ -53,7 +51,6 @@ export class ActiveEditorActions {
   #eraseConfirmation: AbortController | undefined;
   readonly #currentSelection: () => ReadonlySet<string>;
   readonly #documentHistory: ActiveDocumentHistory;
-  readonly #history: ActiveEditorHistory;
   readonly #isEnabled: () => boolean;
   readonly #model: EditableDocumentModel;
   readonly #onCopyEmbed: () => void;
@@ -66,6 +63,7 @@ export class ActiveEditorActions {
   readonly #visibleCenter: () => { readonly x: number; readonly y: number };
   readonly #lastSessionPointer: () => { readonly x: number; readonly y: number } | null;
   readonly #systemClipboardReadable: boolean;
+  readonly #workScheduler: WorkScheduler;
   #actionConfirmation: ToolbarActionConfirmation | null = null;
   #confirmationSequence = 0;
   #confirmationTimer: number | undefined;
@@ -77,7 +75,6 @@ export class ActiveEditorActions {
     this.#confirmEraseAll = options.confirmEraseAll;
     this.#isAttached = options.isAttached;
     this.#currentSelection = options.currentSelection;
-    this.#history = options.history;
     this.#isEnabled = options.isEnabled;
     this.#model = options.model;
     this.#onCopyEmbed = options.onCopyEmbed;
@@ -85,6 +82,7 @@ export class ActiveEditorActions {
     this.#onFeedback = options.onFeedback;
     this.#onStateChanged = options.onStateChanged;
     this.#ownerWindow = options.ownerWindow;
+    this.#workScheduler = options.workScheduler;
     this.#sceneStore = options.sceneStore;
     this.#setSelection = options.setSelection;
     this.#visibleCenter = options.visibleCenter;
@@ -249,15 +247,14 @@ export class ActiveEditorActions {
 
   #arrange(action: ArrangeAction): void {
     const selection = this.#currentSelection();
-    const previous = {
-      content: this.#sceneStore.materializeBandOrder("content"),
-      highlight: this.#sceneStore.materializeBandOrder("highlight"),
-    };
-    const replacement = {
-      content: arrangeRenderBand(previous.content, (id) => selection.has(id), action).elements,
-      highlight: arrangeRenderBand(previous.highlight, (id) => selection.has(id), action).elements,
-    };
-    this.#history.reorder(previous, replacement);
+    void this.#documentHistory
+      .arrange(
+        action,
+        selection,
+        this.#workScheduler,
+        () => this.#isAttached() && this.#currentSelection() === selection,
+      )
+      .then(() => this.#onStateChanged());
   }
 
   async #probeSystemClipboard(generation: number): Promise<boolean> {
@@ -313,11 +310,16 @@ export class ActiveEditorActions {
 
   async #deleteSelection(): Promise<void> {
     const selection = this.#currentSelection();
-    const ids = selectedElements(this.#sceneStore, selection).map(({ id }) => id);
-    this.#renderer.setElementFade(ids, TRANSITION_DURATIONS.eraserPendingRemoval);
+    let ids: readonly string[] = [];
     try {
-      const outcome = await this.#documentHistory.remove(ids, () =>
-        sameSelection(selection, this.#currentSelection()),
+      const outcome = await this.#documentHistory.removeSelection(
+        selection,
+        this.#workScheduler,
+        () => this.#isAttached() && sameSelection(selection, this.#currentSelection()),
+        (collected) => {
+          ids = collected;
+          this.#renderer.setElementFade(ids, TRANSITION_DURATIONS.eraserPendingRemoval);
+        },
       );
       if (outcome === "applied") this.#setSelection(new Set());
       else if (outcome === "failed" || outcome === "stale") {
@@ -353,12 +355,8 @@ export class ActiveEditorActions {
   }
 
   async #removeAll(signal: AbortSignal): Promise<void> {
-    const ids = [
-      ...this.#sceneStore.materializeBandOrder("highlight"),
-      ...this.#sceneStore.materializeBandOrder("content"),
-    ];
-    const outcome = await this.#documentHistory.remove(
-      ids,
+    const outcome = await this.#documentHistory.removeAll(
+      this.#workScheduler,
       () => !signal.aborted && this.#isAttached(),
     );
     if (outcome === "applied") this.#setSelection(new Set());

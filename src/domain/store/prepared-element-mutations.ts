@@ -4,6 +4,15 @@ import {
   type MutationSource,
 } from "./element-mutation";
 import { createRemovalMutationTimeSliced } from "./removal-mutation";
+import { createRemovalTransition } from "./removal-transition";
+import { ownedHistoryReplaySteps } from "./owned-history-replay";
+import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import {
+  captureOwnedMutationHistory,
+  STABLE_RELATIVE_ORDER,
+  type OwnedMutationHistory,
+  type OwnedMutationReplay,
+} from "./owned-mutation-history";
 import type {
   AppliedElementMutation,
   ElementMutation,
@@ -11,6 +20,7 @@ import type {
   PreparedElementMutation,
   PreparedElementMutationResult,
   StoreSliceScheduler,
+  StoreDelta,
 } from "./types";
 
 interface VersionedMutationSource extends MutationSource {
@@ -26,6 +36,8 @@ export class PreparedElementMutations {
   readonly #readVersion: () => number;
   readonly #readSource: () => VersionedMutationSource;
   readonly #trustedRemovalVersions = new WeakMap<ElementMutation, number>();
+  readonly #ownedHistory = new WeakMap<AppliedElementMutation, OwnedMutationHistory>();
+  readonly #trustedReplayVersions = new WeakMap<ElementMutation, number>();
 
   public constructor(
     readSource: () => VersionedMutationSource,
@@ -55,23 +67,56 @@ export class PreparedElementMutations {
     return mutation;
   }
 
-  public async prepare(
+  public prepare(
     mutation: ElementMutation,
     scheduler: StoreSliceScheduler,
     replay?: AppliedElementMutation,
   ): Promise<PreparedElementMutationResult> {
+    return this.#prepare(mutation, scheduler, replay);
+  }
+
+  /** Only transitions retained by this store can select private canonical replay values. */
+  public prepareHistoryReplay(
+    mutation: ElementMutation,
+    scheduler: StoreSliceScheduler,
+    replay: AppliedElementMutation,
+  ): Promise<PreparedElementMutationResult> {
+    return this.#prepare(mutation, scheduler, replay, true);
+  }
+
+  async #prepare(
+    mutation: ElementMutation,
+    scheduler: StoreSliceScheduler,
+    replay?: AppliedElementMutation,
+    retained = false,
+  ): Promise<PreparedElementMutationResult> {
     const source = this.#readSource();
+    const work = {
+      isCancelled: () =>
+        source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
+      shouldYield: scheduler.shouldYield,
+      yieldControl: scheduler.yieldControl,
+    };
+    let proof = this.#replayProof(mutation, replay, source.mutationVersion);
+    if (retained) {
+      if (proof === undefined || replay === undefined) {
+        throw new RangeError("History transition is not retained by this store.");
+      }
+      const pendingMutation = new MutationPreparationScheduler(work).run(
+        ownedHistoryReplaySteps(mutation, replay, proof.history, source.records),
+      );
+      const retainedMutation =
+        pendingMutation instanceof Promise ? await pendingMutation : pendingMutation;
+      if (retainedMutation === "cancelled") return { status: "cancelled", token: null };
+      proof = { ...proof, retainedMutation };
+    }
     const plan = await planElementMutation(
       source,
       mutation,
-      {
-        isCancelled: () =>
-          source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
-        shouldYield: scheduler.shouldYield,
-        yieldControl: scheduler.yieldControl,
-      },
+      work,
       replay,
       replay === undefined && this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
+      proof,
     );
     if (plan === "cancelled" || source.mutationVersion !== this.#readVersion()) {
       return { status: "cancelled", token: null };
@@ -88,6 +133,45 @@ export class PreparedElementMutations {
     if (prepared === undefined || prepared.mutationVersion !== this.#readVersion()) {
       return { delta: null, status: "cancelled", transition: null };
     }
-    return this.#adopt(prepared.plan);
+    const result = this.#adopt(prepared.plan);
+    if (result.transition !== null && prepared.plan.ownedHistory !== undefined) {
+      this.#ownedHistory.set(result.transition, prepared.plan.ownedHistory);
+      this.#trustNextDirection(result.transition, prepared.plan.requested);
+    }
+    return result;
+  }
+
+  public retainRemoval(
+    delta: StoreDelta,
+    beforeBands: ElementMutation["bands"],
+    afterBands: ElementMutation["bands"],
+  ): AppliedElementMutation {
+    const transition = createRemovalTransition(delta, beforeBands, afterBands);
+    const owned = captureOwnedMutationHistory(delta, STABLE_RELATIVE_ORDER);
+    const retained = Object.freeze({
+      ...transition,
+      payloadBytes: transition.payloadBytes + owned.payloadBytes,
+    });
+    this.#ownedHistory.set(retained, owned);
+    this.#trustNextDirection(retained, retained.forward);
+    return retained;
+  }
+
+  #replayProof(
+    mutation: ElementMutation,
+    replay: AppliedElementMutation | undefined,
+    version: number,
+  ): OwnedMutationReplay | undefined {
+    if (replay === undefined) return undefined;
+    const history = this.#ownedHistory.get(replay);
+    if (history === undefined) return undefined;
+    return { history, bandsTrusted: this.#trustedReplayVersions.get(mutation) === version };
+  }
+
+  #trustNextDirection(transition: AppliedElementMutation, requested: ElementMutation): void {
+    this.#trustedReplayVersions.delete(transition.forward);
+    this.#trustedReplayVersions.delete(transition.reverse);
+    const next = requested === transition.reverse ? transition.forward : transition.reverse;
+    this.#trustedReplayVersions.set(next, this.#readVersion());
   }
 }

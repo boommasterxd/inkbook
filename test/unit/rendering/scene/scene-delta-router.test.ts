@@ -5,6 +5,70 @@ import {
   type SceneDeltaRoutingPorts,
 } from "../../../../src/rendering/scene/scene-delta-router";
 import { fakeRectangleRecord } from "./fakes";
+import * as geometry from "../../../../src/domain/geometry/public";
+
+it.each(["remove", "restore"] as const)(
+  "routes complete %s membership with stored bounds and progressive order",
+  (kind) => {
+    const { ports, spies } = routingPorts();
+    const record = fakeRectangleRecord("member", 0, 10);
+    const removing = kind === "remove";
+    if (!removing) spies.readRecord.mockReturnValue(record);
+    const bounds = vi.spyOn(geometry, "calculateElementBounds");
+    try {
+      routeSceneDelta(
+        {
+          affected: [
+            {
+              id: record.id,
+              before: removing ? record.element : null,
+              after: removing ? null : record.element,
+              beforeBounds: removing ? record.bounds : null,
+              afterBounds: removing ? null : record.bounds,
+              domains: ["order", "visibility"],
+            },
+          ],
+        },
+        ports,
+      );
+      expect(spies.markOrders).not.toHaveBeenCalled();
+      expect(spies.markOrderVisibilityDirty).not.toHaveBeenCalled();
+      expect(spies.invalidateForChanges).toHaveBeenCalledWith(
+        removing ? record.bounds : null,
+        removing ? null : record.bounds,
+        record.id,
+      );
+      expect(spies.invalidateVisibility).toHaveBeenCalledOnce();
+      expect(spies.releaseId).toHaveBeenCalledTimes(removing ? 1 : 0);
+      expect(bounds).not.toHaveBeenCalled();
+    } finally {
+      bounds.mockRestore();
+    }
+  },
+);
+
+it("patches complete batched members separately while keeping one scene invalidation", () => {
+  const { ports, spies } = routingPorts();
+  const records = [fakeRectangleRecord("a", 0, 10), fakeRectangleRecord("b", 1, 20)];
+  routeSceneDelta(
+    {
+      affected: records.map((record) => ({
+        id: record.id,
+        before: record.element,
+        after: null,
+        beforeBounds: record.bounds,
+        afterBounds: null,
+        domains: ["order" as const, "visibility" as const],
+      })),
+    },
+    ports,
+  );
+  expect(spies.markOrders).not.toHaveBeenCalled();
+  expect(spies.markOrderVisibilityDirty).not.toHaveBeenCalled();
+  expect(spies.invalidateForChanges).toHaveBeenCalledTimes(2);
+  expect(spies.invalidateVisibility).toHaveBeenCalledOnce();
+  expect(spies.releaseId).toHaveBeenCalledTimes(2);
+});
 
 it.each(["geometry", "paint", "order", "visibility"] as const)(
   "releases detached %s records only when geometry changed or the element disappeared",

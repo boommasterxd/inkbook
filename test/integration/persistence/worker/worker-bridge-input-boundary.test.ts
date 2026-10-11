@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
-import { encodeUnlockBatch } from "../../../../src/persistence/worker/runtime/wire-codec";
+import { encodeUnlockBatchChunked } from "../../../../src/persistence/worker/runtime/wire-codec";
 import {
   createOneStrokeWorkerSnapshot,
   createWorkerBridgeClient,
@@ -26,7 +26,7 @@ function oneStrokeDerivations() {
 
 async function expectRejectedBatch(
   harness: ReturnType<typeof createBoundaryHarness>,
-  batch: ReturnType<typeof encodeUnlockBatch>["value"],
+  batch: Awaited<ReturnType<typeof encodeUnlockBatchChunked>>["value"],
 ) {
   harness.hostEndpoint.postMessage({ batch, requestId: 1, type: "inkbook-worker-unlock-batch" });
   await expect(harness.pending).rejects.toThrow("batch adoption failed");
@@ -70,27 +70,33 @@ describe("document worker bridge input boundary", () => {
   it("rejects an oversized unlock batch before observer adoption", async () => {
     const harness = createBoundaryHarness();
     const derivation = oneStrokeDerivations()[0]!;
-    const encoded = encodeUnlockBatch({
-      batchIndex: 0,
-      derivations: Array.from({ length: 257 }, () => derivation),
-      elements: Array.from({ length: 257 }, () => createOneStrokeWorkerSnapshot().elements[0]!),
-      identity: createWorkerUnlockRequest(new Uint8Array()).identity,
-    });
+    const encoded = await encodeUnlockBatchChunked(
+      {
+        batchIndex: 0,
+        derivations: Array.from({ length: 257 }, () => derivation),
+        elements: Array.from({ length: 257 }, () => createOneStrokeWorkerSnapshot().elements[0]!),
+        identity: createWorkerUnlockRequest(new Uint8Array()).identity,
+      },
+      { checkpoint: () => undefined, signal: new AbortController().signal },
+    );
 
     await expectRejectedBatch(harness, encoded.value);
   });
 
   it("rejects a hydration batch whose identity differs from the pending request", async () => {
     const harness = createBoundaryHarness();
-    const encoded = encodeUnlockBatch({
-      batchIndex: 0,
-      derivations: oneStrokeDerivations(),
-      elements: createOneStrokeWorkerSnapshot().elements,
-      identity: {
-        ...createWorkerUnlockRequest(new Uint8Array()).identity,
-        purpose: "recovery",
+    const encoded = await encodeUnlockBatchChunked(
+      {
+        batchIndex: 0,
+        derivations: oneStrokeDerivations(),
+        elements: createOneStrokeWorkerSnapshot().elements,
+        identity: {
+          ...createWorkerUnlockRequest(new Uint8Array()).identity,
+          purpose: "recovery",
+        },
       },
-    });
+      { checkpoint: () => undefined, signal: new AbortController().signal },
+    );
 
     await expectRejectedBatch(harness, encoded.value);
   });

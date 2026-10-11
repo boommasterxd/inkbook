@@ -26,6 +26,77 @@ import {
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
 
+function observeBlockSearches() {
+  const work = { calls: 0, slots: 0 };
+  const original = Array.prototype.indexOf;
+  const search = vi.spyOn(Array.prototype, "indexOf").mockImplementation(function (
+    this: unknown[],
+    value: unknown,
+    fromIndex?: number,
+  ) {
+    const block = value as { entries?: unknown[] } | null;
+    if (!Array.isArray(block?.entries)) return Reflect.apply(original, this, [value, fromIndex]);
+    work.calls += 1;
+    const observed = new Proxy(this, {
+      get(target, key, receiver) {
+        if (typeof key === "string" && /^\d+$/.test(key)) work.slots += 1;
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+    return Reflect.apply(original, observed, [value, fromIndex]);
+  });
+  return { work, restore: () => search.mockRestore() };
+}
+
+it("avoids block searches for dense 10,000-root removals and preserves merged band ownership", () => {
+  const cache = new DetachedSceneElementCache();
+  const document = asDocument(new FakeDocument());
+  const instrumentation = createInstrumentation();
+  const base = createTestStroke();
+  const element = { ...base, style: { ...base.style, pressureEnabled: false } };
+  const parts = buildElementPathParts(element);
+  const entries = Array.from({ length: 10_000 }, (_, rank) => {
+    const record = {
+      ...createSceneRecord({ ...element, id: `removal-${rank}` }, rank),
+      band: rank % 2 === 0 ? ("content" as const) : ("highlight" as const),
+    };
+    const entry = createMountedElement(document, record, parts, instrumentation);
+    cache.registerMounted(entry);
+    return entry;
+  });
+  const search = observeBlockSearches();
+  try {
+    // Ascending insertion splits each band into 64-entry blocks, with a larger last block.
+    const dense = entries.filter((entry) => Math.floor(entry.rank / 2) % 64 < 32);
+    for (const entry of dense) cache.unregisterMounted(entry.id);
+    expect(dense).toHaveLength(5_008);
+    expect(search.work).toEqual({ calls: 0, slots: 0 });
+    const remaining = entries.filter((entry) => Math.floor(entry.rank / 2) % 64 >= 32);
+    expect(cache.memoryUsage()).toBe(remaining.length * 112);
+    for (let index = 0; index < remaining.length; index += 1)
+      expect(cache.successor(remaining[index]!)).toBe(remaining[index + 2]);
+    for (const entry of remaining.slice().reverse()) cache.unregisterMounted(entry.id);
+    const maximumBlocksPerBand = Math.ceil(entries.length / 128);
+    // Each merge removes a block and searches at most three times; final blocks drain below 32.
+    expect(search.work.calls).toBeLessThanOrEqual(6 * maximumBlocksPerBand + 64);
+    expect(search.work.slots).toBeLessThanOrEqual(
+      3 * maximumBlocksPerBand * (maximumBlocksPerBand + 1) + 64,
+    );
+    expect(search.work.calls).toBeGreaterThan(0);
+    expect(cache.memoryUsage()).toBe(0);
+    for (const entry of entries) cache.unregisterMounted(entry.id);
+    expect(cache.successor({ id: "before", rank: -1, band: "content" })).toBeUndefined();
+    cache.registerMounted(entries[0]!);
+    cache.registerMounted(entries[1]!);
+    expect(cache.successor({ id: "before", rank: -1, band: "highlight" })).toBe(entries[1]);
+  } finally {
+    search.restore();
+    cache.dispose();
+  }
+  expect(cache.memoryUsage()).toBe(0);
+  expect(cache.successor({ id: "before", rank: -1, band: "content" })).toBeUndefined();
+});
+
 it.each([false, true])(
   "retains published cleanup across repeated indexed delta targets with return=%s",
   (returns) => {

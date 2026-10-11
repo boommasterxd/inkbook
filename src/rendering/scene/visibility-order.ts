@@ -27,12 +27,34 @@ export function mergeVisibleBand(
     ) {
       output[count++] = entrants[entrantIndex++]!;
     }
-    if (retained !== undefined) output[count++] = retained;
+    if (retained !== undefined) {
+      // Removal and restoration may share one publication without changing the previous band.
+      if (entrants[entrantIndex] === retained) entrantIndex += 1;
+      output[count++] = retained;
+    }
     if (previousIndex >= previousCount && retained === undefined) {
       while (entrantIndex < entrants.length) output[count++] = entrants[entrantIndex++]!;
     }
   }
   return count;
+}
+
+/** Dense rank changes preserve the retained sequence when its current ranks remain ordered. */
+export function retainedVisibleOrderStable(
+  previous: readonly (string | undefined)[],
+  count: number,
+  isVisible: (id: string) => boolean,
+  rank: (id: string) => number,
+): boolean {
+  let precedingRank = -Infinity;
+  for (let index = 0; index < count; index += 1) {
+    const id = previous[index];
+    if (id === undefined || !isVisible(id)) continue;
+    const currentRank = rank(id);
+    if (currentRank <= precedingRank) return false;
+    precedingRank = currentRank;
+  }
+  return true;
 }
 
 export function sortVisibleBand(

@@ -12,13 +12,17 @@ import {
   preparedPressureHintBytes,
   preparedPressurePathHint,
 } from "../../../../../src/persistence/serialization/prepared-pressure-hints";
-import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
+import {
+  IncrementalDocumentSerializer,
+  serializeInkbookDocument,
+} from "../../../../../src/persistence/serialization/public";
+import { acceptPreparedPressurePaths } from "../../../../../src/persistence/worker/runtime/prepared-pressure-path-adoption";
 import {
   DocumentWorkerRuntime,
   type DocumentRuntimeResult,
 } from "../../../../../src/persistence/worker/runtime/public";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
@@ -26,6 +30,39 @@ import { unlockCanonicalSnapshot } from "../../../../fixtures/persistence/canoni
 import { rectangle, snapshot } from "./fixtures";
 
 const identity = { exportGeneration: 1, sessionId: "prepared-path", workerEpoch: 1 };
+
+it("captures hint values before cooperative path validation can observe external mutation", async () => {
+  const stroke = {
+    ...pressureStroke(),
+    points: Array.from({ length: 500 }, (_, index) => [30 + index, 20 + (index % 5), 0.5]).flat(),
+  };
+  const hint = { ...preparedHints(preparedStore(stroke), 1)[0]! };
+  const document = { ...snapshot(1), elements: [stroke] };
+  const request = createExportRequest(fullPlan(document), identity, () => [hint]);
+  const serializer = new IncrementalDocumentSerializer();
+  expect(serializer.reset(document).ok).toBe(true);
+  let checkpoints = 0;
+  try {
+    await acceptPreparedPressurePaths(request, serializer, {
+      signal: new AbortController().signal,
+      checkpoint: () => {
+        checkpoints += 1;
+        Object.assign(hint, {
+          d: "<invalid>",
+          id: "changed",
+          shapeKey: "changed",
+          modelRevision: 99,
+        });
+        Object.assign(request, { modelRevision: 99 });
+        return undefined;
+      },
+    });
+    expect(checkpoints).toBeGreaterThan(0);
+    expect(serializer.instrumentation.shapeCacheElements).toBe(1);
+  } finally {
+    serializer.clear();
+  }
+});
 
 function pressureStroke(): StrokeElementV1 {
   const base = indexedStroke(1);
@@ -88,7 +125,10 @@ it.each([undefined, { x: 0, y: 0 }])(
     expect(request.preparedPressurePaths).toHaveLength(1);
     expect(store.instrumentation.fullStoreScans).toBe(0);
     const encoded = encodeRuntimeRequest(request);
-    const decoded = decodeRuntimeRequest(encoded.value);
+    const decoded = await decodeRuntimeRequestChunked(encoded.value, {
+      checkpoint: () => undefined,
+      signal: new AbortController().signal,
+    });
     if (decoded.type !== "export-full") throw new Error("Expected full export.");
     // The wire decoder supplies receiver-owned samples, as in production worker composition.
     const runtime = new DocumentWorkerRuntime(identity, null, undefined, true);

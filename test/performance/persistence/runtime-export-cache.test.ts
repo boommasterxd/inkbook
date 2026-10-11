@@ -6,11 +6,120 @@ import { createTestStroke, createWorkerSnapshot } from "../../fixtures/persisten
 import { createStandardPersistenceFixture, replaceFirstStroke, STANDARD_POINTS } from "./fixtures";
 import { DocumentModelRuntime } from "../../../src/persistence/worker/runtime/document-model";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
 } from "../../../src/persistence/worker/runtime/wire-codec";
 import type { DocumentExportRequest } from "../../../src/persistence/worker/runtime/types";
 import { SampleBase64Writer } from "../../../src/persistence/serialization/sample-base64";
+import { CanonicalElementPathPreparation } from "../../../src/domain/geometry/canonical-element-path-preparation";
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/constants";
+import { createWorkerWorkScheduler } from "../../../src/persistence/worker/runtime/worker-work-scheduler";
+import { ManualWorkerTiming } from "../../fixtures/persistence/manual-worker-timing";
+import { adoptTransferredStrokeSamples } from "../../../src/persistence/worker/runtime/runtime-elements";
+
+// Sequential scenarios share read-only samples; each serializer, proxy and scheduler is fresh.
+const maximumStrokeSamples = Float64Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
+  index % 3 === 0
+    ? Math.floor(index / 3) / 10
+    : index % 3 === 1
+      ? (Math.floor(index / 3) % 7) / 1000
+      : 0.5,
+);
+
+describe("runtime model synchronization performance", () => {
+  it("synchronizes and restores 10,000 pressure strokes without export work", async () => {
+    const stroke = createTestStroke();
+    Object.freeze(stroke.points);
+    const elements = Array.from({ length: 10_000 }, (_, index) => ({
+      ...stroke,
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    }));
+    const model = new DocumentModelRuntime();
+    const identity = {
+      sessionId: "lazy-sync-capacity",
+      workerEpoch: 1,
+      operationId: 1,
+      purpose: "background" as const,
+    };
+    model.synchronize({
+      baseModelRevision: null,
+      identity,
+      modelRevision: 0,
+      snapshot: createWorkerSnapshot(elements),
+      type: "model-sync-full",
+    });
+    const append = vi.spyOn(SampleBase64Writer.prototype, "append");
+    try {
+      for (const [index, changedElements] of [
+        elements.map((element) => ({ ...element, style: { ...element.style, opacity: 0.5 } })),
+        elements,
+      ].entries()) {
+        model.synchronize({
+          baseModelRevision: index,
+          changedElements,
+          identity,
+          modelRevision: index + 1,
+          type: "model-sync-incremental",
+        });
+        expect(model.instrumentation).toMatchObject({
+          cacheElements: 0,
+          fragmentBuilds: 0,
+          sampleEncodingBuilds: 0,
+          shapeBuilds: 0,
+        });
+        expect(append).not.toHaveBeenCalled();
+      }
+      const request = {
+        sessionId: identity.sessionId,
+        workerEpoch: identity.workerEpoch,
+        baseModelRevision: 2,
+        modelRevision: 2,
+        exportGeneration: 1,
+        type: "export-incremental" as const,
+      };
+      const cold = await model.export(request);
+      expect(cold.ok).toBe(true);
+      const warmed = model.instrumentation;
+      append.mockClear();
+      model.synchronize({
+        baseModelRevision: 2,
+        identity,
+        modelRevision: 3,
+        removedIds: elements.map((element) => element.id),
+        type: "model-sync-incremental",
+      });
+      expect(model.instrumentation.cacheElements).toBe(0);
+      expect(model.instrumentation.sampleEncodingCacheElements).toBe(10_000);
+      expect(model.instrumentation.sampleEncodingCacheBytes).toBe(warmed.sampleEncodingCacheBytes);
+      expect(model.instrumentation.sampleEncodingCacheBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+      model.synchronize({
+        baseModelRevision: 3,
+        identity,
+        modelRevision: 4,
+        changedElements: elements,
+        orderChanges: { content: elements.map((element) => element.id) },
+        type: "model-sync-incremental",
+      });
+      expect(model.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds);
+      expect(model.instrumentation.shapeBuilds).toBe(warmed.shapeBuilds);
+      expect(model.instrumentation.sampleEncodingCacheElements).toBe(10_000);
+      expect(append).not.toHaveBeenCalled();
+      expect((await model.export({ ...request, baseModelRevision: 4, modelRevision: 4 })).ok).toBe(
+        true,
+      );
+      expect(model.instrumentation.shapeBuilds).toBe(warmed.shapeBuilds);
+    } finally {
+      append.mockRestore();
+      model.clear();
+    }
+    expect(model.instrumentation).toMatchObject({
+      cacheBytes: 0,
+      sampleEncodingCacheBytes: 0,
+      shapeCacheBytes: 0,
+    });
+  }, 120_000);
+});
+
 describe("runtime export cache performance", () => {
   it("bounds warm and one-element-change UTF-8 encoding across the 11,000-element fixture", async () => {
     const snapshot = createStandardPersistenceFixture();
@@ -24,14 +133,24 @@ describe("runtime export cache performance", () => {
         encode.mockClear();
         encodeInto.mockClear();
         decode.mockClear();
-        if (changed !== undefined)
+        if (changed !== undefined) {
           expect(
             serializer.applyDelta({
               baseModelRevision: snapshot.revision,
-              changedElements: [changed],
+              changedElements: [{ ...changed, style: { ...changed.style, opacity: 0.5 } }],
               modelRevision: snapshot.revision + 1,
             }).ok,
           ).toBe(true);
+          expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds);
+          expect(
+            serializer.applyDelta({
+              baseModelRevision: snapshot.revision + 1,
+              changedElements: [changed],
+              modelRevision: snapshot.revision + 2,
+            }).ok,
+          ).toBe(true);
+          expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds);
+        }
         const result = await serializer.serializeRuntimeChunked({});
         if (!result.ok) throw new Error(result.error.code);
         if (changed === undefined) {
@@ -53,7 +172,7 @@ describe("runtime export cache performance", () => {
         if (changed !== undefined) {
           expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds + 1);
           expect(result.value.hash).not.toBe(cold.value.hash);
-          expect(result.value.snapshot.revision).toBe(snapshot.revision + 1);
+          expect(result.value.snapshot.revision).toBe(snapshot.revision + 2);
           // Verify parity outside the observed encoding window using the existing cache.
           encode.mockRestore();
           encodeInto.mockRestore();
@@ -91,8 +210,14 @@ it("adopts full-reset samples without encoding or decoding stroke metadata at do
     type: "export-full",
     workerEpoch: 1,
   };
-  const same = decodeRuntimeRequest(encodeRuntimeRequest(full).value);
-  const fresh = decodeRuntimeRequest(encodeRuntimeRequest({ ...full, exportGeneration: 2 }).value);
+  const same = await decodeRuntimeRequestChunked(encodeRuntimeRequest(full).value, {
+    checkpoint: () => undefined,
+    signal: new AbortController().signal,
+  });
+  const fresh = await decodeRuntimeRequestChunked(
+    encodeRuntimeRequest({ ...full, exportGeneration: 2 }).value,
+    { checkpoint: () => undefined, signal: new AbortController().signal },
+  );
   if (same.type !== "export-full" || fresh.type !== "export-full")
     throw new Error("Expected full export.");
   let retainedPointReads = 0;
@@ -197,4 +322,178 @@ async function warmSerializer(snapshot: InkSnapshotV1) {
   const cold = await serializer.serializeRuntimeChunked({});
   if (!cold.ok) throw new Error(cold.error.code);
   return { serializer, cold };
+}
+
+it.each(["export", "prewarm"] as const)(
+  "bounds maximum-stroke %s work without forced handoffs while shared budget remains",
+  async (operation) => {
+    const fixture = longStrokeExportFixture();
+    try {
+      if (operation === "prewarm") {
+        expect(await fixture.serializer.prewarmElementAtSliced(0, 0, fixture.context)).toBeNull();
+        fixture.checkWork();
+        expect(fixture.serializer.instrumentation).toMatchObject({
+          cacheElements: 0,
+          fragmentBuilds: 0,
+        });
+        expect(
+          await fixture.serializer.prewarmElementAtSliced(0, 8 * 1024 * 1024, fixture.context),
+        ).toBeGreaterThan(0);
+      }
+      const output = await fixture.serializer.serializeRuntimeChunked(fixture.context);
+      if (!output.ok) throw new Error(output.error.code);
+      fixture.checkWork();
+      expect(fixture.counts()).toMatchObject({ waits: 0 });
+      expect(fixture.counts().reads).toBeGreaterThanOrEqual(MAX_STROKE_POINTS * 3);
+      expect(fixture.counts().operations).toBeGreaterThan(1);
+      expect(fixture.serializer.instrumentation).toMatchObject({
+        fragmentBuilds: 1,
+        shapeBuilds: 1,
+        sampleEncodingBuilds: 1,
+      });
+      const synchronous = fixture.serializer.serialize();
+      if (!synchronous.ok) throw new Error(synchronous.error.code);
+      expect(new TextDecoder().decode(output.value.svg)).toBe(synchronous.value.svg);
+      expect(output.value.hash).toBe(synchronous.value.hash);
+    } finally {
+      fixture.dispose();
+    }
+  },
+);
+
+it.each(["encoding", "geometry"] as const)(
+  "cancels maximum-stroke work at the central %s handoff before unfinished cache publication",
+  async (stage) => {
+    const fixture = longStrokeExportFixture(stage);
+    try {
+      const pending =
+        stage === "encoding"
+          ? fixture.serializer.serializeRuntimeChunked(fixture.context)
+          : fixture.serializer.prewarmElementAtSliced(0, 8 * 1024 * 1024, fixture.context);
+      expect(fixture.counts().waits).toBe(1);
+      const completedReads = stage === "encoding" ? 0 : MAX_STROKE_POINTS * 3;
+      expect(fixture.counts().reads).toBeGreaterThan(completedReads);
+      expect(fixture.counts().reads).toBeLessThanOrEqual(completedReads + 768);
+      expect(fixture.serializer.instrumentation).toMatchObject({
+        cacheElements: 0,
+        shapeCacheElements: 0,
+        sampleEncodingCacheElements: stage === "encoding" ? 0 : 1,
+      });
+      const rejected = expect(pending).rejects.toThrow("cancelled");
+      fixture.controller.abort(new Error("cancelled"));
+      await rejected;
+      expect(fixture.serializer.instrumentation).toMatchObject({
+        fragmentBuilds: 0,
+        shapeBuilds: 0,
+      });
+    } finally {
+      fixture.dispose();
+    }
+  },
+);
+
+it("rejects a replaced model after a central prewarm handoff without retaining old fragments", async () => {
+  const fixture = longStrokeExportFixture("geometry");
+  try {
+    const pending = fixture.serializer.prewarmElementAtSliced(0, 8 * 1024 * 1024, fixture.context);
+    expect(fixture.counts().waits).toBe(1);
+    expect(fixture.serializer.resetRuntime(createWorkerSnapshot([], 1), true).ok).toBe(true);
+    const rejected = expect(pending).rejects.toThrow("model changed");
+    await fixture.resume();
+    await rejected;
+    expect(fixture.serializer.currentRevision()).toBe(1);
+    expect(fixture.serializer.currentElementCount()).toBe(0);
+    expect(fixture.serializer.instrumentation).toMatchObject({
+      cacheElements: 0,
+      cacheBytes: 0,
+      shapeCacheElements: 0,
+      sampleEncodingCacheElements: 0,
+    });
+  } finally {
+    fixture.dispose();
+  }
+});
+
+function longStrokeExportFixture(initialStage: "none" | "encoding" | "geometry" = "none") {
+  const timing = new ManualWorkerTiming();
+  const { workScheduler } = createWorkerWorkScheduler(
+    { sliceMilliseconds: 4, frameIntervalMilliseconds: 1000 / 120 },
+    timing,
+  );
+  const controller = new AbortController();
+  let active = false;
+  let stage = initialStage;
+  let reads = 0;
+  let checkedReads = 0;
+  let checkedOperations = 0;
+  let waits = 0;
+  const observed = new Proxy(maximumStrokeSamples, {
+    get(target, key) {
+      if (active && typeof key === "string" && /^\d+$/.test(key)) {
+        reads += 1;
+        if (stage === "encoding") timing.time = workScheduler.deadline();
+      }
+      const value: unknown = Reflect.get(target, key, target);
+      return typeof value === "function" ? (value.bind(target) as unknown) : value;
+    },
+  });
+  const serializer = new IncrementalDocumentSerializer();
+  expect(
+    serializer.resetRuntime(
+      createWorkerSnapshot([
+        { ...createTestStroke(), points: adoptTransferredStrokeSamples(observed) },
+      ]),
+      true,
+    ).ok,
+  ).toBe(true);
+  const step = Object.getOwnPropertyDescriptor(
+    CanonicalElementPathPreparation.prototype,
+    "stepOperation",
+  )!.value as CanonicalElementPathPreparation["stepOperation"];
+  const geometry = vi
+    .spyOn(CanonicalElementPathPreparation.prototype, "stepOperation")
+    .mockImplementation(function (this: CanonicalElementPathPreparation) {
+      const complete = step.call(this);
+      if (stage === "geometry") timing.time = workScheduler.deadline();
+      return complete;
+    });
+  active = true;
+  const checkWork = () => {
+    // Encoding reads 256 triples; geometry prepares at most 65 smoothed centers per operation.
+    expect(reads - checkedReads).toBeLessThanOrEqual(768);
+    expect(geometry.mock.calls.length - checkedOperations).toBeLessThanOrEqual(1);
+    checkedReads = reads;
+    checkedOperations = geometry.mock.calls.length;
+  };
+  return {
+    serializer,
+    controller,
+    checkWork,
+    counts: () => ({ reads, waits, operations: geometry.mock.calls.length }),
+    context: {
+      signal: controller.signal,
+      checkpoint: () => {
+        checkWork();
+        const pending = workScheduler.checkpoint(controller.signal);
+        if (pending !== undefined) waits += 1;
+        return pending;
+      },
+    },
+    resume: async () => {
+      stage = "none";
+      for (let task = 0; task < 3 && timing.pendingMessages > 0; task += 1) {
+        timing.runNextTask();
+        await Promise.resolve();
+      }
+    },
+    dispose: () => {
+      geometry.mockRestore();
+      serializer.clear();
+      workScheduler.dispose();
+      expect(timing.openPorts).toBe(0);
+      expect(timing.pendingTimers).toBe(0);
+      while (timing.pendingMessages > 0) timing.runNextTask();
+      expect(timing.pendingMessages).toBe(0);
+    },
+  };
 }
