@@ -27,8 +27,10 @@ export async function prepareMutationOrder(
     ownedReplay?: OwnedMutationReplay | undefined;
     ownedRecords?: ReadonlyMap<string, ElementRecord> | undefined;
     removeIds: ReadonlySet<string>;
+    trustedOrder?: MutationOrder | undefined;
   }>,
 ): Promise<MutationOrder | "cancelled"> {
+  if (proof.trustedOrder !== undefined) return proof.trustedOrder;
   if (proof.trustedRemoval) {
     return validateTrustedRemovalOrder(requested, source, sourceRanks, proof.removeIds, scheduler);
   }

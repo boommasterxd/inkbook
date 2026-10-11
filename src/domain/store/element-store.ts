@@ -17,11 +17,7 @@ import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from ".
 import { normalizeElementInput } from "./input-normalization";
 import { applyMutationRecordPatches } from "./mutation-record-patch";
 import { assertCompleteBandOrder, ElementStoreOrdering } from "./order-operations";
-import {
-  prepareReplacementPlan,
-  prepareReplacementPlanTimeSliced,
-  type ReplacementPlan,
-} from "./replacement-plan";
+import { prepareReplacementPlanTimeSliced, type ReplacementPlan } from "./replacement-plan";
 import { PreparedElementMutations } from "./prepared-element-mutations";
 import { PreparedElementReplacements } from "./prepared-element-replacements";
 import type { ElementReplacementPlan } from "./replacement-types";
@@ -37,6 +33,7 @@ import { commitReplacementPlan } from "./time-sliced-element-replacement";
 import { materializeStoreSnapshot } from "./snapshot-materializer";
 import { StoreOrderCursor } from "./order-cursor";
 import { commitSynchronousReplacements } from "./synchronous-element-replacement";
+import { SynchronousReplacementPlans } from "./synchronous-replacement-plans";
 import type { TimeSlicedStoreState } from "./time-sliced-store-creation";
 import type {
   AppliedRemovalResult,
@@ -55,8 +52,6 @@ import type {
   ElementRank,
   PreparedElementMutation,
   PreparedElementMutationResult,
-  PreparedElementReplacement,
-  PreparedElementReplacementResult,
   SnapshotMaterialization,
   StoreDelta,
   StoreDeltaListener,
@@ -75,6 +70,10 @@ export class ElementStore {
   #mutationVersion = 0;
   #overflowCount = 0;
   #paintVersion = 0;
+  readonly #plannedReplacements = new SynchronousReplacementPlans(
+    () => this.#replacementPorts(),
+    () => this.#mutationVersion,
+  );
   readonly #ordering = new ElementStoreOrdering(() => ({
     bands: this.#bands,
     ranks: this.#ranks,
@@ -242,15 +241,13 @@ export class ElementStore {
     capture?: (history: ElementReplacementHistoryData) => void,
   ): StoreDelta | null {
     if (replacements.length === 0) return null;
-    const candidates = this.#prepareReplacementCandidates(replacements);
+    const candidates =
+      this.#plannedReplacements.consume(replacements) ??
+      this.#prepareReplacementCandidates(replacements);
     if (candidates.length === 0) return null;
     return this.#commitReplacements(candidates, capture);
   }
-  public planReplacements(replacements: readonly InkElementV1[]): ReplacementPlan | null {
-    if (replacements.length === 0) return null;
-    const prepared = prepareReplacementPlan(replacements, this.#replacementPorts());
-    return prepared.elements.length === 0 ? null : prepared;
-  }
+  public readonly planReplacements = this.#plannedReplacements.plan.bind(this.#plannedReplacements);
 
   public async planReplacementsTimeSliced(
     replacements: readonly InkElementV1[],
@@ -272,18 +269,12 @@ export class ElementStore {
     return prepared.elements.length === 0 ? null : prepared;
   }
 
-  public prepareElementReplacement(
-    replacements: readonly InkElementV1[],
-    scheduler: StoreSliceScheduler,
-  ): Promise<PreparedElementReplacementResult> {
-    return this.#preparedElementReplacements.prepare(replacements, scheduler);
-  }
-
-  public commitPreparedElementReplacement(
-    token: PreparedElementReplacement,
-  ): ElementReplacementCommitResult {
-    return this.#preparedElementReplacements.commit(token);
-  }
+  public readonly prepareElementReplacement = this.#preparedElementReplacements.prepare.bind(
+    this.#preparedElementReplacements,
+  );
+  public readonly commitPreparedElementReplacement = this.#preparedElementReplacements.commit.bind(
+    this.#preparedElementReplacements,
+  );
   #adoptElementReplacement(plan: ElementReplacementPlan): ElementReplacementCommitResult {
     commitReplacementPlan(
       this.#capacity,
@@ -310,6 +301,11 @@ export class ElementStore {
       this.#preparedElementMutations,
     );
   public readonly prepareHistoryReplay = this.#preparedElementMutations.prepareHistoryReplay.bind(
+    this.#preparedElementMutations,
+  );
+  public readonly prepareElementArrangement =
+    this.#preparedElementMutations.prepareArrangement.bind(this.#preparedElementMutations);
+  public readonly prepareElementAppend = this.#preparedElementMutations.prepareAppend.bind(
     this.#preparedElementMutations,
   );
   public commitPreparedElementMutation(
@@ -372,10 +368,8 @@ export class ElementStore {
   public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): StoreDelta | null {
     const delta = new DeltaBuilder();
     for (const band of ["highlight", "content"] as const) {
-      const ids = this.#bands[band];
-      this.#ordering.arrange(ids, selectedIds, action);
+      if (!this.#ordering.arrange(band, selectedIds, action, delta)) continue;
       this.#instrumentation.bandScans += 1;
-      this.#ordering.refresh(band, 0, delta);
     }
     return this.#publish(delta.build(this.#geometryVersion, this.#paintVersion));
   }
@@ -420,6 +414,14 @@ export class ElementStore {
     for (const reference of references) {
       this.#instrumentation.reverseDependencyVisits += 1;
       visitor(reference);
+    }
+  }
+  public *beginDependents(targetId: string): IterableIterator<EndpointReference> {
+    const references = this.#reverseConnections.get(targetId);
+    if (references === undefined) return;
+    for (const reference of references) {
+      this.#instrumentation.reverseDependencyVisits += 1;
+      yield reference;
     }
   }
   public countReverseDependencies(targetIds: readonly string[], limit: number): number {

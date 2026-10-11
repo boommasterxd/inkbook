@@ -75,9 +75,13 @@ export async function planElementMutation(
   requested: ElementMutation,
   sourceScheduler: StoreSliceScheduler,
   replay?: AppliedElementMutation,
-  trustedRemoval = false,
-  ownedReplay?: OwnedMutationReplay,
+  proof: Readonly<{
+    trustedRemoval?: boolean;
+    ownedReplay?: OwnedMutationReplay;
+    trustedOrder?: MutationOrder;
+  }> = {},
 ): Promise<ElementMutationPlan | "cancelled" | null> {
+  const { trustedRemoval, ownedReplay, trustedOrder } = normalizedMutationProof(proof);
   const scheduler = new MutationPreparationScheduler(sourceScheduler);
   const direction = requested;
   const resolved = resolveHistoryReplay(direction, replay, ownedReplay);
@@ -104,6 +108,7 @@ export async function planElementMutation(
     ownedReplay,
     ownedRecords,
     removeIds,
+    trustedOrder,
   });
   if (order === "cancelled") return order;
   const { bands, ranks } = order;
@@ -154,6 +159,14 @@ export async function planElementMutation(
     records,
     ownedHistory,
     requested: direction,
+  };
+}
+
+function normalizedMutationProof(proof: Parameters<typeof planElementMutation>[4]) {
+  return {
+    trustedRemoval: proof?.trustedRemoval ?? false,
+    ownedReplay: proof?.ownedReplay,
+    trustedOrder: proof?.trustedOrder,
   };
 }
 

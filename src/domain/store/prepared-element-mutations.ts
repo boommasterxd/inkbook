@@ -7,6 +7,11 @@ import { createRemovalMutationTimeSliced } from "./removal-mutation";
 import { createRemovalTransition } from "./removal-transition";
 import { ownedHistoryReplaySteps } from "./owned-history-replay";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import type { MutationOrder } from "./mutation-order";
+import { prepareArrangementMutation } from "./arrangement-mutation";
+import type { ArrangeAction } from "../commands/arrange";
+import { prepareAppendMutation } from "./append-mutation";
+import type { InkElementV1 } from "../schema/public";
 import {
   captureOwnedMutationHistory,
   STABLE_RELATIVE_ORDER,
@@ -16,6 +21,7 @@ import {
 import type {
   AppliedElementMutation,
   ElementMutation,
+  ElementRank,
   ElementMutationCommitResult,
   PreparedElementMutation,
   PreparedElementMutationResult,
@@ -25,6 +31,7 @@ import type {
 
 interface VersionedMutationSource extends MutationSource {
   readonly mutationVersion: number;
+  readonly ranks: ReadonlyMap<string, ElementRank>;
 }
 
 export class PreparedElementMutations {
@@ -38,6 +45,13 @@ export class PreparedElementMutations {
   readonly #trustedRemovalVersions = new WeakMap<ElementMutation, number>();
   readonly #ownedHistory = new WeakMap<AppliedElementMutation, OwnedMutationHistory>();
   readonly #trustedReplayVersions = new WeakMap<ElementMutation, number>();
+  readonly #trustedOrders = new WeakMap<
+    ElementMutation,
+    {
+      readonly mutationVersion: number;
+      readonly order: MutationOrder;
+    }
+  >();
 
   public constructor(
     readSource: () => VersionedMutationSource,
@@ -75,6 +89,58 @@ export class PreparedElementMutations {
     return this.#prepare(mutation, scheduler, replay);
   }
 
+  public async prepareArrangement(
+    action: ArrangeAction,
+    selection: ReadonlySet<string>,
+    scheduler: StoreSliceScheduler,
+  ): Promise<PreparedElementMutationResult> {
+    const source = this.#readSource();
+    const prepared = await prepareArrangementMutation(
+      { bands: source.bands, ranks: source.ranks },
+      action,
+      selection,
+      {
+        ...scheduler,
+        isCancelled: () =>
+          source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
+      },
+    );
+    return this.#prepareTrustedOrder(prepared, source.mutationVersion, scheduler);
+  }
+
+  public async prepareAppend(
+    elements: readonly InkElementV1[],
+    scheduler: StoreSliceScheduler,
+  ): Promise<PreparedElementMutationResult> {
+    const source = this.#readSource();
+    const prepared = await prepareAppendMutation(source, elements, {
+      ...scheduler,
+      isCancelled: () =>
+        source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
+    });
+    return this.#prepareTrustedOrder(prepared, source.mutationVersion, scheduler);
+  }
+
+  #prepareTrustedOrder(
+    prepared:
+      { readonly mutation: ElementMutation; readonly order: MutationOrder } | "cancelled" | null,
+    mutationVersion: number,
+    scheduler: StoreSliceScheduler,
+  ): Promise<PreparedElementMutationResult> {
+    if (
+      prepared === "cancelled" ||
+      mutationVersion !== this.#readVersion() ||
+      scheduler.isCancelled?.()
+    )
+      return Promise.resolve({ status: "cancelled", token: null });
+    if (prepared === null) return Promise.resolve({ status: "noop", token: null });
+    this.#trustedOrders.set(prepared.mutation, {
+      mutationVersion,
+      order: prepared.order,
+    });
+    return this.#prepare(prepared.mutation, scheduler);
+  }
+
   /** Only transitions retained by this store can select private canonical replay values. */
   public prepareHistoryReplay(
     mutation: ElementMutation,
@@ -110,14 +176,15 @@ export class PreparedElementMutations {
       if (retainedMutation === "cancelled") return { status: "cancelled", token: null };
       proof = { ...proof, retainedMutation };
     }
-    const plan = await planElementMutation(
-      source,
-      mutation,
-      work,
-      replay,
-      replay === undefined && this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
-      proof,
-    );
+    const plan = await planElementMutation(source, mutation, work, replay, {
+      trustedRemoval:
+        replay === undefined &&
+        this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
+      ...(proof === undefined ? {} : { ownedReplay: proof }),
+      ...(this.#trustedOrders.get(mutation)?.mutationVersion === source.mutationVersion
+        ? { trustedOrder: this.#trustedOrders.get(mutation)!.order }
+        : {}),
+    });
     if (plan === "cancelled" || source.mutationVersion !== this.#readVersion()) {
       return { status: "cancelled", token: null };
     }

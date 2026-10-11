@@ -133,6 +133,15 @@ export function copyStrokeSamplesToRuntimeSteps(
   >;
 }
 
+/** Capture a JSON-compatible sample array without retaining mutable wire aliases. */
+export function copyStrokeSamplesToJsonSteps(
+  points: SampleSource,
+  samplesPerStep = DEFAULT_SAMPLE_COPY_STEP,
+): Generator<void, number[]> {
+  const length = assertSampleCopyInput(points, samplesPerStep);
+  return copySamplesSteps(points, length, samplesPerStep * 3, false) as Generator<void, number[]>;
+}
+
 function* copySamplesSteps(
   points: SampleSource,
   length: number,

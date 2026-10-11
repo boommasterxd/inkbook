@@ -1,12 +1,10 @@
 import { pressurePaintAdditionSteps, type PressurePaintQuery } from "./pressure-paint-additions";
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import { pressureRadius } from "../../domain/geometry/pressure-radius";
-import { strokeLocalGeometry, strokeWorldPoint } from "../../domain/geometry/stroke-position";
-import { strokeCenterAt, type StrokeCenter } from "../../domain/geometry/stroke-path";
-import {
-  simplifyStrokeCenters,
-  STROKE_SIMPLIFICATION_WINDOW,
-} from "../../domain/geometry/stroke-simplification";
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import type { StrokeCenter } from "../../domain/geometry/stroke-path";
+import { STROKE_SIMPLIFICATION_WINDOW } from "../../domain/geometry/stroke-simplification";
+import { selectionStrokeCenterWindow } from "./stroke-selection-centers";
 import type { PointV1, StrokeElementV1 } from "../../domain/schema/public";
 import type { VisibleSelectionPrimitive } from "./selection-area-primitives";
 
@@ -30,15 +28,10 @@ export function* strokePrimitiveSteps(
   let emitted = 0;
   for (let start = 0; start < count; start += STROKE_SIMPLIFICATION_WINDOW) {
     const end = Math.min(count - 1, start + STROKE_SIMPLIFICATION_WINDOW);
-    const window: StrokeCenter[] = [];
-    for (let index = start; index <= end; index += 1) {
-      const center = strokeCenterAt(stroke.points, index, count);
-      window.push({ ...strokeWorldPoint(stroke, center), pressure: center.pressure });
-    }
-    const simplified = simplifyStrokeCenters(
-      window,
-      stroke.style.width,
-      stroke.style.pressureEnabled,
+    const simplified = selectionStrokeCenterWindow(
+      stroke,
+      start / STROKE_SIMPLIFICATION_WINDOW,
+      query.prepared,
     );
     selected.push(...(start === 0 ? simplified : simplified.slice(1)));
     yield end - start + 1;
@@ -89,9 +82,10 @@ function strokeCapsule(
 }
 
 function localPaintQuery(query: PressurePaintQuery, offset: PointV1): PressurePaintQuery {
-  // Prepared windows are in world space; local pressure geometry must build its own windows.
+  // Only an explicit local port can exchange exact local pressure windows.
   const additionsMayTouch = query.additionsMayTouch;
   return {
+    prepared: query.prepared?.local?.(),
     ...(query.bounds === undefined
       ? {}
       : {

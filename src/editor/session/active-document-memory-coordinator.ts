@@ -4,6 +4,7 @@ const ACTIVE_DOCUMENT_MEMORY_PRESSURE_BYTES = 96 * MEBIBYTE;
 const ACTIVE_DOCUMENT_MEMORY_RELEASE_BYTES = 64 * MEBIBYTE;
 
 export interface ActiveDocumentMemoryUsage {
+  readonly selectionGeometryCacheBytes?: number;
   readonly pressurePathCacheBytes: number;
   readonly pressureWindowCacheBytes: number;
   readonly anchorCacheBytes: number;
@@ -15,7 +16,11 @@ export interface ActiveDocumentMemoryUsage {
 export interface ActiveDocumentMemoryStorePort {
   memoryUsage(): Pick<
     ActiveDocumentMemoryUsage,
-    "anchorCacheBytes" | "modelBytes" | "pressureWindowCacheBytes" | "pressurePathCacheBytes"
+    | "anchorCacheBytes"
+    | "modelBytes"
+    | "pressureWindowCacheBytes"
+    | "pressurePathCacheBytes"
+    | "selectionGeometryCacheBytes"
   >;
   setActiveDocumentMemoryPressure(active: boolean): void;
 }
@@ -84,6 +89,7 @@ const EMPTY_USAGE: ActiveDocumentMemoryUsage = Object.freeze({
 
 function totalBytes(usage: ActiveDocumentMemoryUsage): number {
   return (
+    (usage.selectionGeometryCacheBytes ?? 0) +
     usage.anchorCacheBytes +
     usage.modelBytes +
     usage.motionCacheBytes +
