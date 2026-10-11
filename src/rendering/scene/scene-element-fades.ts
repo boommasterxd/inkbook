@@ -37,6 +37,7 @@ interface EntranceFinish {
 /** Starts element feedback in bounded batches without truncating queued exits. */
 export class SceneElementFades {
   readonly #pending = new Map<string, PendingFade>();
+  readonly #visibleMemberships = new Map<string, PendingFade>();
   readonly #finishes = new Map<string, number>();
   readonly #entrances = new Map<string, PendingFade>();
   readonly #entranceFinishes = new Map<string, EntranceFinish>();
@@ -71,7 +72,7 @@ export class SceneElementFades {
   public set(ids: readonly string[], durationMs: number | null, slice?: FadeSlice): void {
     for (const id of ids) {
       if (durationMs === null) {
-        this.#pending.delete(id);
+        this.deletePending(id);
         this.#finishes.delete(id);
         this.#entrances.delete(id);
         this.#entranceFinishes.delete(id);
@@ -85,7 +86,7 @@ export class SceneElementFades {
         this.releaseStyledGenerations(id);
       } else {
         if (this.#memberships.get(id)?.direction === "enter") {
-          this.#pending.delete(id);
+          this.deletePending(id);
           this.#entrances.delete(id);
           this.#entranceFinishes.delete(id);
           this.releaseMembership(id);
@@ -112,6 +113,7 @@ export class SceneElementFades {
       (this.#memberships.size + this.#finishes.size + this.#generations.size) * 48 +
       this.#styledGenerations.size * 40 +
       this.#styledGenerationCount * 32 +
+      this.#visibleMemberships.size * 32 +
       (this.#prune === undefined ? 0 : 64)
     );
   }
@@ -122,7 +124,7 @@ export class SceneElementFades {
     durationMs: number,
     bounds?: Bounds,
   ): void {
-    this.#pending.delete(id);
+    this.deletePending(id);
     this.#finishes.delete(id);
     this.#entrances.delete(id);
     this.#entranceFinishes.delete(id);
@@ -132,7 +134,7 @@ export class SceneElementFades {
     const effectiveBounds = entry?.motionActive === true ? undefined : bounds;
     if (entry !== undefined) setMountedElementMotion(entry, null);
     if (entry === undefined && (direction === "exit" || durationMs === 0)) return;
-    const visible = this.membershipVisible(id, effectiveBounds);
+    const visible = this.membershipVisible(effectiveBounds, entry);
     if (
       !visible &&
       direction === "enter" &&
@@ -155,7 +157,7 @@ export class SceneElementFades {
       this.#entrances.set(id, fade);
       return;
     }
-    this.#pending.set(id, fade);
+    this.queueMembership(id, fade, visible);
     this.onReadinessChanged?.(id, direction === "exit" ? Infinity : 0);
   }
 
@@ -163,12 +165,12 @@ export class SceneElementFades {
     const fade = this.#entrances.get(entry.id);
     if (fade === undefined) return;
     this.#entrances.delete(entry.id);
-    if (!this.membershipVisible(entry.id, fade.bounds)) {
+    if (!this.membershipVisible(fade.bounds, entry)) {
       this.releaseMembership(entry.id);
       return;
     }
     if (!this.interrupted(entry.id)) this.hideRoots(entry, fade.generation!);
-    this.#pending.set(entry.id, fade);
+    this.queueMembership(entry.id, fade, true);
   }
 
   public interruptMembership(): void {
@@ -194,7 +196,7 @@ export class SceneElementFades {
   public isExitReady(id: string, now: number): boolean {
     if (this.interrupted(id)) {
       if (this.#memberships.get(id)?.direction === "exit") {
-        this.#pending.delete(id);
+        this.deletePending(id);
         this.#finishes.delete(id);
       }
       return true;
@@ -207,7 +209,7 @@ export class SceneElementFades {
   }
 
   public releaseMounted(id: string): void {
-    this.#pending.delete(id);
+    this.deletePending(id);
     this.#finishes.delete(id);
     this.#entranceFinishes.delete(id);
     this.releaseMembership(id);
@@ -221,6 +223,7 @@ export class SceneElementFades {
 
   public release(): void {
     this.#pending.clear();
+    this.#visibleMemberships.clear();
     this.#finishes.clear();
     this.#entrances.clear();
     this.#entranceFinishes.clear();
@@ -233,12 +236,26 @@ export class SceneElementFades {
   }
 
   private write(deadline: number, now: () => number): void {
-    for (const [id, fade] of this.#pending) {
-      if (this.#remaining <= 0 || (this.#remaining < FADE_NODES_PER_FRAME && now() >= deadline))
+    const visited = this.writeQueue(this.#visibleMemberships, deadline, now);
+    if (!visited || now() < deadline) this.writeQueue(this.#pending, deadline, now);
+  }
+
+  private writeQueue(
+    queue: ReadonlyMap<string, PendingFade>,
+    deadline: number,
+    now: () => number,
+  ): boolean {
+    let visited = false;
+    for (const [id, fade] of queue) {
+      if (
+        this.#remaining <= 0 ||
+        ((visited || this.#remaining < FADE_NODES_PER_FRAME) && now() >= deadline)
+      )
         break;
+      visited = true;
       const entry = this.mounted.get(id);
       if (entry === undefined) {
-        this.#pending.delete(id);
+        this.deletePending(id);
         this.#finishes.delete(id);
         this.onReadinessChanged?.(id, 0);
         this.releaseMembership(id);
@@ -246,10 +263,29 @@ export class SceneElementFades {
         this.#remaining -= 1;
         continue;
       }
+      if (
+        queue === this.#visibleMemberships &&
+        fade.admittedDurationMs === undefined &&
+        !this.membershipVisible(fade.bounds, entry)
+      ) {
+        this.#visibleMemberships.delete(id);
+        continue;
+      }
       if (!this.writeFade(entry, fade, deadline, now)) break;
-      this.#pending.delete(id);
+      this.deletePending(id);
       this.onReadinessChanged?.(id, this.#finishes.get(id) ?? 0);
     }
+    return visited;
+  }
+
+  private deletePending(id: string): void {
+    this.#pending.delete(id);
+    this.#visibleMemberships.delete(id);
+  }
+
+  private queueMembership(id: string, fade: PendingFade, visible: boolean): void {
+    this.#pending.set(id, fade);
+    if (visible) this.#visibleMemberships.set(id, fade);
   }
 
   private writeFade(
@@ -270,7 +306,7 @@ export class SceneElementFades {
     const presentation = entry.fadePresentation!;
     const count = elementFadeTargetCount(entry, presentation);
     fade.admittedDurationMs ??=
-      fade.generation !== undefined && !this.membershipVisible(entry.id, fade.bounds)
+      fade.generation !== undefined && !this.membershipVisible(fade.bounds, entry)
         ? 0
         : fade.durationMs;
     const duration = this.interrupted(entry.id) ? 0 : fade.admittedDurationMs;
@@ -358,8 +394,10 @@ export class SceneElementFades {
     return membership !== undefined && membership.generation <= this.#interruptedThrough;
   }
 
-  private membershipVisible(id: string, bounds: Bounds | undefined): boolean {
-    const entry = this.mounted.get(id);
+  private membershipVisible(
+    bounds: Bounds | undefined,
+    entry: MountedSceneElement | undefined,
+  ): boolean {
     return (
       bounds === undefined ||
       this.#viewport === undefined ||

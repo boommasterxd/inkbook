@@ -19,10 +19,10 @@ import { arrow } from "../../domain/schema/fixtures";
 const VIEWPORT: Bounds = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
 const OFFSCREEN: Bounds = { minX: 0, minY: 101, maxX: 100, maxY: 120 };
 
-function setup() {
+function setup(id = "membership") {
   const entry = createMountedElement(
     new FakeDocument() as unknown as Document,
-    fakeRectangleRecord("membership", 0, 10),
+    fakeRectangleRecord(id, 0, 10),
     [{ d: "M0 0L10 10", paint: "stroke" }],
     createInstrumentation(),
   );
@@ -32,6 +32,87 @@ function setup() {
   fades.setViewport(VIEWPORT);
   return { entry, mounted, readiness, fades, node: fakeNode(entry.paths[0]!.node) };
 }
+
+it.each(["clear", "retarget", "missing", "unmount", "interrupt", "release"] as const)(
+  "releases visible admission ownership on %s before an offscreen tail",
+  (cancellation) => {
+    const { entry, mounted, fades, node } = setup();
+    const visible = setup("visible");
+    mounted.set(visible.entry.id, visible.entry);
+    fades.setMembership(entry.id, "exit", 150, OFFSCREEN);
+    fades.setMembership(visible.entry.id, "exit", 150, VIEWPORT);
+    const write = vi.spyOn(fadeStyle, "setElementFadeNode");
+    try {
+      if (cancellation === "clear") fades.set([visible.entry.id], null);
+      if (cancellation === "retarget")
+        fades.setMembership(visible.entry.id, "enter", 150, OFFSCREEN);
+      if (cancellation === "missing") mounted.delete(visible.entry.id);
+      if (cancellation === "unmount") fades.releaseMounted(visible.entry.id);
+      if (cancellation === "interrupt") fades.interruptMembership();
+      if (cancellation === "release") fades.release();
+      fades.flush(0, () => 0);
+      if (cancellation === "missing" || cancellation === "release") {
+        expect(write).not.toHaveBeenCalled();
+      } else {
+        expect(write).toHaveBeenCalledOnce();
+        expect(write.mock.calls[0]![0]).toBe(
+          cancellation === "interrupt" ? visible.entry.paths[0]!.node : entry.paths[0]!.node,
+        );
+        expect(write.mock.calls[0]![1]).toBe(0);
+      }
+      fades.flush(Infinity, () => 0);
+      expect(visible.node.style.getPropertyValue("animation")).toBe("");
+      if (cancellation !== "release") expect(node.style.opacity).toBe("0");
+      fades.releaseMounted(entry.id);
+      fades.releaseMounted(visible.entry.id);
+      expect(fades.pending).toBe(false);
+      expect(fades.memoryUsage()).toBe(0);
+    } finally {
+      write.mockRestore();
+      fades.release();
+    }
+  },
+);
+
+it("demotes unstarted offscreen membership while preserving the deadline and visible priority", () => {
+  const { entry, mounted, fades } = setup();
+  const visible = setup("visible");
+  mounted.set(visible.entry.id, visible.entry);
+  fades.setMembership(entry.id, "exit", 150, VIEWPORT);
+  fades.setViewport(OFFSCREEN);
+  fades.setMembership(visible.entry.id, "exit", 150, OFFSCREEN);
+  const setFadeNode = fadeStyle.setElementFadeNode;
+  const write = vi.spyOn(fadeStyle, "setElementFadeNode");
+  let time = 0;
+  let started = 0;
+  write.mockImplementation((...args) => {
+    if (args[1] === 150) started = time;
+    return setFadeNode(...args);
+  });
+  const mountedGet = mounted.get.bind(mounted);
+  const get = vi.spyOn(mounted, "get");
+  get.mockImplementation((id) => {
+    time += 1;
+    return mountedGet(id);
+  });
+  try {
+    fades.flush(0, () => time);
+    expect(write).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledOnce();
+    fades.flush(Infinity, () => time);
+    expect(write.mock.calls.map(([node, duration]) => [node, duration])).toEqual([
+      [visible.entry.paths[0]!.node, 150],
+      [entry.paths[0]!.node, 0],
+    ]);
+    expect(fades.isExitReady(visible.entry.id, started + 149)).toBe(false);
+    expect(fades.isExitReady(visible.entry.id, started + 150)).toBe(true);
+    fades.release();
+    expect(fades.memoryUsage()).toBe(0);
+  } finally {
+    get.mockRestore();
+    write.mockRestore();
+  }
+});
 
 it.each(["offscreen", "return", "interrupt"] as const)(
   "retains the first admission across a real filled arrow's two exit slices, %s",
@@ -56,13 +137,24 @@ it.each(["offscreen", "return", "interrupt"] as const)(
     const gate = vi.fn((generation: number, interrupted: boolean) =>
       fadeStyle.setHistoryFadeGate(svg, generation, interrupted),
     );
-    const fades = new SceneElementFades(new Map([[entry.id, entry]]), readiness, gate);
+    const reserve = setup("reserve");
+    const mounted = new Map([
+      [entry.id, entry],
+      [reserve.entry.id, reserve.entry],
+    ]);
+    const fades = new SceneElementFades(mounted, readiness, gate);
     fades.setViewport(record.bounds);
+    fades.setMembership(reserve.entry.id, "exit", 400, {
+      ...record.bounds,
+      minY: record.bounds.maxY + 1,
+      maxY: record.bounds.maxY + 2,
+    });
     fades.setMembership(entry.id, "exit", 400, record.bounds);
     expect(fades.flush(0, () => 0)).toBe(true);
     expect(paths[0]!.style.animation).toContain("opacity-exit");
     expect(paths[0]!.style.animation).toContain("--inkbook-history-duration-0, 400ms)");
     expect(paths[1]!.style.getPropertyValue("animation")).toBe("");
+    expect(reserve.node.style.getPropertyValue("opacity")).toBe("");
     fades.setViewport(VIEWPORT);
     if (retarget === "return") fades.setViewport(record.bounds);
     if (retarget === "interrupt") fades.interruptMembership();
@@ -78,9 +170,10 @@ it.each(["offscreen", "return", "interrupt"] as const)(
       expect(paths.every((node) => node.style.getPropertyValue("opacity") === "")).toBe(true);
       expect(fades.isExitReady(entry.id, 409)).toBe(false);
       expect(fades.isExitReady(entry.id, 410)).toBe(true);
-      expect(readiness).toHaveBeenLastCalledWith(entry.id, 410);
+      expect(readiness).toHaveBeenCalledWith(entry.id, 410);
     }
     expect(paths.map((node) => [...node.attributes])).toEqual(paint);
+    fades.releaseMounted(reserve.entry.id);
     fades.releaseMounted(entry.id);
     expect(gate).toHaveBeenLastCalledWith(0, false);
     expect(svg.style.getPropertyValue("--inkbook-history-duration-0")).toBe("");

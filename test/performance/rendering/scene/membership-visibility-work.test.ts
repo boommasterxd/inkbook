@@ -6,9 +6,82 @@ import {
   replaySceneMembership,
 } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
-import { FakeDocument, FakeNode, fakeNode } from "../../../unit/rendering/scene/fakes";
+import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
+import {
+  FakeDocument,
+  FakeNode,
+  fakeNode,
+  fakeRectangleRecord,
+} from "../../../unit/rendering/scene/fakes";
+import { createMountedElement } from "../../../../src/rendering/scene/mounted-element";
+import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
+import { SceneElementFades } from "../../../../src/rendering/scene/scene-element-fades";
 
 const VISIBLE_COUNT = 64;
+
+it("admits visible stroke paint before a 10,000-stroke offscreen reserve without scanning it", () => {
+  const document = new FakeDocument();
+  const stroke = createTestStroke();
+  const entries = Array.from({ length: 10_000 }, (_, rank) => {
+    const id = `stroke-${String(rank)}`;
+    const record = {
+      ...fakeRectangleRecord(id, rank, 10, rank < VISIBLE_COUNT ? 10 : 1_100),
+      element: { ...stroke, id, style: { ...stroke.style, opacity: 0.35, pressureEnabled: false } },
+    };
+    return {
+      bounds: record.bounds,
+      entry: createMountedElement(
+        document as unknown as Document,
+        record,
+        [{ d: "M0 0L10 10", paint: "stroke" }],
+        createInstrumentation(),
+      ),
+    };
+  });
+  const mounted = new Map(entries.map(({ entry }) => [entry.id, entry]));
+  const fades = new SceneElementFades(mounted);
+  fades.setViewport({ minX: 0, minY: 0, maxX: 100, maxY: 100 });
+  for (const { entry, bounds } of [...entries].reverse())
+    fades.setMembership(entry.id, "exit", 150, bounds);
+  const observed = observeFadeWrites(
+    document,
+    entries.map(({ entry }) => fakeNode(entry.paths[0]!.node)),
+  );
+  const get = vi.spyOn(mounted, "get");
+  try {
+    fades.flush(Infinity, () => 0);
+    expect(observed.work).toEqual({ starts: VISIBLE_COUNT, writes: 128 });
+    // One lookup per admitted element, independent of the 10,000 queued records.
+    expect(get.mock.calls.length).toBeLessThanOrEqual(128);
+    const visible = entries.slice(0, VISIBLE_COUNT);
+    expect(
+      visible.every(({ entry }) =>
+        String(fakeNode(entry.paths[0]!.node).style.animation).includes("stroke-exit"),
+      ),
+    ).toBe(true);
+    expect(
+      visible.every(
+        ({ entry }) => fakeNode(entry.paths[0]!.node).attributes.get("stroke-opacity") === "0.35",
+      ),
+    ).toBe(true);
+    expect(visible.every(({ entry }) => !fades.isExitReady(entry.id, 149))).toBe(true);
+    expect(visible.every(({ entry }) => fades.isExitReady(entry.id, 150))).toBe(true);
+    fades.interruptMembership();
+    fades.set(
+      entries.map(({ entry }) => entry.id),
+      null,
+    );
+    expect(fades.pending).toBe(false);
+    expect(fades.memoryUsage()).toBe(0);
+    const writes = observed.work.writes;
+    fades.flush(Infinity, () => 150);
+    expect(observed.work.writes).toBe(writes);
+  } finally {
+    get.mockRestore();
+    observed.restore();
+    fades.release();
+  }
+});
 
 it.each([1_000, 10_000])(
   "bounds actual history animation starts and style writes with %i retained roots",
@@ -26,7 +99,8 @@ it.each([1_000, 10_000])(
     scheduler.runAll(200);
     expect(renderer.mountedCount).toBe(count);
     const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-    const entries = [...records.records.values()];
+    // Commit the offscreen reserve before the visible tail, independently of paint rank.
+    const entries = [...records.records.values()].reverse();
     const observed = observeFadeWrites(document, content.nodes);
     const remove = vi.spyOn(FakeNode.prototype, "remove");
     const replay = (exit: boolean) => {
