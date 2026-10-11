@@ -99,6 +99,20 @@ can transfer without restarting validation. Runtime snapshot copies, clipboard
 validation, and replacement-heap preparation expose bounded checkpoints; final
 store publication remains atomic.
 
+Document scheduler forwarding retains a weak binding to the workspace-owned
+central window scheduler. An ownership version invalidates that binding on
+mount, transfer, detach, or window unload; refresh-rate changes update the existing
+scheduler without requiring ownership scans. In-budget clock and checkpoint calls
+reuse the binding. A completed central handoff and a disposed-scheduler failure
+revalidate mounted, retained, and fallback ownership in their existing preference
+order. A transferred continuation must obtain the destination scheduler's
+admission before continuing, including further transfers while it waits.
+Unloaded windows remain excluded before their native `closed` flag changes.
+Each concrete window adapter retains its native performance object and still
+reads the live clock for every budget check. These bindings introduce neither a
+second scheduler nor a renewed deadline, and idle documents do not strongly
+retain unloaded window schedulers.
+
 Require the scheduler for future cooperative implementations in `AGENTS.md`.
 The source-layout AST gate rejects native work scheduling and private deadline
 renewal outside approved boundaries. Narrow semantic event-ordering and finite

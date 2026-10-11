@@ -41,6 +41,7 @@ function sharedWorkspaceScheduler() {
   const runtimes = createWorkspaceDocumentRuntimes({
     fallbackWindow: () => ownerWindow,
     owningWindow: () => ownerWindow,
+    ownerWindowVersion: () => 0,
     subscribeSchedulingProfile: () => () => undefined,
     workScheduler: () => scheduler,
   });

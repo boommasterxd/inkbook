@@ -2,6 +2,7 @@ import {
   FRAME_WORK_SHARE,
   SchedulerDisposedError,
   type FrameCancellation,
+  type WorkPriority,
   type WorkScheduler,
 } from "../../domain/scheduling/work-scheduler";
 import {
@@ -25,6 +26,7 @@ import type { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 interface WorkspaceRuntimeWindowPorts {
   readonly fallbackWindow: () => Window | undefined;
   readonly owningWindow: (documentId: string) => Window;
+  readonly ownerWindowVersion: () => number;
   readonly workScheduler: (ownerWindow: Window) => WorkScheduler;
   readonly subscribeSchedulingProfile: (listener: () => void) => () => void;
   readonly warn?: (ownerWindow: Window | undefined, message: string) => void;
@@ -49,6 +51,7 @@ export function createWorkspaceSessionFactory(options: {
       owningWindow: options.owningWindow,
       fallbackWindow: options.fallbackWindow,
       workScheduler: (window) => options.profiles.workScheduler(window),
+      ownerWindowVersion: () => options.profiles.ownerWindowVersion(),
       subscribeSchedulingProfile: (listener) => options.profiles.subscribe(listener),
     }),
     options.hooks,
@@ -59,8 +62,23 @@ export function createWorkspaceDocumentRuntimes(
   windows: WorkspaceRuntimeWindowPorts,
 ): DocumentRuntimeFactories {
   const warnFallback = createFallbackWarning(windows);
-  const workScheduler = (documentId: string): WorkScheduler =>
-    createDocumentScheduler(() => windows.workScheduler(windows.owningWindow(documentId)));
+  const workScheduler = (documentId: string): WorkScheduler => {
+    let scheduler: WeakRef<WorkScheduler> | undefined;
+    let ownerVersion: number | undefined;
+    const refreshOwner = (): WorkScheduler => {
+      const bound = windows.workScheduler(windows.owningWindow(documentId));
+      // The workspace owns live schedulers; an idle document must not retain a closed realm.
+      scheduler = new WeakRef(bound);
+      ownerVersion = windows.ownerWindowVersion();
+      return bound;
+    };
+    return createDocumentScheduler(() => {
+      const bound = scheduler?.deref();
+      return bound === undefined || ownerVersion !== windows.ownerWindowVersion()
+        ? refreshOwner()
+        : bound;
+    }, refreshOwner);
+  };
   return {
     workScheduler,
     clock: (documentId) => ({
@@ -188,37 +206,58 @@ function workerErrorName(error: unknown): string {
 }
 
 /** A document may move between windows while retaining its worker and dirty model. */
-function createDocumentScheduler(current: () => WorkScheduler): WorkScheduler {
+function createDocumentScheduler(
+  current: () => WorkScheduler,
+  refreshOwner: () => WorkScheduler,
+): WorkScheduler {
   const forwarding = createWindowSchedulerForwarding(current);
   let disposed = false;
-  const resumeAfterTransfer = (
-    error: unknown,
+  const waitForOwner = (
     original: WorkScheduler,
+    pending: Promise<void>,
     signal: FrameCancellation | undefined,
+    priority: WorkPriority | undefined,
     resume: (scheduler: WorkScheduler) => Promise<void> | undefined,
-  ): Promise<void> | undefined => {
-    if (!(error instanceof SchedulerDisposedError) || disposed || signal?.aborted) throw error;
-    const replacement = current();
-    if (replacement === original) throw error;
-    return resume(replacement);
+  ): Promise<void> => {
+    const continueWith = (
+      replacement: WorkScheduler,
+      run: typeof resume,
+    ): Promise<void> | undefined => {
+      const next = run(replacement);
+      return next === undefined
+        ? undefined
+        : waitForOwner(replacement, next, signal, priority, run);
+    };
+    return pending.then(
+      () => {
+        if (disposed) return undefined;
+        const replacement = refreshOwner();
+        return replacement === original
+          ? undefined
+          : continueWith(replacement, (scheduler) => scheduler.checkpoint(signal, priority));
+      },
+      (error: unknown) => {
+        if (!(error instanceof SchedulerDisposedError) || disposed || signal?.aborted) throw error;
+        const replacement = refreshOwner();
+        if (replacement === original) throw error;
+        return continueWith(replacement, resume);
+      },
+    );
   };
   return {
     ...forwarding,
     checkpoint: (signal, priority) => {
       const original = current();
-      return original.checkpoint(signal, priority)?.catch(async (error: unknown) => {
-        await resumeAfterTransfer(error, original, signal, (replacement) =>
-          replacement.checkpoint(signal, priority),
-        );
-      });
+      const resume = (scheduler: WorkScheduler) => scheduler.checkpoint(signal, priority);
+      const pending = resume(original);
+      return pending === undefined
+        ? undefined
+        : waitForOwner(original, pending, signal, priority, resume);
     },
     nextFrame: (signal, priority) => {
       const original = current();
-      return original.nextFrame(signal, priority).catch(async (error: unknown) => {
-        await resumeAfterTransfer(error, original, signal, (replacement) =>
-          replacement.nextFrame(signal, priority),
-        );
-      });
+      const resume = (scheduler: WorkScheduler) => scheduler.nextFrame(signal, priority);
+      return waitForOwner(original, resume(original), signal, priority, resume);
     },
     dispose: () => {
       disposed = true;

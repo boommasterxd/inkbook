@@ -65,7 +65,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #feedback: WorkspaceFeedbackRouter;
   #headlessRecovery: HeadlessRecoveryNotice | undefined;
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
-  readonly #ownerWindows = new OwnerWindowRegistry();
+  readonly #ownerWindows: OwnerWindowRegistry;
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
   readonly #setState = createWorkspacePresentationStateSetter(this.#mounted);
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
@@ -100,6 +100,9 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#scheme = scheme;
     this.#settings = settings;
     this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
+    this.#ownerWindows = new OwnerWindowRegistry((ownerWindow) =>
+      this.refreshRateProfiles.isWindowAvailable(ownerWindow),
+    );
     this.refreshRateProfiles.observeDefault(this.#fallbackOwnerWindow());
     this.#lifecycle = new WorkspaceRuntimeLifecycle({
       activate: (attachment, attempt) => this.#activate(attachment, attempt),
@@ -150,7 +153,15 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   mount(attachment: PresentationAttachment): void {
     if (this.#disposed) return;
     const key = presentationAttachmentKey(attachment);
-    if (this.#mounted.has(key)) return;
+    if (this.#mounted.has(key)) {
+      this.#ownerWindows.observe(attachment.documentId, attachment.root.ownerDocument.defaultView);
+      this.refreshRateProfiles.acquire(
+        key,
+        attachment.root.ownerDocument.defaultView,
+        attachment.root.ownerDocument,
+      );
+      return;
+    }
     const mounted = createWorkspaceMountedPresentation(
       attachment,
       this.refreshRateProfiles.workScheduler(attachment.root.ownerDocument.defaultView),
@@ -163,7 +174,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       attachment.root.ownerDocument.defaultView,
       attachment.root.ownerDocument,
     );
-    this.refreshRateProfiles.notifyOwnerWindowChanged();
     attachment.root.dataset.inkbookState = "locked";
     this.#coordinator.mountAttachment(attachment);
     this.#lifecycle.continueAutoActivation(attachment);
