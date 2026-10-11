@@ -10,6 +10,10 @@ import * as cellMembership from "../../../src/domain/spatial/cell-membership";
 import * as immutability from "../../../src/domain/store/immutability";
 import * as recordFactory from "../../../src/domain/store/record-factory";
 import * as bounds from "../../../src/domain/geometry/bounds";
+import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
+import * as sampleValidation from "../../../src/domain/schema/stroke-sample-range-validation";
+import * as strokePosition from "../../../src/domain/geometry/stroke-position";
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../src/domain/commands/history";
 import { SpatialQueryScratch, UniformSpatialIndex } from "../../../src/domain/spatial/index";
 import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
@@ -194,12 +198,12 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
   const originalRecords = new Map(elements.map(({ id }) => [id, store.get(id)!]));
   const publications = vi.fn();
   store.subscribe(publications);
-  const recordBuild = vi.spyOn(recordFactory, "createInitialRecord");
-  const cloneElement = vi.spyOn(immutability, "mutableElement");
+  const recordBuild = vi.spyOn(recordFactory, "createOwnedInitialRecordSteps");
+  const cloneElement = vi.spyOn(immutability, "mutableElementSteps");
   const indexInsert = vi.spyOn(UniformSpatialIndex.prototype, "insert");
   const cellRange = vi.spyOn(cellMembership, "createCellRange");
-  const deriveBounds = vi.spyOn(bounds, "calculateElementBounds");
-  const copyElement = vi.spyOn(immutability, "immutableElement");
+  const deriveBounds = vi.spyOn(bounds, "calculateElementBoundsSteps");
+  const copyElement = vi.spyOn(immutability, "immutableElementSteps");
   try {
     const deletion = await prepareAndApply({
       bands: {
@@ -406,5 +410,88 @@ it("stages a 10,000-entry spatial cut and publishes it with bounded commit work"
     get.mockRestore();
     values.mockRestore();
     attach.mockRestore();
+  }
+});
+
+it("slices actual sample work for one maximum-length insertion and owned Undo", async () => {
+  const template = createStandardRuntimeDomainFixture().elements[0]!;
+  if (template.kind !== "stroke") throw new Error("Expected stroke template.");
+  const points = new Float64Array(MAX_STROKE_POINTS * 3);
+  for (let index = 0; index < points.length; index += 3) {
+    points[index] = index % 60;
+    points[index + 1] = index % 30;
+    points[index + 2] = 0.5;
+  }
+  const store = new ElementStore();
+  let work = 0;
+  let yields = 0;
+  const charge = (count: number) => {
+    work += count;
+  };
+  const copy = sampleCopy.copySampleRange;
+  const compare = sampleCopy.compareSampleRange;
+  const validate = sampleValidation.assertStrokeSampleRange;
+  const worldPoint = strokePosition.strokeWorldPoint;
+  const spies = [
+    vi
+      .spyOn(sampleCopy, "copySampleRange")
+      .mockImplementation((source, target, start, end, proof) => {
+        charge(end - start);
+        return copy(source, target, start, end, proof);
+      }),
+    vi
+      .spyOn(sampleCopy, "compareSampleRange")
+      .mockImplementation((source, expected, start, end) => {
+        charge(end - start);
+        return compare(source, expected, start, end);
+      }),
+    vi
+      .spyOn(sampleValidation, "assertStrokeSampleRange")
+      .mockImplementation((value, path, context, offset, range) => {
+        charge(range.end - range.start);
+        return validate(value, path, context, offset, range);
+      }),
+    vi.spyOn(strokePosition, "strokeWorldPoint").mockImplementation((...args) => {
+      charge(3);
+      return worldPoint(...args);
+    }),
+  ];
+  const scheduler = {
+    shouldYield: () => work >= 768,
+    yieldControl: async () => {
+      expect(work).toBeLessThanOrEqual(768);
+      work = 0;
+      yields += 1;
+    },
+  };
+  try {
+    const inserted = await store.prepareElementMutation(
+      {
+        bands: { content: [template.id], highlight: [] },
+        elements: [{ ...template, points: points as unknown as number[] }],
+      },
+      scheduler,
+    );
+    if (inserted.token === null) throw new Error("Expected insertion.");
+    const transition = store.commitPreparedElementMutation(inserted.token).transition!;
+    const original = store.get(template.id)!;
+    const removal = await store.prepareElementMutation(transition.reverse, scheduler, transition);
+    if (removal.token === null) throw new Error("Expected removal.");
+    store.commitPreparedElementMutation(removal.token);
+    for (const spy of spies) spy.mockClear();
+    const restored = await store.prepareElementMutation(transition.forward, scheduler, transition);
+    if (restored.token === null) throw new Error("Expected owned Undo.");
+    store.commitPreparedElementMutation(restored.token);
+    expect(store.get(template.id)?.element).toBe(original.element);
+    expect(spies[0]).not.toHaveBeenCalled();
+    expect(spies[2]).toHaveBeenCalledTimes(1);
+    expect(spies[2]!.mock.calls[0]![0]).toHaveLength(3);
+    expect(spies[3]).not.toHaveBeenCalled();
+    expect(spies[1]!.mock.calls.length).toBe(Math.ceil(MAX_STROKE_POINTS / 256));
+    expect(work).toBeLessThanOrEqual(768);
+    expect(yields).toBeGreaterThan(1);
+    expect(transition.payloadBytes).toBeLessThan(DEFAULT_HISTORY_BYTE_LIMIT);
+  } finally {
+    for (const spy of spies) spy.mockRestore();
   }
 });

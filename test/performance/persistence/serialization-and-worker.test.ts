@@ -289,7 +289,7 @@ async function acknowledgeAndPrewarm(
   runtime: DocumentWorkerRuntime,
   identity: Parameters<DocumentWorkerRuntime["acknowledgeExport"]>[0],
 ): Promise<void> {
-  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAt");
+  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAtSliced");
   try {
     runtime.acknowledgeExport(identity, true);
     runtime.requestPrewarm();

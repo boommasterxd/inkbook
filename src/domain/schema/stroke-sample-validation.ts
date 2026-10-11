@@ -1,11 +1,7 @@
 import type { PointV1 } from "./types";
 import { retainValidatedSampleExtrema, type StrokeSampleExtrema } from "./stroke-sample-extrema";
-import {
-  assertGeometryNumber,
-  assertUnitInterval,
-  fail,
-  type ValidationContext,
-} from "./validation-internals";
+import { assertStrokeSampleRange } from "./stroke-sample-range-validation";
+import { fail, type ValidationContext } from "./validation-internals";
 
 export function* assertStrokeSamplesSteps(
   value: unknown,
@@ -37,25 +33,15 @@ export function* assertStrokeSamplesSteps(
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (let index = 0; index < value.length; index += 3) {
-    const x: unknown = value[index];
-    const y: unknown = value[index + 1];
-    const pressure: unknown = value[index + 2];
-    assertGeometryNumber(x, `${path}[${index}]`, context.limits.absoluteCoordinate);
-    assertGeometryNumber(y, `${path}[${index + 1}]`, context.limits.absoluteCoordinate);
-    assertUnitInterval(pressure, `${path}[${index + 2}]`);
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
-    if (
-      offset !== undefined &&
-      (Math.abs(x + offset.x) > context.limits.absoluteCoordinate ||
-        Math.abs(y + offset.y) > context.limits.absoluteCoordinate)
-    ) {
-      fail("invalid-range", path, "Translated stroke coordinates exceed the numeric limit.");
-    }
-    if ((index / 3 + 1) % samplesPerStep === 0) yield true;
+  const sampleInterval = samplesPerStep > 0 ? Math.max(1, Math.floor(samplesPerStep)) : 256;
+  for (let start = 0; start < value.length; start += sampleInterval * 3) {
+    const end = Math.min(start + sampleInterval * 3, value.length);
+    const bounds = assertStrokeSampleRange(value, path, context, offset, { start, end });
+    minX = Math.min(minX, bounds.minX);
+    minY = Math.min(minY, bounds.minY);
+    maxX = Math.max(maxX, bounds.maxX);
+    maxY = Math.max(maxY, bounds.maxY);
+    if ((end / 3) % sampleInterval === 0) yield true;
   }
   retainValidatedSampleExtrema(value, { minX, minY, maxX, maxY });
 }

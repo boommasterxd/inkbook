@@ -24,18 +24,21 @@ it("avoids encoding point reads on cold loaded export and header changes across 
     serializer.resetValidatedRuntime(parsed.value.snapshot, parsed.value.derivations, true).ok,
   ).toBe(true);
   expect(serializer.instrumentation.sampleEncodingCacheElements).toBe(10_000);
-  const encode = sampleCodec.encodeStrokeSamples;
+  const encode = sampleCodec.encodeStrokeSamplesSteps;
   let pointReads = 0;
-  const probe = vi.spyOn(sampleCodec, "encodeStrokeSamples").mockImplementation((points) =>
-    encode(
-      new Proxy(points, {
-        get(target, key) {
-          if (typeof key === "string" && /^\d+$/.test(key)) pointReads += 1;
-          return Reflect.get(target, key, target) as unknown;
-        },
-      }),
-    ),
-  );
+  const probe = vi
+    .spyOn(sampleCodec, "encodeStrokeSamplesSteps")
+    .mockImplementation((points, signal) =>
+      encode(
+        new Proxy(points, {
+          get(target, key) {
+            if (typeof key === "string" && /^\d+$/.test(key)) pointReads += 1;
+            return Reflect.get(target, key, target) as unknown;
+          },
+        }),
+        signal,
+      ),
+    );
   try {
     const cold = await serializer.serializeRuntimeChunked({});
     if (!cold.ok) throw new Error(cold.error.code);

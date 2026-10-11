@@ -1,12 +1,8 @@
 import { validatedSampleExtrema } from "./stroke-sample-extrema";
 import type { ParsedJsonProof } from "./parsed-json-proof";
 import { strokeLocalGeometry } from "../geometry/stroke-position";
-import {
-  calculateElementBounds,
-  derivePageExtent,
-  isAnchorTarget,
-  resolveShapeAnchor,
-} from "../geometry/public";
+import { calculateElementBoundsSteps } from "../geometry/bounds";
+import { derivePageExtent, isAnchorTarget, resolveShapeAnchor } from "../geometry/public";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../spatial/index";
 import {
   FILE_SCHEMA_LIMITS,
@@ -16,7 +12,7 @@ import {
   PAGE_MARGIN,
   type SchemaLimits,
 } from "./constants";
-import { assertInkElement } from "./element-validation";
+import { assertInkElementSteps } from "./element-validation";
 import type {
   BackgroundV1,
   EndpointConnectionV1,
@@ -88,15 +84,27 @@ export function validateInkPageV1(value: unknown): ValidationResult<PageV1> {
 export function validateInkConnectionRelationsV1(
   elements: readonly InkElementV1[],
 ): ValidationResult<void> {
+  const steps = validateInkConnectionRelationsV1Steps(elements);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+export function* validateInkConnectionRelationsV1Steps(
+  elements: readonly InkElementV1[],
+): Generator<void, ValidationResult<void>> {
   const statistics = createStatistics();
   try {
-    const byId = new Map(elements.map((element) => [element.id, element]));
-    const steps = validateConnections(elements, byId, {
+    const byId = new Map<string, InkElementV1>();
+    for (let index = 0; index < elements.length; index += 1) {
+      const element = elements[index]!;
+      byId.set(element.id, element);
+      if ((index + 1) % 128 === 0) yield;
+    }
+    yield* validateConnections(elements, byId, {
       limits: FILE_SCHEMA_LIMITS,
       statistics,
     });
-    let step = steps.next();
-    while (!step.done) step = steps.next();
     return { ok: true, statistics, value: undefined };
   } catch (error: unknown) {
     return { error: toValidationError(error), ok: false };
@@ -222,8 +230,8 @@ function* validateElements(elements: unknown[], context: ValidationContext): Gen
   for (let index = 0; index < elements.length; index += 1) {
     const path = `$.elements[${index}]`;
     const element = elements[index];
-    assertInkElement(element, path, context);
-    const highlight = isHighlight(element);
+    yield* assertInkElementSteps(element, path, context);
+    const highlight = isHighlight(element as InkElementV1);
     if (highlight && contentStarted) {
       fail("invalid-render-band-order", path, "Highlight elements must precede content elements.");
     }
@@ -279,7 +287,7 @@ function* validateConnections(
     }
     if ((index + 1) % 128 === 0) yield;
   }
-  validateConnectionCycles(elements, byId);
+  yield* validateConnectionCycles(elements, byId);
 }
 
 interface ConnectionValidationInput {
@@ -327,27 +335,29 @@ function validateConnection(input: ConnectionValidationInput): void {
   }
 }
 
-function validateConnectionCycles(
+function* validateConnectionCycles(
   elements: readonly InkElementV1[],
   byId: ReadonlyMap<string, InkElementV1>,
-): void {
+): Generator<void, void> {
   const dependencies = new Map<string, readonly string[]>();
   const indegree = new Map<string, number>();
+  let visited = 0;
   for (const element of elements) {
+    if (++visited % 128 === 0) yield;
     if (element.kind !== "line" && element.kind !== "arrow") continue;
     indegree.set(element.id, 0);
-    const targets = [element.startConnection?.targetId, element.endConnection?.targetId].filter(
-      (id): id is string => {
-        const target = id === undefined ? undefined : byId.get(id);
-        return target?.kind === "line" || target?.kind === "arrow";
-      },
-    );
+    const targets = connectedLinearTargets(element, byId);
     dependencies.set(element.id, targets);
   }
   for (const targets of dependencies.values()) {
     for (const targetId of targets) indegree.set(targetId, (indegree.get(targetId) ?? 0) + 1);
+    if (++visited % 128 === 0) yield;
   }
-  const queue = [...indegree].filter(([, count]) => count === 0).map(([id]) => id);
+  const queue: string[] = [];
+  for (const [id, count] of indegree) {
+    if (count === 0) queue.push(id);
+    if (++visited % 128 === 0) yield;
+  }
   let processed = 0;
   for (let index = 0; index < queue.length; index += 1) {
     const id = queue[index]!;
@@ -357,6 +367,7 @@ function validateConnectionCycles(
       indegree.set(targetId, remaining);
       if (remaining === 0) queue.push(targetId);
     }
+    if (++visited % 128 === 0) yield;
   }
   if (processed !== indegree.size) {
     fail(
@@ -365,6 +376,18 @@ function validateConnectionCycles(
       "Linear endpoint connections must not form a cycle.",
     );
   }
+}
+
+function connectedLinearTargets(
+  element: Extract<InkElementV1, { kind: "line" | "arrow" }>,
+  byId: ReadonlyMap<string, InkElementV1>,
+): string[] {
+  return [element.startConnection?.targetId, element.endConnection?.targetId].filter(
+    (id): id is string => {
+      const target = id === undefined ? undefined : byId.get(id);
+      return target?.kind === "line" || target?.kind === "arrow";
+    },
+  );
 }
 
 function* validateBoundsAndExtent(
@@ -379,7 +402,9 @@ function* validateBoundsAndExtent(
   for (let index = 0; index < elements.length; index += 1) {
     const element = elements[index] as InkElementV1;
     const localBounds = Object.freeze(
-      calculateElementBounds(element.kind === "stroke" ? strokeLocalGeometry(element) : element),
+      yield* calculateElementBoundsSteps(
+        element.kind === "stroke" ? strokeLocalGeometry(element) : element,
+      ),
     );
     const bounds =
       element.kind === "stroke" && element.offset !== undefined

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-import * as strokeSamples from "../../../../src/domain/elements/stroke-samples";
+import * as sampleCopy from "../../../../src/domain/elements/runtime-sample-copy";
 import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
 import { encodeUnlockBatch } from "../../../../src/persistence/worker/runtime/wire-codec";
 import { SessionScenePaths } from "../../../../src/obsidian/embeds/session-scene-paths";
@@ -310,12 +310,12 @@ it("excludes waiting for central scheduler admission without changing its work p
 it("starts the complete watchdog budget after slow request encoding", async () => {
   vi.useFakeTimers();
   const { endpoint, client } = watchdogFixture();
-  const copySamples = strokeSamples.copyStrokeSamplesToRuntime;
+  const copySamples = sampleCopy.copySampleRange;
   const encoding = vi
-    .spyOn(strokeSamples, "copyStrokeSamplesToRuntime")
-    .mockImplementation((samples) => {
+    .spyOn(sampleCopy, "copySampleRange")
+    .mockImplementation((source, target, start, end, proof) => {
       vi.advanceTimersByTime(500);
-      return copySamples(samples);
+      copySamples(source, target, start, end, proof);
     });
   try {
     const pending = client

@@ -204,6 +204,7 @@ export interface DocumentRuntimePort {
   execute(
     request: DocumentRuntimeRequest,
     observer?: DocumentRuntimeObserver,
+    prepare?: (context: RuntimeSliceContext) => Promise<DocumentRuntimeRequest>,
   ): Promise<DocumentRuntimeResult>;
   requestPrewarm?(): void;
   setLiveInputActive?(active: boolean): void;

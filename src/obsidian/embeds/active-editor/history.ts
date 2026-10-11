@@ -117,11 +117,31 @@ export class ActiveEditorHistory {
     return this.#history.undoSync();
   }
 
-  public registerApplied(transition: AppliedAsyncHistoryTransition): boolean {
+  public registerApplied(
+    transition: AppliedAsyncHistoryTransition,
+    effect?: SelectionFrameHistoryEffect,
+  ): boolean {
     if (this.isTraversing) {
       throw new Error("Applied history cannot be registered during an Undo or Redo operation.");
     }
-    this.#history.registerApplied(transition);
+    effect?.apply();
+    this.#history.registerApplied(
+      effect === undefined
+        ? transition
+        : {
+            payloadBytes: transition.payloadBytes,
+            redo: async () => {
+              const applied = await transition.redo();
+              if (applied) effect.apply();
+              return applied;
+            },
+            undo: async () => {
+              const applied = await transition.undo();
+              if (applied) effect.revert();
+              return applied;
+            },
+          },
+    );
     this.#notifyCommitted();
     return true;
   }
@@ -133,22 +153,16 @@ export class ActiveEditorHistory {
     effect?: SelectionFrameHistoryEffect,
   ): boolean {
     if (previous.length === 0 || previous.length !== replacements.length) return false;
-    effect?.apply();
-    return this.registerApplied({
-      payloadBytes:
-        estimateElementHistoryPayloadBytes(previous) +
-        estimateElementHistoryPayloadBytes(replacements),
-      redo: async () => {
-        const applied = await transition.redo();
-        if (applied) effect?.apply();
-        return applied;
+    return this.registerApplied(
+      {
+        payloadBytes:
+          estimateElementHistoryPayloadBytes(previous) +
+          estimateElementHistoryPayloadBytes(replacements),
+        redo: transition.redo,
+        undo: transition.undo,
       },
-      undo: async () => {
-        const applied = await transition.undo();
-        if (applied) effect?.revert();
-        return applied;
-      },
-    });
+      effect,
+    );
   }
 
   public redoAsync(): Promise<boolean> {

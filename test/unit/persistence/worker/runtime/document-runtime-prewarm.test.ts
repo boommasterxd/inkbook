@@ -55,7 +55,7 @@ it("admits background prewarming through the input gate without a forced frame w
 it("skips a complete export cache and resumes prewarming after model synchronization", async () => {
   const model = new DocumentModelRuntime();
   const snapshot = rectangleDocument(3);
-  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAt");
+  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAtSliced");
   const checkpoint = vi.fn(() => undefined);
   const context = { checkpoint, signal: new AbortController().signal };
   try {

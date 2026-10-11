@@ -139,17 +139,20 @@ it.each([false, true])(
     const source = decoded.snapshot.elements[0]!;
     const points = source.kind === "stroke" && source.points;
     const reset = vi.spyOn(IncrementalDocumentSerializer.prototype, "resetRuntime");
+    const slicedReset = vi.spyOn(IncrementalDocumentSerializer.prototype, "resetRuntimeSliced");
     const runtime = production
       ? createProductionDocumentRuntime(executor, { workScheduler: createTestWorkScheduler() })
       : new DocumentWorkerRuntime(executor);
     try {
       expect(await runtime.execute(decoded)).toMatchObject({ type: "export-success" });
-      const canonical = reset.mock.calls[0]![0].elements[0]!;
+      const canonical = (production ? slicedReset.mock.calls : reset.mock.calls)[0]![0]
+        .elements[0]!;
       if (canonical.kind !== "stroke") throw new Error("Missing runtime stroke.");
       if (production) expect(canonical.points).toBe(points);
       else expect(canonical.points).not.toBe(points);
     } finally {
       reset.mockRestore();
+      slicedReset.mockRestore();
       runtime.terminate();
     }
   },

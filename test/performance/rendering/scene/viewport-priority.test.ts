@@ -139,8 +139,8 @@ it.each([
   { exact: true, busy: false },
   { exact: false, busy: true },
 ])(
-  "admits leading reserve after exact publication before busy trailing writes: %j",
-  ({ exact, busy }) => {
+  "defers leading reserve during an interactive lease while publishing the required scene: %j",
+  async ({ exact, busy }) => {
     const reserveY = exact ? 900 : 600;
     const reserveStroke = {
       ...indexedStroke(600),
@@ -165,11 +165,12 @@ it.each([
     const { work } = observeIndexedSceneQueries(domain);
     const input = new InteractiveWorkPriority();
     input.setInputActive(true, "navigation");
+    const wait = vi.fn(() => input.waitForBackground());
     const { renderer, scheduler } = createSceneFixture(
       NAVIGATION_PAGE,
       store,
       { height: 100, left: 0, top: 0, width: 100 },
-      { waitForBackground: () => input.waitForBackground() },
+      { waitForBackground: wait },
     );
     scheduler.runAll();
     const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
@@ -184,11 +185,10 @@ it.each([
       renderer.setViewport({ height: 100, left: 0, top: exact ? 400 : 100, width: 100 });
       scheduler.runNext();
       expect(renderer.mountedCount).toBe(busy ? 16 : SCENE_PUBLICATION_ROOTS_PER_FRAME);
-      if (exact || busy) expect(prepare).not.toHaveBeenCalled();
-      else expect(prepare).toHaveBeenCalledOnce();
+      expect(prepare).not.toHaveBeenCalled();
       if (busy) {
         scheduler.runNext();
-        expect(order.slice(0, 3)).toEqual(["publication", "reserve", "publication"]);
+        expect(order.slice(0, 2)).toEqual(["publication", "publication"]);
         expect(renderer.mountedCount).toBeLessThan(600);
       }
       while (renderer.mountedCount < 600) {
@@ -198,6 +198,13 @@ it.each([
           SCENE_PUBLICATION_ROOTS_PER_FRAME,
         );
       }
+      scheduler.runAll();
+      expect(prepare).not.toHaveBeenCalled();
+      expect(scheduler.pendingCount).toBe(0);
+      input.setInputActive(false, "navigation");
+      await wait.mock.results[0]!.value;
+      expect(scheduler.pendingCount).toBe(1);
+      scheduler.runAll();
       expect(prepare).toHaveBeenCalledOnce();
       expect(prepare.mock.calls[0]![0]).toEqual([reserveStroke.id]);
       expect(prepare.mock.calls[0]![2]?.navigationReserve).toBe(true);

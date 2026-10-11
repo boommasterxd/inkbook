@@ -6,6 +6,7 @@ import {
 } from "../../../../../src/persistence/worker/runtime/runtime-elements";
 import {
   decodeRuntimeRequest,
+  encodeRuntimeRequest,
   encodeRuntimeRequestChunked,
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import type {
@@ -34,6 +35,7 @@ const incremental: IncrementalModelSyncRuntimeRequest = {
 function confirmedCache() {
   const cache = new ModelPointReferences();
   full.snapshot.elements.forEach(cache.encoder(full));
+  encodeRuntimeRequest(full);
   cache.accept(full, { identity: unlockIdentity, modelRevision: 0, type: "model-sync-success" });
   return cache;
 }
@@ -159,6 +161,7 @@ describe("worker point ownership", () => {
   });
 
   it("publishes unlock batches only after terminal success", () => {
+    encodeRuntimeRequest(full);
     const cache = new ModelPointReferences();
     cache.stageUnlock({
       batchIndex: 0,
@@ -194,6 +197,31 @@ describe("worker point ownership", () => {
       first.kind === "stroke" && first.points,
     );
   });
+});
+
+it("rejects frozen accessor samples without publishing a reusable reference", async () => {
+  const points = [...STROKE.points];
+  let reads = 0;
+  Object.defineProperty(points, 0, {
+    enumerable: true,
+    get: () => {
+      reads += 1;
+      return 10;
+    },
+  });
+  Object.freeze(points);
+  const stroke = { ...STROKE, points };
+  const request = { ...full, snapshot: { ...full.snapshot, elements: [stroke] } };
+  const cache = new ModelPointReferences();
+  await expect(encode(cache, request)).rejects.toThrow("data values");
+  cache.accept(request, {
+    identity: unlockIdentity,
+    modelRevision: 0,
+    type: "model-sync-success",
+  });
+  expect(cache.encoder({ ...incremental, changedElements: [stroke] })(stroke)).toBe(false);
+  expect(reads).toBe(0);
+  expect(() => cache.resolver(0, executor)(stroke.id)).toThrow("acknowledged");
 });
 
 describe("encoded point identity snapshots", () => {

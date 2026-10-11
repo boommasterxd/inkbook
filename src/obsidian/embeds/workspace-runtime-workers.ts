@@ -96,14 +96,7 @@ export function createWorkspaceDocumentRuntimes(
       return {
         isCancelled,
         shouldYield: () => scheduler.shouldYield(),
-        yieldControl: () => {
-          if (priority === "frame") {
-            return scheduler.shouldYield()
-              ? scheduler.nextFrame(undefined, "frame")
-              : Promise.resolve();
-          }
-          return scheduler.checkpoint() ?? Promise.resolve();
-        },
+        yieldControl: () => scheduler.checkpoint(undefined, priority) ?? Promise.resolve(),
       };
     },
     now: (documentId) => {

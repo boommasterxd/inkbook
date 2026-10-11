@@ -1,5 +1,6 @@
 import * as geometry from "../../../src/domain/geometry/public";
 import * as strokeSamples from "../../../src/domain/elements/public";
+import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../../src/domain/spatial/index";
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/public";
 import type { InkElementV1, InkSnapshotV1 } from "../../../src/domain/schema/public";
@@ -94,16 +95,12 @@ describe("document worker export performance", () => {
 
 function observeSampleCopyBytes() {
   const work = { bytes: 0 };
-  const native = Float64Array;
-  vi.stubGlobal(
-    "Float64Array",
-    new Proxy(native, {
-      construct(target, argumentsList, newTarget) {
-        const source: unknown = argumentsList[0];
-        if (source instanceof native || Array.isArray(source)) work.bytes += source.length * 8;
-        return Reflect.construct(target, argumentsList, newTarget) as Float64Array;
-      },
-    }),
+  const copy = sampleCopy.copySampleRange;
+  vi.spyOn(sampleCopy, "copySampleRange").mockImplementation(
+    (source, target, start, end, proof) => {
+      work.bytes += (end - start) * Float64Array.BYTES_PER_ELEMENT;
+      copy(source, target, start, end, proof);
+    },
   );
   return work;
 }

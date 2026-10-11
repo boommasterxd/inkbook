@@ -1,7 +1,7 @@
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../commands/history";
 import type { RenderBand } from "../commands/render-bands";
 import type { InkElementV1 } from "../schema/public";
-import { mutableElement } from "./immutability";
+import { mutableElementSteps } from "./immutability";
 import { elementMutationPayloadBytes } from "./mutation-payload";
 import type { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import { requireElementRecord } from "./record-access";
@@ -82,13 +82,13 @@ async function reverseMutation(
   const removedCreatedIds: string[] = [];
   for (const id of removeIds) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    elements.push(mutableElement(requireElementRecord(source.records, id).element));
+    elements.push(requireElementRecord(source.records, id).element as InkElementV1);
   }
   for (const id of desired.keys()) {
     const current = source.records.get(id);
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (current === undefined) removedCreatedIds.push(id);
-    else elements.push(mutableElement(current.element));
+    else elements.push(current.element as InkElementV1);
   }
   return freezeMutation({ bands: source.bands, elements, removeIds: removedCreatedIds }, scheduler);
 }
@@ -101,7 +101,7 @@ async function freezeMutation(
   if (content === "cancelled") return content;
   const highlight = await copyFrozen(mutation.bands.highlight, scheduler);
   if (highlight === "cancelled") return highlight;
-  const elements = await copyFrozen(mutation.elements ?? [], scheduler);
+  const elements = await copyHistoryElements(mutation.elements ?? [], scheduler);
   if (elements === "cancelled") return elements;
   const removeIds = await copyFrozen(mutation.removeIds ?? [], scheduler);
   if (removeIds === "cancelled") return removeIds;
@@ -110,6 +110,19 @@ async function freezeMutation(
     elements,
     removeIds,
   });
+}
+
+async function copyHistoryElements(
+  elements: readonly InkElementV1[],
+  scheduler: MutationPreparationScheduler,
+): Promise<readonly InkElementV1[] | "cancelled"> {
+  const copy = new Array<InkElementV1>(elements.length);
+  for (let index = 0; index < elements.length; index += 1) {
+    const element = await scheduler.run(mutableElementSteps(elements[index]!));
+    if (element === "cancelled") return element;
+    copy[index] = element;
+  }
+  return Object.freeze(copy);
 }
 
 async function copyFrozen<T>(

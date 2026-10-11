@@ -4,6 +4,7 @@ import { ElementStore } from "../../../../src/domain/store/public";
 import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-editor/controller-actions";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 import {
   selectedRectangle,
   createClipboardDocumentModel,
@@ -51,6 +52,7 @@ function eraseFixture(confirm?: (signal: AbortSignal) => Promise<boolean>) {
     onPendingChanged: vi.fn(),
     onStateChanged: vi.fn(),
     ownerWindow: { navigator: {} } as Window,
+    workScheduler: immediateWorkScheduler(),
     sceneStore: new ElementSceneStore(store),
     setSelection,
     visibleCenter: () => ({ x: 100, y: 100 }),

@@ -20,6 +20,8 @@ import {
 } from "./controller-styles";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
+import type { PreparedElementHistory } from "./prepared-element-history";
+import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
 
 export interface ActiveEditorStyleSessionOptions {
   readonly defaults: ToolDefaultsV1;
@@ -30,6 +32,8 @@ export interface ActiveEditorStyleSessionOptions {
   readonly selection: () => ReadonlySet<string>;
   readonly selectionFrames?: SelectionFrameSession;
   readonly store: ElementStore;
+  readonly preparedHistory?: PreparedElementHistory;
+  readonly isEnabled?: () => boolean;
 }
 
 export class ActiveEditorStyleSession {
@@ -41,6 +45,8 @@ export class ActiveEditorStyleSession {
   readonly #selection: () => ReadonlySet<string>;
   readonly #selectionFrames: SelectionFrameSession | undefined;
   readonly #store: ElementStore;
+  readonly #preparedHistory: PreparedElementHistory | undefined;
+  readonly #isEnabled: () => boolean;
 
   public constructor(options: ActiveEditorStyleSessionOptions) {
     this.#defaults = structuredClone(options.defaults);
@@ -51,6 +57,8 @@ export class ActiveEditorStyleSession {
     this.#selection = options.selection;
     this.#selectionFrames = options.selectionFrames;
     this.#store = options.store;
+    this.#preparedHistory = options.preparedHistory;
+    this.#isEnabled = options.isEnabled ?? (() => true);
   }
 
   public get defaults(): ToolDefaultsV1 {
@@ -76,6 +84,23 @@ export class ActiveEditorStyleSession {
   }
 
   public apply(tool: EditorTool, id: string, value: boolean | number | string): void {
+    if (!this.#isEnabled()) return;
+    const selection = this.#selection();
+    if (selection.size > 0 && this.#preparedHistory !== undefined) {
+      if (tool === "select" && (id === "selection-area" || id === "selection-inclusion")) return;
+      this.#preparedHistory.commitStyle({
+        selection,
+        controlId: id,
+        value,
+        isCurrent: () => this.#selection() === selection,
+        frameEffect: (previous, replacements, scheduler) =>
+          this.#prepareFrameEffect(previous, replacements, scheduler, id),
+        onCompleted: (committed) => {
+          if (committed) this.#onSelectionGeometryChanged();
+        },
+      });
+      return;
+    }
     const elements = selectedElements(this.#sceneStore, this.#selection());
     if (elements.length > 0) {
       if (tool === "select" && (id === "selection-area" || id === "selection-inclusion")) return;
@@ -97,6 +122,39 @@ export class ActiveEditorStyleSession {
     if (defaults === this.#defaults) return;
     this.#defaults = defaults;
     this.#onStateChanged();
+  }
+
+  async #prepareFrameEffect(
+    previous: readonly InkElementV1[],
+    replacements: readonly InkElementV1[],
+    scheduler: TransformSliceScheduler,
+    controlId: string,
+  ) {
+    if (this.#selectionFrames === undefined) return undefined;
+    if (
+      [
+        "color",
+        "opacity",
+        "outline-color",
+        "outline-style",
+        "outline-opacity",
+        "fill-color",
+        "fill-opacity",
+      ].includes(controlId)
+    )
+      return undefined;
+    const geometry: SelectedElementGeometry[] = [];
+    for (const element of previous) {
+      if (scheduler.isCancelled?.()) return undefined;
+      if (scheduler.shouldYield()) {
+        await scheduler.yieldControl();
+        if (scheduler.isCancelled?.()) return undefined;
+      }
+      const bounds = this.#store.get(element.id)?.bounds;
+      if (bounds !== undefined) geometry.push({ bounds, element });
+    }
+    const frame = await this.#selectionFrames.currentTimeSliced(geometry, scheduler);
+    return this.#selectionFrames.rebaseTimeSliced(frame, replacements, scheduler);
   }
 }
 

@@ -14,6 +14,13 @@ import { createSelectionPreviewRenderer } from "../../fixtures/obsidian/selectio
 import * as bounds from "../../../src/domain/geometry/bounds";
 import { selectionOverlayGeometry } from "../../../src/editor/selection/public";
 import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
+import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
+import { elementMutationPorts } from "../../fixtures/obsidian/element-mutation-ports";
+import { createStandardRuntimeDomainFixture } from "../domain/standard-domain-fixture";
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
+import { ActiveDocumentHistory } from "../../../src/obsidian/embeds/active-editor/document-history";
+import { arrangeSelectionAvailability } from "../../../src/obsidian/embeds/active-editor/controller-elements";
+import * as strokePosition from "../../../src/domain/geometry/stroke-position";
 
 function fixture(elements: readonly InkElementV1[]) {
   const store = new ElementStore(elements);
@@ -219,6 +226,265 @@ it.each([false, true])(
       geometry.mockRestore();
       prepared.dispose();
       history.dispose();
+    }
+  },
+);
+
+it.each([10, 10_000])(
+  "reads only one selected element for Arrange availability in a %s-stroke store",
+  (size) => {
+    const elements = Array.from({ length: size }, (_, index) => indexedStroke(index));
+    const store = new ElementStore(elements);
+    const sceneStore = new ElementSceneStore(store);
+    const read = vi.spyOn(sceneStore, "get");
+    const materialize = vi.spyOn(sceneStore, "materializeBandOrder");
+    store.resetInstrumentation();
+    try {
+      expect(arrangeSelectionAvailability(sceneStore, new Set([elements[1]!.id]))).toEqual({
+        "bring-forward": true,
+        "bring-to-front": true,
+        "send-backward": true,
+        "send-to-back": true,
+      });
+      expect(read).toHaveBeenCalledExactlyOnceWith(elements[1]!.id);
+      expect(materialize).not.toHaveBeenCalled();
+      expect(store.instrumentation.bandScans).toBe(0);
+      expect(store.instrumentation.fullStoreScans).toBe(0);
+    } finally {
+      read.mockRestore();
+      materialize.mockRestore();
+      sceneStore.release();
+    }
+  },
+);
+
+async function hydratedStandardStrokes(maximum: boolean) {
+  const source = maximum
+    ? [
+        {
+          ...indexedStroke(0),
+          points: Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
+            index % 3 === 2 ? 0.5 : Math.floor(index / 3),
+          ),
+        },
+      ]
+    : createStandardRuntimeDomainFixture().elements.slice(0, 10_000);
+  const elements = source.map((element, index) =>
+    element.kind === "stroke" && index % 2 === 0
+      ? {
+          ...element,
+          tool: "highlighter" as const,
+          style: { ...element.style, pressureEnabled: false },
+        }
+      : element,
+  );
+  const builder = ElementStore.createBuilder({
+    shouldYield: () => false,
+    yieldControl: () => Promise.resolve(),
+  });
+  await builder.appendOwnedRuntime(elements);
+  const store = await builder.finalize();
+  if (store === null) throw new Error("Expected hydrated stroke store.");
+  const originals = elements.map(({ id }) => store.get(id)!);
+  return { store, originals };
+}
+
+async function scheduledDocumentFixture(maximum = false) {
+  const { store, originals } = await hydratedStandardStrokes(maximum);
+  const work = { reads: 0, points: 0, maxReads: 0, maxPoints: 0, totalPoints: 0, yields: 0 };
+  const priorities: (string | undefined)[] = [];
+  let leaseDepth = 0;
+  let revision = 0;
+  const shouldYield = () => work.reads >= 256 || work.points >= 256;
+  const scheduler = {
+    ...immediateWorkScheduler(shouldYield),
+    checkpoint: (_signal?: unknown, priority?: "input" | "frame" | "background") => {
+      if (!shouldYield()) return undefined;
+      expect(leaseDepth).toBeGreaterThan(0);
+      priorities.push(priority);
+      work.yields += 1;
+      work.reads = 0;
+      work.points = 0;
+      points.mockClear();
+      return Promise.resolve();
+    },
+  };
+  const actualPoint = strokePosition.strokeWorldPoint;
+  const points = vi.spyOn(strokePosition, "strokeWorldPoint").mockImplementation((...args) => {
+    work.totalPoints += 1;
+    work.points += 1;
+    work.maxPoints = Math.max(work.maxPoints, work.points);
+    return actualPoint(...args);
+  });
+  const reads = vi.spyOn(store, "get").mockImplementation((id) => {
+    work.reads += 1;
+    work.maxReads = Math.max(work.maxReads, work.reads);
+    return ElementStore.prototype.get.call(store, id);
+  });
+  const ranks = vi.spyOn(store, "getRank").mockImplementation((id) => {
+    work.reads += 1;
+    work.maxReads = Math.max(work.maxReads, work.reads);
+    return ElementStore.prototype.getRank.call(store, id);
+  });
+  const model = {
+    store,
+    get revision() {
+      return revision;
+    },
+    beginInteractiveOperation: () => {
+      leaseDepth += 1;
+      return () => {
+        leaseDepth -= 1;
+      };
+    },
+    ...elementMutationPorts(
+      store,
+      () => {
+        revision += 1;
+      },
+      {
+        shouldYield,
+        yieldControl: () => scheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
+      },
+    ),
+  } as unknown as EditableDocumentModel;
+  const history = new ActiveEditorHistory(model);
+  const prepared = new PreparedElementHistory({
+    history,
+    model,
+    isAttached: () => true,
+    onPendingChanged: () => undefined,
+    motion: { beginPreviewCommit: () => ({ arm: () => true, cancel: () => undefined }) },
+    workScheduler: scheduler,
+  });
+  const documentHistory = new ActiveDocumentHistory({ history, model });
+  const inspect = (id: string) => ElementStore.prototype.get.call(store, id)!;
+  return {
+    store,
+    originals,
+    history,
+    prepared,
+    documentHistory,
+    scheduler,
+    work,
+    priorities,
+    inspect,
+    cleanup: () => {
+      prepared.dispose();
+      documentHistory.dispose();
+      history.dispose();
+      points.mockRestore();
+      reads.mockRestore();
+      ranks.mockRestore();
+      expect(leaseDepth).toBe(0);
+    },
+  };
+}
+
+it.each([
+  { controlId: "opacity", maximum: false },
+  { controlId: "stroke-width", maximum: false },
+  { controlId: "stroke-width", maximum: true },
+])(
+  "publishes one $controlId command and reuses owned samples and bounds (maximum=$maximum)",
+  async ({ controlId, maximum }) => {
+    const test = await scheduledDocumentFixture(maximum);
+    const publications = vi.fn();
+    test.store.subscribe(publications);
+    try {
+      const committed = new Promise<boolean>((resolve) => {
+        expect(
+          test.prepared.commitStyle({
+            selection: new Set(test.originals.map(({ element }) => element.id)),
+            controlId,
+            value: controlId === "opacity" ? 0.5 : 14,
+            isCurrent: () => true,
+            onCompleted: resolve,
+          }),
+        ).toBe(true);
+      });
+      expect(publications).not.toHaveBeenCalled();
+      expect(await committed).toBe(true);
+      expect(test.history.commandCount).toBe(1);
+      expect(publications).toHaveBeenCalledOnce();
+      const forward = test.originals.map(({ element }) => test.inspect(element.id));
+      for (const [index, original] of test.originals.entries()) {
+        if (forward[index]!.element.kind !== "stroke" || original.element.kind !== "stroke")
+          throw new Error("Expected loaded strokes.");
+        expect(forward[index]!.element.points).toBe(original.element.points);
+        const version = controlId === "opacity" ? "paintVersion" : "geometryVersion";
+        expect(forward[index]![version]).toBeGreaterThan(original[version]);
+      }
+      const initialPoints = test.work.totalPoints;
+      expect(await test.history.undoAsync()).toBe(true);
+      for (const original of test.originals) {
+        const restored = test.inspect(original.element.id);
+        expect(restored.element).toBe(original.element);
+        expect(restored.bounds).toBe(original.bounds);
+        const version = controlId === "opacity" ? "paintVersion" : "geometryVersion";
+        expect(restored[version]).toBeGreaterThan(forward[0]![version]);
+      }
+      expect(await test.history.redoAsync()).toBe(true);
+      for (const record of forward) {
+        expect(test.inspect(record.element.id).element).toBe(record.element);
+        expect(test.inspect(record.element.id).bounds).toBe(record.bounds);
+      }
+      expect(test.work.totalPoints).toBe(initialPoints);
+      expect(initialPoints).toBe(
+        controlId === "opacity" ? 0 : maximum ? MAX_STROKE_POINTS : 500_000,
+      );
+      expect(test.work.yields).toBeGreaterThan(0);
+      expect(test.work.maxReads).toBeLessThanOrEqual(257);
+      expect(test.work.maxPoints).toBeLessThanOrEqual(511);
+      expect(test.priorities.every((priority) => priority === "frame")).toBe(true);
+      expect(publications).toHaveBeenCalledTimes(3);
+    } finally {
+      test.cleanup();
+    }
+  },
+);
+
+it.each(["bring-forward", "send-backward", "bring-to-front", "send-to-back"] as const)(
+  "arranges 10,000 strokes with %s in both bands without geometry work",
+  async (action) => {
+    const test = await scheduledDocumentFixture();
+    const publications = vi.fn();
+    test.store.subscribe(publications);
+    const materialize = vi.spyOn(test.store, "materializeBandOrder");
+    const selection = new Set(
+      test.originals.filter((_, index) => index % 4 < 2).map(({ element }) => element.id),
+    );
+    try {
+      expect(
+        await test.documentHistory.arrange(action, selection, test.scheduler, () => true),
+      ).toBe("applied");
+      expect(test.history.commandCount).toBe(1);
+      expect(publications).toHaveBeenCalledOnce();
+      expect(await test.history.undoAsync()).toBe(true);
+      for (const [index, original] of test.originals.entries()) {
+        expect(test.inspect(original.element.id)).toBe(original);
+        expect(ElementStore.prototype.getRank.call(test.store, original.element.id)?.rank).toBe(
+          Math.floor(index / 2),
+        );
+      }
+      expect(await test.history.redoAsync()).toBe(true);
+      const noopSelection =
+        action === "bring-to-front" || action === "send-to-back"
+          ? selection
+          : new Set(test.originals.map(({ element }) => element.id));
+      expect(
+        await test.documentHistory.arrange(action, noopSelection, test.scheduler, () => true),
+      ).toBe("noop");
+      expect(test.history.commandCount).toBe(1);
+      expect(publications).toHaveBeenCalledTimes(3);
+      expect(test.work.totalPoints).toBe(0);
+      expect(test.work.yields).toBeGreaterThan(0);
+      expect(test.work.maxReads).toBeLessThanOrEqual(257);
+      expect(materialize).not.toHaveBeenCalled();
+      expect(test.priorities.every((priority) => priority === "frame")).toBe(true);
+    } finally {
+      materialize.mockRestore();
+      test.cleanup();
     }
   },
 );

@@ -1,5 +1,9 @@
-import { validateRuntimeInkElementV1 } from "../schema/element-validation";
+import {
+  validateRuntimeInkElementV1,
+  validateRuntimeInkElementV1Steps,
+} from "../schema/element-validation";
 import type { InkElementV1, StrokeElementV1 } from "../schema/types";
+import type { ValidationResult } from "../schema/validation-types";
 import {
   isStoredStroke,
   markValidatedInternalStyleReplacement,
@@ -33,6 +37,19 @@ function freezeStrokeHeader(stroke: StrokeElementV1): void {
 
 /** Reuse sample validation only for the exact exclusively owned stored buffer. */
 export function validateRuntimeReplacement(source: object, replacement: InkElementV1) {
+  const steps = validateRuntimeReplacementSteps(source, replacement, Infinity, Infinity);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+/** Runtime composition supplies private candidates; only the exact owned samples reuse proof. */
+export function* validateRuntimeReplacementSteps(
+  source: object,
+  replacement: InkElementV1,
+  nodesPerStep = 2048,
+  samplesPerStep = 256,
+): Generator<boolean | void, ValidationResult<InkElementV1>> {
   if (
     isStoredStroke(source) &&
     "kind" in source &&
@@ -41,7 +58,10 @@ export function validateRuntimeReplacement(source: object, replacement: InkEleme
     replacement.kind === "stroke" &&
     replacement.points === source.points
   ) {
-    const validation = validateRuntimeInkElementV1({ ...replacement, points: [0, 0, 0.5] });
+    const header = { ...replacement, points: [0, 0, 0.5] };
+    const validation = Number.isFinite(nodesPerStep)
+      ? yield* validateRuntimeInkElementV1Steps(header, {}, nodesPerStep, samplesPerStep)
+      : validateRuntimeInkElementV1(header);
     if (validation.ok && !storedStrokeOffsetWithinRange(replacement)) {
       return {
         ok: false as const,
@@ -60,5 +80,7 @@ export function validateRuntimeReplacement(source: object, replacement: InkEleme
         }
       : validation;
   }
-  return validateRuntimeInkElementV1(replacement);
+  return Number.isFinite(nodesPerStep)
+    ? yield* validateRuntimeInkElementV1Steps(replacement, {}, nodesPerStep, samplesPerStep)
+    : validateRuntimeInkElementV1(replacement);
 }

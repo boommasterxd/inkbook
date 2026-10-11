@@ -1,5 +1,5 @@
 import { elementMutationPayloadBytes } from "./mutation-payload";
-import { classifyReplacement, elementsEqual } from "./element-comparison";
+import { classifyReplacementSteps, elementsEqualSteps } from "./element-comparison";
 import { assignRecordVersions } from "./record-factory";
 import type { InkElementV1 } from "../schema/public";
 import type { RenderBand } from "../commands/render-bands";
@@ -43,12 +43,27 @@ export function restoreOwnedRecord(
   owned: ElementRecord | undefined,
   versions: Readonly<{ geometryVersion: number; paintVersion: number }>,
 ): ElementRecord | undefined {
-  if (owned === undefined || !elementsEqual(owned.element, element)) return undefined;
+  const steps = restoreOwnedRecordSteps(element, current, owned, versions);
+  let result = steps.next();
+  while (!result.done) result = steps.next();
+  return result.value;
+}
+
+export function* restoreOwnedRecordSteps(
+  element: InkElementV1,
+  current: ElementRecord | undefined,
+  owned: ElementRecord | undefined,
+  versions: Readonly<{ geometryVersion: number; paintVersion: number }>,
+  samplesPerStep = 256,
+): Generator<void, ElementRecord | undefined> {
+  if (owned === undefined || !(yield* elementsEqualSteps(owned.element, element, samplesPerStep))) {
+    return undefined;
+  }
   if (current === undefined) {
     return assignRecordVersions(owned, versions.geometryVersion, versions.paintVersion);
   }
-  if (elementsEqual(current.element, element)) return current;
-  const domains = classifyReplacement(current.element, element);
+  if (yield* elementsEqualSteps(current.element, element, samplesPerStep)) return current;
+  const domains = yield* classifyReplacementSteps(current.element, element, samplesPerStep);
   return assignRecordVersions(
     owned,
     domains.includes("geometry") ? versions.geometryVersion : current.geometryVersion,

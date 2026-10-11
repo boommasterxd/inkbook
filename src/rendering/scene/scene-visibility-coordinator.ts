@@ -326,6 +326,11 @@ export class SceneVisibilityCoordinator {
         this.scheduleNavigationFrame();
       return;
     }
+    if (this.waitForQuiet()) {
+      this.cancelNavigationFrame();
+      this.#navigation!.pause();
+      return;
+    }
     this.#navigation!.setTarget(this.#priority, this.#envelope);
     const scheduler = options.scene.workScheduler;
     if (this.#navigation!.prepare(scheduler.deadline(), () => scheduler.now()))

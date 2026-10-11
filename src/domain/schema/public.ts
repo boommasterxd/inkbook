@@ -43,7 +43,7 @@ export {
   PAGE_WIDTH,
   PORTABLE_PALETTE_V1,
 } from "./constants";
-export { validateInkElementV1 } from "./element-validation";
+export { validateInkElementV1, validateRuntimeInkElementV1Steps } from "./element-validation";
 export { validatedElementDerivationBounds } from "./derivation-validation";
 export {
   validateInkConnectionRelationsV1,

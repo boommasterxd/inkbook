@@ -371,9 +371,12 @@ describe("ElementStore time-sliced hydration", () => {
 
   it("adopts bounded batches and resolves connections only during finalization", async () => {
     const target = rectangle();
+    let yields = 0;
     const builder = ElementStore.createBuilder({
       shouldYield: () => true,
-      yieldControl: async () => undefined,
+      yieldControl: async () => {
+        yields += 1;
+      },
     });
 
     expect(await builder.append([connectedLine(target)])).toBe("accepted");
@@ -381,7 +384,7 @@ describe("ElementStore time-sliced hydration", () => {
     const store = await builder.finalize();
     builder.cancel();
 
-    expectHydratedConnection(store, target, 4);
+    expectHydratedConnection(store, target, yields);
   });
 
   it("releases accumulated batches after cancellation", async () => {

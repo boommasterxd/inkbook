@@ -16,6 +16,7 @@ export async function acceptPreparedPressurePaths(
 ): Promise<void> {
   const candidates: unknown = request.preparedPressurePaths;
   if (!Array.isArray(candidates)) return;
+  const modelRevision = request.modelRevision;
   const changed =
     request.type === "export-full" || request.includeBaselinePreparedPressurePaths === true
       ? null
@@ -24,10 +25,10 @@ export async function acceptPreparedPressurePaths(
   let bytes = 0;
   for (let index = 0; index < Math.min(candidates.length, MAX_PREPARED_PRESSURE_HINTS); index++) {
     context?.signal.throwIfAborted();
-    const candidate: unknown = candidates[index];
+    const candidate: unknown = captureHint(candidates[index]);
     if (
       !isPreparedPressurePathHint(candidate) ||
-      candidate.modelRevision !== request.modelRevision ||
+      candidate.modelRevision !== modelRevision ||
       (changed !== null && !changed.has(candidate.id)) ||
       accepted.has(candidate.id)
     )
@@ -47,6 +48,18 @@ export async function acceptPreparedPressurePaths(
     if (serializer.seedPreparedPressurePath(candidate.id, candidate.d, candidate.shapeKey))
       accepted.add(candidate.id);
   }
+}
+
+function captureHint(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  const hint = value as Partial<PreparedPressurePathHint>;
+  return {
+    id: hint.id,
+    d: hint.d,
+    shapeKey: hint.shapeKey,
+    modelRevision: hint.modelRevision,
+    geometryVersion: hint.geometryVersion,
+  };
 }
 
 function isPreparedPressurePathHint(value: unknown): value is PreparedPressurePathHint {

@@ -1,10 +1,15 @@
 import { isStoredStroke } from "../../../domain/elements/stroke-replacement-proof";
+import {
+  createSampleCopyProof,
+  isImmutableStrokeSampleSource,
+} from "../../../domain/elements/runtime-sample-copy";
 import type { InkElementV1, StrokeSamplesV1 } from "../../../domain/schema/public";
 import type { ExecutorIdentity } from "../protocol";
 import type { DocumentRuntimeRequest, DocumentRuntimeResult, UnlockRuntimeBatch } from "./types";
 
 interface EncodedPointChanges {
   readonly points: Map<string, StrokeSamplesV1 | null>;
+  readonly ownedPoints: Set<StrokeSamplesV1>;
   readonly removedIds: readonly string[];
 }
 
@@ -35,16 +40,23 @@ export class ModelPointReferences {
       this.#matches(request.baseModelRevision, "identity" in request ? request.identity : request);
     const encoded: EncodedPointChanges = {
       points: new Map(),
+      ownedPoints: new Set(),
       removedIds: "removedIds" in request ? [...(request.removedIds ?? [])] : [],
     };
     this.#encodedOwnership.set(request, encoded);
     return (element) => {
-      if (element.kind !== "stroke" || !ownsImmutableSamples(element)) {
+      if (
+        element.kind !== "stroke" ||
+        (!isStoredStroke(element) && !createSampleCopyProof(element.points).eligible)
+      ) {
         encoded.points.set(element.id, null);
         return false;
       }
       encoded.points.set(element.id, element.points);
-      return valid && this.#points.get(element.id) === element.points;
+      if (isStoredStroke(element)) encoded.ownedPoints.add(element.points);
+      return (
+        valid && ownsImmutableSamples(element) && this.#points.get(element.id) === element.points
+      );
     };
   }
 
@@ -108,7 +120,11 @@ export class ModelPointReferences {
     }
     for (const id of encoded.removedIds) this.#points.delete(id);
     for (const [id, points] of encoded.points) {
-      if (points === null) this.#points.delete(id);
+      if (
+        points === null ||
+        (!encoded.ownedPoints.has(points) && !isImmutableStrokeSampleSource(points))
+      )
+        this.#points.delete(id);
       else this.#points.set(id, points);
     }
   }
@@ -131,5 +147,8 @@ export class ModelPointReferences {
 }
 
 function ownsImmutableSamples(element: InkElementV1): boolean {
-  return element.kind === "stroke" && (isStoredStroke(element) || Object.isFrozen(element.points));
+  return (
+    element.kind === "stroke" &&
+    (isStoredStroke(element) || isImmutableStrokeSampleSource(element.points))
+  );
 }

@@ -77,6 +77,7 @@ export class ActiveEditorController {
   readonly #touchMode: ActiveEditorTouchMode;
   #leftHanded: boolean;
   readonly #resetForDisable = (): void => {
+    this.#preparedHistory?.cancel();
     this.#cursor?.clear();
     this.#snappingInversion = undefined;
     Interactions.resetActiveEditorForDisable(
@@ -112,16 +113,6 @@ export class ActiveEditorController {
       controller: options,
       history: this.#history,
       onPendingChanged: (pending) => this.#availability.setPending(pending),
-    });
-    this.#styles = new ActiveEditorStyleSession({
-      defaults: options.defaults,
-      history: this.#history,
-      onSelectionGeometryChanged: () => this.#handles.renderSelection(),
-      onStateChanged: this.#onStateChanged,
-      sceneStore: this.#sceneStore,
-      selection: () => this.#selection,
-      selectionFrames: this.#selectionFrames,
-      store: this.#model.store,
     });
     this.#touchMode = createActiveEditorTouchMode(options);
     this.#leftHanded = options.deviceSettings.leftHandedToolbar;
@@ -169,6 +160,18 @@ export class ActiveEditorController {
       interactions.menus,
       interactions.preparedHistory,
     ];
+    this.#styles = new ActiveEditorStyleSession({
+      defaults: options.defaults,
+      history: this.#history,
+      onSelectionGeometryChanged: () => this.#handles.renderSelection(),
+      onStateChanged: this.#onStateChanged,
+      sceneStore: this.#sceneStore,
+      selection: () => this.#selection,
+      selectionFrames: this.#selectionFrames,
+      store: this.#model.store,
+      preparedHistory: this.#preparedHistory,
+      isEnabled: () => this.#availability.acceptsInput,
+    });
     [this.#keyboard, this.#gestures] = this.#createInputControllers(options);
     this.#cursor = ToolCursor.createActiveToolCursorController(
       [options.container, this.#renderer],
@@ -486,6 +489,7 @@ export class ActiveEditorController {
   #setSelection(selection: ReadonlySet<string>): void {
     this.#pendingSelection.cancel();
     if (selection === this.#selection) return;
+    this.#preparedHistory.cancel();
     if (!Helpers.sameSelectionMembers(selection, this.#selection)) this.#selectionFrames.reset();
     this.#selection = selection;
     this.#renderer.setSelectedElements(selection);

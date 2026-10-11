@@ -87,6 +87,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     onPendingChanged: options.onPendingChanged,
     onStateChanged: controller.onStateChanged,
     ownerWindow: options.ownerWindow,
+    workScheduler: controller.workScheduler,
     renderer: controller.renderer,
     sceneStore: controller.sceneStore,
     setSelection: options.setSelection,

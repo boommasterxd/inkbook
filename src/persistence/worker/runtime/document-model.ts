@@ -2,6 +2,7 @@ import { VerifiedOutputProofs } from "./verified-output-proofs";
 import type { OutputVerificationOptions } from "./verified-output-proofs";
 import { prepareScenePaths } from "./prepare-scene-paths";
 import { RuntimeModelError } from "./runtime-model-error";
+import { prepareModelUpdate } from "./model-update-preparation";
 export { RuntimeModelError } from "./runtime-model-error";
 import * as preparedPaths from "./prepared-pressure-path-adoption";
 import { parseRuntimeInput } from "./parse-runtime-input";
@@ -177,11 +178,21 @@ export class DocumentModelRuntime {
     sliceContext?: RuntimeSliceContext,
   ): Promise<ModelExportResult> {
     const proofEpoch = this.#outputProofs.epoch;
+    let preparation: Awaited<ReturnType<typeof prepareModelUpdate>> | undefined;
     try {
+      if (sliceContext !== undefined)
+        preparation = await prepareModelUpdate({
+          serializer: this.#serializer,
+          request,
+          context: sliceContext,
+          pointCopies: this.#pointCopies,
+          ownsSamples: this.ownsTransferredSamples,
+        });
       const update =
-        request.type === "export-full"
+        preparation?.result ??
+        (request.type === "export-full"
           ? this.#resetForExport(request.snapshot, request.modelRevision)
-          : this.#applyIncremental(request);
+          : this.#applyIncremental(request));
       if (!update.ok) return failure(update.error.code, true);
       await preparedPaths.acceptPreparedPressurePaths(request, this.#serializer, sliceContext);
       const serialized = await this.#serializeRuntimeChunked(sliceContext);
@@ -198,6 +209,7 @@ export class DocumentModelRuntime {
       );
       this.#snapshot = serialized.value.snapshot;
       this.#modelRevision = serialized.value.snapshot.revision;
+      preparation?.confirm();
       this.#resetPrewarmState();
       if (this.#serializer.hasCompleteFragmentCache()) {
         this.#prewarmCursor = this.#serializer.currentElementCount();
@@ -211,24 +223,52 @@ export class DocumentModelRuntime {
       };
     } catch (error) {
       return failure(error instanceof RuntimeModelError ? error.code : "runtime-failure", false);
+    } finally {
+      preparation?.discard();
     }
   }
 
-  public synchronize(request: ModelSyncRuntimeRequest): void {
+  public synchronize(request: ModelSyncRuntimeRequest): void;
+  public synchronize(
+    request: ModelSyncRuntimeRequest,
+    context: RuntimeSliceContext | undefined,
+  ): void | Promise<void>;
+  public synchronize(
+    request: ModelSyncRuntimeRequest,
+    context?: RuntimeSliceContext,
+  ): void | Promise<void> {
+    if (context !== undefined)
+      return prepareModelUpdate({
+        serializer: this.#serializer,
+        request,
+        context,
+        pointCopies: this.#pointCopies,
+        ownsSamples: this.ownsTransferredSamples,
+      }).then((preparation) => {
+        try {
+          if (!preparation.result.ok)
+            throw new RuntimeModelError(preparation.result.error.code, true);
+          this.#confirmSynchronization();
+          preparation.confirm();
+        } finally {
+          preparation.discard();
+        }
+      });
     const update =
       request.type === "model-sync-full"
-        ? this.#resetForSynchronization(request.snapshot, request.modelRevision)
+        ? this.#resetForExport(request.snapshot, request.modelRevision)
         : this.#applyIncremental(request);
     if (!update.ok) throw new RuntimeModelError(update.error.code, true);
-    if (this.#serializer.currentRevision() === null) {
+    this.#confirmSynchronization();
+  }
+  #confirmSynchronization(): void {
+    const revision = this.#serializer.currentRevision();
+    if (revision === null) {
       throw new RuntimeModelError("snapshot-invalid", false);
     }
     this.#snapshot = null;
-    this.#modelRevision = request.modelRevision;
-    this.#prewarmedBytes = 0;
-    this.#prewarmedElementCount = 0;
-    this.#prewarmVisitedElementCount = 0;
-    this.#prewarmCursor = 0;
+    this.#modelRevision = revision;
+    this.#resetPrewarmState();
   }
 
   public async prepareScenePaths(
@@ -349,15 +389,17 @@ export class DocumentModelRuntime {
     const index = this.#prewarmCursor;
     this.#prewarmCursor += 1;
     this.#prewarmVisitedElementCount += 1;
-    const cachedBytes = this.#serializer.prewarmElementAt(
+    const cachedBytes = await this.#serializer.prewarmElementAtSliced(
       index,
       MAX_PREWARM_BYTES - this.#prewarmedBytes,
+      context,
     );
     if (cachedBytes !== null) {
       this.#prewarmedElementCount += 1;
       this.#prewarmedBytes += cachedBytes;
     }
-    await context.checkpoint();
+    const pending = context.checkpoint();
+    if (pending !== undefined) await pending;
     return this.#prewarmCursor < elementCount;
   }
 
@@ -381,13 +423,6 @@ export class DocumentModelRuntime {
       },
       true,
     );
-  }
-
-  #resetForSynchronization(snapshot: InkSnapshotV1, modelRevision: number) {
-    if (snapshot.revision !== modelRevision) {
-      throw new RuntimeModelError("revision-mismatch", false);
-    }
-    return this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot), true);
   }
 
   #reset(snapshot: InkSnapshotV1): void {

@@ -15,7 +15,14 @@ import {
   isConnectable,
   resolveConnections,
 } from "./connections";
-import { classifyReplacement, elementsEqual } from "./element-comparison";
+import {
+  classifyReplacement,
+  classifyReplacementSteps,
+  elementsEqual,
+  elementsEqualSteps,
+} from "./element-comparison";
+import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import { prepareRuntimeElement } from "./runtime-element-preparation";
 import { cancelled, yieldWhenRequested } from "./replacement-scheduler";
 import type {
   DeltaDomain,
@@ -58,18 +65,26 @@ export async function prepareReplacementCandidatesTimeSliced(
   ports: ReplacementPlannerPorts,
   scheduler: StoreSliceScheduler,
 ): Promise<TimeSlicedReplacementCandidates | "cancelled"> {
-  const prepared = await prepareReplacementDraftsTimeSliced(replacements, ports, scheduler);
+  let yields = 0;
+  const trackedScheduler: StoreSliceScheduler = {
+    ...scheduler,
+    yieldControl: async () => {
+      await scheduler.yieldControl();
+      yields += 1;
+    },
+  };
+  const prepared = await prepareReplacementDraftsTimeSliced(replacements, ports, trackedScheduler);
   if (prepared === "cancelled") return prepared;
   const classified = await classifyReplacementDraftsTimeSliced(
-    prepared.drafts,
+    prepared,
     ports.getRecord,
-    scheduler,
+    trackedScheduler,
   );
   if (classified === "cancelled") return classified;
   return {
-    candidates: classified.candidates,
-    drafts: prepared.drafts,
-    yields: prepared.yields + classified.yields,
+    candidates: classified,
+    drafts: prepared,
+    yields,
   };
 }
 
@@ -86,19 +101,16 @@ async function prepareReplacementDraftsTimeSliced(
   replacements: readonly InkElementV1[],
   ports: ReplacementPlannerPorts,
   scheduler: StoreSliceScheduler,
-): Promise<{ readonly drafts: Map<string, InkElementV1>; readonly yields: number } | "cancelled"> {
+): Promise<Map<string, InkElementV1> | "cancelled"> {
   const drafts = new Map<string, InkElementV1>();
-  let yields = 0;
+  const work = new MutationPreparationScheduler(scheduler);
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
-    prepareDraft(drafts, replacement, ports.getRecord);
-    const checkpoint = yieldWhenRequested(scheduler);
-    if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint !== 0) {
-      const yielded = await checkpoint;
-      if (yielded === "cancelled") return yielded;
-      yields += yielded;
-    }
+    const staged = await prepareDraftTimeSliced(replacement, ports.getRecord, work);
+    if (staged === "cancelled") return staged;
+    if (drafts.has(staged.id)) throw new RangeError(`Duplicate replacement ID: ${staged.id}`);
+    drafts.set(staged.id, staged);
+    if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
   }
   const lookup = createLookup(drafts, ports.getRecord);
   const connectionRoots: string[] = [];
@@ -108,19 +120,27 @@ async function prepareReplacementDraftsTimeSliced(
       drafts.set(id, resolveConnections(draft, lookup));
       connectionRoots.push(id);
     }
-    const checkpoint = yieldWhenRequested(scheduler);
-    if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint !== 0) {
-      const yielded = await checkpoint;
-      if (yielded === "cancelled") return yielded;
-      yields += yielded;
-    }
+    if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
   }
   assertAcyclicConnections(connectionRoots, lookup);
   const propagation = await propagateTargetChangesTimeSliced(drafts, ports, scheduler);
   if (propagation === "cancelled") return propagation;
-  yields += propagation;
-  return { drafts, yields };
+  return drafts;
+}
+
+async function prepareDraftTimeSliced(
+  replacement: InkElementV1,
+  getRecord: ReplacementPlannerPorts["getRecord"],
+  work: MutationPreparationScheduler,
+): Promise<InkElementV1 | "cancelled"> {
+  const current = getRecord(replacement.id);
+  const staged =
+    isCanonicalStrokeTranslation(current.element, replacement) ||
+    isValidatedInternalStyleReplacement(current.element, replacement)
+      ? replacement
+      : await prepareRuntimeElement(replacement, current, undefined, work);
+  if (staged !== "cancelled") assertReplacementIdentity(current.element, staged);
+  return staged;
 }
 
 function prepareDrafts(
@@ -259,25 +279,37 @@ async function classifyReplacementDraftsTimeSliced(
   drafts: Map<string, InkElementV1>,
   getRecord: (id: string) => ElementRecord,
   scheduler: StoreSliceScheduler,
-): Promise<
-  { readonly candidates: readonly ReplacementCandidate[]; readonly yields: number } | "cancelled"
-> {
+): Promise<readonly ReplacementCandidate[] | "cancelled"> {
   const candidates: ReplacementCandidate[] = [];
   const lookup = createLookup(drafts, getRecord);
-  let yields = 0;
+  const work = new MutationPreparationScheduler(scheduler);
   for (const [id, element] of drafts) {
     if (cancelled(scheduler)) return "cancelled";
-    const candidate = classifyCandidate(id, element, getRecord, lookup);
+    const candidate = await classifyCandidateTimeSliced(getRecord(id), element, lookup, work);
+    if (candidate === "cancelled") return candidate;
     if (candidate !== null) candidates.push(candidate);
-    const checkpoint = yieldWhenRequested(scheduler);
-    if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint !== 0) {
-      const yielded = await checkpoint;
-      if (yielded === "cancelled") return yielded;
-      yields += yielded;
-    }
+    if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
   }
-  return { candidates, yields };
+  return candidates;
+}
+
+async function classifyCandidateTimeSliced(
+  current: ElementRecord,
+  element: InkElementV1,
+  lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
+  work: MutationPreparationScheduler,
+): Promise<ReplacementCandidate | null | "cancelled"> {
+  const translation = canonicalStrokeTranslation(current.element, element);
+  if (translation !== null) {
+    return translation.x === 0 && translation.y === 0
+      ? null
+      : { current, domains: CANONICAL_TRANSLATION_DOMAINS, element };
+  }
+  const equal = await work.run(elementsEqualSteps(current.element, element));
+  if (equal === "cancelled") return equal;
+  if (equal) return null;
+  const domains = await work.run(classifyReplacementSteps(current.element, element));
+  return domains === "cancelled" ? domains : classifiedCandidate(current, element, domains, lookup);
 }
 
 function classifyCandidate(
@@ -295,6 +327,15 @@ function classifyCandidate(
   }
   if (elementsEqual(current.element, element)) return null;
   const domains = classifyReplacement(current.element, element);
+  return classifiedCandidate(current, element, domains, lookup);
+}
+
+function classifiedCandidate(
+  current: ElementRecord,
+  element: InkElementV1,
+  domains: DeltaDomain[],
+  lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
+): ReplacementCandidate {
   if (domains.length === 0) throw new RangeError("Replacement changed unsupported record fields.");
   if (isConnectable(element)) assertValidReplacementElement(current.element, element);
   assertResolvedConnections(element, lookup);

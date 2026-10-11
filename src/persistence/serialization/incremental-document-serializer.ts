@@ -4,52 +4,53 @@ import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 import { pressureShapeKey } from "./prepared-pressure-hints";
 import {
-  FILE_SCHEMA_LIMITS,
-  validateInkSnapshotV1,
   type InkElementV1,
   type InkSnapshotV1,
   type PageV1,
   type SnapshotValidationDerivations,
 } from "../../domain/schema/public";
-import { validateRuntimeInkSnapshotV1 } from "../../domain/schema/snapshot-validation";
 import { BackgroundFragmentCache } from "./background";
-import { canonicalElement, canonicalPage, canonicalSnapshot } from "./canonical-snapshot";
+import { canonicalElement, canonicalPage } from "./canonical-snapshot";
 import {
   canonicalMetadataFragmentsSha256,
   metadataPrefix as canonicalMetadataPrefix,
 } from "./canonical-metadata";
-import { codecFailure, generatedOutputLimitFailure, invalidSnapshot } from "./codec-failure";
+import { codecFailure } from "./codec-failure";
 import {
-  assembleAndHashChunkedOutput,
+  ChunkedOutputCancelledError,
   type ChunkedOutputAssemblyOptions,
-  ChunkedOutputLimitError,
 } from "./chunked-output-assembler";
-import { documentFragments, envelope, snapshotMetadata, snapshotValue } from "./document-assembly";
-import {
-  buildElementFragments,
-  elementRenderBand,
-  type ElementFragments,
-  type RenderBand,
-} from "./element-fragments";
+import { envelope, snapshotMetadata, snapshotValue } from "./document-assembly";
+import { buildElementFragments, type ElementFragments, type RenderBand } from "./element-fragments";
 import { ElementFragmentCache } from "./element-fragment-cache";
-import { prepareDocumentDelta, validateDocumentDelta } from "./incremental-document-delta";
-import type { EncodedByteBudget } from "./encoded-byte-budget";
+import {
+  prepareDocumentDeltaSteps,
+  validateDocumentDeltaSteps,
+} from "./incremental-document-delta";
+import {
+  prepareSerializationModelSteps,
+  consumeSerializationSteps,
+  completeSerializationSteps,
+  type PreparedSerializationModel,
+} from "./serialization-model-preparation";
 import * as incrementalValidation from "./incremental-validation";
 import type {
   DocumentSerializationDelta,
-  ElementAssembly,
   FragmentSerializerInstrumentation,
-  FragmentAssembly,
 } from "./incremental-document-serializer-types";
-import { prepareSerialization } from "./serialization-budgets";
-import { collectOrderedElementFragments } from "./ordered-element-fragments";
+import { checkBackgroundLimit, prepareSerialization } from "./serialization-budgets";
+import { assembleOrderedElementFragments } from "./ordered-element-fragments";
+import {
+  captureDeltaInputSteps,
+  copySerializationElementsSteps,
+} from "./serialization-input-preparation";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "./types";
 export class IncrementalDocumentSerializer {
-  readonly #cache = new ElementFragmentCache();
-  readonly #shapeCache = new StrokeShapeCache();
-  readonly #elements = new Map<string, InkElementV1>();
+  #cache = new ElementFragmentCache();
+  readonly #shapeCache = new StrokeShapeCache((stroke) => this.#elements.get(stroke.id) === stroke);
+  #elements = new Map<string, InkElementV1>();
   public readonly sampleEncodingCache = new StrokeSampleEncodingCache((stroke) => {
     const current = this.#elements.get(stroke.id);
     return (
@@ -59,8 +60,9 @@ export class IncrementalDocumentSerializer {
       stroke.points instanceof Float64Array
     );
   });
-  readonly #facts = new Map<string, incrementalValidation.ElementFacts>();
-  readonly #orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  #facts = new Map<string, incrementalValidation.ElementFacts>();
+  #orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  #epoch = 0;
   readonly #backgroundCache = new BackgroundFragmentCache();
   #fragmentBuilds = 0;
   #fragmentHits = 0;
@@ -119,7 +121,13 @@ export class IncrementalDocumentSerializer {
     context.signal.throwIfAborted();
     const element = this.#elements.get(id);
     if (element?.kind !== "stroke") return undefined;
-    const shape = this.#shapeCache.read(element);
+    const shape = await consumeSerializationSteps(
+      this.#shapeCache.readSteps(element, context.signal),
+      context,
+    );
+    context.signal.throwIfAborted();
+    if (this.#elements.get(id) !== element)
+      throw new Error("The scene path model changed during preparation.");
     if (shape !== undefined) return shape;
     const fragment = this.#cache.current(element);
     if (fragment?.strokePaths !== undefined) {
@@ -145,27 +153,29 @@ export class IncrementalDocumentSerializer {
   public prewarmElement(id: string, maximumBytes: number): number | null {
     const element = this.#elements.get(id);
     if (element === undefined) return null;
-    const cached = this.#cache.current(element);
-    if (cached !== undefined) {
-      this.#cache.touch(id);
-      return 0;
-    }
-    const fragments = buildElementFragments(
+    const bytes = this.#cache.prewarm(
       element,
-      this.#facts.get(id)?.bottom,
+      this.#facts.get(id)!.bottom,
       this.#shapeCache,
       this.sampleEncodingCache,
+      maximumBytes,
     );
-    if (fragments.bytes > maximumBytes) return null;
-    this.#fragmentBuilds += 1;
-    this.#cache.replace(id, fragments);
-    return fragments.bytes;
+    if (bytes !== null && bytes > 0) this.#fragmentBuilds += 1;
+    return bytes;
   }
-  public prewarmElementAt(index: number, maximumBytes: number): number | null {
+  public async prewarmElementAtSliced(
+    index: number,
+    maximumBytes: number,
+    options: ChunkedOutputAssemblyOptions,
+  ): Promise<number | null> {
     const highlight = this.#orders.highlight;
     const id =
       index < highlight.length ? highlight[index] : this.#orders.content[index - highlight.length];
-    return id === undefined ? null : this.prewarmElement(id, maximumBytes);
+    const element = id === undefined ? undefined : this.#elements.get(id);
+    if (element === undefined) return null;
+    if (this.#cache.current(element) !== undefined) return 0;
+    const fragments = await this.#fragmentsForSliced(element, options, maximumBytes);
+    return fragments.bytes > maximumBytes ? null : fragments.bytes;
   }
   public reset(snapshot: InkSnapshotV1): DocumentCodecResult<void> {
     return this.#reset(snapshot, false);
@@ -187,91 +197,139 @@ export class IncrementalDocumentSerializer {
     validatedDerivations?: SnapshotValidationDerivations,
     ownsRuntimeSamples = false,
   ): DocumentCodecResult<void> {
-    let validatedSnapshot = snapshot;
-    let derivations = validatedDerivations;
-    if (derivations === undefined) {
-      const validation = runtimeStrokeBuffers
-        ? validateRuntimeInkSnapshotV1(snapshot)
-        : validateInkSnapshotV1(snapshot);
-      this.#fullValidationRuns += 1;
-      if (!validation.ok) return invalidSnapshot(validation.error);
-      validatedSnapshot = validation.value;
-      derivations = validation.derivations;
-    }
-    if (derivations.elements.length !== validatedSnapshot.elements.length) {
-      return codecFailure("invalid-delta", "Validated element derivations are incomplete.");
-    }
-    const canonical = canonicalSnapshot(
-      validatedSnapshot,
-      runtimeStrokeBuffers,
-      !ownsRuntimeSamples,
+    if (validatedDerivations === undefined) this.#fullValidationRuns += 1;
+    const prepared = completeSerializationSteps(
+      prepareSerializationModelSteps(snapshot, {
+        runtimeStrokeBuffers,
+        ownsRuntimeSamples,
+        ...(validatedDerivations === undefined ? {} : { derivations: validatedDerivations }),
+        nodesPerStep: Infinity,
+      }),
     );
-    const nextFacts = new Map<string, incrementalValidation.ElementFacts>();
-    try {
-      for (let index = 0; index < canonical.elements.length; index += 1) {
-        const element = canonical.elements[index]!;
-        nextFacts.set(
-          element.id,
-          incrementalValidation.elementFacts(element, derivations.elements[index]),
-        );
-      }
-    } catch {
-      return codecFailure("invalid-delta", "Validated element derivation is inconsistent.");
-    }
-    this.#runtimeStrokeBuffers = runtimeStrokeBuffers;
-    this.sampleEncodingCache.reconcile(canonical);
-    const activeIds = new Set(canonical.elements.map(({ id }) => id));
-    for (const id of this.#cache.ids()) {
-      if (!activeIds.has(id)) this.#cache.remove(id);
-    }
-    for (const id of this.#shapeCache.ids()) {
-      if (!activeIds.has(id)) this.#shapeCache.remove(id);
-    }
-    this.#elements.clear();
-    this.#facts.clear();
-    this.#orders.content = [];
-    this.#orders.highlight = [];
-    this.#page = canonical.page;
-    this.#revision = canonical.revision;
-    for (let index = 0; index < canonical.elements.length; index += 1) {
-      const element = canonical.elements[index]!;
-      this.#cache.adopt(element, ownsRuntimeSamples);
-      this.#elements.set(element.id, element);
-      this.#facts.set(element.id, nextFacts.get(element.id)!);
-      this.#derivedBoundsReuses += 1;
-      this.#orders[elementRenderBand(element)].push(element.id);
-    }
-    this.#aggregateFacts = incrementalValidation.aggregateElementFacts(this.#facts.values());
+    if (!prepared.ok) return prepared;
+    this.#adoptModel(
+      prepared.value,
+      completeSerializationSteps(
+        this.#cache.prepareResetSteps(prepared.value.elements, ownsRuntimeSamples, Infinity),
+      ),
+    );
     return { ok: true, value: undefined };
   }
-  /** Publish validated model facts; export and prewarming resolve invalidated fragments lazily. */
+  public async resetRuntimeSliced(
+    snapshot: InkSnapshotV1,
+    context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
+    ownsSamples = false,
+  ): Promise<DocumentCodecResult<void>> {
+    const epoch = this.#epoch;
+    const prepared = await consumeSerializationSteps(
+      prepareSerializationModelSteps(snapshot, {
+        runtimeStrokeBuffers: true,
+        ownsRuntimeSamples: ownsSamples,
+      }),
+      context,
+    );
+    this.#fullValidationRuns += 1;
+    if (!prepared.ok) return prepared;
+    const cache = await consumeSerializationSteps(
+      this.#cache.prepareResetSteps(prepared.value.elements, true),
+      context,
+    );
+    context.signal.throwIfAborted();
+    if (epoch !== this.#epoch)
+      return codecFailure("base-revision-mismatch", "The staged model is stale.");
+    this.#adoptModel(prepared.value, cache);
+    return { ok: true, value: undefined };
+  }
+  #adoptModel(model: PreparedSerializationModel, cache: ElementFragmentCache): void {
+    this.sampleEncodingCache.reconcileElements(model.elements);
+    for (const id of this.#shapeCache.ids()) {
+      if (!model.elements.has(id)) this.#shapeCache.remove(id);
+    }
+    this.#cache = cache;
+    this.#elements = model.elements;
+    this.#facts = model.facts;
+    this.#orders = model.orders;
+    this.#page = model.page;
+    this.#revision = model.revision;
+    this.#runtimeStrokeBuffers = model.runtimeStrokeBuffers;
+    this.#aggregateFacts = model.aggregate;
+    this.#derivedBoundsReuses += model.elements.size;
+    this.#epoch += 1;
+  }
   public applyDelta(
     delta: DocumentSerializationDelta,
     ownsSamples = false,
   ): DocumentCodecResult<void> {
+    return completeSerializationSteps(this.#applyDeltaSteps(delta, ownsSamples, Infinity));
+  }
+  public async applyDeltaSliced(
+    delta: DocumentSerializationDelta,
+    context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
+    ownsSamples = false,
+  ): Promise<DocumentCodecResult<void>> {
+    if (!ownsSamples) {
+      const header = await consumeSerializationSteps(captureDeltaInputSteps(delta), context);
+      delta = {
+        ...header,
+        ...(header.changedElements === undefined
+          ? {}
+          : {
+              changedElements: await consumeSerializationSteps(
+                copySerializationElementsSteps(header.changedElements),
+                context,
+              ),
+            }),
+      };
+    }
+    return consumeSerializationSteps(
+      this.#applyDeltaSteps(delta, true, 256, context.signal),
+      context,
+    );
+  }
+  *#applyDeltaSteps(
+    delta: DocumentSerializationDelta,
+    ownsSamples: boolean,
+    nodesPerStep: number,
+    signal?: AbortSignal,
+  ): Generator<boolean | void, DocumentCodecResult<void>> {
+    const epoch = this.#epoch;
     if (this.#revision === null || delta.baseModelRevision !== this.#revision) {
       return codecFailure(
         "base-revision-mismatch",
         "Delta base revision does not match the model.",
       );
     }
-    const prepared = prepareDocumentDelta({
-      currentElements: this.#elements,
-      currentOrders: this.#orders,
-      currentPage: this.#page!,
-      delta,
-    });
+    const prepared = yield* prepareDocumentDeltaSteps(
+      {
+        currentElements: this.#elements,
+        currentOrders: this.#orders,
+        currentPage: this.#page!,
+        delta,
+      },
+      nodesPerStep,
+    );
     if (!prepared.ok) return prepared;
-    const facts = validateDocumentDelta({
-      aggregate: this.#aggregateFacts,
-      currentElements: this.#elements,
-      currentFacts: this.#facts,
-      currentPage: this.#page!,
-      pageChanged: delta.page !== undefined,
-      prepared: prepared.value,
-      runtimeStrokeBuffers: this.#runtimeStrokeBuffers,
-    });
+    const facts = yield* validateDocumentDeltaSteps(
+      {
+        aggregate: this.#aggregateFacts,
+        currentElements: this.#elements,
+        currentFacts: this.#facts,
+        currentPage: this.#page!,
+        pageChanged: delta.page !== undefined,
+        prepared: prepared.value,
+        runtimeStrokeBuffers: this.#runtimeStrokeBuffers,
+      },
+      nodesPerStep,
+    );
     if (!facts.ok) return facts;
+    const changed = new Map<string, InkElementV1>();
+    for (const element of prepared.value.changed.values()) {
+      changed.set(element.id, canonicalElement(element, this.#runtimeStrokeBuffers, !ownsSamples));
+      if (changed.size % nodesPerStep === 0) yield;
+    }
+    signal?.throwIfAborted();
+    if (epoch !== this.#epoch)
+      return codecFailure("base-revision-mismatch", "The staged model is stale.");
     for (const id of prepared.value.removed) {
       this.#facts.delete(id);
       this.#elements.delete(id);
@@ -279,8 +337,7 @@ export class IncrementalDocumentSerializer {
       this.sampleEncodingCache.remove(id);
       this.#shapeCache.retire(id);
     }
-    for (const changedElement of prepared.value.changed.values()) {
-      const element = canonicalElement(changedElement, this.#runtimeStrokeBuffers, !ownsSamples);
+    for (const element of changed.values()) {
       if (ownsSamples) this.#cache.retainRuntimeOwnership(element);
       this.#elements.set(element.id, element);
       this.#facts.set(element.id, facts.value.changed.get(element.id)!);
@@ -294,6 +351,7 @@ export class IncrementalDocumentSerializer {
     this.#aggregateFacts = facts.value.aggregate;
     this.#derivedBoundsReuses += prepared.value.derivations.size;
     this.#incrementalValidationRuns += 1;
+    this.#epoch += 1;
     return { ok: true, value: undefined };
   }
   public serialize(
@@ -314,7 +372,13 @@ export class IncrementalDocumentSerializer {
       page,
       revision,
     } = prepared.value;
-    const assembly = this.#assembleElements(outputBudget, metadataBudget);
+    const assembly = assembleOrderedElementFragments({
+      orders: this.#orders,
+      element: (id) => this.#elements.get(id)!,
+      fragment: (element) => this.#fragmentsFor(element),
+      outputBudget,
+      metadataBudget,
+    });
     if (!assembly.ok) return assembly;
     const metadata = snapshotMetadata(revision, page, assembly.value.metadata);
     const metadataHash = canonicalMetadataFragmentsSha256(
@@ -348,78 +412,39 @@ export class IncrementalDocumentSerializer {
   public async serializeChunked(
     options: ChunkedOutputAssemblyOptions = {},
   ): Promise<DocumentCodecResult<SerializedInkbookDocument>> {
-    const prepared = prepareSerialization(
-      this.#page,
-      this.#revision,
-      this.#aggregateFacts.maximumBottom,
-      this.#backgroundCache,
-    );
-    if (!prepared.ok) return prepared;
-    const {
-      background,
-      lockedHeight,
-      metadataPrefix,
-      output: outputBudget,
-      metadata: metadataBudget,
-      page,
-      revision,
-    } = prepared.value;
-    const assembly = this.#collectFragments(outputBudget, metadataBudget);
-    if (!assembly.ok) return assembly;
-    if (!metadataBudget.tryReserve(2)) return generatedOutputLimitFailure();
-    const metadataBytes = metadataBudget.usedBytes;
-    const metadataHash = canonicalMetadataFragmentsSha256(
-      canonicalMetadataPrefix(revision, page),
-      assembly.value.canonicalMetadata,
-    );
-    let assembled;
     try {
-      assembled = await assembleAndHashChunkedOutput(
-        documentFragments(
-          revision,
-          lockedHeight,
-          metadataPrefix,
-          metadataHash,
-          assembly.value,
-          background,
-        ),
-        { ...options, maximumBytes: FILE_SCHEMA_LIMITS.totalInputBytes },
-      );
+      const serialized = await this.serializeRuntimeChunked(options);
+      if (!serialized.ok) return serialized;
+      return {
+        ok: true,
+        value: { ...serialized.value, svg: new TextDecoder().decode(serialized.value.svg) },
+      };
     } catch (error) {
-      if (error instanceof ChunkedOutputLimitError) return generatedOutputLimitFailure();
+      if (options.signal?.aborted) throw new ChunkedOutputCancelledError();
       throw error;
     }
-    const snapshot = snapshotValue(revision, page, assembly.value.elements);
-    return {
-      ok: true,
-      value: {
-        hash: assembled.hash,
-        lockedHeight,
-        metadataBytes,
-        snapshot,
-        snapshotHash: metadataHash,
-        svg: assembled.output,
-        totalBytes: assembled.totalBytes,
-      },
-    };
   }
   public serializeRuntimeChunked(
     options: ChunkedOutputAssemblyOptions,
   ): Promise<DocumentCodecResult<SerializedInkbookDocument<Uint8Array<ArrayBuffer>>>> {
+    if (options.signal?.aborted) return Promise.reject(new ChunkedOutputCancelledError());
     const snapshot = this.currentSnapshot();
     if (snapshot === null) {
       return Promise.resolve(
         codecFailure("invalid-delta", "Serializer has no initialized document model."),
       );
     }
+    const prepared = checkBackgroundLimit(snapshot.page, this.#aggregateFacts.maximumBottom);
+    if (!prepared.ok) return Promise.resolve(prepared);
     return serializeRuntimeSnapshotToUtf8(
       snapshot,
       options,
-      (element) => this.#fragmentsFor(element),
+      (element) => this.#fragmentsForSliced(element, options),
       this.#backgroundCache,
     );
   }
   public clear(): void {
+    this.#epoch += 1;
     this.#cache.clear();
     this.#shapeCache.clear();
     this.sampleEncodingCache.clear();
@@ -432,37 +457,6 @@ export class IncrementalDocumentSerializer {
     this.#revision = null;
     this.#runtimeStrokeBuffers = false;
     this.#aggregateFacts = incrementalValidation.emptyAggregateFacts();
-  }
-  #assembleElements(
-    outputBudget: EncodedByteBudget,
-    metadataBudget: EncodedByteBudget,
-  ): DocumentCodecResult<ElementAssembly> {
-    const fragments = this.#collectFragments(outputBudget, metadataBudget);
-    if (!fragments.ok) return fragments;
-    if (!metadataBudget.tryReserve(2)) return generatedOutputLimitFailure();
-    return {
-      ok: true,
-      value: {
-        content: fragments.value.content.map(({ svg }) => svg).join(""),
-        elements: fragments.value.elements,
-        highlights: fragments.value.highlight.map(({ svg }) => svg).join(""),
-        maximumBottom: fragments.value.maximumBottom,
-        metadata: fragments.value.metadata,
-        canonicalMetadata: fragments.value.canonicalMetadata,
-      },
-    };
-  }
-  #collectFragments(
-    outputBudget: EncodedByteBudget,
-    metadataBudget: EncodedByteBudget,
-  ): DocumentCodecResult<FragmentAssembly> {
-    return collectOrderedElementFragments({
-      orders: this.#orders,
-      element: (id) => this.#elements.get(id)!,
-      fragment: (element) => this.#fragmentsFor(element),
-      outputBudget,
-      metadataBudget,
-    });
   }
   #fragmentsFor(element: InkElementV1): ElementFragments {
     const cached = this.#cache.current(element);
@@ -479,6 +473,25 @@ export class IncrementalDocumentSerializer {
     );
     this.#fragmentBuilds += 1;
     this.#cache.retainIfSpace(element.id, fragments);
+    return fragments;
+  }
+  async #fragmentsForSliced(
+    element: InkElementV1,
+    options: ChunkedOutputAssemblyOptions,
+    maximumBytes = Infinity,
+  ): Promise<ElementFragments> {
+    const epoch = this.#epoch;
+    const { fragments, built } = await this.#cache.resolveSliced({
+      element,
+      bottom: this.#facts.get(element.id)!.bottom,
+      shapeCache: this.#shapeCache,
+      sampleCache: this.sampleEncodingCache,
+      assembly: options,
+      maximumBytes,
+      isCurrent: () => epoch === this.#epoch && this.#elements.get(element.id) === element,
+    });
+    if (built) this.#fragmentBuilds += 1;
+    else if (fragments.bytes <= maximumBytes) this.#fragmentHits += 1;
     return fragments;
   }
 }

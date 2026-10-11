@@ -1,5 +1,5 @@
 import type { InkElementV1, InkSnapshotV1, StrokeElementV1 } from "../../domain/schema/public";
-import { encodeStrokeSamples } from "./stroke-sample-codec";
+import { encodeStrokeSamples, encodeStrokeSamplesSteps } from "./stroke-sample-codec";
 
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
 const MAX_CACHE_ELEMENTS = 20_000;
@@ -29,6 +29,22 @@ export class StrokeSampleEncodingCache {
   }
 
   public resolve(stroke: StrokeElementV1): string {
+    const steps = this.#resolveSteps(stroke, undefined, true);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+
+  public *resolveSteps(stroke: StrokeElementV1, signal?: AbortSignal): Generator<void, string> {
+    return yield* this.#resolveSteps(stroke, signal, false);
+  }
+
+  *#resolveSteps(
+    stroke: StrokeElementV1,
+    signal: AbortSignal | undefined,
+    synchronous: boolean,
+  ): Generator<void, string> {
+    signal?.throwIfAborted();
     const entry = this.#entries.get(stroke.id);
     const owned = this.ownsStroke(stroke);
     if (owned && entry?.points === stroke.points) {
@@ -37,10 +53,15 @@ export class StrokeSampleEncodingCache {
       this.#hits += 1;
       return entry.encoding;
     }
-    const encoding = encodeStrokeSamples(stroke.points);
+    const encoding = synchronous
+      ? encodeStrokeSamples(stroke.points)
+      : yield* encodeStrokeSamplesSteps(stroke.points, signal);
+    signal?.throwIfAborted();
     this.#builds += 1;
-    this.remove(stroke.id);
-    if (owned) this.retainDecoded(stroke.id, stroke.points, encoding);
+    if (this.ownsStroke(stroke)) this.retainDecoded(stroke.id, stroke.points, encoding);
+    else if (entry?.points === stroke.points && this.#entries.get(stroke.id) === entry) {
+      this.remove(stroke.id);
+    }
     return encoding;
   }
 
@@ -73,6 +94,10 @@ export class StrokeSampleEncodingCache {
 
   public reconcile(snapshot: InkSnapshotV1): void {
     const active = new Map(snapshot.elements.map((element) => [element.id, element]));
+    this.reconcileElements(active);
+  }
+
+  public reconcileElements(active: ReadonlyMap<string, InkElementV1>): void {
     for (const [id, entry] of this.#entries) {
       const element = active.get(id);
       if (element?.kind !== "stroke" || element.points !== entry.points) this.remove(id);

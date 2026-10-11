@@ -11,7 +11,7 @@ import {
   prepareConnectionDetachments,
   resolveConnections,
 } from "./connections";
-import { classifyReplacement, elementsEqual, hasConnections } from "./element-comparison";
+import { classifyReplacementSteps, elementsEqualSteps, hasConnections } from "./element-comparison";
 import type { DocumentCapacity, DocumentCapacityPatch } from "./document-capacity";
 import type { PreparedSpatialMutation } from "../spatial/mutation-preparation";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
@@ -26,22 +26,19 @@ import {
   ownedHistoryPayloadBytes,
   ownedReplayRecords,
   prepareOwnedMutationHistory,
-  restoreOwnedRecord,
+  restoreOwnedRecordSteps,
   type OwnedMutationHistory,
   type OwnedMutationReplay,
 } from "./owned-mutation-history";
 import {
   assignRecordVersions,
-  createInitialRecord,
-  createReplacementRecord,
+  createOwnedInitialRecordSteps,
+  createOwnedReplacementRecordSteps,
   nextRecordVersion,
 } from "./record-factory";
 import { requireElementRecord } from "./record-access";
-import {
-  assertReplacementIdentity,
-  assertValidRuntimeElement,
-  assertValidReplacementElement,
-} from "./replacement-planner";
+import { assertReplacementIdentity } from "./replacement-planner";
+import { prepareRuntimeElement } from "./runtime-element-preparation";
 import type {
   AppliedElementMutation,
   DeltaDomain,
@@ -92,14 +89,16 @@ export async function planElementMutation(
   if (sourceRanks === "cancelled") return sourceRanks;
   const removeIds = await buildIdSet(requested.removeIds ?? [], scheduler);
   if (removeIds === "cancelled") return removeIds;
-  const desired = await collectDesiredElements(
+  const ownedRecords = ownedReplayRecords(requested, replay, ownedReplay?.history);
+  const collected = await collectDesiredElements(
     source,
     requested.elements ?? [],
     removeIds,
     scheduler,
+    ownedRecords,
   );
-  if (desired === "cancelled") return desired;
-  const ownedRecords = ownedReplayRecords(requested, replay, ownedReplay?.history);
+  if (collected === "cancelled") return collected;
+  const { desired, explicit } = collected;
   const records = await buildRecords(source, desired, removeIds, scheduler, ownedRecords);
   if (records === "cancelled") return records;
   const order = await prepareMutationOrder(source, requested, records, sourceRanks, scheduler, {
@@ -126,7 +125,7 @@ export async function planElementMutation(
   if (ownedHistory === "cancelled") return ownedHistory;
   const applied = await prepareMutationHistory(
     {
-      requested,
+      requested: historyDirection(requested, bands, explicit, removeIds, trustedRemoval),
       source,
       desired,
       removeIds,
@@ -150,28 +149,44 @@ export async function planElementMutation(
   };
 }
 
+function historyDirection(
+  requested: ElementMutation,
+  bands: Record<RenderBand, string[]>,
+  elements: readonly InkElementV1[],
+  removeIds: ReadonlySet<string>,
+  trustedRemoval: boolean,
+): ElementMutation {
+  return trustedRemoval ? requested : { bands, elements, removeIds: [...removeIds] };
+}
+
 async function collectDesiredElements(
   source: MutationSource,
   elements: readonly InkElementV1[],
   removeIds: ReadonlySet<string>,
   scheduler: MutationPreparationScheduler,
-): Promise<Map<string, InkElementV1> | "cancelled"> {
+  ownedRecords?: ReadonlyMap<string, ElementRecord>,
+): Promise<{ desired: Map<string, InkElementV1>; explicit: InkElementV1[] } | "cancelled"> {
   const desired = await collectConnectionDetachments(source, removeIds, scheduler);
   if (desired === "cancelled") return desired;
-  for (const element of elements) {
+  const explicit: InkElementV1[] = [];
+  for (const input of elements) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    const current = source.records.get(input.id);
+    const element = await prepareRuntimeElement(
+      input,
+      current,
+      ownedRecords?.get(input.id),
+      scheduler,
+    );
+    if (element === "cancelled") return element;
     if (desired.has(element.id) && !removeIds.has(element.id)) {
       throw new RangeError(`Duplicate mutation element ID: ${element.id}`);
     }
     if (removeIds.has(element.id))
       throw new RangeError(`Mutation cannot remove and set: ${element.id}`);
-    const current = source.records.get(element.id);
-    if (current === undefined) assertValidRuntimeElement(element);
-    else {
-      assertReplacementIdentity(current.element, element);
-      assertValidReplacementElement(current.element, element);
-    }
+    if (current !== undefined) assertReplacementIdentity(current.element, element);
     desired.set(element.id, element);
+    explicit.push(element);
   }
   const lookup = (id: string) =>
     removeIds.has(id) ? undefined : (desired.get(id) ?? source.records.get(id)?.element);
@@ -179,7 +194,7 @@ async function collectDesiredElements(
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (isConnectable(element)) desired.set(id, resolveConnections(element, lookup));
   }
-  return desired;
+  return { desired, explicit };
 }
 
 async function buildIdSet(
@@ -230,24 +245,13 @@ async function buildRecords(
   }
   const versions = await mutationVersions(source, desired, scheduler);
   if (versions === "cancelled") return versions;
-  const { geometryVersion, paintVersion } = versions;
   for (const [id, element] of desired) {
-    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     const current = source.records.get(id);
-    const restored = restoreOwnedRecord(element, current, ownedRecords?.get(id), versions);
-    if (restored !== undefined) {
-      if (restored !== current) records.set(id, restored);
-      continue;
-    }
-    if (current === undefined) {
-      records.set(
-        id,
-        assignRecordVersions(createInitialRecord(element), geometryVersion, paintVersion),
-      );
-    } else {
-      const updated = updatedRecord(current, element, geometryVersion, paintVersion);
-      if (updated !== current) records.set(id, updated);
-    }
+    const record = await scheduler.run(
+      buildRecord(element, current, ownedRecords?.get(id), versions),
+    );
+    if (record === "cancelled") return record;
+    if (record !== current) records.set(id, record);
   }
   return records;
 }
@@ -266,7 +270,8 @@ async function mutationVersions(
       changesGeometry = true;
       changesPaint = true;
     } else {
-      const domains = classifyReplacement(current.element, element);
+      const domains = await scheduler.run(classifyReplacementSteps(current.element, element));
+      if (domains === "cancelled") return domains;
       changesGeometry ||= domains.includes("geometry");
       changesPaint ||= domains.includes("paint");
     }
@@ -280,19 +285,25 @@ async function mutationVersions(
   return { geometryVersion, paintVersion };
 }
 
-function updatedRecord(
-  current: ElementRecord,
+function* buildRecord(
   element: InkElementV1,
-  geometryVersion: number,
-  paintVersion: number,
-): ElementRecord {
-  if (elementsEqual(current.element, element)) return current;
-  const domains = classifyReplacement(current.element, element);
-  return createReplacementRecord(
+  current: ElementRecord | undefined,
+  owned: ElementRecord | undefined,
+  versions: Readonly<{ geometryVersion: number; paintVersion: number }>,
+): Generator<void, ElementRecord> {
+  const restored = yield* restoreOwnedRecordSteps(element, current, owned, versions);
+  if (restored !== undefined) return restored;
+  if (current === undefined) {
+    const initial = yield* createOwnedInitialRecordSteps(element);
+    return assignRecordVersions(initial, versions.geometryVersion, versions.paintVersion);
+  }
+  if (yield* elementsEqualSteps(current.element, element)) return current;
+  const domains = yield* classifyReplacementSteps(current.element, element);
+  return yield* createOwnedReplacementRecordSteps(
     element,
     current,
-    domains.includes("geometry") ? geometryVersion : current.geometryVersion,
-    domains.includes("paint") ? paintVersion : current.paintVersion,
+    domains.includes("geometry") ? versions.geometryVersion : current.geometryVersion,
+    domains.includes("paint") ? versions.paintVersion : current.paintVersion,
   );
 }
 
@@ -326,13 +337,16 @@ async function buildDelta(
     const before = source.records.get(id) ?? null;
     const after = records.has(id) ? (records.get(id) ?? null) : before;
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    const domains = mutationDomains(
-      before,
-      after,
-      sourceRanks.get(id),
-      order.ranks.get(id) ?? sourceRanks.get(id),
-      mutationOrderPreserved(order, sourceRanks, id),
+    const domains = await scheduler.run(
+      mutationDomains(
+        before,
+        after,
+        sourceRanks.get(id),
+        order.ranks.get(id) ?? sourceRanks.get(id),
+        mutationOrderPreserved(order, sourceRanks, id),
+      ),
     );
+    if (domains === "cancelled") return domains;
     if (domains.length === 0) continue;
     if (after !== null) {
       geometryVersion = Math.max(geometryVersion, after.geometryVersion);
@@ -349,13 +363,13 @@ async function buildDelta(
   });
 }
 
-function mutationDomains(
+function* mutationDomains(
   before: ElementRecord | null,
   after: ElementRecord | null,
   previousRank: ElementRank | undefined,
   nextRank: ElementRank | undefined,
   relativeOrderPreserved: boolean,
-): DeltaDomain[] {
+): Generator<void, DeltaDomain[]> {
   if (before === null && after !== null) {
     const domains: DeltaDomain[] = ["geometry", "paint", "order", "visibility"];
     if (hasConnections(after.element)) domains.push("connection");
@@ -369,7 +383,9 @@ function mutationDomains(
   }
   if (before === null || after === null || nextRank === undefined) return [];
   const domains =
-    before === after ? [] : classifyReplacement(before.element, after.element as InkElementV1);
+    before === after
+      ? []
+      : yield* classifyReplacementSteps(before.element, after.element as InkElementV1);
   if (
     previousRank?.band !== nextRank.band ||
     (!relativeOrderPreserved && previousRank.rank !== nextRank.rank)

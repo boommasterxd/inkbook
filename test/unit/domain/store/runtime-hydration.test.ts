@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as strokePosition from "../../../../src/domain/geometry/stroke-position";
 
-import { validateInkElementV1, type InkElementV1 } from "../../../../src/domain/schema/public";
+import {
+  validateInkElementV1,
+  type InkElementV1,
+  type StrokeElementV1,
+} from "../../../../src/domain/schema/public";
 import { validateRuntimeInkSnapshotV1 } from "../../../../src/domain/schema/snapshot-validation";
 import {
   immutableElement,
@@ -19,6 +24,63 @@ import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../
 import { highlighter, rectangle } from "./fixtures";
 
 describe("runtime element ownership", () => {
+  it("privately stages ordinary builder input and preserves its file-only boundary", async () => {
+    const source = highlighter();
+    const builder = ElementStore.createBuilder({
+      shouldYield: () => false,
+      yieldControl: async () => {
+        throw new Error("Available shared budget must not force a handoff.");
+      },
+    });
+    expect(await builder.append([source])).toBe("accepted");
+    source.points[0] = -100;
+    const store = await builder.finalize();
+    const stored = store?.get(source.id)?.element;
+    expect(stored?.kind === "stroke" && stored.points[0]).toBe(100);
+    expect(stored?.kind === "stroke" && stored.points).not.toBe(source.points);
+
+    const runtime = {
+      ...highlighter(),
+      points: new Float64Array(source.points),
+    } as unknown as StrokeElementV1;
+    const rejected = ElementStore.createBuilder({
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    await expect(rejected.append([runtime])).rejects.toThrow(RangeError);
+    expect(await rejected.finalize()).toBeNull();
+  });
+
+  it.each([false, true])(
+    "cancels inside a long stroke bounds pass with owned input %s",
+    async (owned) => {
+      const source = {
+        ...highlighter(),
+        points: Array.from({ length: 4097 }, (_, index) => [index, index % 7, 0.5]).flat(),
+      };
+      let cancelled = false;
+      const transform = vi.spyOn(strokePosition, "strokeWorldPoint");
+      const builder = ElementStore.createBuilder({
+        isCancelled: () => cancelled,
+        shouldYield: () => transform.mock.calls.length > 0,
+        yieldControl: async () => {
+          cancelled = true;
+        },
+      });
+      try {
+        const status = owned
+          ? await builder.appendOwnedRuntime([source])
+          : await builder.append([source]);
+        expect(status).toBe("cancelled");
+        expect(transform).toHaveBeenCalledTimes(256);
+        expect(await builder.finalize()).toBeNull();
+        expect(transform).toHaveBeenCalledTimes(256);
+      } finally {
+        transform.mockRestore();
+      }
+    },
+  );
+
   it("copies typed samples for ordinary immutability and adopts explicit ownership", () => {
     const source = highlighter();
     const points = new Float64Array(source.points);

@@ -6,16 +6,48 @@ import { serializeInkbookDocument } from "../../../../src/persistence/serializat
 import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/document-model";
 import {
   createTestStroke,
+  createMultiWindowPressureStroke,
   createWorkerSnapshot,
 } from "../../../fixtures/persistence/worker-snapshot";
 import { rectangle } from "../worker/runtime/fixtures";
+import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
+
+describe("sample ownership during cooperative encoding", () => {
+  it("rechecks current ownership after encoding and preserves a replacement cache entry", () => {
+    const base = createMultiWindowPressureStroke();
+    const stroke = { ...base, points: [...base.points, ...base.points] };
+    let current = stroke;
+    const cache = new StrokeSampleEncodingCache((candidate) => candidate === current);
+    const steps = cache.resolveSteps(stroke);
+    expect(steps.next().done).toBe(false);
+    current = { ...stroke, points: [...stroke.points] };
+    const replacement = cache.resolve(current);
+    expect(finishGeometrySteps(steps)).toBe(replacement);
+    expect(cache.resolve(current)).toBe(replacement);
+    expect(cache.instrumentation).toMatchObject({
+      sampleEncodingBuilds: 2,
+      sampleEncodingHits: 1,
+      sampleEncodingCacheElements: 1,
+    });
+    const unowned = cache.resolveSteps(stroke);
+    expect(finishGeometrySteps(unowned)).toBe(replacement);
+    expect(cache.resolve(current)).toBe(replacement);
+    expect(cache.instrumentation).toMatchObject({
+      sampleEncodingBuilds: 3,
+      sampleEncodingHits: 2,
+      sampleEncodingCacheElements: 1,
+    });
+  });
+});
 
 describe("session-owned sample encodings", () => {
   it("reconciles only changed sample identities and kinds without encoding", () => {
     const stroke = createTestStroke();
     const cache = new StrokeSampleEncodingCache(() => true);
     const encoding = cache.resolve(stroke);
-    cache.reconcileElement({ ...stroke, style: { ...stroke.style, opacity: 0.5 } });
+    cache.reconcileElements(
+      new Map([[stroke.id, { ...stroke, style: { ...stroke.style, opacity: 0.5 } }]]),
+    );
     expect(cache.resolve(stroke)).toBe(encoding);
     expect(cache.instrumentation).toMatchObject({
       sampleEncodingBuilds: 1,

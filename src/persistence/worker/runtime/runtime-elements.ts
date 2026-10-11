@@ -3,8 +3,15 @@ import {
   validatedSampleExtrema,
 } from "../../../domain/schema/stroke-sample-extrema";
 import { assertStrokeSamplesV1 } from "../../../domain/elements/public";
+import {
+  captureRuntimeElementHeader,
+  copyStrokeSamplesToRuntimeSteps,
+} from "../../../domain/elements/runtime-element-copy";
 import { isStoredStroke } from "../../../domain/elements/stroke-replacement-proof";
-import { MAX_STROKE_POINTS } from "../../../domain/schema/public";
+import {
+  assertSampleCopyInput,
+  isImmutableStrokeSampleSource,
+} from "../../../domain/elements/runtime-sample-copy";
 import type {
   InkElementV1,
   InkSnapshotV1,
@@ -13,6 +20,7 @@ import type {
   StrokeSamplesV1,
 } from "../../../domain/schema/public";
 import { runtimeSliceWorkProfile } from "./slice-scheduler";
+import { assertStagedSampleCapacity } from "../../serialization/serialization-input-preparation";
 import type { RuntimeSliceContext } from "./types";
 
 export type RuntimeStrokeSamples = StrokeSamplesV1 & Readonly<Float64Array>;
@@ -24,9 +32,20 @@ export type RuntimeInkSnapshot = Omit<InkSnapshotV1, "elements"> & {
   readonly elements: RuntimeInkElement[];
 };
 
-export function adoptTransferredStrokeSamples(points: Float64Array): RuntimeStrokeSamples {
-  assertStrokeSamplesV1(points);
+export function* validateRuntimeSamplesSteps(
+  points: Float64Array,
+  samplesPerStep = 256,
+): Generator<void, RuntimeStrokeSamples> {
+  const length = assertSampleCopyInput(points, samplesPerStep);
+  for (let start = 0; start < length; start += samplesPerStep * 3) {
+    assertStrokeSamplesV1(points.subarray(start, Math.min(length, start + samplesPerStep * 3)));
+    yield;
+  }
   return points as RuntimeStrokeSamples;
+}
+
+export function adoptTransferredStrokeSamples(points: Float64Array): RuntimeStrokeSamples {
+  return drainSteps(validateRuntimeSamplesSteps(points));
 }
 
 export function copySnapshotToRuntime(
@@ -37,11 +56,9 @@ export function copySnapshotToRuntime(
 ): RuntimeInkSnapshot {
   return {
     ...snapshot,
-    elements: copyElementsToRuntimeInternal(
-      snapshot.elements,
-      pointCopies,
-      derivations,
-      ownsSamples,
+    page: { ...snapshot.page, background: { ...snapshot.page.background } },
+    elements: drainSteps(
+      copyElementsSteps(snapshot.elements, pointCopies, derivations, ownsSamples),
     ),
   };
 }
@@ -64,84 +81,23 @@ export async function copySnapshotToRuntimeSliced(
   derivations?: SnapshotValidationDerivations,
   ownsSamples = false,
 ): Promise<RuntimeInkSnapshot> {
-  return {
+  const header = {
     ...snapshot,
-    elements: await copyElementsToRuntimeSlicedInternal(
-      snapshot.elements,
+    page: { ...snapshot.page, background: { ...snapshot.page.background } },
+  };
+  return {
+    ...header,
+    elements: await runSteps(
+      copyElementsSteps(
+        snapshot.elements,
+        pointCopies,
+        derivations,
+        ownsSamples,
+        sampleStep(context),
+      ),
       context,
-      pointCopies,
-      derivations,
-      ownsSamples,
     ),
   };
-}
-
-async function copyElementsToRuntimeSlicedInternal(
-  elements: readonly InkElementV1[],
-  context: RuntimeSliceContext,
-  pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
-  derivations?: SnapshotValidationDerivations,
-  ownsSamples = false,
-): Promise<RuntimeInkElement[]> {
-  const profile = context.workProfile ?? runtimeSliceWorkProfile(context.sliceMilliseconds?.());
-  const sampleSlice = Math.max(3, Math.floor(profile.inputByteLimit / 24) * 3);
-  const copied: RuntimeInkElement[] = [];
-  for (let index = 0; index < elements.length; index += 1) {
-    const element = elements[index]!;
-    if (element.kind === "stroke" && derivations !== undefined) {
-      assertValidatedStrokeSource(element, derivations, index);
-    }
-    if (element.kind !== "stroke") copied.push(element);
-    else if (element.points instanceof Float64Array && (ownsSamples || isStoredStroke(element)))
-      copied.push(element as RuntimeStrokeElement);
-    else {
-      copied.push(
-        await copyStrokeToRuntimeSliced(
-          element,
-          sampleSlice,
-          context,
-          pointCopies,
-          derivations !== undefined,
-        ),
-      );
-    }
-    if ((index + 1) % profile.nodeLimit === 0) {
-      const pending = context.checkpoint();
-      if (pending !== undefined) await pending;
-    }
-  }
-  context.signal.throwIfAborted();
-  return copied;
-}
-
-async function copyStrokeToRuntimeSliced(
-  element: StrokeElementV1,
-  sampleSlice: number,
-  context: RuntimeSliceContext,
-  pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
-  validated = false,
-): Promise<RuntimeStrokeElement> {
-  const source = element.points;
-  const reusable = Object.isFrozen(source) || isStoredStroke(element);
-  const retained = reusable ? pointCopies?.get(source) : undefined;
-  if (retained !== undefined) return { ...element, points: retained };
-  if (
-    !validated &&
-    (source.length < 3 || source.length % 3 !== 0 || source.length / 3 > MAX_STROKE_POINTS)
-  ) {
-    assertStrokeSamplesV1(source);
-  }
-  const points = new Float64Array(source.length);
-  for (let start = 0; start < source.length; start += sampleSlice) {
-    const end = Math.min(source.length, start + sampleSlice);
-    for (let index = start; index < end; index += 1) points[index] = source[index]!;
-    if (!validated) assertStrokeSamplesV1(points.subarray(start, end));
-    const pending = context.checkpoint();
-    if (pending !== undefined) await pending;
-  }
-  copyValidatedSampleExtrema(source, points);
-  if (reusable) pointCopies?.set(source, points as RuntimeStrokeSamples);
-  return { ...element, points: points as RuntimeStrokeSamples };
 }
 
 export function copyElementsToRuntime(
@@ -149,33 +105,95 @@ export function copyElementsToRuntime(
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
   ownsSamples = false,
 ): RuntimeInkElement[] {
-  return copyElementsToRuntimeInternal(elements, pointCopies, undefined, ownsSamples);
+  return drainSteps(copyElementsSteps(elements, pointCopies, undefined, ownsSamples));
 }
 
-function copyElementsToRuntimeInternal(
+export function copyElementsToRuntimeSliced(
+  elements: readonly InkElementV1[],
+  context: RuntimeSliceContext,
+  pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
+  ownsSamples = false,
+): Promise<RuntimeInkElement[]> {
+  return runSteps(
+    copyElementsSteps(elements, pointCopies, undefined, ownsSamples, sampleStep(context)),
+    context,
+  );
+}
+
+function* copyElementsSteps(
   elements: readonly InkElementV1[],
   pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
   derivations?: SnapshotValidationDerivations,
   ownsSamples = false,
-): RuntimeInkElement[] {
-  return elements.map((element, index) => {
-    if (element.kind !== "stroke") return element;
-    if (derivations !== undefined) assertValidatedStrokeSource(element, derivations, index);
-    if (element.points instanceof Float64Array && (ownsSamples || isStoredStroke(element)))
-      return element as RuntimeStrokeElement;
-    const reusable = Object.isFrozen(element.points) || isStoredStroke(element);
-    let points = reusable ? pointCopies?.get(element.points) : undefined;
-    if (points === undefined) {
-      const copied = new Float64Array(element.points);
-      points =
-        derivations === undefined
-          ? adoptTransferredStrokeSamples(copied)
-          : (copied as RuntimeStrokeSamples);
-      copyValidatedSampleExtrema(element.points, points);
-      if (reusable) pointCopies?.set(element.points, points);
+  samplesPerStep = 256,
+): Generator<void, RuntimeInkElement[]> {
+  const copied: RuntimeInkElement[] = [];
+  const sampleCounts = { strokes: 0, strokePoints: 0 };
+  for (let index = 0; index < elements.length; index += 1) {
+    const element = elements[index]!;
+    const header = captureRuntimeElementHeader(element);
+    if (element.kind !== "stroke") copied.push(header as unknown as RuntimeInkElement);
+    else {
+      assertStagedSampleCapacity(sampleCounts, element.points.length, `$.elements[${index}]`);
+      if (derivations !== undefined) assertValidatedStrokeSource(element, derivations, index);
+      const points = yield* copyStrokeSteps(
+        element,
+        pointCopies,
+        derivations !== undefined,
+        ownsSamples,
+        samplesPerStep,
+      );
+      copied.push({ ...header, points } as unknown as RuntimeStrokeElement);
     }
-    return { ...element, points };
-  });
+    yield;
+  }
+  return copied;
+}
+
+function* copyStrokeSteps(
+  element: StrokeElementV1,
+  pointCopies: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples> | undefined,
+  validated: boolean,
+  ownsSamples: boolean,
+  samplesPerStep: number,
+): Generator<void, RuntimeStrokeSamples> {
+  const source = element.points;
+  const immutable = isImmutableStrokeSampleSource(source) || isStoredStroke(element);
+  const retained = immutable ? pointCopies?.get(source) : undefined;
+  if (retained !== undefined) return retained;
+  if (source instanceof Float64Array && (ownsSamples || isStoredStroke(element))) return source;
+  const candidate = yield* copyStrokeSamplesToRuntimeSteps(source, samplesPerStep);
+  const copiedImmutable = immutable || isImmutableStrokeSampleSource(source);
+  const points =
+    validated && (copiedImmutable || ownsSamples)
+      ? (candidate as RuntimeStrokeSamples)
+      : yield* validateRuntimeSamplesSteps(candidate, samplesPerStep);
+  if (copiedImmutable || ownsSamples) copyValidatedSampleExtrema(source, points);
+  if (copiedImmutable) pointCopies?.set(source, points);
+  return points;
+}
+
+function sampleStep(context: RuntimeSliceContext): number {
+  const profile = context.workProfile ?? runtimeSliceWorkProfile(context.sliceMilliseconds?.());
+  return Math.max(1, Math.floor(profile.inputByteLimit / 24));
+}
+
+function drainSteps<T>(steps: Generator<void, T>): T {
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+async function runSteps<T>(steps: Generator<void, T>, context: RuntimeSliceContext): Promise<T> {
+  context.signal.throwIfAborted();
+  let step = steps.next();
+  while (!step.done) {
+    const pending = context.checkpoint();
+    if (pending !== undefined) await pending;
+    context.signal.throwIfAborted();
+    step = steps.next();
+  }
+  return step.value;
 }
 
 function assertValidatedStrokeSource(

@@ -7,48 +7,83 @@ export interface ArrangeResult<T> {
 
 export type SelectionPredicate<T> = (element: T) => boolean;
 
-function bringForward<T>(elements: readonly T[], selection: readonly boolean[]): T[] {
-  const arranged: T[] = [];
-  let index = 0;
+interface PreparedBand<T> {
+  readonly elements: T[];
+  readonly selection: boolean[];
+  selectedCount: number;
+}
 
-  while (index < elements.length) {
-    if (selection[index] !== true) {
-      arranged.push(...elements.slice(index, index + 1));
-      index += 1;
-      continue;
+function* moveAdjacentSteps<T>(
+  band: PreparedBand<T>,
+  forward: boolean,
+  stepsPerChunk: number,
+): Generator<void, T[]> {
+  const { elements, selection } = band;
+  const direction = forward ? -1 : 1;
+  let index = forward ? elements.length - 2 : 1;
+  let steps = 0;
+  while (index >= 0 && index < elements.length) {
+    const neighbor = index - direction;
+    if (selection[index] === true && selection[neighbor] === false) {
+      const element = elements[index]!;
+      elements[index] = elements[neighbor]!;
+      elements[neighbor] = element;
+      selection[index] = false;
+      selection[neighbor] = true;
     }
-
-    const runStart = index;
-    while (selection[index] === true) index += 1;
-    if (index < elements.length) arranged.push(...elements.slice(index, index + 1));
-    arranged.push(...elements.slice(runStart, index));
-    if (index < elements.length) index += 1;
+    index += direction;
+    if (++steps % stepsPerChunk === 0) yield;
   }
+  if (steps % stepsPerChunk !== 0) yield;
+  return elements;
+}
 
+function* partitionSteps<T>(
+  band: PreparedBand<T>,
+  selectedLast: boolean,
+  stepsPerChunk: number,
+): Generator<void, T[]> {
+  const arranged: T[] = [];
+  let selectedIndex = selectedLast ? band.elements.length - band.selectedCount : 0;
+  let unselectedIndex = selectedLast ? 0 : band.selectedCount;
+  for (let index = 0; index < band.elements.length; index += 1) {
+    const target = band.selection[index] === true ? selectedIndex++ : unselectedIndex++;
+    arranged[target] = band.elements[index]!;
+    if ((index + 1) % stepsPerChunk === 0) yield;
+  }
+  if (band.elements.length % stepsPerChunk !== 0) yield;
   return arranged;
 }
 
-function sendBackward<T>(elements: readonly T[], selection: readonly boolean[]): T[] {
-  return bringForward([...elements].reverse(), [...selection].reverse()).reverse();
-}
-
-function stablePartition<T>(
+/** Yields bounded logical work; the consumer's central scheduler decides when to hand off. */
+export function* arrangeRenderBandSteps<T>(
   elements: readonly T[],
-  selection: readonly boolean[],
-  selectedLast: boolean,
-): T[] {
-  const selectedElements: T[] = [];
-  const unselectedElements: T[] = [];
-  for (const [index, element] of elements.entries()) {
-    (selection[index] === true ? selectedElements : unselectedElements).push(element);
+  selected: SelectionPredicate<T>,
+  action: ArrangeAction,
+  stepsPerChunk = 256,
+): Generator<void, ArrangeResult<T>> {
+  if (!Number.isSafeInteger(stepsPerChunk) || stepsPerChunk < 1) {
+    throw new RangeError("Arrange chunk size must be a positive safe integer.");
   }
-  return selectedLast
-    ? [...unselectedElements, ...selectedElements]
-    : [...selectedElements, ...unselectedElements];
-}
-
-function hasOrderChanged<T>(before: readonly T[], after: readonly T[]): boolean {
-  return before.some((element, index) => element !== after[index]);
+  const band: PreparedBand<T> = { elements: [], selection: [], selectedCount: 0 };
+  for (let index = 0; index < elements.length; index += 1) {
+    const element = elements[index]!;
+    const isSelected = selected(element);
+    band.elements.push(element);
+    band.selection.push(isSelected);
+    if (isSelected) band.selectedCount += 1;
+    if ((index + 1) % stepsPerChunk === 0) yield;
+  }
+  if (elements.length % stepsPerChunk !== 0) yield;
+  const adjacent = action === "bring-forward" || action === "send-backward";
+  const arranged = adjacent
+    ? yield* moveAdjacentSteps(band, action === "bring-forward", stepsPerChunk)
+    : yield* partitionSteps(band, action === "bring-to-front", stepsPerChunk);
+  for (let index = 0; index < elements.length; index += 1) {
+    if (elements[index] !== arranged[index]) return { elements: arranged, changed: true };
+    if ((index + 1) % stepsPerChunk === 0) yield;
+  }
+  return { elements, changed: false };
 }
 
 export function arrangeRenderBand<T>(
@@ -56,23 +91,8 @@ export function arrangeRenderBand<T>(
   selected: SelectionPredicate<T>,
   action: ArrangeAction,
 ): ArrangeResult<T> {
-  const selection = elements.map(selected);
-  let arranged: T[];
-  switch (action) {
-    case "bring-forward":
-      arranged = bringForward(elements, selection);
-      break;
-    case "send-backward":
-      arranged = sendBackward(elements, selection);
-      break;
-    case "bring-to-front":
-      arranged = stablePartition(elements, selection, true);
-      break;
-    case "send-to-back":
-      arranged = stablePartition(elements, selection, false);
-      break;
-  }
-
-  const changed = hasOrderChanged(elements, arranged);
-  return { elements: changed ? arranged : elements, changed };
+  const steps = arrangeRenderBandSteps(elements, selected, action);
+  let result = steps.next();
+  while (!result.done) result = steps.next();
+  return result.value;
 }

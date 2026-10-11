@@ -23,4 +23,12 @@ export class MutationPreparationScheduler {
     await this.scheduler.yieldControl();
     return !(this.scheduler.isCancelled?.() ?? false);
   }
+
+  public async run<T>(steps: Generator<void | boolean, T>): Promise<T | "cancelled"> {
+    while (true) {
+      if (!(this.checkpoint() || (await this.resume()))) return "cancelled";
+      const step = steps.next();
+      if (step.done) return step.value;
+    }
+  }
 }

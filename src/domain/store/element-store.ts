@@ -161,6 +161,9 @@ export class ElementStore {
     const rank = this.#ranks.get(id);
     return rank === undefined ? undefined : Object.freeze({ ...rank });
   }
+  public bandSize(band: RenderBand): number {
+    return this.#bands[band].length;
+  }
   public getSemanticAnchors(id: string): readonly ResolvedShapeAnchor[] | null {
     return this.#runtime.semanticAnchors(this.#records.get(id));
   }

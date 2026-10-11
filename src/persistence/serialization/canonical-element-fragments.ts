@@ -1,24 +1,46 @@
 import type { InkElementV1 } from "../../domain/schema/public";
 import { canonicalElement } from "./canonical-snapshot";
-import { encodeStrokeSamples } from "./stroke-sample-codec";
+import { encodeStrokeSamples, encodeStrokeSamplesSteps } from "./stroke-sample-codec";
 import type { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 
 export function serializeCanonicalElementMetadata(
   element: InkElementV1,
   sampleCache?: StrokeSampleEncodingCache,
 ): string {
-  const canonical = canonicalElement(element, true);
-  return JSON.stringify(
-    canonical.kind === "stroke"
-      ? {
-          ...canonical,
-          points:
-            element.kind === "stroke" && sampleCache !== undefined
-              ? sampleCache.resolve(element)
-              : encodeStrokeSamples(canonical.points),
-        }
-      : canonical,
-  );
+  const points =
+    element.kind === "stroke"
+      ? (sampleCache?.resolve(element) ?? encodeStrokeSamples(element.points))
+      : undefined;
+  const steps = canonicalMetadataSteps(element, points, undefined, undefined);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+export function* serializeCanonicalElementMetadataSteps(
+  element: InkElementV1,
+  sampleCache?: StrokeSampleEncodingCache,
+  signal?: AbortSignal,
+): Generator<void, string> {
+  return yield* canonicalMetadataSteps(element, undefined, sampleCache, signal);
+}
+
+function* canonicalMetadataSteps(
+  element: InkElementV1,
+  encoding: string | undefined,
+  sampleCache: StrokeSampleEncodingCache | undefined,
+  signal: AbortSignal | undefined,
+): Generator<void, string> {
+  signal?.throwIfAborted();
+  if (element.kind !== "stroke") return JSON.stringify(canonicalElement(element));
+  const canonical = canonicalElement({ ...element, points: [] });
+  const points =
+    encoding ??
+    (sampleCache === undefined
+      ? yield* encodeStrokeSamplesSteps(element.points, signal)
+      : yield* sampleCache.resolveSteps(element, signal));
+  signal?.throwIfAborted();
+  return JSON.stringify({ ...canonical, points });
 }
 
 /** Avoid materializing or stringifying an entire long runtime stroke in one task. */

@@ -5,6 +5,7 @@ import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-edit
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 import {
   selectedRectangle,
   createClipboardDocumentModel,
@@ -76,6 +77,7 @@ function actionFixture(
     },
     onStateChanged: vi.fn(),
     ownerWindow: clipboardWindow(write),
+    workScheduler: immediateWorkScheduler(),
     sceneStore: new ElementSceneStore(model.store),
     setSelection,
     visibleCenter: () => ({ x: 100, y: 100 }),

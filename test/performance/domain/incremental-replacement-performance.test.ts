@@ -1,6 +1,7 @@
 import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 import { expect, it, vi } from "vitest";
 import * as elementValidation from "../../../src/domain/schema/element-validation";
+import * as sampleValidation from "../../../src/domain/schema/stroke-sample-range-validation";
 import * as bottomHeap from "../../../src/domain/spatial/max-bottom-heap";
 import { UniformSpatialIndex } from "../../../src/domain/spatial";
 import { applySelectionStyleChange } from "../../../src/editor/tools/style-change";
@@ -144,20 +145,24 @@ it("validates resize samples once at the authoritative prepared transaction", as
     startPointer: { x: 100, y: 100 },
   });
   session.update({ x: 110, y: 110 });
-  const validate = vi.spyOn(elementValidation, "validateInkElementV1");
+  const validate = vi.spyOn(sampleValidation, "assertStrokeSampleRange");
   try {
     const materialized = await session.prepareCommitTimeSliced(scheduler);
     expect(validate).not.toHaveBeenCalled();
     if (materialized.status !== "ready") throw new Error("Expected resize materialization.");
     const prepared = await store.prepareElementReplacement(materialized.replacements, scheduler);
     if (prepared.token === null) throw new Error("Expected resize transaction.");
-    expect(validate.mock.calls).toHaveLength(selected.length);
     expect(
-      validate.mock.calls.reduce(
-        (sum, [element]) => sum + (element as { points: number[] }).points.length,
-        0,
-      ),
+      validate.mock.calls.reduce((sum, [, , , , range]) => sum + range.end - range.start, 0),
     ).toBe(sampleValues);
+    expect(validate.mock.calls.every(([, , , , range]) => range.end - range.start <= 768)).toBe(
+      true,
+    );
+    const stagedBuffers = new Set(validate.mock.calls.map(([points]) => points));
+    expect(stagedBuffers.size).toBe(selected.length);
+    for (const replacement of materialized.replacements) {
+      if (replacement.kind === "stroke") expect(stagedBuffers.has(replacement.points)).toBe(false);
+    }
     expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
     expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("cancelled");
   } finally {

@@ -96,7 +96,7 @@ describe("owned history replay", () => {
     const retained = transition.reverse.elements![0]!;
     if (retained.kind !== "stroke") throw new Error("Expected retained stroke.");
     retained.points[0] = retained.points[0]! + 10;
-    const build = vi.spyOn(recordFactory, "createInitialRecord");
+    const build = vi.spyOn(recordFactory, "createOwnedInitialRecordSteps");
     try {
       await apply(store, transition.reverse, transition);
       expect(build).toHaveBeenCalledTimes(1);
@@ -113,7 +113,7 @@ describe("owned history replay", () => {
   it("does not transfer private record provenance to another store", async () => {
     const { transition } = await removedStroke();
     const other = new ElementStore();
-    const build = vi.spyOn(recordFactory, "createInitialRecord");
+    const build = vi.spyOn(recordFactory, "createOwnedInitialRecordSteps");
     try {
       await apply(other, transition.reverse, transition);
       expect(build).toHaveBeenCalledTimes(1);

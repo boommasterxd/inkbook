@@ -1,6 +1,7 @@
 import { selectionCenterlineBounds } from "./centerline-bounds";
 import {
   canonicalPoint,
+  calculateElementBoundsSteps,
   normalizeRotation,
   rotatePointClockwise,
   unionBounds,
@@ -13,7 +14,7 @@ import type {
   SelectionPreviewFrame,
   SelectionPreviewTransform,
 } from "./handle-types";
-import { rotateSelection } from "./transforms";
+import { rotateSelection, type TransformSliceScheduler } from "./transforms";
 
 export type OrientedSelectionFrame = SelectionPreviewFrame;
 
@@ -35,6 +36,19 @@ export class SelectionFrameSession {
     if (selected.length < 2) return null;
     this.#frame ??= createSelectionFrame(selected);
     return this.#frame;
+  }
+
+  public async currentTimeSliced(
+    selected: readonly SelectedElementGeometry[],
+    scheduler: TransformSliceScheduler,
+  ): Promise<OrientedSelectionFrame | null> {
+    if (selected.length < 2) return null;
+    if (this.#frame !== null) return this.#frame;
+    const revision = this.#revision;
+    const frame = await prepareFrame(createSelectionFrameSteps(selected), scheduler);
+    if (revision !== this.#revision || scheduler.isCancelled?.()) return null;
+    this.#frame = frame;
+    return frame;
   }
 
   public reset(): void {
@@ -62,7 +76,30 @@ export class SelectionFrameSession {
     if (frame === null || elements.length < 2) return undefined;
     const replacement = createSelectionFrameAtRotation(elements, frame.rotation);
     if (replacement === null) return undefined;
+    return this.#rebaseEffect(frame, replacement, this.#revision);
+  }
+
+  public async rebaseTimeSliced(
+    frame: OrientedSelectionFrame | null,
+    elements: readonly InkElementV1[],
+    scheduler: TransformSliceScheduler,
+  ): Promise<SelectionFrameHistoryEffect | undefined> {
+    if (frame === null || elements.length < 2) return undefined;
     const revision = this.#revision;
+    const replacement = await prepareFrame(
+      createSelectionFrameAtRotationSteps(elements, frame.rotation),
+      scheduler,
+    );
+    if (replacement === null || revision !== this.#revision || scheduler.isCancelled?.())
+      return undefined;
+    return this.#rebaseEffect(frame, replacement, revision);
+  }
+
+  #rebaseEffect(
+    frame: OrientedSelectionFrame,
+    replacement: OrientedSelectionFrame,
+    revision: number,
+  ): SelectionFrameHistoryEffect {
     return {
       apply: () => this.#replaceAtRevision(revision, replacement),
       revert: () => this.#replaceAtRevision(revision, frame),
@@ -80,11 +117,20 @@ export function createSelectionFrameAtRotation(
   elements: readonly InkElementV1[],
   rotation: number,
 ): OrientedSelectionFrame | null {
+  return completeFrame(createSelectionFrameAtRotationSteps(elements, rotation));
+}
+
+function* createSelectionFrameAtRotationSteps(
+  elements: readonly InkElementV1[],
+  rotation: number,
+): Generator<void, OrientedSelectionFrame | null> {
   let bounds: Bounds | null = null;
   for (const source of elements) {
     const element = selectionFrameElementAtRotation(source, rotation);
-    const current = selectionCenterlineBounds(element);
+    const painted = yield* calculateElementBoundsSteps(element);
+    const current = selectionCenterlineBounds(element, painted);
     bounds = bounds === null ? current : unionBounds(bounds, current);
+    yield;
   }
   if (bounds === null) return null;
   return selectionFrameFromLocalBounds(bounds, rotation);
@@ -129,16 +175,46 @@ export function selectionFrameElementAtRotation(
 export function createSelectionFrame(
   selected: readonly SelectedElementGeometry[],
 ): OrientedSelectionFrame | null {
+  return completeFrame(createSelectionFrameSteps(selected));
+}
+
+function* createSelectionFrameSteps(
+  selected: readonly SelectedElementGeometry[],
+): Generator<void, OrientedSelectionFrame | null> {
   let bounds: Bounds | null = null;
   for (const item of selected) {
     const current = selectionCenterlineBounds(item.element, item.bounds);
     bounds = bounds === null ? current : unionBounds(bounds, current);
+    yield;
   }
   if (bounds === null) return null;
   return {
     points: framePoints(bounds),
     rotation: 0,
   };
+}
+
+function completeFrame(
+  steps: Generator<void, OrientedSelectionFrame | null>,
+): OrientedSelectionFrame | null {
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+async function prepareFrame(
+  steps: Generator<void, OrientedSelectionFrame | null>,
+  scheduler: TransformSliceScheduler,
+): Promise<OrientedSelectionFrame | null> {
+  while (!scheduler.isCancelled?.()) {
+    if (scheduler.shouldYield()) {
+      await scheduler.yieldControl();
+      if (scheduler.isCancelled?.()) return null;
+    }
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+  return null;
 }
 
 export function selectionFramePoint(frame: OrientedSelectionFrame, position: BoxAnchorV1): PointV1 {

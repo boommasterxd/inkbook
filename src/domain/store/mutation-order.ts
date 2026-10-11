@@ -128,6 +128,7 @@ async function collectValidatedBand(
     }
     if (prior?.band !== band || prior.rank !== index) state.ranks.set(id, { band, rank: index });
   }
+  state.dirtyBands[band] ||= state.bands[band].length !== state.source.bands[band].length;
 }
 
 export function mutationOrderPreserved(

@@ -1,5 +1,8 @@
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
+import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
+import * as strokeSamples from "../../../src/domain/elements/public";
+import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 import { packElementsChunked } from "../../../src/persistence/worker/runtime/element-wire-codec";
@@ -137,39 +140,56 @@ describe("wire preparation deterministic work bounds", () => {
   });
 
   it.each([
-    { elements: 129, points: 1, expectedSlices: 2 },
-    { elements: 7, points: MAX_STROKE_POINTS, expectedSlices: 7 },
+    { elements: 129, points: 1, expectedSlices: 260 },
+    { elements: 7, points: MAX_STROKE_POINTS, expectedSlices: 1344 },
   ])(
     "bounds observed packing work for $elements strokes of $points points",
     async ({ elements, points, expectedSlices }) => {
       const observed = observedPackingInput(elements, points);
-      const slices: { elements: number; bytes: number; pointReads: number }[] = [];
-      const checkpoint = async (): Promise<void> => {
+      const slices: ReturnType<typeof observed.capture>[] = [];
+      const checkpoint = (): undefined => {
         const slice = observed.capture();
         slices.push(slice);
-        expect(slice.elements).toBeLessThanOrEqual(64);
-        expect(slice.bytes - points * 3 * Float64Array.BYTES_PER_ELEMENT).toBeLessThan(
-          WORK_CHUNK_BYTES,
-        );
-        expect(slice.pointReads).toBeGreaterThanOrEqual(slice.elements * points * 3);
-        expect(slice.pointReads).toBeLessThanOrEqual(slice.elements * points * 8);
+        expect(slice.elements).toBeLessThanOrEqual(1);
+        expect(slice.bytes).toBeLessThanOrEqual(768 * Float64Array.BYTES_PER_ELEMENT);
+        expect(slice.pointReads).toBeLessThanOrEqual(768);
+        // Enumerable-key inspection reads each descriptor for for-in and own-key validation.
+        expect(slice.descriptorReads).toBeLessThanOrEqual(2 * 768);
+        expect(slice.validatedValues).toBeLessThanOrEqual(768);
+        return undefined;
       };
-      const packed = await packElementsChunked(observed.elements, {
-        checkpoint,
-        signal: new AbortController().signal,
-      });
-      expect(slices).toHaveLength(expectedSlices);
-      await checkpoint();
-      expect(slices.reduce((sum, slice) => sum + slice.elements, 0)).toBe(elements);
-      expect(slices.reduce((sum, slice) => sum + slice.bytes, 0)).toBe(elements * points * 24);
-      expect(packed.records).toHaveLength(elements);
-      expect(packed.pointBuffers).toHaveLength(elements);
-      for (const [index, buffer] of packed.pointBuffers.entries()) {
-        expect(packed.records[index]).toMatchObject({
-          id: `stroke-${index}`,
-          pointsBufferIndex: index,
+      try {
+        const packing = packElementsChunked(observed.elements, {
+          checkpoint,
+          signal: new AbortController().signal,
         });
-        expect(Array.from(buffer)).toEqual(observed.samples);
+        // A free shared budget drains bounded units without a forced asynchronous handoff.
+        const inlineSlices = slices.length;
+        const packed = await packing;
+        expect(inlineSlices).toBe(expectedSlices);
+        checkpoint();
+        expect(slices.reduce((sum, slice) => sum + slice.elements, 0)).toBe(elements);
+        expect(slices.reduce((sum, slice) => sum + slice.bytes, 0)).toBe(elements * points * 24);
+        expect(slices.reduce((sum, slice) => sum + slice.pointReads, 0)).toBe(
+          elements * points * 3,
+        );
+        expect(slices.reduce((sum, slice) => sum + slice.descriptorReads, 0)).toBe(
+          elements * points * 9,
+        );
+        expect(slices.reduce((sum, slice) => sum + slice.validatedValues, 0)).toBe(
+          elements * points * 3,
+        );
+        expect(packed.records).toHaveLength(elements);
+        expect(packed.pointBuffers).toHaveLength(elements);
+        for (const [index, buffer] of packed.pointBuffers.entries()) {
+          expect(packed.records[index]).toMatchObject({
+            id: `stroke-${index}`,
+            pointsBufferIndex: index,
+          });
+          expect(Array.from(buffer)).toEqual(observed.samples);
+        }
+      } finally {
+        observed.restore();
       }
     },
   );
@@ -177,15 +197,25 @@ describe("wire preparation deterministic work bounds", () => {
 
 function observedPackingInput(elementCount: number, pointCount: number) {
   const samples = Array.from({ length: pointCount * 3 }, (_, index) => (index % 3 === 2 ? 1 : 0));
-  let pointReads = 0;
+  const { observed: points, work } = observeSchemaArray(samples);
+  let copiedBytes = 0;
+  let validatedValues = 0;
+  const copyRange = sampleCopy.copySampleRange;
+  const copying = vi
+    .spyOn(sampleCopy, "copySampleRange")
+    .mockImplementation((source, target, start, end, proof) => {
+      copiedBytes += (end - start) * Float64Array.BYTES_PER_ELEMENT;
+      copyRange(source, target, start, end, proof);
+    });
+  const assertSamples = strokeSamples.assertStrokeSamplesV1;
+  const validation = vi
+    .spyOn(strokeSamples, "assertStrokeSamplesV1")
+    .mockImplementation((values) => {
+      validatedValues += values.length;
+      assertSamples(values);
+    });
   let elementReads = 0;
   let nextIndex = 0;
-  const points = new Proxy(samples, {
-    get(target, property, receiver) {
-      if (typeof property === "string" && /^\d+$/.test(property)) pointReads += 1;
-      return Reflect.get(target, property, receiver) as unknown;
-    },
-  });
   const strokes: StrokeElementV1[] = Array.from({ length: elementCount }, (_, index) => ({
     id: `stroke-${index}`,
     kind: "stroke",
@@ -215,10 +245,23 @@ function observedPackingInput(elementCount: number, pointCount: number) {
     elements,
     samples,
     capture: () => {
-      const result = { elements: elementReads, bytes: elementReads * pointCount * 24, pointReads };
+      const result = {
+        elements: elementReads,
+        bytes: copiedBytes,
+        pointReads: work.indexedReads,
+        descriptorReads: work.descriptorReads,
+        validatedValues,
+      };
       elementReads = 0;
-      pointReads = 0;
+      copiedBytes = 0;
+      validatedValues = 0;
+      work.indexedReads = 0;
+      work.descriptorReads = 0;
       return result;
+    },
+    restore: () => {
+      copying.mockRestore();
+      validation.mockRestore();
     },
   };
 }

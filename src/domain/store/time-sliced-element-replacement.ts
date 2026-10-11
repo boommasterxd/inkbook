@@ -13,10 +13,11 @@ import {
 import { planCanonicalStrokeReplacement } from "./canonical-stroke-replacement";
 import { DocumentCapacity, type DocumentCapacityPatch } from "./document-capacity";
 import {
-  createOwnedReplacementRecord,
+  createOwnedReplacementRecordSteps,
   createOwnedTranslatedReplacementRecord,
 } from "./record-factory";
 import { requireElementRecord } from "./record-access";
+import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import { cancelled, ReplacementCheckpoint, yieldWhenRequested } from "./replacement-scheduler";
 import {
   prepareReplacementCandidatesTimeSliced,
@@ -197,7 +198,16 @@ async function prepareCandidateRecords(
   const changes: PreparedReplacementRecords["changes"] = [];
   let geometryVersion = currentGeometryVersion;
   let paintVersion = currentPaintVersion;
-  const work = new ReplacementCheckpoint(scheduler);
+  let recordYields = 0;
+  const trackedScheduler: StoreSliceScheduler = {
+    ...scheduler,
+    yieldControl: async () => {
+      await scheduler.yieldControl();
+      recordYields += 1;
+    },
+  };
+  const work = new ReplacementCheckpoint(trackedScheduler);
+  const recordWork = new MutationPreparationScheduler(trackedScheduler);
   for (const candidate of candidates) {
     if (cancelled(scheduler)) return "cancelled";
     if (candidate.domains.includes("geometry") && geometryVersion === currentGeometryVersion) {
@@ -206,7 +216,13 @@ async function prepareCandidateRecords(
     if (candidate.domains.includes("paint") && paintVersion === currentPaintVersion) {
       paintVersion = nextVersion(currentPaintVersion, "paintVersion");
     }
-    const record = createCandidateRecord(candidate, geometryVersion, paintVersion);
+    const record = await createCandidateRecord(
+      candidate,
+      geometryVersion,
+      paintVersion,
+      recordWork,
+    );
+    if (record === "cancelled") return record;
     records.push(record);
     if (candidate.domains.includes("geometry")) {
       capacity.validateReplacementBounds(record);
@@ -241,7 +257,7 @@ async function prepareCandidateRecords(
     paintVersion,
     records,
     spatialReplacements,
-    yields: work.yields,
+    yields: recordYields,
   };
 }
 
@@ -267,11 +283,12 @@ export function commitReplacementPlan(
   commitReverseConnectionPatches(reverseConnections, plan.reversePatches);
 }
 
-function createCandidateRecord(
+async function createCandidateRecord(
   candidate: ReplacementCandidate,
   geometryVersion: number,
   paintVersion: number,
-): ElementRecord {
+  work: MutationPreparationScheduler,
+): Promise<ElementRecord | "cancelled"> {
   const nextGeometryVersion = candidate.domains.includes("geometry")
     ? geometryVersion
     : candidate.current.geometryVersion;
@@ -280,11 +297,13 @@ function createCandidateRecord(
     : candidate.current.paintVersion;
   const translation = canonicalStrokeTranslation(candidate.current.element, candidate.element);
   return translation === null
-    ? createOwnedReplacementRecord(
-        candidate.element,
-        candidate.current,
-        nextGeometryVersion,
-        nextPaintVersion,
+    ? work.run(
+        createOwnedReplacementRecordSteps(
+          candidate.element,
+          candidate.current,
+          nextGeometryVersion,
+          nextPaintVersion,
+        ),
       )
     : createOwnedTranslatedReplacementRecord(
         candidate.element,

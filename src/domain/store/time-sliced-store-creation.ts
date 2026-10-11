@@ -1,16 +1,14 @@
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import { FILE_SCHEMA_LIMITS } from "../schema/constants";
 import type { ElementValidationDerivation, InkElementV1 } from "../schema/public";
+import { validateRuntimeInkElementV1Steps } from "../schema/element-validation";
 import { UniformSpatialIndex } from "../spatial/index";
 
 import { assertResolvedConnections, connectionReferences } from "./connections";
 import { DocumentCapacity } from "./document-capacity";
-import {
-  createInitialRecord,
-  createOwnedInitialRecord,
-  createOwnedValidatedInitialRecord,
-} from "./record-factory";
-import { assertValidElement, assertValidRuntimeElement } from "./replacement-planner";
+import { createOwnedInitialRecordSteps, createOwnedValidatedInitialRecord } from "./record-factory";
+import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import { prepareRuntimeElement } from "./runtime-element-preparation";
 import { StoreAppendBuilder } from "./store-append-builder";
 import type { ElementRecord, EndpointReference, StoreSliceScheduler } from "./types";
 
@@ -42,11 +40,20 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
   readonly #ranks = new Map<string, InitialRankEntry>();
   readonly #records = new Map<string, ElementRecord>();
   readonly #scheduler: StoreSliceScheduler;
+  readonly #work: MutationPreparationScheduler;
   #yields = 0;
 
   public constructor(scheduler: StoreSliceScheduler) {
     super();
     this.#scheduler = scheduler;
+    this.#work = new MutationPreparationScheduler({
+      isCancelled: () => this.#isCancelled(),
+      shouldYield: () => scheduler.shouldYield(),
+      yieldControl: async () => {
+        await scheduler.yieldControl();
+        this.#yields += 1;
+      },
+    });
   }
 
   protected override async appendBatch(
@@ -74,15 +81,13 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     this.#assertOpen();
     if (derivations !== undefined) return this.#appendValidatedRuntime(elements, derivations);
     for (let index = 0; index < elements.length; index += 1) {
-      const element = elements[index]!;
       if (this.#isCancelled()) return this.#cancel();
-      if (ownsRuntimeElements) assertValidRuntimeElement(element);
-      else assertValidElement(element);
+      const element = await this.#prepareElement(elements[index]!, ownsRuntimeElements);
+      if (element === "cancelled") return this.#cancel();
       if (this.#records.has(element.id))
         throw new RangeError(`Duplicate element ID: ${element.id}`);
-      const record = ownsRuntimeElements
-        ? createOwnedInitialRecord(element)
-        : createInitialRecord(element);
+      const record = await this.#work.run(createOwnedInitialRecordSteps(element));
+      if (record === "cancelled" || this.#isCancelled()) return this.#cancel();
       const capacityPatch = this.#capacity.prepare([], [record]);
       this.#index.insert(element.id, record.bounds);
       this.#capacity.commit(capacityPatch);
@@ -91,6 +96,24 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
       if (continuation !== 0) this.#yields += await continuation;
     }
     return this.#isCancelled() ? this.#cancel() : "accepted";
+  }
+
+  async #prepareElement(
+    element: InkElementV1,
+    ownsRuntimeElements: boolean,
+  ): Promise<InkElementV1 | "cancelled"> {
+    if (!ownsRuntimeElements) {
+      if (element?.kind === "stroke" && element.points instanceof Float64Array) {
+        throw new RangeError("Invalid element replacement: invalid-type");
+      }
+      return prepareRuntimeElement(element, undefined, undefined, this.#work);
+    }
+    const validation = await this.#work.run(
+      validateRuntimeInkElementV1Steps(element, {}, 2048, 256),
+    );
+    if (validation === "cancelled") return validation;
+    if (!validation.ok) throw new RangeError(`Invalid runtime element: ${validation.error.code}`);
+    return element;
   }
 
   async #appendValidatedRuntime(

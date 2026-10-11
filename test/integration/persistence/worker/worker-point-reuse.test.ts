@@ -25,7 +25,7 @@ it("retains worker-owned shape points through hosted move and undo requests", as
   };
   const runtime = new DocumentWorkerRuntime(identity, null, undefined, true);
   const fallback = new DocumentWorkerRuntime(identity);
-  const execute = vi.spyOn(runtime, "execute");
+  const decodedRequests = observeDecodedRequests(runtime);
   const detach = attachDocumentWorkerHost(hostEndpoint, runtime);
   const client = new WorkerDocumentRuntimePort(() => clientEndpoint, {
     workScheduler: new TestWorkScheduler(),
@@ -43,10 +43,10 @@ it("retains worker-owned shape points through hosted move and undo requests", as
         type: "model-sync-full",
       }),
     ).toMatchObject({ type: "model-sync-success" });
-    expect(await fallback.execute(execute.mock.calls[0]![0])).toMatchObject({
+    expect(await fallback.execute(decodedRequests[0]!)).toMatchObject({
       type: "model-sync-success",
     });
-    const original = requestStroke(execute.mock.calls[0]![0]);
+    const original = requestStroke(decodedRequests[0]!);
     for (const [index, offset] of [
       { x: 5, y: 7 },
       { x: 0, y: 0 },
@@ -67,11 +67,11 @@ it("retains worker-owned shape points through hosted move and undo requests", as
           type: "model-sync-incremental",
         }),
       ).toMatchObject({ type: "model-sync-success" });
-      expect(await fallback.execute(execute.mock.calls[index + 1]![0])).toMatchObject({
+      expect(await fallback.execute(decodedRequests[index + 1]!)).toMatchObject({
         type: "model-sync-success",
       });
       expect(clientEndpoint.transfers.flat().length).toBe(transferredBefore);
-      expect(requestStroke(execute.mock.calls[index + 1]![0]).points).toBe(original.points);
+      expect(requestStroke(decodedRequests[index + 1]!).points).toBe(original.points);
       for (const model of [runtime, fallback]) {
         expect(model.instrumentation).toMatchObject({
           fragmentBuilds: 0,
@@ -107,6 +107,19 @@ it("retains worker-owned shape points through hosted move and undo requests", as
     detach();
   }
 });
+
+function observeDecodedRequests(runtime: DocumentWorkerRuntime) {
+  const decodedRequests: DocumentRuntimeRequest[] = [];
+  const execute = runtime.execute.bind(runtime);
+  vi.spyOn(runtime, "execute").mockImplementation((header, observer, prepare) =>
+    execute(header, observer, async (context) => {
+      const request = prepare === undefined ? header : await prepare(context);
+      decodedRequests.push(request);
+      return request;
+    }),
+  );
+  return decodedRequests;
+}
 
 function requestStroke(request: DocumentRuntimeRequest) {
   const element =

@@ -6,8 +6,27 @@ import { MutationPreparationScheduler } from "../../../../src/domain/store/mutat
 import {
   captureOwnedMutationHistory,
   prepareOwnedMutationHistory,
+  restoreOwnedRecord,
+  restoreOwnedRecordSteps,
 } from "../../../../src/domain/store/owned-mutation-history";
-import { highlighter } from "./fixtures";
+import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import type { ElementRecord } from "../../../../src/domain/store/types";
+import { connectedLine, highlighter } from "./fixtures";
+
+function record(element: InkElementV1): ElementRecord {
+  return Object.freeze({
+    bounds: Object.freeze({ minX: 0, minY: 0, maxX: 200, maxY: 300 }),
+    element,
+    geometryVersion: 5,
+    paintVersion: 6,
+  });
+}
+
+function drain<T>(steps: Generator<void, T>): T {
+  let result = steps.next();
+  while (!result.done) result = steps.next();
+  return result.value;
+}
 
 describe("owned mutation history retention", () => {
   it("accounts for private records and leaves order-only records unretained", () => {
@@ -53,5 +72,84 @@ describe("owned mutation history retention", () => {
       }),
     );
     expect(prepared).toEqual(captureOwnedMutationHistory(delta));
+  });
+});
+
+describe("owned record restoration steps", () => {
+  const versions = { geometryVersion: 11, paintVersion: 12 };
+
+  it("preserves owned guards, current identity, bounds and domain versions", () => {
+    const element = highlighter();
+    const owned = record(element);
+    expect(drain(restoreOwnedRecordSteps(element, undefined, undefined, versions))).toBeUndefined();
+    expect(
+      drain(restoreOwnedRecordSteps({ ...element, createdAt: 99 }, owned, owned, versions)),
+    ).toBeUndefined();
+    expect(drain(restoreOwnedRecordSteps(element, owned, owned, versions))).toBe(owned);
+    const line = connectedLine();
+    const cases = [
+      { target: element, current: undefined, geometry: 11, paint: 12 },
+      { target: element, current: record({ ...element, createdAt: 99 }), geometry: 5, paint: 6 },
+      {
+        target: element,
+        current: record({ ...element, style: { ...element.style, opacity: 0.2 } }),
+        geometry: 5,
+        paint: 12,
+      },
+      {
+        target: element,
+        current: record({ ...element, points: [100, 300, 0.5, 250, 300, 0.5] }),
+        geometry: 11,
+        paint: 6,
+      },
+      { target: line, current: record({ ...line, startConnection: null }), geometry: 5, paint: 6 },
+    ];
+    for (const { target, current, geometry, paint } of cases) {
+      const retained = record(target);
+      const result = drain(restoreOwnedRecordSteps(target, current, retained, versions, 1));
+      expect(result).toEqual(restoreOwnedRecord(target, current, retained, versions));
+      expect(result).toMatchObject({ geometryVersion: geometry, paintVersion: paint });
+      expect(result!.element).toBe(retained.element);
+      expect(result!.bounds).toBe(retained.bounds);
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(retained.geometryVersion).toBe(5);
+      expect(retained.paintVersion).toBe(6);
+    }
+  });
+
+  it("bounds retained stroke reads across all replay comparisons and stops on abandonment", () => {
+    const samples = Array.from({ length: 30_000 }, (_, index) => (index % 3 === 2 ? 0.5 : index));
+    let reads = 0;
+    const points = () =>
+      new Proxy([...samples], {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/u.test(key)) reads += 1;
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      });
+    const element = { ...highlighter(), points: points() };
+    const retained = record({ ...element, points: points() });
+    const current = record({
+      ...element,
+      points: points(),
+      style: { ...element.style, opacity: 0.2 },
+    });
+    const steps = restoreOwnedRecordSteps(element, current, retained, versions);
+    let result;
+    do {
+      const previousReads = reads;
+      result = steps.next();
+      // The owned guard, current comparison and domain classification are three bounded phases.
+      expect(reads - previousReads).toBeLessThanOrEqual(3 * 512);
+    } while (!result.done);
+    expect(reads).toBe(samples.length * 6);
+    expect(result.value!.bounds).toBe(retained.bounds);
+    expect(result.value).toMatchObject({ geometryVersion: 5, paintVersion: 12 });
+    const stopped = restoreOwnedRecordSteps(element, current, retained, versions);
+    stopped.next();
+    const stoppedReads = reads;
+    stopped.return(undefined);
+    stopped.next();
+    expect(reads).toBe(stoppedReads);
   });
 });

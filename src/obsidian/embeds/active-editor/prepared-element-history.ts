@@ -9,6 +9,8 @@ import type { SelectionFrameHistoryEffect } from "../../../editor/selection/publ
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 import type { ActiveEditorHistory } from "./history";
+import { createSelectionStyleReplacementSteps } from "./controller-styles";
+import { applyDocumentHistoryMutation, collectDocumentBandOrder } from "./document-history";
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 export interface PreparedElementHistoryOptions {
@@ -28,6 +30,19 @@ export interface PreparedElementHistoryOptions {
 type SelectionFrameEffectFactory = (
   replacements: readonly InkElementV1[],
 ) => SelectionFrameHistoryEffect | undefined;
+
+export interface PreparedStyleChange {
+  readonly selection: ReadonlySet<string>;
+  readonly controlId: string;
+  readonly value: boolean | number | string;
+  readonly isCurrent: () => boolean;
+  readonly frameEffect?: (
+    previous: readonly InkElementV1[],
+    replacements: readonly InkElementV1[],
+    scheduler: TransformSliceScheduler,
+  ) => Promise<SelectionFrameHistoryEffect | undefined>;
+  readonly onCompleted: (committed: boolean) => void;
+}
 
 export class PreparedElementHistory {
   readonly #history: ActiveEditorHistory;
@@ -55,6 +70,95 @@ export class PreparedElementHistory {
     this.#generation += 1;
     this.#abort.abort();
     this.#setPending(false);
+  }
+
+  public cancel(): void {
+    this.#generation += 1;
+  }
+
+  public commitStyle(change: PreparedStyleChange): boolean {
+    if (this.#pending || this.#disposed || this.#history.isTraversing) return false;
+    const basisRevision = this.#model.revision;
+    this.#run(async (generation) => {
+      const scheduler = this.#scheduler(generation);
+      const isCancelled = scheduler.isCancelled;
+      const styleScheduler = {
+        ...scheduler,
+        isCancelled: () =>
+          isCancelled?.() === true ||
+          this.#history.isTraversing ||
+          !change.isCurrent() ||
+          this.#model.revision !== basisRevision,
+      };
+      const selected = this.#selectedElements(change.selection);
+      const steps = createSelectionStyleReplacementSteps(selected, change.controlId, change.value);
+      let step: ReturnType<typeof steps.next>;
+      do {
+        if (styleScheduler.isCancelled()) return false;
+        if (styleScheduler.shouldYield()) {
+          await styleScheduler.yieldControl();
+          if (styleScheduler.isCancelled()) return false;
+        }
+        step = steps.next();
+      } while (!step.done);
+      if (step.value === null) return false;
+      const plan = await this.#model.store.planReplacementsTimeSliced(
+        step.value.replacements,
+        styleScheduler,
+      );
+      if (plan === null || plan === "cancelled") return false;
+      const effect = await change.frameEffect?.(
+        step.value.previous,
+        step.value.replacements,
+        styleScheduler,
+      );
+      if (styleScheduler.isCancelled()) return false;
+      return this.#commitStyleApplied(plan.elements, styleScheduler, effect);
+    }, change.onCompleted);
+    return true;
+  }
+
+  *#selectedElements(selection: ReadonlySet<string>): Generator<InkElementV1> {
+    for (const id of selection) {
+      const record = this.#model.store.get(id);
+      if (record === undefined) throw new RangeError("Style selection is stale.");
+      yield record.element as InkElementV1;
+    }
+  }
+
+  async #commitStyleApplied(
+    replacements: readonly InkElementV1[],
+    scheduler: TransformSliceScheduler,
+    effect?: SelectionFrameHistoryEffect,
+  ): Promise<boolean> {
+    const bands = await collectDocumentBandOrder(this.#model.store, scheduler);
+    if (bands === "cancelled") return false;
+    const prepared = await this.#model.prepareElementMutation(
+      { bands, elements: replacements },
+      {
+        isCancelled: () => scheduler.isCancelled?.() ?? false,
+      },
+    );
+    if (prepared.status !== "prepared" || prepared.token === null || scheduler.isCancelled?.())
+      return false;
+    const applied = this.#model.commitPreparedElementMutation(prepared.token);
+    if (applied === null) return false;
+    const replay = (mutation: typeof applied.forward) =>
+      applyDocumentHistoryMutation(
+        this.#model,
+        mutation,
+        applied,
+        () => this.#disposed || !this.#isAttached(),
+      );
+    this.#history.registerApplied(
+      {
+        payloadBytes: applied.payloadBytes,
+        redo: () => replay(applied.forward),
+        undo: () => replay(applied.reverse),
+      },
+      effect,
+    );
+    return true;
   }
 
   public commitHandle(
@@ -120,6 +224,15 @@ export class PreparedElementHistory {
       previewCommit,
     );
     if (!committed) return false;
+    this.#registerApplied(previous, replacements, effect);
+    return true;
+  }
+
+  #registerApplied(
+    previous: readonly InkElementV1[],
+    replacements: readonly InkElementV1[],
+    effect?: SelectionFrameHistoryEffect,
+  ): void {
     this.#history.registerAppliedReplacement(
       previous,
       replacements,
@@ -129,7 +242,6 @@ export class PreparedElementHistory {
       },
       effect,
     );
-    return true;
   }
 
   async #replace(
@@ -138,10 +250,13 @@ export class PreparedElementHistory {
     suppressMotionIds?: readonly string[],
     previewCommit?: ReturnType<PreparedElementHistoryOptions["motion"]["beginPreviewCommit"]>,
   ): Promise<boolean> {
-    const cancellation = { isCancelled: () => this.#isCancelled(generation) };
+    const basisRevision = this.#model.revision;
+    const cancellation = {
+      isCancelled: () => this.#isCancelled(generation) || this.#model.revision !== basisRevision,
+    };
     const preparation = await this.#model.prepareElementReplacement(elements, cancellation);
     if (preparation.status !== "prepared" || preparation.token === null) return false;
-    if (this.#isCancelled(generation)) return false;
+    if (cancellation.isCancelled()) return false;
     if (
       previewCommit !== undefined &&
       suppressMotionIds !== undefined &&
@@ -157,14 +272,16 @@ export class PreparedElementHistory {
     onCompleted?: (committed: boolean) => void,
   ): void {
     const generation = ++this.#generation;
+    const release = this.#model.beginInteractiveOperation?.();
     this.#setPending(true);
     void operation(generation)
       .catch(() => false)
+      .finally(() => {
+        release?.();
+        this.#setPending(false);
+      })
       .then((committed) => {
         if (!this.#disposed && generation === this.#generation) onCompleted?.(committed);
-      })
-      .finally(() => {
-        if (generation === this.#generation) this.#setPending(false);
       });
   }
 
@@ -172,7 +289,8 @@ export class PreparedElementHistory {
     return {
       isCancelled: () => this.#isCancelled(generation),
       shouldYield: () => this.#workScheduler.shouldYield(),
-      yieldControl: () => this.#workScheduler.nextFrame(this.#abort.signal, "frame"),
+      yieldControl: () =>
+        this.#workScheduler.checkpoint(this.#abort.signal, "frame") ?? Promise.resolve(),
     };
   }
 
