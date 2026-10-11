@@ -25,6 +25,7 @@ import { createStandardRuntimeDomainFixture } from "../domain/standard-domain-fi
 import { ActiveDocumentHistory } from "../../../src/obsidian/embeds/active-editor/document-history";
 import { arrangeSelectionAvailability } from "../../../src/obsidian/embeds/active-editor/controller-elements";
 import * as strokePosition from "../../../src/domain/geometry/stroke-position";
+import { observeArrangementBandReads } from "../../fixtures/domain/arrangement-work";
 
 function fixture(elements: readonly InkElementV1[]) {
   const store = new ElementStore(elements);
@@ -122,14 +123,14 @@ it("reuses a rotated stroke outline for camera changes without recalculating sam
   const stroke = {
     ...indexedStroke(0),
     rotation: 37,
-    points: Array.from({ length: 250 }, (_, i) => [i, i % 7, 0.5]).flat(),
+    points: Array.from({ length: MAX_STROKE_POINTS }, (_, i) => [i, i % 7, 0.5]).flat(),
   };
   const test = fixture([stroke]);
-  const calculate = vi.spyOn(bounds, "calculateElementBounds");
+  const calculate = vi.spyOn(strokePosition, "strokeWorldPoint");
   try {
     test.interaction.renderSelection();
     const before = test.renderer.setSelectionOverlayPath.mock.lastCall;
-    expect(calculate).toHaveBeenCalled();
+    expect(calculate).toHaveBeenCalledTimes(MAX_STROKE_POINTS);
     calculate.mockClear();
     test.state.zoom = 2;
     test.interaction.renderCameraSelection();
@@ -295,6 +296,15 @@ async function hydratedStandardStrokes(maximum: boolean) {
 async function scheduledDocumentFixture(maximum = false) {
   const { store, originals } = await hydratedStandardStrokes(maximum);
   const work = { reads: 0, points: 0, maxReads: 0, maxPoints: 0, totalPoints: 0, yields: 0 };
+  const arrangementReads = { content: 0, highlight: 0 };
+  const countRead = () => {
+    work.reads += 1;
+    work.maxReads = Math.max(work.maxReads, work.reads);
+  };
+  const orders = observeArrangementBandReads((band) => {
+    arrangementReads[band] += 1;
+    countRead();
+  });
   const priorities: (string | undefined)[] = [];
   let leaseDepth = 0;
   let revision = 0;
@@ -320,13 +330,11 @@ async function scheduledDocumentFixture(maximum = false) {
     return actualPoint(...args);
   });
   const reads = vi.spyOn(store, "get").mockImplementation((id) => {
-    work.reads += 1;
-    work.maxReads = Math.max(work.maxReads, work.reads);
+    countRead();
     return ElementStore.prototype.get.call(store, id);
   });
   const ranks = vi.spyOn(store, "getRank").mockImplementation((id) => {
-    work.reads += 1;
-    work.maxReads = Math.max(work.maxReads, work.reads);
+    countRead();
     return ElementStore.prototype.getRank.call(store, id);
   });
   const committed = () => {
@@ -361,6 +369,7 @@ async function scheduledDocumentFixture(maximum = false) {
     documentHistory,
     scheduler,
     work,
+    arrangementReads,
     priorities,
     inspect: (id: string) => ElementStore.prototype.get.call(store, id)!,
     cleanup: () => {
@@ -370,6 +379,7 @@ async function scheduledDocumentFixture(maximum = false) {
       points.mockRestore();
       reads.mockRestore();
       ranks.mockRestore();
+      orders.mockRestore();
       expect(leaseDepth).toBe(0);
     },
   };
@@ -454,6 +464,7 @@ it.each(["bring-forward", "send-backward", "bring-to-front", "send-to-back"] as 
       expect(
         await test.documentHistory.arrange(action, selection, test.scheduler, () => true),
       ).toBe("applied");
+      expect(test.arrangementReads).toEqual({ content: 5_000, highlight: 5_000 });
       expect(test.history.commandCount).toBe(1);
       expect(publications).toHaveBeenCalledOnce();
       expect(await test.history.undoAsync()).toBe(true);
@@ -474,6 +485,9 @@ it.each(["bring-forward", "send-backward", "bring-to-front", "send-to-back"] as 
       expect(test.history.commandCount).toBe(1);
       expect(publications).toHaveBeenCalledTimes(3);
       expect(test.work.totalPoints).toBe(0);
+      expect(test.arrangementReads.content + test.arrangementReads.highlight).toBeLessThanOrEqual(
+        test.originals.length * 2,
+      );
       expect(test.work.yields).toBeGreaterThan(0);
       expect(test.work.maxReads).toBeLessThanOrEqual(257);
       expect(materialize).not.toHaveBeenCalled();
