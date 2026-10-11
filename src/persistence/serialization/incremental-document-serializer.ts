@@ -331,10 +331,10 @@ export class IncrementalDocumentSerializer {
     if (epoch !== this.#epoch)
       return codecFailure("base-revision-mismatch", "The staged model is stale.");
     for (const id of prepared.value.removed) {
+      this.sampleEncodingCache.retire(this.#elements.get(id));
       this.#facts.delete(id);
       this.#elements.delete(id);
       this.#cache.remove(id);
-      this.sampleEncodingCache.remove(id);
       this.#shapeCache.retire(id);
     }
     for (const element of changed.values()) {

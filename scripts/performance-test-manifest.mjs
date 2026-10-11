@@ -30,6 +30,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/navigation-reserve-capacity.test.ts",
     "test/performance/persistence/worker-point-references.test.ts",
     "test/performance/persistence/worker/scene-path-receiver-work.test.ts",
+    "test/performance/persistence/worker-history-sample-reuse.test.ts",
     "test/performance/persistence/worker/visible-scene-prefix-work.test.ts",
     "test/performance/rendering/scene/remote-scene-pipeline.test.ts",
     "test/performance/rendering/scene/remote-path-empty-lookahead.test.ts",

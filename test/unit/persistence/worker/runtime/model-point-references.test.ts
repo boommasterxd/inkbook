@@ -297,3 +297,99 @@ describe("encoded point identity snapshots", () => {
     expect(() => cache.resolver(1, executor)(STROKE.id)).toThrow("acknowledged");
   });
 });
+
+describe("confirmed deletion point restoration", () => {
+  async function remove(cache: ModelPointReferences) {
+    const request = { ...incremental, changedElements: [], removedIds: [STROKE.id] };
+    await encode(cache, request);
+    cache.accept(request, {
+      identity: unlockIdentity,
+      modelRevision: 1,
+      type: "model-sync-success",
+    });
+    return { ...incremental, baseModelRevision: 1, modelRevision: 2, changedElements: [STROKE] };
+  }
+
+  it("restores retired immutable samples only with the matching acknowledged base", async () => {
+    const cache = confirmedCache();
+    const request = await remove(cache);
+    expect(cache.instrumentation.retiredPointElements).toBe(1);
+    expect(() => cache.resolver(1, executor)(STROKE.id)).toThrow("acknowledged");
+    const encoded = await encode(cache, request);
+    expect(encoded.transfer).toHaveLength(0);
+    const context = { checkpoint: () => undefined, signal: new AbortController().signal };
+    await expect(decodeRuntimeRequestChunked(encoded.value, context)).rejects.toThrow("index");
+    await expect(
+      decodeRuntimeRequestChunked(encoded.value, context, cache.resolver(0, executor)),
+    ).rejects.toThrow("acknowledged");
+    await expect(
+      decodeRuntimeRequestChunked(
+        encoded.value,
+        context,
+        cache.resolver(1, { ...executor, sessionId: "foreign" }),
+      ),
+    ).rejects.toThrow("acknowledged");
+    const decoded = await decodeRuntimeRequestChunked(
+      encoded.value,
+      context,
+      cache.resolver(1, executor),
+    );
+    expect(decoded.type === "model-sync-incremental" && decoded.changedElements?.[0]).toEqual(
+      STROKE,
+    );
+    cache.accept(request, {
+      identity: unlockIdentity,
+      modelRevision: 2,
+      type: "model-sync-success",
+    });
+    expect(cache.resolver(2, executor)(STROKE.id)).toBe(STROKE.points);
+    expect(cache.instrumentation.retiredPointBytes).toBe(0);
+    expect(() => cache.resolver(2, executor)(STROKE.id, true)).toThrow("acknowledged");
+  });
+
+  it("copies changed identities and keeps failed or cancelled candidates unpublished", async () => {
+    const cache = confirmedCache();
+    const request = await remove(cache);
+    const changed = {
+      ...STROKE,
+      points: Object.freeze([...STROKE.points]) as typeof STROKE.points,
+    };
+    expect((await encode(cache, { ...request, changedElements: [changed] })).transfer).toHaveLength(
+      1,
+    );
+    cache.accept(request, {
+      identity: unlockIdentity,
+      code: "cancelled",
+      retryable: true,
+      type: "runtime-failure",
+    });
+    expect((await encode(cache, request)).transfer).toHaveLength(0);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      encodeRuntimeRequestChunked(request, {
+        checkpoint: () => undefined,
+        signal: controller.signal,
+        reusePoints: cache.encoder(request),
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(cache.instrumentation.retiredPointElements).toBe(1);
+    cache.clear();
+    expect((await encode(cache, request)).transfer).toHaveLength(1);
+    expect(cache.instrumentation.retiredPointBytes).toBe(0);
+  });
+
+  it("resets retired ownership with full synchronization and worker epochs", async () => {
+    const cache = confirmedCache();
+    const request = await remove(cache);
+    expect(
+      (await encode(cache, { ...request, identity: { ...unlockIdentity, workerEpoch: 4 } }))
+        .transfer,
+    ).toHaveLength(1);
+    const reset = { ...full, modelRevision: 1, snapshot: { ...snapshot(1), elements: [] } };
+    await encode(cache, reset);
+    cache.accept(reset, { identity: unlockIdentity, modelRevision: 1, type: "model-sync-success" });
+    expect(cache.instrumentation.retiredPointBytes).toBe(0);
+    expect((await encode(cache, request)).transfer).toHaveLength(1);
+  });
+});

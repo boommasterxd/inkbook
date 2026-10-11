@@ -7,6 +7,53 @@ import {
 import * as sampleCodec from "../../../src/persistence/serialization/stroke-sample-codec";
 import { adoptTransferredStrokeSamples } from "../../../src/persistence/worker/runtime/runtime-elements";
 import { createStandardPersistenceFixture } from "./fixtures";
+import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
+import { elementRenderBand } from "../../../src/persistence/serialization/element-fragments";
+
+async function deleteAndRestore(
+  serializer: IncrementalDocumentSerializer,
+  snapshot: InkSnapshotV1,
+) {
+  const retained = serializer.instrumentation.sampleEncodingCacheBytes;
+  expect(
+    serializer.applyDelta(
+      {
+        baseModelRevision: snapshot.revision,
+        modelRevision: snapshot.revision + 1,
+        removedIds: snapshot.elements.map((element) => element.id),
+      },
+      true,
+    ).ok,
+  ).toBe(true);
+  expect(serializer.currentElementCount()).toBe(0);
+  expect(serializer.instrumentation).toMatchObject({
+    cacheElements: 0,
+    sampleEncodingCacheElements: 10_000,
+    sampleEncodingCacheBytes: retained,
+  });
+  expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
+  expect(
+    serializer.applyDelta(
+      {
+        baseModelRevision: snapshot.revision + 1,
+        modelRevision: snapshot.revision + 2,
+        changedElements: snapshot.elements,
+        orderChanges: {
+          content: snapshot.elements
+            .filter((element) => elementRenderBand(element) === "content")
+            .map((element) => element.id),
+          highlight: snapshot.elements
+            .filter((element) => elementRenderBand(element) === "highlight")
+            .map((element) => element.id),
+        },
+      },
+      true,
+    ).ok,
+  ).toBe(true);
+  expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
+  expect(serializer.currentElementCount()).toBe(snapshot.elements.length);
+  expect(serializer.instrumentation.sampleEncodingBuilds).toBe(0);
+}
 
 it("avoids encoding point reads on cold loaded export and header changes across 10,000 strokes", async () => {
   const fixture = createStandardPersistenceFixture();
@@ -44,14 +91,16 @@ it("avoids encoding point reads on cold loaded export and header changes across 
     if (!cold.ok) throw new Error(cold.error.code);
     expect(cold.value.hash).toBe(disk.value.hash);
     expect(pointReads).toBe(0);
+    await deleteAndRestore(serializer, parsed.value.snapshot);
+    expect(pointReads).toBe(0);
     const first = parsed.value.snapshot.elements.find((element) => element.kind === "stroke")!;
     const moved = { ...first, offset: { x: 10, y: 10 }, style: { ...first.style, opacity: 0.5 } };
     expect(
       serializer.applyDelta(
         {
-          baseModelRevision: fixture.revision,
+          baseModelRevision: fixture.revision + 2,
           changedElements: [moved],
-          modelRevision: fixture.revision + 1,
+          modelRevision: fixture.revision + 3,
         },
         true,
       ).ok,
@@ -63,9 +112,9 @@ it("avoids encoding point reads on cold loaded export and header changes across 
     expect(
       serializer.applyDelta(
         {
-          baseModelRevision: fixture.revision + 1,
+          baseModelRevision: fixture.revision + 3,
           changedElements: [{ ...moved, points: adoptTransferredStrokeSamples(points) }],
-          modelRevision: fixture.revision + 2,
+          modelRevision: fixture.revision + 4,
         },
         true,
       ).ok,
@@ -76,9 +125,9 @@ it("avoids encoding point reads on cold loaded export and header changes across 
     expect(
       serializer.applyDelta(
         {
-          baseModelRevision: fixture.revision + 2,
+          baseModelRevision: fixture.revision + 4,
           changedElements: [first],
-          modelRevision: fixture.revision + 3,
+          modelRevision: fixture.revision + 5,
         },
         true,
       ).ok,

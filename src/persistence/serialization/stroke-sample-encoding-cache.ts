@@ -8,6 +8,7 @@ interface Entry {
   readonly points: ArrayLike<number>;
   readonly encoding: string;
   readonly bytes: number;
+  retired: boolean;
 }
 
 /** Session-owned compact samples, reused only for immutable current-model identities. */
@@ -48,6 +49,7 @@ export class StrokeSampleEncodingCache {
     const entry = this.#entries.get(stroke.id);
     const owned = this.ownsStroke(stroke);
     if (owned && entry?.points === stroke.points) {
+      entry.retired = false;
       this.#entries.delete(stroke.id);
       this.#entries.set(stroke.id, entry);
       this.#hits += 1;
@@ -73,7 +75,7 @@ export class StrokeSampleEncodingCache {
     while (this.#bytes + bytes > MAX_CACHE_BYTES || this.#entries.size >= MAX_CACHE_ELEMENTS) {
       this.remove(this.#entries.keys().next().value!);
     }
-    this.#entries.set(id, { points, encoding, bytes });
+    this.#entries.set(id, { points, encoding, bytes, retired: false });
     this.#bytes += bytes;
   }
 
@@ -100,13 +102,28 @@ export class StrokeSampleEncodingCache {
   public reconcileElements(active: ReadonlyMap<string, InkElementV1>): void {
     for (const [id, entry] of this.#entries) {
       const element = active.get(id);
-      if (element?.kind !== "stroke" || element.points !== entry.points) this.remove(id);
+      if (entry.retired || element?.kind !== "stroke" || element.points !== entry.points)
+        this.remove(id);
     }
   }
 
   public reconcileElement(element: InkElementV1): void {
     const entry = this.#entries.get(element.id);
     if (element.kind !== "stroke" || element.points !== entry?.points) this.remove(element.id);
+  }
+
+  /** Call before removal, while exclusive immutable runtime ownership can still be proved. */
+  public retire(stroke: InkElementV1 | undefined): void {
+    if (stroke === undefined) return;
+    const entry = this.#entries.get(stroke.id);
+    if (
+      stroke.kind === "stroke" &&
+      stroke.points instanceof Float64Array &&
+      entry?.points === stroke.points &&
+      this.ownsStroke(stroke)
+    ) {
+      entry.retired = true;
+    } else this.remove(stroke.id);
   }
 
   public remove(id: string): void {

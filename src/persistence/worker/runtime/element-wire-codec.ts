@@ -28,7 +28,7 @@ export interface PackedElements {
 export interface RuntimeWireSliceOptions {
   readonly checkpoint: () => Promise<void> | undefined;
   readonly signal: AbortSignal;
-  readonly reusePoints?: (element: InkElementV1) => boolean;
+  readonly reusePoints?: (element: InkElementV1) => boolean | "retired";
 }
 
 export function packElements(elements: readonly InkElementV1[]): PackedElements {
@@ -53,7 +53,7 @@ export function packValidatedElementsChunked(
 
 function* packElementsSteps(
   elements: readonly InkElementV1[],
-  reusePoints?: (element: InkElementV1) => boolean,
+  reusePoints?: (element: InkElementV1) => boolean | "retired",
   derivations?: readonly ElementValidationDerivation[],
 ): Generator<void, PackedElements> {
   if (derivations !== undefined && elements.length !== derivations.length)
@@ -66,9 +66,10 @@ function* packElementsSteps(
     if (derivations !== undefined) assertMatchingDerivation(source, derivations[index]!);
     if (source.kind !== "stroke") records.push(header as unknown as NonStrokeElement);
     else {
-      const reused = reusePoints?.(source) === true;
-      const pointsBufferIndex = reused ? -1 : pointBuffers.length;
-      if (!reused) {
+      const reuse = reusePoints?.(source);
+      const pointsBufferIndex =
+        reuse === "retired" ? -2 : reuse === true ? -1 : pointBuffers.length;
+      if (reuse !== true && reuse !== "retired") {
         const points = yield* copyStrokeSamplesToRuntimeSteps(source.points);
         if (derivations === undefined) yield* validateRuntimeSamplesSteps(points);
         pointBuffers.push(points);
@@ -82,7 +83,7 @@ function* packElementsSteps(
 
 export function unpackElements(
   packed: PackedElements,
-  resolvePoints?: (id: string) => StrokeSamplesV1,
+  resolvePoints?: (id: string, retired?: boolean) => StrokeSamplesV1,
 ): InkElementV1[] {
   return completeSerializationSteps(unpackElementsSteps(packed, resolvePoints));
 }
@@ -102,14 +103,14 @@ export function unpackValidatedElements(
 
 export function unpackElementsSteps(
   packed: PackedElements,
-  resolvePoints?: (id: string) => StrokeSamplesV1,
+  resolvePoints?: (id: string, retired?: boolean) => StrokeSamplesV1,
 ): Generator<void, InkElementV1[]> {
   return unpackElementBuffersSteps(packed, resolvePoints, false);
 }
 
 function* unpackElementBuffersSteps(
   packed: PackedElements,
-  resolvePoints: ((id: string) => StrokeSamplesV1) | undefined,
+  resolvePoints: ((id: string, retired?: boolean) => StrokeSamplesV1) | undefined,
   validated = false,
 ): Generator<void, InkElementV1[]> {
   if (!hasPackedArrays(packed))
@@ -136,11 +137,12 @@ function* unpackStrokePointsSteps(
   record: PackedStroke,
   packed: PackedElements,
   used: Set<number>,
-  resolvePoints: ((id: string) => StrokeSamplesV1) | undefined,
+  resolvePoints: ((id: string, retired?: boolean) => StrokeSamplesV1) | undefined,
   validated: boolean,
 ): Generator<void, StrokeSamplesV1> {
   const index = record.pointsBufferIndex;
-  if (index === -1 && resolvePoints !== undefined) return resolvePoints(record.id);
+  if ((index === -1 || index === -2) && resolvePoints !== undefined)
+    return resolvePoints(record.id, index === -2);
   if (
     !Number.isSafeInteger(index) ||
     index < 0 ||

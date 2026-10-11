@@ -44,14 +44,14 @@ export type DocumentRuntimeWireRequest =
 export function decodeRuntimeRequestChunked(
   request: unknown,
   context: RuntimeSliceContext,
-  resolvePoints?: (id: string) => StrokeSamplesV1,
+  resolvePoints?: (id: string, retired?: boolean) => StrokeSamplesV1,
 ): Promise<DocumentRuntimeRequest> {
   return consumeSerializationSteps(decodeRuntimeRequestSteps(request, resolvePoints), context);
 }
 
 function* decodeRuntimeRequestSteps(
   request: unknown,
-  resolvePoints?: (id: string) => StrokeSamplesV1,
+  resolvePoints?: (id: string, retired?: boolean) => StrokeSamplesV1,
 ): Generator<void, DocumentRuntimeRequest> {
   if (!isDocumentRuntimeWireRequest(request))
     throw new TypeError("Worker request does not match the runtime wire protocol.");

@@ -7,7 +7,10 @@ import { createProductionDocumentRuntime } from "../../../src/persistence/worker
 import { createWorkerBridgeEndpoints } from "../../fixtures/persistence/worker-bridge";
 import { TestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 import { ModelPointReferences } from "../../../src/persistence/worker/runtime/model-point-references";
-import { copySnapshotToRuntimeSliced } from "../../../src/persistence/worker/runtime/runtime-elements";
+import {
+  copyElementsToRuntime,
+  copySnapshotToRuntimeSliced,
+} from "../../../src/persistence/worker/runtime/runtime-elements";
 import {
   encodeRuntimeRequestChunked,
   decodeRuntimeRequestChunked,
@@ -270,4 +273,89 @@ describe("worker translation sample work", () => {
       ),
     ).rejects.toThrow("acknowledged");
   });
+});
+
+it("bounds retired samples by entries and bytes with identical mutable-source eviction", () => {
+  const frozen = Object.freeze([...STROKE.points]) as typeof STROKE.points;
+  const long = Object.freeze(
+    Array.from({ length: 16_384 * 3 }, (_, index) => (index % 3 === 2 ? 0.5 : 10)),
+  ) as typeof STROKE.points;
+  copyElementsToRuntime([
+    { ...STROKE, points: frozen },
+    { ...STROKE, points: long },
+  ]);
+  for (const [count, points] of [
+    [20_000, frozen],
+    [100, long],
+  ] as const) {
+    const sender = new ModelPointReferences();
+    const receiver = new ModelPointReferences(true);
+    const elements = Array.from({ length: count }, (_, index) => ({
+      ...STROKE,
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      points: index === 0 ? [...points] : points,
+    }));
+    const full: FullModelSyncRuntimeRequest = {
+      baseModelRevision: null,
+      identity: unlockIdentity,
+      modelRevision: 0,
+      snapshot: { ...snapshot(), elements },
+      type: "model-sync-full",
+    };
+    elements.forEach(sender.encoder(full));
+    const success = {
+      identity: unlockIdentity,
+      modelRevision: 0,
+      type: "model-sync-success" as const,
+    };
+    sender.accept(full, success);
+    receiver.accept(full, success);
+    const removal: IncrementalModelSyncRuntimeRequest = {
+      identity: unlockIdentity,
+      baseModelRevision: 0,
+      modelRevision: 1,
+      removedIds: elements.map((element) => element.id),
+      type: "model-sync-incremental",
+    };
+    sender.encoder(removal);
+    sender.accept(removal, { ...success, modelRevision: 1 });
+    receiver.accept(removal, { ...success, modelRevision: 1 });
+    expect(sender.instrumentation).toEqual(receiver.instrumentation);
+    expect(sender.instrumentation.retiredPointElements).toBeLessThanOrEqual(20_000);
+    expect(sender.instrumentation.retiredPointBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+    const restore = {
+      ...removal,
+      baseModelRevision: 1,
+      modelRevision: 2,
+      changedElements: elements,
+      removedIds: [],
+    };
+    const reuse = sender.encoder(restore);
+    expect(reuse(elements[0]!)).toBe(false);
+    expect(reuse(elements[elements.length - 1]!)).toBe("retired");
+    if (count === 100) expect(reuse(elements[1]!)).toBe(false);
+    else {
+      const extra = { ...STROKE, id: "00000000-0000-4000-8000-999999999999", points: frozen };
+      const insert = { ...restore, changedElements: [extra], modelRevision: 2 };
+      sender.encoder(insert)(extra);
+      sender.accept(insert, { ...success, modelRevision: 2 });
+      receiver.accept(insert, { ...success, modelRevision: 2 });
+      const removeExtra = {
+        ...insert,
+        baseModelRevision: 2,
+        modelRevision: 3,
+        changedElements: [],
+        removedIds: [extra.id],
+      };
+      sender.encoder(removeExtra);
+      sender.accept(removeExtra, { ...success, modelRevision: 3 });
+      receiver.accept(removeExtra, { ...success, modelRevision: 3 });
+      expect(sender.instrumentation).toEqual(receiver.instrumentation);
+      expect(sender.instrumentation.retiredPointElements).toBe(20_000);
+      expect(() => receiver.resolver(3, executor)(elements[0]!.id, true)).toThrow("acknowledged");
+    }
+    sender.clear();
+    receiver.clear();
+    expect(sender.instrumentation).toEqual({ retiredPointBytes: 0, retiredPointElements: 0 });
+  }
 });
