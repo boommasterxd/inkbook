@@ -242,7 +242,7 @@ it("holds restoration until publication and reverses exits without paint or tran
   fades.flush(Infinity, () => 430);
   expect(fades.pending).toBe(false);
   expect(node.style.animation).toBe("");
-  expect(node.style.opacity).toBe("");
+  expect(node.style.getPropertyValue("opacity")).toBe("");
   expect(entry.fadeActive).toBe(false);
 });
 

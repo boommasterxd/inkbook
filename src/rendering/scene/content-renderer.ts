@@ -3,6 +3,7 @@ import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { sameStrokeShape } from "./stroke-position";
 import { CommittedPreviewGeometry } from "./committed-preview-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
+import type { Bounds } from "../../domain/geometry/primitives";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import {
@@ -93,7 +94,6 @@ export class SceneContentRenderer {
       visibility,
     });
   }
-
   public setSelectedElements(ids: ReadonlySet<string>): void {
     if (this.#selectionTraces.setSelection(ids))
       this.#selectionTraces.markMountedDirty(this.#mounted, this.#selectionDirty);
@@ -105,7 +105,6 @@ export class SceneContentRenderer {
   public flushSelectionContext(): void {
     this.#selectionTraces.flushContext();
   }
-
   public previewMemoryUsage(): number {
     return (
       this.#selectionTraces.memoryUsage() +
@@ -299,7 +298,6 @@ export class SceneContentRenderer {
         : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);
     return this.applyCanonicalElementPreview(element, parts);
   }
-
   public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
     const entry = this.#mounted.get(element.id);
     return element.kind === "stroke" &&
@@ -357,7 +355,6 @@ export class SceneContentRenderer {
           );
     this.updateGeometry(entry, record, parts);
   }
-
   public setElementFade(
     ids: readonly string[],
     durationMs: number | null,
@@ -369,10 +366,16 @@ export class SceneContentRenderer {
     if (this.#mounted.get(id)?.fadeActive !== true && this.#fades.readyAt(id) === 0)
       this.#fades.set([id], 0);
   }
-  public setMembershipFade(id: string, direction: ElementFadeDirection, durationMs: number): void {
-    const entry = this.#mounted.get(id);
-    if (entry !== undefined) setMountedElementMotion(entry, null);
-    this.#fades.setMembership(id, direction, durationMs);
+  public setMembershipViewport(bounds: Bounds | undefined): void {
+    this.#fades.setViewport(bounds);
+  }
+  public setMembershipFade(
+    id: string,
+    direction: ElementFadeDirection,
+    durationMs: number,
+    bounds?: Bounds,
+  ): void {
+    this.#fades.setMembership(id, direction, durationMs, bounds ?? this.#store.get(id)?.bounds);
   }
   public settleMembershipVisibility(contains: (id: string) => boolean): void {
     this.#fades.settleVisibility(contains);
@@ -387,14 +390,12 @@ export class SceneContentRenderer {
   public flushElementFades(deadline: number, now: () => number): boolean {
     return this.#fades.flush(deadline, now);
   }
-
   public setElementMotion(ids: readonly string[], opacity: number | null, scale = 1): void {
     for (const id of ids) {
       const entry = this.#mounted.get(id);
       if (entry !== undefined) setMountedElementMotion(entry, opacity, scale);
     }
   }
-
   public release(): void {
     this.#committedGeometry.release();
     this.#deferredPreviews.clear();
@@ -472,7 +473,6 @@ export class SceneContentRenderer {
       this.#selectionDirty.delete(entry.id);
     else this.#selectionDirty.add(entry.id);
   }
-
   private writePaint(id: string, publication: ScenePublicationBudget): void {
     const entry = this.#mounted.get(id);
     const record = this.#store.get(id);

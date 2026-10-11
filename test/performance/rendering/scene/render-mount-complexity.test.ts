@@ -169,17 +169,17 @@ function verifyEraserFeedback(
   const before = renderer.instrumentation();
   const ids = [...fixture.contentIds, ...fixture.highlightIds];
   renderer.setElementFade(ids, 160);
-  expect(styleWrites()).toBe(128 * 2);
+  expect(styleWrites()).toBe(128);
   expect(scheduler.pendingCount).toBe(1);
   scheduler.runNext();
-  expect(styleWrites()).toBe(128 * 2);
+  expect(styleWrites()).toBe(128);
   while (scheduler.pendingCount > 0) {
     const beforeFrame = styleWrites();
     scheduler.runNext();
-    expect(styleWrites() - beforeFrame).toBeLessThanOrEqual(128 * 2);
+    expect(styleWrites() - beforeFrame).toBeLessThanOrEqual(128);
     expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
   }
-  expect(styleWrites()).toBe(STROKES * 2);
+  expect(styleWrites()).toBe(STROKES);
   expect(
     cameraGroup.nodes[3]!.nodes.every((node) =>
       node.style.getPropertyValue("animation").startsWith("inkbook-element-stroke-exit"),
@@ -192,7 +192,7 @@ function verifyEraserFeedback(
   ).toBe(true);
   expect(scheduler.pendingCount).toBe(0);
   renderer.clearElementFade(ids);
-  expect(styleWrites()).toBe(STROKES * 4);
+  expect(styleWrites()).toBe(STROKES * 2);
   expect(
     nodes
       .flatMap((node) => [node, ...node.nodes])

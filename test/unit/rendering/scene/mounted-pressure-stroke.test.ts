@@ -133,7 +133,7 @@ describe("mounted pressure stroke groups", () => {
     expect(entry.fadeActive).toBe(false);
     expect(group.style.opacity).toBeUndefined();
     expect(group.style.filter).toBeUndefined();
-    expect(group.nodes[0]!.style.animation).toBe("");
+    expect(group.nodes[0]!.style.getPropertyValue("animation")).toBe("");
     expect(removeMountedElementNode(entry)).toBe(true);
     expect(parent.nodes).toHaveLength(0);
   });
@@ -234,8 +234,8 @@ it.each(["kind", "pressure-style"] as const)(
         : { ...record.element, style: { ...record.element.style, pressureEnabled: false } };
     setMountedElementFade(entry, null);
     expect(entry.fadeActive).toBe(false);
-    expect(path.style.animation).toBe("");
-    expect(path.style.opacity).toBe("");
+    expect(path.style.getPropertyValue("animation")).toBe("");
+    expect(path.style.getPropertyValue("opacity")).toBe("");
     expect(group.style.animation).toBeUndefined();
     expect(group.style.opacity).toBe(motionOpacity);
     expect(group.style.transform).toBe(motionTransform);
@@ -273,8 +273,8 @@ it("fades multipart pressure at the group to preserve overlapping-path compositi
   expect(childrenUnchanged()).toBe(true);
   setMountedElementFade(entry, null);
   expect(entry.fadeActive).toBe(false);
-  expect(group.style.animation).toBe("");
-  expect(group.style.opacity).toBe("");
+  expect(group.style.getPropertyValue("animation")).toBe("");
+  expect(group.style.getPropertyValue("opacity")).toBe("");
   expect(group.attributes.get("opacity")).toBe(String(opacity));
   expect(childrenUnchanged()).toBe(true);
   expect(writeFilter).not.toHaveBeenCalled();
@@ -298,30 +298,30 @@ describe("opacity-only removal feedback", () => {
         `inkbook-element-${kind === "pressure" ? "fill" : "stroke"}-exit 400ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards`,
       );
       expect(node.style.filter || "").toBe("");
-      expect(node.style.opacity).toBe("");
+      expect(node.style.getPropertyValue("opacity")).toBe("");
       expect(node.attributes.get(attribute)).toBe(opacity);
       expect(group?.attributes.get("opacity")).toBe(originalGroupOpacity);
       if (group !== undefined) {
         expect(originalGroupOpacity).toBe(
           String(normalizeStrokePaint(record.element.style).opacity),
         );
-        expect(group.style.animation || "").toBe("");
-        expect(group.style.opacity || "").toBe("");
+        expect(group.style.getPropertyValue("animation")).toBe("");
+        expect(group.style.getPropertyValue("opacity")).toBe("");
       }
       setMountedElementFade(entry, null);
       expect(entry.fadeActive).toBe(false);
-      expect(node.style.animation).toBe("");
+      expect(node.style.getPropertyValue("animation")).toBe("");
       expect(node.style.filter || "").toBe("");
-      expect(node.style.opacity).toBe("");
+      expect(node.style.getPropertyValue("opacity")).toBe("");
       setMountedElementFade(entry, 0);
-      expect(node.style.animation).toBe("");
+      expect(node.style.getPropertyValue("animation")).toBe("");
       expect(node.style.filter || "").toBe("");
       expect(node.style.opacity).toBe("0");
       expect(node.attributes.get(attribute)).toBe(opacity);
       expect(group?.attributes.get("opacity")).toBe(originalGroupOpacity);
-      expect(group?.style.opacity || "").toBe("");
+      expect(group?.style.getPropertyValue("opacity") || "").toBe("");
       setMountedElementFade(entry, null);
-      expect(node.style.opacity).toBe("");
+      expect(node.style.getPropertyValue("opacity")).toBe("");
       expect(writeFilter).not.toHaveBeenCalled();
     },
   );
@@ -334,14 +334,14 @@ describe("opacity-only removal feedback", () => {
     setMountedElementFade(entry, 400);
     entry.displayedElement = fakeRectangleRecord(record.id, 0, 0).element;
     setMountedElementFade(entry, 200);
-    expect(path.style.animation).toBe("");
+    expect(path.style.getPropertyValue("animation")).toBe("");
     expect(group.style.animation).toContain("inkbook-element-opacity-exit 200ms");
     expect(group.attributes.get("opacity")).toBe(groupOpacity);
     expect(path.style.filter).toBeUndefined();
     expect(group.style.filter).toBeUndefined();
     setMountedElementFade(entry, null);
-    expect(group.style.animation).toBe("");
-    expect(group.style.opacity).toBe("");
+    expect(group.style.getPropertyValue("animation")).toBe("");
+    expect(group.style.getPropertyValue("opacity")).toBe("");
   });
 
   it("fades filled shapes from their original root opacity without filter writes", () => {
@@ -352,15 +352,15 @@ describe("opacity-only removal feedback", () => {
     setMountedElementFade(entry, 400);
     expect(node.style.filter).toBeUndefined();
     expect(node.style.animation).toContain("inkbook-element-opacity-exit 400ms");
-    expect(node.style.opacity).toBe("");
+    expect(node.style.getPropertyValue("opacity")).toBe("");
     expect([...node.attributes]).toEqual(paint);
     setMountedElementFade(entry, null);
-    expect(node.style.animation).toBe("");
+    expect(node.style.getPropertyValue("animation")).toBe("");
     setMountedElementFade(entry, 0);
-    expect(node.style.animation).toBe("");
+    expect(node.style.getPropertyValue("animation")).toBe("");
     expect(node.style.opacity).toBe("0");
     setMountedElementFade(entry, null);
-    expect(node.style.opacity).toBe("");
+    expect(node.style.getPropertyValue("opacity")).toBe("");
     expect([...node.attributes]).toEqual(paint);
     expect(writeFilter).not.toHaveBeenCalled();
   });

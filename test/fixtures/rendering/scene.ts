@@ -115,6 +115,31 @@ export function createSceneRecord(element: InkElementV1, rank = 0): SceneElement
   };
 }
 
+/** Updates fixture membership and publishes its matching committed history delta. */
+export function replaySceneMembership(
+  renderer: SvgSceneRenderer,
+  store: FakeSceneStore,
+  records: readonly SceneElementRecord[],
+  direction: "enter" | "exit",
+): void {
+  const exiting = direction === "exit";
+  for (const record of records) {
+    if (exiting) store.records.delete(record.id);
+    else store.records.set(record.id, record);
+  }
+  renderer.applyDelta({
+    historyReplay: true,
+    affected: records.map(({ id, element, bounds }) => ({
+      id,
+      domains: ["visibility"],
+      before: exiting ? element : null,
+      after: exiting ? null : element,
+      beforeBounds: exiting ? bounds : null,
+      afterBounds: exiting ? null : bounds,
+    })),
+  });
+}
+
 /** Observes the actual indexed cell and candidate visits, including resumed cursors. */
 export function observeIndexedSceneQueries(store: Pick<ElementStore, "beginQuery">) {
   const work = { indexedVisits: 0 };

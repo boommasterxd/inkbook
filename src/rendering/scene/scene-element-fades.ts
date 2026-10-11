@@ -1,4 +1,10 @@
-import { setMountedElementFade, type MountedSceneElement } from "./mounted-element";
+import {
+  setMountedElementFade,
+  setMountedElementMotion,
+  type MountedSceneElement,
+} from "./mounted-element";
+import type { Bounds } from "../../domain/geometry/primitives";
+import { intersects } from "./visibility-bounds";
 import {
   elementFadePresentation,
   elementFadeTarget,
@@ -15,6 +21,8 @@ export interface FadeSlice {
 }
 
 interface PendingFade {
+  admittedDurationMs?: number;
+  readonly bounds?: Bounds;
   readonly durationMs: number;
   readonly direction: ElementFadeDirection;
   readonly generation?: number;
@@ -48,12 +56,17 @@ export class SceneElementFades {
     { ids: MapIterator<[string, PendingFade]>; contains: (id: string) => boolean } | undefined;
   #remaining = FADE_NODES_PER_FRAME;
   #initialDeadline: number | undefined;
+  #viewport: Bounds | undefined;
 
   public constructor(
     private readonly mounted: ReadonlyMap<string, MountedSceneElement>,
     private readonly onReadinessChanged?: (id: string, finish: number) => void,
     private readonly membershipGate?: (generation: number, interrupted: boolean) => void,
   ) {}
+
+  public setViewport(bounds: Bounds | undefined): void {
+    this.#viewport = bounds;
+  }
 
   public set(ids: readonly string[], durationMs: number | null, slice?: FadeSlice): void {
     for (const id of ids) {
@@ -103,7 +116,12 @@ export class SceneElementFades {
     );
   }
 
-  public setMembership(id: string, direction: ElementFadeDirection, durationMs: number): void {
+  public setMembership(
+    id: string,
+    direction: ElementFadeDirection,
+    durationMs: number,
+    bounds?: Bounds,
+  ): void {
     this.#pending.delete(id);
     this.#finishes.delete(id);
     this.#entrances.delete(id);
@@ -111,10 +129,28 @@ export class SceneElementFades {
     this.releaseMembership(id);
     this.#prune = undefined;
     const entry = this.mounted.get(id);
+    const effectiveBounds = entry?.motionActive === true ? undefined : bounds;
+    if (entry !== undefined) setMountedElementMotion(entry, null);
     if (entry === undefined && (direction === "exit" || durationMs === 0)) return;
+    const visible = this.membershipVisible(id, effectiveBounds);
+    if (
+      !visible &&
+      direction === "enter" &&
+      entry?.fadeActive !== true &&
+      !this.#styledGenerations.has(id)
+    ) {
+      this.onReadinessChanged?.(id, 0);
+      return;
+    }
     this.#memberships.set(id, { direction, generation: this.#generation });
     this.#generations.set(this.#generation, (this.#generations.get(this.#generation) ?? 0) + 1);
-    const fade = { durationMs, direction, generation: this.#generation, index: 0 };
+    const fade = {
+      ...(effectiveBounds === undefined ? {} : { bounds: effectiveBounds }),
+      durationMs: direction === "exit" || visible ? durationMs : 0,
+      direction,
+      generation: this.#generation,
+      index: 0,
+    };
     if (entry === undefined) {
       this.#entrances.set(id, fade);
       return;
@@ -127,6 +163,10 @@ export class SceneElementFades {
     const fade = this.#entrances.get(entry.id);
     if (fade === undefined) return;
     this.#entrances.delete(entry.id);
+    if (!this.membershipVisible(entry.id, fade.bounds)) {
+      this.releaseMembership(entry.id);
+      return;
+    }
     if (!this.interrupted(entry.id)) this.hideRoots(entry, fade.generation!);
     this.#pending.set(entry.id, fade);
   }
@@ -229,14 +269,19 @@ export class SceneElementFades {
     entry.fadeActive = true;
     const presentation = entry.fadePresentation!;
     const count = elementFadeTargetCount(entry, presentation);
-    const duration = this.interrupted(entry.id) ? 0 : fade.durationMs;
+    fade.admittedDurationMs ??=
+      fade.generation !== undefined && !this.membershipVisible(entry.id, fade.bounds)
+        ? 0
+        : fade.durationMs;
+    const duration = this.interrupted(entry.id) ? 0 : fade.admittedDurationMs;
     do {
       const node = elementFadeTarget(entry, fade.index, presentation);
       if (node !== undefined) {
         setElementFadeNode(node, duration, presentation, fade.direction, fade.generation);
-        node.style.removeProperty("visibility");
+        if (node.style.getPropertyValue("visibility")) node.style.removeProperty("visibility");
       }
-      entry.group?.style.removeProperty("visibility");
+      if (entry.group?.style.getPropertyValue("visibility"))
+        entry.group.style.removeProperty("visibility");
       if (node !== undefined)
         this.writeStyledGeneration(
           entry.id,
@@ -313,6 +358,18 @@ export class SceneElementFades {
     return membership !== undefined && membership.generation <= this.#interruptedThrough;
   }
 
+  private membershipVisible(id: string, bounds: Bounds | undefined): boolean {
+    const entry = this.mounted.get(id);
+    return (
+      bounds === undefined ||
+      this.#viewport === undefined ||
+      entry?.motionActive === true ||
+      entry?.appliedPreviewTransform != null ||
+      (entry !== undefined && entry.displayedPathParts !== entry.pathParts) ||
+      intersects(bounds, this.#viewport)
+    );
+  }
+
   private releaseMembership(id: string): void {
     const membership = this.#memberships.get(id);
     if (membership === undefined) return;
@@ -375,6 +432,7 @@ export class SceneElementFades {
 }
 
 function showRoots(entry: MountedSceneElement): void {
-  if (entry.group !== null) entry.group.style.removeProperty("visibility");
-  else for (const path of entry.paths) path.node.style.removeProperty("visibility");
+  const roots = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
+  for (const root of roots)
+    if (root.style.getPropertyValue("visibility")) root.style.removeProperty("visibility");
 }

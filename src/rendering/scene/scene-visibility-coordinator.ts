@@ -232,6 +232,9 @@ export class SceneVisibilityCoordinator {
   }
 
   public setContext(camera: SceneCamera, viewport: SceneViewport | undefined): void {
+    this.#content.setMembershipViewport(
+      viewport === undefined ? undefined : visibilityPageBounds(viewport, camera, true).envelope,
+    );
     this.#transforms.setContext(camera, viewport);
     this.#elements.refreshProgressiveContext(viewport, camera);
     this.invalidate(true);

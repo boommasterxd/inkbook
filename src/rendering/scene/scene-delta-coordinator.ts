@@ -34,6 +34,9 @@ export class SceneDeltaCoordinator {
           affected.id,
           affected.after === null ? "exit" : "enter",
           this.options.motion.duration(TRANSITION_DURATIONS.historyMembership),
+          affected.after === null
+            ? (affected.beforeBounds ?? undefined)
+            : (affected.afterBounds ?? undefined),
         );
         fadedRemovals ??= [];
         fadedRemovals.push(affected.id);

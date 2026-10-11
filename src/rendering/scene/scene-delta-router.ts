@@ -62,7 +62,8 @@ function prepareMembershipFade(
 ): void {
   if (affected.before === null && affected.after != null && historyReplay !== true)
     content.setElementFade([affected.id], null);
-  if (affected.after === null) content.prepareElementRemoval(affected.id);
+  if (affected.after === null && !(historyReplay === true && affected.before != null))
+    content.prepareElementRemoval(affected.id);
 }
 
 function invalidateDetachedElements(delta: SceneStoreDelta, ports: SceneDeltaRoutingPorts): void {

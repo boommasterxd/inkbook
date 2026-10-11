@@ -48,11 +48,13 @@ export function setElementFadeNode(
     generation === undefined
       ? `${String(durationMs)}ms`
       : `var(--inkbook-history-duration-${String(generation)}, ${String(durationMs)}ms)`;
-  node.style.animation = animated
+  const animation = animated
     ? `inkbook-element-${presentation}-${direction} ${duration} ${EASING_TOKENS.erase} ${direction === "enter" ? "reverse both" : "forwards"}`
     : "";
   // Start from the existing paint alpha or root opacity; pressure group alpha remains intact.
-  node.style.opacity = durationMs === 0 && direction === "exit" ? "0" : "";
+  const opacity = durationMs === 0 && direction === "exit" ? "0" : "";
+  if (node.style.getPropertyValue("animation") !== animation) node.style.animation = animation;
+  if (node.style.getPropertyValue("opacity") !== opacity) node.style.opacity = opacity;
 }
 
 function usesPaintOpacity(presentation: ElementFadePresentation): boolean {
