@@ -29,6 +29,12 @@ export class SceneGeometryAliases {
     return alias?.version === version ? alias.key : undefined;
   }
 
+  /** Availability probes do not promote aliases before the actual contour access. */
+  public peek(id: string, version: number): string | undefined {
+    const alias = this.#aliases.get(id);
+    return alias?.version === version ? alias.key : undefined;
+  }
+
   public retain(id: string, version: number | undefined, key: string): void {
     const previous = this.#aliases.get(id);
     if (previous?.key === key && (version === undefined || previous.version === version)) {
