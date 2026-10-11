@@ -7,6 +7,7 @@ import { type EncodedClipboard } from "../../../../src/persistence/clipboard/typ
 import type { PreparedElementMutation } from "../../../../src/domain/store/public";
 import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
+import { renderBandOf } from "../../../../src/domain/commands/render-bands";
 
 export function createEncodedClipboardFixture(): EncodedClipboard {
   const customText = 'INKBOOK/1:{"format":"inkbook-elements"}';
@@ -47,6 +48,7 @@ export function createClipboardDocumentModel(options: {
   readonly planClipboardPaste: EditableDocumentModel["planClipboardPaste"];
   readonly prepareElementMutation: EditableDocumentModel["prepareElementMutation"];
   readonly prepareElementRemoval?: EditableDocumentModel["prepareElementRemoval"];
+  readonly prepareElementAppend?: EditableDocumentModel["prepareElementAppend"];
   readonly revision?: () => number;
   readonly store: EditableDocumentModel["store"];
 }): EditableDocumentModel {
@@ -67,6 +69,35 @@ export function createClipboardDocumentModel(options: {
     encodeClipboard: options.encodeClipboard ?? vi.fn(async () => null),
     planClipboardPaste: options.planClipboardPaste,
     prepareElementMutation: options.prepareElementMutation,
+    prepareElementArrangement: (action, selection, cancellation) =>
+      options.store.prepareElementArrangement(action, selection, {
+        isCancelled: () => cancellation.isCancelled(),
+        shouldYield: () => false,
+        yieldControl: () => Promise.resolve(),
+      }),
+    prepareElementAppend:
+      options.prepareElementAppend ??
+      ((elements, cancellation) =>
+        options.prepareElementMutation(
+          {
+            bands: {
+              content: [
+                ...options.store.materializeBandOrder("content"),
+                ...elements
+                  .filter((element) => renderBandOf(element) === "content")
+                  .map(({ id }) => id),
+              ],
+              highlight: [
+                ...options.store.materializeBandOrder("highlight"),
+                ...elements
+                  .filter((element) => renderBandOf(element) === "highlight")
+                  .map(({ id }) => id),
+              ],
+            },
+            elements,
+          },
+          cancellation,
+        )),
     prepareElementRemoval:
       options.prepareElementRemoval ??
       (async (ids, cancellation) => {

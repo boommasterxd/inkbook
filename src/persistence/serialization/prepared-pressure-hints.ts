@@ -1,5 +1,6 @@
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { ElementRecord } from "../../domain/store/types";
+import type { InkElementV1, StrokeElementV1 } from "../../domain/schema/public";
 
 export const MAX_PREPARED_PRESSURE_HINT_BYTES = 4 * 1024 * 1024;
 export const MAX_PREPARED_PRESSURE_HINTS = 1024;
@@ -56,4 +57,16 @@ export function pressureShapeKey(stroke: {
 
 export function preparedPressureHintBytes(hint: PreparedPressurePathHint): number {
   return 72 + (hint.id.length + hint.shapeKey.length + hint.d.length) * 2;
+}
+
+export function matchesPreparedPressurePath(
+  element: InkElementV1 | undefined,
+  shapeKey: string,
+): element is StrokeElementV1 {
+  return (
+    element?.kind === "stroke" &&
+    element.style.pressureEnabled &&
+    (element.offset === undefined || (element.offset.x === 0 && element.offset.y === 0)) &&
+    pressureShapeKey(element) === shapeKey
+  );
 }

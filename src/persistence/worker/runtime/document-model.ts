@@ -13,7 +13,7 @@ import type {
   SnapshotValidationDerivations,
   StrokeSamplesV1,
 } from "../../../domain/schema/public";
-import { encodeRuntimeSelection, resolveClipboardPayload } from "../../clipboard/codec";
+import { resolveClipboardPayload } from "../../clipboard/codec";
 import { planPaste, resolvePasteTarget } from "../../clipboard/operations";
 import type {
   ClipboardCandidates,
@@ -29,7 +29,16 @@ import {
   IncrementalDocumentSerializer,
 } from "../../serialization/public";
 import type { DocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
-import { decodeClipboardChunked, encodeRuntimeSelectionChunked } from "./fallback-clipboard-codec";
+import {
+  completeSerializationSteps,
+  consumeSerializationSteps,
+} from "../../serialization/serialization-model-preparation";
+import {
+  decodeClipboardChunked,
+  encodeRuntimeSelectionChunked,
+  encodeRuntimeSelectionWrite,
+  missingClipboardSelection,
+} from "./fallback-clipboard-codec";
 import {
   copyElementsToRuntime,
   copyParsed,
@@ -291,18 +300,10 @@ export class DocumentModelRuntime {
     basisRevision: number,
     selectedIds: readonly string[],
   ): ClipboardResult<ClipboardWritePayload> {
-    const snapshot = this.#atRevision(basisRevision);
-    const encoded = encodeRuntimeSelection(snapshot.elements, new Set(selectedIds));
-    return encoded.ok
-      ? {
-          ok: true,
-          value: {
-            byteLength: encoded.value.byteLength,
-            customText: encoded.value.customText,
-            plainText: encoded.value.plainText,
-          },
-        }
-      : encoded;
+    this.#validatedPasteState(basisRevision);
+    const selected = completeSerializationSteps(this.#serializer.selectionSteps(selectedIds));
+    if (selected === null) return missingClipboardSelection();
+    return encodeRuntimeSelectionWrite(selected, selectedIds);
   }
 
   public async encodeClipboardSliced(
@@ -310,15 +311,23 @@ export class DocumentModelRuntime {
     selectedIds: readonly string[],
     context: RuntimeSliceContext,
   ): Promise<ClipboardResult<ClipboardWritePayload>> {
-    const snapshot = this.#atRevision(basisRevision);
-    return encodeRuntimeSelectionChunked(snapshot.elements, selectedIds, context);
+    this.#validatedPasteState(basisRevision);
+    const selected = await consumeSerializationSteps(
+      this.#serializer.selectionSteps(selectedIds),
+      context,
+    );
+    context.signal.throwIfAborted();
+    this.#validatedPasteState(basisRevision);
+    return selected === null
+      ? missingClipboardSelection()
+      : encodeRuntimeSelectionChunked(selected, selectedIds, context);
   }
 
   public decodeClipboard(
     basisRevision: number,
     candidates: ClipboardCandidates,
   ): ClipboardResult<DecodedClipboard> {
-    this.#atRevision(basisRevision);
+    this.#validatedPasteState(basisRevision);
     return resolveClipboardPayload(candidates);
   }
 
@@ -327,7 +336,7 @@ export class DocumentModelRuntime {
     candidates: ClipboardCandidates,
     context: RuntimeSliceContext,
   ): Promise<ClipboardResult<DecodedClipboard>> {
-    this.#atRevision(basisRevision);
+    this.#validatedPasteState(basisRevision);
     return decodeClipboardChunked(candidates, context);
   }
 
@@ -463,16 +472,6 @@ export class DocumentModelRuntime {
     return this.ownsTransferredSamples && hasRuntimeStrokeSamples(snapshot)
       ? (snapshot as RuntimeInkSnapshot)
       : copySnapshotToRuntime(snapshot, this.#pointCopies, undefined, this.ownsTransferredSamples);
-  }
-  #atRevision(revision: number): InkSnapshotV1 {
-    if (this.#modelRevision !== revision || this.#serializer.currentRevision() !== revision) {
-      throw new RuntimeModelError("basis-revision-mismatch", true);
-    }
-    const snapshot = this.#snapshot ?? this.#serializer.currentSnapshot();
-    if (snapshot === null || snapshot.revision !== revision)
-      throw new RuntimeModelError("snapshot-invalid", false);
-    this.#snapshot = snapshot;
-    return snapshot;
   }
   #validatedPasteState(revision: number) {
     if (this.#modelRevision !== revision || this.#serializer.currentRevision() !== revision) {

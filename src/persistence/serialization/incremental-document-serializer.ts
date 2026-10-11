@@ -1,8 +1,8 @@
 import { StrokeShapeCache } from "./stroke-shape-cache";
-import { readStrokeFragmentPaths } from "./stroke-fragment-paths";
+import { prepareCachedScenePath } from "./scene-path-preparation";
 import type { SvgPathPart } from "../../domain/geometry/svg-path-part";
 import { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
-import { pressureShapeKey } from "./prepared-pressure-hints";
+import { matchesPreparedPressurePath } from "./prepared-pressure-hints";
 import {
   type InkElementV1,
   type InkSnapshotV1,
@@ -20,7 +20,12 @@ import {
   ChunkedOutputCancelledError,
   type ChunkedOutputAssemblyOptions,
 } from "./chunked-output-assembler";
-import { envelope, snapshotMetadata, snapshotValue } from "./document-assembly";
+import {
+  envelope,
+  orderedSnapshotValue,
+  snapshotMetadata,
+  snapshotValue,
+} from "./document-assembly";
 import { buildElementFragments, type ElementFragments, type RenderBand } from "./element-fragments";
 import { ElementFragmentCache } from "./element-fragment-cache";
 import {
@@ -46,6 +51,11 @@ import {
 } from "./serialization-input-preparation";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
+import {
+  prepareSerializationRanks,
+  serializationSelectionSteps,
+  type SerializationRank,
+} from "./serialization-selection";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "./types";
 export class IncrementalDocumentSerializer {
   #cache = new ElementFragmentCache();
@@ -62,6 +72,7 @@ export class IncrementalDocumentSerializer {
   });
   #facts = new Map<string, incrementalValidation.ElementFacts>();
   #orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  #ranks = new Map<string, SerializationRank>();
   #epoch = 0;
   readonly #backgroundCache = new BackgroundFragmentCache();
   #fragmentBuilds = 0;
@@ -88,26 +99,20 @@ export class IncrementalDocumentSerializer {
     };
   }
   public currentSnapshot(): InkSnapshotV1 | null {
-    if (this.#page === null || this.#revision === null) return null;
-    const ids = [...this.#orders.highlight, ...this.#orders.content];
-    const elements = ids.map((id) => this.#elements.get(id)!);
-    return snapshotValue(this.#revision, this.#page, elements);
+    return orderedSnapshotValue(this.#revision, this.#page, this.#elements, this.#orders);
   }
   public currentRevision(): number | null {
     return this.#revision;
+  }
+  public selectionSteps(ids: readonly string[]) {
+    return serializationSelectionSteps(this.#elements, this.#ranks, ids);
   }
   public currentPage(): PageV1 | null {
     return this.#page === null ? null : canonicalPage(this.#page);
   }
   public seedPreparedPressurePath(id: string, d: string, shapeKey: string): boolean {
     const element = this.#elements.get(id);
-    if (
-      element?.kind !== "stroke" ||
-      !element.style.pressureEnabled ||
-      (element.offset !== undefined && (element.offset.x !== 0 || element.offset.y !== 0)) ||
-      pressureShapeKey(element) !== shapeKey
-    )
-      return false;
+    if (!matchesPreparedPressurePath(element, shapeKey)) return false;
     this.#shapeCache.seed(element, d);
     return true;
   }
@@ -118,27 +123,15 @@ export class IncrementalDocumentSerializer {
     id: string,
     context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
   ): Promise<readonly SvgPathPart[] | undefined> {
-    context.signal.throwIfAborted();
-    const element = this.#elements.get(id);
-    if (element?.kind !== "stroke") return undefined;
-    const shape = await consumeSerializationSteps(
-      this.#shapeCache.readSteps(element, context.signal),
+    return prepareCachedScenePath(
+      {
+        current: (key) => this.#elements.get(key),
+        shapes: this.#shapeCache,
+        fragments: this.#cache,
+      },
+      id,
       context,
     );
-    context.signal.throwIfAborted();
-    if (this.#elements.get(id) !== element)
-      throw new Error("The scene path model changed during preparation.");
-    if (shape !== undefined) return shape;
-    const fragment = this.#cache.current(element);
-    if (fragment?.strokePaths !== undefined) {
-      const parts = await readStrokeFragmentPaths(fragment, context);
-      context.signal.throwIfAborted();
-      if (this.#elements.get(id) !== element)
-        throw new Error("The scene path model changed during preparation.");
-      this.#cache.touch(id);
-      return parts;
-    }
-    return this.#shapeCache.prepare(element, context);
   }
   public currentElementCount(): number {
     return this.#elements.size;
@@ -249,6 +242,7 @@ export class IncrementalDocumentSerializer {
     this.#elements = model.elements;
     this.#facts = model.facts;
     this.#orders = model.orders;
+    this.#ranks = model.ranks;
     this.#page = model.page;
     this.#revision = model.revision;
     this.#runtimeStrokeBuffers = model.runtimeStrokeBuffers;
@@ -322,6 +316,10 @@ export class IncrementalDocumentSerializer {
       nodesPerStep,
     );
     if (!facts.ok) return facts;
+    const ranks =
+      prepared.value.orders === this.#orders
+        ? this.#ranks
+        : yield* prepareSerializationRanks(prepared.value.orders, nodesPerStep);
     const changed = new Map<string, InkElementV1>();
     for (const element of prepared.value.changed.values()) {
       changed.set(element.id, canonicalElement(element, this.#runtimeStrokeBuffers, !ownsSamples));
@@ -346,6 +344,7 @@ export class IncrementalDocumentSerializer {
     }
     this.#orders.highlight = prepared.value.orders.highlight;
     this.#orders.content = prepared.value.orders.content;
+    this.#ranks = ranks;
     this.#page = canonicalPage(prepared.value.page);
     this.#revision = delta.modelRevision;
     this.#aggregateFacts = facts.value.aggregate;
@@ -451,6 +450,7 @@ export class IncrementalDocumentSerializer {
     this.#backgroundCache.clear();
     this.#elements.clear();
     this.#facts.clear();
+    this.#ranks.clear();
     this.#orders.content = [];
     this.#orders.highlight = [];
     this.#page = null;

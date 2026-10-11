@@ -41,9 +41,25 @@ export function elementMutationPorts(
   },
 ): Pick<
   EditableDocumentModel,
-  "commitPreparedElementMutation" | "prepareElementMutation" | "prepareElementRemoval"
+  | "commitPreparedElementMutation"
+  | "prepareElementMutation"
+  | "prepareElementRemoval"
+  | "prepareElementArrangement"
+  | "prepareElementAppend"
 > {
   return {
+    prepareElementArrangement: (action, selection, cancellation) =>
+      store.prepareElementArrangement(action, selection, {
+        isCancelled: () => cancellation.isCancelled(),
+        shouldYield: () => work.shouldYield(),
+        yieldControl: () => work.yieldControl(),
+      }),
+    prepareElementAppend: (elements, cancellation) =>
+      store.prepareElementAppend(elements, {
+        isCancelled: () => cancellation.isCancelled(),
+        shouldYield: () => work.shouldYield(),
+        yieldControl: () => work.yieldControl(),
+      }),
     commitPreparedElementMutation: (token) => {
       const result = store.commitPreparedElementMutation(token);
       if (result.status === "committed") committed();
