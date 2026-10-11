@@ -82,11 +82,13 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     if (derivations !== undefined) return this.#appendValidatedRuntime(elements, derivations);
     for (let index = 0; index < elements.length; index += 1) {
       if (this.#isCancelled()) return this.#cancel();
-      const element = await this.#prepareElement(elements[index]!, ownsRuntimeElements);
+      const preparation = this.#prepareElement(elements[index]!, ownsRuntimeElements);
+      const element = preparation instanceof Promise ? await preparation : preparation;
       if (element === "cancelled") return this.#cancel();
       if (this.#records.has(element.id))
         throw new RangeError(`Duplicate element ID: ${element.id}`);
-      const record = await this.#work.run(createOwnedInitialRecordSteps(element));
+      const preparedRecord = this.#work.run(createOwnedInitialRecordSteps(element));
+      const record = preparedRecord instanceof Promise ? await preparedRecord : preparedRecord;
       if (record === "cancelled" || this.#isCancelled()) return this.#cancel();
       const capacityPatch = this.#capacity.prepare([], [record]);
       this.#index.insert(element.id, record.bounds);
@@ -98,20 +100,21 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     return this.#isCancelled() ? this.#cancel() : "accepted";
   }
 
-  async #prepareElement(
+  #prepareElement(
     element: InkElementV1,
     ownsRuntimeElements: boolean,
-  ): Promise<InkElementV1 | "cancelled"> {
+  ): InkElementV1 | "cancelled" | Promise<InkElementV1 | "cancelled"> {
     if (!ownsRuntimeElements) {
       if (element?.kind === "stroke" && element.points instanceof Float64Array) {
         throw new RangeError("Invalid element replacement: invalid-type");
       }
       return prepareRuntimeElement(element, undefined, undefined, this.#work);
     }
-    const validation = await this.#work.run(
-      validateRuntimeInkElementV1Steps(element, {}, 2048, 256),
-    );
-    if (validation === "cancelled") return validation;
+    return this.#work.run(this.#validateOwnedElementSteps(element));
+  }
+
+  *#validateOwnedElementSteps(element: InkElementV1): Generator<void | boolean, InkElementV1> {
+    const validation = yield* validateRuntimeInkElementV1Steps(element, {}, 2048, 256);
     if (!validation.ok) throw new RangeError(`Invalid runtime element: ${validation.error.code}`);
     return element;
   }

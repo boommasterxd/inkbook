@@ -30,10 +30,9 @@ export async function collectDesiredElements(
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     const current = source.records.get(input.id);
     const owned = ownedRecords?.get(input.id);
-    const element =
-      owned?.element === input
-        ? input
-        : await prepareRuntimeElement(input, current, owned, scheduler);
+    const pendingElement =
+      owned?.element === input ? input : prepareRuntimeElement(input, current, owned, scheduler);
+    const element = pendingElement instanceof Promise ? await pendingElement : pendingElement;
     if (element === "cancelled") return element;
     if (desired.has(element.id) && !removeIds.has(element.id) && owned?.element !== element) {
       throw new RangeError(`Duplicate mutation element ID: ${element.id}`);

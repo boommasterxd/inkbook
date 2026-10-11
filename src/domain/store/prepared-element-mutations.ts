@@ -102,9 +102,11 @@ export class PreparedElementMutations {
       if (proof === undefined || replay === undefined) {
         throw new RangeError("History transition is not retained by this store.");
       }
-      const retainedMutation = await new MutationPreparationScheduler(work).run(
+      const pendingMutation = new MutationPreparationScheduler(work).run(
         ownedHistoryReplaySteps(mutation, replay, proof.history, source.records),
       );
+      const retainedMutation =
+        pendingMutation instanceof Promise ? await pendingMutation : pendingMutation;
       if (retainedMutation === "cancelled") return { status: "cancelled", token: null };
       proof = { ...proof, retainedMutation };
     }

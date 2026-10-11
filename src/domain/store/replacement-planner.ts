@@ -118,8 +118,11 @@ async function prepareReplacementDraftsTimeSliced(
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
     const owned = ports.getRetainedRecord?.(replacement);
-    const staged = await prepareDraftTimeSliced(replacement, ports.getRecord, work, owned);
+    const current = ports.getRecord(replacement.id);
+    const preparation = prepareDraftTimeSliced(replacement, current, work, owned);
+    const staged = preparation instanceof Promise ? await preparation : preparation;
     if (staged === "cancelled") return staged;
+    assertReplacementIdentity(current.element, staged);
     if (drafts.has(staged.id)) throw new RangeError(`Duplicate replacement ID: ${staged.id}`);
     drafts.set(staged.id, staged);
     if (owned !== undefined) retained.set(staged.id, owned);
@@ -141,21 +144,17 @@ async function prepareReplacementDraftsTimeSliced(
   return drafts;
 }
 
-async function prepareDraftTimeSliced(
+function prepareDraftTimeSliced(
   replacement: InkElementV1,
-  getRecord: ReplacementPlannerPorts["getRecord"],
+  current: ElementRecord,
   work: MutationPreparationScheduler,
   retained: ElementRecord | undefined,
-): Promise<InkElementV1 | "cancelled"> {
-  const current = getRecord(replacement.id);
-  const staged =
-    retained?.element === replacement ||
+): InkElementV1 | "cancelled" | Promise<InkElementV1 | "cancelled"> {
+  return retained?.element === replacement ||
     isCanonicalStrokeTranslation(current.element, replacement) ||
     isValidatedInternalStyleReplacement(current.element, replacement)
-      ? replacement
-      : await prepareRuntimeElement(replacement, current, retained, work);
-  if (staged !== "cancelled") assertReplacementIdentity(current.element, staged);
-  return staged;
+    ? replacement
+    : prepareRuntimeElement(replacement, current, retained, work);
 }
 
 function prepareDrafts(
@@ -308,13 +307,14 @@ async function classifyReplacementDraftsTimeSliced(
   const work = new MutationPreparationScheduler(scheduler);
   for (const [id, element] of drafts) {
     if (cancelled(scheduler)) return "cancelled";
-    const candidate = await classifyCandidateTimeSliced(
+    const classification = classifyCandidateTimeSliced(
       getRecord(id),
       element,
       lookup,
       work,
       retained.get(id),
     );
+    const candidate = classification instanceof Promise ? await classification : classification;
     if (candidate === "cancelled") return candidate;
     if (candidate !== null) candidates.push(candidate);
     if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
@@ -322,26 +322,33 @@ async function classifyReplacementDraftsTimeSliced(
   return candidates;
 }
 
-async function classifyCandidateTimeSliced(
+function classifyCandidateTimeSliced(
   current: ElementRecord,
   element: InkElementV1,
   lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
   work: MutationPreparationScheduler,
   retainedRecord: ElementRecord | undefined,
-): Promise<ReplacementCandidate | null | "cancelled"> {
+): ReplacementCandidate | null | "cancelled" | Promise<ReplacementCandidate | null | "cancelled"> {
   const translation = canonicalStrokeTranslation(current.element, element);
   if (translation !== null) {
     return translation.x === 0 && translation.y === 0
       ? null
       : { current, domains: CANONICAL_TRANSLATION_DOMAINS, element, retainedRecord };
   }
-  const equal = await work.run(elementsEqualSteps(current.element, element));
-  if (equal === "cancelled") return equal;
+  return work.run(classifyCandidateSteps(current, element, lookup, retainedRecord));
+}
+
+function* classifyCandidateSteps(
+  current: ElementRecord,
+  element: InkElementV1,
+  lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
+  retainedRecord: ElementRecord | undefined,
+): Generator<void | boolean, ReplacementCandidate | null> {
+  const equal = yield* elementsEqualSteps(current.element, element);
   if (equal) return null;
-  const domains = await work.run(classifyReplacementSteps(current.element, element));
-  return domains === "cancelled"
-    ? domains
-    : classifiedCandidate(current, element, domains, lookup, retainedRecord);
+  yield;
+  const domains = yield* classifyReplacementSteps(current.element, element);
+  return classifiedCandidate(current, element, domains, lookup, retainedRecord);
 }
 
 function classifyCandidate(

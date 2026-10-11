@@ -120,7 +120,8 @@ async function copyHistoryElements(
 ): Promise<readonly InkElementV1[] | "cancelled"> {
   const copy = new Array<InkElementV1>(elements.length);
   for (let index = 0; index < elements.length; index += 1) {
-    const element = await scheduler.run(mutableElementSteps(elements[index]!));
+    const pendingElement = scheduler.run(mutableElementSteps(elements[index]!));
+    const element = pendingElement instanceof Promise ? await pendingElement : pendingElement;
     if (element === "cancelled") return element;
     copy[index] = element;
   }

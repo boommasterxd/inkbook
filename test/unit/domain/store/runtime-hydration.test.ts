@@ -22,7 +22,24 @@ import {
 import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../fixtures/editor/selection-transform-reference";
-import { highlighter, rectangle } from "./fixtures";
+import { highlighter, mixedElement, rectangle } from "./fixtures";
+
+it("finishes admitted batch geometry in the current turn without per-record continuations", async () => {
+  const elements = Array.from({ length: 32 }, (_, index) => mixedElement(index));
+  const transform = vi.spyOn(strokePosition, "strokeWorldPoint");
+  const yieldControl = vi.fn(async () => undefined);
+  const builder = ElementStore.createBuilder({ shouldYield: () => false, yieldControl });
+  try {
+    const pending = builder.append(elements);
+    expect(transform).toHaveBeenCalledTimes(32);
+    expect(yieldControl).not.toHaveBeenCalled();
+    expect(await pending).toBe("accepted");
+    expect((await builder.finalize())?.size).toBe(elements.length);
+    expect(transform).toHaveBeenCalledTimes(32);
+  } finally {
+    transform.mockRestore();
+  }
+});
 
 describe("runtime element ownership", () => {
   it("privately stages ordinary builder input and preserves its file-only boundary", async () => {

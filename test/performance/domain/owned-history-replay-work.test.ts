@@ -5,6 +5,7 @@ import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
 import * as validation from "../../../src/domain/elements/runtime-replacement-validation";
 import * as equality from "../../../src/domain/store/element-comparison";
 import * as payload from "../../../src/domain/store/mutation-payload";
+import { MutationPreparationScheduler } from "../../../src/domain/store/mutation-preparation-scheduler";
 import { createStandardRuntimeDomainFixture } from "./standard-domain-fixture";
 import { uninterruptedMutationScheduler as scheduler } from "../../fixtures/domain/element-mutation";
 
@@ -31,6 +32,7 @@ it("replays 10,000 privately retained strokes without public staging, point scan
   ];
   const payloadBytes = vi.spyOn(payload, "elementMutationPayloadBytes");
   const compare = vi.spyOn(equality, "elementsEqualSteps");
+  const preparationRuns = vi.spyOn(MutationPreparationScheduler.prototype, "run");
   const published = vi.fn();
   store.subscribe(published);
   let interrupted = false;
@@ -57,6 +59,9 @@ it("replays 10,000 privately retained strokes without public staging, point scan
     expect(compare.mock.calls.length).toBeLessThanOrEqual(fixture.strokeCount * 2);
     expect(compare.mock.calls.every(([left, right]) => left === right)).toBe(true);
     expect(yielded).toBe(1);
+    expect(
+      preparationRuns.mock.results.filter(({ value }) => value instanceof Promise).length,
+    ).toBe(1);
     expect(published).toHaveBeenCalledTimes(3);
     expect(store.size).toBe(fixture.strokeCount);
     for (const original of originals) {
@@ -68,5 +73,6 @@ it("replays 10,000 privately retained strokes without public staging, point scan
     for (const spy of spies) spy.mockRestore();
     compare.mockRestore();
     payloadBytes.mockRestore();
+    preparationRuns.mockRestore();
   }
 });

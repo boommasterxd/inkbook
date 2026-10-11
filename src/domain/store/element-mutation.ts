@@ -173,9 +173,10 @@ async function buildRecords(
   if (versions === "cancelled") return versions;
   for (const [id, element] of desired) {
     const current = source.records.get(id);
-    const record = await scheduler.run(
+    const pendingRecord = scheduler.run(
       buildRecord(element, current, ownedRecords?.get(id), versions),
     );
+    const record = pendingRecord instanceof Promise ? await pendingRecord : pendingRecord;
     if (record === "cancelled") return record;
     if (record !== current) records.set(id, record);
   }
@@ -196,7 +197,8 @@ async function mutationVersions(
       changesGeometry = true;
       changesPaint = true;
     } else {
-      const domains = await scheduler.run(classifyReplacementSteps(current.element, element));
+      const pendingDomains = scheduler.run(classifyReplacementSteps(current.element, element));
+      const domains = pendingDomains instanceof Promise ? await pendingDomains : pendingDomains;
       if (domains === "cancelled") return domains;
       changesGeometry ||= domains.includes("geometry");
       changesPaint ||= domains.includes("paint");
@@ -263,7 +265,7 @@ async function buildDelta(
     const before = source.records.get(id) ?? null;
     const after = records.has(id) ? (records.get(id) ?? null) : before;
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
-    const domains = await scheduler.run(
+    const pendingDomains = scheduler.run(
       mutationDomains(
         before,
         after,
@@ -272,6 +274,7 @@ async function buildDelta(
         mutationOrderPreserved(order, sourceRanks, id),
       ),
     );
+    const domains = pendingDomains instanceof Promise ? await pendingDomains : pendingDomains;
     if (domains === "cancelled") return domains;
     if (domains.length === 0) continue;
     if (after !== null) {

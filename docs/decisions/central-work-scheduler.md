@@ -81,7 +81,11 @@ Resumable sample validation, copying, comparison, bounds, encoding, and contour
 preparation use bounded producers shared with synchronous callers. Synchronous
 wrappers drain those producers; asynchronous consumers consult the injected
 scheduler between their steps. A step boundary alone never forces a frame or
-renews the work deadline. Public mutable values are staged into private candidates
+renews the work deadline. The preparation runner returns completed results synchronously. It
+creates a Promise only for an actual central scheduler handoff; per-record callers
+await only that Promise. After resumption, one iterative drain owns subsequent
+handoffs, avoiding a retained chain of continuation Promises.
+Public mutable values are staged into private candidates
 and those exact values are validated before atomic adoption. Cancellation releases
 staging without publishing a partial Store or worker model. Native allocations and
 final string or byte publication remain indivisible operations. Atomic map and

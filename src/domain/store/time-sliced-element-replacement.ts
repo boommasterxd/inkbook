@@ -219,12 +219,8 @@ async function prepareCandidateRecords(
     if (candidate.domains.includes("paint") && paintVersion === currentPaintVersion) {
       paintVersion = nextVersion(currentPaintVersion, "paintVersion");
     }
-    const record = await createCandidateRecord(
-      candidate,
-      geometryVersion,
-      paintVersion,
-      recordWork,
-    );
+    const preparation = createCandidateRecord(candidate, geometryVersion, paintVersion, recordWork);
+    const record = preparation instanceof Promise ? await preparation : preparation;
     if (record === "cancelled") return record;
     records.push(record);
     historyBuilder.append(candidate.current, record);
@@ -288,42 +284,53 @@ export function commitReplacementPlan(
   commitReverseConnectionPatches(reverseConnections, plan.reversePatches);
 }
 
-async function createCandidateRecord(
+function createCandidateRecord(
   candidate: ReplacementCandidate,
   geometryVersion: number,
   paintVersion: number,
   work: MutationPreparationScheduler,
-): Promise<ElementRecord | "cancelled"> {
+): ElementRecord | "cancelled" | Promise<ElementRecord | "cancelled"> {
+  return work.run(createCandidateRecordSteps(candidate, geometryVersion, paintVersion));
+}
+
+function* createCandidateRecordSteps(
+  candidate: ReplacementCandidate,
+  geometryVersion: number,
+  paintVersion: number,
+): Generator<void | boolean, ElementRecord> {
   const nextGeometryVersion = candidate.domains.includes("geometry")
     ? geometryVersion
     : candidate.current.geometryVersion;
   const nextPaintVersion = candidate.domains.includes("paint")
     ? paintVersion
     : candidate.current.paintVersion;
-  const restored = await work.run(
-    restoreOwnedRecordSteps(candidate.element, candidate.current, candidate.retainedRecord, {
+  const restored = yield* restoreOwnedRecordSteps(
+    candidate.element,
+    candidate.current,
+    candidate.retainedRecord,
+    {
       geometryVersion: nextGeometryVersion,
       paintVersion: nextPaintVersion,
-    }),
+    },
   );
   if (restored !== undefined) return restored;
   const translation = canonicalStrokeTranslation(candidate.current.element, candidate.element);
-  return translation === null
-    ? work.run(
-        createOwnedReplacementRecordSteps(
-          candidate.element,
-          candidate.current,
-          nextGeometryVersion,
-          nextPaintVersion,
-        ),
-      )
-    : createOwnedTranslatedReplacementRecord(
-        candidate.element,
-        candidate.current,
-        nextGeometryVersion,
-        nextPaintVersion,
-        translation,
-      );
+  if (translation !== null) {
+    return createOwnedTranslatedReplacementRecord(
+      candidate.element,
+      candidate.current,
+      nextGeometryVersion,
+      nextPaintVersion,
+      translation,
+    );
+  }
+  yield;
+  return yield* createOwnedReplacementRecordSteps(
+    candidate.element,
+    candidate.current,
+    nextGeometryVersion,
+    nextPaintVersion,
+  );
 }
 
 function canonicalStrokeTranslation(
