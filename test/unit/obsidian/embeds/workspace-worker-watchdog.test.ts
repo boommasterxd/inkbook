@@ -55,6 +55,7 @@ async function workspaceWorkerHarness() {
   const firstScheduler = new TestWorkScheduler();
   const secondScheduler = new TestWorkScheduler();
   let owner = first.ownerWindow;
+  let ownerVersion = 0;
   const endpoint = new TestWorkerEndpoint();
   const warn = vi.fn();
   vi.spyOn(documentRuntime, "createDocumentRuntime").mockImplementation(
@@ -63,6 +64,7 @@ async function workspaceWorkerHarness() {
   );
   const runtimes = createWorkspaceDocumentRuntimes({
     owningWindow: () => owner,
+    ownerWindowVersion: () => ownerVersion,
     fallbackWindow: () => owner,
     workScheduler: (window) => (window === first.ownerWindow ? firstScheduler : secondScheduler),
     subscribeSchedulingProfile: () => () => undefined,
@@ -76,6 +78,7 @@ async function workspaceWorkerHarness() {
     secondScheduler,
     transferAndClose: () => {
       owner = second.ownerWindow;
+      ownerVersion += 1;
       first.close();
     },
     cleanup: () => {

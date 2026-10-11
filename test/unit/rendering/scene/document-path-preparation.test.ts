@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import {
   MAX_PREPARED_SCENE_PATH_BYTES,
   MAX_PREPARED_SCENE_PATH_IDS,
@@ -19,18 +20,49 @@ it("walks the current band order lazily and skips cached contours without local 
   const cached = [{ d: "M0 0L1 1", paint: "stroke" as const }];
   cache.retain(elements[0]!.id, store.get(elements[0]!.id)!.geometryVersion, cached);
   const localBuild = vi.spyOn(cache, "startPreparation");
+  const pressure = vi.spyOn(store, "pressureGeometry");
   expect(work.orderReads).toBe(0);
   await completeDocumentPaths(fixture);
   expect(prepare).toHaveBeenCalledOnce();
   expect(prepare.mock.calls[0]![0]).toEqual(elements.slice(1).map(({ id }) => id));
   expect(work).toEqual({ orderReads: 3, builds: 2 });
   expect(localBuild).not.toHaveBeenCalled();
+  expect(pressure.mock.calls.some(([id]) => id === elements[0]!.id)).toBe(false);
   expect(domain.instrumentation.snapshotMaterializations).toBe(0);
   expect(domain.instrumentation.bandScans).toBe(0);
   expect(preparation.memoryUsage()).toBe(0);
   expect(cache.has(elements[2]!.id, store.get(elements[2]!.id)!.geometryVersion)).toBe(true);
   preparation.release();
   store.release();
+});
+
+it("binds a reused immutable contour to the current version without copying a pressure-path hit", () => {
+  const fixture = createDocumentPathFixture(2);
+  const records = fixture.elements.map(({ id }) => fixture.store.get(id)!);
+  const shared = fixture.cache.build(records[0]!.element);
+  const pressureOnly = buildElementPathParts(records[1]!.element);
+  fixture.store.pressureGeometry(records[1]!.id, records[1]!.geometryVersion).publishPath!(
+    pressureOnly,
+  );
+  const read = vi.spyOn(fixture.cache, "read");
+  try {
+    expect(fixture.preparation.prepare(Infinity, () => 0)).toBe(false);
+    expect(read).toHaveBeenCalledWith(
+      records[0]!.element,
+      expect.anything(),
+      records[0]!.geometryVersion,
+    );
+    expect(fixture.cache.has(records[0]!.id, records[0]!.geometryVersion)).toBe(true);
+    expect(fixture.cache.take(records[0]!.id, records[0]!.geometryVersion)).toBe(shared);
+    expect(fixture.cache.has(records[1]!.id, records[1]!.geometryVersion)).toBe(false);
+    expect(fixture.cache.statistics().entries).toBe(1);
+    expect(fixture.prepare).not.toHaveBeenCalled();
+  } finally {
+    read.mockRestore();
+    fixture.preparation.release();
+    fixture.cache.release();
+    fixture.store.release();
+  }
 });
 
 it("registers quietly adopted contours for immutable reuse and pressure-path consumers", async () => {

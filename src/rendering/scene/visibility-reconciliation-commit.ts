@@ -11,6 +11,7 @@ import {
 } from "./visibility-publication";
 import { orderDeltaPublication } from "./visibility-delta-reconciliation";
 import type { MountSlice, MountYieldReason } from "./mount-slice";
+import { VisibilityExitReadiness } from "./visibility-exit-readiness";
 
 /** Orders only the remaining bounded cleanup list, preserving a partial element's cursor. */
 function prepareVisibilityExitOrder(
@@ -56,6 +57,14 @@ export function removeOrderedVisibilityExits(
     return false;
   const prepared = prepareVisibilityExitOrder(pending, options.mounted);
   if (prepared && frame.now() >= frame.deadline) return false;
+  if (pending.exitOrderPrepared && options.exitReadyAt !== undefined) {
+    pending.exitReadiness ??= new VisibilityExitReadiness(
+      pending,
+      options.mounted,
+      options.exitReadyAt,
+      options.instrumentation,
+    );
+  }
   return removeVisibilityExits(pending, options, frame);
 }
 
@@ -96,10 +105,12 @@ export function prepareVisibilityCleanup(
     const previousIndex = pending.exitIndex;
     const previousSpan = pending.exitIds.length - previousIndex;
     const previousOrderPrepared = pending.exitOrderPrepared;
+    const previousReadiness = pending.exitReadiness?.revision;
     const previousRemovals = cleanup.remainingRemovals?.();
     cleanup.remove();
     if (
       pending.exitIndex !== previousIndex ||
+      previousReadiness !== pending.exitReadiness?.revision ||
       previousRemovals !== cleanup.remainingRemovals?.() ||
       (!previousOrderPrepared && pending.exitOrderPrepared && previousSpan > 1)
     )

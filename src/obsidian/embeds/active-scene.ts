@@ -165,7 +165,9 @@ export class ActiveInkbookScene {
       root: options.root,
       storeMaximumBottom: () => options.model.store.getMaximumBottom(),
     });
-    this.#unsubscribeStore = options.model.store.subscribe((delta) => this.#applyDelta(delta));
+    this.#unsubscribeStore = options.model.store.subscribe((delta) =>
+      this.#applyDelta(delta, options.history.isReplaying),
+    );
     const readiness = createSceneReadiness(
       this.#chrome,
       () => this.#disposed || this.#surfaceFailed,
@@ -269,11 +271,14 @@ export class ActiveInkbookScene {
     this.#controller.updateSnappingSettings(settings);
   }
 
-  #applyDelta(delta: StoreDelta): void {
+  #applyDelta(delta: StoreDelta, historyReplay: boolean): void {
     this.#renderer.applyDelta({
+      historyReplay,
       affected: delta.changes.map((change) => ({
         after: change.after === null ? null : (change.after.element as InkElementV1),
+        afterBounds: change.after?.bounds ?? null,
         before: change.before === null ? null : (change.before.element as InkElementV1),
+        beforeBounds: change.before?.bounds ?? null,
         domains: change.domains,
         id: change.id,
       })),

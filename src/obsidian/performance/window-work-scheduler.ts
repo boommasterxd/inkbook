@@ -8,13 +8,14 @@ export function createWindowWorkScheduler(
   ownerWindow: Window,
   profile: () => { readonly sliceBudgetMs: number; readonly frameDurationMs: number },
 ): WorkScheduler {
+  const performance = ownerWindow.performance;
   const tasks = new HostTaskQueue({
     openChannel: (receive) => openWindowTaskChannel(ownerWindow, receive),
     setTimer: (callback, delay) => ownerWindow.setTimeout(callback, delay),
     clearTimer: (handle) => ownerWindow.clearTimeout(handle),
   });
   return new SharedFrameScheduler({
-    now: () => ownerWindow.performance.now(),
+    now: () => performance.now(),
     budgetMs: () => profile().sliceBudgetMs,
     frameIntervalMs: () => profile().frameDurationMs,
     requestFrame: (callback) => ownerWindow.requestAnimationFrame(callback),

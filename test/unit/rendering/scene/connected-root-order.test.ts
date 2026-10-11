@@ -76,6 +76,12 @@ it("maintains interleaved band successors through insertion, rank shifts, remova
   expect(get).not.toHaveBeenCalled();
   for (const entry of entries.slice(0, 500)) order.remove(entry.id);
   expect(order.successor({ id: "removed", rank: 19, band: "content" })).toBe(entries[500]);
+  expect(order.memoryUsage()).toBe(500 * 112);
+  for (const entry of entries.slice(500))
+    expect(order.successor({ ...entry, rank: entry.rank + 20 })).toBe(entries[entry.rank + 2]);
+  for (const entry of entries.slice(500).reverse()) order.remove(entry.id);
+  expect(order.memoryUsage()).toBe(0);
+  expect(order.successor({ id: "removed", rank: -1, band: "highlight" })).toBeUndefined();
   order.remove("unknown");
   order.clear();
   expect(order.memoryUsage()).toBe(0);

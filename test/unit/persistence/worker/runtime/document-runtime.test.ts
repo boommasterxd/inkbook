@@ -196,7 +196,8 @@ describe("document worker model synchronization", () => {
       type: "model-sync-incremental",
     });
     expect(model.instrumentation).toMatchObject({
-      cacheElements: 1,
+      cacheElements: 0,
+      fragmentBuilds: 1,
       prewarmedBytes: 0,
       prewarmedElements: 0,
     });

@@ -1,4 +1,5 @@
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import { calculateElementBoundsSteps } from "../../domain/geometry/bounds";
 import type { StrokeElementV1 } from "../../domain/schema/public";
 import { assertSpatialBounds } from "../../domain/spatial/bounds";
 import {
@@ -50,30 +51,33 @@ export interface ValidatedDeltaFacts {
   readonly changed: ReadonlyMap<string, ElementFacts>;
 }
 
-export function elementFacts(
+export function* elementFactsSteps(
   element: InkElementV1,
   derivation?: ElementValidationDerivation,
-): ElementFacts {
+  samplesPerStep = 256,
+): Generator<void, ElementFacts> {
   if (element.kind === "stroke") {
-    if (derivation !== undefined) return validatedStrokeFacts(element, derivation);
-    return strokeFacts(element);
+    if (derivation !== undefined)
+      return yield* validatedStrokeFacts(element, derivation, samplesPerStep);
+    return yield* strokeFacts(element, undefined, samplesPerStep);
   }
   const bounds =
     derivation === undefined
-      ? calculateElementBounds(element)
+      ? yield* boundsSteps(element, samplesPerStep)
       : validatedElementDerivationBounds(element, derivation);
   return factsFromBounds(element, bounds);
 }
 
-function validatedStrokeFacts(
+function* validatedStrokeFacts(
   stroke: StrokeElementV1,
   derivation: ElementValidationDerivation,
-): ElementFacts {
+  samplesPerStep: number,
+): Generator<void, ElementFacts> {
   const worldBounds = validatedElementDerivationBounds(stroke, derivation);
   const local = strokeLocalGeometry(stroke);
   const bounds =
     derivation.strokeLocalBounds ??
-    (stroke.offset === undefined ? worldBounds : calculateElementBounds(local));
+    (stroke.offset === undefined ? worldBounds : yield* boundsSteps(local, samplesPerStep));
   assertSpatialBounds(bounds);
   const x = stroke.offset?.x ?? 0;
   const y = stroke.offset?.y ?? 0;
@@ -87,24 +91,29 @@ function validatedStrokeFacts(
   return { ...factsFromBounds(stroke, worldBounds), strokeGeometry: { local, bounds } };
 }
 
-export function validatedDeltaElementFacts(
+export function* validatedDeltaElementFactsSteps(
   element: InkElementV1,
   derivation?: ElementValidationDerivation,
   previous?: ElementFacts,
-): ElementFacts {
+  samplesPerStep = 256,
+): Generator<void, ElementFacts> {
   if (element.kind === "stroke") {
     if (derivation !== undefined) validatedElementDerivationBounds(element, derivation);
-    return strokeFacts(element, previous);
+    return yield* strokeFacts(element, previous, samplesPerStep);
   }
-  if (derivation === undefined) return elementFacts(element);
+  if (derivation === undefined) return yield* elementFactsSteps(element, undefined, samplesPerStep);
   validatedElementDerivationBounds(element, derivation);
-  const calculatedBounds = calculateElementBounds(element);
+  const calculatedBounds = yield* boundsSteps(element, samplesPerStep);
   // Translating retained bounds and recomputing translated geometry can round differently.
   // A mismatched hint never supplies capacity facts; use the canonical recomputation.
   return factsFromBounds(element, calculatedBounds);
 }
 
-function strokeFacts(stroke: StrokeElementV1, previous?: ElementFacts): ElementFacts {
+function* strokeFacts(
+  stroke: StrokeElementV1,
+  previous: ElementFacts | undefined,
+  samplesPerStep: number,
+): Generator<void, ElementFacts> {
   const local = strokeLocalGeometry(stroke);
   const cached = previous?.strokeGeometry;
   const old = cached?.local;
@@ -115,7 +124,7 @@ function strokeFacts(stroke: StrokeElementV1, previous?: ElementFacts): ElementF
     old.style.width === local.style.width &&
     old.tool === local.tool &&
     (local.rotation === 0 || (old.pivot.x === local.pivot.x && old.pivot.y === local.pivot.y));
-  const bounds = reusable ? cached!.bounds : calculateElementBounds(local);
+  const bounds = reusable ? cached!.bounds : yield* boundsSteps(local, samplesPerStep);
   const x = stroke.offset?.x ?? 0;
   const y = stroke.offset?.y ?? 0;
   const translated = {
@@ -140,9 +149,16 @@ function factsFromBounds(element: InkElementV1, bounds: Readonly<SpatialBounds>)
   };
 }
 
-export function aggregateElementFacts(facts: Iterable<ElementFacts>): AggregateFacts {
+export function* aggregateElementFactsSteps(
+  facts: Iterable<ElementFacts>,
+  nodesPerStep = 256,
+): Generator<void, AggregateFacts> {
   const aggregate = mutableAggregate();
-  for (const fact of facts) addFact(aggregate, fact, 1);
+  let visited = 0;
+  for (const fact of facts) {
+    addFact(aggregate, fact, 1);
+    if (++visited % nodesPerStep === 0) yield;
+  }
   return aggregate;
 }
 
@@ -150,14 +166,17 @@ export function emptyAggregateFacts(): AggregateFacts {
   return mutableAggregate();
 }
 
-export function updateAggregateFacts(
+export function* updateAggregateFactsSteps(
   current: AggregateFacts,
   existing: ReadonlyMap<string, ElementFacts>,
   changed: ReadonlyMap<string, ElementFacts>,
   removed: ReadonlySet<string>,
-): AggregateFacts {
+  nodesPerStep = 256,
+): Generator<void, AggregateFacts> {
   const aggregate = { ...current };
+  let visited = 0;
   for (const id of removed) {
+    if (++visited % nodesPerStep === 0) yield;
     const fact = existing.get(id);
     if (fact === undefined) continue;
     addFact(aggregate, fact, -1);
@@ -168,9 +187,10 @@ export function updateAggregateFacts(
       addFact(aggregate, previous, -1);
     }
     addFact(aggregate, fact, 1);
+    if (++visited % nodesPerStep === 0) yield;
   }
   if (aggregate.maximumBottomCount === 0 && aggregate.elements > 0) {
-    const extent = recomputeMaximumBottom(existing, changed, removed);
+    const extent = yield* recomputeMaximumBottom(existing, changed, removed, nodesPerStep);
     aggregate.maximumBottom = extent.bottom;
     aggregate.maximumBottomCount = extent.count;
   } else if (aggregate.elements === 0) {
@@ -179,22 +199,33 @@ export function updateAggregateFacts(
   return aggregate;
 }
 
-export function connectionRelationsAffected(
+export function* connectionRelationsAffectedSteps(
   currentElements: ReadonlyMap<string, InkElementV1>,
   changed: ReadonlyMap<string, InkElementV1>,
   removed: ReadonlySet<string>,
-): boolean {
-  const changedTargets = collectChangedAnchorTargets(currentElements, changed, removed);
+  nodesPerStep = 256,
+): Generator<void, boolean> {
+  const changedTargets = yield* collectChangedAnchorTargets(
+    currentElements,
+    changed,
+    removed,
+    nodesPerStep,
+  );
   if (changedTargets === null) return true;
-  return changedTargets.size > 0 && hasConnectionToTarget(currentElements, changedTargets);
+  return (
+    changedTargets.size > 0 &&
+    (yield* hasConnectionToTarget(currentElements, changedTargets, nodesPerStep))
+  );
 }
 
-function collectChangedAnchorTargets(
+function* collectChangedAnchorTargets(
   currentElements: ReadonlyMap<string, InkElementV1>,
   changed: ReadonlyMap<string, InkElementV1>,
   removed: ReadonlySet<string>,
-): ReadonlySet<string> | null {
+  nodesPerStep: number,
+): Generator<void, ReadonlySet<string> | null> {
   const changedTargets = new Set<string>();
+  let visited = 0;
   for (const element of changed.values()) {
     const current = currentElements.get(element.id);
     if (
@@ -206,8 +237,10 @@ function collectChangedAnchorTargets(
     if (isAnchorTarget(element) || (current !== undefined && isAnchorTarget(current))) {
       changedTargets.add(element.id);
     }
+    if (++visited % nodesPerStep === 0) yield;
   }
   for (const id of removed) {
+    if (++visited % nodesPerStep === 0) yield;
     const current = currentElements.get(id);
     if (current === undefined) continue;
     if (hasEndpointConnection(current)) return null;
@@ -216,11 +249,14 @@ function collectChangedAnchorTargets(
   return changedTargets;
 }
 
-function hasConnectionToTarget(
+function* hasConnectionToTarget(
   currentElements: ReadonlyMap<string, InkElementV1>,
   changedTargets: ReadonlySet<string>,
-): boolean {
+  nodesPerStep: number,
+): Generator<void, boolean> {
+  let visited = 0;
   for (const element of currentElements.values()) {
+    if (++visited % nodesPerStep === 0) yield;
     if (element.kind !== "line" && element.kind !== "arrow") continue;
     const startTarget = element.startConnection?.targetId;
     const endTarget = element.endConnection?.targetId;
@@ -318,11 +354,12 @@ function addFact(aggregate: ReturnType<typeof mutableAggregate>, fact: ElementFa
   }
 }
 
-function recomputeMaximumBottom(
+function* recomputeMaximumBottom(
   existing: ReadonlyMap<string, ElementFacts>,
   changed: ReadonlyMap<string, ElementFacts>,
   removed: ReadonlySet<string>,
-): { readonly bottom: number | null; readonly count: number } {
+  nodesPerStep: number,
+): Generator<void, { readonly bottom: number | null; readonly count: number }> {
   let bottom: number | null = null;
   let count = 0;
   const include = (fact: ElementFacts) => {
@@ -333,11 +370,22 @@ function recomputeMaximumBottom(
       count += 1;
     }
   };
+  let visited = 0;
   for (const [id, fact] of existing) {
     if (!changed.has(id) && !removed.has(id)) include(fact);
+    if (++visited % nodesPerStep === 0) yield;
   }
-  for (const fact of changed.values()) include(fact);
+  for (const fact of changed.values()) {
+    include(fact);
+    if (++visited % nodesPerStep === 0) yield;
+  }
   return { bottom, count };
+}
+
+function* boundsSteps(element: InkElementV1, samplesPerStep: number) {
+  return Number.isFinite(samplesPerStep)
+    ? yield* calculateElementBoundsSteps(element, samplesPerStep)
+    : calculateElementBounds(element);
 }
 
 function hasEndpointConnection(element: InkElementV1): boolean {

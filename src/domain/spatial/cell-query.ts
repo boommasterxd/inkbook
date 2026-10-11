@@ -1,16 +1,16 @@
 import { boundsIntersect, type SpatialBounds } from "./bounds";
 import type { CellColumns, CellRange, IndexedEntry } from "./index-state";
 import type { SpatialQueryScratch } from "./query-scratch";
+import { shouldVisitAxisRange } from "./cell-traversal-policy";
 
 export function visitSpatialCells<Id>(
   cells: CellColumns,
   slots: readonly (IndexedEntry<Id> | undefined)[],
-  occupiedCellCount: number,
   range: CellRange,
   bounds: SpatialBounds,
   scratch: SpatialQueryScratch<Id>,
 ): void {
-  if (shouldVisitRange(range, occupiedCellCount)) {
+  if (shouldVisitAxisRange(range.minCellX, range.maxCellX, cells.size)) {
     visitCellRange(cells, slots, range, bounds, scratch);
   } else {
     visitSparseCells(cells, slots, range, bounds, scratch);
@@ -41,12 +41,6 @@ export function maximumOverflowBottom<Id>(
   return maximum;
 }
 
-function shouldVisitRange(range: CellRange, occupiedCellCount: number): boolean {
-  const width = range.maxCellX - range.minCellX + 1;
-  const height = range.maxCellY - range.minCellY + 1;
-  return width <= occupiedCellCount && height <= Math.floor(occupiedCellCount / width);
-}
-
 function visitCellRange<Id>(
   cells: CellColumns,
   slots: readonly (IndexedEntry<Id> | undefined)[],
@@ -57,10 +51,7 @@ function visitCellRange<Id>(
   for (let cellX = range.minCellX; cellX <= range.maxCellX; cellX += 1) {
     const column = cells.get(cellX);
     if (column === undefined) continue;
-    for (let cellY = range.minCellY; cellY <= range.maxCellY; cellY += 1) {
-      const bucket = column.get(cellY);
-      if (bucket !== undefined) visitBucket(bucket, slots, bounds, scratch);
-    }
+    visitColumn(column, slots, range, bounds, scratch);
   }
 }
 
@@ -73,6 +64,23 @@ function visitSparseCells<Id>(
 ): void {
   for (const [cellX, column] of cells) {
     if (cellX < range.minCellX || cellX > range.maxCellX) continue;
+    visitColumn(column, slots, range, bounds, scratch);
+  }
+}
+
+function visitColumn<Id>(
+  column: Map<number, Set<number>>,
+  slots: readonly (IndexedEntry<Id> | undefined)[],
+  range: CellRange,
+  bounds: SpatialBounds,
+  scratch: SpatialQueryScratch<Id>,
+): void {
+  if (shouldVisitAxisRange(range.minCellY, range.maxCellY, column.size)) {
+    for (let cellY = range.minCellY; cellY <= range.maxCellY; cellY += 1) {
+      const bucket = column.get(cellY);
+      if (bucket !== undefined) visitBucket(bucket, slots, bounds, scratch);
+    }
+  } else {
     for (const [cellY, bucket] of column) {
       if (cellY >= range.minCellY && cellY <= range.maxCellY) {
         visitBucket(bucket, slots, bounds, scratch);

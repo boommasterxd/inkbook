@@ -88,9 +88,9 @@ export class SpatialQueryScratch<Id> {
   private ensureMarkerCapacity(required: number): void {
     if (required <= this.markers.length) return;
 
-    const markers = new Uint32Array(required);
-    markers.set(this.markers);
-    this.markers = markers;
+    const capacity = Math.max(required, this.markers.length === 0 ? 16 : this.markers.length * 2);
+    // begin() advances the epoch before growth, so previous query marks are obsolete.
+    this.markers = new Uint32Array(capacity);
     this.allocationTotal += 1;
   }
 

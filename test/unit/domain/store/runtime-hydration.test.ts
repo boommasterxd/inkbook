@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as strokePosition from "../../../../src/domain/geometry/stroke-position";
 
-import { validateInkElementV1, type InkElementV1 } from "../../../../src/domain/schema/public";
+import {
+  validateInkElementV1,
+  type InkElementV1,
+  type StrokeElementV1,
+} from "../../../../src/domain/schema/public";
 import { validateRuntimeInkSnapshotV1 } from "../../../../src/domain/schema/snapshot-validation";
 import {
-  immutableElement,
+  immutableElementSteps,
   mutableElement,
   takeImmutableElementOwnership,
 } from "../../../../src/domain/store/immutability";
@@ -14,17 +19,92 @@ import {
   hydrateRuntimeStroke,
   runtimeStrokeHydrationFixture,
 } from "../../../fixtures/domain/runtime-stroke-store";
+import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../fixtures/editor/selection-transform-reference";
-import { highlighter, rectangle } from "./fixtures";
+import { highlighter, mixedElement, rectangle } from "./fixtures";
+
+it("finishes admitted batch geometry in the current turn without per-record continuations", async () => {
+  const elements = Array.from({ length: 32 }, (_, index) => mixedElement(index));
+  const transform = vi.spyOn(strokePosition, "strokeWorldPoint");
+  const yieldControl = vi.fn(async () => undefined);
+  const builder = ElementStore.createBuilder({ shouldYield: () => false, yieldControl });
+  try {
+    const pending = builder.append(elements);
+    expect(transform).toHaveBeenCalledTimes(32);
+    expect(yieldControl).not.toHaveBeenCalled();
+    expect(await pending).toBe("accepted");
+    expect((await builder.finalize())?.size).toBe(elements.length);
+    expect(transform).toHaveBeenCalledTimes(32);
+  } finally {
+    transform.mockRestore();
+  }
+});
 
 describe("runtime element ownership", () => {
+  it("privately stages ordinary builder input and preserves its file-only boundary", async () => {
+    const source = highlighter();
+    const builder = ElementStore.createBuilder({
+      shouldYield: () => false,
+      yieldControl: async () => {
+        throw new Error("Available shared budget must not force a handoff.");
+      },
+    });
+    expect(await builder.append([source])).toBe("accepted");
+    source.points[0] = -100;
+    const store = await builder.finalize();
+    const stored = store?.get(source.id)?.element;
+    expect(stored?.kind === "stroke" && stored.points[0]).toBe(100);
+    expect(stored?.kind === "stroke" && stored.points).not.toBe(source.points);
+
+    const runtime = {
+      ...highlighter(),
+      points: new Float64Array(source.points),
+    } as unknown as StrokeElementV1;
+    const rejected = ElementStore.createBuilder({
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    await expect(rejected.append([runtime])).rejects.toThrow(RangeError);
+    expect(await rejected.finalize()).toBeNull();
+  });
+
+  it.each([false, true])(
+    "cancels inside a long stroke bounds pass with owned input %s",
+    async (owned) => {
+      const source = {
+        ...highlighter(),
+        points: Array.from({ length: 4097 }, (_, index) => [index, index % 7, 0.5]).flat(),
+      };
+      let cancelled = false;
+      const transform = vi.spyOn(strokePosition, "strokeWorldPoint");
+      const builder = ElementStore.createBuilder({
+        isCancelled: () => cancelled,
+        shouldYield: () => transform.mock.calls.length > 0,
+        yieldControl: async () => {
+          cancelled = true;
+        },
+      });
+      try {
+        const status = owned
+          ? await builder.appendOwnedRuntime([source])
+          : await builder.append([source]);
+        expect(status).toBe("cancelled");
+        expect(transform).toHaveBeenCalledTimes(256);
+        expect(await builder.finalize()).toBeNull();
+        expect(transform).toHaveBeenCalledTimes(256);
+      } finally {
+        transform.mockRestore();
+      }
+    },
+  );
+
   it("copies typed samples for ordinary immutability and adopts explicit ownership", () => {
     const source = highlighter();
     const points = new Float64Array(source.points);
     const runtime = { ...source, points } as unknown as InkElementV1;
 
-    const copied = immutableElement(runtime);
+    const copied = finishGeometrySteps(immutableElementSteps(runtime));
     if (copied.kind !== "stroke") throw new Error("Expected stroke record.");
     expect(copied.points).toBeInstanceOf(Float64Array);
     expect(copied.points).not.toBe(points);

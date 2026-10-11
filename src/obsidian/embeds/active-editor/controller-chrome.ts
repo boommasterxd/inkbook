@@ -145,7 +145,9 @@ function configureActiveEditorToolbarMenus(
         overflow: overflowMenuState(actions, selectionSize() > 0),
         selectedShape: chromeState.selectedShape,
         shapeIcon: style.shapeIcon,
-        styleControls: style.controls,
+        get styleControls() {
+          return style.controls;
+        },
       };
     },
     handlers: callbacks,

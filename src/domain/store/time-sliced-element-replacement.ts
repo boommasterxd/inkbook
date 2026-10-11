@@ -13,14 +13,18 @@ import {
 import { planCanonicalStrokeReplacement } from "./canonical-stroke-replacement";
 import { DocumentCapacity, type DocumentCapacityPatch } from "./document-capacity";
 import {
-  createOwnedReplacementRecord,
+  createOwnedReplacementRecordSteps,
   createOwnedTranslatedReplacementRecord,
 } from "./record-factory";
 import { requireElementRecord } from "./record-access";
+import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import { restoreOwnedRecordSteps } from "./owned-mutation-history";
+import type { ReplacementHistory } from "./replacement-history";
 import { cancelled, ReplacementCheckpoint, yieldWhenRequested } from "./replacement-scheduler";
 import {
   prepareReplacementCandidatesTimeSliced,
   type ReplacementCandidate,
+  type ReplacementPlannerPorts,
 } from "./replacement-planner";
 import type {
   ElementReplacementPlan,
@@ -33,12 +37,6 @@ import type {
   ImmutableInkElement,
   StoreSliceScheduler,
 } from "./types";
-
-interface ReplacementPorts {
-  readonly getRecord: (id: string) => ElementRecord;
-  readonly getReferences: (targetId: string) => readonly EndpointReference[] | undefined;
-  readonly onReverseVisit: () => void;
-}
 
 interface PreparedCandidateRecords extends PreparedReplacementRecords {
   readonly connectionCandidates: ReplacementCandidate[];
@@ -57,12 +55,13 @@ export async function planElementReplacement(
   if (canonical === "cancelled" || canonical === null || !("status" in canonical)) return canonical;
   const fallbackYields = canonical.yields;
   let reverseVisits = 0;
-  const ports: ReplacementPorts = {
+  const ports: ReplacementPlannerPorts = {
     getRecord: (id) => requireElementRecord(source.records, id),
     getReferences: (id) => source.reverseConnections.get(id),
     onReverseVisit: () => {
       reverseVisits += 1;
     },
+    getRetainedRecord: (element) => source.history.retainedRecord(element),
   };
   const preparedCandidates = await prepareReplacementCandidatesTimeSliced(
     replacements,
@@ -80,6 +79,7 @@ export async function planElementReplacement(
     source.paintVersion,
     source.capacity,
     scheduler,
+    source.history,
   );
   if (preparedRecords === "cancelled") return preparedRecords;
   const {
@@ -89,6 +89,7 @@ export async function planElementReplacement(
     connectionCandidates,
     connectionRecords,
     geometryVersion: nextGeometryVersion,
+    history,
     paintVersion: nextPaintVersion,
     records,
     spatialReplacements,
@@ -130,6 +131,7 @@ export async function planElementReplacement(
       paintVersion: nextPaintVersion,
     }),
     geometryVersion: nextGeometryVersion,
+    history,
     indexPatch,
     indexVisitCount: spatialReplacements.length + reverseVisits,
     paintVersion: nextPaintVersion,
@@ -187,6 +189,7 @@ async function prepareCandidateRecords(
   currentPaintVersion: number,
   capacity: DocumentCapacity,
   scheduler: StoreSliceScheduler,
+  history: ReplacementHistory,
 ): Promise<PreparedCandidateRecords | "cancelled"> {
   const records: ElementRecord[] = [];
   const capacityPreviousRecords: ElementRecord[] = [];
@@ -197,7 +200,17 @@ async function prepareCandidateRecords(
   const changes: PreparedReplacementRecords["changes"] = [];
   let geometryVersion = currentGeometryVersion;
   let paintVersion = currentPaintVersion;
-  const work = new ReplacementCheckpoint(scheduler);
+  const historyBuilder = history.createBuilder();
+  let recordYields = 0;
+  const trackedScheduler: StoreSliceScheduler = {
+    ...scheduler,
+    yieldControl: async () => {
+      await scheduler.yieldControl();
+      recordYields += 1;
+    },
+  };
+  const work = new ReplacementCheckpoint(trackedScheduler);
+  const recordWork = new MutationPreparationScheduler(trackedScheduler);
   for (const candidate of candidates) {
     if (cancelled(scheduler)) return "cancelled";
     if (candidate.domains.includes("geometry") && geometryVersion === currentGeometryVersion) {
@@ -206,8 +219,11 @@ async function prepareCandidateRecords(
     if (candidate.domains.includes("paint") && paintVersion === currentPaintVersion) {
       paintVersion = nextVersion(currentPaintVersion, "paintVersion");
     }
-    const record = createCandidateRecord(candidate, geometryVersion, paintVersion);
+    const preparation = createCandidateRecord(candidate, geometryVersion, paintVersion, recordWork);
+    const record = preparation instanceof Promise ? await preparation : preparation;
+    if (record === "cancelled") return record;
     records.push(record);
+    historyBuilder.append(candidate.current, record);
     if (candidate.domains.includes("geometry")) {
       capacity.validateReplacementBounds(record);
       spatialReplacements.push({ bounds: record.bounds, id: record.element.id });
@@ -238,10 +254,11 @@ async function prepareCandidateRecords(
     connectionCandidates,
     connectionRecords,
     geometryVersion,
+    history: historyBuilder.finish(),
     paintVersion,
     records,
     spatialReplacements,
-    yields: work.yields,
+    yields: recordYields,
   };
 }
 
@@ -271,28 +288,49 @@ function createCandidateRecord(
   candidate: ReplacementCandidate,
   geometryVersion: number,
   paintVersion: number,
-): ElementRecord {
+  work: MutationPreparationScheduler,
+): ElementRecord | "cancelled" | Promise<ElementRecord | "cancelled"> {
+  return work.run(createCandidateRecordSteps(candidate, geometryVersion, paintVersion));
+}
+
+function* createCandidateRecordSteps(
+  candidate: ReplacementCandidate,
+  geometryVersion: number,
+  paintVersion: number,
+): Generator<void | boolean, ElementRecord> {
   const nextGeometryVersion = candidate.domains.includes("geometry")
     ? geometryVersion
     : candidate.current.geometryVersion;
   const nextPaintVersion = candidate.domains.includes("paint")
     ? paintVersion
     : candidate.current.paintVersion;
+  const restored = yield* restoreOwnedRecordSteps(
+    candidate.element,
+    candidate.current,
+    candidate.retainedRecord,
+    {
+      geometryVersion: nextGeometryVersion,
+      paintVersion: nextPaintVersion,
+    },
+  );
+  if (restored !== undefined) return restored;
   const translation = canonicalStrokeTranslation(candidate.current.element, candidate.element);
-  return translation === null
-    ? createOwnedReplacementRecord(
-        candidate.element,
-        candidate.current,
-        nextGeometryVersion,
-        nextPaintVersion,
-      )
-    : createOwnedTranslatedReplacementRecord(
-        candidate.element,
-        candidate.current,
-        nextGeometryVersion,
-        nextPaintVersion,
-        translation,
-      );
+  if (translation !== null) {
+    return createOwnedTranslatedReplacementRecord(
+      candidate.element,
+      candidate.current,
+      nextGeometryVersion,
+      nextPaintVersion,
+      translation,
+    );
+  }
+  yield;
+  return yield* createOwnedReplacementRecordSteps(
+    candidate.element,
+    candidate.current,
+    nextGeometryVersion,
+    nextPaintVersion,
+  );
 }
 
 function canonicalStrokeTranslation(

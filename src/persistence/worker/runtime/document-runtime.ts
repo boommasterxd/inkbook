@@ -15,7 +15,7 @@ import {
   requestJobKind,
   supersedesSpeculativeSceneRequest,
 } from "./request-admission";
-import { emitUnlockBatches } from "./unlock-batches";
+import { runUnlockRequest, runVerifyOutputRequest } from "./runtime-document-operations";
 import { ScenePathOperation } from "./scene-path-operation";
 import { runtimeSliceContext } from "./slice-scheduler";
 import { NavigationJobSuspension } from "./navigation-job-suspension";
@@ -33,6 +33,7 @@ interface PendingJob {
   readonly sceneOperation?: ScenePathOperation;
   readonly abortController: AbortController;
   readonly observer: DocumentRuntimeObserver | undefined;
+  readonly prepare?: (context: RuntimeSliceContext) => Promise<DocumentRuntimeRequest>;
   readonly reject: (reason: unknown) => void;
   readonly request: DocumentRuntimeRequest;
   readonly resolve: (result: DocumentRuntimeResult) => void;
@@ -92,6 +93,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
   public execute(
     request: DocumentRuntimeRequest,
     observer?: DocumentRuntimeObserver,
+    prepare?: (context: RuntimeSliceContext) => Promise<DocumentRuntimeRequest>,
   ): Promise<DocumentRuntimeResult> {
     if (this.#terminated)
       return Promise.reject(new Error("Document worker runtime is terminated."));
@@ -121,6 +123,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         ...(sceneOperation === undefined ? {} : { sceneOperation }),
         abortController: new AbortController(),
         observer,
+        ...(prepare === undefined ? {} : { prepare }),
         reject,
         request,
         resolve,
@@ -263,9 +266,9 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         signal.throwIfAborted();
         result =
           this.#scheduler === null
-            ? await this.#run(pending.request, pending.observer, signal)
+            ? await this.#run(pending, signal)
             : await this.#scheduler.run(
-                (signal) => this.#run(pending.request, pending.observer, signal),
+                (signal) => this.#run(pending, signal),
                 signal,
                 isNavigationSceneRequest(pending.request) ? "frame" : undefined,
               );
@@ -311,11 +314,9 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     signal.throwIfAborted();
   }
 
-  async #run(
-    request: DocumentRuntimeRequest,
-    observer: DocumentRuntimeObserver | undefined,
-    signal: AbortSignal,
-  ): Promise<DocumentRuntimeResult> {
+  async #run(job: PendingJob, signal: AbortSignal): Promise<DocumentRuntimeResult> {
+    let request = job.request;
+    const observer = job.observer;
     while (isDocumentPrewarmRequest(request) && this.#foreground !== undefined)
       await this.#foreground.catch(() => undefined);
     signal.throwIfAborted();
@@ -329,9 +330,16 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
           : undefined) ??
         (isDocumentPrewarmRequest(request) ? this.#yieldSpeculative(signal) : undefined),
     );
+    if (job.prepare !== undefined) {
+      request = await job.prepare(sliceContext!);
+      signal.throwIfAborted();
+      if (!matchesRequestExecutor(request, this.#executor))
+        throw new RuntimeModelError("stale-executor", false);
+    }
     if (request.type === "prepare-scene-paths")
       return this.#prepareScenePaths(request, sliceContext, signal, observer);
-    if (request.type === "unlock") return this.#unlock(request, sliceContext, observer);
+    if (request.type === "unlock")
+      return runUnlockRequest(this.#model, request, sliceContext, observer);
     if (
       request.type === "clipboard-encode" ||
       request.type === "clipboard-decode" ||
@@ -341,14 +349,15 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         this.#services.createId(),
       );
     if (request.type === "model-sync-full" || request.type === "model-sync-incremental") {
-      this.#model.synchronize(request);
+      await this.#model.synchronize(request, sliceContext);
       return {
         identity: request.identity,
         modelRevision: request.modelRevision,
         type: "model-sync-success",
       };
     }
-    if (request.type === "verify-output") return this.#verifyOutput(request, sliceContext);
+    if (request.type === "verify-output")
+      return runVerifyOutputRequest(this.#model, request, sliceContext);
     const scheduler = this.#scheduler;
     const result = await this.#model.export(request, scheduler === null ? undefined : sliceContext);
     if (result.ok) {
@@ -373,65 +382,6 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       sessionId: request.sessionId,
       type: "export-failure",
       workerEpoch: request.workerEpoch,
-    };
-  }
-
-  async #verifyOutput(
-    request: Extract<DocumentRuntimeRequest, { type: "verify-output" }>,
-    context: RuntimeSliceContext | undefined,
-  ): Promise<DocumentRuntimeResult> {
-    const parsed = await this.#model.verifyOutput(request.input, context, {
-      ...(request.expectedBytes === undefined ? {} : { expectedBytes: request.expectedBytes }),
-      versionPolicy:
-        request.versionPolicy ??
-        (request.identity.purpose === "read-back" ? "current" : "editable"),
-      ...(request.identity.purpose === "preflight" && request.confirmedBase !== undefined
-        ? { confirmedBase: request.confirmedBase }
-        : {}),
-    });
-    return {
-      identity: request.identity,
-      persisted: parsed === null ? { type: "unreadable" } : { ...parsed, type: "confirmed" },
-      type: "verify-output-success",
-    };
-  }
-
-  async #unlock(
-    request: Extract<DocumentRuntimeRequest, { type: "unlock" }>,
-    context: RuntimeSliceContext | undefined,
-    observer: DocumentRuntimeObserver | undefined,
-  ): Promise<DocumentRuntimeResult> {
-    let batchCount = 0;
-    const unlocked = await this.#model.unlock(
-      request.input,
-      context,
-      async (snapshot, derivations, adoptionSignal) => {
-        batchCount = await emitUnlockBatches(
-          request.identity,
-          snapshot.elements,
-          derivations,
-          observer,
-          adoptionSignal,
-        );
-      },
-      request.safeStaticProof,
-    );
-    const { snapshot } = unlocked;
-    return {
-      identity: request.identity,
-      lockedHeight: unlocked.lockedHeight,
-      outputHash: unlocked.outputHash,
-      requiresCanonicalRewrite: unlocked.requiresCanonicalRewrite,
-      sourceVersion: unlocked.sourceVersion,
-      snapshot: {
-        batchCount,
-        elementCount: snapshot.elements.length,
-        format: snapshot.format,
-        page: snapshot.page,
-        revision: snapshot.revision,
-        version: snapshot.version,
-      },
-      type: "unlock-success",
     };
   }
 

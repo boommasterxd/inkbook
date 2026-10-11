@@ -1,13 +1,14 @@
-import type { StrokeShapeCache } from "./stroke-shape-cache";
+import { prepareStrokeShapeSteps, type StrokeShapeCache } from "./stroke-shape-cache";
 import type { StrokeSampleEncodingCache } from "./stroke-sample-encoding-cache";
 import type { StrokeFragmentPathRange } from "./stroke-fragment-paths";
-import { buildElementPathParts } from "../../domain/geometry/element-path";
-import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { isHighlightElement } from "../../domain/commands/render-bands";
 import { calculateElementBounds } from "../../domain/geometry/public";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { escapeXmlText } from "../documents/xml-text";
-import { serializeCanonicalElementMetadata } from "./canonical-element-fragments";
+import {
+  serializeCanonicalElementMetadata,
+  serializeCanonicalElementMetadataSteps,
+} from "./canonical-element-fragments";
 import { serializedPathDataByteLength, serializeElementPaths, serializeParts } from "./path-markup";
 
 const decoder = new TextDecoder();
@@ -41,12 +42,45 @@ export function buildElementFragments(
   shapeCache?: StrokeShapeCache,
   sampleCache?: StrokeSampleEncodingCache,
 ): ElementFragments {
-  const canonicalMetadata = serializeCanonicalElementMetadata(element, sampleCache);
+  const steps = elementFragmentSteps(element, bottom, shapeCache, sampleCache, undefined, true);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+/** Yield markers offer scheduler checkpoints; they never require a task handoff. */
+export function* buildElementFragmentsSteps(
+  element: InkElementV1,
+  bottom: number,
+  shapeCache?: StrokeShapeCache,
+  sampleCache?: StrokeSampleEncodingCache,
+  signal?: AbortSignal,
+): Generator<void, ElementFragments> {
+  return yield* elementFragmentSteps(element, bottom, shapeCache, sampleCache, signal, false);
+}
+
+function* elementFragmentSteps(
+  element: InkElementV1,
+  bottom: number,
+  shapeCache: StrokeShapeCache | undefined,
+  sampleCache: StrokeSampleEncodingCache | undefined,
+  signal: AbortSignal | undefined,
+  synchronous: boolean,
+): Generator<void, ElementFragments> {
+  signal?.throwIfAborted();
+  const canonicalMetadata = synchronous
+    ? serializeCanonicalElementMetadata(element, sampleCache)
+    : yield* serializeCanonicalElementMetadataSteps(element, sampleCache, signal);
   const metadata = escapeXmlText(canonicalMetadata);
   const parts =
     element.kind === "stroke"
-      ? (shapeCache?.resolve(element) ?? buildElementPathParts(strokeLocalGeometry(element)))
+      ? shapeCache === undefined
+        ? yield* prepareStrokeShapeSteps(element, signal)
+        : synchronous
+          ? shapeCache.resolve(element)
+          : yield* shapeCache.resolveSteps(element, signal)
       : undefined;
+  signal?.throwIfAborted();
   const svg = (
     parts === undefined ? serializeElementPaths(element) : serializeParts(element, parts)
   ).join("");

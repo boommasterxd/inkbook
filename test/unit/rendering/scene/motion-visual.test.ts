@@ -11,6 +11,7 @@ import {
 } from "../../../../src/rendering/scene/motion-visual";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
+import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import { asDocument, FakeDocument, fakeNode } from "./fakes";
 
 function pressureStroke() {
@@ -25,6 +26,43 @@ function motionParent() {
   const parent = document.createElementNS(SVG_NAMESPACE, "g");
   return { document, parent };
 }
+
+describe("canonical stroke motion reuse", () => {
+  it.each([false, true])(
+    "reuses canonical local paths with positioned fade geometry (pressure: %s)",
+    (pressureEnabled) => {
+      const stroke = pressureStroke();
+      Object.freeze(stroke.points);
+      const local = { ...stroke, style: { ...stroke.style, pressureEnabled } };
+      const cache = new ScenePathCache();
+      const parts = cache.build(local);
+      const moved = {
+        ...local,
+        offset: { x: 70, y: 40 },
+        pivot: { x: local.pivot.x + 70, y: local.pivot.y + 40 },
+      };
+      const build = vi.spyOn(elementPath, "buildElementPathParts");
+      const { document, parent } = motionParent();
+      try {
+        const visual = createMotionVisual(document, parent, [moved], 32, 100_000, (element) =>
+          cache.read(element),
+        );
+        expect(build).not.toHaveBeenCalled();
+        expect(fakeNode(visual.nodes[0]!).attributes.get("d")).toBe(parts[0]!.d);
+        expect(fakeNode(visual.nodes[0]!).attributes.get("transform")).toBe("translate(70 40)");
+        writeMotionVisual(visual, 0.5, 0.98);
+        expect(fakeNode(visual.targets[0]!.node).style["transform"]).toBe(
+          pressureEnabled ? "scale(0.98)" : "translate(70px, 40px) scale(0.98)",
+        );
+        removeMotionVisual(visual);
+        expect(fakeNode(parent).nodes).toHaveLength(0);
+      } finally {
+        build.mockRestore();
+        cache.release();
+      }
+    },
+  );
+});
 
 describe("pressure motion visuals", () => {
   it("composites continuous pressure geometry once during a fade", () => {

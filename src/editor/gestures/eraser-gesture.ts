@@ -2,7 +2,6 @@ import { assertFinitePoint, type Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
 
-const ERASER_FADE_MS = 400;
 const FINALIZATION_WORK_UNITS_PER_QUANTUM = 12_288;
 const QUERY_BATCH_WORK_UNITS = 128;
 const UPDATE_CHECKPOINT_WORK_UNITS = 1_024;
@@ -50,8 +49,8 @@ export interface EraserQueryPort {
 }
 
 export interface EraserFeedbackPort {
-  setCandidateFade(ids: ReadonlySet<string>, durationMs: number): void;
-  addCandidateFade?(ids: readonly string[], durationMs: number): void;
+  setCandidateFade(ids: ReadonlySet<string>): void;
+  addCandidateFade?(ids: readonly string[]): void;
   clearCandidateFade(ids: ReadonlySet<string>): void;
 }
 
@@ -231,9 +230,8 @@ export class EraserSweep {
 
   #publishAdded(added: readonly string[]): void {
     if (added.length === 0) return;
-    if (this.#feedback.addCandidateFade !== undefined)
-      this.#feedback.addCandidateFade(added, ERASER_FADE_MS);
-    else this.#feedback.setCandidateFade(this.#candidates, ERASER_FADE_MS);
+    if (this.#feedback.addCandidateFade !== undefined) this.#feedback.addCandidateFade(added);
+    else this.#feedback.setCandidateFade(this.#candidates);
   }
 
   #activateNextSweep(): ActiveSweep | null {

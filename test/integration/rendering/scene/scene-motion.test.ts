@@ -386,9 +386,9 @@ describe("motion limits", () => {
     scheduler.runAll();
 
     expect(contentPath(renderer, 1).style.opacity).toBeUndefined();
-    expect(contentPath(renderer, 0).style.animation).toBe("");
+    expect(contentPath(renderer, 0).style.getPropertyValue("animation")).toBe("");
     expect(contentPath(renderer, 0).style.opacity).toBe("0");
-    expect(contentPath(renderer, 0).style.filter).toBe("");
+    expect(contentPath(renderer, 0).style.filter || "").toBe("");
     expect(fakeNode(renderer.svg).nodes[2]!.nodes[1]!.style.opacity).toBe("1");
     expect(renderer.instrumentation()).toMatchObject({
       motionCacheEntries: 0,

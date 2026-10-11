@@ -28,12 +28,14 @@ it("defers complete snapshot creation until clipboard needs it after sync", asyn
   try {
     synchronizeOnce(model);
     expect(model.modelRevision).toBe(1);
+    expect(model.instrumentation).toMatchObject({ cacheElements: 0, fragmentBuilds: 0 });
     expect(
       await model.prewarmOne({
         checkpoint: async () => undefined,
         signal: new AbortController().signal,
       }),
     ).toBe(false);
+    expect(model.instrumentation).toMatchObject({ cacheElements: 1, fragmentBuilds: 1 });
     expect(materialize).not.toHaveBeenCalled();
     expect(model.encodeClipboard(1, [rectangle().id]).ok).toBe(true);
     expect(model.encodeClipboard(1, [rectangle().id]).ok).toBe(true);
@@ -82,7 +84,7 @@ it("builds one snapshot when exporting after lazy model sync", async () => {
   }
 });
 
-it("rejects clipboard access after an unconfirmed export changes serializer state", async () => {
+it("preserves clipboard access when export is cancelled before staging", async () => {
   const model = synchronizedModel();
   const cancelled = new AbortController();
   cancelled.abort();
@@ -98,12 +100,10 @@ it("rejects clipboard access after an unconfirmed export changes serializer stat
     { checkpoint: async () => undefined, signal: cancelled.signal },
   );
   expect(failed.ok).toBe(false);
+  expect(model.instrumentation).toMatchObject({ cacheElements: 0, fragmentBuilds: 0 });
   expect(model.modelRevision).toBe(1);
-  for (const revision of [1, 2]) {
-    expect(() => model.encodeClipboard(revision, [rectangle().id])).toThrow(
-      "basis-revision-mismatch",
-    );
-  }
+  expect(model.encodeClipboard(1, [rectangle().id]).ok).toBe(true);
+  expect(() => model.encodeClipboard(2, [rectangle().id])).toThrow("basis-revision-mismatch");
 
   model.synchronize({
     baseModelRevision: null,
@@ -113,4 +113,46 @@ it("rejects clipboard access after an unconfirmed export changes serializer stat
     type: "model-sync-full",
   });
   expect(model.encodeClipboard(3, [rectangle().id]).ok).toBe(true);
+});
+
+it("requires full recovery when cancellation follows complete model adoption", async () => {
+  const model = synchronizedModel();
+  const cancelled = new AbortController();
+  const previousRuns = model.instrumentation.incrementalValidationRuns;
+  const failed = await model.export(
+    {
+      ...executor,
+      baseModelRevision: 1,
+      changedElements: [rectangle(220)],
+      exportGeneration: 1,
+      modelRevision: 2,
+      type: "export-incremental",
+    },
+    {
+      signal: cancelled.signal,
+      checkpoint: () => {
+        if (model.instrumentation.incrementalValidationRuns > previousRuns) cancelled.abort();
+        return undefined;
+      },
+    },
+  );
+  expect(failed.ok).toBe(false);
+  expect(model.modelRevision).toBe(1);
+  for (const revision of [1, 2])
+    expect(() => model.encodeClipboard(revision, [rectangle().id])).toThrow(
+      "basis-revision-mismatch",
+    );
+  await model.synchronize(
+    {
+      baseModelRevision: null,
+      identity: { ...executor, operationId: 3, purpose: "background" },
+      modelRevision: 3,
+      snapshot: snapshot(3, 240),
+      type: "model-sync-full",
+    },
+    { signal: new AbortController().signal, checkpoint: () => undefined },
+  );
+  expect(model.modelRevision).toBe(3);
+  expect(model.encodeClipboard(3, [rectangle().id]).ok).toBe(true);
+  model.clear();
 });

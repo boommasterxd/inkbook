@@ -6,15 +6,157 @@ import { MountSlice } from "../../../../src/rendering/scene/mount-slice";
 import { SceneEntrantPriority } from "../../../../src/rendering/scene/scene-entrant-priority";
 import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
 import { commitVisibleBands } from "../../../../src/rendering/scene/visibility-order";
+import * as visibleOrder from "../../../../src/rendering/scene/visibility-order";
+import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
 import {
   createViewportRectangleStore,
   observeIndexedSceneQueries,
+  createSceneFixture,
 } from "../../../fixtures/rendering/scene";
 import { FakeSceneStore, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
-import { createInteractionFixture } from "./interaction-refresh-profile-fixture";
+import { createInteractionFixture, INTERACTION_PAGE } from "./interaction-refresh-profile-fixture";
 
 const BOUNDS = { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+
+function createIndexedVisibilityState() {
+  const fixture = createInteractionFixture();
+  const port = new ElementSceneStore(fixture.store);
+  const instrumentation = createInstrumentation();
+  const state = new SceneVisibilityState(port, instrumentation);
+  const { query, work } = observeIndexedSceneQueries(fixture.store);
+  return { fixture, port, instrumentation, state, query, work };
+}
+
+it("clears candidate positions when a freed slot receives a different ID", () => {
+  const store = createViewportRectangleStore(3, () => 10);
+  const state = new SceneVisibilityState(store, createInstrumentation());
+  expect(state.query(BOUNDS).visibility.content.count).toBe(3);
+  const query = vi.spyOn(store, "query");
+  const first = store.records.get("entry-0")!;
+  const last = store.records.get("entry-2")!;
+  store.records.delete(first.id);
+  state.releaseId(first.id);
+  state.invalidateForChanges(first.bounds, null, first.id);
+  const replacement = fakeRectangleRecord("replacement", 0, 10);
+  store.records.set(replacement.id, replacement);
+  state.invalidateForChanges(null, replacement.bounds, replacement.id);
+  store.records.delete(last.id);
+  state.releaseId(last.id);
+  state.invalidateForChanges(last.bounds, null, last.id);
+  const result = state.query(BOUNDS);
+  expect(result.visibility.content.ids.slice(0, result.visibility.content.count)).toEqual([
+    "replacement",
+    "entry-1",
+  ]);
+  expect(state.contains(first.id)).toBe(false);
+  expect(state.contains(last.id)).toBe(false);
+  expect(state.contains(replacement.id)).toBe(true);
+  expect(query).not.toHaveBeenCalled();
+  state.release();
+  query.mockRestore();
+  expect(state.queryMemoryUsage()).toBe(0);
+});
+
+it.each([false, true])(
+  "patches a 10,000-stroke removal and restore without indexed visits or resort (coalesced: %s)",
+  async (coalesced) => {
+    const fixture = createInteractionFixture();
+    const port = new ElementSceneStore(fixture.store);
+    const { renderer, scheduler } = createSceneFixture(INTERACTION_PAGE, port, {
+      height: 100,
+      left: 0,
+      top: 0,
+      width: 100,
+    });
+    scheduler.runAll();
+    const previous = renderer.mountedIds("content");
+    expect(previous.length).toBeGreaterThan(100);
+    const id = previous[0]!;
+    const { query, work } = observeIndexedSceneQueries(fixture.store);
+    const sort = vi.spyOn(visibleOrder, "sortVisibleBand");
+    const unsubscribe = fixture.store.subscribe((delta) =>
+      renderer.applyDelta({
+        affected: delta.changes.map((change) => ({
+          id: change.id,
+          domains: change.domains,
+          before: (change.before?.element as InkElementV1 | undefined) ?? null,
+          after: (change.after?.element as InkElementV1 | undefined) ?? null,
+          beforeBounds: change.before?.bounds ?? null,
+          afterBounds: change.after?.bounds ?? null,
+        })),
+      }),
+    );
+    try {
+      renderer.resetInstrumentation();
+      const removed = fixture.store.removeWithHistory([id]);
+      if (removed === null) throw new Error("Expected deletion.");
+      if (!coalesced) {
+        scheduler.runAll();
+        expect(renderer.mountedIds("content")).toEqual(previous.slice(1));
+        expect(renderer.instrumentation()).toMatchObject({
+          domExits: 1,
+          domReorders: 0,
+          contentAttributeWrites: 0,
+        });
+      }
+      const prepared = await fixture.store.prepareElementMutation(
+        removed.transition.reverse,
+        { shouldYield: () => false, yieldControl: async () => undefined },
+        removed.transition,
+      );
+      expect(prepared.status).toBe("prepared");
+      fixture.store.commitPreparedElementMutation(prepared.token!);
+      scheduler.runAll();
+      expect(renderer.mountedIds("content")).toEqual(previous);
+      expect(query).not.toHaveBeenCalled();
+      expect(work.indexedVisits).toBe(0);
+      expect(sort).not.toHaveBeenCalled();
+      expect(renderer.instrumentation()).toMatchObject({
+        spatialQueries: 0,
+        domReorders: 0,
+        geometryBuilds: 0,
+      });
+      expect(renderer.instrumentation().contentAttributeWrites).toBeLessThanOrEqual(10);
+      expect(renderer.instrumentation().domEntrants).toBeLessThanOrEqual(1);
+    } finally {
+      sort.mockRestore();
+      query.mockRestore();
+      unsubscribe();
+      renderer.destroy();
+      port.release();
+    }
+    expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+    expect(scheduler.pendingCount).toBe(0);
+  },
+);
+
+it("restarts a suspended candidate query when membership changes its indexed generation", () => {
+  const { fixture, port, state, query, work } = createIndexedVisibilityState();
+  const cancel = vi.spyOn(SpatialQueryCursor.prototype, "cancel");
+  try {
+    expect(state.query(BOUNDS, BOUNDS, false, 8, () => work.indexedVisits).pending).toBe(true);
+    const id = fixture.ids[0]!;
+    const record = fixture.store.get(id)!;
+    fixture.store.remove([id]);
+    expect(fixture.store.get(id)).toBeUndefined();
+    state.releaseId(id);
+    state.invalidateForChanges(record.bounds, null, id);
+    expect(cancel).toHaveBeenCalledOnce();
+    const result = state.query(BOUNDS, BOUNDS, false);
+    expect(result.pending).toBeUndefined();
+    expect(state.contains(id)).toBe(false);
+    expect(query).toHaveBeenCalledTimes(2);
+    state.query({ ...BOUNDS, minY: 2_000, maxY: 2_100 }, undefined, false);
+    expect(query).toHaveBeenCalledTimes(3);
+  } finally {
+    state.release();
+    port.release();
+    query.mockRestore();
+    cancel.mockRestore();
+  }
+  expect(state.queryMemoryUsage()).toBe(0);
+});
 
 it.each(["minX", "maxX", "minY", "maxY"] as const)(
   "reuses the exact current reserve boundary on %s and queries beyond it",
@@ -44,11 +186,7 @@ it.each(["minX", "maxX", "minY", "maxY"] as const)(
 );
 
 it("shrinks a 10,000-member zoom envelope through bounded indexed work and cancels stale shrink work", () => {
-  const fixture = createInteractionFixture();
-  const port = new ElementSceneStore(fixture.store);
-  const instrumentation = createInstrumentation();
-  const state = new SceneVisibilityState(port, instrumentation);
-  const { query, work } = observeIndexedSceneQueries(fixture.store);
+  const { fixture, port, instrumentation, state, query, work } = createIndexedVisibilityState();
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const broad = visibilityPageBounds(viewport, { x: 0, zoom: 0.1 });
   const original = state.query(broad.envelope, broad.retained).visibility;
@@ -100,6 +238,7 @@ it("shrinks a 10,000-member zoom envelope through bounded indexed work and cance
   port.release();
   expect(state.queryMemoryUsage()).toBe(0);
   cancel.mockRestore();
+  query.mockRestore();
 });
 
 function observeBounds(store: FakeSceneStore, onRead: () => void): void {

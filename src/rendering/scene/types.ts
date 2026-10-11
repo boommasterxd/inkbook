@@ -20,13 +20,17 @@ export interface SceneElementRecord {
 
 export interface SceneDeltaEntry {
   readonly after?: InkElementV1 | null;
+  readonly afterBounds?: Bounds | null;
   readonly before?: InkElementV1 | null;
+  readonly beforeBounds?: Bounds | null;
   readonly domains: readonly SceneDirtyDomain[];
   readonly id: string;
 }
 
 export interface SceneStoreDelta {
   readonly affected: readonly SceneDeltaEntry[];
+  /** Captured at commit time; only membership changes use history fade feedback. */
+  readonly historyReplay?: boolean;
 }
 
 export interface SpatialQuerySink {
@@ -190,6 +194,8 @@ export interface SceneInstrumentationSnapshot {
   readonly visibilityCandidateVisits: number;
   readonly visibilityHysteresisHits: number;
   readonly visibilityReconcileVisits: number;
+  readonly exitReadinessVisits: number;
+  readonly exitReadinessComparisons: number;
   readonly visibilitySortSkips: number;
   readonly visibilityPathYields: number;
   readonly visibilityPublicationYields: number;
@@ -253,6 +259,8 @@ export interface MutableSceneInstrumentation {
   visibilityCandidateVisits: number;
   visibilityHysteresisHits: number;
   visibilityReconcileVisits: number;
+  exitReadinessVisits: number;
+  exitReadinessComparisons: number;
   visibilitySortSkips: number;
   visibilityPathYields: number;
   visibilityPublicationYields: number;

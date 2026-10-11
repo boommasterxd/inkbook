@@ -1,7 +1,9 @@
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { sameStrokeShape } from "./stroke-position";
 import { CommittedPreviewGeometry } from "./committed-preview-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
+import type { Bounds } from "../../domain/geometry/primitives";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import {
@@ -15,6 +17,7 @@ import {
 import type { ScenePathCache } from "./path-cache";
 import type { ScenePublicationBudget } from "./mount-slice";
 import { SceneElementFades, type FadeSlice } from "./scene-element-fades";
+import { setHistoryFadeGate, type ElementFadeDirection } from "./element-fade-style";
 import { SceneSelectionTraces } from "./selection-traces";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
@@ -40,7 +43,11 @@ export class SceneContentRenderer {
   #committedPreviewIds: string[] = [];
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #mounted = new Map<string, MountedSceneElement>();
-  readonly #fades = new SceneElementFades(this.#mounted);
+  readonly #fades = new SceneElementFades(
+    this.#mounted,
+    (id, finish) => this.#reconciler.updateExitReadiness(id, finish),
+    (generation, interrupted) => setHistoryFadeGate(this.#dom.svg, generation, interrupted),
+  );
   #newlyMountedIds: readonly string[] = EMPTY_IDS;
   readonly #orderDirty: Record<RenderBand, Set<string>> = {
     content: new Set(),
@@ -76,15 +83,17 @@ export class SceneContentRenderer {
       ...options,
       dom,
       instrumentation,
-      isExitReady: (id, now) => this.isElementFadeExitReady(id, now),
+      isExitReady: (id, now) => this.#fades.isExitReady(id, now),
+      exitReadyAt: (id) => this.#fades.readyAt(id),
       mounted: this.#mounted,
+      onMount: (entry) => this.#fades.bindMounted(entry),
+      onUnmount: (id) => this.#fades.releaseMounted(id),
       orderDirty: this.#orderDirty,
       pathCache,
       store,
       visibility,
     });
   }
-
   public setSelectedElements(ids: ReadonlySet<string>): void {
     if (this.#selectionTraces.setSelection(ids))
       this.#selectionTraces.markMountedDirty(this.#mounted, this.#selectionDirty);
@@ -96,12 +105,12 @@ export class SceneContentRenderer {
   public flushSelectionContext(): void {
     this.#selectionTraces.flushContext();
   }
-
   public previewMemoryUsage(): number {
     return (
       this.#selectionTraces.memoryUsage() +
       this.#committedGeometry.memoryUsage() +
       this.#reconciler.memoryUsage() +
+      this.#fades.memoryUsage() +
       (this.#deferredPreviews.size + this.#committedPreviewIds.length) * 8
     );
   }
@@ -127,11 +136,9 @@ export class SceneContentRenderer {
   public markPaint(id: string): void {
     this.#paintDirty.add(id);
   }
-
   public markOrder(id: string): void {
     this.markOrders([id]);
   }
-
   public markOrders(ids: readonly string[]): void {
     for (const id of ids) {
       markSceneOrderDirty(id, this.#store, this.#orderDirty, this.#detachedCache);
@@ -184,17 +191,14 @@ export class SceneContentRenderer {
       publication,
     );
   }
-
   public get hasPendingExitCleanup(): boolean {
     return this.#reconciler.hasPendingCleanup;
   }
-
   public get hasMountedWork(): boolean {
     return (
       this.#geometryDirty.size > 0 || this.#paintDirty.size > 0 || this.#selectionDirty.size > 0
     );
   }
-
   public get hasVisibilityWork(): boolean {
     return this.#reconciler.hasPendingWork;
   }
@@ -204,33 +208,26 @@ export class SceneContentRenderer {
   public get waitingForPaths(): boolean {
     return this.#reconciler.waitingForPaths && !this.hasMountedWork;
   }
-
   public setVisibilityPriority(priority: SceneVisibilityPriority): void {
     this.#reconciler.setPriority(priority);
   }
-
   public hasUnprotectedDeferredExit(
     ...args: Parameters<SceneVisibilityReconciler["hasUnprotectedDeferredExit"]>
   ): boolean {
     return this.#reconciler.hasUnprotectedDeferredExit(...args);
   }
-
   public get hasPendingWork(): boolean {
     return this.hasMountedWork || this.hasVisibilityWork;
   }
-
   public get needsVisibilityRestart(): boolean {
     return this.#reconciler.needsRestart;
   }
-
   public replaceVisibility(...args: Parameters<SceneVisibilityReconciler["replace"]>): void {
     this.#reconciler.replace(...args);
   }
-
   public cancelPendingVisibility(): void {
     this.#reconciler.cancel();
   }
-
   public reconcileVisibility(
     deadline: number,
     now: () => number,
@@ -261,7 +258,6 @@ export class SceneContentRenderer {
     );
     return result.pending || this.#selectionDirty.size > 0;
   }
-
   public promoteVisible(id: string): boolean {
     return this.#reconciler.promote(id);
   }
@@ -302,7 +298,15 @@ export class SceneContentRenderer {
         : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);
     return this.applyCanonicalElementPreview(element, parts);
   }
-
+  public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
+    const entry = this.#mounted.get(element.id);
+    return element.kind === "stroke" &&
+      (Object.isFrozen(element.points) || isStoredStroke(element)) &&
+      entry !== undefined &&
+      sameStrokeShape(entry.displayedElement, element)
+      ? entry.displayedPathParts
+      : undefined;
+  }
   public applyCanonicalElementPreview(
     element: InkElementV1,
     parts: readonly SvgPathPart[],
@@ -350,7 +354,6 @@ export class SceneContentRenderer {
           );
     this.updateGeometry(entry, record, parts);
   }
-
   public setElementFade(
     ids: readonly string[],
     durationMs: number | null,
@@ -358,30 +361,40 @@ export class SceneContentRenderer {
   ): void {
     this.#fades.set(ids, durationMs, slice);
   }
-
   public prepareElementRemoval(id: string): void {
-    if (this.#mounted.get(id)?.fadeActive !== true) this.#fades.set([id], 0);
+    if (this.#mounted.get(id)?.fadeActive !== true && this.#fades.readyAt(id) === 0)
+      this.#fades.set([id], 0);
   }
-
+  public setMembershipViewport(bounds: Bounds | undefined): void {
+    this.#fades.setViewport(bounds);
+  }
+  public setMembershipFade(
+    id: string,
+    direction: ElementFadeDirection,
+    durationMs: number,
+    bounds?: Bounds,
+  ): void {
+    this.#fades.setMembership(id, direction, durationMs, bounds ?? this.#store.get(id)?.bounds);
+  }
+  public settleMembershipVisibility(contains: (id: string) => boolean): void {
+    this.#fades.settleVisibility(contains);
+  }
+  public interruptMembershipFades(): void {
+    this.#fades.interruptMembership();
+    this.#reconciler.invalidateExitReadiness();
+  }
   public get pendingElementFades(): boolean {
     return this.#fades.pending;
   }
-
   public flushElementFades(deadline: number, now: () => number): boolean {
     return this.#fades.flush(deadline, now);
   }
-
-  public isElementFadeExitReady(id: string, now: number): boolean {
-    return !this.#fades.pending && this.#fades.isExitReady(id, now);
-  }
-
   public setElementMotion(ids: readonly string[], opacity: number | null, scale = 1): void {
     for (const id of ids) {
       const entry = this.#mounted.get(id);
       if (entry !== undefined) setMountedElementMotion(entry, opacity, scale);
     }
   }
-
   public release(): void {
     this.#committedGeometry.release();
     this.#deferredPreviews.clear();
@@ -402,7 +415,6 @@ export class SceneContentRenderer {
     this.#committedCounts.content = 0;
     this.#committedCounts.highlight = 0;
   }
-
   private writeGeometry(
     id: string,
     deadline: number,
@@ -428,7 +440,7 @@ export class SceneContentRenderer {
       (sameStrokeShape(entry.displayedElement, record.element)
         ? entry.displayedPathParts
         : undefined) ??
-      this.#pathCache.read(record.element, pressure) ??
+      this.#pathCache.read(record.element, pressure, record.geometryVersion) ??
       (pending
         ? this.#committedGeometry.prepare(record, deadline, now, pressure)
         : this.#pathCache.build(record.element, pressure));
@@ -440,13 +452,15 @@ export class SceneContentRenderer {
       this.applyPreviewTransform(id, desired.transform, desired.version, desired.strokeWidthScale);
     return true;
   }
-
   private updateGeometry(
     entry: MountedSceneElement,
     record: SceneElementRecord,
     parts: readonly SvgPathPart[],
     publication?: ScenePublicationBudget,
   ): void {
+    const geometryChanged = entry.geometryVersion !== record.geometryVersion;
+    if (geometryChanged && !this.#pathCache.has(record.id, record.geometryVersion))
+      this.#pathCache.completePreparation(record.element, parts, record.geometryVersion);
     updateMountedGeometry(
       entry,
       record,
@@ -459,7 +473,6 @@ export class SceneContentRenderer {
       this.#selectionDirty.delete(entry.id);
     else this.#selectionDirty.add(entry.id);
   }
-
   private writePaint(id: string, publication: ScenePublicationBudget): void {
     const entry = this.#mounted.get(id);
     const record = this.#store.get(id);

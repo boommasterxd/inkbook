@@ -3,6 +3,7 @@ import type { ScenePreviewCommitController } from "./preview-commit-handoff";
 import type { SceneCommitCoordinator } from "./scene-commit-coordinator";
 import { routeSceneDelta, type SceneDeltaRoutingPorts } from "./scene-delta-router";
 import type { SceneStoreDelta } from "./types";
+import { TRANSITION_DURATIONS } from "../motion/transitions";
 
 interface SceneDeltaCoordinatorOptions {
   readonly commits: SceneCommitCoordinator;
@@ -23,6 +24,24 @@ export class SceneDeltaCoordinator {
   ): void {
     let fadedRemovals: string[] | undefined;
     for (const affected of delta.affected) {
+      const membership =
+        delta.historyReplay === true &&
+        ((affected.before === null && affected.after != null) ||
+          (affected.before != null && affected.after === null));
+      if (membership) {
+        this.#fadedIds.delete(affected.id);
+        this.options.routing.content.setMembershipFade(
+          affected.id,
+          affected.after === null ? "exit" : "enter",
+          this.options.motion.duration(TRANSITION_DURATIONS.historyMembership),
+          affected.after === null
+            ? (affected.beforeBounds ?? undefined)
+            : (affected.afterBounds ?? undefined),
+        );
+        fadedRemovals ??= [];
+        fadedRemovals.push(affected.id);
+        continue;
+      }
       if (affected.after === null && this.#fadedIds.delete(affected.id)) {
         fadedRemovals ??= [];
         fadedRemovals.push(affected.id);

@@ -59,6 +59,53 @@ describe("DocumentCapacity exact aggregate limits", () => {
 });
 
 describe("DocumentCapacity scheduled patches", () => {
+  it("consumes lazy record slots in removal-before-addition order at exact fanout capacity", async () => {
+    const { capacity, previous } = fanoutReplacement();
+    let removed = 0;
+    function* removals() {
+      yield null;
+      for (const record of previous) {
+        removed += 1;
+        yield record;
+      }
+    }
+    function* additions() {
+      expect(removed).toBe(previous.length);
+      yield null;
+      yield* previous;
+    }
+    const prepared = await capacity.prepareTimeSliced(removals(), additions(), {
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    if (prepared === "cancelled") throw new Error("Expected a capacity patch.");
+    capacity.commit(prepared.patch);
+    expect(() => capacity.prepare([], [linearRecord("old-target")])).toThrow(RangeError);
+    expect(() => capacity.commit(prepared.patch)).toThrow(/stale/);
+  });
+
+  it("cancels at a null projection slot before reading or validating following records", async () => {
+    const capacity = new DocumentCapacity();
+    let advanced = false;
+    let cancelled = false;
+    function* additions() {
+      yield null;
+      advanced = true;
+      yield rectangleRecord((FILE_SCHEMA_LIMITS.maximumDerivedHeight ?? 1) + 1);
+    }
+    expect(
+      await capacity.prepareTimeSliced([], additions(), {
+        isCancelled: () => cancelled,
+        shouldYield: () => true,
+        yieldControl: async () => {
+          cancelled = true;
+        },
+      }),
+    ).toBe("cancelled");
+    expect(advanced).toBe(false);
+    expect(() => capacity.commit(capacity.prepare([], [rectangleRecord()]))).not.toThrow();
+  });
+
   it("time-slices fanout patches and leaves cancelled preparation uncommitted", async () => {
     const { capacity, next, previous } = fanoutReplacement();
     let yields = 0;

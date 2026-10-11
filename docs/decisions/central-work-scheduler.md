@@ -47,11 +47,14 @@ of waiting for the remainder of a synthetic display frame. Main-thread fallback
 work still shares its owning window's frame budget. Cache prewarming starts through
 a checkpoint without an unconditional frame wait.
 
-Terminal selection-transform preparation, including Store replacement and its
-Undo/Redo replay, uses the same FIFO `frame` queue as rendering. It must not remain
+Interactive history preparation, including structural mutations, selection styles,
+Arrange, Store replacement, and their Undo/Redo replay, uses the same FIFO `frame`
+queue as rendering. It must not remain
 behind a scene that can consume the complete allowance on every frame. Pointer
-and camera `input` still precede both; other asynchronous preparation keeps its
-default `background` priority. The main-thread encoding and dispatch of a pending
+and camera `input` still precede both. Speculative scene reserves and document
+prewarming wait for interactive leases to finish; required visible publication
+continues through the shared frame budget. Other asynchronous preparation keeps
+its default `background` priority. The main-thread encoding and dispatch of a pending
 worker export also use `frame` admission, preserving overlap between export and
 scene work instead of holding the worker idle until rendering finishes. The
 autosave debounce remains unchanged. Required viewport contour preparation and
@@ -74,11 +77,41 @@ durations, and I/O timeouts retain their own purpose. Autosave now starts after
 1,000 milliseconds of content inactivity; explicit flush and lifecycle save
 boundaries remain independent of that debounce.
 
+Resumable sample validation, copying, comparison, bounds, encoding, and contour
+preparation use bounded producers shared with synchronous callers. Synchronous
+wrappers drain those producers; asynchronous consumers consult the injected
+scheduler between their steps. A step boundary alone never forces a frame or
+renews the work deadline. The preparation runner returns completed results synchronously. It
+creates a Promise only for an actual central scheduler handoff; per-record callers
+await only that Promise. After resumption, one iterative drain owns subsequent
+handoffs, avoiding a retained chain of continuation Promises.
+Public mutable values are staged into private candidates
+and those exact values are validated before atomic adoption. Cancellation releases
+staging without publishing a partial Store or worker model. Native allocations and
+final string or byte publication remain indivisible operations. Atomic map and
+cache adoption, snapshot-array materialization, final unlock adoption, and the
+ordered-ID digest still traverse bounded document state synchronously; these
+boundaries do not establish complete preemptibility.
+
 Shared preview recognition follows an open requesting window, preferring a visible
 requester, while retaining one validation per document. Pending scheduling waits
 can transfer without restarting validation. Runtime snapshot copies, clipboard
 validation, and replacement-heap preparation expose bounded checkpoints; final
 store publication remains atomic.
+
+Document scheduler forwarding retains a weak binding to the workspace-owned
+central window scheduler. An ownership version invalidates that binding on
+mount, transfer, detach, or window unload; refresh-rate changes update the existing
+scheduler without requiring ownership scans. In-budget clock and checkpoint calls
+reuse the binding. A completed central handoff and a disposed-scheduler failure
+revalidate mounted, retained, and fallback ownership in their existing preference
+order. A transferred continuation must obtain the destination scheduler's
+admission before continuing, including further transfers while it waits.
+Unloaded windows remain excluded before their native `closed` flag changes.
+Each concrete window adapter retains its native performance object and still
+reads the live clock for every budget check. These bindings introduce neither a
+second scheduler nor a renewed deadline, and idle documents do not strongly
+retain unloaded window schedulers.
 
 Require the scheduler for future cooperative implementations in `AGENTS.md`.
 The source-layout AST gate rejects native work scheduling and private deadline

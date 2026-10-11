@@ -101,7 +101,7 @@ export class SceneFrameWork {
     }
     return {
       backgroundDeferred,
-      pendingFades,
+      pendingFades: pendingFades || content.pendingElementFades,
       pendingMotion,
       pendingPreview,
       pendingVisibility,

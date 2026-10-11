@@ -23,8 +23,9 @@ import {
   type ReplacementPlan,
 } from "./replacement-plan";
 import { PreparedElementMutations } from "./prepared-element-mutations";
-import type { PreparedReplacementState } from "./replacement-types";
-import { createRemovalTransition } from "./removal-transition";
+import { PreparedElementReplacements } from "./prepared-element-replacements";
+import type { ElementReplacementPlan } from "./replacement-types";
+import { ReplacementHistory } from "./replacement-history";
 import { assignRecordVersions, createInitialRecord, nextRecordVersion } from "./record-factory";
 import {
   assertValidElement,
@@ -32,7 +33,7 @@ import {
   type ReplacementCandidate,
   type ReplacementPlannerPorts,
 } from "./replacement-planner";
-import { commitReplacementPlan, planElementReplacement } from "./time-sliced-element-replacement";
+import { commitReplacementPlan } from "./time-sliced-element-replacement";
 import { materializeStoreSnapshot } from "./snapshot-materializer";
 import { StoreOrderCursor } from "./order-cursor";
 import { commitSynchronousReplacements } from "./synchronous-element-replacement";
@@ -43,6 +44,8 @@ import type {
   DeltaDomain,
   ElementMutation,
   ElementMutationCommitResult,
+  ElementReplacementCommitResult,
+  ElementReplacementHistoryData,
   ElementRecord,
   ElementStoreInstrumentation,
   ElementStoreMemoryUsage,
@@ -58,7 +61,6 @@ import type {
   StoreDelta,
   StoreDeltaListener,
   StoreSliceScheduler,
-  TimeSlicedStoreResult,
 } from "./types";
 
 export class ElementStore {
@@ -79,10 +81,25 @@ export class ElementStore {
     records: this.#records,
   }));
   readonly #runtime = new ElementStoreRuntime();
-  readonly #preparedElementReplacements = new WeakMap<
-    PreparedElementReplacement,
-    PreparedReplacementState
-  >();
+  readonly #replacementHistory = new ReplacementHistory();
+  readonly #preparedElementReplacements = new PreparedElementReplacements(
+    () => ({
+      capacity: this.#capacity,
+      geometryVersion: this.#geometryVersion,
+      history: this.#replacementHistory,
+      mutationVersion: this.#mutationVersion,
+      paintVersion: this.#paintVersion,
+      records: this.#records,
+      reverseConnections: this.#reverseConnections,
+      spatialIndex: this.#spatialIndex,
+    }),
+    () => this.#mutationVersion,
+    (plan) => {
+      this.#instrumentation.timeSlicedIndexVisits += plan.indexVisitCount;
+      this.#instrumentation.timeSlicedReplacementYields += plan.yields;
+    },
+    (plan) => this.#adoptElementReplacement(plan),
+  );
   readonly #preparedElementMutations = new PreparedElementMutations(
     () => ({
       capacity: this.#capacity,
@@ -162,6 +179,9 @@ export class ElementStore {
     const rank = this.#ranks.get(id);
     return rank === undefined ? undefined : Object.freeze({ ...rank });
   }
+  public bandSize(band: RenderBand): number {
+    return this.#bands[band].length;
+  }
   public getSemanticAnchors(id: string): readonly ResolvedShapeAnchor[] | null {
     return this.#runtime.semanticAnchors(this.#records.get(id));
   }
@@ -217,11 +237,14 @@ export class ElementStore {
     if (id !== replacement.id) throw new RangeError("Replacement ID must match the requested ID.");
     return this.replaceMany([replacement]);
   }
-  public replaceMany(replacements: readonly InkElementV1[]): StoreDelta | null {
+  public replaceMany(
+    replacements: readonly InkElementV1[],
+    capture?: (history: ElementReplacementHistoryData) => void,
+  ): StoreDelta | null {
     if (replacements.length === 0) return null;
     const candidates = this.#prepareReplacementCandidates(replacements);
     if (candidates.length === 0) return null;
-    return this.#commitReplacements(candidates);
+    return this.#commitReplacements(candidates, capture);
   }
   public planReplacements(replacements: readonly InkElementV1[]): ReplacementPlan | null {
     if (replacements.length === 0) return null;
@@ -249,54 +272,19 @@ export class ElementStore {
     return prepared.elements.length === 0 ? null : prepared;
   }
 
-  public async prepareElementReplacement(
+  public prepareElementReplacement(
     replacements: readonly InkElementV1[],
     scheduler: StoreSliceScheduler,
   ): Promise<PreparedElementReplacementResult> {
-    if (replacements.length === 0) return { status: "noop", token: null };
-    const mutationVersion = this.#mutationVersion;
-    const isCancelled = () =>
-      this.#mutationVersion !== mutationVersion || (scheduler.isCancelled?.() ?? false);
-    const plan = await planElementReplacement(
-      {
-        capacity: this.#capacity,
-        geometryVersion: this.#geometryVersion,
-        paintVersion: this.#paintVersion,
-        records: this.#records,
-        reverseConnections: this.#reverseConnections,
-        spatialIndex: this.#spatialIndex,
-      },
-      replacements,
-      {
-        isCancelled,
-        shouldYield: scheduler.shouldYield,
-        yieldControl: scheduler.yieldControl,
-      },
-    );
-    if (plan === "cancelled" || this.#mutationVersion !== mutationVersion) {
-      return { status: "cancelled", token: null };
-    }
-    if (plan === null) return { status: "noop", token: null };
-    const token = Object.freeze({}) as PreparedElementReplacement;
-    this.#preparedElementReplacements.set(token, { isCancelled, mutationVersion, plan });
-    this.#instrumentation.timeSlicedIndexVisits += plan.indexVisitCount;
-    this.#instrumentation.timeSlicedReplacementYields += plan.yields;
-    return { status: "prepared", token };
+    return this.#preparedElementReplacements.prepare(replacements, scheduler);
   }
 
   public commitPreparedElementReplacement(
     token: PreparedElementReplacement,
-  ): TimeSlicedStoreResult {
-    const prepared = this.#preparedElementReplacements.get(token);
-    this.#preparedElementReplacements.delete(token);
-    if (
-      prepared === undefined ||
-      prepared.isCancelled() ||
-      this.#mutationVersion !== prepared.mutationVersion
-    ) {
-      return { delta: null, status: "cancelled" };
-    }
-    const { plan } = prepared;
+  ): ElementReplacementCommitResult {
+    return this.#preparedElementReplacements.commit(token);
+  }
+  #adoptElementReplacement(plan: ElementReplacementPlan): ElementReplacementCommitResult {
     commitReplacementPlan(
       this.#capacity,
       this.#records,
@@ -308,7 +296,7 @@ export class ElementStore {
     this.#geometryVersion = plan.geometryVersion;
     this.#paintVersion = plan.paintVersion;
     this.#instrumentation.recordReplacements += plan.replacementCount;
-    return { delta: this.#publish(plan.delta), status: "committed" };
+    return { delta: this.#publish(plan.delta), history: plan.history, status: "committed" };
   }
   public prepareElementMutation(
     mutation: ElementMutation,
@@ -321,6 +309,9 @@ export class ElementStore {
     this.#preparedElementMutations.createRemovalMutationTimeSliced.bind(
       this.#preparedElementMutations,
     );
+  public readonly prepareHistoryReplay = this.#preparedElementMutations.prepareHistoryReplay.bind(
+    this.#preparedElementMutations,
+  );
   public commitPreparedElementMutation(
     token: PreparedElementMutation,
   ): ElementMutationCommitResult {
@@ -368,16 +359,14 @@ export class ElementStore {
   public removeWithHistory(
     ids: ReadonlySet<string> | readonly string[],
   ): AppliedRemovalResult | null {
-    const beforeBands = {
+    const before = {
       content: [...this.#bands.content],
       highlight: [...this.#bands.highlight],
     };
     const delta = this.remove(ids);
     if (delta === null) return null;
-    return Object.freeze({
-      delta,
-      transition: createRemovalTransition(delta, beforeBands, this.#bands),
-    });
+    const transition = this.#preparedElementMutations.retainRemoval(delta, before, this.#bands);
+    return Object.freeze({ delta, transition });
   }
 
   public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): StoreDelta | null {
@@ -457,7 +446,10 @@ export class ElementStore {
     this.#instrumentation = { ...EMPTY_STORE_INSTRUMENTATION };
     this.#runtime.resetStatistics();
   }
-  #commitReplacements(candidates: readonly ReplacementCandidate[]): StoreDelta {
+  #commitReplacements(
+    candidates: readonly ReplacementCandidate[],
+    capture?: (history: ElementReplacementHistoryData) => void,
+  ): StoreDelta {
     const result = commitSynchronousReplacements(
       {
         capacity: this.#capacity,
@@ -468,12 +460,15 @@ export class ElementStore {
         spatialIndex: this.#spatialIndex,
       },
       candidates,
+      this.#replacementHistory,
     );
     this.#overflowCount = result.overflowCount;
     this.#geometryVersion = result.geometryVersion;
     this.#paintVersion = result.paintVersion;
     this.#instrumentation.recordReplacements += result.replacementCount;
-    return this.#publish(result.delta)!;
+    const delta = this.#publish(result.delta)!;
+    capture?.(result.history);
+    return delta;
   }
   #prepareReplacementCandidates(replacements: readonly InkElementV1[]): ReplacementCandidate[] {
     return prepareReplacementCandidates(replacements, this.#replacementPorts());
@@ -481,6 +476,7 @@ export class ElementStore {
   #replacementPorts(): ReplacementPlannerPorts {
     return {
       getRecord: (id) => this.#requireRecord(id),
+      getRetainedRecord: (element) => this.#replacementHistory.retainedRecord(element),
       getReferences: (targetId) => this.#reverseConnections.get(targetId),
       onReverseVisit: () => {
         this.#instrumentation.reverseDependencyVisits += 1;

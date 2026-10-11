@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-import * as strokeSamples from "../../../../src/domain/elements/stroke-samples";
+import * as sampleCopy from "../../../../src/domain/elements/runtime-sample-copy";
 import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
-import { encodeUnlockBatch } from "../../../../src/persistence/worker/runtime/wire-codec";
+import { encodeUnlockBatchChunked } from "../../../../src/persistence/worker/runtime/wire-codec";
 import { SessionScenePaths } from "../../../../src/obsidian/embeds/session-scene-paths";
 import {
   createWorkerBridgeHarness,
@@ -310,12 +310,12 @@ it("excludes waiting for central scheduler admission without changing its work p
 it("starts the complete watchdog budget after slow request encoding", async () => {
   vi.useFakeTimers();
   const { endpoint, client } = watchdogFixture();
-  const copySamples = strokeSamples.copyStrokeSamplesToRuntime;
+  const copySamples = sampleCopy.copySampleRange;
   const encoding = vi
-    .spyOn(strokeSamples, "copyStrokeSamplesToRuntime")
-    .mockImplementation((samples) => {
+    .spyOn(sampleCopy, "copySampleRange")
+    .mockImplementation((source, target, start, end, proof) => {
       vi.advanceTimersByTime(500);
-      return copySamples(samples);
+      copySamples(source, target, start, end, proof);
     });
   try {
     const pending = client
@@ -400,12 +400,15 @@ it("keeps a hung unlock observer subject to the bounded watchdog", async () => {
   const observer = { unlockBatch: vi.fn(() => new Promise<void>(() => undefined)) };
   const pending = client.execute(request, observer).catch((error: unknown) => error);
   await vi.advanceTimersByTimeAsync(0);
-  const batch = encodeUnlockBatch({
-    identity: request.identity,
-    batchIndex: 0,
-    elements: [],
-    derivations: [],
-  });
+  const batch = await encodeUnlockBatchChunked(
+    {
+      identity: request.identity,
+      batchIndex: 0,
+      elements: [],
+      derivations: [],
+    },
+    { checkpoint: () => undefined, signal: new AbortController().signal },
+  );
   sender.postMessage({ batch: batch.value, requestId: 1, type: "inkbook-worker-unlock-batch" });
   await vi.advanceTimersByTimeAsync(100);
   expect(observer.unlockBatch).toHaveBeenCalledOnce();

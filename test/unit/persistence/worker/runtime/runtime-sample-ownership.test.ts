@@ -7,7 +7,7 @@ import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/run
 import { createProductionDocumentRuntime } from "../../../../../src/persistence/worker/runtime/production-document-runtime";
 import { adoptTransferredStrokeSamples } from "../../../../../src/persistence/worker/runtime/runtime-elements";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import { hydrateRuntimeStroke } from "../../../../fixtures/domain/runtime-stroke-store";
@@ -132,24 +132,28 @@ it.each([false, true])(
       type: "export-full" as const,
     };
     const packed = encodeRuntimeRequest(request);
-    const decoded = decodeRuntimeRequest(
+    const decoded = await decodeRuntimeRequestChunked(
       structuredClone(packed.value, { transfer: [...packed.transfer] }),
+      { checkpoint: () => undefined, signal: new AbortController().signal },
     );
     if (decoded.type !== "export-full") throw new Error("Missing full request.");
     const source = decoded.snapshot.elements[0]!;
     const points = source.kind === "stroke" && source.points;
     const reset = vi.spyOn(IncrementalDocumentSerializer.prototype, "resetRuntime");
+    const slicedReset = vi.spyOn(IncrementalDocumentSerializer.prototype, "resetRuntimeSliced");
     const runtime = production
       ? createProductionDocumentRuntime(executor, { workScheduler: createTestWorkScheduler() })
       : new DocumentWorkerRuntime(executor);
     try {
       expect(await runtime.execute(decoded)).toMatchObject({ type: "export-success" });
-      const canonical = reset.mock.calls[0]![0].elements[0]!;
+      const canonical = (production ? slicedReset.mock.calls : reset.mock.calls)[0]![0]
+        .elements[0]!;
       if (canonical.kind !== "stroke") throw new Error("Missing runtime stroke.");
       if (production) expect(canonical.points).toBe(points);
       else expect(canonical.points).not.toBe(points);
     } finally {
       reset.mockRestore();
+      slicedReset.mockRestore();
       runtime.terminate();
     }
   },

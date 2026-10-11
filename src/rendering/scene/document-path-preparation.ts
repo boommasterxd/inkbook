@@ -140,9 +140,9 @@ export class DocumentPathPreparation {
       if (id === undefined) break;
       const record = this.store.get(id);
       if (record?.element.kind !== "stroke") continue;
+      if (this.cache.has(id, record.geometryVersion)) continue;
       const pressure = this.store.pressureGeometry?.(id, record.geometryVersion);
-      if (this.cache.has(id, record.geometryVersion) || this.cache.read(record.element, pressure))
-        continue;
+      if (this.cache.read(record.element, pressure, record.geometryVersion)) continue;
       versions.set(id, record.geometryVersion);
     }
     if (versions.size === 0) return !this.#orderComplete || this.#retry.size > 0;

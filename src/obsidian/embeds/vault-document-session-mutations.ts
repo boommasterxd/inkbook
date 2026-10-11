@@ -3,6 +3,7 @@ import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 import type {
   AppliedElementMutation,
   ElementStore,
+  ElementReplacementHistoryData,
   PreparedElementMutation,
   PreparedElementReplacement,
   StoreDelta,
@@ -14,7 +15,6 @@ import {
   commitVaultPage,
   recordVaultStoreDelta,
 } from "./vault-document-model";
-import { removedElementIds } from "./vault-document-model-delta";
 
 interface VaultDocumentSessionMutationOptions {
   readonly autosave: () => AutosaveCoordinator | undefined;
@@ -44,21 +44,21 @@ export class VaultDocumentSessionMutations {
     const context = this.#requireContext();
     if (context === undefined) return;
     const delta = context.store.arrange(ids, action);
-    if (delta !== null) this.#recordDelta(context, delta, []);
+    if (delta !== null) this.#recordDelta(context, delta);
   }
 
   public commitBandOrder(order: Parameters<ElementStore["reorderBands"]>[0]): void {
     const context = this.#requireContext();
     if (context === undefined) return;
     const delta = context.store.reorderBands(order);
-    if (delta !== null) this.#recordDelta(context, delta, []);
+    if (delta !== null) this.#recordDelta(context, delta);
   }
 
   public commitElements(elements: readonly InkElementV1[]): void {
     const context = this.#requireContext();
     if (context === undefined) return;
     const delta = context.store.create([...elements]);
-    if (delta !== null) this.#recordDelta(context, delta, []);
+    if (delta !== null) this.#recordDelta(context, delta);
   }
 
   public commitPage(page: InkSnapshotV1["page"]): void {
@@ -80,18 +80,20 @@ export class VaultDocumentSessionMutations {
     if (context === undefined) return null;
     const result = context.store.commitPreparedElementMutation(token);
     if (result.delta === null || result.transition === null) return null;
-    this.#recordDelta(context, result.delta, removedElementIds(result.delta));
+    this.#recordDelta(context, result.delta);
     return result.transition;
   }
 
   public commitPreparedElementReplacement(
     token: PreparedElementReplacement,
+    capture?: (history: ElementReplacementHistoryData) => void,
   ): "cancelled" | "committed" | "noop" {
     const context = this.#requireContext();
     if (context === undefined) return "cancelled";
     return commitVaultElementReplacement({
       active: true,
-      recordDelta: (delta) => this.#recordDelta(context, delta, []),
+      ...(capture === undefined ? {} : { capture }),
+      recordDelta: (delta) => this.#recordDelta(context, delta),
       store: context.store,
       token,
     });
@@ -102,27 +104,31 @@ export class VaultDocumentSessionMutations {
     if (context === undefined) return;
     const delta = context.store.remove([...ids]);
     if (delta !== null) {
-      this.#recordDelta(context, delta, removedElementIds(delta));
+      this.#recordDelta(context, delta);
     }
   }
 
-  public replaceElements(elements: readonly InkElementV1[]): void {
+  public replaceElements(
+    elements: readonly InkElementV1[],
+    capture?: (history: ElementReplacementHistoryData) => void,
+  ): void {
     const context = this.#requireContext();
     if (context === undefined) return;
-    const delta = context.store.replaceMany(elements);
-    if (delta !== null) this.#recordDelta(context, delta, []);
+    let history: ElementReplacementHistoryData | undefined;
+    const delta = context.store.replaceMany(elements, (committed) => {
+      history = committed;
+    });
+    if (delta !== null) {
+      this.#recordDelta(context, delta);
+      if (history !== undefined) capture?.(history);
+    }
   }
 
-  #recordDelta(
-    context: VaultMutationContext,
-    delta: StoreDelta,
-    removedIds: readonly string[],
-  ): void {
+  #recordDelta(context: VaultMutationContext, delta: StoreDelta): void {
     this.#options.setRevision(context.nextRevision);
     recordVaultStoreDelta({
       autosave: context.autosave,
       delta,
-      removedIds,
       revision: context.nextRevision,
     });
   }

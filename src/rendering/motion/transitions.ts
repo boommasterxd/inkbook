@@ -10,7 +10,7 @@ export const MOTION_TOKENS = Object.freeze({
   fast: 120,
   surface: 220,
   standard: 180,
-  erase: 400,
+  erase: 150,
   layout: 240,
 } as const);
 
@@ -28,6 +28,7 @@ export const TRANSITION_DURATIONS = Object.freeze({
   toolActiveState: MOTION_TOKENS.fast,
   selectionHandlesEnterExit: MOTION_TOKENS.fast,
   eraserPendingRemoval: MOTION_TOKENS.erase,
+  historyMembership: MOTION_TOKENS.erase,
   committedEntrance: MOTION_TOKENS.fast,
   commandRemovalExit: MOTION_TOKENS.fast,
   styleChange: MOTION_TOKENS.fast,

@@ -10,6 +10,7 @@ import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
 import type { MountSlice, MountYieldReason, ScenePublicationBudget } from "./mount-slice";
 import type { DetachedSceneElementCache } from "./detached-element-cache";
+import type { VisibilityExitReadiness } from "./visibility-exit-readiness";
 
 export interface PendingMutationRun {
   band: RenderBand;
@@ -22,6 +23,8 @@ export interface PendingMutationRun {
 }
 
 interface PublicationOptions {
+  readonly onMount?: (entry: MountedSceneElement) => void;
+  readonly onUnmount?: (id: string) => void;
   readonly detachedCache?: DetachedSceneElementCache | undefined;
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
@@ -80,6 +83,7 @@ function commitPublishedEntry(
   const roots = publicationRootCount(entry);
   const connected = roots === 0;
   options.mounted.set(entry.id, entry);
+  options.onMount?.(entry);
   if (!connected) options.instrumentation.domEntrants += 1;
   options.instrumentation.domRootsPublished += roots;
   return connected;
@@ -292,6 +296,7 @@ export function publishVisibilityRuns(frame: {
 interface ExitPublication {
   readonly exitIds: readonly string[];
   exitIndex: number;
+  readonly exitReadiness?: VisibilityExitReadiness;
 }
 interface ExitOptions extends PublicationOptions {
   readonly visibility: { contains(id: string): boolean; releaseId(id: string): void };
@@ -300,6 +305,7 @@ interface ExitOptions extends PublicationOptions {
     retain(id: string, version: number, parts: MountedSceneElement["pathParts"]): void;
   };
   readonly isExitReady?: (id: string, now: number) => boolean;
+  readonly exitReadyAt?: (id: string) => number;
 }
 
 function removeVisibilityExitNode(
@@ -313,7 +319,9 @@ function removeVisibilityExitNode(
 ): void {
   if (!removeMountedElementNode(entry)) return;
   finalization.pending.exitIndex += 1;
+  finalization.pending.exitReadiness?.consume(entry.id);
   options.mounted.delete(entry.id);
+  options.onUnmount?.(entry.id);
   options.detachedCache?.unregisterMounted(entry.id);
   finalization.onRemoved?.(entry.id);
   if (record === undefined) {
@@ -350,6 +358,38 @@ function restoreProtectedExit(
   return true;
 }
 
+/** Rechecks readiness when preview protection changed after initial classification. */
+function visibilityExitReadiness(
+  entry: MountedSceneElement,
+  pending: ExitPublication,
+  options: ExitOptions,
+  now: number,
+): "ready" | "retry" | "wait" {
+  if (options.isExitReady?.(entry.id, now) !== false) return "ready";
+  const finish = options.exitReadyAt?.(entry.id);
+  if (
+    pending.exitReadiness === undefined ||
+    finish === undefined ||
+    finish <= now ||
+    entry.detachedPathCount > 0
+  )
+    return "wait";
+  pending.exitReadiness.update(entry.id, finish);
+  return "retry";
+}
+
+function skipVisibilityExit(
+  id: string | undefined,
+  pending: ExitPublication,
+  onSkipped: ((id: string) => void) | undefined,
+): void {
+  if (id !== undefined) {
+    onSkipped?.(id);
+    pending.exitReadiness?.consume(id);
+  }
+  pending.exitIndex += 1;
+}
+
 /** Removes old paths incrementally, rechecking visibility after every retarget. */
 export function removeVisibilityExits(
   pending: ExitPublication,
@@ -371,17 +411,19 @@ export function removeVisibilityExits(
       (visitedNodes > 0 && frame.now() >= frame.deadline)
     )
       return false;
+    if (pending.exitReadiness?.select(frame) === false) return false;
     const id = pending.exitIds[pending.exitIndex];
     const entry = id === undefined ? undefined : options.mounted.get(id);
     visitedNodes += 1;
     if (entry === undefined || !frame.isExit(entry.id)) {
       if (entry !== undefined && !restoreProtectedExit(entry, options, frame.publication))
         return false;
-      if (id !== undefined) frame.onSkipped?.(id);
-      pending.exitIndex += 1;
+      skipVisibilityExit(id, pending, frame.onSkipped);
       continue;
     }
-    if (options.isExitReady?.(entry.id, frame.now()) === false) return false;
+    const readiness = visibilityExitReadiness(entry, pending, options, frame.now());
+    if (readiness === "wait") return false;
+    if (readiness === "retry") continue;
     const record = options.store.get(entry.id);
     removedNodes += 1;
     if (frame.publication !== undefined)

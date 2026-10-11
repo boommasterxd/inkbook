@@ -232,6 +232,9 @@ export class SceneVisibilityCoordinator {
   }
 
   public setContext(camera: SceneCamera, viewport: SceneViewport | undefined): void {
+    this.#content.setMembershipViewport(
+      viewport === undefined ? undefined : visibilityPageBounds(viewport, camera, true).envelope,
+    );
     this.#transforms.setContext(camera, viewport);
     this.#elements.refreshProgressiveContext(viewport, camera);
     this.invalidate(true);
@@ -283,6 +286,7 @@ export class SceneVisibilityCoordinator {
       return;
     }
     this.#preloadMarginDirty = false;
+    this.#content.settleMembershipVisibility((id) => this.#visibility.contains(id));
     if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) {
       if (this.#content.hasPendingWork) this.prepareNavigation();
       return;
@@ -324,6 +328,11 @@ export class SceneVisibilityCoordinator {
         this.#navigation!.adoptReady(scheduler.deadline(), () => scheduler.now())
       )
         this.scheduleNavigationFrame();
+      return;
+    }
+    if (this.waitForQuiet()) {
+      this.cancelNavigationFrame();
+      this.#navigation!.pause();
       return;
     }
     this.#navigation!.setTarget(this.#priority, this.#envelope);

@@ -1,5 +1,10 @@
 export { isAnchorTarget, resolveShapeAnchor } from "./anchors";
-export { boundsIntersect, calculateElementBounds, effectiveStrokeWidth } from "./bounds";
+export {
+  boundsIntersect,
+  calculateElementBounds,
+  calculateElementBoundsSteps,
+  effectiveStrokeWidth,
+} from "./bounds";
 export { backgroundGuideLayout } from "./background-guides";
 export {
   changeCoordinateSystemDimension,

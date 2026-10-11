@@ -5,6 +5,10 @@ import { SchedulerDisposedError } from "../../../../src/domain/scheduling/work-s
 import { createWorkspaceDocumentRuntimes } from "../../../../src/obsidian/embeds/workspace-runtime-workers";
 import * as documentRuntime from "../../../../src/persistence/worker/runtime/public";
 import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
+import {
+  observedSchedulingWindow,
+  windowBindingHarness,
+} from "../../../fixtures/obsidian/window-scheduling";
 
 function windowHarness() {
   const host = new ManualHost();
@@ -22,6 +26,7 @@ function runtimePorts(fixture: ReturnType<typeof windowHarness>) {
   return {
     fallbackWindow: () => fixture.ownerWindow,
     owningWindow: () => fixture.ownerWindow,
+    ownerWindowVersion: () => 0,
     subscribeSchedulingProfile: () => () => undefined,
     workScheduler: () => fixture.scheduler,
   };
@@ -31,9 +36,11 @@ function documentTransferHarness() {
   const first = windowHarness();
   const second = windowHarness();
   let owner = first;
+  let ownerVersion = 0;
   const runtimes = createWorkspaceDocumentRuntimes({
     ...runtimePorts(first),
     owningWindow: () => owner.ownerWindow,
+    ownerWindowVersion: () => ownerVersion,
     workScheduler: (window) => (window === first.ownerWindow ? first.scheduler : second.scheduler),
   });
   return {
@@ -43,6 +50,7 @@ function documentTransferHarness() {
     documentScheduler: runtimes.workScheduler("drawing.svg"),
     moveToSecond: () => {
       owner = second;
+      ownerVersion += 1;
     },
   };
 }
@@ -175,6 +183,134 @@ describe("document worker warning boundaries", () => {
       "Worker and Blob URL APIs",
     );
     h.scheduler.dispose();
+  });
+});
+
+it.each(["unload", "transfer"] as const)(
+  "admits a third owner after an intermediate destination %s",
+  async (transition) => {
+    const h = windowBindingHarness();
+    const third = observedSchedulingWindow();
+    const scheduler = h.runtimes.workScheduler("drawing.svg");
+    const secondScheduler = h.profiles.workScheduler(h.second.ownerWindow);
+    const thirdScheduler = h.profiles.workScheduler(third.ownerWindow);
+    scheduler.deadline();
+    secondScheduler.deadline();
+    thirdScheduler.deadline();
+    h.second.host.time = secondScheduler.budgetMs();
+    third.host.time = thirdScheduler.budgetMs();
+    let settled = false;
+    const pending = scheduler.nextFrame().then(() => {
+      settled = true;
+    });
+    h.attachment.root = h.second.root;
+    h.registry.observe("drawing.svg", h.second.ownerWindow);
+    h.presentations.push({ attachment: { documentId: "other.svg", root: third.root } });
+    h.first.host.frame();
+    await Promise.resolve();
+    expect(h.second.host.pendingFrames).toBe(1);
+    if (transition === "unload") h.second.ownerWindow.dispatchEvent(new Event("unload"));
+    else {
+      h.attachment.root = third.root;
+      h.second.host.time = h.second.host.frameInterval;
+      h.second.host.frame();
+    }
+    await Promise.resolve();
+    expect(third.host.pendingFrames).toBe(1);
+    expect(settled).toBe(false);
+    third.host.time = third.host.frameInterval;
+    third.host.frame();
+    await pending;
+    expect(settled).toBe(true);
+    scheduler.dispose();
+    h.profiles.dispose();
+    for (const window of [h.first, h.second, third]) {
+      expect(window.host.pendingFrames).toBe(0);
+      expect(window.host.pendingTimers).toBe(0);
+    }
+  },
+);
+
+describe("document scheduler owning-window binding", () => {
+  it.each(["checkpoint", "nextFrame"] as const)(
+    "requires destination admission after a successful old-owner %s",
+    async (method) => {
+      const h = windowBindingHarness();
+      const scheduler = h.runtimes.workScheduler("drawing.svg");
+      const target = h.profiles.workScheduler(h.second.ownerWindow);
+      const admit = vi.spyOn(target, "checkpoint");
+      const caller = new AbortController();
+      scheduler.deadline();
+      target.deadline();
+      h.first.host.time = scheduler.budgetMs();
+      h.second.host.time = target.budgetMs();
+      let settled = false;
+      const pending = scheduler[method](caller.signal, "frame")?.then(() => {
+        settled = true;
+      });
+      h.attachment.root = h.second.root;
+      h.first.host.time = h.first.host.frameInterval;
+      h.first.host.frame();
+      await Promise.resolve();
+      expect(admit).toHaveBeenCalledExactlyOnceWith(caller.signal, "frame");
+      expect(h.second.host.pendingFrames).toBe(1);
+      expect(settled).toBe(false);
+      h.second.host.time = h.second.host.frameInterval;
+      h.second.host.frame();
+      await pending;
+      expect(settled).toBe(true);
+      scheduler.dispose();
+      h.profiles.dispose();
+    },
+  );
+
+  it("revalidates silent presentation adoption only when an actual handoff resumes", async () => {
+    const h = windowBindingHarness();
+    const scheduler = h.runtimes.workScheduler("drawing.svg");
+    const pending = scheduler.nextFrame();
+    h.attachment.root = h.second.root;
+    h.second.host.time = 2;
+    h.first.host.frame();
+    await pending;
+    expect(scheduler.now()).toBe(2);
+    scheduler.dispose();
+    h.profiles.dispose();
+  });
+
+  it("rebinds a closed pop-out wait to the fallback even before window.closed changes", async () => {
+    const h = windowBindingHarness();
+    const scheduler = h.runtimes.workScheduler("drawing.svg");
+    const pending = scheduler.nextFrame();
+    expect(h.first.host.pendingFrames).toBe(1);
+    h.first.ownerWindow.dispatchEvent(new Event("unload"));
+    await Promise.resolve();
+    expect(h.first.host.pendingFrames).toBe(0);
+    expect(h.second.host.pendingFrames).toBe(1);
+    h.second.host.frame();
+    await pending;
+    scheduler.dispose();
+    h.profiles.dispose();
+    expect(h.first.host.pendingTimers).toBe(0);
+    expect(h.second.host.pendingFrames).toBe(0);
+    expect(h.second.host.pendingTimers).toBe(0);
+  });
+
+  it("keeps first-mounted, retained detached and fallback owner selection between changes", () => {
+    const h = windowBindingHarness();
+    const scheduler = h.runtimes.workScheduler("drawing.svg");
+    h.registry.observe("drawing.svg", h.second.ownerWindow);
+    expect(scheduler.now()).toBe(0);
+    h.first.host.time = 1;
+    h.second.host.time = 2;
+    expect(scheduler.now()).toBe(1);
+    h.presentations.length = 0;
+    h.profiles.notifyOwnerWindowChanged();
+    expect(scheduler.now()).toBe(2);
+    h.registry.clear();
+    h.profiles.notifyOwnerWindowChanged();
+    expect(scheduler.now()).toBe(2);
+    scheduler.dispose();
+    h.profiles.dispose();
   });
 });
 

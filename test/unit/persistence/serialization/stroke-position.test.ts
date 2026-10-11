@@ -1,8 +1,9 @@
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
 import {
-  elementFacts,
-  validatedDeltaElementFacts,
+  elementFactsSteps,
+  validatedDeltaElementFactsSteps,
 } from "../../../../src/persistence/serialization/incremental-validation";
+import { completeSerializationSteps } from "../../../../src/persistence/serialization/serialization-model-preparation";
 import { StrokeShapeCache } from "../../../../src/persistence/serialization/stroke-shape-cache";
 import {
   adoptTransferredStrokeSamples,
@@ -75,7 +76,6 @@ it("reuses worker-runtime geometry while exporting moved, undone, and redone str
           modelRevision: revision,
           changedElements: [moved],
         },
-        undefined,
         true,
       ).ok,
     ).toBe(true);
@@ -164,6 +164,8 @@ it("reuses retired pressure geometry after Undo transfers a new point buffer", (
       orderChanges: { content: [removedId] },
     }).ok,
   ).toBe(true);
+  expect(serializer.instrumentation.shapeBuilds).toBe(1);
+  expect(serializer.serialize().ok).toBe(true);
   expect(serializer.instrumentation.shapeBuilds).toBe(2);
   expect(serializer.instrumentation.retiredPointComparisons).toBe(restored.points.length + 1);
   serializer.clear();
@@ -207,7 +209,7 @@ it.each([0, 0.37, 1.25])(
       rotation,
       points: [51.123, 240.456, 0.5, 62.345, 252.789, 0.7, 80.125, 270.375, 0.4],
     };
-    let facts = elementFacts(original);
+    let facts = completeSerializationSteps(elementFactsSteps(original));
     for (const offset of [
       { x: 0.123, y: 12.007 },
       { x: -0.007, y: 25.001 },
@@ -218,8 +220,10 @@ it.each([0, 0.37, 1.25])(
         offset,
         pivot: { x: original.pivot.x + offset.x, y: original.pivot.y + offset.y },
       };
-      const changed = validatedDeltaElementFacts(moved, undefined, facts);
-      expect(changed).toEqual(elementFacts(moved));
+      const changed = completeSerializationSteps(
+        validatedDeltaElementFactsSteps(moved, undefined, facts),
+      );
+      expect(changed).toEqual(completeSerializationSteps(elementFactsSteps(moved)));
       expect(changed.strokeGeometry?.bounds).toBe(facts.strokeGeometry?.bounds);
       expect(changed.bottom).toBe(calculateElementBounds(moved).maxY);
       facts = changed;

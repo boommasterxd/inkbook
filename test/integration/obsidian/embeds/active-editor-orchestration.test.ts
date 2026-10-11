@@ -218,12 +218,16 @@ describe("active editor context-menu scaling", () => {
     actions.dispose();
   });
 
-  it("materializes each 10k render band only once for one availability pass", async () => {
+  it("uses selected ranks without materializing 10k render bands for one availability pass", async () => {
     const ids = Array.from({ length: 10_000 }, (_, index) => `element-${index}`);
     const materializeBandOrder = vi.fn((band: "content" | "highlight") =>
       band === "content" ? ids : [],
     );
-    const sceneStore = { materializeBandOrder } as unknown as ElementSceneStore;
+    const get = vi.fn((id: string) => ({ id, band: "content", rank: 5_000 }));
+    const bandSize = vi.fn((band: "content" | "highlight") =>
+      band === "content" ? ids.length : 0,
+    );
+    const sceneStore = { materializeBandOrder, get, bandSize } as unknown as ElementSceneStore;
     const model = documentModel(vi.fn(async () => null));
     const actions = activeActions(
       model,
@@ -237,9 +241,9 @@ describe("active editor context-menu scaling", () => {
 
     menus.open({ x: 1, y: 2 });
     await vi.waitFor(() => expect(menu.shown).toBe(true));
-    expect(materializeBandOrder).toHaveBeenCalledTimes(2);
-    expect(materializeBandOrder).toHaveBeenNthCalledWith(1, "highlight");
-    expect(materializeBandOrder).toHaveBeenNthCalledWith(2, "content");
+    expect(materializeBandOrder).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledExactlyOnceWith(ids[5_000]!);
+    expect(bandSize).toHaveBeenCalledExactlyOnceWith("content");
     menus.dispose();
     actions.dispose();
   });

@@ -1,5 +1,6 @@
 import * as geometry from "../../../src/domain/geometry/public";
 import * as strokeSamples from "../../../src/domain/elements/public";
+import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../../src/domain/spatial/index";
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/public";
 import type { InkElementV1, InkSnapshotV1 } from "../../../src/domain/schema/public";
@@ -9,7 +10,7 @@ import * as canonical from "../../../src/persistence/serialization/canonical-sna
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../src/domain/store/public";
-import { changedElementDerivations } from "../../../src/obsidian/embeds/vault-document-model-delta";
+import { prepareVaultStoreDelta } from "../../../src/obsidian/embeds/vault-document-model-delta";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
@@ -94,16 +95,12 @@ describe("document worker export performance", () => {
 
 function observeSampleCopyBytes() {
   const work = { bytes: 0 };
-  const native = Float64Array;
-  vi.stubGlobal(
-    "Float64Array",
-    new Proxy(native, {
-      construct(target, argumentsList, newTarget) {
-        const source: unknown = argumentsList[0];
-        if (source instanceof native || Array.isArray(source)) work.bytes += source.length * 8;
-        return Reflect.construct(target, argumentsList, newTarget) as Float64Array;
-      },
-    }),
+  const copy = sampleCopy.copySampleRange;
+  vi.spyOn(sampleCopy, "copySampleRange").mockImplementation(
+    (source, target, start, end, proof) => {
+      work.bytes += (end - start) * Float64Array.BYTES_PER_ELEMENT;
+      copy(source, target, start, end, proof);
+    },
   );
   return work;
 }
@@ -169,8 +166,7 @@ describe("validated worker export work", () => {
     const reusesBefore = runtime.instrumentation.derivedBoundsReuses;
     const exported = await runtime.execute({
       baseModelRevision: 1,
-      changedElementDerivations: changedElementDerivations(delta),
-      changedElements: [changed],
+      ...prepareVaultStoreDelta(delta),
       exportGeneration: 1,
       modelRevision: 2,
       sessionId: "phases",
@@ -243,6 +239,7 @@ describe("complete translated stroke delta work", () => {
   it("bounds canonical capacity and fragment rebuilding for a complete translated stroke delta", () => {
     const serializer = new IncrementalDocumentSerializer();
     expect(serializer.reset(snapshot).ok).toBe(true);
+    expect(serializer.serialize().ok).toBe(true);
     const strokes = snapshot.elements.filter((element) => element.kind === "stroke");
     expect(strokes).toHaveLength(10_000);
     const changedElements = strokes.map((element) =>
@@ -276,9 +273,14 @@ describe("complete translated stroke delta work", () => {
       }),
     ).toEqual({ ok: true, value: undefined });
     expect(bounds).toHaveBeenCalledTimes(10_000);
+    expect(builds).not.toHaveBeenCalled();
+    expect(serializer.instrumentation.fragmentBuilds).toBe(fragmentsBefore);
+    expect(serializer.serialize().ok).toBe(true);
+    expect(bounds).toHaveBeenCalledTimes(10_000);
     // Bound the actual pressure-window unions for the shared 500,000-point fixture.
     expect(builds.mock.calls.length).toBeLessThanOrEqual(10_001);
     expect(serializer.instrumentation.fragmentBuilds - fragmentsBefore).toBe(10_000);
     expect(serializer.currentSnapshot()?.revision).toBe(snapshot.revision + 1);
+    serializer.clear();
   });
 });

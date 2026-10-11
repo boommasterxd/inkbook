@@ -54,11 +54,12 @@ export class SceneMountPreparation {
         options.pathCache.read(
           record.element,
           options.store.pressureGeometry?.(record.id, record.geometryVersion),
+          record.geometryVersion,
         ) !== undefined,
       onPrepared: (record, parts) => {
         const pressure = options.store.pressureGeometry?.(record.id, record.geometryVersion);
         localPressureGeometry(record.element, pressure)?.publishPath?.(parts);
-        options.pathCache.completePreparation(record.element, parts);
+        options.pathCache.completePreparation(record.element, parts, record.geometryVersion);
       },
       ownsPrepared: (record, parts) => options.pathCache.ownsPrepared(record.element, parts),
     });
@@ -153,8 +154,6 @@ export class SceneMountPreparation {
       const remote = this.#remote.read(record, this.options.upcomingIds ?? (() => []));
       if (remote === "pending") return undefined;
       if (remote !== undefined) {
-        localPressureGeometry(record.element, pressure)?.publishPath?.(remote);
-        pathCache.completePreparation(record.element, remote);
         return remote;
       }
       this.#pending = {
@@ -166,7 +165,7 @@ export class SceneMountPreparation {
     if (!allowLocal || !slice.prepare(this.#pending.path)) return undefined;
     const parts = this.#pending.path.parts!;
     localPressureGeometry(record.element, pressure)?.publishPath?.(parts);
-    pathCache.completePreparation(record.element, parts);
+    pathCache.completePreparation(record.element, parts, record.geometryVersion);
     this.#pending = undefined;
     return parts;
   }
@@ -177,12 +176,13 @@ export class SceneMountPreparation {
   ): readonly SvgPathPart[] | undefined {
     const { pathCache } = this.options;
     const cached =
-      pathCache.take(record.id, record.geometryVersion) ?? pathCache.read(record.element, pressure);
+      pathCache.take(record.id, record.geometryVersion) ??
+      pathCache.read(record.element, pressure, record.geometryVersion);
     if (cached !== undefined) return cached;
     const prepared = this.options.takePreparedPath?.(record);
     if (prepared !== undefined) {
       localPressureGeometry(record.element, pressure)?.publishPath?.(prepared);
-      pathCache.completePreparation(record.element, prepared);
+      pathCache.completePreparation(record.element, prepared, record.geometryVersion);
     }
     return prepared;
   }

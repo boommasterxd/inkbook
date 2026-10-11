@@ -11,6 +11,7 @@ export class VisibilityCandidates implements SpatialQuerySink {
   #capacity = 0;
   #epoch = 0;
   #markers = new Uint32Array(0);
+  #positions = new Uint32Array(0);
   #bounds: Bounds | undefined;
   #key: string | undefined;
   #pendingKey: string | undefined;
@@ -34,13 +35,14 @@ export class VisibilityCandidates implements SpatialQuerySink {
   }
 
   public memoryUsage(): number {
-    return this.#count * 16 + (this.#cursor?.memoryUsage?.() ?? 0);
+    return this.#count * 16 + this.#positions.byteLength + (this.#cursor?.memoryUsage?.() ?? 0);
   }
 
   public add(id: string): void {
     const slot = this.slotFor(id);
     if (this.#markers[slot] === this.#epoch) return;
     this.#markers[slot] = this.#epoch;
+    this.#positions[slot] = this.#count + 1;
     this.#capacity = growVisibilityCapacity(this.#count + 1, this.#capacity, this.instrumentation);
     this.#ids[this.#count++] = id;
   }
@@ -103,25 +105,52 @@ export class VisibilityCandidates implements SpatialQuerySink {
     if (this.#pendingKey !== undefined) this.invalidate();
   }
 
-  public invalidateForChanges(before?: Bounds | null, after?: Bounds | null): void {
+  public invalidateForChanges(before?: Bounds | null, after?: Bounds | null, id?: string): void {
     if (
+      this.#pendingKey === undefined &&
+      this.#key !== undefined &&
       this.#bounds !== undefined &&
       before !== undefined &&
-      after !== undefined &&
-      relevantToRange(before, this.#bounds) === relevantToRange(after, this.#bounds)
-    )
+      after !== undefined
+    ) {
+      if (relevantToRange(before, this.#bounds) === relevantToRange(after, this.#bounds)) return;
+      if (id === undefined) {
+        this.invalidate();
+        return;
+      }
+      if (after !== null) {
+        const slot = this.slotFor(id);
+        this.releaseSlot(slot);
+        if (relevantToRange(after, this.#bounds)) this.add(id);
+      }
+      this.#generation += 1;
       return;
+    }
     this.invalidate();
   }
 
   public releaseSlot(slot: number): void {
+    const position = this.#positions[slot] ?? 0;
+    if (this.#markers[slot] === this.#epoch && position > 0) {
+      const last = this.#ids[--this.#count];
+      if (position <= this.#count && last !== undefined) {
+        this.#ids[position - 1] = last;
+        this.#positions[this.slotFor(last)] = position;
+      }
+      this.#ids[this.#count] = undefined;
+      this.#generation += 1;
+    }
     this.#markers[slot] = 0;
+    this.#positions[slot] = 0;
   }
 
   public ensureMarkerCapacity(capacity: number): void {
     const markers = new Uint32Array(capacity);
     markers.set(this.#markers);
     this.#markers = markers;
+    const positions = new Uint32Array(capacity);
+    positions.set(this.#positions);
+    this.#positions = positions;
   }
 
   public release(): void {
@@ -131,6 +160,7 @@ export class VisibilityCandidates implements SpatialQuerySink {
     this.#capacity = 0;
     this.#epoch = 0;
     this.#markers = new Uint32Array(0);
+    this.#positions = new Uint32Array(0);
     this.invalidate();
   }
 }

@@ -204,9 +204,9 @@ export class NavigationPathPreparation {
   private admit(id: string): void {
     const record = this.store.get(id);
     if (record?.element.kind !== "stroke" || intersects(this.#visible!, record.bounds)) return;
+    if (this.cache.has(id, record.geometryVersion)) return;
     const pressure = this.store.pressureGeometry?.(id, record.geometryVersion);
-    if (this.cache.has(id, record.geometryVersion) || this.cache.read(record.element, pressure))
-      return;
+    if (this.cache.read(record.element, pressure, record.geometryVersion)) return;
     if (this.store.prepareScenePaths === undefined || this.#remoteUnavailable)
       this.#pending = { record, path: this.cache.startPreparation(record.element, pressure) };
     else {

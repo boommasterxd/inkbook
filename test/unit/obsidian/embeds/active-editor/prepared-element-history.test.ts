@@ -70,7 +70,9 @@ describe("prepared selection preview lifecycle", () => {
   });
 
   it("releases an armed handoff when final token adoption is cancelled", async () => {
-    const commitPreparedElementReplacement = vi.fn(() => "cancelled" as const);
+    const commitPreparedElementReplacement = vi.fn<
+      EditableDocumentModel["commitPreparedElementReplacement"]
+    >(() => "cancelled");
     const pageBounds = pageBoundsPlanner();
     const model = {
       commitPreparedElementReplacement,
@@ -90,14 +92,14 @@ describe("prepared selection preview lifecycle", () => {
     expect(motion.arm).toHaveBeenCalledOnce();
     expect(motion.arm.mock.calls[0]?.[0]).toHaveLength(1_001);
     expect(pageBounds.plan).not.toHaveBeenCalled();
-    expect(commitPreparedElementReplacement).toHaveBeenCalledWith(PREPARED_TOKEN);
+    expect(commitPreparedElementReplacement.mock.calls[0]?.[0]).toBe(PREPARED_TOKEN);
     expect(onCompleted).toHaveBeenCalledWith(false);
   });
 });
 
 describe("committed prepared replacement", () => {
   it("registers history after a committed replacement even if disposal follows the commit", async () => {
-    const registerAppliedReplacement = vi.fn(() => true);
+    const registerApplied = vi.fn(() => true);
     let prepared: PreparedElementHistory;
     const model = {
       commitPreparedElementReplacement: vi.fn(() => {
@@ -111,7 +113,7 @@ describe("committed prepared replacement", () => {
       store: pageBoundsPlanner().store,
     } as unknown as EditableDocumentModel;
     prepared = new PreparedElementHistory({
-      history: { registerAppliedReplacement } as unknown as ActiveEditorHistory,
+      history: { registerApplied } as unknown as ActiveEditorHistory,
       isAttached: () => true,
       model,
       motion: motionPort(),
@@ -120,7 +122,7 @@ describe("committed prepared replacement", () => {
     });
 
     expect(prepared.commitMove(largeSelection(), { x: 1, y: 2 })).toBe(true);
-    await vi.waitFor(() => expect(registerAppliedReplacement).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(registerApplied).toHaveBeenCalledOnce());
   });
 });
 

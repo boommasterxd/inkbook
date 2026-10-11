@@ -26,7 +26,21 @@ import {
 } from "./primitives";
 
 export function calculateElementBounds(element: InkElementV1): Bounds {
-  if (element.kind === "stroke") return strokeBounds(element);
+  const steps = calculateElementBoundsSteps(element, Number.POSITIVE_INFINITY);
+  let result = steps.next();
+  while (!result.done) result = steps.next();
+  return result.value;
+}
+
+/** Sample batches bound indivisible work; callers decide when their scheduler must yield. */
+export function* calculateElementBoundsSteps(
+  element: InkElementV1,
+  pointsPerStep = 256,
+): Generator<void, Bounds> {
+  if (pointsPerStep <= 0 || (!Number.isInteger(pointsPerStep) && pointsPerStep !== Infinity)) {
+    throw new RangeError("Bounds sample batches must be positive integers or Infinity.");
+  }
+  if (element.kind === "stroke") return yield* strokeBoundsSteps(element, pointsPerStep);
   if (element.kind === "coordinate-system") return coordinateSystemBounds(element);
   if (element.kind === "table") return rotatedBoxBounds(element);
   if (
@@ -57,9 +71,12 @@ export function effectiveStrokeWidth(
   return isHighlighter ? stroke.style.width * 2.5 : stroke.style.width;
 }
 
-function strokeBounds(stroke: StrokeElementV1): Bounds {
+function* strokeBoundsSteps(
+  stroke: StrokeElementV1,
+  pointsPerStep: number,
+): Generator<void, Bounds> {
   const local = strokeLocalGeometry(stroke);
-  const bounds = localStrokeBounds(local);
+  const bounds = yield* localStrokeBoundsSteps(local, pointsPerStep);
   const x = stroke.offset?.x ?? 0;
   const y = stroke.offset?.y ?? 0;
   return {
@@ -70,7 +87,10 @@ function strokeBounds(stroke: StrokeElementV1): Bounds {
   };
 }
 
-function localStrokeBounds(stroke: StrokeElementV1): Bounds {
+function* localStrokeBoundsSteps(
+  stroke: StrokeElementV1,
+  pointsPerStep: number,
+): Generator<void, Bounds> {
   const samples = stroke.points;
   let minX = Infinity;
   let minY = Infinity;
@@ -96,6 +116,7 @@ function localStrokeBounds(stroke: StrokeElementV1): Bounds {
     minY = Math.min(minY, rotatedY);
     maxX = Math.max(maxX, rotatedX);
     maxY = Math.max(maxY, rotatedY);
+    if ((index / 3 + 1) % pointsPerStep === 0 && index + 3 < samples.length) yield;
   }
   return expandBounds({ maxX, maxY, minX, minY }, effectiveStrokeWidth(stroke) / 2);
 }

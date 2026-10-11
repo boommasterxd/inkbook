@@ -89,12 +89,12 @@ export function observeEndpointPreparation(store: ElementStore) {
   let maximumReverseVisitsBetweenYields = 0;
   let partialPublications = 0;
   let yields = 0;
-  const original = recordFactory.createOwnedReplacementRecord;
+  const original = recordFactory.createOwnedReplacementRecordSteps;
   const spy = vi
-    .spyOn(recordFactory, "createOwnedReplacementRecord")
-    .mockImplementation((...args) => {
+    .spyOn(recordFactory, "createOwnedReplacementRecordSteps")
+    .mockImplementation(function* (...args) {
       creations += 1;
-      return original(...args);
+      return yield* original(...args);
     });
   const resolveConnections = connections.resolveConnections;
   const reverseSpy = vi.spyOn(connections, "resolveConnections").mockImplementation((...args) => {

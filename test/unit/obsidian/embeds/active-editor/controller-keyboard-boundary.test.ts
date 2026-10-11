@@ -149,7 +149,7 @@ describe("active editor native paste DOM boundary", () => {
     expect(harness.controller.chromeProps().toolbarState.hasSelection).toBe(true);
 
     expect(harness.key("Delete").defaultPrevented).toBe(true);
-    expect(harness.renderer.setElementFade).toHaveBeenCalledWith(expect.any(Array), 400);
+    expect(harness.renderer.setElementFade).toHaveBeenCalledWith(expect.any(Array), 150);
     harness.dispose();
   });
 

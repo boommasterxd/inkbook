@@ -18,12 +18,13 @@ import type { SessionIdentity } from "../../editor/session/session-port";
 import type { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import type {
   ElementStore,
+  ElementReplacementHistoryData,
   PreparedElementReplacement,
   PreparedElementReplacementResult,
   StoreDelta,
   StoreSliceScheduler,
 } from "../../domain/store/public";
-import { changedElementDerivations, changedElements } from "./vault-document-model-delta";
+import { prepareVaultStoreDelta } from "./vault-document-model-delta";
 
 import type { EditableDocumentModel } from "./document-model-port";
 import { attachEditableDocumentState } from "./editable-document-state";
@@ -189,6 +190,16 @@ export function prepareVaultElementMutation(options: {
   readonly store: ElementStore;
 }): ReturnType<EditableDocumentModel["prepareElementMutation"]> {
   if (!options.active) return Promise.resolve({ status: "cancelled", token: null });
+  if (
+    options.cancellation.replaySource === "retained" &&
+    options.cancellation.replay !== undefined
+  ) {
+    return options.store.prepareHistoryReplay(
+      options.mutation,
+      options.scheduler(() => options.cancellation.isCancelled()),
+      options.cancellation.replay,
+    );
+  }
   return options.store.prepareElementMutation(
     options.mutation,
     options.scheduler(() => options.cancellation.isCancelled()),
@@ -231,7 +242,7 @@ export function createVaultElementPreparationActions(options: {
           active: options.active(),
           cancellation,
           mutation,
-          scheduler: options.scheduler,
+          scheduler: (isCancelled) => options.scheduler(isCancelled, "frame"),
           store: options.store,
         }),
       ),
@@ -241,7 +252,7 @@ export function createVaultElementPreparationActions(options: {
           active: options.active(),
           cancellation,
           ids,
-          scheduler: options.scheduler,
+          scheduler: (isCancelled) => options.scheduler(isCancelled, "frame"),
           store: options.store,
         }),
       ),
@@ -276,31 +287,32 @@ export function prepareVaultElementReplacement(options: {
 
 export function commitVaultElementReplacement(options: {
   readonly active: boolean;
+  readonly capture?: (history: ElementReplacementHistoryData) => void;
   readonly recordDelta: (delta: StoreDelta) => void;
   readonly store: ElementStore | undefined;
   readonly token: PreparedElementReplacement;
 }): "cancelled" | "committed" | "noop" {
   if (options.store === undefined || !options.active) return "cancelled";
   const result = options.store.commitPreparedElementReplacement(options.token);
-  if (result.delta !== null) options.recordDelta(result.delta);
+  if (result.delta !== null) {
+    options.recordDelta(result.delta);
+    if (result.history !== null) options.capture?.(result.history);
+  }
   return result.status;
 }
 
 export function recordVaultStoreDelta(options: {
   readonly autosave: AutosaveCoordinator | undefined;
   readonly delta: StoreDelta;
-  readonly removedIds: readonly string[];
   readonly revision: number;
 }): void {
   if (options.autosave === undefined) return;
   options.autosave.recordCommit({
-    changedElementDerivations: changedElementDerivations(options.delta),
-    changedElements: changedElements(options.delta),
+    ...prepareVaultStoreDelta(options.delta),
     dirtyBands: (Object.keys(options.delta.dirtyBands) as Array<"content" | "highlight">).filter(
       (band) => options.delta.dirtyBands[band],
     ),
     modelRevision: options.revision,
-    removedIds: options.removedIds,
   });
 }
 

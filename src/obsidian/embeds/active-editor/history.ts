@@ -3,6 +3,7 @@ import type { RenderBand } from "../../../domain/commands/render-bands";
 import type { InkElementV1, PageV1 } from "../../../domain/schema/public";
 import type { DocumentMutationAvailability } from "../document-model-port";
 import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
+import type { ElementReplacementHistoryData } from "../../../domain/store/public";
 
 export type ActiveEditorBandOrder = Readonly<Record<RenderBand, readonly string[]>>;
 
@@ -13,7 +14,10 @@ export interface ActiveEditorHistoryModel {
   commitElements(elements: readonly InkElementV1[]): void;
   commitPage(page: PageV1): void;
   removeElements(ids: readonly string[]): void;
-  replaceElements(elements: readonly InkElementV1[]): void;
+  replaceElements(
+    elements: readonly InkElementV1[],
+    capture?: (history: ElementReplacementHistoryData) => void,
+  ): void;
 }
 
 interface SynchronousEditorMutation {
@@ -33,6 +37,7 @@ type CommitListener = () => void;
 export class ActiveEditorHistory {
   readonly #committedListeners = new Set<CommitListener>();
   #history = new AppliedCommandHistory();
+  #replayDepth = 0;
   readonly #model: ActiveEditorHistoryModel;
 
   public constructor(model: ActiveEditorHistoryModel) {
@@ -53,6 +58,10 @@ export class ActiveEditorHistory {
 
   public get isTraversing(): boolean {
     return this.#history.isTraversing;
+  }
+
+  public get isReplaying(): boolean {
+    return this.#replayDepth > 0;
   }
 
   public get retainedPayloadBytes(): number {
@@ -83,16 +92,26 @@ export class ActiveEditorHistory {
     effect?: SelectionFrameHistoryEffect,
   ): boolean {
     if (previous.length === 0 || previous.length !== replacements.length) return false;
+    const captured = captureElementReplacementHistory(previous, replacements);
+    let initialCommit = true;
     return this.#execute({
       apply: () => {
-        this.#model.replaceElements(replacements);
+        if (initialCommit) {
+          this.#model.replaceElements(
+            captured.replacements as readonly InkElementV1[],
+            captured.capture,
+          );
+          initialCommit = false;
+        } else {
+          this.#model.replaceElements(captured.replacements as readonly InkElementV1[]);
+        }
         effect?.apply();
       },
-      payloadBytes:
-        estimateElementHistoryPayloadBytes(previous) +
-        estimateElementHistoryPayloadBytes(replacements),
+      get payloadBytes() {
+        return captured.payloadBytes;
+      },
       revert: () => {
-        this.#model.replaceElements(previous);
+        this.#model.replaceElements(captured.previous as readonly InkElementV1[]);
         effect?.revert();
       },
     });
@@ -117,11 +136,29 @@ export class ActiveEditorHistory {
     return this.#history.undoSync();
   }
 
-  public registerApplied(transition: AppliedAsyncHistoryTransition): boolean {
+  public registerApplied(
+    transition: AppliedAsyncHistoryTransition,
+    effect?: SelectionFrameHistoryEffect,
+  ): boolean {
     if (this.isTraversing) {
       throw new Error("Applied history cannot be registered during an Undo or Redo operation.");
     }
-    this.#history.registerApplied(transition);
+    effect?.apply();
+    this.#history.registerApplied({
+      get payloadBytes() {
+        return transition.payloadBytes;
+      },
+      redo: () =>
+        this.#replayAsync(
+          () => transition.redo(),
+          () => effect?.apply(),
+        ),
+      undo: () =>
+        this.#replayAsync(
+          () => transition.undo(),
+          () => effect?.revert(),
+        ),
+    });
     this.#notifyCommitted();
     return true;
   }
@@ -133,22 +170,16 @@ export class ActiveEditorHistory {
     effect?: SelectionFrameHistoryEffect,
   ): boolean {
     if (previous.length === 0 || previous.length !== replacements.length) return false;
-    effect?.apply();
-    return this.registerApplied({
-      payloadBytes:
-        estimateElementHistoryPayloadBytes(previous) +
-        estimateElementHistoryPayloadBytes(replacements),
-      redo: async () => {
-        const applied = await transition.redo();
-        if (applied) effect?.apply();
-        return applied;
+    return this.registerApplied(
+      {
+        payloadBytes:
+          estimateElementHistoryPayloadBytes(previous) +
+          estimateElementHistoryPayloadBytes(replacements),
+        redo: transition.redo,
+        undo: transition.undo,
       },
-      undo: async () => {
-        const applied = await transition.undo();
-        if (applied) effect?.revert();
-        return applied;
-      },
-    });
+      effect,
+    );
   }
 
   public redoAsync(): Promise<boolean> {
@@ -180,6 +211,27 @@ export class ActiveEditorHistory {
     }
   }
 
+  async #replayAsync(operation: () => Promise<boolean>, effect: () => void): Promise<boolean> {
+    this.#replayDepth += 1;
+    try {
+      const applied = await operation();
+      if (applied) effect();
+      return applied;
+    } finally {
+      this.#replayDepth -= 1;
+    }
+  }
+
+  #replaySync(operation: () => void): boolean {
+    this.#replayDepth += 1;
+    try {
+      operation();
+      return true;
+    } finally {
+      this.#replayDepth -= 1;
+    }
+  }
+
   #execute(mutation: SynchronousEditorMutation): boolean {
     if (this.isTraversing) {
       throw new Error("Editor history cannot commit during an Undo or Redo operation.");
@@ -188,8 +240,8 @@ export class ActiveEditorHistory {
     mutation.apply();
     this.#history.registerAppliedSync({
       payloadBytes: mutation.payloadBytes,
-      redo: () => (mutation.apply(), true),
-      undo: () => (mutation.revert(), true),
+      redo: () => this.#replaySync(mutation.apply),
+      undo: () => this.#replaySync(mutation.revert),
     });
     this.#notifyCommitted();
     return true;
@@ -200,11 +252,44 @@ export class ActiveEditorHistory {
   }
 }
 
-function estimateElementHistoryPayloadBytes(elements: readonly InkElementV1[]): number {
+export function captureElementReplacementHistory(
+  previous: readonly InkElementV1[],
+  replacements: readonly InkElementV1[],
+) {
+  let retainedPrevious: ElementReplacementHistoryData["previous"] = previous;
+  let retainedReplacements: ElementReplacementHistoryData["replacements"] = replacements;
+  let capturedPayload: number | undefined;
+  return {
+    capture: (history: ElementReplacementHistoryData) => {
+      retainedPrevious = history.previous;
+      retainedReplacements = history.replacements;
+      capturedPayload = history.payloadBytes;
+    },
+    get previous() {
+      return retainedPrevious;
+    },
+    get replacements() {
+      return retainedReplacements;
+    },
+    get payloadBytes() {
+      return (
+        capturedPayload ??
+        estimateElementHistoryPayloadBytes(retainedPrevious) +
+          estimateElementHistoryPayloadBytes(retainedReplacements)
+      );
+    },
+  };
+}
+
+function estimateElementHistoryPayloadBytes(
+  elements: ElementReplacementHistoryData["previous"],
+): number {
   return elements.reduce((total, element) => total + estimateElementPayloadBytes(element), 0);
 }
 
-function estimateElementPayloadBytes(element: InkElementV1): number {
+function estimateElementPayloadBytes(
+  element: ElementReplacementHistoryData["previous"][number],
+): number {
   const structuralBytes = 256 + element.id.length * 2;
   switch (element.kind) {
     case "stroke":

@@ -250,7 +250,8 @@ describe("worker path-only preparation resources", () => {
       checkpoint.mockClear();
       windows.mockClear();
       expect(await cache.prepare(stroke, { signal: controller.signal, checkpoint })).toBe(first);
-      expect(checkpoint).not.toHaveBeenCalled();
+      // Cached preparation still consults central admission before reading the cache.
+      expect(checkpoint).toHaveBeenCalledTimes(1);
       expect(windows).not.toHaveBeenCalled();
       cache.clear();
       expect(cache.instrumentation.shapeCacheBytes).toBe(0);

@@ -6,7 +6,12 @@ import { snapshotMetadataPrefix } from "./document-assembly";
 import { codecFailure } from "./codec-failure";
 import { derivePageExtent } from "../../domain/geometry/public";
 import { serializeSvgNumber } from "../documents/svg-number";
-import type { BackgroundFragmentCache } from "./background";
+import {
+  backgroundFitsStaticLimit,
+  backgroundPathDataByteLength,
+  type BackgroundFragmentCache,
+} from "./background";
+import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "../documents/svg-output-limits";
 import type {
   Background,
   PreparedSerialization,
@@ -72,4 +77,22 @@ function resolveBackground(
     );
   }
   return { ok: true, value: { background, lockedHeight } };
+}
+
+/** Reject an impossible background before resolving element fragments or publishing geometry. */
+export function checkBackgroundLimit(
+  page: PageV1,
+  maximumBottom: number | null,
+): DocumentCodecResult<void> {
+  const extent = derivePageExtent(page, maximumBottom);
+  const lockedHeight = Number(serializeSvgNumber(extent.lockedHeight));
+  if (
+    !backgroundFitsStaticLimit(page.background, lockedHeight, FILE_SCHEMA_LIMITS.totalInputBytes) ||
+    backgroundPathDataByteLength(page.background, lockedHeight) > MAXIMUM_TOTAL_PATH_DATA_BYTES
+  )
+    return codecFailure(
+      "static-output-limit-exceeded",
+      "Generated background exceeds file limits.",
+    );
+  return { ok: true, value: undefined };
 }

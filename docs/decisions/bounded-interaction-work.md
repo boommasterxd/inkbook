@@ -19,9 +19,9 @@ Progressive retained-node reordering shares the live-root allowance with entrant
 and new selection indicators. A discovered order mismatch ends the already proven
 run while preserving its successor anchor; it must not retroactively reparent an
 unbounded earlier run. Unchanged retained anchors consume no publication capacity.
-One explicitly new order entry does not disable progressive viewport work when
-no existing element changes order. The element still publishes completely;
-unproved deltas, multiple insertions, and actual reorders retain atomic publication.
+Complete membership changes matching the current Store do not disable progressive
+viewport work when no surviving element changes relative order. Each entrant still
+publishes completely; unproved deltas and actual reorders retain atomic publication.
 When mounted updates and viewport reconciliation compete for the frame budget,
 each receives the first available slice on alternating frames. Selection-edge
 autoscroll resolves the current owner viewport once per frame before preview
@@ -69,7 +69,10 @@ an optimum for browser memory or revisit speed.
 
 A smaller fade-start quota was rejected: the paired selection-delete diagnostic
 did not reduce long native tasks and increased layerization work. Keep the
-existing deadline-checked fade allowance, full duration, and width-dependent blur.
+existing deadline-checked fade allowance and full duration. Eraser and selection
+Delete share retained-node opacity feedback without blur. Avoid filter work that
+the central scheduler cannot interrupt inside browser rendering; preserve the
+paint and group composition rules in the [canonical fade contract](../rendering-and-performance.md#imperative-scene-ownership).
 
 For area selection, use proven whole-bounds exclusion as well as acceptance.
 Reuse a bounded edge index only for factory-owned immutable lasso points. Use
@@ -118,7 +121,17 @@ state atomically. Small patches keep local updates. This trades temporary index
 structure duplication and a retained-entry traversal for bounded publication; it
 does not make every Store commit operation constant-time. Generation and
 cancellation checks protect the preparation and its final adoption. External band orders receive
-full validation; only Store-produced version-bound removals reuse proven order.
+full validation; Store-produced version-bound removals and privately proved history
+directions may reuse proven order as defined in [History Replay Reuse](history-replay-reuse.md).
+Structural shadows collect grid extent entries once and construct their bottom
+heap in linear work with bottom-up heapification. Each indivisible sift uses the
+same shared scheduler admission and generation checks as retained and inserted
+entries. Overflow maxima retain their separate bounded path. A complete clear
+skips the retained-entry traversal only after every removal ID has been proved
+distinct and present, the removal count equals the current index size, and there
+are no insertions. Heap comparisons, actual index visits, full-clear enumeration,
+and cancellation before atomic publication have deterministic work coverage;
+these bounds do not establish physical-device latency.
 The worker reuses confirmed
 order arrays for ordinary element changes, and Paste uses revision-matched model
 facts and direct ID queries rather than rebuilding the existing document.
@@ -152,8 +165,7 @@ Avoid asynchronous continuations for synchronous checkpoint decisions. Large
 handle commits and the clipboard fallback await only actual scheduler handoffs;
 canonical serialization and cancellation boundaries remain unchanged. Exhausted
 motion-path or byte capacity is checked before constructing replacement geometry.
-The existing eraser blur feedback is retained. Handle cancellation reuses unchanged
-selection geometry, and zero-displacement correction does not schedule per-element
+Handle cancellation reuses unchanged selection geometry, and zero-displacement correction does not schedule per-element
 work. Large decorative selection-trace removals operate on a temporarily detached
 group while preserving retained nodes and sibling order; content publication
 limits remain unchanged. After a complete reconciliation scan proves retained

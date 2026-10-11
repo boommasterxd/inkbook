@@ -25,7 +25,7 @@ export async function planCanonicalStrokeReplacement(
   const detection = await detectCanonicalBatch(source, replacements, scheduler);
   if (detection === "cancelled" || detection.status === "fallback") return detection;
   const geometryVersion = nextVersion(source.geometryVersion);
-  const prepared = await prepareRecords(source, replacements, geometryVersion, scheduler);
+  const prepared = await prepareRecords(source, detection.replacements, geometryVersion, scheduler);
   if (prepared === "cancelled") return prepared;
   let yields = detection.yields + prepared.yields;
   let indexYields = 0;
@@ -61,6 +61,7 @@ export interface CanonicalFallback {
 interface CanonicalDetection {
   readonly status: "canonical";
   readonly yields: number;
+  readonly replacements: readonly InkElementV1[];
 }
 
 async function detectCanonicalBatch(
@@ -69,9 +70,13 @@ async function detectCanonicalBatch(
   scheduler: StoreSliceScheduler,
 ): Promise<CanonicalDetection | "cancelled" | CanonicalFallback> {
   const ids = new Set<string>();
+  const staged: InkElementV1[] = [];
   const work = new ReplacementCheckpoint(scheduler);
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
+    if (source.history.retainedRecord(replacement) !== undefined) {
+      return { status: "fallback", yields: work.yields };
+    }
     if (ids.has(replacement.id))
       throw new RangeError(`Duplicate replacement ID: ${replacement.id}`);
     ids.add(replacement.id);
@@ -82,10 +87,11 @@ async function detectCanonicalBatch(
     const proof = inferStoredStrokeTranslation(current.element, replacement);
     if (proof?.source !== current.element) return { status: "fallback", yields: work.yields };
     assertReplacementIdentity(current.element, replacement);
+    staged.push(replacement);
     const checkpoint = work.checkpoint();
     if (checkpoint === false || (checkpoint !== true && !(await checkpoint))) return "cancelled";
   }
-  return { status: "canonical", yields: work.yields };
+  return { status: "canonical", yields: work.yields, replacements: Object.freeze(staged) };
 }
 
 async function prepareRecords(
@@ -94,7 +100,8 @@ async function prepareRecords(
   geometryVersion: number,
   scheduler: StoreSliceScheduler,
 ): Promise<PreparedReplacementRecords | "cancelled"> {
-  const prepared: PreparedReplacementRecords = {
+  const historyBuilder = source.history.createBuilder();
+  const prepared: Omit<PreparedReplacementRecords, "history"> = {
     capacityPreviousRecords: [],
     capacityRecords: [],
     changes: [],
@@ -117,6 +124,7 @@ async function prepareRecords(
     );
     source.capacity.validateReplacementBounds(record);
     prepared.records.push(record);
+    historyBuilder.append(current, record);
     prepared.spatialReplacements.push({ bounds: record.bounds, id: record.element.id });
     prepared.changes.push(
       Object.freeze({
@@ -129,7 +137,7 @@ async function prepareRecords(
     const checkpoint = work.checkpoint();
     if (checkpoint === false || (checkpoint !== true && !(await checkpoint))) return "cancelled";
   }
-  return { ...prepared, yields: work.yields };
+  return { ...prepared, history: historyBuilder.finish(), yields: work.yields };
 }
 
 function finishPlan(
@@ -150,6 +158,7 @@ function finishPlan(
       paintVersion: source.paintVersion,
     }),
     geometryVersion,
+    history: prepared.history,
     indexPatch,
     indexVisitCount: prepared.records.length,
     paintVersion: source.paintVersion,

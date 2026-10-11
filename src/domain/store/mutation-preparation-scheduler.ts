@@ -23,4 +23,24 @@ export class MutationPreparationScheduler {
     await this.scheduler.yieldControl();
     return !(this.scheduler.isCancelled?.() ?? false);
   }
+
+  /** A Promise is created only when the central scheduler actually requires a handoff. */
+  public run<T>(steps: Generator<void | boolean, T>): T | "cancelled" | Promise<T | "cancelled"> {
+    while (true) {
+      if (!this.checkpoint()) {
+        return this.#pending ? this.#runAfterYield(steps) : "cancelled";
+      }
+      const step = steps.next();
+      if (step.done) return step.value;
+    }
+  }
+
+  async #runAfterYield<T>(steps: Generator<void | boolean, T>): Promise<T | "cancelled"> {
+    if (!(await this.resume())) return "cancelled";
+    while (true) {
+      const step = steps.next();
+      if (step.done) return step.value;
+      if (!(this.checkpoint() || (await this.resume()))) return "cancelled";
+    }
+  }
 }

@@ -82,6 +82,8 @@ Each such gesture is exactly one undo step.
 
 The Undo and Redo toolbar buttons operate directly on the canvas history. Both remain visible in stable toolbar positions and are disabled when the corresponding action is unavailable.
 
+Membership replay uses the [shared history fade](quality-and-testing.md#animation-contract): an action that removes elements fades them out, and an action that restores elements fades them in. The direction follows the resulting membership, so Redo of erasing fades out while Undo of erasing fades in. The same rule applies to toolbar and keyboard traversal.
+
 Within the unlocked embed, `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` use an additional unified history maintained separately for each Obsidian pane. This history can chronologically combine canvas actions with changes to the surrounding Markdown.
 
 Automatic changes to the handwriting height do not create undo steps.
@@ -122,8 +124,8 @@ Delete:
 - removes the selection
 - creates one undo step
 - is triggered through the toolbar, selection context menu, or `Delete`
-- previews the same 400 ms opacity and width-dependent blur fade as the [eraser](editor-tools.md#eraser), using retained scene nodes and bounded animation starts; committing does not wait for the animation
-- restores pending feedback if preparation fails or becomes stale; Undo during the fade restores the element without leftover blur
+- previews a 150 ms opacity fade using retained scene nodes and bounded animation starts; committing does not wait for the animation
+- restores pending feedback if preparation fails or becomes stale; Undo during the fade restores the element without leftover opacity changes
 - leaves `Backspace` available for normal text input
 
 Paste:

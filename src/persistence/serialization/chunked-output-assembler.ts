@@ -1,13 +1,6 @@
 import { ChunkedSha256 } from "./chunked-output-sha256";
 
 const DEFAULT_SLICE_BYTE_LIMIT = 64 * 1024;
-const MAX_UTF8_BYTES_PER_CODE_UNIT = 3;
-
-export interface ChunkedOutputAssembly {
-  readonly hash: string;
-  readonly output: string;
-  readonly totalBytes: number;
-}
 
 export interface ChunkedUtf8OutputAssembly {
   readonly hash: string;
@@ -36,47 +29,6 @@ export class ChunkedOutputLimitError extends Error {
     super("Chunked output exceeds the configured byte limit.");
     this.name = "ChunkedOutputLimitError";
   }
-}
-
-export async function assembleAndHashChunkedOutput(
-  fragments: Iterable<string>,
-  options: ChunkedOutputAssemblyOptions = {},
-): Promise<ChunkedOutputAssembly> {
-  const sliceByteLimit = options.sliceByteLimit ?? DEFAULT_SLICE_BYTE_LIMIT;
-  validateSliceByteLimit(sliceByteLimit);
-  validateMaximumBytes(options.maximumBytes);
-  throwIfCancelled(options.signal);
-
-  const hash = new ChunkedSha256();
-  const encoder = new FragmentUtf8Encoder(options.checkpoint === undefined ? null : sliceByteLimit);
-  let output = "";
-  let bytesSinceCheckpoint = 0;
-  for (const fragment of fragments) {
-    throwIfCancelled(options.signal);
-    for (const encoded of encoder.encode(fragment)) {
-      hash.update(encoded);
-      throwIfMaximumExceeded(hash.totalBytes, options.maximumBytes);
-      bytesSinceCheckpoint += encoded.byteLength;
-      if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-        const pending = options.checkpoint();
-        if (pending !== undefined) await pending;
-        throwIfCancelled(options.signal);
-        bytesSinceCheckpoint = 0;
-      }
-    }
-    output += fragment;
-  }
-  const remainder = encoder.finish();
-  hash.update(remainder);
-  throwIfMaximumExceeded(hash.totalBytes, options.maximumBytes);
-  bytesSinceCheckpoint += remainder.byteLength;
-  if (options.checkpoint !== undefined && bytesSinceCheckpoint >= sliceByteLimit) {
-    const pending = options.checkpoint();
-    if (pending !== undefined) await pending;
-    throwIfCancelled(options.signal);
-  }
-  throwIfCancelled(options.signal);
-  return { hash: hash.digestHex(), output, totalBytes: hash.totalBytes };
 }
 
 export async function assembleAndHashPreparedUtf8Output(
@@ -169,59 +121,6 @@ class ExactUtf8Output {
     }
     return this.#output;
   }
-}
-
-class FragmentUtf8Encoder {
-  readonly #encoder = new TextEncoder();
-  readonly #maximumCodeUnits: number | null;
-  #pendingHighSurrogate = "";
-
-  public constructor(sliceByteLimit: number | null) {
-    this.#maximumCodeUnits =
-      sliceByteLimit === null
-        ? null
-        : Math.max(1, Math.floor(sliceByteLimit / MAX_UTF8_BYTES_PER_CODE_UNIT));
-  }
-
-  public *encode(fragment: string): Iterable<Uint8Array> {
-    const input = this.#nextInput(fragment);
-    for (let offset = 0; offset < input.length;) {
-      const end = this.#safeEnd(input, offset);
-      yield this.#encoder.encode(input.slice(offset, end));
-      offset = end;
-    }
-  }
-
-  public finish(): Uint8Array {
-    if (this.#pendingHighSurrogate.length === 0) return new Uint8Array();
-    const encoded = this.#encoder.encode(this.#pendingHighSurrogate);
-    this.#pendingHighSurrogate = "";
-    return encoded;
-  }
-
-  #nextInput(fragment: string): string {
-    let input = this.#pendingHighSurrogate + fragment;
-    this.#pendingHighSurrogate = "";
-    if (hasTrailingHighSurrogate(input)) {
-      this.#pendingHighSurrogate = input[input.length - 1]!;
-      input = input.slice(0, -1);
-    }
-    return input;
-  }
-
-  #safeEnd(input: string, offset: number): number {
-    if (this.#maximumCodeUnits === null) return input.length;
-    let end = Math.min(input.length, offset + this.#maximumCodeUnits);
-    if (end < input.length && hasTrailingHighSurrogate(input.slice(offset, end))) end -= 1;
-    if (end === offset) return Math.min(input.length, offset + 2);
-    return end;
-  }
-}
-
-function hasTrailingHighSurrogate(value: string): boolean {
-  if (value.length === 0) return false;
-  const code = value.charCodeAt(value.length - 1);
-  return code >= 0xd800 && code <= 0xdbff;
 }
 
 function validateSliceByteLimit(value: number): void {

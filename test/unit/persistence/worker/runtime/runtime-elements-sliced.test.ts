@@ -6,6 +6,7 @@ import { observeSchemaArray } from "../../../../fixtures/domain/schema-array-wor
 import {
   copySnapshotToRuntime,
   copySnapshotToRuntimeSliced,
+  validateRuntimeSamplesSteps,
 } from "../../../../../src/persistence/worker/runtime/runtime-elements";
 import { snapshot } from "./fixtures";
 
@@ -30,7 +31,7 @@ it("copies and validates long strokes in bounded chunks and reuses frozen sample
     context,
     copies,
   );
-  expect(checkpoints).toBe(24);
+  expect(checkpoints).toBe(72);
   const copied = first.elements[0];
   expect(copied?.kind).toBe("stroke");
   if (copied?.kind !== "stroke") return;
@@ -42,7 +43,7 @@ it("copies and validates long strokes in bounded chunks and reuses frozen sample
     copies,
   );
   expect(again.elements[0]).toMatchObject({ points: copied.points });
-  expect(checkpoints).toBe(24);
+  expect(checkpoints).toBe(73);
 });
 
 it("does not publish partial stroke copies when cancellation interrupts a chunk", async () => {
@@ -96,6 +97,7 @@ it("uses matching validation derivations to avoid scanning copied samples again"
     index % 3 === 2 ? 0.5 : 100 + (Math.floor(index / 3) % 10),
   );
   const { observed: points, work } = observeSchemaArray(values);
+  Object.freeze(points);
   source.points = points;
   const input = { ...snapshot(), elements: [source] };
   const validation = validateInkSnapshotV1(input);
@@ -121,7 +123,7 @@ it("uses matching validation derivations to avoid scanning copied samples again"
     const direct = copySnapshotToRuntime(input, undefined, validation.derivations);
     expect(work.indexedReads).toBe(24_000);
     expect(assertion).not.toHaveBeenCalled();
-    expect(checkpoints).toHaveLength(24);
+    expect(checkpoints).toHaveLength(48);
     expect(sliced.elements[0]?.kind).toBe("stroke");
     expect(sliced.elements[0]?.kind === "stroke" && sliced.elements[0].points).toEqual(
       new Float64Array(values),
@@ -133,6 +135,34 @@ it("uses matching validation derivations to avoid scanning copied samples again"
   } finally {
     assertion.mockRestore();
   }
+});
+
+it("captures mutable stroke headers before sample copying can yield", async () => {
+  const source = stroke();
+  const originalWidth = source.style.width;
+  const originalPivot = { ...source.pivot };
+  source.points = Array.from({ length: 12_000 }, (_, index) => (index % 3 === 2 ? 0.5 : 100));
+  let changed = false;
+  const copied = await copySnapshotToRuntimeSliced(
+    { ...snapshot(), elements: [source] },
+    {
+      checkpoint: () => {
+        if (!changed) {
+          changed = true;
+          Object.assign(source.style, { width: 22 });
+          source.pivot.x = 300;
+          source.points = [1, 1, 1];
+        }
+        return undefined;
+      },
+      signal: new AbortController().signal,
+    },
+  );
+  expect(copied.elements[0]).toMatchObject({
+    pivot: originalPivot,
+    style: { width: originalWidth },
+  });
+  expect(copied.elements[0]?.kind === "stroke" && copied.elements[0].points.length).toBe(12_000);
 });
 
 it("validates direct unproven samples and rejects unrelated derivations", async () => {
@@ -153,4 +183,8 @@ it("validates direct unproven samples and rejects unrelated derivations", async 
   expect(() => copySnapshotToRuntime(input, undefined, validation.derivations)).toThrow(
     "matching validation derivations",
   );
+  for (const stepSize of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+    expect(() => validateRuntimeSamplesSteps(new Float64Array([0, 0, 1]), stepSize).next()).toThrow(
+      RangeError,
+    );
 });

@@ -57,7 +57,11 @@ it.each(["eviction", "retention", "geometry", "parts"] as const)(
     const delivered = paths("second", "third");
     progress().onProgress(delivered);
     expect(remote.readyCount).toBe(2);
-    if (change === "eviction") for (const entry of records.slice(1)) cache.invalidate(entry.id);
+    if (change === "eviction") {
+      for (const id of ["evict-first", "evict-second", "evict-third"])
+        cache.completePreparation(record(id).element, paths(id)[0]!.parts);
+      expect(cache.statistics().evictions).toBe(3);
+    }
     if (change === "retention") cache.setRetentionEnabled(false);
     if (change === "geometry")
       for (const entry of records.slice(1))
@@ -139,7 +143,7 @@ it.each([false, true])(
 async function handoffFixture(scheduler?: TestWorkScheduler) {
   const records = ["first", "second", "third"].map(record);
   const indexed = new Map(records.map((entry) => [entry.id, entry]));
-  const cache = new ScenePathCache();
+  const cache = new ScenePathCache(3);
   let finish!: (result: readonly PreparedScenePathEntry[]) => void;
   let progress!: ScenePathPreparationObserver;
   const remote = new RemoteScenePaths(

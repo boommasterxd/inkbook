@@ -8,6 +8,7 @@ export function createSynchronousActiveEditorHistory(store: ElementStore): Activ
     commitElements: () => undefined,
     commitPage: () => undefined,
     removeElements: () => undefined,
-    replaceElements: (elements: readonly InkElementV1[]) => store.replaceMany(elements),
+    replaceElements: (elements: readonly InkElementV1[], capture) =>
+      store.replaceMany(elements, capture),
   });
 }
