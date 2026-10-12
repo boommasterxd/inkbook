@@ -39,6 +39,7 @@ export class MovePreview implements GesturePreview {
   #finished = false;
   #frameHandle: number | undefined;
   #lastPointer: SelectionPreviewOptions["start"]["pointer"];
+  #lastRenderedZoom: number | undefined;
   #moveSnap: SelectionMoveSnap | null = null;
   #previewMaximumBottomValue: number | undefined;
   #pendingPointer: SelectionPreviewOptions["start"]["pointer"] | undefined;
@@ -179,6 +180,7 @@ export class MovePreview implements GesturePreview {
   }
 
   #renderUpdate(pointer: SelectionPreviewOptions["start"]["pointer"]): number {
+    this.#lastRenderedZoom = this.#selectionZoom();
     const rawDelta = {
       x: pointer.x - this.#options.start.pointer.x,
       y: pointer.y - this.#options.start.pointer.y,
@@ -216,14 +218,22 @@ export class MovePreview implements GesturePreview {
 
   #refreshAfterViewportChange(): void {
     if (this.#finished || this.#currentViewport === undefined) return;
-    const source = this.#pendingPointer ?? this.#lastPointer;
+    const pending = this.#pendingPointer;
+    const source = pending ?? this.#lastPointer;
     this.#discardPendingPointer();
     const pointer = this.#projectViewportPointer(source, this.#currentViewport);
-    this.#lastPointer = pointer;
-    const maximumBottom = this.#renderUpdate(pointer);
-    this.#options.selectionEdgeDrag?.updatePreviewBottom(maximumBottom);
+    const changed =
+      pending !== undefined ||
+      pointer.x !== this.#lastPointer.x ||
+      pointer.y !== this.#lastPointer.y ||
+      this.#selectionZoom() !== this.#lastRenderedZoom;
+    if (changed) {
+      this.#lastPointer = pointer;
+      const maximumBottom = this.#renderUpdate(pointer);
+      this.#options.selectionEdgeDrag?.updatePreviewBottom(maximumBottom);
+    }
     this.#options.selectionEdgeDrag?.update(this.#currentViewport);
-    this.#options.renderer.flushPointerFeedbackFrame?.();
+    if (changed) this.#options.renderer.flushPointerFeedbackFrame?.();
   }
 
   #assertActive(): void {

@@ -1,14 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
+import { createSelectionEdgePreview } from "../../../fixtures/obsidian/selection-edge-preview";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { SceneElementPreviews } from "../../../../src/rendering/scene/scene-element-previews";
-import type { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
+import { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
 import { createAllElementSnapshot } from "../../../unit/persistence/serialization/fixtures";
 import { fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
 import { createDenseSelectionPreview } from "../../../fixtures/rendering/selection-preview";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
 import { takeImmutableElementOwnership } from "../../../../src/domain/store/immutability";
+import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/move-preview";
+import { SelectionEdgeAutoScroller } from "../../../../src/obsidian/embeds/active-editor/selection-edge-scroll";
+import { SelectionFrameSession } from "../../../../src/editor/selection/public";
+import { ManualFrameScheduler } from "../../../fixtures/obsidian/manual-frame-scheduler";
+import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
+import { selectionOverlayPaths } from "../../../../src/obsidian/embeds/active-editor/selection-overlay-path";
+import type { InkElementV1 } from "../../../../src/domain/schema/public";
 
 describe("progressive snapshot ownership", () => {
   it("rechecks one owned shape per admitted version while retaining its path until cancellation", () => {
@@ -50,6 +58,94 @@ describe("progressive snapshot ownership", () => {
     }
   });
 });
+
+it.each([1_000, 2_000])(
+  "translates %s mounted selections once per input without repeating unchanged edge feedback",
+  (count) => {
+    const scene = createDenseSelectionPreview(count, false);
+    const store = new ElementStore([...scene.store.records.values()].map(({ element }) => element));
+    const sceneStore = new ElementSceneStore(store);
+    const selection = new Set(scene.ids);
+    const selectedGeometry = scene.ids.map((id) => {
+      const record = store.get(id)!;
+      return { bounds: record.bounds, element: record.element as InkElementV1 };
+    });
+    const selectionFrames = new SelectionFrameSession();
+    const overlay = selectionOverlayPaths(selectedGeometry, {
+      pageToScreen: (point) => point,
+      zoom: 1,
+      frame: selectionFrames.current(selectedGeometry),
+    });
+    scene.renderer.setSelectedElements(selection);
+    scene.renderer.setSelectionOverlayPath(overlay.outline, "accent", overlay.handles);
+    scene.scheduler.runAll();
+    const frames = new ManualFrameScheduler();
+    const scroll = vi.fn();
+    const scroller = new SelectionEdgeAutoScroller({
+      cancelFrame: (handle) => frames.cancelFrame(handle),
+      onFrame: () => edge.refresh(),
+      onScroll: scroll,
+      readViewport: () => ({ left: -1_000, right: 1_000, top: -1_000, bottom: 1_000 }),
+      requestFrame: (callback) => frames.requestFrame(callback),
+    });
+    const edge = createSelectionEdgePreview(scroller);
+    const preview = new MovePreview({
+      history: {} as never,
+      preparedHistory: {} as never,
+      renderer: scene.renderer,
+      sceneStore,
+      store,
+      frameScheduler: frames,
+      selection: () => selection,
+      selectionGeometry: () => selectedGeometry,
+      selectionFrames,
+      setSelection: vi.fn(),
+      pageToScreen: (point) => point,
+      viewportToPage: (point) => point,
+      selectionEdgeDrag: edge.port,
+      start: {
+        additive: false,
+        kind: "element-move",
+        tool: "select",
+        pointer: { pointerId: 1, pointerType: "pen", x: 21, y: 21 },
+      },
+    });
+    const apply = vi.spyOn(SceneContentRenderer.prototype, "applyPreviewTransform");
+    const geometry = vi.spyOn(CanonicalElementPathPreparation.prototype, "step");
+    const read = vi.spyOn(store, "get");
+    scene.renderer.resetInstrumentation();
+    try {
+      for (const x of [29, 33, 37]) {
+        preview.update({ pointerId: 1, pointerType: "pen", x, y: 21 });
+        frames.runNext();
+        expect(apply.mock.calls.length % count).toBe(0);
+        const writes = scene.renderer.instrumentation().attributeWrites;
+        const applications = apply.mock.calls.length;
+        frames.runNext();
+        scene.scheduler.runAll();
+        expect(apply).toHaveBeenCalledTimes(applications);
+        expect(scene.renderer.instrumentation().attributeWrites).toBe(writes);
+        for (const node of scene.selectedNodes)
+          expect(node.attributes.get("transform")).toBe(`translate(${x - 21} 0)`);
+      }
+      expect(apply).toHaveBeenCalledTimes(count * 3);
+      expect(geometry).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+      expect(scroll).not.toHaveBeenCalled();
+      preview.revert();
+      expect(frames.pendingCount).toBe(0);
+      scene.scheduler.runAll();
+      for (const node of scene.selectedNodes) expect(node.attributes.has("transform")).toBe(false);
+    } finally {
+      preview.revert();
+      apply.mockRestore();
+      geometry.mockRestore();
+      read.mockRestore();
+      scene.renderer.destroy();
+      sceneStore.release();
+    }
+  },
+);
 describe("mounted preview candidate work", () => {
   it("reuses actual scene membership without another query of a 10000-element selection", () => {
     const elements = Array.from(

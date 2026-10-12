@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createSelectionEdgePreview } from "../../../../fixtures/obsidian/selection-edge-preview";
 
 import {
   SelectionEdgeAutoScroller,
@@ -262,8 +263,8 @@ describe("selection edge-scroll frame arbitration", () => {
   it.each([300, 110])("uses the latest pointer at y=%s when scrolling runs first", (y) => {
     const frames = new Frames();
     const onScroll = vi.fn<SelectionEdgeAutoScrollerOptions["onScroll"]>();
-    let refresh: (() => void) | undefined;
-    const scroller = createScroller(frames, { onFrame: () => refresh?.(), onScroll });
+    const scroller = createScroller(frames, { onFrame: () => edge.refresh(), onScroll });
+    const edge = createSelectionEdgePreview(scroller);
     const setPreviewTransform = vi.fn();
     const preview = new MovePreview({
       history: {} as SelectionPreviewOptions["history"],
@@ -284,15 +285,7 @@ describe("selection edge-scroll frame arbitration", () => {
         suppressMotionForNextDelta: vi.fn(),
       },
       selection: () => new Set(),
-      selectionEdgeDrag: {
-        begin: (callback) => {
-          refresh = callback;
-        },
-        finish: () => scroller.finish(),
-        stop: () => scroller.finish(),
-        update: (point) => scroller.update(point),
-        updatePreviewBottom: vi.fn(),
-      },
+      selectionEdgeDrag: edge.port,
       start: {
         additive: false,
         kind: "element-move",
@@ -312,7 +305,7 @@ describe("selection edge-scroll frame arbitration", () => {
     expect(setPreviewTransform).toHaveBeenLastCalledWith(
       [],
       `translate(0 ${String(y - 300)})`,
-      3,
+      2,
       "scale",
       expect.any(Function),
     );
