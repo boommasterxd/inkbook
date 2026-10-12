@@ -12,7 +12,7 @@ import type { NavigationPathPreparation } from "../../../src/rendering/scene/nav
 import type { SceneVisibilityPriority } from "../../../src/rendering/scene/scene-entrant-priority";
 import type { Bounds } from "../../../src/domain/geometry/public";
 import type { SceneElementRecord } from "../../../src/rendering/scene/types";
-import type { InkElementV1, PageV1 } from "../../../src/domain/schema/public";
+import type { InkElementV1, PageV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import type { SceneRendererOptions, SceneViewport } from "../../../src/rendering/scene/types";
 import {
   SvgSceneRenderer,
@@ -86,19 +86,28 @@ export function createSceneFixture(
 }
 
 /** Real committed Store deltas in a 10,000-stroke document, including history provenance. */
-export function createHistoryContourScene() {
+export async function createHistoryContourScene() {
   const elements = Array.from({ length: 10_000 }, (_, index) => {
     const element = indexedStroke(index);
     return {
       ...element,
-      points: Array.from({ length: 20 + (index % 61) }, (_, sample) => [
-        roundCanonical(element.pivot.x + sample / 10),
-        roundCanonical(element.pivot.y + Math.sin(sample / 5) * 2),
-        roundCanonical(0.3 + ((index + sample) % 7) / 10),
-      ]).flat(),
+      points: new Float64Array(
+        Array.from({ length: 20 + (index % 61) }, (_, sample) => [
+          roundCanonical(element.pivot.x + sample / 10),
+          roundCanonical(element.pivot.y + Math.sin(sample / 5) * 2),
+          roundCanonical(0.3 + ((index + sample) % 7) / 10),
+        ]).flat(),
+      ) as unknown as StrokeElementV1["points"],
     };
   });
-  const store = new ElementStore(elements);
+  // This fixture owns all buffers; validate and hydrate them without a second sample copy.
+  const builder = ElementStore.createBuilder({
+    shouldYield: () => false,
+    yieldControl: async () => undefined,
+  });
+  expect(await builder.appendOwnedRuntime(elements)).toBe("accepted");
+  const store = await builder.finalize();
+  if (store === null) throw new Error("Expected a complete history contour store.");
   const sceneStore = new ElementSceneStore(store);
   const scene = createSceneFixture(createWorkerSnapshot([]).page, sceneStore, {
     height: 100,
@@ -107,6 +116,8 @@ export function createHistoryContourScene() {
     width: 100,
   });
   scene.scheduler.runAll();
+  const ids = scene.renderer.mountedIds("content").slice(0, 10);
+  expect(ids).toHaveLength(10);
   let historyReplay = false;
   const unsubscribe = store.subscribe((delta) =>
     scene.renderer.applyDelta({
@@ -121,6 +132,7 @@ export function createHistoryContourScene() {
   return {
     ...scene,
     store,
+    ids,
     prepareReplay: (transition: AppliedElementMutation, direction: "forward" | "reverse") => {
       historyReplay = true;
       return store.prepareElementMutation(

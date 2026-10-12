@@ -16,10 +16,8 @@ it.each([
 ] as const)(
   "preserves %s history contours in a 10,000-stroke store (memory pressure: %s)",
   async (edit, memoryPressure) => {
-    const fixture = createHistoryContourScene();
-    const { store, renderer, scheduler } = fixture;
-    const ids = renderer.mountedIds("content").slice(0, 10);
-    expect(ids).toHaveLength(10);
+    const fixture = await createHistoryContourScene();
+    const { store, renderer, scheduler, ids } = fixture;
     const count = renderer.mountedCount;
     const build = vi.spyOn(geometry, "buildElementPathParts");
     const contour = vi.spyOn(intersections, "intersectPressureBoundaries");

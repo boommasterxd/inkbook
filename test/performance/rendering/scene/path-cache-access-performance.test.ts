@@ -15,11 +15,9 @@ import { fakeNode } from "../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
-it("clears previews after cache release without retaining unchanged canonical contours", () => {
-  const fixture = createHistoryContourScene();
-  const { store, renderer, scheduler } = fixture;
-  const ids = renderer.mountedIds("content").slice(0, 10);
-  expect(ids).toHaveLength(10);
+it("clears previews after cache release without retaining unchanged canonical contours", async () => {
+  const fixture = await createHistoryContourScene();
+  const { store, renderer, scheduler, ids } = fixture;
   const records = ids.map((id) => store.get(id)!);
   const groups = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes.slice(0, ids.length);
   expect(groups).toHaveLength(ids.length);
@@ -71,10 +69,8 @@ it("clears previews after cache release without retaining unchanged canonical co
 it.each([false, true])(
   "retains edited contours once in a 10,000-stroke store (Store prepared: %s)",
   async (storePrepared) => {
-    const fixture = createHistoryContourScene();
-    const { store, renderer, scheduler } = fixture;
-    const ids = renderer.mountedIds("content").slice(0, 10);
-    expect(ids).toHaveLength(10);
+    const fixture = await createHistoryContourScene();
+    const { store, renderer, scheduler, ids } = fixture;
     const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
     const alias = vi.spyOn(SceneGeometryAliases.prototype, "retain");
     const outline = vi.spyOn(pressureOutline, "visitPreparedPressureOutline");
