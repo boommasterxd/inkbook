@@ -1,4 +1,5 @@
 import type { NavigationCursorLayout } from "./navigation-layout";
+import { activeSceneViewportFromBounds } from "../active-scene-viewport";
 import * as Scrolling from "../../scrolling/index";
 import { createInputState, type InputState } from "../../../editor/input/index";
 import type { PointerSample } from "../../../editor/input/index";
@@ -20,6 +21,7 @@ import type { SelectionFrameSession } from "../../../editor/selection/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { ActiveEditorBackgroundSession } from "./background-session";
 import { ActiveEditorHistoryTraversal } from "./history-traversal";
+import { ActiveEditorStyleSession, type ActiveEditorStyleSessionOptions } from "./style-session";
 
 export interface ActiveEditorInteractionsOptions {
   readonly controller: ActiveEditorControllerOptions;
@@ -36,6 +38,28 @@ export interface ActiveEditorInteractionsOptions {
   readonly selectionFrames: SelectionFrameSession;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
   readonly snapping: () => ActiveEditorControllerOptions["snapping"];
+}
+
+export function createControllerStyleSession(
+  controller: ActiveEditorControllerOptions,
+  options: Pick<
+    ActiveEditorStyleSessionOptions,
+    | "onSelectionGeometryChanged"
+    | "onStateChanged"
+    | "selection"
+    | "selectionFrames"
+    | "preparedHistory"
+    | "isEnabled"
+  >,
+): ActiveEditorStyleSession {
+  return new ActiveEditorStyleSession({
+    ...options,
+    defaults: controller.defaults,
+    history: controller.history,
+    sceneStore: controller.sceneStore,
+    selectionIdentity: options.selection,
+    store: controller.model.store,
+  });
 }
 
 export function createControllerHistorySessions(options: {
@@ -86,6 +110,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     onPendingChanged: options.onPendingChanged,
     onStateChanged: controller.onStateChanged,
     ownerWindow: options.ownerWindow,
+    workScheduler: controller.workScheduler,
     renderer: controller.renderer,
     sceneStore: controller.sceneStore,
     setSelection: options.setSelection,
@@ -137,6 +162,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
 export function createControllerNavigation(options: {
   readonly controller: ActiveEditorControllerOptions;
   readonly getInput: ActiveEditorNavigationOptions["getInput"];
+  readonly onCancelPinch: () => void;
   readonly isSelectionMoveActive: () => boolean;
   readonly renderSelection: () => void;
   readonly adoptCursorLayout?: (layout: NavigationCursorLayout) => void;
@@ -147,13 +173,20 @@ export function createControllerNavigation(options: {
   let appliedZoom = options.getInput().zoom;
   return new ActiveEditorNavigation({
     workScheduler: controller.workScheduler,
+    onCancelPinch: options.onCancelPinch,
     onNavigationActive: (active) => controller.model.setNavigationActive?.(active),
     activePageHeight: () =>
       controller.selectionMoveLayout.currentHeight?.() ??
       derivePageExtent(controller.model.page, controller.model.store.getMaximumBottom() ?? null)
         .activeHeight,
     applyCamera: (camera, layout) => {
-      if (layout !== undefined) options.adoptCursorLayout?.(layout);
+      if (layout !== undefined) {
+        options.adoptCursorLayout?.(layout);
+        controller.renderer.setViewport(
+          activeSceneViewportFromBounds(layout.containerBounds, layout.ownerViewport),
+        );
+        controller.onNavigationLayout?.(layout);
+      }
       controller.renderer.setCamera(camera);
       if (camera.zoom !== appliedZoom || !options.isSelectionMoveActive()) {
         options.renderSelection();

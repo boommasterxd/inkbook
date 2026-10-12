@@ -12,12 +12,6 @@ interface FragmentAssembly<T> {
   readonly metadata: Iterable<T>;
 }
 
-interface MarkupFragmentAssembly {
-  readonly content: Iterable<{ readonly svg: string }>;
-  readonly highlight: Iterable<{ readonly svg: string }>;
-  readonly metadata: Iterable<string>;
-}
-
 export function snapshotMetadata(
   revision: number,
   page: PageV1,
@@ -28,25 +22,6 @@ export function snapshotMetadata(
 
 export function snapshotMetadataPrefix(revision: number, page: PageV1): string {
   return escapeXmlText(canonicalMetadataPrefix(revision, page));
-}
-
-export function documentFragments(
-  revision: number,
-  lockedHeight: number,
-  metadataPrefix: string,
-  metadataHash: string,
-  assembly: MarkupFragmentAssembly,
-  background: string,
-): Iterable<string> {
-  return assembleDocumentFragments(
-    { background, lockedHeight, metadataHash, metadataPrefix, revision },
-    {
-      content: markup(assembly.content),
-      highlight: markup(assembly.highlight),
-      metadata: assembly.metadata,
-    },
-    (text) => text,
-  );
 }
 
 export function documentUtf8Fragments(
@@ -63,10 +38,6 @@ export function documentUtf8Fragments(
     assembly,
     (text) => encoder.encode(text),
   );
-}
-
-function* markup(fragments: Iterable<{ readonly svg: string }>): Iterable<string> {
-  for (const fragment of fragments) yield fragment.svg;
 }
 
 function* assembleDocumentFragments<T>(

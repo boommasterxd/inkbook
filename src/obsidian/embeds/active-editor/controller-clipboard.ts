@@ -10,6 +10,7 @@ import {
 
 import type { EditableDocumentModel } from "../vault-document-session";
 import { ClipboardAdoptionGuard } from "./clipboard-adoption-guard";
+import { applyDocumentHistoryMutation } from "./document-history";
 import {
   readClipboardCandidates,
   readSynchronousClipboardCandidates,
@@ -349,19 +350,16 @@ export class ActiveEditorClipboardController {
     });
   }
 
-  async #applyMutation(
+  #applyMutation(
     mutation: import("../../../domain/store/public").ElementMutation,
     replay: import("../../../domain/store/public").AppliedElementMutation,
   ): Promise<boolean> {
     const operationGeneration = this.#beginOperation();
-    return (
-      (await this.#prepareAndCommit(
-        mutation,
-        this.#model.revision,
-        () => this.#isOperationCurrent(operationGeneration),
-        undefined,
-        replay,
-      )) !== null
+    return applyDocumentHistoryMutation(
+      this.#model,
+      mutation,
+      replay,
+      () => !this.#isPresentationAttached() || !this.#isOperationCurrent(operationGeneration),
     );
   }
 
@@ -400,7 +398,6 @@ export class ActiveEditorClipboardController {
     expectedRevision: number,
     operationCurrent: () => boolean,
     validateBeforeCommit: () => boolean = () => true,
-    replay?: import("../../../domain/store/public").AppliedElementMutation,
   ): Promise<import("../../../domain/store/public").AppliedElementMutation | null> {
     if (
       this.#model.revision !== expectedRevision ||
@@ -414,7 +411,6 @@ export class ActiveEditorClipboardController {
       !this.#isPresentationAttached() ||
       !operationCurrent();
     const prepared = await this.#model.prepareElementMutation(mutation, {
-      ...(replay === undefined ? {} : { replay }),
       isCancelled: cancelled,
     });
     if (prepared.token === null || cancelled() || !validateBeforeCommit()) return null;

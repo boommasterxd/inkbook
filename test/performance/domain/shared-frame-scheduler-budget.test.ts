@@ -137,3 +137,57 @@ it("releases a cancelled 10,000-callback queue and reuses the scheduler", () => 
   expect(host.pendingFrames).toBe(0);
   expect(host.pendingTimers).toBe(0);
 });
+
+it(`admits required checkpoint work fairly beside a recurring full ${profile.refreshRate} Hz frame`, async () => {
+  const host = new ManualHost();
+  host.budget = profile.interruptibleSliceDeadlineMs;
+  host.frameInterval = profile.frameDurationMs;
+  const scheduler = new SharedFrameScheduler(host);
+  host.time = scheduler.deadline();
+  const order: string[] = [];
+  const background = scheduler.checkpoint()?.then(() => order.push("default"));
+  const explicitBackground = scheduler
+    .checkpoint(undefined, "background")
+    ?.then(() => order.push("background"));
+  let renderHandle = 0;
+  const render = (): void => {
+    order.push("render");
+    host.time += host.budget;
+    renderHandle = scheduler.requestFrame(render);
+  };
+  renderHandle = scheduler.requestFrame(render);
+  const required = ["first", "second"].map((name) => {
+    const pending = scheduler.checkpoint(undefined, "frame");
+    if (pending === undefined) throw new Error("Exhausted required work must await admission.");
+    return pending.then(() => {
+      order.push(name);
+      host.time += host.budget;
+    });
+  });
+  for (let frame = 1; frame <= 3; frame++) {
+    host.time = frame * host.frameInterval;
+    host.frame();
+    await Promise.resolve();
+    while (host.hasTimer(0)) {
+      host.timer(0);
+      await Promise.resolve();
+    }
+    expect(host.pendingFrames).toBeLessThanOrEqual(1);
+    expect(host.pendingTimers).toBeLessThanOrEqual(1);
+  }
+  await Promise.all(required);
+  expect(order).toEqual(["render", "first", "second"]);
+  scheduler.cancelFrame(renderHandle);
+  host.time = 4 * host.frameInterval;
+  host.frame();
+  await background;
+  while (host.hasTimer(0)) {
+    host.timer(0);
+    await Promise.resolve();
+  }
+  await explicitBackground;
+  expect(order).toEqual(["render", "first", "second", "default", "background"]);
+  scheduler.dispose();
+  expect(host.pendingFrames).toBe(0);
+  expect(host.pendingTimers).toBe(0);
+});

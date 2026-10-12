@@ -18,20 +18,31 @@ import type { SessionIdentity } from "../../editor/session/session-port";
 import type { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import type {
   ElementStore,
+  ElementReplacementHistoryData,
   PreparedElementReplacement,
   PreparedElementReplacementResult,
   StoreDelta,
   StoreSliceScheduler,
 } from "../../domain/store/public";
-import { changedElementDerivations, changedElements } from "./vault-document-model-delta";
+import { prepareVaultStoreDelta } from "./vault-document-model-delta";
 
 import type { EditableDocumentModel } from "./document-model-port";
 import { attachEditableDocumentState } from "./editable-document-state";
 import { SessionClipboardCoordinator } from "./session-clipboard";
+import { SessionScenePaths } from "./session-scene-paths";
 import type { VaultDocumentPersistedEvent } from "./vault-document-recovery";
 
 type EditableActions = Parameters<typeof attachEditableDocumentState>[0];
 type EditableState = Parameters<typeof attachEditableDocumentState>[1];
+
+export function isVaultPersistencePending(autosave: AutosaveCoordinator | undefined): boolean {
+  return (
+    autosave !== undefined &&
+    (autosave.status === "debouncing" ||
+      autosave.status === "saving" ||
+      autosave.status === "waiting-for-gesture")
+  );
+}
 
 export function createVaultEditableModel(options: {
   readonly actions: Omit<EditableActions, "store">;
@@ -61,6 +72,7 @@ export function createVaultAutosaveSession(
     confirmed: options.confirmed,
     ...(options.statusChanged ? { statusChanged: options.statusChanged } : {}),
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),
+    ...(options.createReplacement ? { createReplacement: options.createReplacement } : {}),
     currentRevision: options.currentRevision,
     executor: options.executor,
     initialSnapshot: options.initialSnapshot,
@@ -126,6 +138,32 @@ export function createVaultClipboardCoordinator(options: {
   });
 }
 
+export function createVaultSessionScenePaths(
+  options: Omit<Parameters<typeof createVaultClipboardCoordinator>[0], "now">,
+): SessionScenePaths {
+  return new SessionScenePaths({
+    ...options,
+    recoverExecutorFailure: () => options.autosave()?.recoverWorkerExecutor() ?? false,
+    synchronize: (identity) =>
+      options.autosave()?.synchronizeWorkerBaseline(identity) ?? Promise.resolve(false),
+  });
+}
+
+export function createVaultInputActivityActions(
+  priority: InteractiveWorkPriority,
+  executor: () => DocumentRuntimePort | undefined,
+): Pick<EditableActions, "setGestureActive" | "setNavigationActive"> {
+  const update = (active: boolean, source: "gesture" | "navigation"): void => {
+    if (!priority.setInputActive(active, source)) return;
+    if (source === "navigation") executor()?.setNavigationActive?.(active);
+    else executor()?.setLiveInputActive?.(active);
+  };
+  return {
+    setGestureActive: (active) => update(active, "gesture"),
+    setNavigationActive: (active) => update(active, "navigation"),
+  };
+}
+
 export function createConfirmedPersistenceObserver(options: {
   readonly active: () => boolean;
   readonly documentId: string;
@@ -152,6 +190,16 @@ export function prepareVaultElementMutation(options: {
   readonly store: ElementStore;
 }): ReturnType<EditableDocumentModel["prepareElementMutation"]> {
   if (!options.active) return Promise.resolve({ status: "cancelled", token: null });
+  if (
+    options.cancellation.replaySource === "retained" &&
+    options.cancellation.replay !== undefined
+  ) {
+    return options.store.prepareHistoryReplay(
+      options.mutation,
+      options.scheduler(() => options.cancellation.isCancelled()),
+      options.cancellation.replay,
+    );
+  }
   return options.store.prepareElementMutation(
     options.mutation,
     options.scheduler(() => options.cancellation.isCancelled()),
@@ -194,7 +242,7 @@ export function createVaultElementPreparationActions(options: {
           active: options.active(),
           cancellation,
           mutation,
-          scheduler: options.scheduler,
+          scheduler: (isCancelled) => options.scheduler(isCancelled, "frame"),
           store: options.store,
         }),
       ),
@@ -204,7 +252,7 @@ export function createVaultElementPreparationActions(options: {
           active: options.active(),
           cancellation,
           ids,
-          scheduler: options.scheduler,
+          scheduler: (isCancelled) => options.scheduler(isCancelled, "frame"),
           store: options.store,
         }),
       ),
@@ -239,31 +287,32 @@ export function prepareVaultElementReplacement(options: {
 
 export function commitVaultElementReplacement(options: {
   readonly active: boolean;
+  readonly capture?: (history: ElementReplacementHistoryData) => void;
   readonly recordDelta: (delta: StoreDelta) => void;
   readonly store: ElementStore | undefined;
   readonly token: PreparedElementReplacement;
 }): "cancelled" | "committed" | "noop" {
   if (options.store === undefined || !options.active) return "cancelled";
   const result = options.store.commitPreparedElementReplacement(options.token);
-  if (result.delta !== null) options.recordDelta(result.delta);
+  if (result.delta !== null) {
+    options.recordDelta(result.delta);
+    if (result.history !== null) options.capture?.(result.history);
+  }
   return result.status;
 }
 
 export function recordVaultStoreDelta(options: {
   readonly autosave: AutosaveCoordinator | undefined;
   readonly delta: StoreDelta;
-  readonly removedIds: readonly string[];
   readonly revision: number;
 }): void {
   if (options.autosave === undefined) return;
   options.autosave.recordCommit({
-    changedElementDerivations: changedElementDerivations(options.delta),
-    changedElements: changedElements(options.delta),
+    ...prepareVaultStoreDelta(options.delta),
     dirtyBands: (Object.keys(options.delta.dirtyBands) as Array<"content" | "highlight">).filter(
       (band) => options.delta.dirtyBands[band],
     ),
     modelRevision: options.revision,
-    removedIds: options.removedIds,
   });
 }
 

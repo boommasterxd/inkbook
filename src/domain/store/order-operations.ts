@@ -36,12 +36,12 @@ export class ElementStoreOrdering {
     } else {
       ids.unshift(element.id);
       state.ranks.set(element.id, { band, rank: 0 });
-      this.refresh(band, 1, delta);
+      this.refresh(band, 1, delta, false);
     }
     delta.dirtyBand(band);
   }
 
-  public refresh(band: RenderBand, start: number, delta: DeltaBuilder): void {
+  public refresh(band: RenderBand, start: number, delta: DeltaBuilder, publishOrder = true): void {
     const state = this.#state();
     const ids = state.bands[band];
     let changed = false;
@@ -54,9 +54,11 @@ export class ElementStoreOrdering {
         previous.band = band;
         previous.rank = rank;
       }
-      const record = state.records.get(id);
-      if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
-      delta.addOrder(id, record);
+      if (publishOrder) {
+        const record = state.records.get(id);
+        if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
+        delta.addOrder(id, record);
+      }
       changed = true;
     }
     if (changed) delta.dirtyBand(band);

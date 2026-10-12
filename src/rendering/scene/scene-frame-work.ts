@@ -5,6 +5,9 @@ import type { SceneElementPreviews } from "./scene-element-previews";
 import type { SceneContentScheduler } from "./scene-content-scheduler";
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { PreviewTransform } from "./scene-visibility-reconciler";
+import { completeSceneFrame, type SceneFrameWorkResult } from "./scene-frame-completion";
+import type { SceneCommitCoordinator } from "./scene-commit-coordinator";
+import type { SceneFrameScheduler } from "./scene-frame-scheduler";
 
 interface SceneFrameWorkPorts {
   readonly backgroundPending: () => boolean;
@@ -13,15 +16,8 @@ interface SceneFrameWorkPorts {
   readonly elements: SceneElementPreviews;
   readonly motion: SceneMotionController;
   readonly scheduler: WorkScheduler;
+  readonly queryPending?: () => boolean;
   readonly writeBackground: (deadline: number, allowAtomic: boolean) => boolean;
-}
-
-export interface SceneFrameWorkResult {
-  readonly backgroundDeferred: boolean;
-  readonly pendingFades: boolean;
-  readonly pendingMotion: boolean;
-  readonly pendingPreview: boolean;
-  readonly pendingVisibility: boolean;
 }
 
 /** Gives an admitted scene one bounded late unit and rotates competing queues. */
@@ -30,6 +26,23 @@ export class SceneFrameWork {
   #nextDeferredLane = 0;
 
   public constructor(private readonly ports: SceneFrameWorkPorts) {}
+
+  public complete(
+    work: SceneFrameWorkResult,
+    commits: SceneCommitCoordinator,
+    frames: SceneFrameScheduler,
+  ): void {
+    completeSceneFrame(
+      work,
+      {
+        query: this.ports.queryPending?.() === true,
+        motion: this.ports.motion.pending,
+        exits: this.ports.content.hasPendingExitCleanup,
+      },
+      commits,
+      frames,
+    );
+  }
 
   public write(
     frameTime: number,
@@ -61,6 +74,7 @@ export class SceneFrameWork {
       !pendingPreview &&
       !pendingMotion &&
       !content.hasPendingWork &&
+      this.ports.queryPending?.() !== true &&
       !content.pendingElementFades;
     let earlierWork = false;
     if (deferredFirst) {
@@ -72,10 +86,12 @@ export class SceneFrameWork {
     const fadePending = content.pendingElementFades;
     const pendingFades = now() < deadline ? content.flushElementFades(deadline, now) : fadePending;
     earlierWork ||= fadePending;
-    const pendingVisibility =
-      now() < deadline || !earlierWork
-        ? contentScheduler.write(deadline, transforms, elements)
-        : content.hasPendingWork;
+    const contentAdmitted = now() < deadline;
+    if (!contentAdmitted && !earlierWork)
+      return this.writeLate(frameTime, deadline, transforms, elements);
+    const pendingVisibility = contentAdmitted
+      ? contentScheduler.write(deadline, transforms, elements)
+      : content.hasPendingWork;
     this.#preferDeferred = pendingVisibility && !deferredFirst;
     if (!deferredFirst) {
       pendingPreview = preview.write(deadline, now);
@@ -83,7 +99,14 @@ export class SceneFrameWork {
       // The sole pending operation may commit atomically even if bookkeeping spent the slice.
       backgroundDeferred = this.ports.writeBackground(deadline, backgroundOnly);
     }
-    return { backgroundDeferred, pendingFades, pendingMotion, pendingPreview, pendingVisibility };
+    return {
+      backgroundDeferred,
+      pendingFades: pendingFades || content.pendingElementFades,
+      pendingMotion,
+      pendingPreview,
+      pendingVisibility,
+      waitingForPaths: content.waitingForPaths,
+    };
   }
 
   private writeLate(
@@ -99,7 +122,7 @@ export class SceneFrameWork {
     if (deferredPending && (!contentPending || this.#preferDeferred)) {
       this.writeOneDeferred(frameTime, deadline);
     } else if (contentPending) {
-      pendingVisibility = contentScheduler.write(deadline, transforms, elements);
+      pendingVisibility = contentScheduler.write(deadline, transforms, elements, true);
     }
     if (contentPending && deferredPending) this.#preferDeferred = !this.#preferDeferred;
     else this.#preferDeferred = false;
@@ -110,6 +133,7 @@ export class SceneFrameWork {
       pendingMotion: this.ports.motion.pending,
       pendingPreview: this.ports.elements.progressive.pending,
       pendingVisibility,
+      waitingForPaths: content.waitingForPaths,
     };
   }
 
@@ -133,7 +157,11 @@ export class SceneFrameWork {
         content.flushElementFades(deadline, now);
       } else if (lane === 2 && motion.pending) {
         motion.write(frameTime, deadline, now, true);
-      } else if (lane === 3 && this.ports.backgroundPending()) {
+      } else if (
+        lane === 3 &&
+        this.ports.backgroundPending() &&
+        this.ports.queryPending?.() !== true
+      ) {
         // A validated background DOM write is indivisible once this lane is admitted.
         this.ports.writeBackground(deadline, true);
       } else continue;

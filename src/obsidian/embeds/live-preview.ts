@@ -16,6 +16,7 @@ import {
   documentRecognitionUnavailable,
 } from "./live-preview-recognition-effects";
 import { LivePreviewEntrances } from "./live-preview-entrances";
+import { LIVE_PREVIEW_ZOOM_SCROLL_EXTENSION } from "./live-preview-zoom-scroll";
 
 export interface LivePreviewContext {
   readonly enabled: boolean;
@@ -146,6 +147,7 @@ export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extens
     },
   });
   return Prec.highest([
+    LIVE_PREVIEW_ZOOM_SCROLL_EXTENSION,
     entrances,
     blockDecorations,
     ViewPlugin.fromClass(

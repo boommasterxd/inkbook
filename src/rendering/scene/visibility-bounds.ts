@@ -2,6 +2,16 @@ import type { Bounds } from "../../domain/geometry/primitives";
 
 const SPATIAL_CELL_SIZE = 256;
 
+export function sameBounds(left: Bounds | undefined, right: Bounds): boolean {
+  return (
+    left !== undefined &&
+    left.minX === right.minX &&
+    left.maxX === right.maxX &&
+    left.minY === right.minY &&
+    left.maxY === right.maxY
+  );
+}
+
 export function cellRange(bounds: Bounds): { readonly bounds: Bounds; readonly key: string } {
   const minX = Math.floor(bounds.minX / SPATIAL_CELL_SIZE);
   const minY = Math.floor(bounds.minY / SPATIAL_CELL_SIZE);

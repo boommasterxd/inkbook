@@ -68,7 +68,8 @@ export function serializePath(d: string, attributes: PathAttributes): string {
   return `<path ${serialized.join(" ")}/>`;
 }
 
-export function serializedPathDataByteLength(pathMarkup: string): number {
+/** Generated path markup is ASCII; optional offsets address its existing UTF-8 payload. */
+export function serializedPathDataByteLength(pathMarkup: string, offsets?: number[]): number {
   const prefix = '<path d="';
   let bytes = 0;
   let cursor = 0;
@@ -79,6 +80,7 @@ export function serializedPathDataByteLength(pathMarkup: string): number {
     const end = pathMarkup.indexOf('"', dataStart);
     if (end < 0) throw new Error("invalid-serialized-path-markup");
     bytes += end - dataStart;
+    offsets?.push(dataStart, end);
     cursor = end + 1;
   }
   return bytes;

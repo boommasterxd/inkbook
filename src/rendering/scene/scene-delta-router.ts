@@ -4,9 +4,11 @@ import type { SceneContentRenderer } from "./content-renderer";
 import type { ScenePathCache } from "./path-cache";
 import type { SceneDeltaEntry, SceneStoreDelta, SceneStorePort } from "./types";
 import type { SceneVisibilityState } from "./visibility-state";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
 
 export interface SceneDeltaRoutingPorts {
   readonly content: SceneContentRenderer;
+  readonly detachedCache?: DetachedSceneElementCache;
   readonly invalidateVisibility: () => void;
   readonly markOrderVisibilityDirty: () => void;
   readonly pathCache: ScenePathCache;
@@ -15,15 +17,12 @@ export interface SceneDeltaRoutingPorts {
 }
 
 export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRoutingPorts): void {
-  let firstVisibilityChange: SceneDeltaEntry | undefined;
-  let hasMultipleVisibilityChanges = false;
+  let visibilityChanges: SceneDeltaEntry[] | undefined;
   let orderIds: string[] | undefined;
   let onlyNewOrder = true;
   for (const affected of delta.affected) {
-    if (affected.before === null && affected.after != null) {
-      ports.content.setElementFade([affected.id], null);
-    }
-    if (affected.after === null) ports.content.prepareElementRemoval(affected.id);
+    const localMembership = completeMembershipChange(affected, ports.store);
+    prepareMembershipFade(affected, delta.historyReplay, ports.content);
     let geometryDirty = false;
     let visibilityDirty = false;
     for (const domain of affected.domains) {
@@ -33,6 +32,7 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
         visibilityDirty = true;
       } else if (domain === "paint") ports.content.markPaint(affected.id);
       else if (domain === "order") {
+        if (localMembership) continue;
         orderIds ??= [];
         orderIds.push(affected.id);
         onlyNewOrder &&= affected.before === null && affected.after != null;
@@ -42,31 +42,65 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
       }
     }
     if (!visibilityDirty) continue;
-    if (firstVisibilityChange === undefined) firstVisibilityChange = affected;
-    else hasMultipleVisibilityChanges = true;
+    visibilityChanges ??= [];
+    visibilityChanges.push(affected);
   }
   if (orderIds !== undefined) {
     ports.content.markOrders(orderIds);
     if (orderIds.length !== 1 || !onlyNewOrder) ports.markOrderVisibilityDirty();
   }
-  if (firstVisibilityChange !== undefined) {
-    invalidateVisibility(firstVisibilityChange, hasMultipleVisibilityChanges, ports);
+  if (visibilityChanges !== undefined) {
+    invalidateVisibility(visibilityChanges, ports);
+  }
+  invalidateDetachedElements(delta, ports);
+}
+
+function prepareMembershipFade(
+  affected: SceneDeltaEntry,
+  historyReplay: boolean | undefined,
+  content: SceneContentRenderer,
+): void {
+  if (affected.before === null && affected.after != null && historyReplay !== true)
+    content.setElementFade([affected.id], null);
+  if (affected.after === null && !(historyReplay === true && affected.before != null))
+    content.prepareElementRemoval(affected.id);
+}
+
+function invalidateDetachedElements(delta: SceneStoreDelta, ports: SceneDeltaRoutingPorts): void {
+  if (ports.detachedCache === undefined) return;
+  for (const affected of delta.affected) {
+    if (affected.domains.includes("geometry") || ports.store.get(affected.id) === undefined) {
+      ports.detachedCache.invalidate(affected.id);
+    }
   }
 }
 
 function invalidateVisibility(
-  affected: SceneDeltaEntry,
-  hasMultipleChanges: boolean,
+  changes: readonly SceneDeltaEntry[],
   ports: SceneDeltaRoutingPorts,
 ): void {
-  if (hasMultipleChanges) ports.visibility.invalidateForChanges();
+  if (
+    changes.length > 1 &&
+    changes.some((change) => change.before === undefined || change.after === undefined)
+  )
+    ports.visibility.invalidateForChanges();
   else {
-    ports.visibility.invalidateForChanges(
-      elementBounds(affected.before),
-      currentBounds(affected, ports.store),
-    );
+    for (const affected of changes)
+      ports.visibility.invalidateForChanges(
+        affected.beforeBounds ?? elementBounds(affected.before),
+        affected.afterBounds ?? currentBounds(affected, ports.store),
+        affected.before !== undefined && affected.after !== undefined ? affected.id : undefined,
+      );
   }
   ports.invalidateVisibility();
+}
+
+function completeMembershipChange(change: SceneDeltaEntry, store: SceneStorePort): boolean {
+  if (!change.domains.includes("visibility")) return false;
+  if (change.before != null && change.after === null) return store.get(change.id) === undefined;
+  return (
+    change.before === null && change.after != null && store.get(change.id)?.element === change.after
+  );
 }
 
 function releaseRemovedElement(

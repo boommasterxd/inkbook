@@ -18,8 +18,10 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { EditableDocumentModel } from "./vault-document-session";
 import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
 import type { EditorChromeOpenings } from "./editor-chrome-openings";
+import type { HostZoomScroll } from "./live-preview-zoom-scroll";
 
 export interface ActiveInkbookSceneOptions extends EditorChromeOpenings, LockedPreviewPresentation {
+  readonly hostZoomScroll?: HostZoomScroll;
   readonly workScheduler: WorkScheduler;
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
   readonly defaults: ToolDefaultsV1;

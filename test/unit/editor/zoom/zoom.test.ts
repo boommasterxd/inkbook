@@ -119,6 +119,8 @@ describe("anchored zoom", () => {
   it("uses the native edge when exact vertical anchoring exceeds bounds", () => {
     expect(anchoredScrollTop(0, -20, 0, 1, 4, { min: 0, max: 100 })).toBe(0);
     expect(anchoredScrollTop(100, 200, 0, 1, 4, { min: 0, max: 100 })).toBe(100);
+    expect(anchoredScrollTop(0, -20, 0, 1, 4)).toBe(-60);
+    expect(anchoredScrollTop(100, 200, 0, 1, 4)).toBe(1_000);
   });
 
   it("updates zoom, camera, height, and scroll from one atomic result", () => {

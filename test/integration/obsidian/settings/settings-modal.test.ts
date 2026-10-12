@@ -8,6 +8,7 @@ import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab
 import { InkbookSettingsModalController } from "../../../../src/obsidian/settings/settings-modal";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
+import * as actionDialog from "../../../../src/obsidian/dialogs/action-dialog";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -124,6 +125,71 @@ describe("Inkbook settings modal scroll preservation", () => {
   });
 });
 
+describe("Inkbook settings modal reset refresh", () => {
+  it.each(["group", "all"])(
+    "refreshes the open preload controls after a %s reset",
+    async (scope) => {
+      const { controller, store } = openSettingsModalWithFullMotion();
+      const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
+      const pixelSelector = '[data-control="scroll-preload-margin"]';
+      const slider = required<HTMLInputElement>(`${pixelSelector} input[type="range"]`);
+      const refreshSelector = '[data-setting-name="Display refresh rate"] select';
+      const highlightSelector = '[data-setting-name="Selection highlights"] input';
+      const refresh = required<HTMLSelectElement>(refreshSelector);
+      const highlights = required<HTMLInputElement>(highlightSelector);
+      refresh.value = "60";
+      refresh.dispatchEvent(new Event("change", { bubbles: true }));
+      highlights.checked = false;
+      highlights.dispatchEvent(new Event("change", { bubbles: true }));
+      slider.value = "800";
+      slider.dispatchEvent(new Event("input"));
+      slider.dispatchEvent(new Event("change"));
+      await vi.waitFor(() => {
+        expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(800);
+        expect(store.getVaultSettings().refreshRatePreference).toBe(60);
+        expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(false);
+      });
+      modalContent.scrollTop = 240;
+      vi.spyOn(actionDialog, "confirmInkbookAction").mockResolvedValue(true);
+      const reset =
+        scope === "all"
+          ? required<HTMLElement>('[data-setting-name="Reset all Inkbook settings"]')
+          : required<HTMLElement>(
+              '.inkbook-settings-performance-group [data-setting-name="Reset group to defaults"]',
+            );
+
+      reset.click();
+
+      await vi.waitFor(() => {
+        expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(300);
+        expect(store.getVaultSettings().refreshRatePreference).toBe("auto");
+        expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(true);
+        expect(required<HTMLSelectElement>(refreshSelector).value).toBe("auto");
+        expect(required<HTMLInputElement>(highlightSelector).checked).toBe(true);
+        expect(required<HTMLInputElement>(`${pixelSelector} input[type="range"]`).value).toBe(
+          "300",
+        );
+        expect(required<HTMLInputElement>(`${pixelSelector} input[type="number"]`).value).toBe(
+          "300",
+        );
+      });
+      expect(modalContent.scrollTop).toBe(240);
+      controller.dispose();
+      vi.restoreAllMocks();
+    },
+  );
+
+  it("releases the tab update listener when the settings modal closes", () => {
+    const { controller, tab } = openSettingsModalWithFullMotion();
+    const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
+    controller.dispose();
+    const replace = vi.spyOn(modalContent, "replaceChildren");
+    tab.update();
+    expect(replace).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+});
+
 describe("Inkbook settings disclosure motion", () => {
   it("finishes a reversed disclosure only when the new transition completes", () => {
     const { controller } = openSettingsModalWithFullMotion();
@@ -196,6 +262,7 @@ describe("Inkbook settings disclosure motion", () => {
 function openSettingsModalWithFullMotion(): {
   controller: InkbookSettingsModalController;
   store: ReturnType<typeof createTestSettingsStore>;
+  tab: InkbookSettingTab;
 } {
   const workspaceContainer = document.body.createDiv();
   const app = { workspace: { containerEl: workspaceContainer } } as unknown as App;
@@ -206,7 +273,7 @@ function openSettingsModalWithFullMotion(): {
   });
   const controller = new InkbookSettingsModalController(app, tab, store);
   controller.open("settings");
-  return { controller, store };
+  return { controller, store, tab };
 }
 
 function required<T extends Element = HTMLElement>(selector: string): T {

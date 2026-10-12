@@ -1,6 +1,5 @@
 import { positionedTransform } from "./stroke-position";
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
-import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import { SVG_NAMESPACE } from "./constants";
 import {
@@ -12,7 +11,13 @@ import {
   type PresentationAttribute,
 } from "./element-presentation";
 import type { MutableSceneInstrumentation, SceneElementRecord } from "./types";
-import { EASING_TOKENS } from "../motion/transitions";
+import {
+  elementFadePresentation,
+  elementFadeTarget,
+  elementFadeTargetCount,
+  setElementFadeNode,
+  type ElementFadePresentation,
+} from "./element-fade-style";
 import { clearMotionStyle, writeMotionStyle } from "./motion-visual";
 
 interface MountedPath {
@@ -36,6 +41,8 @@ export interface MountedSceneElement {
   committedOrderEpoch: number;
   detachedPathCount: number;
   fadeActive: boolean;
+  fadePresentation: ElementFadePresentation | null;
+  motionActive: boolean;
   displayedElement: SceneElementRecord["element"];
   displayedPathParts: readonly SvgPathPart[];
   group: SVGGElement | null;
@@ -68,6 +75,8 @@ export function createMountedElement(
     committedOrderEpoch: 0,
     detachedPathCount: 0,
     fadeActive: false,
+    fadePresentation: null,
+    motionActive: false,
     displayedElement: record.element,
     displayedPathParts: parts,
     group,
@@ -223,20 +232,15 @@ export function updateMountedElementPreview(
     readonly parent: SVGGElement;
   },
 ): void {
-  const original = {
-    geometryVersion: entry.geometryVersion,
-    paintVersion: entry.paintVersion,
-    pathParts: entry.pathParts,
-    rank: entry.rank,
-  };
+  const { geometryVersion, paintVersion, pathParts, rank } = entry;
   updateMountedPreviewGeometry(entry, { ...record, element: previewElement }, parts, options);
   entry.displayedElement = previewElement;
   refreshPosition(entry, options.instrumentation);
   entry.displayedPathParts = parts;
-  entry.geometryVersion = original.geometryVersion;
-  entry.paintVersion = original.paintVersion;
-  entry.pathParts = original.pathParts;
-  entry.rank = original.rank;
+  entry.geometryVersion = geometryVersion;
+  entry.paintVersion = paintVersion;
+  entry.pathParts = pathParts;
+  entry.rank = rank;
 }
 
 function updateMountedPreviewGeometry(
@@ -260,37 +264,17 @@ function updateMountedPreviewGeometry(
 }
 
 export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
+  const presentation = elementFadePresentation(entry);
+  const previousPresentation = entry.fadePresentation ?? presentation;
+  if (durationMs !== null && entry.fadeActive && previousPresentation !== presentation)
+    setMountedElementFade(entry, null);
+  const targetPresentation = durationMs === null ? previousPresentation : presentation;
   entry.fadeActive = durationMs !== null;
-  const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
-  for (const node of nodes) setElementFadeNode(node, durationMs, entry.displayedElement);
-}
-
-export function setElementFadeNode(
-  node: SVGElement,
-  durationMs: number | null,
-  element: SceneElementRecord["element"],
-): void {
-  const animated = durationMs !== null && durationMs > 0;
-  node.style.animation = animated
-    ? `inkbook-element-erase ${String(durationMs)}ms ${EASING_TOKENS.erase} forwards`
-    : "";
-  node.style.filter = animated ? `blur(${String(elementEraseBlur(element))}px)` : "";
-  // Let the keyframes start from the element's own opacity, including pressure groups.
-  node.style.opacity = durationMs === 0 ? "0" : "";
-}
-
-function elementEraseBlur(element: SceneElementRecord["element"]): number {
-  if (
-    "fillColor" in element.style &&
-    element.style.fillColor !== null &&
-    element.style.fillOpacity > 0
-  )
-    return 50;
-  const width =
-    element.kind === "stroke" || element.kind === "straight-highlighter"
-      ? effectiveStrokeWidth(element)
-      : element.style.outlineWidth;
-  return Math.min(50, width * 10);
+  entry.fadePresentation = durationMs === null ? null : presentation;
+  for (let index = 0; index < elementFadeTargetCount(entry, targetPresentation); index += 1) {
+    const node = elementFadeTarget(entry, index, targetPresentation);
+    if (node !== undefined) setElementFadeNode(node, durationMs, targetPresentation);
+  }
 }
 
 export function setMountedElementMotion(
@@ -298,11 +282,12 @@ export function setMountedElementMotion(
   opacity: number | null,
   scale = 1,
 ): void {
+  if (opacity === null && !entry.motionActive) return;
+  entry.motionActive = opacity !== null;
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
-  for (const node of nodes) {
+  for (const node of nodes)
     if (opacity === null) clearMotionStyle(node);
     else writeMotionStyle(node, opacity * entry.groupOpacity, scale);
-  }
 }
 
 export function firstPath(entry: MountedSceneElement): SVGElement {
@@ -355,6 +340,7 @@ function replacePathTopology(
   removeMountedElement(entry);
   entry.detachedPathCount = 0;
   entry.group = group;
+  entry.motionActive = false;
   entry.groupOpacity = pressureGroupOpacity(record);
   entry.appliedPreviewTransform = null;
   entry.appliedTransform = null;

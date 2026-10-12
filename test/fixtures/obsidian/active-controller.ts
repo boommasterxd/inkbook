@@ -180,6 +180,7 @@ function rendererPort(inputSurface: HTMLDivElement) {
     inputSurface,
     interruptMotionForPointerDown: vi.fn(),
     setCamera: vi.fn(),
+    setViewport: vi.fn<SvgSceneRenderer["setViewport"]>(),
     setElementFade: vi.fn(),
     setElementPreviews: vi.fn(),
     setLivePath: vi.fn(),

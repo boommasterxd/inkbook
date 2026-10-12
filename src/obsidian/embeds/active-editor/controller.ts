@@ -1,3 +1,4 @@
+import type { NavigationCursorLayout as CursorLayout } from "./navigation-layout";
 import type { GestureController, GesturePreviewStart } from "../../../editor/gestures/public";
 import * as EditorInput from "../../../editor/input/index";
 import { SelectionFrameSession } from "../../../editor/selection/public";
@@ -8,7 +9,7 @@ import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./coalesced-input";
 import { createActiveEditorChromeProps, createChromeCallbacks } from "./controller-chrome";
-import { applyInputAction, configureInputTool } from "./controller-dispatch";
+import { applyInputAction, cancelHandle, configureInputTool } from "./controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import * as Interactions from "./controller-interactions";
 import * as Helpers from "./controller-helpers";
@@ -17,7 +18,7 @@ import type { ActiveEditorHistory } from "./history";
 import type { ActiveEditorHistoryTraversal } from "./history-traversal";
 import type { ActiveEditorHandleInteraction } from "./handle-interaction";
 import { ActiveEditorNavigation, type ActiveEditorViewState } from "./navigation";
-import { ActiveEditorStyleSession } from "./style-session";
+import type { ActiveEditorStyleSession } from "./style-session";
 import type { ActiveEditorBackgroundSession } from "./background-session";
 import { ActiveEditorLongPressScheduler } from "./long-press";
 import type { PreparedElementHistory } from "./prepared-element-history";
@@ -76,6 +77,7 @@ export class ActiveEditorController {
   readonly #touchMode: ActiveEditorTouchMode;
   #leftHanded: boolean;
   readonly #resetForDisable = (): void => {
+    this.#preparedHistory?.cancel();
     this.#cursor?.clear();
     this.#snappingInversion = undefined;
     Interactions.resetActiveEditorForDisable(
@@ -112,16 +114,6 @@ export class ActiveEditorController {
       history: this.#history,
       onPendingChanged: (pending) => this.#availability.setPending(pending),
     });
-    this.#styles = new ActiveEditorStyleSession({
-      defaults: options.defaults,
-      history: this.#history,
-      onSelectionGeometryChanged: () => this.#handles.renderSelection(),
-      onStateChanged: this.#onStateChanged,
-      sceneStore: this.#sceneStore,
-      selection: () => this.#selection,
-      selectionFrames: this.#selectionFrames,
-      store: this.#model.store,
-    });
     this.#touchMode = createActiveEditorTouchMode(options);
     this.#leftHanded = options.deviceSettings.leftHandedToolbar;
     this.#input = Interactions.createControllerInputState(options);
@@ -131,6 +123,7 @@ export class ActiveEditorController {
     this.#navigation = Interactions.createControllerNavigation({
       controller: options,
       getInput: () => this.#input,
+      onCancelPinch: () => this.#cancelActiveGesture(),
       isSelectionMoveActive: () => this.#input.interaction?.phase === "element-move",
       renderSelection: () => this.#handles.renderCameraSelection(),
       adoptCursorLayout: (layout) => this.#cursor?.adoptNavigationLayout(layout),
@@ -167,6 +160,14 @@ export class ActiveEditorController {
       interactions.menus,
       interactions.preparedHistory,
     ];
+    this.#styles = Interactions.createControllerStyleSession(options, {
+      onSelectionGeometryChanged: () => this.#handles.renderSelection(),
+      onStateChanged: this.#onStateChanged,
+      selection: () => this.#selection,
+      selectionFrames: this.#selectionFrames,
+      preparedHistory: this.#preparedHistory,
+      isEnabled: () => this.#availability.acceptsInput,
+    });
     [this.#keyboard, this.#gestures] = this.#createInputControllers(options);
     this.#cursor = ToolCursor.createActiveToolCursorController(
       [options.container, this.#renderer],
@@ -197,6 +198,7 @@ export class ActiveEditorController {
   public dispose(): void {
     this.#pendingSelection.cancel();
     this.#cursor.dispose();
+    this.#styles.dispose();
     this.#availability.setEnabled(false);
     this.#captures.releaseAll();
     this.#actions.dispose();
@@ -273,6 +275,7 @@ export class ActiveEditorController {
   public handleNativeScroll(): void {
     if (this.#availability.acceptsInput) this.#navigation.notifyScroll();
   }
+  public adoptSceneLayout = (layout: CursorLayout): void => this.#cursor.adoptSceneLayout(layout);
   public handleWheel(event: WheelEvent): void {
     if (!this.#availability.acceptsInput) return;
     if (Interactions.hasStableGeometryGesture(this.#input, this.#handles)) {
@@ -394,12 +397,7 @@ export class ActiveEditorController {
       this.#dispatch({ type: "reset" });
       return true;
     }
-    const pointerId = this.#handles.activePointerId;
-    if (pointerId === undefined || !this.#handles.cancel(pointerId)) return false;
-    this.#captures.release(pointerId);
-    this.#navigation.finish();
-    this.#penGuard.stop();
-    return true;
+    return cancelHandle(this.#handles, this.#captures, this.#navigation, this.#penGuard);
   }
   #interruptForInput(): void {
     this.#pendingSelection.cancel();
@@ -488,8 +486,10 @@ export class ActiveEditorController {
   #setSelection(selection: ReadonlySet<string>): void {
     this.#pendingSelection.cancel();
     if (selection === this.#selection) return;
+    this.#preparedHistory.cancel();
     if (!Helpers.sameSelectionMembers(selection, this.#selection)) this.#selectionFrames.reset();
     this.#selection = selection;
+    this.#styles.invalidateSelection();
     this.#renderer.setSelectedElements(selection);
     this.#input = { ...this.#input, hasSelection: selection.size > 0 };
     this.#handles.renderSelection();

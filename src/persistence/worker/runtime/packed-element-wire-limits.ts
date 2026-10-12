@@ -7,15 +7,6 @@ const MAX_CLIPBOARD_POINT_BYTES =
 const MAX_DOCUMENT_POINT_BYTES =
   FILE_SCHEMA_LIMITS.strokePoints * 3 * Float64Array.BYTES_PER_ELEMENT;
 
-export function assertDocumentElementWireLimits(elements: PackedElements): void {
-  assertPackedElementWireLimits(
-    elements.records.length,
-    elements.pointBuffers,
-    FILE_SCHEMA_LIMITS.elements,
-    MAX_DOCUMENT_POINT_BYTES,
-  );
-}
-
 export function assertClipboardElementWireLimits(elements: PackedElements): void {
   assertPackedElementWireLimits(
     elements.records.length,
@@ -43,6 +34,23 @@ function assertPackedElementWireLimits(
   maximumElements: number,
   maximumPointBytes: number,
 ): void {
+  const steps = packedElementWireLimitSteps(
+    elementCount,
+    pointBuffers,
+    maximumElements,
+    maximumPointBytes,
+  );
+  while (!steps.next().done) {
+    // The synchronous boundary consumes the same validation producer.
+  }
+}
+
+function* packedElementWireLimitSteps(
+  elementCount: number,
+  pointBuffers: readonly Float64Array[],
+  maximumElements: number,
+  maximumPointBytes: number,
+): Generator<void> {
   if (elementCount < 0 || elementCount > maximumElements) {
     throw new RangeError("Worker element transfer exceeds the element limit.");
   }
@@ -68,5 +76,15 @@ function assertPackedElementWireLimits(
     if (pointBytes > maximumPointBytes) {
       throw new RangeError("Worker element transfer exceeds the point-buffer byte limit.");
     }
+    yield;
   }
+}
+
+export function documentElementWireLimitSteps(elements: PackedElements): Generator<void> {
+  return packedElementWireLimitSteps(
+    elements.records.length,
+    elements.pointBuffers,
+    FILE_SCHEMA_LIMITS.elements,
+    MAX_DOCUMENT_POINT_BYTES,
+  );
 }

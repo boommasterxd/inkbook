@@ -118,7 +118,7 @@ export class UniformSpatialIndex<Id> {
       insertions,
       {
         mutation: this.mutationPorts(),
-        entries: () => this.entries.values(),
+        entries: this.entries,
         createShadow: () => {
           const shadow = new UniformSpatialIndex<Id>();
           shadow.recordVersion = this.recordVersion;
@@ -126,21 +126,21 @@ export class UniformSpatialIndex<Id> {
         },
         appendRetained: (shadow, entry) => {
           const retained = { ...entry, slot: shadow.slots.length };
-          shadow.attachEntry(retained, rangeFromEntry(retained), true);
+          shadow.attachEntry(retained, rangeFromEntry(retained), false);
+          return retained;
         },
-        appendInserted: (shadow, insertion) =>
-          shadow.attachEntry(
-            shadow.createEntry(
-              insertion.id,
-              insertion.bounds,
-              insertion.range,
-              shadow.slots.length,
-            ),
+        appendInserted: (shadow, insertion) => {
+          const entry = shadow.createEntry(
+            insertion.id,
+            insertion.bounds,
             insertion.range,
-            true,
-          ),
-        adoptShadow: (shadow, generation) => {
-          // All mutable index state is instance-owned; old cursors see the incremented generation.
+            shadow.slots.length,
+          );
+          shadow.attachEntry(entry, insertion.range, false);
+          return entry;
+        },
+        adoptShadow: (shadow, generation, extentHeap) => {
+          shadow.extentHeap = extentHeap;
           Object.assign(this, shadow);
           this.mutationGeneration = generation + 1;
         },
@@ -228,7 +228,6 @@ export class UniformSpatialIndex<Id> {
       {
         cells: this.cells,
         generation: () => this.mutationGeneration,
-        occupiedCellCount: this.occupiedCellCount,
         overflowSlots: this.overflowSlots,
         slots: this.slots,
       },
@@ -242,7 +241,7 @@ export class UniformSpatialIndex<Id> {
     scratch.begin(this.slots.length);
 
     if (this.occupiedCellCount > 0)
-      visitSpatialCells(this.cells, this.slots, this.occupiedCellCount, range, bounds, scratch);
+      visitSpatialCells(this.cells, this.slots, range, bounds, scratch);
     visitOverflowEntries(this.overflowSlots, this.slots, bounds, scratch);
     return scratch.count;
   }

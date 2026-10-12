@@ -10,7 +10,7 @@ import {
 import { arrow } from "../../unit/domain/schema/fixtures";
 
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
-import { SpatialQueryScratch } from "../../../src/domain/spatial/index";
+import { SpatialQueryScratch, UniformSpatialIndex } from "../../../src/domain/spatial/index";
 import { ElementStore } from "../../../src/domain/store/public";
 import { elementContainsPoint, HitTestScratch } from "../../../src/editor/selection/hit-test";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
@@ -28,7 +28,12 @@ import {
   createStandardRuntimeDomainFixture,
   type StandardDomainFixture,
 } from "./standard-domain-fixture";
-import { createNoopHistoryModel, exerciseTransformRun, requireStroke } from "./domain-scenarios";
+import {
+  createNoopHistoryModel,
+  exerciseTransformRun,
+  observeSpatialQueryWork,
+  requireStroke,
+} from "./domain-scenarios";
 import { indexedStroke } from "../../fixtures/editor/stroke";
 let fixture: StandardDomainFixture;
 let store: ElementStore;
@@ -84,6 +89,100 @@ it.each([1_000, 10_000])("keeps local index work bounded with %i unrelated strok
     recordReplacements: 0,
   });
   scratch.release();
+});
+
+it.each([
+  { axis: "columns", count: 1_000 },
+  { axis: "columns", count: 10_000 },
+  { axis: "rows", count: 1_000 },
+  { axis: "rows", count: 10_000 },
+])("bounds anisotropic queries among $count unrelated $axis", ({ axis, count }) => {
+  const index = new UniformSpatialIndex<number>();
+  index.insertMany(
+    Array.from({ length: count }, (_, id) => ({
+      id,
+      bounds: {
+        minX: axis === "columns" ? id * 256 + 1 : 1,
+        maxX: axis === "columns" ? id * 256 + 2 : 2,
+        minY: axis === "rows" ? id * 256 + 1 : 1,
+        maxY: axis === "rows" ? id * 256 + 2 : 2,
+      },
+    })),
+  );
+  const bounds = {
+    minX: 1,
+    maxX: axis === "rows" ? 10_001 * 256 : 2,
+    minY: 1,
+    maxY: axis === "columns" ? 10_001 * 256 : 2,
+  };
+  const observed = observeSpatialQueryWork(index, vi.spyOn);
+  const scratch = new SpatialQueryScratch<number>();
+  try {
+    expect(index.query(bounds, scratch)).toBe(1);
+    expect(scratch.at(0)).toBe(0);
+    expect(observed.counts).toEqual({ columns: 1, cells: 1, slots: 1 });
+    observed.reset();
+    const cursor = index.beginQuery(bounds);
+    const ids: number[] = [];
+    let done = false;
+    for (let advance = 0; advance < 12 && !done; advance += 1) {
+      const before = { ...observed.counts };
+      const step = cursor.advance(1);
+      expect(step.workUnits).toBeLessThanOrEqual(1);
+      expect(
+        Object.values(observed.counts).reduce((sum, value) => sum + value, 0),
+      ).toBeLessThanOrEqual(Object.values(before).reduce((sum, value) => sum + value, 0) + 1);
+      ids.push(...step.ids);
+      done = step.done;
+    }
+    expect(done).toBe(true);
+    expect(ids).toEqual([0]);
+    expect(observed.counts).toEqual({ columns: 1, cells: 1, slots: 1 });
+    expect(cursor.memoryUsage()).toBe(0);
+  } finally {
+    observed.restore();
+    scratch.release();
+  }
+});
+
+it("retains dense 10,000-element lookup and cursor admission bounds", () => {
+  const index = new UniformSpatialIndex<number>();
+  index.insertMany(
+    Array.from({ length: 10_000 }, (_, id) => ({
+      id,
+      bounds: {
+        minX: (id % 100) * 512 + 1,
+        maxX: (id % 100) * 512 + 2,
+        minY: Math.floor(id / 100) * 512 + 1,
+        maxY: Math.floor(id / 100) * 512 + 2,
+      },
+    })),
+  );
+  const bounds = { minX: 0, minY: 0, maxX: 2_100, maxY: 2_100 };
+  const observed = observeSpatialQueryWork(index, vi.spyOn);
+  const scratch = new SpatialQueryScratch<number>();
+  try {
+    expect(index.query(bounds, scratch)).toBe(25);
+    expect(observed.counts).toEqual({ columns: 9, cells: 45, slots: 25 });
+    observed.reset();
+    const cursor = index.beginQuery(bounds);
+    const ids: number[] = [];
+    let work = 0;
+    let done = false;
+    while (!done) {
+      const step = cursor.advance(64);
+      work += step.workUnits;
+      expect(work).toBeLessThanOrEqual(131);
+      ids.push(...step.ids);
+      done = step.done;
+    }
+    expect(ids).toEqual(Array.from({ length: scratch.count }, (_, offset) => scratch.at(offset)));
+    expect(observed.counts).toEqual({ columns: 9, cells: 45, slots: 25 });
+    expect(cursor.memoryUsage()).toBe(0);
+  } finally {
+    observed.restore();
+    scratch.release();
+  }
 });
 
 async function loadFixture(): Promise<void> {

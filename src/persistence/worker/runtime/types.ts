@@ -57,6 +57,15 @@ export interface UnlockRuntimeRequest {
 
 /** IDs are in visible-first order; no source-file presentation paths are accepted. */
 export interface PrepareScenePathsRuntimeRequest {
+  readonly speculative?: boolean;
+  /** Speculative leading contours admitted during navigation; visible work supersedes them. */
+  readonly navigationReserve?: boolean;
+  /** Offer this exact-viewport prefix before preparing overscan contours. */
+  readonly visibleCount?: number;
+  /** Positive remaining contour capacity; defaults to the 4 MiB protocol limit. */
+  readonly maxBytes?: number;
+  /** Complete contours go to scenePaths; the terminal paths array is then empty. */
+  readonly streamProgress?: boolean;
   readonly basisRevision: number;
   readonly identity: PurposeOperationIdentity;
   readonly ids: readonly string[];
@@ -136,6 +145,7 @@ export interface UnlockRuntimeBatch {
 
 export interface DocumentRuntimeObserver {
   unlockBatch(batch: UnlockRuntimeBatch, signal: AbortSignal): Promise<void> | void;
+  scenePaths?(batch: PreparedScenePathsRuntimeSuccess, signal: AbortSignal): Promise<void> | void;
 }
 
 export interface EncodeClipboardRuntimeSuccess {
@@ -187,29 +197,35 @@ export type DocumentRuntimeResult =
   | VerifyRuntimeSuccess;
 
 export interface DocumentRuntimePort {
+  retargetScenePreparation?(identity: PurposeOperationIdentity, ids: readonly string[]): void;
   cancelScenePreparation?(identity: PurposeOperationIdentity): void;
   acknowledgeExport?(identity: ExportIdentity, accepted: boolean): void;
   checkpoint?(signal: AbortSignal): Promise<void> | undefined;
   execute(
     request: DocumentRuntimeRequest,
     observer?: DocumentRuntimeObserver,
+    prepare?: (context: RuntimeSliceContext) => Promise<DocumentRuntimeRequest>,
   ): Promise<DocumentRuntimeResult>;
   requestPrewarm?(): void;
   setLiveInputActive?(active: boolean): void;
+  setNavigationActive?(active: boolean): void;
   setSchedulingProfile?(sliceMilliseconds: number, frameIntervalMilliseconds: number): void;
   terminate(): void;
 }
 
 export interface DocumentRuntimeServices {
   createId(): string;
-  now?(this: void): number;
 }
 
 export interface InputAwareSliceScheduler {
-  checkpoint(signal: AbortSignal): Promise<void> | undefined;
+  checkpoint(signal: AbortSignal, priority?: "frame"): Promise<void> | undefined;
   getSliceMilliseconds?(): number;
   getSliceWorkProfile?(): RuntimeSliceWorkProfile;
-  run<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal: AbortSignal): Promise<T>;
+  run<T>(
+    operation: (signal: AbortSignal) => T | Promise<T>,
+    signal: AbortSignal,
+    priority?: "frame",
+  ): Promise<T>;
   setLiveInputActive?(active: boolean): void;
   setSchedulingProfile?(sliceMilliseconds: number, frameIntervalMilliseconds: number): void;
 }

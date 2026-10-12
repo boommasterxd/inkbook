@@ -98,8 +98,31 @@ export function createSelectionStyleReplacement(
   controlId: string,
   value: boolean | number | string,
 ): SelectionStyleReplacement | null {
-  const result = applySelectionStyleChange(elements, styleChange(controlId, value));
-  return result.changed ? { previous: elements, replacements: result.elements } : null;
+  const steps = createSelectionStyleReplacementSteps(elements, controlId, value);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value === null ? null : { ...step.value, previous: elements };
+}
+
+/** The caller controls admission between individual selected records. */
+export function* createSelectionStyleReplacementSteps(
+  elements: Iterable<InkElementV1>,
+  controlId: string,
+  value: boolean | number | string,
+): Generator<void, SelectionStyleReplacement | null> {
+  const change = styleChange(controlId, value);
+  const previous: InkElementV1[] = [];
+  const replacements: InkElementV1[] = [];
+  let changed = false;
+  for (const element of elements) {
+    const result = applySelectionStyleChange([element], change);
+    previous.push(element);
+    replacements.push(result.elements[0]!);
+    changed ||= result.changed;
+    yield;
+  }
+  if (previous.length === 0) applySelectionStyleChange([], change);
+  return changed ? { previous, replacements } : null;
 }
 
 export function updateSessionToolDefaults(

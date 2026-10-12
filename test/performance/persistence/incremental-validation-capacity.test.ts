@@ -1,11 +1,12 @@
 import {
-  elementFacts,
-  validatedDeltaElementFacts,
+  elementFactsSteps,
+  validatedDeltaElementFactsSteps,
 } from "../../../src/persistence/serialization/incremental-validation";
+import { completeSerializationSteps } from "../../../src/persistence/serialization/serialization-model-preparation";
 import { expect, it } from "vitest";
 
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/public";
-import { prepareDocumentDelta } from "../../../src/persistence/serialization/incremental-document-delta";
+import { prepareDocumentDeltaSteps } from "../../../src/persistence/serialization/incremental-document-delta";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 import { StrokeShapeCache } from "../../../src/persistence/serialization/stroke-shape-cache";
 import { adoptTransferredStrokeSamples } from "../../../src/persistence/worker/runtime/runtime-elements";
@@ -29,23 +30,27 @@ it("reuses validated order without scanning 10k elements for a small edit", () =
     currentPage: createSnapshot().page,
   };
   const changed = { ...elements[0]!, createdAt: 100 };
-  const prepared = prepareDocumentDelta({
-    ...options,
-    delta: { changedElements: [changed], baseModelRevision: 7, modelRevision: 8 },
-  });
+  const prepared = completeSerializationSteps(
+    prepareDocumentDeltaSteps({
+      ...options,
+      delta: { changedElements: [changed], baseModelRevision: 7, modelRevision: 8 },
+    }),
+  );
   expect(prepared.ok).toBe(true);
   if (!prepared.ok) throw new Error(prepared.error.message);
   expect(prepared.value.orders.content).toBe(content);
   expect(fullMapIterations).toBe(0);
 
-  const invalidOrder = prepareDocumentDelta({
-    ...options,
-    delta: {
-      baseModelRevision: 7,
-      modelRevision: 8,
-      orderChanges: { content: [content[0]!, content[0]!] },
-    },
-  });
+  const invalidOrder = completeSerializationSteps(
+    prepareDocumentDeltaSteps({
+      ...options,
+      delta: {
+        baseModelRevision: 7,
+        modelRevision: 8,
+        orderChanges: { content: [content[0]!, content[0]!] },
+      },
+    }),
+  );
   expect(invalidOrder).toMatchObject({ ok: false, error: { code: "invalid-order" } });
   expect(fullMapIterations).toBeGreaterThan(0);
 });
@@ -70,9 +75,15 @@ it("updates retained serializer capacity without rescanning unchanged geometry",
   expect(serializer.instrumentation).toMatchObject({
     fullValidationRuns: 1,
     incrementalValidationRuns: 100,
-    fragmentBuilds: 100,
+    fragmentBuilds: 0,
+    cacheElements: 0,
+  });
+  expect(serializer.prewarmElement(target.id, 1024 * 1024)).not.toBeNull();
+  expect(serializer.instrumentation).toMatchObject({
+    fragmentBuilds: 1,
     cacheElements: 1,
   });
+  serializer.clear();
 });
 
 it.each([1_000, 20_000])(
@@ -122,9 +133,15 @@ it.each([1_000, 20_000])(
     expect(serializer.instrumentation).toMatchObject({
       fullValidationRuns: 1,
       incrementalValidationRuns: 3,
-      fragmentBuilds: 3,
+      fragmentBuilds: 0,
+      cacheElements: 0,
+    });
+    expect(serializer.prewarmElement(elements[0]!.id, 1024 * 1024)).not.toBeNull();
+    expect(serializer.instrumentation).toMatchObject({
+      fragmentBuilds: 1,
       cacheElements: 1,
     });
+    serializer.clear();
   },
 );
 
@@ -182,7 +199,7 @@ it("does not reread pressure samples when deriving unchanged local geometry boun
       },
     }),
   }));
-  const facts = strokes.map((stroke) => elementFacts(stroke));
+  const facts = strokes.map((stroke) => completeSerializationSteps(elementFactsSteps(stroke)));
   expect(sampleReads).toBeGreaterThan(500_000);
   sampleReads = 0;
   for (const [index, stroke] of strokes.entries()) {
@@ -192,7 +209,9 @@ it("does not reread pressure samples when deriving unchanged local geometry boun
       offset,
       pivot: { x: stroke.pivot.x + offset.x, y: stroke.pivot.y + offset.y },
     };
-    const changed = validatedDeltaElementFacts(moved, undefined, facts[index]);
+    const changed = completeSerializationSteps(
+      validatedDeltaElementFactsSteps(moved, undefined, facts[index]),
+    );
     expect(changed.strokeGeometry?.bounds).toBe(facts[index]!.strokeGeometry?.bounds);
   }
   expect(sampleReads).toBe(0);

@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
 import { SchedulerDisposedError } from "../../../../src/domain/scheduling/work-scheduler";
 import { createWorkspaceDocumentRuntimes } from "../../../../src/obsidian/embeds/workspace-runtime-workers";
+import * as documentRuntime from "../../../../src/persistence/worker/runtime/public";
 import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
+import {
+  observedSchedulingWindow,
+  windowBindingHarness,
+} from "../../../fixtures/obsidian/window-scheduling";
 
 function windowHarness() {
   const host = new ManualHost();
@@ -21,6 +26,7 @@ function runtimePorts(fixture: ReturnType<typeof windowHarness>) {
   return {
     fallbackWindow: () => fixture.ownerWindow,
     owningWindow: () => fixture.ownerWindow,
+    ownerWindowVersion: () => 0,
     subscribeSchedulingProfile: () => () => undefined,
     workScheduler: () => fixture.scheduler,
   };
@@ -30,9 +36,11 @@ function documentTransferHarness() {
   const first = windowHarness();
   const second = windowHarness();
   let owner = first;
+  let ownerVersion = 0;
   const runtimes = createWorkspaceDocumentRuntimes({
     ...runtimePorts(first),
     owningWindow: () => owner.ownerWindow,
+    ownerWindowVersion: () => ownerVersion,
     workScheduler: (window) => (window === first.ownerWindow ? first.scheduler : second.scheduler),
   });
   return {
@@ -42,6 +50,7 @@ function documentTransferHarness() {
     documentScheduler: runtimes.workScheduler("drawing.svg"),
     moveToSecond: () => {
       owner = second;
+      ownerVersion += 1;
     },
   };
 }
@@ -121,6 +130,190 @@ describe("workspace document runtime scheduling", () => {
   });
 });
 
+describe("document worker warning boundaries", () => {
+  it.each([
+    { error: new TypeError("private-document-content"), name: "TypeError" },
+    { error: new DOMException("private-document-content", "SecurityError"), name: "SecurityError" },
+    {
+      error: new DOMException("private-document-content", "InvalidStateError"),
+      name: "InvalidStateError",
+    },
+    {
+      error: Object.assign(new Error("private-document-content"), { name: "private-document.svg" }),
+      name: "unknown",
+    },
+    { error: { name: "TypeError", message: "private-document-content" }, name: "unknown" },
+  ])("limits construction warning details to a safe error name: $name", async ({ error, name }) => {
+    const h = windowHarness();
+    const create = vi.spyOn(documentRuntime, "createDocumentRuntime").mockRejectedValue(error);
+    const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(h));
+    try {
+      await expect(runtimes.create("session", 1, "private-document.svg")).rejects.toBe(error);
+      expect(h.warn).toHaveBeenCalledOnce();
+      expect(h.warn.mock.calls[0]?.[0]).toContain(`error=${name}.`);
+      expect(JSON.stringify(h.warn.mock.calls)).not.toContain("private-document");
+    } finally {
+      create.mockRestore();
+      h.scheduler.dispose();
+    }
+  });
+
+  it("warns on construction failure and fallback without leaking document content", async () => {
+    const h = windowHarness();
+    const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(h));
+    await expect(runtimes.create("session", 1, "private-document.svg")).rejects.toThrow(
+      "Worker and Blob URL APIs",
+    );
+    const fallback = runtimes.createFallback("session", 2, () => false, "private-document.svg");
+    expect(h.warn.mock.calls[0]?.[0]).toContain("session=session; epoch=1; phase=construction");
+    expect(h.warn.mock.calls[0]?.[0]).toContain("kind=error; request=none; error=Error");
+    expect(h.warn.mock.calls[1]?.[0]).toContain("main-thread fallback");
+    expect(JSON.stringify(h.warn.mock.calls)).not.toContain("private-document");
+    fallback.terminate();
+    h.scheduler.dispose();
+  });
+
+  it("keeps the original factory failure even if the console rejects warnings", async () => {
+    const h = windowHarness();
+    h.warn.mockImplementation(() => {
+      throw new Error("console unavailable");
+    });
+    const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(h));
+    await expect(runtimes.create("session", 1, "drawing.svg")).rejects.toThrow(
+      "Worker and Blob URL APIs",
+    );
+    h.scheduler.dispose();
+  });
+});
+
+it.each(["unload", "transfer"] as const)(
+  "admits a third owner after an intermediate destination %s",
+  async (transition) => {
+    const h = windowBindingHarness();
+    const third = observedSchedulingWindow();
+    const scheduler = h.runtimes.workScheduler("drawing.svg");
+    const secondScheduler = h.profiles.workScheduler(h.second.ownerWindow);
+    const thirdScheduler = h.profiles.workScheduler(third.ownerWindow);
+    scheduler.deadline();
+    secondScheduler.deadline();
+    thirdScheduler.deadline();
+    h.second.host.time = secondScheduler.budgetMs();
+    third.host.time = thirdScheduler.budgetMs();
+    let settled = false;
+    const pending = scheduler.nextFrame().then(() => {
+      settled = true;
+    });
+    h.attachment.root = h.second.root;
+    h.registry.observe("drawing.svg", h.second.ownerWindow);
+    h.presentations.push({ attachment: { documentId: "other.svg", root: third.root } });
+    h.first.host.frame();
+    await Promise.resolve();
+    expect(h.second.host.pendingFrames).toBe(1);
+    if (transition === "unload") h.second.ownerWindow.dispatchEvent(new Event("unload"));
+    else {
+      h.attachment.root = third.root;
+      h.second.host.time = h.second.host.frameInterval;
+      h.second.host.frame();
+    }
+    await Promise.resolve();
+    expect(third.host.pendingFrames).toBe(1);
+    expect(settled).toBe(false);
+    third.host.time = third.host.frameInterval;
+    third.host.frame();
+    await pending;
+    expect(settled).toBe(true);
+    scheduler.dispose();
+    h.profiles.dispose();
+    for (const window of [h.first, h.second, third]) {
+      expect(window.host.pendingFrames).toBe(0);
+      expect(window.host.pendingTimers).toBe(0);
+    }
+  },
+);
+
+describe("document scheduler owning-window binding", () => {
+  it.each(["checkpoint", "nextFrame"] as const)(
+    "requires destination admission after a successful old-owner %s",
+    async (method) => {
+      const h = windowBindingHarness();
+      const scheduler = h.runtimes.workScheduler("drawing.svg");
+      const target = h.profiles.workScheduler(h.second.ownerWindow);
+      const admit = vi.spyOn(target, "checkpoint");
+      const caller = new AbortController();
+      scheduler.deadline();
+      target.deadline();
+      h.first.host.time = scheduler.budgetMs();
+      h.second.host.time = target.budgetMs();
+      let settled = false;
+      const pending = scheduler[method](caller.signal, "frame")?.then(() => {
+        settled = true;
+      });
+      h.attachment.root = h.second.root;
+      h.first.host.time = h.first.host.frameInterval;
+      h.first.host.frame();
+      await Promise.resolve();
+      expect(admit).toHaveBeenCalledExactlyOnceWith(caller.signal, "frame");
+      expect(h.second.host.pendingFrames).toBe(1);
+      expect(settled).toBe(false);
+      h.second.host.time = h.second.host.frameInterval;
+      h.second.host.frame();
+      await pending;
+      expect(settled).toBe(true);
+      scheduler.dispose();
+      h.profiles.dispose();
+    },
+  );
+
+  it("revalidates silent presentation adoption only when an actual handoff resumes", async () => {
+    const h = windowBindingHarness();
+    const scheduler = h.runtimes.workScheduler("drawing.svg");
+    const pending = scheduler.nextFrame();
+    h.attachment.root = h.second.root;
+    h.second.host.time = 2;
+    h.first.host.frame();
+    await pending;
+    expect(scheduler.now()).toBe(2);
+    scheduler.dispose();
+    h.profiles.dispose();
+  });
+
+  it("rebinds a closed pop-out wait to the fallback even before window.closed changes", async () => {
+    const h = windowBindingHarness();
+    const scheduler = h.runtimes.workScheduler("drawing.svg");
+    const pending = scheduler.nextFrame();
+    expect(h.first.host.pendingFrames).toBe(1);
+    h.first.ownerWindow.dispatchEvent(new Event("unload"));
+    await Promise.resolve();
+    expect(h.first.host.pendingFrames).toBe(0);
+    expect(h.second.host.pendingFrames).toBe(1);
+    h.second.host.frame();
+    await pending;
+    scheduler.dispose();
+    h.profiles.dispose();
+    expect(h.first.host.pendingTimers).toBe(0);
+    expect(h.second.host.pendingFrames).toBe(0);
+    expect(h.second.host.pendingTimers).toBe(0);
+  });
+
+  it("keeps first-mounted, retained detached and fallback owner selection between changes", () => {
+    const h = windowBindingHarness();
+    const scheduler = h.runtimes.workScheduler("drawing.svg");
+    h.registry.observe("drawing.svg", h.second.ownerWindow);
+    expect(scheduler.now()).toBe(0);
+    h.first.host.time = 1;
+    h.second.host.time = 2;
+    expect(scheduler.now()).toBe(1);
+    h.presentations.length = 0;
+    h.profiles.notifyOwnerWindowChanged();
+    expect(scheduler.now()).toBe(2);
+    h.registry.clear();
+    h.profiles.notifyOwnerWindowChanged();
+    expect(scheduler.now()).toBe(2);
+    scheduler.dispose();
+    h.profiles.dispose();
+  });
+});
+
 describe("document scheduler transfer and fallback", () => {
   it("resumes an in-flight frame wait on the new window after the old scheduler closes", async () => {
     const { first, second, documentScheduler, moveToSecond } = documentTransferHarness();
@@ -140,15 +333,20 @@ describe("document scheduler transfer and fallback", () => {
 
   it("retries a checkpoint only after transfer and preserves abort errors", async () => {
     const { first, second, documentScheduler, moveToSecond } = documentTransferHarness();
+    const firstCheckpoint = vi.spyOn(first.scheduler, "checkpoint");
+    const secondCheckpoint = vi.spyOn(second.scheduler, "checkpoint");
+    const caller = new AbortController();
     expect(documentScheduler.checkpoint()).toBeUndefined();
     first.host.time = first.host.budget;
-    const pending = documentScheduler.checkpoint();
+    const pending = documentScheduler.checkpoint(caller.signal, "frame");
     expect(pending).toBeDefined();
+    expect(firstCheckpoint).toHaveBeenLastCalledWith(caller.signal, "frame");
     moveToSecond();
     first.scheduler.dispose();
     await Promise.resolve();
     expect(second.host.pendingFrames).toBe(0);
     await pending;
+    expect(secondCheckpoint).toHaveBeenCalledExactlyOnceWith(caller.signal, "frame");
 
     const aborted = new AbortController();
     const rejected = documentScheduler.nextFrame(aborted.signal);

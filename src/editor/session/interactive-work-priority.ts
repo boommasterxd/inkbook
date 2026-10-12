@@ -25,14 +25,23 @@ export class InteractiveWorkPriority {
     return this.#inputReleases.size > 0;
   }
 
-  public setInputActive(active: boolean, source: "gesture" | "navigation" = "gesture"): void {
-    if (this.#disposed) return;
+  public get gestureActive(): boolean {
+    return this.#inputReleases.has("gesture");
+  }
+
+  public get navigationActive(): boolean {
+    return this.#inputReleases.has("navigation");
+  }
+
+  public setInputActive(active: boolean, source: "gesture" | "navigation" = "gesture"): boolean {
+    if (this.#disposed || this.#inputReleases.has(source) === active) return false;
     if (active) {
-      if (!this.#inputReleases.has(source)) this.#inputReleases.set(source, this.begin());
+      this.#inputReleases.set(source, this.begin());
     } else {
       this.#inputReleases.get(source)?.();
       this.#inputReleases.delete(source);
     }
+    return true;
   }
 
   public async run<T>(operation: () => Promise<T>): Promise<T> {

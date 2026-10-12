@@ -7,10 +7,7 @@ export function* upcomingScenePathIds(
 ): Iterable<string> {
   if (pending === undefined) return;
   if (pending.delta !== undefined) {
-    for (let index = pending.delta.index; index < pending.delta.ids.length; index += 1) {
-      const id = pending.delta.ids[index]!;
-      if (!mounted.has(id) && !pending.entrants.has(id)) yield id;
-    }
+    yield* upcomingDeltaIds(pending, mounted);
     return;
   }
   const bands =
@@ -24,5 +21,29 @@ export function* upcomingScenePathIds(
       const id = visible.ids[index];
       if (id !== undefined && !mounted.has(id) && !pending.entrants.has(id)) yield id;
     }
+  }
+}
+
+function* upcomingDeltaIds(
+  pending: PendingReconciliation,
+  mounted: { has(id: string): boolean },
+): Iterable<string> {
+  const delta = pending.delta!;
+  for (let index = delta.index; index < delta.ids.length; index += 1) {
+    const id = delta.ids[index]!;
+    if (!mounted.has(id) && !pending.entrants.has(id)) yield id;
+  }
+  // Deferred candidates stay in priority order after an asynchronous response.
+  for (const id of delta.deferred) {
+    if (!mounted.has(id) && !pending.entrants.has(id)) yield id;
+  }
+  const priority = delta.priority;
+  if (priority === undefined) return;
+  while (true) {
+    const generation = priority.heapGeneration;
+    for (const id of priority.upcoming(Infinity)) {
+      if (!mounted.has(id) && !pending.entrants.has(id)) yield id;
+    }
+    if (generation === priority.heapGeneration) return;
   }
 }

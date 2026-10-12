@@ -51,6 +51,43 @@ describe("spatial index steady-state instrumentation", () => {
     expect(scratch.markerCapacity).toBe(0);
     expect(scratch.resultCapacity).toBe(0);
   });
+
+  it("deduplicates after growth, epoch wrap, slot reuse and release", () => {
+    const scratch = new SpatialQueryScratch<string>();
+    scratch.begin(1);
+    scratch.visit(0, "initial", true);
+    scratch.visit(0, "duplicate", true);
+    expect(scratch.count).toBe(1);
+    expect(scratch.duplicateVisitCount).toBe(1);
+    scratch.begin(17);
+    scratch.visit(0, "reused", true);
+    scratch.visit(16, "outside", false);
+    scratch.visit(16, "duplicate outside", true);
+    expect(scratch.count).toBe(1);
+    expect(scratch.at(0)).toBe("reused");
+    expect(scratch.candidateVisitCount).toBe(3);
+    expect(scratch.duplicateVisitCount).toBe(1);
+    expect(() => scratch.at(1)).toThrow(RangeError);
+    const state = scratch as unknown as { epoch: number; markers: Uint32Array };
+    state.markers[0] = 1;
+    state.epoch = 0xffff_ffff;
+    scratch.begin(17);
+    scratch.visit(0, "wrapped", true);
+    expect(scratch.at(0)).toBe("wrapped");
+    expect(scratch.duplicateVisitCount).toBe(0);
+    state.epoch = 0xffff_ffff;
+    scratch.begin(33);
+    scratch.visit(0, "grown after wrap", true);
+    expect(scratch.at(0)).toBe("grown after wrap");
+    scratch.release();
+    expect(() => scratch.at(0)).toThrow(RangeError);
+    expect(scratch.markerCapacity).toBe(0);
+    scratch.begin(1);
+    scratch.visit(0, "after release", true);
+    expect(scratch.at(0)).toBe("after release");
+    expect(scratch.duplicateVisitCount).toBe(0);
+    scratch.release();
+  });
 });
 
 describe("resumable spatial query work", () => {
@@ -84,7 +121,6 @@ describe("resumable spatial query work", () => {
         [1, new Map([[0, bucket]])],
       ]),
       generation: () => 0,
-      occupiedCellCount: 2,
       overflowSlots: new Set<number>(),
       slots: new Proxy(slots, {
         get(target, key, receiver) {

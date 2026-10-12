@@ -272,22 +272,21 @@ describe("InkSnapshotV1 bounded JSON-tree inspection", () => {
     document.untrusted = entries.observed;
     const steps = validateInkSnapshotV1Steps(document);
 
-    expect(steps.next()).toEqual({ done: false, value: undefined });
-    // Enumeration and sparse/data-property checks visit each entry four times
-    // before recursive traversal yields after at most 2048 JSON nodes.
-    expect(entries.work.descriptorReads).toBeGreaterThan(0);
-    expect(entries.work.descriptorReads).toBeLessThanOrEqual(4 * 4096 + 2048);
-    const before = entries.work.descriptorReads;
-    const result = steps.next();
-
+    let result = steps.next();
+    let previousReads = 0;
     expect(result.done).toBe(false);
-    expect(entries.work.descriptorReads - before).toBeLessThanOrEqual(2048);
-    const beforeFinal = entries.work.descriptorReads;
-    expect(steps.next()).toMatchObject({
+    while (!result.done) {
+      // Array enumeration and reverse data checks each inspect two descriptors
+      // per entry; every preflight pass now stops at the shared node interval.
+      expect(entries.work.descriptorReads - previousReads).toBeLessThanOrEqual(2 * 2048);
+      previousReads = entries.work.descriptorReads;
+      result = steps.next();
+    }
+    expect(result).toMatchObject({
       done: true,
       value: { ok: false, error: { code: "unknown-property" } },
     });
-    expect(entries.work.descriptorReads - beforeFinal).toBeLessThanOrEqual(2048);
+    expect(entries.work.descriptorReads - previousReads).toBeLessThanOrEqual(2 * 2048);
     expect(entries.work.descriptorReads).toBeLessThanOrEqual(5 * 4096);
     expect(entries.work.indexedReads).toBe(0);
   });

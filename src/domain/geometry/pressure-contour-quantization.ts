@@ -1,11 +1,12 @@
 import type { PointV1 } from "../schema/types";
 import { PRESSURE_PREPARATION_CHECK_INTERVAL } from "./pressure-union";
+import { recordPressureAddition, type PressureAdditions } from "./pressure-additions";
 
 /** Each checkpoint groups a bounded number of vertex inspections or local removals. */
 export function* iteratePressureContourQuantization(
   closed: readonly PointV1[],
   grid: number,
-  additions: (readonly PointV1[])[],
+  additions: PressureAdditions,
 ): Generator<void, PointV1[]> {
   const points = closed.slice(0, -1);
   const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
@@ -49,7 +50,8 @@ export function* iteratePressureContourQuantization(
       distance = displacement;
     }
     if (best !== current) {
-      additions.push([before, best, current], [current, best, after]);
+      recordPressureAddition(additions, before, best, current);
+      recordPressureAddition(additions, current, best, after);
       points[index] = best;
     }
     if ((index + 1) % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;

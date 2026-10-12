@@ -4,7 +4,164 @@ import type { PendingReconciliation } from "./reconciliation-state";
 import type { ReconciliationResult } from "./reconciliation-state";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
-import { publishVisibilityRuns } from "./visibility-publication";
+import {
+  publishVisibilityRuns,
+  removeVisibilityExits,
+  scanVisibilityExits,
+} from "./visibility-publication";
+import { orderDeltaPublication } from "./visibility-delta-reconciliation";
+import type { MountSlice, MountYieldReason } from "./mount-slice";
+import { VisibilityExitReadiness } from "./visibility-exit-readiness";
+
+/** Orders only the remaining bounded cleanup list, preserving a partial element's cursor. */
+function prepareVisibilityExitOrder(
+  pending: PendingReconciliation,
+  mounted: ReadonlyMap<string, MountedSceneElement>,
+): boolean {
+  if (pending.exitOrderPrepared || !pending.exitScanComplete) return false;
+  pending.exitOrderPrepared = true;
+  const partial = mounted.get(pending.exitIds[pending.exitIndex] ?? "");
+  const start =
+    pending.exitIndex + (partial !== undefined && partial.detachedPathCount > 0 ? 1 : 0);
+  const prepared = pending.exitIds.length - start > 1;
+  const unique = new Set(pending.exitIds.slice(start));
+  if (start > pending.exitIndex && partial !== undefined) unique.delete(partial.id);
+  const remaining = [...unique];
+  remaining.sort((left, right) => {
+    const a = mounted.get(left);
+    const b = mounted.get(right);
+    if (a === undefined) return b === undefined ? 0 : 1;
+    if (b === undefined) return -1;
+    if (a.band !== b.band) return a.band === "highlight" ? -1 : 1;
+    return a.committedRank - b.committedRank;
+  });
+  for (let index = 0; index < remaining.length; index += 1) {
+    pending.exitIds[start + index] = remaining[index]!;
+  }
+  pending.exitIds.length = start + remaining.length;
+  return prepared;
+}
+
+/** Shares existing frame admission; native list sorting is one bounded indivisible step. */
+export function removeOrderedVisibilityExits(
+  pending: PendingReconciliation,
+  options: Parameters<typeof removeVisibilityExits>[1],
+  frame: Parameters<typeof removeVisibilityExits>[2],
+): boolean {
+  if (
+    !pending.exitOrderPrepared &&
+    pending.exitScanComplete &&
+    pending.exitIds.length - pending.exitIndex > 1 &&
+    frame.now() >= frame.deadline
+  )
+    return false;
+  const prepared = prepareVisibilityExitOrder(pending, options.mounted);
+  if (prepared && frame.now() >= frame.deadline) return false;
+  if (pending.exitOrderPrepared && options.exitReadyAt !== undefined) {
+    pending.exitReadiness ??= new VisibilityExitReadiness(
+      pending,
+      options.mounted,
+      options.exitReadyAt,
+      options.instrumentation,
+    );
+  }
+  return removeVisibilityExits(pending, options, frame);
+}
+
+export function hasPendingVisibilityCleanup(pending: PendingReconciliation): boolean {
+  return (
+    pending.published || !pending.exitScanComplete || pending.exitIndex < pending.exitIds.length
+  );
+}
+
+/** Records completion so remote waits park only after real exit bookkeeping has finished. */
+export function collectPendingVisibilityExits(
+  pending: PendingReconciliation,
+  slice: MountSlice,
+  instrumentation: MutableSceneInstrumentation,
+  add: (id: string) => void,
+): MountYieldReason | undefined {
+  if (pending.exitScanComplete) return undefined;
+  const reason = scanVisibilityExits(pending.exits, slice, instrumentation, add);
+  if (reason === undefined) pending.exitScanComplete = true;
+  return reason;
+}
+
+/** Alternates old mount cleanup with entrants after the first new publication. */
+export function prepareVisibilityCleanup(
+  pending: PendingReconciliation,
+  slice: MountSlice,
+  cleanup: {
+    readonly collect: () => MountYieldReason | undefined;
+    readonly remove: () => void;
+    readonly remainingRemovals?: () => number;
+  },
+): MountYieldReason | undefined {
+  if (!pending.cleanupFirst) return undefined;
+  const initialBlock = slice.blockingReason();
+  if (initialBlock !== undefined) return initialBlock;
+  pending.cleanupFirst = false;
+  const remove = () => {
+    const previousIndex = pending.exitIndex;
+    const previousSpan = pending.exitIds.length - previousIndex;
+    const previousOrderPrepared = pending.exitOrderPrepared;
+    const previousReadiness = pending.exitReadiness?.revision;
+    const previousRemovals = cleanup.remainingRemovals?.();
+    cleanup.remove();
+    if (
+      pending.exitIndex !== previousIndex ||
+      previousReadiness !== pending.exitReadiness?.revision ||
+      previousRemovals !== cleanup.remainingRemovals?.() ||
+      (!previousOrderPrepared && pending.exitOrderPrepared && previousSpan > 1)
+    )
+      slice.record();
+  };
+  const hasCollectedExits = pending.exitIndex < pending.exitIds.length;
+  if (hasCollectedExits) {
+    remove();
+    const blocked = slice.blockingReason();
+    if (blocked !== undefined) return blocked;
+  }
+  const blocked = cleanup.collect() ?? slice.blockingReason();
+  if (blocked !== undefined) return blocked;
+  if (!hasCollectedExits && pending.exitIndex < pending.exitIds.length) {
+    remove();
+  }
+  return slice.blockingReason();
+}
+
+/** Publishes a target slice before using any remaining budget for obsolete mounts. */
+export function publishPendingVisibility(
+  pending: PendingReconciliation,
+  newlyMountedIds: readonly string[],
+  cleanup: {
+    readonly collect: () => void;
+    readonly remove: () => void;
+    readonly canWork: () => boolean;
+    readonly waitingForPreparation: boolean;
+  },
+): ReconciliationResult {
+  if (pending.scanExits && newlyMountedIds.length > 0 && cleanup.canWork()) cleanup.collect();
+  if (
+    pending.delta !== undefined &&
+    pending.exitIndex < pending.exitIds.length &&
+    cleanup.canWork()
+  )
+    cleanup.remove();
+  const committedVisibility = pending.targetPublished ? undefined : pending.visibility;
+  pending.targetPublished ||= newlyMountedIds.length > 0;
+  pending.cleanupFirst ||=
+    hasPendingVisibilityCleanup(pending) &&
+    (newlyMountedIds.length > 0 ||
+      (cleanup.waitingForPreparation && hasPendingVisibilityCleanup(pending)));
+  return {
+    ...(newlyMountedIds.length === 0 || committedVisibility === undefined
+      ? {}
+      : { committedVisibility }),
+    newlyMountedIds,
+    pending: true,
+  };
+}
 
 interface CommitOptions {
   readonly dom: SceneDom;
@@ -21,6 +178,7 @@ export function commitVisibilityReconciliation(
   epoch: number,
   output: string[],
 ): number {
+  orderDeltaPublication(pending);
   publishVisibilityRuns({
     runs: pending.runs,
     count: pending.runCount,

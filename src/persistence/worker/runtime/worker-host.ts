@@ -1,4 +1,5 @@
 import { ModelPointReferences } from "./model-point-references";
+import { assertScenePathIds } from "./scene-path-limits";
 import type {
   DocumentRuntimeObserver,
   DocumentRuntimePort,
@@ -6,11 +7,12 @@ import type {
   UnlockRuntimeBatch,
 } from "./types";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   encodeRuntimeResultChunked,
-  encodeUnlockBatch,
+  encodeUnlockBatchChunked,
   isDocumentRuntimeWireRequest,
 } from "./wire-codec";
+import { runtimeRequestAdmissionHeader } from "./request-wire-decoding";
 import type {
   BridgeBatchAcknowledgement,
   BridgeControl,
@@ -19,6 +21,7 @@ import type {
   BridgeRequest,
   BridgeSuccess,
   BridgeUnlockBatch,
+  BridgeScenePaths,
 } from "./bridge-messages";
 
 export interface WorkerHostEndpoint {
@@ -114,33 +117,61 @@ function dispatchHostedRequest(
   const { requestId } = message;
   let request: DocumentRuntimeRequest;
   try {
-    const wire = message.request;
-    const resolvePoints =
-      "baseModelRevision" in wire
-        ? pointReferences.resolver(
-            wire.baseModelRevision,
-            "identity" in wire ? wire.identity : wire,
-          )
-        : undefined;
-    request = decodeRuntimeRequest(wire, resolvePoints);
+    request = runtimeRequestAdmissionHeader(message.request);
   } catch {
-    postExecutorFailure(endpoint, requestId);
+    postExecutorFailure(endpoint, requestId, "host-decoding");
     return;
   }
-  if (request.type === "unlock") pointReferences.clear();
+  let decodingFailed = false;
+  let sceneBatchIndex = 0;
   const observer: DocumentRuntimeObserver = {
+    scenePaths: (batch, signal) =>
+      postScenePaths(
+        endpoint,
+        acknowledgements,
+        {
+          batch,
+          batchIndex: sceneBatchIndex++,
+          requestId,
+          type: "inkbook-worker-scene-paths",
+        },
+        signal,
+      ),
     unlockBatch: async (batch, signal) => {
-      await postUnlockBatch(endpoint, acknowledgements, requestId, batch, signal);
+      await postUnlockBatch(endpoint, acknowledgements, requestId, batch, signal, runtime);
       pointReferences.stageUnlock(batch);
     },
   };
-  void runtime.execute(request, observer).then(
-    (result) => {
-      pointReferences.accept(request, result);
-      return postHostedResult(endpoint, runtime, exportAcknowledgements, requestId, result);
-    },
-    () => postExecutorFailure(endpoint, requestId),
-  );
+  void runtime
+    .execute(request, observer, async (context) => {
+      try {
+        const wire = message.request;
+        const resolvePoints =
+          "baseModelRevision" in wire
+            ? pointReferences.resolver(
+                wire.baseModelRevision,
+                "identity" in wire ? wire.identity : wire,
+              )
+            : undefined;
+        request = await decodeRuntimeRequestChunked(wire, context, resolvePoints);
+        if (request.type === "unlock") pointReferences.clear();
+        return request;
+      } catch (error) {
+        decodingFailed = !context.signal.aborted;
+        throw error;
+      }
+    })
+    .then(
+      (result) => {
+        if (decodingFailed) {
+          postExecutorFailure(endpoint, requestId, "host-decoding");
+          return;
+        }
+        pointReferences.accept(request, result);
+        return postHostedResult(endpoint, runtime, exportAcknowledgements, requestId, result);
+      },
+      () => postExecutorFailure(endpoint, requestId, "host-execution"),
+    );
 }
 
 async function postHostedResult(
@@ -185,27 +216,37 @@ async function postHostedResult(
       exportAcknowledgements.delete(requestId);
       runtime.acknowledgeExport?.(pending.identity, false);
     }
-    postExecutorFailure(endpoint, requestId);
+    postExecutorFailure(endpoint, requestId, "host-encoding");
   }
 }
 
-function postExecutorFailure(endpoint: WorkerHostEndpoint, requestId: number): void {
+function postExecutorFailure(
+  endpoint: WorkerHostEndpoint,
+  requestId: number,
+  phase: NonNullable<BridgeFailure["phase"]>,
+): void {
   endpoint.postMessage({
     code: "executor-failed",
+    phase,
     requestId,
     type: "inkbook-worker-error",
   } satisfies BridgeFailure);
 }
 
-function postUnlockBatch(
+async function postUnlockBatch(
   endpoint: WorkerHostEndpoint,
   acknowledgements: Map<string, PendingAcknowledgement>,
   requestId: number,
   batch: UnlockRuntimeBatch,
   signal: AbortSignal,
+  runtime: DocumentRuntimePort,
 ): Promise<void> {
   signal.throwIfAborted();
-  const encoded = encodeUnlockBatch(batch);
+  const encoded = await encodeUnlockBatchChunked(batch, {
+    checkpoint: () => runtime.checkpoint?.(signal),
+    signal,
+  });
+  signal.throwIfAborted();
   const key = acknowledgementKey(requestId, batch.batchIndex);
   return new Promise((resolve, reject) => {
     const abort = (): void => {
@@ -251,12 +292,46 @@ function createPendingAcknowledgement(
   };
 }
 
+function postScenePaths(
+  endpoint: WorkerHostEndpoint,
+  acknowledgements: Map<string, PendingAcknowledgement>,
+  message: BridgeScenePaths,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const key = acknowledgementKey(message.requestId, message.batchIndex);
+  return new Promise((resolve, reject) => {
+    const abort = (): void => {
+      acknowledgements.delete(key);
+      signal.removeEventListener("abort", abort);
+      reject(new Error("Document worker scene paths were aborted."));
+    };
+    const pending = createPendingAcknowledgement(signal, abort, resolve, reject);
+    acknowledgements.set(key, pending);
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      endpoint.postMessage(message);
+    } catch {
+      acknowledgements.delete(key);
+      pending.reject(new Error("Document worker scene path dispatch failed."));
+    }
+  });
+}
+
 function applyControl(runtime: DocumentRuntimePort, control: BridgeControl): void {
   if (control.action === "cancel-scene-paths" && control.identity !== undefined)
     runtime.cancelScenePreparation?.(control.identity);
+  else if (
+    control.action === "retarget-scene-paths" &&
+    control.identity !== undefined &&
+    control.ids !== undefined
+  )
+    runtime.retargetScenePreparation?.(control.identity, control.ids);
   else if (control.action === "prewarm") runtime.requestPrewarm?.();
   else if (control.action === "set-live-input")
     runtime.setLiveInputActive?.(control.active === true);
+  else if (control.action === "set-navigation")
+    runtime.setNavigationActive?.(control.active === true);
   else if (
     control.sliceMilliseconds !== undefined &&
     control.frameIntervalMilliseconds !== undefined
@@ -287,24 +362,40 @@ function isBridgeRequest(value: unknown): value is BridgeRequest {
 }
 
 function isBridgeControl(value: unknown): value is BridgeControl {
+  if (!isObject(value) || value.type !== "inkbook-worker-control") return false;
   return (
-    isObject(value) &&
-    value.type === "inkbook-worker-control" &&
-    ((value.action === "cancel-scene-paths" &&
-      isObject(value.identity) &&
-      typeof value.identity.sessionId === "string" &&
-      Number.isSafeInteger(value.identity.workerEpoch) &&
-      Number.isSafeInteger(value.identity.operationId) &&
-      value.identity.purpose === "background") ||
-      (value.action === "prewarm" && value.active === undefined) ||
-      (value.action === "set-live-input" && typeof value.active === "boolean") ||
-      (value.action === "set-profile" &&
-        typeof value.sliceMilliseconds === "number" &&
-        Number.isFinite(value.sliceMilliseconds) &&
-        value.sliceMilliseconds > 0 &&
-        typeof value.frameIntervalMilliseconds === "number" &&
-        Number.isFinite(value.frameIntervalMilliseconds) &&
-        value.frameIntervalMilliseconds > 0))
+    validSceneControl(value) ||
+    (value.action === "prewarm" && value.active === undefined) ||
+    ((value.action === "set-live-input" || value.action === "set-navigation") &&
+      typeof value.active === "boolean") ||
+    (value.action === "set-profile" &&
+      typeof value.sliceMilliseconds === "number" &&
+      Number.isFinite(value.sliceMilliseconds) &&
+      value.sliceMilliseconds > 0 &&
+      typeof value.frameIntervalMilliseconds === "number" &&
+      Number.isFinite(value.frameIntervalMilliseconds) &&
+      value.frameIntervalMilliseconds > 0)
+  );
+}
+
+function validRetargetIds(ids: unknown): boolean {
+  try {
+    assertScenePathIds(ids as readonly string[]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validSceneControl(value: Record<string, unknown>): boolean {
+  return (
+    (value.action === "cancel-scene-paths" || value.action === "retarget-scene-paths") &&
+    (value.action !== "retarget-scene-paths" || validRetargetIds(value.ids)) &&
+    isObject(value.identity) &&
+    typeof value.identity.sessionId === "string" &&
+    Number.isSafeInteger(value.identity.workerEpoch) &&
+    Number.isSafeInteger(value.identity.operationId) &&
+    value.identity.purpose === "background"
   );
 }
 

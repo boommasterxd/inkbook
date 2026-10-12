@@ -337,9 +337,9 @@ describe("plugin workspace realm integration", () => {
     harness.darken();
     expect(scene?.setScheme).toHaveBeenLastCalledWith("dark");
     const settingTab = (harness.plugin as unknown as TestPluginRegistration).settingTabs[0];
-    await settingTab?.setControlValue("device.motion", "full");
+    await settingTab?.setControlValue("device.scrollPreloadMarginPx", 800);
     expect(scene?.updateDeviceSettings).toHaveBeenLastCalledWith(
-      expect.objectContaining({ motion: "full" }),
+      expect.objectContaining({ scrollPreloadMarginPx: 800 }),
     );
     presentation.child.unload();
     expect(scene?.dispose).toHaveBeenCalledTimes(1);

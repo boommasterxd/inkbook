@@ -234,6 +234,20 @@
 }
 
 @media (width <= 600px) {
+  .inkbook-settings-tool-controls .inkbook-menu-value-field,
+  .inkbook-settings-inline-controls .inkbook-menu-value-field,
+  .inkbook-settings-tool-controls .inkbook-menu-slider,
+  .inkbook-settings-inline-controls .inkbook-menu-slider {
+    min-block-size: 44px;
+  }
+
+  .inkbook-settings-tool-controls .inkbook-menu-slider,
+  .inkbook-settings-inline-controls .inkbook-menu-slider {
+    background-clip: content-box;
+    box-sizing: border-box;
+    padding-block: 20px;
+  }
+
   .inkbook-settings-tool-controls .inkbook-menu-choice,
   .inkbook-settings-tool-controls .inkbook-menu-stepper-button {
     min-block-size: 44px;

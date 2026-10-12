@@ -1,6 +1,10 @@
 import type { SceneViewport } from "../../rendering/scene/types";
 import { browserScrollMetrics, type BrowserScrollElement } from "../scrolling/index";
-import { measureElementBox, type ElementBoxMeasurement } from "./active-editor/element-content-box";
+import {
+  measureElementBox,
+  type ElementBoxMeasurement,
+  type ElementContentBox,
+} from "./active-editor/element-content-box";
 
 interface SceneRect {
   readonly bottom: number;
@@ -13,16 +17,46 @@ interface ScrollOwnerWithClientWidth extends BrowserScrollElement {
   readonly clientWidth: number;
 }
 
-export function readActiveSceneViewport(
+interface ActiveSceneLayout {
+  readonly cursorLayout: {
+    readonly containerBounds: ElementContentBox;
+    readonly ownerViewport: SceneRect;
+    readonly ownerWindow: Window | null;
+    readonly scrollOwner: BrowserScrollElement;
+    readonly scrollTop: number;
+  };
+  readonly viewport: SceneViewport;
+}
+
+/** A fresh owning-window read shared by scene clipping and cursor projection. */
+export function readActiveSceneLayout(
   container: HTMLElement,
   scrollOwner: BrowserScrollElement,
   root?: HTMLElement,
-): SceneViewport {
+): ActiveSceneLayout {
   const measurement = measureElementBox(container);
-  const containerBounds = measurement.contentBox;
-  const containerWidth = Math.max(0, containerBounds.width);
-  const containerHeight = preparedContentHeight(container, root, measurement);
   const ownerViewport = readScrollOwnerViewport(scrollOwner);
+  return {
+    cursorLayout: {
+      containerBounds: measurement.contentBox,
+      ownerViewport,
+      ownerWindow: container.ownerDocument.defaultView,
+      scrollOwner,
+      scrollTop: browserScrollMetrics.getScrollTop(scrollOwner),
+    },
+    viewport: activeSceneViewportFromBounds(
+      { ...measurement.contentBox, height: preparedContentHeight(container, root, measurement) },
+      ownerViewport,
+    ),
+  };
+}
+
+export function activeSceneViewportFromBounds(
+  containerBounds: ElementContentBox,
+  ownerViewport: SceneRect,
+): SceneViewport {
+  const containerWidth = Math.max(0, containerBounds.width);
+  const containerHeight = Math.max(0, containerBounds.height);
   const left = clamp(ownerViewport.left - containerBounds.left, 0, containerWidth);
   const right = clamp(ownerViewport.right - containerBounds.left, 0, containerWidth);
   const top = clamp(ownerViewport.top - containerBounds.top, 0, containerHeight);
@@ -53,7 +87,7 @@ function preparedContentHeight(
   return Math.max(0, measurement.contentBox.height);
 }
 
-function readScrollOwnerViewport(scrollOwner: BrowserScrollElement): SceneRect {
+export function readScrollOwnerViewport(scrollOwner: BrowserScrollElement): SceneRect {
   if (scrollOwner.ownerDocument.scrollingElement === scrollOwner) {
     const ownerWindow = scrollOwner.ownerDocument.defaultView;
     const clientWidth = (scrollOwner as Partial<ScrollOwnerWithClientWidth>).clientWidth;

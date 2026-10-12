@@ -2,11 +2,14 @@ import type {
   PreparedPressureGeometryPort,
   PressureWindow,
   PressureWindowMeasurement,
+  PressurePathWindow,
+  PressurePreparationMode,
 } from "./prepared-pressure-geometry";
 import { iteratePressureContourApproximation } from "./pressure-contour-approximation";
 import type { PointV1 } from "../schema/types";
 import type { PressureOutlinePiece } from "./pressure-outline-piece";
 import { iteratePressureUnion } from "./pressure-union";
+import { pressureAdditionCount, type PressureAdditions } from "./pressure-additions";
 
 export type { PressureWindow } from "./prepared-pressure-geometry";
 
@@ -42,12 +45,25 @@ export function preparePressureWindows(
 }
 
 /** Cold consumers may cancel between the same union operations used by canonical rendering. */
+export function preparePressureWindowSteps(
+  pieces: readonly PressureOutlinePiece[],
+  mode?: "full",
+): Generator<void, PressureWindow>;
+export function preparePressureWindowSteps(
+  pieces: readonly PressureOutlinePiece[],
+  mode: "path-only",
+): Generator<void, PressurePathWindow>;
+export function preparePressureWindowSteps(
+  pieces: readonly PressureOutlinePiece[],
+  mode?: PressurePreparationMode,
+): Generator<void, PressureWindow | PressurePathWindow>;
 export function* preparePressureWindowSteps(
   pieces: readonly PressureOutlinePiece[],
-): Generator<void, PressureWindow> {
+  mode: PressurePreparationMode = "full",
+): Generator<void, PressureWindow | PressurePathWindow> {
   const capsules = pieces.map((piece) => (piece.kind === "dot" ? piece : piece.capsule));
   const result = yield* iteratePressureUnion(capsules);
-  const additions: (readonly PointV1[])[] = [];
+  const additions: PressureAdditions = mode === "full" ? [] : { count: 0 };
   const width = pieces.find((piece) => piece.kind === "strip")?.width;
   const loops = [];
   let commands = 0;
@@ -68,15 +84,30 @@ export function* preparePressureWindowSteps(
       );
     // One bounded contour can add at most four triangles per input polyline point.
     // Reject before beginning another contour, bounding retained window additions.
-    if (commands > pieces.length * 16 || additions.length > 4 * 4096)
-      return { kind: "window", loops: result.contours, additions: [] };
+    if (commands > pieces.length * 16 || pressureAdditionCount(additions) > 4 * 4096)
+      return completedWindow(result.contours, mode === "full" ? [] : { count: 0 });
     yield;
   }
-  return { kind: "window", loops, additions };
+  return completedWindow(loops, additions);
+}
+
+function completedWindow(
+  loops: PressureWindow["loops"],
+  additions: PressureAdditions,
+): PressureWindow | PressurePathWindow {
+  return Array.isArray(additions)
+    ? { kind: "window", loops, additions }
+    : { kind: "path-window", loops };
 }
 
 /** Retained numeric payload; JavaScript object overhead depends on the runtime. */
-export function pressureWindowMemoryUsage(window: PressureWindow): number {
+export function pressureWindowMemoryUsage(window: PressureWindow | PressurePathWindow): number {
+  if (window.kind === "path-window")
+    return window.loops.reduce(
+      (bytes, loop) =>
+        bytes + loop.reduce((total, edge) => total + (edge.kind === "line" ? 32 : 64), 0),
+      0,
+    );
   return measurePressureWindow(window).numericBytes;
 }
 

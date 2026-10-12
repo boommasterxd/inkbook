@@ -131,7 +131,7 @@ export class ActivePageLayout {
   }
 }
 
-function maximumHeight(...values: Array<number | undefined>): number | undefined {
+export function maximumHeight(...values: Array<number | undefined>): number | undefined {
   const finite = values.filter((value): value is number => Number.isFinite(value));
   return finite.length === 0 ? undefined : Math.max(...finite);
 }

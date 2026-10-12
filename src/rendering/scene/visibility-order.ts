@@ -27,12 +27,34 @@ export function mergeVisibleBand(
     ) {
       output[count++] = entrants[entrantIndex++]!;
     }
-    if (retained !== undefined) output[count++] = retained;
+    if (retained !== undefined) {
+      // Removal and restoration may share one publication without changing the previous band.
+      if (entrants[entrantIndex] === retained) entrantIndex += 1;
+      output[count++] = retained;
+    }
     if (previousIndex >= previousCount && retained === undefined) {
       while (entrantIndex < entrants.length) output[count++] = entrants[entrantIndex++]!;
     }
   }
   return count;
+}
+
+/** Dense rank changes preserve the retained sequence when its current ranks remain ordered. */
+export function retainedVisibleOrderStable(
+  previous: readonly (string | undefined)[],
+  count: number,
+  isVisible: (id: string) => boolean,
+  rank: (id: string) => number,
+): boolean {
+  let precedingRank = -Infinity;
+  for (let index = 0; index < count; index += 1) {
+    const id = previous[index];
+    if (id === undefined || !isVisible(id)) continue;
+    const currentRank = rank(id);
+    if (currentRank <= precedingRank) return false;
+    precedingRank = currentRank;
+  }
+  return true;
 }
 
 export function sortVisibleBand(
@@ -81,30 +103,33 @@ export function firstMountedSuccessor(
 }
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { SceneStorePort } from "./types";
-import type { BandVisibility } from "./visibility-types";
+import type { VisibilityResult } from "./visibility-types";
 
-export function copyCommittedVisibility(
-  target: (string | undefined)[],
-  previousCount: number,
-  visibility: BandVisibility,
+export function commitVisibleBands(
+  ids: Record<RenderBand, readonly (string | undefined)[]>,
+  counts: Record<RenderBand, number>,
+  visibility: VisibilityResult,
   proof?: {
     readonly mounted: ReadonlyMap<string, MountedSceneElement>;
     readonly store: SceneStorePort;
     readonly epoch: number;
   },
-): number {
-  for (let index = 0; index < visibility.count; index += 1) {
-    const id = visibility.ids[index];
-    target[index] = id;
-    const entry = id === undefined ? undefined : proof?.mounted.get(id);
-    const record = entry === undefined ? undefined : proof?.store.get(entry.id);
-    if (entry !== undefined && record?.band === entry.band && entry.detachedPathCount === 0) {
-      entry.committedRank = record.rank;
-      entry.committedOrderEpoch = proof!.epoch;
+): void {
+  for (const band of ["highlight", "content"] as const) {
+    const visible = visibility[band];
+    ids[band] = visible.ids;
+    counts[band] = visible.count;
+    if (proof === undefined) continue;
+    for (let index = 0; index < visible.count; index += 1) {
+      const id = visible.ids[index];
+      const entry = id === undefined ? undefined : proof.mounted.get(id);
+      const record = entry === undefined ? undefined : proof.store.get(entry.id);
+      if (entry !== undefined && record?.band === entry.band && entry.detachedPathCount === 0) {
+        entry.committedRank = record.rank;
+        entry.committedOrderEpoch = proof.epoch;
+      }
     }
   }
-  for (let index = visibility.count; index < previousCount; index += 1) target[index] = undefined;
-  return visibility.count;
 }
 
 export function refreshVisibleRanks(
@@ -123,15 +148,6 @@ export function refreshVisibleRanks(
     const record = store.get(id);
     if (record?.band === band) ranks[slot] = record.rank;
   }
-}
-
-export function copyVisibleReferences(
-  source: readonly (string | undefined)[],
-  count: number,
-  target: (string | undefined)[],
-): number {
-  for (let index = 0; index < count; index += 1) target[index] = source[index];
-  return count;
 }
 
 export function clearVisibleReferences(values: (string | undefined)[], count: number): void {

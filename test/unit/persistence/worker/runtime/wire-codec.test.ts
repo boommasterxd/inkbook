@@ -17,19 +17,23 @@ import {
   encodeRuntimeResultChunked,
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import {
-  decodeRuntimeRequest,
+  decodeRuntimeRequestChunked,
   decodeRuntimeResult,
   decodeUnlockBatch,
   encodeRuntimeRequest,
   encodeRuntimeRequestChunked,
   encodeRuntimeResult,
-  encodeUnlockBatch,
+  encodeUnlockBatchChunked,
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import {
   packElements,
   unpackElements,
 } from "../../../../../src/persistence/worker/runtime/element-wire-codec";
 import { snapshot, STROKE } from "./fixtures";
+
+function createWireContext() {
+  return { checkpoint: () => undefined, signal: new AbortController().signal };
+}
 
 const clipboardIdentity = (operationId: number) => ({
   operationId,
@@ -48,10 +52,10 @@ describe("document worker wire codec", () => {
         snapshot: snapshot(),
         type: "model-sync-full",
       },
-      { checkpoint: async () => undefined, signal: new AbortController().signal },
+      createWireContext(),
     );
     expect(full.value.type).toBe("model-sync-full-wire");
-    expect(decodeRuntimeRequest(full.value)).toMatchObject({
+    expect(await decodeRuntimeRequestChunked(full.value, createWireContext())).toMatchObject({
       modelRevision: 0,
       snapshot: { revision: 0 },
       type: "model-sync-full",
@@ -66,12 +70,14 @@ describe("document worker wire codec", () => {
       type: "model-sync-incremental",
     });
     expect(incremental.value.type).toBe("model-sync-incremental-wire");
-    expect(decodeRuntimeRequest(incremental.value)).toMatchObject({
-      changedElementDerivations: [{ elementId: STROKE.id }],
-      changedElements: [{ id: STROKE.id }],
-      modelRevision: 1,
-      type: "model-sync-incremental",
-    });
+    expect(await decodeRuntimeRequestChunked(incremental.value, createWireContext())).toMatchObject(
+      {
+        changedElementDerivations: [{ elementId: STROKE.id }],
+        changedElements: [{ id: STROKE.id }],
+        modelRevision: 1,
+        type: "model-sync-incremental",
+      },
+    );
     expect(STROKE.points).toEqual([10, 10, 0.5, 20, 20, 1]);
   });
 
@@ -96,7 +102,7 @@ describe("document worker wire codec", () => {
     );
   });
 
-  it("round-trips full requests and transferable UTF-8 export results", () => {
+  it("round-trips full requests and transferable UTF-8 export results", async () => {
     const request = encodeRuntimeRequest({
       baseModelRevision: null,
       exportGeneration: 4,
@@ -107,7 +113,7 @@ describe("document worker wire codec", () => {
       workerEpoch: 2,
     });
     expect(request.value.type).toBe("export-full-wire");
-    expect(decodeRuntimeRequest(request.value)).toMatchObject({
+    expect(await decodeRuntimeRequestChunked(request.value, createWireContext())).toMatchObject({
       exportGeneration: 4,
       snapshot: { revision: 0 },
       type: "export-full",
@@ -291,7 +297,7 @@ describe("document worker clipboard wire adoption", () => {
 
     expect(checkpoints).toBe(2);
     expect(document.elements).toEqual(elements);
-    const decoded = decodeRuntimeRequest(encoded.value);
+    const decoded = await decodeRuntimeRequestChunked(encoded.value, createWireContext());
     expect(decoded.type === "export-full" && decoded.snapshot.elements).toHaveLength(130);
   });
 });
@@ -357,7 +363,7 @@ describe("document worker owned result adoption", () => {
 });
 
 describe("document worker wire validation", () => {
-  it("rejects reused, missing, and malformed wire buffers", () => {
+  it("rejects reused, missing, and malformed wire buffers", async () => {
     const packed = packElements([
       {
         createdAt: 1,
@@ -383,7 +389,9 @@ describe("document worker wire validation", () => {
     ).toThrow("reused");
     packed.pointBuffers[0]![0] = Number.NaN;
     expect(() => unpackElements(packed)).toThrow();
-    expect(() => decodeRuntimeRequest({ type: "unknown" })).toThrow("wire protocol");
+    await expect(
+      decodeRuntimeRequestChunked({ type: "unknown" }, createWireContext()),
+    ).rejects.toThrow("wire protocol");
     expect(() => decodeRuntimeResult({ output: "text", type: "export-success-wire" })).toThrow(
       "wire protocol",
     );
@@ -391,23 +399,26 @@ describe("document worker wire validation", () => {
 });
 
 describe("document worker unlock batch wire validation", () => {
-  it("round-trips bounded unlock batches with copied point transfers", () => {
+  it("round-trips bounded unlock batches with copied point transfers", async () => {
     const source = snapshot();
     const validation = validateInkSnapshotV1(source);
     if (!validation.ok) throw new Error(validation.error.message);
     const elements = source.elements;
     const derivations = validation.derivations.elements;
-    const encoded = encodeUnlockBatch({
-      batchIndex: 0,
-      derivations,
-      elements,
-      identity: {
-        operationId: 1,
-        purpose: "unlock",
-        sessionId: "session-a",
-        workerEpoch: 2,
+    const encoded = await encodeUnlockBatchChunked(
+      {
+        batchIndex: 0,
+        derivations,
+        elements,
+        identity: {
+          operationId: 1,
+          purpose: "unlock",
+          sessionId: "session-a",
+          workerEpoch: 2,
+        },
       },
-    });
+      createWireContext(),
+    );
 
     expect(decodeUnlockBatch(encoded.value)).toEqual({
       batchIndex: 0,
@@ -423,19 +434,22 @@ describe("document worker unlock batch wire validation", () => {
     expect(() => decodeUnlockBatch({ ...encoded.value, batchIndex: -1 })).toThrow("wire protocol");
   });
 
-  it("rejects unlock batches that exceed receiver element or point-buffer limits", () => {
+  it("rejects unlock batches that exceed receiver element or point-buffer limits", async () => {
     const identity = {
       operationId: 1,
       purpose: "unlock" as const,
       sessionId: "session-a",
       workerEpoch: 2,
     };
-    const tooManyElements = encodeUnlockBatch({
-      batchIndex: 0,
-      derivations: Array.from({ length: 257 }, () => validatedSnapshotDerivations()[0]!),
-      elements: Array.from({ length: 257 }, () => snapshot().elements[0]!),
-      identity,
-    });
+    const tooManyElements = await encodeUnlockBatchChunked(
+      {
+        batchIndex: 0,
+        derivations: Array.from({ length: 257 }, () => validatedSnapshotDerivations()[0]!),
+        elements: Array.from({ length: 257 }, () => snapshot().elements[0]!),
+        identity,
+      },
+      createWireContext(),
+    );
     expect(() => decodeUnlockBatch(tooManyElements.value)).toThrow("element limit");
 
     const { points: _points, ...strokeRecord } = STROKE;

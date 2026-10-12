@@ -12,24 +12,24 @@ import { createTerminalVaultPort } from "./terminal-vault-port";
 import { AutosavePersistedOutputVerifier } from "./persisted-output-verifier";
 import { notifyConfirmedPersistence } from "./confirmed-persistence";
 import { AutosaveWorkerModelState } from "./worker-model-state";
-import { isAutosaveSuspended, terminalAutosaveOutcome } from "./status";
+import { isAutosaveSuspended, terminalAutosaveOutcome, resolveAutosaveWaiters } from "./status";
 import { ACTIVE_GESTURE_RETRY_MS, AUTOSAVE_DELAY_MS, AutosaveTimer } from "./timer";
 import { assertAutosaveInitialState } from "./coordinator-validation";
 import { inspectAutosaveExternalChange } from "./external-change";
 import { inspectIndeterminateSave } from "./indeterminate-save";
 import { classifyAutosaveFailure } from "./save-failure";
+import { AutosaveExecutorRecovery } from "./executor-recovery";
+import { executeAutosaveModelSynchronization } from "./model-sync-recovery";
 type ConfirmedBase = Extract<VaultBase, { type: "confirmed" }>;
 export class AutosaveCoordinator {
   readonly #beforeExistingWrite;
   #canonicalRewritePending: boolean;
   #confirmedBase: VaultBase;
-  readonly #createFallback;
+  readonly #recovery;
   readonly #document;
   #disposed = false;
-  #executor;
   #exportGeneration = 0;
   #exportInFlight: exports.ConcreteExportRequest | null = null;
-  #fallbackUsed = false;
   #forced = false;
   readonly #integrity;
   #modelSyncInFlight: ModelSyncRuntimeRequest | null = null;
@@ -44,7 +44,6 @@ export class AutosaveCoordinator {
   readonly #timer;
   readonly #terminalVault;
   readonly #waiters: Autosave.FlushWaiter[] = [];
-  #workerEpoch;
   readonly #verifier;
   readonly #workerModel;
   public constructor(options: Autosave.AutosaveCoordinatorOptions) {
@@ -53,16 +52,14 @@ export class AutosaveCoordinator {
     this.#beforeExistingWrite = options.beforeExistingWrite;
     this.#canonicalRewritePending = options.requiresCanonicalRewrite ?? false;
     this.#confirmedBase = options.confirmedBase;
-    this.#createFallback = options.createFallback;
+    this.#recovery = new AutosaveExecutorRecovery(options);
     this.#document = options.documentSource;
-    this.#executor = options.executor;
     this.#observer = options.observer;
     this.#path = options.path;
     this.#sessionId = options.sessionId;
     this.#status = this.dirty ? "debouncing" : "clean";
     this.#timer = new AutosaveTimer(options.clock, () => this.#kick());
     this.#terminalVault = createTerminalVaultPort(options.vault, () => this.#disposed);
-    this.#workerEpoch = options.workerEpoch ?? 0;
     this.#workerModel = new AutosaveWorkerModelState(options.initialSnapshot.revision);
     if (this.#canonicalRewritePending) {
       this.#workerModel.requireFull(options.initialSnapshot.revision);
@@ -71,11 +68,11 @@ export class AutosaveCoordinator {
     this.#verifier = new AutosavePersistedOutputVerifier({
       workScheduler: options.workScheduler,
       ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
-      executor: () => this.#executor,
+      executor: () => this.#recovery.executor,
       isDisposed: () => this.#disposed,
       sessionId: this.#sessionId,
       switchToFallback: () => this.#switchToFallback(),
-      workerEpoch: () => this.#workerEpoch,
+      workerEpoch: () => this.#recovery.epoch,
     });
   }
   public get dirty(): boolean {
@@ -109,7 +106,7 @@ export class AutosaveCoordinator {
   }
   public async synchronizeWorkerBaseline(identity: PurposeOperationIdentity): Promise<boolean> {
     const revision = this.#document.currentRevision();
-    if (this.#disposed || isAutosaveSuspended(this.#status)) return false;
+    if (this.#recovery.blocksSynchronization(this.#disposed, this.#status)) return false;
     if (
       this.#workerModel.modelRevision === revision &&
       !this.#workerModel.requiresFullSynchronization
@@ -118,15 +115,27 @@ export class AutosaveCoordinator {
     if (this.#exportInFlight !== null || this.#modelSyncInFlight !== null) return false;
     const plan = this.#workerModel.takePlan(this.#document);
     if (plan === null || plan.modelRevision !== revision) return false;
-    const request = exports.createModelSyncRequest(plan, identity);
-    this.#modelSyncInFlight = request;
+    let request = exports.createModelSyncRequest(plan, identity);
     let synchronized = false;
     try {
-      const result = await this.#executor.execute(request);
+      const result = await executeAutosaveModelSynchronization({
+        request,
+        current: (candidate) =>
+          !this.#disposed &&
+          this.#modelSyncInFlight === candidate &&
+          this.#recovery.epoch === candidate.identity.workerEpoch &&
+          this.#document.currentRevision() === candidate.modelRevision,
+        execute: (candidate) => {
+          request = candidate;
+          this.#modelSyncInFlight = candidate;
+          return this.#recovery.executor.execute(candidate);
+        },
+        snapshot: () => this.#document.snapshot(),
+      });
       if (
         this.#disposed ||
         this.#modelSyncInFlight !== request ||
-        !exports.matchesModelSyncResult(request, result)
+        !exports.matchesModelSyncResult(request, result, this.#recovery.epoch)
       ) {
         return false;
       }
@@ -134,7 +143,7 @@ export class AutosaveCoordinator {
       synchronized = true;
       return result.modelRevision === this.#document.currentRevision();
     } catch {
-      if (!this.#disposed && this.#modelSyncInFlight === request) this.#switchToFallback();
+      if (!this.#disposed && this.#modelSyncInFlight === request) await this.#switchToFallback();
       return false;
     } finally {
       if (!this.#disposed && this.#modelSyncInFlight === request) {
@@ -144,12 +153,12 @@ export class AutosaveCoordinator {
       }
     }
   }
-  public recoverWorkerExecutor(): boolean {
-    if (this.#disposed || !this.#switchToFallback()) return false;
-    this.#prepared = null;
-    this.#requireFullSnapshot();
+  public readonly recoverWorkerExecutor = async (resumePersistence = true): Promise<boolean> => {
+    if (!(await this.#switchToFallback())) return false;
+    if (!resumePersistence) return true;
+    if (this.#savePromise === null && (this.#forced || !this.#timer.hasPending)) this.#kick();
     return true;
-  }
+  };
   public flush(_reason: Autosave.FlushReason): Promise<Autosave.FlushOutcome> {
     if (this.#disposed) return Promise.resolve(terminalAutosaveOutcome(this.dirty, this.#status));
     if (!this.dirty) return Promise.resolve("clean");
@@ -229,7 +238,7 @@ export class AutosaveCoordinator {
     if (this.#save !== null) this.#save.result = null;
     this.#save = null;
     this.#forced = false;
-    if (mode === "terminal") this.#executor.terminate();
+    if (mode === "terminal") this.#recovery.executor.terminate();
     this.#setStatus("executor-failed");
     this.#resolveWaiters();
   }
@@ -247,19 +256,20 @@ export class AutosaveCoordinator {
     this.#startPreparedSave();
   }
   #dispatchExport(): void {
-    if (this.#disposed || this.#exportInFlight !== null || this.#modelSyncInFlight !== null) return;
+    if (this.#disposed || this.#recovery.pending) return;
+    if (this.#exportInFlight !== null || this.#modelSyncInFlight !== null) return;
     const plan = this.#workerModel.takePlan(this.#document);
     if (plan === null) return;
     this.#exportGeneration = nextSafeCounter(this.#exportGeneration, "exportGeneration");
     const identity = {
       exportGeneration: this.#exportGeneration,
       sessionId: this.#sessionId,
-      workerEpoch: this.#workerEpoch,
+      workerEpoch: this.#recovery.epoch,
     };
     const request = this.#workerModel.createExportRequest(plan, identity, this.#document);
     this.#exportInFlight = request;
     this.#setStatus("saving");
-    void this.#executor.execute(request).then(
+    void this.#recovery.executor.execute(request).then(
       (result) => void this.#adoptExport(request, result),
       () => this.#recoverExecutor(request),
     );
@@ -269,12 +279,14 @@ export class AutosaveCoordinator {
     result: DocumentRuntimeResult,
   ): Promise<void> {
     if (this.#disposed || this.#exportInFlight !== request) {
-      if (result.type === "export-success") this.#executor.acknowledgeExport?.(result, false);
+      if (result.type === "export-success")
+        this.#recovery.executor.acknowledgeExport?.(result, false);
       return;
     }
     if (result.type !== "export-success" || !exports.matchesExportResult(request, result)) {
       this.#exportInFlight = null;
-      if (result.type === "export-success") this.#executor.acknowledgeExport?.(result, false);
+      if (result.type === "export-success")
+        this.#recovery.executor.acknowledgeExport?.(result, false);
       if (result.type === "export-failure" && exports.matchesExportResult(request, result)) {
         this.#requireFullSnapshot();
         if (request.type === "export-incremental") this.#timer.clear();
@@ -301,32 +313,32 @@ export class AutosaveCoordinator {
     decision: integrity.ExportIntegrityDecision,
   ): void {
     if (this.#disposed || this.#exportInFlight !== request) {
-      this.#executor.acknowledgeExport?.(result, false);
+      this.#recovery.executor.acknowledgeExport?.(result, false);
       return;
     }
     this.#exportInFlight = null;
     if (result.modelRevision !== this.#document.currentRevision()) {
       this.#workerModel.acknowledgeExport(result.modelRevision);
-      this.#executor.acknowledgeExport?.(result, false);
+      this.#recovery.executor.acknowledgeExport?.(result, false);
       if (this.#forced || !this.#timer.hasPending) this.#kick();
       return;
     }
     if (decision !== "match") {
-      this.#executor.acknowledgeExport?.(result, false);
+      this.#recovery.executor.acknowledgeExport?.(result, false);
       this.#prepared = null;
       if (decision === "retry-full") {
         this.#requireFullSnapshot();
         this.#setStatus("debouncing");
         this.#kick();
       } else {
-        this.#switchToFallback();
+        void this.#switchToFallback();
         this.#setStatus("executor-failed");
         this.#resolveWaiters();
       }
       return;
     }
     this.#workerModel.acknowledgeExport(result.modelRevision);
-    this.#executor.acknowledgeExport?.(result, true);
+    this.#recovery.executor.acknowledgeExport?.(result, true);
     this.#prepared = result;
     this.#startPreparedSave();
     if (this.#forced) this.#kick();
@@ -338,7 +350,7 @@ export class AutosaveCoordinator {
       prepared === null ||
       this.#savePromise !== null ||
       prepared.modelRevision !== this.#document.currentRevision() ||
-      prepared.workerEpoch !== this.#workerEpoch
+      prepared.workerEpoch !== this.#recovery.epoch
     )
       return;
     this.#prepared = null;
@@ -414,7 +426,7 @@ export class AutosaveCoordinator {
         else {
           if (this.#save === active) this.#save = null;
           this.#requireFullSnapshot();
-          if (this.#switchToFallback()) this.#setStatus("debouncing");
+          if (await this.#switchToFallback()) this.#setStatus("debouncing");
         }
       }
     } finally {
@@ -445,15 +457,13 @@ export class AutosaveCoordinator {
     this.#canonicalRewritePending = false;
     this.#save = null;
     notifyConfirmedPersistence(this.#observer, this.#path, base, readBack);
-    this.#executor.requestPrewarm?.();
+    this.#recovery.executor.requestPrewarm?.();
     this.#setStatus(this.dirty ? "debouncing" : "clean");
   }
-  #recoverExecutor(request: exports.ConcreteExportRequest): void {
+  async #recoverExecutor(request: exports.ConcreteExportRequest): Promise<void> {
     if (this.#disposed || this.#exportInFlight !== request) return;
     this.#exportInFlight = null;
-    if (!this.#switchToFallback()) return;
-    this.#prepared = null;
-    this.#requireFullSnapshot();
+    if (!(await this.#switchToFallback())) return;
     this.#kick();
   }
   #requireFullSnapshot(): void {
@@ -468,24 +478,22 @@ export class AutosaveCoordinator {
     this.#observer?.statusChanged(status);
   }
   #resolveWaiters(): void {
-    if (this.dirty && !isAutosaveSuspended(this.#status) && this.#status !== "retryable-error")
-      return;
-    const outcome = terminalAutosaveOutcome(this.dirty, this.#status);
-    for (const waiter of this.#waiters.splice(0)) waiter.resolve(outcome);
+    resolveAutosaveWaiters(this.dirty, this.#status, this.#waiters);
   }
-  #switchToFallback(): boolean {
-    if (this.#disposed) return false;
-    if (this.#fallbackUsed || this.#createFallback === undefined) {
-      this.#setStatus("executor-failed");
-      this.#resolveWaiters();
-      return false;
-    }
-    this.#fallbackUsed = true;
-    this.#executor.terminate();
-    this.#workerEpoch = nextSafeCounter(this.#workerEpoch, "workerEpoch");
-    this.#workerModel.resetPreparedPathBaseline();
-    this.#executor = this.#createFallback(this.#workerEpoch);
-    this.#verifier.resetOperationIdentities();
-    return true;
+  #switchToFallback(): Promise<boolean> {
+    return this.#recovery.recover({
+      disposed: () => this.#disposed,
+      adopt: () => {
+        this.#exportInFlight = null;
+        this.#prepared = null;
+        this.#workerModel.resetPreparedPathBaseline();
+        this.#requireFullSnapshot();
+        this.#verifier.resetOperationIdentities();
+      },
+      failed: () => {
+        this.#setStatus("executor-failed");
+        this.#resolveWaiters();
+      },
+    });
   }
 }

@@ -23,6 +23,8 @@ export class SceneMotionController {
   readonly #content: SceneContentRenderer;
   readonly #dom: SceneDom;
   readonly #entries = new Map<number, MotionEntry>();
+  #cacheBytes = 0;
+  #cacheEntries = 0;
   #frameCursor: Iterator<MotionEntry> | undefined;
   readonly #entryByElementId = new Map<string, number>();
   readonly #instrumentation: MutableSceneInstrumentation;
@@ -40,7 +42,7 @@ export class SceneMotionController {
     dom: SceneDom,
     content: SceneContentRenderer,
     instrumentation: MutableSceneInstrumentation,
-    reducedMotion: boolean,
+    reducedMotion = false,
   ) {
     this.#dom = dom;
     this.#content = content;
@@ -111,7 +113,7 @@ export class SceneMotionController {
     this.refreshCacheSize();
   }
   public cacheMemoryUsage(): number {
-    return this.#instrumentation.motionCacheBytes;
+    return this.#cacheBytes;
   }
   public setReducedMotion(reduced: boolean): void {
     if (reduced === this.#reducedMotion) return;
@@ -304,7 +306,6 @@ export class SceneMotionController {
     }
     if (raw >= 1) this.finishEntry(entry, false);
   }
-
   private writeGeometry(entry: GeometryMotionEntry, progress: number): void {
     const current: InkElementV1[] = [];
     for (let index = 0; index < entry.to.length; index += 1) {
@@ -318,16 +319,19 @@ export class SceneMotionController {
     }
     entry.current = current;
   }
-
   private finishEntry(entry: MotionEntry, releasing: boolean): void {
-    if (entry.kind === "exit" || entry.kind === "crossfade") removeMotionVisual(entry.visual);
+    if (!this.#entries.delete(entry.id)) return;
+    if (entry.kind === "exit" || entry.kind === "crossfade") {
+      removeMotionVisual(entry.visual);
+      this.#cacheEntries -= entry.visual.nodes.length;
+      this.#cacheBytes -= entry.visual.bytes;
+    }
     if (!releasing && entry.kind !== "exit") {
       this.#content.setElementMotion(entry.ids, null);
       if (entry.kind === "geometry") {
         for (const id of entry.ids) this.#content.clearElementPreview(id);
       }
     }
-    this.#entries.delete(entry.id);
     for (const id of entry.ids) {
       if (this.#entryByElementId.get(id) === entry.id) this.#entryByElementId.delete(id);
     }
@@ -345,17 +349,15 @@ export class SceneMotionController {
   }
 
   private createVisual(elements: readonly InkElementV1[]): MotionVisual {
-    if (this.#instrumentation.motionCacheEntries >= MAX_MOTION_PATHS) this.evictOldestVisual();
-    const visual = createMotionVisual(
+    if (this.#cacheEntries >= MAX_MOTION_PATHS) this.evictOldestVisual();
+    return createMotionVisual(
       this.#dom.ownerDocument,
       this.#dom.motionGroup,
       elements,
-      MAX_MOTION_PATHS - this.#instrumentation.motionCacheEntries,
-      MAX_MOTION_BYTES - this.#instrumentation.motionCacheBytes,
+      MAX_MOTION_PATHS - this.#cacheEntries,
+      MAX_MOTION_BYTES - this.#cacheBytes,
+      (element) => this.#content.readCanonicalStrokePath(element),
     );
-    this.#instrumentation.motionCacheEntries += visual.nodes.length;
-    this.#instrumentation.motionCacheBytes += visual.bytes;
-    return visual;
   }
 
   private evictOldestVisual(): void {
@@ -440,6 +442,11 @@ export class SceneMotionController {
 
   private add(entry: MotionEntry): void {
     this.#entries.set(entry.id, entry);
+    if (entry.kind === "exit" || entry.kind === "crossfade") {
+      this.#cacheEntries += entry.visual.nodes.length;
+      this.#cacheBytes += entry.visual.bytes;
+      this.refreshCacheSize();
+    }
     for (const id of entry.ids) this.#entryByElementId.set(id, entry.id);
   }
 
@@ -486,14 +493,7 @@ export class SceneMotionController {
   }
 
   private refreshCacheSize(): void {
-    let bytes = 0;
-    let entries = 0;
-    for (const entry of this.#entries.values()) {
-      if (entry.kind !== "exit" && entry.kind !== "crossfade") continue;
-      bytes += entry.visual.bytes;
-      entries += entry.visual.nodes.length;
-    }
-    this.#instrumentation.motionCacheBytes = bytes;
-    this.#instrumentation.motionCacheEntries = entries;
+    this.#instrumentation.motionCacheBytes = this.#cacheBytes;
+    this.#instrumentation.motionCacheEntries = this.#cacheEntries;
   }
 }

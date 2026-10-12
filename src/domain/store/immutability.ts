@@ -1,53 +1,60 @@
-import { copyValidatedSampleExtrema } from "../schema/stroke-sample-extrema";
+import { validatedSampleExtrema } from "../schema/stroke-sample-extrema";
+import { validateRuntimeInkElementV1Steps } from "../schema/element-validation";
 import type { InkElementV1 } from "../schema/public";
+import { copyRuntimeElementSteps } from "../elements/runtime-element-copy";
 
 import type { DeepReadonly, ImmutableInkElement } from "./types";
 
-export function immutableElement(element: InkElementV1): ImmutableInkElement {
-  const clone = cloneValue(element) as InkElementV1;
-  if (element.kind === "stroke" && clone.kind === "stroke") {
-    copyValidatedSampleExtrema(element.points, clone.points);
+export function* immutableElementSteps(
+  element: InkElementV1,
+): Generator<void, ImmutableInkElement> {
+  const validated =
+    element.kind === "stroke" && validatedSampleExtrema(element.points) !== undefined;
+  const clone = yield* copyRuntimeElementSteps(element);
+  if (validated && clone.kind === "stroke") {
+    const steps = validateRuntimeInkElementV1Steps(clone, {}, 2048, 256);
+    let step = steps.next();
+    while (!step.done) {
+      yield;
+      step = steps.next();
+    }
+    const validation = step.value;
+    if (!validation.ok) throw new RangeError(`Invalid immutable element: ${validation.error.code}`);
   }
-  return freezeValue(clone);
+  return takeImmutableElementOwnership(clone);
 }
 
 /** Preserve an unchanged owned sample buffer while copying all replaceable fields. */
-export function immutableReplacement(
+export function* immutableReplacementSteps(
   element: InkElementV1,
   source: ImmutableInkElement,
-): ImmutableInkElement {
+): Generator<void, ImmutableInkElement> {
   if (element.kind !== "stroke" || source.kind !== "stroke" || element.points !== source.points) {
-    return immutableElement(element);
+    return yield* immutableElementSteps(element);
   }
-  const fields = immutableElement({ ...element, points: [0, 0, 0.5] });
+  const fields = yield* immutableElementSteps({ ...element, points: [0, 0, 0.5] });
   return Object.freeze({ ...fields, points: source.points });
 }
 
 /** The caller must relinquish every mutable alias after transferring ownership. */
 export function takeImmutableElementOwnership(element: InkElementV1): ImmutableInkElement {
+  if (Object.isFrozen(element)) return element;
+  if (element.kind === "stroke" && Array.isArray(element.points)) Object.freeze(element.points);
   return freezeValue(element);
 }
 
 export function mutableElement(element: ImmutableInkElement): InkElementV1 {
-  return cloneValue(element) as InkElementV1;
+  return drainSteps(mutableElementSteps(element));
 }
 
-function cloneValue(value: unknown): unknown {
-  if (value instanceof Float64Array) return new Float64Array(value);
-  if (Array.isArray(value)) {
-    const clone = new Array<unknown>(value.length);
-    for (let index = 0; index < value.length; index += 1) {
-      const item: unknown = value[index];
-      clone[index] = item !== null && typeof item === "object" ? cloneValue(item) : item;
-    }
-    return clone;
-  }
-  if (value !== null && typeof value === "object") {
-    const clone: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value)) clone[key] = cloneValue(child);
-    return clone;
-  }
-  return value;
+export function* mutableElementSteps(element: ImmutableInkElement): Generator<void, InkElementV1> {
+  return (yield* copyRuntimeElementSteps(element)) as InkElementV1;
+}
+
+function drainSteps<T>(steps: Generator<void, T>): T {
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
 }
 
 function freezeValue<T>(value: T): DeepReadonly<T> {

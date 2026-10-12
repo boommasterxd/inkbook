@@ -19,9 +19,9 @@ Progressive retained-node reordering shares the live-root allowance with entrant
 and new selection indicators. A discovered order mismatch ends the already proven
 run while preserving its successor anchor; it must not retroactively reparent an
 unbounded earlier run. Unchanged retained anchors consume no publication capacity.
-One explicitly new order entry does not disable progressive viewport work when
-no existing element changes order. The element still publishes completely;
-unproved deltas, multiple insertions, and actual reorders retain atomic publication.
+Complete membership changes matching the current Store do not disable progressive
+viewport work when no surviving element changes relative order. Each entrant still
+publishes completely; unproved deltas and actual reorders retain atomic publication.
 When mounted updates and viewport reconciliation compete for the frame budget,
 each receives the first available slice on alternating frames. Selection-edge
 autoscroll resolves the current owner viewport once per frame before preview
@@ -31,9 +31,48 @@ fallback, and serialized contour output.
 Canonical budgets and ownership belong in
 [Rendering and Performance](../rendering-and-performance.md).
 
+Navigation distinguishes required viewport preparation from background work.
+The first required remote contour has an early response; subsequent lookahead
+excludes reusable local geometry and retains valid overlapping work. Readiness
+survives unchanged, versions-valid retargets and completed valid overlap when a
+request shrinks; a real shrink without completed overlap resets readiness until
+valid progress arrives. Identical retained-ID retargets are suppressed. Remote
+completion wakes the existing scene scheduler. Spatial preparation serves the
+actual viewport before overscan and follows scroll or pan direction while final
+SVG paint order remains canonical. Safe camera-priority changes retain acquired
+records and heap progress only when conservative tier and direction proofs keep
+the ordering valid; otherwise the heap rebuilds under the shared deadline from
+cached bounds. Ready cached candidates can pass a suspended cold candidate, and
+old-node cleanup does not precede their first preparation.
+
+Viewport-first heap construction avoids prioritizing the preload margin before
+visible publication without weakening global scroll-direction order. Physical
+exit ownership survives a retarget after visible publication, independently of
+unpublished entrant ownership. The canonical rules are in
+[Viewport Culling](../rendering-and-performance.md#viewport-culling).
+
+Bounded offscreen-node reuse avoids repeated SVG creation and geometry attribute
+writes while nodes remain cached. Remove connected offscreen roots physically
+outside the mounting envelope under the shared cleanup budget. A 1 MiB
+detached-node cache keeps recent roots, separately from the 25 MiB contour cache;
+neither has a separate root-count cap. Positive entry sizes bound cardinality,
+and memory pressure disables retention. Returns before pending removal can still
+use the connected-ownership fast path. Fully detached returns and actual reorders
+retain the 384-root-per-frame publication allowance; node eviction permits DOM
+recreation without contour recomputation. The shared ownership and cleanup limits
+are defined in [Path Caches](../rendering-and-performance.md#path-caches). Geometry
+identity and ID/version aliases share one canonical path-cache entry. Both caches
+participate in active-document memory pressure and reject stale geometry and deleted
+IDs. Detached retention does not guarantee an instant revisit or eliminate browser
+publication costs. This byte budget bounds retained ownership; it does not establish
+an optimum for browser memory or revisit speed.
+
 A smaller fade-start quota was rejected: the paired selection-delete diagnostic
 did not reduce long native tasks and increased layerization work. Keep the
-existing deadline-checked fade allowance, full duration, and width-dependent blur.
+existing deadline-checked fade allowance and full duration. Eraser and selection
+Delete share retained-node opacity feedback without blur. Avoid filter work that
+the central scheduler cannot interrupt inside browser rendering; preserve the
+paint and group composition rules in the [canonical fade contract](../rendering-and-performance.md#imperative-scene-ownership).
 
 For area selection, use proven whole-bounds exclusion as well as acceptance.
 Reuse a bounded edge index only for factory-owned immutable lasso points. Use
@@ -52,6 +91,16 @@ capped at the existing batch charge. Expensive domain-geometry batches retain
 the conservative charge. Camera-only changes reproject retained selection geometry rather than
 fetching all selected elements again. The predicate and scheduling rules belong
 in [Editor Tools](../editor-tools.md#select).
+
+Navigation retains one fresh owning-window layout snapshot for the scene and
+cursor in each existing read phase. It suppresses camera, selection, and cursor
+feedback only when a previously applied proof still matches camera, fit zoom,
+container and owner geometry, owner/window identity, and actual scroll position.
+Input configuration changes only with zoom bounds. A zoom-owned height resize
+may skip one follow-up root-only invalidation only after scene and cursor adopt
+that full proof and the fresh measurement still matches; external or unknown
+geometry changes keep normal invalidation. The full navigation contract is in
+[Zoom](../zoom.md#atomic-zoom-frames).
 
 Reuse validation only when the authoritative owner proves the unchanged data
 identity. An internal style change does not require another scan of an exclusively
@@ -72,7 +121,17 @@ state atomically. Small patches keep local updates. This trades temporary index
 structure duplication and a retained-entry traversal for bounded publication; it
 does not make every Store commit operation constant-time. Generation and
 cancellation checks protect the preparation and its final adoption. External band orders receive
-full validation; only Store-produced version-bound removals reuse proven order.
+full validation; Store-produced version-bound removals and privately proved history
+directions may reuse proven order as defined in [History Replay Reuse](history-replay-reuse.md).
+Structural shadows collect grid extent entries once and construct their bottom
+heap in linear work with bottom-up heapification. Each indivisible sift uses the
+same shared scheduler admission and generation checks as retained and inserted
+entries. Overflow maxima retain their separate bounded path. A complete clear
+skips the retained-entry traversal only after every removal ID has been proved
+distinct and present, the removal count equals the current index size, and there
+are no insertions. Heap comparisons, actual index visits, full-clear enumeration,
+and cancellation before atomic publication have deterministic work coverage;
+these bounds do not establish physical-device latency.
 The worker reuses confirmed
 order arrays for ordinary element changes, and Paste uses revision-matched model
 facts and direct ID queries rather than rebuilding the existing document.
@@ -106,8 +165,7 @@ Avoid asynchronous continuations for synchronous checkpoint decisions. Large
 handle commits and the clipboard fallback await only actual scheduler handoffs;
 canonical serialization and cancellation boundaries remain unchanged. Exhausted
 motion-path or byte capacity is checked before constructing replacement geometry.
-The existing eraser blur feedback is retained. Handle cancellation reuses unchanged
-selection geometry, and zero-displacement correction does not schedule per-element
+Handle cancellation reuses unchanged selection geometry, and zero-displacement correction does not schedule per-element
 work. Large decorative selection-trace removals operate on a temporarily detached
 group while preserving retained nodes and sibling order; content publication
 limits remain unchanged. After a complete reconciliation scan proves retained
@@ -115,10 +173,29 @@ relative order, insert returning elements between retained DOM anchors rather
 than reparenting unchanged nodes; retain the full ordering path for actual reorder
 and partial detachment. A still-mounted exit returning with an older visibility
 generation uses a temporary, once-per-band DOM-position map to prove its retained
-order. Progressive publication invalidates that proof; reconciliation disposal
-releases it. Completion refreshes the retained proof in the existing visibility
-copy, so future full reconciliations can reuse it. Partial work never publishes a
-completed proof. A stale generation alone must not move unchanged DOM nodes.
+order. Only actual retained-node reordering invalidates that proof; new entrants
+and connected returns that need no reorder preserve the retained relative-order
+snapshot. Reconciliation disposal releases the temporary position map. Completion
+refreshes the retained proof in the existing visibility copy, so future full
+reconciliations can reuse it. Partial work never publishes a completed proof. A
+stale generation alone must not move unchanged DOM nodes.
+The retained SVG lives in a presentation-owned shadow root so host selectors cannot
+match its large active subtree through ancestors; ownership and styling boundaries
+are defined in [Rendering and Performance](../rendering-and-performance.md#imperative-scene-ownership).
+Keep progressive insertion flat and element-complete. The 16-element unit bounds
+each native publication; the 384-original-root frame allowance counts multipart
+elements. An existing late-scene admission may complete one already-prepared
+queued unit, without fresh preparation, cleanup, or deadline renewal. See the
+[canonical publication contract](../rendering-and-performance.md#imperative-scene-ownership).
+Insert a single physical root directly; use a fragment only when an ordered unit
+needs multiple roots. This avoids intermediate DOM work without enlarging the
+publication allowance. Transfer terminal remote reservations to proven cache
+ownership before refilling the worker pipeline, preserving receiver validation.
+After required scene work finishes, allow quiet document-contour preparation to
+use spare cache capacity under central admission. Keep this preparation separate
+from DOM mounting so it cannot enlarge the viewport or evict recent contours.
+The [cache contract](../rendering-and-performance.md#path-caches) defines its
+pause, capacity, and lifetime boundaries.
 Pressure-window publication shares one identity-bound
 memory measurement with its immediate consumer. Warm metadata digest assembly
 batches cooperative checkpoints while keeping output-copy slices bounded and

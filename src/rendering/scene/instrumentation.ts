@@ -1,6 +1,18 @@
 import type { MutableSceneInstrumentation, SceneInstrumentationSnapshot } from "./types";
 import type { SceneBackgroundCache } from "./background-cache";
 import type { ScenePathCache } from "./path-cache";
+import type { DetachedSceneElementCache } from "./detached-element-cache";
+import type { MountYieldReason } from "./mount-slice";
+
+/** Records the reconciler's actual final blocker, including zero-element slices. */
+export function recordVisibilityYield(
+  value: MutableSceneInstrumentation,
+  reason: MountYieldReason | undefined,
+): void {
+  if (reason === "paths") value.visibilityPathYields += 1;
+  else if (reason === "budget") value.visibilityPublicationYields += 1;
+  else if (reason === "deadline") value.visibilityDeadlineYields += 1;
+}
 
 export function createInstrumentation(): MutableSceneInstrumentation {
   return {
@@ -12,6 +24,11 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     contentAttributeWrites: 0,
     contentGeometryWrites: 0,
     domEntrants: 0,
+    domRootsPublished: 0,
+    detachedCacheBytes: 0,
+    detachedCacheEntries: 0,
+    detachedCacheEvictions: 0,
+    detachedCacheHits: 0,
     domExits: 0,
     domFragmentRuns: 0,
     domReorders: 0,
@@ -55,7 +72,12 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     visibilityCandidateVisits: 0,
     visibilityHysteresisHits: 0,
     visibilityReconcileVisits: 0,
+    exitReadinessVisits: 0,
+    exitReadinessComparisons: 0,
     visibilitySortSkips: 0,
+    visibilityPathYields: 0,
+    visibilityPublicationYields: 0,
+    visibilityDeadlineYields: 0,
   };
 }
 
@@ -75,6 +97,7 @@ export function refreshCacheInstrumentation(
   value: MutableSceneInstrumentation,
   background: SceneBackgroundCache,
   pathSource: ScenePathCache,
+  detachedSource?: DetachedSceneElementCache,
 ): void {
   const path = pathSource.statistics();
   value.geometryBuilds = path.builds;
@@ -82,6 +105,11 @@ export function refreshCacheInstrumentation(
   value.pathCacheEntries = path.entries;
   value.pathCacheEvictions = path.evictions;
   value.pathCacheHits = path.hits;
+  const detached = detachedSource?.statistics();
+  value.detachedCacheBytes = detached?.bytes ?? 0;
+  value.detachedCacheEntries = detached?.entries ?? 0;
+  value.detachedCacheEvictions = detached?.evictions ?? 0;
+  value.detachedCacheHits = detached?.hits ?? 0;
   value.backgroundBuilds = background.builds;
   value.backgroundCacheHits = background.hits;
 }

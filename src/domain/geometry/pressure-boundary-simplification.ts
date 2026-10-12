@@ -1,6 +1,7 @@
 import type { PointV1 } from "../schema/types";
 import { pointSegmentDistance } from "./primitives";
 import { PRESSURE_PREPARATION_CHECK_INTERVAL } from "./pressure-union";
+import { recordPressureAddition, type PressureAdditionRecorder } from "./pressure-additions";
 
 interface Vertex {
   point: PointV1;
@@ -27,7 +28,7 @@ interface Extent {
 export function* iteratePressureBoundarySimplification(
   points: readonly PointV1[],
   tolerance: number,
-  addedTriangle?: (triangle: readonly PointV1[]) => void,
+  addedTriangle?: PressureAdditionRecorder,
 ): Generator<void, PointV1[]> {
   if (!Number.isFinite(tolerance) || tolerance < 0)
     throw new RangeError("Invalid boundary tolerance");
@@ -75,7 +76,7 @@ function* removeConcave(
   index: number,
   tolerance: number,
   source: readonly PointV1[],
-  addedTriangle?: (triangle: readonly PointV1[]) => void,
+  addedTriangle?: PressureAdditionRecorder,
 ): Generator<void, boolean> {
   const first = vertices[index]!;
   const middle = vertices[first.next]!;
@@ -85,7 +86,6 @@ function* removeConcave(
     -orientationError(first.point, middle.point, last.point)
   )
     return false;
-  const triangle = [first.point, middle.point, last.point];
   let error =
     Math.max(first.error, middle.error) +
     pointSegmentDistance(middle.point, first.point, last.point);
@@ -93,7 +93,7 @@ function* removeConcave(
     error = yield* chordError(source, first.source, last.source, tolerance);
   }
   if (error > tolerance) return false;
-  addedTriangle?.(triangle);
+  recordPressureAddition(addedTriangle, first.point, middle.point, last.point);
   first.error = error;
   last.previous = index;
   first.next = middle.next;
@@ -105,7 +105,7 @@ function replaceConvexPair(
   index: number,
   tolerance: number,
   extent: Extent,
-  addedTriangle?: (triangle: readonly PointV1[]) => void,
+  addedTriangle?: PressureAdditionRecorder,
 ): boolean {
   const first = vertices[index]!;
   const left = vertices[first.next]!;
@@ -114,12 +114,11 @@ function replaceConvexPair(
   const last = vertices[right.next]!;
   const intersection = outwardIntersection(first.point, left.point, right.point, last.point);
   if (intersection === undefined || !inside(intersection, extent)) return false;
-  const triangle = [left.point, intersection, right.point];
   const error =
     Math.max(first.error, left.error, right.error) +
     pointSegmentDistance(intersection, left.point, right.point);
   if (error > tolerance) return false;
-  addedTriangle?.(triangle);
+  recordPressureAddition(addedTriangle, left.point, intersection, right.point);
   first.error = error;
   left.point = intersection;
   left.anchor = false;

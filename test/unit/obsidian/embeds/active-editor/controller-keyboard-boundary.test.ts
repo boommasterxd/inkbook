@@ -149,7 +149,7 @@ describe("active editor native paste DOM boundary", () => {
     expect(harness.controller.chromeProps().toolbarState.hasSelection).toBe(true);
 
     expect(harness.key("Delete").defaultPrevented).toBe(true);
-    expect(harness.renderer.setElementFade).toHaveBeenCalledWith(expect.any(Array), 400);
+    expect(harness.renderer.setElementFade).toHaveBeenCalledWith(expect.any(Array), 150);
     harness.dispose();
   });
 
@@ -247,18 +247,25 @@ describe("active eraser navigation boundary", () => {
         harness.controller.handlePointerBoundary(true);
         harness.controller.handlePointerDown(primaryPointer(400, 400));
         harness.renderer.setCamera.mockClear();
+        harness.renderer.setViewport.mockClear();
         expect(harness.key("+", { ctrlKey: true }).defaultPrevented).toBe(true);
         const wheel = new WheelEvent("wheel", { deltaY: -100, ctrlKey: true, cancelable: true });
         harness.controller.handleWheel(wheel);
         expect(wheel.defaultPrevented).toBe(true);
         await vi.advanceTimersByTimeAsync(32);
         expect(harness.renderer.setCamera).not.toHaveBeenCalled();
+        expect(harness.renderer.setViewport).not.toHaveBeenCalled();
         if (finish === "release") harness.controller.handlePointerUp(primaryPointer(400, 400));
         else harness.controller.handlePointerCancel(primaryPointer(400, 400));
         harness.renderer.setCamera.mockClear();
         expect(harness.key("+", { ctrlKey: true }).defaultPrevented).toBe(true);
         await vi.advanceTimersByTimeAsync(32);
         expect(harness.renderer.setCamera).toHaveBeenCalled();
+        expect(harness.renderer.setViewport).toHaveBeenCalledOnce();
+        const viewport = harness.renderer.setViewport.mock.lastCall?.[0];
+        expect(viewport).toMatchObject({ left: 0, top: document.body.scrollTop, width: 800 });
+        expect(viewport?.height).toBeGreaterThan(0);
+        expect(viewport?.height).toBeLessThanOrEqual(600);
       } finally {
         harness.dispose();
         vi.useRealTimers();

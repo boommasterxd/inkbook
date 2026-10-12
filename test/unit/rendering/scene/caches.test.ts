@@ -10,24 +10,27 @@ import { pathPresentation } from "../../../../src/rendering/scene/element-presen
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 
 describe("scene caches", () => {
-  it("enforces the 4,096-entry and 32-MiB recently-unmounted path caps", () => {
+  it("enforces the 12,288-entry and 25-MiB recently-unmounted path caps", () => {
     const entryBounded = new ScenePathCache();
     const smallParts = [{ d: "M 0 0 L 1 1", paint: "stroke" }] as const;
     for (let index = 0; index <= PATH_CACHE_MAX_ENTRIES; index += 1) {
-      entryBounded.retain(`entry-${String(index)}`, 1, smallParts);
+      entryBounded.retain(`entry-${String(index)}`, 1, [...smallParts]);
     }
 
-    expect(PATH_CACHE_MAX_ENTRIES).toBe(4_096);
-    expect(PATH_CACHE_MAX_BYTES).toBe(32 * 1_024 * 1_024);
-    expect(entryBounded.statistics()).toMatchObject({ entries: 4_096, evictions: 1 });
+    expect(PATH_CACHE_MAX_ENTRIES).toBe(12_288);
+    expect(PATH_CACHE_MAX_BYTES).toBe(25 * 1_024 * 1_024);
+    expect(entryBounded.statistics()).toMatchObject({
+      entries: PATH_CACHE_MAX_ENTRIES,
+      evictions: 1,
+    });
     expect(entryBounded.take("entry-0", 1)).toBeUndefined();
 
     const byteBounded = new ScenePathCache();
     const largeParts = [{ d: "M".repeat(5 * 1_024 * 1_024), paint: "stroke" }] as const;
     for (let index = 0; index < 4; index += 1) {
-      byteBounded.retain(`large-${String(index)}`, 1, largeParts);
+      byteBounded.retain(`large-${String(index)}`, 1, [...largeParts]);
     }
-    expect(byteBounded.statistics()).toMatchObject({ entries: 3, evictions: 1 });
+    expect(byteBounded.statistics()).toMatchObject({ entries: 2, evictions: 2 });
     expect(byteBounded.cacheMemoryUsage()).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
   });
 });
@@ -44,8 +47,11 @@ describe("prepared live path cache", () => {
       geometryMemoryBytes: 128,
     };
     cache.retainPrepared("first", 1, prepared);
+    expect(cache.has("first", 1)).toBe(true);
+    expect(cache.has("first", 1)).toBe(true);
     expect(build).not.toHaveBeenCalled();
     expect(cache.take("first", 1)).toBe(parts);
+    expect(cache.statistics().entries).toBe(0);
     expect(cache.take("first", 1)).toBeUndefined();
     expect(build).toHaveBeenCalledTimes(1);
     cache.retainPrepared("first", 2, prepared);

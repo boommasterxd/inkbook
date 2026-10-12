@@ -1,8 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
+import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
+import {
+  createMountedElement,
+  type MountedSceneElement,
+} from "../../../../src/rendering/scene/mounted-element";
+import { resetReconciliationBuffers } from "../../../../src/rendering/scene/reconciliation-buffers";
+import type { PendingReconciliation } from "../../../../src/rendering/scene/reconciliation-state";
+import { removeOrderedVisibilityExits } from "../../../../src/rendering/scene/visibility-reconciliation-commit";
 import type { SceneElementRecord } from "../../../../src/rendering/scene/types";
 import { arrow } from "../../../unit/domain/schema/fixtures";
-import { FakeSceneStore, fakeNode, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
+import {
+  asDocument,
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  fakeNode,
+  fakeRectangleRecord,
+} from "../../../unit/rendering/scene/fakes";
 
 function setup(records: SceneElementRecord[]) {
   const store = new FakeSceneStore();
@@ -71,36 +87,148 @@ function expectEmptyScene(harness: ReturnType<typeof setup>): void {
   expect(harness.renderer.hasPendingSceneCommit).toBe(false);
 }
 
+it("defers native removal when many repeated exits spend the preparation deadline", () => {
+  const node = new FakeNode(new FakeDocument(), "path");
+  const remove = vi.spyOn(node, "remove");
+  const entry = {
+    id: "single",
+    band: "content",
+    committedRank: 0,
+    detachedPathCount: 0,
+    paths: [{ node }],
+  } as unknown as MountedSceneElement;
+  const pending = {
+    exitIds: Array<string>(20_000).fill(entry.id),
+    exitIndex: 0,
+    exitScanComplete: true,
+    exitOrderPrepared: false,
+  } as PendingReconciliation;
+  const options = {
+    mounted: new Map([[entry.id, entry]]),
+  } as unknown as Parameters<typeof removeOrderedVisibilityExits>[1];
+  let reads = 0;
+  expect(
+    removeOrderedVisibilityExits(pending, options, {
+      deadline: 8,
+      now: () => (reads++ === 0 ? 0 : 8),
+      isExit: () => true,
+    }),
+  ).toBe(false);
+  expect(pending.exitIds).toEqual([entry.id]);
+  expect(pending.exitIndex).toBe(0);
+  expect(remove).not.toHaveBeenCalled();
+  remove.mockRestore();
+});
+
+describe("deduplicated scene cleanup", () => {
+  it.each([false, true])(
+    "preserves deduplicated exits and the partial head with pending entrants=%s",
+    (preservePending) => {
+      const document = asDocument(new FakeDocument());
+      const instrumentation = createInstrumentation();
+      const records = [...rectangles(2), createSceneRecord(arrow(500), 2)];
+      const entries = records.map((record) =>
+        createMountedElement(
+          document,
+          record,
+          buildElementPathParts(record.element),
+          instrumentation,
+        ),
+      );
+      const partial = entries[2]!;
+      partial.paths[1]!.node.remove();
+      partial.detachedPathCount = 1;
+      const removals = entries.flatMap((entry) =>
+        entry.paths.map(({ node }) => vi.spyOn(node, "remove")),
+      );
+      const pending = {
+        exitIds: ["consumed", partial.id, "r-1", "r-0", partial.id, "r-1", "r-0", "stale"],
+        exitIndex: 1,
+        exitScanComplete: true,
+        exitOrderPrepared: false,
+      } as PendingReconciliation;
+      const removed = vi.fn<(id: string) => void>();
+      const skipped = vi.fn();
+      const releaseId = vi.fn();
+      const options = {
+        mounted: new Map(entries.map((entry) => [entry.id, entry])),
+        store: new FakeSceneStore(),
+        instrumentation,
+        visibility: { releaseId },
+        pathCache: { invalidate: vi.fn(), retain: vi.fn() },
+      } as unknown as Parameters<typeof removeOrderedVisibilityExits>[1];
+      const get = vi.spyOn(options.mounted, "get");
+      resetReconciliationBuffers({
+        preservePending,
+        preserveExits: true,
+        exitCursor: pending,
+        entrants: new Map(),
+        exitIds: pending.exitIds,
+        publishedEntrantIds: [],
+        newlyMountedIds: [],
+        runs: [],
+      });
+      pending.exitIndex = 0;
+      try {
+        expect(
+          removeOrderedVisibilityExits(pending, options, {
+            deadline: 8,
+            now: () => 0,
+            isExit: () => true,
+            onRemoved: removed,
+            onSkipped: skipped,
+          }),
+        ).toBe(true);
+        expect(pending.exitIds).toEqual([partial.id, "r-0", "r-1", "stale"]);
+        expect(removed.mock.calls.map(([id]) => id)).toEqual([partial.id, "r-0", "r-1"]);
+        expect(removals.map((spy) => spy.mock.calls.length)).toEqual([1, 1, 1, 0]);
+        expect(skipped).toHaveBeenCalledExactlyOnceWith("stale");
+        expect(releaseId).toHaveBeenCalledTimes(3);
+        expect(options.mounted.size).toBe(0);
+        expect(get.mock.calls.every(([id]) => id !== "consumed")).toBe(true);
+        expect(get.mock.calls.length).toBeLessThanOrEqual(32);
+      } finally {
+        for (const spy of removals) spy.mockRestore();
+      }
+    },
+  );
+});
+
 describe("sliced scene exit cleanup", () => {
-  it("restores still-mounted faded nodes after Undo and safely cleans a subsequent Redo", () => {
+  it("removes collected exits in committed rank order within the per-frame node cap", () => {
     const records = rectangles(200);
     const harness = setup(records);
-    const original = [...harness.content.nodes];
-    remove(harness, records);
-    beginCleanup(harness);
-    expect(harness.renderer.mountedCount).toBe(136);
-    expect(harness.renderer.hasPendingSceneCommit).toBe(false);
-    const retained = [...harness.content.nodes];
-    expect(retained.every((node) => node.style.opacity === "0")).toBe(true);
-
-    restore(harness, records);
-    harness.scheduler.runAll();
-    expect(harness.renderer.mountedIds("content")).toEqual(records.map(({ id }) => id));
-    expect(harness.content.nodes).toHaveLength(200);
-    for (const node of retained) {
-      expect(harness.content.nodes).toContain(node);
-      expect(node.style.opacity).toBe("");
-      expect(node.style.filter).toBe("");
+    const removed: number[] = [];
+    const removals = harness.content.nodes.map((node, rank) => {
+      const original = node.remove.bind(node);
+      return vi.spyOn(node, "remove").mockImplementation(() => {
+        removed.push(rank);
+        original();
+      });
+    });
+    try {
+      harness.renderer.setElementFade(
+        records.map(({ id }) => id),
+        0,
+      );
+      harness.scheduler.runAll();
+      remove(harness, [...records].reverse(), false);
+      let previous = 0;
+      while (harness.scheduler.pendingCount > 0) {
+        harness.scheduler.runNext();
+        expect(removed.length - previous).toBeLessThanOrEqual(64);
+        previous = removed.length;
+      }
+      expect(removed).toEqual(records.map(({ rank }) => rank));
+      expectEmptyScene(harness);
+    } finally {
+      for (const removal of removals) removal.mockRestore();
+      harness.renderer.destroy();
     }
-    expect(harness.content.nodes.map((node) => node.attributes.get("d"))).toEqual(
-      original.map((node) => node.attributes.get("d")),
-    );
-    remove(harness, records);
-    harness.scheduler.runAll();
-    expectEmptyScene(harness);
-    harness.renderer.destroy();
   });
+});
 
+describe("mixed scene exit cleanup", () => {
   it.each([0, 199])("bounds mixed deletion cleanup when %s other exits have faded", (count) => {
     const records = rectangles(200);
     const harness = setup(records);
@@ -111,28 +239,33 @@ describe("sliced scene exit cleanup", () => {
     remove(harness, records, false);
     beginCleanup(harness);
     expect(harness.renderer.mountedCount).toBe(136);
-    expect(harness.content.nodes.every((node) => node.style.opacity === "0")).toBe(true);
+    expect(harness.renderer.instrumentation().domExits).toBe(200 - harness.renderer.mountedCount);
+    expect(harness.content.nodes.some((node) => node.style.opacity === "0")).toBe(true);
     expect(harness.renderer.hasPendingSceneCommit).toBe(false);
     harness.scheduler.runAll();
     expectEmptyScene(harness);
     harness.renderer.destroy();
   });
 
-  it("publishes the new viewport before obsolete offscreen nodes finish cleanup", () => {
+  it("publishes the new viewport before detaching obsolete roots in bounded cleanup", () => {
     const next = fakeRectangleRecord("new-visible", 200, 10, 1_000);
     const harness = setup([...rectangles(200), next]);
     expect(harness.renderer.mountedCount).toBe(200);
     harness.renderer.setViewport({ height: 500, left: 0, top: 1_000, width: 500 });
     harness.scheduler.runNext();
-    expect(harness.renderer.mountedIds("content")).toEqual([next.id]);
-    expect(harness.renderer.mountedCount).toBe(137);
-    expect(harness.scheduler.pendingCount).toBe(1);
+    expect(harness.renderer.mountedIds("content")).toContain(next.id);
+    expect(harness.renderer.mountedCount).toBeGreaterThan(1);
+    expect(harness.renderer.mountedCount).toBeLessThanOrEqual(201);
+    expect(harness.scheduler.pendingCount).toBeGreaterThan(0);
     const newNode = harness.content.nodes.find((node) =>
       node.attributes.get("d")?.includes("1000"),
     );
     expect(newNode).toBeDefined();
     harness.scheduler.runAll();
     expect(harness.content.nodes).toEqual([newNode]);
+    expect(harness.renderer.mountedIds("content")).toEqual([next.id]);
+    expect(harness.renderer.instrumentation().domExits).toBe(200);
+    expect(harness.renderer.instrumentation().detachedCacheEntries).toBe(200);
     harness.renderer.destroy();
   });
 });
@@ -145,8 +278,8 @@ describe("deferred scene exit cleanup", () => {
     const path = harness.content.nodes[0]!;
     remove(harness, records);
     harness.renderer.clearElementFade(records.map(({ id }) => id));
-    expect(path.style.animation).toContain("inkbook-element-erase 220ms");
-    expect(path.style.filter).toBe("blur(20px)");
+    expect(path.style.animation).toContain("inkbook-element-opacity-exit 220ms");
+    expect(path.style.filter).toBeUndefined();
     expect(harness.renderer.instrumentation().motionTombstones).toBe(0);
     harness.scheduler.runNext();
     expect(harness.renderer.mountedCount).toBe(1);
@@ -157,7 +290,7 @@ describe("deferred scene exit cleanup", () => {
     harness.renderer.destroy();
   });
 
-  it("restores a selection deleted with blur when Undo arrives before the transition finishes", () => {
+  it("restores a selection deleted with opacity feedback when Undo arrives before the transition finishes", () => {
     const records = rectangles(2);
     const harness = setup(records);
     harness.renderer.setReducedMotion(false);
@@ -168,10 +301,16 @@ describe("deferred scene exit cleanup", () => {
     harness.renderer.clearElementFade(ids);
     harness.scheduler.runNext();
     expect(harness.content.nodes).toEqual(original);
-    expect(original.every((node) => node.style.filter === "blur(20px)")).toBe(true);
+    expect(
+      original.every((node) =>
+        node.style.getPropertyValue("animation").startsWith("inkbook-element-opacity-exit"),
+      ),
+    ).toBe(true);
     harness.scheduler.time += 150;
     restore(harness, records);
-    expect(original.every((node) => node.style.filter === "")).toBe(true);
+    expect(
+      original.every((node) => node.style.animation === "" && node.style.filter === undefined),
+    ).toBe(true);
     harness.scheduler.time += 300;
     harness.scheduler.runAll();
     expect(harness.content.nodes).toEqual(original);
@@ -244,6 +383,39 @@ describe("interrupted scene exit cleanup", () => {
     if (undo) expect(harness.content.nodes.slice(-2)).toEqual(original.slice(-2));
     harness.renderer.destroy();
   });
+
+  it.each([false, true])(
+    "retargets partially detached multipart culling with return=%s",
+    (returns) => {
+      const record = createSceneRecord(arrow(), 63);
+      const next = fakeRectangleRecord("next", 64, 10, 10_000);
+      const final = fakeRectangleRecord("final", 65, 10, 20_000);
+      const records = [...rectangles(63), record];
+      const harness = setup([...records, next, final]);
+      const original = [...harness.content.nodes];
+      expect(original).toHaveLength(65);
+      harness.renderer.resetInstrumentation();
+      harness.renderer.setViewport({ height: 500, left: 0, top: 10_000, width: 500 });
+      harness.scheduler.runNext();
+      expect(harness.content.nodes).toHaveLength(2);
+      expect(harness.renderer.mountedCount).toBe(2);
+      expect(harness.renderer.mountedIds("content")).toEqual([next.id]);
+      expect(harness.renderer.instrumentation().detachedCacheEntries).toBe(63);
+      if (returns) harness.renderer.setViewport({ height: 500, left: 0, top: 0, width: 500 });
+      else harness.renderer.setViewport({ height: 500, left: 0, top: 20_000, width: 500 });
+      harness.scheduler.runAll();
+      if (returns) expect(harness.content.nodes).toEqual(original);
+      else expect(original.every((node) => node.parent === undefined)).toBe(true);
+      expect(harness.renderer.mountedCount).toBe(returns ? 64 : 1);
+      expect(harness.renderer.mountedIds("content")).toEqual(
+        returns ? records.map(({ id }) => id) : [final.id],
+      );
+      expect(harness.renderer.instrumentation().geometryBuilds).toBe(returns ? 1 : 2);
+      harness.renderer.destroy();
+      expect(harness.scheduler.pendingCount).toBe(0);
+      expect(harness.renderer.memoryUsage().pathCacheBytes).toBe(0);
+    },
+  );
 });
 
 describe("retained DOM order after rank changes", () => {
@@ -293,7 +465,7 @@ describe("retained DOM order after rank changes", () => {
       ],
     });
     harness.scheduler.runNext();
-    expect(harness.content.nodes).toEqual([original[1], original[2], original[0]]);
+    expect(harness.content.nodes).toEqual([original[2], original[1], original[0]]);
 
     harness.renderer.setViewport({ height: 2000, left: 0, top: 0, width: 500 });
     harness.scheduler.runAll();

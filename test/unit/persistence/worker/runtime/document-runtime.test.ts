@@ -1,5 +1,5 @@
 import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/parse-document";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
 
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
@@ -196,7 +196,8 @@ describe("document worker model synchronization", () => {
       type: "model-sync-incremental",
     });
     expect(model.instrumentation).toMatchObject({
-      cacheElements: 1,
+      cacheElements: 0,
+      fragmentBuilds: 1,
       prewarmedBytes: 0,
       prewarmedElements: 0,
     });
@@ -410,15 +411,17 @@ describe("document worker fallback scheduling", () => {
   it("aborts a running fallback checkpoint and releases its pending job", async () => {
     let releaseYield = (): void => undefined;
     let now = 0;
+    const workScheduler = createTestWorkScheduler({
+      now: () => (now += 9),
+      checkpoint: () =>
+        new Promise<void>((resolve) => {
+          releaseYield = resolve;
+        }),
+    });
+    const dispose = vi.spyOn(workScheduler, "dispose");
     const scheduler = new GestureAwareSliceScheduler({
       isInputActive: () => false,
-      workScheduler: createTestWorkScheduler({
-        now: () => (now += 9),
-        checkpoint: () =>
-          new Promise<void>((resolve) => {
-            releaseYield = resolve;
-          }),
-      }),
+      workScheduler,
     });
     const runtime = new DocumentWorkerRuntime(executor, scheduler);
     const pending = runtime.execute({
@@ -434,6 +437,7 @@ describe("document worker fallback scheduling", () => {
     releaseYield();
 
     await expect(pending).rejects.toThrow("terminated");
+    expect(dispose).not.toHaveBeenCalled();
   });
 
   it("cancels chunked fallback parsing before any unlock batch is published", async () => {

@@ -31,6 +31,14 @@ export class SceneSelectionTraces {
   public needsUpdate(id: string, element?: InkElementV1): boolean {
     return this.#traces.has(id) || (element !== undefined && this.includes(element));
   }
+  public markMountedDirty(
+    mounted: ReadonlyMap<string, MountedSceneElement>,
+    dirty: Set<string>,
+    ids: Iterable<string> = mounted.keys(),
+  ): void {
+    for (const id of ids)
+      if (this.needsUpdate(id, mounted.get(id)?.displayedElement)) dirty.add(id);
+  }
   public includes(element: InkElementV1): boolean {
     return (
       this.#selected.has(element.id) &&
@@ -133,7 +141,7 @@ export class SceneSelectionTraces {
     let removed: string[] | undefined;
     for (const id of this.#traces.keys())
       if (!mounted.has(id) || !this.#selected.has(id)) (removed ??= []).push(id);
-    if (removed !== undefined) this.removeMany(removed);
+    if (removed !== undefined) this.removeMany(removed, true);
   }
   public release(): void {
     this.removeMany([...this.#traces.keys()]);
@@ -155,11 +163,11 @@ export class SceneSelectionTraces {
     this.#bytes -= bytes;
     this.#traces.delete(id);
   }
-  private removeMany(ids: readonly string[]): void {
+  private removeMany(ids: readonly string[], detach = ids.length >= 32): void {
     if (ids.length === 0) return;
-    // Release large batches outside the connected SVG. SceneDom keeps this
+    // Release culling batches and large selection changes outside the SVG. SceneDom keeps this
     // group last in the camera group, so appending restores its original order.
-    const parent = ids.length >= 32 ? this.#group.parentNode : null;
+    const parent = detach ? this.#group.parentNode : null;
     if (parent !== null) this.#group.remove();
     try {
       for (const id of ids) this.removeTrace(id);

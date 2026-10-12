@@ -16,6 +16,9 @@ export function activeEditorPointerHarness() {
   const capture = vi.fn();
   const release = vi.fn();
   const beginGestureGeometry = vi.fn(() => true);
+  const cancelPanMomentum = vi.fn();
+  const recordTouchPan = vi.fn();
+  const releaseTouchPan = vi.fn();
   const hit = vi.fn(() => null);
   const dispatch = vi.fn((action: InputAction) => {
     const result = reduceInput(h.controls.input, action);
@@ -68,12 +71,14 @@ export function activeEditorPointerHarness() {
       dispatchFromEvent: (_event: unknown, run: () => void) => run(),
     } as ActiveEditorMenuController,
     navigation: {
-      cancelPanMomentum: vi.fn(),
+      cancelPanMomentum,
       beginGestureGeometry,
       finish: vi.fn(),
       zoom: 1,
       screenPointer,
       pageSample: (sample: PointerSample) => sample,
+      recordTouchPan,
+      releaseTouchPan,
     } as unknown as ActiveEditorNavigation,
     sceneStore: { hit } as unknown as ElementSceneStore,
   });
@@ -84,6 +89,9 @@ export function activeEditorPointerHarness() {
     capture,
     release,
     beginGestureGeometry,
+    cancelPanMomentum,
+    recordTouchPan,
+    releaseTouchPan,
     hit,
     screenPointer,
     coalesced,

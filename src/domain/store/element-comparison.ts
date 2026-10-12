@@ -3,15 +3,37 @@ import type { InkElementV1 } from "../schema/public";
 import type { DeltaDomain, ImmutableInkElement } from "./types";
 
 export function elementsEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
-  return valuesEqual(left, right);
+  return drain(elementsEqualSteps(left, right));
+}
+
+interface ComparisonProgress {
+  readonly samplesPerStep: number;
+  samples: number;
+}
+
+export function* elementsEqualSteps(
+  left: ImmutableInkElement,
+  right: InkElementV1,
+  samplesPerStep = 256,
+): Generator<void, boolean> {
+  return yield* valuesEqualSteps(left, right, comparisonProgress(samplesPerStep));
 }
 
 export function classifyReplacement(
   previous: ImmutableInkElement,
   next: InkElementV1,
 ): DeltaDomain[] {
+  return drain(classifyReplacementSteps(previous, next));
+}
+
+export function* classifyReplacementSteps(
+  previous: ImmutableInkElement,
+  next: InkElementV1,
+  samplesPerStep = 256,
+): Generator<void, DeltaDomain[]> {
+  const progress = comparisonProgress(samplesPerStep);
   const domains: DeltaDomain[] = [];
-  if (!geometryEqual(previous, next)) domains.push("geometry");
+  if (!(yield* geometryEqualSteps(previous, next, progress))) domains.push("geometry");
   if (!paintEqual(previous, next)) domains.push("paint");
   if (!connectionsEqual(previous, next)) domains.push("connection");
   return domains;
@@ -24,37 +46,42 @@ export function hasConnections(element: ImmutableInkElement | InkElementV1): boo
   );
 }
 
-function geometryEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
+function* geometryEqualSteps(
+  left: ImmutableInkElement,
+  right: InkElementV1,
+  progress: ComparisonProgress,
+): Generator<void, boolean> {
   if (left.kind !== right.kind) return false;
   if (!valuesEqual(left.pivot, right.pivot) || left.rotation !== right.rotation) return false;
   if (!geometryStyleEqual(left, right)) return false;
   switch (left.kind) {
     case "stroke":
-      return strokeGeometryEqual(left, right);
+      return yield* strokeGeometryEqualSteps(left, right, progress);
     case "line":
     case "arrow":
       return connectedLinearGeometryEqual(left, right);
     case "straight-highlighter":
       return right.kind === "straight-highlighter" && linearGeometryEqual(left, right);
     case "coordinate-system":
-      return coordinateGeometryEqual(left, right);
+      return yield* coordinateGeometryEqualSteps(left, right, progress);
     case "table":
-      return tableGeometryEqual(left, right);
+      return yield* tableGeometryEqualSteps(left, right, progress);
     default:
       return boxGeometryEqual(left, right);
   }
 }
 
-function strokeGeometryEqual(
+function* strokeGeometryEqualSteps(
   left: Extract<ImmutableInkElement, { kind: "stroke" }>,
   right: InkElementV1,
-): boolean {
+  progress: ComparisonProgress,
+): Generator<void, boolean> {
   return (
     right.kind === "stroke" &&
     left.tool === right.tool &&
     (left.offset?.x ?? 0) === (right.offset?.x ?? 0) &&
     (left.offset?.y ?? 0) === (right.offset?.y ?? 0) &&
-    valuesEqual(left.points, right.points)
+    (yield* valuesEqualSteps(left.points, right.points, progress))
   );
 }
 
@@ -70,28 +97,30 @@ function connectedLinearGeometryEqual(
   );
 }
 
-function coordinateGeometryEqual(
+function* coordinateGeometryEqualSteps(
   left: Extract<ImmutableInkElement, { kind: "coordinate-system" }>,
   right: InkElementV1,
-): boolean {
+  progress: ComparisonProgress,
+): Generator<void, boolean> {
   return (
     right.kind === "coordinate-system" &&
     left.dimension === right.dimension &&
-    valuesEqual(left.origin, right.origin) &&
-    valuesEqual(left.axes, right.axes)
+    (yield* valuesEqualSteps(left.origin, right.origin, progress)) &&
+    (yield* valuesEqualSteps(left.axes, right.axes, progress))
   );
 }
 
-function tableGeometryEqual(
+function* tableGeometryEqualSteps(
   left: Extract<ImmutableInkElement, { kind: "table" }>,
   right: InkElementV1,
-): boolean {
+  progress: ComparisonProgress,
+): Generator<void, boolean> {
   return (
     right.kind === "table" &&
     left.x === right.x &&
     left.y === right.y &&
     left.columnWidth === right.columnWidth &&
-    valuesEqual(left.columnOffsets, right.columnOffsets) &&
+    (yield* valuesEqualSteps(left.columnOffsets, right.columnOffsets, progress)) &&
     left.height === right.height &&
     left.columns === right.columns &&
     left.headerHeight === right.headerHeight
@@ -174,21 +203,86 @@ function connectionsEqual(left: ImmutableInkElement, right: InkElementV1): boole
 }
 
 function valuesEqual(left: unknown, right: unknown): boolean {
+  return drain(valuesEqualSteps(left, right, comparisonProgress(256)));
+}
+
+function* valuesEqualSteps(
+  left: unknown,
+  right: unknown,
+  progress: ComparisonProgress,
+): Generator<void, boolean> {
   if (Object.is(left, right)) return true;
   if (left instanceof Float64Array && right instanceof Float64Array) {
-    return left.length === right.length && left.every((value, index) => value === right[index]);
+    return yield* typedSamplesEqualSteps(left, right, progress);
   }
   if (Array.isArray(left) && Array.isArray(right)) {
-    if (left.length !== right.length) return false;
-    return left.every((value, index) => valuesEqual(value, right[index]));
+    return yield* arrayValuesEqualSteps(left, right, progress);
   }
   if (left === null || right === null || typeof left !== "object" || typeof right !== "object") {
     return false;
   }
-  const leftEntries = Object.entries(left);
+  return yield* recordValuesEqualSteps(left, right, progress);
+}
+
+function* recordValuesEqualSteps(
+  left: object,
+  right: object,
+  progress: ComparisonProgress,
+): Generator<void, boolean> {
+  const leftRecord = left as Record<string, unknown>;
   const rightRecord = right as Record<string, unknown>;
-  return (
-    leftEntries.length === Object.keys(rightRecord).length &&
-    leftEntries.every(([key, value]) => valuesEqual(value, rightRecord[key]))
-  );
+  let rightCount = 0;
+  for (const key in rightRecord) {
+    if (Object.prototype.hasOwnProperty.call(rightRecord, key)) rightCount += 1;
+    if (++progress.samples % progress.samplesPerStep === 0) yield;
+  }
+  let leftCount = 0;
+  for (const key in leftRecord) {
+    if (Object.prototype.hasOwnProperty.call(leftRecord, key)) {
+      leftCount += 1;
+      if (!(yield* valuesEqualSteps(leftRecord[key], rightRecord[key], progress))) return false;
+    }
+    if (++progress.samples % progress.samplesPerStep === 0) yield;
+  }
+  return leftCount === rightCount;
+}
+
+function* typedSamplesEqualSteps(
+  left: Float64Array,
+  right: Float64Array,
+  progress: ComparisonProgress,
+): Generator<void, boolean> {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+    if (++progress.samples % progress.samplesPerStep === 0) yield;
+  }
+  return true;
+}
+
+function* arrayValuesEqualSteps(
+  left: readonly unknown[],
+  right: readonly unknown[],
+  progress: ComparisonProgress,
+): Generator<void, boolean> {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (index in left && !(yield* valuesEqualSteps(left[index], right[index], progress)))
+      return false;
+    if (++progress.samples % progress.samplesPerStep === 0) yield;
+  }
+  return true;
+}
+
+function comparisonProgress(samplesPerStep: number): ComparisonProgress {
+  if (!Number.isSafeInteger(samplesPerStep) || samplesPerStep < 1) {
+    throw new RangeError("Comparison sample count must be a positive safe integer.");
+  }
+  return { samplesPerStep, samples: 0 };
+}
+
+function drain<T>(steps: Generator<void, T>): T {
+  let result = steps.next();
+  while (!result.done) result = steps.next();
+  return result.value;
 }

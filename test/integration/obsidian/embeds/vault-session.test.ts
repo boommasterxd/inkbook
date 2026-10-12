@@ -136,7 +136,7 @@ describe("vault-backed document session", () => {
 });
 
 describe("vault-backed document executors", () => {
-  it("switches once to the fallback executor when worker construction fails", async () => {
+  it("falls back after one bounded native restart when worker construction remains unavailable", async () => {
     const document = documentFromSnapshot();
     const create = vi.fn(async (): Promise<DocumentRuntimePort> => {
       throw new Error("CSP blocked worker construction");
@@ -147,12 +147,12 @@ describe("vault-backed document executors", () => {
       status: "active",
       workerEpoch: 2,
     });
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2);
     expect(session.getSnapshot().workerEpoch).toBe(2);
     await expect(session.unlock({ ...operation(), operationId: 2 })).resolves.toMatchObject({
       status: "load-error",
     });
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("terminates an asynchronously constructed worker when unlock is cancelled", async () => {

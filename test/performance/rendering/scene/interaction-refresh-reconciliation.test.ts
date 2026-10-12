@@ -1,11 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as motionVisual from "../../../../src/rendering/scene/motion-visual";
 
 import { boundsIntersect } from "../../../../src/domain/geometry/public";
+import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import { SpatialQueryCursor } from "../../../../src/domain/spatial/query-cursor";
 import { ElementStore, type StoreDelta } from "../../../../src/domain/store/public";
 import { moveSelection } from "../../../../src/editor/selection/transforms";
+import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
+import {
+  DETACHED_ELEMENT_CACHE_MAX_BYTES,
+  PATH_CACHE_MAX_BYTES,
+  SCENE_PUBLICATION_ROOTS_PER_FRAME,
+} from "../../../../src/rendering/scene/constants";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import type { SceneCamera, SceneViewport } from "../../../../src/rendering/scene/types";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
@@ -17,13 +25,14 @@ import {
 } from "./interaction-refresh-profile-fixture";
 import { FakeNode, FakeScheduler } from "../../../unit/rendering/scene/fakes";
 
-// Reading the clock for scheduler admission is not scene work. Later synthetic ticks
-// exercise deadlines; the assertions below bound actual mounts, queries, and builds.
-const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 8;
-const MAX_MOUNT_SLICE_ELEMENTS = 6;
+// Scheduling time advances at observed work boundaries, never at clock reads.
+// This controlled work cost exercises deadlines without claiming execution speed.
+const SIMULATED_WORK_COST_MS = 0.5;
 const TRANSITIONS = 12;
 const DEFAULT_CAMERA: SceneCamera = { x: 0, zoom: 1 };
 const DEFAULT_VIEWPORT: SceneViewport = { height: 100, left: 0, top: 0, width: 100 };
+
+afterEach(() => vi.restoreAllMocks());
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation profile`, () => {
   it("keeps coalesced pan, zoom, and viewport jumps with bounded work", () => {
@@ -35,6 +44,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
 
     let finalCamera: SceneCamera = DEFAULT_CAMERA;
     let finalViewport: SceneViewport = DEFAULT_VIEWPORT;
+    let entrants = 0;
+    let exits = 0;
+    const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+    const initialRemovals = scheduler.totalRemovedRoots;
     for (let frame = 0; frame < TRANSITIONS; frame += 1) {
       const phase = frame % 4;
       const viewport = {
@@ -47,10 +60,23 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
         x: phase % 2 === 0 ? 0 : -50,
         zoom: phase % 3 === 0 ? 1.05 : 1,
       } satisfies SceneCamera;
+      const previous = new Set(renderer.mountedIds("content"));
+      const envelopeIds = expectedVisibleIds(fixture.store, fixture.ids, viewport, camera);
+      const hysteresis = renderer.instrumentation().visibilityHysteresisHits;
+      const removals = scheduler.totalRemovedRoots;
       runFirstFrameAndFollowUps(scheduler, () => {
         renderer.setViewport(viewport);
         renderer.setCamera(camera);
       });
+      // Hysteresis reuses the last admitted envelope's complete membership.
+      const reused = renderer.instrumentation().visibilityHysteresisHits > hysteresis;
+      const expected = new Set(reused ? previous : envelopeIds);
+      const leaving = [...previous].filter((id) => !expected.has(id)).length;
+      entrants += [...expected].filter((id) => !previous.has(id)).length;
+      exits += leaving;
+      expect(renderer.mountedIds("content")).toEqual([...expected]);
+      expect(content.nodes).toHaveLength(expected.size);
+      expect(scheduler.totalRemovedRoots - removals).toBe(leaving);
       finalCamera = camera;
       finalViewport = viewport;
       expect(scheduler.pendingCount).toBe(0);
@@ -58,8 +84,15 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
 
     const instrumentation = renderer.instrumentation();
     expect(instrumentation.spatialQueries).toBeGreaterThan(0);
-    expect(instrumentation.domEntrants).toBeGreaterThan(0);
-    expect(instrumentation.domExits).toBeGreaterThan(0);
+    expect(instrumentation.domEntrants).toBe(entrants);
+    expect(instrumentation.domExits).toBe(exits);
+    expect(scheduler.totalRemovedRoots - initialRemovals).toBe(exits);
+    expect(exits).toBeGreaterThan(0);
+    expect(instrumentation.detachedCacheEntries).toBeGreaterThan(0);
+    expect(instrumentation.detachedCacheBytes).toBeLessThanOrEqual(
+      DETACHED_ELEMENT_CACHE_MAX_BYTES,
+    );
+    expect(instrumentation.pathCacheBytes).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
     expect(renderer.mountedCount).toBeLessThan(INTERACTION_ELEMENT_COUNT);
     expect(renderer.mountedIds("content")).toEqual(
       expectedVisibleIds(fixture.store, fixture.ids, finalViewport, finalCamera),
@@ -121,6 +154,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
     const { renderer, scheduler } = createProfileRenderer(fixture.store);
     try {
       drainPendingFrames(scheduler);
+      const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
       for (let transition = 0; transition < 16; transition += 1) {
         const viewport = { ...DEFAULT_VIEWPORT, top: transition % 2 === 0 ? 800 : 0 };
         const camera = { x: transition % 3 === 0 ? -50 : 0, zoom: transition % 4 ? 1 : 1.05 };
@@ -129,8 +163,8 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         const entrants = expected.filter((id) => !previous.has(id)).length;
         const expectedSet = new Set(expected);
         const exits = [...previous].filter((id) => !expectedSet.has(id)).length;
-        // At least one scanned, staged, or removed element per slice, plus phase handoffs.
-        const maximumFrames = previous.size + expected.length + exits + 2;
+        // Order proof and priority classification precede the existing mount/exit phases.
+        const maximumFrames = previous.size + expected.length * 3 + exits + 2;
         renderer.resetInstrumentation();
         fixture.store.resetInstrumentation();
         renderer.setViewport(viewport);
@@ -140,8 +174,17 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         const stats = renderer.instrumentation();
         expect(stats.spatialQueries).toBe(1);
         expect(stats.domEntrants).toBe(entrants);
+        expect(stats.domRootsPublished).toBe(entrants);
         expect(stats.domExits).toBe(exits);
+        expect(content.nodes).toHaveLength(expected.length);
+        expect(new Set(content.nodes).size).toBe(expected.length);
+        expect(stats.detachedCacheBytes).toBeLessThanOrEqual(DETACHED_ELEMENT_CACHE_MAX_BYTES);
+        expect(stats.pathCacheBytes).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
         expect(stats.geometryBuilds).toBeLessThanOrEqual(entrants);
+        // Order, priority, warm checks, stage/retry, and newly mounted exit-iterator visits.
+        expect(stats.visibilityReconcileVisits).toBeLessThanOrEqual(
+          previous.size + expected.length * 6 + 16,
+        );
         expect(fixture.store.instrumentation.fullStoreScans).toBe(0);
         expect(fixture.store.instrumentation.bandScans).toBe(0);
       }
@@ -159,13 +202,13 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () 
     const { renderer, scheduler } = createFullyVisibleRenderer(fixture.store, () => budget);
     let starts = 0;
     const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
-    for (const node of content.nodes) {
-      let filter = node.style.filter;
-      Object.defineProperty(node.style, "filter", {
-        get: () => filter,
+    for (const node of content.nodes.flatMap((root) => [root, ...root.nodes])) {
+      let animation = node.style.animation;
+      Object.defineProperty(node.style, "animation", {
+        get: () => animation,
         set: (value: string) => {
-          filter = value;
-          if (value.startsWith("blur(")) {
+          animation = value;
+          if (value.startsWith("inkbook-element-")) {
             starts += 1;
             scheduler.time += 1;
           }
@@ -237,7 +280,7 @@ describe("restored stroke motion work", () => {
     const restored = fixture.elements.slice(0, 2_000);
     fixture.store.remove(restored.map(({ id }) => id));
     const { renderer, scheduler } = createInteractionRenderer(fixture.store);
-    renderer.setViewport({ height: 100, left: 0, top: 200, width: 200 });
+    renderer.setViewport({ height: 100, left: 0, top: 200, width: 100 });
     scheduler.runAll();
     expect(renderer.mountedCount).toBeGreaterThan(256);
     expect(renderer.mountedCount).toBeLessThan(900);
@@ -265,29 +308,79 @@ describe("restored stroke motion work", () => {
 });
 
 class ProfileScheduler extends FakeScheduler {
-  #frameEntryRead = false;
-
-  public override now(): number {
-    const current = this.time;
-    if (!this.#frameEntryRead)
-      this.time +=
-        INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / FAKE_CLOCK_CHECKPOINTS_PER_FRAME;
-    this.#frameEntryRead = false;
-    return current;
-  }
+  public publishedRoots = 0;
+  public removedRoots = 0;
+  public totalRemovedRoots = 0;
 
   public override runNext(): void {
+    this.publishedRoots = 0;
+    this.removedRoots = 0;
     this.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-    this.#frameEntryRead = true;
     super.runNext();
+    expect(this.publishedRoots).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    expect(this.removedRoots).toBeLessThanOrEqual(64);
   }
 }
 
 function createProfileRenderer(store: ElementStore) {
   const scheduler = new ProfileScheduler();
-  return createInteractionRenderer(store, {
+  observePreparationWork(scheduler);
+  const fixture = createInteractionRenderer(store, {
     frameBudgetMs: () => INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
     scheduler,
+  });
+  const content = (fixture.renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+  const originalInsert = content.insertBefore.bind(content);
+  vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
+    const roots = node.fragment ? node.nodes.length : 1;
+    const result = originalInsert(node, successor);
+    scheduler.publishedRoots += roots;
+    scheduler.time += roots * SIMULATED_WORK_COST_MS;
+    return result;
+  });
+  const originalRemove = Object.getOwnPropertyDescriptor(FakeNode.prototype, "remove")!
+    .value as FakeNode["remove"];
+  vi.spyOn(FakeNode.prototype, "remove").mockImplementation(function (this: FakeNode) {
+    scheduler.removedRoots += 1;
+    scheduler.totalRemovedRoots += 1;
+    originalRemove.call(this);
+  });
+  return { ...fixture, scheduler };
+}
+
+function observePreparationWork(scheduler: FakeScheduler): void {
+  const originalGet = Object.getOwnPropertyDescriptor(ElementSceneStore.prototype, "get")!
+    .value as ElementSceneStore["get"];
+  vi.spyOn(ElementSceneStore.prototype, "get").mockImplementation(function (
+    this: ElementSceneStore,
+    id,
+  ) {
+    const record = originalGet.call(this, id);
+    scheduler.time += SIMULATED_WORK_COST_MS;
+    return record;
+  });
+  const originalAdvance = Object.getOwnPropertyDescriptor(SpatialQueryCursor.prototype, "advance")!
+    .value as SpatialQueryCursor<unknown>["advance"];
+  vi.spyOn(SpatialQueryCursor.prototype, "advance").mockImplementation(function (
+    this: SpatialQueryCursor<unknown>,
+    maximum,
+  ) {
+    const result = originalAdvance.call(this, maximum);
+    scheduler.time += result.workUnits * SIMULATED_WORK_COST_MS;
+    return result;
+  });
+  const originalStep = Object.getOwnPropertyDescriptor(
+    CanonicalElementPathPreparation.prototype,
+    "step",
+  )!.value as CanonicalElementPathPreparation["step"];
+  vi.spyOn(CanonicalElementPathPreparation.prototype, "step").mockImplementation(function (
+    this: CanonicalElementPathPreparation,
+    deadline,
+    now,
+  ) {
+    const complete = originalStep.call(this, deadline, now);
+    scheduler.time += SIMULATED_WORK_COST_MS;
+    return complete;
   });
 }
 
@@ -317,18 +410,17 @@ function drainPendingFrames(scheduler: FakeScheduler): void {
 
 function drainBoundedReconciliation(
   renderer: SvgSceneRenderer,
-  scheduler: FakeScheduler,
+  scheduler: ProfileScheduler,
   maximumFrames: number,
 ): void {
   let frames = 0;
   while (scheduler.pendingCount > 0) {
     expect(scheduler.pendingCount).toBe(1);
-    expect(frames).toBeLessThan(maximumFrames);
+    expect(frames, JSON.stringify(renderer.instrumentation())).toBeLessThan(maximumFrames);
+    scheduler.publishedRoots = 0;
     scheduler.runNext();
     frames += 1;
-    const stats = renderer.instrumentation();
-    // Simulated time controls scheduling; the observed mount count remains the work bound.
-    expect(stats.maximumMountSliceElements).toBeLessThanOrEqual(MAX_MOUNT_SLICE_ELEMENTS);
+    expect(scheduler.publishedRoots).toBeLessThanOrEqual(SCENE_PUBLICATION_ROOTS_PER_FRAME);
   }
 }
 

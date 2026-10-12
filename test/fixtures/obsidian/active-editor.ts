@@ -7,6 +7,9 @@ import type {
 } from "../../../src/editor/gestures/public";
 import type { CreationPreviewRenderer } from "../../../src/obsidian/embeds/active-editor/creation-preview";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
+import { PreparedElementHistory } from "../../../src/obsidian/embeds/active-editor/prepared-element-history";
+import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
+import { immediateWorkScheduler } from "./immediate-work-scheduler";
 
 export function activeEditorStoreHistory(store: ElementStore): ActiveEditorHistory {
   return new ActiveEditorHistory({
@@ -14,7 +17,32 @@ export function activeEditorStoreHistory(store: ElementStore): ActiveEditorHisto
     commitElements: (elements) => void store.create(elements),
     commitPage: vi.fn(),
     removeElements: (ids) => void store.remove(ids),
-    replaceElements: (elements) => void store.replaceMany(elements),
+    replaceElements: (elements, capture) => void store.replaceMany(elements, capture),
+  });
+}
+
+export function invalidatePendingHistory(
+  reason: "selection" | "revision" | "dispose" | "failure",
+  history: { dispose(): void },
+  advanceRevision: () => void,
+): boolean {
+  if (reason === "revision") advanceRevision();
+  if (reason === "dispose") history.dispose();
+  return reason !== "selection";
+}
+
+export function activeEditorPreparedHistory(
+  model: EditableDocumentModel,
+  history: ActiveEditorHistory,
+  scheduler = immediateWorkScheduler(),
+): PreparedElementHistory {
+  return new PreparedElementHistory({
+    history,
+    model,
+    isAttached: () => true,
+    onPendingChanged: () => undefined,
+    motion: { beginPreviewCommit: () => ({ arm: () => true, cancel: () => undefined }) },
+    workScheduler: scheduler,
   });
 }
 

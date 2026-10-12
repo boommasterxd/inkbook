@@ -14,12 +14,14 @@ import { InkbookFeedbackManager } from "../../../../src/obsidian/feedback";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 import { SafeStaticProof } from "../../../../src/persistence/serialization/safe-static-proof";
 import type { VaultDocumentSessionHooks } from "../../../../src/obsidian/embeds/vault-document-recovery";
+import type { DocumentRuntimeFactories } from "../../../../src/obsidian/embeds/document-model-port";
 
 const boundary = vi.hoisted(() => {
   const snapshot: WorkspaceEditorCoordinatorSnapshot = { disposed: false };
   return {
     snapshot,
     sessionHooks: undefined as VaultDocumentSessionHooks | undefined,
+    runtimes: undefined as DocumentRuntimeFactories | undefined,
     createScene: vi.fn(),
     getEditorContext: vi.fn(() => ({ model: { getSaveStatus: () => "saved" as const } })),
     activationRequests: vi.fn(),
@@ -69,10 +71,11 @@ vi.mock("../../../../src/obsidian/embeds/vault-document-session-factory", () => 
     constructor(
       _vault: unknown,
       _fileManager: unknown,
-      _runtimes: unknown,
+      runtimes: DocumentRuntimeFactories,
       hooks: VaultDocumentSessionHooks,
     ) {
       boundary.sessionHooks = hooks;
+      boundary.runtimes = runtimes;
     }
     getEditorContext = boundary.getEditorContext;
     prepareForUnload = boundary.prepareForUnload;
@@ -138,6 +141,27 @@ function createHarness(initialEntrance?: PresentationAttachment["initialEntrance
 const runtimes: ObsidianWorkspaceRuntime[] = [];
 afterEach(() => {
   for (const runtime of runtimes.splice(0)) runtime.dispose();
+});
+
+it("refreshes a remounted presentation owner without recreating its document scheduler", () => {
+  const { runtime, attachment } = createHarness();
+  runtimes.push(runtime);
+  const first = runtime.refreshRateProfiles.workScheduler(
+    attachment.root.ownerDocument.defaultView,
+  );
+  vi.spyOn(first, "now").mockReturnValue(1);
+  const document = boundary.runtimes!.workScheduler(attachment.documentId);
+  expect(document.now()).toBe(1);
+  const secondRoot = new FakePresentationElement() as unknown as HTMLElement;
+  const second = runtime.refreshRateProfiles.workScheduler(secondRoot.ownerDocument.defaultView);
+  vi.spyOn(second, "now").mockReturnValue(2);
+  Object.defineProperty(attachment.root, "ownerDocument", { value: secondRoot.ownerDocument });
+  runtime.mount(attachment);
+  expect(document.now()).toBe(2);
+  const version = runtime.refreshRateProfiles.ownerWindowVersion();
+  runtime.mount(attachment);
+  expect(runtime.refreshRateProfiles.ownerWindowVersion()).toBe(version);
+  document.dispose();
 });
 
 function startActivation() {

@@ -1,12 +1,25 @@
 import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 import { expect, it, vi } from "vitest";
 import * as elementValidation from "../../../src/domain/schema/element-validation";
+import * as sampleValidation from "../../../src/domain/schema/stroke-sample-range-validation";
 import * as bottomHeap from "../../../src/domain/spatial/max-bottom-heap";
 import { UniformSpatialIndex } from "../../../src/domain/spatial";
 import { applySelectionStyleChange } from "../../../src/editor/tools/style-change";
 import { ElementStore } from "../../../src/domain/store/public";
+import type { ElementReplacementHistoryData } from "../../../src/domain/store/public";
+import type { ImmutableInkElement } from "../../../src/domain/store/types";
+import type { InkElementV1 } from "../../../src/domain/schema/public";
+import * as recordFactory from "../../../src/domain/store/record-factory";
+import * as bounds from "../../../src/domain/geometry/bounds";
+import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
+import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../src/domain/commands/history";
 import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
-import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
+import {
+  moveSelection,
+  moveSelectionTimeSliced,
+  rotateSelection,
+} from "../../../src/editor/selection/transforms";
+import { scaleSelectionUniformForTest } from "../../fixtures/editor/selection-transform-reference";
 import { CheckpointSliceScheduler, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 
@@ -104,6 +117,100 @@ it("prepares replacements incrementally and preserves unrelated records", async 
   });
 }, 30_000);
 
+const retainedTransforms = {
+  move: (elements: readonly InkElementV1[]) => moveSelection(elements, { x: 2, y: 3 }),
+  rotate: (elements: readonly InkElementV1[]) => rotateSelection(elements, { x: 0, y: 0 }, 37),
+  scale: (elements: readonly InkElementV1[]) =>
+    scaleSelectionUniformForTest(elements, { x: 0, y: 0 }, 2),
+};
+
+it.each([
+  ["sync", "move"],
+  ["sync", "rotate"],
+  ["sync", "scale"],
+  ["sliced", "move"],
+  ["sliced", "rotate"],
+  ["sliced", "scale"],
+] as const)(
+  "reuses actual 10,000-stroke %s %s history without rebuilding samples or bounds",
+  async (mode, transform) => {
+    const { fixture, observations, store } = await createObservedOwnedStore();
+    const original = fixture.strokeIds.map((id) => store.get(id)!);
+    const initial = original.map(({ element }) => element as InkElementV1);
+    const history = await apply(retainedTransforms[transform](initial));
+    const changed = fixture.strokeIds.map((id) => store.get(id)!);
+    expect(history.previous).toHaveLength(10_000);
+    expect(history.replacements).toHaveLength(10_000);
+    expect(history.payloadBytes).toBeLessThanOrEqual(DEFAULT_HISTORY_BYTE_LIMIT);
+    for (const { work } of observations) {
+      work.indexedReads = 0;
+      work.descriptorReads = 0;
+    }
+    store.resetInstrumentation();
+    const probes = [
+      vi.spyOn(recordFactory, "createReplacementRecord"),
+      vi.spyOn(recordFactory, "createOwnedReplacementRecordSteps"),
+      vi.spyOn(recordFactory, "createOwnedTranslatedReplacementRecord"),
+      vi.spyOn(bounds, "calculateElementBoundsSteps"),
+      vi.spyOn(sampleCopy, "copySampleRange"),
+      vi.spyOn(sampleCopy, "compareSampleRange"),
+    ];
+    try {
+      await apply(history.previous);
+      for (const record of original) {
+        const restored = store.get(record.element.id)!;
+        expect(restored.element).toBe(record.element);
+        expect(restored.bounds).toBe(record.bounds);
+        expect(restored.geometryVersion).toBeGreaterThan(record.geometryVersion);
+      }
+      await apply(history.replacements);
+      for (const record of changed) {
+        const redone = store.get(record.element.id)!;
+        expect(redone.element).toBe(record.element);
+        expect(redone.bounds).toBe(record.bounds);
+        expect(redone.geometryVersion).toBeGreaterThan(record.geometryVersion);
+      }
+      for (const probe of probes) expect(probe).not.toHaveBeenCalled();
+      expect(
+        observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
+      ).toBe(true);
+      expect(store.instrumentation).toMatchObject({
+        bandScans: 0,
+        fullStoreScans: 0,
+        snapshotMaterializations: 0,
+        recordReplacements: 20_000,
+      });
+    } finally {
+      for (const probe of probes) probe.mockRestore();
+    }
+
+    async function apply(
+      elements: readonly ImmutableInkElement[],
+    ): Promise<ElementReplacementHistoryData> {
+      const inputs = elements as readonly InkElementV1[];
+      if (mode === "sync") {
+        let captured: ElementReplacementHistoryData | undefined;
+        expect(
+          store.replaceMany(inputs, (data) => {
+            captured = data;
+          }),
+        ).not.toBeNull();
+        if (captured === undefined) throw new Error("Expected canonical replacement history.");
+        return captured;
+      }
+      const prepared = await store.prepareElementReplacement(inputs, {
+        shouldYield: () => false,
+        yieldControl: async () => undefined,
+      });
+      if (prepared.token === null) throw new Error("Expected prepared replacement.");
+      const committed = store.commitPreparedElementReplacement(prepared.token);
+      if (committed.history === null) throw new Error("Expected canonical replacement history.");
+      return committed.history;
+    }
+  },
+  60_000,
+);
+
 it("validates 10,000 owned style replacements once without reading their samples", async () => {
   const { fixture, observations, store } = await createObservedOwnedStore();
   const strokes = fixture.strokeIds.map((id) => requireStroke(store, id));
@@ -144,20 +251,24 @@ it("validates resize samples once at the authoritative prepared transaction", as
     startPointer: { x: 100, y: 100 },
   });
   session.update({ x: 110, y: 110 });
-  const validate = vi.spyOn(elementValidation, "validateInkElementV1");
+  const validate = vi.spyOn(sampleValidation, "assertStrokeSampleRange");
   try {
     const materialized = await session.prepareCommitTimeSliced(scheduler);
     expect(validate).not.toHaveBeenCalled();
     if (materialized.status !== "ready") throw new Error("Expected resize materialization.");
     const prepared = await store.prepareElementReplacement(materialized.replacements, scheduler);
     if (prepared.token === null) throw new Error("Expected resize transaction.");
-    expect(validate.mock.calls).toHaveLength(selected.length);
     expect(
-      validate.mock.calls.reduce(
-        (sum, [element]) => sum + (element as { points: number[] }).points.length,
-        0,
-      ),
+      validate.mock.calls.reduce((sum, [, , , , range]) => sum + range.end - range.start, 0),
     ).toBe(sampleValues);
+    expect(validate.mock.calls.every(([, , , , range]) => range.end - range.start <= 768)).toBe(
+      true,
+    );
+    const stagedBuffers = new Set(validate.mock.calls.map(([points]) => points));
+    expect(stagedBuffers.size).toBe(selected.length);
+    for (const replacement of materialized.replacements) {
+      if (replacement.kind === "stroke") expect(stagedBuffers.has(replacement.points)).toBe(false);
+    }
     expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
     expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("cancelled");
   } finally {

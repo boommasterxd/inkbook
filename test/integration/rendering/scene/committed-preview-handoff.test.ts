@@ -6,7 +6,12 @@ import { rectangle } from "../../../unit/domain/store/fixtures";
 import { afterEach, expect, it, vi } from "vitest";
 import * as elementPath from "../../../../src/domain/geometry/element-path";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
-import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
+import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import {
+  commitSceneGeometry,
+  createSceneFixture,
+  createSceneRecord,
+} from "../../../fixtures/rendering/scene";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
@@ -27,6 +32,8 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
     ...indexedStroke(1),
     points: Array.from({ length: 4096 }, (_, i) => [i / 10, 20 + (i % 7), 0.5]).flat(),
   };
+  // Match the authoritative Store's immutable samples for contour identity reuse.
+  Object.freeze(element.points);
   const elements = [element, ...extras];
   const ids = elements.map(({ id }) => id);
   for (const [rank, value] of elements.entries())
@@ -92,8 +99,18 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
 }
 
 it("keeps committed feedback while preparing geometry and composes a subsequent gesture", () => {
-  const { renderer, scheduler, element, moved, group, fullBuild, step, pressureGeometry } =
-    pendingCommit();
+  const {
+    renderer,
+    scheduler,
+    element,
+    moved,
+    group,
+    original,
+    fullBuild,
+    step,
+    pressureGeometry,
+    store,
+  } = pendingCommit();
   renderer.setPreviewTransform([element.id], "translate(5 0)", 2);
   renderer.flushPointerFeedbackFrame();
   expect(group.attributes.get("transform")).toBe("translate(5 0) scale(1.1 1)");
@@ -118,6 +135,18 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   renderer.clearPreviewTransforms();
   scheduler.runAll();
   expect(group.attributes.has("transform")).toBe(false);
+  const read = vi.spyOn(ScenePathCache.prototype, "read");
+  commitSceneGeometry({ store, renderer }, moved, element, 3);
+  scheduler.runAll();
+  const access = read.mock.calls.findIndex(([value]) => value === element);
+  expect(access).toBeGreaterThanOrEqual(0);
+  expect(read.mock.calls[access]![2]).toBe(3);
+  expect(read.mock.results[access]!.value).toBeDefined();
+  const cache = read.mock.contexts[access]!;
+  if (!(cache instanceof ScenePathCache)) throw new Error("Expected the scene contour cache.");
+  expect(cache.has(element.id, 3)).toBe(true);
+  expect(cache.has(element.id, 2)).toBe(false);
+  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
   expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
@@ -145,10 +174,12 @@ it("defers a new canonical preview until the committed geometry basis is current
 
 it("releases pending committed work when the renderer is destroyed", () => {
   const { renderer, scheduler } = pendingCommit();
+  const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
   expect(renderer.memoryUsage().pathCacheBytes).toBeGreaterThan(0);
   renderer.destroy();
   expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
   expect(scheduler.pendingCount).toBe(0);
+  expect(complete).not.toHaveBeenCalled();
 });
 
 it("retains mixed constant-width ink and shapes while the preceding pressure job is pending", () => {
@@ -171,6 +202,7 @@ it("retains mixed constant-width ink and shapes while the preceding pressure job
 
 it("drops committed preparation when its element is removed before publication", () => {
   const { renderer, scheduler, store, element, moved, step } = pendingCommit();
+  const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
   store.records.delete(element.id);
   step.mockClear();
   renderer.applyDelta({
@@ -180,9 +212,26 @@ it("drops committed preparation when its element is removed before publication",
   });
   scheduler.runAll();
   expect(step).not.toHaveBeenCalled();
+  expect(complete).not.toHaveBeenCalled();
   expect(renderer.mountedIds("content")).toEqual([]);
-  expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
+  // Reusable visibility-position markers remain until presentation disposal.
   renderer.destroy();
+  expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
+});
+
+it("discards unfinished edited contours when a newer commit restores the cached shape", () => {
+  const { renderer, scheduler, store, element, moved, step, group, original } = pendingCommit();
+  const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
+  commitSceneGeometry({ store, renderer }, moved, element, 3);
+  step.mockClear();
+  scheduler.runAll();
+  expect(step).not.toHaveBeenCalled();
+  const published = complete.mock.calls.filter(([value]) => value === moved);
+  expect(published).toHaveLength(0);
+  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+  expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
 
 it("finishes selection dismissal on schedule while canonical commit geometry remains pending", () => {

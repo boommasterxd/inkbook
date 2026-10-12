@@ -1,6 +1,5 @@
 import { sys } from "typescript";
 import { describe, expect, it } from "vitest";
-
 const stylesheet = [
   readStylesheet("src/obsidian/styles/inkbook.css"),
   readStylesheet("src/obsidian/styles/feedback.css"),
@@ -136,7 +135,6 @@ describe("Inkbook toolbar motion styles", () => {
 describe("Inkbook editor chrome styles", () => {
   it("leaves native vertical touch panning enabled on the canvas input surface", () => {
     const inputSurface = declarationsFor(".inkbook-root .inkbook-canvas-input");
-
     expect(inputSurface).toContain("touch-action: pan-y");
     expect(inputSurface).not.toContain("touch-action: none");
   });
@@ -154,7 +152,7 @@ describe("Inkbook editor chrome styles", () => {
     const editorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome");
     const hiddenEditorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome[hidden]");
     const heldUnlockForeground = declarationsFor(
-      ".inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,\n.inkbook-root.inkbook-active-preparing .inkbook-canvas-input,\n.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground",
+      ".inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,\n.inkbook-root.inkbook-active-preparing .inkbook-canvas-input",
     );
     const scene = declarationsFor(".inkbook-root .inkbook-scene");
     const transitioningScene = declarationsFor(
@@ -173,6 +171,8 @@ describe("Inkbook editor chrome styles", () => {
     const presentationShell = declarationsFor(".inkbook-root.inkbook-embed-root::before");
     expect(activeRoot).toContain("z-index: var(--layer-popover)");
     expect(background).not.toContain("margin-block-start");
+    expect(stylesheet).toContain("--inkbook-scene-foreground-visibility: visible");
+    expect(stylesheet).toContain("--inkbook-scene-foreground-visibility: hidden");
     expect(embedRoot).toContain("contain: none !important");
     expect(embedRoot).toContain("overflow: visible");
     expect(livePreviewRoot).toContain("contain: none !important");

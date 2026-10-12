@@ -9,6 +9,8 @@ import {
   type PressureBoundarySegment,
 } from "./pressure-boundary-intersections";
 import { pressureCapsuleContains } from "./pressure-capsule-containment";
+import { pressureArcBounds } from "./pressure-arc-bounds";
+import { pressureLineBounds } from "./pressure-line-bounds";
 
 export const MAX_PRESSURE_UNION_SHAPES = 64;
 /** Bounded geometry/cancellation intervals; consumers still use the shared time budget. */
@@ -104,16 +106,27 @@ export function* iteratePressureUnion(
       shape,
       boundaries,
       bounds: shapeBounds(shape),
-      boundaryBounds: boundaries.map(boundaryBounds),
+      boundaryBounds: boundaries.map((boundary) =>
+        boundary.kind === "arc"
+          ? pressureArcBounds(boundary, context.arcAngles)
+          : pressureLineBounds(boundary),
+      ),
     };
   });
   const visible: PressureBoundarySegment[] = [];
   for (let index = 0; index < sources.length; index += 1) {
-    for (const boundary of sources[index]!.boundaries) {
-      const intervals = yield* clipBoundary(boundary, index, sources, context);
+    const source = sources[index]!;
+    for (const [boundaryIndex, boundary] of source.boundaries.entries()) {
+      const intervals = yield* clipBoundary(
+        boundary,
+        index,
+        sources,
+        context,
+        source.boundaryBounds[boundaryIndex]!,
+      );
       if (intervals === undefined) return fallback(sources, work);
       for (const interval of intervals) {
-        visible.push(boundarySlice(boundary, interval));
+        visible.push(boundarySlice(boundary, interval, context.arcAngles));
         work.visibleFragments += 1;
         if (visible.length > shapes.length * 16) return fallback(sources, work);
       }
@@ -178,10 +191,10 @@ function* clipBoundary(
   owner: number,
   sources: readonly Source[],
   context: UnionContext,
+  extent: Bounds,
 ): Generator<void, Interval[] | undefined> {
   const { work, arcAngles } = context;
   let intervals = [{ first: 0, last: 1 }];
-  const extent = boundaryBounds(boundary);
   for (let other = 0; other < sources.length && intervals.length > 0; other += 1) {
     if (other === owner || !overlaps(extent, sources[other]!.bounds)) continue;
     const source = sources[other]!;
@@ -238,7 +251,11 @@ function retainInterval(
   const { work } = context;
   work.intervalTests += 1;
   if (interval.last - interval.first <= PARAMETER_ERROR) return;
-  const point = pressureBoundaryPoint(boundary, (interval.first + interval.last) / 2);
+  const point = pressureBoundaryPoint(
+    boundary,
+    (interval.first + interval.last) / 2,
+    context.arcAngles,
+  );
   if (covered(boundary, point, source, earlier, context)) return;
   const previous = output[output.length - 1];
   if (previous !== undefined && Math.abs(previous.last - interval.first) <= PARAMETER_ERROR)
@@ -318,9 +335,10 @@ function tangent(boundary: PressureBoundarySegment, point: PointV1): PointV1 {
 function boundarySlice(
   boundary: PressureBoundarySegment,
   interval: Interval,
+  arcAngles: PressureArcAngleCache,
 ): PressureBoundarySegment {
-  const start = pressureBoundaryPoint(boundary, interval.first);
-  const end = pressureBoundaryPoint(boundary, interval.last);
+  const start = pressureBoundaryPoint(boundary, interval.first, arcAngles);
+  const end = pressureBoundaryPoint(boundary, interval.last, arcAngles);
   return boundary.kind === "line"
     ? { kind: "line", start, end }
     : { ...boundary, start, end, sweep: boundary.sweep * (interval.last - interval.first) };
@@ -444,38 +462,6 @@ function endpointTolerance(sources: readonly Source[]): number {
   return Math.max(1e-10, 128 * Number.EPSILON * magnitude);
 }
 
-function boundaryBounds(boundary: PressureBoundarySegment): Bounds {
-  const bounds =
-    boundary.kind === "line"
-      ? {
-          minX: Math.min(boundary.start.x, boundary.end.x),
-          minY: Math.min(boundary.start.y, boundary.end.y),
-          maxX: Math.max(boundary.start.x, boundary.end.x),
-          maxY: Math.max(boundary.start.y, boundary.end.y),
-        }
-      : {
-          minX: boundary.center.x - boundary.radius,
-          minY: boundary.center.y - boundary.radius,
-          maxX: boundary.center.x + boundary.radius,
-          maxY: boundary.center.y + boundary.radius,
-        };
-  const pad =
-    128 *
-    Number.EPSILON *
-    Math.max(
-      1,
-      Math.abs(bounds.minX),
-      Math.abs(bounds.minY),
-      Math.abs(bounds.maxX),
-      Math.abs(bounds.maxY),
-    );
-  return {
-    minX: bounds.minX - pad,
-    minY: bounds.minY - pad,
-    maxX: bounds.maxX + pad,
-    maxY: bounds.maxY + pad,
-  };
-}
 function containsPoint(bounds: Bounds, point: PointV1): boolean {
   return (
     point.x >= bounds.minX &&

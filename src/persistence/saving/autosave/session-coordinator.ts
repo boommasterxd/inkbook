@@ -35,6 +35,7 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
       type: "confirmed",
     },
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),
+    ...(options.createReplacement ? { createReplacement: options.createReplacement } : {}),
     documentSource: {
       currentRevision: options.currentRevision,
       isGestureActive: options.isGestureActive,

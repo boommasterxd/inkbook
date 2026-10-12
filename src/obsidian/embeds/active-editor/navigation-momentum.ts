@@ -1,20 +1,16 @@
 import { HorizontalPanMomentum } from "../../../editor/zoom/index";
-
+import { TrackpadPanMomentum, trackpadPanSampleTime } from "./trackpad-pan-momentum";
 import type { ActiveEditorWheelInput } from "./navigation-types";
-import {
-  isTrackpadPanInput,
-  TrackpadPanMomentum,
-  type TrackpadPanInput,
-} from "./trackpad-pan-momentum";
 
 export class ActiveEditorPanMomentum {
   readonly #onRelease: () => void;
+  readonly #now: () => number;
   readonly #touch = new HorizontalPanMomentum();
-  readonly #trackpad: TrackpadPanMomentum;
+  readonly #trackpad = new TrackpadPanMomentum();
 
-  public constructor(ownerWindow: Window, onRelease: () => void) {
+  public constructor(onRelease: () => void, now: () => number) {
     this.#onRelease = onRelease;
-    this.#trackpad = new TrackpadPanMomentum(ownerWindow);
+    this.#now = now;
   }
 
   public get active(): boolean {
@@ -30,20 +26,18 @@ export class ActiveEditorPanMomentum {
     this.#trackpad.cancel();
   }
 
-  public cancelTouch(): void {
+  public recordWheel(screenDeltaX: number, event: ActiveEditorWheelInput): void {
     this.#touch.cancel();
-  }
-
-  public cancelTrackpad(): void {
-    this.#trackpad.cancel();
-  }
-
-  public prepareWheel(zoomWheel: boolean): void {
-    if (zoomWheel) this.cancel();
-    else this.cancelTouch();
+    if (event.deltaMode !== 0 || event.shiftKey === true) {
+      this.#trackpad.cancel();
+      return;
+    }
+    const timestamp = trackpadPanSampleTime(event.timeStamp, this.#now());
+    this.#trackpad.record(screenDeltaX, timestamp, event.cancelable !== false);
   }
 
   public recordTouch(screenDeltaX: number, timestamp: number): void {
+    this.#trackpad.cancel();
     this.#touch.record(screenDeltaX, timestamp);
   }
 
@@ -53,21 +47,5 @@ export class ActiveEditorPanMomentum {
       return;
     }
     this.cancel();
-  }
-
-  public trackpadWheelDelta(
-    screenDeltaX: number,
-    event: ActiveEditorWheelInput,
-  ): number | undefined {
-    const input: TrackpadPanInput = {
-      deltaMode: event.deltaMode,
-      shiftKey: event.shiftKey === true,
-    };
-    return isTrackpadPanInput(input) ? this.#trackpad.record(screenDeltaX) : undefined;
-  }
-
-  public transferOwnerWindow(ownerWindow: Window): void {
-    this.#touch.cancel();
-    this.#trackpad.transferClock(ownerWindow);
   }
 }

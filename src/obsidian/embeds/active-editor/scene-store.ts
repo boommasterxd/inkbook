@@ -1,4 +1,4 @@
-import { renderBandOf } from "../../../domain/commands/render-bands";
+import { renderBandOf, type RenderBand } from "../../../domain/commands/render-bands";
 import type { Bounds } from "../../../domain/geometry/public";
 import { FILE_SCHEMA_LIMITS, type InkElementV1, type PointV1 } from "../../../domain/schema/public";
 import { SpatialQueryScratch } from "../../../domain/spatial/index";
@@ -42,6 +42,10 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
 
   public beginQuery(bounds: Bounds): ReturnType<ElementStore["beginQuery"]> {
     return this.#store.beginQuery(bounds);
+  }
+
+  public beginOrder(): ReturnType<ElementStore["beginOrder"]> {
+    return this.#store.beginOrder();
   }
 
   public query(bounds: Bounds, sink: SpatialQuerySink): void {
@@ -90,6 +94,10 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
 
   public materializeBandOrder(band: "content" | "highlight"): readonly string[] {
     return this.#store.materializeBandOrder(band);
+  }
+
+  public bandSize(band: RenderBand): number {
+    return this.#store.bandSize(band);
   }
 
   public hit(point: PointV1, pointerType: "mouse" | "pen" | "touch", zoom: number): string | null {

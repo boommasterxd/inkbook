@@ -4,6 +4,10 @@ export type ActiveEditorMotionPreference = InkbookDeviceSettingsV2["motion"];
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
+export function motionPreference(value: string | undefined): ActiveEditorMotionPreference {
+  return value === "full" || value === "reduced" || value === "system" ? value : "system";
+}
+
 /** Resolves the device preference against the owning window and observes system changes. */
 export class ActiveEditorMotion {
   readonly #mediaQuery: MediaQueryList | undefined;

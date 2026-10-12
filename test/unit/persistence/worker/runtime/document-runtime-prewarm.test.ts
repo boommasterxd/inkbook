@@ -55,7 +55,7 @@ it("admits background prewarming through the input gate without a forced frame w
 it("skips a complete export cache and resumes prewarming after model synchronization", async () => {
   const model = new DocumentModelRuntime();
   const snapshot = rectangleDocument(3);
-  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAt");
+  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAtSliced");
   const checkpoint = vi.fn(() => undefined);
   const context = { checkpoint, signal: new AbortController().signal };
   try {
@@ -86,6 +86,34 @@ it("skips a complete export cache and resumes prewarming after model synchroniza
     prewarm.mockRestore();
     model.clear();
   }
+});
+
+it("keeps prewarming paused during navigation while admitting required contour preparation", async () => {
+  const runtime = new DocumentWorkerRuntime(executor);
+  const snapshot = rectangleDocument(3);
+  const identity = { ...executor, operationId: 1, purpose: "background" as const };
+  await runtime.execute({
+    baseModelRevision: null,
+    identity,
+    modelRevision: 0,
+    snapshot,
+    type: "model-sync-full",
+  });
+  runtime.setNavigationActive(true);
+  runtime.requestPrewarm();
+  expect(runtime.instrumentation.prewarmVisitedElements).toBe(0);
+  expect(
+    await runtime.execute({
+      basisRevision: 0,
+      identity,
+      ids: [snapshot.elements[0]!.id],
+      type: "prepare-scene-paths",
+    }),
+  ).toMatchObject({ type: "prepare-scene-paths-success" });
+  expect(runtime.instrumentation.prewarmVisitedElements).toBe(0);
+  runtime.setNavigationActive(false);
+  await vi.waitFor(() => expect(runtime.instrumentation.prewarmVisitedElements).toBe(3));
+  runtime.terminate();
 });
 
 it("prewarms a fragment whose cache admission was refused during export", async () => {

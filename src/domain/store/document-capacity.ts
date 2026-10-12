@@ -39,8 +39,8 @@ export class DocumentCapacity {
   }
 
   public async prepareTimeSliced(
-    previous: readonly ElementRecord[],
-    next: readonly ElementRecord[],
+    previous: Iterable<ElementRecord | null>,
+    next: Iterable<ElementRecord | null>,
     scheduler: StoreSliceScheduler,
   ): Promise<{ readonly patch: DocumentCapacityPatch; readonly yields: number } | "cancelled"> {
     const totals = { ...this.#totals };
@@ -52,7 +52,7 @@ export class DocumentCapacity {
     ] as const) {
       for (const record of records) {
         if (cancelled(scheduler)) return "cancelled";
-        applyRecord(totals, fanout, this.#fanout, record, direction);
+        if (record !== null) applyRecord(totals, fanout, this.#fanout, record, direction);
         if (scheduler.shouldYield()) {
           await scheduler.yieldControl();
           if (cancelled(scheduler)) return "cancelled";

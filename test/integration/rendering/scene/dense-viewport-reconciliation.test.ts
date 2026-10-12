@@ -18,7 +18,6 @@ describe("dense viewport reconciliation acceptance", () => {
         reverseInsertion: true,
         viewport: profile.viewport,
       });
-      const promoted = fixture.hits[99]!.expectedId;
 
       expect(
         fixture.records.every(({ bounds }) =>
@@ -27,6 +26,9 @@ describe("dense viewport reconciliation acceptance", () => {
       ).toBe(true);
 
       scheduler.runNext();
+      const initial = new Set(renderer.mountedIds("content"));
+      const promoted = fixture.contentIds.find((id) => !initial.has(id))!;
+      expect(promoted).toBeDefined();
       expect(renderer.mountedIds("content")).not.toContain(promoted);
       renderer.promoteVisible(promoted);
       scheduler.runNext();

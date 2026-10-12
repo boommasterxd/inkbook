@@ -67,4 +67,27 @@ describe("workspace scheduler ownership", () => {
     expect(host.pendingFrames).toBe(0);
     expect(host.pendingTimers).toBe(0);
   });
+
+  it("invalidates ownership only for default, presentation and unload transitions", () => {
+    const profiles = new WorkspaceRefreshProfiles(120);
+    const first = owningWindow();
+    const second = owningWindow();
+    expect(profiles.ownerWindowVersion()).toBe(0);
+    profiles.observeDefault(first.ownerWindow);
+    expect(profiles.ownerWindowVersion()).toBe(1);
+    profiles.observeDefault(first.ownerWindow);
+    profiles.setPreference(240);
+    expect(profiles.ownerWindowVersion()).toBe(1);
+    profiles.notifyOwnerWindowChanged();
+    expect(profiles.ownerWindowVersion()).toBe(2);
+    profiles.observeDefault(second.ownerWindow);
+    expect(profiles.ownerWindowVersion()).toBe(3);
+    profiles.workScheduler(first.ownerWindow);
+    first.ownerWindow.dispatchEvent(new Event("unload"));
+    expect(profiles.ownerWindowVersion()).toBe(4);
+    expect(profiles.isWindowAvailable(first.ownerWindow)).toBe(false);
+    expect(profiles.isWindowAvailable(second.ownerWindow)).toBe(true);
+    expect(() => profiles.workScheduler(first.ownerWindow)).toThrow("unloaded");
+    profiles.dispose();
+  });
 });

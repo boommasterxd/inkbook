@@ -67,6 +67,7 @@ describe("persistence serialization performance", () => {
     expect(serializer.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);
     expect(serializer.instrumentation.shapeCacheBytes).toBeLessThanOrEqual(32 * MIB);
     expect(checkpoints).toBeGreaterThan(0);
+    await assertEvictedContourReuse(serializer, amplified);
     await annotate(
       `compact million-sample export: output=${result.value.totalBytes} bytes, ` +
         `fragmentsBuilt=${serializer.instrumentation.fragmentBuilds}/${amplified.elements.length}, ` +
@@ -119,6 +120,34 @@ describe("persistence serialization performance", () => {
     }
   }, 120_000);
 });
+
+async function assertEvictedContourReuse(
+  serializer: IncrementalDocumentSerializer,
+  fixture: ReturnType<typeof createStandardPersistenceFixture>,
+): Promise<void> {
+  expect(serializer.instrumentation.cacheElements).toBe(fixture.elements.length);
+  expect(serializer.instrumentation.shapeCacheElements).toBeLessThan(10_000);
+  const firstStroke = fixture.elements.find((element) => element.kind === "stroke")!;
+  const before = serializer.instrumentation;
+  const decode = vi.spyOn(TextDecoder.prototype, "decode");
+  try {
+    const prepared = await serializer.prepareScenePath(firstStroke.id, {
+      signal: new AbortController().signal,
+      checkpoint: () => undefined,
+    });
+    expect(prepared).toBeDefined();
+    const bytes = decode.mock.calls.map(([input]) => input?.byteLength ?? 0);
+    expect(bytes.reduce((sum, count) => sum + count, 0)).toBe(
+      prepared!.reduce((sum, part) => sum + part.d.length, 0),
+    );
+    expect(Math.max(...bytes)).toBeLessThanOrEqual(64 * 1024);
+    expect(serializer.instrumentation.shapeBuilds).toBe(before.shapeBuilds);
+    expect(serializer.instrumentation.shapeCacheBytes).toBe(before.shapeCacheBytes);
+    expect(serializer.instrumentation.cacheBytes).toBe(before.cacheBytes);
+  } finally {
+    decode.mockRestore();
+  }
+}
 
 describe("document worker export work bounds", () => {
   it("rebuilds only changed fragments and reuses all fragments for order-only exports", async () => {
@@ -260,7 +289,7 @@ async function acknowledgeAndPrewarm(
   runtime: DocumentWorkerRuntime,
   identity: Parameters<DocumentWorkerRuntime["acknowledgeExport"]>[0],
 ): Promise<void> {
-  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAt");
+  const prewarm = vi.spyOn(IncrementalDocumentSerializer.prototype, "prewarmElementAtSliced");
   try {
     runtime.acknowledgeExport(identity, true);
     runtime.requestPrewarm();

@@ -3,6 +3,7 @@ import { ActiveEditorActions } from "../../../src/obsidian/embeds/active-editor/
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import type { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/vault-document-session";
+import { workSchedulerFromFrames } from "./work-scheduler";
 
 export function activeActions(
   model: EditableDocumentModel,
@@ -27,6 +28,7 @@ export function activeActions(
     onPendingChanged: vi.fn(),
     onStateChanged,
     ownerWindow,
+    workScheduler: workSchedulerFromFrames(ownerWindow),
     sceneStore,
     setSelection: vi.fn(),
     visibleCenter: () => ({ x: 100, y: 100 }),

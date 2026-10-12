@@ -1,7 +1,21 @@
-import type { SvgSceneRenderer } from "../../rendering/scene/index";
+import type { SceneInputHandlers, SvgSceneRenderer } from "../../rendering/scene/index";
 
 import type { ActiveEditorController } from "./active-editor/controller";
 import { CanvasTouchBoundary } from "./canvas-touch-boundary";
+
+export function createSceneInputHandlers(
+  controller: () => ActiveEditorController | undefined,
+): SceneInputHandlers {
+  return {
+    contextmenu: (event) => controller()?.handleContextMenu(event),
+    keydown: (event) => controller()?.handleKeyDown(event),
+    pointercancel: (event) => controller()?.handlePointerCancel(event),
+    pointerdown: (event) => controller()?.handlePointerDown(event),
+    pointermove: (event) => controller()?.handlePointerMove(event),
+    pointerup: (event) => controller()?.handlePointerUp(event),
+    wheel: (event) => controller()?.handleWheel(event),
+  };
+}
 
 export function attachActiveSceneInputListeners(
   renderer: SvgSceneRenderer,

@@ -1,17 +1,157 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { escapeXmlText } from "../../../../src/persistence/documents/xml-text";
-import { buildElementFragments } from "../../../../src/persistence/serialization/element-fragments";
+import {
+  buildElementFragments,
+  buildElementFragmentsSteps,
+} from "../../../../src/persistence/serialization/element-fragments";
 import { ElementFragmentCache } from "../../../../src/persistence/serialization/element-fragment-cache";
 import { createAllElementSnapshot } from "./fixtures";
 import { arrow } from "../../domain/schema/fixtures";
 import { coordinateSystem } from "../../domain/geometry/fixtures";
 import { serializeElementPaths } from "../../../../src/persistence/serialization/path-markup";
 import { SampleBase64Writer } from "../../../../src/persistence/serialization/sample-base64";
-import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
+import {
+  createMultiWindowPressureStroke,
+  createTestStroke,
+} from "../../../fixtures/persistence/worker-snapshot";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
+import { StrokeShapeCache } from "../../../../src/persistence/serialization/stroke-shape-cache";
+import { StrokeSampleEncodingCache } from "../../../../src/persistence/serialization/stroke-sample-encoding-cache";
+import { canonicalElement } from "../../../../src/persistence/serialization/canonical-snapshot";
+import { encodeStrokeSamples } from "../../../../src/persistence/serialization/stroke-sample-codec";
+import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
+import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("cooperative element fragments", () => {
+  it("preserves canonical metadata and native path bytes for every element kind", () => {
+    const stroke = createMultiWindowPressureStroke();
+    const elements = [
+      ...createAllElementSnapshot().elements,
+      stroke,
+      { ...stroke, rotation: 35, offset: { x: 17, y: 23 } },
+      { ...stroke, style: { ...stroke.style, pressureEnabled: false } },
+    ];
+    for (const element of elements) {
+      const fragment = finishGeometrySteps(buildElementFragmentsSteps(element, 123));
+      const canonical = canonicalElement(element);
+      const metadata = JSON.stringify(
+        element.kind === "stroke"
+          ? { ...canonical, points: encodeStrokeSamples(element.points) }
+          : canonical,
+      );
+      expect(fragment.canonicalMetadata).toBe(metadata);
+      expect(fragment.svg).toBe(serializeElementPaths(element).join(""));
+      expect(fragment.bottom).toBe(123);
+      expect(fragment.metadataUtf8).toEqual(new TextEncoder().encode(escapeXmlText(metadata)));
+    }
+  });
+
+  it.each([false, true])(
+    "bounds actual sample reads per step without requiring a signal, cached=%s",
+    (cached) => {
+      const stroke = longObservedStroke();
+      const shapeCache = cached ? new StrokeShapeCache() : undefined;
+      const sampleCache = cached ? new StrokeSampleEncodingCache(() => true) : undefined;
+      const steps = buildElementFragmentsSteps(stroke.element, 123, shapeCache, sampleCache);
+      const geometry = vi.spyOn(CanonicalElementPathPreparation.prototype, "stepOperation");
+      let step;
+      do {
+        stroke.resetReads();
+        geometry.mockClear();
+        step = steps.next();
+        // Sample encoding visits 256 triples; a geometry step visits at most 65 centers.
+        expect(stroke.reads()).toBeLessThanOrEqual(768);
+        expect(geometry.mock.calls.length).toBeLessThanOrEqual(1);
+      } while (!step.done);
+      expect(step.value.svg).toContain("<path");
+      if (!cached) return;
+      expect(shapeCache!.instrumentation.shapeBuilds).toBe(1);
+      expect(sampleCache!.instrumentation.sampleEncodingBuilds).toBe(1);
+      stroke.resetReads();
+      geometry.mockClear();
+      const reused = buildElementFragmentsSteps(
+        stroke.element,
+        123,
+        shapeCache,
+        sampleCache,
+      ).next();
+      expect(reused.done).toBe(true);
+      expect(stroke.reads()).toBe(0);
+      expect(geometry).not.toHaveBeenCalled();
+      expect(sampleCache!.instrumentation.sampleEncodingHits).toBe(1);
+    },
+  );
+});
+
+describe("cooperative stroke cache publication", () => {
+  it("cancels each unfinished producer while preserving completed valid sample work", () => {
+    const { element } = longObservedStroke();
+    const shapeCache = new StrokeShapeCache();
+    const sampleCache = new StrokeSampleEncodingCache(() => true);
+    const controller = new AbortController();
+    const samples = buildElementFragmentsSteps(
+      element,
+      123,
+      shapeCache,
+      sampleCache,
+      controller.signal,
+    );
+    expect(samples.next().done).toBe(false);
+    controller.abort();
+    expect(() => samples.next()).toThrow();
+    expect(sampleCache.instrumentation.sampleEncodingCacheElements).toBe(0);
+    expect(shapeCache.instrumentation.shapeCacheElements).toBe(0);
+
+    const geometryController = new AbortController();
+    const geometry = buildElementFragmentsSteps(
+      element,
+      123,
+      shapeCache,
+      sampleCache,
+      geometryController.signal,
+    );
+    while (sampleCache.instrumentation.sampleEncodingCacheElements === 0) {
+      expect(geometry.next().done).toBe(false);
+    }
+    geometryController.abort();
+    expect(() => geometry.next()).toThrow();
+    expect(shapeCache.instrumentation.shapeCacheElements).toBe(0);
+    expect(sampleCache.instrumentation.sampleEncodingCacheElements).toBe(1);
+  });
+
+  it("checks current shape ownership before cold publication and scene seeding", () => {
+    const { element } = longObservedStroke();
+    let current = element;
+    const cache = new StrokeShapeCache((stroke) => stroke === current);
+    const steps = cache.resolveSteps(element);
+    expect(steps.next().done).toBe(false);
+    current = { ...element };
+    expect(finishGeometrySteps(steps)).toHaveLength(1);
+    cache.seed(element, "M0 0L1 1Z");
+    expect(cache.instrumentation).toMatchObject({ shapeBuilds: 1, shapeCacheElements: 0 });
+    cache.seed(current, "M0 0L1 1Z");
+    expect(cache.read(current)?.[0]?.d).toBe("M0 0L1 1Z");
+  });
+
+  it("bounds retired comparisons and leaves retained geometry reusable after cancellation", () => {
+    const { element } = longObservedStroke();
+    const cache = new StrokeShapeCache();
+    const original = cache.resolve(element);
+    cache.retire(element.id);
+    const restored = { ...element, points: [...element.points] };
+    const controller = new AbortController();
+    const comparison = cache.resolveSteps(restored, controller.signal);
+    expect(comparison.next().done).toBe(false);
+    expect(cache.instrumentation.retiredPointComparisons).toBe(768);
+    controller.abort();
+    expect(() => comparison.next()).toThrow();
+    expect(cache.resolve(restored)).toBe(original);
+    expect(cache.instrumentation.shapeBuilds).toBe(1);
+  });
+});
 
 it.each(["solid", "dashed", "dotted"] as const)(
   "serializes symmetric open heads with their %s shaft and axis paint",
@@ -33,6 +173,25 @@ it.each(["solid", "dashed", "dotted"] as const)(
 );
 
 describe("cached element fragment byte counts", () => {
+  it("accounts for owned stroke range descriptors and releases their cache entry", () => {
+    const stroke = createTestStroke();
+    const fragment = buildElementFragments(stroke);
+    const cache = new ElementFragmentCache();
+    expect(fragment.strokePaths).toHaveLength(1);
+    expect(fragment.retainedBytes).toBe(
+      fragment.bytes +
+        (fragment.metadataUtf8 === fragment.canonicalMetadataUtf8
+          ? 0
+          : fragment.canonicalMetadataBytes) +
+        48 +
+        64 * fragment.strokePaths!.length,
+    );
+    cache.replace(stroke.id, fragment);
+    expect(cache.retainedBytes).toBe(fragment.retainedBytes);
+    cache.remove(stroke.id);
+    expect(cache.retainedBytes).toBe(0);
+  });
+
   it.each(["ascii", 'äß漢字😀<&>"', "\ud800"])(
     "counts canonical and XML-escaped UTF-8 bytes exactly for %j",
     (id) => {
@@ -50,7 +209,8 @@ describe("cached element fragment byte counts", () => {
       expect(fragment.bytes).toBe(encoder.encode(fragment.metadata + fragment.svg).byteLength);
       expect(fragment.retainedBytes).toBe(
         fragment.bytes +
-          (fragment.metadata === fragment.canonicalMetadata ? 0 : fragment.canonicalMetadataBytes),
+          (fragment.metadata === fragment.canonicalMetadata ? 0 : fragment.canonicalMetadataBytes) +
+          (fragment.strokePaths === undefined ? 0 : 48 + 64 * fragment.strokePaths.length),
       );
       expect(fragment.metadataUtf8 === fragment.canonicalMetadataUtf8).toBe(
         fragment.metadata === fragment.canonicalMetadata,
@@ -213,6 +373,28 @@ function runtimeReplacementCases(): Record<string, (stroke: StrokeElementV1) => 
 function runtimeStroke(): StrokeElementV1 {
   const stroke = createTestStroke();
   return { ...stroke, points: new Float64Array(stroke.points) as unknown as typeof stroke.points };
+}
+
+function longObservedStroke() {
+  const stroke = createMultiWindowPressureStroke();
+  const points = Array.from(
+    { length: 1024 * 3 },
+    (_, index) => stroke.points[index % stroke.points.length]!,
+  );
+  let reads = 0;
+  const observed = new Proxy(points, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) reads += 1;
+      return Reflect.get(target, property, receiver) as unknown;
+    },
+  });
+  return {
+    element: { ...stroke, points: observed },
+    reads: () => reads,
+    resetReads: () => {
+      reads = 0;
+    },
+  };
 }
 
 function changeSample(

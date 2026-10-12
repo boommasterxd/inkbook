@@ -33,7 +33,7 @@ interface PreparedRuntimeExport {
 
 export type RuntimeElementFragmentResolver = (
   element: InkSnapshotV1["elements"][number],
-) => ElementFragments;
+) => ElementFragments | Promise<ElementFragments>;
 
 export async function serializeRuntimeSnapshotToUtf8(
   snapshot: InkSnapshotV1,
@@ -87,7 +87,8 @@ async function prepareRuntimeExport(
   for (let index = 0; index < snapshot.elements.length; index += 1) {
     options.signal?.throwIfAborted();
     const element = snapshot.elements[index]!;
-    const fragment = resolveFragment(element);
+    const resolved = resolveFragment(element);
+    const fragment = resolved instanceof Promise ? await resolved : resolved;
     fragments.push(fragment);
     const separatorBytes = index === 0 ? 0 : 1;
     canonicalMetadataBytes += fragment.canonicalMetadataBytes + separatorBytes;
