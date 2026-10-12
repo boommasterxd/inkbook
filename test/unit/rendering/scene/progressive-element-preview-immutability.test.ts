@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { strokeLocalGeometry } from "../../../../src/domain/geometry/stroke-position";
-import * as pressureWindows from "../../../../src/domain/geometry/pressure-window";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
-import { createProgressivePreviewFixture } from "../../../fixtures/rendering/progressive-element-preview";
+import {
+  createProgressivePreviewFixture,
+  observePressurePreviewSteps,
+  writeOnePreviewStep,
+} from "../../../fixtures/rendering/progressive-element-preview";
 import { createMultiWindowPressureStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { takeImmutableElementOwnership } from "../../../../src/domain/store/immutability";
-import { writeOnePreviewStep } from "../../../fixtures/rendering/progressive-element-preview";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 
 afterEach(() => vi.restoreAllMocks());
@@ -32,17 +34,9 @@ describe("pressure snapshot immutable shape ownership", () => {
         materialize: () => element,
         feedback: { transform: "scale(2 1)", inverse: "scale(0.5 1)" },
       };
-      let time = 0;
-      const step = Reflect.get(ProgressivePreviewPath.prototype, "step");
-      const steps = vi.spyOn(ProgressivePreviewPath.prototype, "step");
-      steps.mockImplementation(function (this: ProgressivePreviewPath) {
-        const complete = step.call(this, 0, () => 1);
-        time += 1;
-        return complete;
-      });
-      const windows = vi.spyOn(pressureWindows, "preparePressureWindowSteps");
+      const { steps, windows, writeNext } = observePressurePreviewSteps();
       preview.set({ ...request, version: 1 });
-      while (windows.mock.calls.length === 0) preview.write(time + 1, () => time);
+      while (windows.mock.calls.length === 0) writeNext(preview);
       const oldPath = steps.mock.contexts[0] as ProgressivePreviewPath;
       const cancel = vi.spyOn(oldPath, "cancel");
       if (mutable === "header") element.rotation = 27;
@@ -52,7 +46,7 @@ describe("pressure snapshot immutable shape ownership", () => {
       if (mutable === "pivot") element.pivot.x += 5;
       if (mutable === "offset") element.offset.x += 5;
       preview.set({ ...request, version: 2 });
-      preview.write(time + 1, () => time);
+      writeNext(preview);
       expect(cancel).toHaveBeenCalledOnce();
       expect(oldPath.memoryUsage()).toBe(0);
       expect(content.applyCanonicalElementPreview).not.toHaveBeenCalled();

@@ -5,6 +5,7 @@ import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progress
 import {
   createProgressivePreviewFixture,
   createLongPreviewStroke,
+  observePressurePreviewSteps,
 } from "../../../fixtures/rendering/progressive-element-preview";
 import { createMultiWindowPressureStroke } from "../../../fixtures/persistence/worker-snapshot";
 
@@ -16,15 +17,7 @@ describe("pressure snapshot supersession work", () => {
     let element = createMultiWindowPressureStroke();
     const ids = [element.id];
     const feedbackIds = [...ids, createLongPreviewStroke(2).id];
-    let time = 0;
-    const step = Reflect.get(ProgressivePreviewPath.prototype, "step");
-    const steps = vi.spyOn(ProgressivePreviewPath.prototype, "step");
-    steps.mockImplementation(function (this: ProgressivePreviewPath) {
-      const complete = step.call(this, 0, () => 1);
-      time += 1;
-      return complete;
-    });
-    const windows = vi.spyOn(pressureWindows, "preparePressureWindowSteps");
+    const { steps, windows, writeNext } = observePressurePreviewSteps();
     const materialize = vi.fn(() => element);
     const request = (version: number) => ({
       ids,
@@ -37,7 +30,7 @@ describe("pressure snapshot supersession work", () => {
       },
     });
     preview.set(request(1));
-    while (windows.mock.calls.length === 0) preview.write(time + 1, () => time);
+    while (windows.mock.calls.length === 0) writeNext(preview);
     expect(preview.memoryUsage()).toBeGreaterThanOrEqual(
       pressureWindows.PRESSURE_WINDOW_SCRATCH_BYTES,
     );
@@ -54,7 +47,7 @@ describe("pressure snapshot supersession work", () => {
       for (let sample = 0; sample < 4; sample += 1) preview.set(request(version));
       expect(materialize).toHaveBeenCalledTimes(version - 2);
       preview.writeFeedback(2, Infinity, () => 0);
-      preview.write(time + 1, () => time);
+      writeNext(preview);
       expect(materialize).toHaveBeenCalledTimes(version - 1);
       expect(content.applyPreviewTransform).toHaveBeenLastCalledWith(
         feedbackIds[1],
