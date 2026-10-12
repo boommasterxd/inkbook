@@ -47,12 +47,25 @@ function denseDisks(tangent = false) {
 function observeScalarEntries() {
   const maps = new Set<Map<unknown, unknown>>();
   let entries = 0;
+  let parameterChecks = 0;
   let peak = 0;
   const descriptor = Object.getOwnPropertyDescriptor(Map.prototype, "set")!;
   const originalSet = descriptor.value as Map<unknown, unknown>["set"];
   const publication = function (this: Map<unknown, unknown>, key: unknown, value: unknown) {
     const result = Reflect.apply(originalSet, this, [key, value]);
     if (typeof value === "object" && value !== null && "endpointScale" in value) {
+      const scaleDescriptor = Object.getOwnPropertyDescriptor(value, "endpointScale");
+      const endpointScale: unknown = scaleDescriptor?.value;
+      if (scaleDescriptor?.configurable !== true || typeof endpointScale !== "number")
+        throw new Error("Cannot observe pressure endpoint scale");
+      Object.defineProperty(value, "endpointScale", {
+        configurable: scaleDescriptor.configurable,
+        enumerable: scaleDescriptor.enumerable,
+        get: () => {
+          parameterChecks += 1;
+          return endpointScale;
+        },
+      });
       maps.add(this);
       entries += 1;
       peak = Math.max(peak, this.size);
@@ -64,6 +77,9 @@ function observeScalarEntries() {
     maps,
     get entries() {
       return entries;
+    },
+    get parameterChecks() {
+      return parameterChecks;
     },
     get peak() {
       return peak;
@@ -83,7 +99,7 @@ function measureUnion(shapes: Parameters<typeof iteratePressureUnion>[0], uncach
     const result = finishGeometrySteps(iteratePressureUnion(shapes));
     return {
       result,
-      parameterReads: reads.mock.calls.length,
+      scalarReads: reads.mock.calls.length,
       absolute: absolute.mock.calls.length,
       signs: signs.mock.calls.length,
       distances: distances.mock.calls.length,
@@ -171,14 +187,18 @@ describe("window-owned pressure boundary scalar work", () => {
       const cached = measureUnion(shapes, false);
       expect(cached.result).toEqual(direct.result);
       expect(cached.result.usedFallback).toBe(fallback);
-      expect(cached.parameterReads).toBe(direct.parameterReads);
-      expect(cached.parameterReads).toBeGreaterThan(0);
+      expect(cached.scalarReads).toBe(direct.scalarReads);
+      expect(cached.scalarReads).toBeGreaterThan(0);
+      expect(cached.scalarReads).toBeLessThanOrEqual(
+        2 * cached.result.work.intersectionTests + cached.result.work.boundaryTests,
+      );
       expect(cached.distances).toBe(direct.distances);
       expect(cached.angles).toBe(direct.angles);
-      // Each real parameter query removes six fixed abs operands. Each retained
-      // boundary adds at most four endpoint abs plus one absolute sweep once.
+      // The published endpoint-scale getter observes every real cached parameter
+      // check, including checks that share one pair read; preparation adds <=5 abs/entry.
+      expect(ownership.parameterChecks).toBeGreaterThan(cached.scalarReads);
       expect(cached.absolute).toBeLessThanOrEqual(
-        direct.absolute - 6 * cached.parameterReads + 5 * ownership.entries,
+        direct.absolute - 6 * ownership.parameterChecks + 5 * ownership.entries,
       );
       expect(cached.signs).toBeLessThanOrEqual(direct.signs + ownership.entries);
       expect(ownership.maps.size).toBe(1);

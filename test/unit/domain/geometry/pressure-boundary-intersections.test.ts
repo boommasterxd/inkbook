@@ -246,6 +246,31 @@ describe("pressure arc metadata reuse", () => {
     );
   });
 
+  it("preserves second-operand scalar admission and exact hits with a partial cache", () => {
+    const first = line(-2, 0, 2, 0);
+    const second = arc(origin);
+    const scalars = new PressureBoundaryScalarCache(1);
+    const angles = new WeakMap<PressureBoundaryArc, number>();
+    expect(intersectPressureBoundaries(first, second, angles, scalars)).toEqual(
+      intersectPressureBoundaries(first, second),
+    );
+    expect(scalars.read(first)).toBeUndefined();
+    expect(scalars.read(second)).toBeDefined();
+    expect(intersectPressureBoundaries(second, first, angles, scalars)).toEqual(
+      intersectPressureBoundaries(second, first),
+    );
+  });
+
+  it.each([line(-1, 0, 1, 0), arc(origin, 2, 0.4, -Math.PI)])(
+    "preserves exact endpoint hits for shared operand identity (%#)",
+    (boundary) => {
+      const scalars = new PressureBoundaryScalarCache(1);
+      expect(intersectPressureBoundaries(boundary, boundary, undefined, scalars)).toEqual(
+        intersectPressureBoundaries(boundary, boundary),
+      );
+    },
+  );
+
   it("reuses arc angles for midpoint and clipped endpoint generation without rounding changes", () => {
     const boundary = arc({ x: -999_999, y: 999_999 }, 0.35, 0.4, -Math.PI);
     const fractions = [0, 1, ...Array.from({ length: 64 }, (_, index) => (index + 1) / 65)];
