@@ -111,9 +111,10 @@ export function pressureWindowMemoryUsage(window: PressureWindow | PressurePathW
   return measurePressureWindow(window).numericBytes;
 }
 
-/** Measure both cache retention and active-job accounting in one boundary visit. */
+/** Measure accounting and optionally complete deep immutability in one boundary visit. */
 export function measurePressureWindow(
   window: PressureWindow,
+  freeze = false,
 ): PressureWindowMeasurement & { readonly retainedBytes: number } {
   const points = new Set<PointV1>();
   let scalarBytes = 0;
@@ -127,12 +128,21 @@ export function measurePressureWindow(
         points.add(segment.center);
         scalarBytes += 2 * 8;
       }
+      if (freeze) Object.freeze(segment);
     }
+    if (freeze) Object.freeze(loop);
   }
   overhead += 48 + window.additions.length * 8;
   for (const polygon of window.additions) {
     overhead += 48 + polygon.length * (8 + 24);
     for (const point of polygon) points.add(point);
+    if (freeze) Object.freeze(polygon);
+  }
+  if (freeze) {
+    for (const point of points) Object.freeze(point);
+    Object.freeze(window.additions);
+    Object.freeze(window.loops);
+    Object.freeze(window);
   }
   const numericBytes = points.size * 2 * 8 + scalarBytes;
   return { window, numericBytes, retainedBytes: overhead + numericBytes };

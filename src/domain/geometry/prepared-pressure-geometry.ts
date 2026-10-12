@@ -30,6 +30,8 @@ export interface PreparedPressureGeometryPort {
   readPath?(): readonly SvgPathPart[] | undefined;
   publishPath?(parts: readonly SvgPathPart[]): void;
   readWindow(windowIndex: number): PressureWindow | undefined;
+  /** Returns a complete immutable window and its owner-bound measured payload together. */
+  readWindowMeasurement?(windowIndex: number): PressureWindowMeasurement | undefined;
   /** May return the measured numeric payload of this exact window. */
   publishWindow(windowIndex: number, window: PressureWindow): PressureWindowMeasurement | void;
 }

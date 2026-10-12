@@ -1,6 +1,8 @@
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
+import { sameLocalSelectionShape } from "../../domain/store/prepared-stroke-center-cache";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
-import type { InkElementV1 } from "../../domain/schema/public";
+import type { InkElementV1, StrokeElementV1 } from "../../domain/schema/public";
 import type { SceneContentRenderer } from "./content-renderer";
 import type { PreviewTransform } from "./scene-visibility-reconciler";
 import type { PreviewBoundsTransform } from "./types";
@@ -34,6 +36,8 @@ interface PendingPath {
   readonly element: InkElementV1;
   readonly path: ProgressivePreviewPath;
   readonly version: number;
+  readonly pressureEnabled: boolean;
+  readonly replay?: boolean;
 }
 
 /** Retains complete canonical snapshots while coalescing updates to a bounded selection. */
@@ -141,7 +145,9 @@ export class ProgressiveElementPreview {
     let stepped = false;
     while (true) {
       if ((stepped || !admittedFirstStep) && now() >= deadline) return this.#hasPending();
-      const starting = this.#pending === undefined;
+      const refreshed = this.#refreshPressureSnapshot();
+      if (refreshed && now() >= deadline) return this.#hasPending();
+      const starting = refreshed || this.#pending === undefined;
       const pending = this.#pending ?? this.#startNext();
       if (pending === undefined) return false;
       this.#pending = pending;
@@ -263,6 +269,39 @@ export class ProgressiveElementPreview {
     this.#apply(completed);
   }
 
+  #refreshPressureSnapshot(): boolean {
+    const pending = this.#pending;
+    const request = this.#request;
+    if (
+      pending === undefined ||
+      request?.feedback === undefined ||
+      pending.replay ||
+      pending.version === request.version ||
+      !pending.pressureEnabled
+    )
+      return false;
+    const element = request.materialize(pending.element.id);
+    const reusable =
+      pending.element.kind === "stroke" &&
+      element?.kind === "stroke" &&
+      immutableLocalShape(pending.element) &&
+      immutableLocalShape(element) &&
+      sameLocalSelectionShape(pending.element, element);
+    if (!reusable) pending.path.cancel();
+    this.#versions.set(pending.element.id, request.version);
+    this.#pending =
+      element === undefined
+        ? undefined
+        : {
+            element,
+            feedback: request.feedback,
+            path: reusable ? pending.path : new ProgressivePreviewPath(element),
+            version: request.version,
+            pressureEnabled: element.kind === "stroke" && element.style.pressureEnabled,
+          };
+    return true;
+  }
+
   #startNext(): PendingPath | undefined {
     const request = this.#request;
     if (request === undefined) return undefined;
@@ -275,6 +314,8 @@ export class ProgressiveElementPreview {
         feedback: this.#snapshotFeedback.get(replayId),
         path: new ProgressivePreviewPath(element),
         version: this.#versions.get(replayId)!,
+        pressureEnabled: element.kind === "stroke" && element.style.pressureEnabled,
+        replay: true,
       };
     }
     for (let scanned = 0; scanned < request.ids.length; scanned += 1) {
@@ -289,6 +330,7 @@ export class ProgressiveElementPreview {
           feedback: request.feedback,
           path: new ProgressivePreviewPath(element),
           version: request.version,
+          pressureEnabled: element.kind === "stroke" && element.style.pressureEnabled,
         };
       }
     }
@@ -365,6 +407,17 @@ export class ProgressiveElementPreview {
 
 function elementBytes(element: InkElementV1): number {
   return 128 + (element.kind === "stroke" ? element.points.length * 8 : 0);
+}
+
+function immutableLocalShape(element: StrokeElementV1): boolean {
+  return (
+    isStoredStroke(element) ||
+    (Object.isFrozen(element) &&
+      Object.isFrozen(element.points) &&
+      Object.isFrozen(element.style) &&
+      Object.isFrozen(element.pivot) &&
+      (element.offset === undefined || Object.isFrozen(element.offset)))
+  );
 }
 
 function pathBytes(parts: readonly SvgPathPart[]): number {

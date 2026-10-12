@@ -160,9 +160,9 @@ describe("transformed preview candidate retention", () => {
       {
         applyPreviewTransform,
         flushSelectionContext: vi.fn(),
-        promoteVisible: vi.fn(),
+        promoteVisible: vi.fn(() => false),
         previewMountedIds: () => ["0", "1"],
-      } as unknown as SceneContentRenderer,
+      },
       { x: 0, zoom: 1 },
     );
     const viewport = { height: 100, left: 0, top: 0, width: 100 };

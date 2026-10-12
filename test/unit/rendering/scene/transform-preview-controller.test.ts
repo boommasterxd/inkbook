@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
 import { SceneTransformPreviewController } from "../../../../src/rendering/scene/transform-preview-controller";
 
 function createController() {
@@ -8,9 +7,9 @@ function createController() {
     {
       applyPreviewTransform,
       flushSelectionContext: vi.fn(),
-      promoteVisible: vi.fn(),
+      promoteVisible: vi.fn(() => false),
       previewMountedIds: () => [],
-    } as unknown as SceneContentRenderer,
+    },
     { x: 0, zoom: 1 },
   );
   return { controller, applyPreviewTransform };

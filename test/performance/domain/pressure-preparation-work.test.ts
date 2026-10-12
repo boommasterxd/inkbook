@@ -9,6 +9,8 @@ import * as windowPreparation from "../../../src/domain/geometry/pressure-window
 import { finishGeometrySteps } from "../../fixtures/domain/geometry-steps";
 import { serializePressureWindows } from "../../../src/domain/geometry/pressure-path-serialization";
 import { StrokeShapeCache } from "../../../src/persistence/serialization/stroke-shape-cache";
+import { PreparedPressureWindowCache } from "../../../src/domain/store/prepared-pressure-window-cache";
+import { CanonicalElementPathPreparation } from "../../../src/domain/geometry/canonical-element-path-preparation";
 import {
   createMultiWindowPressureStroke,
   createTestStroke,
@@ -108,6 +110,79 @@ describe("bounded pressure preparation work", () => {
       expect(resumptions).toBeLessThanOrEqual(512);
     } finally {
       probes.mockRestore();
+    }
+  });
+});
+
+describe("immutable pressure window measurement reuse", () => {
+  it("measures and freezes each retained window once across aliases and canonical cache hits", () => {
+    const cache = new PreparedPressureWindowCache();
+    const source = createMultiWindowPressureStroke();
+    const measure = vi.spyOn(windowPreparation, "measurePressureWindow");
+    const freeze = vi.spyOn(Object, "freeze");
+    const windows = vi.spyOn(windowPreparation, "preparePressureWindowSteps");
+    let additionReads = 0;
+    const port = {
+      readWindow: (index: number) => cache.read(source.id, 1, index),
+      readWindowMeasurement: (index: number) => cache.readMeasurement(source.id, 1, index),
+      publishWindow: (index: number, value: windowPreparation.PressureWindow) => {
+        Reflect.set(
+          value,
+          "additions",
+          value.additions.map(
+            (polygon) =>
+              new Proxy(polygon, {
+                get: (target, key, receiver) => {
+                  if (typeof key === "string" && /^\d+$/u.test(key)) additionReads += 1;
+                  return Reflect.get(target, key, receiver) as unknown;
+                },
+              }),
+          ),
+        );
+        return cache.publish(source.id, 1, index, value);
+      },
+    };
+    try {
+      const first = new CanonicalElementPathPreparation(source, port);
+      while (!first.step()) {
+        /* Finish complete canonical windows. */
+      }
+      const count = cache.statistics().entries;
+      expect(count).toBeGreaterThan(1);
+      expect(measure).toHaveBeenCalledTimes(count);
+      expect(freeze.mock.calls.length).toBeGreaterThan(count);
+      expect(additionReads).toBeGreaterThan(0);
+      const retained = cache.readMeasurement(source.id, 1, 0)!;
+      measure.mockClear();
+      freeze.mockClear();
+      windows.mockClear();
+      additionReads = 0;
+      const second = new CanonicalElementPathPreparation(source, port);
+      while (!second.step()) {
+        /* Consume complete immutable cache witnesses. */
+      }
+      expect(second.parts).toEqual(first.parts);
+      expect(windows).not.toHaveBeenCalled();
+      expect(measure).not.toHaveBeenCalled();
+      expect(freeze).not.toHaveBeenCalled();
+      expect(additionReads).toBe(0);
+      expect(cache.publish("alias", 1, 0, retained.window)).toBe(retained);
+      expect(measure).not.toHaveBeenCalled();
+      expect(freeze).not.toHaveBeenCalled();
+      expect(additionReads).toBe(0);
+      second.cancel();
+      expect(second.memoryUsage()).toBe(0);
+      cache.release();
+      expect(cache.measuredWindowCount).toBe(0);
+      expect(cache.statistics().bytes).toBe(0);
+      cache.publish(source.id, 2, 0, retained.window);
+      expect(measure).toHaveBeenCalledOnce();
+      expect(freeze.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      measure.mockRestore();
+      freeze.mockRestore();
+      windows.mockRestore();
+      cache.release();
     }
   });
 });

@@ -9,12 +9,14 @@ import type { MountedSceneElement } from "./mounted-element";
 interface RetainedTransform {
   readonly base: string | null;
   readonly strokeWidthScale: number | null;
+  bytes: number;
   desired: PreviewTransform;
 }
 
 /** Retains committed feedback while one versioned canonical replacement is prepared. */
 export class CommittedPreviewGeometry {
   readonly #transforms = new Map<string, RetainedTransform>();
+  #transformBytes = 0;
   #job: { id: string; version: number; path: ProgressivePreviewPath } | undefined;
 
   public retainPreviews(
@@ -36,8 +38,11 @@ export class CommittedPreviewGeometry {
   }
 
   public retain(id: string, base: string | null, strokeWidthScale: number | null): void {
+    const bytes = 40 + 2 * (id.length + (base?.length ?? 0));
+    this.#transformBytes += bytes - (this.#transforms.get(id)?.bytes ?? 0);
     this.#transforms.set(id, {
       base,
+      bytes,
       strokeWidthScale,
       desired: { transform: null, strokeWidthScale: null, version: Number.MAX_SAFE_INTEGER },
     });
@@ -54,6 +59,10 @@ export class CommittedPreviewGeometry {
   public resolve(id: string, desired: PreviewTransform): PreviewTransform {
     const retained = this.#transforms.get(id);
     if (retained === undefined) return desired;
+    const bytes =
+      40 + 2 * (id.length + (retained.base?.length ?? 0) + (desired.transform?.length ?? 0));
+    this.#transformBytes += bytes - retained.bytes;
+    retained.bytes = bytes;
     retained.desired = desired;
     const transform = [desired.transform, retained.base].filter(Boolean).join(" ") || null;
     return {
@@ -86,7 +95,9 @@ export class CommittedPreviewGeometry {
   }
 
   public finish(id: string): PreviewTransform | undefined {
-    const desired = this.#transforms.get(id)?.desired;
+    const retained = this.#transforms.get(id);
+    const desired = retained?.desired;
+    this.#transformBytes -= retained?.bytes ?? 0;
     this.#transforms.delete(id);
     if (this.#job?.id === id) {
       this.#job.path.cancel();
@@ -96,14 +107,12 @@ export class CommittedPreviewGeometry {
   }
 
   public memoryUsage(): number {
-    let bytes = this.#job?.path.memoryUsage() ?? 0;
-    for (const [id, { base, desired }] of this.#transforms)
-      bytes += 32 + 2 * (id.length + (base?.length ?? 0) + (desired.transform?.length ?? 0));
-    return bytes;
+    return this.#transformBytes + (this.#job?.path.memoryUsage() ?? 0);
   }
 
   public release(): void {
     this.#transforms.clear();
+    this.#transformBytes = 0;
     this.#job?.path.cancel();
     this.#job = undefined;
   }

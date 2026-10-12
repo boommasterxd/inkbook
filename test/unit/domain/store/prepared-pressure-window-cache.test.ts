@@ -34,6 +34,7 @@ describe("prepared pressure window capacity", () => {
     cache.release();
     expect(cache.statistics().bytes).toBe(0);
     expect(cache.indexedStrokeCount).toBe(0);
+    expect(cache.measuredWindowCount).toBe(0);
   });
 
   it("enforces the actual 8 MiB byte bound before the entry bound", () => {
@@ -58,7 +59,7 @@ describe("prepared pressure window capacity", () => {
       { x: 1, y: 1 },
       { x: 2, y: 0 },
     ];
-    const added = { ...window(), additions: [triangle] };
+    const added = Object.freeze({ ...window(), additions: [triangle] });
     cache.publish("a", 1, 0, added);
     expect(cache.statistics().bytes - before).toBeGreaterThan(3 * 16);
     expect(Object.isFrozen(added.additions)).toBe(true);
@@ -79,42 +80,68 @@ describe("prepared pressure window capacity", () => {
     cache.publish("a", 1, 2, window(100));
     expect(cache.statistics().entries).toBe(0);
     expect(cache.indexedStrokeCount).toBe(0);
+    expect(cache.measuredWindowCount).toBe(0);
     expect(() => cache.read("a", 1, -1)).toThrow(RangeError);
     expect(() => cache.publish("a", 1, NaN, value)).toThrow(RangeError);
+  });
+
+  it("releases identity witnesses only after their final retained alias", () => {
+    const cache = new PreparedPressureWindowCache(2);
+    const value = window();
+    const measurement = cache.publish("a", 1, 0, value);
+    cache.publish("b", 1, 0, value);
+    expect(cache.measuredWindowCount).toBe(1);
+    expect(cache.readMeasurement("a", 1, 0)).toBe(measurement);
+    expect(Object.isFrozen(measurement)).toBe(true);
+    cache.invalidate("a");
+    expect(cache.measuredWindowCount).toBe(1);
+    cache.publish("c", 1, 0, window());
+    expect(cache.measuredWindowCount).toBe(2);
+    cache.publish("d", 1, 0, window());
+    expect(cache.measuredWindowCount).toBe(2);
+    expect(cache.read("b", 1, 0)).toBeUndefined();
+    cache.setRetentionEnabled(false);
+    expect(cache.measuredWindowCount).toBe(0);
+    expect(cache.publish("d", 1, 0, value)).toBeUndefined();
   });
 });
 
 describe("store-owned prepared pressure windows", () => {
-  it("shares paint-only geometry and rejects stale publication after geometry changes or removal", () => {
-    const source = stroke();
-    const store = new ElementStore([source]);
-    const changed = vi.fn();
-    const unsubscribe = store.subscribeMemoryUsage(changed);
-    const version = store.get(source.id)!.geometryVersion;
-    const port = store.pressureGeometry(source.id, version);
-    const value = window();
-    expect(port.publishWindow(0, value)).toMatchObject({
-      window: value,
-      numericBytes: pressureWindowMemoryUsage(value),
-    });
-    expect(port.readWindow(0)).toBe(value);
-    expect(Object.isFrozen(value.loops[0]![0]!.start)).toBe(true);
-    expect(store.activeDocumentMemoryUsage().pressureWindowCacheBytes).toBeGreaterThan(0);
-    expect(changed).toHaveBeenCalledOnce();
-    store.replace(source.id, { ...source, style: { ...source.style, opacity: 0.5 } });
-    expect(port.readWindow(0)).toBe(value);
-    store.replace(source.id, { ...source, points: [0, 0, 1, 5, 5, 1] });
-    port.publishWindow(0, value);
-    expect(port.readWindow(0)).toBeUndefined();
-    expect(store.activeDocumentMemoryUsage().pressureWindowCacheBytes).toBe(0);
-    const current = store.pressureGeometry(source.id, store.get(source.id)!.geometryVersion);
-    current.publishWindow(1, value);
-    store.remove([source.id]);
-    current.publishWindow(1, value);
-    expect(current.readWindow(1)).toBeUndefined();
-    expect(store.instrumentation.pressureWindowCacheEntries).toBe(0);
-    unsubscribe();
-  });
+  it.each([undefined, { x: 10, y: 20 }])(
+    "shares paint-only geometry and rejects stale windows (offset=%j)",
+    (offset) => {
+      const source = { ...stroke(), ...(offset === undefined ? {} : { offset }) };
+      const store = new ElementStore([source]);
+      const changed = vi.fn();
+      const unsubscribe = store.subscribeMemoryUsage(changed);
+      const version = store.get(source.id)!.geometryVersion;
+      const port = store.pressureGeometry(source.id, version);
+      const value = window();
+      expect(port.publishWindow(0, value)).toMatchObject({
+        window: value,
+        numericBytes: pressureWindowMemoryUsage(value),
+      });
+      expect(port.readWindow(0)).toBe(value);
+      expect(port.readWindowMeasurement?.(0)).toMatchObject({ window: value });
+      expect(Object.isFrozen(value.loops[0]![0]!.start)).toBe(true);
+      expect(store.activeDocumentMemoryUsage().pressureWindowCacheBytes).toBeGreaterThan(0);
+      expect(changed).toHaveBeenCalledOnce();
+      store.replace(source.id, { ...source, style: { ...source.style, opacity: 0.5 } });
+      expect(port.readWindow(0)).toBe(value);
+      store.replace(source.id, { ...source, points: [0, 0, 1, 5, 5, 1] });
+      port.publishWindow(0, value);
+      expect(port.readWindow(0)).toBeUndefined();
+      expect(port.readWindowMeasurement?.(0)).toBeUndefined();
+      expect(store.activeDocumentMemoryUsage().pressureWindowCacheBytes).toBe(0);
+      const current = store.pressureGeometry(source.id, store.get(source.id)!.geometryVersion);
+      current.publishWindow(1, value);
+      store.remove([source.id]);
+      current.publishWindow(1, value);
+      expect(current.readWindow(1)).toBeUndefined();
+      expect(store.instrumentation.pressureWindowCacheEntries).toBe(0);
+      unsubscribe();
+    },
+  );
 
   it("isolates stores, disables retention under pressure, and permanently revokes closed-store ports", () => {
     const source = stroke();

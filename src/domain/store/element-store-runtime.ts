@@ -104,6 +104,12 @@ export class ElementStoreRuntime {
             ? local.readWindow(index)
             : cache.read(id, geometryVersion, index)
           : undefined,
+      readWindowMeasurement: (index) =>
+        current()
+          ? isLocal()
+            ? local.readWindowMeasurement?.(index)
+            : cache.readMeasurement(id, geometryVersion, index)
+          : undefined,
       publishWindow: (index, window) => {
         if (!current()) return;
         if (isLocal()) return local.publishWindow(index, window);
@@ -140,6 +146,12 @@ export class ElementStoreRuntime {
         prepare((stroke) =>
           stroke.style.pressureEnabled
             ? windows.read(key, centers.resolve(id, version, stroke).shapeVersion, index)
+            : undefined,
+        ),
+      readWindowMeasurement: (index) =>
+        prepare((stroke) =>
+          stroke.style.pressureEnabled
+            ? windows.readMeasurement(key, centers.resolve(id, version, stroke).shapeVersion, index)
             : undefined,
         ),
       publishWindow: (index, window) =>

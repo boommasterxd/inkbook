@@ -8,10 +8,15 @@ import { fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
 import { createDenseSelectionPreview } from "../../../fixtures/rendering/selection-preview";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
+import { takeImmutableElementOwnership } from "../../../../src/domain/store/immutability";
 
 describe("progressive snapshot ownership", () => {
-  it("retains the same unfinished snapshot across superseding feedback and releases it on cancel", () => {
+  it("rechecks one owned shape per admitted version while retaining its path until cancellation", () => {
     const { renderer, scheduler, ids, store } = createDenseSelectionPreview(300);
+    // This scenario supplies immutable shapes, matching the authoritative Store contract.
+    for (const record of store.records.values()) {
+      takeImmutableElementOwnership(record.element);
+    }
     const paths = new Set<ProgressivePreviewPath>();
     const materialize = vi.fn((id: string) => store.get(id)?.element);
     const step = vi.spyOn(ProgressivePreviewPath.prototype, "step").mockImplementation(function (
@@ -30,13 +35,14 @@ describe("progressive snapshot ownership", () => {
         });
         renderer.flushPointerFeedbackFrame(scheduler.time);
         scheduler.runNext();
+        expect(materialize).toHaveBeenCalledTimes(version);
       }
       expect(paths.size).toBe(1);
-      expect(materialize).toHaveBeenCalledOnce();
+      expect(materialize).toHaveBeenCalledTimes(3);
       renderer.clearProgressiveElementPreviews();
       scheduler.runAll();
       expect(cancel).toHaveBeenCalledOnce();
-      expect(materialize).toHaveBeenCalledOnce();
+      expect(materialize).toHaveBeenCalledTimes(3);
     } finally {
       step.mockRestore();
       cancel.mockRestore();

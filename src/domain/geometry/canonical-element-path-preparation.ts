@@ -208,12 +208,18 @@ export class CanonicalElementPathPreparation {
   ): boolean {
     if (this.#pendingPieces.length === 0) return true;
     const count = Math.min(64, this.#pendingPieces.length);
+    const measurement =
+      this.#windowJob === undefined
+        ? this.pressureGeometry?.readWindowMeasurement?.(this.#windows.length)
+        : undefined;
     const cached =
       this.#windowJob === undefined
-        ? this.pressureGeometry?.readWindow(this.#windows.length)
+        ? this.pressureGeometry?.readWindowMeasurement === undefined
+          ? this.pressureGeometry?.readWindow(this.#windows.length)
+          : measurement?.window
         : undefined;
     if (cached !== undefined) {
-      this.acceptWindow(cached, count);
+      this.acceptWindow(cached, count, measurement);
       return this.#pendingPieces.length === 0;
     }
     this.#windowJob ??=
