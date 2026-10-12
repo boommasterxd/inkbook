@@ -60,7 +60,7 @@ function observeScalarEntries() {
         throw new Error("Cannot observe pressure endpoint scale");
       Object.defineProperty(value, "endpointScale", {
         configurable: scaleDescriptor.configurable,
-        enumerable: scaleDescriptor.enumerable,
+        enumerable: scaleDescriptor.enumerable ?? false,
         get: () => {
           parameterChecks += 1;
           return endpointScale;
