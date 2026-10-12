@@ -11,7 +11,7 @@ import {
 describe("selection move threshold", () => {
   it.each([
     ["mouse", 2],
-    ["pen", 2],
+    ["pen", 6],
     ["touch", 6],
   ] as const)(
     "starts a selected %s move only beyond %s pixels with the complete delta",
@@ -30,7 +30,7 @@ describe("selection move threshold", () => {
         pointerMove({ pointerType, x: 10 + threshold + 0.001, y: 20 }),
       );
       expect(effectTypes(moved.effects)).toEqual(
-        pointerType === "touch"
+        pointerType !== "mouse"
           ? ["cancel-long-press", "begin-preview", "update-preview"]
           : ["begin-preview", "update-preview"],
       );
@@ -73,7 +73,7 @@ describe("selection move threshold", () => {
       expect(inputPhase(started.state)).toBe("element-move");
       expect(started.state.hasSelection).toBe(true);
       expect(effectTypes(started.effects)).toEqual(
-        pointerType === "touch" ? ["capture-pointer", "schedule-long-press"] : ["capture-pointer"],
+        pointerType !== "mouse" ? ["capture-pointer", "schedule-long-press"] : ["capture-pointer"],
       );
     },
   );
@@ -114,17 +114,20 @@ describe("Select tap and area arbitration", () => {
         pointerDown({ pointerType, target: { elementId: "shape-b", isSelected: false } }),
       );
       expect(inputPhase(pending.state)).toBe("select-pending");
-      expect(effectTypes(pending.effects)).toEqual(["capture-pointer"]);
+      expect(effectTypes(pending.effects)).toEqual(
+        pointerType === "pen" ? ["capture-pointer", "schedule-long-press"] : ["capture-pointer"],
+      );
       const boundary = reduceInput(pending.state, pointerMove({ pointerType, x: 16, y: 20 }));
       expect(boundary.effects).toEqual([]);
       const dragged = reduceInput(boundary.state, pointerMove({ pointerType, x: 16.001, y: 20 }));
       expect(inputPhase(dragged.state)).toBe("lasso");
       expect(effectTypes(dragged.effects)).toEqual([
         "clear-selection",
+        ...(pointerType === "pen" ? ["cancel-long-press"] : []),
         "begin-preview",
         "update-preview",
       ]);
-      expect(dragged.effects[1]).toMatchObject({
+      expect(dragged.effects.find((effect) => effect.type === "begin-preview")).toMatchObject({
         kind: "lasso",
         pointer: { x: 10, y: 20 },
         additive: false,

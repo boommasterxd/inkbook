@@ -328,7 +328,7 @@ describe("touch navigation and finger drawing", () => {
       const started = apply(state, pointerDown({ pointerType, shift: true }));
       expect(inputPhase(started.state)).toBe("select-pending");
       const moved = apply(started.state, pointerMove({ pointerType, x: 17, y: 20 }));
-      expect(moved.effects[0]).toMatchObject({
+      expect(moved.effects.find((effect) => effect.type === "begin-preview")).toMatchObject({
         type: "begin-preview",
         kind: "lasso",
         additive: true,

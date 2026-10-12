@@ -166,6 +166,7 @@ export function handleLongPress(state: InputState, action: LongPressAction): Inp
     return unchangedEffects(state);
   }
   const threshold =
+    interaction.pointerType === "pen" ||
     interaction.phase === "element-move" ||
     (interaction.phase === "touch-pending" && interaction.target !== undefined)
       ? ELEMENT_DRAG_THRESHOLD_PX
@@ -174,16 +175,20 @@ export function handleLongPress(state: InputState, action: LongPressAction): Inp
     return unchangedEffects(state);
   }
   const effects = cleanupEffects(interaction);
-  if (interaction.phase === "touch-pending" && interaction.target !== undefined) {
+  const target =
+    interaction.phase === "touch-pending" || interaction.phase === "select-pending"
+      ? (action.target ?? interaction.target)
+      : undefined;
+  if (target !== undefined && !target.isSelected) {
     effects.push({
       type: "select-element",
-      elementId: interaction.target.elementId,
+      elementId: target.elementId,
       mode: interaction.controlOrMeta ? "add" : "replace",
     });
   }
   effects.push({
     type: "open-context-menu",
-    source: "touch",
+    source: interaction.pointerType === "touch" ? "touch" : "pointer",
     position: interaction.current,
   });
   return {

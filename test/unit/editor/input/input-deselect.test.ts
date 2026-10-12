@@ -87,7 +87,7 @@ describe("mouse and pen Select clicks", () => {
       "clear-selection",
       "begin-preview",
     ]);
-    expect(effectTypes(selectedTarget.effects)).toEqual(["capture-pointer"]);
+    expect(effectTypes(selectedTarget.effects)).toEqual(["capture-pointer", "schedule-long-press"]);
     expect(inputPhase(selectedTarget.state)).toBe("element-move");
     expect(selectedTarget.state.hasSelection).toBe(true);
   });

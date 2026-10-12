@@ -27,3 +27,14 @@ export function touchInteractionBlocksNativeScroll(
     interaction.phase !== "note-scroll"
   );
 }
+/** Touch compatibility menus must not replace the scheduler-owned long-press menu. */
+export function isTouchCompatibilityEvent(event: MouseEvent): boolean {
+  if (!("sourceCapabilities" in event)) return false;
+  const capabilities = event.sourceCapabilities;
+  return (
+    capabilities !== null &&
+    typeof capabilities === "object" &&
+    "firesTouchEvents" in capabilities &&
+    capabilities.firesTouchEvents === true
+  );
+}

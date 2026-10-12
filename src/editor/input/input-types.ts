@@ -2,7 +2,7 @@ import type { StartupToolV1 } from "../../domain/settings/types";
 
 export const LONG_PRESS_DELAY_MS = 500;
 export const ELEMENT_DRAG_THRESHOLD_PX = 6;
-export const SELECTED_POINTER_DRAG_THRESHOLD_PX = 2;
+export const SELECTED_MOUSE_DRAG_THRESHOLD_PX = 2;
 export const EMPTY_TOUCH_THRESHOLD_PX = 10;
 export const TOUCH_AXIS_LOCK_THRESHOLD_PX = 4;
 export const TOUCH_TAP_MAX_DURATION_MS = 350;
@@ -61,6 +61,7 @@ export interface PointerExitAction {
 export interface LongPressAction {
   readonly type: "long-press";
   readonly pointerId: number;
+  readonly target?: PointerTarget;
 }
 
 export interface ContextMenuAction extends InputPoint {

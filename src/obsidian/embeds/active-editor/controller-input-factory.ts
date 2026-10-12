@@ -1,5 +1,6 @@
 import type { GestureController, GestureControllerPorts } from "../../../editor/gestures/public";
 import type { InputAction, PointerSample } from "../../../editor/input/index";
+import type { LongPressAction } from "../../../editor/input/input-types";
 import type { KeyboardShortcutSettingsV1 } from "../../../domain/settings/index";
 import { selectElement } from "../../../editor/selection/public";
 
@@ -31,6 +32,7 @@ interface ActiveEditorInputFactoryOptions {
   readonly keyboardShortcuts: KeyboardShortcutSettingsV1;
   readonly lastScreenPointer: () => PointerSample | null;
   readonly longPress: ActiveEditorLongPressScheduler;
+  readonly longPressTarget: (pointerId: number) => LongPressAction["target"];
   readonly menus: ActiveEditorMenuController;
   readonly model: EditableDocumentModel;
   readonly navigation: ActiveEditorNavigation;
@@ -98,9 +100,14 @@ export function createActiveEditorInputControllers(
       options.capturePointer,
       (pointerId) => options.captures.release(pointerId),
       (pointerId, delayMs) =>
-        options.longPress.schedule(pointerId, delayMs, () =>
-          options.dispatch({ type: "long-press", pointerId }),
-        ),
+        options.longPress.schedule(pointerId, delayMs, () => {
+          const target = options.longPressTarget(pointerId);
+          options.dispatch({
+            type: "long-press",
+            pointerId,
+            ...(target === undefined ? {} : { target }),
+          });
+        }),
     ],
     [clearSelection, selectOne],
     [options.onStateChanged, options.onStateChanged],

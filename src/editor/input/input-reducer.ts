@@ -1,6 +1,6 @@
 import {
   ELEMENT_DRAG_THRESHOLD_PX,
-  SELECTED_POINTER_DRAG_THRESHOLD_PX,
+  SELECTED_MOUSE_DRAG_THRESHOLD_PX,
   TOUCH_AXIS_LOCK_THRESHOLD_PX,
   type ConfigureInputAction,
   type ContextMenuAction,
@@ -190,6 +190,7 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
       {
         ...base,
         phase: "select-pending",
+        longPressScheduled: scheduleLongPress(base, capture),
         ...(action.target === undefined ? {} : { target: action.target }),
       },
       capture,
@@ -237,17 +238,23 @@ function startElementMove(
   elementId: string,
   effects: InputEffect[],
 ): InputReduction {
-  const isTouch = base.pointerType === "touch";
   const interaction: InputInteraction = {
     ...base,
     phase: "element-move",
     elementId,
-    longPressScheduled: isTouch,
+    longPressScheduled: scheduleLongPress(base, effects),
   };
-  if (isTouch) {
-    effects.push(longPressEffect(base.pointerId));
-  }
   return withInteraction(state, interaction, effects);
+}
+
+function scheduleLongPress(
+  base: ReturnType<typeof interactionBase>,
+  effects: InputEffect[],
+): boolean {
+  if (base.pointerType !== "touch" && (base.pointerType !== "pen" || base.penRole !== "normal"))
+    return false;
+  effects.push(longPressEffect(base.pointerId));
+  return true;
 }
 
 function handlePointerMove(state: InputState, action: PointerMoveAction): InputReduction {
@@ -352,8 +359,8 @@ function movePreview(
   );
   const needsThreshold = kind === "element-move" || kind === "lasso";
   const threshold =
-    kind === "element-move" && interaction.pointerType !== "touch"
-      ? SELECTED_POINTER_DRAG_THRESHOLD_PX
+    kind === "element-move" && interaction.pointerType === "mouse"
+      ? SELECTED_MOUSE_DRAG_THRESHOLD_PX
       : ELEMENT_DRAG_THRESHOLD_PX;
   if (needsThreshold && !interaction.previewStarted && movement <= threshold) {
     return updateCurrent(state, interaction, action, []);

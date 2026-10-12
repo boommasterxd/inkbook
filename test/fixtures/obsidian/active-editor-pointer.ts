@@ -1,6 +1,11 @@
 import { onTestFinished, vi } from "vitest";
 import { ElementStore } from "../../../src/domain/store/public";
-import { reduceInput, type InputAction, type PointerSample } from "../../../src/editor/input";
+import {
+  reduceInput,
+  type InputAction,
+  type InputPoint,
+  type PointerSample,
+} from "../../../src/editor/input";
 import type { InputEffect } from "../../../src/editor/input/input-types";
 import { ActiveEditorPointerController } from "../../../src/obsidian/embeds/active-editor/controller-pointer";
 import { CoalescedPointerInput } from "../../../src/obsidian/embeds/active-editor/coalesced-input";
@@ -86,6 +91,7 @@ export function activeEditorPointerHarness(
       zoom: 1,
       screenPointer,
       pageSample: (sample: PointerSample) => sample,
+      pagePointFromScreen: (sample: InputPoint) => sample,
       recordTouchPan,
       releaseTouchPan,
     } as unknown as ActiveEditorNavigation,

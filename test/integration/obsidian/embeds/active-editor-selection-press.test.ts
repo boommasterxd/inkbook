@@ -37,6 +37,7 @@ describe("active Select press arbitration", () => {
         expect(h.hit).not.toHaveBeenCalled();
         expect(effectTypes(h.effects)).toEqual([
           "capture-pointer",
+          ...(pointerType === "pen" ? ["schedule-long-press", "cancel-long-press"] : []),
           "begin-preview",
           "update-preview",
           "update-preview",
@@ -93,6 +94,9 @@ describe("coalesced Select press arbitration", () => {
       const batch = [sample(20, { ...contact, clientX: excursion ? 47 : 46 }), sample(30, contact)];
       try {
         h.pointer.handlePointerDown(sample(10, contact));
+        expect(h.effects.filter((effect) => effect.type === "schedule-long-press")).toHaveLength(
+          pointerType === "pen" ? 1 : 0,
+        );
         h.pointer.handlePointerMove(sample(30, { ...contact, getCoalescedEvents: () => batch }));
         expect(h.controls.input.interaction?.phase).toBe(excursion ? "lasso" : "select-pending");
         expect(
@@ -111,6 +115,9 @@ describe("coalesced Select press arbitration", () => {
         expect(h.controls.input.interaction).toBeUndefined();
         expect(h.effects.some((effect) => effect.type === "revert-preview")).toBe(
           terminal === "cancel",
+        );
+        expect(h.effects.filter((effect) => effect.type === "cancel-long-press")).toHaveLength(
+          pointerType === "pen" ? 1 : 0,
         );
       } finally {
         h.controller.dispose();
@@ -138,6 +145,7 @@ describe("coalesced Select release arbitration", () => {
         );
         expect(effectTypes(h.effects)).toEqual([
           "capture-pointer",
+          ...(pointerType === "pen" ? ["schedule-long-press", "cancel-long-press"] : []),
           "begin-preview",
           "update-preview",
           "commit-preview",
@@ -173,24 +181,26 @@ describe("selected pen release contact ownership", () => {
             buttons: 0,
             clientX: contact.clientX + 3,
             getCoalescedEvents: () =>
-              realContact ? [sample(30, { ...contact, clientX: contact.clientX + 3 })] : [],
+              realContact ? [sample(30, { ...contact, clientX: contact.clientX + 7 })] : [],
           }),
         );
         expect(effectTypes(h.effects)).toEqual(
           realContact
             ? [
                 "capture-pointer",
+                "schedule-long-press",
+                "cancel-long-press",
                 "begin-preview",
                 "update-preview",
                 "commit-preview",
                 "release-pointer",
               ]
-            : ["capture-pointer", "release-pointer"],
+            : ["capture-pointer", "schedule-long-press", "cancel-long-press", "release-pointer"],
         );
         if (realContact)
           expect(h.effects.find((effect) => effect.type === "update-preview")).toMatchObject({
             kind: "element-move",
-            pointer: { x: element.pivot.x + 3, y: element.pivot.y },
+            pointer: { x: element.pivot.x + 7, y: element.pivot.y },
           });
         expect(h.hit).not.toHaveBeenCalled();
         expect(h.controls.input.interaction).toBeUndefined();
@@ -212,6 +222,8 @@ describe("selected pen release contact ownership", () => {
       );
       expect(effectTypes(h.effects)).toEqual([
         "capture-pointer",
+        "schedule-long-press",
+        "cancel-long-press",
         "begin-preview",
         "update-preview",
         "commit-preview",
@@ -245,7 +257,9 @@ describe("active Select press terminal ownership", () => {
       });
       expect(effectTypes(h.effects)).toEqual([
         "capture-pointer",
+        "schedule-long-press",
         "select-element",
+        "cancel-long-press",
         "release-pointer",
       ]);
       expect(h.hit).toHaveBeenCalledExactlyOnceWith(

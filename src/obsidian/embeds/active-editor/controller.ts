@@ -424,6 +424,7 @@ export class ActiveEditorController {
       keyboardShortcuts: options.deviceSettings.keyboardShortcuts,
       lastScreenPointer: () => this.#cursor.lastScreenPointer,
       longPress: this.#longPress,
+      longPressTarget: (pointerId) => this.#pointer.longPressTarget(pointerId),
       menus: this.#menus,
       model: this.#model,
       navigation: this.#navigation,

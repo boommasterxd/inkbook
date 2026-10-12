@@ -11,7 +11,11 @@ import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import { hasPenContact } from "../../../editor/input/pointer-validation";
 
 import type { ActiveToolCursorController } from "./tool-cursor-controller";
-import type { CoalescedCreationSample, CoalescedPointerInput } from "./coalesced-input";
+import {
+  filtersPenRelease,
+  type CoalescedCreationSample,
+  type CoalescedPointerInput,
+} from "./coalesced-input";
 import { selectedTargetAt, selectionTargetAt } from "./controller-elements";
 import { isMacPlatform, normalizePointerType } from "./controller-helpers";
 import type { ActiveEditorHandleInteraction } from "./handle-interaction";
@@ -19,7 +23,7 @@ import type { ActiveEditorMenuController } from "./controller-menu";
 import type { ActiveEditorNavigation } from "./navigation";
 import type { ElementSceneStore } from "./scene-store";
 import type { SelectionFrameSession } from "../../../editor/selection/public";
-import { touchInteractionBlocksNativeScroll } from "./controller-touch";
+import { isTouchCompatibilityEvent, touchInteractionBlocksNativeScroll } from "./controller-touch";
 
 export interface ActiveEditorPointerOptions {
   readonly coalesced: CoalescedPointerInput;
@@ -229,6 +233,22 @@ export class ActiveEditorPointerController {
     );
   }
 
+  public longPressTarget(pointerId: number) {
+    const interaction = this.#options.getInput().interaction;
+    if (
+      !this.#options.isEnabled() ||
+      interaction?.phase !== "select-pending" ||
+      interaction.pointerType !== "pen" ||
+      interaction.pointerId !== pointerId ||
+      !interaction.longPressScheduled
+    )
+      return undefined;
+    return this.#selectionTarget(
+      this.#options.navigation.pagePointFromScreen(interaction.start),
+      "pen",
+    );
+  }
+
   public handlePointerMove(event: PointerEvent): void {
     if (this.#isForeignHandlePointer(event.pointerId)) return;
     this.#options.cursor.record(event, "move");
@@ -434,20 +454,6 @@ export class ActiveEditorPointerController {
   }
 }
 
-function filtersPenRelease(event: PointerEvent, interaction: InputState["interaction"]): boolean {
-  return (
-    event.pointerType === "pen" &&
-    interaction !== undefined &&
-    interaction.phase !== "pinch" &&
-    interaction.pointerId === event.pointerId &&
-    (interaction.phase === "select-pending" ||
-      interaction.phase === "element-move" ||
-      interaction.phase === "lasso" ||
-      interaction.phase === "eraser-gesture" ||
-      (interaction.phase === "tool-gesture" && interaction.tool === "draw"))
-  );
-}
-
 function ownsTouchPan(
   interaction: InputState["interaction"],
   pointerId: number,
@@ -479,17 +485,5 @@ function claimsPointerGesture(
   return (
     interaction !== undefined &&
     (event.pointerType !== "touch" || touchInteractionBlocksNativeScroll(interaction))
-  );
-}
-
-/** Touch menus are opened once by the editor's long-press scheduler. */
-function isTouchCompatibilityEvent(event: MouseEvent): boolean {
-  if (!("sourceCapabilities" in event)) return false;
-  const capabilities = event.sourceCapabilities;
-  return (
-    capabilities !== null &&
-    typeof capabilities === "object" &&
-    "firesTouchEvents" in capabilities &&
-    capabilities.firesTouchEvents === true
   );
 }

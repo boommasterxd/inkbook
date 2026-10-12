@@ -103,7 +103,11 @@ export class CoalescedPointerInput {
   public moveAction(pointer: PointerSample, state: InputState): PointerMoveAction {
     const action: PointerMoveAction = { type: "pointer-move", ...pointer };
     const interaction = state.interaction;
-    if (interaction?.phase !== "select-pending" || interaction.pointerId !== pointer.pointerId)
+    if (
+      (interaction?.phase !== "select-pending" && interaction?.phase !== "element-move") ||
+      interaction.previewStarted ||
+      interaction.pointerId !== pointer.pointerId
+    )
       return action;
     let maximum = 0;
     for (const sample of this.#pending ?? []) {
@@ -315,4 +319,22 @@ function coalescedEvents(event: PointerEvent): readonly PointerEvent[] | null {
   } catch {
     return null;
   }
+}
+
+/** Terminal pen gestures admit contact samples, never a displaced lift/hover position. */
+export function filtersPenRelease(
+  event: PointerEvent,
+  interaction: InputState["interaction"],
+): boolean {
+  return (
+    event.pointerType === "pen" &&
+    interaction !== undefined &&
+    interaction.phase !== "pinch" &&
+    interaction.pointerId === event.pointerId &&
+    (interaction.phase === "select-pending" ||
+      interaction.phase === "element-move" ||
+      interaction.phase === "lasso" ||
+      interaction.phase === "eraser-gesture" ||
+      (interaction.phase === "tool-gesture" && interaction.tool === "draw"))
+  );
 }
