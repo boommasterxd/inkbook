@@ -16,6 +16,11 @@ bounds rather than starting another spatial search for every preview context.
 Retain canonical render-band order and per-element path identity; arbitrary
 selection groups must not reparent interleaved elements.
 
+Unchanged retained band/rank values reuse the published order without another
+rank traversal. Account preview transform bytes incrementally. Cancel unfinished
+superseded pressure snapshots at admitted scene updates; retain complete snapshots
+as residual bases and reuse measurements only through the bounded owning cache.
+
 Reuse selected-record and single-stroke frame snapshots across chrome, hit testing,
 and gesture startup. Own demanded local center and pressure preparation in the
 Store, with sample identity and local shape determining compatibility across
@@ -26,6 +31,9 @@ Store revision. Preview preparation must not eagerly build commit-only index,
 capacity, record, or history state. Clipboard lookup uses selected IDs and retained
 ranks. Paste may reuse derivations only after its own complete validation and
 immutable staging; snapshot wrapper metadata before asynchronous preparation.
+Combine Paste wire capture and insertion preparation. Only the private sample-copy
+producer may witness its own complete frozen numeric arrays; reuse their JSON
+structure proof while retaining semantic validation and exact resource limits.
 
 Canonical resource limits, invalidation, scheduling, and trust boundaries belong
 in [Rendering and Performance](../rendering-and-performance.md). User-visible
