@@ -59,6 +59,8 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/domain/maximum-live-stroke-performance.test.ts",
     "test/performance/domain/owned-history-replay-work.test.ts",
     "test/performance/domain/pressure-boundary-scalar-work.test.ts",
+    "test/performance/domain/pressure-collinear-pruning-work.test.ts",
+    "test/performance/domain/pressure-contour-quantization-work.test.ts",
     "test/performance/domain/pressure-outline-performance.test.ts",
     "test/performance/domain/pressure-preparation-work.test.ts",
     "test/performance/domain/spatial-mutation-work.test.ts",
