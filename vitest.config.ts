@@ -5,6 +5,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const exposeGarbageCollector = process.execArgv.includes("--expose-gc");
 const serialCapacityTests = [
+  "test/integration/rendering/scene/committed-preview-handoff.test.ts",
   "test/integration/rendering/scene/history-contour-reuse.test.ts",
   "test/unit/domain/geometry/table-column-change.test.ts",
   "test/unit/persistence/documents/path-data-validator.test.ts",

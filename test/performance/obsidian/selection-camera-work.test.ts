@@ -167,7 +167,8 @@ it.each(
     const actualPoint = strokePosition.strokeWorldPoint;
     const geometry = vi.spyOn(strokePosition, "strokeWorldPoint").mockImplementation((...args) => {
       pointBuilds += 1;
-      geometry.mockClear();
+      // Count every production call, retaining only a bounded batch of spy records.
+      if (pointBuilds % 1_024 === 0) geometry.mockClear();
       return actualPoint(...args);
     });
     const materialize = vi.spyOn(store, "materializeBandOrder");
