@@ -8,6 +8,9 @@ import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/sc
 import { indexedStroke } from "../../fixtures/editor/stroke";
 import { ManualFrameScheduler } from "../../fixtures/obsidian/manual-frame-scheduler";
 import { createSelectionPreviewRenderer } from "../../fixtures/obsidian/selection-preview-renderer";
+import { createInputState } from "../../../src/editor/input";
+import { activeEditorPointerHarness } from "../../fixtures/obsidian/active-editor-pointer";
+import { timedCursorPointerEvent as sample } from "../../fixtures/obsidian/tool-cursor";
 
 it("shares 10,000 selected records across handles, target lookup and move startup", () => {
   const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
@@ -92,5 +95,47 @@ it("shares 10,000 selected records across handles, target lookup and move startu
     read.mockRestore();
     handles.dispose();
     sceneStore.release();
+  }
+});
+
+it("performs zero document queries or candidate reads when area dragging over 10,000 coincident strokes", () => {
+  const elements = Array.from({ length: 10_000 }, (_, index) => ({
+    ...indexedStroke(index),
+    pivot: { x: 20, y: 20 },
+    points: [20, 20, 0.5],
+  }));
+  const h = activeEditorPointerHarness(elements);
+  const query = vi.spyOn(h.store, "query");
+  const read = vi.spyOn(h.store, "get");
+  const pressure = vi.spyOn(h.store, "pressureGeometry");
+  const movement = vi.spyOn(Math, "hypot");
+  h.controls.input = createInputState({ activeTool: "select" });
+  const contact = { buttons: 1, button: 0, clientX: 40, clientY: 50 };
+  try {
+    h.store.resetInstrumentation();
+    h.pointer.handlePointerDown(sample(10, contact));
+    const batch = Array.from({ length: 4096 }, (_, index) =>
+      sample(20 + index, { ...contact, clientX: index === 0 ? 47 : 40 }),
+    );
+    h.pointer.handlePointerMove(sample(4115, { ...contact, getCoalescedEvents: () => batch }));
+    h.pointer.handlePointerCancel(sample(4120, contact));
+    expect(
+      h.effects.some((effect) => effect.type === "begin-preview" && effect.kind === "lasso"),
+    ).toBe(true);
+    expect(h.controls.input.interaction).toBeUndefined();
+    expect(h.hit).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(pressure).not.toHaveBeenCalled();
+    expect(movement.mock.calls.length).toBeGreaterThanOrEqual(batch.length);
+    expect(movement.mock.calls.length).toBeLessThanOrEqual(batch.length + 2);
+    expect(h.store.instrumentation.fullStoreScans).toBe(0);
+    expect(h.store.instrumentation.snapshotMaterializations).toBe(0);
+  } finally {
+    query.mockRestore();
+    read.mockRestore();
+    pressure.mockRestore();
+    movement.mockRestore();
+    h.controller.dispose();
   }
 });

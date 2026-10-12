@@ -1,6 +1,11 @@
 import type { GesturePreview } from "../../../editor/gestures/public";
 import type { GesturePreviewStart } from "../../../editor/gestures/public";
-import { isValidPointerSample, type PointerSample } from "../../../editor/input/index";
+import {
+  isValidPointerSample,
+  type InputState,
+  type PointerSample,
+} from "../../../editor/input/index";
+import type { PointerMoveAction } from "../../../editor/input/input-types";
 import { hasPenContact } from "../../../editor/input/pointer-validation";
 import type { WorkPriority } from "../../../domain/scheduling/work-scheduler";
 
@@ -92,6 +97,22 @@ export class CoalescedPointerInput {
       this.#pending = undefined;
     }
     return pointer !== undefined || penContactOnly;
+  }
+
+  /** Borrows only the validated batch during its single synchronous move dispatch. */
+  public moveAction(pointer: PointerSample, state: InputState): PointerMoveAction {
+    const action: PointerMoveAction = { type: "pointer-move", ...pointer };
+    const interaction = state.interaction;
+    if (interaction?.phase !== "select-pending" || interaction.pointerId !== pointer.pointerId)
+      return action;
+    let maximum = 0;
+    for (const sample of this.#pending ?? []) {
+      maximum = Math.max(
+        maximum,
+        Math.hypot(sample.x - interaction.start.x, sample.y - interaction.start.y),
+      );
+    }
+    return { ...action, maximumMovement: maximum };
   }
 
   public wrap(preview: GesturePreview): GesturePreview {

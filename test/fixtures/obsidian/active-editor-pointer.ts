@@ -13,9 +13,11 @@ import { toolCursorHarness } from "./tool-cursor";
 import { ManualFrameScheduler } from "./manual-frame-scheduler";
 import { createSelectionPreviewRenderer } from "./selection-preview-renderer";
 
-export function activeEditorPointerHarness() {
+export function activeEditorPointerHarness(
+  elements: ConstructorParameters<typeof ElementStore>[0] = [],
+) {
   const h = toolCursorHarness();
-  const store = new ElementStore();
+  const store = new ElementStore(elements);
   const sceneStore = new ElementSceneStore(store);
   const selection = new Set<string>();
   const handles = pointerHandles(store, sceneStore, selection);
@@ -52,7 +54,7 @@ export function activeEditorPointerHarness() {
   const coalescedInput = new CoalescedPointerInput({
     now: () => 0,
     project: screenPointer,
-    dispatchMove: (sample) => dispatch({ type: "pointer-move", ...sample }),
+    dispatchMove: (sample) => dispatch(coalescedInput.moveAction(sample, h.controls.input)),
   });
   const coalesced = vi.spyOn(coalescedInput, "dispatch");
   const pointer = new ActiveEditorPointerController({
@@ -103,6 +105,9 @@ export function activeEditorPointerHarness() {
     screenPointer,
     coalesced,
     dispatch,
+    store,
+    sceneStore,
+    selection,
   };
 }
 

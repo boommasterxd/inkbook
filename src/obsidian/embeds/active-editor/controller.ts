@@ -139,7 +139,7 @@ export class ActiveEditorController {
     });
     const interactions = Interactions.createActiveEditorInteractions({
       controller: options,
-      dispatchMove: (pointer) => this.#dispatch({ type: "pointer-move", ...pointer }),
+      dispatchMove: (pointer) => this.#dispatch(this.#coalesced.moveAction(pointer, this.#input)),
       history: this.#history,
       isAttached: () => this.#availability.attached,
       isEnabled: () => this.#availability.acceptsInput,

@@ -12,7 +12,7 @@ import { hasPenContact } from "../../../editor/input/pointer-validation";
 
 import type { ActiveToolCursorController } from "./tool-cursor-controller";
 import type { CoalescedCreationSample, CoalescedPointerInput } from "./coalesced-input";
-import { selectionTargetAt } from "./controller-elements";
+import { selectedTargetAt, selectionTargetAt } from "./controller-elements";
 import { isMacPlatform, normalizePointerType } from "./controller-helpers";
 import type { ActiveEditorHandleInteraction } from "./handle-interaction";
 import type { ActiveEditorMenuController } from "./controller-menu";
@@ -148,7 +148,7 @@ export class ActiveEditorPointerController {
       if (event.cancelable) event.preventDefault();
       return;
     }
-    const target = this.#selectionTarget(pagePointer, pointer.pointerType);
+    const target = this.#pointerDownTarget(pagePointer);
     this.#options.menus.dispatchFromEvent(
       classification.isPlatformContextClick ? event : undefined,
       () =>
@@ -192,6 +192,40 @@ export class ActiveEditorPointerController {
           : { frames: this.#options.selectionFrames }),
         geometry: () => this.#options.handles.selectionGeometry(),
       },
+    );
+  }
+
+  #selectedTarget(pointer: PointerSample) {
+    const selected = this.#options.handles.selectionGeometry();
+    return selectedTargetAt(
+      selected,
+      pointer,
+      this.#options.selectionFrames?.current(selected) ?? null,
+      {
+        tolerance: 8 / this.#options.navigation.zoom,
+        preparePressure: (id) => {
+          const record = this.#options.sceneStore.get(id);
+          return record === undefined
+            ? undefined
+            : this.#options.sceneStore.pressureGeometry(id, record.geometryVersion);
+        },
+      },
+    );
+  }
+
+  #pointerDownTarget(pointer: PointerSample) {
+    return this.#options.getInput().activeTool === "select" && pointer.pointerType !== "touch"
+      ? this.#selectedTarget(pointer)
+      : this.#selectionTarget(pointer, pointer.pointerType);
+  }
+
+  #pendingSelectTarget(pointer: PointerSample) {
+    const interaction = this.#options.getInput().interaction;
+    if (interaction?.phase !== "select-pending" || interaction.pointerId !== pointer.pointerId)
+      return undefined;
+    return this.#selectionTarget(
+      this.#options.navigation.pageSample({ ...pointer, ...interaction.start }),
+      pointer.pointerType,
     );
   }
 
@@ -241,11 +275,7 @@ export class ActiveEditorPointerController {
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
     if (this.#finishHandleRelease(event, pointer)) return;
-    const penContactOnly =
-      (previous?.phase === "eraser-gesture" ||
-        (previous?.phase === "tool-gesture" && previous.tool === "draw")) &&
-      previous.pointerId === event.pointerId &&
-      event.pointerType === "pen";
+    const penContactOnly = filtersPenRelease(event, previous);
     if (
       !this.#options.coalesced.dispatch(event, penContactOnly, (samples) =>
         this.#recordTouchPan(event, previous, samples, true),
@@ -259,10 +289,12 @@ export class ActiveEditorPointerController {
       event.pointerType === "touch" &&
       ownsTouchPan(interaction, event.pointerId) &&
       interaction.phase === "page-pan";
+    const target = this.#pendingSelectTarget(pointer);
     this.#options.dispatch({
       type: "pointer-up",
       pointerId: event.pointerId,
       timestamp: event.timeStamp,
+      ...(target === undefined ? {} : { target }),
     });
     if (blocksHostGesture) this.#options.navigation.releaseTouchPan(event.timeStamp);
     if (event.cancelable && claimsPointerGesture(event, previous)) event.preventDefault();
@@ -400,6 +432,20 @@ export class ActiveEditorPointerController {
   #setSnappingInverted(pointerId: number, inverted: boolean | null): void {
     this.#options.setSnappingInverted?.(pointerId, inverted);
   }
+}
+
+function filtersPenRelease(event: PointerEvent, interaction: InputState["interaction"]): boolean {
+  return (
+    event.pointerType === "pen" &&
+    interaction !== undefined &&
+    interaction.phase !== "pinch" &&
+    interaction.pointerId === event.pointerId &&
+    (interaction.phase === "select-pending" ||
+      interaction.phase === "element-move" ||
+      interaction.phase === "lasso" ||
+      interaction.phase === "eraser-gesture" ||
+      (interaction.phase === "tool-gesture" && interaction.tool === "draw"))
+  );
 }
 
 function ownsTouchPan(

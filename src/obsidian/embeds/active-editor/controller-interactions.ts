@@ -253,6 +253,7 @@ export function hasStableGeometryGesture(
 ): boolean {
   return (
     handles.activePointerId !== undefined ||
+    input.interaction?.phase === "select-pending" ||
     input.interaction?.phase === "lasso" ||
     input.interaction?.phase === "eraser-gesture"
   );

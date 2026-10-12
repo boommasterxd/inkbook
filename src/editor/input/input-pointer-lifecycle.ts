@@ -56,6 +56,7 @@ function commitSingleInteraction(
   interaction: Exclude<InputInteraction, PinchInteraction>,
   action: PointerExitAction,
 ): InputReduction {
+  if (interaction.phase === "select-pending") return commitSelectPress(state, interaction, action);
   const effects = cleanupEffects(interaction);
   let nextState = { ...state, interaction: undefined };
   const kind = previewKind(interaction);
@@ -83,6 +84,27 @@ function commitSingleInteraction(
     }
   }
   return { state: nextState, effects };
+}
+
+function commitSelectPress(
+  state: InputState,
+  interaction: Extract<InputInteraction, { phase: "select-pending" }>,
+  action: PointerExitAction,
+): InputReduction {
+  const effects = cleanupEffects(interaction);
+  const target = action.target ?? interaction.target;
+  let hasSelection = state.hasSelection;
+  if (target !== undefined) {
+    effects.unshift({
+      type: "select-element",
+      elementId: target.elementId,
+      mode: interaction.controlOrMeta ? "add" : "replace",
+    });
+  } else if (hasSelection && !interaction.shift) {
+    effects.unshift({ type: "clear-selection" });
+    hasSelection = false;
+  }
+  return { state: { ...state, interaction: undefined, hasSelection }, effects };
 }
 
 export function cancelInteraction(

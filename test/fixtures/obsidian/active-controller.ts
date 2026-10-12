@@ -87,6 +87,7 @@ export function createHarness() {
     selectElement: () => {
       controller.handleToolbarAction("select");
       controller.handlePointerDown(primaryPointer());
+      controller.handlePointerUp(primaryPointer());
     },
     renderer,
   };
