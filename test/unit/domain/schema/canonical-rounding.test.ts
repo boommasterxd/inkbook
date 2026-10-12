@@ -5,6 +5,7 @@ import {
   canonicalizeRotation,
   canonicalizeUnitIntervalNumber,
   isCanonicalGeometryNumber,
+  isCanonicalUnitIntervalNumber,
 } from "../../../../src/domain/schema/canonical";
 
 function reference(value: number, decimals = 3): number {
@@ -84,4 +85,44 @@ describe("canonical geometry rounding compatibility", () => {
       expect(isCanonicalGeometryNumber(value)).toBe(false);
     },
   );
+});
+
+describe("canonical unit interval validation compatibility", () => {
+  it("accepts every four-decimal grid value and rejects its adjacent IEEE values", () => {
+    for (let index = 0; index <= 10_000; index += 1) {
+      const value = index / 10_000;
+      expect(isCanonicalUnitIntervalNumber(value)).toBe(true);
+      expect(canonicalizeUnitIntervalNumber(value)).toBe(value);
+      expect(isCanonicalUnitIntervalNumber(adjacent(value, -1))).toBe(false);
+      expect(isCanonicalUnitIntervalNumber(adjacent(value, 1))).toBe(false);
+    }
+  });
+
+  it("rejects out-of-range, noncanonical, and coercible values without invoking conversion", () => {
+    const coercible = {
+      valueOf: () => {
+        throw new Error("Validation must not coerce an object.");
+      },
+    };
+    const invalid: readonly unknown[] = [
+      -0,
+      -0.0001,
+      1.0001,
+      Number.NaN,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      Number.MIN_VALUE,
+      0.00005,
+      0.12345,
+      "0.5",
+      true,
+      null,
+      undefined,
+      Symbol("pressure"),
+      1n,
+      new Number(0.5),
+      coercible,
+    ];
+    for (const value of invalid) expect(isCanonicalUnitIntervalNumber(value)).toBe(false);
+  });
 });

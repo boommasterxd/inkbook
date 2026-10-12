@@ -2,6 +2,7 @@ const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}
 const RGBA_PATTERN = /^#[0-9A-F]{8}$/;
 const MAXIMUM_FAST_ABSOLUTE_VALUE = 2_000_000;
 const ROUNDING_SCALE = 1_000;
+const UNIT_INTERVAL_SCALE = 10_000;
 
 function canonicalizeDecimal(value: number, decimals: number): number {
   const rounded = Number(value.toFixed(decimals));
@@ -51,7 +52,8 @@ export function isCanonicalUnitIntervalNumber(value: unknown): value is number {
     value >= 0 &&
     value <= 1 &&
     !Object.is(value, -0) &&
-    Object.is(value, canonicalizeUnitIntervalNumber(value))
+    // Membership in the four-decimal grid does not require decimal string formatting.
+    Object.is(value, Math.round(value * UNIT_INTERVAL_SCALE) / UNIT_INTERVAL_SCALE)
   );
 }
 

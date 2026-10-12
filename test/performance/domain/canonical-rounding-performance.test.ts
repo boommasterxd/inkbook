@@ -1,9 +1,26 @@
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 
-import { canonicalizeGeometryNumber } from "../../../src/domain/schema/canonical";
+import {
+  canonicalizeGeometryNumber,
+  isCanonicalUnitIntervalNumber,
+} from "../../../src/domain/schema/canonical";
 
 describe("canonical coordinate rounding", () => {
+  it("validates every pressure sample without decimal formatting in the standard capacity", () => {
+    const decimalFormatting = vi.spyOn(Number.prototype, "toFixed");
+    let accepted = 0;
+    try {
+      for (let index = 0; index < 500_000; index += 1) {
+        if (isCanonicalUnitIntervalNumber((index % 10_001) / 10_000)) accepted += 1;
+      }
+      expect(accepted).toBe(500_000);
+      expect(decimalFormatting).not.toHaveBeenCalled();
+    } finally {
+      decimalFormatting.mockRestore();
+    }
+  });
+
   it("avoids decimal string conversion for ordinary canonical coordinates", () => {
     const decimalFormatting = vi.spyOn(Number.prototype, "toFixed");
     try {
