@@ -247,7 +247,7 @@ export class ActiveEditorController {
     this.#penGuard.stop();
   }
   public recoverTouchTerminal(pointerId: number): void {
-    if (ControllerTouch.touchInteractionOwnsPointer(this.#input.interaction, pointerId))
+    if (ControllerTouch.touchTerminalNeedsRecovery(this.#input, pointerId))
       this.#pointer.cancelPointer(pointerId);
   }
   public handleToolbarAction(action: ToolbarAction, trigger?: HTMLButtonElement): void {

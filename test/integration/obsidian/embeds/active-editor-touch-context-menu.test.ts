@@ -114,6 +114,51 @@ describe("pen selection long press", () => {
   });
 });
 
+describe("long-press touch terminal recovery", () => {
+  it.each(["pointerup", "pointercancel"])(
+    "recovers %s outside the canvas without closing the menu",
+    (terminal) => {
+      const h = createHarness();
+      try {
+        h.selectElement();
+        h.controller.handlePointerDown(contact("touch"));
+        vi.advanceTimersByTime(500);
+        expect(h.menu.positions).toHaveLength(1);
+        const close = vi.spyOn(h.menu, "close");
+        h.capture.release.mockClear();
+        document.body.dispatchEvent(
+          new PointerEvent(terminal, {
+            bubbles: true,
+            pointerType: "touch",
+            pointerId: 8,
+            buttons: 0,
+          }),
+        );
+        vi.advanceTimersByTime(0);
+        expect(h.capture.release).not.toHaveBeenCalled();
+        document.body.dispatchEvent(
+          new PointerEvent(terminal, {
+            bubbles: true,
+            pointerType: "touch",
+            pointerId: 7,
+            buttons: 0,
+          }),
+        );
+        vi.advanceTimersByTime(0);
+        expect(close).not.toHaveBeenCalled();
+        expect(h.menu.positions).toHaveLength(1);
+        expect(h.renderer.setPreviewTransform).not.toHaveBeenCalled();
+        h.menu.close();
+        h.input.focus();
+        h.key("Escape");
+        expect(h.renderer.setSelectedElements.mock.lastCall?.[0].size).toBe(0);
+      } finally {
+        h.dispose();
+      }
+    },
+  );
+});
+
 function contact(pointerType: string, overrides: PointerEventInit = {}): PointerEvent {
   return new PointerEvent("pointerdown", {
     pointerType,

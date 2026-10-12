@@ -7,10 +7,9 @@ export function isTouchInteraction(interaction: InputState["interaction"]): bool
   );
 }
 
-export function touchInteractionOwnsPointer(
-  interaction: InputState["interaction"],
-  pointerId: number,
-): boolean {
+export function touchTerminalNeedsRecovery(input: InputState, pointerId: number): boolean {
+  if (input.consumedPointerIds.includes(pointerId)) return true;
+  const interaction = input.interaction;
   if (!isTouchInteraction(interaction) || interaction === undefined) return false;
   return interaction.phase === "pinch"
     ? interaction.pointers.some((pointer) => pointer.pointerId === pointerId)
