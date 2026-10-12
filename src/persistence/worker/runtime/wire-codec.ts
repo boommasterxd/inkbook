@@ -16,16 +16,13 @@ import {
   packElementsChunked,
   type PackedElements,
   type RuntimeWireSliceOptions,
-  unpackElements,
-  unpackElementsSteps,
+  unpackInsertionElementsSteps,
   unpackValidatedElements,
 } from "./element-wire-codec";
-import { prepareInsertionElementSteps } from "../../../domain/store/prepared-insertion-element";
 import {
   completeSerializationSteps,
   consumeSerializationSteps,
 } from "../../serialization/serialization-model-preparation";
-import type { InkElementV1 } from "../../../domain/schema/public";
 import type {
   DecodeClipboardRuntimeSuccess,
   DocumentRuntimeRequest,
@@ -259,12 +256,8 @@ export async function decodeRuntimeResultChunked(
     const plan = result.result;
     if (plan.ok) {
       assertClipboardElementWireLimits(plan.value.elements);
-      const unpacked = await consumeSerializationSteps(
-        unpackElementsSteps(plan.value.elements),
-        options,
-      );
       const elements = await consumeSerializationSteps(
-        preparePasteElementsSteps(unpacked),
+        unpackInsertionElementsSteps(plan.value.elements),
         options,
       );
       return {
@@ -362,21 +355,8 @@ function packedPastePlan(
 function unpackPastePlan(result: ClipboardResult<PackedPastePlan>): ClipboardResult<PastePlan> {
   if (!result.ok) return result;
   assertClipboardElementWireLimits(result.value.elements);
-  const elements = completeSerializationSteps(
-    preparePasteElementsSteps(unpackElements(result.value.elements)),
-  );
+  const elements = completeSerializationSteps(unpackInsertionElementsSteps(result.value.elements));
   return { ok: true, value: { ...result.value, elements } };
-}
-
-function* preparePasteElementsSteps(
-  elements: readonly InkElementV1[],
-): Generator<boolean | void, InkElementV1[]> {
-  const prepared: InkElementV1[] = [];
-  for (const element of elements) {
-    prepared.push(yield* prepareInsertionElementSteps(element));
-    yield;
-  }
-  return prepared;
 }
 
 export async function encodeUnlockBatchChunked(

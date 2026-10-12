@@ -1,7 +1,8 @@
 import { expect, it } from "vitest";
 
 import { validateInkElementV1 } from "../../../../../src/domain/schema/public";
-import { unpackElements } from "../../../../../src/persistence/worker/runtime/element-wire-codec";
+import { unpackElementsSteps } from "../../../../../src/persistence/worker/runtime/element-wire-codec";
+import { completeSerializationSteps } from "../../../../../src/persistence/serialization/serialization-model-preparation";
 import { decodeRuntimeRequestChunked } from "../../../../../src/persistence/worker/runtime/request-wire-decoding";
 import { rectangle, snapshot } from "./fixtures";
 
@@ -9,7 +10,9 @@ it.each([0, -1, -2])(
   "preserves an illegal non-stroke buffer index %s for exact-key validation",
   (pointsBufferIndex) => {
     const record = { ...rectangle(), pointsBufferIndex };
-    const [element] = unpackElements({ pointBuffers: [], records: [record] });
+    const [element] = completeSerializationSteps(
+      unpackElementsSteps({ pointBuffers: [], records: [record] }),
+    );
 
     expect(element).toEqual(record);
     expect(validateInkElementV1(element)).toMatchObject({

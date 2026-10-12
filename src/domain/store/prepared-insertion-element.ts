@@ -1,6 +1,7 @@
 import {
   captureRuntimeElementHeader,
-  copyStrokeSamplesToJsonSteps,
+  copyStrokeSamplesToImmutableJsonSteps,
+  preparedInsertionHeader,
 } from "../elements/runtime-element-copy";
 import { calculateElementBoundsSteps } from "../geometry/bounds";
 import type { Bounds } from "../geometry/primitives";
@@ -19,7 +20,7 @@ export function* prepareInsertionElementSteps(
   element: InkElementV1,
 ): Generator<boolean | void, InkElementV1> {
   if (boundsByElement.has(element)) return element;
-  const header = captureRuntimeElementHeader(element);
+  const header = preparedInsertionHeader(element) ?? captureRuntimeElementHeader(element);
   const points = Object.getOwnPropertyDescriptor(element, "points");
   if (
     header.kind === "stroke" &&
@@ -27,7 +28,7 @@ export function* prepareInsertionElementSteps(
   )
     throw new TypeError("Stroke samples must be an own data property.");
   const staged = (header.kind === "stroke"
-    ? { ...header, points: yield* copyStrokeSamplesToJsonSteps(points!.value as number[]) }
+    ? { ...header, points: yield* copyStrokeSamplesToImmutableJsonSteps(points!.value as number[]) }
     : header) as unknown as InkElementV1;
   const validation = yield* validateInkElementV1Steps(staged, {}, 2048, 256);
   if (!validation.ok) throw new RangeError(`Invalid insertion element: ${validation.error.code}`);

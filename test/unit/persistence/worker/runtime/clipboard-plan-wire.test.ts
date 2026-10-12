@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   decodeRuntimeResult,
@@ -9,28 +9,93 @@ import {
 import { STROKE } from "./fixtures";
 import { maximumLengthHighlighter } from "../../../domain/store/fixtures";
 import type { PlanClipboardPasteRuntimeSuccess } from "../../../../../src/persistence/worker/runtime/types";
+import type { StrokeElementV1 } from "../../../../../src/domain/schema/public";
+
+function pasteResult(element: StrokeElementV1 = STROKE): PlanClipboardPasteRuntimeSuccess {
+  const ids = [element.id];
+  return {
+    identity: { operationId: 1, purpose: "clipboard", sessionId: "session-a", workerEpoch: 1 },
+    type: "clipboard-plan-paste-success",
+    result: {
+      ok: true,
+      value: {
+        activateTool: "select",
+        commandTimestamp: 1,
+        contentIds: element.tool === "highlighter" ? [] : ids,
+        elements: [element],
+        highlightIds: element.tool === "highlighter" ? ids : [],
+        insertAtBandFront: true,
+        repeatState: { fingerprint: "stroke", pasteCount: 1 },
+        selectedIds: ids,
+        translation: { x: 0, y: 0 },
+      },
+    },
+  };
+}
+
+it.each([Number.NaN, -0, 1_000_001, 0.0001])(
+  "completely validates untrusted wire samples despite caller flags (%s)",
+  async (value) => {
+    const encoded = encodeRuntimeResult(pasteResult());
+    if (encoded.value.type !== "clipboard-plan-paste-success-wire" || !encoded.value.result.ok)
+      throw new Error("Expected a packed plan.");
+    const wire = encoded.value;
+    const plan = encoded.value.result.value;
+    plan.elements.pointBuffers[0]![0] = value;
+    Object.assign(wire, { validated: true, fromClipboard: true });
+    expect(() => decodeRuntimeResult(wire)).toThrow();
+    await expect(
+      decodeRuntimeResultChunked(wire, {
+        checkpoint: () => undefined,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow();
+  },
+);
+
+it("rejects wire-header accessors without executing them", () => {
+  const encoded = encodeRuntimeResult(pasteResult());
+  if (encoded.value.type !== "clipboard-plan-paste-success-wire" || !encoded.value.result.ok)
+    throw new Error("Expected a packed plan.");
+  const getter = vi.fn(() => STROKE.id);
+  Object.defineProperty(encoded.value.result.value.elements.records[0]!, "id", {
+    get: getter,
+    enumerable: true,
+  });
+  expect(() => decodeRuntimeResult(encoded.value)).toThrow();
+  expect(getter).not.toHaveBeenCalled();
+});
+
+it("captures wire headers and copied samples before asynchronous callers can mutate them", async () => {
+  const encoded = encodeRuntimeResult(pasteResult(maximumLengthHighlighter()));
+  if (encoded.value.type !== "clipboard-plan-paste-success-wire" || !encoded.value.result.ok)
+    throw new Error("Expected a packed plan.");
+  const wire = encoded.value;
+  const plan = encoded.value.result.value;
+  const points = plan.elements.pointBuffers[0]!;
+  const before = points[0];
+  let mutated = false;
+  const decoded = await decodeRuntimeResultChunked(wire, {
+    signal: new AbortController().signal,
+    checkpoint: async () => {
+      if (mutated) return;
+      mutated = true;
+      points[0] = Number.NaN;
+      plan.elements.records[0]!.id = "changed";
+    },
+  });
+  if (decoded.type !== "clipboard-plan-paste-success" || !decoded.result.ok)
+    throw new Error("Expected an independently captured plan.");
+  const element = decoded.result.value.elements[0]!;
+  expect(element.id).not.toBe("changed");
+  expect(element.kind === "stroke" && element.points[0]).toBe(before);
+  expect(element.kind === "stroke" && Object.isFrozen(element.points)).toBe(true);
+});
 
 describe("clipboard paste-plan wire codec", () => {
   it("slices wire sample packing and adoption and cancels both before publication", async () => {
     const element = maximumLengthHighlighter();
-    const result: PlanClipboardPasteRuntimeSuccess = {
-      identity: { operationId: 1, purpose: "clipboard", sessionId: "session-a", workerEpoch: 1 },
-      type: "clipboard-plan-paste-success",
-      result: {
-        ok: true,
-        value: {
-          activateTool: "select",
-          commandTimestamp: 1,
-          contentIds: [],
-          elements: [element],
-          highlightIds: [element.id],
-          insertAtBandFront: true,
-          repeatState: { fingerprint: "stroke", pasteCount: 1 },
-          selectedIds: [element.id],
-          translation: { x: 0, y: 0 },
-        },
-      },
-    };
+    const result = pasteResult(element);
     let packing = 0;
     const encoded = await encodeRuntimeResultChunked(result, {
       signal: new AbortController().signal,
