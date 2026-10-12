@@ -55,6 +55,8 @@ Pressure geometry has a separate capacity of 64 emitted capsules or disks per ca
 
 One gesture retains at most 16,384 points as one selectable, erasable, undoable element. Once a new point would exceed that capacity, freeze the accepted geometry for the remainder of the gesture and issue one notice asking the user to lift the pen. Further valid samples neither move the endpoint nor rebuild geometry; release commits the accepted stroke and cancellation discards it. This lifetime capacity is independent of the 4,096-sample pending frame batch.
 
+Each exact-union window may reuse endpoint coordinate scales and absolute/signed sweeps for at most four unchanged source boundaries per shape, with a hard ceiling of 256 entries. Query-dependent roundoff and native distance and angle checks remain exact. Capacity exhaustion uses direct computation. The window releases all scalar entries on completion, fallback, failure, and generator cancellation; no scalar proof crosses a window or session boundary.
+
 The numeric input buffer holds five 64-bit scalars per retained sample: position, pressure, movement timestamp, and filtered velocity. At the point cap it occupies 655,360 bytes, excluding canonical points and geometry. Distance, timing, and pressure decisions read scalar values directly from that numeric buffer. The pointer hot path does not reconstruct temporary sample objects or replacement sample arrays for already retained points.
 
 Constant-width strokes use one SVG centerline; pressure-sensitive strokes use the continuous filled outline defined below.

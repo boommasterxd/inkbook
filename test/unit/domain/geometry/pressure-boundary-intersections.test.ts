@@ -9,6 +9,7 @@ import {
   pressureBoundaryParameter,
   pressureBoundaryPoint,
 } from "../../../../src/domain/geometry/pressure-boundary-intersections";
+import { PressureBoundaryScalarCache } from "../../../../src/domain/geometry/pressure-boundary-scalars";
 
 function line(x1: number, y1: number, x2: number, y2: number): PressureBoundaryLine {
   return { kind: "line", start: { x: x1, y: y1 }, end: { x: x2, y: y2 } };
@@ -201,6 +202,50 @@ describe("circular pressure boundary intersections", () => {
 });
 
 describe("pressure arc metadata reuse", () => {
+  it.each([0, -0, Math.PI, -Math.PI, Math.PI * 1.5, -Math.PI * 2])(
+    "preserves exact parameters with scalar reuse at sweep %s",
+    (sweep) => {
+      const boundary = arc({ x: -999_999, y: 999_999 }, 0.35, 0.4, sweep);
+      const epsilon = 32 * Number.EPSILON * 999_999;
+      const points = [
+        boundary.start,
+        boundary.end,
+        ...[0.125, 0.5, 0.875].map((fraction) => pressureBoundaryPoint(boundary, fraction)),
+        { x: boundary.center.x, y: boundary.center.y + boundary.radius + epsilon / 2 },
+        { x: boundary.center.x, y: boundary.center.y + boundary.radius + epsilon * 2 },
+        { x: -2_000_000, y: 2_000_000 },
+      ];
+      const scalars = new PressureBoundaryScalarCache(1);
+      const angles = new WeakMap<PressureBoundaryArc, number>();
+      for (const point of points)
+        expect(pressureBoundaryParameter(boundary, point, angles, scalars)).toBe(
+          pressureBoundaryParameter(boundary, point),
+        );
+    },
+  );
+
+  it.each([
+    [line(-2, -2, 2, 2), line(-1, 1, 1, -1)],
+    [line(-4, -2, 4, -2), line(2, -2, -2, -2)],
+    [line(-2, 1, 2, 1), arc(origin)],
+    [line(-2, 1.000001, 2, 1.000001), arc(origin)],
+    [arc(origin, 2, 0.2), arc({ x: 2, y: 0 }, 2, 0.2)],
+    [arc(origin, 2, 0, Math.PI), arc(origin, 2, Math.PI * 1.5, -Math.PI)],
+  ])("preserves complete intersection output with bounded scalar reuse (%#)", (first, second) => {
+    const scalars = new PressureBoundaryScalarCache(2);
+    const angles = new WeakMap<PressureBoundaryArc, number>();
+    expect(intersectPressureBoundaries(first, second, angles, scalars)).toEqual(
+      intersectPressureBoundaries(first, second),
+    );
+    expect(intersectPressureBoundaries(second, first, angles, scalars)).toEqual(
+      intersectPressureBoundaries(second, first),
+    );
+    const full = new PressureBoundaryScalarCache(0);
+    expect(intersectPressureBoundaries(first, second, angles, full)).toEqual(
+      intersectPressureBoundaries(first, second),
+    );
+  });
+
   it("reuses arc angles for midpoint and clipped endpoint generation without rounding changes", () => {
     const boundary = arc({ x: -999_999, y: 999_999 }, 0.35, 0.4, -Math.PI);
     const fractions = [0, 1, ...Array.from({ length: 64 }, (_, index) => (index + 1) / 65)];

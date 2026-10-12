@@ -10,18 +10,28 @@ import type { PointV1 } from "../schema/types";
 import type { PressureOutlinePiece } from "./pressure-outline-piece";
 import { iteratePressureUnion } from "./pressure-union";
 import { pressureAdditionCount, type PressureAdditions } from "./pressure-additions";
+import { MAX_PRESSURE_BOUNDARY_SCALAR_ENTRIES } from "./pressure-boundary-scalars";
 
 export type { PressureWindow } from "./prepared-pressure-geometry";
 
 /** Conservative numeric payload reserved for one suspended preparation job, not JS heap overhead.
  * 64 sources (64 scalars each, including cached arc starts);
+ * 256 source-boundary scalar entries (at most three scalars each);
  * 1,025 guarded union edges including stitching (32 scalars);
  * two 505-interval buffers; 26 cut values; 1,024 completed contour edges (four coordinates);
  * 4,097 active polyline slots including rewrite/rounding arrays (16 scalars);
  * at most 16,384 retained plus 16,384 active addition triangles (six coordinates).
  */
 export const PRESSURE_WINDOW_SCRATCH_BYTES =
-  (64 * 64 + 1025 * 32 + 2 * 505 * 2 + 26 + 1024 * 4 + 4097 * 16 + 32768 * 6) * 8;
+  (64 * 64 +
+    MAX_PRESSURE_BOUNDARY_SCALAR_ENTRIES * 3 +
+    1025 * 32 +
+    2 * 505 * 2 +
+    26 +
+    1024 * 4 +
+    4097 * 16 +
+    32768 * 6) *
+  8;
 
 /** Independent unions partition the emitted capsule stream, never raw input windows. */
 export function preparePressureWindows(

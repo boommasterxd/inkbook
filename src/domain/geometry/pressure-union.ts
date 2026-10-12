@@ -11,6 +11,7 @@ import {
 import { pressureCapsuleContains } from "./pressure-capsule-containment";
 import { pressureArcBounds } from "./pressure-arc-bounds";
 import { pressureLineBounds } from "./pressure-line-bounds";
+import { PressureBoundaryScalarCache } from "./pressure-boundary-scalars";
 
 export const MAX_PRESSURE_UNION_SHAPES = 64;
 /** Bounded geometry/cancellation intervals; consumers still use the shared time budget. */
@@ -49,6 +50,7 @@ interface Source {
 interface UnionContext {
   readonly work: PressureUnionWork;
   readonly arcAngles: PressureArcAngleCache;
+  readonly scalarCache: PressureBoundaryScalarCache;
   readonly maximumOperations: number;
   inspectedIntervals: number;
 }
@@ -97,9 +99,22 @@ export function* iteratePressureUnion(
   const context: UnionContext = {
     work,
     arcAngles: new WeakMap<PressureBoundaryArc, number>(),
+    scalarCache: new PressureBoundaryScalarCache(shapes.length * 4),
     maximumOperations: shapes.length * PRESSURE_UNION_OPERATIONS_PER_SHAPE,
     inspectedIntervals: 0,
   };
+  try {
+    return yield* prepareUnion(shapes, context);
+  } finally {
+    context.scalarCache.clear();
+  }
+}
+
+function* prepareUnion(
+  shapes: readonly Shape[],
+  context: UnionContext,
+): Generator<void, PressureUnionResult> {
+  const { work } = context;
   const sources = shapes.map((shape) => {
     const boundaries = pressureShapeBoundary(shape);
     return {
@@ -202,7 +217,12 @@ function* clipBoundary(
     for (const [index, edge] of source.boundaries.entries()) {
       if (!overlaps(extent, source.boundaryBounds[index]!)) continue;
       work.intersectionTests += 1;
-      for (const intersection of intersectPressureBoundaries(boundary, edge, arcAngles))
+      for (const intersection of intersectPressureBoundaries(
+        boundary,
+        edge,
+        arcAngles,
+        context.scalarCache,
+      ))
         cuts.push(intersection.first);
     }
     cuts.sort((a, b) => a - b);
@@ -274,7 +294,8 @@ function covered(
   for (const [index, edge] of source.boundaries.entries()) {
     if (!containsPoint(source.boundaryBounds[index]!, point)) continue;
     work.boundaryTests += 1;
-    if (pressureBoundaryParameter(edge, point, arcAngles) === undefined) continue;
+    if (pressureBoundaryParameter(edge, point, arcAngles, context.scalarCache) === undefined)
+      continue;
     const incoming = tangent(boundary, point);
     const adjacent = tangent(edge, point);
     if (incoming.x * adjacent.x + incoming.y * adjacent.y < 0) return true;
