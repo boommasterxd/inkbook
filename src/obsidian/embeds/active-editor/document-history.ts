@@ -4,7 +4,7 @@ import type {
   ElementMutation,
   PreparedElementMutationResult,
 } from "../../../domain/store/public";
-import { arrangeRenderBandSteps, type ArrangeAction } from "../../../domain/commands/arrange";
+import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ElementStore } from "../../../domain/store/public";
 import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
@@ -62,10 +62,10 @@ export class ActiveDocumentHistory {
     isCurrent: () => boolean,
   ): Promise<DocumentMutationOutcome> {
     return this.#run(async (isCancelled) => {
-      const mutation = await this.#prepareArrange(action, selection, scheduler, isCancelled);
-      if (mutation === "cancelled") return { status: "cancelled", token: null };
-      if (mutation === null) return { status: "noop", token: null };
-      return this.#model.prepareElementMutation(mutation, { isCancelled });
+      const wait = scheduler.checkpoint(undefined, "frame");
+      if (wait !== undefined) await wait;
+      if (isCancelled()) return { status: "cancelled", token: null };
+      return this.#model.prepareElementArrangement(action, selection, { isCancelled });
     }, isCurrent);
   }
 
@@ -121,32 +121,6 @@ export class ActiveDocumentHistory {
       shouldYield: () => scheduler.shouldYield(),
       yieldControl: () => scheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
     });
-  }
-
-  async #prepareArrange(
-    action: ArrangeAction,
-    selection: ReadonlySet<string>,
-    scheduler: WorkScheduler,
-    isCancelled: () => boolean,
-  ): Promise<ElementMutation | "cancelled" | null> {
-    const bands = await this.#collectBandOrder(scheduler, isCancelled);
-    if (bands === "cancelled") return bands;
-    let changed = false;
-    for (const band of ["highlight", "content"] as const) {
-      const steps = arrangeRenderBandSteps(bands[band], (id) => selection.has(id), action);
-      while (!isCancelled()) {
-        const wait = scheduler.checkpoint(undefined, "frame");
-        if (wait !== undefined) await wait;
-        if (isCancelled()) return "cancelled";
-        const step = steps.next();
-        if (!step.done) continue;
-        changed ||= step.value.changed;
-        bands[band] = step.value.elements as string[];
-        break;
-      }
-    }
-    if (isCancelled()) return "cancelled";
-    return changed ? { bands } : null;
   }
 
   async #run(

@@ -3,6 +3,7 @@ import {
   isValidInputPoint,
   isValidPointerSample,
   type InputAction,
+  type InputPoint,
   type InputState,
   type PointerSample,
 } from "../../../editor/input/index";
@@ -10,15 +11,19 @@ import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import { hasPenContact } from "../../../editor/input/pointer-validation";
 
 import type { ActiveToolCursorController } from "./tool-cursor-controller";
-import type { CoalescedCreationSample, CoalescedPointerInput } from "./coalesced-input";
-import { selectionTargetAt } from "./controller-elements";
+import {
+  filtersPenRelease,
+  type CoalescedCreationSample,
+  type CoalescedPointerInput,
+} from "./coalesced-input";
+import { selectedTargetAt, selectionTargetAt } from "./controller-elements";
 import { isMacPlatform, normalizePointerType } from "./controller-helpers";
 import type { ActiveEditorHandleInteraction } from "./handle-interaction";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import type { ActiveEditorNavigation } from "./navigation";
 import type { ElementSceneStore } from "./scene-store";
 import type { SelectionFrameSession } from "../../../editor/selection/public";
-import { touchInteractionBlocksNativeScroll } from "./controller-touch";
+import { isTouchCompatibilityEvent, touchInteractionBlocksNativeScroll } from "./controller-touch";
 
 export interface ActiveEditorPointerOptions {
   readonly coalesced: CoalescedPointerInput;
@@ -69,14 +74,7 @@ export class ActiveEditorPointerController {
       pressure: 0,
     };
     this.#options.setLastPointer({ ...point, ...pointer }, { ...screenPoint, ...pointer });
-    const target = selectionTargetAt(
-      this.#options.sceneStore,
-      this.#options.selection(),
-      point,
-      "mouse",
-      this.#options.navigation.zoom,
-      this.#options.selectionFrames,
-    );
+    const target = this.#selectionTarget(point, "mouse");
     this.#options.menus.dispatchFromEvent(event, () =>
       this.#options.dispatch({
         type: "context-menu",
@@ -154,14 +152,7 @@ export class ActiveEditorPointerController {
       if (event.cancelable) event.preventDefault();
       return;
     }
-    const target = selectionTargetAt(
-      this.#options.sceneStore,
-      this.#options.selection(),
-      pagePointer,
-      pointer.pointerType,
-      this.#options.navigation.zoom,
-      this.#options.selectionFrames,
-    );
+    const target = this.#pointerDownTarget(pagePointer);
     this.#options.menus.dispatchFromEvent(
       classification.isPlatformContextClick ? event : undefined,
       () =>
@@ -190,6 +181,72 @@ export class ActiveEditorPointerController {
     if (event.cancelable && claimsPointerGesture(event, this.#options.getInput().interaction)) {
       event.preventDefault();
     }
+  }
+
+  #selectionTarget(point: InputPoint, pointerType: PointerSample["pointerType"]) {
+    return selectionTargetAt(
+      this.#options.sceneStore,
+      this.#options.selection(),
+      point,
+      pointerType,
+      this.#options.navigation.zoom,
+      {
+        ...(this.#options.selectionFrames === undefined
+          ? {}
+          : { frames: this.#options.selectionFrames }),
+        geometry: () => this.#options.handles.selectionGeometry(),
+      },
+    );
+  }
+
+  #selectedTarget(pointer: PointerSample) {
+    const selected = this.#options.handles.selectionGeometry();
+    return selectedTargetAt(
+      selected,
+      pointer,
+      this.#options.selectionFrames?.current(selected) ?? null,
+      {
+        tolerance: 8 / this.#options.navigation.zoom,
+        preparePressure: (id) => {
+          const record = this.#options.sceneStore.get(id);
+          return record === undefined
+            ? undefined
+            : this.#options.sceneStore.pressureGeometry(id, record.geometryVersion);
+        },
+      },
+    );
+  }
+
+  #pointerDownTarget(pointer: PointerSample) {
+    return this.#options.getInput().activeTool === "select" && pointer.pointerType !== "touch"
+      ? this.#selectedTarget(pointer)
+      : this.#selectionTarget(pointer, pointer.pointerType);
+  }
+
+  #pendingSelectTarget(pointer: PointerSample) {
+    const interaction = this.#options.getInput().interaction;
+    if (interaction?.phase !== "select-pending" || interaction.pointerId !== pointer.pointerId)
+      return undefined;
+    return this.#selectionTarget(
+      this.#options.navigation.pageSample({ ...pointer, ...interaction.start }),
+      pointer.pointerType,
+    );
+  }
+
+  public longPressTarget(pointerId: number) {
+    const interaction = this.#options.getInput().interaction;
+    if (
+      !this.#options.isEnabled() ||
+      interaction?.phase !== "select-pending" ||
+      interaction.pointerType !== "pen" ||
+      interaction.pointerId !== pointerId ||
+      !interaction.longPressScheduled
+    )
+      return undefined;
+    return this.#selectionTarget(
+      this.#options.navigation.pagePointFromScreen(interaction.start),
+      "pen",
+    );
   }
 
   public handlePointerMove(event: PointerEvent): void {
@@ -238,11 +295,7 @@ export class ActiveEditorPointerController {
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
     if (this.#finishHandleRelease(event, pointer)) return;
-    const penContactOnly =
-      (previous?.phase === "eraser-gesture" ||
-        (previous?.phase === "tool-gesture" && previous.tool === "draw")) &&
-      previous.pointerId === event.pointerId &&
-      event.pointerType === "pen";
+    const penContactOnly = filtersPenRelease(event, previous);
     if (
       !this.#options.coalesced.dispatch(event, penContactOnly, (samples) =>
         this.#recordTouchPan(event, previous, samples, true),
@@ -256,10 +309,12 @@ export class ActiveEditorPointerController {
       event.pointerType === "touch" &&
       ownsTouchPan(interaction, event.pointerId) &&
       interaction.phase === "page-pan";
+    const target = this.#pendingSelectTarget(pointer);
     this.#options.dispatch({
       type: "pointer-up",
       pointerId: event.pointerId,
       timestamp: event.timeStamp,
+      ...(target === undefined ? {} : { target }),
     });
     if (blocksHostGesture) this.#options.navigation.releaseTouchPan(event.timeStamp);
     if (event.cancelable && claimsPointerGesture(event, previous)) event.preventDefault();
@@ -430,17 +485,5 @@ function claimsPointerGesture(
   return (
     interaction !== undefined &&
     (event.pointerType !== "touch" || touchInteractionBlocksNativeScroll(interaction))
-  );
-}
-
-/** Touch menus are opened once by the editor's long-press scheduler. */
-function isTouchCompatibilityEvent(event: MouseEvent): boolean {
-  if (!("sourceCapabilities" in event)) return false;
-  const capabilities = event.sourceCapabilities;
-  return (
-    capabilities !== null &&
-    typeof capabilities === "object" &&
-    "firesTouchEvents" in capabilities &&
-    capabilities.firesTouchEvents === true
   );
 }

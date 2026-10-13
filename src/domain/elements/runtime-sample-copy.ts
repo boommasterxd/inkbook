@@ -10,6 +10,7 @@ const immutableSampleSources = new WeakSet<object>();
 export interface SampleCopyProof {
   readonly source: SampleSource;
   eligible: boolean;
+  finite: boolean;
 }
 
 export function isImmutableStrokeSampleSource(points: object): boolean {
@@ -22,6 +23,7 @@ export function createSampleCopyProof(source: SampleSource): SampleCopyProof {
     : undefined;
   return {
     source,
+    finite: true,
     eligible:
       Array.isArray(source) &&
       !Object.isExtensible(source) &&
@@ -72,6 +74,7 @@ export function copySampleRange(
     const value = source[index];
     if (typeof value !== "number") throw new TypeError("Stroke samples must contain numbers.");
     target[index] = value;
+    if (proof !== undefined && !Number.isFinite(value)) proof.finite = false;
     if (proof?.eligible && !immutableDataDescriptor(descriptor, value)) proof.eligible = false;
   }
 }

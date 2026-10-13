@@ -102,11 +102,7 @@ export class SvgSceneRenderer {
       this.#detachedCache,
     );
     this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
-    this.#transformPreviews = new SceneTransformPreviewController(
-      this.#content,
-      options.store,
-      this.#camera,
-    );
+    this.#transformPreviews = new SceneTransformPreviewController(this.#content, this.#camera);
     this.#visibilityCoordinator = new SceneVisibilityCoordinator(
       this.#content,
       this.#visibility,
@@ -355,10 +351,11 @@ export class SvgSceneRenderer {
     transform: string | null,
     version: number,
     strokeWidth: Scene.PreviewStrokeWidth = "scale",
+    transformBounds?: Scene.PreviewBoundsTransform,
   ): void {
     this.assertActive();
     runtime.validatePreviewVersion(version, "Preview transform");
-    this.#transformPreviews.set(ids, transform, version, strokeWidth);
+    this.#transformPreviews.set(ids, transform, version, strokeWidth, transformBounds);
     this.#frames.schedule();
   }
   public clearPreviewTransforms(): void {
@@ -461,16 +458,19 @@ export class SvgSceneRenderer {
     this.#visibilityCoordinator.releaseCommittedPreview(this.#previewCommits);
     this.#visibilityCoordinator.prepare(this.#viewport, this.#camera, deadline);
     this.#transformPreviews.refreshContext();
-    this.#visibilityCoordinator.releaseLostPreviews(
+    this.flushPointerFeedbackFrame(deadline);
+    const previewTransforms = this.#elementPreviews.previewTransforms(
       this.#transformPreviews.values,
+    );
+    this.#visibilityCoordinator.releaseLostPreviews(
+      previewTransforms,
       () => this.#elementPreviews.values,
     );
-    this.flushPointerFeedbackFrame(deadline);
     this.#motion.writeSelectionFeedback(startedAt);
     const work = this.#frameWork.write(
       startedAt,
       deadline,
-      this.#transformPreviews.values,
+      previewTransforms,
       this.#elementPreviews.values,
     );
     this.#visibilityCoordinator.finishMountedFrame(

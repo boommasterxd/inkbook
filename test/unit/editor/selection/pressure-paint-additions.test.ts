@@ -11,16 +11,17 @@ import {
   type StrokeCenter,
 } from "../../../../src/domain/geometry/stroke-path";
 import * as pressureUnion from "../../../../src/domain/geometry/pressure-union";
+import * as pressureOutline from "../../../../src/domain/geometry/pressure-outline";
+import * as pressureWindow from "../../../../src/domain/geometry/pressure-window";
+import { buildPressureCapsule } from "../../../../src/domain/geometry/pressure-joins";
 import { simplifyStrokeCenters } from "../../../../src/domain/geometry/stroke-simplification";
 import { pressurePaintAdditionSteps } from "../../../../src/editor/selection/pressure-paint-additions";
 import { elementContainsPoint } from "../../../../src/editor/selection/hit-test";
-import {
-  createRectangleSelectionArea,
-  elementMatchesSelectionAreaSteps,
-} from "../../../../src/editor/selection/selection-area";
+import { elementMatchesSelectionAreaSteps } from "../../../../src/editor/selection/selection-area";
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
 import { strokeSvgContainsPoint } from "../../../fixtures/domain/svg-path-fill";
 import { stroke } from "../../domain/schema/fixtures";
+import { rectangleSelectionAround } from "../../../fixtures/editor/selection-query";
 
 function fixture() {
   const target = {
@@ -30,14 +31,96 @@ function fixture() {
     style: { ...stroke().style, width: 8 as const, pressureEnabled: true },
   };
   const windows = new Map<number, PressureWindow>();
+  const publishWindow = vi.fn((index: number, window: PressureWindow) => {
+    windows.set(index, window);
+  });
   const prepared: PreparedPressureGeometryPort = {
     readWindow: (index) => windows.get(index),
-    publishWindow: vi.fn((index: number, window: PressureWindow) => {
-      windows.set(index, window);
-    }),
+    publishWindow,
   };
-  return { target, windows, prepared };
+  return { target, windows, prepared, publishWindow };
 }
+
+const windowBoundaryCenters = Array.from({ length: 66 }, (_, index) => ({
+  x: index * 20,
+  y: index % 2 ? 10 : 0,
+  pressure: 0.5,
+}));
+
+it.each([63, 64, 65])("preserves exact emitted-window identity at %s pieces", (count) => {
+  const { prepared, windows, publishWindow } = fixture();
+  const centers = windowBoundaryCenters.slice(0, count + 1);
+  const chunks: (readonly pressureOutline.PressureOutlinePiece[])[] = [];
+  const prepare = vi.spyOn(pressureWindow, "preparePressureWindowSteps");
+  prepare.mockImplementation(function* (pieces): Generator<void, PressureWindow> {
+    chunks.push([...pieces]);
+    yield;
+    return {
+      kind: "window",
+      loops: [],
+      additions: [[{ x: chunks.length, y: 0 }]],
+    };
+  });
+  try {
+    const expected = centers.slice(1).map((end, index) => ({
+      kind: "strip",
+      capsule: buildPressureCapsule(centers[index]!, end, 8),
+      width: 8,
+    }));
+    const output = [...pressurePaintAdditionSteps(centers, 8, { prepared })];
+    expect(chunks).toEqual(count <= 64 ? [expected] : [expected.slice(0, 64), expected.slice(64)]);
+    expect(output.filter((value) => typeof value === "number")).toEqual(
+      Array.from({ length: Math.floor(count / 32) }, () => 32),
+    );
+    expect(output.filter(Array.isArray)).toEqual(
+      [...windows.values()].flatMap((window) => window.additions),
+    );
+    expect(publishWindow).toHaveBeenCalledTimes(Math.ceil(count / 64));
+    prepare.mockClear();
+    expect([...pressurePaintAdditionSteps(centers, 8, { prepared })]).toEqual(
+      output.filter((value) => value !== undefined),
+    );
+    expect(prepare).not.toHaveBeenCalled();
+  } finally {
+    prepare.mockRestore();
+  }
+});
+
+it("counts suppressed intervals for checkpoints without creating extra windows", () => {
+  const { prepared, windows, publishWindow } = fixture();
+  const centers = Array.from({ length: 130 }, () => ({ x: 0, y: 0, pressure: 1 }));
+  const output = [...pressurePaintAdditionSteps(centers, 8, { prepared })];
+  expect(output.filter((value) => typeof value === "number")).toEqual([32, 32, 32, 32]);
+  expect(windows.size).toBe(1);
+  expect(windows.get(0)!.loops).toHaveLength(1);
+  expect(publishWindow).toHaveBeenCalledTimes(1);
+  expect(output.filter(Array.isArray)).toEqual(windows.get(0)!.additions);
+});
+
+it("closes the shared outline iterator when cancelled at a raw-interval checkpoint", () => {
+  const original = pressureOutline.iteratePreparedPressureOutline;
+  let closed = false;
+  const outline = vi.spyOn(pressureOutline, "iteratePreparedPressureOutline");
+  outline.mockImplementation(function* (...args) {
+    try {
+      yield* original(...args);
+    } finally {
+      closed = true;
+    }
+  });
+  try {
+    const { prepared, windows } = fixture();
+    const steps = pressurePaintAdditionSteps(windowBoundaryCenters, 8, { prepared });
+    expect(steps.next()).toEqual({ done: false, value: 32 });
+    expect(closed).toBe(false);
+    steps.return(undefined);
+    expect(closed).toBe(true);
+    expect(windows.size).toBe(0);
+    expect(steps.next().done).toBe(true);
+  } finally {
+    outline.mockRestore();
+  }
+});
 
 it("cancels an addition guard without starting a pressure window", () => {
   const { target } = fixture();
@@ -130,10 +213,7 @@ describe("shared painted pressure windows", () => {
     const prepare = vi.spyOn(pressureUnion, "iteratePressureUnion");
     try {
       expect(elementContainsPoint(target, point, 0, prepared)).toBe(true);
-      const area = createRectangleSelectionArea(
-        { x: point.x - 0.001, y: point.y - 0.001 },
-        { x: point.x + 0.001, y: point.y + 0.001 },
-      );
+      const area = rectangleSelectionAround(point, 0.001);
       const steps = elementMatchesSelectionAreaSteps(
         area,
         target,
@@ -159,10 +239,7 @@ describe("shared painted pressure windows", () => {
       const offset = { x, y: x + 0.002 };
       const moved = translatedStroke(target, offset);
       const worldPoint = { x: point.x + offset.x, y: point.y + offset.y };
-      const area = createRectangleSelectionArea(
-        { x: worldPoint.x - 0.001, y: worldPoint.y - 0.001 },
-        { x: worldPoint.x + 0.001, y: worldPoint.y + 0.001 },
-      );
+      const area = rectangleSelectionAround(worldPoint, 0.001);
       const readWindow = vi.spyOn(prepared, "readWindow");
       const publishWindow = vi.spyOn(prepared, "publishWindow");
       publishWindow.mockClear();

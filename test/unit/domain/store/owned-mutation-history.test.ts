@@ -46,14 +46,14 @@ describe("owned mutation history retention", () => {
     const retained = captureOwnedMutationHistory(delta);
     expect(retained.forward.size).toBe(0);
     expect(retained.reverse.get(element.id)).toBe(original);
-    expect(retained.payloadBytes).toBe(272 + elementMutationPayloadBytes(original.element));
+    expect(retained.payloadBytes).toBe(464 + elementMutationPayloadBytes(original.element));
     const orderOnly = captureOwnedMutationHistory({
       ...delta,
       changes: [{ id: element.id, before: original, after: original, domains: ["order"] }],
     });
     expect(orderOnly.forward.size).toBe(0);
     expect(orderOnly.reverse.size).toBe(0);
-    expect(orderOnly.payloadBytes).toBe(64);
+    expect(orderOnly.payloadBytes).toBe(256);
   });
 
   it("discards incomplete ownership preparation on cancellation and can retry", async () => {

@@ -95,9 +95,10 @@ export class StrokeShapeCache {
   /** A validated current-model contour produced by the active Store scene. */
   public seed(stroke: StrokeElementV1, d: string): void {
     if (!this.mayRetain(stroke)) return;
+    const local = strokeLocalGeometry(stroke);
     const cached = this.#entries.get(stroke.id);
-    if (cached?.stroke.points === stroke.points && sameShapeFields(cached.stroke, stroke)) return;
-    this.#retain(strokeLocalGeometry(stroke), [{ d, paint: "fill" }]);
+    if (cached?.stroke.points === local.points && sameShapeFields(cached.stroke, local)) return;
+    this.#retain(local, [{ d, paint: "fill" }]);
   }
   #retain(local: StrokeElementV1, parts: readonly SvgPathPart[]): void {
     const bytes =

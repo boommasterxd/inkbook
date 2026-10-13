@@ -27,8 +27,9 @@ import {
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import {
   packElements,
-  unpackElements,
+  unpackElementsSteps,
 } from "../../../../../src/persistence/worker/runtime/element-wire-codec";
+import { completeSerializationSteps } from "../../../../../src/persistence/serialization/serialization-model-preparation";
 import { snapshot, STROKE } from "./fixtures";
 
 function createWireContext() {
@@ -90,7 +91,7 @@ describe("document worker wire codec", () => {
 
     expect(STROKE.points).toEqual([10, 10, 0.5, 20, 20, 1]);
     expect(packed.pointBuffers[0]?.byteLength).toBe(0);
-    const unpacked = unpackElements(transferred);
+    const unpacked = completeSerializationSteps(unpackElementsSteps(transferred));
     expect(unpacked).toHaveLength(1 + document.elements.length);
     const transferredStroke = unpacked[0];
     expect(transferredStroke?.kind).toBe("stroke");
@@ -383,12 +384,16 @@ describe("document worker wire validation", () => {
       },
     ]);
     const record = packed.records[0]!;
-    expect(() => unpackElements({ pointBuffers: [], records: [record] })).toThrow("index");
     expect(() =>
-      unpackElements({ pointBuffers: packed.pointBuffers, records: [record, record] }),
+      completeSerializationSteps(unpackElementsSteps({ pointBuffers: [], records: [record] })),
+    ).toThrow("index");
+    expect(() =>
+      completeSerializationSteps(
+        unpackElementsSteps({ pointBuffers: packed.pointBuffers, records: [record, record] }),
+      ),
     ).toThrow("reused");
     packed.pointBuffers[0]![0] = Number.NaN;
-    expect(() => unpackElements(packed)).toThrow();
+    expect(() => completeSerializationSteps(unpackElementsSteps(packed))).toThrow();
     await expect(
       decodeRuntimeRequestChunked({ type: "unknown" }, createWireContext()),
     ).rejects.toThrow("wire protocol");

@@ -6,8 +6,12 @@ import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/sc
 import { indexedStroke } from "../editor/stroke";
 import { createWorkerSnapshot } from "../persistence/worker-snapshot";
 import { calculateElementBounds } from "../../../src/domain/geometry/bounds";
+import { buildElementPathParts } from "../../../src/domain/geometry/element-path";
 import { roundCanonical } from "../../../src/domain/geometry/primitives";
-import type { ScenePathPreparation } from "../../../src/domain/geometry/prepared-scene-paths";
+import type {
+  PreparedScenePathEntry,
+  ScenePathPreparation,
+} from "../../../src/domain/geometry/prepared-scene-paths";
 import type { NavigationPathPreparation } from "../../../src/rendering/scene/navigation-path-preparation";
 import type { SceneVisibilityPriority } from "../../../src/rendering/scene/scene-entrant-priority";
 import type { Bounds } from "../../../src/domain/geometry/public";
@@ -86,20 +90,32 @@ export function createSceneFixture(
 }
 
 /** Real committed Store deltas in a 10,000-stroke document, including history provenance. */
-export function createHistoryContourScene() {
-  const elements = Array.from({ length: 10_000 }, (_, index) => {
-    const element = indexedStroke(index);
-    return {
-      ...element,
-      points: Array.from({ length: 20 + (index % 61) }, (_, sample) => [
-        roundCanonical(element.pivot.x + sample / 10),
-        roundCanonical(element.pivot.y + Math.sin(sample / 5) * 2),
-        roundCanonical(0.3 + ((index + sample) % 7) / 10),
-      ]).flat(),
-    };
-  });
+export function createHistoryContourScene(inputs?: {
+  readonly elements: readonly InkElementV1[];
+  readonly paths: readonly PreparedScenePathEntry[];
+}) {
+  const elements =
+    inputs?.elements ??
+    Array.from({ length: 10_000 }, (_, index) => {
+      const element = indexedStroke(index);
+      return {
+        ...element,
+        points: Array.from({ length: 20 + (index % 61) }, (_, sample) => [
+          roundCanonical(element.pivot.x + sample / 10),
+          roundCanonical(element.pivot.y + Math.sin(sample / 5) * 2),
+          roundCanonical(0.3 + ((index + sample) % 7) / 10),
+        ]).flat(),
+      };
+    });
   const store = new ElementStore(elements);
   const sceneStore = new ElementSceneStore(store);
+  const paths = new Map(inputs?.paths.map(({ id, parts }) => [id, parts]));
+  sceneStore.pressureGeometry = (id, version) => {
+    const port = store.pressureGeometry(id, version);
+    const parts = paths.get(id);
+    if (version === 0 && parts !== undefined) port.publishPath!(parts);
+    return port;
+  };
   const scene = createSceneFixture(createWorkerSnapshot([]).page, sceneStore, {
     height: 100,
     left: 0,
@@ -121,6 +137,28 @@ export function createHistoryContourScene() {
   return {
     ...scene,
     store,
+    /** Share only immutable setup data; replay targets always prepare their own contours. */
+    initialInputs: () => {
+      const mounted = scene.renderer.mountedIds("content");
+      const targets = new Set(mounted.slice(0, 10));
+      return Object.freeze({
+        elements: Object.freeze(elements.map(({ id }) => store.get(id)!.element as InkElementV1)),
+        paths: Object.freeze(
+          mounted
+            .filter((id) => !targets.has(id))
+            .map((id) => {
+              const record = store.get(id)!;
+              const parts =
+                store.pressureGeometry(id, record.geometryVersion).readPath?.() ??
+                buildElementPathParts(record.element as InkElementV1);
+              return Object.freeze({
+                id,
+                parts: Object.freeze(parts.map((part) => Object.freeze({ ...part }))),
+              });
+            }),
+        ),
+      });
+    },
     prepareReplay: (transition: AppliedElementMutation, direction: "forward" | "reverse") => {
       historyReplay = true;
       return store.prepareElementMutation(
@@ -133,6 +171,8 @@ export function createHistoryContourScene() {
       unsubscribe();
       scene.renderer.destroy();
       sceneStore.release();
+      paths.clear();
+      store.releasePreparedPressureGeometry();
     },
   };
 }

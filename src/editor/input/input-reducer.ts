@@ -1,5 +1,6 @@
 import {
   ELEMENT_DRAG_THRESHOLD_PX,
+  SELECTED_MOUSE_DRAG_THRESHOLD_PX,
   TOUCH_AXIS_LOCK_THRESHOLD_PX,
   type ConfigureInputAction,
   type ContextMenuAction,
@@ -162,8 +163,7 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
     capture.push({ type: "activate-temporary-eraser", previousTool: state.activeTool });
   }
   if (!temporaryEraser && action.target?.isSelected === true) {
-    const isTouch = action.pointerType === "touch";
-    return startElementMove(inputState, base, action.target.elementId, capture, isTouch, true);
+    return startElementMove(inputState, base, action.target.elementId, capture);
   }
   if (action.pointerType === "touch" && action.target !== undefined) {
     const interaction: TouchPendingInteraction = {
@@ -184,18 +184,17 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
     capture.push(longPressEffect(action.pointerId));
     return withInteraction(inputState, interaction, capture);
   }
-  if (tool === "select" && action.target !== undefined) {
-    return startElementMove(
-      inputState,
-      base,
-      action.target.elementId,
-      capture,
-      false,
-      action.target.isSelected,
-    );
-  }
   if (tool === "select") {
-    return withInteraction(inputState, { ...base, phase: "lasso" }, capture);
+    return withInteraction(
+      inputState,
+      {
+        ...base,
+        phase: "select-pending",
+        longPressScheduled: scheduleLongPress(base, capture),
+        ...(action.target === undefined ? {} : { target: action.target }),
+      },
+      capture,
+    );
   }
   const phase = tool === "eraser" ? "eraser-gesture" : "tool-gesture";
   const interaction: InputInteraction = { ...base, phase, previewStarted: true };
@@ -221,9 +220,9 @@ function shouldClearSelectionAtPointerDown(
     (action.pointerType === "touch" && action.target !== undefined)
   )
     return false;
-  if (tool === "select" && action.target !== undefined) return false;
+  if (tool === "select") return false;
   if (action.pointerType === "touch") {
-    return tool !== "select" && fingerDrawingEnabled(state);
+    return fingerDrawingEnabled(state);
   }
   return (
     action.button === 0 &&
@@ -238,30 +237,33 @@ function startElementMove(
   base: ReturnType<typeof interactionBase>,
   elementId: string,
   effects: InputEffect[],
-  isTouch: boolean,
-  isSelected: boolean,
 ): InputReduction {
   const interaction: InputInteraction = {
     ...base,
     phase: "element-move",
     elementId,
-    longPressScheduled: isTouch,
+    longPressScheduled: scheduleLongPress(base, effects),
   };
-  if (!isSelected) {
-    effects.push({
-      type: "select-element",
-      elementId,
-      mode: base.controlOrMeta ? "add" : "replace",
-    });
-  }
-  if (isTouch) {
-    effects.push(longPressEffect(base.pointerId));
-  }
   return withInteraction(state, interaction, effects);
 }
 
+function scheduleLongPress(
+  base: ReturnType<typeof interactionBase>,
+  effects: InputEffect[],
+): boolean {
+  if (base.pointerType !== "touch" && (base.pointerType !== "pen" || base.penRole !== "normal"))
+    return false;
+  effects.push(longPressEffect(base.pointerId));
+  return true;
+}
+
 function handlePointerMove(state: InputState, action: PointerMoveAction): InputReduction {
-  if (!isValidPointerSample(action) || state.consumedPointerIds.includes(action.pointerId)) {
+  if (
+    !isValidPointerSample(action) ||
+    (action.maximumMovement !== undefined &&
+      (!Number.isFinite(action.maximumMovement) || action.maximumMovement < 0)) ||
+    state.consumedPointerIds.includes(action.pointerId)
+  ) {
     return unchangedEffects(state);
   }
   const interaction = state.interaction;
@@ -276,6 +278,24 @@ function handlePointerMove(state: InputState, action: PointerMoveAction): InputR
   }
   if (interaction.phase === "touch-pending") {
     return movePendingTouch(state, interaction, action);
+  }
+  if (interaction.phase === "select-pending") {
+    const movement = Math.max(
+      distance(delta(interaction.start, action)),
+      action.maximumMovement ?? 0,
+    );
+    if (movement <= ELEMENT_DRAG_THRESHOLD_PX) {
+      return updateCurrent(state, interaction, action, []);
+    }
+    const clearsSelection = state.hasSelection && !interaction.shift;
+    const moved = movePreview(
+      clearsSelection ? { ...state, hasSelection: false } : state,
+      { ...interaction, phase: "lasso" },
+      action,
+    );
+    return clearsSelection
+      ? { state: moved.state, effects: [{ type: "clear-selection" }, ...moved.effects] }
+      : moved;
   }
   if (interaction.phase === "note-scroll" || interaction.phase === "page-pan") {
     return moveNavigation(state, interaction, action);
@@ -333,9 +353,16 @@ function movePreview(
   if (kind === undefined) {
     return unchangedEffects(state);
   }
-  const movement = distance(delta(interaction.start, action));
+  const movement = Math.max(
+    distance(delta(interaction.start, action)),
+    action.maximumMovement ?? 0,
+  );
   const needsThreshold = kind === "element-move" || kind === "lasso";
-  if (needsThreshold && !interaction.previewStarted && movement <= ELEMENT_DRAG_THRESHOLD_PX) {
+  const threshold =
+    kind === "element-move" && interaction.pointerType === "mouse"
+      ? SELECTED_MOUSE_DRAG_THRESHOLD_PX
+      : ELEMENT_DRAG_THRESHOLD_PX;
+  if (needsThreshold && !interaction.previewStarted && movement <= threshold) {
     return updateCurrent(state, interaction, action, []);
   }
   const effects: InputEffect[] = [];

@@ -12,6 +12,7 @@ import type {
   ValidationStatistics,
 } from "./validation-types";
 import type { StrokeSampleExtrema } from "./stroke-sample-extrema";
+import { isCapturedJsonSampleArray } from "../elements/runtime-sample-copy-producer";
 
 class ValidationFailure extends Error {
   readonly validationError: ValidationError;
@@ -118,6 +119,19 @@ function* visitJsonValue(
   options.state.maximumDepth = Math.max(options.state.maximumDepth, depth);
   if (options.allowRuntimeStrokeBuffers && value instanceof Float64Array) return;
   if (Array.isArray(value)) {
+    if (isCapturedJsonSampleArray(value)) {
+      assertContainerWidth(value.length, path, options.maximumContainerEntries);
+      const remainingNodes = options.maximumNodes - options.state.nodes;
+      if (value.length > remainingNodes) {
+        fail(
+          "json-node-limit-exceeded",
+          `${path}[${Math.floor(remainingNodes)}]`,
+          "JSON value count exceeds the validation budget.",
+        );
+      }
+      options.state.nodes += value.length;
+      return;
+    }
     yield* visitArrayValues(value, depth, path, options);
   } else {
     yield* visitRecordValues(value, depth, path, options);

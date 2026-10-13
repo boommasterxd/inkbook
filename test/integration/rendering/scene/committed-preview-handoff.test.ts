@@ -3,7 +3,7 @@ import * as pressureUnion from "../../../../src/domain/geometry/pressure-union";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { scaleElement } from "../../../../src/editor/selection/transforms";
 import { rectangle } from "../../../unit/domain/store/fixtures";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import * as elementPath from "../../../../src/domain/geometry/element-path";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
@@ -18,6 +18,44 @@ import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
+const baselineStroke = {
+  ...indexedStroke(1),
+  points: Array.from({ length: 4096 }, (_, i) => [i / 10, 20 + (i % 7), 0.5]).flat(),
+};
+Object.freeze(baselineStroke.points);
+Object.freeze(baselineStroke.style);
+Object.freeze(baselineStroke.pivot);
+Object.freeze(baselineStroke);
+let baselineParts: Readonly<ReturnType<typeof elementPath.buildElementPathParts>>;
+let scaledPath: string;
+beforeAll(() => {
+  // Reuse immutable input/reference contours; each edited scene job remains cold.
+  baselineParts = Object.freeze(
+    elementPath.buildElementPathParts(baselineStroke).map((part) => Object.freeze(part)),
+  );
+  scaledPath = elementPath.buildElementPathParts(
+    scaleElement(baselineStroke, { x: 0, y: 0 }, { x: 1.1, y: 1 }),
+  )[0]!.d;
+});
+
+function baselineScene(store: FakeSceneStore) {
+  const originalRead = Reflect.get(ScenePathCache.prototype, "read");
+  const read = vi.spyOn(ScenePathCache.prototype, "read");
+  read.mockImplementation(function (this: ScenePathCache, element, geometry, version) {
+    if (element.kind === "stroke" && element.points === baselineStroke.points && version === 1)
+      this.completePreparation(element, baselineParts, version);
+    return originalRead.call(this, element, geometry, version);
+  });
+  try {
+    const fixture = createSceneFixture(createWorkerSnapshot([]).page, store);
+    fixture.scheduler.runAll();
+    return fixture;
+  } finally {
+    // All edited preparation and later Undo reads use the unmodified cache.
+    read.mockRestore();
+  }
+}
+
 function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
   const store = new FakeSceneStore();
   const windows = new Map<string, PressureWindow>();
@@ -28,18 +66,12 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
     },
   });
   Object.assign(store, { pressureGeometry });
-  const element = {
-    ...indexedStroke(1),
-    points: Array.from({ length: 4096 }, (_, i) => [i / 10, 20 + (i % 7), 0.5]).flat(),
-  };
-  // Match the authoritative Store's immutable samples for contour identity reuse.
-  Object.freeze(element.points);
+  const element = { ...baselineStroke };
   const elements = [element, ...extras];
   const ids = elements.map(({ id }) => id);
   for (const [rank, value] of elements.entries())
     store.records.set(value.id, createSceneRecord(value, rank));
-  const { renderer, scheduler } = createSceneFixture(createWorkerSnapshot([]).page, store);
-  scheduler.runAll();
+  const { renderer, scheduler } = baselineScene(store);
   if (selected) {
     renderer.setSelectedElements(new Set(ids));
     scheduler.runAll();
@@ -125,7 +157,7 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
     expect(step.mock.calls.length).toBeLessThanOrEqual(8);
   }
   expect(fullBuild).not.toHaveBeenCalled();
-  expect(group.nodes[0]!.attributes.get("d")).toBe(elementPath.buildElementPathParts(moved)[0]!.d);
+  expect(group.nodes[0]!.attributes.get("d")).toBe(scaledPath);
   expect(group.attributes.get("transform")).toBe("translate(5 0)");
   const union = vi.spyOn(pressureUnion, "iteratePressureUnion");
   expect(elementPath.buildElementPathParts(moved, pressureGeometry(element.id, 2))[0]!.d).toBe(

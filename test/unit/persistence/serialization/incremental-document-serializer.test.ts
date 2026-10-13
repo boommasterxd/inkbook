@@ -8,8 +8,9 @@ import {
 } from "../../../../src/persistence/serialization/public";
 import {
   packElements,
-  unpackElements,
+  unpackElementsSteps,
 } from "../../../../src/persistence/worker/runtime/element-wire-codec";
+import { completeSerializationSteps } from "../../../../src/persistence/serialization/serialization-model-preparation";
 import {
   createAllElementSnapshot,
   createDottedRectangleSnapshot,
@@ -291,7 +292,7 @@ describe("runtime stroke fragment serialization", () => {
     const transferred = structuredClone(packed, {
       transfer: packed.pointBuffers.map(({ buffer }) => buffer as ArrayBuffer),
     });
-    const elements = unpackElements(transferred);
+    const elements = completeSerializationSteps(unpackElementsSteps(transferred));
     const runtimeSnapshot = { ...snapshot, elements };
     const stroke = runtimeSnapshot.elements.find((element) => element.kind === "stroke");
     if (stroke?.kind !== "stroke") throw new Error("Missing stroke fixture.");
@@ -428,7 +429,10 @@ function warmedSerializer(snapshot: ReturnType<typeof createAllElementSnapshot>)
 
 async function warmedRuntimeSerializer(ownsSamples: boolean) {
   const snapshot = createAllElementSnapshot();
-  const runtime = { ...snapshot, elements: unpackElements(packElements(snapshot.elements)) };
+  const runtime = {
+    ...snapshot,
+    elements: completeSerializationSteps(unpackElementsSteps(packElements(snapshot.elements))),
+  };
   const serializer = new IncrementalDocumentSerializer();
   expect(serializer.resetRuntime(runtime, ownsSamples).ok).toBe(true);
   const cold = await serializer.serializeRuntimeChunked({});

@@ -23,6 +23,8 @@ import { describe, expect, it, vi } from "vitest";
 import { buildPressureOutline } from "../../../src/domain/geometry/pressure-outline";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
 import { buildPressureResizeFrame } from "./geometry-frame-fixture";
+import { createAdversarialPressureWindow } from "../../fixtures/domain/adversarial-pressure-window";
+import { observePressureStitchBuckets } from "../../fixtures/domain/pressure-stitching-observation";
 const STYLE = {
   color: { type: "theme-text" as const },
   opacity: 1,
@@ -77,21 +79,21 @@ describe("bounded canonical pressure geometry", () => {
   it("stitches pressure contours using bounded numeric bucket lookups", () => {
     const shapes = regularCapsules(32, -48);
     shapes.push({ kind: "dot", center: { x: 200, y: 200 }, radius: 1 });
-    const lookups = vi.spyOn(Map.prototype, "get");
+    const lookups = observePressureStitchBuckets();
     let step;
     const iterator = iteratePressureUnion(shapes);
     try {
       do {
         step = iterator.next();
       } while (!step.done);
-      const keys = lookups.mock.calls.map(([key]) => key as unknown);
-      lookups.mockRestore();
+      const keys = lookups.keys();
+      lookups.restore();
       expect(step.value.usedFallback).toBe(false);
       expect(keys.length).toBeGreaterThan(0);
       expect(keys.every((key) => typeof key === "number")).toBe(true);
       expect(keys.length).toBeLessThanOrEqual(step.value.work.visibleFragments * 28);
     } finally {
-      lookups.mockRestore();
+      lookups.restore();
     }
   });
 });
@@ -393,13 +395,7 @@ describe("bounded capsule union work", () => {
   });
 
   it("yields between real clipping work and bounds a full adversarial window", () => {
-    const shapes = Array.from({ length: 64 }, (_, index) =>
-      buildPressureCapsule(
-        { x: index % 2 ? 0 : 200, y: index * 0.1, pressure: index % 2 },
-        { x: index % 2 ? 200 : 0, y: (index + 1) * 0.1, pressure: (index + 1) % 2 },
-        22,
-      ),
-    );
+    const shapes = createAdversarialPressureWindow();
     const calls = vi.spyOn(intersections, "intersectPressureBoundaries");
     try {
       const cancelled = iteratePressureUnion(shapes);

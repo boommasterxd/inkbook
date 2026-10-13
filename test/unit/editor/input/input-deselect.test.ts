@@ -33,60 +33,43 @@ describe("selection deselection", () => {
     );
     expect(started.effects).toContainEqual({ type: "clear-selection" });
   });
+});
 
-  it("clears on Select pointer-down without emitting a second clear on release", () => {
+describe("mouse and pen Select clicks", () => {
+  it("clears an empty Select click on release", () => {
     const started = reduceInput(
       createInputState({ activeTool: "select", hasSelection: true }),
       pointerDown(),
     );
     const released = reduceInput(started.state, { type: "pointer-up", pointerId: 1 });
-    expect(started.effects).toContainEqual({ type: "clear-selection" });
-    expect(released.effects).toEqual([{ type: "release-pointer", pointerId: 1 }]);
+    expect(started.effects).toEqual([{ type: "capture-pointer", pointerId: 1 }]);
+    expect(released.effects).toEqual([
+      { type: "clear-selection" },
+      { type: "release-pointer", pointerId: 1 },
+    ]);
     expect(released.state.hasSelection).toBe(false);
   });
 
-  it("replaces the selection when clicking an unselected element", () => {
-    const started = reduceInput(
-      createInputState({ activeTool: "select", hasSelection: true }),
-      pointerDown({ target: { elementId: "shape-b", isSelected: false } }),
-    );
-    expect(effectTypes(started.effects)).toEqual(["capture-pointer", "select-element"]);
-    expect(started.effects).toContainEqual({
-      type: "select-element",
-      elementId: "shape-b",
-      mode: "replace",
-    });
-  });
-
-  it("adds an unselected element for a Control or Command click", () => {
-    const started = reduceInput(
-      createInputState({ activeTool: "select", hasSelection: true }),
-      pointerDown({
-        controlOrMeta: true,
-        target: { elementId: "shape-b", isSelected: false },
-      }),
-    );
-    expect(started.effects).toContainEqual({
-      type: "select-element",
-      elementId: "shape-b",
-      mode: "add",
-    });
-  });
-
-  it("replaces the selection for a Shift click instead of treating Shift as additive", () => {
-    const started = reduceInput(
-      createInputState({ activeTool: "select", hasSelection: true }),
-      pointerDown({
-        shift: true,
-        target: { elementId: "shape-b", isSelected: false },
-      }),
-    );
-    expect(started.effects).toContainEqual({
-      type: "select-element",
-      elementId: "shape-b",
-      mode: "replace",
-    });
-  });
+  it.each([
+    ["plain", false, false, "replace"],
+    ["Control or Command", true, false, "add"],
+    ["Shift", false, true, "replace"],
+  ] as const)(
+    "selects an unselected element after a %s click",
+    (_modifier, controlOrMeta, shift, mode) => {
+      const started = reduceInput(
+        createInputState({ activeTool: "select", hasSelection: true }),
+        pointerDown({ controlOrMeta, shift, target: { elementId: "shape-b", isSelected: false } }),
+      );
+      expect(effectTypes(started.effects)).toEqual(["capture-pointer"]);
+      const released = reduceInput(started.state, { type: "pointer-up", pointerId: 1 });
+      expect(released.effects).toContainEqual({
+        type: "select-element",
+        elementId: "shape-b",
+        mode,
+      });
+    },
+  );
 
   it("clears for a normal pen outside but preserves its selected target", () => {
     const state = createInputState({ activeTool: "arrow", hasSelection: true });
@@ -104,7 +87,7 @@ describe("selection deselection", () => {
       "clear-selection",
       "begin-preview",
     ]);
-    expect(effectTypes(selectedTarget.effects)).toEqual(["capture-pointer"]);
+    expect(effectTypes(selectedTarget.effects)).toEqual(["capture-pointer", "schedule-long-press"]);
     expect(inputPhase(selectedTarget.state)).toBe("element-move");
     expect(selectedTarget.state.hasSelection).toBe(true);
   });

@@ -11,7 +11,8 @@ import * as ownedHistory from "../../../src/domain/store/owned-mutation-history"
 import * as mutationOrder from "../../../src/domain/store/mutation-order";
 import * as mutationElements from "../../../src/domain/store/mutation-elements";
 import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
-import type { ElementRecord } from "../../../src/domain/store/types";
+import type { AppliedElementMutation, ElementRecord } from "../../../src/domain/store/types";
+import type { InkElementV1 } from "../../../src/domain/schema/public";
 import { MutationPreparationScheduler } from "../../../src/domain/store/mutation-preparation-scheduler";
 import { createStandardRuntimeDomainFixture } from "./standard-domain-fixture";
 import { uninterruptedMutationScheduler as scheduler } from "../../fixtures/domain/element-mutation";
@@ -265,5 +266,116 @@ it("validates canonical connected destinations once in a 10,000-stroke document"
     validateConnections.mockRestore();
     detachments.mockRestore();
     retainedLookups.restore();
+  }
+});
+
+async function arrangeHistory(store: ElementStore, ids: readonly string[]) {
+  const prepared = await store.prepareElementArrangement("bring-to-front", new Set(ids), scheduler);
+  if (prepared.token === null) throw new Error("Expected arrangement token.");
+  const transition = store.commitPreparedElementMutation(prepared.token).transition;
+  if (transition === null) throw new Error("Expected arrangement history.");
+  return transition;
+}
+
+async function replayHistory(
+  store: ElementStore,
+  transition: AppliedElementMutation,
+  direction: "forward" | "reverse",
+) {
+  const prepared = await store.prepareHistoryReplay(transition[direction], scheduler, transition);
+  if (prepared.token === null) throw new Error("Expected replay token.");
+  expect(store.commitPreparedElementMutation(prepared.token).status).toBe("committed");
+}
+
+function observeOrderRankReads() {
+  let rankReads = 0;
+  const prepare = mutationOrder.prepareMutationOrder;
+  const spy = vi
+    .spyOn(mutationOrder, "prepareMutationOrder")
+    .mockImplementation(async (...args) => {
+      const ranks = vi.spyOn(args[3], "get");
+      try {
+        return await prepare(...args);
+      } finally {
+        rankReads += ranks.mock.calls.length;
+        ranks.mockRestore();
+      }
+    });
+  return {
+    count: () => rankReads,
+    reset: () => {
+      rankReads = 0;
+    },
+    restore: () => spy.mockRestore(),
+  };
+}
+
+it("reuses older exact band states for 1,000 and 2,000 selected strokes in a mixed 10,000-stroke document", async () => {
+  const fixture = createStandardRuntimeDomainFixture();
+  const elements = fixture.elements.slice(0, fixture.strokeCount).map((element, index) => {
+    if (element.kind !== "stroke") throw new Error("Expected stroke.");
+    return index % 2 === 0
+      ? element
+      : {
+          ...element,
+          tool: "highlighter" as const,
+          style: { ...element.style, pressureEnabled: false },
+        };
+  });
+  const content = elements.filter((_, index) => index % 2 === 0).map(({ id }) => id);
+  const highlight = elements.filter((_, index) => index % 2 !== 0).map(({ id }) => id);
+  for (const selectedCount of [1_000, 2_000]) {
+    const builder = ElementStore.createBuilder(scheduler);
+    await builder.appendOwnedRuntime(elements);
+    const store = await builder.finalize();
+    if (store === null) throw new Error("Expected hydrated store.");
+    const a = await arrangeHistory(store, content.slice(0, selectedCount));
+    const b = await arrangeHistory(store, content.slice(selectedCount, selectedCount * 2));
+    const orderReads = observeOrderRankReads();
+    try {
+      await replayHistory(store, b, "reverse");
+      expect(orderReads.count()).toBe(content.length);
+      orderReads.reset();
+      await replayHistory(store, a, "reverse");
+      expect(orderReads.count()).toBe(content.length);
+      expect(store.materializeBandOrder("content")).toEqual(content);
+      orderReads.reset();
+      await replayHistory(store, a, "forward");
+      expect(orderReads.count()).toBe(content.length);
+      orderReads.reset();
+      // Specialized replacement replay changes the mutation version but leaves
+      // both authoritative orders intact, including the large untouched band.
+      const original = store.get(highlight[0]!)!.element;
+      if (original.kind !== "stroke") throw new Error("Expected stroke.");
+      let previous: readonly InkElementV1[] = [];
+      store.replaceMany(
+        [
+          {
+            ...original,
+            points: original.points as unknown as number[],
+            style: { ...original.style, opacity: 0.25 },
+          },
+        ],
+        (history) => {
+          previous = history.previous as readonly InkElementV1[];
+        },
+      );
+      expect(previous).toHaveLength(1);
+      store.replaceMany(previous);
+      await replayHistory(store, a, "reverse");
+      // Full validation would read 10,000 authoritative ranks instead of the
+      // 5,000 copied IDs in the changed content band.
+      expect(orderReads.count()).toBe(content.length);
+      expect(store.materializeBandOrder("content")).toEqual(content);
+      expect(store.materializeBandOrder("highlight")).toEqual(highlight);
+      orderReads.reset();
+      await replayHistory(store, a, "forward");
+      await replayHistory(store, b, "forward");
+      expect(orderReads.count()).toBe(content.length * 2);
+      expect(store.bandSize("content")).toBe(5_000);
+      expect(store.bandSize("highlight")).toBe(5_000);
+    } finally {
+      orderReads.restore();
+    }
   }
 });

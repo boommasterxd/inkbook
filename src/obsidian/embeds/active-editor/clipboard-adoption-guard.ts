@@ -1,5 +1,5 @@
 import { renderBandOf } from "../../../domain/commands/render-bands";
-import { calculateElementBounds, derivePageExtent } from "../../../domain/geometry/public";
+import { derivePageExtent } from "../../../domain/geometry/public";
 import {
   CLIPBOARD_SCHEMA_LIMITS,
   FILE_SCHEMA_LIMITS,
@@ -12,8 +12,14 @@ import {
   MAX_SPATIAL_MEMBERSHIPS,
   SPATIAL_CELL_SIZE,
 } from "../../../domain/spatial/index";
-import type { ElementStore, StoreDelta } from "../../../domain/store/public";
+import type { ElementStore, StoreDelta, StoreSliceScheduler } from "../../../domain/store/public";
+import { MutationPreparationScheduler } from "../../../domain/store/mutation-preparation-scheduler";
+import {
+  prepareInsertionElementSteps,
+  preparedInsertionBounds,
+} from "../../../domain/store/prepared-insertion-element";
 import type { PastePlan } from "../../../persistence/clipboard/public";
+import { capturePastePlan } from "../../../persistence/clipboard/paste-plan-snapshot";
 
 interface DocumentFacts {
   connectedEndpoints: number;
@@ -32,6 +38,7 @@ interface FactElement {
 }
 
 export interface PreparedClipboardAdoption {
+  readonly elements: readonly InkElementV1[];
   readonly facts: Readonly<DocumentFacts>;
   readonly fanout: ReadonlyMap<string, number>;
   readonly ids: ReadonlySet<string>;
@@ -61,23 +68,39 @@ export class ClipboardAdoptionGuard {
     this.#unsubscribe();
   }
 
-  public prepare(plan: PastePlan): PreparedClipboardAdoption | null {
+  public async prepare(
+    plan: PastePlan,
+    scheduler: StoreSliceScheduler,
+  ): Promise<PreparedClipboardAdoption | null> {
     try {
-      const ids = consistentPlanIds(plan);
-      if (ids === null) return null;
+      const captured = capturePastePlan(plan);
+      if (captured === null) return null;
+      plan = captured;
+      const work = new MutationPreparationScheduler(scheduler);
+      const ids = new Set(plan.selectedIds);
+      if (ids.size !== plan.elements.length || ids.size > CLIPBOARD_SCHEMA_LIMITS.elements)
+        return null;
       const facts = emptyFacts();
       const fanout = new Map<string, number>();
       const targetIds = new Set<string>();
+      const elements: InkElementV1[] = [];
       let maximumBottom: number | null = null;
-      for (const element of plan.elements) {
-        const bounds = calculateElementBounds(element);
+      for (const input of plan.elements) {
+        if (!(work.checkpoint() || (await work.resume()))) return null;
+        const pending = work.run(prepareInsertionElementSteps(input));
+        const element = pending instanceof Promise ? await pending : pending;
+        if (element === "cancelled") return null;
+        const bounds = preparedInsertionBounds(element)!;
+        elements.push(element);
         maximumBottom = Math.max(maximumBottom ?? bounds.maxY, bounds.maxY);
         addElementFacts(facts, fanout, element, bounds, 1);
         if (!connectionsHaveTargets(element, ids, this.#store)) return null;
         addConnectionTargets(element, targetIds);
       }
+      if (scheduler.isCancelled?.() || consistentPlanIds({ ...plan, elements }) === null)
+        return null;
       if (!withinClipboardLimits(facts, fanout)) return null;
-      return { facts, fanout, ids, maximumBottom, targetIds };
+      return { elements: Object.freeze(elements), facts, fanout, ids, maximumBottom, targetIds };
     } catch {
       return null;
     }

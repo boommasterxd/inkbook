@@ -16,15 +16,26 @@ expensive preparation pass.
 ## Decision
 
 Enumerate the Store-owned prepared-path cache, not the complete document.
-Only current, internally generated pressure paths may become export hints.
-The Store checks each cached geometry version; the host attaches hints only when
-its current document revision matches the export plan. The bounded request carries
-that revision and the local shape header with the path. The first accepted export
+Only current, internally generated local pressure paths may become export hints.
+The existing Store path LRU retains an exact weak sample-identity witness and
+immutable local shape fields for each local entry. It checks these against the
+current owned record; the host attaches hints only when its current document
+revision matches the export plan. Old geometry ports cannot read or publish after
+their captured version changes. Placement changes preserve a compatible local
+entry; changed samples or shape fields and removal invalidate it. A geometry-neutral
+Store delta can rebind an exact old witness to a new owned sample buffer after the
+Store has proved equal sample values and unchanged local shape fields. This adds
+no sample comparison in cache publication and accepts no public trust flag. Local witnesses
+add 192 bytes to each entry within the existing 1,024-entry and 4-MiB limits.
+Version-bound world entries remain separate and never supply local export hints.
+The bounded request carries the current revision and local shape header with the
+path. The first accepted export
 per worker epoch can seed unchanged baseline contours even on an incremental
 request; later incremental requests select changed IDs only. An epoch change
-reopens that initial handoff. Explicit zero offsets are eligible; nonzero offsets
-remain excluded because the Store pressure cache and translated scene paths have
-different coordinate spaces. Lazy enumeration visits at most 1,024 current cache
+reopens that initial handoff. Nonzero offsets are eligible only through the
+explicit local path port and its owned shape witness. Both producer and receiver
+derive the header from `strokeLocalGeometry`, including its localized rotation
+pivot. World-space selection windows remain separate. Lazy enumeration visits at most 1,024 current cache
 entries and retains at most 4 MiB in one handoff.
 
 The worker checks request/revision agreement, supported shape fields, path syntax,

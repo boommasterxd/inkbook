@@ -8,6 +8,7 @@ import {
   type ElementReplacementHistoryData,
 } from "../../../../../src/domain/store/public";
 import * as mutationPayload from "../../../../../src/domain/store/mutation-payload";
+import * as replacementPlanner from "../../../../../src/domain/store/replacement-planner";
 import { ActiveDocumentHistory } from "../../../../../src/obsidian/embeds/active-editor/document-history";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
@@ -142,6 +143,8 @@ describe("prepared style document history", () => {
     const originalTarget = fixture.inspect(target.id);
     const originalDependent = fixture.inspect(dependent.id);
     const prepare = vi.spyOn(fixture.model, "prepareElementReplacement");
+    const candidates = vi.spyOn(replacementPlanner, "prepareReplacementCandidatesTimeSliced");
+    const previewPlan = vi.spyOn(fixture.store, "planReplacementsTimeSliced");
     const prepareMutation = vi.spyOn(fixture.model, "prepareElementMutation");
     const collectOrder = vi.spyOn(fixture.store, "beginOrder");
     const originalCommit = fixture.model.commitPreparedElementReplacement.bind(fixture.model);
@@ -158,6 +161,8 @@ describe("prepared style document history", () => {
     expect(fixture.pending).toEqual([true]);
     await finished(fixture);
     expect(fixture.completed).toHaveBeenCalledWith(true);
+    expect(candidates).toHaveBeenCalledOnce();
+    expect(previewPlan).not.toHaveBeenCalled();
     expect(fixture.inspect(target.id)).toMatchObject({
       dimension: "2d",
       axes: target.axes.slice(0, 2),
@@ -414,8 +419,8 @@ describe("prepared arrangement history", () => {
     expectOrder(fixture, [0, 1, 2, 3, 4]);
     await expect(fixture.history.redoAsync()).resolves.toBe(true);
     expectOrder(fixture, indices);
-    expect(prepare.mock.calls[1]![1].replay).toBeDefined();
-    expect(prepare.mock.calls[2]![1].replay).toBe(prepare.mock.calls[1]![1].replay);
+    expect(prepare.mock.calls[0]![1].replay).toBeDefined();
+    expect(prepare.mock.calls[1]![1].replay).toBe(prepare.mock.calls[0]![1].replay);
     expect(deltas).toHaveBeenCalledTimes(3);
   });
 

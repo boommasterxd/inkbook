@@ -375,6 +375,7 @@ function handlesPort(active: boolean): ActiveEditorHandleInteraction {
   return {
     cancel: vi.fn(() => active),
     pointerDown: vi.fn(() => active),
+    selectionGeometry: vi.fn(() => []),
     pointerMove: vi.fn(() => active),
     pointerUp: vi.fn(() => active),
   } as unknown as ActiveEditorHandleInteraction;

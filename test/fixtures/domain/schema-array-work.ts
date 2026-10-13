@@ -1,10 +1,16 @@
 /** Observes production indexed reads, including JSON descriptor-based inspection. */
-export function observeSchemaArray<T>(values: T[]) {
+export function observeSchemaArray<T, ArrayType extends readonly T[] = T[]>(
+  values: ArrayType,
+  onIndexedRead?: () => void,
+) {
   const work = { indexedReads: 0, descriptorReads: 0 };
   const observed = new Proxy(values, {
     get(target, key, receiver): unknown {
-      if (isIndex(key)) work.indexedReads += 1;
-      return Reflect.get(target, key, receiver) as unknown;
+      if (isIndex(key)) {
+        work.indexedReads += 1;
+        onIndexedRead?.();
+      }
+      return Reflect.get(target, key, receiver);
     },
     getOwnPropertyDescriptor(target, key) {
       if (isIndex(key)) work.descriptorReads += 1;

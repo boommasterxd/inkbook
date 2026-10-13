@@ -12,6 +12,7 @@ import { MutationPreparationScheduler } from "../../../../src/domain/store/mutat
 import { ElementStore } from "../../../../src/domain/store/public";
 import {
   applyElementMutation as apply,
+  applyRetainedHistoryMutation as applyRetained,
   uninterruptedMutationScheduler as scheduler,
 } from "../../../fixtures/domain/element-mutation";
 import { connectedLine, highlighter, IDS, rectangle } from "./fixtures";
@@ -179,13 +180,13 @@ describe("private replay band proof", () => {
     const { elements, store, removed } = ownedRemoval();
     const bandCheck = observeHighlightValidation();
     try {
-      await apply(store, removed.transition.reverse, removed.transition);
+      await applyRetained(store, removed.transition, "reverse");
       bandCheck.expectVisited(false);
-      await apply(store, removed.transition.forward, removed.transition);
+      await applyRetained(store, removed.transition, "forward");
       bandCheck.expectVisited(false);
       store.updateStyle(elements[1]!.id, { ...elements[1]!.style, outlineOpacity: 0.5 });
-      await apply(store, removed.transition.reverse, removed.transition);
-      bandCheck.expectVisited(true);
+      await applyRetained(store, removed.transition, "reverse");
+      bandCheck.expectVisited(false);
     } finally {
       bandCheck.restore();
     }

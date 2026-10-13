@@ -76,6 +76,7 @@ export interface ElementStoreInstrumentation {
 }
 
 export interface ElementStoreMemoryUsage {
+  readonly selectionGeometryCacheBytes?: number;
   readonly pressurePathCacheBytes: number;
   readonly pressureWindowCacheBytes: number;
   readonly anchorCacheBytes: number;

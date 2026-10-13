@@ -206,6 +206,7 @@ export class SceneVisibilityCoordinator {
     liveStroke.settleCommits(settled);
     livePaths.settle(settled);
     const mountedIds = this.#content.takeNewlyMountedIds();
+    this.#transforms.applyMounted(mountedIds);
     motion.bindMountedEntrances(mountedIds, frameTime);
     motion.finishEntranceBatch();
     this.#elements.applyMounted(mountedIds);
@@ -235,8 +236,10 @@ export class SceneVisibilityCoordinator {
     this.#content.setMembershipViewport(
       viewport === undefined ? undefined : visibilityPageBounds(viewport, camera, true).envelope,
     );
-    this.#transforms.setContext(camera, viewport);
-    this.#elements.refreshProgressiveContext(viewport, camera);
+    const envelope =
+      viewport === undefined ? undefined : visibilityPageBounds(viewport, camera).envelope;
+    this.#transforms.setContext(camera, viewport, envelope);
+    this.#elements.refreshProgressiveContext(viewport, camera, envelope);
     this.invalidate(true);
   }
 
@@ -286,6 +289,8 @@ export class SceneVisibilityCoordinator {
       return;
     }
     this.#preloadMarginDirty = false;
+    this.#transforms.setContext(camera, viewport, envelope);
+    this.#elements.refreshProgressiveContext(viewport, camera, envelope, true);
     this.#content.settleMembershipVisibility((id) => this.#visibility.contains(id));
     if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) {
       if (this.#content.hasPendingWork) this.prepareNavigation();

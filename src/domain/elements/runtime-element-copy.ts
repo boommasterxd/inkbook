@@ -4,19 +4,68 @@ import {
   assertSampleCopyInput,
   compareSampleRange,
   copySampleRange,
-  createSampleCopyProof,
-  finishSampleCopyProof,
   assertSampleArrayKeysSteps,
   DEFAULT_SAMPLE_COPY_STEP,
   type SampleBuffer,
   type SampleSource,
 } from "./runtime-sample-copy";
+import {
+  copySampleBufferSteps,
+  copyImmutableJsonSampleSteps,
+} from "./runtime-sample-copy-producer";
 
 const MAX_HEADER_NODES = 256;
+const immutableCapturedHeaders = new WeakSet<object>();
 
 interface HeaderCopyBudget {
   remaining: number;
   readonly ancestors: Set<object>;
+}
+
+/** Stroke protocol fields are removed only after every header descriptor is captured safely. */
+export function captureImmutableRuntimeElementHeader(
+  element: object,
+  excludedStrokeKeys?: ReadonlySet<string>,
+): Record<string, unknown> {
+  const captured = captureRuntimeElementHeader(element);
+  const header =
+    captured.kind === "stroke" && excludedStrokeKeys !== undefined
+      ? Object.fromEntries(Object.entries(captured).filter(([key]) => !excludedStrokeKeys.has(key)))
+      : captured;
+  if (freezeCapturedHeader(header)) immutableCapturedHeaders.add(header);
+  return header;
+}
+
+/** Only header ownership is reused; the attached samples remain untrusted input. */
+export function attachCapturedStrokeSamples(
+  header: Record<string, unknown>,
+  points: SampleSource,
+): Record<string, unknown> {
+  if (!immutableCapturedHeaders.has(header)) {
+    throw new TypeError("Stroke samples require a privately captured immutable header.");
+  }
+  const element = Object.freeze({ ...header, points });
+  immutableCapturedHeaders.add(element);
+  return element;
+}
+
+export function preparedInsertionHeader(element: object): Record<string, unknown> | undefined {
+  if (!immutableCapturedHeaders.has(element)) return undefined;
+  const header = element as Record<string, unknown>;
+  if (header.kind !== "stroke") return header;
+  const { points: _points, ...fields } = header;
+  return fields;
+}
+
+function freezeCapturedHeader(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return true;
+  if (value instanceof Float64Array) return false;
+  let immutable = true;
+  for (const child of Object.values(value)) {
+    immutable = freezeCapturedHeader(child) && immutable;
+  }
+  Object.freeze(value);
+  return immutable;
 }
 
 /** Capture all fields, including invalid unknown fields, before sample work can yield. */
@@ -127,27 +176,17 @@ export function copyStrokeSamplesToRuntimeSteps(
   samplesPerStep = DEFAULT_SAMPLE_COPY_STEP,
 ): Generator<void, Float64Array> {
   const length = assertSampleCopyInput(points, samplesPerStep);
-  return copySamplesSteps(points, length, samplesPerStep * 3, true) as Generator<
+  return copySampleBufferSteps(points, length, samplesPerStep * 3, "runtime") as Generator<
     void,
     Float64Array
   >;
 }
 
-function* copySamplesSteps(
+/** The result has no mutable aliases and carries private JSON-tree preparation proof. */
+export function copyStrokeSamplesToImmutableJsonSteps(
   points: SampleSource,
-  length: number,
-  valuesPerStep: number,
-  typed: boolean,
-): Generator<void, SampleBuffer> {
-  const candidate = allocateSampleCopy(length, typed);
-  const proof = createSampleCopyProof(points);
-  for (let start = 0; start < length; start += valuesPerStep) {
-    copySampleRange(points, candidate, start, Math.min(length, start + valuesPerStep), proof);
-    yield;
-  }
-  yield* assertSampleArrayKeysSteps(points, valuesPerStep);
-  finishSampleCopyProof(proof);
-  return candidate;
+): Generator<void, number[]> {
+  return copyImmutableJsonSampleSteps(points);
 }
 
 /** The expected buffer must be exclusively owned and immutable throughout consumption. */
@@ -162,7 +201,12 @@ export function stageStrokeSamplesSteps(
     expected?.length !== length ||
     points instanceof Float64Array !== expected instanceof Float64Array
   ) {
-    return copySamplesSteps(points, length, samplesPerStep * 3, points instanceof Float64Array);
+    return copySampleBufferSteps(
+      points,
+      length,
+      samplesPerStep * 3,
+      points instanceof Float64Array ? "runtime" : "json",
+    );
   }
   return compareAndStageSamples(points, expected, samplesPerStep * 3);
 }

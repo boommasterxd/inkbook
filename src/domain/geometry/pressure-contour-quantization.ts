@@ -1,6 +1,7 @@
 import type { PointV1 } from "../schema/types";
 import { PRESSURE_PREPARATION_CHECK_INTERVAL } from "./pressure-union";
 import { recordPressureAddition, type PressureAdditions } from "./pressure-additions";
+import { iteratePressureCollinearPruning } from "./pressure-collinear-pruning";
 
 /** Each checkpoint groups a bounded number of vertex inspections or local removals. */
 export function* iteratePressureContourQuantization(
@@ -22,8 +23,16 @@ export function* iteratePressureContourQuantization(
     const before = points[(index + points.length - 1) % points.length]!;
     const current = points[index]!;
     const after = points[(index + 1) % points.length]!;
-    const x = Math.floor(current.x / grid) * grid;
-    const y = Math.floor(current.y / grid) * grid;
+    const beforeX = before.x;
+    const beforeY = before.y;
+    const currentX = current.x;
+    const currentY = current.y;
+    const x = Math.floor(currentX / grid) * grid;
+    const y = Math.floor(currentY / grid) * grid;
+    const incomingX = currentX - beforeX;
+    const incomingY = currentY - beforeY;
+    const outgoingX = after.x - currentX;
+    const outgoingY = after.y - currentY;
     let best = current;
     let distance = Infinity;
     for (let candidate = 0; candidate < 16; candidate += 1) {
@@ -31,10 +40,7 @@ export function* iteratePressureContourQuantization(
         x: x + ((candidate % 4) - 1) * grid,
         y: y + (Math.floor(candidate / 4) - 1) * grid,
       };
-      const displacement = Math.hypot(next.x - current.x, next.y - current.y);
       if (
-        displacement > Math.SQRT2 * grid ||
-        displacement >= distance ||
         next.x < bounds.minX ||
         next.x > bounds.maxX ||
         next.y < bounds.minY ||
@@ -42,10 +48,12 @@ export function* iteratePressureContourQuantization(
       )
         continue;
       if (
-        cross(before, current, next) < -roundoff(before, current, next) ||
-        cross(current, after, next) < -roundoff(current, after, next)
+        outsideCross(incomingX * (next.y - beforeY), incomingY * (next.x - beforeX)) ||
+        outsideCross(outgoingX * (next.y - currentY), outgoingY * (next.x - currentX))
       )
         continue;
+      const displacement = Math.hypot(next.x - currentX, next.y - currentY);
+      if (displacement > Math.SQRT2 * grid || displacement >= distance) continue;
       best = next;
       distance = displacement;
     }
@@ -56,40 +64,9 @@ export function* iteratePressureContourQuantization(
     }
     if ((index + 1) % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
   }
-  yield* removeCollinear(points);
+  yield* iteratePressureCollinearPruning(points);
   return [...points, points[0]!];
 }
-function* removeCollinear(points: PointV1[]): Generator<void> {
-  let changed = true;
-  let inspected = 0;
-  while (changed && points.length > 3) {
-    changed = false;
-    for (let index = 0; index < points.length; index += 1) {
-      const before = points[(index + points.length - 1) % points.length]!;
-      const current = points[index]!;
-      const after = points[(index + 1) % points.length]!;
-      if (++inspected % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
-      if (
-        Math.abs(cross(before, current, after)) > roundoff(before, current, after) ||
-        (current.x - before.x) * (after.x - current.x) +
-          (current.y - before.y) * (after.y - current.y) <
-          0
-      )
-        continue;
-      points.splice(index, 1);
-      changed = true;
-      break;
-    }
-  }
-}
-function cross(first: PointV1, second: PointV1, third: PointV1): number {
-  return (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x);
-}
-
-function roundoff(first: PointV1, second: PointV1, third: PointV1): number {
-  const x = second.x - first.x;
-  const y = second.y - first.y;
-  return (
-    8 * Number.EPSILON * (Math.abs(x * (third.y - first.y)) + Math.abs(y * (third.x - first.x)))
-  );
+function outsideCross(first: number, second: number): boolean {
+  return first - second < -8 * Number.EPSILON * (Math.abs(first) + Math.abs(second));
 }

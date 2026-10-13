@@ -1,4 +1,6 @@
 import { selectionCenterlineBounds } from "./centerline-bounds";
+import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
+import { sameLocalSelectionShape } from "../../domain/store/prepared-stroke-center-cache";
 import {
   canonicalPoint,
   calculateElementBoundsSteps,
@@ -26,6 +28,8 @@ export interface SelectionFrameHistoryEffect {
 export class SelectionFrameSession {
   readonly #onChanged: () => void;
   #frame: OrientedSelectionFrame | null = null;
+  #singleStroke: { readonly element: InkElementV1; readonly frame: OrientedSelectionFrame } | null =
+    null;
   #revision = 0;
 
   public constructor(onChanged: () => void = () => undefined) {
@@ -33,7 +37,7 @@ export class SelectionFrameSession {
   }
 
   public current(selected: readonly SelectedElementGeometry[]): OrientedSelectionFrame | null {
-    if (selected.length < 2) return null;
+    if (selected.length < 2) return this.#currentSingleStroke(selected);
     this.#frame ??= createSelectionFrame(selected);
     return this.#frame;
   }
@@ -42,7 +46,7 @@ export class SelectionFrameSession {
     selected: readonly SelectedElementGeometry[],
     scheduler: TransformSliceScheduler,
   ): Promise<OrientedSelectionFrame | null> {
-    if (selected.length < 2) return null;
+    if (selected.length < 2) return this.#currentSingleStrokeTimeSliced(selected, scheduler);
     if (this.#frame !== null) return this.#frame;
     const revision = this.#revision;
     const frame = await prepareFrame(createSelectionFrameSteps(selected), scheduler);
@@ -54,6 +58,7 @@ export class SelectionFrameSession {
   public reset(): void {
     this.#revision += 1;
     this.#frame = null;
+    this.#singleStroke = null;
   }
 
   public transition(
@@ -111,6 +116,74 @@ export class SelectionFrameSession {
     this.#frame = frame;
     this.#onChanged();
   }
+
+  #currentSingleStroke(
+    selected: readonly SelectedElementGeometry[],
+  ): OrientedSelectionFrame | null {
+    const item = selected[0];
+    if (item?.element.kind !== "stroke") {
+      this.#singleStroke = null;
+      return null;
+    }
+    const cached = this.#singleStroke;
+    if (cached !== null && sameSingleStrokeFrame(cached.element, item.element)) return cached.frame;
+    const frame = createSingleStrokeSelectionFrame(item);
+    if (isStoredStroke(item.element)) this.#singleStroke = { element: item.element, frame };
+    return frame;
+  }
+
+  async #currentSingleStrokeTimeSliced(
+    selected: readonly SelectedElementGeometry[],
+    scheduler: TransformSliceScheduler,
+  ): Promise<OrientedSelectionFrame | null> {
+    if (scheduler.isCancelled?.()) return null;
+    const item = selected[0];
+    if (item?.element.kind !== "stroke") return this.#currentSingleStroke(selected);
+    const cached = this.#singleStroke;
+    if (cached !== null && sameSingleStrokeFrame(cached.element, item.element)) return cached.frame;
+    const revision = this.#revision;
+    const frame = await prepareFrame(createSingleStrokeFrameSteps(item), scheduler);
+    if (frame === null || revision !== this.#revision || scheduler.isCancelled?.()) return null;
+    if (isStoredStroke(item.element)) this.#singleStroke = { element: item.element, frame };
+    return frame;
+  }
+}
+
+function sameSingleStrokeFrame(first: InkElementV1, second: InkElementV1): boolean {
+  if (first === second) return true;
+  return (
+    first.kind === "stroke" &&
+    second.kind === "stroke" &&
+    isStoredStroke(second) &&
+    sameLocalSelectionShape(first, second) &&
+    first.tool === second.tool &&
+    first.offset?.x === second.offset?.x &&
+    first.offset?.y === second.offset?.y
+  );
+}
+
+/** One local bound calculation supplies both the outline and every single-stroke handle. */
+export function createSingleStrokeSelectionFrame(
+  selected: SelectedElementGeometry,
+): OrientedSelectionFrame {
+  return completeFrame(createSingleStrokeFrameSteps(selected))!;
+}
+
+function* createSingleStrokeFrameSteps(
+  selected: SelectedElementGeometry,
+): Generator<void, OrientedSelectionFrame> {
+  const element = selected.element;
+  const painted =
+    element.rotation === 0
+      ? selected.bounds
+      : yield* calculateElementBoundsSteps({ ...element, rotation: 0 });
+  const bounds = selectionCenterlineBounds({ ...element, rotation: 0 }, painted);
+  return {
+    points: selectionFrameBoundsPoints(bounds).map((point) =>
+      rotatePointClockwise(point, element.pivot, element.rotation),
+    ) as unknown as OrientedSelectionFrame["points"],
+    rotation: element.rotation,
+  };
 }
 
 export function createSelectionFrameAtRotation(
@@ -141,7 +214,7 @@ export function selectionFrameFromLocalBounds(
   rotation: number,
 ): OrientedSelectionFrame {
   return {
-    points: framePoints(bounds).map((point) =>
+    points: selectionFrameBoundsPoints(bounds).map((point) =>
       rotatePointClockwise(point, { x: 0, y: 0 }, rotation),
     ) as unknown as OrientedSelectionFrame["points"],
     rotation,
@@ -189,7 +262,7 @@ function* createSelectionFrameSteps(
   }
   if (bounds === null) return null;
   return {
-    points: framePoints(bounds),
+    points: selectionFrameBoundsPoints(bounds),
     rotation: 0,
   };
 }
@@ -236,7 +309,7 @@ export function selectionFramePoint(frame: OrientedSelectionFrame, position: Box
   return points[position];
 }
 
-function framePoints(bounds: Bounds): OrientedSelectionFrame["points"] {
+export function selectionFrameBoundsPoints(bounds: Bounds): OrientedSelectionFrame["points"] {
   return [
     { x: bounds.minX, y: bounds.minY },
     { x: bounds.maxX, y: bounds.minY },

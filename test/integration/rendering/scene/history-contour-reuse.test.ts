@@ -1,10 +1,23 @@
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import * as geometry from "../../../../src/domain/geometry/element-path";
 import * as intersections from "../../../../src/domain/geometry/pressure-boundary-intersections";
 import * as pressureOutline from "../../../../src/domain/geometry/pressure-outline";
 import { translatedStroke } from "../../../../src/domain/geometry/stroke-position";
 import type { InkElementV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { createHistoryContourScene, drainHistoryFrames } from "../../../fixtures/rendering/scene";
+
+let initialInputs: NonNullable<Parameters<typeof createHistoryContourScene>[0]>;
+
+beforeAll(() => {
+  const fixture = createHistoryContourScene();
+  try {
+    initialInputs = fixture.initialInputs();
+  } finally {
+    fixture.dispose();
+  }
+  fixture.scheduler.runAll();
+  expect(fixture.scheduler.pendingCount).toBe(0);
+});
 
 it.each([
   ["unchanged", false],
@@ -16,10 +29,12 @@ it.each([
 ] as const)(
   "preserves %s history contours in a 10,000-stroke store (memory pressure: %s)",
   async (edit, memoryPressure) => {
-    const fixture = createHistoryContourScene();
+    const fixture = createHistoryContourScene(initialInputs);
     const { store, renderer, scheduler } = fixture;
+    expect(store.size).toBe(10_000);
     const ids = renderer.mountedIds("content").slice(0, 10);
     expect(ids).toHaveLength(10);
+    expect(renderer.instrumentation().geometryBuilds).toBe(ids.length);
     const count = renderer.mountedCount;
     const build = vi.spyOn(geometry, "buildElementPathParts");
     const contour = vi.spyOn(intersections, "intersectPressureBoundaries");

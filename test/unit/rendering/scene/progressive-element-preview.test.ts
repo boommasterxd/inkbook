@@ -1,34 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import type { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
 import { ProgressiveElementPreview } from "../../../../src/rendering/scene/progressive-element-preview";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
+import { SceneElementPreviews } from "../../../../src/rendering/scene/scene-element-previews";
+import { createSceneRecord } from "../../../fixtures/rendering/scene";
 import { rectangle } from "../../domain/store/fixtures";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
-
-function setup(maximumBytes?: number) {
-  const content = {
-    applyCanonicalElementPreview: vi.fn((_element: InkElementV1) => true),
-    clearElementPreview: vi.fn(),
-    applyPreviewTransform: vi.fn<SceneContentRenderer["applyPreviewTransform"]>(),
-    promoteVisible: vi.fn(),
-  };
-  return {
-    content,
-    preview: new ProgressiveElementPreview(
-      content as unknown as SceneContentRenderer,
-      maximumBytes,
-    ),
-  };
-}
-
-function longStroke(index: number) {
-  return {
-    ...indexedStroke(index),
-    points: Array.from({ length: 4096 }, (_, offset) => [offset, offset % 2, 0.5]).flat(),
-  };
-}
+import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { takeImmutableElementOwnership } from "../../../../src/domain/store/immutability";
+import {
+  createProgressivePreviewFixture as setup,
+  createLongPreviewStroke as longStroke,
+  writeOnePreviewStep as writeOneStep,
+} from "../../../fixtures/rendering/progressive-element-preview";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -134,17 +119,85 @@ describe("progressive element preview lifecycle", () => {
   });
 });
 
-function writeOneStep(preview: ProgressiveElementPreview): void {
-  let time = 0;
-  preview.write(1, () => time++);
-}
-
 function startLongPreview(preview: ProgressiveElementPreview) {
   const element = longStroke(1);
   preview.set({ ids: [element.id], materialize: () => element, version: 1 });
   writeOneStep(preview);
   return element;
 }
+
+describe("pressure snapshot supersession", () => {
+  it("drops an unavailable current snapshot without publishing its obsolete predecessor", () => {
+    const { content, preview } = setup();
+    const element = startLongPreview(preview);
+    const cancel = vi.spyOn(ProgressivePreviewPath.prototype, "cancel");
+    preview.set({
+      ids: [element.id],
+      materialize: () => undefined,
+      version: 2,
+      feedback: { transform: "scale(2 1)", inverse: "scale(0.5 1)" },
+    });
+    expect(preview.write(Infinity, () => 0)).toBe(false);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(content.applyCanonicalElementPreview).not.toHaveBeenCalled();
+    preview.clear();
+    expect(preview.memoryUsage()).toBe(0);
+  });
+
+  it.each([false, true])(
+    "restarts an immutable snapshot only for changed shape (widthChanged=%s)",
+    (widthChanged) => {
+      const { content, preview } = setup();
+      const element = longStroke(1);
+      takeImmutableElementOwnership(element);
+      let current = element;
+      const request = {
+        ids: [element.id],
+        materialize: () => current,
+        feedback: { transform: "scale(2 1)", inverse: "scale(0.5 1)" },
+      };
+      const cancel = vi.spyOn(ProgressivePreviewPath.prototype, "cancel");
+      preview.set({ ...request, version: 1 });
+      writeOneStep(preview);
+      if (widthChanged) current = { ...element, style: { ...element.style, width: 4 } };
+      preview.set({ ...request, version: 2 });
+      writeOneStep(preview);
+      expect(cancel).toHaveBeenCalledTimes(Number(widthChanged));
+      preview.write(Infinity, () => 0);
+      expect(content.applyCanonicalElementPreview).toHaveBeenCalledExactlyOnceWith(
+        current,
+        buildElementPathParts(current),
+      );
+      expect(content.applyPreviewTransform).toHaveBeenLastCalledWith(element.id, null, 2, null);
+      preview.release();
+      expect(preview.memoryUsage()).toBe(0);
+    },
+  );
+});
+
+it("defers other snapshots when supersession materialization exhausts the shared deadline", () => {
+  const { content, preview } = setup();
+  const first = startLongPreview(preview);
+  const second = indexedStroke(2);
+  let time = 0;
+  const materialize = vi.fn((id: string) => {
+    time = 1;
+    return id === first.id ? undefined : second;
+  });
+  preview.set({
+    ids: [first.id, second.id],
+    materialize,
+    version: 2,
+    feedback: { transform: "scale(2 1)", inverse: "scale(0.5 1)" },
+  });
+  expect(preview.write(1, () => time)).toBe(true);
+  expect(materialize).toHaveBeenCalledExactlyOnceWith(first.id);
+  expect(content.applyCanonicalElementPreview).not.toHaveBeenCalled();
+  expect(preview.write(Infinity, () => time)).toBe(false);
+  expect(content.applyCanonicalElementPreview).toHaveBeenCalledOnce();
+  preview.clear();
+  expect(preview.memoryUsage()).toBe(0);
+});
 
 describe("progressive preview resource bounds", () => {
   it.each([40, 256])("publishes all %i long strokes fairly under continuous updates", (count) => {
@@ -186,17 +239,24 @@ describe("progressive preview resource bounds", () => {
   it("evicts replay geometry while preserving canonical snapshots and rebuilding evicted mounts", () => {
     const { content, preview } = setup(1);
     const elements = [indexedStroke(1), indexedStroke(2)];
-    preview.set({
+    const request = {
       ids: elements.map(({ id }) => id),
-      materialize: (id) => elements.find((element) => element.id === id),
+      materialize: (id: string) => elements.find((element) => element.id === id),
       version: 1,
-    });
+    };
+    preview.set(request);
     while (preview.write(100, () => 0)) {
       /* Finish both canonical snapshots. */
     }
-    expect(preview.memoryUsage()).toBe(
-      elements.reduce((bytes, element) => bytes + 128 + element.points.length * 8, 0),
+    const retained = setup();
+    retained.preview.set(request);
+    retained.preview.write(100, () => 0);
+    const replayBytes = retained.content.applyCanonicalElementPreview.mock.calls.reduce(
+      (bytes, [, parts]) => bytes + parts.reduce((total, part) => total + part.d.length * 2, 0),
+      0,
     );
+    expect(preview.memoryUsage()).toBe(retained.preview.memoryUsage() - replayBytes);
+    retained.preview.release();
     content.applyCanonicalElementPreview.mockClear();
     preview.applyMounted([elements[0]!.id]);
     expect(content.clearElementPreview).not.toHaveBeenCalled();
@@ -210,12 +270,28 @@ describe("progressive preview resource bounds", () => {
     preview.clear();
     expect(preview.memoryUsage()).toBe(0);
   });
-
-  it("enforces the root cap at the controller boundary and accounts pending allocation", () => {
-    const { preview } = setup();
+});
+describe("scene canonical snapshot ownership", () => {
+  it("enforces the snapshot cap at the scene owner and accounts pending allocation", () => {
+    const { content } = setup();
     const elements = Array.from({ length: 300 }, (_, index) => indexedStroke(index));
+    const records = new Map(elements.map((element) => [element.id, createSceneRecord(element)]));
+    const ids = elements.map(({ id }) => id);
+    const owner = new SceneElementPreviews(
+      {
+        ...content,
+        previewMountedIds: () => ids,
+      } as unknown as SceneContentRenderer,
+      {
+        get: (id) => records.get(id),
+        query: () => {
+          throw new Error("Unexpected snapshot selection query");
+        },
+      },
+    );
+    const preview = owner.progressive;
     const materialize = vi.fn((id: string) => elements.find((element) => element.id === id));
-    preview.set({ ids: elements.map(({ id }) => id), materialize, version: 1 });
+    owner.setProgressive({ ids, materialize, version: 1 }, undefined, { x: 0, zoom: 1 });
     expect(preview.write(0, () => 0)).toBe(true);
     expect(materialize).not.toHaveBeenCalled();
     while (preview.write(100, () => 0)) {

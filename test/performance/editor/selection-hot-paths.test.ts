@@ -218,9 +218,9 @@ describe("selection commit hot paths", () => {
     expect(promises).toBeLessThanOrEqual(32);
   });
 
-  it("moves 488 dense strokes synchronously without reading unchanged samples", () => {
+  it("moves 488 dense strokes synchronously without reading unchanged samples", async () => {
     const strokes = Array.from({ length: 488 }, (_, index) => denseViewportStroke(index));
-    verifyIndexedMiss(strokes);
+    await verifyIndexedMiss(strokes);
     let sampleReads = 0;
     const observed = strokes.map((stroke) => ({
       ...stroke,
@@ -348,10 +348,15 @@ function movedSession(strokes: readonly StrokeElementV1[]): SelectionHandleSessi
   return session;
 }
 
-function verifyIndexedMiss(strokes: readonly StrokeElementV1[]): void {
-  const store = new ElementStore(
-    strokes.map((stroke) => ({ ...stroke, points: Array.from(stroke.points) })),
-  );
+async function verifyIndexedMiss(strokes: readonly StrokeElementV1[]): Promise<void> {
+  const builder = ElementStore.createBuilder({
+    shouldYield: () => false,
+    yieldControl: async () => undefined,
+  });
+  await builder.appendOwnedRuntime(strokes);
+  const store = await builder.finalize();
+  if (store === null) throw new Error("Expected a complete dense stroke store.");
+  expect(store.size).toBe(strokes.length);
   const sceneStore = new ElementSceneStore(store);
   store.resetInstrumentation();
   try {

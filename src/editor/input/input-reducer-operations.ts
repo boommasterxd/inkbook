@@ -84,6 +84,7 @@ export function previewKind(
     case "note-scroll":
     case "page-pan":
     case "touch-pending":
+    case "select-pending":
       return undefined;
   }
 }

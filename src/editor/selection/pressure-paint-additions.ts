@@ -3,7 +3,7 @@ import type { Bounds } from "../../domain/geometry/primitives";
 import { boundsIntersect } from "../../domain/geometry/public";
 import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
 import {
-  visitPreparedPressureOutline,
+  iteratePreparedPressureOutline,
   type PressureOutlinePiece,
 } from "../../domain/geometry/pressure-outline";
 import { preparePressureWindowSteps } from "../../domain/geometry/pressure-window";
@@ -28,24 +28,14 @@ export function* pressurePaintAdditionSteps(
 ): Generator<readonly PointV1[] | number | undefined> {
   const pending: PressureOutlinePiece[] = [];
   let windowIndex = 0;
-  for (let index = 0; index < Math.max(1, centers.length - 1); index += 1) {
-    visitPreparedPressureOutline(
-      centers,
-      width,
-      (piece) => {
-        pending.push(piece);
-        return false;
-      },
-      {
-        firstBoundary: index,
-        lastBoundary: Math.min(index + 1, centers.length - 1),
-      },
-    );
+  let intervalCount = 0;
+  for (const piece of iteratePreparedPressureOutline(centers, width)) {
+    if (piece !== undefined) pending.push(piece);
     if (pending.length === 64) {
       yield* windowAdditions(pending, windowIndex++, query);
       pending.length = 0;
     }
-    if (index % 32 === 31) yield 32;
+    if (++intervalCount % 32 === 0) yield 32;
   }
   if (pending.length > 0) yield* windowAdditions(pending, windowIndex, query);
 }

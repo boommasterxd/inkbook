@@ -9,12 +9,50 @@ import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboar
 import { MAX_CLIPBOARD_ITEMS } from "../../../../src/obsidian/embeds/active-editor/clipboard-reader";
 import { ActiveEditorClipboardController } from "../../../../src/obsidian/embeds/active-editor/controller-clipboard";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import {
   createClipboardDocumentModel,
   createDeferredPreparation,
   createPreparedToken,
 } from "./active-editor-clipboard-fixtures";
+
+describe("active editor prepared clipboard ownership", () => {
+  it("uses captured selection IDs after asynchronous append preparation", async () => {
+    const original = createPastePlan(rectangle(uuid(900)));
+    const expectedId = original.selectedIds[0]!;
+    const pending = createDeferredPreparation();
+    const prepare = vi.fn(() => pending.promise);
+    const commit = vi.fn(() => appliedMutation());
+    const selection = vi.fn();
+    const model = createModel(
+      new ElementStore(),
+      vi.fn(async () => original),
+      prepare,
+      commit,
+    );
+    const controller = createController(
+      model,
+      clipboardWindow(
+        [],
+        vi.fn(async () => ""),
+      ),
+      vi.fn(),
+      selection,
+    );
+    const paste = controller.paste(toolbarPaste());
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+    original.selectedIds = [uuid(901)];
+    original.contentIds = [...original.selectedIds];
+    original.elements[0]!.id = uuid(901);
+    original.repeatState.pasteCount = 99;
+    pending.complete();
+    await expect(paste).resolves.toMatchObject({ kind: "committed" });
+    expect(selection).toHaveBeenCalledWith(new Set([expectedId]));
+    expect(commit).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
+});
 
 describe("active editor clipboard input boundaries", () => {
   it("rejects an oversized Blob before text materialization or fallback", async () => {
@@ -189,7 +227,12 @@ function createHarness(
   };
 }
 
-function createController(model: EditableDocumentModel, ownerWindow: Window, onResult = vi.fn()) {
+function createController(
+  model: EditableDocumentModel,
+  ownerWindow: Window,
+  onResult = vi.fn(),
+  onSelectionChanged = vi.fn(),
+) {
   return new ActiveEditorClipboardController({
     currentSelection: () => new Set(),
     history: new ActiveEditorHistory(model),
@@ -197,8 +240,9 @@ function createController(model: EditableDocumentModel, ownerWindow: Window, onR
     model,
     onPendingChanged: vi.fn(),
     onResult,
-    onSelectionChanged: vi.fn(),
+    onSelectionChanged,
     ownerWindow,
+    workScheduler: immediateWorkScheduler(),
   });
 }
 

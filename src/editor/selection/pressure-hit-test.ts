@@ -7,8 +7,9 @@ import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { pressureCapsuleContainsPoint } from "../../domain/geometry/pressure-capsule-selection";
 import { boundsFromPoints, type Bounds } from "../../domain/geometry/public";
 import { pressureRadius } from "../../domain/geometry/pressure-radius";
-import { simplifyStrokeCenters } from "../../domain/geometry/stroke-simplification";
 import { transformedStrokeCenters, type StrokeCenter } from "../../domain/geometry/stroke-path";
+import { simplifyStrokeCenters } from "../../domain/geometry/stroke-simplification";
+import { selectionStrokeCenters } from "./stroke-selection-centers";
 import type { PointV1, StrokeElementV1 } from "../../domain/schema/public";
 
 interface PressureHitBlock {
@@ -40,9 +41,9 @@ export function pressureStrokeContainsPoint(
   if (stroke.offset !== undefined) {
     point = { x: point.x - stroke.offset.x, y: point.y - stroke.offset.y };
     stroke = strokeLocalGeometry(stroke);
-    prepared = undefined;
+    prepared = prepared?.local?.();
   }
-  const index = pressureHitIndex(stroke, source);
+  const index = pressureHitIndex(stroke, source, prepared);
   const outerTolerance = tolerance + pressureContourOutwardError(stroke.style.width);
   let nearPaint = false;
   for (const block of index.blocks) {
@@ -87,7 +88,11 @@ export function pressureStrokeContainsPoint(
   return false;
 }
 
-function pressureHitIndex(stroke: StrokeElementV1, source: StrokeElementV1): PressureHitIndex {
+function pressureHitIndex(
+  stroke: StrokeElementV1,
+  source: StrokeElementV1,
+  prepared: PreparedPressureGeometryPort | undefined,
+): PressureHitIndex {
   const samples = stroke.points;
   const cacheable =
     Object.isFrozen(samples) || (samples instanceof Float64Array && isStoredStroke(source));
@@ -101,7 +106,9 @@ function pressureHitIndex(stroke: StrokeElementV1, source: StrokeElementV1): Pre
     )
       return cached;
   }
-  const centers = simplifyStrokeCenters(transformedStrokeCenters(stroke), stroke.style.width, true);
+  const centers = isStoredStroke(source)
+    ? selectionStrokeCenters(stroke, prepared)
+    : simplifyStrokeCenters(transformedStrokeCenters(stroke), stroke.style.width, true);
   const blocks = pressureBlocks(centers, stroke.style.width);
   // Keep index preparation in the same world coordinates as SVG serialization.
   const index = {

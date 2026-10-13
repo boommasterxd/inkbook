@@ -378,15 +378,12 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
     expect(fixture.scheduler.pendingCount).toBe(0);
   });
 
-  it("keeps coalesced S Pen selection moves with coalesced work", () => {
-    const profiles = [
-      ["mixed connected S Pen move", longPressureElements()],
-      ["10,000-stroke S Pen move", fallbackElements()],
-    ] as const;
-    for (const [, elements] of profiles) {
-      const result = runMovePipeline(elements);
-      expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-    }
+  it.each([
+    ["mixed connected S Pen move", longPressureElements],
+    ["10,000-stroke S Pen move", fallbackElements],
+  ] as const)("keeps %s with coalesced work", (_name, createElements) => {
+    const result = runMovePipeline(createElements());
+    expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
   });
 });
 

@@ -2,6 +2,7 @@ import type { StartupToolV1 } from "../../domain/settings/types";
 
 export const LONG_PRESS_DELAY_MS = 500;
 export const ELEMENT_DRAG_THRESHOLD_PX = 6;
+export const SELECTED_MOUSE_DRAG_THRESHOLD_PX = 2;
 export const EMPTY_TOUCH_THRESHOLD_PX = 10;
 export const TOUCH_AXIS_LOCK_THRESHOLD_PX = 4;
 export const TOUCH_TAP_MAX_DURATION_MS = 350;
@@ -39,6 +40,7 @@ export interface PointerDownAction extends PointerSample {
 
 export interface PointerMoveAction extends PointerSample {
   readonly type: "pointer-move";
+  readonly maximumMovement?: number;
 }
 
 export interface PenModeChangeAction extends PointerSample {
@@ -53,11 +55,13 @@ export interface PointerExitAction {
   readonly type: "pointer-up" | "pointer-cancel" | "lost-pointer-capture";
   readonly pointerId: number;
   readonly timestamp?: number;
+  readonly target?: PointerTarget;
 }
 
 export interface LongPressAction {
   readonly type: "long-press";
   readonly pointerId: number;
+  readonly target?: PointerTarget;
 }
 
 export interface ContextMenuAction extends InputPoint {
@@ -107,6 +111,11 @@ export interface TouchPendingInteraction extends SinglePointerInteraction {
   readonly target?: PointerTarget;
 }
 
+interface SelectPendingInteraction extends SinglePointerInteraction {
+  readonly phase: "select-pending";
+  readonly target?: PointerTarget;
+}
+
 interface NoteScrollInteraction extends SinglePointerInteraction {
   readonly phase: "note-scroll";
 }
@@ -140,6 +149,7 @@ export interface PinchInteraction {
 
 export type InputInteraction =
   | TouchPendingInteraction
+  | SelectPendingInteraction
   | NoteScrollInteraction
   | PagePanInteraction
   | ElementMoveInteraction

@@ -83,6 +83,7 @@ function interactionCursor(
     case "touch-pending":
       return DEFAULT_CURSOR;
     case "lasso":
+    case "select-pending":
     case "tool-gesture":
       return undefined;
   }

@@ -80,26 +80,16 @@ export class SceneVisibilityState {
   }
 
   public resortCurrent(): VisibilityResult {
-    this.#highlightIds = this.#highlightIds.slice(0, this.#highlightCount);
-    this.#contentIds = this.#contentIds.slice(0, this.#contentCount);
-    refreshVisibleRanks(
-      this.#highlightIds,
-      this.#highlightCount,
-      "highlight",
-      this.#store,
-      this.#slotById,
-      this.#visibleRanks,
-    );
-    refreshVisibleRanks(
-      this.#contentIds,
-      this.#contentCount,
-      "content",
-      this.#store,
-      this.#slotById,
-      this.#visibleRanks,
-    );
-    this.sortBand(this.#highlightIds, this.#highlightCount, "highlight");
-    this.sortBand(this.#contentIds, this.#contentCount, "content");
+    for (const band of ["highlight", "content"] as const) {
+      const ids = band === "highlight" ? this.#highlightIds : this.#contentIds;
+      const count = band === "highlight" ? this.#highlightCount : this.#contentCount;
+      if (!refreshVisibleRanks(ids, count, band, this.#store, this.#slotById, this.#visibleRanks))
+        continue;
+      const sorted = ids.slice(0, count);
+      this.sortBand(sorted, count, band);
+      if (band === "highlight") this.#highlightIds = sorted;
+      else this.#contentIds = sorted;
+    }
     return this.currentResult();
   }
 
@@ -277,6 +267,7 @@ export class SceneVisibilityState {
 
   private classifyCandidates(previousEpoch: number | undefined): boolean {
     let unchanged = previousEpoch !== undefined;
+    let retainedRanksUnchanged = true;
     for (const record of this.#classification.records) {
       const id = record.id;
       const slot = this.#slotById.get(id);
@@ -286,6 +277,8 @@ export class SceneVisibilityState {
         previousEpoch !== undefined &&
         this.#visibleMarkers[slot] === previousEpoch &&
         this.#visibleBands[slot] === bandCode;
+      const rank = record.rank;
+      if (retained && this.#visibleRanks[slot] !== rank) retainedRanksUnchanged = false;
       if (!retained) {
         (record.band === "highlight" ? this.#newHighlightIds : this.#newContentIds).push(id);
       }
@@ -294,10 +287,11 @@ export class SceneVisibilityState {
       }
       this.#visibleMarkers[slot] = this.#visibleEpoch;
       this.#visibleBands[slot] = bandCode;
-      this.#visibleRanks[slot] = record.rank;
+      this.#visibleRanks[slot] = rank;
       this.pushNextBand(record.band, id);
     }
-    this.#retainedRanksStable = this.retainedOrderStable();
+    // Geometry and camera changes preserve the published order when retained ranks are identical.
+    this.#retainedRanksStable = retainedRanksUnchanged || this.retainedOrderStable();
     return (
       this.#retainedRanksStable &&
       unchanged &&

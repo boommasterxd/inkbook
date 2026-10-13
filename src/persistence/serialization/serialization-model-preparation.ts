@@ -10,7 +10,10 @@ import {
 } from "../../domain/schema/snapshot-validation";
 import { canonicalElement, canonicalPage } from "./canonical-snapshot";
 import { codecFailure, invalidSnapshot } from "./codec-failure";
-import { elementRenderBand, type RenderBand } from "./element-fragments";
+import {
+  renderBandOf as elementRenderBand,
+  type RenderBand,
+} from "../../domain/commands/render-bands";
 import * as facts from "./incremental-validation";
 import type { DocumentCodecResult } from "./types";
 import {
@@ -18,12 +21,14 @@ import {
   copySerializationElementsSteps,
 } from "./serialization-input-preparation";
 import { toValidationError } from "../../domain/schema/validation-internals";
+import { prepareSerializationRanks, type SerializationRanks } from "./serialization-selection";
 
 export interface PreparedSerializationModel {
   readonly elements: Map<string, InkElementV1>;
   readonly facts: Map<string, facts.ElementFacts>;
   readonly aggregate: facts.AggregateFacts;
   readonly orders: Record<RenderBand, string[]>;
+  readonly ranks: SerializationRanks;
   readonly page: PageV1;
   readonly revision: number;
   readonly runtimeStrokeBuffers: boolean;
@@ -88,6 +93,7 @@ export function* prepareSerializationModelSteps(
       facts: elementFacts,
       aggregate,
       orders,
+      ranks: yield* prepareSerializationRanks(orders, nodesPerStep),
       page: canonicalPage(snapshot.page),
       revision: snapshot.revision,
       runtimeStrokeBuffers: options.runtimeStrokeBuffers,

@@ -113,6 +113,7 @@ export class ActiveEditorActions {
       },
       onSelectionChanged: options.setSelection,
       ownerWindow: options.ownerWindow,
+      workScheduler: options.workScheduler,
     });
   }
 

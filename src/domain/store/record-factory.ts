@@ -24,6 +24,7 @@ import {
   takeImmutableElementOwnership,
 } from "./immutability";
 import type { ElementRecord } from "./types";
+import { preparedInsertionBounds } from "./prepared-insertion-element";
 
 export function createInitialRecord(element: InkElementV1): ElementRecord {
   return drainRecordSteps(createInitialRecordSteps(element));
@@ -43,7 +44,7 @@ export function* createOwnedInitialRecordSteps(
 ): Generator<void, ElementRecord> {
   return yield* initialRecordSteps(
     takeImmutableElementOwnership(element),
-    undefined,
+    preparedInsertionBounds(element),
     pointsPerStep,
   );
 }
@@ -123,6 +124,17 @@ export function* createOwnedReplacementRecordSteps(
     paintVersion,
     undefined,
     pointsPerStep,
+  );
+}
+
+export function createOwnedReplacementRecord(
+  element: InkElementV1,
+  current: ElementRecord,
+  geometryVersion: number,
+  paintVersion: number,
+): ElementRecord {
+  return drainRecordSteps(
+    createOwnedReplacementRecordSteps(element, current, geometryVersion, paintVersion),
   );
 }
 

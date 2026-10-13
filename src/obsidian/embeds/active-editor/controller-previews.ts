@@ -10,7 +10,10 @@ import { LassoPreview, MovePreview, type SelectionEdgeDragPort } from "./selecti
 import type { ElementSceneStore } from "./scene-store";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { PointV1 } from "../../../domain/schema/public";
-import type { SelectionFrameSession } from "../../../editor/selection/public";
+import type {
+  SelectionFrameSession,
+  SelectedElementGeometry,
+} from "../../../editor/selection/public";
 import { activeSnapFeatures } from "./snapping-settings";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
@@ -28,6 +31,7 @@ export interface ActiveEditorPreviewOptions {
   readonly renderer: SvgSceneRenderer;
   readonly sceneStore: ElementSceneStore;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionGeometry?: () => readonly SelectedElementGeometry[];
   readonly selectionSignal?: AbortSignal;
   readonly selectionFrames: SelectionFrameSession;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
@@ -68,6 +72,9 @@ export function createActiveEditorPreview(
     renderer: options.renderer,
     sceneStore: options.sceneStore,
     selection: options.selection,
+    ...(options.selectionGeometry === undefined
+      ? {}
+      : { selectionGeometry: options.selectionGeometry }),
     selectionFrames: options.selectionFrames,
     selectionDefaults: structuredClone(options.defaults.select),
     ...(options.selectionEdgeDrag === undefined

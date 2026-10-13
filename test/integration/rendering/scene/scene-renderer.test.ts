@@ -475,24 +475,26 @@ describe("dense scene reconciliation", () => {
     });
   });
 
-  it("limits transformed selected content to 256 viewport-near paths", () => {
-    const { content } = setupTransformPreview("selected", (rank) => 10 + rank / 1_000);
-    expect(content.nodes.filter(({ attributes }) => attributes.has("transform"))).toHaveLength(256);
+  it("transforms every mounted selected path in a dense viewport", () => {
+    const { content, renderer } = setupTransformPreview("selected", (rank) => 10 + rank / 1_000);
+    expect(content.nodes.filter(({ attributes }) => attributes.has("transform"))).toHaveLength(300);
+    renderer.destroy();
   });
 });
 describe("camera-aware selection transform previews", () => {
-  it("refreshes the bounded transform subset in the same camera frame", () => {
+  it("retains complete mounted feedback in the same camera frame", () => {
     const { content, renderer, scheduler } = setupTransformPreview(
       "camera-selected",
       (rank) => rank / 2,
     );
-    expect(content.nodes[content.nodes.length - 1]?.attributes.has("transform")).toBe(false);
+    expect(content.nodes[content.nodes.length - 1]?.attributes.has("transform")).toBe(true);
     renderer.setCamera({ x: -100, zoom: 1 });
     scheduler.runAll();
 
     expect(content.nodes[content.nodes.length - 1]?.attributes.get("transform")).toBe(
       "translate(5 0)",
     );
-    expect(content.nodes.filter(({ attributes }) => attributes.has("transform"))).toHaveLength(256);
+    expect(content.nodes.filter(({ attributes }) => attributes.has("transform"))).toHaveLength(300);
+    renderer.destroy();
   });
 });
