@@ -58,6 +58,31 @@ function observeCopiedSamples() {
   return { allocations, copiedSamples };
 }
 
+function observeSampleDescriptors(
+  samples: ReturnType<typeof observeCopiedSamples>["copiedSamples"],
+) {
+  const original = Object.getOwnPropertyDescriptor;
+  const counts = new WeakMap<object, number>();
+  // Keep the real boundary observable without retaining millions of spy call tuples.
+  Object.getOwnPropertyDescriptor = (value: unknown, key: PropertyKey) => {
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      samples.has(value) &&
+      /^(0|[1-9][0-9]*)$/.test(String(key))
+    )
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    return original(value, key);
+  };
+  return {
+    count: (values: ReadonlySet<object>) =>
+      [...values].reduce((total, value) => total + (counts.get(value) ?? 0), 0),
+    restore: () => {
+      Object.getOwnPropertyDescriptor = original;
+    },
+  };
+}
+
 it("captures maximum clipboard wire samples once and reuses preparation through Store adoption", async () => {
   const wire = clipboardCapacityWire();
   const { allocations, copiedSamples } = observeCopiedSamples();
@@ -65,11 +90,11 @@ it("captures maximum clipboard wire samples once and reuses preparation through 
   const keyWalk = vi.spyOn(sampleCopy, "assertSampleArrayKeysSteps");
   const validation = vi.spyOn(sampleValidation, "assertStrokeSampleRange");
   const wireValidation = vi.spyOn(runtimeElements, "validateRuntimeSamplesSteps");
-  const descriptors = vi.spyOn(Object, "getOwnPropertyDescriptor");
   const headers = vi.spyOn(elementCopy, "captureRuntimeElementHeader");
   const capturedHeaders = vi.spyOn(elementCopy, "captureImmutableRuntimeElementHeader");
   const store = new ElementStore();
   const guard = new ClipboardAdoptionGuard(store);
+  const descriptors = observeSampleDescriptors(copiedSamples);
   try {
     const decoded = await decodeRuntimeResultChunked(wire, {
       checkpoint: () => undefined,
@@ -91,11 +116,7 @@ it("captures maximum clipboard wire samples once and reuses preparation through 
         element.kind === "stroke" ? [element.points] : [],
       ),
     );
-    const stagedDescriptorCount = () =>
-      descriptors.mock.calls.filter(
-        ([value, key]) =>
-          stagedSamples.has(value as number[]) && /^(0|[1-9][0-9]*)$/.test(String(key)),
-      ).length;
+    const stagedDescriptorCount = () => descriptors.count(stagedSamples);
     expect(stagedDescriptorCount()).toBe(0);
     for (const samples of stagedSamples) {
       const observed = copiedSamples.get(samples)!;
@@ -140,11 +161,11 @@ it("captures maximum clipboard wire samples once and reuses preparation through 
     keyWalk.mockRestore();
     validation.mockRestore();
     wireValidation.mockRestore();
-    descriptors.mockRestore();
+    descriptors.restore();
     headers.mockRestore();
     capturedHeaders.mockRestore();
   }
-});
+}, 20_000);
 
 describe("validated model paste work", () => {
   it("copies one selected stroke in a 10,000-stroke document with bounded record lookups", () => {

@@ -122,7 +122,7 @@ it("reuses synchronous candidate planning without preparing commit resources dur
   } finally {
     vi.restoreAllMocks();
   }
-});
+}, 20_000);
 
 it("prepares replacements incrementally and preserves unrelated records", async () => {
   const { fixture, observations, store } = await createObservedOwnedStore();

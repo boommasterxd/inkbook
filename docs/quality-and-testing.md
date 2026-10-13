@@ -413,7 +413,7 @@ Local npm checks use one exclusive loopback listener on `127.0.0.1:47839` across
 
 Unit and Integration tests use isolated Vitest workers with `maxWorkers: "100%"`, allowing one worker per available CPU instead of leaving a CPU unused on small runners. The exhaustive table-rotation, path-validation, trusted-output, SVG-capacity, and worker input-hash capacity files form a separate serial group, so their existing deadlines do not compete with another test worker. Each file runs exactly once; all other quality files use the parallel group. Performance batches explicitly retain their single-worker override. This changes execution scheduling only: local and hosted tests, coverage scope, thresholds, and required checks remain identical. Reuse immutable serialized fixture strings within a test file where setup is identical; create fresh mutable parser/session state for each case and retain complete capacity and boundary inputs. Worker input-hash capacity fixtures use an independent platform digest as their reference, avoiding a second full JavaScript hash during setup.
 
-The full 16,384-point stroke serialization setup and round trip, live-builder capacity/prefix-reuse checks, and active-editor capacity/history/cancellation checks have a 20-second operational timeout under coverage. They process a complete stroke and its lifecycle, not one interaction frame; compact contour unions add bounded preparation work to reduce persisted and rendered path complexity. This narrow exception retains complete fixtures, assertions, coverage, and deterministic work/resource limits. Other test deadlines and the 20-minute CI job limits are unchanged. Per-frame responsiveness remains governed by the separate scheduling and work contracts, not this whole-stroke timeout.
+The full 16,384-point stroke serialization setup and round trip, live-builder capacity/prefix-reuse checks, and active-editor capacity/history/cancellation checks have a 20-second operational timeout under coverage. They process a complete stroke and its lifecycle, not one interaction frame; compact contour unions add bounded preparation work to reduce persisted and rendered path complexity. Three complete-document resource cases also use a 20-second operational timeout: synchronous candidate-plan reuse in `incremental-replacement-performance.test.ts`, maximum clipboard wire capture/adoption in `clipboard-paste-work.test.ts`, and the complete translated-stroke delta in `worker-unlock-hydration.test.ts`. Each includes full validation or serialization of the 500,000-point capacity fixture before its observed operation. These narrow exceptions retain complete fixtures, assertions, coverage, cancellation/ownership checks, and deterministic work/resource limits. Other test deadlines and the 20-minute CI job limits are unchanged. Per-frame responsiveness remains governed by the separate scheduling and work contracts, not these whole-capacity timeouts.
 
 Hosted CI runs the complete classified contract suite under [Performance CI](performance-ci.md). Pull requests and manual dispatches run the complete gate; post-merge main pushes do not repeat the tested squash tree, while release tags rerun it. Required check names remain `CI`, `Performance (shared)`, `Performance (refresh profiles)`, `gitleaks`, and `Validate PR Title`. Standard Ubuntu runners use Node.js 24 for quality and Node.js 26 for two performance shards. Performance files run serially with isolation. Local `npm run ci` includes the exact union of both shards. Missing, skipped, failed, or malformed results and operational timeouts fail. `npm run benchmark` runs these contracts without a reference checkout or measurement mode. Physical-device performance is not established by a green run.
 
@@ -435,18 +435,16 @@ The dependency-cruiser gate evaluates the complete `src/` graph including TypeSc
 CI MUST run:
 
 - formatting verification
-- hard linting with project size, complexity, naming, mobile, Obsidian, and architecture-boundary rules
+- hard linting with project size, complexity, naming, mobile, Obsidian, and architecture-boundary rules, including the renderer restriction rejecting `querySelector`, `querySelectorAll`, and descendant selector walks in scene reconciliation
 - source-layout and CSS linting
 - complete import-graph cycle and area-direction verification
 - main, test, and isolated worker TypeScript type checking
-- Unit and Integration tests
-- the project-wide coverage thresholds above
+- Unit and Integration tests with the project-wide coverage thresholds above
 - `jscpd` with `minTokens: 50`
 - `knip`, including a fatal production-only pass for unused files, exports, and types so source code reachable exclusively from tests cannot survive the gate; `ignoreExportsUsedInFile` keeps internally consumed module exports valid while still rejecting exports with no production caller
 - dependency security audit
 - production build and release-artifact verification
 - deterministic schema fixture and performance benchmark suites
-- a renderer-scoped lint restriction that rejects `querySelector`, `querySelectorAll`, and descendant selector walks in scene reconciliation
 
 No gate may be bypassed through broad exclusions, empty assertions, raised limits, or disabled rules. The root manifest allows Moment only as a direct development dependency tracking the `$moment` security override for Obsidian's pinned dependency. This keeps native npm and Dependabot updates available, including resolvable major-update proposals. Manifest lint rejects production and optional Moment dependencies, retains other dependency-replacement checks, and preserves the runtime rule requiring Obsidian's host export instead of a direct Moment value import.
 
