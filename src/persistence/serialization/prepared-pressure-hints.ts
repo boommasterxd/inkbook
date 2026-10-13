@@ -1,6 +1,8 @@
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { ElementRecord } from "../../domain/store/types";
 import type { InkElementV1, StrokeElementV1 } from "../../domain/schema/public";
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 
 export const MAX_PREPARED_PRESSURE_HINT_BYTES = 4 * 1024 * 1024;
 export const MAX_PREPARED_PRESSURE_HINTS = 1024;
@@ -22,8 +24,8 @@ export function preparedPressurePathHint(
   const source = record?.element;
   if (
     source?.kind !== "stroke" ||
+    !isStoredStroke(source) ||
     !source.style.pressureEnabled ||
-    (source.offset !== undefined && (source.offset.x !== 0 || source.offset.y !== 0)) ||
     parts.length !== 1 ||
     parts[0]?.paint !== "fill"
   )
@@ -33,7 +35,7 @@ export function preparedPressurePathHint(
     geometryVersion: record.geometryVersion,
     id: source.id,
     modelRevision,
-    shapeKey: pressureShapeKey(source),
+    shapeKey: pressureShapeKey(strokeLocalGeometry(source as StrokeElementV1)),
   };
 }
 
@@ -66,7 +68,6 @@ export function matchesPreparedPressurePath(
   return (
     element?.kind === "stroke" &&
     element.style.pressureEnabled &&
-    (element.offset === undefined || (element.offset.x === 0 && element.offset.y === 0)) &&
-    pressureShapeKey(element) === shapeKey
+    pressureShapeKey(strokeLocalGeometry(element)) === shapeKey
   );
 }

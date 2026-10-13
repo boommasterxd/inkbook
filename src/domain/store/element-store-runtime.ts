@@ -91,9 +91,11 @@ export class ElementStoreRuntime {
       local: () => local,
       readCenters: (index) => local.readCenters?.(index),
       publishCenters: (index, centers) => local.publishCenters?.(index, centers),
-      readPath: () => (current() ? paths.read(id, geometryVersion) : undefined),
+      readPath: () =>
+        current() ? (isLocal() ? local.readPath?.() : paths.read(id, geometryVersion)) : undefined,
       publishPath: (parts) => {
         if (!current()) return;
+        if (isLocal()) return local.publishPath?.(parts);
         const previous = paths.statistics().bytes;
         paths.publish(id, geometryVersion, parts);
         if (previous !== paths.statistics().bytes) access.notify?.();
@@ -128,17 +130,22 @@ export class ElementStoreRuntime {
   ): PreparedPressureGeometryPort {
     const centers = this.#strokeCenters;
     const windows = this.#pressureCache;
+    const paths = this.#pressurePaths;
     const key = `local:${id}`;
     const prepare = <T>(work: (stroke: StrokeElementV1) => T): T | undefined => {
       const stroke = current();
       if (stroke === undefined) return;
-      const before = centers.statistics().bytes + windows.statistics().bytes;
+      const retainedBytes = () =>
+        centers.statistics().bytes + windows.statistics().bytes + paths.statistics().bytes;
+      const before = retainedBytes();
       const result = work(stroke);
-      if (before !== centers.statistics().bytes + windows.statistics().bytes)
-        this.#pressureAccess.notify?.();
+      if (before !== retainedBytes()) this.#pressureAccess.notify?.();
       return result;
     };
-    return {
+    const local: PreparedPressureGeometryPort = {
+      local: () => local,
+      readPath: () => prepare((stroke) => paths.readLocal(id, stroke)),
+      publishPath: (parts) => prepare((stroke) => paths.publishLocal(id, stroke, parts)),
       readCenters: (index) => prepare((stroke) => centers.read(id, version, stroke, index)),
       publishCenters: (index, values) =>
         prepare((stroke) => centers.publish(id, version, stroke, index, values)),
@@ -161,6 +168,7 @@ export class ElementStoreRuntime {
             : undefined,
         ),
     };
+    return local;
   }
 
   public *preparedPressurePaths(
@@ -171,15 +179,10 @@ export class ElementStoreRuntime {
       ids === undefined
         ? this.#pressurePaths.cachedVersions()
         : this.#pressurePaths.versionsFor(ids);
-    for (const [id, version] of versions) {
+    for (const [id] of versions) {
       const current = record(id);
-      if (
-        current?.geometryVersion !== version ||
-        current.element.kind !== "stroke" ||
-        !current.element.style.pressureEnabled
-      )
-        continue;
-      const parts = this.#pressurePaths.read(id, version);
+      if (current?.element.kind !== "stroke" || !current.element.style.pressureEnabled) continue;
+      const parts = this.#pressurePaths.readLocal(id, current.element as StrokeElementV1);
       if (parts !== undefined) yield { record: current, parts };
     }
   }
@@ -244,10 +247,13 @@ export class ElementStoreRuntime {
       this.#strokeCenters.statistics().bytes;
     this.#estimatedRetainedBytes = applyStoreDeltaBytes(this.#estimatedRetainedBytes, delta);
     for (const change of delta.changes) {
+      if (change.before !== null && change.after !== null && !change.domains.includes("geometry")) {
+        this.#pressurePaths.retainGeometryNeutral(change.id, change.before, change.after);
+      }
       if (change.after === null || change.domains.includes("geometry")) {
         this.#anchorCache.invalidate(change.id);
         this.#pressureCache.invalidate(change.id);
-        this.#pressurePaths.invalidate(change.id);
+        this.#pressurePaths.invalidateWorld(change.id);
         const before = change.before?.element;
         const after = change.after?.element;
         if (
@@ -257,6 +263,7 @@ export class ElementStoreRuntime {
         ) {
           this.#strokeCenters.invalidate(change.id);
           this.#pressureCache.invalidate(`local:${change.id}`);
+          this.#pressurePaths.invalidate(change.id);
         }
       }
     }

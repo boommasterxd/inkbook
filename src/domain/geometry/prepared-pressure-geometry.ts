@@ -23,7 +23,7 @@ export interface PressureWindowMeasurement {
 
 /** A store-owned view scoped to one stroke geometry version. */
 export interface PreparedPressureGeometryPort {
-  /** Local preparation uses the exact local shape and survives placement-only changes. */
+  /** Local centers, windows and complete paths survive placement changes; stale ports are revoked. */
   local?(): PreparedPressureGeometryPort;
   readCenters?(windowIndex: number): readonly PressureCenter[] | undefined;
   publishCenters?(windowIndex: number, centers: readonly PressureCenter[]): void;

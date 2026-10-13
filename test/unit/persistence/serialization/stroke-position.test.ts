@@ -185,6 +185,23 @@ it("compares point values only for retired shapes", () => {
   expect(cache.instrumentation.retiredPointComparisons).toBe(original.points.length);
 });
 
+it("seeds a placed rotated local shape once without replacing a compatible contour", () => {
+  const original = { ...stroke(), rotation: 37 };
+  const placed = {
+    ...original,
+    offset: { x: -12.007, y: 25.003 },
+    pivot: { x: original.pivot.x - 12.007, y: original.pivot.y + 25.003 },
+  };
+  const cache = new StrokeShapeCache();
+  cache.seed(placed, "M0 0L1 1Z");
+  const retained = cache.read(placed);
+  cache.seed(placed, "M5 5L6 6Z");
+  expect(cache.read(placed)).toBe(retained);
+  expect(cache.read(placed)).toEqual([{ d: "M0 0L1 1Z", paint: "fill" }]);
+  expect(cache.instrumentation.shapeBuilds).toBe(0);
+  cache.clear();
+});
+
 it("invalidates only changed local geometry and releases deleted stroke entries", () => {
   const original = stroke();
   const cache = new StrokeShapeCache();
