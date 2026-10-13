@@ -8,10 +8,8 @@ import * as unions from "../../../../src/domain/geometry/pressure-union";
 import * as serialization from "../../../../src/domain/geometry/pressure-path-serialization";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
 import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
-import {
-  preparedPressurePathHint,
-  preparedPressureHintBytes,
-} from "../../../../src/persistence/serialization/prepared-pressure-hints";
+import { preparedPressureHintBytes } from "../../../../src/persistence/serialization/prepared-pressure-hints";
+import { preparedHints as offeredPaths } from "../../../fixtures/persistence/prepared-pressure-hints";
 import {
   createStandardDomainFixture,
   createMaximumStroke,
@@ -62,13 +60,6 @@ function prepare(store: ElementStore, id: string, cache?: ScenePathCache) {
   cache?.completePreparation(record.element as StrokeElementV1, parts, record.geometryVersion);
   job.cancel();
   return parts;
-}
-
-function offeredPaths(store: ElementStore, revision: number) {
-  return Array.from(store.preparedPressurePaths()).flatMap(({ record, parts }) => {
-    const hint = preparedPressurePathHint(record, parts, revision);
-    return hint === undefined ? [] : [hint];
-  });
 }
 
 function maximumPressureWave(): StrokeElementV1 {

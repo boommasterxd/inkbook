@@ -9,6 +9,7 @@ import {
   prepareSerializationRanks,
 } from "../../../src/persistence/serialization/serialization-selection";
 import { createStandardDomainFixture } from "../domain/standard-domain-fixture";
+import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 
 type Band = "content" | "highlight";
@@ -45,8 +46,8 @@ function observeWork(model: ReturnType<typeof capacityModel>) {
   const reads = { content: 0, highlight: 0 };
   const ranks = completeSerializationSteps(prepareSerializationRanks(model.currentOrders, 256));
   const currentOrders = {
-    content: observedIds(model.currentOrders.content, () => reads.content++),
-    highlight: observedIds(model.currentOrders.highlight, () => reads.highlight++),
+    content: observeSchemaArray(model.currentOrders.content, () => reads.content++).observed,
+    highlight: observeSchemaArray(model.currentOrders.highlight, () => reads.highlight++).observed,
   };
   const iterations = [Symbol.iterator, "entries", "values", "keys", "forEach"] as const;
   const scans = iterations.map((method) => vi.spyOn(model.currentElements, method));
@@ -100,13 +101,36 @@ function isRank(value: unknown): value is { band: Band; rank: number } {
   );
 }
 
-function observedIds(ids: string[], onRead: () => void) {
-  return new Proxy(ids, {
-    get(target, key, receiver) {
-      if (typeof key === "string" && /^\d+$/u.test(key)) onRead();
-      return Reflect.get(target, key, receiver) as unknown;
+function selectedGeometryReplacements(model: ReturnType<typeof capacityModel>, count: number) {
+  return model.elements
+    .filter((element) => element.tool === "pen")
+    .slice(0, count)
+    .map((element) => ({
+      ...element,
+      offset: { x: 4, y: 8 },
+      pivot: { x: element.pivot.x + 4, y: element.pivot.y + 8 },
+    }));
+}
+
+function rankUpdateSteps(
+  work: ReturnType<typeof observeWork>,
+  nextOrders: Readonly<Record<Band, readonly string[]>>,
+) {
+  return prepareSerializationRankUpdate(
+    {
+      currentOrders: work.currentOrders,
+      nextOrders,
+      currentRanks: work.ranks,
     },
-  });
+    256,
+  );
+}
+
+function assertNoRankPreparation(work: ReturnType<typeof observeWork>) {
+  expect(work.rankGets.content).not.toHaveBeenCalled();
+  expect(work.rankGets.highlight).not.toHaveBeenCalled();
+  expect(work.stagedWrites).toEqual({ content: 0, highlight: 0 });
+  work.assertNoCanonicalMutation();
 }
 
 function preparedDelta(
@@ -137,17 +161,7 @@ it.each([1_000, 2_000])(
       ok: true,
       value: undefined,
     });
-    const changedElements = model.elements
-      .filter((element) => element.tool === "pen")
-      .slice(0, count)
-      .map((element) => ({
-        ...element,
-        offset: { x: 4, y: 8 },
-        pivot: {
-          x: element.pivot.x + 4,
-          y: element.pivot.y + 8,
-        },
-      }));
+    const changedElements = selectedGeometryReplacements(model, count);
     // eslint-disable-next-line @typescript-eslint/unbound-method -- The probe forwards the observed receiver through call().
     const originalGet = Map.prototype.get;
     // eslint-disable-next-line @typescript-eslint/unbound-method -- The probe forwards the observed receiver through call().
@@ -199,39 +213,15 @@ it.each([1_000, 2_000])(
   "does not visit either band or rebuild ranks for %i same-band geometry changes at 10k capacity",
   (count) => {
     const model = capacityModel();
-    const changedElements = model.elements
-      .filter((element) => element.tool === "pen")
-      .slice(0, count)
-      .map((element) => ({
-        ...element,
-        offset: { x: 4, y: 8 },
-        pivot: {
-          x: element.pivot.x + 4,
-          y: element.pivot.y + 8,
-        },
-      }));
+    const changedElements = selectedGeometryReplacements(model, count);
     const work = observeWork(model);
     try {
       const prepared = preparedDelta(work, { changedElements });
       expect(prepared.orders).toBe(work.currentOrders);
-      expect(
-        completeSerializationSteps(
-          prepareSerializationRankUpdate(
-            {
-              currentOrders: work.currentOrders,
-              nextOrders: prepared.orders,
-              currentRanks: work.ranks,
-            },
-            256,
-          ),
-        ),
-      ).toBe(work.ranks);
+      expect(completeSerializationSteps(rankUpdateSteps(work, prepared.orders))).toBe(work.ranks);
       expect(work.reads).toEqual({ content: 0, highlight: 0 });
       expect(work.gets).toHaveBeenCalledTimes(count);
-      expect(work.rankGets.content).not.toHaveBeenCalled();
-      expect(work.rankGets.highlight).not.toHaveBeenCalled();
-      expect(work.stagedWrites).toEqual({ content: 0, highlight: 0 });
-      work.assertNoCanonicalMutation();
+      assertNoRankPreparation(work);
     } finally {
       work.restore();
     }
@@ -258,16 +248,7 @@ it.each([
     expect(work.gets.mock.calls.length).toBe(5_000);
     expect(work.reads.highlight).toBe(0);
     expect(work.reads.content).toBeLessThanOrEqual(10_000);
-    const updated = completeSerializationSteps(
-      prepareSerializationRankUpdate(
-        {
-          currentOrders: work.currentOrders,
-          nextOrders: prepared.orders,
-          currentRanks: work.ranks,
-        },
-        256,
-      ),
-    );
+    const updated = completeSerializationSteps(rankUpdateSteps(work, prepared.orders));
     const nextSize = prepared.orders.content.length;
     const contentRankReads = work.rankGets.content.mock.calls.length;
     const highlightRankReads = work.rankGets.highlight.mock.calls.length;
@@ -302,10 +283,7 @@ it("rejects an incomplete replacement without scanning unrelated records or touc
     expect(result).toMatchObject({ ok: false, error: { code: "invalid-order" } });
     expect(work.gets).toHaveBeenCalledTimes(2_000);
     expect(work.reads).toEqual({ content: 2_000, highlight: 0 });
-    expect(work.rankGets.content).not.toHaveBeenCalled();
-    expect(work.rankGets.highlight).not.toHaveBeenCalled();
-    expect(work.stagedWrites).toEqual({ content: 0, highlight: 0 });
-    work.assertNoCanonicalMutation();
+    assertNoRankPreparation(work);
   } finally {
     work.restore();
   }
@@ -317,14 +295,7 @@ it("releases cancelled staged rank work without changing the authoritative 10k b
   const work = observeWork(model);
   try {
     const prepared = preparedDelta(work, { orderChanges: { content: next } });
-    const steps = prepareSerializationRankUpdate(
-      {
-        currentOrders: work.currentOrders,
-        nextOrders: prepared.orders,
-        currentRanks: work.ranks,
-      },
-      256,
-    );
+    const steps = rankUpdateSteps(work, prepared.orders);
     expect(steps.next().done).toBe(false);
     expect(work.rankGets.content).toHaveBeenCalledTimes(256);
     expect(work.rankGets.highlight).not.toHaveBeenCalled();

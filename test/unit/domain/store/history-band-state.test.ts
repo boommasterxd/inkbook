@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
-import type { AppliedElementMutation, StoreDelta } from "../../../../src/domain/store/types";
+import type { StoreDelta } from "../../../../src/domain/store/types";
 import * as renderBands from "../../../../src/domain/commands/render-bands";
 import {
   applyElementMutation,
+  applyRetainedHistoryMutation as replay,
   uninterruptedMutationScheduler as scheduler,
 } from "../../../fixtures/domain/element-mutation";
 import { mixedElement } from "./fixtures";
@@ -15,16 +16,6 @@ async function arrange(store: ElementStore, ids: readonly string[]) {
   const result = store.commitPreparedElementMutation(prepared.token);
   if (result.transition === null) throw new Error("Expected arrangement history.");
   return result.transition;
-}
-
-async function replay(
-  store: ElementStore,
-  transition: AppliedElementMutation,
-  direction: "forward" | "reverse",
-) {
-  const prepared = await store.prepareHistoryReplay(transition[direction], scheduler, transition);
-  if (prepared.token === null) throw new Error("Expected retained replay.");
-  expect(store.commitPreparedElementMutation(prepared.token).status).toBe("committed");
 }
 
 function fixture() {

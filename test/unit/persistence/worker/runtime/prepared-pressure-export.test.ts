@@ -30,6 +30,7 @@ import {
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { unlockCanonicalSnapshot } from "../../../../fixtures/persistence/canonical-worker-unlock";
+import { preparedHints } from "../../../../fixtures/persistence/prepared-pressure-hints";
 import { rectangle, snapshot } from "./fixtures";
 
 const identity = { exportGeneration: 1, sessionId: "prepared-path", workerEpoch: 1 };
@@ -87,13 +88,6 @@ function preparedStore(stroke: StrokeElementV1) {
     buildElementPathParts(strokeLocalGeometry(stroke)),
   );
   return store;
-}
-
-function preparedHints(store: ElementStore, revision: number) {
-  return Array.from(store.preparedPressurePaths()).flatMap(({ record, parts }) => {
-    const hint = preparedPressurePathHint(record, parts, revision);
-    return hint === undefined ? [] : [hint];
-  });
 }
 
 function fullPlan(document: InkSnapshotV1) {

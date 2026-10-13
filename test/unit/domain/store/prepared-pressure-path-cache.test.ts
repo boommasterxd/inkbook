@@ -7,6 +7,15 @@ import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 
 const geometry = [{ d: "M0 0L5 5Z", paint: "fill" as const }];
 
+function preparedStoredPath() {
+  const source = stroke();
+  const store = new ElementStore([source]);
+  const first = store.get(source.id)!;
+  const port = store.pressureGeometry(source.id, first.geometryVersion);
+  port.publishPath!(geometry);
+  return { source, store, first, port, retained: port.readPath!() };
+}
+
 it("bounds prepared paths by 1024 entries and four MiB, without retaining caller mutations", () => {
   const cache = new PreparedPressurePathCache();
   for (let index = 0; index < 1025; index++) cache.publish(String(index), 1, geometry);
@@ -156,12 +165,7 @@ it.each(["samples", "rotation", "pivot-x", "pivot-y", "width", "pressure"] as co
 );
 
 it("rejects a tool replacement across immutable bands without invalidating the original path", () => {
-  const source = stroke();
-  const store = new ElementStore([source]);
-  const first = store.get(source.id)!;
-  const port = store.pressureGeometry(source.id, first.geometryVersion);
-  port.publishPath!(geometry);
-  const retained = port.readPath!();
+  const { source, store, first, port, retained } = preparedStoredPath();
   expect(() =>
     store.replace(source.id, {
       ...source,
@@ -175,12 +179,7 @@ it("rejects a tool replacement across immutable bands without invalidating the o
 });
 
 it("rebinds exact local provenance for confirmed equal copied samples and rejects changed values", () => {
-  const source = stroke();
-  const store = new ElementStore([source]);
-  const first = store.get(source.id)!;
-  const port = store.pressureGeometry(source.id, first.geometryVersion);
-  port.publishPath!(geometry);
-  const retained = port.readPath!();
+  const { source, store, first, port, retained } = preparedStoredPath();
   const bytes = store.activeDocumentMemoryUsage().pressurePathCacheBytes;
   store.replace(source.id, {
     ...source,

@@ -7,6 +7,7 @@ import * as mutationOrder from "../../../src/domain/store/mutation-order";
 import { prepareMutationHistory } from "../../../src/domain/store/mutation-history";
 import { MutationPreparationScheduler } from "../../../src/domain/store/mutation-preparation-scheduler";
 import { uninterruptedMutationScheduler as scheduler } from "../../fixtures/domain/element-mutation";
+import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 
 afterEach(() => vi.restoreAllMocks());
@@ -27,18 +28,13 @@ function observeRankWrites() {
 }
 
 function observeBand(values: readonly string[]) {
-  let reads = 0;
-  const band = new Proxy([...values], {
-    get(target, property, receiver) {
-      if (typeof property === "string" && /^\d+$/.test(property)) reads += 1;
-      return Reflect.get(target, property, receiver) as unknown;
-    },
-  });
+  const { observed: band, work } = observeSchemaArray([...values]);
   return {
     band,
-    reads: () => reads,
+    reads: () => work.indexedReads,
     reset: () => {
-      reads = 0;
+      work.indexedReads = 0;
+      work.descriptorReads = 0;
     },
   };
 }

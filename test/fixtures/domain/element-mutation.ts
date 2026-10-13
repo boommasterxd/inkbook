@@ -11,6 +11,23 @@ export const uninterruptedMutationScheduler = {
   yieldControl: async () => undefined,
 };
 
+/** Exercise private retained-history replay and require an atomic commit. */
+export async function applyRetainedHistoryMutation(
+  store: ElementStore,
+  transition: AppliedElementMutation,
+  direction: "forward" | "reverse",
+): Promise<ElementMutationCommitResult> {
+  const { token } = await store.prepareHistoryReplay(
+    transition[direction],
+    uninterruptedMutationScheduler,
+    transition,
+  );
+  if (token === null) throw new Error("Expected retained replay token.");
+  const result = store.commitPreparedElementMutation(token);
+  if (result.status !== "committed") throw new Error("Expected committed retained replay.");
+  return result;
+}
+
 /** Exercise the real prepared mutation boundary and require a complete committed transition. */
 export async function applyElementMutation(
   store: ElementStore,
