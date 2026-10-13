@@ -51,6 +51,12 @@ export class ProgressiveElementPreview {
   readonly #transforms = new Map<string, PreviewTransform>();
   readonly #snapshotFeedback = new Map<string, ProgressivePreviewTransform>();
   readonly #renderedFeedback = new Map<string, ProgressivePreviewTransform>();
+  readonly #feedbackMembers = new Set<string>();
+  #feedbackSource: readonly string[] | undefined;
+  #membershipBytes = 0;
+  #elementBytes = 0;
+  #feedbackBytes = 0;
+  #transformBytes = 0;
   #zoom = 1;
   readonly #maximumBytes: number;
   #completedBytes = 0;
@@ -81,20 +87,26 @@ export class ProgressiveElementPreview {
     let bytes = this.#completedBytes + (this.#pending?.path.memoryUsage() ?? 0);
     bytes += (this.#request?.ids.length ?? 0) * 8 + (this.#request?.feedbackIds?.length ?? 0) * 8;
     bytes += (this.#versions.size + this.#replayIds.size + this.#feedbackIds.size) * 40;
-    for (const [id, feedback] of this.#snapshotFeedback) bytes += feedbackBytes(id, feedback);
-    for (const [id, feedback] of this.#renderedFeedback) bytes += feedbackBytes(id, feedback);
-    for (const [id, preview] of this.#transforms)
-      bytes += 80 + (id.length + (preview.transform?.length ?? 0)) * 2;
+    bytes += this.#membershipBytes + this.#feedbackBytes + this.#transformBytes;
     if (this.#pending !== undefined) bytes += elementBytes(this.#pending.element);
-    for (const element of this.#elements.values()) bytes += elementBytes(element);
-    return bytes;
+    return bytes + this.#elementBytes;
   }
 
   public set(request: PreviewRequest): void {
     const retained = new Set(request.ids);
-    const feedbackIds = new Set(request.feedbackIds ?? request.ids);
+    const feedbackIds = request.feedbackIds ?? request.ids;
+    if (feedbackIds !== this.#feedbackSource) {
+      this.#feedbackSource = feedbackIds;
+      this.#feedbackMembers.clear();
+      this.#membershipBytes = 0;
+      for (const id of feedbackIds) {
+        if (this.#feedbackMembers.has(id)) continue;
+        this.#feedbackMembers.add(id);
+        this.#membershipBytes += 32 + id.length * 2;
+      }
+    }
     for (const id of this.#feedbackIds) {
-      if (!feedbackIds.has(id)) this.#clearFeedback(id);
+      if (!this.#feedbackMembers.has(id)) this.#clearFeedback(id);
     }
     for (const id of this.#versions.keys()) {
       if (!retained.has(id)) {
@@ -105,11 +117,11 @@ export class ProgressiveElementPreview {
     for (const id of this.#elements.keys()) {
       if (retained.has(id)) continue;
       this.#content.clearElementPreview(id);
-      this.#elements.delete(id);
+      this.#setElement(id, undefined);
       this.#removeReplay(id);
       this.#versions.delete(id);
-      this.#snapshotFeedback.delete(id);
-      this.#renderedFeedback.delete(id);
+      this.#setFeedback(this.#snapshotFeedback, id, undefined);
+      this.#setFeedback(this.#renderedFeedback, id, undefined);
     }
     if (this.#pending !== undefined && !retained.has(this.#pending.element.id)) {
       this.#pending?.path.cancel();
@@ -166,7 +178,7 @@ export class ProgressiveElementPreview {
 
   public applyMounted(ids: readonly string[]): void {
     for (const id of ids) {
-      this.#renderedFeedback.delete(id);
+      this.#setFeedback(this.#renderedFeedback, id, undefined);
       if (this.#request?.affineElement?.(id) !== undefined) {
         this.#applyFeedback(id);
         continue;
@@ -189,8 +201,7 @@ export class ProgressiveElementPreview {
           continue;
         }
         if (this.#elements.has(id)) this.#replayIds.add(id);
-        if ((this.#request?.feedbackIds ?? this.#request?.ids)?.includes(id))
-          this.#applyFeedback(id);
+        if (this.#feedbackMembers.has(id)) this.#applyFeedback(id);
       }
     }
   }
@@ -206,6 +217,12 @@ export class ProgressiveElementPreview {
     this.#transforms.clear();
     this.#snapshotFeedback.clear();
     this.#renderedFeedback.clear();
+    this.#feedbackMembers.clear();
+    this.#feedbackSource = undefined;
+    this.#membershipBytes = 0;
+    this.#elementBytes = 0;
+    this.#feedbackBytes = 0;
+    this.#transformBytes = 0;
     this.#request = undefined;
     this.#appliedRequest = undefined;
     this.#pending?.path.cancel();
@@ -224,15 +241,15 @@ export class ProgressiveElementPreview {
     if (this.#elements.has(id) && this.#elements.get(id) !== element) {
       this.#content.clearElementPreview(id);
       this.#removeReplay(id);
-      this.#snapshotFeedback.delete(id);
-      this.#renderedFeedback.delete(id);
+      this.#setFeedback(this.#snapshotFeedback, id, undefined);
+      this.#setFeedback(this.#renderedFeedback, id, undefined);
     }
     if (this.#pending?.element.id === id) {
       this.#pending.path.cancel();
       this.#pending = undefined;
     }
     this.#replayIds.delete(id);
-    this.#elements.set(id, element);
+    this.#setElement(id, element);
     this.#versions.set(id, version);
   }
 
@@ -261,9 +278,8 @@ export class ProgressiveElementPreview {
 
   #complete(completed: CompletedPath, version: number): void {
     const id = completed.element.id;
-    this.#elements.set(id, completed.element);
-    if (completed.feedback !== undefined) this.#snapshotFeedback.set(id, completed.feedback);
-    else this.#snapshotFeedback.delete(id);
+    this.#setElement(id, completed.element);
+    this.#setFeedback(this.#snapshotFeedback, id, completed.feedback);
     this.#retainReplay(completed);
     this.#versions.set(id, version);
     this.#apply(completed);
@@ -359,8 +375,7 @@ export class ProgressiveElementPreview {
   #apply(completed: CompletedPath): void {
     const id = completed.element.id;
     if (!this.#content.applyCanonicalElementPreview(completed.element, completed.parts)) return;
-    if (completed.feedback !== undefined) this.#renderedFeedback.set(id, completed.feedback);
-    else this.#renderedFeedback.delete(id);
+    this.#setFeedback(this.#renderedFeedback, id, completed.feedback);
     this.#applyFeedback(id);
   }
 
@@ -379,8 +394,7 @@ export class ProgressiveElementPreview {
       version: request?.version ?? 0,
       strokeWidthScale: transform === null ? null : this.#zoom,
     };
-    if (transform === null) this.#transforms.delete(id);
-    else this.#transforms.set(id, preview);
+    this.#setTransform(id, transform === null ? undefined : preview);
     this.#content.applyPreviewTransform(
       id,
       preview.transform,
@@ -392,8 +406,39 @@ export class ProgressiveElementPreview {
   #clearFeedback(id: string): void {
     this.#content.applyPreviewTransform(id, null, Number.MAX_SAFE_INTEGER, null);
     this.#feedbackIds.delete(id);
-    this.#transforms.delete(id);
-    this.#renderedFeedback.delete(id);
+    this.#setTransform(id, undefined);
+    this.#setFeedback(this.#renderedFeedback, id, undefined);
+  }
+
+  #setElement(id: string, element: InkElementV1 | undefined): void {
+    const previous = this.#elements.get(id);
+    this.#elementBytes +=
+      (element === undefined ? 0 : elementBytes(element)) -
+      (previous === undefined ? 0 : elementBytes(previous));
+    if (element === undefined) this.#elements.delete(id);
+    else this.#elements.set(id, element);
+  }
+
+  #setFeedback(
+    entries: Map<string, ProgressivePreviewTransform>,
+    id: string,
+    feedback: ProgressivePreviewTransform | undefined,
+  ): void {
+    const previous = entries.get(id);
+    this.#feedbackBytes +=
+      (feedback === undefined ? 0 : feedbackBytes(id, feedback)) -
+      (previous === undefined ? 0 : feedbackBytes(id, previous));
+    if (feedback === undefined) entries.delete(id);
+    else entries.set(id, feedback);
+  }
+
+  #setTransform(id: string, preview: PreviewTransform | undefined): void {
+    const previous = this.#transforms.get(id);
+    this.#transformBytes +=
+      (preview === undefined ? 0 : transformBytes(id, preview)) -
+      (previous === undefined ? 0 : transformBytes(id, previous));
+    if (preview === undefined) this.#transforms.delete(id);
+    else this.#transforms.set(id, preview);
   }
 
   #hasPending(): boolean {
@@ -426,4 +471,8 @@ function pathBytes(parts: readonly SvgPathPart[]): number {
 
 function feedbackBytes(id: string, feedback: ProgressivePreviewTransform): number {
   return 64 + (id.length + feedback.transform.length + feedback.inverse.length) * 2;
+}
+
+function transformBytes(id: string, preview: PreviewTransform): number {
+  return 80 + (id.length + (preview.transform?.length ?? 0)) * 2;
 }
