@@ -17,6 +17,16 @@ export function isCapturedJsonSampleArray(points: object): boolean {
   return capturedJsonSamples.has(points);
 }
 
+/** Private producer provenance permits scalar copying without another structural inspection. */
+function copyCapturedJsonSampleRange(
+  source: SampleSource,
+  target: SampleBuffer,
+  start: number,
+  end: number,
+): void {
+  for (let index = start; index < end; index += 1) target[index] = source[index]!;
+}
+
 export function copyImmutableJsonSampleSteps(points: SampleSource): Generator<void, number[]> {
   const length = assertSampleCopyInput(points, DEFAULT_SAMPLE_COPY_STEP);
   return produceSampleBufferSteps(
@@ -51,11 +61,14 @@ function* produceSampleBufferSteps(
 ): Generator<void, SampleBuffer> {
   const candidate = allocateSampleCopy(length, representation === "runtime");
   const proof = createSampleCopyProof(points);
+  const captured = capturedJsonSamples.has(points);
   for (let start = 0; start < length; start += valuesPerStep) {
-    copySampleRange(points, candidate, start, Math.min(length, start + valuesPerStep), proof);
+    const end = Math.min(length, start + valuesPerStep);
+    if (captured) copyCapturedJsonSampleRange(points, candidate, start, end);
+    else copySampleRange(points, candidate, start, end, proof);
     yield;
   }
-  yield* assertSampleArrayKeysSteps(points, valuesPerStep);
+  if (!captured) yield* assertSampleArrayKeysSteps(points, valuesPerStep);
   finishSampleCopyProof(proof);
   if (representation === "immutable-json") {
     Object.freeze(candidate);

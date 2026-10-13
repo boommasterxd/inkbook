@@ -17,7 +17,9 @@ Retain canonical render-band order and per-element path identity; arbitrary
 selection groups must not reparent interleaved elements.
 
 Unchanged retained band/rank values reuse the published order without another
-rank traversal. Account preview transform bytes incrementally. Cancel unfinished
+rank traversal. Reuse feedback membership across requests with the same ID list;
+remounted feedback uses set membership rather than a selection-wide array search.
+Account preview elements, bases, and transform bytes incrementally. Cancel unfinished
 superseded pressure snapshots at admitted scene updates; retain complete snapshots
 as residual bases and reuse measurements only through the bounded owning cache.
 
@@ -34,6 +36,8 @@ immutable staging; snapshot wrapper metadata before asynchronous preparation.
 Combine Paste wire capture and insertion preparation. Only the private sample-copy
 producer may witness its own complete frozen numeric arrays; reuse their JSON
 structure proof while retaining semantic validation and exact resource limits.
+Required public history buffers remain independent copies; private captured-sample
+provenance also avoids repeating structural inspection during that copy.
 
 Canonical resource limits, invalidation, scheduling, and trust boundaries belong
 in [Rendering and Performance](../rendering-and-performance.md). User-visible

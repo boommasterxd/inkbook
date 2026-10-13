@@ -1,10 +1,7 @@
 import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
-import { strokeWorldPoint } from "../../domain/geometry/stroke-position";
-import { strokeCenterAt, type StrokeCenter } from "../../domain/geometry/stroke-path";
-import {
-  simplifyStrokeCenters,
-  STROKE_SIMPLIFICATION_WINDOW,
-} from "../../domain/geometry/stroke-simplification";
+import { strokeCenterWindow } from "../../domain/geometry/stroke-center-window";
+import type { StrokeCenter } from "../../domain/geometry/stroke-path";
+import { STROKE_SIMPLIFICATION_WINDOW } from "../../domain/geometry/stroke-simplification";
 import type { StrokeElementV1 } from "../../domain/schema/public";
 
 /** Demand one canonical window at a time, preserving the cheap early-hit path. */
@@ -15,15 +12,7 @@ export function selectionStrokeCenterWindow(
 ): readonly StrokeCenter[] {
   const retained = prepared?.readCenters?.(index);
   if (retained !== undefined) return retained;
-  const count = stroke.points.length / 3;
-  const start = index * STROKE_SIMPLIFICATION_WINDOW;
-  const end = Math.min(count - 1, start + STROKE_SIMPLIFICATION_WINDOW);
-  const window: StrokeCenter[] = [];
-  for (let sample = start; sample <= end; sample += 1) {
-    const center = strokeCenterAt(stroke.points, sample, count);
-    window.push({ ...strokeWorldPoint(stroke, center), pressure: center.pressure });
-  }
-  const centers = simplifyStrokeCenters(window, stroke.style.width, stroke.style.pressureEnabled);
+  const centers = strokeCenterWindow(stroke, index);
   prepared?.publishCenters?.(index, centers);
   return centers;
 }

@@ -412,7 +412,7 @@ it.each([1, 100])(
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(count);
     const boundary = vi.spyOn(intersections, "intersectPressureBoundaries");
-    const geometry = vi.spyOn(strokeGeometry, "iterateTransformedStrokeCenters");
+    const geometry = vi.spyOn(strokeGeometry, "strokeCenterAt");
     try {
       for (const delta of [20, 0, 20]) {
         renderer.resetInstrumentation();

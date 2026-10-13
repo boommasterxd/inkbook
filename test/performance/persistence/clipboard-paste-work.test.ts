@@ -20,7 +20,7 @@ import {
 import { ClipboardAdoptionGuard } from "../../../src/obsidian/embeds/active-editor/clipboard-adoption-guard";
 import * as elementCopy from "../../../src/domain/elements/runtime-element-copy";
 
-it("captures maximum clipboard wire samples once and reuses preparation through Store adoption", async () => {
+function clipboardCapacityWire() {
   const elements = createClipboardLimitFixture();
   const ids = elements.map(({ id }) => id);
   const encoded = encodeRuntimeResult({
@@ -41,8 +41,28 @@ it("captures maximum clipboard wire samples once and reuses preparation through 
       },
     },
   });
-  const wire = structuredClone(encoded.value, { transfer: [...encoded.transfer] });
+  return structuredClone(encoded.value, { transfer: [...encoded.transfer] });
+}
+
+function observeCopiedSamples() {
+  const copiedSamples = new Map<object, ReturnType<typeof observeSchemaArray<number>>>();
+  const allocateSamples = sampleCopy.allocateSampleCopy;
+  const allocations = vi
+    .spyOn(sampleCopy, "allocateSampleCopy")
+    .mockImplementation((length, typed) => {
+      if (typed) return allocateSamples(length, typed);
+      const observed = observeSchemaArray(allocateSamples(length, typed) as number[]);
+      copiedSamples.set(observed.observed, observed);
+      return observed.observed;
+    });
+  return { allocations, copiedSamples };
+}
+
+it("captures maximum clipboard wire samples once and reuses preparation through Store adoption", async () => {
+  const wire = clipboardCapacityWire();
+  const { allocations, copiedSamples } = observeCopiedSamples();
   const copy = vi.spyOn(sampleCopy, "copySampleRange");
+  const keyWalk = vi.spyOn(sampleCopy, "assertSampleArrayKeysSteps");
   const validation = vi.spyOn(sampleValidation, "assertStrokeSampleRange");
   const wireValidation = vi.spyOn(runtimeElements, "validateRuntimeSamplesSteps");
   const descriptors = vi.spyOn(Object, "getOwnPropertyDescriptor");
@@ -71,13 +91,17 @@ it("captures maximum clipboard wire samples once and reuses preparation through 
         element.kind === "stroke" ? [element.points] : [],
       ),
     );
-    expect(
+    const stagedDescriptorCount = () =>
       descriptors.mock.calls.filter(
         ([value, key]) =>
           stagedSamples.has(value as number[]) && /^(0|[1-9][0-9]*)$/.test(String(key)),
-      ),
-    ).toHaveLength(0);
-    descriptors.mockRestore();
+      ).length;
+    expect(stagedDescriptorCount()).toBe(0);
+    for (const samples of stagedSamples) {
+      const observed = copiedSamples.get(samples)!;
+      observed.work.indexedReads = 0;
+      observed.work.descriptorReads = 0;
+    }
     headers.mockRestore();
     capturedHeaders.mockRestore();
     const prepared = await guard.prepare(decoded.result.value, {
@@ -93,11 +117,27 @@ it("captures maximum clipboard wire samples once and reuses preparation through 
     expect(store.commitPreparedElementMutation(insertion.token).status).toBe("committed");
     expect(store.size).toBe(5_000);
     // Public history remains mutable and owns one independent copy per inserted stroke.
-    expect(copy).toHaveBeenCalledTimes(8_000);
+    expect(allocations).toHaveBeenCalledTimes(8_000);
+    expect(copy).toHaveBeenCalledTimes(4_000);
+    expect(
+      [...stagedSamples].reduce(
+        (total, samples) => total + copiedSamples.get(samples)!.work.indexedReads,
+        0,
+      ),
+    ).toBe(1_500_000);
+    expect(
+      [...stagedSamples].every((samples) => copiedSamples.get(samples)!.work.descriptorReads === 0),
+    ).toBe(true);
+    expect(
+      keyWalk.mock.calls.filter(([value]) => stagedSamples.has(value as number[])),
+    ).toHaveLength(0);
+    expect(stagedDescriptorCount()).toBe(0);
     expect(validation).toHaveBeenCalledTimes(4_000);
   } finally {
     guard.dispose();
     copy.mockRestore();
+    allocations.mockRestore();
+    keyWalk.mockRestore();
     validation.mockRestore();
     wireValidation.mockRestore();
     descriptors.mockRestore();
