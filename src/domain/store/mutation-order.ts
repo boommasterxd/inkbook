@@ -221,7 +221,7 @@ export async function restoreOwnedReplayBands(
   const ranks = new Map<string, ElementRank>();
   for (const band of ["highlight", "content"] as const) {
     if (!owned.dirtyBands[band]) {
-      // Only the private mutation-version proof admits reuse of these mutable
+      // Only the private exact band-state proof admits reuse of these mutable
       // authoritative arrays. Frozen history arrays are never installed here.
       bands[band] = source.bands[band] as string[];
       continue;

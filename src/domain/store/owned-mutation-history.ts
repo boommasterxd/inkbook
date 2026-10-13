@@ -93,7 +93,8 @@ function historyBuilder(
     finish: (): OwnedMutationHistory => ({
       forward,
       reverse,
-      payloadBytes: payload.bytes,
+      // Two directional band-state snapshots and their identity references.
+      payloadBytes: payload.bytes + 192,
       dirtyBands: delta.dirtyBands,
       relativeOrderPreserved: Object.freeze(relativeOrderPreserved),
     }),

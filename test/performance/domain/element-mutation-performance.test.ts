@@ -302,7 +302,7 @@ it("publishes local membership deltas and replays without validating unchanged 1
       removed.transition.forward,
       removed.transition.reverse,
     ]) {
-      const prepared = await store.prepareElementMutation(
+      const prepared = await store.prepareHistoryReplay(
         mutation,
         { shouldYield: () => false, yieldControl: async () => undefined },
         removed.transition,

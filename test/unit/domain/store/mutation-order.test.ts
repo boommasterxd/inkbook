@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as renderBands from "../../../../src/domain/commands/render-bands";
 import { DocumentCapacity } from "../../../../src/domain/store/document-capacity";
-import type { ElementRecord } from "../../../../src/domain/store/types";
+import type { AppliedElementMutation, ElementRecord } from "../../../../src/domain/store/types";
 import { restoreOwnedReplayBands } from "../../../../src/domain/store/mutation-order";
 import {
   captureOwnedMutationHistory,
@@ -40,6 +40,16 @@ function observeHighlightValidation() {
     },
     restore: () => check.mockRestore(),
   };
+}
+
+async function applyRetained(
+  store: ElementStore,
+  transition: AppliedElementMutation,
+  direction: "forward" | "reverse",
+) {
+  const prepared = await store.prepareHistoryReplay(transition[direction], scheduler, transition);
+  if (prepared.token === null) throw new Error("Expected retained replay.");
+  expect(store.commitPreparedElementMutation(prepared.token).status).toBe("committed");
 }
 
 function observeCapacityDirections() {
@@ -179,13 +189,13 @@ describe("private replay band proof", () => {
     const { elements, store, removed } = ownedRemoval();
     const bandCheck = observeHighlightValidation();
     try {
-      await apply(store, removed.transition.reverse, removed.transition);
+      await applyRetained(store, removed.transition, "reverse");
       bandCheck.expectVisited(false);
-      await apply(store, removed.transition.forward, removed.transition);
+      await applyRetained(store, removed.transition, "forward");
       bandCheck.expectVisited(false);
       store.updateStyle(elements[1]!.id, { ...elements[1]!.style, outlineOpacity: 0.5 });
-      await apply(store, removed.transition.reverse, removed.transition);
-      bandCheck.expectVisited(true);
+      await applyRetained(store, removed.transition, "reverse");
+      bandCheck.expectVisited(false);
     } finally {
       bandCheck.restore();
     }
