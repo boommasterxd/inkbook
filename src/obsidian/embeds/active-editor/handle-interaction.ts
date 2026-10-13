@@ -238,6 +238,7 @@ export class ActiveEditorHandleInteraction {
         action,
         elements,
         planner: this.#model.store,
+        preparedFrame: frame,
         snap: {
           canConnect: (sourceId, targetId) => this.#sceneStore.canConnect(sourceId, targetId),
           features: activeSnapFeatures(snapping, snappingInverted),

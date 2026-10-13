@@ -1,11 +1,17 @@
 import { selectionCenterlineBounds } from "./centerline-bounds";
 import {
   canonicalPoint,
+  boundsFromPoints,
   rotatePointClockwise,
   unionBounds,
   type Bounds,
 } from "../../domain/geometry/public";
-import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../domain/schema/public";
+import type {
+  BoxAnchorV1,
+  InkElementV1,
+  PointV1,
+  StrokeElementV1,
+} from "../../domain/schema/public";
 
 import { oppositeBoxAnchor } from "./handles";
 import {
@@ -26,6 +32,29 @@ export class SelectionScalePreviewFramePlan {
   readonly #entries: readonly CenterlineBoundsEntry[];
   readonly #bounds: Bounds;
   readonly #rotation: number;
+
+  public static fromSingleStrokeFrame(
+    element: StrokeElementV1,
+    frame: OrientedSelectionFrame,
+  ): SelectionScalePreviewFramePlan {
+    const aligned = selectionFrameElementAtRotation(element, frame.rotation) as StrokeElementV1;
+    const delta = {
+      x: (aligned.offset?.x ?? 0) - (element.offset?.x ?? 0),
+      y: (aligned.offset?.y ?? 0) - (element.offset?.y ?? 0),
+    };
+    // Match the existing pivot/offset canonicalization when aligning sample geometry.
+    const bounds = boundsFromPoints(
+      frame.points.map((point) => {
+        const local = rotatePointClockwise(point, element.pivot, -frame.rotation);
+        return { x: local.x + delta.x, y: local.y + delta.y };
+      }),
+    );
+    const [topLeft, topRight, , bottomLeft] = frame.points;
+    // Inverse rotation must not turn an exactly collapsed edge into a positive extent.
+    if (topLeft.x === topRight.x && topLeft.y === topRight.y) bounds.maxX = bounds.minX;
+    if (topLeft.x === bottomLeft.x && topLeft.y === bottomLeft.y) bounds.maxY = bounds.minY;
+    return new SelectionScalePreviewFramePlan([], frame.rotation, [{ id: element.id, bounds }]);
+  }
 
   public constructor(
     elements: readonly InkElementV1[],

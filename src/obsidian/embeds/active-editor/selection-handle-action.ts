@@ -52,12 +52,7 @@ function scaleHandleAction(
   frame: OrientedSelectionFrame | null,
 ): Extract<SelectionHandleAction, { kind: "scale" }> {
   return {
-    anchor:
-      element === undefined
-        ? frame === null
-          ? oppositePoint(bounds, handle.position)
-          : selectionFramePoint(frame, oppositeBoxAnchor(handle.position))
-        : oppositeElementHandlePoint(element, handle.position),
+    anchor: oppositeHandlePoint(element, bounds, frame, handle.position),
     kind: handle.kind,
     position: handle.position,
     rotation: element?.rotation ?? frame?.rotation ?? 0,
@@ -72,14 +67,22 @@ function rotationHandleAction(
   return {
     center: element?.pivot ?? frameCenter(frame) ?? boundsCenter(bounds),
     kind: "rotate",
-    opposite:
-      element === undefined
-        ? frame === null
-          ? oppositePoint(bounds, "top-center")
-          : selectionFramePoint(frame, "bottom-center")
-        : oppositeElementHandlePoint(element, "top-center"),
+    opposite: oppositeHandlePoint(element, bounds, frame, "top-center"),
     referenceRotation: element?.rotation ?? frame?.rotation ?? 0,
   };
+}
+
+function oppositeHandlePoint(
+  element: InkElementV1 | undefined,
+  bounds: Bounds,
+  frame: OrientedSelectionFrame | null,
+  position: BoxAnchorV1,
+): PointV1 {
+  if (element !== undefined && (element.kind !== "stroke" || frame === null))
+    return oppositeElementHandlePoint(element, position);
+  return frame === null
+    ? oppositePoint(bounds, position)
+    : selectionFramePoint(frame, oppositeBoxAnchor(position));
 }
 
 function frameCenter(frame: OrientedSelectionFrame | null): PointV1 | undefined {
