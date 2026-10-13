@@ -23,7 +23,7 @@ it("orders selected records by stable bands and ranks while deduplicating IDs", 
   expect(
     completeSerializationSteps(serializationSelectionSteps(elements, ranks, ["unknown"])),
   ).toBeNull();
-  ranks.delete(first.id);
+  ranks.content.delete(first.id);
   expect(
     completeSerializationSteps(serializationSelectionSteps(elements, ranks, [first.id])),
   ).toBeNull();

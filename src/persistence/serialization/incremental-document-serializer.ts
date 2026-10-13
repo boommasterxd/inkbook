@@ -52,9 +52,9 @@ import {
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
 import {
-  prepareSerializationRanks,
+  prepareSerializationRankUpdate,
   serializationSelectionSteps,
-  type SerializationRank,
+  type SerializationRanks,
 } from "./serialization-selection";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "./types";
 export class IncrementalDocumentSerializer {
@@ -72,7 +72,7 @@ export class IncrementalDocumentSerializer {
   });
   #facts = new Map<string, incrementalValidation.ElementFacts>();
   #orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
-  #ranks = new Map<string, SerializationRank>();
+  #ranks: SerializationRanks = { content: new Map(), highlight: new Map() };
   #epoch = 0;
   readonly #backgroundCache = new BackgroundFragmentCache();
   #fragmentBuilds = 0;
@@ -316,10 +316,10 @@ export class IncrementalDocumentSerializer {
       nodesPerStep,
     );
     if (!facts.ok) return facts;
-    const ranks =
-      prepared.value.orders === this.#orders
-        ? this.#ranks
-        : yield* prepareSerializationRanks(prepared.value.orders, nodesPerStep);
+    const ranks = yield* prepareSerializationRankUpdate(
+      { currentOrders: this.#orders, nextOrders: prepared.value.orders, currentRanks: this.#ranks },
+      nodesPerStep,
+    );
     const changed = new Map<string, InkElementV1>();
     for (const element of prepared.value.changed.values()) {
       changed.set(element.id, canonicalElement(element, this.#runtimeStrokeBuffers, !ownsSamples));
@@ -450,7 +450,8 @@ export class IncrementalDocumentSerializer {
     this.#backgroundCache.clear();
     this.#elements.clear();
     this.#facts.clear();
-    this.#ranks.clear();
+    this.#ranks.content.clear();
+    this.#ranks.highlight.clear();
     this.#orders.content = [];
     this.#orders.highlight = [];
     this.#page = null;

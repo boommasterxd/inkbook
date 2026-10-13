@@ -142,6 +142,7 @@ export async function planElementMutation(
       desired,
       removeIds,
       ownedPayloadBytes: ownedHistoryPayloadBytes(ownedHistory),
+      dirtyBands: order.dirtyBands,
       retainedReplay: ownedReplay?.retainedMutation !== undefined,
     },
     scheduler,

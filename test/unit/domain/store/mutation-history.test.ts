@@ -43,6 +43,41 @@ function uninterruptedScheduler() {
 }
 
 describe("mutation history private and public ownership", () => {
+  it("shares frozen unchanged bands between directions without aliasing mutable source arrays", async () => {
+    const state = historyFixture();
+    const transition = await prepareMutationHistory(state, uninterruptedScheduler());
+    if (transition === "cancelled") throw new Error("Unexpected cancellation.");
+    expect(transition.reverse.bands.highlight).toBe(transition.forward.bands.highlight);
+    expect(transition.reverse.bands.highlight).not.toBe(state.source.bands.highlight);
+    state.source.bands.highlight.push(IDS.other);
+    expect(transition.reverse.bands.highlight).toEqual([IDS.highlight]);
+  });
+
+  it("shares validated unchanged public removal bands and independently captures the changed band", async () => {
+    const state = historyFixture();
+    const requested = Object.freeze({
+      bands: Object.freeze({ content: Object.freeze([IDS.target]), highlight: Object.freeze([]) }),
+      removeIds: Object.freeze([IDS.highlight]),
+    });
+    const transition = await prepareMutationHistory(
+      {
+        ...state,
+        source: { ...state.source, bands: { content: [IDS.target], highlight: [IDS.highlight] } },
+        requested,
+        desired: new Map(),
+        removeIds: new Set([IDS.highlight]),
+        dirtyBands: { content: false, highlight: true },
+      },
+      uninterruptedScheduler(),
+      undefined,
+      true,
+    );
+    if (transition === "cancelled") throw new Error("Unexpected cancellation.");
+    expect(transition.reverse.bands.content).toBe(requested.bands.content);
+    expect(transition.reverse.bands.highlight).not.toBe(requested.bands.highlight);
+    expect(transition.reverse.bands.highlight).toEqual([IDS.highlight]);
+  });
+
   it("copies each retained direction once in bounded sample ranges", async () => {
     const state = historyFixture();
     const allocate = vi.spyOn(sampleCopy, "allocateSampleCopy");

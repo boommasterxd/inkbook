@@ -52,7 +52,8 @@ it("reuses validated order without scanning 10k elements for a small edit", () =
     }),
   );
   expect(invalidOrder).toMatchObject({ ok: false, error: { code: "invalid-order" } });
-  expect(fullMapIterations).toBeGreaterThan(0);
+  // The supplied band is still rejected completely without copying the document map.
+  expect(fullMapIterations).toBe(0);
 });
 
 it("updates retained serializer capacity without rescanning unchanged geometry", () => {

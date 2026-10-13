@@ -21,14 +21,14 @@ import {
   copySerializationElementsSteps,
 } from "./serialization-input-preparation";
 import { toValidationError } from "../../domain/schema/validation-internals";
-import { prepareSerializationRanks, type SerializationRank } from "./serialization-selection";
+import { prepareSerializationRanks, type SerializationRanks } from "./serialization-selection";
 
 export interface PreparedSerializationModel {
   readonly elements: Map<string, InkElementV1>;
   readonly facts: Map<string, facts.ElementFacts>;
   readonly aggregate: facts.AggregateFacts;
   readonly orders: Record<RenderBand, string[]>;
-  readonly ranks: Map<string, SerializationRank>;
+  readonly ranks: SerializationRanks;
   readonly page: PageV1;
   readonly revision: number;
   readonly runtimeStrokeBuffers: boolean;

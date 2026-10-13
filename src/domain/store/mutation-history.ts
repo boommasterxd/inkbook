@@ -17,6 +17,7 @@ interface HistoryPreparation {
   readonly source: HistorySource;
   readonly desired: ReadonlyMap<string, InkElementV1>;
   readonly removeIds: ReadonlySet<string>;
+  readonly dirtyBands?: Readonly<Record<RenderBand, boolean>>;
   readonly ownedPayloadBytes?: number;
   readonly retainedReplay?: boolean;
 }
@@ -40,7 +41,7 @@ export async function prepareMutationHistory(
     ? state.requested
     : await freezeMutation(state.requested, scheduler);
   if (forward === "cancelled") return forward;
-  const reverse = await reverseMutation(state.source, state.desired, state.removeIds, scheduler);
+  const reverse = await reverseMutation(state, forward, scheduler);
   if (reverse === "cancelled") return reverse;
   const forwardBytes = await estimateMutationBytes(forward, scheduler);
   if (forwardBytes === "cancelled") return forwardBytes;
@@ -75,9 +76,8 @@ async function estimateReverseBytes(
 }
 
 async function reverseMutation(
-  source: HistorySource,
-  desired: ReadonlyMap<string, InkElementV1>,
-  removeIds: ReadonlySet<string>,
+  { source, desired, removeIds, requested, dirtyBands }: HistoryPreparation,
+  forward: ElementMutation,
   scheduler: MutationPreparationScheduler,
 ): Promise<ElementMutation | "cancelled"> {
   const elements: InkElementV1[] = [];
@@ -92,16 +92,28 @@ async function reverseMutation(
     if (current === undefined) removedCreatedIds.push(id);
     else elements.push(current.element as InkElementV1);
   }
-  return freezeMutation({ bands: source.bands, elements, removeIds: removedCreatedIds }, scheduler);
+  const reusableBands: Partial<Record<RenderBand, readonly string[]>> = {};
+  for (const band of ["highlight", "content"] as const) {
+    if (dirtyBands?.[band] === false || requested.bands[band] === source.bands[band]) {
+      reusableBands[band] = forward.bands[band];
+    }
+  }
+  return freezeMutation(
+    { bands: source.bands, elements, removeIds: removedCreatedIds },
+    scheduler,
+    reusableBands,
+  );
 }
 
 async function freezeMutation(
   mutation: ElementMutation,
   scheduler: MutationPreparationScheduler,
+  reusableBands: Readonly<Partial<Record<RenderBand, readonly string[]>>> = {},
 ): Promise<ElementMutation | "cancelled"> {
-  const content = await copyFrozen(mutation.bands.content, scheduler);
+  const content = reusableBands.content ?? (await copyFrozen(mutation.bands.content, scheduler));
   if (content === "cancelled") return content;
-  const highlight = await copyFrozen(mutation.bands.highlight, scheduler);
+  const highlight =
+    reusableBands.highlight ?? (await copyFrozen(mutation.bands.highlight, scheduler));
   if (highlight === "cancelled") return highlight;
   const elements = await copyHistoryElements(mutation.elements ?? [], scheduler);
   if (elements === "cancelled") return elements;

@@ -3,7 +3,7 @@ import {
   type ElementMutationPlan,
   type MutationSource,
 } from "./element-mutation";
-import { createRemovalMutationTimeSliced } from "./removal-mutation";
+import { prepareRemovalMutation } from "./removal-mutation";
 import { createRemovalTransition } from "./removal-transition";
 import { ownedHistoryReplaySteps } from "./owned-history-replay";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
@@ -71,7 +71,7 @@ export class PreparedElementMutations {
     scheduler: StoreSliceScheduler,
   ): Promise<ElementMutation | "cancelled" | null> {
     const source = this.#readSource();
-    const mutation = await createRemovalMutationTimeSliced(ids, source.records, source.bands, {
+    const prepared = await prepareRemovalMutation(ids, source, {
       isCancelled: () =>
         source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
       shouldYield: scheduler.shouldYield,
@@ -79,9 +79,13 @@ export class PreparedElementMutations {
     });
     if (source.mutationVersion !== this.#readVersion() || scheduler.isCancelled?.())
       return "cancelled";
-    if (mutation === null || mutation === "cancelled") return mutation;
-    this.#trustedRemovalVersions.set(mutation, source.mutationVersion);
-    return mutation;
+    if (prepared === null || prepared === "cancelled") return prepared;
+    this.#trustedRemovalVersions.set(prepared.mutation, source.mutationVersion);
+    this.#trustedOrders.set(prepared.mutation, {
+      mutationVersion: source.mutationVersion,
+      order: prepared.order,
+    });
+    return prepared.mutation;
   }
 
   public prepare(
@@ -179,15 +183,22 @@ export class PreparedElementMutations {
       if (retainedMutation === "cancelled") return { status: "cancelled", token: null };
       proof = { ...proof, retainedMutation };
     }
-    const plan = await planElementMutation(source, mutation, work, replay, {
-      trustedRemoval:
-        replay === undefined &&
-        this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
-      ...(proof === undefined ? {} : { ownedReplay: proof }),
-      ...(this.#trustedOrders.get(mutation)?.mutationVersion === source.mutationVersion
-        ? { trustedOrder: this.#trustedOrders.get(mutation)!.order }
-        : {}),
-    });
+    let plan: ElementMutationPlan | "cancelled" | null;
+    try {
+      plan = await planElementMutation(source, mutation, work, replay, {
+        trustedRemoval:
+          replay === undefined &&
+          this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
+        ...(proof === undefined ? {} : { ownedReplay: proof }),
+        ...(this.#trustedOrders.get(mutation)?.mutationVersion === source.mutationVersion
+          ? { trustedOrder: this.#trustedOrders.get(mutation)!.order }
+          : {}),
+      });
+    } finally {
+      // Removal's public direction can live in history. Only prepared tokens own
+      // the staged mutable band and rank arrays after this handoff.
+      this.#trustedOrders.delete(mutation);
+    }
     if (plan === "cancelled" || source.mutationVersion !== this.#readVersion()) {
       return { status: "cancelled", token: null };
     }
