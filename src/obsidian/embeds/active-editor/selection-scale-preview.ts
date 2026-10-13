@@ -12,7 +12,6 @@ const EMPTY_PREVIEW: SelectionScalePreview = { elements: [] };
 
 export class SelectionScalePreviewPlan {
   readonly #elements: ReadonlyMap<string, InkElementV1>;
-  public readonly progressiveIds: readonly string[];
 
   public constructor(selected: readonly SelectedElementGeometry[]) {
     const elements = new Map<string, InkElementV1>();
@@ -20,7 +19,6 @@ export class SelectionScalePreviewPlan {
       elements.set(element.id, element);
     }
     this.#elements = elements;
-    this.progressiveIds = [...elements.keys()];
   }
 
   public resolve(preview: SelectionHandlePreview): SelectionScalePreview {

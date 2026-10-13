@@ -5,7 +5,11 @@ import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import type { SelectionHandle } from "./handles";
 import { layoutSelectionHandles, ROTATE_HANDLE_OFFSET_PIXELS, selectionBounds } from "./handles";
 import type { SelectedElementGeometry, SelectionPreviewTransform } from "./handle-types";
-import { transformSelectionPoint, type OrientedSelectionFrame } from "./selection-frame";
+import {
+  createSingleStrokeSelectionFrame,
+  transformSelectionPoint,
+  type OrientedSelectionFrame,
+} from "./selection-frame";
 
 export { transformSelectionPoint } from "./selection-frame";
 
@@ -30,6 +34,7 @@ export function selectionOverlayGeometry(
   frame: OrientedSelectionFrame | null = null,
 ): SelectionOverlayGeometry | null {
   if (selected.length === 0) return null;
+  frame ??= singleStrokeFrame(selected);
   const outline = selectionOutline(selected, frame);
   const handles = layoutSelectionHandles(selected, { frame, zoom });
   if (outline === null) return null;
@@ -83,8 +88,17 @@ export function selectionOverlayContainsPoint(
   point: PointV1,
   frame: OrientedSelectionFrame | null = null,
 ): boolean {
+  frame ??= singleStrokeFrame(selected);
   const outline = selectionOutline(selected, frame);
   return outline?.kind === "polygon" && pointInPolygon(point, outline.points);
+}
+
+function singleStrokeFrame(
+  selected: readonly SelectedElementGeometry[],
+): OrientedSelectionFrame | null {
+  return selected.length === 1 && selected[0]!.element.kind === "stroke"
+    ? createSingleStrokeSelectionFrame(selected[0]!)
+    : null;
 }
 
 function selectionOutline(

@@ -21,7 +21,7 @@ function synchronizedModel(): DocumentModelRuntime {
   return model;
 }
 
-it("defers complete snapshot creation until clipboard needs it after sync", async () => {
+it("keeps complete snapshots unmaterialized for clipboard access after sync", async () => {
   const model = new DocumentModelRuntime();
   model.initialize(snapshot());
   const materialize = vi.spyOn(IncrementalDocumentSerializer.prototype, "currentSnapshot");
@@ -38,8 +38,27 @@ it("defers complete snapshot creation until clipboard needs it after sync", asyn
     expect(model.instrumentation).toMatchObject({ cacheElements: 1, fragmentBuilds: 1 });
     expect(materialize).not.toHaveBeenCalled();
     expect(model.encodeClipboard(1, [rectangle().id]).ok).toBe(true);
+    const encoded = model.encodeClipboard(1, [rectangle().id]);
+    if (!encoded.ok) throw new Error("Expected clipboard encoding.");
+    const candidates = { customText: encoded.value.customText };
+    expect(model.decodeClipboard(1, candidates).ok).toBe(true);
+    expect(
+      (
+        await model.decodeClipboardSliced(1, candidates, {
+          signal: new AbortController().signal,
+          checkpoint: () => undefined,
+        })
+      ).ok,
+    ).toBe(true);
+    expect(() => model.decodeClipboard(0, candidates)).toThrow("basis-revision-mismatch");
+    await expect(
+      model.decodeClipboardSliced(0, candidates, {
+        signal: new AbortController().signal,
+        checkpoint: () => undefined,
+      }),
+    ).rejects.toThrow("basis-revision-mismatch");
     expect(model.encodeClipboard(1, [rectangle().id]).ok).toBe(true);
-    expect(materialize).toHaveBeenCalledTimes(1);
+    expect(materialize).toHaveBeenCalledTimes(0);
   } finally {
     materialize.mockRestore();
   }

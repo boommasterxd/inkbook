@@ -4,6 +4,7 @@ import type { InkElementV1 } from "../schema/public";
 import { takeImmutableElementOwnership } from "./immutability";
 import type { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import type { ElementRecord } from "./types";
+import { preparedInsertionBounds } from "./prepared-insertion-element";
 
 /** Validate the same privately staged values that record preparation will adopt. */
 export function prepareRuntimeElement(
@@ -12,6 +13,7 @@ export function prepareRuntimeElement(
   retained: ElementRecord | undefined,
   scheduler: MutationPreparationScheduler,
 ): InkElementV1 | "cancelled" | Promise<InkElementV1 | "cancelled"> {
+  if (current === undefined && preparedInsertionBounds(element) !== undefined) return element;
   const owned = retained ?? current;
   const points = owned?.element.kind === "stroke" ? owned.element.points : undefined;
   const phase = { copying: true };

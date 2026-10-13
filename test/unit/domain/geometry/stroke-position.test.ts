@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateElementBounds } from "../../../../src/domain/geometry/bounds";
-import {
-  iterateTransformedStrokeCenters,
-  transformedStrokeCenters,
-} from "../../../../src/domain/geometry/stroke-path";
+import { transformedStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
+import { strokeCenterWindow } from "../../../../src/domain/geometry/stroke-center-window";
 import {
   strokeLocalGeometry,
   strokeWorldPoint,
@@ -27,7 +25,7 @@ describe("stroke shape and position", () => {
         x: center.x + 100,
         y: center.y - 50,
       }));
-      const actual = [...iterateTransformedStrokeCenters(moved)];
+      const actual = strokeCenterWindow(moved, 0, { validate: true });
       actual.forEach((center, index) => {
         expect(center.x).toBeCloseTo(expected[index]!.x, 9);
         expect(center.y).toBeCloseTo(expected[index]!.y, 9);

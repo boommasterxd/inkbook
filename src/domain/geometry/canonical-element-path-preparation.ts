@@ -1,4 +1,6 @@
 import { strokeLocalGeometry } from "./stroke-position";
+import { isStoredStroke } from "../elements/stroke-replacement-proof";
+import { strokeCenterWindow } from "./stroke-center-window";
 import type {
   PreparedPressureGeometryPort,
   PressureWindowMeasurement,
@@ -6,8 +8,8 @@ import type {
   PressurePreparationMode,
 } from "./prepared-pressure-geometry";
 import { buildElementPathParts, type SvgPathPart } from "./element-path";
-import { iterateTransformedStrokeCenters, buildCenterline, type StrokeCenter } from "./stroke-path";
-import { simplifyStrokeCenters, STROKE_SIMPLIFICATION_WINDOW } from "./stroke-simplification";
+import { buildCenterline } from "./stroke-path";
+import { type simplifyStrokeCenters, STROKE_SIMPLIFICATION_WINDOW } from "./stroke-simplification";
 import { visitPreparedPressureOutline, type PressureOutlinePiece } from "./pressure-outline";
 import {
   pressureWindowMemoryUsage,
@@ -21,8 +23,7 @@ import type { InkElementV1, StrokeElementV1 } from "../schema/public";
 /** Prepares canonical simplification and contour pieces in bounded windows. */
 export class CanonicalElementPathPreparation {
   readonly #element: InkElementV1;
-  #centers: StrokeCenter[] | undefined;
-  #centerJob: Generator<StrokeCenter> | undefined;
+  readonly #reuseCenters: boolean;
   readonly #selected: ReturnType<typeof simplifyStrokeCenters> = [];
   readonly #windows: (PressureWindow | PressurePathWindow)[] = [];
   readonly #pendingPieces: PressureOutlinePiece[] = [];
@@ -42,14 +43,11 @@ export class CanonicalElementPathPreparation {
   ) {
     if (mode === "path-only" && pressureGeometry !== undefined)
       throw new TypeError("Path-only preparation cannot publish selection geometry.");
+    this.#reuseCenters = element.kind === "stroke" && isStoredStroke(element);
     element = element.kind === "stroke" ? strokeLocalGeometry(element) : element;
     this.#element = element;
     if (element.kind === "stroke") {
       this.#parts = element.style.pressureEnabled ? pressureGeometry?.readPath?.() : undefined;
-      if (this.#parts === undefined) {
-        this.#centers = [];
-        this.#centerJob = iterateTransformedStrokeCenters(element);
-      }
     }
   }
 
@@ -67,7 +65,7 @@ export class CanonicalElementPathPreparation {
         : this.#windowBytes;
     return (
       geometry +
-      ((this.#centers?.length ?? 0) + this.#selected.length) * 32 +
+      this.#selected.length * 32 +
       windowBytes +
       (this.#windowJob === undefined ? 0 : PRESSURE_WINDOW_SCRATCH_BYTES) +
       this.#pendingPieces.reduce(
@@ -89,19 +87,16 @@ export class CanonicalElementPathPreparation {
   private prepare(deadline: number, now: () => number, singleOperation: boolean): boolean {
     if (this.#cancelled) return false;
     if (this.#parts !== undefined) return true;
-    if (this.#centerJob !== undefined) this.prepareCenters();
     const element = this.#element;
-    const centers = this.#centers;
-    if (centers === undefined || element.kind !== "stroke") {
+    if (element.kind !== "stroke") {
       this.#parts = buildElementPathParts(element);
       return true;
     }
-    return this.prepareStroke(element, centers, deadline, now, singleOperation);
+    return this.prepareStroke(element, deadline, now, singleOperation);
   }
 
   private prepareStroke(
     element: StrokeElementV1,
-    centers: readonly StrokeCenter[],
     deadline: number,
     now: () => number,
     singleOperation: boolean,
@@ -109,11 +104,14 @@ export class CanonicalElementPathPreparation {
     const pointCount = element.points.length / 3;
     if (this.#prepared < pointCount - 1 || this.#selected.length === 0) {
       const next = Math.min(pointCount - 1, this.#prepared + STROKE_SIMPLIFICATION_WINDOW);
-      const selected = simplifyStrokeCenters(
-        centers.slice(this.#prepared, next + 1),
-        element.style.width,
-        element.style.pressureEnabled,
-      );
+      const index = this.#prepared / STROKE_SIMPLIFICATION_WINDOW;
+      const retained = this.#reuseCenters ? this.pressureGeometry?.readCenters?.(index) : undefined;
+      const selected =
+        retained ??
+        strokeCenterWindow(element, index, {
+          validate: true,
+          first: this.#selected[this.#selected.length - 1],
+        });
       this.#selected.push(...(this.#selected.length === 0 ? selected : selected.slice(1)));
       this.#prepared = next;
       if (next < pointCount - 1) return false;
@@ -146,29 +144,11 @@ export class CanonicalElementPathPreparation {
     return element.style.pressureEnabled ? false : this.finishGeometry();
   }
 
-  private prepareCenters(): void {
-    if (this.#element.kind !== "stroke") return;
-    const count = this.#element.points.length / 3;
-    const next = Math.min(count, this.#prepared + STROKE_SIMPLIFICATION_WINDOW + 1);
-    while (this.#centers!.length < next) {
-      const step = this.#centerJob!.next();
-      if (step.done) throw new Error("Stroke center preparation ended before its sample count.");
-      this.#centers!.push(step.value);
-    }
-    if (next === count) {
-      this.#centerJob!.return(undefined);
-      this.#centerJob = undefined;
-    }
-  }
-
   public cancel(): void {
     this.#cancelled = true;
     this.#parts = undefined;
-    this.#centerJob?.return(undefined);
     this.#windowJob?.return(undefined as never);
-    this.#centerJob = undefined;
     this.#windowJob = undefined;
-    this.#centers = undefined;
     this.#selected.length = 0;
     this.#windows.length = 0;
     this.#pendingPieces.length = 0;
@@ -198,7 +178,6 @@ export class CanonicalElementPathPreparation {
     this.#selected.length = 0;
     this.#windows.length = 0;
     this.#windowBytes = 0;
-    this.#centers = undefined;
     return true;
   }
   private advancePressureWindow(
@@ -208,12 +187,18 @@ export class CanonicalElementPathPreparation {
   ): boolean {
     if (this.#pendingPieces.length === 0) return true;
     const count = Math.min(64, this.#pendingPieces.length);
+    const measurement =
+      this.#windowJob === undefined
+        ? this.pressureGeometry?.readWindowMeasurement?.(this.#windows.length)
+        : undefined;
     const cached =
       this.#windowJob === undefined
-        ? this.pressureGeometry?.readWindow(this.#windows.length)
+        ? this.pressureGeometry?.readWindowMeasurement === undefined
+          ? this.pressureGeometry?.readWindow(this.#windows.length)
+          : measurement?.window
         : undefined;
     if (cached !== undefined) {
-      this.acceptWindow(cached, count);
+      this.acceptWindow(cached, count, measurement);
       return this.#pendingPieces.length === 0;
     }
     this.#windowJob ??=

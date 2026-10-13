@@ -18,6 +18,7 @@ import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/act
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import { immediateFrameScheduler } from "../../../fixtures/obsidian/immediate-frame-scheduler";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 import {
   connectedLine,
   coordinateSystem,
@@ -29,7 +30,6 @@ function rectangle(): Extract<InkElementV1, { kind: "rectangle" }> {
   if (element.kind !== "rectangle") throw new TypeError("Expected a rectangle fixture.");
   return { ...element, height: 140, pivot: { x: 200, y: 170 } };
 }
-
 function line(): Extract<InkElementV1, { kind: "line" }> {
   return {
     ...connectedLine(),
@@ -39,7 +39,6 @@ function line(): Extract<InkElementV1, { kind: "line" }> {
     startConnection: null,
   };
 }
-
 function parseGuideAxis(path: string | null | undefined): {
   readonly end: PointV1;
   readonly start: PointV1;
@@ -51,7 +50,6 @@ function parseGuideAxis(path: string | null | undefined): {
     start: { x: Number(match[1]), y: Number(match[2]) },
   };
 }
-
 function distance(first: PointV1, second: PointV1): number {
   return Math.hypot(first.x - second.x, first.y - second.y);
 }
@@ -314,7 +312,7 @@ describe("active editor selection snap guides", () => {
     fixture.interaction.cancel(pointerId);
   });
 
-  it("renders an offset anchor marker and persists endpoint attachment and detachment", () => {
+  it("renders an offset anchor marker and persists endpoint attachment and detachment", async () => {
     const selectedLine = line();
     const fixture = harness([rectangle(), selectedLine], 1);
     const start = {
@@ -323,8 +321,8 @@ describe("active editor selection snap guides", () => {
       x: selectedLine.end.x,
       y: selectedLine.end.y,
     };
-
     fixture.interaction.pointerDown(start);
+    await fixture.sceneStore.prepareConnections(selectedLine.id, immediateWorkScheduler());
     fixture.interaction.pointerMove({ ...start, x: 100, y: 100 });
     expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 88 100 L 112 100");
     expect(fixture.overlays[fixture.overlays.length - 1]).not.toContain("Z");
@@ -339,6 +337,7 @@ describe("active editor selection snap guides", () => {
     if (connected?.kind !== "line") throw new TypeError("Expected a connected line.");
 
     fixture.interaction.pointerDown({ ...start, x: connected.end.x, y: connected.end.y });
+    await fixture.sceneStore.prepareConnections(selectedLine.id, immediateWorkScheduler());
     fixture.interaction.pointerMove({ ...start, x: 500, y: 500 });
     fixture.interaction.pointerUp(start.pointerId);
     expect(fixture.store.get(selectedLine.id)?.element).toMatchObject({ endConnection: null });
@@ -463,6 +462,7 @@ function harness(
   const clearPreviewTransforms = vi.fn();
   const interaction = new ActiveEditorHandleInteraction({
     frameScheduler: immediateFrameScheduler(),
+    workScheduler: immediateWorkScheduler(),
     history,
     layout,
     model,
@@ -493,6 +493,7 @@ function harness(
     interaction,
     layout,
     overlays,
+    sceneStore,
     selectionFrames,
     store,
   };

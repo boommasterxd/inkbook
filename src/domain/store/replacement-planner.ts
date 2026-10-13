@@ -36,6 +36,7 @@ export interface ReplacementCandidate {
   readonly domains: readonly DeltaDomain[];
   readonly element: InkElementV1;
   readonly retainedRecord?: ElementRecord | undefined;
+  readonly owned?: boolean;
 }
 
 const CANONICAL_TRANSLATION_DOMAINS = Object.freeze(["geometry"] as const);

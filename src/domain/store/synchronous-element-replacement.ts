@@ -6,6 +6,7 @@ import { restoreOwnedRecord } from "./owned-mutation-history";
 import type { ReplacementHistory } from "./replacement-history";
 import {
   createReplacementRecord,
+  createOwnedReplacementRecord,
   createOwnedTranslatedReplacementRecord,
   nextRecordVersion,
 } from "./record-factory";
@@ -54,7 +55,7 @@ export function commitSynchronousReplacements(
     ? nextRecordVersion(state.paintVersion, "paintVersion")
     : state.paintVersion;
   const historyBuilder = history.createBuilder();
-  const records = candidates.map(({ current, domains, element, retainedRecord }) => {
+  const records = candidates.map(({ current, domains, element, retainedRecord, owned }) => {
     const nextGeometryVersion = domains.includes("geometry")
       ? geometryVersion
       : current.geometryVersion;
@@ -63,7 +64,7 @@ export function commitSynchronousReplacements(
       restoreOwnedRecord(element, current, retainedRecord, {
         geometryVersion: nextGeometryVersion,
         paintVersion: nextPaintVersion,
-      }) ?? replacementRecord(element, current, nextGeometryVersion, nextPaintVersion);
+      }) ?? replacementRecord(element, current, nextGeometryVersion, nextPaintVersion, owned);
     historyBuilder.append(current, record);
     return record;
   });
@@ -108,6 +109,7 @@ function replacementRecord(
   current: ElementRecord,
   geometryVersion: number,
   paintVersion: number,
+  owned = false,
 ): ElementRecord {
   const proof = getCanonicalStrokeReplacementProof(element);
   return proof?.source === current.element
@@ -118,5 +120,10 @@ function replacementRecord(
         paintVersion,
         proof.translation,
       )
-    : createReplacementRecord(element, current, geometryVersion, paintVersion);
+    : (owned ? createOwnedReplacementRecord : createReplacementRecord)(
+        element,
+        current,
+        geometryVersion,
+        paintVersion,
+      );
 }

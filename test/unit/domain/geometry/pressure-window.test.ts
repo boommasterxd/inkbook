@@ -48,7 +48,8 @@ describe("canonical pressure windows", () => {
     expect(second[0]).toBe(first[0]);
     expect(second[1]).toBe(first[1]);
     expect(pressureWindowMemoryUsage(first[0]!)).toBeGreaterThan(0);
-    expect(PRESSURE_WINDOW_SCRATCH_BYTES).toBe(2_441_584);
+    // The window additionally reserves 256 * 3 * 8 = 6,144 bytes for exact boundary scalars.
+    expect(PRESSURE_WINDOW_SCRATCH_BYTES).toBe(2_447_728);
   });
 
   it("falls back to exact native arcs when approximation exceeds its emitted-command budget", () => {

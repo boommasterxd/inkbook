@@ -13,6 +13,7 @@ import {
   createPreparedToken,
 } from "./active-editor-clipboard-fixtures";
 import { rectangle } from "../../../unit/domain/store/fixtures";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 describe("active editor context paste", () => {
   it("disables repeat offsets for every canvas invocation point", async () => {
@@ -33,6 +34,7 @@ describe("active editor context paste", () => {
       revision: () => 7,
     });
     const controller = new ActiveEditorClipboardController({
+      workScheduler: immediateWorkScheduler(),
       currentSelection: () => new Set([source.id]),
       history: new ActiveEditorHistory(model),
       isPresentationAttached: () => true,

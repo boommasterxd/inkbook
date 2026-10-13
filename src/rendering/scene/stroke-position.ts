@@ -13,13 +13,15 @@ export function positionedTransform(
   return preview === null ? position : `${preview} ${position}`;
 }
 
-/** Store pressure windows are world-space; never exchange them with translated local paths. */
+/** Translated paths exchange windows only through the explicit shape-local preparation port. */
 export function localPressureGeometry(
   element: InkElementV1,
   geometry: PreparedPressureGeometryPort | undefined,
 ): PreparedPressureGeometryPort | undefined {
   const offset = element.kind === "stroke" ? element.offset : undefined;
-  return offset === undefined || (offset.x === 0 && offset.y === 0) ? geometry : undefined;
+  return offset === undefined || (offset.x === 0 && offset.y === 0)
+    ? geometry
+    : geometry?.local?.();
 }
 
 /** A mounted path remains valid when only its durable position or paint changes. */

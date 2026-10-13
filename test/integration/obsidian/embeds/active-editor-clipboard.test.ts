@@ -81,6 +81,7 @@ describe("active editor clipboard bridge", () => {
     const history = new ActiveEditorHistory(model);
     const onResult = vi.fn();
     const controller = new ActiveEditorClipboardController({
+      workScheduler: immediateWorkScheduler(),
       currentSelection: () => selection,
       history,
       isPresentationAttached: () => true,
@@ -158,6 +159,7 @@ describe("active editor clipboard activation boundary", () => {
     } as unknown as Window;
     const onResult = vi.fn();
     const controller = new ActiveEditorClipboardController({
+      workScheduler: immediateWorkScheduler(),
       currentSelection: () => new Set([selected.id]),
       history: new ActiveEditorHistory(model),
       isPresentationAttached: () => true,
@@ -391,6 +393,7 @@ function clipboardHarness(
   let selection: ReadonlySet<string> = new Set([selectedId]);
   const history = new ActiveEditorHistory(model);
   const controller = new ActiveEditorClipboardController({
+    workScheduler: immediateWorkScheduler(),
     currentSelection: () => selection,
     history,
     isPresentationAttached: () => true,

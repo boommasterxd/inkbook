@@ -1,6 +1,6 @@
 import type { SvgPathPart } from "./svg-path-part";
 import type { PointV1 } from "../schema/types";
-import type { PressureBoundaryArc, PressureBoundaryLine } from "./pressure-joins";
+import type { PressureBoundaryArc, PressureBoundaryLine, PressureCenter } from "./pressure-joins";
 
 export interface PressureWindow {
   readonly kind: "window";
@@ -23,9 +23,15 @@ export interface PressureWindowMeasurement {
 
 /** A store-owned view scoped to one stroke geometry version. */
 export interface PreparedPressureGeometryPort {
+  /** Local centers, windows and complete paths survive placement changes; stale ports are revoked. */
+  local?(): PreparedPressureGeometryPort;
+  readCenters?(windowIndex: number): readonly PressureCenter[] | undefined;
+  publishCenters?(windowIndex: number, centers: readonly PressureCenter[]): void;
   readPath?(): readonly SvgPathPart[] | undefined;
   publishPath?(parts: readonly SvgPathPart[]): void;
   readWindow(windowIndex: number): PressureWindow | undefined;
+  /** Returns a complete immutable window and its owner-bound measured payload together. */
+  readWindowMeasurement?(windowIndex: number): PressureWindowMeasurement | undefined;
   /** May return the measured numeric payload of this exact window. */
   publishWindow(windowIndex: number, window: PressureWindow): PressureWindowMeasurement | void;
 }

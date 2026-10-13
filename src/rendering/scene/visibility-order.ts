@@ -132,6 +132,7 @@ export function commitVisibleBands(
   }
 }
 
+/** Refreshes cached ranks and reports whether the published band may require sorting. */
 export function refreshVisibleRanks(
   ids: readonly (string | undefined)[],
   count: number,
@@ -139,15 +140,21 @@ export function refreshVisibleRanks(
   store: SceneStorePort,
   slots: ReadonlyMap<string, number>,
   ranks: Float64Array,
-): void {
+): boolean {
+  let changed = false;
   for (let index = 0; index < count; index += 1) {
     const id = ids[index];
     if (id === undefined) continue;
     const slot = slots.get(id);
     if (slot === undefined) continue;
     const record = store.get(id);
-    if (record?.band === band) ranks[slot] = record.rank;
+    if (record?.band !== band) continue;
+    const rank = record.rank;
+    if (ranks[slot] === rank) continue;
+    ranks[slot] = rank;
+    changed = true;
   }
+  return changed;
 }
 
 export function clearVisibleReferences(values: (string | undefined)[], count: number): void {

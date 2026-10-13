@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { GesturePreview } from "../../../../src/editor/gestures/public";
-import type { PointerSample } from "../../../../src/editor/input/index";
+import {
+  createInputState,
+  reduceInput,
+  type PointerSample,
+} from "../../../../src/editor/input/index";
+import { pointerDown } from "../../../fixtures/editor/input-actions";
 import {
   CoalescedPointerInput,
   type CoalescedCreationSample,
@@ -73,6 +78,39 @@ describe("active editor validated input observers", () => {
     expect(fixture.updateSamples).toHaveBeenCalledExactlyOnceWith([
       expect.objectContaining({ x: 99, time: 0 }),
     ]);
+    expect(fixture.scheduler.pendingCount).toBe(0);
+  });
+});
+
+describe("coalesced selection press movement", () => {
+  it("starts an out-and-back area with one complete geometry batch", () => {
+    const fixture = setup("preserve");
+    let state = reduceInput(
+      createInputState({ activeTool: "select" }),
+      pointerDown({ pointerType: "pen", x: 10, y: 10 }),
+    ).state;
+    fixture.dispatchMove.mockImplementation((pointer) => {
+      const reduction = reduceInput(state, fixture.input.moveAction(pointer, state));
+      state = reduction.state;
+      for (const effect of reduction.effects) {
+        if (effect.type === "update-preview") fixture.routed.update(effect.pointer);
+      }
+    });
+    const samples = [sample(20, 1), sample(10, 2)];
+    expect(fixture.input.dispatch(event(samples))).toBe(true);
+    expect(state.interaction?.phase).toBe("lasso");
+    expect(fixture.dispatchMove).toHaveBeenCalledOnce();
+    expect(fixture.scheduler.pendingCount).toBe(1);
+    fixture.scheduler.runNext();
+    expect(fixture.updateSamples).toHaveBeenCalledExactlyOnceWith([
+      expect.objectContaining({ x: 20, y: 20, time: 1 }),
+      expect.objectContaining({ x: 10, y: 10, time: 2 }),
+    ]);
+    const next = fixture.input.moveAction(
+      { pointerId: 1, pointerType: "pen", x: 10, y: 10 },
+      state,
+    );
+    expect(next).not.toHaveProperty("maximumMovement");
     expect(fixture.scheduler.pendingCount).toBe(0);
   });
 });

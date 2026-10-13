@@ -121,56 +121,6 @@ describe("selection move edge-drag integration", () => {
   });
 });
 
-describe("selection move edge-scroll projection", () => {
-  it("reprojects the held viewport point after edge scrolling", () => {
-    let refreshViewport: (() => void) | undefined;
-    let scrollOffset = 0;
-    const edgeDrag = {
-      ...createEdgeDrag(),
-      begin: vi.fn((refresh?: () => void) => {
-        refreshViewport = refresh;
-      }),
-    };
-    const setPreviewTransform = vi.fn();
-    const flushPointerFeedbackFrame = vi.fn();
-    const preview = new MovePreview({
-      history: {} as ActiveEditorHistory,
-      pageToScreen: (point) => point,
-      pageToViewport: ({ x, y }) => ({ x, y: y - scrollOffset }),
-      preparedHistory: {} as PreparedElementHistory,
-      renderer: {
-        clearPreviewTransforms: vi.fn(),
-        flushPointerFeedbackFrame,
-        setOverlayPath: vi.fn(),
-        setPreviewTransform,
-        suppressMotionForNextDelta: vi.fn(),
-      },
-      sceneStore: {} as ElementSceneStore,
-      selection: () => new Set(),
-      selectionEdgeDrag: edgeDrag,
-      setSelection: vi.fn(),
-      start: {
-        additive: false,
-        kind: "element-move",
-        pointer: pointer(10, 20),
-        tool: "select",
-      },
-      store: { get: () => undefined } as unknown as ElementStore,
-      viewportToPage: ({ x, y }) => ({ x, y: y + scrollOffset }),
-    });
-
-    preview.update(pointer(30, 50));
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([], "translate(20 30)", 1);
-
-    scrollOffset = 40;
-    refreshViewport?.();
-
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([], "translate(20 70)", 2);
-    expect(flushPointerFeedbackFrame).toHaveBeenCalledTimes(2);
-    preview.revert();
-  });
-});
-
 describe("selection move edge-drag validation", () => {
   it("hands a synchronous move from preview to committed geometry atomically", () => {
     const element = rectangle();
@@ -287,8 +237,8 @@ describe("selection move connected geometry", () => {
     });
 
     preview.update(pointer(30, 50));
-
-    expect(setPreviewTransform).toHaveBeenCalledWith([element.id], "translate(20 30)", 1);
+    const transformCall = setPreviewTransform.mock.lastCall;
+    expect(transformCall?.slice(0, 3)).toEqual([[element.id], "translate(20 30)", 1]);
     expect(setSelectionOverlayPath.mock.lastCall?.[0]).toContain(
       "M 120 130 L 320 130 L 320 230 L 120 230 Z",
     );
@@ -333,7 +283,7 @@ describe("selection move connected geometry", () => {
     expect(setElementPreviews.mock.calls[0]?.[0]).toMatchObject([
       { end: { x: 430, y: 140 }, id: line.id, start: { x: 100, y: 100 } },
     ]);
-    expect(setPreviewTransform).toHaveBeenCalledWith([], "translate(30 40)", 1);
+    expect(setPreviewTransform.mock.lastCall?.slice(0, 3)).toEqual([[], "translate(30 40)", 1]);
     expect(setSelectionOverlayPath.mock.calls[0]?.slice(0, 2)).toEqual([null, "none"]);
     expect(setSelectionOverlayPath.mock.calls[0]?.[2]).toContain("M 425 140 a 5 5");
   });

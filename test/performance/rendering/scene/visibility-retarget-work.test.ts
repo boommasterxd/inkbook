@@ -19,6 +19,45 @@ import { createInteractionFixture, INTERACTION_PAGE } from "./interaction-refres
 
 const BOUNDS = { minX: 0, maxX: 100, minY: 0, maxY: 100 };
 
+it("reuses 10,000 retained ranks after geometry changes and preview release without a second order pass", () => {
+  const store = createViewportRectangleStore(10_000, () => 20);
+  const state = new SceneVisibilityState(store, createInstrumentation());
+  const original = state.query(BOUNDS).visibility.content.ids;
+  for (const record of store.records.values()) {
+    store.records.set(record.id, {
+      ...record,
+      bounds: { ...record.bounds, minX: record.bounds.minX + 1 },
+      geometryVersion: record.geometryVersion + 1,
+    });
+  }
+  state.invalidateForChanges(BOUNDS, BOUNDS);
+  const stable = vi.spyOn(visibleOrder, "retainedVisibleOrderStable");
+  const sort = vi.spyOn(visibleOrder, "sortVisibleBand");
+  const reads = vi.spyOn(Map.prototype, "get");
+  try {
+    const result = state.query(BOUNDS);
+    const queryReads = reads.mock.calls.length;
+    reads.mockClear();
+    const released = state.resortCurrent();
+    const releaseReads = reads.mock.calls.length;
+    reads.mockRestore();
+    expect(result.changed).toBe(false);
+    expect(result.visibility.content.ids).toBe(original);
+    expect(released.content.ids).toBe(original);
+    // Each candidate needs its record and slot once; no retained visibility/rank scan remains.
+    expect(queryReads).toBe(20_000);
+    expect(releaseReads).toBe(20_000);
+    expect(stable).not.toHaveBeenCalled();
+    expect(sort).not.toHaveBeenCalled();
+  } finally {
+    reads.mockRestore();
+    stable.mockRestore();
+    sort.mockRestore();
+    state.release();
+  }
+  expect(state.queryMemoryUsage()).toBe(0);
+});
+
 function createIndexedVisibilityState() {
   const fixture = createInteractionFixture();
   const port = new ElementSceneStore(fixture.store);

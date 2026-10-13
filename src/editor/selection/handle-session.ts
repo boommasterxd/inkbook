@@ -82,7 +82,12 @@ export class SelectionHandleSession {
     this.#planner = options.planner;
     this.#scale =
       options.action.kind === "scale"
-        ? new SelectionScaleGesture(options.action, options.elements, options.startPointer)
+        ? new SelectionScaleGesture(
+            options.action,
+            options.elements,
+            options.startPointer,
+            options.preparedFrame,
+          )
         : undefined;
     this.#snap = options.snap;
     this.#snapFeatures = options.snap?.features;

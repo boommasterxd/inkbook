@@ -1,11 +1,16 @@
 import type { InkElementV1 } from "../schema/public";
 
 import {
-  classifyReplacementDrafts,
   prepareReplacementCandidatesTimeSliced,
-  prepareReplacementDrafts,
+  prepareReplacementCandidates,
+  type ReplacementCandidate,
   type ReplacementPlannerPorts,
 } from "./replacement-planner";
+import { immutableReplacementSteps } from "./immutability";
+import {
+  getCanonicalStrokeReplacementProof,
+  isValidatedInternalStyleReplacement,
+} from "../elements/stroke-replacement-proof";
 import type { StoreSliceScheduler } from "./types";
 
 export interface ReplacementPlan {
@@ -17,9 +22,32 @@ export interface ReplacementPlan {
 export function prepareReplacementPlan(
   replacements: readonly InkElementV1[],
   ports: ReplacementPlannerPorts,
-): ReplacementPlan {
-  const drafts = prepareReplacementDrafts(replacements, ports);
-  return finalizeReplacementPlan(replacements, drafts, ports, 0);
+): ReplacementPlan & { readonly candidates: readonly ReplacementCandidate[] } {
+  const candidates = prepareReplacementCandidates(replacements, ports).map((candidate) => {
+    if (
+      candidate.retainedRecord?.element === candidate.element ||
+      isValidatedInternalStyleReplacement(candidate.current.element, candidate.element) ||
+      getCanonicalStrokeReplacementProof(candidate.element)?.source === candidate.current.element
+    ) {
+      return { ...candidate, owned: true };
+    }
+    const steps = immutableReplacementSteps(candidate.element, candidate.current.element);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return { ...candidate, element: step.value as InkElementV1, owned: true };
+  });
+  const elements = Object.freeze(candidates.map(({ element }) => element));
+  const byId = new Map(elements.map((element) => [element.id, element]));
+  return {
+    candidates,
+    elements,
+    replacements: Object.freeze(
+      replacements.map(
+        (element) => byId.get(element.id) ?? (ports.getRecord(element.id).element as InkElementV1),
+      ),
+    ),
+    yields: 0,
+  };
 }
 
 export async function prepareReplacementPlanTimeSliced(
@@ -33,20 +61,6 @@ export async function prepareReplacementPlanTimeSliced(
     elements: Object.freeze(prepared.candidates.map(({ element }) => element)),
     replacements: Object.freeze(explicitFromDrafts(replacements, prepared.drafts)),
     yields: prepared.yields,
-  };
-}
-
-function finalizeReplacementPlan(
-  requested: readonly InkElementV1[],
-  drafts: Map<string, InkElementV1>,
-  ports: ReplacementPlannerPorts,
-  yields: number,
-): ReplacementPlan {
-  const candidates = classifyReplacementDrafts(drafts, ports.getRecord);
-  return {
-    elements: Object.freeze(candidates.map(({ element }) => element)),
-    replacements: Object.freeze(explicitFromDrafts(requested, drafts)),
-    yields,
   };
 }
 

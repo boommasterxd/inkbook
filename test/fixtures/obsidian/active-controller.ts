@@ -87,6 +87,7 @@ export function createHarness() {
     selectElement: () => {
       controller.handleToolbarAction("select");
       controller.handlePointerDown(primaryPointer());
+      controller.handlePointerUp(primaryPointer());
     },
     renderer,
   };
@@ -153,6 +154,8 @@ function documentModel(store: ElementStore): EditableDocumentModel {
     },
     planClipboardPaste: vi.fn(async () => null),
     prepareElementMutation: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
+    prepareElementAppend: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
+    prepareElementArrangement: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
     prepareElementRemoval: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
     prepareElementReplacement: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
     removeElements: vi.fn(),

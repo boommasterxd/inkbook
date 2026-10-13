@@ -60,6 +60,17 @@ export function pathPresentation(element: InkElementV1, part: SvgPathPart): Path
     : presentation;
 }
 
+/** Conservative fixed-size paint reserve for snapshots that restore canonical widths. */
+export function previewPaintPadding(element: InkElementV1): number {
+  if (element.kind === "stroke" || element.kind === "straight-highlighter") {
+    return effectiveStrokeWidth(element) / 2;
+  }
+  const width = element.style.outlineWidth;
+  const nodeReserve =
+    element.kind === "arrow" || element.kind === "coordinate-system" ? Math.max(12, width * 4) : 0;
+  return width / 2 + nodeReserve;
+}
+
 export function liveStrokePresentation(
   style: StrokeStyleV1,
   paint: SvgPathPart["paint"],

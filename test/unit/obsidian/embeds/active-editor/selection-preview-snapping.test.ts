@@ -5,6 +5,7 @@ import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { MovePreview } from "../../../../../src/obsidian/embeds/active-editor/selection-preview";
 import { createSynchronousActiveEditorHistory } from "../../../../fixtures/obsidian/synchronous-active-editor-history";
+import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { uuid } from "../../../domain/schema/fixtures";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 
@@ -15,7 +16,10 @@ const pointer = (x: number, y: number) => ({
   y,
 });
 
-function moveSnapHarness(connectionSnapping: boolean | (() => boolean) = true, selectionSize = 1) {
+async function moveSnapHarness(
+  connectionSnapping: boolean | (() => boolean) = true,
+  selectionSize = 1,
+) {
   const target = rectangle();
   const line = {
     ...connectedLine(target),
@@ -35,7 +39,10 @@ function moveSnapHarness(connectionSnapping: boolean | (() => boolean) = true, s
   const sceneStore = new ElementSceneStore(store);
   const setPreviewTransform = vi.fn();
   const setSnapMarkerPath = vi.fn();
+  const scheduler = immediateWorkScheduler();
+  if (selectionSize === 1) await sceneStore.prepareConnections(line.id, scheduler);
   const preview = new MovePreview({
+    workScheduler: scheduler,
     connectionSnapping,
     history: createSynchronousActiveEditorHistory(store),
     pageToScreen: (point) => point,
@@ -71,13 +78,19 @@ function moveSnapHarness(connectionSnapping: boolean | (() => boolean) = true, s
 }
 
 describe("selection move snapping settings", () => {
-  it("snaps a moved free line endpoint to a shape and renders an offset target marker", () => {
+  it("snaps a moved free line endpoint to a shape and renders an offset target marker", async () => {
     const { line, preview, sceneStore, setPreviewTransform, setSnapMarkerPath, store, target } =
-      moveSnapHarness();
+      await moveSnapHarness();
 
     preview.update(pointer(47, 48));
 
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 1);
+    expect(setPreviewTransform).toHaveBeenLastCalledWith(
+      [line.id],
+      "translate(50 50)",
+      1,
+      "scale",
+      expect.any(Function),
+    );
     expect(setSnapMarkerPath).toHaveBeenLastCalledWith("M 88 100 L 112 100 M 100 88 L 100 112");
     expect(preview.commit()).toBe(true);
     expect(store.get(line.id)?.element).toMatchObject({
@@ -91,13 +104,19 @@ describe("selection move snapping settings", () => {
     sceneStore.release();
   });
 
-  it("keeps a moved line free when connection snapping is disabled", () => {
+  it("keeps a moved line free when connection snapping is disabled", async () => {
     const { line, preview, sceneStore, setPreviewTransform, setSnapMarkerPath, store } =
-      moveSnapHarness(false);
+      await moveSnapHarness(false);
 
     preview.update(pointer(47, 48));
 
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(47 48)", 1);
+    expect(setPreviewTransform).toHaveBeenLastCalledWith(
+      [line.id],
+      "translate(47 48)",
+      1,
+      "scale",
+      expect.any(Function),
+    );
     expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
     expect(preview.commit()).toBe(true);
     expect(store.get(line.id)?.element).toMatchObject({
@@ -107,32 +126,49 @@ describe("selection move snapping settings", () => {
     sceneStore.release();
   });
 
-  it("removes and restores move snapping when the temporary override changes", () => {
+  it("removes and restores move snapping when the temporary override changes", async () => {
     let snappingEnabled = true;
-    const { line, preview, sceneStore, setPreviewTransform, setSnapMarkerPath } = moveSnapHarness(
-      () => snappingEnabled,
-    );
+    const { line, preview, sceneStore, setPreviewTransform, setSnapMarkerPath } =
+      await moveSnapHarness(() => snappingEnabled);
 
     preview.update(pointer(47, 48));
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 1);
+    expect(setPreviewTransform).toHaveBeenLastCalledWith(
+      [line.id],
+      "translate(50 50)",
+      1,
+      "scale",
+      expect.any(Function),
+    );
 
     snappingEnabled = false;
     preview.update(pointer(47, 48));
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(47 48)", 2);
+    expect(setPreviewTransform).toHaveBeenLastCalledWith(
+      [line.id],
+      "translate(47 48)",
+      2,
+      "scale",
+      expect.any(Function),
+    );
     expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
 
     snappingEnabled = true;
     preview.update(pointer(47, 48));
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 3);
+    expect(setPreviewTransform).toHaveBeenLastCalledWith(
+      [line.id],
+      "translate(50 50)",
+      3,
+      "scale",
+      expect.any(Function),
+    );
     sceneStore.release();
   });
 });
 
 describe("group move snapping boundary", () => {
-  it("preserves raw group translation beside external anchors through temporary snapping overrides", () => {
+  it("preserves raw group translation beside external anchors through temporary snapping overrides", async () => {
     let snappingEnabled = true;
     const { lines, preview, sceneStore, setPreviewTransform, setSnapMarkerPath, store } =
-      moveSnapHarness(() => snappingEnabled, 2);
+      await moveSnapHarness(() => snappingEnabled, 2);
     const query = vi.spyOn(sceneStore, "query");
     const targets = vi.spyOn(sceneStore, "getSnapTarget");
     const canConnect = vi.spyOn(sceneStore, "canConnect");
@@ -140,7 +176,13 @@ describe("group move snapping boundary", () => {
     for (const [index, enabled] of [true, false, true].entries()) {
       snappingEnabled = enabled;
       preview.update(pointer(47, 48));
-      expect(setPreviewTransform).toHaveBeenLastCalledWith(ids, "translate(47 48)", index + 1);
+      expect(setPreviewTransform).toHaveBeenLastCalledWith(
+        ids,
+        "translate(47 48)",
+        index + 1,
+        "scale",
+        expect.any(Function),
+      );
       expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
     }
     expect(preview.commit()).toBe(true);

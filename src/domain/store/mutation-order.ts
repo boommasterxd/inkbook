@@ -11,6 +11,18 @@ export interface MutationOrder {
   readonly relativeOrderPreserved: Readonly<Record<RenderBand, boolean>>;
 }
 
+/** Private producers borrow untouched authoritative bands until an atomic replacement is ready. */
+export function createUnchangedMutationOrder(
+  bands: Readonly<Record<RenderBand, readonly string[]>>,
+) {
+  return {
+    bands: { content: bands.content as string[], highlight: bands.highlight as string[] },
+    ranks: new Map<string, ElementRank>(),
+    dirtyBands: { content: false, highlight: false },
+    relativeOrderPreserved: { content: true, highlight: true },
+  };
+}
+
 interface OrderSource {
   readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
   readonly records: ReadonlyMap<string, ElementRecord>;
@@ -27,8 +39,10 @@ export async function prepareMutationOrder(
     ownedReplay?: OwnedMutationReplay | undefined;
     ownedRecords?: ReadonlyMap<string, ElementRecord> | undefined;
     removeIds: ReadonlySet<string>;
+    trustedOrder?: MutationOrder | undefined;
   }>,
 ): Promise<MutationOrder | "cancelled"> {
+  if (proof.trustedOrder !== undefined) return proof.trustedOrder;
   if (proof.trustedRemoval) {
     return validateTrustedRemovalOrder(requested, source, sourceRanks, proof.removeIds, scheduler);
   }
@@ -207,7 +221,7 @@ export async function restoreOwnedReplayBands(
   const ranks = new Map<string, ElementRank>();
   for (const band of ["highlight", "content"] as const) {
     if (!owned.dirtyBands[band]) {
-      // Only the private mutation-version proof admits reuse of these mutable
+      // Only the private exact band-state proof admits reuse of these mutable
       // authoritative arrays. Frozen history arrays are never installed here.
       bands[band] = source.bands[band] as string[];
       continue;

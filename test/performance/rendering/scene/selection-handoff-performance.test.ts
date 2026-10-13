@@ -35,7 +35,7 @@ describe("selection preview handoff performance", () => {
     renderer.setPage(PAGE, 200_000);
     scheduler.runAll();
     verifyBoundedSelectionFrame(renderer, store);
-    const centers = vi.spyOn(strokeGeometry, "iterateTransformedStrokeCenters");
+    const centers = vi.spyOn(strokeGeometry, "strokeCenterAt");
     let notifications = 0;
     const unsubscribe = store.subscribe((delta) => {
       notifications += 1;

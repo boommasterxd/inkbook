@@ -1,6 +1,10 @@
 import type { PointV1 } from "../schema/types";
 import { pressureArcPoint } from "./pressure-joins";
 import type { PressureBoundaryArc, PressureBoundaryLine } from "./pressure-joins";
+import type {
+  PressureBoundaryScalarCache,
+  PressureBoundaryScalars,
+} from "./pressure-boundary-scalars";
 
 export type PressureBoundarySegment = PressureBoundaryLine | PressureBoundaryArc;
 export interface PressureBoundaryIntersection {
@@ -56,11 +60,24 @@ export function pressureBoundaryParameter(
   boundary: PressureBoundarySegment,
   point: PointV1,
   arcAngles?: PressureArcAngleCache,
+  scalarCache?: PressureBoundaryScalarCache,
 ): number | undefined {
-  const epsilon = roundoff(boundary.start, boundary.end, point);
+  return boundaryParameter(boundary, point, arcAngles, scalarCache?.read(boundary));
+}
+
+function boundaryParameter(
+  boundary: PressureBoundarySegment,
+  point: PointV1,
+  arcAngles: PressureArcAngleCache | undefined,
+  scalars: PressureBoundaryScalars | undefined,
+): number | undefined {
+  const epsilon =
+    scalars === undefined
+      ? roundoff(boundary.start, boundary.end, point)
+      : 32 * Number.EPSILON * Math.max(scalars.endpointScale, Math.abs(point.x), Math.abs(point.y));
   if (withinRoundoff(point, boundary.start, epsilon)) return 0;
   if (withinRoundoff(point, boundary.end, epsilon)) return 1;
-  if (boundary.kind === "arc") return arcParameter(boundary, point, epsilon, arcAngles);
+  if (boundary.kind === "arc") return arcParameter(boundary, point, epsilon, arcAngles, scalars);
   const dx = boundary.end.x - boundary.start.x;
   const dy = boundary.end.y - boundary.start.y;
   const lengthSquared = dx * dx + dy * dy;
@@ -78,6 +95,7 @@ function arcParameter(
   point: PointV1,
   epsilon: number,
   arcAngles?: PressureArcAngleCache,
+  scalars?: PressureBoundaryScalars,
 ): number | undefined {
   const dx = arc.center.x - point.x;
   const dy = arc.center.y - point.y;
@@ -95,8 +113,9 @@ function arcParameter(
     return undefined;
   const initial = initialArcAngle(arc, arcAngles);
   const angle = Math.atan2(point.y - arc.center.y, point.x - arc.center.x);
-  const travel = ((((angle - initial) * Math.sign(arc.sweep)) % TURN) + TURN) % TURN;
-  const fraction = travel / Math.abs(arc.sweep);
+  const sign = scalars?.sweepSign ?? Math.sign(arc.sweep);
+  const travel = ((((angle - initial) * sign) % TURN) + TURN) % TURN;
+  const fraction = travel / (scalars?.absoluteSweep ?? Math.abs(arc.sweep));
   return fraction <= 1 ? fraction : undefined;
 }
 
@@ -114,13 +133,16 @@ export function intersectPressureBoundaries(
   first: PressureBoundarySegment,
   second: PressureBoundarySegment,
   arcAngles?: PressureArcAngleCache,
+  scalarCache?: PressureBoundaryScalarCache,
 ): readonly PressureBoundaryIntersection[] {
   if (separatedCarriers(first, second)) return [];
+  const secondScalars = scalarCache?.read(second);
+  const firstScalars = scalarCache?.read(first);
   const result: PressureBoundaryIntersection[] = [];
-  addEndpoints(first, second, result, arcAngles);
+  addEndpoints(first, second, result, arcAngles, firstScalars, secondScalars);
   for (const point of intersectionPoints(first, second)) {
-    const a = pressureBoundaryParameter(first, point, arcAngles);
-    const b = pressureBoundaryParameter(second, point, arcAngles);
+    const a = boundaryParameter(first, point, arcAngles, firstScalars);
+    const b = boundaryParameter(second, point, arcAngles, secondScalars);
     if (a !== undefined && b !== undefined) addIntersection(result, a, b);
   }
   return result;
@@ -173,13 +195,15 @@ function addEndpoints(
   second: PressureBoundarySegment,
   result: PressureBoundaryIntersection[],
   arcAngles?: PressureArcAngleCache,
+  firstScalars?: PressureBoundaryScalars,
+  secondScalars?: PressureBoundaryScalars,
 ): void {
   for (const fraction of [0, 1]) {
     const point = fraction === 0 ? first.start : first.end;
-    const parameter = pressureBoundaryParameter(second, point, arcAngles);
+    const parameter = boundaryParameter(second, point, arcAngles, secondScalars);
     if (parameter !== undefined) addIntersection(result, fraction, parameter);
     const other = fraction === 0 ? second.start : second.end;
-    const reverse = pressureBoundaryParameter(first, other, arcAngles);
+    const reverse = boundaryParameter(first, other, arcAngles, firstScalars);
     if (reverse !== undefined) addIntersection(result, reverse, fraction);
   }
 }

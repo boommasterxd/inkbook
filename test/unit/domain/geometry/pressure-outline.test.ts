@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import {
   buildPressureOutline,
+  iteratePreparedPressureOutline,
   visitPressureOutline,
   visitPreparedPressureOutline,
   type PressureOutlinePiece,
@@ -102,7 +103,7 @@ describe("continuous pressure outlines", () => {
   });
 });
 
-describe("pressure contour assembly", () => {
+describe("canonical pressure nibs", () => {
   it("reuses canonical nibs without changing adjacent capsules", () => {
     const centers = [
       { x: 0, y: 0, pressure: 0.1 },
@@ -121,8 +122,81 @@ describe("pressure contour assembly", () => {
       width: 8,
     }));
     expect(assembled).toEqual(separate);
+    for (let index = 1; index < assembled.length; index += 1) {
+      const previous = assembled[index - 1]!;
+      const current = assembled[index]!;
+      if (previous.kind !== "strip" || current.kind !== "strip")
+        throw new Error("Expected adjacent capsules");
+      expect(current.capsule.start).toBe(previous.capsule.end);
+    }
+  });
+});
+
+describe("prepared pressure outline iteration", () => {
+  it("keeps empty and singleton prepared outlines, including singleton slice semantics", () => {
+    expect([...iteratePreparedPressureOutline([], 8)]).toEqual([]);
+    const center = { x: 2, y: 3, pressure: 1 };
+    expect([
+      ...iteratePreparedPressureOutline([center], 8, { firstBoundary: 0, lastBoundary: 0 }),
+    ]).toEqual([{ kind: "dot", center, radius: 4 }]);
+    expect(
+      visitPreparedPressureOutline([center], 8, () => true, {
+        firstBoundary: 0,
+        lastBoundary: 0,
+      }),
+    ).toBe(true);
   });
 
+  it("yields covered intervals and retains both neighboring slice contexts", () => {
+    const centers = [
+      { x: 0, y: 0, pressure: 0 },
+      { x: 0, y: 0, pressure: 1 },
+      { x: 10, y: 0, pressure: 1 },
+    ];
+    expect([
+      ...iteratePreparedPressureOutline(centers, 8, { firstBoundary: 0, lastBoundary: 1 }),
+    ]).toEqual([undefined]);
+    const stationary = centers.map((center) => ({ ...center, x: 0 }));
+    expect([
+      ...iteratePreparedPressureOutline(stationary, 8, { firstBoundary: 1, lastBoundary: 2 }),
+    ]).toEqual([undefined]);
+    expect([...iteratePreparedPressureOutline(stationary, 8)]).toEqual([
+      { kind: "dot", center: { x: 0, y: 0 }, radius: 4 },
+      undefined,
+    ]);
+    const visited: PressureOutlinePiece[] = [];
+    expect(
+      visitPreparedPressureOutline(stationary, 8, (piece) => {
+        visited.push(piece);
+        return false;
+      }),
+    ).toBe(false);
+    expect(visited).toEqual([{ kind: "dot", center: { x: 0, y: 0 }, radius: 4 }]);
+  });
+
+  it("stops prepared visitation and closes a cancelled iterator before the next interval", () => {
+    const centers = [
+      { x: 0, y: 0, pressure: 0.1 },
+      { x: 10, y: 2, pressure: 0.8 },
+      {
+        get x(): number {
+          throw new Error("Unexpected next interval");
+        },
+        y: -3,
+        pressure: 0.2,
+      },
+    ];
+    expect(visitPreparedPressureOutline(centers, 8, () => true)).toBe(true);
+    const steps = iteratePreparedPressureOutline(centers, 8);
+    const first = steps.next();
+    if (first.done) throw new Error("Expected first pressure interval");
+    expect(first.value?.kind).toBe("strip");
+    steps.return(undefined);
+    expect(steps.next().done).toBe(true);
+  });
+});
+
+describe("pressure contour assembly", () => {
   it("assembles prepared sections identically across bounded live slices", () => {
     const centers = Array.from({ length: 200 }, (_, index) => ({
       x: index * 2,

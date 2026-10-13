@@ -114,6 +114,8 @@ describe("active editor rotated table move", () => {
         [table.id],
         `translate(${String(previewDelta.x)} ${String(previewDelta.y)})`,
         1,
+        "scale",
+        expect.any(Function),
       );
       expect(fixture.setSelectionOverlayPath).toHaveBeenLastCalledWith(
         expect.stringContaining("M "),

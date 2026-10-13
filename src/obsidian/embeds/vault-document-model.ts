@@ -233,9 +233,32 @@ export function createVaultElementPreparationActions(options: {
   readonly store: ElementStore;
 }): Pick<
   EditableActions,
-  "prepareElementMutation" | "prepareElementRemoval" | "prepareElementReplacement"
+  | "prepareElementMutation"
+  | "prepareElementRemoval"
+  | "prepareElementReplacement"
+  | "prepareElementArrangement"
+  | "prepareElementAppend"
 > {
   return {
+    prepareElementArrangement: (action, selection, cancellation) =>
+      options.run(() =>
+        !options.active()
+          ? Promise.resolve({ status: "cancelled", token: null })
+          : options.store.prepareElementArrangement(
+              action,
+              selection,
+              options.scheduler(() => cancellation.isCancelled(), "frame"),
+            ),
+      ),
+    prepareElementAppend: (elements, cancellation) =>
+      options.run(() =>
+        !options.active()
+          ? Promise.resolve({ status: "cancelled", token: null })
+          : options.store.prepareElementAppend(
+              elements,
+              options.scheduler(() => cancellation.isCancelled(), "frame"),
+            ),
+      ),
     prepareElementMutation: (mutation, cancellation) =>
       options.run(() =>
         prepareVaultElementMutation({

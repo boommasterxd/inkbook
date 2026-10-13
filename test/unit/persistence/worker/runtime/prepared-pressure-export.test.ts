@@ -1,7 +1,10 @@
 import { expect, it } from "vitest";
 
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
-import { translatedStroke } from "../../../../../src/domain/geometry/stroke-position";
+import {
+  strokeLocalGeometry,
+  translatedStroke,
+} from "../../../../../src/domain/geometry/stroke-position";
 import type { InkSnapshotV1, StrokeElementV1 } from "../../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { PreparedPressurePathCache } from "../../../../../src/domain/store/prepared-pressure-path-cache";
@@ -27,6 +30,7 @@ import {
 } from "../../../../../src/persistence/worker/runtime/wire-codec";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { unlockCanonicalSnapshot } from "../../../../fixtures/persistence/canonical-worker-unlock";
+import { preparedHints } from "../../../../fixtures/persistence/prepared-pressure-hints";
 import { rectangle, snapshot } from "./fixtures";
 
 const identity = { exportGeneration: 1, sessionId: "prepared-path", workerEpoch: 1 };
@@ -80,17 +84,10 @@ function pressureStroke(): StrokeElementV1 {
 function preparedStore(stroke: StrokeElementV1) {
   const store = new ElementStore([stroke]);
   const record = store.get(stroke.id)!;
-  store
-    .pressureGeometry(stroke.id, record.geometryVersion)
-    .publishPath?.(buildElementPathParts(stroke));
+  store.pressureGeometry(stroke.id, record.geometryVersion).local!().publishPath?.(
+    buildElementPathParts(strokeLocalGeometry(stroke)),
+  );
   return store;
-}
-
-function preparedHints(store: ElementStore, revision: number) {
-  return Array.from(store.preparedPressurePaths()).flatMap(({ record, parts }) => {
-    const hint = preparedPressurePathHint(record, parts, revision);
-    return hint === undefined ? [] : [hint];
-  });
 }
 
 function fullPlan(document: InkSnapshotV1) {
@@ -102,6 +99,16 @@ function fullPlan(document: InkSnapshotV1) {
   };
 }
 
+it("does not grant a scene hint to an externally frozen stroke header", () => {
+  const source = pressureStroke();
+  Object.freeze(source.points);
+  Object.freeze(source);
+  const stored = preparedStore(source).get(source.id)!;
+  expect(
+    preparedPressurePathHint({ ...stored, element: source }, [{ d: "M0 0", paint: "fill" }], 1),
+  ).toBeUndefined();
+});
+
 function expectCanonicalExport(
   result: DocumentRuntimeResult,
   document: InkSnapshotV1,
@@ -112,10 +119,16 @@ function expectCanonicalExport(
   expect(result.outputHash).toBe(canonical.value.hash);
 }
 
-it.each([undefined, { x: 0, y: 0 }])(
-  "reuses a current scene contour with offset %j across the worker wire",
-  async (offset) => {
-    const stroke = { ...pressureStroke(), ...(offset === undefined ? {} : { offset }) };
+it.each([
+  { offset: undefined, rotation: 0 },
+  { offset: { x: 0, y: 0 }, rotation: 0 },
+  { offset: { x: 12.007, y: 25.003 }, rotation: 37 },
+  { offset: { x: -100.007, y: -0.003 }, rotation: 37 },
+])(
+  "reuses a current scene contour with $offset at $rotation degrees across the worker wire",
+  async ({ offset, rotation }) => {
+    const base = { ...pressureStroke(), rotation };
+    const stroke = offset === undefined ? base : translatedStroke(base, offset);
     const store = preparedStore(stroke);
     const document = store.materializeSnapshot({ page: snapshot().page, revision: 1 });
     store.resetInstrumentation();
@@ -155,6 +168,36 @@ it.each([undefined, { x: 0, y: 0 }])(
     runtime.terminate();
   },
 );
+
+it("transfers the retained local contour after movement and rejects the old shape header", async () => {
+  const initial = { ...pressureStroke(), rotation: 37 };
+  const store = preparedStore(initial);
+  const oldHint = preparedHints(store, 1)[0]!;
+  const original = store.get(initial.id)!.element as StrokeElementV1;
+  store.replace(initial.id, translatedStroke(original, { x: -10.003, y: 0.007 }));
+  const hints = preparedHints(store, 2);
+  expect(hints).toHaveLength(1);
+  expect(hints[0]).toMatchObject({ d: oldHint.d, shapeKey: oldHint.shapeKey, modelRevision: 2 });
+  expect(hints[0]!.geometryVersion).not.toBe(oldHint.geometryVersion);
+  const latest = store.materializeSnapshot({ page: snapshot().page, revision: 2 });
+  const runtime = new DocumentWorkerRuntime(identity, null, undefined, true);
+  const result = await runtime.execute(
+    createExportRequest(fullPlan(latest), identity, () => hints),
+  );
+  expectCanonicalExport(result, latest);
+  expect(runtime.instrumentation.shapeBuilds).toBe(0);
+  runtime.terminate();
+  const rejected = new DocumentWorkerRuntime(identity, null, undefined, true);
+  const output = await rejected.execute(
+    createExportRequest(fullPlan(latest), identity, () => [
+      { ...hints[0]!, shapeKey: `${hints[0]!.shapeKey}:wrong` },
+    ]),
+  );
+  expectCanonicalExport(output, latest);
+  expect(rejected.instrumentation.shapeBuilds).toBe(1);
+  rejected.terminate();
+  store.releasePreparedPressureGeometry();
+});
 
 it("stops collecting lazy prepared hints at the receiver entry limit", () => {
   const store = preparedStore(pressureStroke());

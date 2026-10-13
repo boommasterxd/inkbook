@@ -1,9 +1,72 @@
 import { describe, expect, it } from "vitest";
 
+import { calculateElementBounds } from "../../../../src/domain/geometry/public";
 import type { BoxShapeElementV1 } from "../../../../src/domain/schema/public";
 import { SelectionScalePreviewFramePlan } from "../../../../src/editor/selection/scale-preview-frame";
+import {
+  SelectionFrameSession,
+  selectionFramePoint,
+} from "../../../../src/editor/selection/selection-frame";
+import { SelectionScaleGesture } from "../../../../src/editor/selection/selection-scale";
+import { indexedStroke } from "../../../fixtures/editor/stroke";
+import { STROKE_FRAME_CASES } from "../../../fixtures/editor/stroke-frame";
+import { oppositeBoxAnchor } from "../../../../src/editor/selection/handles";
 
 describe("selection scale preview frame", () => {
+  it.each([0, 37])(
+    "reuses a stroke frame with canonical pivot/offset alignment at %s degrees",
+    (rotation) => {
+      const { element, frame } = strokeFrame(rotation);
+      const reused = SelectionScalePreviewFramePlan.fromSingleStrokeFrame(element, frame);
+      const reference = new SelectionScalePreviewFramePlan([element], rotation);
+      const anchor = frame.points[0];
+      for (const factors of [
+        { x: 1, y: 1 },
+        { x: 2, y: 0.5 },
+        { x: 0, y: 0 },
+      ]) {
+        const actual = reused.boundsAt(anchor, factors);
+        const expected = reference.boundsAt(anchor, factors);
+        for (const key of ["minX", "minY", "maxX", "maxY"] as const)
+          expect(actual[key]).toBeCloseTo(expected[key], 9);
+      }
+      expect(reused.without(new Set())).toBe(reused);
+      expect(reused.without(new Set([element.id]))).toBeNull();
+    },
+  );
+
+  it.each(STROKE_FRAME_CASES)(
+    "preserves prepared side/uniform output at $rotation degrees, collapsed=$collapsed, extreme pivot=$extremePivot",
+    ({ rotation, collapsed, extremePivot }) => {
+      const { element, frame } = strokeFrame(rotation, collapsed, extremePivot);
+      for (const position of ["middle-right", "bottom-right"] as const) {
+        const start = selectionFramePoint(frame, position);
+        const action = {
+          anchor: selectionFramePoint(frame, oppositeBoxAnchor(position)),
+          kind: "scale" as const,
+          position,
+          rotation,
+        };
+        const prepared = new SelectionScaleGesture(action, [element], start, frame);
+        const reference = new SelectionScaleGesture(action, [element], start);
+        const pointer = { x: start.x + 20, y: start.y + 10 };
+        for (const uniform of [false, true]) {
+          const actual = prepared.factorsAt(pointer, uniform);
+          const expected = reference.factorsAt(pointer, uniform);
+          expect(actual.x).toBeCloseTo(expected.x, 9);
+          expect(actual.y).toBeCloseTo(expected.y, 9);
+          if (!uniform && (collapsed === "x" || collapsed === "both"))
+            expect(actual.x).toBe(expected.x);
+          if (!uniform && (collapsed === "y" || collapsed === "both"))
+            expect(actual.y).toBe(expected.y);
+          expect(prepared.materialize(pointer, uniform)).toEqual(
+            reference.materialize(pointer, uniform),
+          );
+        }
+      }
+    },
+  );
+
   it("keeps the centerline edge independent of overlapping paint widths", () => {
     const widePath = rectangle("wide-path", 100, 2);
     const widePaint = rectangle("wide-paint", 99, 22);
@@ -80,6 +143,29 @@ describe("uniform centerline scale recovery", () => {
     ).toEqual({ x: 0.25, y: 0 });
   });
 });
+
+function strokeFrame(
+  rotation: number,
+  collapsed: "none" | "x" | "y" | "both" = "none",
+  extremePivot = false,
+) {
+  const element = {
+    ...indexedStroke(0),
+    offset: { x: 17.003, y: -11.007 },
+    pivot: extremePivot ? { x: 99_900, y: -99_900 } : { x: 100, y: 100 },
+    points: [
+      20,
+      30,
+      0.5,
+      collapsed === "x" || collapsed === "both" ? 20 : 65,
+      collapsed === "y" || collapsed === "both" ? 30 : 80,
+      0.8,
+    ],
+    rotation,
+  };
+  const selected = [{ element, bounds: calculateElementBounds(element) }];
+  return { element, frame: new SelectionFrameSession().current(selected)! };
+}
 
 function rectangle(id: string, size: number, outlineWidth: 2 | 22): BoxShapeElementV1 {
   return {

@@ -3,6 +3,7 @@ import { renderBandOf, type RenderBand } from "../commands/render-bands";
 
 import type { DeltaBuilder } from "./delta-builder";
 import type { ElementRank, ElementRecord, ImmutableInkElement } from "./types";
+import { arrangementRange } from "./arrangement-mutation";
 
 interface OrderingState {
   readonly bands: Record<RenderBand, string[]>;
@@ -18,8 +19,33 @@ export class ElementStoreOrdering {
     this.#state = state;
   }
 
-  public arrange(ids: string[], selectedIds: ReadonlySet<string>, action: ArrangeAction): boolean {
-    return arrangeIdsInPlace(ids, selectedIds, action, this.#arrangeScratch);
+  public arrange(
+    band: RenderBand,
+    selectedIds: ReadonlySet<string>,
+    action: ArrangeAction,
+    delta: DeltaBuilder,
+  ): boolean {
+    const state = this.#state();
+    let first = state.bands[band].length;
+    let last = -1;
+    for (const id of selectedIds) {
+      const rank = state.ranks.get(id);
+      if (rank?.band !== band) continue;
+      first = Math.min(first, rank.rank);
+      last = Math.max(last, rank.rank);
+    }
+    if (last < 0) return false;
+    const [start, end] = arrangementRange(state.bands[band].length, { first, last }, action);
+    const ids = state.bands[band].slice(start, end);
+    if (!arrangeIdsInPlace(ids, selectedIds, action, this.#arrangeScratch)) return false;
+    let changed = false;
+    for (let index = start; index < end; index += 1) {
+      if (state.bands[band][index] === ids[index - start]) continue;
+      state.bands[band][index] = ids[index - start]!;
+      this.refresh(band, index, delta, true, index + 1);
+      changed = true;
+    }
+    return changed;
   }
 
   public insert(
@@ -41,11 +67,17 @@ export class ElementStoreOrdering {
     delta.dirtyBand(band);
   }
 
-  public refresh(band: RenderBand, start: number, delta: DeltaBuilder, publishOrder = true): void {
+  public refresh(
+    band: RenderBand,
+    start: number,
+    delta: DeltaBuilder,
+    publishOrder = true,
+    end?: number,
+  ): void {
     const state = this.#state();
     const ids = state.bands[band];
     let changed = false;
-    for (let rank = start; rank < ids.length; rank += 1) {
+    for (let rank = start; rank < (end ?? ids.length); rank += 1) {
       const id = ids[rank]!;
       const previous = state.ranks.get(id);
       if (previous?.rank === rank && previous.band === band) continue;

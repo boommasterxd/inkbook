@@ -14,13 +14,14 @@ import {
 } from "../../domain/schema/element-validation";
 import { validateInkConnectionRelationsV1Steps } from "../../domain/schema/snapshot-validation";
 import { codecFailure, invalidSnapshot } from "./codec-failure";
-import { elementRenderBand, type RenderBand } from "./element-fragments";
+import type { RenderBand } from "./element-fragments";
 import * as incrementalValidation from "./incremental-validation";
 import type {
   DocumentSerializationDelta,
   PreparedDelta,
 } from "./incremental-document-serializer-types";
 import type { DocumentCodecResult } from "./types";
+import { prepareSerializationOrdersSteps } from "./serialization-order-preparation";
 
 interface PrepareDeltaOptions {
   readonly currentElements: ReadonlyMap<string, InkElementV1>;
@@ -63,7 +64,16 @@ export function* prepareDocumentDeltaSteps(
   if (!changed.ok) return changed;
   const derivations = yield* prepareDerivations(delta, changed.value, nodesPerStep);
   if (!derivations.ok) return derivations;
-  const orders = yield* prepareOrders(options, changed.value, removed, nodesPerStep);
+  const orders = yield* prepareSerializationOrdersSteps(
+    {
+      currentElements: options.currentElements,
+      currentOrders: options.currentOrders,
+      changed: changed.value,
+      removed,
+      ...(delta.orderChanges === undefined ? {} : { orderChanges: delta.orderChanges }),
+    },
+    nodesPerStep,
+  );
   if (!orders.ok) return orders;
   const page = delta.page ?? options.currentPage;
   if (delta.page !== undefined) {
@@ -160,81 +170,6 @@ function* prepareDerivations(
     if (derivations.size % nodesPerStep === 0) yield;
   }
   return { ok: true, value: derivations };
-}
-
-function* prepareOrders(
-  options: PrepareDeltaOptions,
-  changed: ReadonlyMap<string, InkElementV1>,
-  removed: ReadonlySet<string>,
-  nodesPerStep: number,
-): Generator<void, DocumentCodecResult<Record<RenderBand, string[]>>> {
-  let visited = 0;
-  if (removed.size === 0 && options.delta.orderChanges === undefined) {
-    const unchangedBands = yield* keepsCurrentBands(options.currentElements, changed, nodesPerStep);
-    if (unchangedBands) return { ok: true, value: options.currentOrders };
-  }
-  const available = new Map<string, InkElementV1>();
-  for (const [id, element] of options.currentElements) {
-    available.set(id, element);
-    if (++visited % nodesPerStep === 0) yield;
-  }
-  for (const id of removed) {
-    available.delete(id);
-    if (++visited % nodesPerStep === 0) yield;
-  }
-  for (const [id, element] of changed) {
-    available.set(id, element);
-    if (++visited % nodesPerStep === 0) yield;
-  }
-  const orders = { content: [] as string[], highlight: [] as string[] };
-  for (const band of ["highlight", "content"] as const) {
-    const replacement = options.delta.orderChanges?.[band];
-    for (const id of replacement ?? options.currentOrders[band]) {
-      if (replacement !== undefined || available.has(id)) orders[band].push(id);
-      if (++visited % nodesPerStep === 0) yield;
-    }
-  }
-  if (!(yield* hasCompleteValidOrder(orders, available, nodesPerStep))) {
-    return codecFailure(
-      "invalid-order",
-      "Band order must contain every current element ID exactly once.",
-    );
-  }
-  return { ok: true, value: orders };
-}
-
-function* keepsCurrentBands(
-  currentElements: ReadonlyMap<string, InkElementV1>,
-  changed: ReadonlyMap<string, InkElementV1>,
-  nodesPerStep: number,
-): Generator<void, boolean> {
-  let visited = 0;
-  for (const element of changed.values()) {
-    const current = currentElements.get(element.id);
-    if (current === undefined || elementRenderBand(current) !== elementRenderBand(element))
-      return false;
-    if (++visited % nodesPerStep === 0) yield;
-  }
-  return true;
-}
-
-function* hasCompleteValidOrder(
-  orders: Readonly<Record<RenderBand, readonly string[]>>,
-  available: ReadonlyMap<string, InkElementV1>,
-  nodesPerStep: number,
-): Generator<void, boolean> {
-  if (orders.highlight.length + orders.content.length !== available.size) return false;
-  const seen = new Set<string>();
-  for (const band of ["highlight", "content"] as const) {
-    for (const id of orders[band]) {
-      if (seen.has(id)) return false;
-      seen.add(id);
-      const element = available.get(id);
-      if (element === undefined || elementRenderBand(element) !== band) return false;
-      if (seen.size % nodesPerStep === 0) yield;
-    }
-  }
-  return true;
 }
 
 function* validateChangedFacts(

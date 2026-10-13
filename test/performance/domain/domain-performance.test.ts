@@ -278,7 +278,7 @@ describe("normalized store and command costs", () => {
     expect(delta?.changes.length).toBeGreaterThanOrEqual(10_000);
     expect(store.get(fixture.strokeIds[1] as string)).toBe(stableRecord);
     expect(store.instrumentation).toMatchObject({
-      bandScans: 2,
+      bandScans: 1,
       fullStoreScans: 0,
       recordReplacements: 0,
     });

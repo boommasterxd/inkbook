@@ -12,6 +12,9 @@ import type { InkElementV1 } from "../../../src/domain/schema/public";
 import * as recordFactory from "../../../src/domain/store/record-factory";
 import * as bounds from "../../../src/domain/geometry/bounds";
 import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
+import * as connections from "../../../src/domain/store/connections";
+import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
+import { ReplacementHistory } from "../../../src/domain/store/replacement-history";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../src/domain/commands/history";
 import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
 import {
@@ -79,6 +82,47 @@ async function createObservedOwnedStore() {
   }
   return { fixture, observations, store };
 }
+
+it("reuses synchronous candidate planning without preparing commit resources during previews", async () => {
+  const { fixture, observations, store } = await createObservedOwnedStore();
+  const target = store.get(fixture.connectedTargetId)!.element as InkElementV1;
+  const validation = vi.spyOn(elementValidation, "validateInkElementV1");
+  const graph = vi.spyOn(connections, "assertAcyclicConnections");
+  const resolution = vi.spyOn(connections, "resolveConnections");
+  const geometry = vi.spyOn(bounds, "calculateElementBoundsSteps");
+  const capacity = vi.spyOn(DocumentCapacity.prototype, "prepare");
+  const index = vi.spyOn(UniformSpatialIndex.prototype, "prepareReplacements");
+  const history = vi.spyOn(ReplacementHistory.prototype, "createBuilder");
+  const expectOnePlanningPass = () => {
+    expect(validation).toHaveBeenCalledTimes(257);
+    expect(graph).toHaveBeenCalledTimes(1);
+    expect(resolution).toHaveBeenCalledTimes(512);
+    expect(store.instrumentation.reverseDependencyVisits).toBe(512);
+  };
+  try {
+    store.resetInstrumentation();
+    const plan = store.planReplacements(moveSelection([target], { x: 0.001, y: 0.001 }))!;
+    expect(plan.elements).toHaveLength(257);
+    expectOnePlanningPass();
+    expect(geometry).not.toHaveBeenCalled();
+    expect(capacity).not.toHaveBeenCalled();
+    expect(index).not.toHaveBeenCalled();
+    expect(history).not.toHaveBeenCalled();
+    const capture = vi.fn<(history: ElementReplacementHistoryData) => void>();
+    expect(store.replaceMany(plan.replacements, capture)?.changes).toHaveLength(257);
+    expectOnePlanningPass();
+    expect(geometry).toHaveBeenCalledTimes(257);
+    expect(capacity).toHaveBeenCalledOnce();
+    expect(index).toHaveBeenCalledOnce();
+    expect(history).toHaveBeenCalledOnce();
+    expect(capture.mock.calls[0]![0].previous).toHaveLength(257);
+    expect(
+      observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
+    ).toBe(true);
+  } finally {
+    vi.restoreAllMocks();
+  }
+}, 20_000);
 
 it("prepares replacements incrementally and preserves unrelated records", async () => {
   const { fixture, observations, store } = await createObservedOwnedStore();

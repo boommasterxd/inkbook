@@ -139,7 +139,7 @@ export class ActiveEditorController {
     });
     const interactions = Interactions.createActiveEditorInteractions({
       controller: options,
-      dispatchMove: (pointer) => this.#dispatch({ type: "pointer-move", ...pointer }),
+      dispatchMove: (pointer) => this.#dispatch(this.#coalesced.moveAction(pointer, this.#input)),
       history: this.#history,
       isAttached: () => this.#availability.attached,
       isEnabled: () => this.#availability.acceptsInput,
@@ -247,7 +247,7 @@ export class ActiveEditorController {
     this.#penGuard.stop();
   }
   public recoverTouchTerminal(pointerId: number): void {
-    if (ControllerTouch.touchInteractionOwnsPointer(this.#input.interaction, pointerId))
+    if (ControllerTouch.touchTerminalNeedsRecovery(this.#input, pointerId))
       this.#pointer.cancelPointer(pointerId);
   }
   public handleToolbarAction(action: ToolbarAction, trigger?: HTMLButtonElement): void {
@@ -355,6 +355,7 @@ export class ActiveEditorController {
     return this.#coalesced.wrapProjected(
       createActiveEditorPreview(pageStart, {
         selectionSignal: this.#pendingSelection.signal,
+        selectionGeometry: () => this.#handles.selectionGeometry(),
         defaults: this.#styles.defaults,
         history: this.#history,
         model: this.#model,
@@ -423,6 +424,7 @@ export class ActiveEditorController {
       keyboardShortcuts: options.deviceSettings.keyboardShortcuts,
       lastScreenPointer: () => this.#cursor.lastScreenPointer,
       longPress: this.#longPress,
+      longPressTarget: (pointerId) => this.#pointer.longPressTarget(pointerId),
       menus: this.#menus,
       model: this.#model,
       navigation: this.#navigation,

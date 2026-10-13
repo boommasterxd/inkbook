@@ -1,5 +1,7 @@
 import {
   captureRuntimeElementHeader,
+  captureImmutableRuntimeElementHeader,
+  attachCapturedStrokeSamples,
   copyStrokeSamplesToRuntimeSteps,
 } from "../../../domain/elements/runtime-element-copy";
 import {
@@ -11,6 +13,7 @@ import {
   type StrokeSamplesV1,
 } from "../../../domain/schema/public";
 import { validateRuntimeSamplesSteps } from "./runtime-elements";
+import { prepareInsertionElementSteps } from "../../../domain/store/prepared-insertion-element";
 import {
   completeSerializationSteps,
   consumeSerializationSteps,
@@ -19,6 +22,7 @@ import {
 type NonStrokeElement = Exclude<InkElementV1, StrokeElementV1>;
 type PackedStroke = Omit<StrokeElementV1, "points"> & { readonly pointsBufferIndex: number };
 type PackedElement = NonStrokeElement | PackedStroke;
+const PACKED_STROKE_FIELDS = new Set(["pointsBufferIndex"]);
 
 export interface PackedElements {
   readonly pointBuffers: readonly Float64Array[];
@@ -81,13 +85,6 @@ function* packElementsSteps(
   return { pointBuffers, records };
 }
 
-export function unpackElements(
-  packed: PackedElements,
-  resolvePoints?: (id: string, retired?: boolean) => StrokeSamplesV1,
-): InkElementV1[] {
-  return completeSerializationSteps(unpackElementsSteps(packed, resolvePoints));
-}
-
 /** Only the identity-checked owned unlock channel may bypass repeated sample scans. */
 export function unpackValidatedElements(
   packed: PackedElements,
@@ -108,26 +105,56 @@ export function unpackElementsSteps(
   return unpackElementBuffersSteps(packed, resolvePoints, false);
 }
 
+/** Capture and completely validate wire values before publishing immutable insertions. */
+export function unpackInsertionElementsSteps(
+  packed: PackedElements,
+): Generator<boolean | void, InkElementV1[]> {
+  return unpackElementBuffersSteps(packed, undefined, false, prepareInsertionElementSteps);
+}
+
+function unpackElementBuffersSteps(
+  packed: PackedElements,
+  resolvePoints: ((id: string, retired?: boolean) => StrokeSamplesV1) | undefined,
+  validated: boolean,
+): Generator<void, InkElementV1[]>;
+function unpackElementBuffersSteps(
+  packed: PackedElements,
+  resolvePoints: ((id: string, retired?: boolean) => StrokeSamplesV1) | undefined,
+  validated: boolean,
+  prepareElement: typeof prepareInsertionElementSteps,
+): Generator<boolean | void, InkElementV1[]>;
 function* unpackElementBuffersSteps(
   packed: PackedElements,
   resolvePoints: ((id: string, retired?: boolean) => StrokeSamplesV1) | undefined,
   validated = false,
-): Generator<void, InkElementV1[]> {
+  prepareElement?: typeof prepareInsertionElementSteps,
+): Generator<boolean | void, InkElementV1[]> {
   if (!hasPackedArrays(packed))
     throw new TypeError("Packed elements must contain record and point-buffer arrays.");
   const used = new Set<number>();
   const elements: InkElementV1[] = [];
   for (let recordIndex = 0; recordIndex < packed.records.length; recordIndex += 1) {
     const record = packed.records[recordIndex]!;
-    const captured = captureRuntimeElementHeader(record);
-    if (record.kind !== "stroke") elements.push(captured as unknown as NonStrokeElement);
+    const captured =
+      prepareElement === undefined
+        ? captureRuntimeElementHeader(record)
+        : captureImmutableRuntimeElementHeader(record, PACKED_STROKE_FIELDS);
+    let element: InkElementV1;
+    if (record.kind !== "stroke") element = captured as unknown as NonStrokeElement;
     else {
+      const points = yield* unpackStrokePointsSteps(
+        record,
+        packed,
+        used,
+        resolvePoints,
+        validated || prepareElement !== undefined,
+      );
       const { pointsBufferIndex: _bufferIndex, ...header } = captured;
-      elements.push({
-        ...header,
-        points: yield* unpackStrokePointsSteps(record, packed, used, resolvePoints, validated),
-      } as unknown as StrokeElementV1);
+      element = (prepareElement === undefined
+        ? { ...header, points }
+        : attachCapturedStrokeSamples(captured, points)) as unknown as StrokeElementV1;
     }
+    elements.push(prepareElement === undefined ? element : yield* prepareElement(element));
     if ((recordIndex + 1) % 64 === 0) yield;
   }
   if (used.size !== packed.pointBuffers.length)

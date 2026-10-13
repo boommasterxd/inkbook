@@ -108,11 +108,6 @@ export class PreparedElementHistory {
         step = steps.next();
       } while (!step.done);
       if (step.value === null) return false;
-      const plan = await this.#model.store.planReplacementsTimeSliced(
-        step.value.replacements,
-        styleScheduler,
-      );
-      if (plan === null || plan === "cancelled") return false;
       const effect = await change.frameEffect?.(
         step.value.previous,
         step.value.replacements,
@@ -121,7 +116,7 @@ export class PreparedElementHistory {
       if (styleScheduler.isCancelled()) return false;
       return this.#commitApplied(
         step.value.previous,
-        plan.elements,
+        step.value.replacements,
         generation,
         undefined,
         effect,

@@ -49,6 +49,7 @@ export class SelectionScaleGesture {
     action: ScaleAction,
     elements: readonly InkElementV1[],
     startPointer: PointV1,
+    preparedFrame?: OrientedSelectionFrame | null,
   ) {
     this.#action = action;
     this.#elements = elements;
@@ -57,7 +58,14 @@ export class SelectionScaleGesture {
       recovered !== null && recovered.element !== elements[0] ? recovered.element : null;
     this.#initialFactors = recovered?.initial ?? { x: 1, y: 1 };
     const previewElements = recovered === null ? elements : [recovered.element];
-    this.#previewFramePlan = new SelectionScalePreviewFramePlan(previewElements, action.rotation);
+    const only = previewElements.length === 1 ? previewElements[0] : undefined;
+    this.#previewFramePlan =
+      only?.kind === "stroke" &&
+      preparedFrame != null &&
+      preparedFrame.rotation === only.rotation &&
+      preparedFrame.rotation === action.rotation
+        ? SelectionScalePreviewFramePlan.fromSingleStrokeFrame(only, preparedFrame)
+        : new SelectionScalePreviewFramePlan(previewElements, action.rotation);
     this.#previewProjection = new SelectionScalePreviewProjection(
       previewElements,
       action.rotation,

@@ -17,6 +17,8 @@ import {
   type SynchronousClipboardData,
 } from "./clipboard-reader";
 import type { ActiveEditorHistory } from "./history";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { capturePastePlan } from "../../../persistence/clipboard/paste-plan-snapshot";
 
 export type ClipboardControllerResult =
   | { readonly action: "copy" | "cut"; readonly kind: "copied" }
@@ -47,6 +49,7 @@ export interface ActiveEditorClipboardOptions {
   readonly onResult: (result: ClipboardControllerResult) => void;
   readonly onSelectionChanged: (selection: ReadonlySet<string>) => void;
   readonly ownerWindow: Window;
+  readonly workScheduler: WorkScheduler;
 }
 
 interface ClipboardItemOwnerWindow extends Window {
@@ -128,6 +131,7 @@ export class ActiveEditorClipboardController {
     ((activeTool: "select", invocation: PasteInvocation) => void) | undefined;
   readonly #onSelectionChanged: (selection: ReadonlySet<string>) => void;
   readonly #ownerWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   #operationGeneration = 0;
   #pending = false;
   #pasteAvailable = false;
@@ -147,6 +151,7 @@ export class ActiveEditorClipboardController {
     this.#onResult = options.onResult;
     this.#onSelectionChanged = options.onSelectionChanged;
     this.#ownerWindow = options.ownerWindow;
+    this.#workScheduler = options.workScheduler;
   }
 
   get canPaste(): boolean {
@@ -217,7 +222,8 @@ export class ActiveEditorClipboardController {
       return this.#reportUnavailable("paste", "clipboard-read-failed");
     }
     const previousRepeat = invocation.kind === "context-menu" ? undefined : this.#repeatState;
-    const plan = await this.#model.planClipboardPaste(candidates, invocation, previousRepeat);
+    const candidate = await this.#model.planClipboardPaste(candidates, invocation, previousRepeat);
+    const plan = candidate === null ? null : capturePastePlan(candidate);
     if (!this.#isOperationCurrent(operationGeneration)) {
       return this.#reportUnavailable("paste", "stale-operation");
     }
@@ -294,25 +300,17 @@ export class ActiveEditorClipboardController {
     operationGeneration: number,
   ): Promise<boolean> {
     if (!currentSelectionRecords(this.#model, selected)) return false;
-    const removed = new Set(selected.map(({ id }) => id));
-    const applied = await this.#prepareAndCommit(
-      {
-        bands: {
-          content: this.#model.store
-            .materializeBandOrder("content")
-            .filter((id) => !removed.has(id)),
-          highlight: this.#model.store
-            .materializeBandOrder("highlight")
-            .filter((id) => !removed.has(id)),
-        },
-        removeIds: [...removed],
-      },
-      expectedRevision,
-      () =>
-        this.#isOperationCurrent(operationGeneration) &&
-        sameSelection(selection, this.#currentSelection()) &&
-        currentSelectionRecords(this.#model, selected),
-    );
+    const cancelled = () =>
+      this.#model.revision !== expectedRevision ||
+      !this.#isPresentationAttached() ||
+      !this.#isOperationCurrent(operationGeneration);
+    const currentSelection = () =>
+      sameSelection(selection, this.#currentSelection()) &&
+      currentSelectionRecords(this.#model, selected);
+    if (cancelled() || !currentSelection()) return false;
+    const prepared = await this.#model.prepareElementRemoval(selection, { isCancelled: cancelled });
+    if (prepared.token === null || cancelled() || !currentSelection()) return false;
+    const applied = this.#model.commitPreparedElementMutation(prepared.token);
     if (applied === null) return false;
     this.#registerApplied(applied);
     return true;
@@ -323,23 +321,25 @@ export class ActiveEditorClipboardController {
     expectedRevision: number,
     operationGeneration: number,
   ): Promise<import("../../../domain/store/public").AppliedElementMutation | null> {
-    const preparedAdoption = this.#adoptionGuard.prepare(plan);
+    const cancelled = () =>
+      this.#model.revision !== expectedRevision ||
+      !this.#isPresentationAttached() ||
+      !this.#isOperationCurrent(operationGeneration);
+    const preparedAdoption = await this.#adoptionGuard.prepare(plan, {
+      isCancelled: cancelled,
+      shouldYield: () => this.#workScheduler.shouldYield(),
+      yieldControl: () => this.#workScheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
+    });
     if (preparedAdoption === null) return null;
     const validatesCurrentDocument = () =>
       this.#adoptionGuard.accepts(preparedAdoption, this.#model.page);
     if (!validatesCurrentDocument()) return null;
-    return this.#prepareAndCommit(
-      {
-        bands: {
-          content: [...this.#model.store.materializeBandOrder("content"), ...plan.contentIds],
-          highlight: [...this.#model.store.materializeBandOrder("highlight"), ...plan.highlightIds],
-        },
-        elements: plan.elements,
-      },
-      expectedRevision,
-      () => this.#isOperationCurrent(operationGeneration),
-      validatesCurrentDocument,
-    );
+    if (cancelled()) return null;
+    const prepared = await this.#model.prepareElementAppend(preparedAdoption.elements, {
+      isCancelled: cancelled,
+    });
+    if (prepared.token === null || cancelled() || !validatesCurrentDocument()) return null;
+    return this.#model.commitPreparedElementMutation(prepared.token);
   }
 
   #registerApplied(applied: import("../../../domain/store/public").AppliedElementMutation): void {
@@ -391,30 +391,6 @@ export class ActiveEditorClipboardController {
 
   #isOperationCurrent(operationGeneration: number): boolean {
     return operationGeneration === this.#operationGeneration;
-  }
-
-  async #prepareAndCommit(
-    mutation: import("../../../domain/store/public").ElementMutation,
-    expectedRevision: number,
-    operationCurrent: () => boolean,
-    validateBeforeCommit: () => boolean = () => true,
-  ): Promise<import("../../../domain/store/public").AppliedElementMutation | null> {
-    if (
-      this.#model.revision !== expectedRevision ||
-      !this.#isPresentationAttached() ||
-      !operationCurrent()
-    ) {
-      return null;
-    }
-    const cancelled = () =>
-      this.#model.revision !== expectedRevision ||
-      !this.#isPresentationAttached() ||
-      !operationCurrent();
-    const prepared = await this.#model.prepareElementMutation(mutation, {
-      isCancelled: cancelled,
-    });
-    if (prepared.token === null || cancelled() || !validateBeforeCommit()) return null;
-    return this.#model.commitPreparedElementMutation(prepared.token);
   }
 
   async #encodedPayload(selection: ReadonlySet<string>): Promise<ClipboardWritePayload> {

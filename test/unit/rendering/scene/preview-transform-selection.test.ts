@@ -1,73 +1,107 @@
 import { describe, expect, it } from "vitest";
-import { ViewportPreviewSelection } from "../../../../src/rendering/scene/preview-transform-selection";
-import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
+import {
+  boundsIntersect,
+  buildElementPathParts,
+  calculateElementBounds,
+} from "../../../../src/domain/geometry/public";
+import { scaleElement } from "../../../../src/editor/selection/transforms";
+import { selectionPreviewBounds } from "../../../../src/obsidian/embeds/active-editor/selection-preview-bounds";
+import { previewPaintPadding } from "../../../../src/rendering/scene/element-presentation";
+import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
+import { createMountedElement } from "../../../../src/rendering/scene/mounted-element";
+import {
+  mountedPreviewIds,
+  ViewportPreviewSelection,
+} from "../../../../src/rendering/scene/preview-transform-selection";
+import { indexedStroke } from "../../../fixtures/editor/stroke";
+import { createSceneRecord } from "../../../fixtures/rendering/scene";
+import { rectangle } from "../../domain/store/fixtures";
+import { FakeDocument } from "./fakes";
 
-const viewport = { height: 100, left: 0, top: 0, width: 100 };
-const camera = { x: 0, zoom: 1 };
+describe("mounted preview selection", () => {
+  it.each([255, 256, 257, 300])(
+    "retains every selected mounted element at capacity %i",
+    (count) => {
+      const ids = Array.from({ length: count }, (_, index) => String(index));
+      const selection = new ViewportPreviewSelection();
+      expect(selection.select(ids, [...ids, "unselected"])).toEqual(ids);
+      expect(selection.includes("unselected")).toBe(false);
+      selection.clear();
+      expect(selection.memoryUsage()).toBe(0);
+      expect(selection.includes(ids[0]!)).toBe(false);
+    },
+  );
 
-describe("viewport preview selection", () => {
-  it("keeps deterministic nearest candidates under dense capacity and filters unselected ids", () => {
-    const store = new FakeSceneStore();
-    const ids = Array.from({ length: 1000 }, (_, index) => String(index).padStart(4, "0"));
-    for (const id of [...ids].reverse()) store.records.set(id, fakeRectangleRecord(id, 0, 30));
-    store.records.set("unselected", fakeRectangleRecord("unselected", 0, 30));
+  it("keeps small offscreen selections without reading scene membership", () => {
     const selection = new ViewportPreviewSelection();
-    expect(selection.select(ids, store, viewport, camera)).toEqual(ids.slice(0, 256));
-    selection.clear();
-    expect(selection.select([], store, viewport, camera)).toEqual([]);
+    const mounted = {
+      [Symbol.iterator](): Iterator<string> {
+        throw new Error("Unexpected mounted traversal");
+      },
+    };
+    const ids = ["offscreen"];
+    expect(selection.select(ids, mounted)).toBe(ids);
   });
 
-  it("counts filled arrow nodes and uses a later single-path candidate to fill the budget", () => {
-    const store = new FakeSceneStore();
-    const ids = Array.from({ length: 300 }, (_, index) => String(index).padStart(4, "0"));
-    for (const id of ids) {
-      const record = fakeRectangleRecord(id, 0, 30);
-      store.records.set(id, {
-        ...record,
-        element: {
-          id,
-          kind: "arrow",
-          createdAt: 0,
-          rotation: 0,
-          start: { x: 30, y: 10 },
-          end: { x: 50, y: 30 },
-          pivot: { x: 40, y: 20 },
-          bend: null,
-          startConnection: null,
-          endConnection: null,
-          startNode: "triangle",
-          endNode: "circle",
-          style: {
-            outlineColor: { type: "rgba", value: "#112233FF" },
-            outlineOpacity: 1,
-            outlineStyle: "solid",
-            outlineWidth: 2,
-          },
-        },
-      });
-    }
-    store.records.set("last", fakeRectangleRecord("last", 0, 30));
-    const selection = new ViewportPreviewSelection();
-    expect(selection.select([...ids, "last"], store, viewport, camera)).toEqual([
-      ...ids.slice(0, 85),
-      "last",
-    ]);
-  });
-
-  it("preserves small offscreen selections and ignores missing ids", () => {
-    const store = new FakeSceneStore();
-    store.records.set("far", fakeRectangleRecord("far", 0, 10000));
-    const selection = new ViewportPreviewSelection();
-    expect(selection.select(["missing", "far"], store, viewport, camera)).toEqual(["far"]);
-  });
-
-  it("waits for a viewport for large selections and releases retained ids on selection replacement", () => {
-    const store = new FakeSceneStore();
+  it("waits for mounted content in large selections and replaces membership on the next gesture", () => {
     const ids = Array.from({ length: 300 }, (_, index) => String(index));
-    for (const id of ids) store.records.set(id, fakeRectangleRecord(id, 0, 30));
     const selection = new ViewportPreviewSelection();
-    expect(selection.select(ids, store, undefined, camera)).toEqual([]);
-    expect(selection.select(ids, store, viewport, camera)).toHaveLength(256);
-    expect(selection.select(["missing"], store, viewport, camera)).toEqual([]);
+    expect(selection.select(ids, [])).toEqual([]);
+    expect(selection.select(ids, ["0", "299", "unselected"])).toEqual(["0", "299"]);
+    expect(selection.select(["next"], ids)).toEqual(["next"]);
+    expect(selection.includes("0")).toBe(false);
+    selection.clear();
   });
+
+  it.each(["pressure", "outline"])(
+    "retains restored %s paint at a shrink/translation camera boundary",
+    (kind) => {
+      const source = indexedStroke(0);
+      const element =
+        kind === "pressure"
+          ? {
+              ...source,
+              points: [20, 20, 1, 22, 22, 1],
+              style: { ...source.style, width: 4 as const, pressureEnabled: true },
+            }
+          : { ...rectangle(), x: 20, y: 20, height: 2, width: 2, pivot: { x: 21, y: 21 } };
+      const transformBounds = selectionPreviewBounds({
+        kind: "scale",
+        anchor: { x: 0, y: 0 },
+        factors: { x: 0.1, y: 0.1 },
+        delta: { x: 0, y: 500 },
+        rotation: 0,
+      });
+      const record = createSceneRecord(element);
+      const mounted = createMountedElement(
+        new FakeDocument() as unknown as Document,
+        record,
+        buildElementPathParts(element),
+        createInstrumentation(),
+      );
+      const affine = transformBounds(record.bounds);
+      const boundary = affine.maxY + previewPaintPadding(element) / 2;
+      const envelope = { minX: 0, maxX: 100, minY: boundary, maxY: boundary + 100 };
+      const canonical = scaleElement(element, { x: 0, y: 0 }, { x: 0.1, y: 0.1 });
+      const canonicalBounds = calculateElementBounds(canonical);
+      canonicalBounds.minY += 500;
+      canonicalBounds.maxY += 500;
+      expect(boundsIntersect(affine, envelope)).toBe(false);
+      expect(boundsIntersect(canonicalBounds, envelope)).toBe(true);
+      expect([
+        ...mountedPreviewIds(
+          new Map([[element.id, mounted]]),
+          { contains: () => false },
+          { envelope, transformBounds },
+        ),
+      ]).toEqual([element.id]);
+      expect([
+        ...mountedPreviewIds(
+          new Map([[element.id, mounted]]),
+          { contains: () => false },
+          { envelope: { ...envelope, minY: 1000, maxY: 1100 }, transformBounds },
+        ),
+      ]).toEqual([]);
+    },
+  );
 });

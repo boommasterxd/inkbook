@@ -14,11 +14,26 @@ import type {
   DecodedClipboard,
 } from "../../clipboard/types";
 import { validateClipboardPayloadSliced } from "../../clipboard/validation";
+import { encodeRuntimeSelection } from "../../clipboard/codec";
 import { parseChunkedJson } from "../../serialization/chunked-json-parser";
 import { runtimeSliceWorkProfile } from "./slice-scheduler";
 import type { RuntimeSliceContext, RuntimeSliceWorkProfile } from "./types";
 
 const encoder = new TextEncoder();
+
+export function missingClipboardSelection(): ClipboardResult<never> {
+  return clipboardFailure("missing-selection", "The selection contains an unknown element.");
+}
+
+export function encodeRuntimeSelectionWrite(
+  selected: readonly InkElementV1[],
+  selectedIds: readonly string[],
+): ClipboardResult<ClipboardWritePayload> {
+  const result = encodeRuntimeSelection(selected, new Set(selectedIds));
+  if (!result.ok) return result;
+  const { byteLength, customText, plainText } = result.value;
+  return { ok: true, value: { byteLength, customText, plainText } };
+}
 function runtimeWorkProfile(context: RuntimeSliceContext): RuntimeSliceWorkProfile {
   if (context.workProfile !== undefined) return context.workProfile;
   return runtimeSliceWorkProfile(context.sliceMilliseconds?.());

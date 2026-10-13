@@ -2,18 +2,159 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   captureRuntimeElementHeader,
+  captureImmutableRuntimeElementHeader,
+  attachCapturedStrokeSamples,
+  preparedInsertionHeader,
   copyRuntimeElementSteps,
   copyStrokeSamplesToRuntimeSteps,
+  copyStrokeSamplesToImmutableJsonSteps,
   stageStrokeSamplesSteps,
 } from "../../../../src/domain/elements/runtime-element-copy";
 import * as sampleCopy from "../../../../src/domain/elements/runtime-sample-copy";
 import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/constants";
 import { validateRuntimeInkElementV1 } from "../../../../src/domain/schema/element-validation";
+import {
+  copySampleBufferSteps,
+  isCapturedJsonSampleArray,
+} from "../../../../src/domain/elements/runtime-sample-copy-producer";
+import {
+  assertJsonTreeSteps,
+  toValidationError,
+} from "../../../../src/domain/schema/validation-internals";
 import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
 import { observePointReads } from "../../../fixtures/rendering/point-reads";
 import { rectangle, stroke, table } from "../schema/fixtures";
 
 afterEach(() => vi.restoreAllMocks());
+
+it("reuses only privately captured immutable headers while keeping attached samples untrusted", () => {
+  const source = stroke();
+  const captured = captureImmutableRuntimeElementHeader(source);
+  const wrapped = attachCapturedStrokeSamples(captured, source.points);
+  source.style = { ...source.style, width: 22 };
+  source.points[0] = 999;
+  expect(preparedInsertionHeader(wrapped)?.style).toEqual(captured.style);
+  expect(captured.style).not.toEqual(source.style);
+  expect(wrapped.points).toBe(source.points);
+  expect(preparedInsertionHeader(Object.freeze({ ...wrapped }))).toBeUndefined();
+  const getter = vi.fn(() => captured.style);
+  const forged = Object.defineProperty({}, "style", { get: getter, enumerable: true });
+  expect(() => attachCapturedStrokeSamples(forged, source.points)).toThrow(TypeError);
+  expect(getter).not.toHaveBeenCalled();
+  expect(preparedInsertionHeader(captureImmutableRuntimeElementHeader(rectangle()))?.kind).toBe(
+    "rectangle",
+  );
+  const typedHeader = captureImmutableRuntimeElementHeader({
+    ...source,
+    unexpected: new Float64Array([1]),
+  });
+  expect(preparedInsertionHeader(typedHeader)).toBeUndefined();
+  expect(
+    captureImmutableRuntimeElementHeader(
+      { ...rectangle(), pointsBufferIndex: 0 },
+      new Set(["pointsBufferIndex"]),
+    ).pointsBufferIndex,
+  ).toBe(0);
+});
+
+it("registers copied JSON structure only after completion and never trusts external frozen arrays", () => {
+  const external = Object.freeze([0, 0, 0.5]);
+  expect(isCapturedJsonSampleArray(external)).toBe(false);
+  expect(isCapturedJsonSampleArray(new Proxy(external, {}))).toBe(false);
+  const copy = vi.spyOn(sampleCopy, "copySampleRange");
+  const steps = copyStrokeSamplesToImmutableJsonSteps(external);
+  steps.next();
+  const unpublished = copy.mock.calls[0]![1];
+  expect(isCapturedJsonSampleArray(unpublished)).toBe(false);
+  steps.return([]);
+  expect(isCapturedJsonSampleArray(unpublished)).toBe(false);
+  const captured = finishGeometrySteps(copyStrokeSamplesToImmutableJsonSteps(external));
+  expect(Object.isFrozen(captured)).toBe(true);
+  expect(Reflect.set(captured, "0", 99)).toBe(false);
+  expect(isCapturedJsonSampleArray(captured)).toBe(true);
+  expect(isCapturedJsonSampleArray([...captured])).toBe(false);
+});
+
+function jsonTreeOutcome(samples: number[], depth: number, nodes: number, entries: number) {
+  let root: unknown = { points: samples };
+  for (let level = 2; level < depth; level += 1) root = { child: root };
+  try {
+    return {
+      maximumDepth: finishGeometrySteps(assertJsonTreeSteps(root, nodes, 2, false, entries)),
+    };
+  } catch (error: unknown) {
+    return { error: toValidationError(error) };
+  }
+}
+
+it.each([2, 16, 17])(
+  "preserves external JSON statistics and failures at container depth %s",
+  (depth) => {
+    const external = [0, 0, 0.5, 1, 1, 0.5];
+    const captured = finishGeometrySteps(copyStrokeSamplesToImmutableJsonSteps(external));
+    for (const [nodes, entries] of [
+      [depth + 6, 6],
+      [depth + 5, 6],
+      [depth + 6, 5],
+    ] as const) {
+      expect(jsonTreeOutcome(captured, depth, nodes, entries)).toEqual(
+        jsonTreeOutcome(external, depth, nodes, entries),
+      );
+    }
+    const outcome = jsonTreeOutcome(captured, depth, depth + 6, 6);
+    if (depth <= 16) expect(outcome).toEqual({ maximumDepth: depth });
+    else expect(outcome).toMatchObject({ error: { code: "maximum-depth-exceeded" } });
+  },
+);
+
+it.each([Number.NaN, -3, 0, 1, Number.POSITIVE_INFINITY])(
+  "rejects invalid exported sample-copy steps without publishing a proof (%s)",
+  (valuesPerStep) => {
+    const allocate = vi.spyOn(sampleCopy, "allocateSampleCopy");
+    const external = [0, 0, 0.5];
+    expect(() =>
+      finishGeometrySteps(copySampleBufferSteps(external, 3, valuesPerStep, "json")),
+    ).toThrow(RangeError);
+    expect(allocate).not.toHaveBeenCalled();
+    expect(isCapturedJsonSampleArray(external)).toBe(false);
+  },
+);
+
+it.each([Number.NaN, -3, 0, 6, Number.POSITIVE_INFINITY])(
+  "rejects mismatched sample-copy lengths without publishing a proof (%s)",
+  (length) => {
+    const allocate = vi.spyOn(sampleCopy, "allocateSampleCopy");
+    const external = [0, 0, 0.5];
+    expect(() => finishGeometrySteps(copySampleBufferSteps(external, length, 3, "json"))).toThrow(
+      RangeError,
+    );
+    expect(allocate).not.toHaveBeenCalled();
+    expect(isCapturedJsonSampleArray(external)).toBe(false);
+  },
+);
+
+it("prevents caller flags from selecting immutable preparation", () => {
+  const external = [0, 0, 0.5];
+  const allocate = vi.spyOn(sampleCopy, "allocateSampleCopy");
+  expect(() => copySampleBufferSteps(external, 3, 3, "immutable-json" as "json")).toThrow(
+    TypeError,
+  );
+  expect(allocate).not.toHaveBeenCalled();
+  const copied = finishGeometrySteps(copySampleBufferSteps(external, 3, 3, "json"));
+  expect(isCapturedJsonSampleArray(copied)).toBe(false);
+});
+
+it.each([
+  [0, Number.NaN, 0.5],
+  [Number.POSITIVE_INFINITY, 0, 0.5],
+  [-0, 0, 0.5],
+  [0, 0, 0.50001],
+  [1_000_001, 0, 0.5],
+])("keeps complete semantic validation for copied numeric samples (%s)", (...values) => {
+  const captured = finishGeometrySteps(copyStrokeSamplesToImmutableJsonSteps(values));
+  expect(isCapturedJsonSampleArray(captured)).toBe(values.every(Number.isFinite));
+  expect(validateRuntimeInkElementV1({ ...stroke(), points: captured }).ok).toBe(false);
+});
 
 it("checks excluded large body fields without copying them or invoking accessors", () => {
   const elements = Array.from({ length: 10_000 }, () => rectangle());

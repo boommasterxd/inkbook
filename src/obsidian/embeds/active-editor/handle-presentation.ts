@@ -1,6 +1,7 @@
 import { calculateElementBounds } from "../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { ProgressivePreviewTransform } from "../../../rendering/scene/progressive-element-preview";
+import type { PreviewBoundsTransform } from "../../../rendering/scene/types";
 import {
   createSelectionFrameAtRotation,
   selectionOverlayGeometry,
@@ -14,6 +15,7 @@ import {
 
 import { selectionOverlayFill, selectionOverlayPaths } from "./selection-overlay-path";
 import { selectionSnapGuidePath } from "./snap-marker-path";
+import { selectionPreviewBounds } from "./selection-preview-bounds";
 
 export interface HandleInteractionRenderer {
   beginPreviewCommit?(): {
@@ -42,6 +44,7 @@ export interface HandleInteractionRenderer {
     transform: string | null,
     version: number,
     strokeWidth?: "preserve" | "scale",
+    transformBounds?: PreviewBoundsTransform,
   ): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }
@@ -170,6 +173,7 @@ export class SelectionHandlePresentation {
       factors: { x: 1 / transform.factors.x, y: 1 / transform.factors.y },
     });
     this.#renderer.setProgressiveElementPreviews?.(ids, materialize, this.#version, {
+      transformBounds: selectionPreviewBounds(transform),
       transform: transformString(transform)!,
       inverse: `${inverse} translate(${String(-transform.delta.x)} ${String(-transform.delta.y)})`,
     });
@@ -185,6 +189,7 @@ export class SelectionHandlePresentation {
       transformString(transform),
       this.#version,
       transform?.kind === "scale" ? "preserve" : "scale",
+      transform === null ? undefined : selectionPreviewBounds(transform),
     );
   }
 }

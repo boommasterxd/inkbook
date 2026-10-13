@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../../../src/domain/store/public";
 import {
   arrangeSelectionAvailability,
   canArrangeSelection,
+  selectedTargetAt,
   selectionTargetAt,
 } from "../../../../../src/obsidian/embeds/active-editor/controller-elements";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
@@ -65,6 +66,90 @@ describe("active editor arrange availability", () => {
 });
 
 describe("active editor selection targets", () => {
+  it("keeps filled selection interiors and group gaps directly draggable", () => {
+    const elements = [rectangle(), rectangle(IDS.other, 500, 100)];
+    const fixture = scene(elements);
+    try {
+      const selected = elements.map((element) => ({
+        element,
+        bounds: fixture.store.get(element.id)!.bounds,
+      }));
+      const target = { elementId: elements[0]!.id, isSelected: true };
+      expect(
+        selectedTargetAt(selected.slice(0, 1), elements[0]!.pivot, null, { tolerance: 8 }),
+      ).toEqual(target);
+      expect(selectedTargetAt(selected, { x: 400, y: 150 }, null, { tolerance: 8 })).toEqual(
+        target,
+      );
+      expect(
+        selectedTargetAt(selected, { x: 800, y: 150 }, null, { tolerance: 8 }),
+      ).toBeUndefined();
+    } finally {
+      fixture.release();
+    }
+  });
+
+  it("recognizes selected centerlines with the existing pointer tolerance without a document hit", () => {
+    const element = { ...connectedLine(), startConnection: null, bend: null };
+    const fixture = scene([element]);
+    try {
+      const selected = [{ element, bounds: fixture.store.get(element.id)!.bounds }];
+      const center = {
+        x: (element.start.x + element.end.x) / 2,
+        y: (element.start.y + element.end.y) / 2,
+      };
+      expect(selectedTargetAt(selected, center, null, { tolerance: 8 })).toEqual({
+        elementId: element.id,
+        isSelected: true,
+      });
+      expect(
+        selectedTargetAt(selected, { x: center.x, y: center.y + 8 }, null, { tolerance: 8 }),
+      ).toEqual({
+        elementId: element.id,
+        isSelected: true,
+      });
+      expect(
+        selectedTargetAt(selected, { x: center.x, y: center.y + 100 }, null, { tolerance: 8 }),
+      ).toBeUndefined();
+      expect(selectedTargetAt([], center, null, { tolerance: 8 })).toBeUndefined();
+    } finally {
+      fixture.release();
+    }
+  });
+});
+
+describe("selected pressure target preparation", () => {
+  it("reuses prepared centers only for an actual singleton bounds hit", () => {
+    const source = indexedStroke(0);
+    const fixture = scene([source]);
+    const record = fixture.store.get(source.id)!;
+    const prepared = fixture.store.pressureGeometry(source.id, record.geometryVersion);
+    prepared.publishCenters!(0, [{ x: 20, y: 20, pressure: 0.5 }]);
+    const readCenters = vi.spyOn(prepared, "readCenters");
+    const publishCenters = vi.spyOn(prepared, "publishCenters");
+    const preparePressure = vi.fn(() => prepared);
+    const selected = [{ element: record.element, bounds: record.bounds }];
+    const context = { tolerance: 8, preparePressure };
+    try {
+      expect(selectedTargetAt([], { x: 27, y: 20 }, null, context)).toBeUndefined();
+      expect(selectedTargetAt(selected, { x: 100, y: 100 }, null, context)).toBeUndefined();
+      expect(preparePressure).not.toHaveBeenCalled();
+      expect(selectedTargetAt(selected, { x: 27, y: 20 }, null, context)).toEqual({
+        elementId: source.id,
+        isSelected: true,
+      });
+      expect(preparePressure).toHaveBeenCalledExactlyOnceWith(source.id);
+      expect(readCenters).toHaveBeenCalledExactlyOnceWith(0);
+      expect(publishCenters).not.toHaveBeenCalled();
+    } finally {
+      readCenters.mockRestore();
+      publishCenters.mockRestore();
+      fixture.release();
+    }
+  });
+});
+
+describe("active editor indexed selection targets", () => {
   it.each(["mouse", "pen", "touch"] as const)(
     "moves a transparent box selection from its highlighted interior with %s input",
     (pointerType) => {

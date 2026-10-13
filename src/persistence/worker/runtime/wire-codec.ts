@@ -16,10 +16,13 @@ import {
   packElementsChunked,
   type PackedElements,
   type RuntimeWireSliceOptions,
-  unpackElements,
+  unpackInsertionElementsSteps,
   unpackValidatedElements,
 } from "./element-wire-codec";
-import { copyElementsFromRuntime } from "./runtime-elements";
+import {
+  completeSerializationSteps,
+  consumeSerializationSteps,
+} from "../../serialization/serialization-model-preparation";
 import type {
   DecodeClipboardRuntimeSuccess,
   DocumentRuntimeRequest,
@@ -181,6 +184,10 @@ export async function encodeRuntimeResultChunked(
   options: RuntimeWireSliceOptions,
 ): Promise<StructuredTransfer<DocumentRuntimeWireResult>> {
   options.signal.throwIfAborted();
+  if (result.type === "clipboard-plan-paste-success" && result.result.ok) {
+    const elements = await packElementsChunked(result.result.value.elements, options);
+    return packedPastePlan(result, elements);
+  }
   if (result.type !== "export-success") {
     return encodeRuntimeResult(result);
   }
@@ -244,6 +251,22 @@ export async function decodeRuntimeResultChunked(
       result: await unpackDecodedClipboardResultChunked(result.result, options),
       type: "clipboard-decode-success",
     };
+  }
+  if (result.type === "clipboard-plan-paste-success-wire") {
+    const plan = result.result;
+    if (plan.ok) {
+      assertClipboardElementWireLimits(plan.value.elements);
+      const elements = await consumeSerializationSteps(
+        unpackInsertionElementsSteps(plan.value.elements),
+        options,
+      );
+      return {
+        ...result,
+        result: { ok: true, value: { ...plan.value, elements } },
+        type: "clipboard-plan-paste-success",
+      };
+    }
+    return { ...result, result: plan, type: "clipboard-plan-paste-success" };
   }
   return decodeRuntimeResult(result);
 }
@@ -311,6 +334,14 @@ function encodePastePlanResult(
     };
   }
   const elements = packElements(result.result.value.elements);
+  return packedPastePlan(result, elements);
+}
+
+function packedPastePlan(
+  result: PlanClipboardPasteRuntimeSuccess,
+  elements: PackedElements,
+): StructuredTransfer<PlanClipboardPasteWireResult> {
+  if (!result.result.ok) throw new TypeError("Only successful paste plans can be packed.");
   return {
     transfer: buffersAsTransferables(elements.pointBuffers),
     value: {
@@ -324,7 +355,7 @@ function encodePastePlanResult(
 function unpackPastePlan(result: ClipboardResult<PackedPastePlan>): ClipboardResult<PastePlan> {
   if (!result.ok) return result;
   assertClipboardElementWireLimits(result.value.elements);
-  const elements = copyElementsFromRuntime(unpackElements(result.value.elements));
+  const elements = completeSerializationSteps(unpackInsertionElementsSteps(result.value.elements));
   return { ok: true, value: { ...result.value, elements } };
 }
 

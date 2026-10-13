@@ -94,6 +94,20 @@ export function snapshotValue(
   return { elements: [...elements], format: "inkbook", page, revision, version: 1 };
 }
 
+export function orderedSnapshotValue(
+  revision: number | null,
+  page: PageV1 | null,
+  elements: ReadonlyMap<string, InkElementV1>,
+  orders: Readonly<{ highlight: readonly string[]; content: readonly string[] }>,
+): InkSnapshotV1 | null {
+  if (page === null || revision === null) return null;
+  return snapshotValue(
+    revision,
+    page,
+    [...orders.highlight, ...orders.content].map((id) => elements.get(id)!),
+  );
+}
+
 export function envelope(
   revision: number,
   lockedHeight: number,

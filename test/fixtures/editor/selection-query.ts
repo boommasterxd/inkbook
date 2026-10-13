@@ -1,7 +1,8 @@
 import { calculateElementBounds, type Bounds } from "../../../src/domain/geometry/public";
-import type { InkElementV1 } from "../../../src/domain/schema/public";
+import type { InkElementV1, PointV1 } from "../../../src/domain/schema/public";
 import {
   elementMatchesSelectionAreaSteps,
+  createRectangleSelectionArea,
   type SelectionArea,
   type SelectionAreaInclusion,
 } from "../../../src/editor/selection/selection-area";
@@ -14,6 +15,14 @@ import {
   selectBySelectionAreaCandidatesSteps,
   type SelectionAreaCandidate,
 } from "../../../src/editor/selection/selection-model";
+
+/** A small query around a paint-boundary point, including fractional placements. */
+export function rectangleSelectionAround(point: PointV1, radius: number): SelectionArea {
+  return createRectangleSelectionArea(
+    { x: point.x - radius, y: point.y - radius },
+    { x: point.x + radius, y: point.y + radius },
+  );
+}
 
 /** Complete the production cooperative query synchronously for focused assertions. */
 export function elementMatchesSelectionArea(

@@ -61,6 +61,7 @@ describe("element mutation algorithm bounds", () => {
       mutationVersion: 0,
       paintVersion: 0,
       records: new Map([[element.id, createInitialRecord(element)]]),
+      ranks: new Map([[element.id, { band: "content" as const, rank: 0 }]]),
       reverseConnections: new Map(),
     }));
     const readVersion = vi.fn(() => 0);
