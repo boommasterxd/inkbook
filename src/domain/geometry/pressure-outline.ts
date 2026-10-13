@@ -49,28 +49,39 @@ export function visitPreparedPressureOutline(
   visitor: (piece: PressureOutlinePiece) => boolean,
   slice: PressureSlice = COMPLETE_SLICE,
 ): boolean {
-  if (centers.length === 1)
-    return visitor({
+  for (const piece of iteratePreparedPressureOutline(centers, width, slice))
+    if (piece !== undefined && visitor(piece)) return true;
+  return false;
+}
+
+/** Yield once per raw interval, including covered disks, while reusing adjacent nibs. */
+export function* iteratePreparedPressureOutline(
+  centers: readonly PressureCenter[],
+  width: number,
+  slice: PressureSlice = COMPLETE_SLICE,
+): Generator<PressureOutlinePiece | undefined> {
+  if (centers.length === 1) {
+    yield {
       kind: "dot",
       center: centers[0]!,
       radius: pressureRadius(centers[0]!.pressure, width),
-    });
+    };
+    return;
+  }
   const first = slice.firstBoundary ?? 0;
   const last = slice.lastBoundary ?? centers.length - 1;
-  if (first >= last) return false;
+  if (first >= last) return;
   let start = preparePressureNib(centers[first]!, width);
   for (let index = first; index < last; index += 1) {
     const end = preparePressureNib(centers[index + 1]!, width);
     const capsule = buildPressureCapsuleFromNibs(start, end);
     start = end;
     if (capsule.kind === "dot") {
-      if (coveredDisk(centers, index, width, capsule)) continue;
-      if (visitor(capsule)) return true;
+      yield coveredDisk(centers, index, width, capsule) ? undefined : capsule;
       continue;
     }
-    if (visitor({ kind: "strip", capsule, width })) return true;
+    yield { kind: "strip", capsule, width };
   }
-  return false;
 }
 
 function coveredDisk(
