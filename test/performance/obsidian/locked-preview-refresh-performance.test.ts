@@ -9,6 +9,8 @@ import { createInkbookLockedPreview } from "../../../src/obsidian/embeds/locked-
 import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 import { createHtmlElement, installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 
+declare function setImmediate(callback: () => void): void;
+
 beforeEach(() => {
   installObsidianDomHelpers();
   vi.spyOn(window, "setTimeout").mockImplementation((callback) => {
@@ -16,7 +18,13 @@ beforeEach(() => {
     return 1 as unknown as ReturnType<typeof window.setTimeout>;
   });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(async () => {
+  // Restoring spies alone retains recorded SVG nodes in Vitest's dirty mock registry.
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+  // Let happy-dom's WeakRef targets expire before allocating the next capacity fixture.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+});
 
 it("coalesces hidden autosave previews into one bounded tree and reuses unchanged identities", async () => {
   const button = createHtmlElement("button");
