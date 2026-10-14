@@ -117,7 +117,7 @@ The complete test matrix, performance budgets, and acceptance requirements are c
 - Keep local and GitHub performance coverage identical under [Local and GitHub Parity](docs/performance-ci.md#local-and-github-parity). The full local `npm run ci` includes both shards and rejects shard-only overrides. Missing, failed, skipped, malformed, and timed-out executions fail closed.
 - For new or changed work bounds, observe the actual production boundary and verify that extra work would violate the assertion where practical. Do not replace removed speed comparisons with fake-time speed claims. Operational timeouts remain safety limits, not performance acceptance thresholds.
 - Keep the quality job and both performance shards within twenty minutes of execution each. Timeouts fail closed; do not skip checks or increase the limit to accommodate additional benchmarks.
-- Use standard `ubuntu-latest` runners only. The quality job uses Node.js 24, and the two parallel performance shards use Node.js 26. Do not add macOS or larger paid runners.
+- Use standard `ubuntu-latest` runners only. Quality and both parallel performance shards use the latest Node.js 24.x release with `check-latest: true`. Do not add macOS or larger paid runners.
 - Keep all GitHub Actions pinned to full commit SHAs.
 - Release tags use `x.y.z` without a leading `v`, match `manifest.json`, and point to a commit on `main`.
 - Keep `gitleaks` as its standalone required job. Performance remains split into invariant work/resource contracts and five-profile scheduling contracts. Preserve the exhaustive manifest. Do not add reference commits, historical anchors, post-merge promotion, timing artifacts, or a separate local measurement mode.

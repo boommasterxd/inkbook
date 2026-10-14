@@ -23,7 +23,7 @@ The exhaustive [manifest](../scripts/performance-test-manifest.mjs) is the sourc
 
 The full local command executes the union of both hosted shards. A full `npm run ci` rejects shard-only overrides. No change selection or source-identity shortcut omits contracts, so an all-source change runs the same performance plan as any other change.
 
-GitHub uses two standard `ubuntu-latest` performance runners with Node.js 26. Quality uses Node.js 24. Keep the required names `CI`, `Performance (shared)`, `Performance (refresh profiles)`, `gitleaks`, and `Validate PR Title`. The quality job and each performance shard retain twenty-minute safety limits. Timeouts fail; they are not converted into warnings or treated as evidence of a speed regression.
+GitHub uses two standard `ubuntu-latest` performance runners. Quality, performance, and release gates use the latest Node.js 24.x release; every `setup-node` step uses `node-version: "24.x"` and `check-latest: true`. Locally, `nvm install` resolves the `24` major alias in `.nvmrc`; `nvm use` alone selects an already installed version. Keep the required names `CI`, `Performance (shared)`, `Performance (refresh profiles)`, `gitleaks`, and `Validate PR Title`. The quality job and each performance shard retain twenty-minute safety limits. Timeouts fail; they are not converted into warnings or treated as evidence of a speed regression.
 
 Pull requests and manual dispatches run the complete gate. Post-merge main pushes do not repeat the tested squash tree. Release tags rerun the gate. No historical anchor, reference promotion, reference checkout, timing artifact, or separate measurement mode exists.
 

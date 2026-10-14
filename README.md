@@ -18,7 +18,7 @@ The automated suite covers pure domain behavior and focused Obsidian, renderer, 
 
 ## Requirements
 
-- Node.js 24
+- Latest Node.js 24.x (`nvm install` resolves the major alias in `.nvmrc`)
 - npm
 - Obsidian 1.13.0 or newer
 
