@@ -2,6 +2,7 @@ name: Secret scan
 
 on:
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -19,9 +20,32 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Run gitleaks
         shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          set -euo pipefail
+          test "$(git rev-parse --is-shallow-repository)" = false
+          case "$GITHUB_EVENT_NAME" in
+            pull_request)
+              for commit in "$PR_BASE_SHA" "$PR_HEAD_SHA"; do
+                if [[ ! "$commit" =~ ^[0-9a-fA-F]{40}$ ]]; then
+                  echo "Invalid or missing pull request commit SHA." >&2
+                  exit 1
+                fi
+                git cat-file -e "${commit}^{commit}"
+              done
+              log_options="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+              ;;
+            workflow_dispatch) log_options="--all" ;;
+            *) echo "Unsupported secret-scan event." >&2; exit 1 ;;
+          esac
+
           version=$(jq -r '.version' .gitleaks-version)
           checksum=$(jq -r '.sha256' .gitleaks-version)
           archive="$RUNNER_TEMP/gitleaks.tar.gz"
@@ -31,4 +55,6 @@ jobs:
             --output "$archive"
           echo "${checksum}  ${archive}" | sha256sum --check --strict
           tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" gitleaks
-          "$binary" dir --no-banner --redact --exit-code 1 --verbose .
+          "$binary" dir --config .gitleaks.toml --no-banner --redact --exit-code 1 --verbose .
+          "$binary" git --config .gitleaks.toml --no-banner --redact --exit-code 1 --verbose \
+            --log-opts="$log_options" .

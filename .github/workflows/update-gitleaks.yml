@@ -5,6 +5,12 @@ on:
     - cron: "0 6 1 * *"
   workflow_dispatch:
 
+# Serialize scheduled and manual updates, including runs on different refs.
+# Do not cancel an active update when another run is triggered.
+concurrency:
+  group: update-gitleaks
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -12,6 +18,7 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -21,6 +28,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           current=$(jq -r '.version' .gitleaks-version)
           latest_tag=$(gh api repos/gitleaks/gitleaks/releases/latest --jq '.tag_name')
           latest=${latest_tag#v}
@@ -31,6 +39,29 @@ jobs:
           if [[ "$latest" == "$current" ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          branch="dependencies/update-gitleaks-${latest}"
+          open_prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" \
+            --state open --json number --jq 'length')
+          if [[ ! "$open_prs" =~ ^[0-9]+$ ]]; then
+            echo "Invalid open pull request count." >&2
+            exit 1
+          fi
+          if [[ "$open_prs" != "0" ]]; then
+            echo "An update pull request already exists."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git ls-remote --exit-code --heads origin "refs/heads/$branch" > /dev/null; then
+            echo "An update branch already exists."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            status=$?
+            if [[ "$status" != "2" ]]; then
+              echo "Could not inspect the remote update branch." >&2
+              exit "$status"
+            fi
           fi
           checksums="$RUNNER_TEMP/gitleaks-checksums.txt"
           curl --fail --location --retry 3 --silent --show-error \
@@ -54,6 +85,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.update.outputs.version }}
         run: |
+          set -euo pipefail
           branch="dependencies/update-gitleaks-${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -62,6 +94,7 @@ jobs:
           git commit --message "chore(deps): update gitleaks to ${VERSION}"
           git push --set-upstream origin "$branch"
           gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
             --base main \
             --head "$branch" \
             --label dependencies \
