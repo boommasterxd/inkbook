@@ -25,7 +25,7 @@ The full local command executes the union of both hosted shards. A full `npm run
 
 GitHub uses two standard `ubuntu-latest` performance runners. Quality, performance, and release gates use the latest Node.js 24.x release; every `setup-node` step uses `node-version: "24.x"` and `check-latest: true`. Locally, `nvm install` resolves the `24` major alias in `.nvmrc`; `nvm use` alone selects an already installed version. Keep the required names `CI`, `Performance (shared)`, `Performance (refresh profiles)`, `gitleaks`, and `Validate PR Title`. The quality job and each performance shard retain twenty-minute safety limits. Timeouts fail; they are not converted into warnings or treated as evidence of a speed regression.
 
-Pull requests and manual dispatches run the complete gate. Post-merge main pushes do not repeat the tested squash tree. Release tags rerun the gate. No historical anchor, reference promotion, reference checkout, timing artifact, or separate measurement mode exists.
+Pull requests targeting `main` and manual dispatches run the complete gate. Post-merge main pushes do not repeat the tested squash tree. Release tags rerun the gate. No historical anchor, reference promotion, reference checkout, timing artifact, or separate measurement mode exists.
 
 For runtime verification, dispatch the complete workflow on the diagnosis branch and record all job durations and total runner minutes. This establishes the observed duration of the full test plan, not a guaranteed upper bound on hosted hardware performance or queueing delay.
 

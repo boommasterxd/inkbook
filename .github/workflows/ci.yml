@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -12,8 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  CI:
-    name: CI
+  quality:
+    name: Quality gates
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -63,3 +64,19 @@ jobs:
         run: npm ci
       - name: Run performance gate
         run: npm run benchmark
+
+  ci:
+    name: CI
+    needs: [quality, Performance]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          PERFORMANCE_RESULT: ${{ needs.Performance.result }}
+        shell: bash
+        run: |
+          test "$QUALITY_RESULT" = success
+          test "$PERFORMANCE_RESULT" = success
