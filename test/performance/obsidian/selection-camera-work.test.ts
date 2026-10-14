@@ -26,6 +26,7 @@ import { ActiveDocumentHistory } from "../../../src/obsidian/embeds/active-edito
 import { arrangeSelectionAvailability } from "../../../src/obsidian/embeds/active-editor/controller-elements";
 import * as strokePosition from "../../../src/domain/geometry/stroke-position";
 import { observeArrangementBandReads } from "../../fixtures/domain/arrangement-work";
+import { observeStrokePointBuilds } from "../../fixtures/domain/stroke-point-work";
 
 function fixture(elements: readonly InkElementV1[]) {
   const store = new ElementStore(elements);
@@ -164,13 +165,7 @@ it.each(
     const model = { store, ...elementReplacementPorts(store) } as EditableDocumentModel;
     const history = new ActiveEditorHistory(model);
     const prepared = activeEditorPreparedHistory(model, history);
-    let pointBuilds = 0;
-    const actualPoint = strokePosition.strokeWorldPoint;
-    const geometry = vi.spyOn(strokePosition, "strokeWorldPoint").mockImplementation((...args) => {
-      pointBuilds += 1;
-      geometry.mockClear();
-      return actualPoint(...args);
-    });
+    const geometry = observeStrokePointBuilds();
     const materialize = vi.spyOn(store, "materializeBandOrder");
     try {
       if (asynchronous) {
@@ -202,7 +197,7 @@ it.each(
         expect(history.replace(elements, replacements)).toBe(true);
       }
       const changed = originals.map(({ element }) => store.get(element.id)!);
-      const committedPointBuilds = pointBuilds;
+      const committedPointBuilds = geometry.work.points;
       expect(await history.undoAsync()).toBe(true);
       for (const original of originals) {
         const restored = store.get(original.element.id)!;
@@ -220,13 +215,17 @@ it.each(
       // Scale also measures the preview frame and stabilized anchor before Store geometry.
       const boundsPasses = kind === "move" ? 0 : kind === "scale" && asynchronous ? 3 : 1;
       expect(committedPointBuilds).toBe(boundsPasses * 500_000);
-      expect(pointBuilds).toBe(committedPointBuilds);
+      expect(geometry.work.points).toBe(committedPointBuilds);
+      expect(geometry.work.maximumHistory).toBeLessThanOrEqual(256);
+      expect(geometry.work.historyClears).toBeLessThanOrEqual(
+        Math.ceil(committedPointBuilds / 256),
+      );
       expect(materialize).not.toHaveBeenCalled();
       expect(store.instrumentation.bandScans).toBe(0);
       expect(store.instrumentation.snapshotMaterializations).toBe(0);
       expect(history.commandCount).toBe(1);
     } finally {
-      geometry.mockRestore();
+      geometry.restore();
       materialize.mockRestore();
       prepared.dispose();
       history.dispose();
