@@ -12,27 +12,83 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  CI_BASE: ${{ github.event.pull_request.base.sha }}
+  CI_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  CI_EVENT: ${{ github.event_name }}
+
 jobs:
-  quality:
-    name: Quality gates
+  select:
+    name: Select affected checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      shared: ${{ steps.plan.outputs.shared }}
+      cadence: ${{ steps.plan.outputs.cadence }}
+      build: ${{ steps.plan.outputs.build }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.x"
           check-latest: true
           cache: npm
+      - name: Detect documentation-only changes
+        id: preflight
+        run: node scripts/ci-plan.mjs --preflight
       - name: Install dependencies
+        if: steps.preflight.outputs.docs != 'true'
         run: npm ci
+      - name: Plan and validate affected checks
+        id: plan
+        run: node scripts/ci-plan.mjs
+
+  quality:
+    name: Quality gates
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_MODE: ${{ needs.select.outputs.mode }}
+      EXPECTED_SHARED: ${{ needs.select.outputs.shared }}
+      EXPECTED_CADENCE: ${{ needs.select.outputs.cadence }}
+      EXPECTED_BUILD: ${{ needs.select.outputs.build }}
+    steps:
+      - name: Check out repository
+        if: needs.select.outputs.mode != 'docs'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Set up Node.js
+        if: needs.select.outputs.mode != 'docs'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.x"
+          check-latest: true
+          cache: npm
+      - name: Install dependencies
+        if: needs.select.outputs.mode != 'docs'
+        run: npm ci
+      - name: Recompute and validate selection
+        if: needs.select.outputs.mode != 'docs'
+        run: node scripts/ci-plan.mjs
       - name: Run quality gate
-        run: npm run ci:quality
+        if: needs.select.outputs.mode != 'docs'
+        run: node scripts/run-ci.mjs quality
+      - name: Confirm documentation checks completed
+        if: needs.select.outputs.mode == 'docs'
+        run: echo "Documentation was validated by the selection job."
 
   Performance:
     name: Performance (${{ matrix.label }})
+    needs: select
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
@@ -49,34 +105,66 @@ jobs:
             refresh-rate: "120"
             timeout_minutes: 20
     env:
+      EXPECTED_MODE: ${{ needs.select.outputs.mode }}
+      EXPECTED_SHARED: ${{ needs.select.outputs.shared }}
+      EXPECTED_CADENCE: ${{ needs.select.outputs.cadence }}
+      EXPECTED_BUILD: ${{ needs.select.outputs.build }}
       INKBOOK_PERFORMANCE_REFRESH_RATE: ${{ matrix.refresh-rate }}
       INKBOOK_PERFORMANCE_SUITE: ${{ matrix.suite }}
     steps:
       - name: Check out repository
+        if: needs.select.outputs[matrix.suite] == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
       - name: Set up Node.js
+        if: needs.select.outputs[matrix.suite] == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.x"
           check-latest: true
           cache: npm
       - name: Install dependencies
+        if: needs.select.outputs[matrix.suite] == 'true'
         run: npm ci
+      - name: Recompute and validate selection
+        if: needs.select.outputs[matrix.suite] == 'true'
+        run: node scripts/ci-plan.mjs
       - name: Run performance gate
-        run: npm run benchmark
+        if: needs.select.outputs[matrix.suite] == 'true'
+        run: node scripts/run-ci.mjs "${INKBOOK_PERFORMANCE_SUITE}"
+      - name: Confirm no affected performance contracts
+        if: needs.select.outputs[matrix.suite] == 'false'
+        run: echo "No affected contracts in this performance suite."
 
   ci:
     name: CI
-    needs: [quality, Performance]
+    needs: [select, quality, Performance]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Require every CI job to succeed
         env:
+          SELECT_RESULT: ${{ needs.select.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           PERFORMANCE_RESULT: ${{ needs.Performance.result }}
+          MODE: ${{ needs.select.outputs.mode }}
+          SHARED: ${{ needs.select.outputs.shared }}
+          CADENCE: ${{ needs.select.outputs.cadence }}
+          BUILD: ${{ needs.select.outputs.build }}
         shell: bash
         run: |
+          test "$SELECT_RESULT" = success
           test "$QUALITY_RESULT" = success
           test "$PERFORMANCE_RESULT" = success
+          for value in "$SHARED" "$CADENCE" "$BUILD"; do
+            case "$value" in true|false) ;; *) exit 1 ;; esac
+          done
+          case "$MODE" in
+            docs) test "$SHARED/$CADENCE/$BUILD" = false/false/false ;;
+            full) test "$SHARED/$CADENCE" = true/true ;;
+            affected) ;;
+            *) exit 1 ;;
+          esac

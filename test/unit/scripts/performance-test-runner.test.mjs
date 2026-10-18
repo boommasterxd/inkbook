@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 import { describe, expect, it } from "vitest";
 
@@ -10,6 +12,29 @@ import {
   selectPerformanceRuns,
   SUPPORTED_REFRESH_RATES,
 } from "../../../scripts/performance-test-runner.mjs";
+
+it("discovers every Vitest-supported performance extension and rejects unclassified files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inkbook-performance-discovery-"));
+  try {
+    await Promise.all(
+      ["ts", "tsx", "mjs"].map((extension) =>
+        writeFile(join(directory, `case.test.${extension}`), ""),
+      ),
+    );
+    const discovered = await collectTestFiles(directory);
+    expect(discovered.map((file) => file.slice(directory.length + 1))).toEqual([
+      "case.test.mjs",
+      "case.test.ts",
+      "case.test.tsx",
+    ]);
+    const existing = await collectTestFiles();
+    expect(() => createPerformanceTestPlan([...existing, ...discovered])).toThrow(
+      "Unclassified performance tests",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 describe("performance test plan", () => {
   it("classifies every benchmark exactly once", async () => {
