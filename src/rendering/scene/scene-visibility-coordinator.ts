@@ -164,7 +164,8 @@ export class SceneVisibilityCoordinator {
   }
 
   /** Required camera work keeps useful directional preparation for the next target. */
-  public invalidate(preservePending = false): void {
+  public invalidate(preservePending = false, preserveRemovalReuse = false): void {
+    if (!preserveRemovalReuse) this.#visibility.removalReuse.invalidate();
     this.#dirty = true;
     this.#documentPaths?.pause();
     this.cancelNavigationFrame();
@@ -179,6 +180,26 @@ export class SceneVisibilityCoordinator {
     this.cancelNavigationFrame();
     this.#orderDirty = true;
     this.#visibility.invalidateStagedOrder();
+  }
+
+  public get canReuseRemoval(): boolean {
+    return (
+      !this.#dirty &&
+      !this.#orderDirty &&
+      !this.#queryPending &&
+      !this.#content.hasVisibilityWork &&
+      !this.#content.needsVisibilityRestart &&
+      !this.hasPreviews
+    );
+  }
+
+  private get hasPreviews(): boolean {
+    return (
+      this.#transforms.activeIds.length > 0 ||
+      this.#elements.immediate.values.size > 0 ||
+      this.#elements.progressive.pending ||
+      this.#elements.progressive.values.size > 0
+    );
   }
 
   public releasePreviews(): void {
@@ -250,6 +271,7 @@ export class SceneVisibilityCoordinator {
     now: () => number = () => this.navigationOptions?.scene.workScheduler.now() ?? 0,
   ): void {
     if (viewport === undefined) return;
+    if (this.hasPreviews) this.#visibility.removalReuse.invalidate();
     this.setPriority(viewport, camera);
     if (!this.#dirty) {
       if (this.#orderDirty) {

@@ -136,7 +136,7 @@ export class SvgSceneRenderer {
       routing: {
         content: this.#content,
         detachedCache: this.#detachedCache,
-        invalidateVisibility: () => this.#visibilityCoordinator.invalidate(),
+        invalidateVisibility: (reuse) => this.#visibilityCoordinator.invalidate(false, reuse),
         markOrderVisibilityDirty: () => this.#visibilityCoordinator.invalidateOrder(),
         pathCache: this.#pathCache,
         store: this.#options.store,
@@ -167,6 +167,8 @@ export class SvgSceneRenderer {
   }
   public applyDelta(delta: Scene.SceneStoreDelta): void {
     this.assertActive();
+    if (this.#layoutDirty || this.#backgroundDirty || !this.#visibilityCoordinator.canReuseRemoval)
+      this.#visibility.removalReuse.invalidate();
     this.#deltas.apply(delta, this.#visibilityCoordinator);
     this.#elementPreviews.applyMounted(this.#content.takeCommittedPreviewIds());
     this.#liveStroke.settleCommits((id) => this.#options.store.get(id) === undefined);
@@ -438,10 +440,8 @@ export class SvgSceneRenderer {
     this.#sceneCommits.release();
   }
   private renderFrame(frameTime: number, scene: boolean): void {
-    if (!scene) {
-      this.#frameWriter.flushToolCursor();
-      return;
-    }
+    if (!scene) return this.#frameWriter.flushToolCursor();
+    if (this.#layoutDirty || this.#backgroundDirty) this.#visibility.removalReuse.invalidate();
     this.#motion.expireSuppression();
     const startedAt = Number.isFinite(frameTime) ? frameTime : this.#scheduler.now();
     const deadline = this.#scheduler.deadline();

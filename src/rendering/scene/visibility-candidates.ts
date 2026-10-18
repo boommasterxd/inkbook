@@ -33,6 +33,9 @@ export class VisibilityCandidates implements SpatialQuerySink {
   public get generation(): number {
     return this.#generation;
   }
+  public get complete(): boolean {
+    return this.#key !== undefined && this.#pendingKey === undefined;
+  }
 
   public memoryUsage(): number {
     return this.#count * 16 + this.#positions.byteLength + (this.#cursor?.memoryUsage?.() ?? 0);

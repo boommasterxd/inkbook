@@ -156,6 +156,7 @@ function finishStage<Id>(
     ports.recordVersion,
     state.inserted.length,
   );
+  const hasChanges = state.removed.length !== 0 || state.inserted.length !== 0;
   let consumed = false;
   return {
     removed: state.removed,
@@ -167,7 +168,7 @@ function finishStage<Id>(
         if (consumed || generation !== ports.generation())
           throw new Error("Prepared spatial mutation is stale.");
         consumed = true;
-        if (state.removed.length !== 0 || state.inserted.length !== 0) apply();
+        if (hasChanges) apply();
       },
     }),
   };

@@ -1,6 +1,7 @@
 import type { RenderBand } from "../commands/render-bands";
 
 import type { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import type { StoreBands } from "./band-snapshots";
 import type { ElementMutation, ElementRank } from "./types";
 
 export async function validateTrustedRemovalOrder(
@@ -11,14 +12,17 @@ export async function validateTrustedRemovalOrder(
   scheduler: MutationPreparationScheduler,
 ): Promise<
   | {
-      bands: Record<RenderBand, string[]>;
+      bands: StoreBands;
       ranks: Map<string, ElementRank>;
       dirtyBands: Record<RenderBand, boolean>;
       relativeOrderPreserved: Record<RenderBand, boolean>;
     }
   | "cancelled"
 > {
-  const bands: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  const bands: StoreBands = {
+    content: source.bands.content,
+    highlight: source.bands.highlight,
+  };
   const ranks = new Map<string, ElementRank>();
   const dirtyBands = { content: false, highlight: false };
   const firstChanged = {
@@ -33,14 +37,13 @@ export async function validateTrustedRemovalOrder(
   for (const band of ["highlight", "content"] as const) {
     const next = requested.bands[band];
     dirtyBands[band] = firstChanged[band] < source.bands[band].length;
-    if (!dirtyBands[band]) {
-      bands[band] = source.bands[band] as string[];
-      continue;
-    }
+    if (!dirtyBands[band]) continue;
+    const ids: string[] = [];
+    bands[band] = ids;
     for (let index = 0; index < next.length; index += 1) {
       if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
       const id = next[index]!;
-      bands[band].push(id);
+      ids.push(id);
       if (index >= firstChanged[band]) ranks.set(id, { band, rank: index });
     }
   }

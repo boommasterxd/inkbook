@@ -4,9 +4,10 @@ import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { DeltaBuilder } from "./delta-builder";
 import type { ElementRank, ElementRecord, ImmutableInkElement } from "./types";
 import { arrangementRange } from "./arrangement-mutation";
+import { mutableBand, type StoreBands } from "./band-snapshots";
 
 interface OrderingState {
-  readonly bands: Record<RenderBand, string[]>;
+  readonly bands: StoreBands;
   readonly ranks: Map<string, ElementRank>;
   readonly records: ReadonlyMap<string, ElementRecord>;
 }
@@ -38,10 +39,11 @@ export class ElementStoreOrdering {
     const [start, end] = arrangementRange(state.bands[band].length, { first, last }, action);
     const ids = state.bands[band].slice(start, end);
     if (!arrangeIdsInPlace(ids, selectedIds, action, this.#arrangeScratch)) return false;
+    const destination = mutableBand(state.bands, band);
     let changed = false;
     for (let index = start; index < end; index += 1) {
       if (state.bands[band][index] === ids[index - start]) continue;
-      state.bands[band][index] = ids[index - start]!;
+      destination[index] = ids[index - start]!;
       this.refresh(band, index, delta, true, index + 1);
       changed = true;
     }
@@ -55,7 +57,7 @@ export class ElementStoreOrdering {
   ): void {
     const state = this.#state();
     const band = renderBandOf(element);
-    const ids = state.bands[band];
+    const ids = mutableBand(state.bands, band);
     if (placement === "front") {
       state.ranks.set(element.id, { band, rank: ids.length });
       ids.push(element.id);

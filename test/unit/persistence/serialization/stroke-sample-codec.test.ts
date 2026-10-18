@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   decodeStrokeSamplesSteps,
+  encodeStrokeSampleBytesSteps,
   encodeStrokeSamples,
   encodeStrokeSamplesSteps,
 } from "../../../../src/persistence/serialization/stroke-sample-codec";
 import { decodeStrokeSamples } from "../../../fixtures/persistence/stroke-sample-codec";
+import {
+  SampleBase64ByteWriter,
+  SampleBase64Writer,
+} from "../../../../src/persistence/serialization/sample-base64";
+import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
 
 describe("compact stroke sample codec", () => {
   it("round trips coordinates and pressure at their stored precision", () => {
@@ -27,7 +33,12 @@ describe("compact stroke sample codec", () => {
       maximum[point * 3 + 1] = point === 0 ? 0 : -point / 1000;
       maximum[point * 3 + 2] = (point % 10) / 10;
     }
-    expect(decodeStrokeSamples(encodeStrokeSamples(maximum))).toEqual(maximum);
+    const encoded = encodeStrokeSamples(maximum);
+    expect(encoded).toBe(referenceStrokeEncoding(maximum));
+    expect(
+      new TextDecoder().decode(finishGeometrySteps(encodeStrokeSampleBytesSteps(maximum))),
+    ).toBe(encoded);
+    expect(decodeStrokeSamples(encoded)).toEqual(maximum);
   });
 
   it.each(
@@ -45,6 +56,7 @@ describe("compact stroke sample codec", () => {
     ].map((values) => [values]),
   )("rejects invalid sample input %j", (values) => {
     expect(() => encodeStrokeSamples(values)).toThrow(RangeError);
+    expect(() => finishGeometrySteps(encodeStrokeSampleBytesSteps(values))).toThrow(RangeError);
   });
 
   it("rejects a stroke with more than the maximum point count", () => {
@@ -94,6 +106,25 @@ describe("compact stroke sample codec", () => {
   });
 });
 
+describe("compact sample Base64 writer", () => {
+  it.each([0, 1, 2, 3, 190, 191, 192, 193, 194, 255, 256, 383, 384, 385, 196_611])(
+    "matches native Base64 for %s bytes across padding and chunk boundaries",
+    (length) => {
+      const bytes = Uint8Array.from({ length }, (_, index) => index % 256);
+      const writer = new SampleBase64Writer();
+      const byteWriter = new SampleBase64ByteWriter();
+      for (const byte of bytes) {
+        writer.append(byte);
+        byteWriter.append(byte);
+      }
+      expect(writer.finish()).toBe(base64(bytes));
+      const encoded = byteWriter.finish();
+      expect(new TextDecoder().decode(encoded)).toBe(base64(bytes));
+      expect(encoded.buffer.byteLength).toBe(encoded.byteLength);
+    },
+  );
+});
+
 describe("compact stroke sample point budget", () => {
   it("decodes when the remaining document point budget exactly matches the stroke", () => {
     const encoded = encodeStrokeSamples(new Float64Array([0, 0, 0, 1, -1, 1]));
@@ -117,6 +148,31 @@ describe("compact stroke sample point budget", () => {
   );
 });
 
-function base64(bytes: number[]): string {
-  return btoa(String.fromCharCode(...bytes));
+function base64(bytes: ArrayLike<number>): string {
+  return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+}
+
+function referenceStrokeEncoding(points: Float64Array): string {
+  const bytes: number[] = [];
+  const append = (integer: number): void => {
+    do {
+      const digit = integer % 128;
+      integer = Math.floor(integer / 128);
+      bytes.push(digit | (integer > 0 ? 128 : 0));
+    } while (integer > 0);
+  };
+  append(points.length / 3);
+  let previousX = 0;
+  let previousY = 0;
+  for (let index = 0; index < points.length; index += 3) {
+    const x = Math.round(points[index]! * 1000);
+    const y = Math.round(points[index + 1]! * 1000);
+    for (const delta of [x - previousX, y - previousY]) {
+      append(delta < 0 ? -delta * 2 - 1 : delta * 2);
+    }
+    append(Math.round(points[index + 2]! * 10_000));
+    previousX = x;
+    previousY = y;
+  }
+  return base64(bytes);
 }

@@ -7,7 +7,7 @@ import {
   canonicalElementFragments,
   canonicalStrokeMetadataFrame,
 } from "./canonical-element-fragments";
-import { encodeStrokeSamplesSteps } from "./stroke-sample-codec";
+import { encodeStrokeSampleBytesSteps } from "./stroke-sample-codec";
 import { metadataPrefix } from "./canonical-metadata";
 import { ChunkedSha256 } from "./chunked-output-sha256";
 
@@ -101,15 +101,14 @@ export class CanonicalMetadataCache {
         return cached.fragments;
       }
     }
-    return this.#encodeElement(element, cached, checkpoint, signal);
+    return consumeMetadataSteps(this.#encodeElement(element, cached, signal), checkpoint, signal);
   }
 
-  async #encodeElement(
+  *#encodeElement(
     element: InkElementV1,
     cached: CachedElement | undefined,
-    checkpoint: () => Promise<void> | undefined,
     signal?: AbortSignal,
-  ): Promise<readonly Uint8Array<ArrayBuffer>[]> {
+  ): Generator<void, readonly Uint8Array<ArrayBuffer>[]> {
     const owned = this.ownsElement(element);
     const samples =
       owned && element.kind === "stroke" && cached?.samples?.points.deref() === element.points
@@ -117,11 +116,9 @@ export class CanonicalMetadataCache {
         : undefined;
     const encoded =
       element.kind === "stroke"
-        ? await this.#strokeBytes(element, samples, checkpoint, signal)
+        ? yield* this.#strokeBytes(element, samples, signal)
         : {
-            fragments: [
-              await encodeFragments(canonicalElementFragments(element), checkpoint, signal),
-            ],
+            fragments: [yield* encodeFragments(canonicalElementFragments(element), signal)],
           };
     signal?.throwIfAborted();
     if (!this.#released && this.ownsElement(element) && retainedBytes(encoded) <= MAX_CACHE_BYTES)
@@ -129,14 +126,13 @@ export class CanonicalMetadataCache {
     return encoded.fragments;
   }
 
-  async #strokeBytes(
+  *#strokeBytes(
     element: Extract<InkElementV1, { kind: "stroke" }>,
     reusedSamples: Uint8Array<ArrayBuffer> | undefined,
-    checkpoint: () => Promise<void> | undefined,
     signal?: AbortSignal,
-  ): Promise<Pick<CachedElement, "fragments" | "samples">> {
+  ): Generator<void, Pick<CachedElement, "fragments" | "samples">> {
     const { prefix, suffix } = canonicalStrokeMetadataFrame(element);
-    const samples = reusedSamples ?? (await encodeSampleBytes(element.points, checkpoint, signal));
+    const samples = reusedSamples ?? (yield* encodeStrokeSampleBytesSteps(element.points, signal));
     signal?.throwIfAborted();
     const fragments = [encoder.encode(prefix), samples, encoder.encode(suffix)];
     if (
@@ -209,11 +205,10 @@ async function copyMetadataBytes(
   return output;
 }
 
-async function encodeFragments(
+function* encodeFragments(
   fragments: Iterable<string>,
-  checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
-): Promise<Uint8Array<ArrayBuffer>> {
+): Generator<void, Uint8Array<ArrayBuffer>> {
   const encoded: Uint8Array<ArrayBuffer>[] = [];
   let length = 0;
   for (const fragment of fragments) {
@@ -222,8 +217,7 @@ async function encodeFragments(
     encoded.push(bytes);
     length += bytes.byteLength;
     if (length > FILE_SCHEMA_LIMITS.metadataBytes) throw new RangeError("Metadata byte limit.");
-    const pending = checkpoint();
-    if (pending !== undefined) await pending;
+    yield;
   }
   return joinBytes(encoded, length);
 }
@@ -269,28 +263,45 @@ async function digestBytes(
   return hasher.digestHex();
 }
 
-async function encodeSampleBytes(
-  points: ArrayLike<number>,
+/** Keep preparation synchronous until the injected scheduler actually requests a handoff. */
+function consumeMetadataSteps<T>(
+  steps: Generator<void, T>,
   checkpoint: () => Promise<void> | undefined,
   signal?: AbortSignal,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const steps = encodeStrokeSamplesSteps(points, signal);
-  let step = steps.next();
-  while (!step.done) {
-    const pending = checkpoint();
-    if (pending !== undefined) await pending;
-    step = steps.next();
-  }
-  if (step.value.length <= CHUNK_BYTES) return encoder.encode(step.value);
-  // The compact alphabet is ASCII, so its character and UTF-8 byte counts agree.
-  const bytes = new Uint8Array(step.value.length);
-  for (let start = 0; start < step.value.length; start += CHUNK_BYTES) {
-    signal?.throwIfAborted();
-    bytes.set(encoder.encode(step.value.slice(start, start + CHUNK_BYTES)), start);
-    if (start + CHUNK_BYTES < step.value.length) {
+): T | Promise<T> {
+  try {
+    for (;;) {
+      signal?.throwIfAborted();
+      const step = steps.next();
+      if (step.done) return step.value;
       const pending = checkpoint();
-      if (pending !== undefined) await pending;
+      if (pending !== undefined) return resumeMetadataSteps(steps, pending, checkpoint, signal);
     }
+  } catch (error) {
+    steps.return(undefined as T);
+    throw error;
   }
-  return bytes;
+}
+
+async function resumeMetadataSteps<T>(
+  steps: Generator<void, T>,
+  pending: Promise<void>,
+  checkpoint: () => Promise<void> | undefined,
+  signal?: AbortSignal,
+): Promise<T> {
+  try {
+    await pending;
+    signal?.throwIfAborted();
+    let step = steps.next();
+    while (!step.done) {
+      const next = checkpoint();
+      if (next !== undefined) await next;
+      signal?.throwIfAborted();
+      step = steps.next();
+    }
+    return step.value;
+  } catch (error) {
+    steps.return(undefined as T);
+    throw error;
+  }
 }

@@ -13,21 +13,21 @@ export class PreviewIdleScheduler {
     this.#waitForBackground = wait;
   }
 
-  public checkpoint(initial = false): Promise<void> | undefined {
+  public checkpoint(initial = false, signal?: AbortSignal): Promise<void> | undefined {
     // Allow the presentation to install its input-priority gate before the first slice.
-    if (initial) return Promise.resolve().then(() => this.checkpoint());
-    if (this.#disposed) return;
-    const ready = this.waitForBackground();
-    return ready === undefined ? this.#admit() : ready.then(() => this.#admit());
+    if (initial) return Promise.resolve().then(() => this.checkpoint(false, signal));
+    if (this.#disposed || signal?.aborted === true) return;
+    const ready = this.waitForBackground(signal);
+    return ready === undefined ? this.#admit(signal) : ready.then(() => this.#admit(signal));
   }
 
-  #admit(): Promise<void> | undefined {
-    if (this.#disposed) return;
+  #admit(signal?: AbortSignal): Promise<void> | undefined {
+    if (this.#disposed || signal?.aborted === true) return;
     try {
       const pending = this.workScheduler.checkpoint(this.#abort.signal);
       if (pending !== undefined) {
         return pending.then(
-          () => this.waitForBackground(),
+          () => this.waitForBackground(signal),
           (error: unknown) => {
             if (!this.#disposed) throw error;
           },
@@ -36,7 +36,7 @@ export class PreviewIdleScheduler {
     } catch (error: unknown) {
       if (!this.#disposed) throw error;
     }
-    return this.waitForBackground();
+    return this.waitForBackground(signal);
   }
 
   public waitForBackground(signal?: AbortSignal): Promise<void> | undefined {

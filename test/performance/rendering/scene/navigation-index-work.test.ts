@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { UniformSpatialIndex } from "../../../../src/domain/spatial";
+import { SpatialMap } from "../../../../src/domain/spatial/spatial-map";
+import type { CellColumns } from "../../../../src/domain/spatial/index-state";
 import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
 import { NavigationPathPreparation } from "../../../../src/rendering/scene/navigation-path-preparation";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
@@ -15,6 +17,7 @@ import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { createSceneRecord, createSceneFixture } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
+import { observeSpatialComparisons } from "../../domain/domain-scenarios";
 
 const BOUNDS = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
 const BUDGET = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs;
@@ -85,7 +88,7 @@ it("classifies a dense acquired query under the same deadline while retaining at
   const records = Array.from({ length: 10_000 }, (_, rank) =>
     fakeRectangleRecord(`entry-${rank}`, rank, 20, 50),
   );
-  const { store } = indexedStore(records);
+  const { store, index } = indexedStore(records);
   const state = new SceneVisibilityState(store, createInstrumentation());
   let clock = 0;
   const get = vi.spyOn(store, "get").mockImplementation((id) => {
@@ -98,12 +101,23 @@ it("classifies a dense acquired query under the same deadline while retaining at
   expect(state.contains("entry-0")).toBe(false);
   expect(get.mock.calls.length).toBeLessThanOrEqual(Math.ceil(BUDGET));
   const slotReads = vi.spyOn(Map.prototype, "get");
+  const indexedSlotReads = vi.spyOn(SpatialMap.prototype, "get");
+  const comparisons = observeSpatialComparisons(
+    (index as unknown as { cells: CellColumns }).cells,
+    vi.spyOn,
+  );
   let reads: number;
   try {
     expect(state.query(BOUNDS, BOUNDS).visibility.content.count).toBe(10_000);
-    reads = slotReads.mock.calls.length;
+    reads = slotReads.mock.calls.length + indexedSlotReads.mock.calls.length;
+    // Classification may reuse already acquired candidates and perform no further tree reads.
+    expect(comparisons.count()).toBeLessThanOrEqual(
+      indexedSlotReads.mock.calls.length * 2 * Math.ceil(Math.log2(index.size + 1)),
+    );
   } finally {
     slotReads.mockRestore();
+    indexedSlotReads.mockRestore();
+    comparisons.restore();
   }
   // Actual slot/rank lookups include final marker adoption and the existing heap-sort comparisons.
   expect(reads).toBeGreaterThanOrEqual(10_000);

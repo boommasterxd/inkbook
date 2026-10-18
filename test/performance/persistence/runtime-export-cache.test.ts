@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/public";
 import { createTestStroke, createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
-import { createStandardPersistenceFixture, replaceFirstStroke, STANDARD_POINTS } from "./fixtures";
+import {
+  createMaximumStrokeSamples,
+  createStandardPersistenceFixture,
+  replaceFirstStroke,
+  STANDARD_POINTS,
+} from "./fixtures";
 import { DocumentModelRuntime } from "../../../src/persistence/worker/runtime/document-model";
 import {
   decodeRuntimeRequestChunked,
@@ -18,13 +23,7 @@ import { ManualWorkerTiming } from "../../fixtures/persistence/manual-worker-tim
 import { adoptTransferredStrokeSamples } from "../../../src/persistence/worker/runtime/runtime-elements";
 
 // Sequential scenarios share read-only samples; each serializer, proxy and scheduler is fresh.
-const maximumStrokeSamples = Float64Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
-  index % 3 === 0
-    ? Math.floor(index / 3) / 10
-    : index % 3 === 1
-      ? (Math.floor(index / 3) % 7) / 1000
-      : 0.5,
-);
+const maximumStrokeSamples = createMaximumStrokeSamples();
 
 describe("runtime model synchronization performance", () => {
   it("synchronizes and restores 10,000 pressure strokes without export work", async () => {
@@ -128,6 +127,10 @@ describe("runtime export cache performance", () => {
     const encode = vi.spyOn(TextEncoder.prototype, "encode");
     const encodeInto = vi.spyOn(TextEncoder.prototype, "encodeInto");
     const decode = vi.spyOn(TextDecoder.prototype, "decode");
+    const sampleWriter = new SampleBase64Writer();
+    sampleWriter.append(0);
+    sampleWriter.finish();
+    const sampleDecoder = decode.mock.contexts[0];
     try {
       for (const changed of [undefined, replaceFirstStroke(snapshot, snapshot.revision + 1)]) {
         encode.mockClear();
@@ -157,9 +160,7 @@ describe("runtime export cache performance", () => {
           expect(result.value.hash).toBe(cold.value.hash);
           expect(result.value.totalBytes).toBe(cold.value.totalBytes);
         }
-        // The observed window includes delta application and complete output assembly.
-        // Only the changed element, envelope and small background require text encoding.
-        // Observe both encoder APIs so direct encodeInto assembly cannot hide a full pass.
+        // Bound both encoder APIs across delta application and complete output assembly.
         expect(encode.mock.calls.length).toBeLessThan(32);
         const encodedBytes = encode.mock.results.reduce(
           (sum, result) =>
@@ -168,7 +169,7 @@ describe("runtime export cache performance", () => {
         );
         expect(encodedBytes).toBeLessThan(16 * 1024);
         expect(encodeInto).not.toHaveBeenCalled();
-        expect(decode).not.toHaveBeenCalled();
+        expect(decode.mock.contexts.filter((decoder) => decoder !== sampleDecoder)).toHaveLength(0);
         if (changed !== undefined) {
           expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds + 1);
           expect(result.value.hash).not.toBe(cold.value.hash);

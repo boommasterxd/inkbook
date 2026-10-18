@@ -3,21 +3,25 @@ import type { MutationPreparationScheduler } from "./mutation-preparation-schedu
 import type { ElementMutation, ElementRank, ElementRecord } from "./types";
 import type { OwnedMutationHistory, OwnedMutationReplay } from "./owned-mutation-history";
 import { validateTrustedRemovalOrder } from "./trusted-removal-order";
+import type { StoreBands } from "./band-snapshots";
 
 export interface MutationOrder {
-  readonly bands: Record<RenderBand, string[]>;
+  readonly bands: StoreBands;
   readonly ranks: Map<string, ElementRank>;
+  /** Complete resulting membership permits atomic rank-map adoption instead of patching. */
+  ranksComplete?: boolean;
   readonly dirtyBands: Record<RenderBand, boolean>;
   readonly relativeOrderPreserved: Readonly<Record<RenderBand, boolean>>;
 }
 
-/** Private producers borrow untouched authoritative bands until an atomic replacement is ready. */
+/** Private producers retain untouched authoritative orders until atomic adoption. */
 export function createUnchangedMutationOrder(
   bands: Readonly<Record<RenderBand, readonly string[]>>,
 ) {
   return {
-    bands: { content: bands.content as string[], highlight: bands.highlight as string[] },
+    bands: { content: bands.content, highlight: bands.highlight },
     ranks: new Map<string, ElementRank>(),
+    ranksComplete: false,
     dirtyBands: { content: false, highlight: false },
     relativeOrderPreserved: { content: true, highlight: true },
   };
@@ -217,19 +221,17 @@ export async function restoreOwnedReplayBands(
   owned: OwnedMutationHistory,
   scheduler: MutationPreparationScheduler,
 ): Promise<MutationOrder | "cancelled"> {
-  const bands: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  const bands: StoreBands = { content: [], highlight: [] };
   const ranks = new Map<string, ElementRank>();
   for (const band of ["highlight", "content"] as const) {
     if (!owned.dirtyBands[band]) {
-      // Only the private exact band-state proof admits reuse of these mutable
-      // authoritative arrays. Frozen history arrays are never installed here.
-      bands[band] = source.bands[band] as string[];
+      bands[band] = source.bands[band];
       continue;
     }
+    bands[band] = requested[band];
     for (let rank = 0; rank < requested[band].length; rank += 1) {
       if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
       const id = requested[band][rank]!;
-      bands[band].push(id);
       const prior = sourceRanks.get(id);
       if (prior?.band !== band || prior.rank !== rank) ranks.set(id, { band, rank });
     }

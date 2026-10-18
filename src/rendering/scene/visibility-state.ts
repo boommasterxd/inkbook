@@ -13,9 +13,11 @@ import type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from ".
 import { growVisibilityCapacity, growVisibilityMarkers } from "./visibility-markers";
 import { VisibilityCandidates } from "./visibility-candidates";
 import { VisibilityClassification } from "./visibility-classification";
+import { VisibilityRemovalReuse } from "./visibility-removal";
 export type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from "./visibility-types";
 
 export class SceneVisibilityState {
+  public readonly removalReuse: VisibilityRemovalReuse;
   readonly #candidates: VisibilityCandidates;
   readonly #classification: VisibilityClassification;
   #contentIds: (string | undefined)[] = [];
@@ -53,6 +55,16 @@ export class SceneVisibilityState {
     this.#edges = new VisibilityEdgeQuery(store, instrumentation);
     this.#candidates = new VisibilityCandidates(store, instrumentation, (id) => this.slotFor(id));
     this.#classification = new VisibilityClassification(store, instrumentation);
+    this.removalReuse = new VisibilityRemovalReuse({
+      current: () => this.currentResult(),
+      bounds: () => this.#visibilityEnvelope,
+      ready: () => !this.#currentInvalidated && this.#candidates.complete,
+      contains: (id) => this.contains(id),
+      updateRank: (id, rank) => {
+        const slot = this.#slotById.get(id);
+        if (slot !== undefined) this.#visibleRanks[slot] = rank;
+      },
+    });
   }
 
   public query(
@@ -63,6 +75,22 @@ export class SceneVisibilityState {
     now: () => number = () => 0,
     forceRefresh = false,
   ): VisibilityQueryResult {
+    const removal = this.removalReuse.advance(bounds, deadline, now, allowEdge && !forceRefresh);
+    if (removal === "pending")
+      return { changed: false, visibility: this.currentResult(), pending: true };
+    if (removal !== undefined) {
+      this.#currentInvalidated = false;
+      if (removal.exited.length === 0) return { changed: false, visibility: this.currentResult() };
+      this.#contentIds = removal.content;
+      this.#contentCount = removal.content.length;
+      this.#highlightIds = removal.highlight;
+      this.#highlightCount = removal.highlight.length;
+      return {
+        changed: true,
+        visibility: this.currentResult(),
+        delta: { entered: [], exited: removal.exited },
+      };
+    }
     if (!forceRefresh && this.canReuseCurrent(bounds, retainedBounds)) {
       this.#edges.release();
       this.#classification.release();
@@ -70,6 +98,7 @@ export class SceneVisibilityState {
       this.#instrumentation.visibilityHysteresisHits += 1;
       return { changed: false, visibility: this.currentResult() };
     }
+    this.removalReuse.invalidate();
     if (allowEdge && this.canQueryEdges(bounds)) {
       this.#classification.release();
       this.#candidates.cancelPending();
@@ -78,8 +107,8 @@ export class SceneVisibilityState {
     this.#edges.release();
     return this.queryFull(bounds, deadline, now);
   }
-
   public resortCurrent(): VisibilityResult {
+    this.removalReuse.invalidate();
     for (const band of ["highlight", "content"] as const) {
       const ids = band === "highlight" ? this.#highlightIds : this.#contentIds;
       const count = band === "highlight" ? this.#highlightCount : this.#contentCount;
@@ -90,9 +119,14 @@ export class SceneVisibilityState {
       if (band === "highlight") this.#highlightIds = sorted;
       else this.#contentIds = sorted;
     }
+    this.removalReuse.ranksFresh();
     return this.currentResult();
   }
-
+  public beginRemoval(): boolean {
+    if (!this.removalReuse.begin()) return false;
+    this.#currentInvalidated = true;
+    return true;
+  }
   public releaseId(id: string): void {
     const slot = this.#slotById.get(id);
     if (slot === undefined) return;
@@ -104,7 +138,6 @@ export class SceneVisibilityState {
     this.#visibleRanks[slot] = 0;
     this.#freeSlots.push(slot);
   }
-
   public contains(id: string): boolean {
     const slot = this.#slotById.get(id);
     return (
@@ -113,21 +146,23 @@ export class SceneVisibilityState {
       this.#visibleMarkers[slot] === this.#visibleEpoch
     );
   }
-
   public queryMemoryUsage(): number {
     return (
       this.#candidates.memoryUsage() +
       this.#edges.memoryUsage() +
-      this.#classification.memoryUsage()
+      this.#classification.memoryUsage() +
+      this.removalReuse.memoryUsage()
     );
   }
 
   public invalidateCandidates(): void {
+    this.removalReuse.invalidate();
     this.#candidates.invalidate();
     this.#classification.release();
   }
 
   public invalidateStagedOrder(): void {
+    this.removalReuse.invalidate();
     this.#classification.release();
     this.#edges.release();
   }
@@ -139,6 +174,7 @@ export class SceneVisibilityState {
   ): void;
   public invalidateForChanges(): void;
   public invalidateForChanges(before?: Bounds | null, after?: Bounds | null, id?: string): void {
+    this.removalReuse.invalidate();
     this.#currentInvalidated = true;
     this.#edges.release();
     this.#classification.release();
@@ -146,6 +182,7 @@ export class SceneVisibilityState {
   }
 
   public release(): void {
+    this.removalReuse.invalidate();
     this.#candidates.release();
     this.#classification.release();
     this.#contentIds = [];
@@ -203,6 +240,7 @@ export class SceneVisibilityState {
   private canQueryEdges(bounds: Bounds): boolean {
     return (
       this.#hasCurrentVisibility &&
+      !this.removalReuse.ranksDirty &&
       !this.#currentInvalidated &&
       this.#visibilityEnvelope !== undefined &&
       envelopesOverlap(this.#visibilityEnvelope, bounds)
@@ -256,6 +294,7 @@ export class SceneVisibilityState {
     this.#classification.release();
     this.#visibilityEnvelope = bounds;
     this.#currentInvalidated = false;
+    this.removalReuse.ranksFresh();
     if (membershipUnchanged) {
       this.discardNextVisibility();
       this.#instrumentation.visibilitySortSkips += 1;
@@ -313,12 +352,20 @@ export class SceneVisibilityState {
 
   private pushNextBand(band: RenderBand, id: string): void {
     if (band === "highlight") {
-      this.ensureHighlightCapacity(this.#nextHighlightCount + 1);
+      this.#highlightCapacity = growVisibilityCapacity(
+        this.#nextHighlightCount + 1,
+        this.#highlightCapacity,
+        this.#instrumentation,
+      );
       this.#nextHighlightIds[this.#nextHighlightCount] = id;
       this.#nextHighlightCount += 1;
       return;
     }
-    this.ensureContentCapacity(this.#nextContentCount + 1);
+    this.#contentCapacity = growVisibilityCapacity(
+      this.#nextContentCount + 1,
+      this.#contentCapacity,
+      this.#instrumentation,
+    );
     this.#nextContentIds[this.#nextContentCount] = id;
     this.#nextContentCount += 1;
   }
@@ -449,21 +496,5 @@ export class SceneVisibilityState {
     this.#visibleMarkers = grown.visible;
     this.#visibleBands = grown.bands;
     this.#visibleRanks = grown.ranks;
-  }
-
-  private ensureContentCapacity(required: number): void {
-    this.#contentCapacity = growVisibilityCapacity(
-      required,
-      this.#contentCapacity,
-      this.#instrumentation,
-    );
-  }
-
-  private ensureHighlightCapacity(required: number): void {
-    this.#highlightCapacity = growVisibilityCapacity(
-      required,
-      this.#highlightCapacity,
-      this.#instrumentation,
-    );
   }
 }

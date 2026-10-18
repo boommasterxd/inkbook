@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   decodeStrokeSamplesSteps,
+  encodeStrokeSampleBytesSteps,
   encodeStrokeSamples,
 } from "../../../src/persistence/serialization/stroke-sample-codec";
 import { decodeStrokeSamples } from "../../fixtures/persistence/stroke-sample-codec";
@@ -13,6 +14,120 @@ import {
 } from "../../../src/domain/schema/snapshot-validation";
 import { createOneStrokeWorkerSnapshot } from "../../fixtures/persistence/worker-bridge";
 import { finishGeometrySteps } from "../../fixtures/domain/geometry-steps";
+
+describe("compact stroke sample encoding work bounds", () => {
+  it("emits maximum-stroke ASCII bytes without native text conversion or oversized output", () => {
+    const points = maximumEncodingSamples();
+    const { allocations, decode, encode, restore } = observeEncodingBuffers();
+    try {
+      const encoded = finishGeometrySteps(encodeStrokeSampleBytesSteps(points));
+      expect(encoded.byteLength).toBe(262_148);
+      expect(encoded.buffer.byteLength).toBe(encoded.byteLength);
+      expect(allocations[0]).toBe(256);
+      expect(allocations[allocations.length - 1]).toBe(encoded.byteLength);
+      expect(allocations.slice(1, -1).every((bytes) => bytes > 0 && bytes <= 256)).toBe(true);
+      expect(allocations.length).toBe(Math.ceil(encoded.byteLength / 256) + 2);
+      expect(allocations.reduce((sum, bytes) => sum + bytes, 0)).toBe(encoded.byteLength * 2 + 256);
+      expect(decode).not.toHaveBeenCalled();
+      expect(encode).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it("encodes a maximum stroke through one bounded ASCII buffer and one decode per chunk", () => {
+    const points = maximumEncodingSamples();
+    const { allocations, decode, restore } = observeEncodingBuffers();
+    try {
+      const encoded = encodeStrokeSamples(points);
+      const inputs = decode.mock.calls.map(([input]) => input as Uint8Array);
+      expect(allocations).toEqual([256]);
+      expect(encoded.length).toBe(262_148);
+      expect(inputs).toHaveLength(Math.ceil(encoded.length / 256));
+      expect(inputs.reduce((sum, input) => sum + input.byteLength, 0)).toBe(encoded.length);
+      expect(inputs.every((input) => input.byteLength > 0 && input.byteLength <= 256)).toBe(true);
+      expect(new Set(inputs.map((input) => input.buffer)).size).toBe(1);
+      expect(decodeStrokeSamples(encoded)).toEqual(points);
+    } finally {
+      restore();
+    }
+  });
+});
+
+function maximumEncodingSamples(): Float64Array<ArrayBuffer> {
+  const points = new Float64Array(16_384 * 3);
+  for (let point = 0; point < points.length / 3; point += 1) {
+    points[point * 3] = point % 2 === 0 ? 1_000_000 : -1_000_000;
+    points[point * 3 + 1] = -points[point * 3]!;
+    points[point * 3 + 2] = 1;
+  }
+  return points;
+}
+
+function observeEncodingBuffers() {
+  const NativeUint8Array = Uint8Array;
+  const allocations: number[] = [];
+  vi.stubGlobal(
+    "Uint8Array",
+    new Proxy(NativeUint8Array, {
+      construct(target, argumentsList, newTarget) {
+        allocations.push(Number(argumentsList[0]));
+        return Reflect.construct(target, argumentsList, newTarget) as InstanceType<typeof target>;
+      },
+    }),
+  );
+  const decode = vi.spyOn(TextDecoder.prototype, "decode");
+  const encode = vi.spyOn(TextEncoder.prototype, "encode");
+  return {
+    allocations,
+    decode,
+    encode,
+    restore(this: void) {
+      decode.mockRestore();
+      encode.mockRestore();
+      vi.unstubAllGlobals();
+    },
+  };
+}
+
+describe("compact sample byte assembly checkpoints", () => {
+  it.each([false, true])("copies at most 64 KiB between checkpoints (abort=%s)", (abort) => {
+    const nativeSet = Reflect.get<Uint8Array, "set">(Uint8Array.prototype, "set");
+    let copied = 0;
+    const copy = vi.spyOn(Uint8Array.prototype, "set").mockImplementation(function (
+      this: Uint8Array,
+      source,
+      offset,
+    ) {
+      if (this.byteLength > 256) copied += source.length;
+      nativeSet.call(this, source, offset);
+    });
+    const controller = new AbortController();
+    const steps = encodeStrokeSampleBytesSteps(maximumEncodingSamples(), controller.signal);
+    try {
+      let step = steps.next();
+      while (!step.done && copied === 0) step = steps.next();
+      expect(step.done).toBe(false);
+      expect(copied).toBe(64 * 1024);
+      if (abort) {
+        controller.abort();
+        expect(() => steps.next()).toThrow();
+        expect(copied).toBe(64 * 1024);
+      } else {
+        while (!step.done) {
+          const previous = copied;
+          step = steps.next();
+          expect(copied - previous).toBeLessThanOrEqual(64 * 1024);
+        }
+        expect(copied).toBe(262_148);
+        expect(step.value).toHaveLength(copied);
+      }
+    } finally {
+      steps.return(new Uint8Array());
+      copy.mockRestore();
+    }
+  });
+});
 
 describe("compact stroke sample work bounds", () => {
   it("decodes the maximum stroke with one exact output buffer and one read per encoded byte", () => {

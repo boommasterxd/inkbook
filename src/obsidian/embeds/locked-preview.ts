@@ -61,6 +61,8 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   #disposed = false;
   #prepared: SVGSVGElement | undefined;
   #pending: Promise<void> | undefined;
+  #preparationAbort: AbortController | undefined;
+  #readinessRequests = 0;
   #failure: Error | undefined;
 
   public constructor(
@@ -91,7 +93,9 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   };
 
   public readonly refresh = (): void => {
-    if (this.#disposed || this.element.hidden || this.#prepared === undefined) return;
+    if (this.#disposed || this.element.hidden) return;
+    this.#startPreparation();
+    if (this.#prepared === undefined) return;
     this.setAspectRatio(this.#descriptor.aspectRatio);
     this.#media.replaceChildren(this.#prepared);
     this.#prepared = undefined;
@@ -105,11 +109,17 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   };
 
   public readonly ensureReady = async (): Promise<void> => {
-    while (this.#pending !== undefined || this.#sourcePending !== undefined) {
-      await this.#sourcePending;
-      await this.#pending;
+    this.#readinessRequests += 1;
+    try {
+      this.#startPreparation();
+      while (this.#pending !== undefined || this.#sourcePending !== undefined) {
+        await this.#sourcePending;
+        await this.#pending;
+      }
+      if (this.#failure !== undefined) throw this.#failure;
+    } finally {
+      this.#readinessRequests -= 1;
     }
-    if (this.#failure !== undefined) throw this.#failure;
   };
 
   public readonly setDescriptor = (descriptor: InkbookLockedPreviewDescriptor): void => {
@@ -168,6 +178,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   public readonly dispose = (): void => {
     this.#disposed = true;
     this.#sourceAbort?.abort();
+    this.#preparationAbort?.abort();
     this.#prepared = undefined;
     this.#sourceGeneration += 1;
     this.#scheduler.dispose();
@@ -185,6 +196,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
       return;
     this.#descriptor = descriptor;
     this.#generation += 1;
+    this.#preparationAbort?.abort();
     this.#prepared = undefined;
     this.#failure = undefined;
     if (this.#matchesMounted(descriptor.contentIdentity)) return;
@@ -194,39 +206,44 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   #startPreparation(): void {
     if (
       this.#disposed ||
+      (this.element.hidden && this.#readinessRequests === 0) ||
       this.#prepared !== undefined ||
       this.#failure !== undefined ||
       this.#matchesMounted(this.#descriptor.contentIdentity)
     )
       return;
-    this.#pending ??= this.#prepare()
-      .catch((error: unknown) => {
-        this.#failure = error instanceof Error ? error : new Error("Preview preparation failed.");
-      })
-      .finally(() => {
-        this.#pending = undefined;
-        this.#startPreparation();
-      });
+    this.#pending ??= this.#prepare().finally(() => {
+      this.#pending = undefined;
+      this.#startPreparation();
+    });
   }
 
   async #prepare(): Promise<void> {
-    while (!this.#disposed) {
-      if (this.#matchesMounted(this.#descriptor.contentIdentity)) return;
-      const target = this.#generation;
+    const target = this.#generation;
+    const abort = new AbortController();
+    this.#preparationAbort = abort;
+    const isCancelled = (): boolean =>
+      this.#disposed ||
+      abort.signal.aborted ||
+      (this.element.hidden && this.#readinessRequests === 0);
+    try {
       const svg = await createPreviewSvgAsync(
         this.element.ownerDocument,
         this.#descriptor.safeSvg,
         {
-          checkpoint: (initial) => this.#scheduler.checkpoint(initial),
-          isCancelled: () => this.#disposed || target !== this.#generation,
+          checkpoint: (initial) => this.#scheduler.checkpoint(initial, abort.signal),
+          isCancelled,
           workScheduler: this.workScheduler,
         },
       );
-      if (this.#disposed) return;
-      if (target !== this.#generation) continue;
+      if (isCancelled()) return;
       this.#prepared = svg;
       this.refresh();
-      return;
+    } catch (error: unknown) {
+      if (!isCancelled() && target === this.#generation)
+        this.#failure = error instanceof Error ? error : new Error("Preview preparation failed.");
+    } finally {
+      if (this.#preparationAbort === abort) this.#preparationAbort = undefined;
     }
   }
 }

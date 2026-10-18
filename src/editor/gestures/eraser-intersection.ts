@@ -1,16 +1,20 @@
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import { shapeVertices, tableLineSegments } from "../../domain/geometry/creation";
-import { pointInPolygon, quadraticPoint, rotatePointClockwise } from "../../domain/geometry/public";
+import { pointInPolygon, quadraticPoint } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
+import {
+  pointSegmentDistanceSquared,
+  segmentBoundsOverlap,
+  segmentDistanceSquared,
+  type NumericSegment,
+} from "./eraser-segment";
+import {
+  EraserStrokeIndexCursor,
+  type EraserStrokeIndex,
+  type EraserStrokeIndexCache,
+} from "./eraser-stroke-index";
 
 const CURVE_SEGMENTS = 24;
-
-interface NumericSegment {
-  endX: number;
-  endY: number;
-  startX: number;
-  startY: number;
-}
 
 type LinearElement = Extract<InkElementV1, { kind: "line" | "arrow" | "straight-highlighter" }>;
 type CheckMode = "coordinate-system" | "ellipse" | "linear" | "polygon" | "segments" | "stroke";
@@ -29,8 +33,9 @@ export function createSweptCapsuleCheck(
   pageEnd: PointV1,
   radius: number,
   element: InkElementV1,
+  cache?: EraserStrokeIndexCache,
 ): SweptCapsuleCheck {
-  return new ResumableSweptCapsuleCheck(pageStart, pageEnd, radius, element);
+  return new ResumableSweptCapsuleCheck(pageStart, pageEnd, radius, element, cache);
 }
 
 class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
@@ -38,6 +43,7 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
   readonly #localEnd: PointV1;
   readonly #localStart: PointV1;
   readonly #sweep: NumericSegment;
+  readonly #strokeCache: EraserStrokeIndexCache | undefined;
   #mode!: CheckMode;
   #radius: number;
   #coordinateIndex = 0;
@@ -54,31 +60,40 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
   #segments: readonly (readonly [PointV1, PointV1])[] = [];
   #strokeIndex = 3;
   #strokeLine: NumericSegment | null = null;
+  #strokeIndexEntry: EraserStrokeIndex | null = null;
+  #strokeIndexCursor: EraserStrokeIndexCursor | null = null;
+  #strokeRecordPending = false;
+  #indexedPreviousSegment = -2;
   #touches = false;
   #vertices: readonly PointV1[] = [];
 
-  public constructor(start: PointV1, end: PointV1, radius: number, element: InkElementV1) {
+  public constructor(
+    start: PointV1,
+    end: PointV1,
+    radius: number,
+    element: InkElementV1,
+    cache?: EraserStrokeIndexCache,
+  ) {
     this.#element = element;
-    this.#localStart = rotatePointClockwise(start, element.pivot, -element.rotation);
-    this.#localEnd = rotatePointClockwise(end, element.pivot, -element.rotation);
-    if (element.kind === "stroke" && element.offset !== undefined) {
-      this.#localStart.x -= element.offset.x;
-      this.#localStart.y -= element.offset.y;
-      this.#localEnd.x -= element.offset.x;
-      this.#localEnd.y -= element.offset.y;
-    }
-    this.#sweep = numericSegment(this.#localStart, this.#localEnd);
+    this.#strokeCache = cache;
+    this.#sweep = localSweep(start, end, element);
+    this.#localStart = { x: this.#sweep.startX, y: this.#sweep.startY };
+    this.#localEnd = { x: this.#sweep.endX, y: this.#sweep.endY };
     this.#radius = radius;
     if (element.kind === "stroke") {
       this.#mode = "stroke";
       this.#radius += effectiveStrokeWidth(element) / 2;
+      this.#strokeIndexEntry = cache?.acquire(element) ?? null;
+      if (this.#strokeIndexEntry?.scanned === true) {
+        this.#strokeIndexCursor = new EraserStrokeIndexCursor(this.#strokeIndexEntry);
+      }
       if (element.points.length < 3) this.#finished = true;
       else if (element.points.length > 3) {
         this.#strokeLine = {
-          endX: element.points[3]!,
-          endY: element.points[4]!,
-          startX: element.points[0]!,
-          startY: element.points[1]!,
+          endX: this.#strokeIndexCursor === null ? element.points[3]! : 0,
+          endY: this.#strokeIndexCursor === null ? element.points[4]! : 0,
+          startX: this.#strokeIndexCursor === null ? element.points[0]! : 0,
+          startY: this.#strokeIndexCursor === null ? element.points[1]! : 0,
         };
       }
       return;
@@ -129,6 +144,14 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       remaining -= 1;
       this.advanceOne();
     }
+    if (
+      this.#finished &&
+      !this.#touches &&
+      this.#strokeIndexEntry === null &&
+      this.#element.kind === "stroke"
+    ) {
+      this.#strokeCache?.rememberMiss(this.#element);
+    }
     this.#progress.result = this.#finished ? this.#touches : null;
     this.#progress.workUnits = budget - remaining;
     return this.#progress;
@@ -158,6 +181,7 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       return;
     }
     const sweep = this.#sweep;
+    if (this.#strokeIndexCursor !== null) return this.advanceIndexedStroke();
     if (element.points.length === 3) {
       this.#touches =
         pointSegmentDistanceSquared(element.points[0]!, element.points[1]!, sweep) <=
@@ -170,6 +194,12 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       this.#finished = true;
       return;
     }
+    if (this.#strokeRecordPending) {
+      this.#strokeIndexEntry!.record(this.#strokeIndex / 3 - 1, line);
+      this.#strokeRecordPending = false;
+      this.advanceStrokeLine(line);
+      return;
+    }
     line.endX = element.points[this.#strokeIndex]!;
     line.endY = element.points[this.#strokeIndex + 1]!;
     if (
@@ -180,10 +210,40 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       this.#finished = true;
       return;
     }
+    if (this.#strokeIndexEntry !== null) this.#strokeRecordPending = true;
+    else this.advanceStrokeLine(line);
+  }
+
+  private advanceStrokeLine(line: NumericSegment): void {
     line.startX = line.endX;
     line.startY = line.endY;
     this.#strokeIndex += 3;
-    if (this.#strokeIndex >= element.points.length) this.#finished = true;
+    if (
+      this.#strokeIndex >=
+      (this.#element as Extract<InkElementV1, { kind: "stroke" }>).points.length
+    ) {
+      this.#finished = true;
+    }
+  }
+
+  private advanceIndexedStroke(): void {
+    const cursor = this.#strokeIndexCursor!;
+    const index = cursor.advance(this.#sweep, this.#radius);
+    const element = this.#element as Extract<InkElementV1, { kind: "stroke" }>;
+    if (index !== null) {
+      const line = this.#strokeLine!;
+      line.startX =
+        index === this.#indexedPreviousSegment + 1 ? line.endX : element.points[index * 3]!;
+      line.startY =
+        index === this.#indexedPreviousSegment + 1 ? line.endY : element.points[index * 3 + 1]!;
+      line.endX = element.points[index * 3 + 3]!;
+      line.endY = element.points[index * 3 + 4]!;
+      this.#indexedPreviousSegment = index;
+      this.#touches =
+        segmentBoundsOverlap(this.#sweep, line, this.#radius) &&
+        segmentDistanceSquared(this.#sweep, line) <= this.#radius * this.#radius;
+    }
+    if (this.#touches || cursor.done) this.#finished = true;
   }
 
   private advanceLinear(): void {
@@ -336,69 +396,32 @@ function segmentsWithin(
   return segmentDistanceSquared(sweep, line) <= radius * radius;
 }
 
-function segmentBoundsOverlap(
-  first: NumericSegment,
-  second: NumericSegment,
-  radius: number,
-): boolean {
-  return (
-    Math.min(first.startX, first.endX) - radius <= Math.max(second.startX, second.endX) &&
-    Math.max(first.startX, first.endX) + radius >= Math.min(second.startX, second.endX) &&
-    Math.min(first.startY, first.endY) - radius <= Math.max(second.startY, second.endY) &&
-    Math.max(first.startY, first.endY) + radius >= Math.min(second.startY, second.endY)
-  );
-}
-
-function segmentDistanceSquared(first: NumericSegment, second: NumericSegment): number {
-  if (segmentsIntersect(first, second)) return 0;
-  return Math.min(
-    pointSegmentDistanceSquared(first.startX, first.startY, second),
-    pointSegmentDistanceSquared(first.endX, first.endY, second),
-    pointSegmentDistanceSquared(second.startX, second.startY, first),
-    pointSegmentDistanceSquared(second.endX, second.endY, first),
-  );
-}
-
-function pointSegmentDistanceSquared(x: number, y: number, segment: NumericSegment): number {
-  const dx = segment.endX - segment.startX;
-  const dy = segment.endY - segment.startY;
-  const squaredLength = dx * dx + dy * dy;
-  const ratio =
-    squaredLength === 0
-      ? 0
-      : clamp01(((x - segment.startX) * dx + (y - segment.startY) * dy) / squaredLength);
-  const offsetX = x - (segment.startX + ratio * dx);
-  const offsetY = y - (segment.startY + ratio * dy);
-  return offsetX * offsetX + offsetY * offsetY;
-}
-
-function segmentsIntersect(left: NumericSegment, right: NumericSegment): boolean {
-  const first = cross(left.startX, left.startY, left.endX, left.endY, right.startX, right.startY);
-  const second = cross(left.startX, left.startY, left.endX, left.endY, right.endX, right.endY);
-  const third = cross(right.startX, right.startY, right.endX, right.endY, left.startX, left.startY);
-  const fourth = cross(right.startX, right.startY, right.endX, right.endY, left.endX, left.endY);
-  if (first === 0 && onSegment(left, right.startX, right.startY)) return true;
-  if (second === 0 && onSegment(left, right.endX, right.endY)) return true;
-  if (third === 0 && onSegment(right, left.startX, left.startY)) return true;
-  if (fourth === 0 && onSegment(right, left.endX, left.endY)) return true;
-  return first > 0 !== second > 0 && third > 0 !== fourth > 0;
-}
-
-function cross(ax: number, ay: number, bx: number, by: number, px: number, py: number): number {
-  return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
-}
-
-function onSegment(segment: NumericSegment, px: number, py: number): boolean {
-  return (
-    px >= Math.min(segment.startX, segment.endX) &&
-    px <= Math.max(segment.startX, segment.endX) &&
-    py >= Math.min(segment.startY, segment.endY) &&
-    py <= Math.max(segment.startY, segment.endY)
-  );
-}
-
 function numericSegment(start: PointV1, end: PointV1): NumericSegment {
   return { endX: end.x, endY: end.y, startX: start.x, startY: start.y };
+}
+
+/** Preserve the existing transform arithmetic while sharing its fixed rotation. */
+function localSweep(start: PointV1, end: PointV1, element: InkElementV1): NumericSegment {
+  const radians = (-element.rotation * Math.PI) / 180;
+  const cosine = element.rotation === 0 ? 1 : Math.cos(radians);
+  const sine = element.rotation === 0 ? -element.rotation : Math.sin(radians);
+  const startX = start.x - element.pivot.x;
+  const startY = start.y - element.pivot.y;
+  const endX = end.x - element.pivot.x;
+  const endY = end.y - element.pivot.y;
+  const sweep = {
+    startX: element.pivot.x + (startX * cosine - startY * sine),
+    startY: element.pivot.y + (startX * sine + startY * cosine),
+    endX: element.pivot.x + (endX * cosine - endY * sine),
+    endY: element.pivot.y + (endX * sine + endY * cosine),
+  };
+  if (element.kind === "stroke" && element.offset !== undefined) {
+    sweep.startX -= element.offset.x;
+    sweep.startY -= element.offset.y;
+    sweep.endX -= element.offset.x;
+    sweep.endY -= element.offset.y;
+  }
+  return sweep;
 }
 
 function clamp01(value: number): number {

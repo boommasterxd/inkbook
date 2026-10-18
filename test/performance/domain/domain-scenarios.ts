@@ -3,6 +3,8 @@ import { ElementStore } from "../../../src/domain/store/public";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
 import type { UniformSpatialIndex } from "../../../src/domain/spatial/index";
 import type { CellColumns, IndexedEntry } from "../../../src/domain/spatial/index-state";
+import { SpatialMap } from "../../../src/domain/spatial/spatial-map";
+import type { SpatialSlots } from "../../../src/domain/spatial/slot-storage";
 import {
   ActiveEditorHistory,
   type ActiveEditorHistoryModel,
@@ -153,40 +155,46 @@ export function observeSpatialQueryWork(
 ) {
   const source = index as unknown as {
     cells: CellColumns;
-    slots: (IndexedEntry<number> | undefined)[];
+    slots: SpatialSlots<IndexedEntry<number>>;
   };
   const maps = new WeakSet<object>([source.cells, ...source.cells.values()]);
-  const originalSlots = source.slots;
   const counts = { columns: 0, cells: 0, slots: 0 };
   const visit = (map: object) => {
     if (map === source.cells) counts.columns += 1;
     else if (maps.has(map)) counts.cells += 1;
   };
-  const originalGet = Reflect.get(Map.prototype, "get") as (
-    this: Map<unknown, unknown>,
+  const originalGet = Reflect.get(SpatialMap.prototype, "get") as (
+    this: SpatialMap<unknown, unknown>,
     key: unknown,
   ) => unknown;
-  const get = spyOn(Map.prototype, "get").mockImplementation(function (
-    this: Map<unknown, unknown>,
+  const get = spyOn(SpatialMap.prototype, "get").mockImplementation(function (
+    this: SpatialMap<unknown, unknown>,
     key: unknown,
   ) {
     visit(this);
     return originalGet.call(this, key);
   });
   const entries = observeSpatialMapEntries(visit, spyOn);
-  source.slots = new Proxy(originalSlots, {
-    get(target, key, receiver) {
-      if (typeof key === "string" && /^\d+$/u.test(key)) counts.slots += 1;
-      return Reflect.get(target, key, receiver) as unknown;
-    },
+  const originalSlotGet = source.slots.get.bind(source.slots);
+  const slots = spyOn(source.slots, "get").mockImplementation((slot) => {
+    counts.slots += 1;
+    return originalSlotGet(slot);
   });
+  const comparisons = observeSpatialComparisons(source.cells, spyOn);
+  const maximumHeight = 2 * Math.ceil(Math.log2(Math.max(index.size, index.membershipCount) + 1));
   return {
     counts,
-    reset: () => Object.assign(counts, { columns: 0, cells: 0, slots: 0 }),
+    comparisonsPerLookupBound: maximumHeight,
+    comparisons: comparisons.count,
+    reset: () => {
+      Object.assign(counts, { columns: 0, cells: 0, slots: 0 });
+      comparisons.reset();
+    },
     restore: () => {
-      source.slots = originalSlots;
+      slots.mockRestore();
       get.mockRestore();
       entries.forEach((spy) => spy.mockRestore());
+      comparisons.restore();
     },
   };
 }
@@ -195,11 +203,11 @@ function observeSpatialMapEntries(
   visit: (map: object) => void,
   spyOn: typeof import("vitest").vi.spyOn,
 ) {
-  const original = Reflect.get(Map.prototype, "entries") as (
-    this: Map<unknown, unknown>,
+  const original = Reflect.get(SpatialMap.prototype, "entries") as (
+    this: SpatialMap<unknown, unknown>,
   ) => MapIterator<[unknown, unknown]>;
   const observed = function* (
-    this: Map<unknown, unknown>,
+    this: SpatialMap<unknown, unknown>,
   ): Generator<[unknown, unknown], undefined> {
     for (const entry of original.call(this)) {
       visit(this);
@@ -208,7 +216,33 @@ function observeSpatialMapEntries(
     return undefined;
   };
   return [
-    spyOn(Map.prototype, "entries").mockImplementation(observed),
-    spyOn(Map.prototype, Symbol.iterator).mockImplementation(observed),
+    spyOn(SpatialMap.prototype, "entries").mockImplementation(observed),
+    spyOn(SpatialMap.prototype, Symbol.iterator).mockImplementation(observed),
   ];
+}
+
+export function observeSpatialComparisons(
+  cells: CellColumns,
+  spyOn: typeof import("vitest").vi.spyOn,
+) {
+  const order = (cells as unknown as { order: object }).order;
+  const prototype = Object.getPrototypeOf(order) as {
+    compare: (first: unknown, second: unknown) => number;
+  };
+  const original = prototype.compare;
+  let comparisons = 0;
+  const compare = spyOn(prototype, "compare").mockImplementation(function (
+    this: typeof prototype,
+    ...args
+  ) {
+    comparisons += 1;
+    return original.apply(this, args);
+  });
+  return {
+    count: () => comparisons,
+    reset: () => {
+      comparisons = 0;
+    },
+    restore: () => compare.mockRestore(),
+  };
 }

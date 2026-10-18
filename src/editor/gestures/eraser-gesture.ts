@@ -1,6 +1,7 @@
 import { assertFinitePoint, type Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
+import { EraserStrokeIndexCache } from "./eraser-stroke-index";
 
 const FINALIZATION_WORK_UNITS_PER_QUANTUM = 12_288;
 const QUERY_BATCH_WORK_UNITS = 128;
@@ -63,6 +64,7 @@ export interface EraserSliceScheduler {
 export type EraserUpdateResult = "accepted" | "cancelled";
 
 export class EraserSweep {
+  readonly #strokeIndices = new EraserStrokeIndexCache();
   readonly #candidates = new Set<string>();
   readonly #feedback: EraserFeedbackPort;
   readonly #pendingSweeps: PendingSweep[] = [];
@@ -110,6 +112,10 @@ export class EraserSweep {
 
   public get retainedSweepCount(): number {
     return this.#pendingSweeps.length + Number(this.#activeSweep !== null);
+  }
+
+  public get retainedStrokeIndexBytes(): number {
+    return this.#strokeIndices.byteLength;
   }
 
   public update(pointValue: PointV1): EraserUpdateResult {
@@ -174,6 +180,7 @@ export class EraserSweep {
     } finally {
       this.#feedback.clearCandidateFade(this.#candidates);
       this.#candidates.clear();
+      this.#strokeIndices.clear();
       this.#state = "finished";
     }
   }
@@ -186,6 +193,7 @@ export class EraserSweep {
     this.#activeSweep = null;
     this.#pendingSweeps.length = 0;
     this.#updateAdded.length = 0;
+    this.#strokeIndices.clear();
     this.#state = "cancelled";
   }
 
@@ -299,7 +307,13 @@ export class EraserSweep {
     if (sweep.check !== null) return sweep.check;
     const element = this.#query.getElement(id);
     if (element === undefined) return null;
-    sweep.check = createSweptCapsuleCheck(sweep.start, sweep.end, this.#radius, element);
+    sweep.check = createSweptCapsuleCheck(
+      sweep.start,
+      sweep.end,
+      this.#radius,
+      element,
+      this.#strokeIndices,
+    );
     return sweep.check;
   }
 }

@@ -68,6 +68,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/domain/pressure-preparation-work.test.ts",
     "test/performance/domain/pressure-center-window-work.test.ts",
     "test/performance/domain/spatial-mutation-work.test.ts",
+    "test/performance/domain/spatial-removal-work.test.ts",
     "test/performance/editor/editor-hot-paths.test.ts",
     "test/performance/editor/eraser-hot-paths.test.ts",
     "test/performance/editor/interaction-refresh-gestures.test.ts",

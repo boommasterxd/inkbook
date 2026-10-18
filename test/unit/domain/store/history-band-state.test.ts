@@ -25,7 +25,7 @@ function fixture() {
 }
 
 describe("exact history band-state witnesses", () => {
-  it("restores nested same-band lineage and retains mutable authoritative orders", async () => {
+  it("restores nested same-band lineage and preserves writable Store operations", async () => {
     const { store, elements } = fixture();
     const a = await arrange(store, [elements[0]!.id]);
     const b = await arrange(store, [elements[2]!.id]);

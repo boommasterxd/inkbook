@@ -1,6 +1,7 @@
 import { eraserQuery } from "../../fixtures/editor/eraser-query";
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
+import { markStoredStroke } from "../../../src/domain/elements/stroke-replacement-proof";
 
 import { denseStrokePoints, maximumStroke } from "./maximum-stroke-fixture";
 
@@ -38,24 +39,21 @@ export function createCountedDenseStrokeEraser(
   let widthReads = 0;
   const strokes = Array.from({ length: count }, (_, index) => {
     const stroke = maximumStroke(index, denseStrokePoints(index, pointCount));
-    return {
-      ...stroke,
-      style: {
-        ...stroke.style,
-        get width() {
-          widthReads += 1;
-          return stroke.style.width;
+    return countedEraserStroke(
+      {
+        ...stroke,
+        style: {
+          ...stroke.style,
+          get width() {
+            widthReads += 1;
+            return stroke.style.width;
+          },
         },
       },
-      points: new Proxy(stroke.points, {
-        get(target, key, receiver) {
-          if (typeof key === "string" && /^\d+$/.test(key) && Number(key) % 3 === 0) {
-            pointReads += 1;
-          }
-          return Reflect.get(target, key, receiver) as unknown;
-        },
-      }),
-    };
+      () => {
+        pointReads += 1;
+      },
+    );
   });
   return {
     eraser: createDenseStrokeEraser(
@@ -72,4 +70,22 @@ export function createCountedDenseStrokeEraser(
       return reads;
     },
   };
+}
+
+export function countedEraserStroke(
+  stroke: StrokeElementV1,
+  pointRead: () => void,
+): StrokeElementV1 {
+  // The fixture exclusively owns frozen samples, matching Store ownership. The
+  // proxy observes actual sample accesses without changing the stored proof.
+  Object.freeze(stroke.points);
+  return markStoredStroke({
+    ...stroke,
+    points: new Proxy(stroke.points, {
+      get(target, key, receiver) {
+        if (typeof key === "string" && /^\d+$/.test(key) && Number(key) % 3 === 0) pointRead();
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    }),
+  });
 }

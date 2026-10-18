@@ -1,5 +1,7 @@
 import { assertSpatialBounds, type SpatialBounds } from "./bounds";
-import type { CellRange, IndexedEntry } from "./index-state";
+import type { CellColumns, CellRange, IndexedEntry } from "./index-state";
+import { SpatialMap } from "./spatial-map";
+import { SpatialSet } from "./spatial-set";
 
 export function createCellRange(
   bounds: SpatialBounds,
@@ -56,4 +58,30 @@ export function createSpatialCellKeys(range: CellRange): number[] {
     }
   }
   return keys;
+}
+
+/** Copy only changed column and bucket roots so prepared removals remain private. */
+export function updateSpatialCells<Id>(
+  cells: CellColumns,
+  entry: IndexedEntry<Id>,
+  add: boolean,
+): number {
+  let occupiedDelta = 0;
+  for (let offset = 0; offset < entry.cellKeys.length; offset += 2) {
+    const cellX = entry.cellKeys[offset]!;
+    const cellY = entry.cellKeys[offset + 1]!;
+    const existingColumn = cells.getForUpdate(cellX, (value) => value.fork());
+    const column = existingColumn ?? new SpatialMap<number, SpatialSet<number>>();
+    const existingBucket = column.getForUpdate(cellY, (value) => value.fork());
+    const bucket = existingBucket ?? new SpatialSet<number>();
+    const wasEmpty = bucket.size === 0;
+    if (add) bucket.add(entry.slot);
+    else bucket.delete(entry.slot);
+    occupiedDelta += Number(wasEmpty) - Number(bucket.size === 0);
+    if (bucket.size === 0) column.delete(cellY);
+    else if (existingBucket === undefined) column.set(cellY, bucket);
+    if (column.size === 0) cells.delete(cellX);
+    else if (existingColumn === undefined) cells.set(cellX, column);
+  }
+  return occupiedDelta;
 }

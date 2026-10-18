@@ -9,7 +9,7 @@ import type { DetachedSceneElementCache } from "./detached-element-cache";
 export interface SceneDeltaRoutingPorts {
   readonly content: SceneContentRenderer;
   readonly detachedCache?: DetachedSceneElementCache;
-  readonly invalidateVisibility: () => void;
+  readonly invalidateVisibility: (preserveRemovalReuse?: boolean) => void;
   readonly markOrderVisibilityDirty: () => void;
   readonly pathCache: ScenePathCache;
   readonly store: SceneStorePort;
@@ -20,8 +20,10 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
   let visibilityChanges: SceneDeltaEntry[] | undefined;
   let orderIds: string[] | undefined;
   let onlyNewOrder = true;
+  let onlyRemovals = !ports.content.hasVisibilityWork;
   for (const affected of delta.affected) {
     const localMembership = completeMembershipChange(affected, ports.store);
+    onlyRemovals &&= completeRemoval(affected, localMembership);
     prepareMembershipFade(affected, delta.historyReplay, ports.content);
     let geometryDirty = false;
     let visibilityDirty = false;
@@ -50,9 +52,20 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
     if (orderIds.length !== 1 || !onlyNewOrder) ports.markOrderVisibilityDirty();
   }
   if (visibilityChanges !== undefined) {
-    invalidateVisibility(visibilityChanges, ports);
+    if (onlyRemovals && ports.visibility.beginRemoval()) ports.invalidateVisibility(true);
+    else invalidateVisibility(visibilityChanges, ports);
   }
   invalidateDetachedElements(delta, ports);
+}
+
+function completeRemoval(change: SceneDeltaEntry, membership: boolean): boolean {
+  return (
+    membership &&
+    change.before != null &&
+    change.after === null &&
+    change.beforeBounds != null &&
+    change.afterBounds === null
+  );
 }
 
 function prepareMembershipFade(

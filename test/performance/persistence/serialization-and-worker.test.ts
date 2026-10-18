@@ -12,6 +12,7 @@ import {
 } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
+import { serializeCanonicalElementMetadata } from "../../../src/persistence/serialization/canonical-element-fragments";
 import type { DocumentRuntimeRequest } from "../../../src/persistence/worker/runtime/public";
 import { STANDARD_POINTS, createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
 import {
@@ -75,13 +76,23 @@ describe("persistence serialization performance", () => {
       "performance",
     );
   }, 120_000);
+});
 
+describe("receiver integrity work bounds", () => {
   it("bounds receiver integrity work between checkpoints without changing its result", async () => {
     const sliceBytes = 64 * 1024;
     // UUIDs are ASCII; the ordered-ID pass includes its domain prefix and one NUL per ID.
     const orderedIdBytes =
       "inkbook-ordered-ids-v1".length +
       snapshot.elements.reduce((bytes, element) => bytes + 1 + element.id.length, 0);
+    const nonStrokeBytes = snapshot.elements.reduce(
+      (bytes, element) =>
+        bytes +
+        (element.kind === "stroke"
+          ? 0
+          : new TextEncoder().encode(serializeCanonicalElementMetadata(element)).byteLength),
+      0,
+    );
     const observer = observeIntegrityWork(snapshot);
     try {
       const expected = deriveDocumentIntegrityManifest(observer.snapshot);
@@ -102,18 +113,35 @@ describe("persistence serialization performance", () => {
       // The ordered-ID digest is currently synchronous and belongs to the final slice.
       expect(finalSlice.encodedBytes).toBeLessThan(sliceBytes + orderedIdBytes);
       expect(finalSlice.hashedBytes).toBe(finalSlice.encodedBytes);
+      expect(finalSlice.copiedBytes).toBe(0);
+      expect(finalSlice.sampleBytes).toBe(0);
       expect(finalSlice.elementReads).toBe(finalSlice.canonicalElements + snapshot.elements.length);
       expect(finalSlice.canonicalElements).toBeLessThanOrEqual(Math.ceil(sliceBytes / 38));
       const total = [...slices, finalSlice].reduce(
         (sum, slice) => ({
           canonicalElements: sum.canonicalElements + slice.canonicalElements,
+          copiedBytes: sum.copiedBytes + slice.copiedBytes,
           elementReads: sum.elementReads + slice.elementReads,
           encodedBytes: sum.encodedBytes + slice.encodedBytes,
           hashedBytes: sum.hashedBytes + slice.hashedBytes,
+          sampleBytes: sum.sampleBytes + slice.sampleBytes,
         }),
-        { canonicalElements: 0, elementReads: 0, encodedBytes: 0, hashedBytes: 0 },
+        {
+          canonicalElements: 0,
+          copiedBytes: 0,
+          elementReads: 0,
+          encodedBytes: 0,
+          hashedBytes: 0,
+          sampleBytes: 0,
+        },
       );
-      assertIntegrityTotals(total, reference, snapshot.elements.length);
+      assertIntegrityTotals(
+        total,
+        reference,
+        snapshot.elements.length,
+        orderedIdBytes,
+        nonStrokeBytes,
+      );
     } finally {
       observer.restore();
       vi.unstubAllGlobals();
@@ -347,6 +375,9 @@ function assertIntegritySlice(work: IntegrityWork, sliceBytes: number): void {
   // Canonical fragments and fallback hash blocks each checkpoint independently.
   expect(work.encodedBytes).toBeLessThanOrEqual(sliceBytes);
   expect(work.hashedBytes).toBeLessThanOrEqual(sliceBytes);
+  // Sample chunks copy at most 256 bytes before resumable 64 KiB final assembly.
+  expect(work.copiedBytes).toBeLessThanOrEqual(sliceBytes + 256);
+  expect(work.sampleBytes).toBeLessThanOrEqual(sliceBytes);
   // Compact sample text allows several small records within the cache's bounded
   // 64-fragment group; the independently observed byte budget still applies.
   expect(work.elementReads).toBeLessThanOrEqual(64);
@@ -357,10 +388,23 @@ function assertIntegrityTotals(
   actual: IntegrityWork,
   reference: IntegrityWork,
   elementCount: number,
+  orderedIdBytes: number,
+  nonStrokeBytes: number,
 ) {
-  // Cached separator and suffix bytes are hashed but no longer re-encoded per digest.
+  // Direct sample ASCII replaces native text encoding; separator/suffix bytes remain cached.
   expect(actual).toEqual({
     ...reference,
-    encodedBytes: reference.encodedBytes - (elementCount - 1 + 2),
+    copiedBytes: actual.copiedBytes,
+    sampleBytes: actual.sampleBytes,
+    encodedBytes: reference.encodedBytes - (elementCount - 1 + 2) - actual.sampleBytes,
   });
+  const metadataBytes = reference.hashedBytes - orderedIdBytes;
+  // One complete assembly, one non-stroke join, and at most two copies of each sample byte.
+  expect(actual.copiedBytes).toBeGreaterThanOrEqual(
+    metadataBytes + nonStrokeBytes + actual.sampleBytes,
+  );
+  expect(actual.copiedBytes).toBeLessThanOrEqual(
+    metadataBytes + nonStrokeBytes + actual.sampleBytes * 2,
+  );
+  expect(actual.sampleBytes).toBeGreaterThan(0);
 }

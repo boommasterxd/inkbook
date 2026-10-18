@@ -10,6 +10,17 @@ import type {
 import { createStandardDomainFixture } from "../domain/standard-domain-fixture";
 import { uuid as retainedCapacityId } from "../../unit/persistence/serialization/fixtures";
 import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/constants";
+
+export function createMaximumStrokeSamples(): Float64Array<ArrayBuffer> {
+  return Float64Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
+    index % 3 === 0
+      ? Math.floor(index / 3) / 10
+      : index % 3 === 1
+        ? (Math.floor(index / 3) % 7) / 1000
+        : 0.5,
+  );
+}
 
 export const STANDARD_STROKES = 10_000;
 export const STANDARD_POINTS = 500_000;

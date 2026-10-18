@@ -1,41 +1,101 @@
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const decoder = new TextDecoder();
+const COPY_CHUNK_BYTES = 64 * 1024;
 
-export class SampleBase64Writer {
-  readonly #parts: string[] = [];
+abstract class Base64ChunkWriter {
   #word = 0;
   #bytes = 0;
-  #chunk = "";
+  readonly #chunk = new Uint8Array(256);
+  #length = 0;
 
   public append(value: number): void {
     this.#word = this.#word * 256 + value;
     this.#bytes += 1;
     if (this.#bytes !== 3) return;
-    this.#chunk += this.#encodeWord(this.#word);
-    if (this.#chunk.length >= 4096) {
-      this.#parts.push(this.#chunk);
-      this.#chunk = "";
-    }
+    this.#encodeWord(this.#word);
     this.#word = 0;
     this.#bytes = 0;
   }
 
-  public finish(): string {
+  protected finishChunks(): void {
     if (this.#bytes === 1) {
-      this.#chunk += this.#encodeWord(this.#word * 65536).slice(0, 2) + "==";
+      this.#encodeWord(this.#word * 65536, 2);
     } else if (this.#bytes === 2) {
-      this.#chunk += this.#encodeWord(this.#word * 256).slice(0, 3) + "=";
+      this.#encodeWord(this.#word * 256, 1);
     }
-    this.#parts.push(this.#chunk);
-    return this.#parts.join("");
+    this.#flush();
   }
 
-  #encodeWord(word: number): string {
-    return (
-      ALPHABET[(word >>> 18) & 63]! +
-      ALPHABET[(word >>> 12) & 63]! +
-      ALPHABET[(word >>> 6) & 63]! +
-      ALPHABET[word & 63]!
-    );
+  protected abstract retainChunk(bytes: Uint8Array<ArrayBuffer>): void;
+
+  #encodeWord(word: number, padding = 0): void {
+    this.#chunk[this.#length++] = ALPHABET.charCodeAt((word >>> 18) & 63);
+    this.#chunk[this.#length++] = ALPHABET.charCodeAt((word >>> 12) & 63);
+    this.#chunk[this.#length++] = padding === 2 ? 61 : ALPHABET.charCodeAt((word >>> 6) & 63);
+    this.#chunk[this.#length++] = padding > 0 ? 61 : ALPHABET.charCodeAt(word & 63);
+    if (this.#length === this.#chunk.length) this.#flush();
+  }
+
+  #flush(): void {
+    if (this.#length === 0) return;
+    const bytes =
+      this.#length === this.#chunk.length ? this.#chunk : this.#chunk.subarray(0, this.#length);
+    this.retainChunk(bytes);
+    this.#length = 0;
+  }
+}
+
+export class SampleBase64Writer extends Base64ChunkWriter {
+  readonly #parts: string[] = [];
+
+  protected retainChunk(bytes: Uint8Array<ArrayBuffer>): void {
+    this.#parts.push(decoder.decode(bytes));
+  }
+
+  public finish(): string {
+    this.finishChunks();
+    return this.#parts.join("");
+  }
+}
+
+/** Retains exact ASCII chunks without converting their bytes through JavaScript strings. */
+export class SampleBase64ByteWriter extends Base64ChunkWriter {
+  readonly #parts: Uint8Array<ArrayBuffer>[] = [];
+  #length = 0;
+
+  protected retainChunk(bytes: Uint8Array<ArrayBuffer>): void {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    this.#parts.push(copy);
+    this.#length += copy.byteLength;
+  }
+
+  public finish(): Uint8Array<ArrayBuffer> {
+    const steps = this.finishSteps();
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+
+  /** Preserve metadata's byte-copy checkpoints without requiring a task handoff. */
+  public *finishSteps(signal?: AbortSignal): Generator<void, Uint8Array<ArrayBuffer>> {
+    signal?.throwIfAborted();
+    this.finishChunks();
+    if (this.#parts.length === 1) return this.#parts[0]!;
+    const bytes = new Uint8Array(this.#length);
+    let offset = 0;
+    let copied = 0;
+    for (const part of this.#parts) {
+      bytes.set(part, offset);
+      offset += part.byteLength;
+      copied += part.byteLength;
+      if (copied >= COPY_CHUNK_BYTES && offset < bytes.byteLength) {
+        yield;
+        signal?.throwIfAborted();
+        copied = 0;
+      }
+    }
+    return bytes;
   }
 }
 
