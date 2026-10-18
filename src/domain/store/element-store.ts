@@ -13,6 +13,7 @@ import { hasConnections } from "./element-comparison";
 import { commitMutationDerivedState, type ElementMutationPlan } from "./element-mutation";
 import { removeElements } from "./element-removal";
 import { mutableElement } from "./immutability";
+import { mutableBand, type StoreBands } from "./band-snapshots";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
 import { normalizeElementInput } from "./input-normalization";
 import { applyMutationRecordPatches } from "./mutation-record-patch";
@@ -56,7 +57,7 @@ import type {
 } from "./types";
 
 export class ElementStore {
-  #bands: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  #bands: StoreBands = { content: [], highlight: [] };
   #capacity = new DocumentCapacity();
   #ranks = new Map<string, ElementRank>();
   #records = new Map<string, ElementRecord>();
@@ -130,7 +131,7 @@ export class ElementStore {
       addConnectionReferences(this.#reverseConnections, record.element);
       const band = renderBandOf(record.element);
       this.#ranks.set(record.element.id, { band, rank: this.#bands[band].length });
-      this.#bands[band].push(record.element.id);
+      mutableBand(this.#bands, band).push(record.element.id);
     }
     this.#runtime.initializeMemory(records.values());
     this.#overflowCount = this.#spatialIndex.overflowCount;
@@ -153,7 +154,7 @@ export class ElementStore {
     store.#capacity = state.capacity;
     store.#overflowCount = state.overflowCount;
     for (const band of ["highlight", "content"] as const)
-      store.#bands[band].push(...state.bands[band]);
+      mutableBand(store.#bands, band).push(...state.bands[band]);
     for (const [id, rank] of state.ranks) store.#ranks.set(id, { ...rank });
     for (const [id, references] of state.reverseConnections)
       store.#reverseConnections.set(id, references);
@@ -289,6 +290,9 @@ export class ElementStore {
   public readonly prepareElementMutation = this.#preparedElementMutations.prepare.bind(
     this.#preparedElementMutations,
   );
+  public readonly prepareElementRemoval = this.#preparedElementMutations.prepareElementRemoval.bind(
+    this.#preparedElementMutations,
+  );
   public readonly createRemovalMutationTimeSliced =
     this.#preparedElementMutations.createRemovalMutationTimeSliced.bind(
       this.#preparedElementMutations,
@@ -306,7 +310,7 @@ export class ElementStore {
   );
   #adoptElementMutation(plan: ElementMutationPlan): ElementMutationCommitResult {
     commitMutationDerivedState(this.#capacity, this.#reverseConnections, plan);
-    applyMutationRecordPatches(this.#records, this.#ranks, plan);
+    this.#ranks = applyMutationRecordPatches(this.#records, this.#ranks, plan);
     this.#overflowCount = this.#spatialIndex.overflowCount;
     this.#geometryVersion = plan.delta.geometryVersion;
     this.#paintVersion = plan.delta.paintVersion;
@@ -317,7 +321,6 @@ export class ElementStore {
       transition: plan.applied,
     };
   }
-
   public updateStyle(id: string, style: ElementStyle): StoreDelta | null {
     const current = this.#requireRecord(id);
     const replacement = mutableElement(current.element);
@@ -383,7 +386,7 @@ export class ElementStore {
     }
     const delta = new DeltaBuilder();
     for (const band of ["highlight", "content"] as const) {
-      const ids = this.#bands[band];
+      const ids = mutableBand(this.#bands, band);
       for (let index = 0; index < ids.length; index += 1) ids[index] = orderedIds[band][index]!;
       this.#instrumentation.bandScans += 1;
       this.#ordering.refresh(band, 0, delta);

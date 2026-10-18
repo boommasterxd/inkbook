@@ -40,6 +40,7 @@ it.each(["remove", "restore"] as const)(
       );
       expect(spies.invalidateVisibility).toHaveBeenCalledOnce();
       expect(spies.releaseId).toHaveBeenCalledTimes(removing ? 1 : 0);
+      expect(spies.beginRemoval).toHaveBeenCalledTimes(removing ? 1 : 0);
       expect(bounds).not.toHaveBeenCalled();
     } finally {
       bounds.mockRestore();
@@ -47,8 +48,9 @@ it.each(["remove", "restore"] as const)(
   },
 );
 
-it("patches complete batched members separately while keeping one scene invalidation", () => {
+it.each([false, true])("routes complete batched removals with reuse admission %s", (reuse) => {
   const { ports, spies } = routingPorts();
+  spies.beginRemoval.mockReturnValue(reuse);
   const records = [fakeRectangleRecord("a", 0, 10), fakeRectangleRecord("b", 1, 20)];
   routeSceneDelta(
     {
@@ -65,8 +67,11 @@ it("patches complete batched members separately while keeping one scene invalida
   );
   expect(spies.markOrders).not.toHaveBeenCalled();
   expect(spies.markOrderVisibilityDirty).not.toHaveBeenCalled();
-  expect(spies.invalidateForChanges).toHaveBeenCalledTimes(2);
+  expect(spies.beginRemoval).toHaveBeenCalledOnce();
+  expect(spies.invalidateForChanges).toHaveBeenCalledTimes(reuse ? 0 : 2);
   expect(spies.invalidateVisibility).toHaveBeenCalledOnce();
+  if (reuse) expect(spies.invalidateVisibility).toHaveBeenCalledWith(true);
+  else expect(spies.invalidateVisibility).toHaveBeenCalledWith();
   expect(spies.releaseId).toHaveBeenCalledTimes(2);
 });
 
@@ -198,6 +203,7 @@ function routingPorts(): {
   readonly ports: SceneDeltaRoutingPorts;
   readonly spies: Record<
     | "readRecord"
+    | "beginRemoval"
     | "invalidateDetached"
     | "invalidateForChanges"
     | "invalidatePath"
@@ -214,6 +220,7 @@ function routingPorts(): {
 } {
   const spies = {
     readRecord: vi.fn(),
+    beginRemoval: vi.fn().mockReturnValue(false),
     invalidateDetached: vi.fn(),
     invalidateForChanges: vi.fn(),
     invalidatePath: vi.fn(),
@@ -229,6 +236,7 @@ function routingPorts(): {
   const ports = {
     detachedCache: { invalidate: spies.invalidateDetached },
     content: {
+      hasVisibilityWork: false,
       markGeometry: spies.markGeometry,
       markOrder: vi.fn(),
       markOrders: spies.markOrders,
@@ -241,6 +249,7 @@ function routingPorts(): {
     pathCache: { invalidate: spies.invalidatePath },
     store: { get: spies.readRecord, query: vi.fn() },
     visibility: {
+      beginRemoval: spies.beginRemoval,
       invalidateForChanges: spies.invalidateForChanges,
       releaseId: spies.releaseId,
     },

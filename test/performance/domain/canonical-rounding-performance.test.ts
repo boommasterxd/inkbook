@@ -1,7 +1,10 @@
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 
-import { canonicalizeGeometryNumber } from "../../../src/domain/schema/canonical";
+import {
+  canonicalizeGeometryNumber,
+  isCanonicalUnitIntervalNumber,
+} from "../../../src/domain/schema/canonical";
 
 describe("canonical coordinate rounding", () => {
   it("avoids decimal string conversion for ordinary canonical coordinates", () => {
@@ -13,6 +16,20 @@ describe("canonical coordinate rounding", () => {
       expect(decimalFormatting).not.toHaveBeenCalled();
       expect(canonicalizeGeometryNumber(2_000_001.125)).toBe(2_000_001.125);
       expect(decimalFormatting).toHaveBeenCalledExactlyOnceWith(3);
+    } finally {
+      decimalFormatting.mockRestore();
+    }
+  });
+
+  it("validates a maximum stroke's canonical pressure without decimal string conversion", () => {
+    const pressures = Array.from(
+      { length: MAX_STROKE_POINTS },
+      (_, index) => (index % 10_001) / 10_000,
+    );
+    const decimalFormatting = vi.spyOn(Number.prototype, "toFixed");
+    try {
+      expect(pressures.every(isCanonicalUnitIntervalNumber)).toBe(true);
+      expect(decimalFormatting.mock.calls.length).toBe(0);
     } finally {
       decimalFormatting.mockRestore();
     }

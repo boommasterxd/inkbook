@@ -1,4 +1,5 @@
 import type { RenderBand } from "../commands/render-bands";
+import type { StoreBands } from "./band-snapshots";
 import type { InkElementV1 } from "../schema/public";
 import type { UniformSpatialIndex } from "../spatial/index";
 
@@ -49,11 +50,12 @@ import type {
 
 export interface ElementMutationPlan {
   readonly applied: AppliedElementMutation;
-  readonly bands: Record<RenderBand, string[]>;
+  readonly bands: StoreBands;
   readonly capacityPatch: DocumentCapacityPatch;
   readonly delta: StoreDelta;
   readonly indexPatch: PreparedSpatialMutation;
   readonly ranks: Map<string, ElementRank>;
+  readonly ranksComplete?: boolean;
   readonly records: Map<string, ElementRecord | null>;
   readonly ownedHistory: OwnedMutationHistory | undefined;
   readonly requested: ElementMutation;
@@ -79,9 +81,11 @@ export async function planElementMutation(
     trustedRemoval?: boolean;
     ownedReplay?: OwnedMutationReplay;
     trustedOrder?: MutationOrder;
+    retainedOnly?: boolean;
   }> = {},
 ): Promise<ElementMutationPlan | "cancelled" | null> {
-  const { trustedRemoval, ownedReplay, trustedOrder } = normalizedMutationProof(proof);
+  const { trustedRemoval, ownedReplay, trustedOrder, retainedOnly } =
+    normalizedMutationProof(proof);
   const scheduler = new MutationPreparationScheduler(sourceScheduler);
   const direction = requested;
   const resolved = resolveHistoryReplay(direction, replay, ownedReplay);
@@ -144,6 +148,7 @@ export async function planElementMutation(
       ownedPayloadBytes: ownedHistoryPayloadBytes(ownedHistory),
       dirtyBands: order.dirtyBands,
       retainedReplay: ownedReplay?.retainedMutation !== undefined,
+      retainedOnly,
     },
     scheduler,
     replay,
@@ -157,6 +162,7 @@ export async function planElementMutation(
     delta,
     indexPatch,
     ranks,
+    ranksComplete: order.ranksComplete === true,
     records,
     ownedHistory,
     requested: direction,
@@ -168,12 +174,13 @@ function normalizedMutationProof(proof: Parameters<typeof planElementMutation>[4
     trustedRemoval: proof?.trustedRemoval ?? false,
     ownedReplay: proof?.ownedReplay,
     trustedOrder: proof?.trustedOrder,
+    retainedOnly: proof?.retainedOnly ?? false,
   };
 }
 
 function historyDirection(
   requested: ElementMutation,
-  bands: Record<RenderBand, string[]>,
+  bands: StoreBands,
   elements: readonly InkElementV1[],
   removeIds: ReadonlySet<string>,
   trustedRemoval: boolean,

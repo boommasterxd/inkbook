@@ -1,5 +1,7 @@
 import type { SpatialBounds } from "./bounds";
 import type { BottomHeapEntry } from "./max-bottom-heap";
+import type { SpatialMap } from "./spatial-map";
+import type { SpatialSet } from "./spatial-set";
 
 export interface IndexedEntry<Id> extends SpatialBounds {
   readonly cellKeys: readonly number[];
@@ -56,4 +58,11 @@ export type PreparedSpatialReplacements<Id> = Readonly<{
   readonly [PREPARED_REPLACEMENT_ID]?: Id;
 }>;
 
-export type CellColumns = Map<number, Map<number, Set<number>>>;
+export type SpatialMapSource<Key, Value> = Pick<
+  ReadonlyMap<Key, Value>,
+  "get" | "size" | "entries" | typeof Symbol.iterator
+>;
+export type SpatialBucketSource = Iterable<number> & { readonly size: number };
+export type SpatialColumnSource = SpatialMapSource<number, SpatialBucketSource>;
+export type CellColumnSource = SpatialMapSource<number, SpatialColumnSource>;
+export type CellColumns = SpatialMap<number, SpatialMap<number, SpatialSet<number>>>;

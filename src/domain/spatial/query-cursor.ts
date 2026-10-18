@@ -1,11 +1,19 @@
 import { boundsIntersect, type SpatialBounds } from "./bounds";
-import type { CellColumns, CellRange, IndexedEntry } from "./index-state";
+import type {
+  CellColumnSource,
+  CellRange,
+  IndexedEntry,
+  SpatialColumnSource,
+  SpatialBucketSource,
+  SpatialMapSource,
+} from "./index-state";
+import { readSpatialSlot, type SpatialSlotSource } from "./slot-storage";
 import { shouldVisitAxisRange } from "./cell-traversal-policy";
 
 interface QuerySource<Id> {
-  readonly cells: CellColumns;
-  readonly slots: readonly (IndexedEntry<Id> | undefined)[];
-  readonly overflowSlots: ReadonlySet<number>;
+  readonly cells: CellColumnSource;
+  readonly slots: SpatialSlotSource<IndexedEntry<Id>>;
+  readonly overflowSlots: Iterable<number>;
   readonly generation: () => number;
 }
 
@@ -65,7 +73,7 @@ export class SpatialQueryCursor<Id> {
   private visitCandidate(slot: number, ids: Id[]): void {
     if (this.seen!.has(slot)) return;
     this.seen!.add(slot);
-    const entry = this.source!.slots[slot];
+    const entry = readSpatialSlot(this.source!.slots, slot);
     if (entry !== undefined && boundsIntersect(entry, this.bounds)) ids.push(entry.id);
   }
 }
@@ -80,9 +88,12 @@ function* visitSlots<Id>(
   yield* source.overflowSlots;
 }
 
-function* visitGrid(cells: CellColumns, range: CellRange): Generator<number | undefined, void> {
-  const columns = new QueryAxis<Map<number, Set<number>>>();
-  const rows = new QueryAxis<Set<number>>();
+function* visitGrid(
+  cells: CellColumnSource,
+  range: CellRange,
+): Generator<number | undefined, void> {
+  const columns = new QueryAxis<SpatialColumnSource>();
+  const rows = new QueryAxis<SpatialBucketSource>();
   columns.reset(cells, range.minCellX, range.maxCellX);
   while (columns.next()) {
     yield undefined;
@@ -105,11 +116,11 @@ class QueryAxis<Value> {
   #coordinate = 0;
   #maximum = 0;
   #entries: MapIterator<[number, Value]> | undefined;
-  #map: ReadonlyMap<number, Value> | undefined;
+  #map: SpatialMapSource<number, Value> | undefined;
   public key = 0;
   public value: Value | undefined;
 
-  public reset(map: ReadonlyMap<number, Value>, minimum: number, maximum: number): void {
+  public reset(map: SpatialMapSource<number, Value>, minimum: number, maximum: number): void {
     this.#map = map;
     this.#coordinate = minimum;
     this.#maximum = maximum;

@@ -45,9 +45,7 @@ it("bounds retained frame resources across sequential store handoffs", async () 
 
 async function removeAndReplay(store: ElementStore, scheduler: StoreSliceScheduler) {
   const ids = store.materializeBandOrder("content");
-  const mutation = await store.createRemovalMutationTimeSliced(ids, scheduler);
-  if (mutation === null || mutation === "cancelled") throw new Error("Removal creation failed.");
-  const prepared = await store.prepareElementMutation(mutation, scheduler);
+  const prepared = await store.prepareElementRemoval(ids, scheduler);
   if (prepared.token === null) throw new Error("Removal preparation failed.");
   const removed = store.commitPreparedElementMutation(prepared.token);
   if (removed.transition === null) throw new Error("Removal commit failed.");

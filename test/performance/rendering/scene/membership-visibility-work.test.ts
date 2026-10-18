@@ -16,8 +16,71 @@ import {
 import { createMountedElement } from "../../../../src/rendering/scene/mounted-element";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { SceneElementFades } from "../../../../src/rendering/scene/scene-element-fades";
+import { VisibilityClassification } from "../../../../src/rendering/scene/visibility-classification";
+import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
 
 const VISIBLE_COUNT = 64;
+
+function expectSceneReleased(scene: ReturnType<typeof createSceneFixture>): void {
+  expect(scene.scheduler.pendingCount).toBe(0);
+  expect(scene.renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+}
+
+it("removes from 10,000 fully published roots without another candidate classification", () => {
+  const store = createViewportRectangleStore(10_000, () => 10);
+  const scene = createSceneFixture(NAVIGATION_PAGE, store);
+  const { renderer, scheduler, document } = scene;
+  renderer.setReducedMotion(true);
+  scheduler.runAll(200);
+  const visibleCount = renderer.mountedCount;
+  expect(visibleCount).toBe(10_000);
+  const removed = [...store.records.values()].slice(0, 10);
+  renderer.resetInstrumentation();
+  const classification = vi.spyOn(VisibilityClassification.prototype, "collect");
+  const creation = vi.spyOn(document, "createElementNS");
+  const get = vi.spyOn(store, "get");
+  const contains = vi.spyOn(SceneVisibilityState.prototype, "contains");
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- The wrapper forwards the actual receiver through apply.
+  const queryVisibility = SceneVisibilityState.prototype.query;
+  const query = vi.spyOn(SceneVisibilityState.prototype, "query");
+  query.mockImplementation(function (this: SceneVisibilityState, ...args) {
+    const reads = get.mock.calls.length;
+    const visits = contains.mock.calls.length;
+    const result = queryVisibility.apply(this, args);
+    expect(get.mock.calls.length - reads).toBe(0);
+    expect(contains.mock.calls.length - visits).toBeLessThanOrEqual(visibleCount);
+    return result;
+  });
+  try {
+    for (const record of removed) store.records.delete(record.id);
+    renderer.applyDelta({
+      affected: removed.map((record) => ({
+        id: record.id,
+        before: record.element,
+        after: null,
+        beforeBounds: record.bounds,
+        afterBounds: null,
+        domains: ["order", "visibility"],
+      })),
+    });
+    scheduler.runAll(200);
+    expect(renderer.mountedCount).toBe(9_990);
+    expect(renderer.instrumentation()).toMatchObject({
+      spatialQueries: 0,
+      visibilityCandidateVisits: 0,
+      domReorders: 0,
+    });
+    expect(classification).not.toHaveBeenCalled();
+    expect(creation).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledOnce();
+    expect(get.mock.calls.length).toBeLessThanOrEqual(removed.length * 8);
+  } finally {
+    for (const observation of [classification, creation, get, contains, query])
+      observation.mockRestore();
+    renderer.destroy();
+  }
+  expectSceneReleased(scene);
+});
 
 it("admits visible stroke paint before a 10,000-stroke offscreen reserve without scanning it", () => {
   const document = new FakeDocument();
@@ -90,12 +153,10 @@ it.each([1_000, 10_000])(
       rank < VISIBLE_COUNT ? 10 : 1_100,
     );
     const indexed = createIndexedSceneStore(records);
-    const { document, renderer, scheduler } = createSceneFixture(
-      NAVIGATION_PAGE,
-      indexed.store,
-      undefined,
-      { scrollPreloadMarginPx: 800 },
-    );
+    const scene = createSceneFixture(NAVIGATION_PAGE, indexed.store, undefined, {
+      scrollPreloadMarginPx: 800,
+    });
+    const { document, renderer, scheduler } = scene;
     scheduler.runAll(200);
     expect(renderer.mountedCount).toBe(count);
     const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
@@ -164,8 +225,7 @@ it.each([1_000, 10_000])(
       remove.mockRestore();
       renderer.destroy();
     }
-    expect(scheduler.pendingCount).toBe(0);
-    expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+    expectSceneReleased(scene);
   },
 );
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { InkbookDocumentRecognitionPort } from "../../../../src/obsidian/embeds/document-recognition";
 import { createReadingViewPostProcessor } from "../../../../src/obsidian/embeds/reading-view";
+import * as previewBuilder from "../../../../src/obsidian/embeds/safe-preview-builder";
 import type {
   EmbedIntegrationPorts,
   PresentationAttachment,
@@ -10,6 +11,7 @@ import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/p
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { createDetachedPreviewHandoff } from "../../../fixtures/obsidian/active-preview-handoff";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const FIRST_PREVIEW = {
@@ -85,6 +87,51 @@ describe("Reading-view preview content identity", () => {
     );
     expect(harness.attachments[0]?.previewContentIdentity).toEqual(SECOND_PREVIEW.contentIdentity);
     harness.child?.unload();
+  });
+});
+
+describe("Reading-view active preview refresh", () => {
+  it("refreshes a visible sibling while deferring the removed active preview", async () => {
+    let current = FIRST_PREVIEW;
+    const listeners = new Set<(documentId: string) => void>();
+    const documents: InkbookDocumentRecognitionPort = {
+      cached: () => current,
+      recognize: async () => current,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const active = mountReadingView(documents);
+    const sibling = mountReadingView(documents);
+    const attachment = active.attachments[0]!;
+    await sibling.attachments[0]!.ensurePreviewReady?.();
+    const { handoff } = await createDetachedPreviewHandoff(
+      attachment,
+      nativeFrameWorkScheduler(attachment.root.ownerDocument.defaultView),
+    );
+    const builder = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
+    try {
+      current = SECOND_PREVIEW;
+      for (const listener of listeners) listener("drawings/ink.svg");
+      await vi.waitFor(() =>
+        expect(sibling.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("4"),
+      );
+      expect(attachment.previewContentIdentity).toEqual(SECOND_PREVIEW.contentIdentity);
+      expect(active.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("12");
+      expect(builder).toHaveBeenCalledOnce();
+      expect(builder.mock.calls[0]?.[0]).toBe(sibling.root.ownerDocument);
+      await handoff.ensurePreviewReady();
+      handoff.restorePreview();
+      expect(active.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("4");
+      expect(builder).toHaveBeenCalledTimes(2);
+    } finally {
+      builder.mockRestore();
+      handoff.dispose();
+      active.child?.unload();
+      sibling.child?.unload();
+    }
+    expect(listeners.size).toBe(0);
   });
 });
 

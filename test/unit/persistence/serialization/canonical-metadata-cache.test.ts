@@ -86,6 +86,46 @@ describe("canonical metadata cache", () => {
   });
 });
 
+describe("metadata sample handoffs", () => {
+  it.each([false, true])("suspends a maximum stroke at handoff (abort=%s)", async (abort) => {
+    let reads = 0;
+    const values = Array.from({ length: 16_384 * 3 }, (_, index) => [10, 20, 0.5][index % 3]!);
+    const points = new Proxy(values, {
+      get(target, key, receiver): unknown {
+        if (typeof key === "string" && /^\d+$/u.test(key)) reads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const value = { ...snapshot(), elements: [{ ...createTestStroke(), points }] };
+    const expected = canonicalMetadataSha256(value);
+    reads = 0;
+    const cache = new CanonicalMetadataCache();
+    const controller = new AbortController();
+    let resume: () => void = () => undefined;
+    const paused = new Promise<void>((resolve) => (resume = resolve));
+    let first = true;
+    const checkpoint = vi.fn(() => {
+      if (!first) return undefined;
+      first = false;
+      return paused;
+    });
+    const pending = cache.digest(value, checkpoint, controller.signal);
+    expect(reads).toBe(256 * 3);
+    expect(checkpoint).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(reads).toBe(256 * 3);
+    if (abort) controller.abort();
+    resume();
+    if (abort) {
+      await expect(pending).rejects.toThrow();
+      expect(reads).toBe(256 * 3);
+    } else {
+      await expect(pending).resolves.toBe(expected);
+      expect(reads).toBe(16_384 * 3);
+    }
+  });
+});
+
 describe("stroke metadata reuse", () => {
   it("keeps a changed stroke header exact while reusing owned samples", async () => {
     const points = createTestStroke().points;

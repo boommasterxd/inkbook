@@ -4,7 +4,7 @@ import {
 } from "../../domain/schema/canonical";
 import { MAX_ABSOLUTE_COORDINATE, MAX_STROKE_POINTS } from "../../domain/schema/constants";
 import type { ParsedJsonProof } from "../../domain/schema/parsed-json-proof";
-import { SampleBase64Reader, SampleBase64Writer } from "./sample-base64";
+import { SampleBase64ByteWriter, SampleBase64Reader, SampleBase64Writer } from "./sample-base64";
 
 const GEOMETRY_SCALE = 1000;
 const PRESSURE_SCALE = 10000;
@@ -16,6 +16,12 @@ const MAXIMUM_ENCODED_CHARACTERS = Math.ceil((MAX_STROKE_POINTS * MAXIMUM_POINT_
 export const COMPACT_METADATA_ENCODING = "json-varint-v1";
 export type SnapshotMetadataEncoding = "json" | typeof COMPACT_METADATA_ENCODING;
 
+interface SampleWriter<Output> {
+  append(value: number): void;
+  finish(): Output;
+  finishSteps?(signal?: AbortSignal): Generator<void, Output>;
+}
+
 /** Point count, then ZigZag coordinate deltas and unsigned pressure, encoded as canonical LEB128. */
 export function encodeStrokeSamples(points: ArrayLike<number>): string {
   return completeSteps(encodeStrokeSamplesSteps(points));
@@ -25,10 +31,26 @@ export function* encodeStrokeSamplesSteps(
   points: ArrayLike<number>,
   signal?: AbortSignal,
 ): Generator<void, string> {
+  return yield* encodeSamplesSteps(points, SampleBase64Writer, signal);
+}
+
+/** Identical compact samples emitted directly as canonical Base64 ASCII bytes. */
+export function* encodeStrokeSampleBytesSteps(
+  points: ArrayLike<number>,
+  signal?: AbortSignal,
+): Generator<void, Uint8Array<ArrayBuffer>> {
+  return yield* encodeSamplesSteps(points, SampleBase64ByteWriter, signal);
+}
+
+function* encodeSamplesSteps<Output>(
+  points: ArrayLike<number>,
+  writerType: new () => SampleWriter<Output>,
+  signal?: AbortSignal,
+): Generator<void, Output> {
   signal?.throwIfAborted();
   const count = points.length / 3;
   assertPointCount(count);
-  const writer = new SampleBase64Writer();
+  const writer = new writerType();
   appendVarint(writer, count);
   let previousX = 0;
   let previousY = 0;
@@ -48,7 +70,7 @@ export function* encodeStrokeSamplesSteps(
     }
   }
   signal?.throwIfAborted();
-  return writer.finish();
+  return writer.finishSteps === undefined ? writer.finish() : yield* writer.finishSteps(signal);
 }
 
 /** Each bounded step may checkpoint through the caller's central WorkScheduler. */
@@ -127,7 +149,7 @@ function unZigZag(value: number): number {
   return value % 2 === 0 ? value / 2 : -(value + 1) / 2;
 }
 
-function appendVarint(writer: SampleBase64Writer, value: number): void {
+function appendVarint(writer: SampleWriter<unknown>, value: number): void {
   while (value >= 128) {
     writer.append((value % 128) + 128);
     value = Math.floor(value / 128);

@@ -26,9 +26,10 @@ import type {
   StoreDelta,
 } from "./types";
 import type { MutableStoreInstrumentation } from "./instrumentation";
+import { mutableBand, type StoreBands } from "./band-snapshots";
 
 interface RemovalState {
-  readonly bands: Record<RenderBand, string[]>;
+  readonly bands: StoreBands;
   readonly capacity: DocumentCapacity;
   readonly geometryVersion: number;
   readonly instrumentation: MutableStoreInstrumentation;
@@ -142,7 +143,8 @@ function removeBandIds(
       .sort((left, right) => right - left);
     if (ranks.length === 0) continue;
     const firstChanged = ranks[ranks.length - 1]!;
-    for (const rank of ranks) state.bands[band].splice(rank, 1);
+    const ids = mutableBand(state.bands, band);
+    for (const rank of ranks) ids.splice(rank, 1);
     for (const id of removedIds) if (state.ranks.get(id)?.band === band) state.ranks.delete(id);
     delta.dirtyBand(band);
     refreshRanks(state, band, firstChanged);

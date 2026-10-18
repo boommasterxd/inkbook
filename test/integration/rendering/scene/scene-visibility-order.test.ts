@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
+import { VisibilityClassification } from "../../../../src/rendering/scene/visibility-classification";
 
 import {
   createPendingScenePathStore,
@@ -15,6 +16,137 @@ import {
   fakeNode,
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
+
+it.each(["before-commit", "after-commit", "offscreen-removal"] as const)(
+  "preserves dense ordering for camera entrants after a removal, %s",
+  (when) => {
+    const store = new FakeSceneStore();
+    const removed = fakeRectangleRecord(
+      "removed",
+      0,
+      10,
+      when === "offscreen-removal" ? 1_000 : 10,
+    );
+    const middle = fakeRectangleRecord("middle", 1, 10, 100);
+    const entrant = fakeRectangleRecord("entrant", 2, 10, 440);
+    const last = fakeRectangleRecord("last", 3, 10, 100);
+    for (const record of [removed, middle, entrant, last]) store.records.set(record.id, record);
+    const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
+      height: 100,
+      left: 0,
+      top: 0,
+      width: 100,
+    });
+    renderer.setReducedMotion(true);
+    scheduler.runAll();
+    const classify = vi.spyOn(VisibilityClassification.prototype, "collect");
+    try {
+      store.records.delete(removed.id);
+      for (const record of [middle, entrant, last])
+        store.records.set(record.id, { ...record, rank: record.rank - 1 });
+      renderer.applyDelta({
+        affected: [
+          {
+            id: removed.id,
+            before: removed.element,
+            after: null,
+            beforeBounds: removed.bounds,
+            afterBounds: null,
+            domains: ["visibility", "order"],
+          },
+        ],
+      });
+      if (when !== "before-commit") {
+        scheduler.runAll();
+        expect(classify).not.toHaveBeenCalled();
+      }
+      renderer.setViewport({ height: 100, left: 0, top: 350, width: 100 });
+      scheduler.runAll();
+      expect(renderer.mountedIds("content")).toEqual(["middle", "entrant", "last"]);
+      expect(classify).toHaveBeenCalled();
+    } finally {
+      classify.mockRestore();
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+  },
+);
+
+it("falls back for Undo, Redo followed by reorder, and removal mixed with endpoint geometry", () => {
+  const store = createViewportRectangleStore(3, () => 10);
+  const records = [...store.records.values()];
+  const removed = records[0]!;
+  const survivor = records[1]!;
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store);
+  renderer.setReducedMotion(true);
+  scheduler.runAll();
+  const classify = vi.spyOn(VisibilityClassification.prototype, "collect");
+  const membership = (exit: boolean) => {
+    if (exit) store.records.delete(removed.id);
+    else store.records.set(removed.id, removed);
+    renderer.applyDelta({
+      historyReplay: true,
+      affected: [
+        {
+          id: removed.id,
+          before: exit ? removed.element : null,
+          after: exit ? null : removed.element,
+          beforeBounds: exit ? removed.bounds : null,
+          afterBounds: exit ? null : removed.bounds,
+          domains: ["visibility", "order"],
+        },
+      ],
+    });
+    scheduler.runAll();
+  };
+  try {
+    membership(true);
+    expect(classify).not.toHaveBeenCalled();
+    membership(false);
+    expect(classify).toHaveBeenCalled();
+    classify.mockClear();
+    membership(true);
+    expect(classify).not.toHaveBeenCalled();
+    store.records.set(survivor.id, { ...survivor, rank: 9 });
+    renderer.applyDelta({
+      affected: [
+        { id: survivor.id, before: survivor.element, after: survivor.element, domains: ["order"] },
+      ],
+    });
+    scheduler.runAll();
+    expect(renderer.mountedIds("content")).toEqual([records[2]!.id, survivor.id]);
+    membership(false);
+    classify.mockClear();
+    store.records.delete(removed.id);
+    store.records.set(survivor.id, { ...survivor, geometryVersion: survivor.geometryVersion + 1 });
+    renderer.applyDelta({
+      affected: [
+        {
+          id: removed.id,
+          before: removed.element,
+          after: null,
+          beforeBounds: removed.bounds,
+          afterBounds: null,
+          domains: ["visibility", "order"],
+        },
+        {
+          id: survivor.id,
+          before: survivor.element,
+          after: survivor.element,
+          beforeBounds: survivor.bounds,
+          afterBounds: survivor.bounds,
+          domains: ["geometry"],
+        },
+      ],
+    });
+    scheduler.runAll();
+    expect(classify).toHaveBeenCalled();
+    expect(renderer.mountedIds("content")).toEqual([survivor.id, records[2]!.id]);
+  } finally {
+    classify.mockRestore();
+    renderer.destroy();
+  }
+});
 
 it.each([false, true])(
   "merges batched entrants at distinct ranks and keeps true reorder atomic (%s)",

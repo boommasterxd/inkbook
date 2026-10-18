@@ -1,11 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { InkbookLivePreviewWidget } from "../../../../src/obsidian/embeds/live-preview-widget";
+import * as previewBuilder from "../../../../src/obsidian/embeds/safe-preview-builder";
 import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/presentation-lifecycle-registry";
-import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/presentation-port";
+import type {
+  EmbedIntegrationPorts,
+  PresentationAttachment,
+} from "../../../../src/obsidian/embeds/presentation-port";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { createDetachedPreviewHandoff } from "../../../fixtures/obsidian/active-preview-handoff";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
@@ -71,6 +76,35 @@ describe("Live Preview widget content identity", () => {
     reconciled.destroy(root);
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
   });
+
+  it("retargets a removed active preview through updateDOM without preparing its SVG", async () => {
+    const ports = createPorts();
+    const widget = new InkbookLivePreviewWidget(embed(), ports);
+    const host = new FakePresentationElement();
+    const root = widget.toDOM({ plugin: () => null, dom: host } as never);
+    host.append(root as unknown as FakePresentationElement);
+    const attachment = ports.attachments[0]!;
+    const { handoff, preview } = await createDetachedPreviewHandoff(
+      attachment,
+      ports.workScheduler(root.ownerDocument.defaultView),
+    );
+    const builder = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
+    try {
+      const latest = embed({ outputHash: "b".repeat(64), revision: 2 });
+      expect(new InkbookLivePreviewWidget(latest, ports).updateDOM(root)).toBe(true);
+      expect(attachment.previewContentIdentity).toEqual(latest.preview.contentIdentity);
+      expect(builder).not.toHaveBeenCalled();
+      await handoff.ensurePreviewReady();
+      expect(builder).toHaveBeenCalledOnce();
+      handoff.restorePreview();
+      expect(preview.hidden).toBe(false);
+      expect(preview.parentElement).toBe(root);
+    } finally {
+      builder.mockRestore();
+      handoff.dispose();
+      widget.destroy(root);
+    }
+  });
 });
 
 function embed(contentIdentity = CONTENT_IDENTITY) {
@@ -83,9 +117,14 @@ function embed(contentIdentity = CONTENT_IDENTITY) {
   };
 }
 
-function createPorts(): EmbedIntegrationPorts & { readonly calls: string[] } {
+function createPorts(): EmbedIntegrationPorts & {
+  readonly attachments: PresentationAttachment[];
+  readonly calls: string[];
+} {
   const calls: string[] = [];
+  const attachments: PresentationAttachment[] = [];
   return {
+    attachments,
     calls,
     documents: {
       cached: () => false,
@@ -98,7 +137,7 @@ function createPorts(): EmbedIntegrationPorts & { readonly calls: string[] } {
     sessions: {
       activate: () => undefined,
       detach: (attachment) => calls.push(`detach:${attachment.documentId}`),
-      mount: () => undefined,
+      mount: (attachment) => attachments.push(attachment),
     },
     workScheduler: nativeFrameWorkScheduler,
   };

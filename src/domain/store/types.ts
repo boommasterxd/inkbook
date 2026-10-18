@@ -126,6 +126,21 @@ export interface AppliedElementMutation {
   readonly forward: ElementMutation;
   readonly payloadBytes: number;
   readonly reverse: ElementMutation;
+  /** Opaque directions are accepted only by the retaining Store's prepareHistoryReplay. */
+  readonly retainedOnly?: true;
+}
+
+declare const RETAINED_ELEMENT_MUTATION: unique symbol;
+
+/** An opaque direction handle; its element payload is held privately by its Store. */
+export interface RetainedElementMutation extends ElementMutation {
+  readonly [RETAINED_ELEMENT_MUTATION]: true;
+}
+
+export interface AppliedRetainedElementMutation extends AppliedElementMutation {
+  readonly forward: RetainedElementMutation;
+  readonly reverse: RetainedElementMutation;
+  readonly retainedOnly: true;
 }
 
 declare const PREPARED_ELEMENT_MUTATION: unique symbol;

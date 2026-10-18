@@ -26,7 +26,7 @@ afterEach(async () => {
   await new Promise<void>((resolve) => setImmediate(resolve));
 });
 
-it("coalesces hidden autosave previews into one bounded tree and reuses unchanged identities", async () => {
+it("defers hidden descriptor trees across saves and builds only the latest on demand", async () => {
   const button = createHtmlElement("button");
   const safeSvg = `<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata>${'<path d="M0 0L1 1"/>'.repeat(10_000)}</svg>`;
   const create = vi.spyOn(document, "createElementNS");
@@ -47,6 +47,7 @@ it("coalesces hidden autosave previews into one bounded tree and reuses unchange
   for (let revision = 2; revision <= 20; revision += 1) {
     preview.setDescriptor(descriptor(revision));
     preview.refresh();
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
   expect(create).toHaveBeenCalledTimes(10_002);
   expect(button.querySelector("svg")).toBe(original);
@@ -116,7 +117,12 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
   handoff.ready();
   for (let revision = 1; revision <= 20; revision += 1) {
     await handoff.setPreviewSource(`app://saved.svg?revision=${String(revision)}`);
-    await Promise.resolve();
+    preview.setDescriptor({
+      safeSvg: svg,
+      aspectRatio: 1,
+      contentIdentity: { revision, outputHash: "b".repeat(64) },
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
   expect(fetch).not.toHaveBeenCalled();
   expect(create).toHaveBeenCalledTimes(initialNodes);

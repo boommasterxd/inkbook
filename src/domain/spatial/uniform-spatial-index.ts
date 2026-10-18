@@ -3,9 +3,13 @@ import {
   type MutationPorts,
   type PreparedSpatialMutation,
 } from "./mutation-preparation";
-import { prepareSpatialMutationTimeSliced, rangeFromEntry } from "./mutation-shadow";
+import { prepareSpatialMutationTimeSliced } from "./mutation-shadow";
 import type { SpatialBounds } from "./bounds";
-import { createCellRange, createSpatialCellKeys } from "./cell-membership";
+import { createCellRange, createSpatialCellKeys, updateSpatialCells } from "./cell-membership";
+import { prepareSpatialRemoval } from "./removal-preparation";
+import { SpatialMap } from "./spatial-map";
+import { SpatialSet } from "./spatial-set";
+import { SpatialFreeSlots, SpatialSlots } from "./slot-storage";
 import { maximumOverflowBottom, visitOverflowEntries, visitSpatialCells } from "./cell-query";
 import {
   bottomHeapEntry,
@@ -41,14 +45,13 @@ export const MAX_ELEMENT_CELLS = 256;
 export { MAX_OVERFLOW_ELEMENTS, MAX_SPATIAL_MEMBERSHIPS } from "./capacity";
 export const MAX_STALE_EXTENT_POPS = 256;
 export const MAX_EXTENT_REBUILD_SLICE = 256;
-const EXTENT_REBUILD_OPERATION_SLICE = MAX_EXTENT_REBUILD_SLICE;
 const EXTENT_BATCH_HEAP_THRESHOLD = 64;
 
 export class UniformSpatialIndex<Id> {
-  private readonly cells: CellColumns = new Map();
-  private readonly entries = new Map<Id, IndexedEntry<Id>>();
-  private readonly freeSlots: number[] = [];
-  private readonly overflowSlots = new Set<number>();
+  private cells: CellColumns = new SpatialMap();
+  private entries = new SpatialMap<Id, IndexedEntry<Id>>();
+  private freeSlots = new SpatialFreeSlots();
+  private overflowSlots = new SpatialSet<number>();
   private readonly rangeScratch: CellRange = {
     maxCellX: 0,
     maxCellY: 0,
@@ -56,9 +59,10 @@ export class UniformSpatialIndex<Id> {
     minCellY: 0,
     overflow: false,
   };
-  private readonly slots: (IndexedEntry<Id> | undefined)[] = [];
+  private slots = new SpatialSlots<IndexedEntry<Id>>();
   private extentHeap: BottomHeapEntry<Id>[] = [];
   private readonly extentBatchHeaps: BottomHeapEntry<Id>[][] = [];
+  private extentBatchEntryCount = 0;
   private extentRebuild: ExtentRebuild<Id> | undefined;
   private gridEntryCount = 0;
   private gridMembershipCount = 0;
@@ -84,9 +88,7 @@ export class UniformSpatialIndex<Id> {
   }
 
   public get extentHeapEntryCount(): number {
-    let count = this.extentHeap.length;
-    for (const heap of this.extentBatchHeaps) count += heap.length;
-    return count;
+    return this.extentHeap.length + this.extentBatchEntryCount;
   }
 
   public get size(): number {
@@ -119,6 +121,37 @@ export class UniformSpatialIndex<Id> {
       {
         mutation: this.mutationPorts(),
         entries: this.entries,
+        prepareRemoval: (stage, scheduler, generation) =>
+          prepareSpatialRemoval(
+            stage,
+            {
+              generation: () => this.mutationGeneration,
+              fork: () => this.forkRemovalState(),
+              remove: (shadow, entry) => shadow.detachEntry(entry, true, false),
+              overflowMaximum: this.overflowMaximum,
+              overflowSlots: (shadow) => shadow.overflowSlots,
+              overflowBottom: (shadow, slot) => shadow.slots.get(slot)?.maxY,
+              setOverflowMaximum: (shadow, maximum) => {
+                shadow.overflowMaximum = maximum;
+              },
+              adopt: (shadow) => {
+                this.cells = shadow.cells;
+                this.entries = shadow.entries;
+                this.freeSlots = shadow.freeSlots;
+                this.overflowSlots = shadow.overflowSlots;
+                this.slots = shadow.slots;
+                this.gridEntryCount = shadow.gridEntryCount;
+                this.gridMembershipCount = shadow.gridMembershipCount;
+                this.occupiedCellCount = shadow.occupiedCellCount;
+                this.overflowMaximum = shadow.overflowMaximum;
+                this.mutationGeneration += 1;
+                this.updateExtentRebuildRecommendation();
+                this.beginExtentRebuild();
+              },
+            },
+            scheduler,
+            generation,
+          ),
         createShadow: () => {
           const shadow = new UniformSpatialIndex<Id>();
           shadow.recordVersion = this.recordVersion;
@@ -126,17 +159,12 @@ export class UniformSpatialIndex<Id> {
         },
         appendRetained: (shadow, entry) => {
           const retained = { ...entry, slot: shadow.slots.length };
-          shadow.attachEntry(retained, rangeFromEntry(retained), false);
+          shadow.attachEntry(retained, false);
           return retained;
         },
-        appendInserted: (shadow, insertion) => {
-          const entry = shadow.createEntry(
-            insertion.id,
-            insertion.bounds,
-            insertion.range,
-            shadow.slots.length,
-          );
-          shadow.attachEntry(entry, insertion.range, false);
+        appendInserted: (shadow, { id, bounds, range }) => {
+          const entry = shadow.createEntry(id, bounds, range, shadow.slots.length);
+          shadow.attachEntry(entry, false);
           return entry;
         },
         adoptShadow: (shadow, generation, extentHeap) => {
@@ -147,6 +175,16 @@ export class UniformSpatialIndex<Id> {
       },
       scheduler,
     );
+  }
+
+  private forkRemovalState(): UniformSpatialIndex<Id> {
+    const shadow = Object.assign(new UniformSpatialIndex<Id>(), this);
+    shadow.cells = this.cells.fork();
+    shadow.entries = this.entries.fork();
+    shadow.freeSlots = this.freeSlots.fork();
+    shadow.overflowSlots = this.overflowSlots.fork();
+    shadow.slots = this.slots.fork();
+    return shadow;
   }
 
   private mutationPorts(): MutationPorts<Id> {
@@ -161,7 +199,7 @@ export class UniformSpatialIndex<Id> {
       commit: (removed, inserted) => {
         for (const entry of removed) this.detachEntry(entry, true);
         for (const { id, bounds, range } of inserted) {
-          this.attachEntry(this.createEntry(id, bounds, range, this.takeSlot()), range, true);
+          this.attachEntry(this.createEntry(id, bounds, range, this.takeSlot()));
         }
         this.finishMutation();
       },
@@ -212,7 +250,7 @@ export class UniformSpatialIndex<Id> {
       if (replacement.membershipChanged) this.commitChangedMembership(replacement);
       else {
         this.entries.set(replacement.replacement.id, replacement.replacement);
-        this.slots[replacement.replacement.slot] = replacement.replacement;
+        this.slots.set(replacement.replacement.slot, replacement.replacement);
         if (replacement.replacement.overflow) overflowMaximumChanged = true;
       }
     }
@@ -247,14 +285,15 @@ export class UniformSpatialIndex<Id> {
   }
 
   public getMaximumBottom(): number | undefined {
-    this.rebuildExtentStep(EXTENT_REBUILD_OPERATION_SLICE);
-    const { stalePops, cleanupPending, maximum } = scanMaximumBottom(
+    this.rebuildExtentStep(MAX_EXTENT_REBUILD_SLICE);
+    const { stalePops, batchStalePops, cleanupPending, maximum } = scanMaximumBottom(
       this.extentHeap,
       this.extentBatchHeaps,
       this.entries,
       MAX_STALE_EXTENT_POPS,
       this.overflowMaximum,
     );
+    this.extentBatchEntryCount -= batchStalePops;
     this.lastExtentStalePops = stalePops;
     this.extentCleanupPending = cleanupPending;
     this.updateExtentRebuildRecommendation();
@@ -289,21 +328,22 @@ export class UniformSpatialIndex<Id> {
     for (let processed = 0; processed < maxEntries; processed += 1) {
       if (rebuild.nextSlot >= rebuild.slotLimit) {
         this.extentHeap = rebuild.heap;
-        this.extentBatchHeaps.splice(0, rebuild.batchHeapCount);
+        for (const heap of this.extentBatchHeaps.splice(0, rebuild.batchHeapCount))
+          this.extentBatchEntryCount -= heap.length;
         this.extentRebuild = undefined;
         this.updateExtentRebuildRecommendation();
         return true;
       }
-      const entry = this.slots[rebuild.nextSlot++];
+      const entry = this.slots.get(rebuild.nextSlot++);
       if (entry !== undefined && !entry.overflow) this.pushRebuildEntry(entry);
     }
 
     return false;
   }
 
-  private attachEntry(entry: IndexedEntry<Id>, range: CellRange, updateExtent = true): void {
+  private attachEntry(entry: IndexedEntry<Id>, updateExtent = true): void {
     this.entries.set(entry.id, entry);
-    this.slots[entry.slot] = entry;
+    this.slots.set(entry.slot, entry);
 
     if (entry.overflow) {
       this.overflowSlots.add(entry.slot);
@@ -313,65 +353,25 @@ export class UniformSpatialIndex<Id> {
 
     this.gridEntryCount += 1;
     this.gridMembershipCount += entry.cellKeys.length / 2;
-    this.addToCells(entry, range);
+    this.occupiedCellCount += updateSpatialCells(this.cells, entry, true);
     if (updateExtent) this.pushExtentEntry(entry);
   }
 
-  private detachEntry(entry: IndexedEntry<Id>, releaseSlot: boolean): void {
+  private detachEntry(entry: IndexedEntry<Id>, releaseSlot: boolean, refreshOverflow = true): void {
     this.entries.delete(entry.id);
-    this.slots[entry.slot] = undefined;
+    this.slots.set(entry.slot, undefined);
 
     if (entry.overflow) {
       this.overflowSlots.delete(entry.slot);
-      if (entry.maxY === this.overflowMaximum)
+      if (refreshOverflow && entry.maxY === this.overflowMaximum)
         this.overflowMaximum = maximumOverflowBottom(this.overflowSlots, this.slots);
     } else {
       this.gridEntryCount -= 1;
       this.gridMembershipCount -= entry.cellKeys.length / 2;
-      this.removeFromCells(entry);
+      this.occupiedCellCount += updateSpatialCells(this.cells, entry, false);
     }
 
     if (releaseSlot) this.freeSlots.push(entry.slot);
-  }
-
-  private addToCells(entry: IndexedEntry<Id>, range: CellRange): void {
-    let keyIndex = 0;
-    for (let cellX = range.minCellX; cellX <= range.maxCellX; cellX += 1) {
-      let column = this.cells.get(cellX);
-      if (column === undefined) {
-        column = new Map();
-        this.cells.set(cellX, column);
-      }
-      for (let cellY = range.minCellY; cellY <= range.maxCellY; cellY += 1) {
-        let bucket = column.get(cellY);
-        if (bucket === undefined) {
-          bucket = new Set();
-          column.set(cellY, bucket);
-          this.occupiedCellCount += 1;
-        }
-        bucket.add(entry.slot);
-        keyIndex += 2;
-      }
-    }
-
-    if (keyIndex !== entry.cellKeys.length)
-      throw new Error("Spatial cell membership is inconsistent.");
-  }
-
-  private removeFromCells(entry: IndexedEntry<Id>): void {
-    for (let index = 0; index < entry.cellKeys.length; index += 2) {
-      const cellX = entry.cellKeys[index];
-      const cellY = entry.cellKeys[index + 1];
-      if (cellX === undefined || cellY === undefined) continue;
-      const column = this.cells.get(cellX);
-      const bucket = column?.get(cellY);
-      bucket?.delete(entry.slot);
-      if (bucket?.size === 0) {
-        column?.delete(cellY);
-        this.occupiedCellCount -= 1;
-      }
-      if (column?.size === 0) this.cells.delete(cellX);
-    }
   }
 
   private createEntry(
@@ -406,7 +406,7 @@ export class UniformSpatialIndex<Id> {
 
   private commitChangedMembership(replacement: PreparedReplacement<Id>): void {
     this.detachEntry(replacement.current, false);
-    this.attachEntry(replacement.replacement, replacement.range, false);
+    this.attachEntry(replacement.replacement, false);
   }
 
   private prepareRange(bounds: SpatialBounds): CellRange {
@@ -464,7 +464,7 @@ export class UniformSpatialIndex<Id> {
     this.mutationGeneration += 1;
     this.updateExtentRebuildRecommendation();
     this.beginExtentRebuild();
-    this.rebuildExtentStep(EXTENT_REBUILD_OPERATION_SLICE);
+    this.rebuildExtentStep(MAX_EXTENT_REBUILD_SLICE);
   }
 
   private updateExtentRebuildRecommendation(): void {
@@ -483,8 +483,10 @@ export class UniformSpatialIndex<Id> {
         this.extentBatchHeaps.push(rebuild.deltaHeap);
       }
       for (const entry of heap) pushBottom(rebuild.deltaHeap, entry);
+      this.extentBatchEntryCount += heap.length;
     } else if (rebuild !== undefined || heap.length > EXTENT_BATCH_HEAP_THRESHOLD) {
       this.extentBatchHeaps.push(heap);
+      this.extentBatchEntryCount += heap.length;
     } else for (const entry of heap) pushBottom(this.extentHeap, entry);
   }
 
