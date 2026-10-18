@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
+import { validateRuntimeInkSnapshotV1 } from "../../../src/domain/schema/snapshot-validation";
 import type { ElementRank } from "../../../src/domain/store/types";
 import { prepareRemovalMutation } from "../../../src/domain/store/removal-mutation";
 import * as mutationOrder from "../../../src/domain/store/mutation-order";
@@ -13,6 +14,7 @@ import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
 import { elementMutationPayloadBytes } from "../../../src/domain/store/mutation-payload";
 import { uninterruptedMutationScheduler as scheduler } from "../../fixtures/domain/element-mutation";
 import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
+import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 
 afterEach(() => vi.restoreAllMocks());
@@ -293,28 +295,33 @@ it.each(["cancelled", "stale"] as const)(
 );
 
 async function observedSampleStore() {
-  const observed = createStandardDomainFixture()
-    .elements.slice(0, 10_000)
-    .map((element) => {
-      if (element.kind !== "stroke") throw new Error("Expected stroke.");
-      // Transfer a fully immutable fixture without freezing through the observer's proxy.
-      Object.freeze(element.points);
-      const { observed: points, work } = observeSchemaArray(element.points);
-      return {
-        element: Object.freeze({
-          ...element,
-          pivot: Object.freeze({ ...element.pivot }),
-          style: Object.freeze({
-            ...element.style,
-            color: Object.freeze({ ...element.style.color }),
-          }),
-          points,
+  const elements = createStandardDomainFixture().elements.slice(0, 10_000);
+  const validation = validateRuntimeInkSnapshotV1(createWorkerSnapshot(elements));
+  if (!validation.ok) throw new Error("Expected valid removal fixture.");
+  expect(validation.statistics).toMatchObject({ strokes: 10_000, strokePoints: 500_000 });
+  const observed = elements.map((element) => {
+    if (element.kind !== "stroke") throw new Error("Expected stroke.");
+    // Observe retained samples after validation; hydration reuses its exact bounds/extrema.
+    Object.freeze(element.points);
+    const { observed: points, work } = observeSchemaArray(element.points);
+    return {
+      element: Object.freeze({
+        ...element,
+        pivot: Object.freeze({ ...element.pivot }),
+        style: Object.freeze({
+          ...element.style,
+          color: Object.freeze({ ...element.style.color }),
         }),
-        work,
-      };
-    });
+        points,
+      }),
+      work,
+    };
+  });
   const builder = ElementStore.createBuilder(scheduler);
-  await builder.appendOwnedRuntime(observed.map(({ element }) => element));
+  await builder.appendOwnedValidatedRuntime(
+    observed.map(({ element }) => element),
+    validation.derivations.elements,
+  );
   const store = await builder.finalize();
   if (store === null) throw new Error("Expected hydrated store.");
   for (const { work } of observed) {
