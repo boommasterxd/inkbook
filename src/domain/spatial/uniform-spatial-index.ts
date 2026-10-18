@@ -127,7 +127,13 @@ export class UniformSpatialIndex<Id> {
             {
               generation: () => this.mutationGeneration,
               fork: () => this.forkRemovalState(),
-              remove: (shadow, entry) => shadow.detachEntry(entry, true),
+              remove: (shadow, entry) => shadow.detachEntry(entry, true, false),
+              overflowMaximum: this.overflowMaximum,
+              overflowSlots: (shadow) => shadow.overflowSlots,
+              overflowBottom: (shadow, slot) => shadow.slots.get(slot)?.maxY,
+              setOverflowMaximum: (shadow, maximum) => {
+                shadow.overflowMaximum = maximum;
+              },
               adopt: (shadow) => {
                 this.cells = shadow.cells;
                 this.entries = shadow.entries;
@@ -156,13 +162,8 @@ export class UniformSpatialIndex<Id> {
           shadow.attachEntry(retained, false);
           return retained;
         },
-        appendInserted: (shadow, insertion) => {
-          const entry = shadow.createEntry(
-            insertion.id,
-            insertion.bounds,
-            insertion.range,
-            shadow.slots.length,
-          );
+        appendInserted: (shadow, { id, bounds, range }) => {
+          const entry = shadow.createEntry(id, bounds, range, shadow.slots.length);
           shadow.attachEntry(entry, false);
           return entry;
         },
@@ -356,13 +357,13 @@ export class UniformSpatialIndex<Id> {
     if (updateExtent) this.pushExtentEntry(entry);
   }
 
-  private detachEntry(entry: IndexedEntry<Id>, releaseSlot: boolean): void {
+  private detachEntry(entry: IndexedEntry<Id>, releaseSlot: boolean, refreshOverflow = true): void {
     this.entries.delete(entry.id);
     this.slots.set(entry.slot, undefined);
 
     if (entry.overflow) {
       this.overflowSlots.delete(entry.slot);
-      if (entry.maxY === this.overflowMaximum)
+      if (refreshOverflow && entry.maxY === this.overflowMaximum)
         this.overflowMaximum = maximumOverflowBottom(this.overflowSlots, this.slots);
     } else {
       this.gridEntryCount -= 1;

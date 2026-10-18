@@ -23,8 +23,10 @@ export class PreviewIdleScheduler {
 
   #admit(signal?: AbortSignal): Promise<void> | undefined {
     if (this.#disposed || signal?.aborted === true) return;
+    const admissionSignal =
+      signal === undefined ? this.#abort.signal : AbortSignal.any([signal, this.#abort.signal]);
     try {
-      const pending = this.workScheduler.checkpoint(this.#abort.signal);
+      const pending = this.workScheduler.checkpoint(admissionSignal);
       if (pending !== undefined) {
         return pending.then(
           () => this.waitForBackground(signal),
