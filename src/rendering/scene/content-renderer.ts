@@ -21,7 +21,7 @@ import { setHistoryFadeGate, type ElementFadeDirection } from "./element-fade-st
 import { SceneSelectionTraces } from "./selection-traces";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
-import type { SceneVisibilityState, VisibilityResult } from "./visibility-state";
+import type { SceneVisibilityState } from "./visibility-state";
 import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
 import { markSceneOrderDirty, writeDirtySet } from "./dirty-set-work";
 import { commitVisibleBands, mountedVisibleIds } from "./visibility-order";
@@ -247,7 +247,19 @@ export class SceneContentRenderer {
       this.#selectionTraces.prune(this.#mounted);
     }
     if (result.committedVisibility !== undefined) {
-      this.commitVisibility(result.committedVisibility, result.orderProofEpoch);
+      commitVisibleBands(
+        this.#committedIds,
+        this.#committedCounts,
+        result.committedVisibility,
+        result.orderProofEpoch === undefined
+          ? undefined
+          : {
+              mounted: this.#mounted,
+              store: this.#store,
+              epoch: result.orderProofEpoch,
+            },
+        result.pending ? undefined : this.#visibility.removalReuse,
+      );
       this.#selectionTraces.prune(this.#mounted);
     }
     this.#newlyMountedIds = result.newlyMountedIds;
@@ -482,19 +494,5 @@ export class SceneContentRenderer {
     entry.displayedElement = record.element;
     if (!this.#selectionTraces.update(entry, record.element, entry.displayedPathParts, publication))
       this.#selectionDirty.add(id);
-  }
-  private commitVisibility(visibility: VisibilityResult, orderProofEpoch?: number): void {
-    commitVisibleBands(
-      this.#committedIds,
-      this.#committedCounts,
-      visibility,
-      orderProofEpoch === undefined
-        ? undefined
-        : {
-            mounted: this.#mounted,
-            store: this.#store,
-            epoch: orderProofEpoch,
-          },
-    );
   }
 }

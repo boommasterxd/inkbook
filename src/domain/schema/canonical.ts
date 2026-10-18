@@ -48,10 +48,11 @@ export function isCanonicalGeometryNumber(value: unknown): value is number {
 export function isCanonicalUnitIntervalNumber(value: unknown): value is number {
   return (
     typeof value === "number" &&
+    Number.isFinite(value) &&
     value >= 0 &&
     value <= 1 &&
     !Object.is(value, -0) &&
-    Object.is(value, canonicalizeUnitIntervalNumber(value))
+    Object.is(value, Math.round(value * 10_000) / 10_000)
   );
 }
 

@@ -121,6 +121,8 @@ it.each([
     expect(index.query(bounds, scratch)).toBe(1);
     expect(scratch.at(0)).toBe(0);
     expect(observed.counts).toEqual({ columns: 1, cells: 1, slots: 1 });
+    expect(observed.comparisons()).toBeGreaterThan(0);
+    expect(observed.comparisons()).toBeLessThanOrEqual(3 * observed.comparisonsPerLookupBound);
     observed.reset();
     const cursor = index.beginQuery(bounds);
     const ids: number[] = [];
@@ -138,6 +140,7 @@ it.each([
     expect(done).toBe(true);
     expect(ids).toEqual([0]);
     expect(observed.counts).toEqual({ columns: 1, cells: 1, slots: 1 });
+    expect(observed.comparisons()).toBeLessThanOrEqual(3 * observed.comparisonsPerLookupBound);
     expect(cursor.memoryUsage()).toBe(0);
   } finally {
     observed.restore();
@@ -164,6 +167,8 @@ it("retains dense 10,000-element lookup and cursor admission bounds", () => {
   try {
     expect(index.query(bounds, scratch)).toBe(25);
     expect(observed.counts).toEqual({ columns: 9, cells: 45, slots: 25 });
+    expect(observed.comparisons()).toBeGreaterThan(0);
+    expect(observed.comparisons()).toBeLessThanOrEqual(79 * observed.comparisonsPerLookupBound);
     observed.reset();
     const cursor = index.beginQuery(bounds);
     const ids: number[] = [];
@@ -178,6 +183,7 @@ it("retains dense 10,000-element lookup and cursor admission bounds", () => {
     }
     expect(ids).toEqual(Array.from({ length: scratch.count }, (_, offset) => scratch.at(offset)));
     expect(observed.counts).toEqual({ columns: 9, cells: 45, slots: 25 });
+    expect(observed.comparisons()).toBeLessThanOrEqual(79 * observed.comparisonsPerLookupBound);
     expect(cursor.memoryUsage()).toBe(0);
   } finally {
     observed.restore();

@@ -1,4 +1,4 @@
-import type { CellRange, IndexedEntry, SpatialReplacement } from "./index-state";
+import type { IndexedEntry, SpatialReplacement } from "./index-state";
 import { bottomHeapEntry, heapifyBottomAt, type BottomHeapEntry } from "./max-bottom-heap";
 import {
   stageSpatialMutationTimeSliced,
@@ -14,7 +14,12 @@ import type { SpatialReplacementPreparationScheduler } from "./replacement-prepa
 // The shadow keeps immutable entry geometry, while rebuilding its own buckets and heap.
 export interface SpatialMutationShadowPorts<Id, Shadow> {
   readonly mutation: MutationPorts<Id>;
-  readonly entries: ReadonlyMap<Id, IndexedEntry<Id>>;
+  readonly entries: Pick<ReadonlyMap<Id, IndexedEntry<Id>>, "size" | "values">;
+  readonly prepareRemoval: (
+    stage: StagedSpatialMutation<Id>,
+    scheduler: SpatialReplacementPreparationScheduler,
+    generation: number,
+  ) => Promise<PreparedSpatialMutation | "cancelled">;
   readonly createShadow: () => Shadow;
   readonly appendRetained: (shadow: Shadow, entry: IndexedEntry<Id>) => IndexedEntry<Id>;
   readonly appendInserted: (
@@ -50,6 +55,9 @@ export async function prepareSpatialMutationTimeSliced<Id, Shadow>(
   if (stage.atomicWork <= MAX_ATOMIC_MUTATION_WORK) {
     const commit = ports.mutation.commit;
     return stage.commitWith(() => commit(stage.removed, stage.inserted));
+  }
+  if (stage.inserted.length === 0 && stage.removedIds.size < ports.entries.size) {
+    return ports.prepareRemoval(stage, scheduler, generation);
   }
   const prepared = await buildShadow(stage, ports, scheduler, generation);
   if (prepared === "cancelled") return prepared;
@@ -110,18 +118,4 @@ function shadowCheckpoint(
   if (admission === false) return false;
   if (admission === true) return generation === currentGeneration();
   return admission.then((allowed) => allowed && generation === currentGeneration());
-}
-
-export function rangeFromEntry<Id>(entry: IndexedEntry<Id>): CellRange {
-  if (entry.overflow) {
-    return { maxCellX: 0, maxCellY: 0, minCellX: 0, minCellY: 0, overflow: true };
-  }
-  const keys = entry.cellKeys;
-  return {
-    minCellX: keys[0]!,
-    minCellY: keys[1]!,
-    maxCellX: keys[keys.length - 2]!,
-    maxCellY: keys[keys.length - 1]!,
-    overflow: false,
-  };
 }

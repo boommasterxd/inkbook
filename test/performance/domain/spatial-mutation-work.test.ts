@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 
 import * as bottomHeap from "../../../src/domain/spatial/max-bottom-heap";
 import { SpatialQueryScratch, UniformSpatialIndex } from "../../../src/domain/spatial/index";
+import { SpatialMap } from "../../../src/domain/spatial/spatial-map";
 
 const ELEMENT_COUNT = 10_000;
 const SLICE_WORK = 64;
@@ -14,6 +15,39 @@ const bounds = (id: number) => ({
   maxY: id * 256 + 2,
 });
 const insertions = Array.from({ length: ELEMENT_COUNT }, (_, id) => ({ id, bounds: bounds(id) }));
+
+it("appends new insertion ordinals without comparisons while bounding existing-key updates", () => {
+  const map = new SpatialMap<number, number>();
+  const state = map as unknown as {
+    ordinals: { compare: (first: bigint, second: bigint) => number };
+  };
+  const originalCompare = state.ordinals.compare.bind(state.ordinals);
+  let comparisons = 0;
+  const compare = vi.spyOn(state.ordinals, "compare").mockImplementation((first, second) => {
+    comparisons += 1;
+    compare.mockClear();
+    return originalCompare(first, second);
+  });
+  try {
+    for (let key = 0; key < ELEMENT_COUNT; key += 1) map.set(key, key);
+    expect(comparisons).toBe(0);
+    const keys = [...map.keys()];
+    map.set(3_333, -1);
+    expect(comparisons).toBeGreaterThan(0);
+    // An existing ordinal visits at most one AVL search path.
+    expect(comparisons).toBeLessThanOrEqual(2 * Math.ceil(Math.log2(ELEMENT_COUNT + 1)));
+    expect(map.get(3_333)).toBe(-1);
+    expect([...map.keys()]).toEqual(keys);
+    expect(map.delete(0)).toBe(true);
+    comparisons = 0;
+    map.set(0, -2);
+    expect(comparisons).toBe(0);
+    expect(map.size).toBe(ELEMENT_COUNT);
+    expect([...map.keys()]).toEqual([...keys.slice(1), 0]);
+  } finally {
+    compare.mockRestore();
+  }
+});
 
 it("bounds marker allocation and eliminates copies while an indexed 10K document grows", () => {
   const MarkerArray = Uint32Array;
@@ -70,7 +104,7 @@ it("bounds marker allocation and eliminates copies while an indexed 10K document
 });
 
 function observeMutationWork(index: UniformSpatialIndex<number>) {
-  const entries = (index as unknown as { entries: Map<number, unknown> }).entries;
+  const entries = (index as unknown as { entries: SpatialMap<number, unknown> }).entries;
   const originalGet = entries.get.bind(entries);
   const originalValues = entries.values.bind(entries);
   const sift = bottomHeap.heapifyBottomAt;
@@ -146,7 +180,7 @@ function observeMutationWork(index: UniformSpatialIndex<number>) {
   };
 }
 
-it("builds the retained spatial shadow with linear heap comparisons before atomic publication", async () => {
+it("prepares a partial spatial removal without rebuilding retained entries or extent heaps", async () => {
   const index = new UniformSpatialIndex<number>();
   index.insertMany(insertions);
   const observed = observeMutationWork(index);
@@ -161,13 +195,12 @@ it("builds the retained spatial shadow with linear heap comparisons before atomi
     if (prepared === "cancelled") throw new Error("Expected a prepared spatial cut.");
     expect(observed.counts().yields).toBeGreaterThan(0);
     expect(observed.counts().sliceWork).toBeLessThanOrEqual(MAX_SLICE_WORK);
-    expect(observed.counts().enumerations).toBe(ELEMENT_COUNT);
+    expect(observed.counts().enumerations).toBe(0);
     expect(observed.get).toHaveBeenCalledTimes(ELEMENT_COUNT / 2);
-    expect(observed.values).toHaveBeenCalledTimes(1);
-    expect(observed.attach).toHaveBeenCalledTimes(ELEMENT_COUNT / 2);
-    expect(observed.heapify).toHaveBeenCalledTimes(ELEMENT_COUNT / 4);
-    expect(observed.counts().comparisons).toBeGreaterThan(ELEMENT_COUNT / 2);
-    expect(observed.counts().comparisons).toBeLessThanOrEqual(ELEMENT_COUNT);
+    expect(observed.values).not.toHaveBeenCalled();
+    expect(observed.attach).not.toHaveBeenCalled();
+    expect(observed.heapify).not.toHaveBeenCalled();
+    expect(observed.counts().comparisons).toBe(0);
     expect(observed.push).not.toHaveBeenCalled();
     expect(index.query(bounds(0), scratch)).toBe(1);
     const workBeforeCommit = observed.counts();
@@ -176,13 +209,13 @@ it("builds the retained spatial shadow with linear heap comparisons before atomi
     expect(() => prepared.commit()).toThrow("stale");
     expect(index.size).toBe(ELEMENT_COUNT / 2);
     expect(index.membershipCount).toBe(ELEMENT_COUNT / 2);
-    expect(index.extentHeapEntryCount).toBe(ELEMENT_COUNT / 2);
+    expect(index.extentHeapEntryCount).toBe(ELEMENT_COUNT);
     expect(index.query(bounds(0), scratch)).toBe(0);
     expect(index.query(bounds(ELEMENT_COUNT - 1), scratch)).toBe(1);
     expect(index.getMaximumBottom()).toBe(bounds(ELEMENT_COUNT - 1).maxY);
     expect(oldCursor.advance(1).stale).toBe(true);
-    expect((index as unknown as { slots: readonly unknown[] }).slots.length).toBe(
-      ELEMENT_COUNT / 2,
+    expect((index as unknown as { slots: { readonly length: number } }).slots.length).toBe(
+      ELEMENT_COUNT,
     );
   } finally {
     observed.restore();

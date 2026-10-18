@@ -193,7 +193,7 @@ describe("atomic spatial mutation selection", () => {
         });
         if (plan === "cancelled") throw new Error("Expected a prepared boundary removal.");
         expect(index.size).toBe(6);
-        expect(scan).toHaveBeenCalledTimes(work === 1_024 ? 0 : 1);
+        expect(scan).not.toHaveBeenCalled();
         plan.commit();
         expect(index.membershipCount).toBe(1_026 - work);
         expect(query(index, near)).toEqual(work === 1_024 ? [4] : []);
@@ -311,7 +311,7 @@ describe("time-sliced spatial mutations", () => {
     expect(query(index, near)).toEqual(expect.arrayContaining([3, MAX_OVERFLOW_ELEMENTS]));
   });
 
-  it("cancels a partially built shadow without changing the live index", async () => {
+  it("cancels a partially prepared local removal without changing the live index", async () => {
     const index = new UniformSpatialIndex<number>();
     index.insertMany(
       Array.from({ length: 1_200 }, (_, id) => ({
@@ -320,15 +320,11 @@ describe("time-sliced spatial mutations", () => {
       })),
     );
     const entries = (index as unknown as { entries: Map<number, unknown> }).entries;
-    const originalValues = entries.values.bind(entries);
-    let shadowVisits = 0;
-    const values = vi.spyOn(entries, "values").mockImplementation(function* () {
-      for (const entry of originalValues()) {
-        shadowVisits += 1;
-        yield entry;
-      }
-      return undefined;
-    });
+    const values = vi.spyOn(entries, "values");
+    const prototype = UniformSpatialIndex.prototype as unknown as {
+      detachEntry: (...args: unknown[]) => void;
+    };
+    const detach = vi.spyOn(prototype, "detachEntry");
     let cancelled = false;
     try {
       const result = await index.prepareMutationTimeSliced(
@@ -336,20 +332,22 @@ describe("time-sliced spatial mutations", () => {
         [],
         {
           isCancelled: () => cancelled,
-          shouldYield: () => shadowVisits >= 2,
+          shouldYield: () => detach.mock.calls.length >= 2,
           yieldControl: async () => {
             cancelled = true;
           },
         },
       );
       expect(result).toBe("cancelled");
-      expect(shadowVisits).toBe(2);
+      expect(values).not.toHaveBeenCalled();
+      expect(detach).toHaveBeenCalledTimes(2);
       expect(index.size).toBe(1_200);
       expect(index.membershipCount).toBe(1_200);
       expect(index.getMaximumBottom()).toBe(10);
       expect(query(index, near)).toContain(0);
     } finally {
       values.mockRestore();
+      detach.mockRestore();
     }
   });
 });

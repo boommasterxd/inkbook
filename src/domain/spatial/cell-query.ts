@@ -1,11 +1,18 @@
 import { boundsIntersect, type SpatialBounds } from "./bounds";
-import type { CellColumns, CellRange, IndexedEntry } from "./index-state";
+import type {
+  CellColumnSource,
+  CellRange,
+  IndexedEntry,
+  SpatialColumnSource,
+  SpatialBucketSource,
+} from "./index-state";
+import { readSpatialSlot, type SpatialSlotSource } from "./slot-storage";
 import type { SpatialQueryScratch } from "./query-scratch";
 import { shouldVisitAxisRange } from "./cell-traversal-policy";
 
 export function visitSpatialCells<Id>(
-  cells: CellColumns,
-  slots: readonly (IndexedEntry<Id> | undefined)[],
+  cells: CellColumnSource,
+  slots: SpatialSlotSource<IndexedEntry<Id>>,
   range: CellRange,
   bounds: SpatialBounds,
   scratch: SpatialQueryScratch<Id>,
@@ -18,32 +25,32 @@ export function visitSpatialCells<Id>(
 }
 
 export function visitOverflowEntries<Id>(
-  overflowSlots: ReadonlySet<number>,
-  slots: readonly (IndexedEntry<Id> | undefined)[],
+  overflowSlots: Iterable<number>,
+  slots: SpatialSlotSource<IndexedEntry<Id>>,
   bounds: SpatialBounds,
   scratch: SpatialQueryScratch<Id>,
 ): void {
   for (const slot of overflowSlots) {
-    const entry = slots[slot];
+    const entry = readSpatialSlot(slots, slot);
     if (entry !== undefined) scratch.visit(slot, entry.id, boundsIntersect(entry, bounds));
   }
 }
 
 export function maximumOverflowBottom<Id>(
-  overflowSlots: ReadonlySet<number>,
-  slots: readonly (IndexedEntry<Id> | undefined)[],
+  overflowSlots: Iterable<number>,
+  slots: SpatialSlotSource<IndexedEntry<Id>>,
 ): number | undefined {
   let maximum: number | undefined;
   for (const slot of overflowSlots) {
-    const entry = slots[slot];
+    const entry = readSpatialSlot(slots, slot);
     if (entry !== undefined) maximum = Math.max(maximum ?? -Infinity, entry.maxY);
   }
   return maximum;
 }
 
 function visitCellRange<Id>(
-  cells: CellColumns,
-  slots: readonly (IndexedEntry<Id> | undefined)[],
+  cells: CellColumnSource,
+  slots: SpatialSlotSource<IndexedEntry<Id>>,
   range: CellRange,
   bounds: SpatialBounds,
   scratch: SpatialQueryScratch<Id>,
@@ -56,8 +63,8 @@ function visitCellRange<Id>(
 }
 
 function visitSparseCells<Id>(
-  cells: CellColumns,
-  slots: readonly (IndexedEntry<Id> | undefined)[],
+  cells: CellColumnSource,
+  slots: SpatialSlotSource<IndexedEntry<Id>>,
   range: CellRange,
   bounds: SpatialBounds,
   scratch: SpatialQueryScratch<Id>,
@@ -69,8 +76,8 @@ function visitSparseCells<Id>(
 }
 
 function visitColumn<Id>(
-  column: Map<number, Set<number>>,
-  slots: readonly (IndexedEntry<Id> | undefined)[],
+  column: SpatialColumnSource,
+  slots: SpatialSlotSource<IndexedEntry<Id>>,
   range: CellRange,
   bounds: SpatialBounds,
   scratch: SpatialQueryScratch<Id>,
@@ -90,13 +97,13 @@ function visitColumn<Id>(
 }
 
 function visitBucket<Id>(
-  bucket: ReadonlySet<number>,
-  slots: readonly (IndexedEntry<Id> | undefined)[],
+  bucket: SpatialBucketSource,
+  slots: SpatialSlotSource<IndexedEntry<Id>>,
   bounds: SpatialBounds,
   scratch: SpatialQueryScratch<Id>,
 ): void {
   for (const slot of bucket) {
-    const entry = slots[slot];
+    const entry = readSpatialSlot(slots, slot);
     if (entry !== undefined) scratch.visit(slot, entry.id, boundsIntersect(entry, bounds));
   }
 }

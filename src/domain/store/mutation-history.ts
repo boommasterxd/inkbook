@@ -1,11 +1,18 @@
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../commands/history";
+import { retainBandSnapshot } from "./band-snapshots";
 import type { RenderBand } from "../commands/render-bands";
 import type { InkElementV1 } from "../schema/public";
 import { mutableElementSteps } from "./immutability";
 import { elementMutationPayloadBytes } from "./mutation-payload";
 import type { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import { requireElementRecord } from "./record-access";
-import type { AppliedElementMutation, ElementMutation, ElementRecord } from "./types";
+import type {
+  AppliedElementMutation,
+  AppliedRetainedElementMutation,
+  ElementMutation,
+  ElementRecord,
+  RetainedElementMutation,
+} from "./types";
 
 interface HistorySource {
   readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
@@ -20,6 +27,13 @@ interface HistoryPreparation {
   readonly dirtyBands?: Readonly<Record<RenderBand, boolean>>;
   readonly ownedPayloadBytes?: number;
   readonly retainedReplay?: boolean;
+  readonly retainedOnly?: boolean;
+}
+
+const retainedDirections = new WeakSet<ElementMutation>();
+
+export function isRetainedMutationDirection(mutation: ElementMutation): boolean {
+  return retainedDirections.has(mutation);
 }
 
 export async function prepareMutationHistory(
@@ -37,6 +51,7 @@ export async function prepareMutationHistory(
     assertPayloadLimit(forwardBytes + reverseBytes + (state.ownedPayloadBytes ?? 0));
     return replay;
   }
+  if (state.retainedOnly) return retainedMutationHistory(state);
   const forward = trustedRemoval
     ? state.requested
     : await freezeMutation(state.requested, scheduler);
@@ -50,6 +65,30 @@ export async function prepareMutationHistory(
   const payloadBytes = forwardBytes + reverseBytes + (state.ownedPayloadBytes ?? 0);
   assertPayloadLimit(payloadBytes);
   return Object.freeze({ forward, payloadBytes, reverse });
+}
+
+function retainedMutationHistory(state: HistoryPreparation): AppliedRetainedElementMutation {
+  const direction = (bands: ElementMutation["bands"]): RetainedElementMutation => {
+    const mutation = Object.freeze({
+      bands: Object.freeze({
+        content: retainBandSnapshot(bands.content),
+        highlight: retainBandSnapshot(bands.highlight),
+      }),
+    }) as RetainedElementMutation;
+    retainedDirections.add(mutation);
+    return mutation;
+  };
+  const forward = direction(state.requested.bands);
+  const reverse = direction(state.source.bands);
+  const payloadBytes =
+    (forward.bands.content.length +
+      forward.bands.highlight.length +
+      reverse.bands.content.length +
+      reverse.bands.highlight.length) *
+      80 +
+    (state.ownedPayloadBytes ?? 0);
+  assertPayloadLimit(payloadBytes);
+  return Object.freeze({ forward, reverse, payloadBytes, retainedOnly: true });
 }
 
 function assertPayloadLimit(bytes: number): void {
@@ -96,6 +135,8 @@ async function reverseMutation(
   for (const band of ["highlight", "content"] as const) {
     if (dirtyBands?.[band] === false || requested.bands[band] === source.bands[band]) {
       reusableBands[band] = forward.bands[band];
+    } else {
+      reusableBands[band] = retainBandSnapshot(source.bands[band]);
     }
   }
   return freezeMutation(

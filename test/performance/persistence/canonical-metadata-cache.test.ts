@@ -17,14 +17,22 @@ it("serializes only replaced elements across a 10,000-stroke save and releases c
   const snapshot = createWorkerSnapshot(elements);
   const cache = new CanonicalMetadataCache(Object.isFrozen);
   let checkpoints = 0;
-  const checkpoint = async () => {
+  const checkpoint = () => {
     checkpoints += 1;
+    return undefined;
   };
   const canonicalize = vi.spyOn(canonical, "canonicalElement");
   const encode = vi.spyOn(TextEncoder.prototype, "encode");
+  const decode = vi.spyOn(TextDecoder.prototype, "decode");
   const sampleText = sampleValues.join(",");
   try {
-    const before = await cache.digest(snapshot, checkpoint);
+    const pending = cache.digest(snapshot, checkpoint);
+    // The unexpired shared budget admits the complete sample work before any microtask.
+    expect(pointReads).toBe(3_000_000);
+    expect(decode.mock.calls.length).toBe(0);
+    // One document prefix and two header fragments per stroke; samples stay as ASCII bytes.
+    expect(encode.mock.calls.length).toBe(20_001);
+    const before = await pending;
     expect(pointReads).toBe(3_000_000);
     expect(canonicalize).toHaveBeenCalledTimes(10_000);
     canonicalize.mockClear();
@@ -69,6 +77,7 @@ it("serializes only replaced elements across a 10,000-stroke save and releases c
   } finally {
     canonicalize.mockRestore();
     encode.mockRestore();
+    decode.mockRestore();
   }
 });
 

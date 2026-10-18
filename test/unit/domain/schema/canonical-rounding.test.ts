@@ -5,6 +5,7 @@ import {
   canonicalizeRotation,
   canonicalizeUnitIntervalNumber,
   isCanonicalGeometryNumber,
+  isCanonicalUnitIntervalNumber,
 } from "../../../../src/domain/schema/canonical";
 
 function reference(value: number, decimals = 3): number {
@@ -75,6 +76,40 @@ describe("canonical geometry rounding compatibility", () => {
     for (const value of [0, 0.00005, 0.12345, 0.49995, 0.50005, 0.99995, 1]) {
       expect(canonicalizeUnitIntervalNumber(value)).toBe(reference(value, 4));
     }
+  });
+
+  it("accepts every four-decimal pressure and rejects its immediate binary neighbors", () => {
+    let failure: { actual: boolean; expected: boolean; value: number } | null = null;
+    for (let step = 0; step <= 10_000; step += 1) {
+      const canonical = step / 10_000;
+      for (const value of [adjacent(canonical, -1), canonical, adjacent(canonical, 1)]) {
+        const expected = Object.is(value, canonical);
+        const actual = isCanonicalUnitIntervalNumber(value);
+        if (actual !== expected || Object.is(value, reference(value, 4)) !== expected) {
+          failure ??= { actual, expected, value };
+        }
+      }
+    }
+    expect(failure).toBeNull();
+  });
+
+  it.each([
+    undefined,
+    null,
+    "0.5",
+    true,
+    false,
+    Number.NaN,
+    Number.NEGATIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+    -0,
+    -0.0001,
+    1.0001,
+    0.00005,
+    0.12345,
+    0.99995,
+  ])("rejects invalid or noncanonical pressure %s", (value) => {
+    expect(isCanonicalUnitIntervalNumber(value)).toBe(false);
   });
 
   it.each([Number.NaN, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY])(

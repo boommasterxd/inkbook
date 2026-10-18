@@ -30,7 +30,7 @@ function isBottomEntryStale<Id>(
 
 function isBottomHeadStale<Id>(
   heap: readonly BottomHeapEntry<Id>[],
-  entries: ReadonlyMap<Id, CurrentBottomEntry>,
+  entries: Pick<ReadonlyMap<Id, CurrentBottomEntry>, "get">,
 ): boolean {
   const head = heap[0];
   return head !== undefined && isBottomEntryStale(head, entries.get(head.id));
@@ -39,15 +39,17 @@ function isBottomHeadStale<Id>(
 export function scanMaximumBottom<Id>(
   heap: BottomHeapEntry<Id>[],
   batches: readonly BottomHeapEntry<Id>[][],
-  entries: ReadonlyMap<Id, CurrentBottomEntry>,
+  entries: Pick<ReadonlyMap<Id, CurrentBottomEntry>, "get">,
   maxStalePops: number,
   overflowMaximum: number | undefined,
 ): {
   readonly cleanupPending: boolean;
   readonly maximum: number | undefined;
   readonly stalePops: number;
+  readonly batchStalePops: number;
 } {
   let stalePops = 0;
+  let batchStalePops = 0;
   let maximum: number | undefined;
   let cleanupPending = false;
   for (let heapIndex = 0; heapIndex <= batches.length; heapIndex += 1) {
@@ -55,6 +57,7 @@ export function scanMaximumBottom<Id>(
     while (stalePops < maxStalePops && isBottomHeadStale(currentHeap, entries)) {
       popMaximumBottom(currentHeap);
       stalePops += 1;
+      batchStalePops += Number(heapIndex !== 0);
     }
     const head = currentHeap[0];
     cleanupPending ||= head !== undefined && isBottomEntryStale(head, entries.get(head.id));
@@ -69,6 +72,7 @@ export function scanMaximumBottom<Id>(
           ? maximum
           : Math.max(maximum, overflowMaximum),
     stalePops,
+    batchStalePops,
   };
 }
 

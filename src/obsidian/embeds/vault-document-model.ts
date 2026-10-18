@@ -216,12 +216,7 @@ export async function prepareVaultElementRemoval(options: {
 }): ReturnType<EditableDocumentModel["prepareElementRemoval"]> {
   if (!options.active) return { status: "cancelled", token: null };
   const scheduler = options.scheduler(() => options.cancellation.isCancelled());
-  const mutation = await options.store.createRemovalMutationTimeSliced(options.ids, scheduler);
-  if (mutation === "cancelled" || options.cancellation.isCancelled()) {
-    return { status: "cancelled", token: null };
-  }
-  if (mutation === null) return { status: "noop", token: null };
-  return options.store.prepareElementMutation(mutation, scheduler);
+  return options.store.prepareElementRemoval(options.ids, scheduler);
 }
 
 export function createVaultElementPreparationActions(options: {

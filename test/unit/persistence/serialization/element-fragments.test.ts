@@ -303,7 +303,8 @@ describe("owned runtime fragment adoption", () => {
   it.each([false, true])("rechecks mutable unowned samples with a typed buffer=%s", (typed) => {
     const source = typed ? runtimeStroke() : createTestStroke();
     const cache = new ElementFragmentCache();
-    cache.replace(source.id, buildElementFragments(source));
+    const fragment = buildElementFragments(source);
+    cache.replace(source.id, fragment);
     source.points[0] = source.points[0]! + 0.001;
     const append = vi.spyOn(SampleBase64Writer.prototype, "append");
     const decode = vi.spyOn(TextDecoder.prototype, "decode");
@@ -311,7 +312,9 @@ describe("owned runtime fragment adoption", () => {
     cache.adopt(source);
 
     expect(append).toHaveBeenCalled();
-    expect(decode).toHaveBeenCalledOnce();
+    expect(
+      decode.mock.calls.filter(([input]) => input === fragment.canonicalMetadataUtf8),
+    ).toHaveLength(1);
     expect(cache.current(source)).toBeUndefined();
   });
 

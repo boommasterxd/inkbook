@@ -7,6 +7,7 @@ import { prepareRemovalMutation } from "./removal-mutation";
 import { createRemovalTransition } from "./removal-transition";
 import { ownedHistoryReplaySteps } from "./owned-history-replay";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import { isRetainedMutationDirection } from "./mutation-history";
 import type { MutationOrder } from "./mutation-order";
 import { prepareArrangementMutation } from "./arrangement-mutation";
 import type { ArrangeAction } from "../commands/arrange";
@@ -93,7 +94,24 @@ export class PreparedElementMutations {
     scheduler: StoreSliceScheduler,
     replay?: AppliedElementMutation,
   ): Promise<PreparedElementMutationResult> {
+    if (isRetainedMutationDirection(mutation)) {
+      throw new RangeError("Opaque history directions require prepareHistoryReplay.");
+    }
     return this.#prepare(mutation, scheduler, replay);
+  }
+
+  /** Retain canonical records without exposing duplicate mutable sample payloads. */
+  public async prepareElementRemoval(
+    ids: ReadonlySet<string> | readonly string[],
+    scheduler: StoreSliceScheduler,
+  ): Promise<PreparedElementMutationResult> {
+    const version = this.#readVersion();
+    const mutation = await this.createRemovalMutationTimeSliced(ids, scheduler);
+    if (mutation === "cancelled" || version !== this.#readVersion() || scheduler.isCancelled?.()) {
+      return { status: "cancelled", token: null };
+    }
+    if (mutation === null) return { status: "noop", token: null };
+    return this.#prepare(mutation, scheduler, undefined, false, true);
   }
 
   public async prepareArrangement(
@@ -162,6 +180,7 @@ export class PreparedElementMutations {
     scheduler: StoreSliceScheduler,
     replay?: AppliedElementMutation,
     retained = false,
+    retainedOnly = false,
   ): Promise<PreparedElementMutationResult> {
     const source = this.#readSource();
     const work = {
@@ -186,6 +205,7 @@ export class PreparedElementMutations {
     let plan: ElementMutationPlan | "cancelled" | null;
     try {
       plan = await planElementMutation(source, mutation, work, replay, {
+        retainedOnly,
         trustedRemoval:
           replay === undefined &&
           this.#trustedRemovalVersions.get(mutation) === source.mutationVersion,
@@ -199,7 +219,11 @@ export class PreparedElementMutations {
       // the staged mutable band and rank arrays after this handoff.
       this.#trustedOrders.delete(mutation);
     }
-    if (plan === "cancelled" || source.mutationVersion !== this.#readVersion()) {
+    if (
+      plan === "cancelled" ||
+      source.mutationVersion !== this.#readVersion() ||
+      scheduler.isCancelled?.()
+    ) {
       return { status: "cancelled", token: null };
     }
     if (plan === null) return { status: "noop", token: null };

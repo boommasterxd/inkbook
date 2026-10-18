@@ -104,6 +104,7 @@ export function firstMountedSuccessor(
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { SceneStorePort } from "./types";
 import type { VisibilityResult } from "./visibility-types";
+import type { VisibilityRemovalReuse } from "./visibility-removal";
 
 export function commitVisibleBands(
   ids: Record<RenderBand, readonly (string | undefined)[]>,
@@ -114,7 +115,9 @@ export function commitVisibleBands(
     readonly store: SceneStorePort;
     readonly epoch: number;
   },
+  removalReuse?: VisibilityRemovalReuse,
 ): void {
+  let generation = removalReuse?.beginCommit(visibility);
   for (const band of ["highlight", "content"] as const) {
     const visible = visibility[band];
     ids[band] = visible.ids;
@@ -127,9 +130,11 @@ export function commitVisibleBands(
       if (entry !== undefined && record?.band === entry.band && entry.detachedPathCount === 0) {
         entry.committedRank = record.rank;
         entry.committedOrderEpoch = proof.epoch;
-      }
+        if (generation !== undefined) removalReuse?.updateRank(entry.id, record.rank);
+      } else generation = undefined;
     }
   }
+  removalReuse?.finishCommit(visibility, generation, proof !== undefined);
 }
 
 /** Refreshes cached ranks and reports whether the published band may require sorting. */

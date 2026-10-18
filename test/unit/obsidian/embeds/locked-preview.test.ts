@@ -166,15 +166,16 @@ it("pauses detached preparation during input and publishes only the latest descr
   });
   preview.setBackgroundWait(() => paused);
   const creates = vi.spyOn(document, "createElementNS");
+  let ready: Promise<void> | undefined;
   for (const revision of [2, 3]) {
     preview.setDescriptor({
       aspectRatio: revision,
       contentIdentity: { ...CONTENT_IDENTITY, revision },
       safeSvg: SAFE_PREVIEW_SVG.replace("</svg>", `<path d="M0 0L${revision} ${revision}"/></svg>`),
     });
+    ready ??= preview.ensureReady();
+    await Promise.resolve();
   }
-  const ready = preview.ensureReady();
-  await Promise.resolve();
   expect(creates).not.toHaveBeenCalled();
   expect(button.querySelector("path")).toBeNull();
   resume();
@@ -209,6 +210,38 @@ it("settles lock readiness when disposed during an input pause without building 
   preview.dispose();
   await ready;
   expect(creates).not.toHaveBeenCalled();
+});
+
+it("cancels paused descriptor work when a hidden surface receives a newer revision", async () => {
+  const { button, preview } = await preparedPreview();
+  preview.setBackgroundWait(() => new Promise<void>(() => undefined));
+  const builder = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
+  const creates = vi.spyOn(document, "createElementNS");
+  preview.setDescriptor({
+    aspectRatio: 2,
+    contentIdentity: { ...CONTENT_IDENTITY, revision: 2 },
+    safeSvg: SAFE_PREVIEW_SVG,
+  });
+  const obsolete = builder.mock.results[0]?.value as Promise<SVGSVGElement | undefined>;
+  await Promise.resolve();
+  button.hidden = true;
+  preview.setDescriptor({
+    aspectRatio: 3,
+    contentIdentity: { ...CONTENT_IDENTITY, revision: 3 },
+    safeSvg: SAFE_PREVIEW_SVG.replace("</svg>", '<path d="M0 0L3 3"/></svg>'),
+  });
+  await expect(obsolete).resolves.toBeUndefined();
+  expect(creates).not.toHaveBeenCalled();
+  expect(builder).toHaveBeenCalledOnce();
+  preview.setBackgroundWait(undefined);
+  await preview.ensureReady();
+  expect(builder).toHaveBeenCalledTimes(2);
+  expect(creates).toHaveBeenCalledTimes(2);
+  expect(button.querySelector("path")).toBeNull();
+  button.hidden = false;
+  preview.refresh();
+  expect(button.querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
+  preview.dispose();
 });
 
 it("settles validated source identity while detached DOM preparation waits for input", async () => {

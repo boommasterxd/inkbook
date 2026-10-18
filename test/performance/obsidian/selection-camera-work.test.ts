@@ -1,6 +1,6 @@
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import * as transforms from "../../../src/editor/selection/transforms";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { ElementStore } from "../../../src/domain/store/public";
 import { MAX_STROKE_POINTS, type InkElementV1 } from "../../../src/domain/schema/public";
 import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
@@ -27,6 +27,12 @@ import { arrangeSelectionAvailability } from "../../../src/obsidian/embeds/activ
 import * as strokePosition from "../../../src/domain/geometry/stroke-position";
 import { observeArrangementBandReads } from "../../fixtures/domain/arrangement-work";
 import { observeStrokePointBuilds } from "../../fixtures/domain/stroke-point-work";
+import { observeSelectionStoreMethod } from "../../fixtures/obsidian/selection-store-work";
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+});
 
 function fixture(elements: readonly InkElementV1[]) {
   const store = new ElementStore(elements);
@@ -63,32 +69,32 @@ function fixture(elements: readonly InkElementV1[]) {
 function largeSelectionFixture() {
   const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
   const test = fixture(elements);
-  return { elements, test, read: vi.spyOn(test.sceneStore, "get") };
+  return { elements, test, read: observeSelectionStoreMethod(test.sceneStore, "get") };
 }
 
 it("reprojects 10,000 selected elements without rereading them until selection or revision changes", () => {
   const { elements, test, read } = largeSelectionFixture();
   try {
     test.interaction.renderCameraSelection();
-    expect(read).toHaveBeenCalledTimes(elements.length);
-    read.mockClear();
+    expect(read.work.calls).toBe(elements.length);
+    read.clear();
     for (const zoom of [1, 2, 0.5]) {
       test.state.zoom = zoom;
       test.interaction.renderCameraSelection();
     }
-    expect(read).not.toHaveBeenCalled();
+    expect(read.work.calls).toBe(0);
     test.state.revision += 1;
     test.interaction.renderCameraSelection();
-    expect(read).toHaveBeenCalledTimes(elements.length);
-    read.mockClear();
+    expect(read.work.calls).toBe(elements.length);
+    read.clear();
     test.state.selection = new Set([elements[0]!.id]);
     test.interaction.renderCameraSelection();
-    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.work.calls).toBe(1);
     test.state.selection = new Set();
     test.interaction.renderCameraSelection();
     expect(test.renderer.setSelectionOverlayPath).toHaveBeenLastCalledWith(null, "accent", null);
   } finally {
-    read.mockRestore();
+    read.restore();
     test.interaction.dispose();
     test.sceneStore.release();
   }
@@ -108,13 +114,13 @@ it("restores a cancelled 10,000-stroke handle preview from retained selection ge
     if (handle === undefined) throw new Error("Expected a resize handle.");
     const pointer = { ...handle.point, pointerId: 1, pointerType: "mouse" as const };
     expect(test.interaction.pointerDown(pointer)).toBe(true);
-    read.mockClear();
+    read.clear();
 
     expect(test.interaction.cancel(pointer.pointerId)).toBe(true);
-    expect(read).not.toHaveBeenCalled();
+    expect(read.work.calls).toBe(0);
     expect(test.renderer.setSelectionOverlayPath).toHaveBeenCalled();
   } finally {
-    read.mockRestore();
+    read.restore();
     test.interaction.dispose();
     test.sceneStore.release();
   }
@@ -166,7 +172,7 @@ it.each(
     const history = new ActiveEditorHistory(model);
     const prepared = activeEditorPreparedHistory(model, history);
     const geometry = observeStrokePointBuilds();
-    const materialize = vi.spyOn(store, "materializeBandOrder");
+    const materialize = observeSelectionStoreMethod(store, "materializeBandOrder");
     try {
       if (asynchronous) {
         const session = new SelectionHandleSession({
@@ -220,13 +226,13 @@ it.each(
       expect(geometry.work.historyClears).toBeLessThanOrEqual(
         Math.ceil(committedPointBuilds / 256),
       );
-      expect(materialize).not.toHaveBeenCalled();
+      expect(materialize.work.calls).toBe(0);
       expect(store.instrumentation.bandScans).toBe(0);
       expect(store.instrumentation.snapshotMaterializations).toBe(0);
       expect(history.commandCount).toBe(1);
     } finally {
       geometry.restore();
-      materialize.mockRestore();
+      materialize.restore();
       prepared.dispose();
       history.dispose();
     }
@@ -239,8 +245,8 @@ it.each([10, 10_000])(
     const elements = Array.from({ length: size }, (_, index) => indexedStroke(index));
     const store = new ElementStore(elements);
     const sceneStore = new ElementSceneStore(store);
-    const read = vi.spyOn(sceneStore, "get");
-    const materialize = vi.spyOn(sceneStore, "materializeBandOrder");
+    const read = observeSelectionStoreMethod(sceneStore, "get");
+    const materialize = observeSelectionStoreMethod(sceneStore, "materializeBandOrder");
     store.resetInstrumentation();
     try {
       expect(arrangeSelectionAvailability(sceneStore, new Set([elements[1]!.id]))).toEqual({
@@ -249,13 +255,14 @@ it.each([10, 10_000])(
         "send-backward": true,
         "send-to-back": true,
       });
-      expect(read).toHaveBeenCalledExactlyOnceWith(elements[1]!.id);
-      expect(materialize).not.toHaveBeenCalled();
+      expect(read.work.calls).toBe(1);
+      expect(read.work.lastArguments).toEqual([elements[1]!.id]);
+      expect(materialize.work.calls).toBe(0);
       expect(store.instrumentation.bandScans).toBe(0);
       expect(store.instrumentation.fullStoreScans).toBe(0);
     } finally {
-      read.mockRestore();
-      materialize.mockRestore();
+      read.restore();
+      materialize.restore();
       sceneStore.release();
     }
   },
@@ -328,14 +335,8 @@ async function scheduledDocumentFixture(maximum = false) {
     work.maxPoints = Math.max(work.maxPoints, work.points);
     return actualPoint(...args);
   });
-  const reads = vi.spyOn(store, "get").mockImplementation((id) => {
-    countRead();
-    return ElementStore.prototype.get.call(store, id);
-  });
-  const ranks = vi.spyOn(store, "getRank").mockImplementation((id) => {
-    countRead();
-    return ElementStore.prototype.getRank.call(store, id);
-  });
+  const reads = observeSelectionStoreMethod(store, "get", countRead);
+  const ranks = observeSelectionStoreMethod(store, "getRank", countRead);
   const committed = () => {
     revision += 1;
   };
@@ -376,8 +377,8 @@ async function scheduledDocumentFixture(maximum = false) {
       documentHistory.dispose();
       history.dispose();
       points.mockRestore();
-      reads.mockRestore();
-      ranks.mockRestore();
+      reads.restore();
+      ranks.restore();
       orders.mockRestore();
       expect(leaseDepth).toBe(0);
     },
@@ -455,7 +456,7 @@ it.each(["bring-forward", "send-backward", "bring-to-front", "send-to-back"] as 
     const test = await scheduledDocumentFixture();
     const publications = vi.fn();
     test.store.subscribe(publications);
-    const materialize = vi.spyOn(test.store, "materializeBandOrder");
+    const materialize = observeSelectionStoreMethod(test.store, "materializeBandOrder");
     const selection = new Set(
       test.originals.filter((_, index) => index % 4 < 2).map(({ element }) => element.id),
     );
@@ -489,10 +490,10 @@ it.each(["bring-forward", "send-backward", "bring-to-front", "send-to-back"] as 
       );
       expect(test.work.yields).toBeGreaterThan(0);
       expect(test.work.maxReads).toBeLessThanOrEqual(257);
-      expect(materialize).not.toHaveBeenCalled();
+      expect(materialize.work.calls).toBe(0);
       expect(test.priorities.every((priority) => priority === "frame")).toBe(true);
     } finally {
-      materialize.mockRestore();
+      materialize.restore();
       test.cleanup();
     }
   },

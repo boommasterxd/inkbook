@@ -1,6 +1,8 @@
 import { expect, it, vi } from "vitest";
+import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
 import { PreviewIdleScheduler } from "../../../../src/obsidian/embeds/preview-idle-scheduler";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
 
 function fixture() {
   let releaseBudget: (() => void) | undefined;
@@ -134,3 +136,68 @@ it("keeps idle gates and available shared admission synchronous", () => {
   scheduler.dispose();
   expect(scheduler.checkpoint()).toBeUndefined();
 });
+
+it("removes a superseded admission without cancelling the replacement queued before it settles", async () => {
+  const host = new ManualHost();
+  const workScheduler = new SharedFrameScheduler(host);
+  const checkpoint = vi.spyOn(workScheduler, "checkpoint");
+  const cancelFrame = vi.spyOn(host, "cancelFrame");
+  const scheduler = new PreviewIdleScheduler(workScheduler);
+  host.time = workScheduler.deadline();
+  const obsolete = new AbortController();
+  const pending = scheduler.checkpoint(false, obsolete.signal);
+  const settled = expect(pending).rejects.toThrow("Superseded preview.");
+  const obsoleteSignal = checkpoint.mock.calls[0]![0]!;
+  const remove = vi.spyOn(obsoleteSignal, "removeEventListener");
+  expect(host.pendingFrames).toBe(1);
+  obsolete.abort(new Error("Superseded preview."));
+  expect(host.pendingFrames).toBe(0);
+  expect(host.hasTimer(50)).toBe(false);
+  expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  const replacement = new AbortController();
+  const current = scheduler.checkpoint(false, replacement.signal);
+  await settled;
+  expect(cancelFrame).toHaveBeenCalledOnce();
+  expect(host.frameRequests).toBe(2);
+  expect(host.pendingFrames).toBe(1);
+  expect(checkpoint.mock.calls[1]![0]!.aborted).toBe(false);
+  host.time = host.frameInterval;
+  host.frame();
+  await current;
+  scheduler.dispose();
+  workScheduler.dispose();
+  expect(host.pendingTimers).toBe(0);
+});
+
+it.each(["success", "error", "dispose"] as const)(
+  "releases the linked admission listener and scheduler resources after %s",
+  async (outcome) => {
+    const host = new ManualHost();
+    const workScheduler = new SharedFrameScheduler(host);
+    const checkpoint = vi.spyOn(workScheduler, "checkpoint");
+    const scheduler = new PreviewIdleScheduler(workScheduler);
+    const operation = new AbortController();
+    host.time = workScheduler.deadline();
+    const pending = scheduler.checkpoint(false, operation.signal);
+    const signal = checkpoint.mock.calls[0]![0]!;
+    const remove = vi.spyOn(signal, "removeEventListener");
+    const settled =
+      outcome === "error"
+        ? expect(pending).rejects.toThrow("disposed")
+        : expect(pending).resolves.toBeUndefined();
+    if (outcome === "success") {
+      host.time = host.frameInterval;
+      host.frame();
+    } else if (outcome === "error") workScheduler.dispose();
+    else scheduler.dispose();
+    await settled;
+    expect(remove).toHaveBeenCalledExactlyOnceWith("abort", expect.any(Function));
+    expect(host.pendingFrames).toBe(0);
+    expect(host.hasTimer(50)).toBe(false);
+    operation.abort();
+    expect(remove).toHaveBeenCalledOnce();
+    scheduler.dispose();
+    workScheduler.dispose();
+    expect(host.pendingTimers).toBe(0);
+  },
+);

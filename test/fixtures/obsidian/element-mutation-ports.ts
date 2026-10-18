@@ -75,16 +75,13 @@ export function elementMutationPorts(
         ? store.prepareHistoryReplay(mutation, scheduler, cancellation.replay)
         : store.prepareElementMutation(mutation, scheduler, cancellation.replay);
     },
-    prepareElementRemoval: async (ids, cancellation) => {
+    prepareElementRemoval: (ids, cancellation) => {
       const scheduler = {
         isCancelled: () => cancellation.isCancelled(),
         shouldYield: () => work.shouldYield(),
         yieldControl: () => work.yieldControl(),
       };
-      const mutation = await store.createRemovalMutationTimeSliced(ids, scheduler);
-      if (mutation === "cancelled") return { status: "cancelled", token: null };
-      if (mutation === null) return { status: "noop", token: null };
-      return store.prepareElementMutation(mutation, scheduler);
+      return store.prepareElementRemoval(ids, scheduler);
     },
   };
 }
