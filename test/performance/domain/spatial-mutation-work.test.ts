@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 
 import * as bottomHeap from "../../../src/domain/spatial/max-bottom-heap";
 import { SpatialQueryScratch, UniformSpatialIndex } from "../../../src/domain/spatial/index";
-import type { SpatialMap } from "../../../src/domain/spatial/spatial-map";
+import { SpatialMap } from "../../../src/domain/spatial/spatial-map";
 
 const ELEMENT_COUNT = 10_000;
 const SLICE_WORK = 64;
@@ -15,6 +15,39 @@ const bounds = (id: number) => ({
   maxY: id * 256 + 2,
 });
 const insertions = Array.from({ length: ELEMENT_COUNT }, (_, id) => ({ id, bounds: bounds(id) }));
+
+it("appends new insertion ordinals without comparisons while bounding existing-key updates", () => {
+  const map = new SpatialMap<number, number>();
+  const state = map as unknown as {
+    ordinals: { compare: (first: bigint, second: bigint) => number };
+  };
+  const originalCompare = state.ordinals.compare.bind(state.ordinals);
+  let comparisons = 0;
+  const compare = vi.spyOn(state.ordinals, "compare").mockImplementation((first, second) => {
+    comparisons += 1;
+    compare.mockClear();
+    return originalCompare(first, second);
+  });
+  try {
+    for (let key = 0; key < ELEMENT_COUNT; key += 1) map.set(key, key);
+    expect(comparisons).toBe(0);
+    const keys = [...map.keys()];
+    map.set(3_333, -1);
+    expect(comparisons).toBeGreaterThan(0);
+    // An existing ordinal visits at most one AVL search path.
+    expect(comparisons).toBeLessThanOrEqual(2 * Math.ceil(Math.log2(ELEMENT_COUNT + 1)));
+    expect(map.get(3_333)).toBe(-1);
+    expect([...map.keys()]).toEqual(keys);
+    expect(map.delete(0)).toBe(true);
+    comparisons = 0;
+    map.set(0, -2);
+    expect(comparisons).toBe(0);
+    expect(map.size).toBe(ELEMENT_COUNT);
+    expect([...map.keys()]).toEqual([...keys.slice(1), 0]);
+  } finally {
+    compare.mockRestore();
+  }
+});
 
 it("bounds marker allocation and eliminates copies while an indexed 10K document grows", () => {
   const MarkerArray = Uint32Array;

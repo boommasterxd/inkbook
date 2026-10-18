@@ -12,7 +12,7 @@ class SpatialKeyOrder<Key> {
   private nextIdentity = 0n;
 
   public compare(first: Key, second: Key): number {
-    if (first === second || (Number.isNaN(first) && Number.isNaN(second))) return 0;
+    if (first === second) return 0;
     const firstType = typeof first;
     const secondType = typeof second;
     if (firstType !== secondType) return firstType < secondType ? -1 : 1;
@@ -20,8 +20,9 @@ class SpatialKeyOrder<Key> {
     if (firstType === "object" || firstType === "function") {
       return this.identity(first) < this.identity(second) ? -1 : 1;
     }
-    if (Number.isNaN(first) || Number.isNaN(second)) return Number.isNaN(first) ? -1 : 1;
-    return first! < second! ? -1 : 1;
+    if (first! < second!) return -1;
+    if (first! > second!) return 1;
+    return Number.isNaN(first) ? (Number.isNaN(second) ? 0 : -1) : 1;
   }
 
   private identity(key: Key): bigint {
@@ -94,16 +95,16 @@ export class SpatialMap<Key, Value> {
       change,
       this.owner,
     );
-    this.ordered = setSpatialNode(
-      this.ordered,
-      ordinal,
-      [storedKey, value],
-      this.ordinals,
-      {
-        added: false,
-      },
-      this.owner,
-    );
+    this.ordered = change.added
+      ? appendSpatialNode(this.ordered, ordinal, [storedKey, value], this.owner)
+      : setSpatialNode(
+          this.ordered,
+          ordinal,
+          [storedKey, value],
+          this.ordinals,
+          { added: false },
+          this.owner,
+        );
     this.size += Number(change.added);
     return this;
   }
@@ -224,6 +225,19 @@ function balance<Key, Value>(
     return rotateLeft(node, owner);
   }
   return node;
+}
+
+/** A new insertion ordinal is greater than every retained key, including after deletions. */
+function appendSpatialNode<Key, Value>(
+  node: SpatialNode<Key, Value> | undefined,
+  key: Key,
+  value: Value,
+  owner: object,
+): SpatialNode<Key, Value> {
+  if (node === undefined) return createSpatialNode(key, value, owner);
+  const editable = ownSpatialNode(node, owner);
+  editable.right = appendSpatialNode(node.right, key, value, owner);
+  return balance(editable, owner);
 }
 
 function setSpatialNode<Key, Value>(

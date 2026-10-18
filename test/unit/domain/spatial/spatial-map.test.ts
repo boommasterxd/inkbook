@@ -36,8 +36,8 @@ describe("persistent spatial storage", () => {
         expect(fork.delete(key)).toBe(expected.delete(key));
         expect(fork.delete(key)).toBe(false);
       }
-      fork.set(6, -1).set(200, 1);
-      expected.set(6, -1).set(200, 1);
+      fork.set(6, -1).set(200, 1).set(1, 3);
+      expected.set(6, -1).set(200, 1).set(1, 3);
       expect([...fork]).toEqual([...expected]);
       expect([...fork.keys()]).toEqual([...expected.keys()]);
       expect([...fork.values()]).toEqual([...expected.values()]);
@@ -96,6 +96,28 @@ describe("spatial key identity", () => {
     scratch.release();
   });
 
+  it.each([
+    [NaN, -Infinity, -0, 1, Infinity],
+    [Infinity, 1, 0, -Infinity, NaN],
+  ])("preserves numeric key lookup and deletion for insertion order %j", (...keys) => {
+    const map = new SpatialMap<number, number>();
+    const expected = new Map<number, number>();
+    keys.forEach((key, value) => {
+      map.set(key, value);
+      expected.set(key, value);
+    });
+    map.set(NaN, 10).set(-0, 20);
+    expected.set(NaN, 10).set(-0, 20);
+    expect([...map]).toEqual([...expected]);
+    for (const key of [NaN, -Infinity, -0, 0, 1, Infinity]) {
+      expect(map.get(key)).toBe(expected.get(key));
+    }
+    for (const key of keys) {
+      expect(map.delete(key)).toBe(expected.delete(key));
+      expect([...map]).toEqual([...expected]);
+    }
+  });
+
   it("preserves identity and insertion order beyond the safe-integer lifetime boundary", () => {
     const map = new SpatialMap<object, number>();
     const state = map as unknown as { nextOrdinal: bigint; order: { nextIdentity: bigint } };
@@ -104,11 +126,15 @@ describe("spatial key identity", () => {
     const first = {};
     const second = {};
     const third = {};
+    const fourth = {};
     map.set(first, 1).set(second, 2);
     const fork = map.fork();
     fork.set(third, 3).set(first, 4);
-    expect([...map.values()]).toEqual([1, 2]);
+    map.set(fourth, 5);
+    expect([...map.values()]).toEqual([1, 2, 5]);
     expect([...fork.keys()]).toEqual([first, second, third]);
+    expect(map.get(third)).toBeUndefined();
+    expect(fork.get(fourth)).toBeUndefined();
     expect(fork.get(first)).toBe(4);
     expect(fork.get(second)).toBe(2);
     expect(fork.delete(second)).toBe(true);
