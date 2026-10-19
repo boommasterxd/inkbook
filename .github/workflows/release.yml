@@ -48,11 +48,6 @@ jobs:
         run: npm ci
       - name: Run release quality gate
         run: npm run ci:quality
-      - name: Set up performance Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "24.x"
-          check-latest: true
       - name: Run release performance gate
         run: npm run benchmark
       - name: Publish release
