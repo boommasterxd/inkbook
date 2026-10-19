@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanupRepositories, commit, createRepository } from "./ci-selection-fixtures.mjs";
 
@@ -29,6 +29,13 @@ const tooling = Object.fromEntries(
 );
 
 afterEach(cleanupRepositories);
+afterEach(() => vi.unstubAllEnvs());
+beforeEach(() => {
+  vi.stubEnv("EXPECTED_MODE", "full");
+  vi.stubEnv("EXPECTED_SHARED", "true");
+  vi.stubEnv("EXPECTED_CADENCE", "true");
+  vi.stubEnv("EXPECTED_BUILD", "false");
+});
 
 async function fixture() {
   return createRepository({
@@ -52,6 +59,10 @@ function run(context, args = [], overrides = {}) {
     timeout: 10_000,
     env: {
       ...process.env,
+      EXPECTED_MODE: undefined,
+      EXPECTED_SHARED: undefined,
+      EXPECTED_CADENCE: undefined,
+      EXPECTED_BUILD: undefined,
       CI_BASE: context.base,
       CI_HEAD: "HEAD",
       CI_EVENT: "pull_request",
@@ -62,7 +73,7 @@ function run(context, args = [], overrides = {}) {
   });
 }
 
-describe("CI planner entrypoint", () => {
+describe("CI planner entrypoint with inherited CI expectations", () => {
   it("validates a docs-only PR and publishes a real plan without installed dependencies", async () => {
     const context = await fixture();
     await commit(context.root, {

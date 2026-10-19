@@ -89,6 +89,7 @@ export async function qualityCommands(plan, root, npmEntry, forceFull = false) {
           resolve(root, "node_modules/vitest/vitest.mjs"),
           "run",
           ...tests,
+          "--reporter=default",
           "--reporter=json",
           "--outputFile=coverage/ci-tests.json",
           ...(coverage.length

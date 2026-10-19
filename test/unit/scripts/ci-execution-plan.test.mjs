@@ -55,6 +55,7 @@ describe("selected CI execution", () => {
     expect(test.args).toContain(integrationTest);
     expect(test.args).toContain(unitTest);
     expect(test.args).toContain("--coverage.include=src/domain/value.ts");
+    expect(test.args).toEqual(expect.arrayContaining(["--reporter=default", "--reporter=json"]));
     expect(test.args).not.toContain("test/unit");
     expect(test.args.some((arg) => arg.startsWith("--coverage.thresholds"))).toBe(false);
   });
