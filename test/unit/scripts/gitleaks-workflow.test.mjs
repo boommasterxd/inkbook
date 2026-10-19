@@ -8,6 +8,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 let workflow;
 let scanScript;
+let scanScriptPath;
 let directory;
 let repository;
 let runnerTemp;
@@ -38,7 +39,7 @@ async function commit(content) {
 }
 
 function scan(event, base = "", head = "") {
-  return execute("bash", ["--noprofile", "--norc", "-c", scanScript], {
+  return execute("bash", ["--noprofile", "--norc", scanScriptPath], {
     env: { ...environment, GITHUB_EVENT_NAME: event, PR_BASE_SHA: base, PR_HEAD_SHA: head },
   });
 }
@@ -61,6 +62,9 @@ beforeEach(async () => {
   runnerTemp = join(directory, "runner");
   const commands = join(directory, "commands");
   await Promise.all([repository, runnerTemp, commands].map((path) => mkdir(path)));
+  // Execute trusted repository workflow code as a script file, never a command string.
+  scanScriptPath = join(directory, "scan-workflow.sh");
+  await writeFile(scanScriptPath, scanScript, { flag: "wx", mode: 0o600 });
   environment = {
     ...process.env,
     PATH: `${commands}:${process.env["PATH"]}`,

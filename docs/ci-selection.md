@@ -28,6 +28,12 @@ The [exhaustive performance manifest](../scripts/performance-test-manifest.mjs) 
 
 Missing, malformed, stale, tampered, failed, cancelled, or unexpectedly skipped selection or execution results fail closed. The final required `CI` check succeeds only when selection and quality complete successfully and both performance contexts either complete their selected contracts or report no-work that matches the recomputed plan.
 
+## Runner outputs and workflow fixtures
+
+The planner publishes optional `GITHUB_OUTPUT` and `GITHUB_STEP_SUMMARY` data only to existing, owned, regular single-link files directly under the canonical `RUNNER_TEMP/_runner_file_commands` directory, using the runner's `set_output_` and `step_summary_` prefixes. It rejects external paths, redirected command directories, symlinks, hardlinks and file-identity changes before appending through the opened handle. `RUNNER_TEMP` is trusted runner configuration; this does not isolate a compromised runner. With both output variables absent, local planning needs no runner directory and continues to print its outputs to stdout.
+
+Workflow regressions execute repository-owned shell from exclusive temporary script files with bounded child processes and owned cleanup. They do not pass workflow contents as shell command strings. Condition tests interpret only the required string/boolean comparisons, logical operators and own context-property access through a bounded TypeScript AST fixture. Unsupported syntax fails instead of executing JavaScript. These fixtures verify the actual workflow policies; they are not a sandbox for hostile repository code or a complete GitHub expression implementation.
+
 ## Local reproduction
 
 To reproduce a pull request plan locally, check out the simulated merge result, export the pull request base and head commit SHAs, and set the event to `pull_request`. First print the plan and its `shared` and `cadence` outputs:
