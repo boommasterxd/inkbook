@@ -18,6 +18,8 @@ export async function runVaultRecoveryOperation<Value>(options: {
     const current = options.access.current();
     if (options.stopped() || current === undefined) return undefined;
     const executor: DocumentRuntimePort = {
+      acknowledgeExport: (identity, accepted) =>
+        current.executor.acknowledgeExport?.(identity, accepted),
       execute: async (request, observer) => {
         try {
           return await current.executor.execute(request, observer);

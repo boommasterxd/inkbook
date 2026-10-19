@@ -31,17 +31,23 @@ describe("vault recovery completion", () => {
       executor,
       fileManager: { trashFile: vi.fn() } as unknown as FileManager,
       files: {
-        createAndReadBack: async (path, content) => {
-          files.set(path, { file: new TestTFile(path, content.length), text: content });
+        createOwnedAndReadBack: async (path, content) => {
+          const file = new TestTFile(path, content.length);
+          files.set(path, { file, text: content });
+          const isCurrent = () => files.get(path)?.file === file;
           return {
-            content,
-            identity: { ctime: 1, mtime: 1, path, size: content.length },
-            materialization: "host-full-read-not-bounded",
-            stabilityEvidence: "object-identity-and-stat-unchanged",
+            file,
+            isCurrent,
+            readBack: {
+              content,
+              identity: { ctime: 1, mtime: 1, path, size: content.length },
+              isCurrent,
+              materialization: "host-full-read-not-bounded",
+              stabilityEvidence: "object-identity-and-stat-unchanged",
+            },
           };
         },
         pathExists: (path) => files.has(path),
-        resolveFile: (path) => files.get(path)!.file,
       },
       operation: { ...operation(), operationId: 2 },
       snapshot: emptySnapshot(),

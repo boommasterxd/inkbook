@@ -451,7 +451,7 @@ describe("VaultDocumentSession exact recovery lifecycle", () => {
     expect(createdCopies.size).toBe(0);
   });
 
-  it("trashes an in-flight recovery artifact after disposal", async () => {
+  it("preserves an unverified recovery artifact when disposal stops its byte comparison", async () => {
     const { createdCopies, factory, holdCopyRead, session } = recoveryCopyHarness();
     await session.unlock(operation());
     factory.getDocumentModel("session-1")?.commitElement(rectangle());
@@ -467,7 +467,7 @@ describe("VaultDocumentSession exact recovery lifecycle", () => {
     releaseCopyRead();
 
     await expect(recovery).resolves.toMatchObject({ status: "failed" });
-    expect(createdCopies.has("drawings/ink-recovered-1.svg")).toBe(false);
+    expect(createdCopies.has("drawings/ink-recovered-1.svg")).toBe(true);
     expect(factory.getDocumentModel("session-1")).toBeUndefined();
   });
 });

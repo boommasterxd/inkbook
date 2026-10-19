@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Create and edit responsive handwriting embeds stored as portable SVG files.",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "main": "main.js",
   "engines": {

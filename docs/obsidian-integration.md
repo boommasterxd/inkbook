@@ -184,7 +184,7 @@ Obsidian variables style host chrome only. The active document graphic and saved
 
 ## Community Directory Release Contract
 
-Before a Community directory submission, the repository MUST contain root `README.md`, `LICENSE`, and `manifest.json` files. `README.md` and `manifest.json` now exist, but a license has not been selected. The repository therefore remains private, its package is marked `UNLICENSED`, and it is not submission-ready until an appropriate root `LICENSE` file is deliberately added and verified.
+Before a Community directory submission, the repository MUST contain root `README.md`, `LICENSE`, and `manifest.json` files. These files are present, and Inkbook uses the [MIT License](../LICENSE) with `MIT` package metadata. Public repository visibility and Community directory submission remain separate publication steps; the remaining release and acceptance requirements still apply.
 
 The release contract is:
 
