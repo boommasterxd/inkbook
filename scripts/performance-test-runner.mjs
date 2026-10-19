@@ -18,7 +18,7 @@ export async function collectTestFiles(directory = performanceRoot) {
   for (const entry of entries) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...(await collectTestFiles(path)));
-    else if (entry.isFile() && entry.name.endsWith(".test.ts")) files.push(path);
+    else if (entry.isFile() && /\.test\.(?:ts|tsx|mjs)$/.test(entry.name)) files.push(path);
   }
   return files.sort();
 }
