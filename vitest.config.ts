@@ -46,7 +46,7 @@ export default defineConfig({
           include: [
             "test/unit/**/*.test.{ts,tsx,mjs}",
             "test/integration/**/*.test.{ts,tsx,mjs}",
-            "test/performance/**/*.test.{ts,tsx}",
+            "test/performance/**/*.test.{ts,tsx,mjs}",
           ],
           exclude: [...configDefaults.exclude, ...serialCapacityTests],
         },
