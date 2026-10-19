@@ -398,10 +398,11 @@ describe("vault-backed recovery copies", () => {
     expect(parsed.ok && parsed.value.snapshot.elements).toEqual([rectangle()]);
   });
 
-  it("trashes an unverified recovery copy instead of retaining it", async () => {
+  it("preserves an unverified artifact when read-back cannot prove its original bytes", async () => {
     const { corruptCopyReads, createdCopies, factory, session } = persistenceHarness();
     await session.unlock(operation());
-    factory.getDocumentModel("session-1")?.commitElement(rectangle());
+    const model = factory.getDocumentModel("session-1")!;
+    model.commitElement(rectangle());
     corruptCopyReads();
 
     await expect(
@@ -411,7 +412,9 @@ describe("vault-backed recovery copies", () => {
         operationId: 2,
       }),
     ).resolves.toMatchObject({ status: "failed" });
-    expect(createdCopies.has("drawings/ink-recovered-1.svg")).toBe(false);
+    expect(createdCopies.has("drawings/ink-recovered-1.svg")).toBe(true);
+    expect(factory.getDocumentModel("session-1")).toBe(model);
+    expect(session.getSnapshot()).toMatchObject({ dirty: true, revision: 8 });
   });
 
   it("trashes a stale recovery copy when a newer operation wins during read-back", async () => {

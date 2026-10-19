@@ -2,7 +2,7 @@
 
 ## Quality Priorities
 
-When requirements compete, use this order:
+No animation, abstraction, or background task may degrade live ink input. When requirements compete, use this order:
 
 1. prevent data loss and unsafe file handling
 2. preserve live input responsiveness
@@ -10,8 +10,6 @@ When requirements compete, use this order:
 4. provide smooth, understandable transitions
 5. reduce background CPU, memory, and file size
 6. add optional visual polish
-
-No animation, abstraction, or background task may degrade live ink input.
 
 ## Performance Acceptance Dataset
 

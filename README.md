@@ -1,89 +1,129 @@
+<div align="center">
+
 # Inkbook
 
-Inkbook is an Obsidian plugin for creating and editing responsive handwriting embeds stored as self-contained SVG files. Notes use the explicit non-image syntax `!inkbook[[path.svg]]`, so Inkbook owns the complete presentation while ordinary SVG embeds and image plugins remain unaffected. It is designed for low-latency pen, touch, and mouse input while preserving a portable static SVG outside the plugin.
+**Handwriting that belongs in your notes.**
 
-## Project status
+Draw, highlight, and sketch diagrams inside Obsidian.<br>
+Keep your drawings as portable SVG files in your vault.
 
-The first-release implementation is present and is being validated as a release candidate. It includes:
+**Pen · Touch · Mouse** &nbsp; | &nbsp; **Desktop · iOS · Android**
 
-- pen, highlighter, straight highlighter, eraser, selection, and lasso tools
-- lines, arrows, closed shapes, coordinate systems, and configurable tables
-- layer ordering within fixed render bands
-- shape-anchor snapping with persistent line and arrow connections
-- backgrounds, page expansion, zoom, clipboard actions, and command history
-- locked SVG previews across tabs, panes, and pop-out windows with one active editor per workspace
-- responsive interaction with the required 10,000-stroke acceptance dataset
+[Get started](#get-started) · [Build from source](#build-from-source) · [Documentation](#documentation)
 
-The automated suite covers pure domain behavior and focused Obsidian, renderer, worker, vault, clipboard, and settings boundaries through deterministic adapters. Real-device validation in Obsidian, including mobile hardware, pop-out windows, pen input, and external SVG editors, remains a manual release step. See [docs/specification.md](docs/specification.md) for the normative scope and [docs/quality-and-testing.md](docs/quality-and-testing.md) for acceptance budgets.
+</div>
 
-## Requirements
+---
 
-- Latest Node.js 24.x (`nvm install` resolves the major alias in `.nvmrc`)
-- npm
-- Obsidian 1.13.0 or newer
+Inkbook brings an editable writing surface into your Markdown notes. Jot down an equation, annotate an idea, or connect shapes into a diagram. Lock the drawing when you are done and keep reading your note.
+
+Each drawing lives in a self-contained SVG attachment with its editable Inkbook data embedded inside. The saved graphic remains viewable outside Obsidian, without the plugin.
+
+> **Release candidate:** The first-release implementation is present and undergoing validation. Real-device acceptance, including mobile hardware and pen input, remains a release step.
+
+## Make room for your ideas
+
+|                       | What you can do                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Write & highlight** | Use a pressure-sensitive pen, freehand highlighter, straight highlighter, and whole-element eraser.     |
+| **Sketch & connect**  | Draw lines, arrows, geometric shapes, coordinate systems, and tables. Snap connectors to shape anchors. |
+| **Select & refine**   | Select or lasso elements, move, resize, rotate, change styles, and adjust their order.                  |
+| **Choose your paper** | Switch between plain, lined, dotted, and square backgrounds. The page expands as you write.             |
+| **Keep your flow**    | Zoom, undo, redo, and copy or paste elements while staying in your note.                                |
+| **Read & return**     | Use locked previews in Live Preview and Reading view, then activate a drawing to edit it again.         |
+
+Inkbook supports tabs, split panes, and pop-out windows, with one active drawing editor per workspace. Touch can navigate the page; finger drawing is optional and disabled by default.
+
+## Get started
+
+Requires **Obsidian 1.13.0 or newer** and an installed Inkbook build. See [Build from source](#build-from-source) for installation.
+
+1. Open a Markdown note in editing mode and place the cursor on an empty line.
+2. Run **Inkbook: Insert handwriting embed** from Obsidian's command palette.
+3. Draw with a pen or mouse, choose a tool, or add a shape.
+4. Choose **Lock** in the toolbar to save and return to the preview.
+
+Inkbook creates the SVG attachment and inserts its reference for you. A reference looks like this, on its own line:
+
+```markdown
+!inkbook[[drawings/my-sketch.svg]]
+```
+
+Markdown-style links are supported too:
+
+```markdown
+!inkbook[My sketch](drawings/my-sketch.svg)
+```
+
+These references must point to an Inkbook-created SVG. Ordinary `![[drawing.svg]]` and `![label](drawing.svg)` embeds keep Obsidian's native image behavior. Source mode always shows the Markdown text.
+
+## Your files, in your vault
+
+- **Portable output.** Each saved SVG includes the drawing, background, light and dark palettes, and editable snapshot.
+- **Local processing.** No account, telemetry, analytics, or remote service is required by the plugin. Vault synchronization remains controlled by your Obsidian setup.
+- **Editable source of truth.** Keep the original Inkbook SVG when using external tools; the embedded snapshot is required for further editing in Inkbook. External SVG edits are not imported as Inkbook elements.
+
+See the [file format](docs/file-format.md) and [SVG portability contract](docs/svg-envelope.md) for details.
+
+## Build from source
+
+Use the latest **Node.js 24.x** release and npm. If you use nvm, `nvm install` reads the major alias from `.nvmrc`.
+
+```sh
+git clone https://github.com/boommasterxd/inkbook.git
+cd inkbook
+npm ci
+npm run build
+```
+
+The production package is generated in `dist/`. Copy these three files into your vault's plugin directory:
+
+```text
+<vault>/.obsidian/plugins/inkbook/
+├── main.js
+├── manifest.json
+└── styles.css
+```
+
+Restart Obsidian, allow community plugins if needed, and enable **Inkbook** under **Settings → Community plugins**. Use a test vault while evaluating the release candidate.
+
+For development, `npm run dev` watches the source and writes development builds to `dist/`. Copy updated artifacts to the test vault and reload the plugin to apply changes.
 
 ## Development
 
-```sh
-npm ci
-npm run dev
-```
+| Command                  | Purpose                                                     |
+| ------------------------ | ----------------------------------------------------------- |
+| `npm run dev`            | Watch source and emit a development build.                  |
+| `npm run build`          | Generate the production plugin package.                     |
+| `npm test`               | Run Unit and focused Integration tests.                     |
+| `npm run test:coverage`  | Run those tests with enforced coverage thresholds.          |
+| `npm run benchmark`      | Run deterministic work, resource, and scheduling contracts. |
+| `npm run ci`             | Run the complete local quality and performance gate.        |
+| `npm run package:verify` | Verify generated release artifacts and version consistency. |
 
-Development and production output is written to `dist/`. Copy its contents, or link the directory, to `<vault>/.obsidian/plugins/inkbook`, then reload Obsidian and enable Inkbook under Community plugins.
+The code is organized into five areas: pure `domain` logic, `editor` interactions, imperative SVG `rendering` with React application chrome, `persistence` and document workers, and `obsidian` host integration. See the [architecture flows](docs/architecture-flows.md) for ownership and data flow.
 
-Useful commands:
+Performance verification uses deterministic work and resource bounds, including large-document fixtures. Physical-device responsiveness remains a separate acceptance check; see [quality and testing](docs/quality-and-testing.md).
 
-| Command                    | Purpose                                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| `npm run dev`              | Watch source and emit a development build with inline source maps.                           |
-| `npm run build`            | Create the minified production plugin package under `dist/`.                                 |
-| `npm test`                 | Run the Unit and focused Integration test suites.                                            |
-| `npm run test:coverage`    | Enforce 85 percent lines, statements, and functions plus 80 percent branches.                |
-| `npm run test:unit`        | Run only deterministic Unit tests.                                                           |
-| `npm run test:integration` | Run only focused boundary Integration tests.                                                 |
-| `npm run test:performance` | Run the complete classified performance profiles.                                            |
-| `npm run lint`             | Enforce Obsidian, naming, size, complexity, architecture-boundary, and mobile-runtime rules. |
-| `npm run lint:styles`      | Validate source CSS with Stylelint.                                                          |
-| `npm run lint:layout`      | Validate source/test naming, Scene file type, and CSS file size.                             |
-| `npm run architecture`     | Reject source dependency cycles and invalid area directions.                                 |
-| `npm run typecheck`        | Type-check plugin source separately from Node-based test tooling.                            |
-| `npm run typecheck:worker` | Type-check the actual worker graph without main-thread platform types.                       |
-| `npm run ci`               | Run the complete local quality and performance gate.                                         |
-| `npm run benchmark`        | Run classified work, resource, and simulated-scheduling checks.                              |
-| `npm run package:verify`   | Verify versions and the exact Obsidian release-artifact envelope.                            |
+## Documentation
 
-The complete gate also checks formatting, source layout, import cycles and direction, worker isolation, duplication, dead code, dependency vulnerabilities, coverage, deterministic performance budgets, the production build, and package contents. Pull request CI selects affected tests and performance contracts from the complete base-to-head diff, with a full-gate fallback whenever selection is uncertain. Manual dispatches, release validation, and local `npm run ci` retain the complete gate. See [the affected CI contract](docs/ci-selection.md).
+| Start here                                            | Read about                                                |
+| ----------------------------------------------------- | --------------------------------------------------------- |
+| [Editor tools](docs/editor-tools.md)                  | Drawing, shapes, selection, erasing, and connectors       |
+| [Features](docs/features.md)                          | Backgrounds, history, clipboard, and input behavior       |
+| [Keyboard shortcuts](docs/keyboard-shortcuts.md)      | Canvas bindings, modifiers, and shortcut configuration    |
+| [Settings](docs/settings.md)                          | Tool defaults, page preferences, and device settings      |
+| [Obsidian integration](docs/obsidian-integration.md)  | Embed syntax, host lifecycle, compatibility, and releases |
+| [Implementation specification](docs/specification.md) | Scope, architecture, and core contracts                   |
 
-## Architecture
+The complete documentation index is maintained in [AGENTS.md](AGENTS.md#documentation-index).
 
-The implementation follows five dependency-directed responsibility areas:
+## Feedback and contributions
 
-- `domain`: pure elements, geometry, commands, schemas, and spatial data
-- `editor`: input arbitration, gestures, selection, sessions, and autosave scheduling
-- `rendering`: framework-free motion contracts, asynchronously loaded React application chrome, and the separate imperative SVG scene
-- `persistence`: document codecs, migrations, worker tasks, and save orchestration
-- `obsidian`: plugin lifecycle, embeds, settings, host adapters, and host styling
+For bugs and feature requests, use the repository's [issue tracker](https://github.com/boommasterxd/inkbook/issues). Include your Obsidian version, operating system, input device, and steps to reproduce the problem. Use a minimal example without private vault content.
 
-`src/main.ts` is the only source file directly under `src/` and remains a thin build entry. Static plugin CSS belongs to `src/obsidian/styles/`, tests mirror source ownership under `test/`, and generated release files remain under ignored `dist/`. Empty architecture folders are not created before they own real implementation.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before preparing changes. Report security vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
-React is restricted to the toolbar and application chrome. Lifecycle-owned adaptive panels and native Obsidian menus are outside React. The production build generates the complete activation runtime and its nested React editor-chrome and document-worker modules from checked-in TypeScript, compresses them, and embeds them in `main.js`; activation decodes owned modules locally without a network request. Pointer input, camera updates, snapping, culling, animation frames, and SVG reconciliation remain imperative hot paths. The exact dependency rules and folder topology are defined in [docs/specification.md](docs/specification.md#source-topology-and-module-boundaries). Runtime ownership and data flows are visualized in [docs/architecture-flows.md](docs/architecture-flows.md), and the public Obsidian boundary is defined in [docs/obsidian-integration.md](docs/obsidian-integration.md).
+## License
 
-The production build is reproducible from the public source and uses ordinary esbuild and Terser minification. `scripts/build.mjs` gzip-compresses and Base91-encodes the generated activation runtime, React editor chrome, and document worker inside `main.js`. The small synchronous Obsidian entry decompresses the activation runtime and imports it through a locally owned Blob URL; the activation runtime loads the nested editor chrome and worker through the same local mechanism when needed. This is build-time packaging, not purpose-hiding obfuscation: the complete TypeScript entries remain in `src/`, no code is fetched from the network, and neither `eval` nor the `Function` constructor is used. Package verification rejects unresolved placeholders, missing runtime markers, source maps, and extra release artifacts without imposing an arbitrary JavaScript byte limit.
-
-## GitHub automation
-
-Pull requests targeting `main` require the exact checks `CI`, `Performance (shared)`, `Performance (refresh profiles)`, `gitleaks`, and `Validate PR Title`. CI and secret scanning run automatically only for those PRs; both retain manual dispatch. PR creation is restricted to repository collaborators. The final `CI` gate aggregates selected quality and performance work under the [CI acceptance contract](docs/quality-and-testing.md#coverage-and-ci-gates). An individual performance check returns successful no-work when its validated selection is empty; documentation-only changes leave both performance checks empty. All workflow actions are pinned to full commit SHAs, enforced by the repository policy, and remain tracked by Dependabot. The standalone gitleaks check scans the checked-out tree and commits introduced by the PR; manual scanner runs cover complete available history.
-
-Dependabot checks npm and GitHub Actions every Monday at 08:00 Europe/Berlin. Minor and patch updates are grouped; only npm minor and patch updates become squash auto-merge eligible after required checks pass. npm major and all GitHub Actions updates require manual merging. The metadata-only automation checks the Dependabot actor and author, matching base/head repository, and nonfork source; only its merge job receives write permissions. CodeMirror peers are updated only together with the selected Obsidian API version because Obsidian requires exact compatible peer versions. A separate monthly workflow updates the checksum-pinned gitleaks CLI. Scheduled and manual scanner updates are serialized, skip an existing version branch or open update PR, and have a ten-minute job timeout. Failed update lookups block changes rather than being treated as absent updates.
-
-## Releases
-
-Obsidian requires a release tag identical to the manifest version, for example `0.1.0` without a leading `v`. A protected version tag must point to a commit on `main`. The release workflow reruns the complete quality gate and publishes `main.js`, `manifest.json`, and `styles.css` as GitHub Release assets.
-
-## Security and privacy
-
-Inkbook's first release is specified for local-only processing without accounts, telemetry, analytics, or network requests. Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
-
-## License status
-
-This private repository is currently unlicensed and its package is marked `UNLICENSED`. Select and add a root `LICENSE` file before public distribution or submission to the Obsidian Community directory.
+Inkbook is licensed under the [MIT License](LICENSE). Copyright (c) 2026 Yannick Schäfer.
