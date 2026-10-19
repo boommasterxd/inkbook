@@ -3,6 +3,7 @@
 ## Scope and Authority
 
 - These instructions apply to the complete repository. Global instructions supplement them where this file is silent.
+- For commits authored on behalf of Yannick Schäfer, use `yannickschaefer@boomapps.de` as the Git author and committer email. Other contributors retain their own identities. Do not rewrite existing commit identities unless explicitly requested.
 - The Markdown files under `docs/` are the normative product, architecture, performance, and acceptance contracts. Keep each behavioral rule in one canonical document and link to it instead of duplicating it.
 - Preserve numeric values, formulas, input conditions, timing rules, and failure behavior when reorganizing code or documentation. Mark unresolved contradictions explicitly.
 - Introduce a module only when it owns real behavior in one of the responsibility areas below. Do not create speculative abstractions or parallel implementations.

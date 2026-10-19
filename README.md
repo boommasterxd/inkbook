@@ -19,7 +19,7 @@ Inkbook brings an editable writing surface into your Markdown notes. Jot down an
 
 Each drawing lives in a self-contained SVG attachment with its editable Inkbook data embedded inside. The saved graphic remains viewable outside Obsidian, without the plugin.
 
-> **Release candidate:** The first-release implementation is present and undergoing validation. Real-device acceptance, including mobile hardware and pen input, remains a release step. The repository does not yet include a license.
+> **Release candidate:** The first-release implementation is present and undergoing validation. Real-device acceptance, including mobile hardware and pen input, remains a release step.
 
 ## Make room for your ideas
 
@@ -126,4 +126,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before preparing changes. Report securit
 
 ## License
 
-No project license has been selected or added yet; `package.json` is marked `UNLICENSED`. License selection and a root `LICENSE` file remain outstanding before public distribution or an Obsidian Community directory submission.
+Inkbook is licensed under the [MIT License](LICENSE). Copyright (c) 2026 Yannick Schäfer.
