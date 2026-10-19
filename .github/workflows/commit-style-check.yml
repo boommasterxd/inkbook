@@ -11,7 +11,7 @@ jobs:
   check-title:
     name: Validate PR Title
     if: github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
       - name: Check PR title
