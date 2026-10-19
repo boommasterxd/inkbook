@@ -6,6 +6,7 @@ import { build, context } from "esbuild";
 import { minify } from "terser";
 
 const production = !process.argv.includes("--watch");
+const licenseBanner = `/*!\n${(await readFile("LICENSE", "utf8")).trim()}\n*/`;
 const workerEntry = resolve("src/persistence/worker/runtime/document-worker-entry.ts");
 const workerSourceModule = resolve("src/persistence/worker/runtime/worker-source.ts");
 const editorChromeEntry = resolve("src/rendering/ui/editor-chrome-entry.ts");
@@ -160,6 +161,7 @@ const embeddedPluginRuntime = embeddedJavaScript({
 });
 
 const buildOptions = {
+  banner: { js: licenseBanner },
   bundle: true,
   charset: "utf8",
   entryNames: "[name]",
@@ -186,7 +188,7 @@ async function copyManifest() {
 async function optimizeMainBundle() {
   const outputPath = resolve("dist/main.js");
   const source = await readFile(outputPath, "utf8");
-  await writeFile(outputPath, await optimizeJavaScript(source), "utf8");
+  await writeFile(outputPath, `${licenseBanner}\n${await optimizeJavaScript(source)}`, "utf8");
 }
 
 await rm("dist", { force: true, recursive: true });

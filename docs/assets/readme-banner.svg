@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title description">
+  <title id="title">Inkbook</title>
+  <desc id="description">Handwriting that belongs in your notes. A violet pen draws a flowing stroke and connected shapes on a page. Write, sketch, and connect inside Obsidian.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#17162b"/>
+      <stop offset="1" stop-color="#2e244e"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#c4b6ff"/>
+      <stop offset="1" stop-color="#8b73e8"/>
+    </linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="12" r="1.2" fill="#c8baff" opacity="0.15"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="340" rx="28" fill="url(#background)"/>
+  <path d="M670 0h502a28 28 0 0 1 28 28v284a28 28 0 0 1-28 28H670z" fill="url(#dots)"/>
+  <circle cx="1110" cy="38" r="228" fill="#9b7ff5" opacity="0.06"/>
+  <circle cx="1110" cy="38" r="170" fill="none" stroke="#c4b6ff" opacity="0.1"/>
+  <g font-family="Verdana, Arial, sans-serif">
+    <text x="64" y="130" fill="#faf9ff" font-size="76" font-weight="700" letter-spacing="-3">Inkbook</text>
+    <text x="68" y="182" fill="#ded6f5" font-size="25">Handwriting that belongs in your notes.</text>
+    <rect x="68" y="221" width="40" height="3" rx="1.5" fill="#b8a7ff"/>
+    <text x="68" y="266" fill="#b8a7ff" font-size="15" font-weight="700" letter-spacing="2">WRITE / SKETCH / CONNECT</text>
+  </g>
+  <g transform="translate(855 54) rotate(7 120 115)">
+    <rect x="-10" y="12" width="242" height="230" rx="20" fill="#100f20" opacity="0.25"/>
+    <rect width="242" height="230" rx="20" fill="#f6f3ff"/>
+    <path d="M28 48h186M28 83h186M28 118h186M28 153h186M28 188h186" fill="none" stroke="#e0d9ef" stroke-width="1.5"/>
+    <path d="M29 92c18-43 24-39 17-9s16 16 25-9 15-24 10-6-5 35 7 17 19-25 20-7 13 6 25-7" fill="none" stroke="#8261cf" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m31 107 102-4" fill="none" stroke="#7bd8bd" stroke-width="9" stroke-linecap="round" opacity="0.65"/>
+    <rect x="30" y="139" width="57" height="44" rx="10" fill="#e4ddf7" stroke="#9576d8" stroke-width="2"/>
+    <path d="M96 161h39m-8-7 8 7-8 7" fill="none" stroke="#9576d8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="171" cy="161" r="27" fill="#e2f4ed" stroke="#6cbaa1" stroke-width="2"/>
+    <path d="m159 161 8 8 16-17" fill="none" stroke="#529c84" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <path d="M684 253c19-48 31-51 39-28s16 39 36 13" fill="none" stroke="#b8a7ff" stroke-width="4" stroke-linecap="round" opacity="0.65"/>
+  <g transform="translate(744 227) rotate(-48)">
+    <path d="m0 12 26-11v22z" fill="#f6f3ff"/>
+    <path d="m0 12 9-4v8z" fill="#b8a7ff"/>
+    <rect x="25" y="0" width="151" height="24" rx="7" fill="url(#ink)"/>
+    <path d="M44 0v24" stroke="#e8e0ff" stroke-width="2" opacity="0.5"/>
+    <path d="M153 6h24" stroke="#e8e0ff" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

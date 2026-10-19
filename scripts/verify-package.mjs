@@ -60,6 +60,17 @@ if (outputMain.trim().length === 0 || outputMain.includes("sourceMappingURL")) {
   throw new Error("dist/main.js must be non-empty and contain no source map reference.");
 }
 
+const license = (await readFile("LICENSE", "utf8")).trim();
+for (const dependency of ["react", "react-dom", "scheduler"]) {
+  const dependencyLicense = (await readFile(`node_modules/${dependency}/LICENSE`, "utf8")).trim();
+  if (!license.includes(dependencyLicense)) {
+    throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
+  }
+}
+if (!outputMain.startsWith(`/*!\n${license}\n*/\n`)) {
+  throw new Error("dist/main.js must retain the complete LICENSE banner.");
+}
+
 if (
   outputMain.includes("__INKBOOK_PLUGIN_RUNTIME_SOURCE__") ||
   !outputMain.includes("inkbook-plugin-bootstrap") ||

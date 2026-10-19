@@ -7,6 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 let workflow;
 let scripts;
+let scriptPaths;
 let directory;
 let environment;
 const current = { version: "8.30.1", sha256: "a".repeat(64) };
@@ -34,6 +35,13 @@ beforeEach(async () => {
   const commands = join(directory, "commands");
   const runnerTemp = join(directory, "runner");
   await Promise.all([commands, runnerTemp].map((path) => fs.mkdir(path)));
+  // Execute trusted repository workflow code as script files, never command strings.
+  scriptPaths = scripts.map((_script, index) => join(directory, `workflow-${index}.sh`));
+  await Promise.all(
+    scripts.map((script, index) =>
+      fs.writeFile(scriptPaths[index], script, { flag: "wx", mode: 0o600 }),
+    ),
+  );
   environment = {
     ...process.env,
     PATH: `${commands}:${process.env["PATH"]}`,
@@ -85,8 +93,8 @@ if (command === "gh" && args[0] === "api") {
 }
 `;
 
-function execute(script, scenario = {}, extra = {}) {
-  return spawnSync("bash", ["--noprofile", "--norc", "-c", script], {
+function execute(scriptPath, scenario = {}, extra = {}) {
+  return spawnSync("bash", ["--noprofile", "--norc", scriptPath], {
     cwd: directory,
     env: { ...environment, FIXTURE_SCENARIO: JSON.stringify(scenario), ...extra },
     encoding: "utf8",
@@ -127,12 +135,12 @@ describe("gitleaks updater workflow execution", () => {
     ["existing branch", { branchStatus: 0 }],
     ["existing open pull request", { openPrs: "1" }],
   ])("leaves the manifest unchanged for %s", async (_name, scenario) => {
-    await expectUnchanged(execute(scripts[0], scenario));
+    await expectUnchanged(execute(scriptPaths[0], scenario));
     expect(await fs.readFile(environment["GITHUB_OUTPUT"], "utf8")).toBe("changed=false\n");
   });
 
   it("updates the checksum and opens one normal PR only when the branch and PR are absent", async () => {
-    const result = execute(scripts[0]);
+    const result = execute(scriptPaths[0]);
     expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(await fs.readFile(join(directory, ".gitleaks-version"), "utf8"))).toEqual({
       version: "8.30.2",
@@ -141,7 +149,7 @@ describe("gitleaks updater workflow execution", () => {
     expect(await fs.readFile(environment["GITHUB_OUTPUT"], "utf8")).toBe(
       "changed=true\nversion=8.30.2\n",
     );
-    const publication = execute(scripts[1], {}, { VERSION: "8.30.2" });
+    const publication = execute(scriptPaths[1], {}, { VERSION: "8.30.2" });
     expect(publication.status, publication.stderr).toBe(0);
     const requests = await calls();
     expect(requests.find((request) => request[0] === "git")).toEqual([
@@ -183,7 +191,7 @@ describe("gitleaks updater workflow execution", () => {
     ["remote Git failure", { branchStatus: 128 }, 128],
     ["invalid release tag", { tag: "v8.30.2-rc.1" }, 1],
   ])("fails closed for %s", async (_name, scenario, status) => {
-    await expectUnchanged(execute(scripts[0], scenario), status);
+    await expectUnchanged(execute(scriptPaths[0], scenario), status);
     expect(await fs.readFile(environment["GITHUB_OUTPUT"], "utf8")).toBe("");
   });
 
@@ -192,7 +200,7 @@ describe("gitleaks updater workflow execution", () => {
     ["invalid digest", "invalid  gitleaks_8.30.2_linux_x64.tar.gz\n"],
     ["duplicate digests", `${`${"b".repeat(64)}  gitleaks_8.30.2_linux_x64.tar.gz\n`.repeat(2)}`],
   ])("rejects %s without changing the pinned manifest", async (_name, checksums) => {
-    expect(execute(scripts[0], { checksums }).status).toBe(1);
+    expect(execute(scriptPaths[0], { checksums }).status).toBe(1);
     expect(JSON.parse(await fs.readFile(join(directory, ".gitleaks-version"), "utf8"))).toEqual(
       current,
     );

@@ -2,236 +2,352 @@
 
 ## Assessment
 
-Inkbook is partially conformant with the applicable local and GitHub standard.
-Repository protection, workflow isolation, affected-check selection, Node.js
-selectors, secret scanning and the observed Slim runner paths are correctly
-configured. Seven high-severity dependency-audit reports still block local and
-hosted CI. The latest merge used the intentional administrator bypass.
-A minor departure concerns the local npm installation.
-Full conformance and release readiness are not established.
+Inkbook is partially conformant with the applicable local and public GitHub
+baseline. Branch protection, affected-check selection, workflow isolation and
+Node.js selectors are correctly configured. Required CI still fails on dependency
+audit, and current main was merged using the administrator bypass. Secret Scanning
+and Push Protection are now enabled; contributor approval matches the public
+profile. CodeQL default setup and its initial Actions/JavaScript analysis passed.
+The ten reported flows are corrected locally; a repeat of their three exact
+CodeQL rules reports zero findings. Hosted alerts still refer to unchanged main.
+Bundled third-party notices are preserved and verified in the working tree.
+The local npm departure, a documentation filename and remaining acceptance gaps
+prevent full conformance and release readiness.
 
 ## Target and scope
 
-| Item                  | Inspected value                                                                                                                                |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Review / baseline     | 2026-10-19; coding-tools 0.29.11, setup contract dated 2026-10-19                                                                              |
-| Local branch / commit | `codex/use-slim-ci-runners`; `d8b1da914d3ea7bcc5b2696b2919f7b221e58cca`                                                                        |
-| GitHub target         | Private `boommasterxd/inkbook`, repository ID `1338357645`, default branch `main`                                                              |
-| Live main             | `cd53b49233ae59b9a666a47551e41fda05603fe7`                                                                                                     |
-| Source equality       | Both commits have tree `bc3271dd6fca1c55227734b0fe32ecd40b9d1046`                                                                              |
-| Actual runtime        | Local Node.js 24.22.0 / npm 12.2.0; hosted inspected jobs 24.22.0 / npm 11.19.1                                                                |
-| Authority             | Review and authorized documentation condensation; changes limited to this report, the quality document and its existing root index description |
+| Item                          | Inspected value                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------ |
+| Review / baseline             | 2026-10-19; coding-tools 0.30.0, setup contract dated 2026-10-19                           |
+| Repository                    | `boommasterxd/inkbook`, ID `1338357645`; origin and live target agree                      |
+| Inspected commit / live main  | `b1ee4999ff020c3a5058ceddf6675ced3e7983e3`                                                 |
+| Report branch                 | `codex/refresh-project-setup-report`, created from clean main                              |
+| Requested / actual visibility | No transition requested; preserve current `public` / `public`; selected profile `public`   |
+| Owner / plan                  | Personal account (`User`); plan and billed usage unavailable                               |
+| Contribution policy           | `collaborators_only`, confirmed by REST and GraphQL; outside contributions are not enabled |
+| License / package publication | Root MIT license, `license: MIT`; `private: true` prevents unintended npm publication      |
+| Actual local runtime          | Node.js 24.22.0 / npm 12.2.0; existing installed dependencies                              |
+| Hosted observed runtime       | Node.js 24.22.0 / bundled npm 11.19.1 in selection, quality and performance logs           |
+| Authority                     | Review plus authorized security/contributor/attribution fixes and README refresh           |
 
-Scope covers the local foundation, six workflows, quality/selection scripts,
-effective GitHub policies and existing execution evidence. Applicable user/root
-instructions, the complete previous report and skill references were read.
-Current project contracts take precedence; valid prior exceptions remain visible.
+Scope includes the local foundation, all six source workflows, their quality and
+selection scripts, effective GitHub controls and existing run evidence. Global,
+root and skill instructions, the complete previous setup report and code-quality
+report were read. Two bounded Sol reviewers examined GitHub and local controls;
+the main reviewer integrated and independently rechecked material findings.
 
-Inkbook is a TypeScript Obsidian plugin with local SVG/settings persistence.
-Next.js, Vercel, Turso, public APIs, SMTP, website CSP and image optimization are
-not applicable. No provider resources or linkage were created.
+Inkbook is a TypeScript/npm/esbuild Obsidian plugin with local SVG/settings
+persistence. Next.js, Vercel, Turso, SMTP and public HTTP APIs are not applicable.
+No hosting target or database is implied by local persistence. No visibility
+transition or historical publication-exposure audit was requested. Follow-up
+authority covers the three selected security/contributor/attribution corrections
+and a README refresh based on the owner's Transcriber repository.
+
+## Applied corrections
+
+Secret Scanning and repository Push Protection were enabled through the repository
+API and independently read back as `enabled`. Fork workflow approval now reads
+`all_external_contributors`; PR creation remains `collaborators_only`.
+CodeQL uses provider-managed default setup, the default query suite,
+`remote_and_local` threat model and standard runners for JavaScript/TypeScript
+and Actions. Its [initial setup run](https://github.com/boommasterxd/inkbook/actions/runs/39260053116)
+passed both analyses on the existing main commit. Default-setup readback now
+includes both language families and a weekly schedule, updated 2026-10-19 at
+13:30:06 UTC. Both analyses are recorded against `refs/heads/main`.
+No additional repository workflow or required-check name was introduced.
+Secret Scanning reports zero open alerts. The initial CodeQL run labelled eight
+workflow-test flows Critical and two `scripts/ci-plan.mjs` paths High. Static
+review found runner-owned output paths and repository-owned workflow code rather
+than ten proven exploitable application vulnerabilities. The requested local
+corrections remove those sinks and tighten the relevant boundaries:
+
+- `ci-runner-output.mjs` confines appends to existing, owned regular single-link
+  runner command files, rejects redirected paths and checks opened-file identity.
+- Workflow tests execute exclusive temporary script files instead of passing
+  workflow contents to `bash -c`.
+- Condition tests replace `runInNewContext` with a bounded TypeScript AST fixture
+  that rejects calls, assignments, prototype access and unsupported syntax.
+
+The three exact rules `js/path-injection`, `js/code-injection` and
+`js/command-line-injection` now return zero results in a local CodeQL 2.27.2 /
+JavaScript query pack 2.4.7 analysis. All 1,720 executable source files under
+`src/`, `test/` and `scripts/` were extracted and compared with the working tree
+through the database source archive; none was missing or different at analysis
+time. Subsequent formatting of one test preserved its TypeScript AST.
+This was a targeted three-rule repeat, not the full CodeQL query suite.
+The ten hosted alerts refer to the inspected main commit until corrected source
+is published and rescanned. No alert was dismissed or suppressed.
+
+Root `LICENSE` now contains the full installed Meta MIT notice shared by React,
+React DOM and Scheduler. The native build preserves the complete license as a
+readable banner after production minification and in the watch configuration.
+Package verification rejects missing or changed bundled notices and upstream
+license drift. The distributable remains exactly `main.js`, `manifest.json` and
+`styles.css`. Five isolated regressions and actual build/package checks pass.
+
+The README now uses a local SVG banner, compact badges and navigation inspired by
+[Transcriber](https://github.com/boommasterxd/transcriber), while retaining source
+installation, release-candidate limits, local processing and contribution scope.
+The restored GitHub automation section also repairs the existing README anchor.
 
 ## Findings
 
-### GH-01: Dependency audit blocks CI; merged source lacks passing CI
+### GH-01: Dependency audit blocks CI; current main lacks successful CI
 
-**Existing issue, still open.** Ordinary merging requires successful current PR
-checks. Both local `npm run ci` and hosted quality fail at
-`npm audit --audit-level=high` with seven high reports in the
-`braces` / `micromatch` / `fast-glob` / `globby` / Stylelint chain.
+**Existing issue, still open.** The latest main-producing [PR 97](https://github.com/boommasterxd/inkbook/pull/97)
+has a failed [CI run](https://github.com/boommasterxd/inkbook/actions/runs/39239768513).
+Quality passed 634 files / 6,433 tests and coverage, then failed
+`npm audit --audit-level=high` on seven related High reports in the
+`braces` / `micromatch` / `fast-glob` / `globby` / Stylelint tooling chain.
 The advisory is [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
-These are related dependency reports, not seven independently validated
-exploitable vulnerabilities in the shipped plugin.
+These reports do not establish seven independent shipped-plugin vulnerabilities.
+Build/package stages after audit did not execute; both performance shards passed
+and final `CI` correctly failed.
 
-The [current CI run](https://github.com/boommasterxd/inkbook/actions/runs/39227808059)
-tested synthetic merge `033384d`, combining head `d8b1da9` with base `0218b2e`.
-All 6,417 tests, coverage, duplication and dead-code checks passed before audit.
-Both performance shards passed; build/package stages after audit did not execute.
-The unconditional final `CI` check correctly failed.
+Logs identify tested synthetic merge `073ae2c40e13e1b0a20aa76c36f69f10d71b0ef3`,
+combining head `d47ab6b5eacba9ac3d179108dbb1ef3713d0a189` and base
+`989babdbef36f140e179a219c2e3572a3bdd8d7a`. Its tree and current main's tree
+are both `19e2aade647b36c67375bdfbbade4952b46e6114`.
+PR 97 merged on 2026-10-19 at 12:38:09 UTC. Ruleset evaluation suite
+`4599582679` records `bypass` and `Required status check "CI" is failing.`
+Administrator-only bypass is intentional; actual use is not successful
+verification or a standing audit waiver.
 
-[PR 96](https://github.com/boommasterxd/inkbook/pull/96) nevertheless merged by
-squash on 2026-10-19 at 09:18:41 UTC. Ruleset evaluation suite `4596512706`
-records `result: bypass` and `Required status check "CI" is failing.`
-The preceding selection change also used a bypass, recorded in suite
-`4595296951` for PR 93. The administrator-only bypass is intentional and
-correctly scoped; its use does not establish passing verification. The prior
-explicitly authorized publication bypass is not a general audit waiver.
+**Correction:** remediate the tooling chain through compatible maintained
+dependencies and obtain successful current PR checks. Preserve audit severity,
+strict checks and normal merge rules. A forced breaking Stylelint downgrade is
+not a verified remedy.
 
-**Correction:** remediate the affected tooling dependencies through compatible,
-maintained changes, then obtain successful current PR checks. Preserve the audit
-threshold and protection rules. The suggested forced downgrade to Stylelint
-7.7.0 is a breaking change, not a verified remedy. No dependency fix or new audit
-exception was introduced during this review.
+### LOCAL-02: Local npm differs from the distribution baseline
 
-### LOCAL-02: Local npm differs from the Node.js distribution baseline
+**Existing environment departure.** Local Node.js 24.22.0 resolves npm 12.2.0.
+The [official release index](https://nodejs.org/dist/index.json), checked again,
+identifies 24.22.0 as latest 24.x and bundled npm 11.19.1. Observed hosted jobs use
+the bundled pairing. No repository npm pin causes the mismatch.
 
-Expected: npm bundled with the selected Node.js release. The local Node.js
-24.22.0 installation resolves npm 12.2.0; the
-[official release index](https://nodejs.org/dist/index.json) records bundled npm
-11.19.1. No repository npm pin causes this environment departure. Hosted selector,
-quality and both performance jobs use 24.22.0 / 11.19.1.
+**Correction:** use supported Node.js 24.x with bundled npm for subsequent
+clean-install acceptance. No global tools were replaced; local checks do not
+prove a fresh bundled-npm installation.
 
-**Correction:** use a supported Node.js 24.x installation with bundled npm for
-subsequent clean-install acceptance. No global tools or dependencies were
-replaced. The local results below do not prove a fresh bundled-npm installation.
+### DOC-01: Documentation filename violates the contract
+
+`docs/reports/CODE-QUALITY-REPORT.md` departs from the required kebab-case
+filenames. Rename it to `code-quality-report.md` and synchronize its root index
+link in a later authorized correction.
 
 ## Control coverage
 
-Statuses apply to the stated evidence layer, not to unperformed runtime checks.
-Paths are repository-relative. `verified` does not mean the complete CI gate passed.
+Statuses distinguish configuration from execution. A verified control does not
+make the complete quality gate or release acceptance successful.
 
-| Control                                                   | Status             | Expected/current behavior and evidence                                                                                                                                                          |
-| --------------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native stack, layout and mirrored tests                   | verified           | TypeScript/npm/esbuild Obsidian plugin; five source areas, thin `src/main.ts`, mirrored tests, README and normative docs                                                                        |
-| Architecture and worker isolation                         | verified           | Dependency-cruiser/ESLint boundaries and entry-based ES2021/WebWorker typecheck; actual graph covers 780 modules and 3,457 dependencies                                                         |
-| Instructions and initial technical documentation          | verified           | Root AGENTS/README/SECURITY/CONTRIBUTING plus focused architecture, development, security, release and ADR coverage in canonical topic docs                                                     |
-| Recursive alphabetical index, relative links and fences   | verified           | All 37 Markdown documents indexed once; actual documentation validator passes                                                                                                                   |
-| Documentation length                                      | verified           | All 37 documents contain fewer than 500 lines; quality-and-testing.md now has 499 lines with unchanged requirements                                                                             |
-| Node selectors and engine enforcement                     | verified           | `engines.node: 24.x`, supported `.nvmrc` alias `24`, `engine-strict=true`; latest 24.x resolves 24.22.0                                                                                         |
-| Actual local npm baseline                                 | drift              | LOCAL-02; hosted bundled npm is separately verified                                                                                                                                             |
-| Lockfile, generated files and package manager             | verified           | npm lockfile v3; ignored dist/coverage/node_modules/generated selection/cache files; no competing package manager                                                                               |
-| Actual quality interfaces and failure propagation         | verified           | Package scripts/check-command-plan/check-execution implement formatting, lint, styles/layout, architecture, types, coverage, jscpd, knip, audit, build/package gates; failures stop the group   |
-| Complexity and size gates                                 | verified           | ESLint errors: 100 function lines, 500 file lines, complexity 20, cognitive complexity 25, six parameters, depth four; type-aware Obsidian rules blocking                                       |
-| Coverage thresholds                                       | verified           | Vitest enforces 85% lines/statements/functions and 80% branches; full local/hosted results exceed each                                                                                          |
-| Duplication and unused code                               | verified           | jscpd `minTokens: 50`, threshold 0%, actual zero clones; knip passes                                                                                                                            |
-| Dependency-audit result                                   | drift              | GH-01; seven high reports block the configured gate                                                                                                                                             |
-| Audit severity baseline                                   | accepted-exception | Explicit project rule blocks high rather than template info; current failure has no waiver                                                                                                      |
-| App Router page/layout boundaries                         | not-applicable     | No Next.js App Router                                                                                                                                                                           |
-| Server initial data / justified client fetching           | not-applicable     | No server/client component boundary; Obsidian adapters own local access                                                                                                                         |
-| Blocking route/backend ESLint enforcement                 | not-applicable     | No App Router/backend; actual plugin boundaries checked separately                                                                                                                              |
-| WebP source / AVIF-first optimization / delivered formats | not-applicable     | No Next.js website image pipeline                                                                                                                                                               |
-| Repository identity, visibility and main                  | verified           | Live repository/branch APIs and local origin match                                                                                                                                              |
-| Merge methods, auto-merge and PR creation                 | verified           | Squash only; auto-merge/head deletion enabled, update suggestions off, collaborators-only creation                                                                                              |
-| Squash metadata and feature set                           | verified           | `COMMIT_OR_PR_TITLE` / `COMMIT_MESSAGES`; Issues on, Projects/Wiki/Discussions/Pages off                                                                                                        |
-| Main ruleset and effective scope                          | verified           | Active `20986962`, default branch, no exclusions; full details and effective main rules inspected                                                                                               |
-| Deletion/force-push and PR/review rules                   | verified           | Block deletion/non-fast-forward; squash PRs, zero approvals, no CODEOWNERS/last-push/stale-review/thread requirement                                                                            |
-| Exact required checks and source binding                  | verified           | CI, both named Performance contexts, gitleaks, Validate PR Title; no App bindings                                                                                                               |
-| Additional performance requirements                       | accepted-exception | Explicit project instructions supplement generic three-check baseline                                                                                                                           |
-| Strict up-to-date branches and creation enforcement       | verified           | Strict checks true; `do_not_enforce_on_create: false`                                                                                                                                           |
-| Bypass configuration / actual use                         | verified           | Sole admin role 5, always; failing-CI use separately reported in GH-01                                                                                                                          |
-| Unattributed Copilot approval                             | accepted-exception | Prior explicit decision retains false; zero required approvals                                                                                                                                  |
-| Legacy/tag protection                                     | verified           | Legacy API has no protection; main ruleset applies; active tag ruleset `20986966` blocks deletion/update/non-fast-forward                                                                       |
-| Actions allowlist and SHA enforcement                     | verified           | Enabled, full-SHA enforcement true; GitHub-owned plus two external Actions, narrower allowlist retained                                                                                         |
-| Default token and private fork policy                     | verified           | Default read; Actions PR creation allowed; fork approval required, no fork writes/secrets/variables                                                                                             |
-| Self-hosted runners, keys and hooks                       | verified           | Dedicated lists/counts empty                                                                                                                                                                    |
-| Actions/Dependabot secrets, variables, environments       | verified           | Counts/lists empty; no secret values requested                                                                                                                                                  |
-| Dependabot security / native scanning                     | verified           | Alerts on, fixes enabled/not paused; APIs explicitly report Code/Secret Scanning disabled; no assigned Code Security configuration                                                              |
-| Retention / OIDC                                          | verified           | Seven days permitted; default immutable OIDC subject; no workflow requests token                                                                                                                |
-| Plan, Apps, push protection, automatic Copilot review     | unverified         | Plan omitted, installation API inaccessible; remaining dashboard/account controls not established                                                                                               |
-| Workflow roles and upstream action pins                   | verified           | Five baseline roles plus native release; all four pins match official version-tag commits                                                                                                       |
-| Every Actions project-code runtime                        | verified           | Selector/quality/performance/release select 24.x with check-latest; no conflicting containers, matrices or reusable callers; existing selector/quality/shard logs resolve 24.22.0               |
-| CI naming and final aggregation                           | verified           | Workflow and final check exactly CI; unconditional gate rejects failed/cancelled/skipped prerequisites and malformed outputs                                                                    |
-| Complete PR diff / tested checkout                        | verified           | Merge-base-to-head, NUL filenames, both rename paths/deletions; current synthetic merge checkout confirmed                                                                                      |
-| Docs-only short path                                      | verified           | Nonempty Markdown-only root docs diff; no install/application work; documentation validation and final gate required; isolated CLI/gate regressions pass                                        |
-| Affected checks / conservative fallback                   | verified           | Base/head AST graphs include transitive/type-only/dynamic/embedded edges; styles/assets select broadly; workflow file readers map explicitly; uncertain/empty/global/unmatched scope falls back |
-| Partial coverage and plan validation                      | verified           | Same thresholds on forward runtime closure plus affected modules, including untested sources; labelled partial; consumers recompute/compare plans; unexpected empty tests fail                  |
-| Build selection and full local interfaces                 | verified           | Production/dependency/unknown paths build; proven tooling/test/docs-only input omits build; manual/release/local full suites preserved                                                          |
-| Selection failure regressions                             | verified           | Actual selected Vitest failure, excluded unrelated tests, stale/malformed plans, history/renames/deletions and actual final-gate shell exercised                                                |
-| Scoped selection adaptations                              | accepted-exception | Canonical ci-selection contract permits mapped workflow/tooling tests and proven non-production full-test fallback without build                                                                |
-| Cancellation, caches, fixtures and browsers               | verified           | PR-scoped cancellation, npm download cache; no secret-bearing/compiler cache, browser installs or external services to condition                                                                |
-| PR-only CI/scanner and post-merge duplication             | verified           | Main-target PRs plus manual dispatch; no current main-push/workflow-run repeat path; existing main-push history shows no current duplicate CI/scanner execution                                 |
-| Runner placement and timeouts                             | verified           | Slim for selection/final/title/Dependabot/scanner/updater; regular quality/performance/release; Slim at most 15 minutes, quality/shards 20 minutes                                              |
-| Hosted Slim selection/final/scanner/title                 | verified           | Full-plan cold-cache selector succeeds; final gate propagates audit failure; checksum/tree/history scan and title succeed                                                                       |
-| Hosted Slim Dependabot/updater branches                   | unverified         | Available active paths predate runner change; human PR skips Dependabot; no dispatch/update PR created                                                                                          |
-| Conventional title policy                                 | verified           | Expected types, optional scope, intentional Dependabot actor exception; source/current check agree                                                                                              |
-| Dependabot schedule/groups/labels/limits                  | verified           | Monday 08:00 Europe/Berlin, ten PRs per ecosystem, minor/patch groups, required labels exist                                                                                                    |
-| CodeMirror compatibility policy                           | accepted-exception | State/view updates ignored; pinned peers match Obsidian 1.14.4 and stay external with Lezer                                                                                                     |
-| Dependabot isolation/eligibility                          | verified           | Metadata-only target event; actor/author/same-repository/nonfork guards; npm minor/patch only; only merge job writes; historical success/major-skip evidence                                    |
-| Scanner version/checksum/rules/scope                      | verified           | Latest Gitleaks 8.30.1, upstream Linux x64 checksum matches; built-in rules/redaction, tree and introduced history; manual all-history path                                                     |
-| Scanner updater source controls                           | verified           | Monthly day one 06:00 UTC/manual; duplicate branch/PR guards, fail-closed errors, exact tag/checksum, serialization, ten-minute timeout, normal PR/no auto-merge                                |
-| Deterministic performance and parity                      | verified           | Exhaustive manifest: 116 invariant files at 120 Hz, 20 cadence files at all five rates; no elapsed-time acceptance; local CI rejects shard-only overrides                                       |
-| Native release policy                                     | accepted-exception | Tag-only full gate, numeric tag/manifest/main ancestry; substantive build/test work justifies regular runner                                                                                    |
-| Current release / Community readiness                     | unverified         | No release invoked; private UNLICENSED state and missing distribution license documented; no submission-ready claim                                                                             |
-| Accessibility and keyboard assertions                     | verified           | Focused toolbar/canvas/panel/keyboard Unit/Integration checks are blocking and pass; manual/physical host acceptance remains separate                                                           |
-| Website production-server/E2E extensions                  | not-applicable     | No native website server; project explicitly requires Unit/focused Integration, excludes E2E/smoke                                                                                              |
-| Vercel config/deployment/runtime/usage/cost               | not-applicable     | No hosted target selected; no provider configuration inferred                                                                                                                                   |
-| Turso/migrations/SMTP/public API/BotID/WAF/web CSP        | not-applicable     | Local SVG/settings persistence; no application backend, database or public service                                                                                                              |
+| Control                                                     | Status             | Expected/current behavior and evidence                                                                                                                    |
+| ----------------------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native stack/layout/mirrored tests                          | verified           | Existing npm/TypeScript/esbuild plugin, five source areas and thin entry; no migration/scaffolder proof needed                                            |
+| Architecture and worker isolation                           | verified           | Complete type-aware graph: 781 modules / 3,462 dependencies; ES2021/WebWorker entry typecheck                                                             |
+| Instructions and initial documentation                      | verified           | Root instructions/README/SECURITY/CONTRIBUTING and normative architecture, operation, security and ADR coverage                                           |
+| Recursive index, file links, fences and length              | verified           | All 38 docs indexed once in path order; validator passes; every document below 500 lines; fragment limitation in DOC-01                                   |
+| Documentation filename                                      | drift              | DOC-01                                                                                                                                                    |
+| Node selectors and engine enforcement                       | verified           | `engines.node: 24.x`, supported nvm alias `24`, `engine-strict=true`; latest 24.x resolves 24.22.0                                                        |
+| Actual local npm                                            | drift              | LOCAL-02; hosted bundled pairing separately verified                                                                                                      |
+| Lockfile / generated output                                 | verified           | npm lockfile v3; ignored dependencies/dist/coverage/caches/generated selection; no competing lockfile                                                     |
+| Actual quality interfaces / failure propagation             | verified           | Command plan includes formatting, lint/styles/layout, architecture, types, coverage, jscpd, knip, audit, build/package; failures stop execution           |
+| Complexity, size and Obsidian lint                          | verified           | Blocking errors: 100/500 function/file lines, 20/25 complexity/cognitive, six parameters, depth four; type-aware Obsidian configuration                   |
+| Coverage thresholds                                         | verified           | 85% statements/lines/functions, 80% branches; full source or selected closure including affected untested modules; partial results labelled               |
+| Duplication / unused-code gates                             | verified           | jscpd `minTokens: 50`, threshold 0%; ordinary and production-only Knip                                                                                    |
+| Dependency audit result                                     | drift              | GH-01; current hosted failure and local result below                                                                                                      |
+| Audit severity                                              | accepted-exception | Explicit project rule blocks High/Critical rather than template info; no GH-01 waiver                                                                     |
+| App Router page/layout boundaries                           | not-applicable     | No Next.js App Router                                                                                                                                     |
+| Initial server data / justified client fetching             | not-applicable     | No Server/Client Component architecture; Obsidian adapters own local access                                                                               |
+| Blocking route/backend ESLint                               | not-applicable     | No App Router/backend; plugin boundaries enforced separately                                                                                              |
+| WebP source / AVIF-first config / delivered formats         | not-applicable     | No Next.js image pipeline                                                                                                                                 |
+| Identity, visibility, default branch                        | verified           | Public personal repository, main, origin/live target agreement; no requested visibility mismatch                                                          |
+| Source license / public documentation                       | verified           | MIT source, installation README, contribution guide, private security-reporting email; bundled notices verified separately                                |
+| PR creation / outside contributions                         | verified           | Collaborators-only policy preserved; external acceptance not applicable                                                                                   |
+| Merge methods / squash metadata / features                  | verified           | Squash only; auto-merge/head deletion on, update suggestions off; COMMIT_OR_PR_TITLE / COMMIT_MESSAGES; Issues on, other listed features off              |
+| Main ruleset / effective scope                              | verified           | Active 20986962, default branch, no exclusions; full details and effective rules read back                                                                |
+| Deletion / force-push / PR / reviews                        | verified           | Block deletion/non-fast-forward; squash PR, zero approvals; no CODEOWNERS/last-push/stale-review/thread requirement                                       |
+| Exact required names / source binding                       | verified           | CI, both named Performance contexts, gitleaks, Validate PR Title; no App binding                                                                          |
+| Extra performance contexts                                  | accepted-exception | Explicit project instructions supplement generic three-check baseline                                                                                     |
+| Fresh branches / creation checks                            | verified           | Strict checks true; do_not_enforce_on_create false                                                                                                        |
+| Admin bypass configuration / use                            | verified           | Sole role 5 always; actual failing-CI use disclosed in GH-01                                                                                              |
+| Unattributed-change approval                                | accepted-exception | Prior scoped decision retains require_extra_approval_for_unattributed_changes false                                                                       |
+| Legacy / tag protection                                     | verified           | Main ruleset applies despite legacy API 404; active 20986966 protects numeric-style tags from deletion/update/non-fast-forward                            |
+| Actions allowlist / SHA enforcement                         | verified           | GitHub-owned plus two external Actions; narrower allowlist retained; full-SHA enforcement true                                                            |
+| Default token / PR-code isolation                           | verified           | Default read; code-bearing checks use pull_request without cloud secrets; guarded metadata-only Dependabot target event                                   |
+| Public contributor approval                                 | verified           | all_external_contributors read back; private-only fork endpoint not applicable                                                                            |
+| Secret Scanning / Push Protection / CodeQL                  | verified           | Secret Scanning/Push Protection enabled; CodeQL setup passed; local fixes yield zero results for all 3 original rules; hosted alerts await publication    |
+| Scanner/workflow control review                             | unverified         | PR-modifiable controls; checksum proves integrity against supplied manifest; no external control-changing run/review evidence established                 |
+| Private reporting route                                     | verified           | SECURITY private email; native private-reporting feature off, not required in addition to chosen route                                                    |
+| Secrets/variables/environments/runners/keys/hooks           | verified           | Counts zero for Actions/Dependabot secrets, Actions variables, environments, self-hosted runners, deploy keys and hooks; no values read                   |
+| Dependabot alerts / automatic fixes                         | verified           | Enabled, not paused; dependency labels exist                                                                                                              |
+| Retention / OIDC                                            | verified           | Seven days, current public maximum 90; default immutable subject; no workflow requests OIDC                                                               |
+| Owner plan / billing / Apps / automatic Copilot review      | unverified         | Plan omitted, billing unavailable, installation API requires App JWT, automatic review setting not established                                            |
+| Five workflow roles / source action provenance              | verified           | Six source workflows including release; four full pins match upstream checkout 7.0.1, setup-node 7.1.0, semantic-pull-request 6.1.1, fetch-metadata 3.1.0 |
+| All project-code Actions runtimes                           | verified           | Selection/quality/shards/release use 24.x and check-latest; no conflicting matrices/callers/containers; inspected logs resolve 24.22.0                    |
+| Exact CI naming / final gate                                | verified           | Workflow/final check CI, required live; unconditional gate rejects failures/cancellation/unknown outputs and unexpected skips                             |
+| Complete PR diff / tested merge                             | verified           | Merge-base-to-head, NUL paths, both rename paths/deletions; current synthetic merge tree equals main                                                      |
+| Docs-only source behavior                                   | verified           | Nonempty root docs Markdown only; no npm install/application checks; documentation validation and real final gate; isolated regression cases              |
+| Hosted docs-only behavior                                   | unverified         | No current execution established; no test PR/dispatch created                                                                                             |
+| Affected scope / conservative fallback                      | verified           | Base/head AST/transitive/type/dynamic/embedded graph, explicit file-reader maps, broad styles/assets; unknown/empty/global/unmatched inputs fall back     |
+| Selection consumers / coverage                              | verified           | Plans recomputed; stale/malformed/missing tests fail; selected-source thresholds maintained and scope reported partial                                    |
+| Build selection / full local commands                       | verified           | Runtime/unknown inputs build; proven non-production inputs may omit build; ordinary full commands retain complete scope                                   |
+| Scoped non-production adaptations                           | accepted-exception | Canonical CI contract permits mapped workflow/tooling tests and proven non-production full-test fallback without build                                    |
+| Cancellation / caches / service setup                       | verified           | Superseded PR cancellation; npm download cache; no browsers/external services/cloud fixtures to install conditionally                                     |
+| Duplicate automatic post-merge CI/Gitleaks                  | verified           | No current main-push/workflow-run repeat; historical workflow records do not establish active source; native tag release separate                         |
+| Runner placement / timeouts                                 | verified           | Slim selection/final/title/Dependabot/scanner/updater; regular substantive quality/performance/release; Slim at most 15 minutes, quality/shards 20        |
+| Hosted Slim selection/final/scanner/title                   | verified           | Full-plan cold-cache selector, scan/title success and correct final failure propagation                                                                   |
+| Hosted Slim Dependabot/updater / admitted forks             | unverified         | Available active executions predate switch; human metadata paths skip; no new hosted fork evidence                                                        |
+| Conventional title policy                                   | verified           | Expected types, optional scope and Dependabot actor exception; source/emitted check agree                                                                 |
+| Dependabot scheduling / guarded auto-merge                  | verified           | Monday 08:00 Europe/Berlin, ten per ecosystem, minor/patch groups; actor/author/same-repo/nonfork checks; npm minor/patch only; isolated write job        |
+| CodeMirror compatibility                                    | accepted-exception | Exact Obsidian 1.14.4 peers; state/view generic updates ignored; CodeMirror/Lezer external                                                                |
+| Scanner version/checksum/rules/scope                        | verified           | Gitleaks 8.30.1, upstream checksum matches; built-in rules/redaction, tree plus introduced history; dispatch all-history path                             |
+| Scanner updater                                             | verified           | Monthly/manual, serialized, strict release/checksum parsing, duplicate guards, fail-closed errors, normal PR/no auto-merge                                |
+| Performance manifest / parity                               | verified           | 117 invariant files, 20 cadence files at five profiles; exhaustive classification; full local CI rejects shard-only overrides                             |
+| Native tag release                                          | accepted-exception | Full quality/performance gate, numeric tag/manifest/main ancestry; substantive checks justify regular runner                                              |
+| Bundled attribution                                         | verified           | Complete upstream notices in LICENSE and actual main.js; verifier/regressions pass                                                                        |
+| Release / Community readiness                               | unverified         | No releases exist or were invoked; manual/hardware acceptance outstanding                                                                                 |
+| Focused accessibility assertions                            | verified           | Blocking toolbar/canvas/panel cases cover roles/names, focus, keyboard and pressed/disabled state                                                         |
+| Broader WCAG/manual accessibility                           | unverified         | No axe/rule engine or documented equivalent rule mapping; focused assertions do not establish WCAG 2.2 AA; real host acceptance not repeated              |
+| Website production-server / E2E checks                      | not-applicable     | Obsidian host, no website server; explicit Unit/Integration-only project policy excludes E2E/smoke                                                        |
+| Vercel settings/ownership/Git/runtime/deployment/usage/cost | not-applicable     | No Vercel target or hosted project configuration; no Function placement/cost attribution to assess                                                        |
+| Turso/environment/migration controls                        | not-applicable     | Local SVG/settings persistence, no backend/cloud database                                                                                                 |
+| SMTP / APIs / WAF / BotID / Bot Management / web CSP        | not-applicable     | No hosted HTTP application or public service                                                                                                              |
 
-## Actual verification
+## Actual local verification
 
-The complete local `npm run ci` ran once against existing dependencies.
-Formatting, ESLint, Stylelint, layout/scheduling boundaries, architecture,
-runtime/test/worker typechecks, all 631 Unit/Integration files and 6,417 tests,
-coverage, duplication and dead-code checks passed. Audit then failed as described
-in GH-01. No install, dependency update or suppression was performed.
+The full local `npm run ci` ran once with existing dependencies. Formatting,
+ESLint, Stylelint, layout/scheduling boundaries, architecture and all three
+TypeScript checks passed. The coverage stage failed: 631 files passed, two files
+had three 5-second capacity-case timeouts, and one worker exited with SIGTRAP
+while running `active-editor-handle-frames.test.ts`. The stack showed V8 failure
+at `Object.freeze()` through `src/domain/store/immutability.ts`. Overall output
+reported 6,424 passed tests, three failed tests and one unhandled worker error;
+no complete coverage summary was produced.
 
-| Full-project coverage | Actual | Required |
-| --------------------- | ------ | -------- |
-| Statements            | 92.92% | 85%      |
-| Branches              | 88.08% | 80%      |
-| Functions             | 94.54% | 85%      |
-| Lines                 | 95.45% | 85%      |
+The timeouts affected `uniform-spatial-index.test.ts` (two aggregate-membership
+cases) and `element-store.test.ts` (incremental membership construction).
+The default run admitted 32 workers on this host. A bounded repeat of only the
+failed coverage stage through `npm run test:coverage -- --maxWorkers=4` passed all
+634 files / 6,433 tests, preserving all files, assertions, deadlines and thresholds.
+The three timeout cases and the SIGTRAP file passed. This does not establish the
+cause or reliability of the default 32-worker path; that execution remains failed.
+Static stages were not repeated. Full-project coverage passed:
 
-Remaining stages were continued separately: `npm run build` and
-`npm run package:verify` passed. The complete `npm run benchmark` also passed:
-116 invariant files at 120 Hz and all 20 cadence-sensitive files at each of
-60, 90, 120, 144 and 240 Hz. Continuations do not change the overall failed CI.
+| Metric     | Actual | Required |
+| ---------- | -----: | -------: |
+| Statements | 92.93% |      85% |
+| Branches   | 88.11% |      80% |
+| Functions  | 94.59% |      85% |
+| Lines      | 95.46% |      85% |
 
-The final report received a separate factual review. Its formatting and whitespace,
-all 37 index entries, relative links and Markdown fences were checked successfully.
-Only documentation edits followed the application checks, so their passing evidence
-was retained without repeating unaffected suites. The authorized condensation of
-quality priorities preserves every requirement and reduces that document to 499 lines.
+Remaining stages continued through the native command-plan/exclusive-check runner,
+individually retaining failures while completing subsequent checks. Duplication
+(zero clones), both dead-code passes, production build and package verification
+passed. Audit failed on the same seven related High reports described in GH-01.
+Complete performance contracts passed: all 117 invariant files at 120 Hz and all
+20 cadence-sensitive files at each of 60, 90, 120, 144 and 240 Hz. The continuation
+runner correctly returned failure because audit failed. Neither continuations nor
+the successful coverage repeat turn the original `npm run ci` into a passing run.
 
-A separate bounded reviewer collected live GitHub evidence. The main reviewer
-independently rechecked active rules, SHA enforcement, current main tree, CI job
-results and bypass evaluation. All four action pins match upstream:
-checkout 7.0.1, setup-node 7.1.0, semantic-pull-request 6.1.1 and fetch-metadata
-3.1.0. [Gitleaks 8.30.1](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1)
-has published Linux x64 checksum
+No install, dependency update, suppression, source fix, raised test deadline or
+reduced fixture was used. Default-run reliability remains an evidence gap:
+resource contention is plausible, but the V8 crash cause was not established.
+
+The license/README follow-up passed all 17 tooling test files / 246 tests, including
+the five new license cases, plus repository-wide formatting, ESLint, zero-clone
+duplication, both Knip passes, native production build and package verification.
+The complete selection graph still parses successfully after the new test:
+1,721 files / 8,221 edges at that stage. Installed upstream license texts and the final readable
+bundle banner match exactly. The SVG banner was rendered and visually inspected.
+Watch configuration uses the same notice, but a watch process was not exercised.
+
+Application runtime source and performance contracts were unchanged, so their
+passing coverage and full performance evidence above was retained. This follow-up
+does not claim another complete `npm run ci` or remove the known audit failure.
+
+The subsequent CodeQL corrections add deterministic rejection cases for both
+runner output variables, external/traversing paths, redirected command directories,
+symlinks, hardlinks and unsupported condition syntax. Existing workflow gate,
+Dependabot eligibility, checksum, Git-history and updater regressions retain their
+actual shell behavior. Integrated verification passed all 18 tooling test files /
+270 tests, repository-wide formatting and ESLint, zero-clone duplication and both
+Knip passes. Documentation index, file links, fences and whitespace checks passed.
+Current source/test/tooling graph construction succeeds with 1,724 files /
+8,224 edges. The independent static review found no additional defect and checked
+the output layout against the official runner implementation.
+
+## Hosted evidence and resource assessment
+
+The [current CI run](https://github.com/boommasterxd/inkbook/actions/runs/39239768513)
+and associated checks provide these timestamp-based observations:
+
+| Job                                                                                    | Runner        | Duration | Result                                   |
+| -------------------------------------------------------------------------------------- | ------------- | -------: | ---------------------------------------- |
+| Select affected checks                                                                 | ubuntu-slim   |     41 s | Success, cold npm cache, full selection  |
+| Quality gates                                                                          | ubuntu-latest |    422 s | Audit failure                            |
+| Performance (shared)                                                                   | ubuntu-latest |    660 s | Success                                  |
+| Performance (refresh profiles)                                                         | ubuntu-latest |    332 s | Success                                  |
+| CI                                                                                     | ubuntu-slim   |      3 s | Correct failure propagation              |
+| [Gitleaks](https://github.com/boommasterxd/inkbook/actions/runs/39239768589)           | ubuntu-slim   |     16 s | Checksum/tree/introduced-history success |
+| [Latest title check](https://github.com/boommasterxd/inkbook/actions/runs/39253529908) | ubuntu-slim   |      5 s | Success                                  |
+
+Five CI jobs total 1,458 runner-seconds (24 minutes 18 seconds), versus
+11 minutes 54 seconds workflow elapsed time. Per-job upward minute rounding
+would give 27 minutes, an estimate rather than billed usage. Scope/cache
+differences prevent attribution of changes against earlier runs to Slim.
+
+Hosted coverage for the inspected committed tree is 92.93% statements, 88.11% branches,
+94.59% functions and 95.47% lines. These stages do not make the failed aggregate
+gate successful. Gitleaks covered the tree and one introduced commit; it does
+not establish a new complete historical publication scan. Its
+[published release](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1)
+Linux x64 checksum matches `.gitleaks-version`:
 `551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb`.
-That verifies published pairing, not independent authenticity.
+This verifies published pairing, not independent authenticity.
 
-Read-only GitHub queries used explicit targets, full/effective rules,
-count-only secret metadata, existing PR/check/job records and filtered logs.
-No provider settings, source, workflows, tests or dependencies changed. No
-dispatch, test PR, merge, release, deployment or live submission was triggered.
-No Obsidian UI/hardware acceptance was repeated for this report. Isolated mocks
-do not establish unobserved provider branches or manual host behavior.
+[GitHub runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+documents Slim's one CPU, 5 GB RAM, unprivileged container and 15-minute cap.
+The observed selector leaves headroom, without guaranteeing future cold installs.
+[Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+distinguishes free standard execution for public repositories from potential
+storage/cache charges. Current inventories show 13 caches / 814,904,334 bytes and
+zero artifacts; these are inventories, not accrued billing.
 
-## Hosted runner evidence and resource assessment
+Account plan, billed usage and shared account capacity remain unavailable. Retain
+the justified runner split, resolve blocking audit and observe remaining Slim
+automation on ordinary authorized runs. No monetary saving is claimed.
 
-The [current CI run](https://github.com/boommasterxd/inkbook/actions/runs/39227808059)
-and associated scanner/title checks provide these observed durations:
+## Verification limits
 
-| Job                            | Runner        | Duration    | Result                                        |
-| ------------------------------ | ------------- | ----------- | --------------------------------------------- |
-| Select affected checks         | ubuntu-slim   | 72 seconds  | Success, cold npm cache, full planner         |
-| Quality gates                  | ubuntu-latest | 412 seconds | Audit failure                                 |
-| Performance (shared)           | ubuntu-latest | 519 seconds | Success                                       |
-| Performance (refresh profiles) | ubuntu-latest | 368 seconds | Success                                       |
-| CI                             | ubuntu-slim   | 5 seconds   | Correct failure propagation                   |
-| gitleaks                       | ubuntu-slim   | 13 seconds  | Checksum, tree and introduced-history success |
-| Validate PR Title              | ubuntu-slim   | 6 seconds   | Success                                       |
+The main reviewer independently read identity/security metadata, public approval,
+full/effective main rules, bypass suite, PR provenance, Actions policies and job
+results. The local reviewer inspected actual selection/gate regressions and parsed
+the exhaustive manifest and dependency graph: 117 invariant / 20 cadence files,
+1,724 graph files / 8,224 edges after the CodeQL fixes. Parsing is not test execution.
 
-The five CI jobs total 1,376 runner-seconds (22 minutes 56 seconds), versus
-10 minutes 11 seconds workflow wall time. Rounding each job upward separately
-gives 25 estimated runner-minutes from timestamps, not actual billed usage.
-The [preceding CI run](https://github.com/boommasterxd/inkbook/actions/runs/39218147036)
-totaled 23 minutes 46 seconds with 11 minutes 30 seconds elapsed.
-Different scope/cache/execution conditions prevent attributing the difference
-to Slim.
+The original draft received independent factual review. The root documentation
+index validator still covers all 38 documents; no Markdown document was added or
+renamed. README banner artwork was rendered at native size and visually inspected.
+The restored `github-automation` anchor was checked separately because the existing
+link validator does not validate fragments.
+Independent follow-up review passed after correcting stale report text and graph
+counts; it confirmed the final provider settings, both CodeQL analyses and the
+complete license banner without an implementation defect in the scoped changes.
 
-[GitHub runner limits](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#single-cpu-runners)
-confirm one CPU, 5 GB RAM, unprivileged containers and the hard 15-minute limit.
-The [Slim tool inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu-slim/ubuntu-slim-Readme.md)
-and actual image `20261012.23.1` logs support required Git, shell, jq, gh, curl,
-archive and checksum tools. The 72-second selector leaves observed headroom,
-without guaranteeing future cold-install duration.
+Authorized provider changes are listed above; local changes comprise README and
+banner, LICENSE, build/package scripts, five regression cases and this report.
+No application runtime source or dependency changed. The verification evidence
+above was collected before publication. The owner subsequently authorized commit,
+push, a normal pull request and an administrator-bypass squash merge to `main`,
+including the known dependency-audit failure. This is a scoped publication
+exception, not a passing CI result or a change to repository protection.
+No manual workflow dispatch, release, deployment or live submission is included.
+CodeQL initialization was the expected consequence of enabling default setup;
+native scans may run again after publication.
+The existing root index remains synchronized.
 
-Actual billed usage, allowance and account plan are unavailable; the billing
-endpoint returned 404 and requires additional user scope.
-[Current runner pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing)
-alone cannot prove savings for this private repository. Retain the runner split,
-inspect remaining Slim automation paths on their next normal authorized runs,
-and resolve the audit failure. No measured monetary savings are claimed.
-
-## Remaining evidence gaps
-
-Full conformance remains blocked by GH-01 and the local npm departure.
-Account plan/billing, installed Apps, push protection and automatic Copilot
-review remain unverified. Hosted Slim Dependabot/updater paths, a hosted
-docs-only execution and a current release were not newly exercised. Isolated
-regressions establish source selection behavior, not every hosted branch.
-Use readback or the next ordinary authorized run; test PRs, dispatches,
-Previews and releases are not audit prerequisites.
+No Obsidian UI/hardware checks were repeated for these packaging/documentation changes.
+Historical host evidence in the code-quality report is not fresh acceptance of
+current artifacts. WCAG, physical pen/mobile, minimum-host and Community release
+acceptance remain unverified. Use readback or normal authorized executions for
+remaining hosted gaps, without manufacturing PRs or deployments for the review.

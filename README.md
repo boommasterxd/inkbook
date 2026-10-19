@@ -1,27 +1,31 @@
-<div align="center">
+<p align="center">
+  <img src="docs/assets/readme-banner.svg" alt="Inkbook: Handwriting that belongs in your notes. Write, sketch, and connect inside Obsidian." width="100%">
+</p>
 
-# Inkbook
+<p align="center">
+  Draw, highlight, and connect ideas directly in your Obsidian notes.<br>
+  Keep every drawing as a portable, editable SVG in your vault.
+</p>
 
-**Handwriting that belongs in your notes.**
+<p align="center">
+  <a href="#get-started"><img src="https://img.shields.io/badge/Obsidian-1.13.0%2B-A99AF5?style=flat-square" alt="Requires Obsidian 1.13.0 or later"></a>
+  <a href="#make-room-for-your-ideas"><img src="https://img.shields.io/badge/Desktop_%26_Mobile-7C6FE8?style=flat-square" alt="Desktop, iOS, and Android"></a>
+  <a href="#your-files-in-your-vault"><img src="https://img.shields.io/badge/Portable_SVG-7BD8BD?style=flat-square" alt="Portable SVG files"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-A99AF5?style=flat-square" alt="MIT license"></a>
+</p>
 
-Draw, highlight, and sketch diagrams inside Obsidian.<br>
-Keep your drawings as portable SVG files in your vault.
-
-**Pen · Touch · Mouse** &nbsp; | &nbsp; **Desktop · iOS · Android**
-
-[Get started](#get-started) · [Build from source](#build-from-source) · [Documentation](#documentation)
-
-</div>
-
----
-
-Inkbook brings an editable writing surface into your Markdown notes. Jot down an equation, annotate an idea, or connect shapes into a diagram. Lock the drawing when you are done and keep reading your note.
-
-Each drawing lives in a self-contained SVG attachment with its editable Inkbook data embedded inside. The saved graphic remains viewable outside Obsidian, without the plugin.
+<p align="center">
+  <a href="#get-started">Get started</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="https://github.com/boommasterxd/inkbook/issues">Report a bug</a>
+</p>
 
 > **Release candidate:** The first-release implementation is present and undergoing validation. Real-device acceptance, including mobile hardware and pen input, remains a release step.
 
 ## Make room for your ideas
+
+Jot down an equation, highlight a passage, or sketch a diagram with **pen, touch, or mouse**. Lock the drawing when you are done and keep reading. Every drawing stays viewable outside Obsidian, without the plugin.
 
 |                       | What you can do                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -105,6 +109,10 @@ The code is organized into five areas: pure `domain` logic, `editor` interaction
 
 Performance verification uses deterministic work and resource bounds, including large-document fixtures. Physical-device responsiveness remains a separate acceptance check; see [quality and testing](docs/quality-and-testing.md).
 
+### GitHub automation
+
+Pull requests targeting `main` run checks selected from the complete change set. The required checks are `CI`, `Performance (shared)`, `Performance (refresh profiles)`, `gitleaks`, and `Validate PR Title`. GitHub requires current branches and squash merges. See [CI selection](docs/ci-selection.md) for documentation-only checks, conservative fallbacks, and coverage scope.
+
 ## Documentation
 
 | Start here                                            | Read about                                                |
@@ -124,6 +132,8 @@ For bugs and feature requests, use the repository's [issue tracker](https://gith
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before preparing changes. Report security vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
+Pull request creation is currently limited to repository collaborators. Bug reports and feature requests remain welcome through Issues.
+
 ## License
 
-Inkbook is licensed under the [MIT License](LICENSE). Copyright (c) 2026 Yannick Schäfer.
+Inkbook is licensed under the [MIT License](LICENSE). Copyright (c) 2026 Yannick Schäfer. Bundled third-party components retain their own licenses; their required notices are included in `LICENSE` and the generated plugin bundle.

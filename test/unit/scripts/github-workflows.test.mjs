@@ -1,7 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { workflowCondition } from "./workflow-condition-fixture.mjs";
 
 function readWorkflow(name) {
   return readFileSync(new URL(`../../../.github/workflows/${name}.yml`, import.meta.url), "utf8");
@@ -57,6 +60,19 @@ describe("required CI aggregation", () => {
   const workflow = readWorkflow("ci");
   const gate = jobSection(workflow, "ci");
   const command = gate.split("        run: |\n")[1]?.trim();
+  let directory;
+  let script;
+
+  beforeAll(() => {
+    if (!command) throw new Error("Missing CI gate shell script.");
+    directory = mkdtempSync(join(tmpdir(), "inkbook-ci-gate-"));
+    script = join(directory, "gate.sh");
+    writeFileSync(script, command, { flag: "wx", mode: 0o600 });
+  });
+
+  afterAll(() => {
+    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
+  });
 
   it("keeps one unconditional CI gate and both required performance contexts", () => {
     expect(workflow.match(/^ {4}name: CI$/gm)).toHaveLength(1);
@@ -68,25 +84,21 @@ describe("required CI aggregation", () => {
   });
 
   function runGate(overrides = {}) {
-    const result = spawnSync(
-      "bash",
-      ["--noprofile", "--norc", "-e", "-o", "pipefail", "-c", command],
-      {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          SELECT_RESULT: "success",
-          QUALITY_RESULT: "success",
-          PERFORMANCE_RESULT: "success",
-          MODE: "full",
-          SHARED: "true",
-          CADENCE: "true",
-          BUILD: "true",
-          ...overrides,
-        },
-        timeout: 5_000,
+    const result = spawnSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail", script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        SELECT_RESULT: "success",
+        QUALITY_RESULT: "success",
+        PERFORMANCE_RESULT: "success",
+        MODE: "full",
+        SHARED: "true",
+        CADENCE: "true",
+        BUILD: "true",
+        ...overrides,
       },
-    );
+      timeout: 5_000,
+    });
     expect(result.error).toBeUndefined();
     return result.status;
   }
@@ -191,10 +203,10 @@ describe("affected CI selection", () => {
         needs: { select: { outputs: { shared: selected } } },
         matrix: { suite: "shared" },
       };
-      expect(runInNewContext("needs.select.outputs[matrix.suite] == 'true'", context)).toBe(
+      expect(workflowCondition("needs.select.outputs[matrix.suite] == 'true'", context)).toBe(
         selected === "true",
       );
-      expect(runInNewContext("needs.select.outputs[matrix.suite] == 'false'", context)).toBe(
+      expect(workflowCondition("needs.select.outputs[matrix.suite] == 'false'", context)).toBe(
         selected === "false",
       );
     }
@@ -214,8 +226,8 @@ describe("Dependabot metadata-only auto-merge", () => {
     const context = dependabotContext();
     context.needs.inspect.outputs.update_type = `version-update:semver-${type}`;
 
-    expect(runInNewContext(foldedCondition(inspect), context, { timeout: 100 })).toBe(true);
-    expect(runInNewContext(foldedCondition(merge), context, { timeout: 100 })).toBe(true);
+    expect(workflowCondition(foldedCondition(inspect), context)).toBe(true);
+    expect(workflowCondition(foldedCondition(merge), context)).toBe(true);
   });
 
   it.each([
@@ -259,8 +271,8 @@ describe("Dependabot metadata-only auto-merge", () => {
     const context = dependabotContext();
     change(context);
 
-    expect(runInNewContext(foldedCondition(inspect), context, { timeout: 100 })).toBe(false);
-    expect(runInNewContext(foldedCondition(merge), context, { timeout: 100 })).toBe(false);
+    expect(workflowCondition(foldedCondition(inspect), context)).toBe(false);
+    expect(workflowCondition(foldedCondition(merge), context)).toBe(false);
   });
 
   it.each([
@@ -274,6 +286,6 @@ describe("Dependabot metadata-only auto-merge", () => {
     const context = dependabotContext();
     context.needs.inspect = { result, outputs: { ecosystem, update_type: updateType } };
 
-    expect(runInNewContext(foldedCondition(merge), context, { timeout: 100 })).toBe(false);
+    expect(workflowCondition(foldedCondition(merge), context)).toBe(false);
   });
 });

@@ -1,8 +1,9 @@
-import { appendFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { validateDocumentation } from "./ci-documentation.mjs";
 import { selectionOutputs, validateExpectedOutputs } from "./ci-execution-plan.mjs";
+import { appendRunnerCommand } from "./ci-runner-output.mjs";
 import { createSelection, inspectChanges } from "./ci-selection.mjs";
 import { collectPerformanceTestPlan } from "./performance-test-runner.mjs";
 
@@ -12,7 +13,7 @@ async function publishOutputs(outputs) {
   const output = Object.entries(outputs)
     .map(([key, value]) => `${key}=${value}\n`)
     .join("");
-  if (process.env["GITHUB_OUTPUT"]) await appendFile(process.env["GITHUB_OUTPUT"], output);
+  await appendRunnerCommand("GITHUB_OUTPUT", output);
   process.stdout.write(output);
 }
 
@@ -51,14 +52,12 @@ try {
       `${plan.reason}\n${plan.tests.length} selected test files; ${plan.coverage.length} coverage inputs.\n`,
     );
     await publishOutputs(outputs);
-    if (process.env["GITHUB_STEP_SUMMARY"]) {
-      await appendFile(
-        process.env["GITHUB_STEP_SUMMARY"],
-        `Selection: **${plan.mode}**. ${plan.reason}\n\n${plan.tests.length} selected test files. ` +
-          `Coverage: ${plan.mode === "affected" ? "partial, selected runtime dependency closure" : plan.mode}. ` +
-          `Build: ${outputs.build}.\n`,
-      );
-    }
+    await appendRunnerCommand(
+      "GITHUB_STEP_SUMMARY",
+      `Selection: **${plan.mode}**. ${plan.reason}\n\n${plan.tests.length} selected test files. ` +
+        `Coverage: ${plan.mode === "affected" ? "partial, selected runtime dependency closure" : plan.mode}. ` +
+        `Build: ${outputs.build}.\n`,
+    );
   }
 } catch (error) {
   process.stderr.write(`${error.message}\n`);
