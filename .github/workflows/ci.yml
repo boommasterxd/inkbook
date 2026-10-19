@@ -20,8 +20,8 @@ env:
 jobs:
   select:
     name: Select affected checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       shared: ${{ steps.plan.outputs.shared }}
@@ -142,7 +142,7 @@ jobs:
     name: CI
     needs: [select, quality, Performance]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
       - name: Require every CI job to succeed
