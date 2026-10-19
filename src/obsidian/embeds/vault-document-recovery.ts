@@ -1,4 +1,4 @@
-import type { FileManager, TFile } from "obsidian";
+import type { FileManager } from "obsidian";
 
 import { FILE_SCHEMA_LIMITS, type InkSnapshotV1 } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
@@ -10,12 +10,14 @@ import type {
 } from "../../editor/session/session-port";
 import type { ExternalChangeOutcome } from "../../persistence/saving/autosave/types";
 import type { MetadataGuardedFileRead } from "../../persistence/saving/save-ports";
+import { exactStringEqualScheduled } from "../../persistence/saving/exact-string-equality";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeResult,
 } from "../../persistence/worker/runtime/public";
 import { adoptOwnedSvgOutput } from "../../persistence/scheduling/owned-svg-output";
 import type { TrustedDocumentHeadPort } from "../storage/trusted-document-head-ledger";
+import type { CreatedVaultFile, CreatedVaultFileRead } from "../vault/file-adapter";
 import type { SafeStaticProof } from "../../persistence/serialization/safe-static-proof";
 import {
   deriveDocumentIntegrityManifest,
@@ -25,6 +27,7 @@ import {
   runVaultRecoveryOperation,
   type VaultRecoveryExecutorAccess,
 } from "./vault-recovery-executor";
+import { runVaultRecoveryExport } from "./vault-recovery-export";
 
 export interface RecoveryCompletionOptions {
   readonly replaceMarkdownTarget?: (
@@ -51,13 +54,12 @@ export interface VaultDocumentSessionHooks {
 export type SessionExternalChangeOutcome = ExternalChangeOutcome | "reloaded" | "reload-failed";
 
 export interface RecoveryFilePort {
-  createAndReadBack(
+  createOwnedAndReadBack(
     path: string,
     content: string,
     maximumBytes: number,
-  ): Promise<MetadataGuardedFileRead>;
+  ): Promise<CreatedVaultFileRead>;
   pathExists(path: string): boolean;
-  resolveFile(path: string): TFile;
 }
 
 interface SaveRecoveryCopyOptions {
@@ -90,16 +92,27 @@ export async function saveSessionRecoveryCopy(
 async function discardRecoveryArtifact(
   fileManager: FileManager,
   operation: RecoveryOperationIdentity,
-  createdFile?: TFile,
+  created?: CreatedVaultFile,
 ): Promise<RecoveryResult> {
-  if (createdFile !== undefined) {
+  if (recoveryCopyIsCurrent(created)) {
     try {
-      await fileManager.trashFile(createdFile);
+      await fileManager.trashFile(created.file);
     } catch {
       // A cleanup failure must not turn an unverified artifact into a confirmed recovery.
     }
   }
   return { ...operation, status: "failed" };
+}
+
+function recoveryCopyIsCurrent(
+  created: CreatedVaultFile | undefined,
+  readBack?: MetadataGuardedFileRead,
+): created is CreatedVaultFile {
+  try {
+    return created?.isCurrent() === true && readBack?.isCurrent?.() !== false;
+  } catch {
+    return false;
+  }
 }
 
 function findAvailableRecoveryPath(
@@ -142,7 +155,7 @@ export async function saveRecoveryCopy(options: SaveRecoveryCopyOptions): Promis
   const path = findAvailableRecoveryPath(options.documentId, (candidate) =>
     options.files.pathExists(candidate),
   );
-  let createdFile: TFile | undefined;
+  let created: CreatedVaultFile | undefined;
   try {
     const exported = await exportRecovery(options);
     if (exported === null) return failed(options.operation);
@@ -156,20 +169,29 @@ export async function saveRecoveryCopy(options: SaveRecoveryCopyOptions): Promis
       return failed(options.operation);
     }
     const output = trusted.content;
-    const readBack = await options.files.createAndReadBack(
+    const candidate = await options.files.createOwnedAndReadBack(
       path,
       output,
       FILE_SCHEMA_LIMITS.totalInputBytes,
     );
-    createdFile = options.files.resolveFile(path);
-    if (options.stopped()) return discard(options, createdFile);
-    if (!(await verifyRecovery(options, exported, readBack.content))) {
-      return discard(options, createdFile);
+    const { readBack } = candidate;
+    if (
+      !recoveryCopyIsCurrent(candidate, readBack) ||
+      !(await exactStringEqualScheduled(readBack.content, output, options.workScheduler)) ||
+      !recoveryCopyIsCurrent(candidate, readBack)
+    ) {
+      return failed(options.operation);
     }
-    return completeRecovery(options, createdFile);
+    created = candidate;
+    if (options.stopped() || !recoveryCopyIsCurrent(created, readBack)) {
+      return discard(options, created);
+    }
+    if (!(await verifyRecovery(options, exported, readBack.content))) {
+      return discard(options, created);
+    }
+    return completeRecovery(options, created, readBack);
   } catch {
-    createdFile ??= resolveCreatedFile(options.files, path);
-    return discard(options, createdFile);
+    return discard(options, created);
   }
 }
 
@@ -177,7 +199,7 @@ async function exportRecovery(
   options: SaveRecoveryCopyOptions,
 ): Promise<Extract<DocumentRuntimeResult, { type: "export-success" }> | null> {
   return runRecovery(options, async (executor, workerEpoch) => {
-    const result = await executor.execute({
+    const result = await runVaultRecoveryExport(executor, {
       baseModelRevision: null,
       exportGeneration: 1,
       modelRevision: options.operation.baseRevision,
@@ -241,23 +263,24 @@ function runRecovery<Value>(
 
 async function completeRecovery(
   options: SaveRecoveryCopyOptions,
-  createdFile: TFile,
+  created: CreatedVaultFile,
+  readBack: MetadataGuardedFileRead,
 ): Promise<RecoveryResult> {
-  if (options.stopped()) return discard(options, createdFile);
-  const savedPath = createdFile.path;
+  const isCurrent = () => !options.stopped() && recoveryCopyIsCurrent(created, readBack);
+  if (!isCurrent()) return discard(options, created);
+  const savedPath = created.file.path;
   options.completion.reportSavedPath?.(savedPath);
+  if (!isCurrent()) return discard(options, created);
   if (options.completion.replaceMarkdownTarget === undefined) {
-    return options.stopped()
-      ? discard(options, createdFile)
-      : { ...options.operation, savedPath, status: "confirmed" };
+    return { ...options.operation, savedPath, status: "confirmed" };
   }
   let replaced = false;
   try {
-    replaced = await options.completion.replaceMarkdownTarget(savedPath, () => !options.stopped());
+    replaced = await options.completion.replaceMarkdownTarget(savedPath, isCurrent);
   } catch {
     // The verified SVG is intentionally preserved when the host Markdown edit fails.
   }
-  if (options.stopped()) return discard(options, createdFile);
+  if (!isCurrent()) return discard(options, created);
   return {
     ...options.operation,
     savedPath,
@@ -265,20 +288,15 @@ async function completeRecovery(
   };
 }
 
-function resolveCreatedFile(files: RecoveryFilePort, path: string): TFile | undefined {
-  try {
-    return files.resolveFile(path);
-  } catch {
-    return undefined;
-  }
-}
-
 function failed(operation: RecoveryOperationIdentity): RecoveryResult {
   return { ...operation, status: "failed" };
 }
 
-function discard(options: SaveRecoveryCopyOptions, file?: TFile): Promise<RecoveryResult> {
-  return discardRecoveryArtifact(options.fileManager, options.operation, file);
+function discard(
+  options: SaveRecoveryCopyOptions,
+  created?: CreatedVaultFile,
+): Promise<RecoveryResult> {
+  return discardRecoveryArtifact(options.fileManager, options.operation, created);
 }
 
 export function acceptsSessionOperation(
@@ -321,7 +339,7 @@ export async function restoreWorkerBaseline(options: {
       },
       stopped: options.stopped ?? (() => false),
       run: (executor, workerEpoch) =>
-        executor.execute({
+        runVaultRecoveryExport(executor, {
           baseModelRevision: null,
           exportGeneration: Number.MAX_SAFE_INTEGER,
           modelRevision: options.revision,
