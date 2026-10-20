@@ -89,6 +89,31 @@ describe("history replay origin", () => {
   );
 });
 
+describe("document history session lifetime", () => {
+  it.each(["sync", "async"] as const)(
+    "rejects queued %s replay after session disposal",
+    async (mode) => {
+      const removeElements = vi.fn();
+      const history = new ActiveEditorHistory({ ...model, removeElements });
+      const replay = vi.fn(async () => true);
+      const effect = { apply: vi.fn(), revert: vi.fn() };
+      const transition = { payloadBytes: 1, redo: replay, undo: replay };
+      if (mode === "sync") history.create([rectangle()]);
+      else history.registerApplied(transition, effect);
+      const pending = history.undoAsync();
+      history.dispose();
+      await expect(pending).resolves.toBe(false);
+      expect(removeElements).not.toHaveBeenCalled();
+      expect(replay).not.toHaveBeenCalled();
+      expect(effect.revert).not.toHaveBeenCalled();
+      expect(history.registerApplied(transition, effect)).toBe(false);
+      expect(history.create([rectangle()])).toBe(false);
+      expect(history.commandCount).toBe(0);
+      await expect(history.undoAsync()).resolves.toBe(false);
+    },
+  );
+});
+
 describe("ActiveEditorHistory applied async transitions", () => {
   it("publishes new Canvas commits for a pane history adapter", () => {
     const history = new ActiveEditorHistory(model);

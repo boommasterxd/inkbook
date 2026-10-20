@@ -177,7 +177,7 @@ describe("autosave trust boundaries", () => {
   });
 });
 
-describe("autosave orchestration", () => {
+describe("automatic autosave scheduling", () => {
   it("debounces content commits for 1,000 ms and confirms the read-back", async () => {
     const harness = await createHarness();
     recordRectangleCommit(harness, 1, 140);
@@ -186,9 +186,7 @@ describe("autosave orchestration", () => {
     expect(harness.vault.processCount).toBe(0);
     harness.clock.advance(1);
 
-    await expect(harness.coordinator.flush("retry")).resolves.toBe("clean");
-    expect(harness.vault.processCount).toBe(1);
-    expect(harness.coordinator.dirty).toBe(false);
+    await expectAutomaticSave(harness);
   });
 
   it("rechecks every 200 ms without dispatching while a gesture is active", async () => {
@@ -202,10 +200,11 @@ describe("autosave orchestration", () => {
     expect(harness.vault.processCount).toBe(0);
     harness.clock.advance(1);
 
-    await expect(harness.coordinator.flush("lock")).resolves.toBe("clean");
-    expect(harness.vault.processCount).toBe(1);
+    await expectAutomaticSave(harness);
   });
+});
 
+describe("autosave conflicts and read-back recovery", () => {
   it("suspends on an exact-base conflict without overwriting external content", async () => {
     const harness = await createHarness({ vaultContent: "external-version" });
     recordRectangleCommit(harness, 1, 160);
@@ -371,3 +370,13 @@ describe("autosave verification executor recovery", () => {
     expect(harness.vault.content).toBe(harness.initial.svg + "\n");
   });
 });
+
+async function expectAutomaticSave(
+  harness: Awaited<ReturnType<typeof createHarness>>,
+): Promise<void> {
+  await harness.vault.waitForProcessCount(1);
+  await harness.coordinator.currentSaveSettlement;
+  expect(harness.vault.processCount).toBe(1);
+  expect(harness.coordinator.dirty).toBe(false);
+  expect(harness.vault.content).toBe(serializeSnapshot(harness.documentSource.value).svg);
+}

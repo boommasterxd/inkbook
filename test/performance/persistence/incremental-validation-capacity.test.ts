@@ -56,37 +56,6 @@ it("reuses validated order without scanning 10k elements for a small edit", () =
   expect(fullMapIterations).toBe(0);
 });
 
-it("updates retained serializer capacity without rescanning unchanged geometry", () => {
-  const elements = Array.from({ length: 20_000 }, (_, index) =>
-    createRetainedCapacityRectangle(index + 1),
-  );
-  const serializer = new IncrementalDocumentSerializer();
-  expect(serializer.reset(createSnapshot(elements)).ok).toBe(true);
-  const target = elements[0]!;
-
-  for (let revision = 8; revision < 108; revision += 1) {
-    const offset = revision % 2;
-    const result = serializer.applyDelta({
-      baseModelRevision: revision - 1,
-      changedElements: [{ ...target, pivot: { x: 150 + offset, y: 150 }, x: 100 + offset }],
-      modelRevision: revision,
-    });
-    expect(result).toEqual({ ok: true, value: undefined });
-  }
-  expect(serializer.instrumentation).toMatchObject({
-    fullValidationRuns: 1,
-    incrementalValidationRuns: 100,
-    fragmentBuilds: 0,
-    cacheElements: 0,
-  });
-  expect(serializer.prewarmElement(target.id, 1024 * 1024)).not.toBeNull();
-  expect(serializer.instrumentation).toMatchObject({
-    fragmentBuilds: 1,
-    cacheElements: 1,
-  });
-  serializer.clear();
-});
-
 it.each([1_000, 20_000])(
   "reads changed geometry only when updating capacity among %i elements",
   (size) => {

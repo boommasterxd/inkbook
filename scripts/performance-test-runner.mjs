@@ -12,6 +12,15 @@ export const performanceRoot = join(projectRoot, "test", "performance");
 export const SUPPORTED_REFRESH_RATES = Object.freeze([60, 90, 120, 144, 240]);
 export const DEFAULT_REFRESH_RATE = 120;
 
+export function assertFullPerformanceEnvironment(environment = process.env) {
+  if (
+    (environment["INKBOOK_PERFORMANCE_SUITE"] ?? "all") !== "all" ||
+    environment["INKBOOK_PERFORMANCE_REFRESH_RATE"] !== undefined
+  ) {
+    throw new Error("Full performance checks require suite all; unset shard overrides.");
+  }
+}
+
 export async function collectTestFiles(directory = performanceRoot) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];

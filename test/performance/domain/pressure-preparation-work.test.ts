@@ -29,25 +29,40 @@ function denseDiskWindow() {
 }
 
 describe("bounded pressure preparation work", () => {
-  it("rejects unrelated source hemispheres before exact intersection and membership probes", () => {
+  it("bounds exact-union work and resumptions while rejecting unrelated hemispheres", () => {
     const shapes = denseDiskWindow();
     const intersectionsProbe = vi.spyOn(intersections, "intersectPressureBoundaries");
     const boundaryProbe = vi.spyOn(intersections, "pressureBoundaryParameter");
     const boundsProbe = vi.spyOn(arcBounds, "pressureArcBounds");
     try {
       const job = iteratePressureUnion(shapes);
+      let resumptions = 0;
       let step;
       do {
+        const previous = intersectionsProbe.mock.calls.length;
         step = job.next();
+        resumptions += 1;
+        // One disk boundary can probe two edges for each of the other 63 disks.
+        expect(intersectionsProbe.mock.calls.length - previous).toBeLessThanOrEqual(126);
       } while (!step.done);
       expect(intersectionsProbe).toHaveBeenCalledTimes(step.value.work.intersectionTests);
       expect(boundaryProbe).toHaveBeenCalledTimes(step.value.work.boundaryTests);
       // Each immutable source hemisphere prepares one extent reused in query direction.
       expect(boundsProbe).toHaveBeenCalledTimes(128);
       // Both query and source hemispheres reject unrelated full-circle comparisons.
+      expect(intersectionsProbe.mock.calls.length).toBeGreaterThan(500);
       expect(intersectionsProbe.mock.calls.length).toBeLessThanOrEqual(5_500);
       expect(boundaryProbe.mock.calls.length).toBeLessThanOrEqual(2_200);
       expect(step.value.usedFallback).toBe(false);
+      // Reject redundant per-source and per-interval generator polling.
+      expect(resumptions).toBeLessThanOrEqual(
+        128 +
+          Math.ceil(step.value.work.intervalTests / 16) +
+          2 * Math.ceil(step.value.work.visibleFragments / 16) +
+          step.value.contours.length +
+          1,
+      );
+      expect(resumptions).toBeLessThanOrEqual(512);
     } finally {
       intersectionsProbe.mockRestore();
       boundaryProbe.mockRestore();
@@ -78,36 +93,6 @@ describe("bounded pressure preparation work", () => {
       expect(job.next()).toEqual({ done: true, value: undefined });
       expect(probes).toHaveBeenCalledTimes(completed);
       expect(iteratePressureUnion([]).next().value).toMatchObject({ contours: [] });
-    } finally {
-      probes.mockRestore();
-    }
-  });
-
-  it("groups exact-union probes without widening a bounded contour step", () => {
-    const shapes = denseDiskWindow();
-    const probes = vi.spyOn(intersections, "intersectPressureBoundaries");
-    try {
-      const job = iteratePressureUnion(shapes);
-      let resumptions = 0;
-      let step;
-      do {
-        const previous = probes.mock.calls.length;
-        step = job.next();
-        resumptions += 1;
-        // One disk boundary can probe two edges for each of the other 63 disks.
-        expect(probes.mock.calls.length - previous).toBeLessThanOrEqual(126);
-      } while (!step.done);
-      expect(probes.mock.calls.length).toBe(step.value.work.intersectionTests);
-      expect(probes.mock.calls.length).toBeGreaterThan(500);
-      // Reject the former per-source and per-interval generator polling cadence.
-      expect(resumptions).toBeLessThanOrEqual(
-        128 +
-          Math.ceil(step.value.work.intervalTests / 16) +
-          2 * Math.ceil(step.value.work.visibleFragments / 16) +
-          step.value.contours.length +
-          1,
-      );
-      expect(resumptions).toBeLessThanOrEqual(512);
     } finally {
       probes.mockRestore();
     }

@@ -34,9 +34,22 @@ describe("arbitrary-frame stroke scaling", () => {
       expect(actual.points).not.toBe(source.points);
       expect(source.points).toEqual(original);
       expect(source.rotation).toBe(rotation);
+      let pressureFailure: {
+        actual: number | undefined;
+        expected: number | undefined;
+        sampleIndex: number;
+      } | null = null;
       for (let index = 2; index < actual.points.length; index += 3) {
-        expect(actual.points[index]).toBe(original[index]);
+        const pressure = actual.points[index];
+        const expectedPressure = original[index];
+        if (!Object.is(pressure, expectedPressure))
+          pressureFailure ??= {
+            actual: pressure,
+            expected: expectedPressure,
+            sampleIndex: (index - 2) / 3,
+          };
       }
+      expect(pressureFailure).toBeNull();
       if (actual.points instanceof Float64Array) {
         actual.points[0] = 123;
         expect(source.points).toEqual(original);

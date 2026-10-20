@@ -1,8 +1,11 @@
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import {
   moveSelectionTimeSliced,
+  moveSelectionWithSnap,
   type SelectionHandleSession,
+  type SelectionMoveSnap,
 } from "../../../editor/selection/public";
+import { hasLinearConnectionDependencies } from "../../../editor/selection/selection-work-budget";
 import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
@@ -168,15 +171,22 @@ export class PreparedElementHistory {
     delta: PointV1,
     onCompleted?: (committed: boolean) => void,
     effect?: SelectionFrameHistoryEffect,
+    snap: SelectionMoveSnap | null = null,
   ): boolean {
-    if (!requiresSlicedMove(elements) || this.#pending || this.#disposed) {
+    if (!requiresSlicedMove(elements, snap) || this.#pending || this.#disposed) {
       return false;
+    }
+    if (snap !== null && elements.length !== 1) {
+      throw new RangeError("Snapped movement requires one selected element.");
     }
     const previewCommit = this.#motion.beginPreviewCommit();
     this.#run(async (generation) => {
       try {
         const scheduler = this.#scheduler(generation);
-        const replacements = await moveSelectionTimeSliced(elements, delta, scheduler);
+        const replacements =
+          snap === null
+            ? await moveSelectionTimeSliced(elements, delta, scheduler)
+            : moveSelectionWithSnap(elements, delta, snap);
         if (replacements === null) return false;
         return await this.#commitApplied(elements, replacements, generation, previewCommit, effect);
       } finally {
@@ -215,12 +225,15 @@ export class PreparedElementHistory {
   ): void {
     if (applied.previous.length === 0 || applied.previous.length !== applied.replacements.length)
       return;
-    this.#history.registerApplied(
+    const model = this.#model;
+    const history = this.#history;
+    const replay = (elements: readonly InkElementV1[]) =>
+      applyPreparedHistoryReplacement(model, elements, () => history.isDisposed);
+    history.registerApplied(
       {
         payloadBytes: applied.payloadBytes,
-        redo: () =>
-          this.#replace(applied.replacements as readonly InkElementV1[], this.#generation),
-        undo: () => this.#replace(applied.previous as readonly InkElementV1[], this.#generation),
+        redo: () => replay(applied.replacements as readonly InkElementV1[]),
+        undo: () => replay(applied.previous as readonly InkElementV1[]),
       },
       effect,
     );
@@ -299,6 +312,27 @@ export class PreparedElementHistory {
   }
 }
 
-function requiresSlicedMove(elements: readonly InkElementV1[]): boolean {
-  return elements.length > SYNCHRONOUS_SELECTION_LIMIT;
+async function applyPreparedHistoryReplacement(
+  model: EditableDocumentModel,
+  elements: readonly InkElementV1[],
+  isCancelled: () => boolean,
+): Promise<boolean> {
+  const basisRevision = model.revision;
+  const cancellation = { isCancelled: () => isCancelled() || model.revision !== basisRevision };
+  if (cancellation.isCancelled()) return false;
+  const preparation = await model.prepareElementReplacement(elements, cancellation);
+  if (preparation.status !== "prepared" || preparation.token === null || cancellation.isCancelled())
+    return false;
+  return model.commitPreparedElementReplacement(preparation.token) === "committed";
+}
+
+function requiresSlicedMove(
+  elements: readonly InkElementV1[],
+  snap: SelectionMoveSnap | null,
+): boolean {
+  return (
+    elements.length > SYNCHRONOUS_SELECTION_LIMIT ||
+    hasLinearConnectionDependencies(elements) ||
+    snap?.candidate.anchor.kind === "linear-endpoint"
+  );
 }

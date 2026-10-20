@@ -65,17 +65,6 @@ describe("arrangeRenderBand", () => {
     expect(calls).toBe(band.length);
   });
 
-  it("preserves the input reference for boundary and empty-selection no-ops", () => {
-    const front = drain(arrangeRenderBandSteps(band, ({ id }) => id === "E", "bring-forward"));
-    const back = drain(arrangeRenderBandSteps(band, ({ id }) => id === "A", "send-backward"));
-    const empty = drain(arrangeRenderBandSteps(band, () => false, "bring-to-front"));
-
-    expect(front).toEqual({ elements: band, changed: false });
-    expect(front.elements).toBe(band);
-    expect(back.elements).toBe(band);
-    expect(empty.elements).toBe(band);
-  });
-
   it.each<ArrangeAction>(["bring-forward", "send-backward", "bring-to-front", "send-to-back"])(
     "preserves source identity for every $0 no-op",
     (action) => {

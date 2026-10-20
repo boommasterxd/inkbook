@@ -1,5 +1,5 @@
 import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import * as elementValidation from "../../../src/domain/schema/element-validation";
 import * as sampleValidation from "../../../src/domain/schema/stroke-sample-range-validation";
 import * as bottomHeap from "../../../src/domain/spatial/max-bottom-heap";
@@ -24,7 +24,21 @@ import {
 } from "../../../src/editor/selection/transforms";
 import { scaleSelectionUniformForTest } from "../../fixtures/editor/selection-transform-reference";
 import { CheckpointSliceScheduler, requireStroke } from "./domain-scenarios";
-import { createStandardDomainFixture } from "./standard-domain-fixture";
+import { createStandardDomainFixture, type StandardDomainFixture } from "./standard-domain-fixture";
+
+let fixtureBase: StandardDomainFixture;
+
+beforeAll(() => {
+  fixtureBase = createStandardDomainFixture();
+  freezeFixtureValue(fixtureBase);
+});
+
+function freezeFixtureValue(value: object): void {
+  for (const child of Object.values(value) as unknown[]) {
+    if (child !== null && typeof child === "object") freezeFixtureValue(child);
+  }
+  Object.freeze(value);
+}
 
 it("bounds heap comparisons during 1,024 spatial replacement preparations", async () => {
   const index = new UniformSpatialIndex<number>();
@@ -62,13 +76,16 @@ it("bounds heap comparisons during 1,024 spatial replacement preparations", asyn
 });
 
 async function createObservedOwnedStore() {
-  const fixture = createStandardDomainFixture();
-  const observations = fixture.elements.flatMap((element) => {
-    if (element.kind !== "stroke") return [];
+  const observations: ReturnType<typeof observeSchemaArray>[] = [];
+  const elements = fixtureBase.elements.map((element) => {
+    if (element.kind !== "stroke") return { ...element };
     const observation = observeSchemaArray(element.points);
-    element.points = observation.observed;
-    return [observation];
+    observations.push(observation);
+    // Fresh headers and observation identity keep each Store independent. Only
+    // frozen numeric source values are shared; no Proxy substitutes a frozen property.
+    return { ...element, points: observation.observed };
   });
+  const fixture = { ...fixtureBase, elements };
   const builder = ElementStore.createBuilder({
     shouldYield: () => false,
     yieldControl: async () => undefined,
@@ -283,7 +300,7 @@ it("validates 10,000 owned style replacements once without reading their samples
 }, 30_000);
 
 it("validates resize samples once at the authoritative prepared transaction", async () => {
-  const fixture = createStandardDomainFixture();
+  const fixture = fixtureBase;
   const store = new ElementStore(fixture.elements);
   const selected = fixture.strokeIds.slice(0, 1_001).map((id) => requireStroke(store, id));
   const sampleValues = selected.reduce((sum, stroke) => sum + stroke.points.length, 0);

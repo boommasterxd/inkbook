@@ -73,19 +73,37 @@ describe("progressive scene preview candidate selection", () => {
 describe("scene preview controller regressions", () => {
   it("does not rebuild a stable transform selection on every pointer frame", () => {
     const record = fakeRectangleRecord("shape", 0, 10);
-    const get = vi.fn((id: string) => (id === record.id ? record : undefined));
+    const previewMountedIds = vi.fn(() => [record.id]);
+    const applyPreviewTransform = vi.fn();
     const content = {
-      applyPreviewTransform: vi.fn(),
+      applyPreviewTransform,
+      flushSelectionContext: vi.fn(),
       promoteVisible: vi.fn(() => false),
-      previewMountedIds: () => [record.id],
-    } as unknown as SceneContentRenderer;
+      previewMountedIds,
+    };
     const controller = new SceneTransformPreviewController(content, { x: 0, zoom: 1 });
     const ids = [record.id];
 
     controller.set(ids, "translate(1 0)", 1, "scale");
+    controller.write();
+    expect(applyPreviewTransform).toHaveBeenCalledExactlyOnceWith(
+      record.id,
+      "translate(1 0)",
+      1,
+      null,
+    );
+    applyPreviewTransform.mockClear();
     controller.set(ids, "translate(2 0)", 2, "scale");
+    controller.write();
 
-    expect(get).not.toHaveBeenCalled();
+    expect(previewMountedIds).toHaveBeenCalledOnce();
+    expect(applyPreviewTransform).toHaveBeenCalledExactlyOnceWith(
+      record.id,
+      "translate(2 0)",
+      2,
+      null,
+    );
+    controller.release();
   });
 
   it("reuses stable pressure fallback geometry and checks only newly mounted ids", () => {

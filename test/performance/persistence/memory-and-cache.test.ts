@@ -1,11 +1,12 @@
-import { spawn } from "node:child_process";
 import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
+
+import { executeIsolatedNode } from "../../fixtures/persistence/isolated-node-process";
 
 import type {
   MemoryCheckpoint,
@@ -25,8 +26,16 @@ const RUNNER = fileURLToPath(new URL("./memory-lifecycle-runner.ts", import.meta
 describe("persistence memory bounds", () => {
   it("bounds the production main-plus-worker save lifecycle and releases its state", async ({
     annotate,
+    signal,
   }) => {
-    const result = await runIsolatedMemoryLifecycle();
+    const pending = runIsolatedMemoryLifecycle(signal);
+    onTestFinished(() =>
+      pending.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    const result = await pending;
     expect(result.lifecycleRuns).toBeGreaterThanOrEqual(5);
     expect(result.coalescedCommitsPerRun).toBeGreaterThanOrEqual(5);
     expect(result.peakBytes).toBeLessThanOrEqual(DESKTOP_MEMORY_LIMIT);
@@ -46,7 +55,7 @@ describe("persistence memory bounds", () => {
   }, 180_000);
 });
 
-async function runIsolatedMemoryLifecycle(): Promise<MemoryResult> {
+async function runIsolatedMemoryLifecycle(signal: AbortSignal): Promise<MemoryResult> {
   const bundled = await build({
     bundle: true,
     entryPoints: [RUNNER],
@@ -57,6 +66,7 @@ async function runIsolatedMemoryLifecycle(): Promise<MemoryResult> {
   });
   const source = bundled.outputFiles[0]?.text;
   if (source === undefined) throw new Error("Memory lifecycle runner was not bundled.");
+  signal.throwIfAborted();
   const directory = await mkdtemp(join(tmpdir(), "inkbook-memory-lifecycle-"));
   const output = join(directory, "result.json");
   const runner = join(directory, "runner.mjs");
@@ -64,7 +74,12 @@ async function runIsolatedMemoryLifecycle(): Promise<MemoryResult> {
     await writeFile(runner, source, "utf8");
     const outputFile = await open(output, "w");
     try {
-      await executeIsolatedNode(runner, outputFile.fd);
+      await executeIsolatedNode({
+        args: ["--expose-gc", "--max-old-space-size=384", runner],
+        outputDescriptor: outputFile.fd,
+        signal,
+        timeoutMs: 150_000,
+      });
     } finally {
       await outputFile.close();
     }
@@ -72,26 +87,6 @@ async function runIsolatedMemoryLifecycle(): Promise<MemoryResult> {
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
-}
-
-function executeIsolatedNode(runner: string, outputDescriptor: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["--expose-gc", "--max-old-space-size=384", runner], {
-      stdio: ["ignore", outputDescriptor, "pipe"],
-    });
-    let stderr = "";
-    const stderrStream = child.stderr;
-    if (stderrStream === null) {
-      reject(new Error("Memory lifecycle runner has no stderr stream."));
-      return;
-    }
-    stderrStream.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`Memory lifecycle runner failed (${code ?? "signal"}): ${stderr}`));
-    });
-  });
 }
 
 function parseResult(output: string): MemoryResult {

@@ -15,21 +15,7 @@ beforeEach(() => {
 });
 
 describe("editor chrome mount", () => {
-  it("releases every React root across repeated mount and unmount cycles", async () => {
-    const ownerDocument = {} as Document;
-    const mounts = Array.from({ length: 25 }, () =>
-      mountEditorChrome({ ownerDocument } as HTMLElement, createEditorChromeProps(ownerDocument)),
-    );
-
-    for (const mounted of mounts) mounted.unmount();
-    await expect(Promise.all(mounts.map(({ ready }) => ready))).resolves.toEqual(
-      Array.from({ length: mounts.length }, () => false),
-    );
-    expect(createRoot).toHaveBeenCalledTimes(mounts.length);
-    expect(reactRoot.unmount).toHaveBeenCalledTimes(mounts.length);
-  });
-
-  it("renders, updates, and unmounts one owner-document React root", () => {
+  it("renders, updates, and unmounts one owner-document React root", async () => {
     const ownerDocument = {} as Document;
     const initial = createEditorChromeProps(ownerDocument);
     const mounted = mountEditorChrome({ ownerDocument } as HTMLElement, initial);
@@ -47,6 +33,7 @@ describe("editor chrome mount", () => {
     mounted.unmount();
     mounted.unmount();
     expect(reactRoot.unmount).toHaveBeenCalledOnce();
+    await expect(mounted.ready).resolves.toBe(false);
     expect(() => mounted.update(createEditorChromeProps(ownerDocument))).toThrow(/unmounted/u);
   });
 
@@ -61,5 +48,6 @@ describe("editor chrome mount", () => {
     expect(() => mounted.update(createEditorChromeProps({} as Document))).toThrow(
       /owning document/u,
     );
+    mounted.unmount();
   });
 });

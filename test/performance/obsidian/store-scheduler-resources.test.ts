@@ -7,6 +7,43 @@ import { ElementStore, type StoreSliceScheduler } from "../../../src/domain/stor
 import { verifyVaultUnlockIntegrity } from "../../../src/obsidian/embeds/vault-unlock-integrity";
 import { createTestStroke, createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 import { windowBindingHarness } from "../../fixtures/obsidian/window-scheduling";
+import { SchedulerDisposedError } from "../../../src/domain/scheduling/work-scheduler";
+
+it("releases document-owned waits and callbacks while another document retains the shared frame", async () => {
+  const h = windowBindingHarness();
+  const shared = h.profiles.workScheduler(h.first.ownerWindow);
+  const closeShared = vi.spyOn(shared, "dispose");
+  const otherDocument = h.runtimes.workScheduler("other.svg");
+  const otherPending = otherDocument.nextFrame();
+  const cancelled: Promise<unknown>[] = [];
+  const run = vi.fn();
+  shared.deadline();
+  h.first.host.time = shared.budgetMs();
+  for (let index = 0; index < 1_000; index++) {
+    const document = h.runtimes.workScheduler("drawing.svg");
+    const caller = new AbortController();
+    const checkpoint = document.checkpoint(caller.signal);
+    expect(checkpoint).toBeDefined();
+    cancelled.push(expect(checkpoint).rejects.toBeInstanceOf(SchedulerDisposedError));
+    cancelled.push(expect(document.nextFrame()).rejects.toBeInstanceOf(SchedulerDisposedError));
+    document.requestFrame(run);
+    document.dispose();
+    expect(h.first.host.pendingFrames).toBe(1);
+    expect(h.first.host.pendingTimers).toBeLessThanOrEqual(2);
+  }
+  await Promise.all(cancelled);
+  expect(closeShared).not.toHaveBeenCalled();
+  h.first.host.time += h.first.host.frameInterval;
+  h.first.host.frame();
+  await otherPending;
+  expect(run).not.toHaveBeenCalled();
+  otherDocument.dispose();
+  h.profiles.dispose();
+  for (const window of [h.first, h.second]) {
+    expect(window.host.pendingFrames).toBe(0);
+    expect(window.host.pendingTimers).toBe(0);
+  }
+});
 
 it("bounds retained frame resources across sequential store handoffs", async () => {
   const host = new ManualHost();

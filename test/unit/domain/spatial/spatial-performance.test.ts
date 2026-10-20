@@ -22,9 +22,13 @@ describe("spatial index steady-state instrumentation", () => {
     const warmAllocationCount = scratch.allocationCount;
     expect(warmAllocationCount).toBeGreaterThan(0);
 
-    for (let query = 0; query < 1_000; query += 1) {
-      expect(index.query(viewport, scratch)).toBe(25);
-    }
+    expect(index.query(viewport, scratch)).toBe(25);
+    expect(index.query({ minX: 100, minY: 100, maxX: 200, maxY: 200 }, scratch)).toBe(0);
+    expect(scratch.count).toBe(0);
+    expect(index.query({ minX: 512, minY: 512, maxX: 2_612, maxY: 2_612 }, scratch)).toBe(25);
+    expect(scratch.at(0)).toBe(101);
+    expect(index.query(viewport, scratch)).toBe(25);
+    expect(scratch.at(0)).toBe(0);
 
     expect(scratch.allocationCount).toBe(warmAllocationCount);
     expect(scratch.candidateVisitCount).toBe(25);

@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  assertSelectionMatches,
+  createExecutionSelection,
   qualityCommands,
   selectedPerformancePlan,
   selectionOutputs,
@@ -10,6 +10,13 @@ import {
 } from "../../../scripts/ci-execution-plan.mjs";
 import { PERFORMANCE_TEST_MANIFEST } from "../../../scripts/performance-test-manifest.mjs";
 import { selectPerformanceRuns } from "../../../scripts/performance-test-runner.mjs";
+import {
+  cleanupRepositories,
+  commit,
+  createRepository,
+  git,
+  mergeBranch,
+} from "./ci-selection-fixtures.mjs";
 
 const unitTest = "test/unit/domain/value.test.ts";
 const integrationTest = "test/integration/editor/value.test.ts";
@@ -20,9 +27,11 @@ const npmEntry = "/npm-cli.js";
 
 function plan(overrides = {}) {
   return {
-    version: 1,
+    version: 2,
     base: "a".repeat(40),
     head: "b".repeat(40),
+    merge: "c".repeat(40),
+    mergeBase: "a".repeat(40),
     changes: ["src/domain/value.ts"],
     mode: "affected",
     reason: "Fixture selection",
@@ -32,11 +41,18 @@ function plan(overrides = {}) {
   };
 }
 
+it("omits the repeated audit only when the caller supplies verified selection evidence", async () => {
+  const commands = await qualityCommands(plan(), root, npmEntry, false, true);
+  expect(commands.some(({ label }) => label === "audit")).toBe(false);
+  expect(commands.some(({ label }) => label.startsWith("test:coverage"))).toBe(true);
+});
+
 describe("selected CI execution", () => {
   it("retains all static gates and production builds while narrowing test and coverage inputs", async () => {
     const commands = await qualityCommands(plan(), root, npmEntry);
     const test = commands.find(({ label }) => label.startsWith("test:coverage"));
     expect(commands.map(({ label }) => label)).toEqual([
+      "docs:check",
       "format:check",
       "lint",
       "lint:styles",
@@ -55,7 +71,8 @@ describe("selected CI execution", () => {
     expect(test.args).toContain(integrationTest);
     expect(test.args).toContain(unitTest);
     expect(test.args).toContain("--coverage.include=src/domain/value.ts");
-    expect(test.args).toEqual(expect.arrayContaining(["--reporter=default", "--reporter=json"]));
+    expect(test.args[0]).toBe(resolve(root, "scripts/run-validated-tests.mjs"));
+    expect(test.args.slice(1, 4)).toEqual([integrationTest, unitTest, "--"]);
     expect(test.args).not.toContain("test/unit");
     expect(test.args.some((arg) => arg.startsWith("--coverage.thresholds"))).toBe(false);
   });
@@ -162,18 +179,65 @@ describe("selected performance execution", () => {
 });
 
 describe("selection integrity", () => {
-  it("accepts unchanged plans and rejects stale commits, omitted tests, and altered coverage", () => {
-    const expected = plan();
-    expect(() => assertSelectionMatches(structuredClone(expected), expected)).not.toThrow();
-    for (const changes of [
-      { head: "c".repeat(40) },
-      { base: "d".repeat(40) },
-      { tests: [unitTest] },
-      { coverage: [] },
-      { version: 2 },
-      { tests: [] },
-    ])
-      expect(() => assertSelectionMatches(plan(changes), expected)).toThrow();
+  it("rejects failed or incomplete upstream audit evidence before executing checks", async () => {
+    for (const status of ["failure", "cancelled", "skipped", "", "unknown"]) {
+      await expect(createExecutionSelection({ root }, { EXPECTED_AUDIT: status })).rejects.toThrow(
+        "audit did not complete",
+      );
+    }
+    await expect(createExecutionSelection({ root }, { EXPECTED_AUDIT: "success" })).rejects.toThrow(
+      "complete expected selection outputs",
+    );
+  });
+
+  it("rejects a plan after the base tip and simulated merge advance with the same PR head", async () => {
+    const context = await createRepository({
+      "src/domain/value.ts": "export const value = 1;",
+      [unitTest]: 'import { value } from "../../../src/domain/value"; void value;',
+    });
+    try {
+      await git(context.root, "checkout", "--quiet", "-b", "feature");
+      const head = await commit(context.root, { "src/domain/value.ts": "export const value = 2;" });
+      const original = await createExecutionSelection({ ...context, head }, {});
+      await git(context.root, "checkout", "--quiet", "main");
+      const base = await commit(context.root, { "docs/upstream.md": "Upstream" });
+      await expect(createExecutionSelection({ ...context, base, head }, {})).rejects.toThrow(
+        "does not contain",
+      );
+      await mergeBranch(context.root, "feature");
+      const expected = Object.fromEntries(
+        Object.entries(selectionOutputs(original)).map(([name, value]) => [
+          `EXPECTED_${name.toUpperCase()}`,
+          value,
+        ]),
+      );
+      const current = await createExecutionSelection(
+        { ...context, base, head },
+        {
+          ...expected,
+          EXPECTED_AUDIT: "success",
+        },
+      );
+      expect(current.tests).toEqual(original.tests);
+      expect(current.mergeBase).toBe(original.mergeBase);
+      expect(current.head).toBe(original.head);
+      expect(current.base).toBe(base);
+      expect(current.merge).not.toBe(original.merge);
+      await expect(
+        createExecutionSelection({ ...context, base, head, merge: original.merge }, expected),
+      ).rejects.toThrow("expected merge revision");
+      await expect(
+        createExecutionSelection(
+          { ...context, base, head },
+          {
+            ...expected,
+            EXPECTED_MODE: "invalid",
+          },
+        ),
+      ).rejects.toThrow("Selection output mode changed");
+    } finally {
+      await cleanupRepositories();
+    }
   });
 
   it("rejects divergent detector outputs before running checks", () => {

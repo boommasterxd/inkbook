@@ -1,4 +1,4 @@
-import type { TFile, TFolder, Vault } from "obsidian";
+import { Component, type TAbstractFile, type TFile, type TFolder, type Vault } from "obsidian";
 
 import type {
   ExistingFilePort,
@@ -31,6 +31,10 @@ export interface CreatedVaultFile {
 
 export interface CreatedVaultFileRead extends CreatedVaultFile {
   readonly readBack: MetadataGuardedFileRead;
+}
+
+export interface TrackedCreatedVaultFile extends CreatedVaultFile {
+  release(): void;
 }
 
 export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
@@ -153,8 +157,42 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
     path: string,
     content: string,
     maximumBytes: number,
+    onCreated?: (created: TrackedCreatedVaultFile) => void,
   ): Promise<CreatedVaultFileRead> {
-    return this.#createAndReadBack(path, content, maximumBytes, false);
+    if (onCreated === undefined) return this.#createAndReadBack(path, content, maximumBytes, false);
+    const normalizedPath = normalizeVaultPath(path, this.#normalizePath);
+    const owner = new Component();
+    let ownedFile: TFile | undefined;
+    let changed = false;
+    let transferred = false;
+    let released = false;
+    const release = () => {
+      released = true;
+      owner.unload();
+    };
+    const noteChange = (file: TAbstractFile, oldPath?: string) => {
+      if (file === ownedFile || file.path === normalizedPath || oldPath === normalizedPath) {
+        changed = true;
+      }
+    };
+    owner.load();
+    try {
+      owner.registerEvent(this.#vault.on("modify", noteChange));
+      owner.registerEvent(this.#vault.on("rename", noteChange));
+      owner.registerEvent(this.#vault.on("delete", noteChange));
+      return await this.#createAndReadBack(path, content, maximumBytes, false, (created) => {
+        ownedFile = created.file;
+        // The command owns this event lifetime until its insertion or rollback settles.
+        onCreated({
+          ...created,
+          isCurrent: () => !released && !changed && created.isCurrent(),
+          release,
+        });
+        transferred = true;
+      });
+    } finally {
+      if (!transferred) release();
+    }
   }
 
   async createAndReadBackForVerification(
@@ -172,11 +210,15 @@ export class ObsidianVaultFileAdapter implements ExistingFilePort, NewFilePort {
     content: string,
     maximumBytes: number,
     deferByteVerification: boolean,
+    onCreated?: (created: CreatedVaultFile) => void,
   ): Promise<CreatedVaultFileRead> {
     assertMaximumBytes(maximumBytes);
     const normalizedPath = normalizeVaultPath(path, this.#normalizePath);
     return this.#serialize(normalizedPath, async () => {
       const created = await this.#create(normalizedPath, content);
+      // Transfer rollback ownership before read-back can fail. Unowned save callers
+      // retain their existing policy of preserving an uncertain write.
+      onCreated?.(created);
       const readBack = await this.#readText(
         normalizedPath,
         maximumBytes,

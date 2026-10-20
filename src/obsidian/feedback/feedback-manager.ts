@@ -17,11 +17,13 @@ export interface InkbookFeedbackHandle {
 export interface InkbookFeedbackRequest {
   readonly actions?: readonly InkbookFeedbackAction[];
   readonly code: InkbookFeedbackCode;
+  readonly onClosed?: () => void;
   readonly timeoutMs?: number;
 }
 
 interface ActiveFeedback extends InkbookFeedbackHandle {
   readonly element: HTMLElement;
+  readonly handle: InkbookFeedbackHandle;
 }
 
 export class InkbookFeedbackManager {
@@ -44,7 +46,7 @@ export class InkbookFeedbackManager {
       if (this.#presentations.get(root) === active) this.#presentations.delete(root);
     });
     if (active !== undefined) this.#presentations.set(root, active);
-    return active ?? CLOSED_FEEDBACK;
+    return active?.handle ?? CLOSED_FEEDBACK;
   }
 
   public showInWindow(ownerWindow: Window, request: InkbookFeedbackRequest): InkbookFeedbackHandle {
@@ -54,7 +56,7 @@ export class InkbookFeedbackManager {
       if (this.#windows.get(ownerDocument) === active) this.#windows.delete(ownerDocument);
     });
     if (active !== undefined) this.#windows.set(ownerDocument, active);
-    return active ?? CLOSED_FEEDBACK;
+    return active?.handle ?? CLOSED_FEEDBACK;
   }
 
   public dispose(): void {
@@ -77,16 +79,22 @@ export class InkbookFeedbackManager {
     let presence: "open" | "exiting" | "closed" = "open";
     let timeout: number | undefined;
     let exitTimeout: number | undefined;
+    const { handle, setClose } = createFeedbackHandle();
+    const removeActions: Array<() => void> = [];
     const unmount = mountWindowFeedback(surface.element, container);
     const finish = (): void => {
       if (presence === "closed") return;
       presence = "closed";
+      setClose(undefined);
       if (timeout !== undefined) ownerWindow.clearTimeout(timeout);
       if (exitTimeout !== undefined) ownerWindow.clearTimeout(exitTimeout);
       unmount();
       surface.element.remove();
+      for (const remove of removeActions) remove();
+      removeActions.length = 0;
       this.#active.delete(active);
       onClosed();
+      request.onClosed?.();
     };
     const close = (mode: FeedbackCloseMode = "animated"): void => {
       if (presence === "closed") return;
@@ -108,11 +116,18 @@ export class InkbookFeedbackManager {
       if (durationMs === 0) finish();
       else exitTimeout = ownerWindow.setTimeout(finish, durationMs);
     };
-    const active: ActiveFeedback = { close, element: surface.element };
+    setClose(close);
+    const active: ActiveFeedback = {
+      close: (mode) => handle.close(mode),
+      element: surface.element,
+      handle,
+    };
     this.#active.add(active);
     for (const action of request.actions ?? []) {
       const button = createFeedbackIconButton(surface.actionGroup, action.id);
-      button.addEventListener("click", () => void this.#runAction(active, action));
+      const onClick = (): void => void this.#runAction(active, action);
+      button.addEventListener("click", onClick);
+      removeActions.push(() => button.removeEventListener("click", onClick));
     }
     if ((request.actions?.length ?? 0) === 0 || request.timeoutMs !== undefined) {
       timeout = ownerWindow.setTimeout(close, request.timeoutMs ?? 5_000);
@@ -134,3 +149,16 @@ export class InkbookFeedbackManager {
 }
 
 const CLOSED_FEEDBACK: InkbookFeedbackHandle = Object.freeze({ close: (): void => undefined });
+
+function createFeedbackHandle(): {
+  readonly handle: InkbookFeedbackHandle;
+  readonly setClose: (close: InkbookFeedbackHandle["close"] | undefined) => void;
+} {
+  let delegate: InkbookFeedbackHandle["close"] | undefined;
+  return {
+    handle: { close: (mode) => delegate?.(mode) },
+    setClose: (close) => {
+      delegate = close;
+    },
+  };
+}

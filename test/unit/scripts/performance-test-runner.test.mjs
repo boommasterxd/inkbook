@@ -8,10 +8,12 @@ import {
   collectPerformanceTestPlan,
   collectTestFiles,
   createPerformanceTestPlan,
-  performanceRoot,
   selectPerformanceRuns,
   SUPPORTED_REFRESH_RATES,
 } from "../../../scripts/performance-test-runner.mjs";
+
+const discovered = await collectTestFiles();
+const plan = await collectPerformanceTestPlan();
 
 it("discovers every Vitest-supported performance extension and rejects unclassified files", async () => {
   const directory = await mkdtemp(join(tmpdir(), "inkbook-performance-discovery-"));
@@ -21,42 +23,29 @@ it("discovers every Vitest-supported performance extension and rejects unclassif
         writeFile(join(directory, `case.test.${extension}`), ""),
       ),
     );
-    const discovered = await collectTestFiles(directory);
-    expect(discovered.map((file) => file.slice(directory.length + 1))).toEqual([
+    const extensionFiles = await collectTestFiles(directory);
+    expect(extensionFiles.map((file) => file.slice(directory.length + 1))).toEqual([
       "case.test.mjs",
       "case.test.ts",
       "case.test.tsx",
     ]);
-    const existing = await collectTestFiles();
-    expect(() => createPerformanceTestPlan([...existing, ...discovered])).toThrow(
-      "Unclassified performance tests",
-    );
+    expect(() =>
+      createPerformanceTestPlan([...plan.invariant, ...plan.cadenceSensitive, ...extensionFiles]),
+    ).toThrow("Unclassified performance tests");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
 describe("performance test plan", () => {
-  it("classifies every benchmark exactly once", async () => {
-    const discovered = await collectTestFiles();
-    const plan = await collectPerformanceTestPlan();
+  it("classifies every benchmark exactly once", () => {
     const classified = [...plan.invariant, ...plan.cadenceSensitive];
 
     expect(new Set(classified).size).toBe(discovered.length);
     expect(classified.toSorted()).toEqual(discovered);
   });
 
-  it("rejects a newly added benchmark until its data dependency is classified", async () => {
-    const discovered = await collectTestFiles();
-    const unclassified = join(performanceRoot, "unclassified-performance.test.ts");
-
-    expect(() => createPerformanceTestPlan([...discovered, unclassified])).toThrow(
-      "Unclassified performance tests",
-    );
-  });
-
-  it("runs shared work once and cadence-sensitive work at every supported rate", async () => {
-    const plan = await collectPerformanceTestPlan();
+  it("runs shared work once and cadence-sensitive work at every supported rate", () => {
     const runs = selectPerformanceRuns(plan, "all");
 
     expect(runs.map(({ label, refreshRate }) => [label, refreshRate])).toEqual([
@@ -65,8 +54,7 @@ describe("performance test plan", () => {
     ]);
   });
 
-  it("keeps every cadence profile in one cost-efficient CI shard", async () => {
-    const plan = await collectPerformanceTestPlan();
+  it("keeps every cadence profile in one cost-efficient CI shard", () => {
     const runs = selectPerformanceRuns(plan, "cadence");
 
     expect(
@@ -81,8 +69,7 @@ describe("performance test plan", () => {
     ).toBe(true);
   });
 
-  it("partitions hosted coverage without dropping or duplicating local file/profile contracts", async () => {
-    const plan = await collectPerformanceTestPlan();
+  it("partitions hosted coverage without dropping or duplicating local file/profile contracts", () => {
     const keys = (runs) =>
       runs
         .flatMap(({ label, refreshRate, testFiles }) =>
@@ -100,9 +87,7 @@ describe("performance test plan", () => {
     expect(selectPerformanceRuns(plan, "shared")[0].testFiles).toEqual(plan.invariant);
   });
 
-  it("requires an explicit supported rate for one CI profile shard", async () => {
-    const plan = await collectPerformanceTestPlan();
-
+  it("requires an explicit supported rate for one CI profile shard", () => {
     expect(selectPerformanceRuns(plan, "profile", "144")[0]).toMatchObject({
       label: "cadence-sensitive",
       refreshRate: 144,

@@ -40,13 +40,17 @@ describe("SVG number formatting", () => {
 
   it("matches the canonical reference across a large deterministic value set", () => {
     let state = 0x9e3779b9;
+    let failure: { actual: string; expected: string; index: number; value: number } | null = null;
     for (let index = 0; index < 250_000; index += 1) {
       state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
       const integral = (state % 4_000_001) - 2_000_000;
       const fraction = ((state >>> 8) % 10_000) / 10_000;
       const value = index % 2 === 0 ? integral + fraction : integral - fraction;
-      expect(moveTo({ x: value, y: -value })).toBe(referenceMove(value, -value));
+      const actual = moveTo({ x: value, y: -value });
+      const expected = referenceMove(value, -value);
+      if (actual !== expected) failure ??= { actual, expected, index, value };
     }
+    expect(failure).toBeNull();
   });
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(

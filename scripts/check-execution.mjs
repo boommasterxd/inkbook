@@ -21,7 +21,7 @@ export async function runExclusiveChecks(commands, options = {}) {
     return error.code === "EADDRINUSE" ? 75 : 1;
   }
   try {
-    return await executeCommands(commands, options.cwd ?? process.cwd());
+    return await executeCommands(commands, options.cwd ?? process.cwd(), options);
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -39,7 +39,8 @@ function listen(server, port) {
   });
 }
 
-async function executeCommands(commands, cwd) {
+export async function executeCommands(commands, cwd, options = {}) {
+  const shutdownGraceMs = options.shutdownGraceMs ?? 5_000;
   let activeChild;
   let interrupted;
   let killTimer;
@@ -49,14 +50,14 @@ async function executeCommands(commands, cwd) {
   const timeout = new Promise((resolve) => (finishTimeout = resolve));
   const interrupt = (signal) => {
     if (interrupted === undefined) {
-      shutdownDeadline = performance.now() + 6_000;
+      shutdownDeadline = performance.now() + shutdownGraceMs + 1_000;
       killTimer = scheduleTimer(() => {
         if (activeChild !== undefined) forwardSignal(activeChild, "SIGKILL");
-      }, 5_000);
+      }, shutdownGraceMs);
       stopTimer = scheduleTimer(() => {
         activeChild?.unref();
         finishTimeout(1);
-      }, 6_000);
+      }, shutdownGraceMs + 1_000);
     }
     interrupted ??= signal;
     if (activeChild !== undefined) forwardSignal(activeChild, signal);
@@ -65,6 +66,13 @@ async function executeCommands(commands, cwd) {
   const terminateHandler = () => interrupt("SIGTERM");
   process.on("SIGINT", interruptHandler);
   process.on("SIGTERM", terminateHandler);
+  const executionTimer =
+    options.timeoutMs === undefined
+      ? undefined
+      : scheduleTimer(() => {
+          process.stderr.write("Check execution exceeded its timeout.\n");
+          interrupt("SIGTERM");
+        }, options.timeoutMs);
   try {
     for (const { label, command, args } of commands) {
       if (interrupted) return signalStatus(interrupted);
@@ -82,6 +90,7 @@ async function executeCommands(commands, cwd) {
     }
     return 0;
   } finally {
+    cancelTimer(executionTimer);
     cancelTimer(killTimer);
     cancelTimer(stopTimer);
     process.removeListener("SIGINT", interruptHandler);

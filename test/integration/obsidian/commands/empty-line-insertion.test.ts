@@ -14,6 +14,9 @@ import {
 } from "../../../../src/obsidian/commands";
 import type { InkbookSettingsStore } from "../../../../src/obsidian/settings";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { guardedRead } from "../../../fixtures/obsidian/embed-paste";
+import { ownedFileRead } from "../../../fixtures/obsidian/owned-file";
+import { createVaultEvents } from "../../../fixtures/obsidian/vault-events";
 
 import { FakeEditor, registerInsertion } from "./insertion-command-fixture";
 
@@ -27,17 +30,24 @@ function createHarness(editor: FakeEditor) {
     failed,
     inserted: (insertion) => insertions.push(insertion),
   };
-  const create = vi.fn(async (_path: string, content: string) => ({ content }));
-  const trash = vi.fn(async () => undefined);
+  const create = vi.fn(async (_path: string, content: string, _maximumBytes: number) => ({
+    content,
+  }));
+  const trash = vi.fn(async (_path: string) => undefined);
   const controller = new EmptyLineInsertionController({
     documents: {
       prepare: async () => ({ content: "<svg />", path: "drawings/new.svg" }),
       verifyCreated: async () => true,
     },
-    files: { createAndReadBack: create },
+    files: {
+      createOwnedAndReadBack: async (path, content, maximumBytes, onCreated) => {
+        const read = await create(path, content, maximumBytes);
+        return ownedFileRead(path, guardedRead(path, read.content), onCreated);
+      },
+    },
     links: { generateEmbed: () => "!inkbook[[../drawings/new.svg]]" },
     notifications,
-    trash: { trash },
+    trash: { trash, trashCreated: (created) => trash(created.file.path) },
   });
   return {
     controller,
@@ -62,15 +72,18 @@ function createFailedInsertionHarness(options: FailedInsertionHarnessOptions) {
   const fakeEditor = options.editor ?? new FakeEditor([""]);
   const failed = vi.fn();
   const inserted = vi.fn();
-  const trash = vi.fn(async () => {
+  const trash = vi.fn(async (_path: string) => {
     if (options.trashError !== undefined) throw options.trashError;
   });
   const controller = new EmptyLineInsertionController({
     documents: { prepare: options.prepare, verifyCreated: options.verifyCreated },
-    files: { createAndReadBack: async (_path, content) => ({ content }) },
+    files: {
+      createOwnedAndReadBack: async (path, content, _maximumBytes, onCreated) =>
+        ownedFileRead(path, guardedRead(path, content), onCreated),
+    },
     links: { generateEmbed: () => "!inkbook[[new.svg]]" },
     notifications: { failed, inserted },
-    trash: { trash },
+    trash: { trash, trashCreated: (created) => trash(created.file.path) },
   });
   return {
     controller,
@@ -408,6 +421,7 @@ function createFallbackInsertionHarness(
 
 function createMemoryVault(files: MemoryVaultFiles) {
   return {
+    ...createVaultEvents(),
     create: async (path: string, text: string) => {
       const file = new TestTFile(path, new TextEncoder().encode(text).byteLength);
       files.set(path, { file, text });

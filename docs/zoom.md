@@ -145,7 +145,7 @@ A locked preview always displays the full page width.
 
 When a zoomed-in embed is locked, zoom and horizontal position begin returning to width fit while height changes to the locked target over 240 milliseconds. Lock, unlock, and content-driven height transitions suppress browser scroll anchoring on the resolved Obsidian scroll owner and retain the embed root's pre-transition viewport Y position. The bounded hold samples that single visual anchor once per animation frame and writes `scrollTop` only when host anchoring actually introduces drift. A host `scroll` event is corrected synchronously before the next paint, including bottom-pinning during locked-to-editor growth. Explicit wheel, touch-scroll, or scroll-key input transfers control to the user immediately.
 
-After the exact saved preview is ready, it crossfades independently over 120 milliseconds as defined in [Quality and Testing](quality-and-testing.md). When reduced motion is enabled, the final camera, height, and preview state apply together without interpolation.
+After the exact saved preview is ready, the complete preview is restored below the disabled editor and takes over atomically after one complete paint opportunity, as described in [Embed UI](embed-ui.md#locked-state). When reduced motion is enabled, the final camera, height, and preview state apply together without interpolation.
 
 Camera state belongs to one mounted editor presentation. When Obsidian removes that presentation, including Live Preview viewport virtualization, Inkbook discards its zoom and horizontal position. A later mount initializes directly at width fit before its first active frame and never paints a retained zoom state after an initial fit layout. Locking likewise starts the next editor at width fit.
 

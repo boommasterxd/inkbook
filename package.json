@@ -18,6 +18,7 @@
     "ci:quality": "node scripts/run-checks.mjs ci:quality",
     "dead-code": "node scripts/run-checks.mjs dead-code",
     "dev": "node scripts/build.mjs --watch",
+    "docs:check": "node scripts/run-checks.mjs docs:check",
     "duplication": "node scripts/run-checks.mjs duplication",
     "format": "node scripts/run-checks.mjs format",
     "format:check": "node scripts/run-checks.mjs format:check",

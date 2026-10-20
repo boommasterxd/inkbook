@@ -141,11 +141,7 @@ export class ActiveDocumentHistory {
       if (isCancelled()) return "stale";
       const applied = this.#model.commitPreparedElementMutation(prepared.token);
       if (applied === null) return "stale";
-      this.#history.registerApplied({
-        payloadBytes: applied.payloadBytes,
-        redo: () => this.#apply(applied.forward, applied),
-        undo: () => this.#apply(applied.reverse, applied),
-      });
+      registerAppliedDocumentMutation(this.#history, this.#model, applied);
       return "applied";
     } catch {
       return "failed";
@@ -153,10 +149,6 @@ export class ActiveDocumentHistory {
       release?.();
       if (generation === this.#generation) this.#setPending(false);
     }
-  }
-
-  async #apply(mutation: ElementMutation, replay: AppliedElementMutation): Promise<boolean> {
-    return applyDocumentHistoryMutation(this.#model, mutation, replay, () => this.#disposed);
   }
 
   #isCurrent(generation: number, basisRevision: number): boolean {
@@ -197,7 +189,21 @@ export async function collectDocumentBandOrder(
   }
 }
 
-export async function applyDocumentHistoryMutation(
+export function registerAppliedDocumentMutation(
+  history: ActiveEditorHistory,
+  model: EditableDocumentModel,
+  applied: AppliedElementMutation,
+): void {
+  const replay = (mutation: ElementMutation) =>
+    applyDocumentHistoryMutation(model, mutation, applied, () => history.isDisposed);
+  history.registerApplied({
+    payloadBytes: applied.payloadBytes,
+    redo: () => replay(applied.forward),
+    undo: () => replay(applied.reverse),
+  });
+}
+
+async function applyDocumentHistoryMutation(
   model: EditableDocumentModel,
   mutation: ElementMutation,
   replay: AppliedElementMutation,

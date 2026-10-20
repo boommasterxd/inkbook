@@ -11,6 +11,7 @@ import type { ElementStore } from "../../domain/store/public";
 import type { SelectionPreviewTransform } from "./handle-types";
 import { transformSelectionPoint } from "./overlay-geometry";
 import { editLinearEndpointFromWorld } from "./transforms";
+import { exceedsExactLinearPreviewWork } from "./selection-work-budget";
 
 type ConnectedLinear = Extract<InkElementV1, { kind: "arrow" | "line" }>;
 
@@ -51,6 +52,25 @@ export class ConnectedSelectionPreviewSession {
       transformedTargets.set(element.id, transformed);
       if (this.#selectedPreviewIds.has(element.id)) previews.set(element.id, transformed);
     }
+    return this.#resolveDependents(previews, transformedTargets, transform);
+  }
+
+  public updateTargets(elements: readonly InkElementV1[]): ConnectedSelectionPreview {
+    const targets = new Map<string, ConnectedLinear>();
+    for (const element of elements) {
+      if (element.kind === "line" || element.kind === "arrow") targets.set(element.id, element);
+    }
+    if (exceedsExactLinearPreviewWork(targets.size + this.#dependents.length)) {
+      return { elements: [...targets.values()], selectedPreviewIds: this.#selectedPreviewIds };
+    }
+    return this.#resolveDependents(new Map(targets), targets, null);
+  }
+
+  #resolveDependents(
+    previews: Map<string, ConnectedLinear>,
+    transformedTargets: ReadonlyMap<string, ConnectedLinear>,
+    transform: SelectionPreviewTransform | null,
+  ): ConnectedSelectionPreview {
     for (const element of this.#dependents) {
       const resolved = resolvePreviewConnections(element, {
         previews,
@@ -159,7 +179,7 @@ interface PreviewConnectionContext {
   readonly previews: ReadonlyMap<string, ConnectedLinear>;
   readonly selectedIds: ReadonlySet<string>;
   readonly store: ElementStore;
-  readonly transform: SelectionPreviewTransform;
+  readonly transform: SelectionPreviewTransform | null;
   readonly transformedTargets: ReadonlyMap<string, ConnectedLinear>;
 }
 
@@ -187,6 +207,7 @@ function previewAnchor(
     context.transformedTargets.get(connection.targetId) ??
     context.previews.get(connection.targetId);
   if (linearTarget !== undefined) return resolveShapeAnchor(linearTarget, connection.anchor);
+  if (context.transform === null) return null;
   const target = context.store.get(connection.targetId)?.element;
   if (target === undefined || !isAnchorTarget(target)) return null;
   const point = resolveShapeAnchor(target, connection.anchor);

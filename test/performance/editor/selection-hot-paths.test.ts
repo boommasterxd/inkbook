@@ -107,8 +107,12 @@ function scaleSessionOptions(
   };
 }
 
-function verifyEndpointFanout(store: ElementStore, firstLineId: string): void {
-  expect(store.get(firstLineId)?.element).toMatchObject({ start: { x: 22, y: 23 } });
+function verifyEndpointFanout(
+  store: ElementStore,
+  firstLineId: string,
+  start = { x: 22, y: 23 },
+): void {
+  expect(store.get(firstLineId)?.element).toMatchObject({ start });
   expect(store.instrumentation).toMatchObject({
     bandScans: 0,
     fullStoreScans: 0,
@@ -285,7 +289,7 @@ describe("selection commit hot paths", () => {
 });
 
 describe("selection connection fan-out commits", () => {
-  it("bounds preparation for a near-maximum 19,929-endpoint selection fan-out", async () => {
+  it("bounds batched and single-step atomic commits of a 19,929-endpoint selection fan-out", async () => {
     const { elements, targetIds } = maximumEndpointFixture();
     const store = new ElementStore(elements);
     store.resetInstrumentation();
@@ -296,26 +300,23 @@ describe("selection connection fan-out commits", () => {
     expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
 
     const scheduler = new CheckpointSliceScheduler(40);
-    const prepared = await prepareEndpointFanout(store, session, scheduler);
+    const batched = await prepareEndpointFanout(store, session, scheduler);
     scheduler.finish();
     expect(Math.max(...scheduler.checkpointCounts)).toBeLessThanOrEqual(40);
-    if (prepared.token === null) throw new Error("Expected a prepared replacement token.");
-    const commit = store.commitPreparedElementReplacement(prepared.token);
-
-    expect(commit.status).toBe("committed");
-    expect(commit.delta?.changes).toHaveLength(elements.length);
+    if (batched.token === null) throw new Error("Expected a prepared replacement token.");
+    expect(store.instrumentation).toMatchObject({ recordReplacements: 0, publishedDeltas: 0 });
+    const batchedCommit = store.commitPreparedElementReplacement(batched.token);
+    expect(batchedCommit.status).toBe("committed");
+    expect(batchedCommit.delta?.changes).toHaveLength(elements.length);
     verifyEndpointFanout(store, elements[39]!.id);
-  }, 30_000);
-
-  it("bounds observed fan-out preparation work between yields without publishing partial state", async () => {
-    const { elements, targetIds } = maximumEndpointFixture();
-    const store = new ElementStore(elements);
-    const session = endpointSession(store, targetIds);
-    session.update({ x: 2, y: 3 });
+    // Capture the newly committed source in a fresh gesture so each scheduler
+    // proves its own atomic output without rebuilding the same full Store.
+    const observedSession = endpointSession(store, targetIds);
+    observedSession.update({ x: 2, y: 3 });
     store.resetInstrumentation();
     const observation = observeEndpointPreparation(store);
     try {
-      const prepared = await prepareEndpointFanout(store, session, observation.scheduler);
+      const prepared = await prepareEndpointFanout(store, observedSession, observation.scheduler);
       const work = observation.finish();
       expect(work.creations).toBe(elements.length);
       expect(work.maximumCreationsBetweenYields).toBe(1);
@@ -336,6 +337,8 @@ describe("selection connection fan-out commits", () => {
       expect(commit.status).toBe("committed");
       expect(commit.delta?.changes).toHaveLength(elements.length);
       expect(new Set(commit.delta?.changes.map(({ id }) => id)).size).toBe(elements.length);
+      verifyEndpointFanout(store, elements[39]!.id, { x: 24, y: 26 });
+      expect(store.commitPreparedElementReplacement(batched.token).status).toBe("cancelled");
     } finally {
       observation.restore();
     }

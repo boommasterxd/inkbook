@@ -1,7 +1,7 @@
 import type { FileManager } from "obsidian";
 
 import type { PathNormalizer } from "./boundary";
-import type { ObsidianVaultFileAdapter } from "./file-adapter";
+import type { CreatedVaultFile, ObsidianVaultFileAdapter } from "./file-adapter";
 import { ObsidianVaultPathBoundary } from "./vault-path-boundary";
 
 export class ObsidianManagedFileAdapter {
@@ -26,5 +26,10 @@ export class ObsidianManagedFileAdapter {
 
   async trash(filePath: string): Promise<void> {
     await this.#fileManager.trashFile(this.#paths.resolveFile(filePath));
+  }
+
+  async trashCreated(created: CreatedVaultFile): Promise<void> {
+    if (!created.isCurrent()) throw new Error("The created file is no longer unchanged.");
+    await this.#fileManager.trashFile(created.file);
   }
 }

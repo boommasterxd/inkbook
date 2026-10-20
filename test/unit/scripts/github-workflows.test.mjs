@@ -32,6 +32,15 @@ it.each(["ci", "gitleaks"])("limits %s PR triggers to main while retaining manua
   expect(triggers).toBe("  pull_request:\n    branches: [main]\n  workflow_dispatch:\n");
 });
 
+it("bounds the complete release pipeline to at most twenty minutes", () => {
+  const release = jobSection(readWorkflow("release"), "release");
+  const timeout = release.match(/^ {4}timeout-minutes: (\d+)$/m);
+
+  expect(timeout).not.toBeNull();
+  expect(Number(timeout[1])).toBeGreaterThan(0);
+  expect(Number(timeout[1])).toBeLessThanOrEqual(20);
+});
+
 function dependabotContext() {
   const repository = "owner/repository";
   return {
@@ -95,6 +104,7 @@ describe("required CI aggregation", () => {
         SHARED: "true",
         CADENCE: "true",
         BUILD: "true",
+        AUDIT: "success",
         ...overrides,
       },
       timeout: 5_000,
@@ -105,7 +115,7 @@ describe("required CI aggregation", () => {
 
   const results = ["failure", "cancelled", "skipped", "", "unknown"];
   it.each(
-    ["SELECT_RESULT", "QUALITY_RESULT", "PERFORMANCE_RESULT"].flatMap((job) =>
+    ["SELECT_RESULT", "QUALITY_RESULT", "PERFORMANCE_RESULT", "AUDIT"].flatMap((job) =>
       results.map((result) => [job, result]),
     ),
   )("rejects %s with result %s", (job, result) => {
@@ -122,12 +132,22 @@ describe("required CI aggregation", () => {
       ),
     ),
   ])("accepts a validated %s plan (%s/%s/%s)", (mode, shared, cadence, build) => {
-    expect(runGate({ MODE: mode, SHARED: shared, CADENCE: cadence, BUILD: build })).toBe(0);
+    expect(
+      runGate({
+        MODE: mode,
+        SHARED: shared,
+        CADENCE: cadence,
+        BUILD: build,
+        AUDIT: mode === "docs" ? "skipped" : "success",
+      }),
+    ).toBe(0);
   });
 
   it.each([
     { MODE: "" },
     { MODE: "unknown" },
+    { MODE: "docs", SHARED: "false", CADENCE: "false", BUILD: "false", AUDIT: "success" },
+    { MODE: "affected", AUDIT: "failure" },
     { SHARED: "false" },
     { CADENCE: "false" },
     ...["SHARED", "CADENCE", "BUILD"].flatMap((field) => [
@@ -154,7 +174,7 @@ describe("affected CI selection", () => {
       expect(section).toContain('node-version: "24.x"\n          check-latest: true');
       expect(section).toContain("cache: npm");
       expect(section).toContain("run: npm ci");
-      expect(section).toContain("run: node scripts/ci-plan.mjs");
+      expect(section.includes("run: node scripts/ci-plan.mjs")).toBe(id === "select");
     }
   });
 
@@ -162,7 +182,7 @@ describe("affected CI selection", () => {
     for (const id of ["quality", "Performance"]) {
       const section = jobSection(workflow, id);
       expect(section).toContain("needs: select");
-      for (const field of ["mode", "shared", "cadence", "build"]) {
+      for (const field of ["mode", "shared", "cadence", "build", "audit"]) {
         expect(section).toContain(
           `EXPECTED_${field.toUpperCase()}: \${{ needs.select.outputs.${field} }}`,
         );
@@ -177,7 +197,7 @@ describe("affected CI selection", () => {
   it("skips dependency installation only after documentation preflight", () => {
     const selection = jobSection(workflow, "select");
     expect(selection).toContain("id: preflight\n        run: node scripts/ci-plan.mjs --preflight");
-    expect(selection.match(/if: steps.preflight.outputs.docs != 'true'/g)).toHaveLength(1);
+    expect(selection.match(/if: steps.preflight.outputs.docs != 'true'/g)).toHaveLength(2);
     expect(selection.indexOf("- name: Set up Node.js")).toBeLessThan(
       selection.indexOf("- name: Detect documentation-only changes"),
     );
@@ -186,7 +206,7 @@ describe("affected CI selection", () => {
     );
     expect(selection).toContain("id: plan\n        run: node scripts/ci-plan.mjs");
     const quality = jobSection(workflow, "quality");
-    expect(quality.match(/if: needs.select.outputs.mode != 'docs'/g)).toHaveLength(5);
+    expect(quality.match(/if: needs.select.outputs.mode != 'docs'/g)).toHaveLength(4);
     expect(quality).toContain("if: needs.select.outputs.mode == 'docs'");
   });
 
@@ -195,7 +215,7 @@ describe("affected CI selection", () => {
     expect(performance).toContain("fail-fast: true");
     expect(performance).not.toMatch(/^ {4}if:/m);
     expect(performance.match(/if: needs.select.outputs\[matrix.suite\] == 'true'/g)).toHaveLength(
-      5,
+      4,
     );
     expect(performance).toContain("if: needs.select.outputs[matrix.suite] == 'false'");
     for (const selected of ["true", "false", "", "unknown"]) {
@@ -209,6 +229,49 @@ describe("affected CI selection", () => {
       expect(workflowCondition("needs.select.outputs[matrix.suite] == 'false'", context)).toBe(
         selected === "false",
       );
+    }
+  });
+});
+
+describe("CI admission and no-work runner routing", () => {
+  const workflow = readWorkflow("ci");
+
+  it("runs the blocking audit in selection before any substantive job can start", () => {
+    const selection = jobSection(workflow, "select");
+    const install = selection.indexOf("run: npm ci");
+    const audit = selection.indexOf("run: npm run audit");
+    const plan = selection.indexOf("id: plan");
+    expect(install).toBeGreaterThan(-1);
+    expect(audit).toBeGreaterThan(install);
+    expect(plan).toBeGreaterThan(audit);
+    expect(selection).toContain("audit: ${{ steps.audit.outcome }}");
+    expect(selection).not.toContain("continue-on-error");
+    for (const id of ["quality", "Performance"]) {
+      const consumer = jobSection(workflow, id);
+      expect(consumer).toContain("needs: select");
+      expect(consumer).not.toMatch(/^ {4}if:/m);
+    }
+  });
+
+  it("uses Slim only for deliberate no-work jobs and bounds their timeouts", () => {
+    for (const [id, output] of [
+      ["quality", "mode"],
+      ["Performance", "shared"],
+    ]) {
+      const section = jobSection(workflow, id);
+      const runner = section.match(/runs-on: \$\{\{ (.+) && 'ubuntu-slim' \|\| 'ubuntu-latest' }}/);
+      const timeout = section.match(/timeout-minutes: \$\{\{ (.+) && 5 \|\| 20 }}/);
+      expect(runner).not.toBeNull();
+      expect(timeout?.[1]).toBe(runner[1]);
+      for (const value of ["docs", "affected", "full", "true", "false", "", "unknown"]) {
+        const context = {
+          needs: { select: { outputs: { [output]: value } } },
+          matrix: { suite: "shared" },
+        };
+        expect(workflowCondition(runner[1], context)).toBe(
+          value === (id === "quality" ? "docs" : "false"),
+        );
+      }
     }
   });
 });

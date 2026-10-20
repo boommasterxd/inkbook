@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   codeFile,
+  checkoutRevision,
   inspectChanges,
   readBaseFiles,
   readHeadFiles,
@@ -13,7 +14,19 @@ import { affectedFiles, createGraph, reachable } from "./ci-selection-graph.mjs"
 export { inspectChanges } from "./ci-selection-git.mjs";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
-const planKeys = ["base", "changes", "coverage", "head", "mode", "reason", "tests", "version"];
+const planKeys = [
+  "base",
+  "changes",
+  "coverage",
+  "head",
+  "merge",
+  "mergeBase",
+  "mode",
+  "reason",
+  "tests",
+  "version",
+];
+const revision = (value) => typeof value === "string" && /^[a-f0-9]{40,64}$/.test(value);
 const documentationPath = (value) => value.startsWith("docs/") && value.endsWith(".md");
 const safePath = (value) =>
   typeof value === "string" &&
@@ -36,13 +49,15 @@ function sortedPaths(values, predicate = () => true) {
 function validShape(plan) {
   return (
     Object.keys(plan).sort().join() === planKeys.join() &&
-    plan.version === 1 &&
+    plan.version === 2 &&
     ["docs", "full", "affected"].includes(plan.mode) &&
     typeof plan.reason === "string" &&
     plan.reason.trim().length > 0 &&
     typeof plan.head === "string" &&
     plan.head.length > 0 &&
-    (plan.base === null || /^[a-f0-9]{40,64}$/.test(plan.base)) &&
+    (plan.base === null || revision(plan.base)) &&
+    revision(plan.merge) &&
+    (plan.mergeBase === null || revision(plan.mergeBase)) &&
     sortedPaths(plan.changes) &&
     sortedPaths(plan.tests, (file) => testFile.test(file)) &&
     sortedPaths(plan.coverage, (file) => file.startsWith("src/") && codeFile.test(file))
@@ -61,7 +76,9 @@ export function validateSelection(plan) {
       !plan.changes.every(documentationPath))
   )
     throw new Error("Invalid documentation selection");
-  if (plan.mode === "affected" && (!plan.base || !plan.changes.length || !plan.tests.length)) {
+  if (plan.mode !== "full" && (!plan.base || !plan.mergeBase || !revision(plan.head)))
+    throw new Error("Incomplete CI revision binding");
+  if (plan.mode === "affected" && (!plan.changes.length || !plan.tests.length)) {
     throw new Error("Incomplete affected CI selection");
   }
   return plan;
@@ -72,6 +89,12 @@ function globalChange(filename) {
   if (/^test\/(?:setup|global-setup)(?:[./-]|$)/.test(filename)) return true;
   if ([".github/workflows/ci.yml", ".github/workflows/release.yml"].includes(filename)) return true;
   if (/^scripts\/(?:build|verify-package)/.test(filename)) return true;
+  if (
+    /^scripts\/(?:ci-[\w-]+|check-command-plan|check-execution|run-checks|run-ci|run-validated-tests|performance-[\w-]+|run-performance-tests)\.mjs$/.test(
+      filename,
+    )
+  )
+    return true;
   if (filename.startsWith("scripts/") && !codeFile.test(filename)) return true;
   return !(
     filename.startsWith("src/") ||
@@ -133,22 +156,36 @@ function coverageScope(graph, tests, changes, files) {
   return [...scope].filter((file) => file.startsWith("src/") && files.has(file)).sort();
 }
 
+async function comparisonState(root, base, head, merge) {
+  const fallback = {
+    base: null,
+    head,
+    merge: await checkoutRevision(root, merge),
+    mergeBase: null,
+    changes: [],
+  };
+  try {
+    return { comparison: await inspectChanges({ root, base, head, merge: fallback.merge }) };
+  } catch (error) {
+    if (error.code === "CI_REVISION_MISMATCH") throw error;
+    return {
+      comparison: fallback,
+      historyError: `Unavailable comparison history: ${error.message}`,
+    };
+  }
+}
+
 export async function createSelection({
   root = projectRoot,
   base,
   head = "HEAD",
+  merge,
   forceFull = false,
 } = {}) {
   root = path.resolve(root);
-  let comparison = { base: null, head, changes: [] };
-  let historyError;
-  try {
-    comparison = await inspectChanges({ root, base, head });
-  } catch (error) {
-    historyError = `Unavailable comparison history: ${error.message}`;
-  }
+  const { comparison, historyError } = await comparisonState(root, base, head, merge);
   const plan = {
-    version: 1,
+    version: 2,
     mode: "full",
     reason: "Full verification requested",
     ...comparison,
@@ -180,7 +217,7 @@ export async function createSelection({
   }
   try {
     const ts = (await import("typescript")).default;
-    const baseFiles = await readBaseFiles(root, comparison.base);
+    const baseFiles = await readBaseFiles(root, comparison.mergeBase);
     const graphs = [createGraph(ts, root, files), createGraph(ts, root, baseFiles)];
     const selected = graphSelection(graphs, comparison.changes, tests);
     const coverage = coverageScope(graphs[0], selected, comparison.changes, files);

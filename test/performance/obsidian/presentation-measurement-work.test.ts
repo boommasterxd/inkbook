@@ -1,10 +1,18 @@
+// @vitest-environment happy-dom
+
 import { expect, it, vi } from "vitest";
+
+import { layoutHarness } from "../../integration/obsidian/embeds/active-editor-layout-fixture";
+import { ownZoomResizeFixture } from "../../fixtures/obsidian/own-zoom-resize";
+import { ownZoomScrollFixture } from "../../fixtures/obsidian/own-zoom-scroll";
 
 import { PresentationController } from "../../../src/obsidian/embeds/presentation-controller";
 import { ColorSchemeBroadcaster } from "../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../fixtures/obsidian/presentation-dom";
 import { createPresentationMotionWindow } from "../../fixtures/obsidian/presentation-motion-window";
 import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
+
+const LAYOUT_SAMPLES = 600;
 
 it("bounds root measurement across resize bursts and retained editor visibility changes", () => {
   const h = measurementHarness();
@@ -114,3 +122,69 @@ function createController(root: FakePresentationElement, ownerWindow: Window) {
     workSchedulerFromFrames(ownerWindow),
   );
 }
+
+it("bounds own-scroll proof reads without repeating complete scene measurements", () => {
+  const h = ownZoomScrollFixture();
+  try {
+    for (let index = 0; index < LAYOUT_SAMPLES; index += 1) {
+      h.zoom(index % 2 === 0 ? 200 : 400, index % 2 === 0 ? 200 : 100);
+      h.scroll();
+    }
+    const count = LAYOUT_SAMPLES;
+    expect(h.fullRead).not.toHaveBeenCalled();
+    expect(h.style).toHaveBeenCalledTimes(count);
+    expect(h.box).toHaveBeenCalledTimes(count * 2);
+    expect(h.ownerBox).toHaveBeenCalledTimes(count * 2);
+    expect(h.onScroll).toHaveBeenCalledTimes(count);
+    h.h.renderer.invalidateLayout();
+    h.scroll();
+    expect(h.fullRead).toHaveBeenCalledOnce();
+    expect(h.style).toHaveBeenCalledTimes(count + 1);
+    h.binding.dispose();
+    h.scroll();
+    expect(h.fullRead).toHaveBeenCalledOnce();
+  } finally {
+    h.dispose();
+  }
+});
+
+it("validates each own projected observer report once without invalidating a second scene frame", () => {
+  const { h, zoom, notify, reset, read, box, ownerBox } = ownZoomResizeFixture();
+  reset();
+  for (let index = 0; index < LAYOUT_SAMPLES; index += 1) {
+    const height = index % 2 === 0 ? 200 : 100;
+    zoom(height);
+    notify(height + 40);
+  }
+  const count = LAYOUT_SAMPLES;
+  expect(h.invalidateLayout).toHaveBeenCalledTimes(count);
+  expect(read).toHaveBeenCalledTimes(count * 2);
+  expect(box).toHaveBeenCalledTimes(count * 2);
+  expect(ownerBox).toHaveBeenCalledTimes(count * 2);
+  expect(h.work.frames.size).toBe(0);
+  h.layout.dispose();
+});
+it("keeps settled page geometry out of continuous zoom layout work", () => {
+  const harness = layoutHarness("reduced");
+  harness.layout.chromeMounted();
+  harness.work.flushFrames();
+  harness.setMaximumBottom(5_000);
+  harness.layout.contentChanged();
+  harness.work.flushFrames();
+  const pageHeight = harness.layout.currentPageHeight()!;
+  const pageWrites = harness.setPage.mock.calls.length;
+  harness.invalidateLayout.mockClear();
+
+  for (let frame = 0; frame < LAYOUT_SAMPLES; frame += 1) {
+    const zoom = frame % 2 === 0 ? 2 : 4;
+    harness.layout.applyZoom({ blockSize: pageHeight * zoom, zoom });
+  }
+
+  expect(harness.setPage).toHaveBeenCalledTimes(pageWrites);
+  expect(harness.invalidateLayout).toHaveBeenCalledTimes(LAYOUT_SAMPLES);
+  expect(harness.rendererPageHeight()).toBe(pageHeight);
+  expect(harness.rect.height).toBeCloseTo(pageHeight * 4);
+  expect(harness.work.frames.size).toBe(0);
+  harness.layout.dispose();
+  expect(harness.work.frames.size).toBe(0);
+});

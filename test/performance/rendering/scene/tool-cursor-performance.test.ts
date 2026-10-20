@@ -4,10 +4,7 @@ import type { StraightHighlighterElementV1 } from "../../../../src/domain/schema
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
 import { liveStrokePresentation } from "../../../../src/rendering/scene/element-presentation";
-import type {
-  SceneToolCursor,
-  SceneToolCursorFrameReader,
-} from "../../../../src/rendering/scene/tool-cursor";
+import type { SceneToolCursorFrameReader } from "../../../../src/rendering/scene/tool-cursor";
 import { FakeNode, fakeNode } from "../../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
@@ -15,6 +12,7 @@ import {
   createInteractionFixture,
   createInteractionRenderer,
 } from "./interaction-refresh-profile-fixture";
+import { createCursorFixture, cursorState, observeWork } from "./tool-cursor-fixture";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -94,161 +92,6 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz cursor bursts retain decoratio
     expect(scheduler.pendingCount).toBe(0);
     expect(cancelledRead).not.toHaveBeenCalled();
     expect(root.parent).toBeUndefined();
-  } finally {
-    renderer.destroy();
-  }
-});
-
-it.each(["tool", "eraser"] as const)(
-  "direct %s movement writes only retained translations",
-  (kind) => {
-    const { store, renderer, scheduler, root, cursor } = createCursorFixture();
-    const icon = cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
-    let position = 0;
-    const read = vi.fn<SceneToolCursorFrameReader>(() => ({
-      cursor:
-        kind === "tool"
-          ? { ...cursorState(position, icon), y: 40 + position }
-          : { kind, x: position, y: 40 + position, radius: 20 },
-      system: "crosshair",
-    }));
-    renderer.requestToolCursorFrame(read);
-    scheduler.runAll();
-    read.mockClear();
-    const observations = observeWork(store, root, renderer.inputSurface);
-    renderer.resetInstrumentation();
-    try {
-      for (let sample = 1; sample <= 32; sample += 1) {
-        position = sample;
-        observations.write.mockClear();
-        renderer.moveToolCursor(sample, 40 + sample);
-        expect(observations.write).toHaveBeenCalledExactlyOnceWith(
-          "transform",
-          `translate(${String(sample)} ${String(40 + sample)})`,
-        );
-        expect(cursor.attributes.get("transform")).toBe(
-          `translate(${String(sample)} ${String(40 + sample)})`,
-        );
-        observations.write.mockClear();
-        renderer.moveToolCursor(sample, 40 + sample);
-        expect(observations.write).not.toHaveBeenCalled();
-      }
-      for (const boundary of observations.content) expect(boundary).not.toHaveBeenCalled();
-      for (const boundary of [
-        observations.traversal,
-        observations.append,
-        observations.insert,
-        observations.remove,
-        observations.system,
-        read,
-      ])
-        expect(boundary).not.toHaveBeenCalled();
-      expect(scheduler.pendingCount).toBe(0);
-      expect(renderer.instrumentation()).toMatchObject({
-        scheduledFrames: 0,
-        geometryBuilds: 0,
-        contentGeometryWrites: 0,
-        livePreviewUpdates: 0,
-      });
-      renderer.requestToolCursorFrame(read);
-      scheduler.runNext();
-      expect(read).toHaveBeenCalledExactlyOnceWith(false);
-      expect(observations.write).not.toHaveBeenCalled();
-      expect(scheduler.pendingCount).toBe(0);
-    } finally {
-      renderer.destroy();
-    }
-  },
-);
-
-it("direct cursor movement respects invalid layout and the latest hidden frame", () => {
-  const { renderer, scheduler, cursor } = createCursorFixture();
-  const icon = cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
-  const read = vi.fn<SceneToolCursorFrameReader>(() => ({
-    cursor: cursorState(10, icon),
-    system: "crosshair",
-  }));
-  renderer.requestToolCursorFrame(read);
-  scheduler.runAll();
-  const write = vi.spyOn(FakeNode.prototype, "setAttribute");
-  try {
-    renderer.invalidateLayout();
-    renderer.moveToolCursor(20, 40);
-    expect(write).not.toHaveBeenCalled();
-    expect(scheduler.pendingCount).toBe(1);
-    scheduler.runAll();
-    write.mockClear();
-    renderer.moveToolCursor(30, 40);
-    expect(write).toHaveBeenCalledExactlyOnceWith("transform", "translate(30 40)");
-    renderer.requestToolCursorFrame(() => ({ cursor: null, system: "default" }));
-    write.mockClear();
-    renderer.moveToolCursor(40, 40);
-    expect(write).toHaveBeenCalledExactlyOnceWith("transform", "translate(40 40)");
-    scheduler.runAll();
-    expect(cursor.attributes.get("display")).toBe("none");
-    write.mockClear();
-    renderer.moveToolCursor(50, 40);
-    expect(write).not.toHaveBeenCalled();
-    expect(cursor.attributes.get("display")).toBe("none");
-    expect(scheduler.pendingCount).toBe(0);
-    renderer.requestToolCursorFrame(read);
-    scheduler.runAll();
-    write.mockClear();
-    renderer.moveToolCursor(60, 40);
-    expect(write).toHaveBeenCalledExactlyOnceWith("transform", "translate(60 40)");
-    expect(cursor.attributes.get("display")).not.toBe("none");
-  } finally {
-    renderer.destroy();
-  }
-});
-
-it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation feedback projects once before paint without extra scene frames`, () => {
-  const { store, renderer, scheduler, root, cursor } = createCursorFixture();
-  const icon = cursor.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
-  let position = 40;
-  const read = vi.fn<SceneToolCursorFrameReader>(() => ({
-    cursor: cursorState(position, icon),
-    system: "crosshair",
-  }));
-  renderer.requestToolCursorFrame(read);
-  scheduler.runAll();
-  const observations = observeWork(store, root, renderer.inputSurface);
-  try {
-    for (const next of [60, 80, 40]) {
-      position = next;
-      read.mockClear();
-      observations.write.mockClear();
-      renderer.resetInstrumentation();
-      renderer.setCamera({ x: 0, zoom: next / 40 });
-      expect(scheduler.pendingCount).toBe(1);
-      renderer.flushPointerFeedbackFrame(undefined, true);
-      expect(read).toHaveBeenCalledExactlyOnceWith(true);
-      expect(cursor.attributes.get("transform")).toBe(`translate(${String(next)} 40)`);
-      expect(observations.write.mock.calls.filter(([name]) => name === "transform")).toHaveLength(
-        2,
-      );
-      for (const boundary of observations.content) expect(boundary).not.toHaveBeenCalled();
-      expect(renderer.instrumentation().scheduledFrames).toBe(1);
-      expect(scheduler.pendingCount).toBe(1);
-      scheduler.runAll();
-      expect(read).toHaveBeenCalledTimes(1);
-      for (const boundary of observations.content) boundary.mockClear();
-    }
-    read.mockClear();
-    for (let sample = 0; sample < 8; sample += 1) renderer.flushPointerFeedbackFrame();
-    expect(read).not.toHaveBeenCalled();
-    expect(scheduler.pendingCount).toBe(0);
-    position = 100;
-    observations.write.mockClear();
-    renderer.resetInstrumentation();
-    for (let sample = 0; sample < 8; sample += 1) renderer.invalidateLayout();
-    expect(read).not.toHaveBeenCalled();
-    expect(observations.write).not.toHaveBeenCalled();
-    for (const boundary of observations.content) expect(boundary).not.toHaveBeenCalled();
-    expect(renderer.instrumentation().scheduledFrames).toBe(1);
-    scheduler.runAll();
-    expect(read).toHaveBeenCalledExactlyOnceWith(true);
-    expect(cursor.attributes.get("transform")).toBe("translate(100 40)");
   } finally {
     renderer.destroy();
   }
@@ -381,41 +224,6 @@ function publishMarker(
   });
 }
 
-function cursorState(x: number, icon: FakeNode): SceneToolCursor {
-  return {
-    color: { type: "theme-text" },
-    kind: "tool",
-    opacity: 0.4,
-    icon: icon as unknown as SVGSVGElement,
-    x,
-    y: 40,
-  };
-}
-
-function observeWork(
-  store: ReturnType<typeof createInteractionFixture>["store"],
-  root: FakeNode,
-  inputSurface: HTMLElement,
-) {
-  return {
-    content: [
-      vi.spyOn(root.ownerDocument, "createElementNS"),
-      vi.spyOn(root.ownerDocument, "createDocumentFragment"),
-      vi.spyOn(fakeNode(inputSurface).ownerDocument, "createElementNS"),
-      vi.spyOn(fakeNode(inputSurface).ownerDocument, "createDocumentFragment"),
-      vi.spyOn(store, "get"),
-      vi.spyOn(store, "query"),
-      vi.spyOn(store, "beginQuery"),
-    ],
-    traversal: vi.spyOn(FakeNode.prototype, "children", "get"),
-    append: vi.spyOn(FakeNode.prototype, "append"),
-    insert: vi.spyOn(FakeNode.prototype, "insertBefore"),
-    remove: vi.spyOn(FakeNode.prototype, "remove"),
-    system: vi.spyOn(fakeNode(inputSurface).style, "setProperty"),
-    write: vi.spyOn(FakeNode.prototype, "setAttribute"),
-  };
-}
-
 function assertStyleUpdates(
   renderer: ReturnType<typeof createInteractionRenderer>["renderer"],
   scheduler: ReturnType<typeof createInteractionRenderer>["scheduler"],
@@ -481,13 +289,4 @@ function assertStyleUpdates(
   expect(observations.append).toHaveBeenCalledOnce();
   expect(observations.remove).toHaveBeenCalledOnce();
   expect(holder.nodes).toEqual([icons[1]]);
-}
-
-function createCursorFixture() {
-  const { store } = createInteractionFixture();
-  const { renderer, scheduler } = createInteractionRenderer(store);
-  scheduler.runAll();
-  const root = fakeNode(renderer.svg);
-  const cursor = fakeNode(renderer.inputSurface).ownerDocument.body.nodes[0]!.nodes[0]!;
-  return { store, renderer, scheduler, root, cursor };
 }

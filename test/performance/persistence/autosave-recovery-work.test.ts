@@ -10,6 +10,60 @@ import {
   type DocumentRuntimeRequest,
 } from "../../../src/persistence/worker/runtime/public";
 import { createMinimalPersistenceFixture } from "./fixtures";
+import { AutosaveWorkerModelState } from "../../../src/persistence/saving/autosave/worker-model-state";
+import { FILE_SCHEMA_LIMITS } from "../../../src/domain/schema/public";
+import { CoalescedExportTarget } from "../../../src/persistence/worker/coalesced-export";
+import { createTestStroke } from "../../fixtures/persistence/worker-snapshot";
+
+it("bounds coalesced history by document capacity and captures the latest full snapshot lazily", () => {
+  const state = new AutosaveWorkerModelState(0);
+  const stroke = createTestStroke();
+  const snapshot = vi.fn(() => createMinimalPersistenceFixture(revision));
+  const orderByBand = vi.fn(() => ({}));
+  const document = {
+    snapshot,
+    orderByBand,
+    currentRevision: () => revision,
+    isGestureActive: () => false,
+  };
+  const target = new CoalescedExportTarget<{ id: string }, never>(0, ({ id }) => id);
+  let revision = 0;
+  for (let index = 0; index < FILE_SCHEMA_LIMITS.elements; index += 1) {
+    const id = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+    target.record({ modelRevision: ++revision, removedIds: [id] });
+  }
+  const bounded = target.materialize({});
+  expect(bounded.type).toBe("incremental");
+  if (bounded.type !== "incremental") throw new Error("Missing bounded incremental plan.");
+  expect(bounded.removedIds).toHaveLength(FILE_SCHEMA_LIMITS.elements);
+  expect(bounded.changedElements).toHaveLength(0);
+  state.record({ modelRevision: revision, removedIds: bounded.removedIds });
+
+  for (let index = FILE_SCHEMA_LIMITS.elements; index < FILE_SCHEMA_LIMITS.elements * 3; index++) {
+    const id = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+    state.record({ modelRevision: ++revision, changedElements: [{ ...stroke, id }] });
+    state.record({ modelRevision: ++revision, removedIds: [id] });
+  }
+  expect(state.requiresFullSynchronization).toBe(true);
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(state.takePlan(document)).toEqual({
+    baseModelRevision: null,
+    modelRevision: revision,
+    snapshot: createMinimalPersistenceFixture(revision),
+    type: "full",
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(orderByBand).not.toHaveBeenCalled();
+  expect(state.takePlan(document)).toBeNull();
+  state.acknowledgeExport(revision);
+  state.record({ modelRevision: ++revision, changedElements: [stroke] });
+  expect(state.takePlan(document)).toMatchObject({
+    baseModelRevision: revision - 1,
+    modelRevision: revision,
+    type: "incremental",
+    changedElements: [stroke],
+  });
+});
 
 interface RecoveryOptions {
   readonly failFull?: boolean;

@@ -12,7 +12,8 @@ import {
   type DocumentRuntimePort,
   type DocumentRuntimeRequest,
 } from "../../../src/persistence/worker/runtime/public";
-import { createStandardPersistenceFixture } from "./fixtures";
+import { createStandardShapeElements } from "../domain/standard-domain-fixture";
+import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 import { FallbackSliceProbe } from "../../fixtures/persistence/fallback-slice-probe";
 import { observeFallbackBytes } from "../../fixtures/persistence/fallback-byte-observer";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
@@ -264,6 +265,5 @@ function requireSerialized() {
 }
 
 function createFallbackFixture() {
-  const standard = createStandardPersistenceFixture();
-  return { ...standard, elements: standard.elements.slice(10_000, 10_257) };
+  return createWorkerSnapshot(createStandardShapeElements(257), 1);
 }

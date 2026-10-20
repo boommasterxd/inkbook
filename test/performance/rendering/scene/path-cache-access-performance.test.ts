@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import * as primitives from "../../../../src/domain/geometry/primitives";
 import * as geometry from "../../../../src/domain/geometry/element-path";
 import { BoundedVersionLru } from "../../../../src/domain/cache/bounded-version-lru";
@@ -10,16 +10,30 @@ import { PATH_CACHE_MAX_BYTES } from "../../../../src/rendering/scene/constants"
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import * as pressureOutline from "../../../../src/domain/geometry/pressure-outline";
 import { translatedStroke } from "../../../../src/domain/geometry/stroke-position";
-import { createHistoryContourScene, drainHistoryFrames } from "../../../fixtures/rendering/scene";
+import {
+  createHistoryContourElements,
+  createHistoryContourScene,
+  drainHistoryFrames,
+} from "../../../fixtures/rendering/scene";
 import { fakeNode } from "../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
-it("clears previews after cache release without retaining unchanged canonical contours", () => {
-  const fixture = createHistoryContourScene();
-  const { store, renderer, scheduler } = fixture;
-  const ids = renderer.mountedIds("content").slice(0, 10);
+let historyElements: readonly InkElementV1[];
+beforeAll(() => {
+  historyElements = createHistoryContourElements();
+});
+
+function createColdHistoryScene() {
+  const fixture = createHistoryContourScene({ elements: historyElements, paths: [] });
+  const ids = fixture.renderer.mountedIds("content").slice(0, 10);
   expect(ids).toHaveLength(10);
+  return { ...fixture, ids };
+}
+
+it("clears previews after cache release without retaining unchanged canonical contours", () => {
+  const fixture = createColdHistoryScene();
+  const { ids, store, renderer, scheduler } = fixture;
   const records = ids.map((id) => store.get(id)!);
   const groups = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes.slice(0, ids.length);
   expect(groups).toHaveLength(ids.length);
@@ -71,10 +85,8 @@ it("clears previews after cache release without retaining unchanged canonical co
 it.each([false, true])(
   "retains edited contours once in a 10,000-stroke store (Store prepared: %s)",
   async (storePrepared) => {
-    const fixture = createHistoryContourScene();
-    const { store, renderer, scheduler } = fixture;
-    const ids = renderer.mountedIds("content").slice(0, 10);
-    expect(ids).toHaveLength(10);
+    const fixture = createColdHistoryScene();
+    const { ids, store, renderer, scheduler } = fixture;
     const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
     const alias = vi.spyOn(SceneGeometryAliases.prototype, "retain");
     const outline = vi.spyOn(pressureOutline, "visitPreparedPressureOutline");

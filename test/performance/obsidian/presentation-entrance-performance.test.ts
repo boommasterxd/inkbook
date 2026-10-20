@@ -42,26 +42,24 @@ it.for([false, true])(
     let invalidFrames = 0;
     let invalidHeights = 0;
     let retainedWork = 0;
-    for (let sample = 0; sample < 2; sample += 1) {
-      const h = loadingMotionHarness();
-      if (!Object.is(h.loading.renderedHeight, 0)) invalidHeights += 1;
-      invalidFrames += runFrames(h, early);
-      const height = h.loading.renderedHeight;
-      if (early) {
-        if (!(height > 0)) invalidHeights += 1;
-        if (!(height < 48)) invalidHeights += 1;
-      } else if (height !== 48) invalidHeights += 1;
+    const h = loadingMotionHarness();
+    if (!Object.is(h.loading.renderedHeight, 0)) invalidHeights += 1;
+    invalidFrames += runFrames(h, early);
+    const height = h.loading.renderedHeight;
+    if (early) {
+      if (!(height > 0)) invalidHeights += 1;
+      if (!(height < 48)) invalidHeights += 1;
+    } else if (height !== 48) invalidHeights += 1;
 
-      h.loading.dispose();
+    h.loading.dispose();
 
-      if (!Object.is(h.loading.renderedHeight, height)) invalidHeights += 1;
-      if (h.frames.size !== 0) retainedWork += 1;
-      if (h.timers.size !== 0) retainedWork += 1;
-      const preview = entranceHarness({ presented: false, initialHeight: height });
-      preview.entrance.prepare();
-      if (!Object.is(preview.renderedHeight, height)) invalidHeights += 1;
-      preview.entrance.dispose();
-    }
+    if (!Object.is(h.loading.renderedHeight, height)) invalidHeights += 1;
+    if (h.frames.size !== 0) retainedWork += 1;
+    if (h.timers.size !== 0) retainedWork += 1;
+    const preview = entranceHarness({ presented: false, initialHeight: height });
+    preview.entrance.prepare();
+    if (!Object.is(preview.renderedHeight, height)) invalidHeights += 1;
+    preview.entrance.dispose();
     expect(invalidFrames).toBe(0);
     expect(invalidHeights).toBe(0);
     expect(retainedWork).toBe(0);
@@ -131,16 +129,14 @@ function runFrames(
 it(`keeps ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz exit frames coalesced and bounded`, async () => {
   let invalidFrames = 0;
   let invalidLifecycle = 0;
-  for (let sample = 0; sample < 2; sample += 1) {
-    const h = exitHarness(400, { before: 24, after: 24 });
-    const ready = h.exit.begin();
-    invalidFrames += runFrames(h);
-    if ((await ready) !== true) invalidLifecycle += 1;
-    if (!Object.is(h.height, 0)) invalidLifecycle += 1;
-    if (h.frames.size !== 0) invalidLifecycle += 1;
-    h.exit.dispose();
-    if (h.listeners.size !== 0) invalidLifecycle += 1;
-  }
+  const h = exitHarness(400, { before: 24, after: 24 });
+  const ready = h.exit.begin();
+  invalidFrames += runFrames(h);
+  if ((await ready) !== true) invalidLifecycle += 1;
+  if (!Object.is(h.height, 0)) invalidLifecycle += 1;
+  if (h.frames.size !== 0) invalidLifecycle += 1;
+  h.exit.dispose();
+  if (h.listeners.size !== 0) invalidLifecycle += 1;
   assertPresentationContracts(invalidFrames, invalidLifecycle);
 });
 

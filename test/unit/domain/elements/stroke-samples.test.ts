@@ -8,8 +8,6 @@ describe("runtime stroke samples", () => {
     const runtime = copyStrokeSamplesToRuntime(wire);
     wire[0] = 99;
     expect(Array.from(runtime)).toEqual([1, 2, 0.5, 3, 4, 1]);
-
-    expect(Array.from(runtime)).toEqual([1, 2, 0.5, 3, 4, 1]);
   });
 
   it.each([

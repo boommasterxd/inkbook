@@ -9,6 +9,7 @@ import { validateInkElementV1 } from "../schema/public";
 
 import {
   assertAcyclicConnections,
+  assertAcyclicConnectionsSteps,
   assertResolvedConnections,
   isAnchorTarget,
   isConnectable,
@@ -139,7 +140,9 @@ async function prepareReplacementDraftsTimeSliced(
     }
     if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
   }
-  assertAcyclicConnections(connectionRoots, lookup);
+  const validation = work.run(assertAcyclicConnectionsSteps(connectionRoots, lookup));
+  const validated = validation instanceof Promise ? await validation : validation;
+  if (validated === "cancelled") return validated;
   const propagation = await propagateTargetChangesTimeSliced(drafts, ports, scheduler);
   if (propagation === "cancelled") return propagation;
   return drafts;

@@ -8,8 +8,29 @@ import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/co
 import { type EncodedClipboard } from "../../../../src/persistence/clipboard/types";
 import { RECTANGLE_ID, rectangle } from "../../../unit/persistence/clipboard/fixtures";
 
+declare function setImmediate(callback: () => void): void;
+
 interface FakeItem {
   formats: ReadonlyMap<string, Promise<string>>;
+}
+
+type WriteFailure = "item-construction" | "async-write" | "sync-write";
+
+function failedClipboardPort(failure: WriteFailure) {
+  const retained: ClipboardWritePayload[] = [];
+  const write = vi.fn(() => {
+    if (failure === "sync-write") throw new DOMException("permission denied", "NotAllowedError");
+    return Promise.reject(new Error("permission denied"));
+  });
+  const port: ClipboardWritePort<FakeItem> = {
+    createItem: (formats) => {
+      if (failure === "item-construction") throw new Error("ClipboardItem unavailable");
+      return { formats };
+    },
+    write,
+    retainSessionPayload: (payload) => retained.push(payload),
+  };
+  return { port, retained, write };
 }
 
 const encodedFixture = (): EncodedClipboard => {
@@ -53,63 +74,35 @@ describe("clipboard write adapter plan", () => {
     await expect(createdItem?.formats.get("text/plain")).resolves.toBe(payload.plainText);
   });
 
-  it("retains the session payload when plain item construction is unavailable", async () => {
-    const payload = encodedFixture();
-    const retained: ClipboardWritePayload[] = [];
-    const write = vi.fn(async () => undefined);
-    const port: ClipboardWritePort<FakeItem> = {
-      createItem: () => {
-        throw new Error("ClipboardItem unavailable");
-      },
-      write,
-      retainSessionPayload: (value) => retained.push(value),
-    };
+  it.each(["item-construction", "async-write", "sync-write"] as const)(
+    "retains the session payload without retrying after %s failure",
+    async (failure) => {
+      const payload = encodedFixture();
+      const { port, retained, write } = failedClipboardPort(failure);
 
-    const attempt = beginClipboardWriteDuringActivation(port, Promise.resolve(payload));
+      const attempt = beginClipboardWriteDuringActivation(port, Promise.resolve(payload));
 
-    expect(attempt.mode).toBe("unavailable");
-    await expect(attempt.systemWrite).resolves.toBe(false);
-    await attempt.payloadReady;
-    expect(write).not.toHaveBeenCalled();
-    expect(retained).toEqual([payload]);
-  });
+      expect(attempt.mode).toBe(failure === "item-construction" ? "unavailable" : "plain-only");
+      await expect(attempt.systemWrite).resolves.toBe(false);
+      await attempt.payloadReady;
+      expect(write).toHaveBeenCalledTimes(failure === "item-construction" ? 0 : 1);
+      expect(retained).toEqual([payload]);
+    },
+  );
 
-  it("retains the session payload and does not retry after an asynchronous write rejection", async () => {
-    const payload = encodedFixture();
-    const retained: ClipboardWritePayload[] = [];
-    let writes = 0;
-    const port: ClipboardWritePort<FakeItem> = {
-      createItem: (formats) => ({ formats }),
-      write: () => {
-        writes += 1;
-        return Promise.reject(new Error("permission denied"));
-      },
-      retainSessionPayload: (value) => retained.push(value),
-    };
+  it.each(["item-construction", "async-write", "sync-write"] as const)(
+    "contains an encoding rejection when %s does not consume clipboard data",
+    async (failure) => {
+      const error = new Error("Clipboard encoding failed.");
+      const { port, retained, write } = failedClipboardPort(failure);
+      const attempt = beginClipboardWriteDuringActivation(port, Promise.reject(error));
 
-    const attempt = beginClipboardWriteDuringActivation(port, Promise.resolve(payload));
-
-    await expect(attempt.systemWrite).resolves.toBe(false);
-    await attempt.payloadReady;
-    expect(writes).toBe(1);
-    expect(retained).toEqual([payload]);
-  });
-
-  it("normalizes a synchronous system write exception to a failed attempt", async () => {
-    const payload = encodedFixture();
-    const retainSessionPayload = vi.fn();
-    const port: ClipboardWritePort<FakeItem> = {
-      createItem: (formats) => ({ formats }),
-      write: () => {
-        throw new DOMException("permission denied", "NotAllowedError");
-      },
-      retainSessionPayload,
-    };
-
-    const attempt = beginClipboardWriteDuringActivation(port, Promise.resolve(payload));
-
-    await expect(attempt.systemWrite).resolves.toBe(false);
-    await attempt.payloadReady;
-    expect(retainSessionPayload).toHaveBeenCalledWith(payload);
-  });
+      await expect(attempt.payloadReady).rejects.toBe(error);
+      await expect(attempt.systemWrite).resolves.toBe(false);
+      expect(retained).toEqual([]);
+      expect(write).toHaveBeenCalledTimes(failure === "item-construction" ? 0 : 1);
+      // Let the host report unhandled rejections before Vitest completes this case.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    },
+  );
 });

@@ -397,7 +397,12 @@ export default [
     },
   },
   {
-    files: ["test/performance/persistence/memory-*.{ts,tsx}"],
+    // These isolated memory harnesses execute only in Node, never in the plugin.
+    files: [
+      "test/performance/persistence/memory-*.{ts,tsx}",
+      "test/fixtures/persistence/isolated-node-process.ts",
+      "test/unit/persistence/saving/isolated-node-process.test.ts",
+    ],
     languageOptions: {
       globals: {
         ...globals.node,

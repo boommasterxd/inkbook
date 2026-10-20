@@ -50,6 +50,7 @@ function observeBlockSearches() {
 
 it("avoids block searches for dense 10,000-root removals and preserves merged band ownership", () => {
   const cache = new DetachedSceneElementCache();
+  const store = new FakeSceneStore();
   const document = asDocument(new FakeDocument());
   const instrumentation = createInstrumentation();
   const base = createTestStroke();
@@ -60,12 +61,30 @@ it("avoids block searches for dense 10,000-root removals and preserves merged ba
       ...createSceneRecord({ ...element, id: `removal-${rank}` }, rank),
       band: rank % 2 === 0 ? ("content" as const) : ("highlight" as const),
     };
+    store.records.set(record.id, record);
     const entry = createMountedElement(document, record, parts, instrumentation);
-    cache.registerMounted(entry);
+    cache.registerMounted(entry, store);
     return entry;
   });
+  for (const record of store.records.values())
+    store.records.set(record.id, { ...record, rank: record.rank + 20 });
+  const get = vi.spyOn(store, "get");
   const search = observeBlockSearches();
   try {
+    // Membership invalidation refreshes only the queried binary-search path.
+    cache.invalidateRanks();
+    expect(get).not.toHaveBeenCalled();
+    const shifted = { ...entries[5_000]!, rank: 5_020 };
+    expect(cache.successor(shifted)).toBe(entries[5_002]);
+    expect(get.mock.calls.length).toBeGreaterThan(0);
+    expect(get.mock.calls.length).toBeLessThanOrEqual(20);
+    get.mockClear();
+    expect(cache.successor(shifted)).toBe(entries[5_002]);
+    expect(get).not.toHaveBeenCalled();
+    // Return the fixture to its original ranks for the removal ownership checks.
+    for (const record of store.records.values())
+      store.records.set(record.id, { ...record, rank: record.rank - 20 });
+    cache.invalidateRanks();
     // Ascending insertion splits each band into 64-entry blocks, with a larger last block.
     const dense = entries.filter((entry) => Math.floor(entry.rank / 2) % 64 < 32);
     for (const entry of dense) cache.unregisterMounted(entry.id);
@@ -90,6 +109,7 @@ it("avoids block searches for dense 10,000-root removals and preserves merged ba
     cache.registerMounted(entries[1]!);
     expect(cache.successor({ id: "before", rank: -1, band: "highlight" })).toBe(entries[1]);
   } finally {
+    get.mockRestore();
     search.restore();
     cache.dispose();
   }

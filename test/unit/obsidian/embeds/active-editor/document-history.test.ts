@@ -22,7 +22,7 @@ async function expectCanvasStep(
 }
 
 describe("active document element history", () => {
-  it("removes targets and restores every dependent connection atomically", async () => {
+  it("restores removed targets and their connections after presentation disposal", async () => {
     const target = rectangle();
     const line = connectedLine(target);
     const store = new ElementStore([target, line]);
@@ -39,6 +39,7 @@ describe("active document element history", () => {
       store,
       ...mutations,
     } as unknown as EditableDocumentModel;
+    const prepare = model.prepareElementMutation.bind(model);
     const preparedCalls = vi.spyOn(model, "prepareElementMutation");
     const removalCalls = vi.spyOn(model, "prepareElementRemoval");
     const history = new ActiveEditorHistory(model);
@@ -49,6 +50,7 @@ describe("active document element history", () => {
     expect(store.get(line.id)?.element).toMatchObject({ startConnection: null });
     expect(deltas).toHaveBeenCalledTimes(1);
     expect(history.commandCount).toBe(1);
+    documentHistory.dispose();
 
     await expect(history.undoAsync()).resolves.toBe(true);
     expect(store.get(target.id)?.element).toEqual(target);
@@ -67,6 +69,23 @@ describe("active document element history", () => {
     expect(preparedCalls.mock.calls[0]![0]).toBe(replay!.reverse);
     expect(preparedCalls.mock.calls[1]![0]).toBe(replay!.forward);
     expect(preparedCalls.mock.calls[1]![1].replay).toBe(replay);
+
+    let completePreparation = () => undefined as void;
+    const gate = new Promise<void>((resolve) => {
+      completePreparation = resolve;
+    });
+    preparedCalls.mockImplementation(async (...args) => {
+      const prepared = await prepare(...args);
+      await gate;
+      return prepared;
+    });
+    const undoAtShutdown = history.undoAsync();
+    await vi.waitFor(() => expect(preparedCalls).toHaveBeenCalledTimes(3));
+    history.dispose();
+    completePreparation();
+    await expect(undoAtShutdown).resolves.toBe(false);
+    expect(store.get(target.id)).toBeUndefined();
+    expect(deltas).toHaveBeenCalledTimes(3);
   });
 
   it("rejects a prepared deletion after its selection becomes stale", async () => {

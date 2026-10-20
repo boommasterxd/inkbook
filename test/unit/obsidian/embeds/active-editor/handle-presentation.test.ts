@@ -18,6 +18,7 @@ import { ElementStore } from "../../../../../src/domain/store/public";
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import { stroke } from "../../../domain/schema/fixtures";
 import { rectangle } from "../../../domain/store/fixtures";
+import { connectionChain } from "../../../../fixtures/domain/connection-chain";
 
 describe("selection handle presentation", () => {
   it("keeps a resized multi-selection frame tight around exact element bounds", () => {
@@ -98,6 +99,54 @@ function rendererPort(
     suppressMotionForNextDelta: vi.fn(),
   };
 }
+
+it.each(["linear-endpoint", "linear-bend"] as const)(
+  "renders local %s feedback while global connection planning is deferred",
+  (kind) => {
+    const elements = connectionChain(3);
+    const source = elements[elements.length - 1]!;
+    const store = new ElementStore(elements);
+    const plan = vi.spyOn(store, "planReplacements");
+    const action =
+      kind === "linear-endpoint"
+        ? { kind, elementId: source.id, endpoint: "end" as const }
+        : { kind, elementId: source.id };
+    const session = new SelectionHandleSession({
+      action,
+      elements: [source],
+      planner: store,
+      startPointer: kind === "linear-endpoint" ? source.end : source.pivot,
+    });
+    const preview = session.update({ x: 450, y: 180 });
+    expect(preview.exactPreviewTruncated).toBe(true);
+    expect(preview.exactElements).toHaveLength(1);
+    expect(preview.exactElements[0]).not.toEqual(source);
+    expect(session.prepareCommit().status).toBe("time-sliced-required");
+    expect(plan).not.toHaveBeenCalled();
+    plan.mockRestore();
+    const overlay = vi.fn<HandleInteractionRenderer["setSelectionOverlayPath"]>();
+    const renderer = rendererPort(overlay);
+    const elementsPreview = vi.spyOn(renderer, "setElementPreviews");
+    const presentation = new SelectionHandlePresentation(
+      renderer,
+      (point) => point,
+      () => 1,
+    );
+    presentation.renderPreview(
+      { frame: null, selected: [selectedGeometry(source)], selectedIds: new Set([source.id]) },
+      preview,
+      { elements: [], selectedPreviewIds: new Set() },
+      [],
+    );
+    expect(elementsPreview).toHaveBeenCalledWith(preview.exactElements, 1);
+    const expected = selectionOverlayPaths(preview.exactElements.map(selectedGeometry), {
+      pageToScreen: (point) => point,
+      zoom: 1,
+    });
+    expect(overlay).toHaveBeenCalledWith(expected.outline, "none", expected.handles);
+    expect(store.instrumentation.publishedDeltas).toBe(0);
+  },
+);
 
 it.each([
   { rotation: 0, pressureEnabled: true, tool: "pen" as const },

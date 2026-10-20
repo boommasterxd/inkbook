@@ -1,8 +1,13 @@
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
 import { UniformSpatialIndex } from "../../../src/domain/spatial";
 import { expect, vi, type Mock } from "vitest";
-import { ElementStore, type AppliedElementMutation } from "../../../src/domain/store/public";
+import {
+  ElementStore,
+  type AppliedElementMutation,
+  type StoreDelta,
+} from "../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
+import { takeImmutableElementOwnership } from "../../../src/domain/store/immutability";
 import { indexedStroke } from "../editor/stroke";
 import { createWorkerSnapshot } from "../persistence/worker-snapshot";
 import { calculateElementBounds } from "../../../src/domain/geometry/bounds";
@@ -15,7 +20,7 @@ import type {
 import type { NavigationPathPreparation } from "../../../src/rendering/scene/navigation-path-preparation";
 import type { SceneVisibilityPriority } from "../../../src/rendering/scene/scene-entrant-priority";
 import type { Bounds } from "../../../src/domain/geometry/public";
-import type { SceneElementRecord } from "../../../src/rendering/scene/types";
+import type { SceneDeltaEntry, SceneElementRecord } from "../../../src/rendering/scene/types";
 import type { InkElementV1, PageV1 } from "../../../src/domain/schema/public";
 import type { SceneRendererOptions, SceneViewport } from "../../../src/rendering/scene/types";
 import {
@@ -89,16 +94,24 @@ export function createSceneFixture(
   return { document: fakeNode(renderer.svg).ownerDocument, parentDocument, renderer, scheduler };
 }
 
-/** Real committed Store deltas in a 10,000-stroke document, including history provenance. */
-export function createHistoryContourScene(inputs?: {
-  readonly elements: readonly InkElementV1[];
-  readonly paths: readonly PreparedScenePathEntry[];
-}) {
-  const elements =
-    inputs?.elements ??
+/** Projects committed records and bounds into the renderer's delta adapter. */
+export function sceneDeltaEntries(delta: StoreDelta): SceneDeltaEntry[] {
+  return delta.changes.map((change) => ({
+    id: change.id,
+    domains: change.domains,
+    before: (change.before?.element as InkElementV1 | undefined) ?? null,
+    after: (change.after?.element as InkElementV1 | undefined) ?? null,
+    beforeBounds: change.before?.bounds ?? null,
+    afterBounds: change.after?.bounds ?? null,
+  }));
+}
+
+/** Immutable samples can be reused while every history scene owns its Store and caches. */
+export function createHistoryContourElements(): readonly InkElementV1[] {
+  return Object.freeze(
     Array.from({ length: 10_000 }, (_, index) => {
       const element = indexedStroke(index);
-      return {
+      const stroke = {
         ...element,
         points: Array.from({ length: 20 + (index % 61) }, (_, sample) => [
           roundCanonical(element.pivot.x + sample / 10),
@@ -106,7 +119,18 @@ export function createHistoryContourScene(inputs?: {
           roundCanonical(0.3 + ((index + sample) % 7) / 10),
         ]).flat(),
       };
-    });
+      takeImmutableElementOwnership(stroke);
+      return stroke;
+    }),
+  );
+}
+
+/** Real committed Store deltas in a 10,000-stroke document, including history provenance. */
+export function createHistoryContourScene(inputs?: {
+  readonly elements: readonly InkElementV1[];
+  readonly paths: readonly PreparedScenePathEntry[];
+}) {
+  const elements = inputs?.elements ?? createHistoryContourElements();
   const store = new ElementStore(elements);
   const sceneStore = new ElementSceneStore(store);
   const paths = new Map(inputs?.paths.map(({ id, parts }) => [id, parts]));

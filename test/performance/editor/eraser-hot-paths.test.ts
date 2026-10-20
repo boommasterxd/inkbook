@@ -5,7 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
-import { countedEraserStroke, createCountedDenseStrokeEraser } from "./eraser-performance-fixture";
+import {
+  countedEraserStroke,
+  createCountedDenseStrokeEraser,
+  observeIndexBuffers,
+} from "./eraser-performance-fixture";
 import { createSweptCapsuleCheck } from "../../../src/editor/gestures/eraser-intersection";
 import {
   EraserStrokeIndex,
@@ -13,6 +17,7 @@ import {
   MAX_ERASER_INDEX_BYTES,
 } from "../../../src/editor/gestures/eraser-stroke-index";
 import { maximumStroke } from "./maximum-stroke-fixture";
+import { rectangle as geometryRectangle } from "../../unit/domain/geometry/fixtures";
 
 const ORIGINAL_STROKE_POINTS = 4_096;
 
@@ -193,25 +198,15 @@ it.each([
 });
 
 function rectangle(): BoxShapeElementV1 {
-  return {
+  return geometryRectangle({
     createdAt: 1,
     height: 20,
     id: "shape",
-    kind: "rectangle",
     pivot: { x: 50, y: 50 },
-    rotation: 0,
-    style: {
-      fillColor: null,
-      fillOpacity: 0,
-      outlineColor: { type: "theme-text" },
-      outlineOpacity: 1,
-      outlineStyle: "solid",
-      outlineWidth: 2,
-    },
     width: 20,
     x: 40,
     y: 40,
-  };
+  });
 }
 
 it("reuses section geometry for repeated near misses and near-parallel diagonal sweeps", () => {
@@ -433,26 +428,68 @@ it("updates a recorded section from new endpoints without reading known starts a
   expect(typeof index.leafRange(1)).toBe("number");
 });
 
-function observeIndexBuffers() {
-  let count = 0;
-  let bytes = 0;
-  vi.stubGlobal(
-    "Float64Array",
-    new Proxy(Float64Array, {
-      construct(target, args, newTarget) {
-        const buffer = Reflect.construct(target, args, newTarget) as Float64Array;
-        count += 1;
-        bytes += buffer.byteLength;
-        return buffer;
+it("drains multiple feedback quanta without a frame wait while the shared budget remains", async () => {
+  const fixture = createCountedDenseStrokeEraser(16, undefined, MAX_STROKE_POINTS, () => true);
+  const yieldControl = vi.fn(async () => undefined);
+  const remove = vi.fn((ids: ReadonlySet<string>) => {
+    expect(ids.size).toBe(16);
+    return true;
+  });
+  let checkpoints = 0;
+  let totalPointReads = fixture.takePointReads();
+  fixture.eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
+  totalPointReads += fixture.takePointReads();
+
+  const committed = await fixture.eraser.commit(remove, {
+    isCancelled: () => false,
+    shouldYield: () => {
+      const reads = fixture.takePointReads();
+      totalPointReads += reads;
+      expect(reads).toBeLessThanOrEqual(256 + 2);
+      checkpoints += 1;
+      return false;
+    },
+    yieldControl,
+  });
+
+  expect(committed).toBe(true);
+  expect(remove).toHaveBeenCalledOnce();
+  expect(checkpoints).toBeGreaterThan(12_288 / 256);
+  expect(totalPointReads + fixture.takePointReads()).toBeGreaterThan(12_288);
+  expect(yieldControl).not.toHaveBeenCalled();
+  expect(fixture.eraser.retainedSweepCount).toBe(0);
+});
+
+it("cancels finalization at the next yield without reading or publishing more work", async () => {
+  const fixture = createCountedDenseStrokeEraser(128, undefined, MAX_STROKE_POINTS, () => true);
+  let cancelled = false;
+  let removals = 0;
+  let yields = 0;
+  try {
+    fixture.eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
+    const committed = await fixture.eraser.commit(
+      () => {
+        removals += 1;
+        return true;
       },
-    }),
-  );
-  return {
-    get count() {
-      return count;
-    },
-    get bytes() {
-      return bytes;
-    },
-  };
-}
+      {
+        isCancelled: () => cancelled,
+        shouldYield: () => true,
+        yieldControl: async () => {
+          yields += 1;
+          fixture.takePointReads();
+          cancelled = true;
+        },
+      },
+    );
+    expect(committed).toBe(false);
+    expect(yields).toBe(1);
+    expect(removals).toBe(0);
+    expect(fixture.takePointReads()).toBe(0);
+    expect(fixture.eraser.candidateCount).toBe(0);
+    expect(fixture.eraser.retainedSweepCount).toBe(0);
+    expect(fixture.eraser.retainedCandidateIdCount).toBe(0);
+  } finally {
+    fixture.eraser.revert();
+  }
+});

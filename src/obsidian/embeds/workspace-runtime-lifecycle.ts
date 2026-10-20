@@ -43,6 +43,7 @@ interface PendingAutoActivation {
 interface InsertionUndoHint {
   readonly dismiss: () => void;
   strokeCommitted: boolean;
+  readonly token: object;
 }
 
 export type HostWriteResolved = (output?: {
@@ -106,12 +107,14 @@ export class WorkspaceRuntimeLifecycle {
     ownerWindow: Window,
     onTimeout: (retry: () => void) => void,
     dismissUndoHint?: () => void,
-  ): void {
-    if (this.#options.isDisposed()) return;
+  ): () => void {
+    if (this.#options.isDisposed()) return () => undefined;
+    const token = {};
     if (dismissUndoHint !== undefined) {
       this.#insertionUndoHints.set(documentId, {
         dismiss: dismissUndoHint,
         strokeCommitted: false,
+        token,
       });
     }
     this.#cancelAutoActivation();
@@ -123,6 +126,10 @@ export class WorkspaceRuntimeLifecycle {
       this.continueAutoActivation(mounted.attachment);
       break;
     }
+    return () => {
+      if (this.#insertionUndoHints.get(documentId)?.token === token)
+        this.#insertionUndoHints.delete(documentId);
+    };
   }
 
   public continueAutoActivation(attachment: PresentationAttachment): void {
@@ -183,6 +190,7 @@ export class WorkspaceRuntimeLifecycle {
   }
 
   public abortAutoActivation(documentId: string): void {
+    this.#insertionUndoHints.delete(documentId);
     if (this.#pendingAutoActivation?.documentId === documentId) this.#cancelAutoActivation();
   }
 

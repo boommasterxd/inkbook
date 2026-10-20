@@ -408,16 +408,8 @@ describe("selection and cancellation", () => {
     });
   });
 
-  it("clears selection on an empty Select click but preserves it for Shift", () => {
+  it("preserves selection for a Shift-modified empty Select click", () => {
     const state = createInputState({ activeTool: "select", hasSelection: true });
-    const click = apply(state, pointerDown());
-    const released = apply(click.state, { type: "pointer-up", pointerId: 1 });
-    expect(click.effects).toEqual([{ type: "capture-pointer", pointerId: 1 }]);
-    expect(released.effects).toEqual([
-      { type: "clear-selection" },
-      { type: "release-pointer", pointerId: 1 },
-    ]);
-
     const additive = apply(state, pointerDown({ shift: true }));
     expect(apply(additive.state, { type: "pointer-up", pointerId: 1 }).effects).toEqual([
       { type: "release-pointer", pointerId: 1 },

@@ -2,6 +2,7 @@ import type { Editor, EditorPosition } from "obsidian";
 import { vi } from "vitest";
 
 import { EmbedPasteController } from "../../../src/obsidian/commands/embed-paste";
+import { ownedFileRead } from "./owned-file";
 
 export class FakeEditor {
   content: string;
@@ -63,7 +64,7 @@ export function pasteHarness(
   confirmedOutput?: { matchesConfirmedOutput(read: ReturnType<typeof guardedRead>): boolean },
 ) {
   const events: string[] = [];
-  const create = vi.fn(async (path: string, content: string) => {
+  const create = vi.fn(async (path: string, content: string, _maximumBytes: number) => {
     events.push(`create:${path}:${content}`);
     events.push(`read:${path}`);
     return guardedRead(path, content);
@@ -90,7 +91,11 @@ export function pasteHarness(
   const controller = new EmbedPasteController({
     ...(confirmedOutput === undefined ? {} : { confirmedOutput }),
     choices: { choose },
-    documents: { createAndReadBack: create, readWithMetadataGuard: read },
+    documents: {
+      createOwnedAndReadBack: async (path, content, maximumBytes, onCreated) =>
+        ownedFileRead(path, await create(path, content, maximumBytes), onCreated),
+      readWithMetadataGuard: read,
+    },
     links: {
       generateEmbed: (path) => {
         events.push(`link:${path}`);
@@ -100,7 +105,7 @@ export function pasteHarness(
         linkpath === "drawings/source.svg" ? { path: "drawings/source.svg" } : null,
     },
     placement: { preparePath },
-    trash: { trash },
+    trash: { trashCreated: (created) => trash(created.file.path) },
     validation: { validate },
   });
   return { choose, controller, create, events, preparePath, read, trash, validate };

@@ -34,7 +34,18 @@ function changedPaths(output) {
   return [...paths].sort();
 }
 
-export async function inspectChanges({ root, base, head = "HEAD" }) {
+export async function checkoutRevision(root, expected) {
+  const revision = (await git(root, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
+  if (expected !== undefined && revision !== expected) {
+    throw Object.assign(new Error("CI checkout does not match the expected merge revision."), {
+      code: "CI_REVISION_MISMATCH",
+    });
+  }
+  return revision;
+}
+
+export async function inspectChanges({ root, base, head = "HEAD", merge }) {
+  const checkedOut = await checkoutRevision(root, merge);
   if (typeof base !== "string" || !base) throw new Error("Missing comparison base");
   const resolvedHead = (
     await git(root, ["rev-parse", "--verify", "--end-of-options", `${head}^{commit}`])
@@ -44,6 +55,15 @@ export async function inspectChanges({ root, base, head = "HEAD" }) {
   ).trim();
   const mergeBase = (await git(root, ["merge-base", resolvedBase, resolvedHead])).trim();
   if (!/^[a-f0-9]{40,64}$/.test(mergeBase)) throw new Error("Missing merge base");
+  for (const revision of [resolvedBase, resolvedHead]) {
+    try {
+      await git(root, ["merge-base", "--is-ancestor", revision, checkedOut]);
+    } catch {
+      throw Object.assign(new Error("CI checkout does not contain the requested base and head."), {
+        code: "CI_REVISION_MISMATCH",
+      });
+    }
+  }
   const output = await git(root, [
     "diff",
     "--no-ext-diff",
@@ -54,7 +74,13 @@ export async function inspectChanges({ root, base, head = "HEAD" }) {
     resolvedHead,
     "--",
   ]);
-  return { base: mergeBase, head: resolvedHead, changes: changedPaths(output) };
+  return {
+    base: resolvedBase,
+    head: resolvedHead,
+    merge: checkedOut,
+    mergeBase,
+    changes: changedPaths(output),
+  };
 }
 
 async function collectFiles(root, directory, files) {

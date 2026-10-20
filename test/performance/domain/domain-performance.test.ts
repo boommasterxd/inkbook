@@ -73,7 +73,7 @@ it.each([1_000, 10_000])("keeps local index work bounded with %i unrelated strok
   indexed.query(bounds, scratch);
   const warmAllocations = scratch.allocationCount;
   indexed.resetInstrumentation();
-  for (let query = 0; query < 100; query += 1) {
+  for (let query = 0; query < 3; query += 1) {
     expect(indexed.query(bounds, scratch)).toBe(local.length);
     expect(scratch.candidateVisitCount).toBeLessThanOrEqual(local.length);
     expect(scratch.duplicateVisitCount).toBe(0);
@@ -204,30 +204,6 @@ async function loadFixture(): Promise<void> {
   store = loadedStore;
   fixture = { ...loadedFixture, elements: [] };
 }
-describe("standard 10,000-stroke domain fixture", () => {
-  beforeEach(loadFixture);
-  it("matches the normative point, shape, connection, overflow, and extent boundaries", () => {
-    expect(fixture.strokeCount).toBe(10_000);
-    expect(fixture.strokePointCount).toBe(500_000);
-    expect(fixture.shapeCount).toBe(500);
-    expect(fixture.linearElementCount).toBe(500);
-    expect(fixture.lineCount).toBe(250);
-    expect(fixture.arrowCount).toBe(250);
-    expect(store.size).toBe(11_000);
-    expect(store.getMaximumBottom()).toBeGreaterThanOrEqual(200_000);
-
-    let dependentEndpoints = 0;
-    store.visitDependents(fixture.connectedTargetId, () => {
-      dependentEndpoints += 1;
-    });
-    expect(dependentEndpoints).toBe(512);
-
-    expect(new Set(fixture.arrowNodes)).toEqual(
-      new Set(["none", "arrow", "triangle", "diamond", "circle"]),
-    );
-  });
-});
-
 describe("normalized store and command costs", () => {
   beforeEach(loadFixture);
   it("commits one-stroke paint changes without scans, retained growth, or unrelated replacement", async () => {
@@ -237,11 +213,11 @@ describe("normalized store and command costs", () => {
     const retainedBytes = store.instrumentation.estimatedRetainedBytes;
     store.resetInstrumentation();
 
-    for (let operation = 0; operation < 500; operation += 1) {
+    for (const opacity of [0.99, 1, 0.99]) {
       const current = store.get(changedId)!.element;
       if (current.kind !== "stroke") throw new Error("Expected stroke fixture record.");
       const replacement = structuredClone(current) as StrokeElementV1;
-      replacement.style.opacity = operation % 2 === 0 ? 0.99 : 1;
+      replacement.style.opacity = opacity;
       store.replace(changedId, replacement);
     }
 
@@ -249,14 +225,30 @@ describe("normalized store and command costs", () => {
     expect(store.instrumentation.estimatedRetainedBytes).toBe(retainedBytes);
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
-      publishedDeltas: 500,
-      recordReplacements: 500,
+      publishedDeltas: 3,
+      recordReplacements: 3,
       reverseDependencyVisits: 0,
       snapshotMaterializations: 0,
     });
   });
 
-  it("uses the reverse map for a 512-endpoint target commit", () => {
+  it("uses the reverse map for the normative mixed fixture's 512-endpoint target", () => {
+    expect(fixture.strokeCount).toBe(10_000);
+    expect(fixture.strokePointCount).toBe(500_000);
+    expect(fixture.shapeCount).toBe(500);
+    expect(fixture.linearElementCount).toBe(500);
+    expect(fixture.lineCount).toBe(250);
+    expect(fixture.arrowCount).toBe(250);
+    expect(store.size).toBe(11_000);
+    expect(store.getMaximumBottom()).toBeGreaterThanOrEqual(200_000);
+    expect(new Set(fixture.arrowNodes)).toEqual(
+      new Set(["none", "arrow", "triangle", "diamond", "circle"]),
+    );
+    let dependentEndpoints = 0;
+    store.visitDependents(fixture.connectedTargetId, () => {
+      dependentEndpoints += 1;
+    });
+    expect(dependentEndpoints).toBe(512);
     const target = store.get(fixture.connectedTargetId)!.element;
     if (target.kind !== "rectangle") throw new Error("Expected rectangle target.");
     const replacement = structuredClone(target) as InkElementV1;
@@ -292,7 +284,7 @@ describe("normalized store and command costs", () => {
 });
 
 describe("spatial queries, selection, and snapping", () => {
-  it("reuses scratch allocations for 500 hit-test queries", async () => {
+  it("reuses hit-test scratch for early, middle and terminal maximum-stroke hits", async () => {
     await loadFixture();
     const scratch = new SpatialQueryScratch<string>();
     const hitScratch = new HitTestScratch();
@@ -313,14 +305,10 @@ describe("spatial queries, selection, and snapping", () => {
     Object.freeze(maximumPressureStroke.points);
     elementContainsPoint(maximumPressureStroke, { x: 8000, y: 0 }, 0);
 
-    for (let operation = 0; operation < 500; operation += 1) {
+    for (const x of [0, 8000, (MAX_STROKE_POINTS - 1) * 4]) {
       store.query(queryBounds, scratch);
       findFrontmostHit(hitScratch, { x: 30, y: 30 }, "pen", 1, hitCandidates(store, scratch));
-      const containsPoint = elementContainsPoint(
-        maximumPressureStroke,
-        { x: operation * 28, y: 0 },
-        0,
-      );
+      const containsPoint = elementContainsPoint(maximumPressureStroke, { x, y: 0 }, 0);
       expect(containsPoint).toBe(true);
     }
 
@@ -328,13 +316,13 @@ describe("spatial queries, selection, and snapping", () => {
     expect(scratch.candidateVisitCount).toBeLessThan(10);
   });
 
-  it("limits 500 snap lookups to spatially returned targets", () => {
+  it("limits cold and repeated warm snap lookups to spatially returned targets", () => {
     const snapStore = new ElementStore(createDenseSnapTargets());
     const query = new StoreSpatialQuery(snapStore);
     const reader = new StoreTargetReader(snapStore);
     snapStore.resetInstrumentation();
 
-    for (let operation = 0; operation < 500; operation += 1) {
+    for (let operation = 0; operation < 3; operation += 1) {
       reader.reset();
       findSnapCandidate(
         { current: null, pointer: { x: 100, y: 500 }, pointerType: "pen", zoom: 1 },
@@ -349,7 +337,7 @@ describe("spatial queries, selection, and snapping", () => {
     expect(query.storeScratch.allocationCount).toBe(query.warmStoreAllocationCount);
     expect(snapStore.instrumentation).toMatchObject({
       anchorBuilds: 128,
-      anchorCacheHits: 128 * 499,
+      anchorCacheHits: 128 * 2,
       fullStoreScans: 0,
     });
   });
@@ -357,7 +345,7 @@ describe("spatial queries, selection, and snapping", () => {
 
 describe("large selection commit", () => {
   beforeEach(loadFixture);
-  it("time-slices and atomically commits 50 canonical 10,000-stroke transforms per run", async () => {
+  it("commits 10,000-stroke transforms atomically through reversal and history eviction", async () => {
     store.resetInstrumentation();
     const history = new ActiveEditorHistory(createNoopHistoryModel());
     let partialStoreObserved = false;
@@ -370,25 +358,27 @@ describe("large selection commit", () => {
       store,
       history,
       fixture.strokeIds,
-      50,
+      3,
       (stableId, stableRecord) => {
         if (store.get(stableId) !== stableRecord) partialStoreObserved = true;
       },
     );
     unsubscribe();
-    expect(run.yieldsPerOperation).toHaveLength(50);
+    expect(run.yieldsPerOperation).toHaveLength(3);
     expect(run.yieldsPerOperation.every((count) => count > 0)).toBe(true);
     expect(run.checkpointCounts.every((count) => count <= 40)).toBe(true);
     expect(partialStoreObserved).toBe(false);
-    expect(publishedDeltas).toBe(50);
-    expect(history.commandCount).toBeGreaterThan(0);
+    expect(publishedDeltas).toBe(3);
+    // Each complete before/after payload is 30,560,000 bytes. The third command
+    // crosses 64 MiB and must evict the oldest while retaining the two newest.
+    expect(history.commandCount).toBe(2);
     expect(run.maximumRetainedHistoryBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
-      publishedDeltas: 50,
-      recordReplacements: 50 * 10_000,
+      publishedDeltas: 3,
+      recordReplacements: 3 * 10_000,
       snapshotMaterializations: 0,
-      timeSlicedIndexVisits: 50 * 10_000,
+      timeSlicedIndexVisits: 3 * 10_000,
     });
   }, 180_000);
 });

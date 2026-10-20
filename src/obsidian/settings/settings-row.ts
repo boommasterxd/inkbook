@@ -12,6 +12,12 @@ export interface SettingsRowOptions {
   readonly name: string;
 }
 
+export function nameSettingToggle(toggleElement: HTMLElement, name: string): void {
+  const control =
+    toggleElement.tagName === "LABEL" ? (toggleElement as HTMLLabelElement).control : toggleElement;
+  control?.setAttribute("aria-label", name);
+}
+
 export function createSettingsRow(
   container: HTMLElement,
   options: SettingsRowOptions,

@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { AdaptivePanelHeight } from "../../../src/obsidian/menus/adaptive-panel-height";
 import { PhoneSheetPages } from "../../../src/obsidian/menus/phone-sheet-pages";
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
-import { INTERACTION_REFRESH_PROFILE, runInteractionFrames } from "../interaction-refresh-profile";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 
 function createPhonePagePerformanceFixture() {
   const layer = window.createDiv();
@@ -81,28 +81,6 @@ function createPhonePagePerformanceFixture() {
   };
 }
 
-it("swaps and restores a phone sheet page without rebuilding controls", () => {
-  installObsidianDomHelpers();
-  const fixture = createPhonePagePerformanceFixture();
-  document.body.append(fixture.layer);
-  try {
-    runInteractionFrames((frame) => {
-      if (frame % 2 === 1) {
-        fixture.back();
-        return;
-      }
-      fixture.push();
-    });
-
-    expect(fixture.disposed).toBe(INTERACTION_REFRESH_PROFILE.sampleCount / 2);
-    expect(fixture.created).toBe(fixture.disposed);
-    expect(fixture.scroll.children).toHaveLength(1);
-    expect(fixture.scroll.firstElementChild).toBe(fixture.rootContent);
-  } finally {
-    fixture.dispose();
-  }
-});
-
 it("bounds retained page nodes throughout repeated push and back transitions", () => {
   installObsidianDomHelpers();
   const fixture = createPhonePagePerformanceFixture();
@@ -111,7 +89,7 @@ it("bounds retained page nodes throughout repeated push and back transitions", (
     for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
       if (frame % 2 === 0) fixture.push();
       else fixture.back();
-      // Inventory traversal belongs to the resource check, outside the timed trajectory.
+      // Inventory traversal belongs to the resource check, outside the transition itself.
       expect(fixture.layer.querySelectorAll("*").length).toBeLessThanOrEqual(50);
     }
     expect(fixture.created).toBe(INTERACTION_REFRESH_PROFILE.sampleCount / 2);

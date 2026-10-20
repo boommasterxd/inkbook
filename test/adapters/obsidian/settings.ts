@@ -94,72 +94,74 @@ class ButtonComponent {
 }
 
 class ToggleComponent {
-  readonly #element: HTMLInputElement;
+  readonly toggleEl: HTMLLabelElement;
+  readonly #input: HTMLInputElement;
 
   public constructor(container: HTMLElement) {
-    this.#element = container.appendChild(createOwnedElement(container.ownerDocument, "input"));
-    this.#element.type = "checkbox";
+    this.toggleEl = container.appendChild(createOwnedElement(container.ownerDocument, "label"));
+    this.#input = this.toggleEl.appendChild(createOwnedElement(container.ownerDocument, "input"));
+    this.#input.type = "checkbox";
   }
 
   public setValue(value: boolean): this {
-    this.#element.checked = value;
+    this.#input.checked = value;
     return this;
   }
 
   public onChange(callback: (value: boolean) => void): this {
-    this.#element.addEventListener("change", () => callback(this.#element.checked));
+    this.#input.addEventListener("change", () => callback(this.#input.checked));
     return this;
   }
 }
 
 class DropdownComponent {
-  readonly #element: HTMLSelectElement;
+  readonly selectEl: HTMLSelectElement;
 
   public constructor(container: HTMLElement) {
-    this.#element = container.appendChild(createOwnedElement(container.ownerDocument, "select"));
+    this.selectEl = container.appendChild(createOwnedElement(container.ownerDocument, "select"));
   }
 
   public addOptions(options: Record<string, string>): this {
     for (const [value, label] of Object.entries(options)) {
-      const option = createOwnedElement(this.#element.ownerDocument, "option");
+      const option = createOwnedElement(this.selectEl.ownerDocument, "option");
       option.value = value;
       option.textContent = label;
-      this.#element.append(option);
+      this.selectEl.append(option);
     }
     return this;
   }
 
   public setValue(value: string): this {
-    this.#element.value = value;
+    this.selectEl.value = value;
     return this;
   }
 
   public onChange(callback: (value: string) => void): this {
-    this.#element.addEventListener("change", () => callback(this.#element.value));
+    this.selectEl.addEventListener("change", () => callback(this.selectEl.value));
     return this;
   }
 }
 
 class TextComponent {
-  readonly #element: HTMLInputElement;
+  readonly inputEl: HTMLInputElement;
 
   public constructor(container: HTMLElement) {
-    this.#element = container.appendChild(createOwnedElement(container.ownerDocument, "input"));
-    this.#element.type = "text";
+    this.inputEl = container.appendChild(createOwnedElement(container.ownerDocument, "input"));
+    this.inputEl.type = "text";
   }
 
   public setValue(value: string): this {
-    this.#element.value = value;
+    this.inputEl.value = value;
     return this;
   }
 
   public setPlaceholder(value: string): this {
-    this.#element.placeholder = value;
+    this.inputEl.placeholder = value;
     return this;
   }
 
   public onChange(callback: (value: string) => void): this {
-    this.#element.addEventListener("input", () => callback(this.#element.value));
+    this.inputEl.addEventListener("input", () => callback(this.inputEl.value));
     return this;
   }
 }

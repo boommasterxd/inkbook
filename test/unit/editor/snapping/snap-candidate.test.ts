@@ -45,19 +45,33 @@ function harness(targets: readonly TestTarget[], ranks: Readonly<Record<string, 
 }
 
 describe("endpoint snapping", () => {
-  it("uses input-specific screen radii independent of zoom", () => {
-    const fixture = harness([rectangle("a")], { a: 0 });
-    expect(
-      findSnapCandidate(
-        { current: null, pointer: { x: 106, y: 50 }, pointerType: "mouse", zoom: 2 },
-        fixture.spatial,
-        fixture.targets,
-        fixture.scratch,
-      )?.targetId,
-    ).toBe("a");
-  });
+  it.each([
+    { pointerType: "mouse", radius: 12 },
+    { pointerType: "pen", radius: 12 },
+    { pointerType: "touch", radius: 16 },
+  ] as const)(
+    "uses the $radius-pixel acquisition boundary for $pointerType",
+    ({ pointerType, radius }) => {
+      const fixture = harness([rectangle("a")], { a: 0 });
+      for (const zoom of [0.5, 2]) {
+        for (const [distance, expected] of [
+          [radius, "a"],
+          [radius + 0.001, undefined],
+        ] as const) {
+          expect(
+            findSnapCandidate(
+              { current: null, pointer: { x: 100 + distance / zoom, y: 50 }, pointerType, zoom },
+              fixture.spatial,
+              fixture.targets,
+              fixture.scratch,
+            )?.targetId,
+          ).toBe(expected);
+        }
+      }
+    },
+  );
 
-  it("resolves equal distance by frontmost rank then stable target ID", () => {
+  it("resolves equal distance by frontmost rank", () => {
     const fixture = harness([rectangle("b"), rectangle("a")], { a: 2, b: 1 });
     const result = findSnapCandidate(
       { current: null, pointer: { x: 100, y: 50 }, pointerType: "mouse", zoom: 1 },

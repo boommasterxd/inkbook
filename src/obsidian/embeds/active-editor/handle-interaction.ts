@@ -461,7 +461,11 @@ export class ActiveEditorHandleInteraction {
     readonly elements: readonly InkElementV1[];
     readonly selectedPreviewIds: ReadonlySet<string>;
   } {
-    if (preview.transform === null) return { elements: [], selectedPreviewIds: new Set() };
+    if (preview.transform === null) {
+      return preview.exactPreviewTruncated
+        ? active.connectedPreview.updateTargets(preview.exactElements)
+        : { elements: [], selectedPreviewIds: new Set() };
+    }
     if (!preview.exactPreviewTruncated) {
       return {
         elements: [],

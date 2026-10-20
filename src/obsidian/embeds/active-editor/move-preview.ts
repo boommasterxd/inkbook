@@ -20,6 +20,7 @@ import type { SelectionPreviewOptions } from "./selection-preview-contracts";
 import { snapMarkerPath } from "./snap-marker-path";
 import { selectionPreviewBounds } from "./selection-preview-bounds";
 import { ConnectionPreviewPreparation } from "./connection-preview-preparation";
+import { hasLinearConnectionDependencies } from "../../../editor/selection/selection-work-budget";
 
 export class MovePreview implements GesturePreview {
   readonly #connectionPreparation: ConnectionPreviewPreparation;
@@ -102,18 +103,17 @@ export class MovePreview implements GesturePreview {
           this.#selectionFrame,
           this.#translationTransform(),
         );
-        prepared =
-          this.#moveSnap === null &&
-          this.#options.preparedHistory.commitMove(
-            this.#elements,
-            this.#current,
-            (result) => {
-              if (!result) this.#renderSelectionOverlay(null);
-              if (result) this.#options.selectionEdgeDrag?.finish(true, previewMaximumBottom);
-              else this.#options.selectionEdgeDrag?.finish(false);
-            },
-            effect,
-          );
+        prepared = this.#options.preparedHistory.commitMove(
+          this.#elements,
+          this.#current,
+          (result) => {
+            if (!result) this.#renderSelectionOverlay(null);
+            if (result) this.#options.selectionEdgeDrag?.finish(true, previewMaximumBottom);
+            else this.#options.selectionEdgeDrag?.finish(false);
+          },
+          effect,
+          this.#moveSnap,
+        );
         committed = prepared || this.#commitSynchronous(effect);
       }
     } catch (error: unknown) {
@@ -168,6 +168,11 @@ export class MovePreview implements GesturePreview {
   }
 
   #commitSynchronous(effect: SelectionFrameHistoryEffect | undefined): boolean {
+    if (
+      hasLinearConnectionDependencies(this.#elements) ||
+      this.#moveSnap?.candidate.anchor.kind === "linear-endpoint"
+    )
+      return false;
     const plan = this.#options.store.planReplacements(this.#movedElements());
     if (plan === null) return false;
     return commitPreviewReplacement({

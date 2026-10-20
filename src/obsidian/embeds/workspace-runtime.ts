@@ -315,8 +315,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     ownerWindow: Window,
     onTimeout: (retry: () => void) => void,
     dismissUndoHint?: () => void,
-  ): void {
-    this.#lifecycle.queueAutoActivation(documentId, ownerWindow, onTimeout, dismissUndoHint);
+  ): () => void {
+    return this.#lifecycle.queueAutoActivation(documentId, ownerWindow, onTimeout, dismissUndoHint);
   }
   readonly abortAutoActivation = (documentId: string): void =>
     this.#lifecycle.abortAutoActivation(documentId);

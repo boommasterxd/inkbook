@@ -25,19 +25,24 @@ async function fixture(files = {}) {
 }
 
 describe("syntax-aware affected dependencies", () => {
-  it.each([
-    'import type { value } from "../../../src/domain/value"; type Value = typeof value;',
-    'type Value = typeof import("../../../src/domain/value").value;',
-    'const value = require("../../../src/domain/value");',
-    'const value = await import("../../../src/domain/value");',
-    'export { value } from "../../../src/domain/value";',
-  ])("tracks TypeScript-parsed dependency syntax %#", async (source) => {
-    const context = await fixture({ [selectedTest]: source });
+  it("tracks every supported TypeScript-parsed dependency form independently", async () => {
+    const sources = [
+      'import type { value } from "../../../src/domain/value"; type Value = typeof value;',
+      'type Value = typeof import("../../../src/domain/value").value;',
+      'const value = require("../../../src/domain/value");',
+      'const value = await import("../../../src/domain/value");',
+      'export { value } from "../../../src/domain/value";',
+    ];
+    const tests = sources.map((_source, index) => `test/unit/domain/syntax-${index}.test.ts`);
+    const context = await fixture({
+      [selectedTest]: "export {};",
+      ...Object.fromEntries(sources.map((source, index) => [tests[index], source])),
+    });
     await commit(context.root, { "src/domain/value.ts": "export const value = 2;" });
 
     expect(await createSelection(context)).toMatchObject({
       mode: "affected",
-      tests: [selectedTest],
+      tests: tests.sort(),
     });
   });
 
@@ -160,6 +165,7 @@ describe("embedded module build mappings", () => {
     expect(await createSelection(context)).toMatchObject({
       mode: "affected",
       tests: [selectedTest],
+      coverage: [entry, loader].sort(),
     });
   });
 });

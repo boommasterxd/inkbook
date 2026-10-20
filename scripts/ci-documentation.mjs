@@ -1,5 +1,6 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 async function markdownFiles(root, directory = "docs") {
   const files = [];
@@ -55,4 +56,13 @@ export async function validateDocumentation(root) {
     await checkLinks(root, file, checkFences(content, file));
   }
   process.stdout.write(`Validated ${files.length} indexed documents and root documentation.\n`);
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    await validateDocumentation(process.cwd());
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  }
 }

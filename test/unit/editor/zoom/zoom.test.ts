@@ -80,7 +80,6 @@ describe("camera and scroll clamps", () => {
 
   it("clamps native scroll bounds after a new height is known", () => {
     const bounds = { min: 0, max: 700 };
-    expect(bounds).toEqual({ min: 0, max: 700 });
     expect(clampScrollTop(-1, bounds)).toBe(0);
     expect(clampScrollTop(900, bounds)).toBe(700);
   });

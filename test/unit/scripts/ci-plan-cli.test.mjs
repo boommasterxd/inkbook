@@ -1,14 +1,19 @@
 import { execFile } from "node:child_process";
 import { link, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createCheckCommandPlan } from "../../../scripts/check-command-plan.mjs";
 import { cleanupRepositories, commit, createRepository } from "./ci-selection-fixtures.mjs";
 
 const execute = promisify(execFile);
 const scripts = [
   "ci-plan",
+  "run-ci",
+  "check-command-plan",
+  "check-execution",
   "ci-runner-output",
   "ci-documentation",
   "ci-execution-plan",
@@ -64,8 +69,8 @@ async function fixture() {
   return { ...context, runnerTemp, commands, output, summary };
 }
 
-function run(context, args = [], overrides = {}) {
-  return execute(process.execPath, [path.join(context.root, "scripts/ci-plan.mjs"), ...args], {
+function run(context, args = [], overrides = {}, entry = "ci-plan") {
+  return execute(process.execPath, [path.join(context.root, `scripts/${entry}.mjs`), ...args], {
     cwd: context.root,
     encoding: "utf8",
     timeout: 10_000,
@@ -75,8 +80,10 @@ function run(context, args = [], overrides = {}) {
       EXPECTED_SHARED: undefined,
       EXPECTED_CADENCE: undefined,
       EXPECTED_BUILD: undefined,
+      EXPECTED_AUDIT: undefined,
       CI_BASE: context.base,
       CI_HEAD: "HEAD",
+      CI_MERGE: undefined,
       CI_EVENT: "pull_request",
       RUNNER_TEMP: context.runnerTemp,
       GITHUB_OUTPUT: context.output,
@@ -98,14 +105,6 @@ describe("CI planner entrypoint with inherited CI expectations", () => {
     expect(await readFile(context.output, "utf8")).toBe(
       "existing=retained\ndocs=true\nmode=docs\nshared=false\ncadence=false\nbuild=false\n",
     );
-    expect(
-      JSON.parse(await readFile(path.join(context.root, ".ci-selection.json"), "utf8")),
-    ).toMatchObject({
-      mode: "docs",
-      changes: ["docs/example.md"],
-      tests: [],
-      coverage: [],
-    });
     expect(await readFile(context.summary, "utf8")).toMatch(
       /^Existing summary\nSelection: \*\*docs\*\*/,
     );
@@ -166,6 +165,55 @@ describe("CI planner entrypoint with inherited CI expectations", () => {
       code: 1,
       stderr: expect.stringContaining("Selection output mode changed"),
     });
+    await expect(run(context, [], { CI_MERGE: context.base })).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("expected merge revision"),
+    });
+  });
+
+  it("recomputes an active consumer selection without trusting a serialized plan", async () => {
+    const context = await fixture();
+    await commit(context.root, { "test/unit/example.test.ts": "export const changed = true;" });
+    await symlink(
+      fileURLToPath(new URL("../../../node_modules", import.meta.url)),
+      path.join(context.root, "node_modules"),
+      "dir",
+    );
+    await writeFile(path.join(context.root, ".ci-selection.json"), "malformed legacy plan");
+    await expect(run(context, ["shared"], {}, "run-ci")).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("Unexpected empty performance selection"),
+    });
+    await expect(
+      run(context, ["shared"], { EXPECTED_SHARED: "true" }, "run-ci"),
+    ).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("Selection output shared changed"),
+    });
+  });
+});
+
+describe("regular documentation quality gate", () => {
+  it.each([
+    [
+      "mixed code and documentation changes",
+      { "docs/example.md": "[Missing](missing.md)\n", "src/domain/example.ts": "export {};" },
+      "Broken relative Markdown link",
+    ],
+    ["README changes", { "README.md": "[Missing](missing.md)\n" }, "Broken relative Markdown link"],
+    ["instruction changes", { "AGENTS.md": "# Instructions\n" }, "Missing Documentation Index"],
+  ])("rejects invalid %s through the regular gate command", async (_label, changes, error) => {
+    const context = await fixture();
+    await commit(context.root, changes);
+    const [check] = createCheckCommandPlan("ci:quality", [], "/npm-cli.js");
+    expect(check.label).toBe("docs:check");
+    await expect(
+      execute(check.command, check.args, {
+        cwd: context.root,
+        encoding: "utf8",
+        timeout: 10_000,
+      }),
+    ).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining(error) });
   });
 });
 

@@ -10,16 +10,19 @@ describe("check command plan", () => {
     ["INKBOOK_PERFORMANCE_SUITE", "shared"],
     ["INKBOOK_PERFORMANCE_SUITE", "cadence"],
     ["INKBOOK_PERFORMANCE_SUITE", "profile"],
-  ])("rejects partial local CI through %s=%s", (name, value) => {
+    ["INKBOOK_PERFORMANCE_REFRESH_RATE", "60"],
+  ])("rejects partial full commands through %s=%s", (name, value) => {
     vi.stubEnv(name, value);
-    expect(() => createCheckCommandPlan("ci", [], "/npm-cli.js")).toThrow("suite all");
-    expect(createCheckCommandPlan("benchmark")).toHaveLength(1);
+    for (const command of ["ci", "benchmark", "test:performance"]) {
+      expect(() => createCheckCommandPlan(command, [], "/npm-cli.js")).toThrow("suite all");
+    }
   });
 
   it("expands the complete gate once, with performance after quality", () => {
     const plan = createCheckCommandPlan("ci", [], "/npm-cli.js");
 
     expect(plan.map(({ label }) => label)).toEqual([
+      "docs:check",
       "format:check",
       "lint",
       "lint:styles",
@@ -37,7 +40,13 @@ describe("check command plan", () => {
       "test:performance",
     ]);
     expect(plan.every(({ command }) => command === process.execPath)).toBe(true);
+    expect(plan.find(({ label }) => label === "test:coverage").args[0]).toMatch(
+      /scripts\/run-validated-tests\.mjs$/,
+    );
     expect(plan.find(({ label }) => label === "test:coverage").args.slice(1)).toEqual([
+      "test/unit",
+      "test/integration",
+      "--",
       "run",
       "test/unit",
       "test/integration",
@@ -48,6 +57,19 @@ describe("check command plan", () => {
       "audit",
       "--audit-level=high",
     ]);
+  });
+
+  it("also rejects shard overrides at the direct full-performance entrypoint", () => {
+    const [task] = createCheckCommandPlan("benchmark");
+    const result = spawnSync(task.command, task.args, {
+      encoding: "utf8",
+      timeout: 5_000,
+      env: { ...process.env, INKBOOK_PERFORMANCE_SUITE: "shared" },
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("unset shard overrides");
+    expect(result.stdout).not.toContain("Deterministic contracts:");
   });
 
   it("launches the installed architecture CLI", () => {

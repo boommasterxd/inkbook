@@ -56,7 +56,7 @@ beforeAll(async () => {
     .join("\n");
 });
 
-beforeEach(async () => {
+async function prepareFixture() {
   directory = await mkdtemp(join(tmpdir(), "inkbook-gitleaks-"));
   repository = join(directory, "repository");
   runnerTemp = join(directory, "runner");
@@ -79,11 +79,7 @@ beforeEach(async () => {
   git("config", "user.email", "fixture@example.invalid");
   git("config", "user.name", "Fixture");
   await prepareScanner(commands);
-});
-
-afterEach(async () => {
-  await rm(directory, { recursive: true, force: true });
-});
+}
 
 async function prepareScanner(commands) {
   // Replace only download/detection boundaries; execute the unchanged workflow shell,
@@ -131,11 +127,16 @@ fi
   await chmod(download, 0o755);
 }
 
+it("fetches complete history while preserving the merge checkout and read-only credentials", () => {
+  expect(workflow).toContain("fetch-depth: 0");
+  expect(workflow).toContain("persist-credentials: false");
+  expect(workflow).not.toContain("ref:");
+});
+
 describe("gitleaks workflow execution", () => {
-  it("fetches complete history while preserving the merge checkout and read-only credentials", () => {
-    expect(workflow).toContain("fetch-depth: 0");
-    expect(workflow).toContain("persist-credentials: false");
-    expect(workflow).not.toContain("ref:");
+  beforeEach(prepareFixture);
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
   });
 
   it("rejects a secret introduced and removed between the PR base and head", async () => {

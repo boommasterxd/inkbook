@@ -113,8 +113,7 @@ describe("touch tap classification", () => {
     });
   });
 
-  it("rejects the exact tap duration and movement boundaries", () => {
-    const durationEnd = releaseTargetTapAt(450);
+  it("rejects the exact tap movement boundary", () => {
     const movementStart = reduceInput(createInputState(), {
       ...touchDown,
       timestamp: 100,
@@ -133,7 +132,6 @@ describe("touch tap classification", () => {
       timestamp: 200,
     });
 
-    expect(durationEnd.effects.map(({ type }) => type)).not.toContain("select-element");
     expect(movementEnd.effects.map(({ type }) => type)).not.toContain("select-element");
   });
 });

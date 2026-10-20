@@ -107,6 +107,7 @@ Copy:
 - writes the complete prefixed payload through the interoperable system `text/plain` format
 - additionally retains an in-session copy in case clipboard permissions are unavailable
 - does not let an unresolved best-effort system write block the validated in-session payload or the next clipboard action
+- contains rejected text and Blob payload promises even when the host never consumes them after ClipboardItem construction or write failure; encoding failure remains an explicit failed Copy or Cut result
 - preserves connections whose target is also selected through clipboard-local IDs; connections to unselected targets become free endpoints
 
 The MIME identifier, versioned payload schema, validation rules, and limits are defined in [File Format and Geometry](file-format.md).
@@ -250,8 +251,8 @@ The process:
 3. A zoomed-in embed begins returning to width fit.
 4. The camera and height animate toward width fit and the locked preview height over 240 milliseconds while the snapshot export and save run concurrently.
 5. If saving is still running after the layout transition, the editor remains visible but disabled at the locked geometry.
-6. After the exact saved revision and its static preview are ready, the preview fades in while the editor fades out over an independent 120 milliseconds.
-7. The interactive editor is unmounted only after the crossfade completes.
+6. After the exact saved revision and its static preview are ready, the complete persisted preview is restored below the disabled editor.
+7. After one complete paint opportunity, preview and editor visibility exchange atomically, then the interactive editor is unmounted, as described in [Embed UI](embed-ui.md#locked-state).
 
 The save is awaited in full so that the new preview does not accidentally load the previous file state. A validated saved SVG and the aspect ratio derived from those exact SVG bytes are mounted atomically, including when the presentation is already locked. A failed save keeps the disabled editor mounted with its dirty state and presents Retry, Save local copy, and Cancel actions. Cancel restores the prior active camera and active height without discarding data.
 

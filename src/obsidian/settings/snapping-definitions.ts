@@ -5,6 +5,7 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { SettingsControlKey } from "./control-values";
 import { resetAction } from "./definition-helpers";
 import { SettingsPanelMotion } from "./settings-panel-motion";
+import { nameSettingToggle } from "./settings-row";
 
 export interface SnappingGroupCallbacks {
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
@@ -65,13 +66,14 @@ function enabledDefinition(
     name: "Enable snapping",
     desc: "Enable all configured snapping behavior.",
     render: (setting) => {
-      setting.addToggle((toggle) =>
+      setting.addToggle((toggle) => {
+        nameSettingToggle(toggle.toggleEl, "Enable snapping");
         toggle.setValue(callbacks.get("snapping.enabled") === true).onChange((enabled) => {
           void callbacks.set("snapping.enabled", enabled).then(() => {
             for (const motion of dependentMotions) motion.setExpanded(enabled);
           });
-        }),
-      );
+        });
+      });
     },
   };
 }
@@ -86,7 +88,7 @@ function dependentDefinition(
   return {
     name,
     desc,
-    render: (setting) => renderDependentToggle(setting, callbacks, dependentMotions, key),
+    render: (setting) => renderDependentToggle(setting, callbacks, dependentMotions, key, name),
   };
 }
 
@@ -95,17 +97,19 @@ function renderDependentToggle(
   callbacks: SnappingGroupCallbacks,
   dependentMotions: Set<SettingsPanelMotion>,
   key: SettingsControlKey,
+  name: string,
 ): () => void {
   const row = setting.settingEl;
   row.classList.add("inkbook-snapping-dependent-row");
   const enabled = callbacks.get("snapping.enabled") === true;
   row.hidden = !enabled;
   row.inert = !enabled;
-  setting.addToggle((toggle) =>
+  setting.addToggle((toggle) => {
+    nameSettingToggle(toggle.toggleEl, name);
     toggle
       .setValue(callbacks.get(key) === true)
-      .onChange((value) => void callbacks.set(key, value)),
-  );
+      .onChange((value) => void callbacks.set(key, value));
+  });
   const motion = new SettingsPanelMotion(
     row,
     callbacks.readMotion,

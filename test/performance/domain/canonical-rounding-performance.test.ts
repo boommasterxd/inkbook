@@ -44,12 +44,25 @@ describe("canonical coordinate rounding", () => {
       );
       const rounded = coordinates.map((value) => canonicalizeGeometryNumber(value * scale));
       expect(rounded).toHaveLength(MAX_STROKE_POINTS * 2);
+      let failure: {
+        index: number;
+        source: number;
+        value: number;
+        canonical: number;
+        error: number;
+        finite: boolean;
+        negativeZero: boolean;
+      } | null = null;
       for (const [index, value] of rounded.entries()) {
-        expect(Number.isFinite(value)).toBe(true);
-        expect(Math.abs(value - coordinates[index]! * scale)).toBeLessThanOrEqual(0.000500001);
-        expect(canonicalizeGeometryNumber(value)).toBe(value);
-        expect(Object.is(value, -0)).toBe(false);
+        const source = coordinates[index]! * scale;
+        const error = Math.abs(value - source);
+        const canonical = canonicalizeGeometryNumber(value);
+        const finite = Number.isFinite(value);
+        const negativeZero = Object.is(value, -0);
+        if (!finite || !(error <= 0.000500001) || !Object.is(canonical, value) || negativeZero)
+          failure ??= { index, source, value, canonical, error, finite, negativeZero };
       }
+      expect(failure).toBeNull();
     },
   );
 });

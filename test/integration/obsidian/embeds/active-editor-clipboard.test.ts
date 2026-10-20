@@ -331,6 +331,10 @@ describe("active editor arrange and menu bridge", () => {
     unsubscribe();
     menus.dispose();
     actions.dispose();
+    await expect(history.redoAsync()).resolves.toBe(true);
+    expect(store.materializeBandOrder("content")).toEqual([initialOrder[1], selectedId]);
+    await expect(history.undoAsync()).resolves.toBe(true);
+    expect(store.materializeBandOrder("content")).toEqual(initialOrder);
   });
 });
 

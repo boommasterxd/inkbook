@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
 
 import * as geometry from "../../../src/domain/geometry/element-path";
-import { createAllElementSnapshot } from "../../unit/persistence/serialization/fixtures";
+import { createAllElementSnapshot, uuid } from "../../unit/persistence/serialization/fixtures";
 import * as pathMarkup from "../../../src/persistence/serialization/path-markup";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { StreamingStaticIntegrityMatcher } from "../../../src/persistence/serialization/streaming-static-integrity";
-import { createPressureGroupFixture } from "./fixtures";
+import { createMinimalPersistenceFixture, createPressureGroupFixture } from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -46,15 +46,17 @@ const arrowCases = [
 it.each(arrowCases)(
   "builds only current geometry once for 10,000 $style $nodes arrows",
   ({ nodes, style }) => {
-    const snapshot: InkSnapshotV1 = createPressureGroupFixture();
     const arrow = createAllElementSnapshot().elements.find((element) => element.kind === "arrow")!;
-    snapshot.elements = snapshot.elements.map((element) => ({
-      ...arrow,
-      id: element.id,
-      startNode: nodes[0],
-      endNode: nodes[1],
-      style: { ...arrow.style, outlineStyle: style },
-    }));
+    const snapshot: InkSnapshotV1 = {
+      ...createMinimalPersistenceFixture(1),
+      elements: Array.from({ length: 10_000 }, (_, index) => ({
+        ...arrow,
+        id: uuid(index + 1),
+        startNode: nodes[0],
+        endNode: nodes[1],
+        style: { ...arrow.style, outlineStyle: style },
+      })),
+    };
     const serialized = serializeInkbookDocument(snapshot, { hash: () => "fixture-hash" });
     if (!serialized.ok) throw new Error(serialized.error.code);
     const suffix = serialized.value.svg.slice(

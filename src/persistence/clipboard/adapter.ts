@@ -32,6 +32,8 @@ export const beginClipboardWriteDuringActivation = <Item>(
     return payload;
   });
   const plain = retainedPayloadReady.then(({ plainText }) => plainText);
+  // ClipboardItem construction or write rejection may leave its data promise unconsumed.
+  void plain.catch(() => undefined);
   try {
     const item = port.createItem(new Map([["text/plain", plain]]));
     return {

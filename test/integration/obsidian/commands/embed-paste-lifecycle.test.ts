@@ -2,6 +2,7 @@ import type { Editor } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { EmbedPasteController } from "../../../../src/obsidian/commands/embed-paste";
+import { ownedFileRead } from "../../../fixtures/obsidian/owned-file";
 
 function harness() {
   const owner = new AbortController();
@@ -29,17 +30,21 @@ function harness() {
   const create = vi.fn(async () => read("duplicate.svg"));
   const validate = vi.fn(async () => true);
   const preparePath = vi.fn(async () => "duplicate.svg");
-  const trash = vi.fn(async () => undefined);
+  const trash = vi.fn(async (_path: string) => undefined);
   const controller = new EmbedPasteController({
     signal: owner.signal,
     choices: { choose },
-    documents: { createAndReadBack: create, readWithMetadataGuard: readSource },
+    documents: {
+      createOwnedAndReadBack: async (_path, _content, _maximumBytes, onCreated) =>
+        ownedFileRead("duplicate.svg", await create(), onCreated),
+      readWithMetadataGuard: readSource,
+    },
     links: {
       generateEmbed: () => "!inkbook[[duplicate.svg]]",
       resolveLinkTarget: () => ({ path: "source.svg" }),
     },
     placement: { preparePath },
-    trash: { trash },
+    trash: { trashCreated: (created) => trash(created.file.path) },
     validation: { validate },
   });
   return {

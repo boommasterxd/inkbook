@@ -207,6 +207,7 @@ function routingPorts(): {
     | "invalidateDetached"
     | "invalidateForChanges"
     | "invalidatePath"
+    | "invalidateRanks"
     | "invalidateVisibility"
     | "markGeometry"
     | "markOrderVisibilityDirty"
@@ -224,6 +225,7 @@ function routingPorts(): {
     invalidateDetached: vi.fn(),
     invalidateForChanges: vi.fn(),
     invalidatePath: vi.fn(),
+    invalidateRanks: vi.fn(),
     invalidateVisibility: vi.fn(),
     markGeometry: vi.fn(),
     markOrderVisibilityDirty: vi.fn(),
@@ -234,7 +236,10 @@ function routingPorts(): {
     prepareElementRemoval: vi.fn(),
   };
   const ports = {
-    detachedCache: { invalidate: spies.invalidateDetached },
+    detachedCache: {
+      invalidate: spies.invalidateDetached,
+      invalidateRanks: spies.invalidateRanks,
+    },
     content: {
       hasVisibilityWork: false,
       markGeometry: spies.markGeometry,
