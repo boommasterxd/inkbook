@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+// @vitest-environment-options {"settings":{"enableIframePageLoading":true,"navigation":{"disableChildFrameNavigation":true,"disableFallbackToSetURL":true}}}
 
 import { afterEach, expect, it, vi } from "vitest";
 

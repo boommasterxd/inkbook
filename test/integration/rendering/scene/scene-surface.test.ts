@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
+// @vitest-environment-options {"settings":{"enableIframePageLoading":true,"navigation":{"disableChildFrameNavigation":true,"disableFallbackToSetURL":true}}}
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Window as HappyDomWindow } from "happy-dom";
 import { Platform } from "obsidian";
 import { SceneDom } from "../../../../src/rendering/scene/scene-dom";
 import { SceneSurface } from "../../../../src/rendering/scene/scene-surface";
@@ -94,6 +96,22 @@ function surfaceFixture() {
 }
 
 describe("isolated scene surface", () => {
+  it("provides the owned blank document while blocking child-frame navigation", async () => {
+    const { host, scene } = fixture();
+    const frame = host.shadowRoot!.querySelector("iframe")!;
+    const settings = (window as unknown as HappyDomWindow).happyDOM.settings;
+    expect(settings.enableCSSFileLoading).toBe(false);
+    expect(settings.navigation.disableChildFrameNavigation).toBe(true);
+    expect(settings.navigation.disableFallbackToSetURL).toBe(true);
+    const drawingDocument = frame.contentDocument!;
+    expect(drawingDocument.body.firstElementChild).toBe(scene.svg);
+    expect(drawingDocument.URL).toBe("about:blank");
+    frame.contentWindow!.location.href = "https://example.invalid/untrusted";
+    await (window as unknown as HappyDomWindow).happyDOM.waitUntilComplete();
+    expect(frame.contentDocument).toBe(drawingDocument);
+    expect(drawingDocument.URL).toBe("about:blank");
+  });
+
   it("isolates retained SVG selectors while input stays on the accessible light DOM surface", () => {
     const { container, host, pointerdown, scene } = fixture();
     expect(host.shadowRoot?.mode).toBe("open");

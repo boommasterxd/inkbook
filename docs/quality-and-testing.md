@@ -281,6 +281,8 @@ The editor targets WCAG 2.2 AA within the capabilities of the Obsidian host.
 
 ## Automated Test Strategy
 
+Happy DOM 21 disables iframe loading by default, including the scene's owned `about:blank` document. Only the scene-surface Integration tests and their layout-profile performance test enable iframe document creation through file-scoped environment options. Child-frame navigation and URL fallback remain disabled, and external CSS loading retains its disabled default. The scene-surface regression verifies the blank document's ownership and blocked navigation; production frame creation and lifecycle assertions remain unchanged.
+
 The project uses Unit and Integration tests only. End-to-end tests and smoke tests are explicitly out of scope. For every new or changed test, including performance tests, inspect existing coverage, fixtures, and helpers first and extend or reuse them where suitable. Minimize CI work by preparing identical immutable inputs once per suite where safe and combining related checks when this avoids duplicate expensive execution without obscuring failures or weakening scenario independence. Parameterization alone does not reduce work if each case repeats the same setup. Create fresh mutable state for each case; never share mutable parser/session instances, depend on test order, or reuse another test's result. Preserve full capacity inputs, boundary and failure cases, meaningful transitions, assertions, isolation, and coverage thresholds. Review redundant setup and execution costs as part of every test change; do not introduce generic test infrastructure solely to remove trivial duplication.
 
 ### Unit Tests
