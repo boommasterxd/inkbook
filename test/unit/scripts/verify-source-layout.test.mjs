@@ -112,6 +112,24 @@ it("resolves local test API shadows within their lexical scopes", () => {
   ]);
 });
 
+it("keeps RegExp test calls in vi fixtures while detecting executable test registration", () => {
+  const violations = validateSourceLayout([
+    {
+      content:
+        'import { vi } from "vitest";\nexport const numeric = vi.fn((key: string) => /^\\d+$/.test(key));\nexport const alternate = /^\\d+$/["test"]("42");\n',
+      path: "test/performance/eraser-performance-fixture.ts",
+    },
+    {
+      content: 'import { vi } from "vitest";\nit("case", () => vi.fn()());\n',
+      path: "test/unit/vi-registration.ts",
+    },
+  ]);
+
+  expect(violations).toEqual([
+    "test/unit/vi-registration.ts: executable tests must use the *.test.* suffix.",
+  ]);
+});
+
 it("reports CSS files above the hard line limit", () => {
   const violations = validateSourceLayout([
     { content: `${".a {}\n".repeat(500)}.b {}`, path: "src/obsidian/styles/too-large.css" },

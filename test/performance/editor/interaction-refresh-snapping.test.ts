@@ -43,11 +43,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
 
   it("keeps indexed semantic-anchor lookup with bounded work", () => {
     const { sceneStore, scratch, store, targets } = createSnapFixture();
-    populateScratch(
-      targets,
-      (target, frame) => findCandidate(sceneStore, scratch, target, frame),
-      "Snap-candidate",
-    );
+    expect(findCandidate(sceneStore, scratch, targets[1_010]!, 0)).not.toBeNull();
     store.resetInstrumentation();
     const allocationsBefore = scratch.allocationCount;
     let matched = 0;
@@ -92,11 +88,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
     const moving = movingSnapLine();
     const selectedIds = new Set([moving.id]);
     let matched = 0;
-    populateScratch(
-      targets,
-      (target, frame) => findMoveSnap(sceneStore, scratch, moving, selectedIds, target, frame),
-      "Selection-move snap",
-    );
+    expect(
+      findMoveSnap(sceneStore, scratch, moving, selectedIds, targets[1_010]!, 0),
+    ).not.toBeNull();
     store.resetInstrumentation();
     const allocationsBefore = scratch.allocationCount;
 
@@ -195,19 +189,6 @@ function createSnapFixture() {
     store,
     targets,
   };
-}
-
-function populateScratch(
-  targets: readonly ReturnType<typeof rectangle>[],
-  lookup: (target: ReturnType<typeof rectangle>, frame: number) => unknown,
-  label: string,
-): void {
-  for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
-    const target = targets[(frame * 17) % targets.length]!;
-    if (lookup(target, frame) === null) {
-      throw new Error(`${label} scratch initialization did not find its target.`);
-    }
-  }
 }
 
 function snapTarget(index: number) {

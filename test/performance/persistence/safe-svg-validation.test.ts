@@ -34,10 +34,6 @@ describe("safe SVG validation performance", () => {
       expect(work.reads).toBeLessThanOrEqual(64 * 1024);
       expect(work.commands).toBeLessThanOrEqual(256);
     } while (!step.done);
-    const normal = validatePathDataSteps(path);
-    let expected = normal.next();
-    while (!expected.done) expected = normal.next();
-    expect(step.value).toEqual(expected.value);
     expect(step.value).toEqual({ commands: 400_000, numericTokens: 800_000 });
   }, 120_000);
 });

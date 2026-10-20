@@ -137,13 +137,14 @@ export class SelectionHandlePresentation {
               context.frame?.rotation ?? 0,
             )
           : null;
-    const basePreviewElements = preview.exactPreviewTruncated
-      ? connected.elements
-      : preview.transform === null
-        ? preview.exactElements
-        : preview.exactElements.filter(
-            ({ id }) => !context.selectedIds.has(id) || connected.selectedPreviewIds.has(id),
-          );
+    const basePreviewElements =
+      preview.transform === null
+        ? uniquePreviewElements(preview.exactElements, connected.elements)
+        : preview.exactPreviewTruncated
+          ? connected.elements
+          : preview.exactElements.filter(
+              ({ id }) => !context.selectedIds.has(id) || connected.selectedPreviewIds.has(id),
+            );
     this.#version += 1;
     this.#renderer.setElementPreviews(
       uniquePreviewElements(basePreviewElements, scaleElements),

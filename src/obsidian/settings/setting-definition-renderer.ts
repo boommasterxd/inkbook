@@ -8,7 +8,7 @@ import {
   type SettingTab,
 } from "obsidian";
 
-import { bindSettingsAction } from "./settings-row";
+import { bindSettingsAction, nameSettingToggle } from "./settings-row";
 
 export class SettingDefinitionRenderer {
   readonly #cleanups: (() => void)[] = [];
@@ -41,7 +41,7 @@ export class SettingDefinitionRenderer {
     }
     if (isPage(definition)) return;
     const group = new SettingGroup(container);
-    this.#renderDefinition(group, definition, 0);
+    this.#renderDefinition(group, definition, 0, "root");
   }
 
   #renderGroup(container: HTMLElement, definition: SettingDefinitionGroup): void {
@@ -49,13 +49,24 @@ export class SettingDefinitionRenderer {
     if (definition.heading !== undefined) group.setHeading(definition.heading);
     if (definition.cls !== undefined) group.addClass(definition.cls);
     definition.items?.forEach((item, index) => {
-      if (!isPage(item) && visible(item)) this.#renderDefinition(group, item, index);
+      if (!isPage(item) && visible(item)) {
+        this.#renderDefinition(group, item, index, definition.cls ?? definition.heading ?? "group");
+      }
     });
   }
 
-  #renderDefinition(group: SettingGroup, definition: SettingDefinition, index: number): void {
+  #renderDefinition(
+    group: SettingGroup,
+    definition: SettingDefinition,
+    index: number,
+    groupIdentity: string,
+  ): void {
     group.addSetting((setting) => {
       setting.setName(definition.name);
+      setting.settingEl.dataset.inkbookSettingIdentity = JSON.stringify([
+        groupIdentity,
+        definition.control?.key ?? definition.name,
+      ]);
       if (definition.desc !== undefined) setting.setDesc(definition.desc);
       if (definition.control !== undefined && disabled(definition.control)) {
         setting.setDisabled(true);
@@ -93,13 +104,15 @@ export class SettingDefinitionRenderer {
     setting.controlEl.classList.add("inkbook-setting-controls");
     const value = this.#host.getControlValue(control.key);
     if (control.type === "toggle") {
-      setting.addToggle((toggle) =>
-        toggle.setValue(value === true).onChange((next) => this.#commit(control.key, next)),
-      );
+      setting.addToggle((toggle) => {
+        nameSettingToggle(toggle.toggleEl, definition.name);
+        toggle.setValue(value === true).onChange((next) => this.#commit(control.key, next));
+      });
       return;
     }
     if (control.type === "dropdown") {
       setting.addDropdown((dropdown) => {
+        dropdown.selectEl.setAttribute("aria-label", definition.name);
         dropdown.addOptions(control.options).setValue(String(value));
         dropdown.onChange((next) => this.#commit(control.key, next));
       });
@@ -107,6 +120,7 @@ export class SettingDefinitionRenderer {
     }
     if (control.type === "folder" || control.type === "text") {
       setting.addText((text) => {
+        text.inputEl.setAttribute("aria-label", definition.name);
         text.setValue(typeof value === "string" ? value : "");
         if (control.placeholder !== undefined) text.setPlaceholder(control.placeholder);
         text.onChange((next) => {

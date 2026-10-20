@@ -350,6 +350,7 @@ function showInsertionFeedback(
   insertion: CompletedEmptyLineInsertion,
 ): void {
   const ownerWindow = feedbackOwnerWindow(plugin);
+  let releaseUndoHint = (): void => undefined;
   const inserted = feedback.showInWindow(ownerWindow, {
     actions: [
       {
@@ -362,9 +363,10 @@ function showInsertionFeedback(
       },
     ],
     code: "handwriting-inserted",
+    onClosed: () => releaseUndoHint(),
     timeoutMs: 5_000,
   });
-  runtime.queueAutoActivation(
+  releaseUndoHint = runtime.queueAutoActivation(
     insertion.filePath,
     ownerWindow,
     (retry) => {

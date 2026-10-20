@@ -36,6 +36,7 @@ type CommitListener = () => void;
 
 export class ActiveEditorHistory {
   readonly #committedListeners = new Set<CommitListener>();
+  #disposed = false;
   #history = new AppliedCommandHistory();
   #replayDepth = 0;
   readonly #model: ActiveEditorHistoryModel;
@@ -62,6 +63,10 @@ export class ActiveEditorHistory {
 
   public get isReplaying(): boolean {
     return this.#replayDepth > 0;
+  }
+
+  public get isDisposed(): boolean {
+    return this.#disposed;
   }
 
   public get retainedPayloadBytes(): number {
@@ -140,6 +145,7 @@ export class ActiveEditorHistory {
     transition: AppliedAsyncHistoryTransition,
     effect?: SelectionFrameHistoryEffect,
   ): boolean {
+    if (this.#disposed) return false;
     if (this.isTraversing) {
       throw new Error("Applied history cannot be registered during an Undo or Redo operation.");
     }
@@ -198,11 +204,13 @@ export class ActiveEditorHistory {
   }
 
   public dispose(): void {
+    this.#disposed = true;
     this.#committedListeners.clear();
     this.#history = new AppliedCommandHistory();
   }
 
   async #traverse(operation: () => Promise<boolean>): Promise<boolean> {
+    if (this.#disposed) return false;
     const release = this.#model.beginInteractiveOperation?.();
     try {
       return await operation();
@@ -212,9 +220,11 @@ export class ActiveEditorHistory {
   }
 
   async #replayAsync(operation: () => Promise<boolean>, effect: () => void): Promise<boolean> {
+    if (this.#disposed) return false;
     this.#replayDepth += 1;
     try {
       const applied = await operation();
+      if (this.#disposed) return false;
       if (applied) effect();
       return applied;
     } finally {
@@ -223,6 +233,7 @@ export class ActiveEditorHistory {
   }
 
   #replaySync(operation: () => void): boolean {
+    if (this.#disposed) return false;
     this.#replayDepth += 1;
     try {
       operation();
@@ -233,6 +244,7 @@ export class ActiveEditorHistory {
   }
 
   #execute(mutation: SynchronousEditorMutation): boolean {
+    if (this.#disposed) return false;
     if (this.isTraversing) {
       throw new Error("Editor history cannot commit during an Undo or Redo operation.");
     }

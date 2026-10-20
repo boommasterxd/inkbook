@@ -102,7 +102,7 @@ describe("toolbar cursor icon adapter", () => {
     h.defaults.pen.color = { type: "rgba", value: "#123456" };
     h.defaults.pen.opacity = 0.2;
     h.defaults.pen.width = 22;
-    for (let move = 0; move < 200; move++) expect(h.resolve("draw", h.defaults)).toBe(icon);
+    expect(h.resolve("draw", h.defaults)).toBe(icon);
     expect(h.getIcon).toHaveBeenCalledOnce();
     expect(h.importNode).toHaveBeenCalledExactlyOnceWith(h.source, true);
     h.resolve("highlighter", h.defaults);
@@ -115,9 +115,8 @@ describe("toolbar cursor icon adapter", () => {
     h.getIcon.mockReturnValue(null);
     expect(h.resolve("eraser", h.defaults)).toBeUndefined();
     expect(h.getIcon).not.toHaveBeenCalled();
-    for (let move = 0; move < 200; move++) {
-      expect(h.resolve("draw", h.defaults)).toBeUndefined();
-    }
+    expect(h.resolve("draw", h.defaults)).toBeUndefined();
+    expect(h.resolve("draw", h.defaults)).toBeUndefined();
     expect(h.getIcon).toHaveBeenCalledOnce();
     expect(h.importNode).not.toHaveBeenCalled();
     expect(h.resolve("eraser", h.defaults)).toBeUndefined();

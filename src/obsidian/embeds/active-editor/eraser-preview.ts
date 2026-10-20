@@ -1,5 +1,4 @@
 import type { InkElementV1 } from "../../../domain/schema/public";
-import type { AppliedElementMutation, ElementMutation } from "../../../domain/store/public";
 import {
   EraserSweep,
   type EraserFeedbackPort,
@@ -9,7 +8,7 @@ import {
 import type { EditableDocumentModel } from "../vault-document-session";
 
 import { EraserFrameScheduler } from "./eraser-scheduler";
-import { applyDocumentHistoryMutation } from "./document-history";
+import { registerAppliedDocumentMutation } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
 import type { CoalescedCreationSample } from "./coalesced-input";
@@ -164,16 +163,8 @@ export class EraserPreview implements GesturePreview {
     if (prepared.token === null || cancelled()) return false;
     const applied = this.#model.commitPreparedElementMutation(prepared.token);
     if (applied === null) return false;
-    this.#history.registerApplied({
-      payloadBytes: applied.payloadBytes,
-      redo: () => this.#applyMutation(applied.forward, applied),
-      undo: () => this.#applyMutation(applied.reverse, applied),
-    });
+    registerAppliedDocumentMutation(this.#history, this.#model, applied);
     return true;
-  }
-
-  #applyMutation(mutation: ElementMutation, replay: AppliedElementMutation): Promise<boolean> {
-    return applyDocumentHistoryMutation(this.#model, mutation, replay, () => false);
   }
 
   #assertActive(): void {

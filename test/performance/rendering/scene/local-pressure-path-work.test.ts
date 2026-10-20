@@ -1,5 +1,6 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../src/domain/store/public";
+import { takeImmutableElementOwnership } from "../../../../src/domain/store/immutability";
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { translatedStroke } from "../../../../src/domain/geometry/stroke-position";
 import * as centers from "../../../../src/domain/geometry/stroke-path";
@@ -13,10 +14,20 @@ import { preparedHints as offeredPaths } from "../../../fixtures/persistence/pre
 import {
   createStandardDomainFixture,
   createMaximumStroke,
+  type StandardDomainFixture,
 } from "../../domain/standard-domain-fixture";
 import { observePointReads } from "../../../fixtures/rendering/point-reads";
 
 afterEach(() => vi.restoreAllMocks());
+
+let fixture: StandardDomainFixture;
+beforeAll(() => {
+  fixture = createStandardDomainFixture();
+  for (const element of fixture.elements) takeImmutableElementOwnership(element);
+  Object.freeze(fixture.elements);
+  Object.freeze(fixture.strokeIds);
+  Object.freeze(fixture);
+});
 
 function observePreparationWork() {
   let pointReads = 0;
@@ -81,7 +92,6 @@ function maximumPressureWave(): StrokeElementV1 {
 it.each([1_000, 2_000])(
   "reuses moved local contours for %i selected mixed-length strokes in the 10k fixture",
   (selectedCount) => {
-    const fixture = createStandardDomainFixture();
     expect(fixture.strokeCount).toBe(10_000);
     expect(fixture.strokePointCount).toBe(500_000);
     const store = new ElementStore(fixture.elements);

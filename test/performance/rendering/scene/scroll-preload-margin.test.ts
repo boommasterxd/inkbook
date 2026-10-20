@@ -1,19 +1,27 @@
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { ElementStore } from "../../../../src/domain/store/public";
+import { takeImmutableElementOwnership } from "../../../../src/domain/store/immutability";
+import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { createSceneFixture, observeIndexedSceneQueries } from "../../../fixtures/rendering/scene";
 import { fakeNode, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
-import { indexedStroke } from "../../../fixtures/editor/stroke";
+import { uuid } from "../../../unit/domain/schema/fixtures";
+
+let elements: readonly InkElementV1[];
+beforeAll(() => {
+  elements = Object.freeze(
+    Array.from({ length: 10_000 }, (_, rank) => {
+      const element = fakeRectangleRecord(uuid(rank + 1_000), rank, 20, rank * 10).element;
+      takeImmutableElementOwnership(element);
+      return element;
+    }),
+  );
+});
 
 function createIndexedMarginFixture(margin: number) {
-  const domain = new ElementStore(
-    Array.from(
-      { length: 10_000 },
-      (_, rank) => fakeRectangleRecord(indexedStroke(rank).id, rank, 20, rank * 10).element,
-    ),
-  );
+  const domain = new ElementStore(elements);
   const store = new ElementSceneStore(domain);
   const { query, work } = observeIndexedSceneQueries(domain);
   const fixture = createSceneFixture(

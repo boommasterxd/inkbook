@@ -63,6 +63,11 @@ export function createStandardRuntimeDomainFixture(): StandardDomainFixture {
   return createStandardFixture(true);
 }
 
+export function createStandardShapeElements(count: number): InkElementV1[] {
+  let identity = STROKE_COUNT + 1;
+  return createShapes(() => uuid(identity++), count);
+}
+
 function createStandardFixture(runtimeStrokeBuffers: boolean): StandardDomainFixture {
   let identity = 1;
   const nextId = (): string => uuid(identity++);
@@ -157,9 +162,9 @@ function createStrokePoints(
   return points;
 }
 
-function createShapes(nextId: () => string): InkElementV1[] {
+function createShapes(nextId: () => string, count = SHAPE_COUNT): InkElementV1[] {
   const shapes: InkElementV1[] = [];
-  for (let index = 0; index < SHAPE_COUNT; index += 1) {
+  for (let index = 0; index < count; index += 1) {
     const x = 100 + (index % 10) * 170;
     const y = 500 + Math.floor(index / 10) * 2500;
     if (index === 100) shapes.push(createCoordinateSystem(nextId(), x, y));

@@ -302,7 +302,7 @@ describe("active editor eraser composition", () => {
 });
 
 describe("active editor eraser commit", () => {
-  it("previews, cancels, and atomically removes complete eraser hits with undo", async () => {
+  it("retains eraser Undo after presentation release and cancels replay on session shutdown", async () => {
     const document = model();
     const element = createDragElement({
       defaults: createBuiltInSettings().toolDefaults,
@@ -357,8 +357,22 @@ describe("active editor eraser commit", () => {
     await expect(committed.completion).resolves.toBe(true);
     expect(document.store.size).toBe(0);
     expect(history.commandCount).toBe(1);
+    options.sceneStore.release();
+    options.workScheduler.dispose();
     await expect(history.undoAsync()).resolves.toBe(true);
-    expect(document.store.size).toBe(1);
+    expect(document.store.get(element.id)?.element).toEqual(element);
+    await expect(history.redoAsync()).resolves.toBe(true);
+    expect(document.store.size).toBe(0);
+
+    const prepare = document.prepareElementMutation.bind(document);
+    vi.spyOn(document, "prepareElementMutation").mockImplementation(async (...args) => {
+      const prepared = await prepare(...args);
+      history.dispose();
+      return prepared;
+    });
+    await expect(history.undoAsync()).resolves.toBe(false);
+    expect(document.store.size).toBe(0);
+    expect(pendingFrames.size).toBe(0);
   });
 });
 

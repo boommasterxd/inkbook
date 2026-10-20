@@ -1,15 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
-import type {
+import {
   ElementStore,
-  PreparedElementReplacement,
+  type PreparedElementReplacement,
 } from "../../../../../src/domain/store/public";
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
-import type { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
+import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/vault-document-session";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
+import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { elementReplacementPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
+import { rectangle } from "../../../domain/store/fixtures";
 
 const PREPARED_TOKEN = Object.freeze({}) as PreparedElementReplacement;
 
@@ -98,6 +101,60 @@ describe("prepared selection preview lifecycle", () => {
 });
 
 describe("committed prepared replacement", () => {
+  it("cancels a retained replacement replay when its document session shuts down", async () => {
+    const target = rectangle();
+    const store = new ElementStore([target]);
+    let revision = 0;
+    const model = {
+      get revision() {
+        return revision;
+      },
+      store,
+      ...elementReplacementPorts(store, () => {
+        revision += 1;
+      }),
+    } as unknown as EditableDocumentModel;
+    const history = new ActiveEditorHistory(model);
+    const prepared = new PreparedElementHistory({
+      history,
+      model,
+      isAttached: () => true,
+      motion: motionPort(),
+      onPendingChanged: vi.fn(),
+      workScheduler: immediateWorkScheduler(),
+    });
+    const completed = vi.fn();
+    prepared.commitStyle({
+      selection: new Set([target.id]),
+      controlId: "opacity",
+      value: 0.5,
+      isCurrent: () => true,
+      onCompleted: completed,
+    });
+    await vi.waitFor(() => expect(completed).toHaveBeenCalledWith(true));
+    prepared.dispose();
+    const replacement = store.get(target.id)!.element;
+    const prepare = model.prepareElementReplacement.bind(model);
+    let finishPreparation = () => undefined as void;
+    const gate = new Promise<void>((resolve) => {
+      finishPreparation = resolve;
+    });
+    const replay = vi
+      .spyOn(model, "prepareElementReplacement")
+      .mockImplementation(async (...args) => {
+        const token = await prepare(...args);
+        await gate;
+        return token;
+      });
+    const undo = history.undoAsync();
+    await vi.waitFor(() => expect(replay).toHaveBeenCalledOnce());
+    history.dispose();
+    finishPreparation();
+    await expect(undo).resolves.toBe(false);
+    expect(store.get(target.id)?.element).toBe(replacement);
+    expect(revision).toBe(1);
+  });
+
   it("registers history after a committed replacement even if disposal follows the commit", async () => {
     const registerApplied = vi.fn(() => true);
     let prepared: PreparedElementHistory;

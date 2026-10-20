@@ -2,6 +2,11 @@ import type { Editor } from "obsidian";
 
 import { ObsidianEditorMutationAdapter, type InsertedEmbedMutation } from "../vault";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
+import type {
+  CreatedVaultFile,
+  CreatedVaultFileRead,
+  TrackedCreatedVaultFile,
+} from "../vault/file-adapter";
 
 interface PreparedInkbookDocument {
   readonly content: string;
@@ -14,11 +19,12 @@ interface InsertionDocumentFactoryPort {
 }
 
 interface InsertionFilePort {
-  createAndReadBack(
+  createOwnedAndReadBack(
     path: string,
     content: string,
     maximumBytes: number,
-  ): Promise<{ readonly content: string }>;
+    onCreated: (created: TrackedCreatedVaultFile) => void,
+  ): Promise<CreatedVaultFileRead>;
 }
 
 interface InsertionLinkPort {
@@ -27,6 +33,7 @@ interface InsertionLinkPort {
 
 interface InsertionTrashPort {
   trash(filePath: string): Promise<void>;
+  trashCreated(created: CreatedVaultFile): Promise<void>;
 }
 
 export interface CompletedEmptyLineInsertion {
@@ -216,12 +223,16 @@ export class EmptyLineInsertionController {
     line: number,
   ): Promise<CompletedEmptyLineInsertion> {
     const prepared = await this.#dependencies.documents.prepare(sourcePath);
-    const readBack = await this.#dependencies.files.createAndReadBack(
-      prepared.path,
-      prepared.content,
-      FILE_SCHEMA_LIMITS.totalInputBytes,
-    );
+    let created: TrackedCreatedVaultFile | undefined;
     try {
+      const { readBack } = await this.#dependencies.files.createOwnedAndReadBack(
+        prepared.path,
+        prepared.content,
+        FILE_SCHEMA_LIMITS.totalInputBytes,
+        (file) => {
+          created = file;
+        },
+      );
       const verified = await this.#dependencies.documents.verifyCreated(readBack.content);
       if (readBack.content !== prepared.content || verified !== true) {
         throw new Error("The created Inkbook document did not pass worker verification.");
@@ -245,8 +256,9 @@ export class EmptyLineInsertionController {
         inserted,
       );
     } catch (error: unknown) {
+      if (created === undefined) throw error;
       try {
-        await this.#dependencies.trash.trash(prepared.path);
+        await this.#dependencies.trash.trashCreated(created);
       } catch {
         throw new InsertionActionError(
           "The created handwriting file could not be moved to trash.",
@@ -254,6 +266,8 @@ export class EmptyLineInsertionController {
         );
       }
       throw error;
+    } finally {
+      created?.release();
     }
   }
 }

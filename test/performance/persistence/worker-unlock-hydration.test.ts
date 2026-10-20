@@ -7,7 +7,7 @@ import type { InkElementV1, InkSnapshotV1 } from "../../../src/domain/schema/pub
 import { verifyVaultUnlockIntegrity } from "../../../src/obsidian/embeds/vault-unlock-integrity";
 import * as metadata from "../../../src/persistence/serialization/canonical-metadata";
 import * as canonical from "../../../src/persistence/serialization/canonical-snapshot";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../src/domain/store/public";
 import { prepareVaultStoreDelta } from "../../../src/obsidian/embeds/vault-document-model-delta";
@@ -23,12 +23,36 @@ import {
 
 afterEach(() => vi.restoreAllMocks());
 
-const snapshot = createStandardPersistenceFixture();
+let sourceSnapshot: InkSnapshotV1 | undefined;
+let serializedSource: { readonly svg: string; readonly pressureBuilds: number } | undefined;
+
+afterAll(() => {
+  serializedSource = undefined;
+  sourceSnapshot = undefined;
+});
+
+function fixtureSnapshot(): InkSnapshotV1 {
+  sourceSnapshot ??= createStandardPersistenceFixture();
+  return sourceSnapshot;
+}
+
+function serializedFixture() {
+  if (serializedSource !== undefined) return serializedSource;
+  const builds = vi.spyOn(pressureUnion, "iteratePressureUnion");
+  try {
+    const serialized = serializeInkbookDocument(fixtureSnapshot());
+    if (!serialized.ok) throw new Error(serialized.error.code);
+    serializedSource = { svg: serialized.value.svg, pressureBuilds: builds.mock.calls.length };
+    return serializedSource;
+  } finally {
+    builds.mockRestore();
+  }
+}
 
 describe("document worker export performance", () => {
   it("hydrates the complete worker wire without rescanning or recopying received samples", async () => {
-    const serialized = serializeInkbookDocument(snapshot);
-    if (!serialized.ok) throw new Error(serialized.error.code);
+    const snapshot = fixtureSnapshot();
+    const serialized = serializedFixture();
     const harness = createWorkerBridgeHarness();
     harness.clientEndpoint.cloneTransfers = true;
     harness.hostEndpoint.cloneTransfers = true;
@@ -47,7 +71,7 @@ describe("document worker export performance", () => {
       const result = await client.execute(
         {
           type: "unlock",
-          input: serialized.value.svg,
+          input: serialized.svg,
           identity: { operationId: 1, purpose: "unlock", sessionId: "session-a", workerEpoch: 1 },
         },
         {
@@ -107,12 +131,11 @@ function observeSampleCopyBytes() {
 
 describe("validated worker export work", () => {
   it("bounds unlock batches and incremental-save work while reusing validated bounds", async () => {
-    const builds = vi.spyOn(pressureUnion, "iteratePressureUnion");
-    const serialized = serializeInkbookDocument(snapshot);
-    const expectedBuilds = builds.mock.calls.length;
+    const snapshot = fixtureSnapshot();
+    const serialized = serializedFixture();
+    const expectedBuilds = serialized.pressureBuilds;
     expect(expectedBuilds).toBeGreaterThan(0);
-    builds.mockClear();
-    if (!serialized.ok) throw new Error(serialized.error.code);
+    const builds = vi.spyOn(pressureUnion, "iteratePressureUnion");
     const sampleScans = vi.spyOn(strokeSamples, "assertStrokeSamplesV1");
     const runtime = new DocumentWorkerRuntime({ sessionId: "phases", workerEpoch: 1 });
     const builder = ElementStore.createBuilder({
@@ -129,7 +152,7 @@ describe("validated worker export work", () => {
           sessionId: "phases",
           workerEpoch: 1,
         },
-        input: serialized.value.svg,
+        input: serialized.svg,
         type: "unlock",
       },
       {
@@ -158,7 +181,7 @@ describe("validated worker export work", () => {
     expect(finalized.size).toBe(snapshot.elements.length);
     expect(finalized.instrumentation.hydrationElementVisits).toBe(snapshot.elements.length * 2);
     await verifyHydrationProof({ ...snapshot, elements: ownedElements }, finalized);
-    await verifyPersistedProof(runtime, serialized.value.svg, expectedBuilds);
+    await verifyPersistedProof(runtime, serialized.svg, expectedBuilds);
     const first = snapshot.elements[0]!;
     const changed = { ...replaceFirstStroke(snapshot, 2), createdAt: first.createdAt };
     const delta = finalized.replace(changed.id, changed);
@@ -237,6 +260,7 @@ async function verifyPersistedProof(
 
 describe("complete translated stroke delta work", () => {
   it("bounds canonical capacity and fragment rebuilding for a complete translated stroke delta", () => {
+    const snapshot = fixtureSnapshot();
     const serializer = new IncrementalDocumentSerializer();
     expect(serializer.reset(snapshot).ok).toBe(true);
     // Warm every real fragment without assembling and hashing an unused initial SVG.

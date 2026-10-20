@@ -5,20 +5,37 @@ import * as pressureWindows from "../../../src/domain/geometry/pressure-path-ser
 import * as simplification from "../../../src/domain/geometry/stroke-simplification";
 import * as strokeSlices from "../../../src/domain/geometry/pressure-outline";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
-import { runMaximumStrokes } from "./maximum-stroke-scenario";
 import { createMaximumStroke } from "./standard-domain-fixture";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("maximum live-stroke primitives", () => {
-  it("keeps twenty maximum pressure strokes within tail and chunk bounds", () => {
+  it("bounds a maximum pressure stroke delivered one sample at a time", () => {
+    const source = createMaximumStroke();
+    const builder = new LiveStrokeBuilder({
+      input: { pressureSource: "pen", zoom: 1 },
+      style: source.style,
+    });
     const pressureResponse = vi.spyOn(Math, "expm1");
-    const result = runMaximumStrokes(20);
-    expect(pressureResponse).toHaveBeenCalledTimes(20 * (MAX_STROKE_POINTS - 1));
-    expect(result.appendedSamples).toBe(20 * MAX_STROKE_POINTS);
-    expect(result.completedStrokes).toBe(20);
-    expect(result.maximumTailSamples).toBeLessThanOrEqual(131);
-    expect(result.maximumFinalizedChunkSamples).toBeLessThanOrEqual(256);
+    for (let point = 0; point < source.points.length; point += 3) {
+      builder.append({
+        pressure: source.points[point + 2]!,
+        time: point / 3,
+        x: source.points[point]!,
+        y: source.points[point + 1]!,
+      });
+    }
+    const commit = builder.finish();
+    expect(pressureResponse).toHaveBeenCalledTimes(MAX_STROKE_POINTS - 1);
+    expect(commit.instrumentation).toMatchObject({
+      appendedInputSamples: MAX_STROKE_POINTS,
+      commitBuilds: 1,
+    });
+    expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(131);
+    expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(256);
+    expect(commit.points).toHaveLength(MAX_STROKE_POINTS * 3);
+    expect(commit.geometry.length).toBeGreaterThan(0);
+    expect(commit.geometry.every(({ d }) => d.length > 0)).toBe(true);
   }, 120_000);
 
   it.each(["pen", "simulated"] as const)(

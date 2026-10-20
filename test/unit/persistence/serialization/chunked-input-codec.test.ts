@@ -1,4 +1,3 @@
-import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import * as canonical from "../../../../src/persistence/serialization/canonical-snapshot";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +5,10 @@ import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import { jsonContainerBudget } from "../../../../src/domain/schema/validation-internals";
 import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/chunked-input-codec";
 import { ChunkedInputCancelledError } from "../../../../src/persistence/serialization/chunked-input-types";
+import type {
+  DocumentCodecResult,
+  ParsedInkbookDocument,
+} from "../../../../src/persistence/serialization/types";
 import {
   CURRENT_METADATA_REWRITES,
   rewriteDocumentMetadata,
@@ -33,22 +36,19 @@ function serializeFixture(snapshot: ReturnType<typeof createSnapshot>): string {
   return serialized.value.svg;
 }
 
-async function expectChunkedInputToMatchSynchronous(
+async function parseChunkedInput(
   input: string,
   options: ConstructorParameters<typeof ChunkedInkbookInputParser>[0] = {},
-): Promise<Awaited<ReturnType<typeof parseInkbookDocumentForTest>>> {
+): Promise<DocumentCodecResult<ParsedInkbookDocument>> {
   const bytes = new TextEncoder().encode(input);
   const parser = new ChunkedInkbookInputParser(options);
-  await parser.write(bytes);
-
-  const result = await parser.finish();
-  expect(logicalStrokePoints(result)).toEqual(await parseInkbookDocumentForTest(bytes));
-  return result;
+  const written = await parser.write(bytes);
+  return written.ok ? parser.finish() : written;
 }
 
 function logicalStrokePoints(
-  result: Awaited<ReturnType<typeof parseInkbookDocumentForTest>>,
-): Awaited<ReturnType<typeof parseInkbookDocumentForTest>> {
+  result: DocumentCodecResult<ParsedInkbookDocument>,
+): DocumentCodecResult<ParsedInkbookDocument> {
   if (!result.ok) return result;
   return {
     ...result,
@@ -77,7 +77,7 @@ async function expectSnapshotMetadataPrefixAccepted(
 }
 
 describe("chunked Inkbook input", () => {
-  it("matches the synchronous codec across byte boundaries", async () => {
+  it("preserves the snapshot across distinct write and processing boundaries", async () => {
     const svg = allElementSvg;
     const bytes = new TextEncoder().encode(svg);
     const parser = new ChunkedInkbookInputParser({ inputSliceBytes: 37, pathBatchSize: 2 });
@@ -92,7 +92,13 @@ describe("chunked Inkbook input", () => {
       const stroke = parsed.value.snapshot.elements.find((element) => element.kind === "stroke");
       expect(stroke?.kind === "stroke" && stroke.points).toBeInstanceOf(Float64Array);
     }
-    expect(logicalStrokePoints(parsed)).toEqual(await parseInkbookDocumentForTest(bytes));
+    expect(logicalStrokePoints(parsed)).toMatchObject({
+      ok: true,
+      value: { snapshot: createAllElementSnapshot(), sourceVersion: 1 },
+    });
+    expect(logicalStrokePoints(parsed)).toEqual(
+      logicalStrokePoints(await parseChunkedInput(svg, { inputSliceBytes: bytes.length + 1 })),
+    );
     expect(parser.maximumRetainedStaticInputCharacters).toBeLessThanOrEqual(47);
   });
 
@@ -120,42 +126,43 @@ describe("chunked Inkbook input", () => {
     expect(checkpoints).toBeGreaterThan(afterInput);
   });
 
-  it("returns the same structured failures as the synchronous pipeline", async () => {
+  it("rejects revision drift, malformed metadata, unsafe markup, and changed geometry", async () => {
     const svg = snapshotSvg;
     const inputs = [
-      svg.replace('data-inkbook-revision="7"', 'data-inkbook-revision="8"'),
-      svg.replace('"format":"inkbook"', '"format":'),
-      svg.replace("</svg>", "<script/></svg>"),
-      svg.replace("M0 0L2048.6", "M1 0L2048.6"),
-    ];
+      [svg.replace('data-inkbook-revision="7"', 'data-inkbook-revision="8"'), "revision-mismatch"],
+      [svg.replace('"format":"inkbook"', '"format":'), "invalid-json"],
+      [svg.replace("</svg>", "<script/></svg>"), "invalid-svg"],
+      [svg.replace("M0 0L2048.6", "M1 0L2048.6"), "static-path-mismatch"],
+    ] as const;
 
-    for (const input of inputs) {
-      const bytes = new TextEncoder().encode(input);
-      const parser = new ChunkedInkbookInputParser();
-      await parser.write(bytes);
-      expect(await parser.finish()).toEqual(await parseInkbookDocumentForTest(bytes));
+    for (const [input, code] of inputs) {
+      expect(await parseChunkedInput(input)).toMatchObject({ ok: false, error: { code } });
     }
   });
 
-  it("matches synchronous migration of a canonical version zero document", async () => {
+  it("migrates a canonical version zero document without changing its snapshot", async () => {
     const svg = allElementSvg;
     const versionZero = toVersionZeroDocument(svg);
 
-    await expectChunkedInputToMatchSynchronous(versionZero, {
+    const result = await parseChunkedInput(versionZero, {
       inputSliceBytes: versionZero.length + 1,
       pathBatchSize: 256,
+    });
+    expect(logicalStrokePoints(result)).toMatchObject({
+      ok: true,
+      value: { snapshot: createAllElementSnapshot(), sourceVersion: 0 },
     });
   });
 });
 
-describe("chunked Inkbook metadata boundaries", () => {
+describe("chunked Inkbook metadata binding", () => {
   it.each(CURRENT_METADATA_REWRITES)(
-    "matches synchronous rejection of noncanonical or unbound metadata as $expectedCode",
+    "rejects noncanonical or unbound metadata as $expectedCode",
     async ({ expectedCode, mutate, updateHash }) => {
       const svg = snapshotSvg;
       const input = rewriteDocumentMetadata(svg, mutate, updateHash);
 
-      const result = await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 31 });
+      const result = await parseChunkedInput(input, { inputSliceBytes: 31 });
       expect(result).toMatchObject({
         error: { code: expectedCode },
         ok: false,
@@ -180,7 +187,9 @@ describe("chunked Inkbook metadata boundaries", () => {
       }
     },
   );
+});
 
+describe("streaming Inkbook metadata boundaries", () => {
   it("accepts exactly 60 MiB of metadata and rejects the next byte while streaming", async () => {
     const parser = new ChunkedInkbookInputParser();
     const chunk = new Uint8Array(256 * 1024).fill(0x20);
@@ -198,19 +207,31 @@ describe("chunked Inkbook metadata boundaries", () => {
 
   it("decodes allowed XML entities split across every byte boundary", async () => {
     const svg = snapshotSvg;
-    const input = appendMetadataProperty(svg, '"escapedXml":"&lt;&amp;&gt;"');
+    const input = appendMetadataProperty(svg, '"escapedXml":"<&>"').replace(
+      '"<&>"',
+      '"&lt;&amp;&gt;"',
+    );
 
-    await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 1 });
+    expect(await parseChunkedInput(input, { inputSliceBytes: 1 })).toMatchObject({
+      ok: false,
+      error: {
+        code: "snapshot-invalid",
+        validationError: { code: "unknown-property", path: "$.escapedXml" },
+      },
+    });
   });
 
-  it("matches native container-width enforcement at the limit and limit plus one", async () => {
+  it("enforces container width before snapshot validation at the limit plus one", async () => {
     const svg = snapshotSvg;
     const maximumEntries = jsonContainerBudget(FILE_SCHEMA_LIMITS);
 
     for (const entries of [maximumEntries, maximumEntries + 1]) {
       const input = appendMetadataProperty(svg, wideMetadataArrayProperty(entries));
 
-      await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 1024 });
+      expect(await parseChunkedInput(input, { inputSliceBytes: 1024 })).toMatchObject({
+        ok: false,
+        error: { code: entries === maximumEntries ? "snapshot-invalid" : "invalid-json" },
+      });
     }
   });
 
@@ -241,14 +262,14 @@ describe("chunked Inkbook metadata boundaries", () => {
 });
 
 describe("chunked Inkbook input boundaries", () => {
-  it("prioritizes the file-size limit exactly like the synchronous codec", async () => {
+  it("rejects oversized input before attempting UTF-8 decoding", async () => {
     const bytes = new Uint8Array(FILE_SCHEMA_LIMITS.totalInputBytes + 1);
     bytes[0] = 0xff;
     const parser = new ChunkedInkbookInputParser();
 
     const result = await parser.write(bytes);
 
-    expect(result).toEqual(await parseInkbookDocumentForTest(bytes));
+    expect(result).toMatchObject({ ok: false, error: { code: "invalid-svg" } });
     expect(parser.bytesReceived).toBe(0);
   });
 

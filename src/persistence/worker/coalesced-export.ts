@@ -1,4 +1,5 @@
 import { assertSafeCounter } from "./identity";
+import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 import type { ElementValidationDerivation } from "../../domain/schema/public";
 import type { DocumentRevision, ElementId, RenderBand } from "./protocol";
 
@@ -84,6 +85,10 @@ export class CoalescedExportTarget<TElement, TPage> {
     }
     this.#recordChanges(changedElements, derivations);
     this.#recordRemovals(delta.removedIds ?? []);
+    if (this.#changedElements.size + this.#removedIds.size > FILE_SCHEMA_LIMITS.elements) {
+      this.requireFullSnapshot(delta.modelRevision);
+      return;
+    }
     for (const band of delta.dirtyBands ?? []) {
       this.#dirtyBands.add(band);
     }

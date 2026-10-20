@@ -1,6 +1,9 @@
 import { isAnchorTarget, resolveShapeAnchor } from "../geometry/anchors";
 import { linearPivot, pointDistance } from "../geometry/primitives";
-import { hasReachableDependencyCycle } from "../schema/dependency-cycle";
+import {
+  hasReachableDependencyCycle,
+  hasReachableDependencyCycleSteps,
+} from "../schema/dependency-cycle";
 import type { InkElementV1, LineElementV1, ArrowElementV1 } from "../schema/public";
 
 import { mutableElement } from "./immutability";
@@ -111,6 +114,15 @@ export function assertAcyclicConnections(
   lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
 ): void {
   if (hasReachableDependencyCycle(roots, (id) => connectionDependencies(id, lookup))) {
+    throw new RangeError("Linear endpoint connections must not form a cycle.");
+  }
+}
+
+export function* assertAcyclicConnectionsSteps(
+  roots: Iterable<string>,
+  lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
+): Generator<void, void> {
+  if (yield* hasReachableDependencyCycleSteps(roots, (id) => connectionDependencies(id, lookup))) {
     throw new RangeError("Linear endpoint connections must not form a cycle.");
   }
 }

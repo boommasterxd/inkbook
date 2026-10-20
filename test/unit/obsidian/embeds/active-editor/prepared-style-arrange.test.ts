@@ -134,7 +134,7 @@ async function finished(fixture: ReturnType<typeof styleFixture>) {
 }
 
 describe("prepared style document history", () => {
-  it("restores a removed axis and its external connection exactly on Undo", async () => {
+  it("restores an axis and its connection after the preparing presentation is disposed", async () => {
     const target = coordinateSystem();
     const dependent = axisConnectedLine();
     const fixture = styleFixture([target, dependent]);
@@ -177,6 +177,8 @@ describe("prepared style document history", () => {
     const changedDependent = fixture.inspect(dependent.id);
     expect(captured?.previous.map(({ id }) => id)).toEqual([target.id, dependent.id]);
     expect(fixture.history.retainedPayloadBytes).toBe(captured!.payloadBytes);
+    fixture.detach();
+    fixture.prepared.dispose();
 
     await expect(fixture.history.undoAsync()).resolves.toBe(true);
     expect(fixture.inspect(target.id)).toEqual(target);

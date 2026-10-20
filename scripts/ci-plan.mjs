@@ -1,10 +1,9 @@
-import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { validateDocumentation } from "./ci-documentation.mjs";
-import { selectionOutputs, validateExpectedOutputs } from "./ci-execution-plan.mjs";
+import { createExecutionSelection, selectionOutputs } from "./ci-execution-plan.mjs";
 import { appendRunnerCommand } from "./ci-runner-output.mjs";
-import { createSelection, inspectChanges } from "./ci-selection.mjs";
+import { inspectChanges } from "./ci-selection.mjs";
 import { collectPerformanceTestPlan } from "./performance-test-runner.mjs";
 
 const checkProjectRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -35,6 +34,7 @@ try {
     root: checkProjectRoot,
     base: process.env["CI_BASE"],
     head: process.env["CI_HEAD"] || "HEAD",
+    merge: process.env["CI_MERGE"],
     forceFull: process.env["CI_EVENT"] !== "pull_request",
   };
   const args = process.argv.slice(2);
@@ -42,12 +42,10 @@ try {
     await preflight(options);
   } else {
     if (args.length) throw new Error("Unsupported CI planner arguments.");
-    const plan = await createSelection(options);
+    const plan = await createExecutionSelection(options);
     if (plan.mode === "docs") await validateDocumentation(checkProjectRoot);
     else await collectPerformanceTestPlan();
     const outputs = selectionOutputs(plan, options.forceFull);
-    validateExpectedOutputs(outputs);
-    await writeFile(`${checkProjectRoot}/.ci-selection.json`, JSON.stringify(plan, null, 2) + "\n");
     process.stdout.write(
       `${plan.reason}\n${plan.tests.length} selected test files; ${plan.coverage.length} coverage inputs.\n`,
     );

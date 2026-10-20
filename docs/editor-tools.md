@@ -83,7 +83,7 @@ Internally, a stroke consists of:
 The default pen uses:
 
 - color: `theme-text`, meaning the current light or dark Inkbook document-palette text role
-- width: 8 page units
+- width: 4 page units
 - dynamic stroke width: enabled
 - real pressure data when a pen is detected
 - simulated pressure for a mouse or finger
@@ -158,7 +158,7 @@ The start and end of a line or arrow independently snap to nearby semantic ancho
 
 Anchors are derived from the target's current scaled and rotated geometry. They are not stored as canvas elements. The nearest candidate within 12 CSS pixels for mouse or pen input and 16 CSS pixels for touch input is previewed with a plain screen-sized target cross. Each arm extends 12 CSS pixels from the snapped anchor in all four directions at every zoom. The same marker is used for new lines and arrows, endpoint handles, and whole-line movement. All snap guides use a 1.5-CSS-pixel stroke with a 3-pixel SVG dash and 3-pixel gap, round caps and joins, no fill, and no shadow. Direction, bend, rotation, and separator guides extend 24 CSS pixels beyond each end of their reference segment. These presentation dimensions stay constant through zoom. It clears immediately when the candidate is released, without an exit transition. An existing candidate remains active until the pointer is 4 CSS pixels beyond the acquisition radius. Equal-distance candidates resolve by frontmost render order, then target ID, then semantic anchor order. Semantic anchors take precedence over the 90-degree angular guide when both are eligible.
 
-Pointer release persists a connection to the semantic target anchor rather than only the resolved page coordinate. Moving, scaling, rotating, or editing the target recomputes every connected endpoint in the same frame. A curved line retains its page-space bend point, so its endpoint tangent and arrow node reorient exactly as they do after a manual endpoint edit.
+Pointer release persists a connection to the semantic target anchor rather than only the resolved page coordinate. Moving, scaling, rotating, or editing the target recomputes connected endpoints in the same frame within the [exact-preview work limits](quality-and-testing.md#performance-architecture-rules). Larger targeted handle cohorts retain the edited line's immediate local feedback until their complete atomic commit. A curved line retains its page-space bend point, so its endpoint tangent and arrow node reorient exactly as they do after a manual endpoint edit.
 
 Dragging a connected endpoint previews a detached free endpoint. Releasing it over an eligible anchor replaces the connection; releasing it elsewhere leaves it detached at the free position. Deleting an attached target detaches each dependent endpoint at its last resolved position. Undo and Redo restore target geometry and connection state atomically.
 
@@ -246,11 +246,11 @@ The following options are available for shapes:
 
 Shape widths:
 
-- XS: 1
-- S: 2
-- M: 4
-- L: 8
-- XL: 12
+- XS: 2
+- S: 4
+- M: 8
+- L: 14
+- XL: 22
 
 Outline styles:
 

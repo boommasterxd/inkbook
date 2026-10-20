@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import {
@@ -14,6 +14,7 @@ import {
 } from "../../../unit/rendering/scene/fakes";
 import {
   createPressureNavigationHarness,
+  createPressureNavigationRecords,
   NAVIGATION_VISIBLE_STROKES,
   NAVIGATION_PAGE,
 } from "../../../fixtures/rendering/pressure-navigation";
@@ -26,6 +27,10 @@ import {
 } from "./interaction-refresh-profile-fixture";
 
 const PREVIEW_FRAMES = 12;
+let pressureRecords: ReturnType<typeof createPressureNavigationRecords>;
+beforeAll(() => {
+  pressureRecords = createPressureNavigationRecords();
+});
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz interaction profile`, () => {
   it("retains geometry through camera and selection preview updates", () => {
@@ -86,7 +91,10 @@ function runSelectionFrames(
 }
 
 it("finishes cold pressure mounting during uninterrupted zoom and reuses dense offscreen paths", () => {
-  const { document, renderer, scheduler } = createPressureNavigationHarness();
+  const { document, renderer, scheduler } = createPressureNavigationHarness(
+    undefined,
+    pressureRecords,
+  );
   const nodes = vi.spyOn(document, "createElementNS");
   let frame = 0;
   for (; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
@@ -137,7 +145,10 @@ it("finishes cold pressure mounting during uninterrupted zoom and reuses dense o
 });
 
 it("makes entrant progress while every camera frame changes membership under a busy deadline", () => {
-  const { document, renderer, scheduler, store } = createPressureNavigationHarness();
+  const { document, renderer, scheduler, store } = createPressureNavigationHarness(
+    undefined,
+    pressureRecords,
+  );
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(NAVIGATION_VISIBLE_STROKES);
   renderer.resetInstrumentation();
@@ -171,7 +182,10 @@ it("makes entrant progress while every camera frame changes membership under a b
 
 it("completes initial mounting through subpixel host layout changes without repeated geometry", () => {
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
-  const { renderer, scheduler, document } = createPressureNavigationHarness(viewport);
+  const { renderer, scheduler, document } = createPressureNavigationHarness(
+    viewport,
+    pressureRecords,
+  );
   const nodes = vi.spyOn(document, "createElementNS");
   for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
     viewport.height = 100 + (frame % 2) / 100;

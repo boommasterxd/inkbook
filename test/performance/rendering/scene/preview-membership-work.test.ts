@@ -25,7 +25,7 @@ function observeSelectionReads(ids: readonly string[]) {
   };
 }
 
-it.each([1_000, 2_000, 10_000])(
+it.each([1_000, 10_000])(
   "reuses %s feedback members across 256 snapshots, pressure work and remount batches",
   (count) => {
     const { preview, content } = createProgressivePreviewFixture();

@@ -1,56 +1,11 @@
 // @vitest-environment happy-dom
 
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  InkbookEditorChrome,
-  registerToolbarResize,
-} from "../../../../src/rendering/ui/editor-chrome";
+import { registerToolbarResize } from "../../../../src/rendering/ui/editor-chrome";
 import { toolbarMainHalfWidth } from "../../../../src/rendering/ui/toolbar-layout";
 
 describe("Inkbook editor chrome layout", () => {
-  it("renders toolbar chrome without scene, canvas, or custom menu content", () => {
-    const markup = renderToStaticMarkup(
-      <InkbookEditorChrome
-        layout="scrollable"
-        leftHanded
-        onToolbarAction={vi.fn()}
-        ownerDocument={{} as Document}
-        renderIcon={vi.fn()}
-        selectionArea="lasso"
-        selectedShape="rectangle"
-        shapeIcon={{ arrowEnd: "arrow", arrowStart: "none", coordinateDimension: "2d" }}
-        styleIcon={{
-          fillColor: null,
-          fillOpacity: 0,
-          outlineColor: null,
-          outlineStyle: "solid",
-        }}
-        toolbarState={{
-          activeTool: "select",
-          canPaste: false,
-          canRedo: false,
-          canUndo: false,
-          fingerDrawingAvailable: false,
-          fingerDrawingEnabled: false,
-          hasSelection: false,
-          openFlyout: null,
-          pasteVisible: false,
-        }}
-      />,
-    );
-
-    expect(markup).toContain("inkbook-toolbar-shell");
-    expect(markup).toContain("inkbook-toolbar-scrollable");
-    expect(markup).toContain("inkbook-toolbar-left-handed");
-    expect(markup).toContain('aria-label="Select: Lasso"');
-    expect(markup).not.toContain("inkbook-flyout");
-    expect(markup).not.toContain("inkbook-scene");
-    expect(markup).not.toContain("inkbook-canvas-input");
-    expect(markup).not.toContain('role="status"');
-  });
-
   it("remeasures the primary pill through the owning window resize observer", () => {
     const observer = resizeObserverHarness();
     const onResize = vi.fn();

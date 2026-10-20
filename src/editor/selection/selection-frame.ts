@@ -68,10 +68,7 @@ export class SelectionFrameSession {
     if (frame === null || transform === null) return undefined;
     const revision = this.#revision;
     const replacement = transformSelectionFrame(frame, transform);
-    return {
-      apply: () => this.#replaceAtRevision(revision, replacement),
-      revert: () => this.#replaceAtRevision(revision, frame),
-    };
+    return this.#rebaseEffect(frame, replacement, revision);
   }
 
   public rebase(
@@ -105,9 +102,14 @@ export class SelectionFrameSession {
     replacement: OrientedSelectionFrame,
     revision: number,
   ): SelectionFrameHistoryEffect {
+    const session = new WeakRef(this);
+    const replace = (next: OrientedSelectionFrame) => {
+      const current = session.deref();
+      if (current !== undefined) current.#replaceAtRevision(revision, next);
+    };
     return {
-      apply: () => this.#replaceAtRevision(revision, replacement),
-      revert: () => this.#replaceAtRevision(revision, frame),
+      apply: () => replace(replacement),
+      revert: () => replace(frame),
     };
   }
 

@@ -53,8 +53,8 @@ export function createObsidianEmbedPasteController(
         }),
     },
     documents: {
-      createAndReadBack: (path, content, maximumBytes) =>
-        files.createAndReadBack(path, content, maximumBytes),
+      createOwnedAndReadBack: (path, content, maximumBytes, onCreated) =>
+        files.createOwnedAndReadBack(path, content, maximumBytes, onCreated),
       readWithMetadataGuard: (path, maximumBytes) =>
         files.readWithMetadataGuard(path, maximumBytes),
     },

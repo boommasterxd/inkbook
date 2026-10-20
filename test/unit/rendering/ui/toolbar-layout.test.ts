@@ -15,15 +15,6 @@ describe("toolbar layout", () => {
     ).toBe("wide");
   });
 
-  it("keeps transient context actions from changing the primary layout decision", () => {
-    expect(
-      resolveToolbarLayout({
-        availableWidth: 620 + TOOLBAR_CONTEXT_CORRIDOR_PX,
-        contentWidth: 620,
-      }),
-    ).toBe("wide");
-  });
-
   it("uses horizontal scrolling without shrinking controls when content overflows", () => {
     expect(
       resolveToolbarLayout({

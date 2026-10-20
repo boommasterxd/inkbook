@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { selectionOutputs } from "../../../scripts/ci-execution-plan.mjs";
+import { PERFORMANCE_TEST_MANIFEST } from "../../../scripts/performance-test-manifest.mjs";
 import {
   createSelection,
   inspectChanges,
@@ -10,6 +12,7 @@ import {
   commit,
   createRepository,
   git,
+  mergeBranch,
   write,
 } from "./ci-selection-fixtures.mjs";
 
@@ -84,12 +87,14 @@ describe("affected CI selection", () => {
     const head = await commit(context.root, { "docs/feature.md": "Feature" });
     await git(context.root, "checkout", "--quiet", "main");
     const upstream = await commit(context.root, { "docs/upstream.md": "Upstream" });
-    await git(context.root, "checkout", "--quiet", "feature");
+    await mergeBranch(context.root, "feature");
     const comparison = await inspectChanges({ root: context.root, base: upstream, head });
 
-    expect(comparison.base).toBe(context.base);
+    expect(comparison.base).toBe(upstream);
+    expect(comparison.mergeBase).toBe(context.base);
+    expect(comparison.merge).toBe(await git(context.root, "rev-parse", "HEAD"));
     expect(comparison.changes).toEqual(["docs/feature.md", "src/domain/value.ts"]);
-    expect((await createSelection({ ...context, base: upstream })).mode).toBe("affected");
+    expect((await createSelection({ ...context, base: upstream, head })).mode).toBe("affected");
   });
 
   it("selects changed test files and supports mjs and tsx test enumeration", async () => {
@@ -123,7 +128,7 @@ describe("affected CI selection", () => {
     const context = await fixture();
     await commit(context.root, { ".github/workflows/gitleaks.yml": "name: gitleaks" });
     expect((await createSelection(context)).tests).toEqual([workflowTest]);
-    await commit(context.root, { "scripts/ci-plan.mjs": "export const plan = 2;" });
+    await commit(context.root, { "scripts/verify-source-layout.mjs": "export const check = 2;" });
     const plan = await createSelection(context);
 
     expect(plan.mode).toBe("affected");
@@ -163,6 +168,64 @@ describe("base graph deletion and renaming", () => {
     expect(plan.mode).toBe("affected");
     expect(plan.tests).toContain(directTest);
     expect(plan.coverage).toEqual(["src/domain/wrapper.ts"]);
+  });
+});
+
+describe("CI infrastructure changes", () => {
+  it("retains every classified performance contract when the manifest changes", async () => {
+    const classified = Object.values(PERFORMANCE_TEST_MANIFEST).flat().sort();
+    const context = await fixture(
+      Object.fromEntries(classified.map((file) => [file, "export {};"])),
+    );
+    await commit(context.root, {
+      "scripts/performance-test-manifest.mjs": "export const changed = true;",
+    });
+    const plan = await createSelection(context);
+
+    expect(plan.tests.filter((file) => file.startsWith("test/performance/"))).toEqual(
+      [...classified, performanceTest].sort(),
+    );
+    expect(selectionOutputs(plan)).toMatchObject({ mode: "full", shared: "true", cadence: "true" });
+  });
+
+  it.each([
+    "scripts/ci-selection.mjs",
+    "scripts/ci-selection-graph.mjs",
+    "scripts/ci-selection-git.mjs",
+    "scripts/ci-execution-plan.mjs",
+    "scripts/ci-plan.mjs",
+    "scripts/ci-runner-output.mjs",
+    "scripts/check-command-plan.mjs",
+    "scripts/check-execution.mjs",
+    "scripts/run-checks.mjs",
+    "scripts/run-ci.mjs",
+    "scripts/run-validated-tests.mjs",
+    "scripts/performance-test-manifest.mjs",
+    "scripts/performance-test-runner.mjs",
+    "scripts/performance-batch.mjs",
+    "scripts/performance-gate.mjs",
+    "scripts/run-performance-tests.mjs",
+  ])("selects complete tests and both shards for execution infrastructure %s", async (filename) => {
+    const invariant = PERFORMANCE_TEST_MANIFEST.invariant[0];
+    const cadence = PERFORMANCE_TEST_MANIFEST.cadenceSensitive[0];
+    const files = { [invariant]: "export {};", [cadence]: "export {};" };
+    const context = await fixture(files);
+    await commit(context.root, { [filename]: "export const changed = true;" });
+    const plan = await createSelection(context);
+
+    expect(plan.mode).toBe("full");
+    expect(plan.tests).toEqual(
+      Object.keys({ ...initialFiles, ...files })
+        .filter((file) => file.includes(".test."))
+        .sort(),
+    );
+    expect(plan.coverage).toContain("src/domain/unrelated.ts");
+    expect(selectionOutputs(plan)).toEqual({
+      mode: "full",
+      shared: "true",
+      cadence: "true",
+      build: "false",
+    });
   });
 });
 
@@ -238,11 +301,13 @@ describe("CI selection conservative fallback", () => {
 
 describe("CI selection validation", () => {
   const valid = {
-    version: 1,
+    version: 2,
     mode: "affected",
     reason: "Dependency selection",
     base: "a".repeat(40),
     head: "b".repeat(40),
+    merge: "c".repeat(40),
+    mergeBase: "a".repeat(40),
     changes: ["src/domain/value.ts"],
     tests: [directTest],
     coverage: ["src/domain/value.ts"],
@@ -252,7 +317,9 @@ describe("CI selection validation", () => {
     null,
     [],
     {},
-    { ...valid, version: 2 },
+    { ...valid, version: 1 },
+    { ...valid, merge: null },
+    { ...valid, mergeBase: null },
     { ...valid, extra: true },
     { ...valid, tests: [] },
     { ...valid, tests: [directTest, directTest] },

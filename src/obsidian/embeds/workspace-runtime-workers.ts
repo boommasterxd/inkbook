@@ -211,7 +211,7 @@ function createDocumentScheduler(
   refreshOwner: () => WorkScheduler,
 ): WorkScheduler {
   const forwarding = createWindowSchedulerForwarding(current);
-  let disposed = false;
+  const lifetime = new AbortController();
   const waitForOwner = (
     original: WorkScheduler,
     pending: Promise<void>,
@@ -230,14 +230,19 @@ function createDocumentScheduler(
     };
     return pending.then(
       () => {
-        if (disposed) return undefined;
+        lifetime.signal.throwIfAborted();
         const replacement = refreshOwner();
         return replacement === original
           ? undefined
           : continueWith(replacement, (scheduler) => scheduler.checkpoint(signal, priority));
       },
       (error: unknown) => {
-        if (!(error instanceof SchedulerDisposedError) || disposed || signal?.aborted) throw error;
+        if (
+          !(error instanceof SchedulerDisposedError) ||
+          lifetime.signal.aborted ||
+          signal?.aborted
+        )
+          throw error;
         const replacement = refreshOwner();
         if (replacement === original) throw error;
         return continueWith(replacement, resume);
@@ -247,6 +252,8 @@ function createDocumentScheduler(
   return {
     ...forwarding,
     checkpoint: (signal, priority) => {
+      if (lifetime.signal.aborted) return Promise.reject(new SchedulerDisposedError());
+      signal = documentWaitCancellation(lifetime.signal, signal);
       const original = current();
       const resume = (scheduler: WorkScheduler) => scheduler.checkpoint(signal, priority);
       const pending = resume(original);
@@ -255,13 +262,38 @@ function createDocumentScheduler(
         : waitForOwner(original, pending, signal, priority, resume);
     },
     nextFrame: (signal, priority) => {
+      if (lifetime.signal.aborted) return Promise.reject(new SchedulerDisposedError());
+      signal = documentWaitCancellation(lifetime.signal, signal);
       const original = current();
       const resume = (scheduler: WorkScheduler) => scheduler.nextFrame(signal, priority);
       return waitForOwner(original, resume(original), signal, priority, resume);
     },
     dispose: () => {
-      disposed = true;
+      lifetime.abort(new SchedulerDisposedError());
       forwarding.dispose();
+    },
+  };
+}
+
+function documentWaitCancellation(
+  lifetime: FrameCancellation,
+  caller?: FrameCancellation,
+): FrameCancellation {
+  if (caller === undefined) return lifetime;
+  return {
+    get aborted() {
+      return lifetime.aborted || caller.aborted;
+    },
+    get reason() {
+      return caller.aborted ? caller.reason : lifetime.reason;
+    },
+    addEventListener: (type, callback, options) => {
+      lifetime.addEventListener(type, callback, options);
+      caller.addEventListener(type, callback, options);
+    },
+    removeEventListener: (type, callback) => {
+      lifetime.removeEventListener(type, callback);
+      caller.removeEventListener(type, callback);
     },
   };
 }

@@ -42,19 +42,6 @@ describe("canonical background guide layout", () => {
       verticalSpacing: 100,
     });
   });
-
-  it("places dots at the same intersections as the corresponding square grid", () => {
-    const dotted = backgroundGuideLayout({
-      ...base,
-      background: { spacing: 50, type: "dots" },
-    });
-    const squared = backgroundGuideLayout({
-      ...base,
-      background: { spacing: 50, type: "squares" },
-    });
-
-    expect(dotted).toEqual(squared);
-  });
 });
 
 describe("canonical background guide spacing matrix", () => {

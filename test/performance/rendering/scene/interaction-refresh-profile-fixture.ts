@@ -1,4 +1,4 @@
-import type { PageV1 } from "../../../../src/domain/schema/public";
+import type { PageV1, StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
@@ -11,6 +11,24 @@ import {
 } from "../../../unit/rendering/scene/fakes";
 
 export const INTERACTION_ELEMENT_COUNT = 10_000;
+export const LIVE_STROKE_FRAME_COUNT = 450;
+export const LIVE_STROKE_SAMPLES_PER_FRAME = 8;
+export const LIVE_PRESSURE_STYLE: StrokeStyleV1 = {
+  color: { type: "theme-text" },
+  opacity: 1,
+  pressureEnabled: true,
+  smoothing: 0.5,
+  width: 4,
+};
+
+export function createLivePressureSample(index: number, frameDurationMs: number, dense = false) {
+  return {
+    pressure: 0.35 + (index % 11) * 0.05,
+    time: index * frameDurationMs,
+    x: index * 0.75,
+    y: 50 + Math.sin(index / (dense ? 1 : 20)) * 25,
+  };
+}
 
 export const INTERACTION_PAGE: PageV1 = {
   activeBufferLines: 3,

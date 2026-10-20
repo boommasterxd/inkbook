@@ -24,6 +24,11 @@ const EXACT_PREVIEW_ELEMENT_LIMIT = 256;
 const EXACT_PREVIEW_WORK_LIMIT = 16_384;
 const EXACT_STROKE_PREVIEW_POINT_LIMIT = 256;
 
+/** Linear replacements consume one geometry-work unit each, without stroke samples. */
+export function exceedsExactLinearPreviewWork(elementCount: number): boolean {
+  return elementCount > Math.min(EXACT_PREVIEW_ELEMENT_LIMIT, EXACT_PREVIEW_WORK_LIMIT);
+}
+
 export function exceedsExactPreviewWork(
   elements: readonly InkElementV1[],
   planner: SelectionReplacementPlanner,
@@ -49,6 +54,7 @@ function hasLongStroke(elements: readonly InkElementV1[]): boolean {
 export interface ReplacementWorkOptions {
   readonly countStrokeSamples?: boolean;
   readonly includeReverseDependencies?: boolean;
+  readonly hasLinearConnectionTarget?: boolean;
 }
 
 export function exceedsReplacementWork(
@@ -59,6 +65,8 @@ export function exceedsReplacementWork(
   options: ReplacementWorkOptions = {},
 ): boolean {
   if (elements.length > elementLimit) return true;
+  // A linear target may reach the complete connection graph even without dependents.
+  if (options.hasLinearConnectionTarget || hasLinearConnectionDependencies(elements)) return true;
   let work = 0;
   for (const element of elements) {
     work +=
@@ -71,4 +79,16 @@ export function exceedsReplacementWork(
   const dependencyLimit = Math.min(elementLimit - elements.length, workLimit - work);
   const targetIds = elements.map(({ id }) => id);
   return planner.countReverseDependencies(targetIds, dependencyLimit) > dependencyLimit;
+}
+
+export function hasLinearConnectionDependencies(elements: readonly InkElementV1[]): boolean {
+  return elements.some(hasLinearConnectionTarget);
+}
+
+function hasLinearConnectionTarget(element: InkElementV1): boolean {
+  return (
+    (element.kind === "line" || element.kind === "arrow") &&
+    (element.startConnection?.anchor.kind === "linear-endpoint" ||
+      element.endConnection?.anchor.kind === "linear-endpoint")
+  );
 }

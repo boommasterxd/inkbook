@@ -175,7 +175,10 @@ export class SelectionHandleSession {
       this.#valid = true;
       const transform = this.#previewTransform(true);
       return {
-        exactElements: [],
+        exactElements:
+          this.#action.kind === "linear-endpoint" || this.#action.kind === "linear-bend"
+            ? this.#replaceActionTarget()
+            : [],
         exactPreviewTruncated: true,
         previewFrame: this.#previewFrame(),
         snapCandidate: this.#snapCandidate,
@@ -451,6 +454,9 @@ export class SelectionHandleSession {
   }
 
   #replacementWorkOptions(): ReplacementWorkOptions {
+    if (this.#snapCandidate?.anchor.kind === "linear-endpoint") {
+      return { hasLinearConnectionTarget: true };
+    }
     if (this.#action.kind === "move") return MOVE_REPLACEMENT_WORK;
     return this.#action.kind === "table-header" || this.#action.kind === "table-column"
       ? TABLE_SEPARATOR_REPLACEMENT_WORK

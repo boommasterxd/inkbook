@@ -209,16 +209,31 @@ describe("existing SVG save verification", () => {
     expect(vault.readCount()).toBe(1);
   });
 
-  it("keeps the file dirty when read-back proof fails", async () => {
+  it("rejects failed read-back verification after writing the prepared output", async () => {
     const vault = memoryVault();
+    let verificationCount = 0;
     await expect(
       saveExistingFile(
-        { path: "page.svg", expectedBase: base, output, outputHash: "wrong", revision: 2 },
+        { path: "page.svg", expectedBase: base, output, outputHash, revision: 2 },
         { currentRevision: () => 2 },
         vault,
-        verifier,
+        {
+          verify: async (content, revision, hash) => {
+            verificationCount += 1;
+            expect({ content, revision, hash }).toEqual({
+              content: output,
+              revision: 2,
+              hash: outputHash,
+            });
+            return false;
+          },
+        },
       ),
     ).rejects.toMatchObject({ code: "read-back-mismatch" } satisfies Partial<SaveError>);
+    expect(verificationCount).toBe(1);
+    expect(vault.processCount()).toBe(1);
+    expect(vault.readCount()).toBe(2);
+    expect(vault.value()).toBe(output);
   });
 
   it("binds a preverified preflight to the confirmed revision and hash", async () => {
@@ -265,6 +280,21 @@ describe("existing SVG save read limits", () => {
 });
 
 describe("save output trust boundary", () => {
+  it("rejects a malformed prepared output hash before reading or writing", async () => {
+    const vault = memoryVault();
+    await expect(
+      saveExistingFile(
+        { path: "page.svg", expectedBase: base, output, outputHash: "wrong", revision: 2 },
+        { currentRevision: () => 2 },
+        vault,
+        verifier,
+      ),
+    ).rejects.toMatchObject({ code: "read-back-mismatch" } satisfies Partial<SaveError>);
+    expect(vault.readCount()).toBe(0);
+    expect(vault.processCount()).toBe(0);
+    expect(vault.value()).toBe(base);
+  });
+
   it("rejects unsafe SVG with its correct hash before any vault write", async () => {
     const vault = memoryVault();
     const unsafe = "<svg/>";

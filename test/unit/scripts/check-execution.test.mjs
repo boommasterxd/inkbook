@@ -22,7 +22,7 @@ beforeEach(async () => {
     runnerPath,
     `import { runExclusiveChecks } from ${JSON.stringify(executionUrl)};
 process.exitCode = await runExclusiveChecks(JSON.parse(process.argv[2]), {
-  port: Number(process.argv[3]), cwd: process.cwd()
+  port: Number(process.argv[3]), cwd: process.cwd(), timeoutMs: Number(process.argv[4]) || undefined
 });`,
   );
   await writeFile(
@@ -43,11 +43,15 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-function start(commands, cwd = directory) {
-  const child = spawn(process.execPath, [runnerPath, JSON.stringify(commands), String(port)], {
-    cwd,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+function start(commands, cwd = directory, timeoutMs) {
+  const child = spawn(
+    process.execPath,
+    [runnerPath, JSON.stringify(commands), String(port), String(timeoutMs)],
+    {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
   const events = new EventEmitter();
   let output = "";
   for (const stream of [child.stdout, child.stderr]) {
@@ -151,6 +155,63 @@ describe("exclusive check execution", () => {
     ]).completed;
     expect(result.code).toBe(1);
     expect(result.output).toContain("Cannot run check");
+    expect(result.output).not.toContain("MUST_NOT_RUN");
+    expect(await start([]).completed).toMatchObject({ code: 0 });
+  });
+});
+
+describe("nested and timed check execution", () => {
+  it("drains a nested runner's ignored grandchild before releasing the outer guard", async () => {
+    const nestedCommand = command(
+      'import { spawn } from "node:child_process"; ' +
+        'process.on("SIGTERM", () => console.log("nested terminated")); ' +
+        `const child = spawn(process.execPath, [${JSON.stringify(leafPath)}], { stdio: "inherit" }); ` +
+        "console.log(`grandchild pid ${child.pid}`);",
+    );
+    const owner = start([
+      command(
+        `import { executeCommands } from ${JSON.stringify(executionUrl)}; ` +
+          `process.exitCode = await executeCommands(${JSON.stringify([nestedCommand])}, process.cwd(), { shutdownGraceMs: 500 });`,
+      ),
+      command('console.log("MUST_NOT_RUN")'),
+    ]);
+    await owner.waitFor("ready");
+    owner.child.kill("SIGTERM");
+    await owner.waitFor("nested terminated");
+    expect(await start([]).completed).toMatchObject({ code: 75 });
+    const result = await owner.completed;
+    expect(result.code).toBe(137);
+    expect(result.output).not.toContain("MUST_NOT_RUN");
+    const pid = Number(result.output.match(/grandchild pid (\d+)/)[1]);
+    if (process.platform === "linux") {
+      const stat = await readFile(`/proc/${pid}/stat`, "utf8").catch((error) => {
+        expect(error.code).toBe("ENOENT");
+        return undefined;
+      });
+      if (stat !== undefined)
+        expect(["Z", "X"]).toContain(
+          stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3),
+        );
+    } else expect(() => process.kill(pid, 0)).toThrow();
+    expect(await start([]).completed).toMatchObject({ code: 0 });
+  });
+
+  it("cleans up a timed-out process group before releasing ownership or running successors", async () => {
+    const owner = start(
+      [
+        command(
+          'process.on("SIGTERM", () => { console.log("deadline stopped"); process.exit(0); }); console.log("ready"); process.stdin.resume();',
+        ),
+        command('console.log("MUST_NOT_RUN")'),
+      ],
+      directory,
+      500,
+    );
+    await owner.waitFor("ready");
+    const result = await owner.completed;
+    expect(result.code).toBe(143);
+    expect(result.output).toContain("Check execution exceeded its timeout.");
+    expect(result.output).toContain("deadline stopped");
     expect(result.output).not.toContain("MUST_NOT_RUN");
     expect(await start([]).completed).toMatchObject({ code: 0 });
   });

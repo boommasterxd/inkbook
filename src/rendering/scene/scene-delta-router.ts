@@ -20,9 +20,11 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
   let visibilityChanges: SceneDeltaEntry[] | undefined;
   let orderIds: string[] | undefined;
   let onlyNewOrder = true;
+  let membershipChanged = false;
   let onlyRemovals = !ports.content.hasVisibilityWork;
   for (const affected of delta.affected) {
     const localMembership = completeMembershipChange(affected, ports.store);
+    membershipChanged ||= localMembership;
     onlyRemovals &&= completeRemoval(affected, localMembership);
     prepareMembershipFade(affected, delta.historyReplay, ports.content);
     let geometryDirty = false;
@@ -47,15 +49,25 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
     visibilityChanges ??= [];
     visibilityChanges.push(affected);
   }
-  if (orderIds !== undefined) {
-    ports.content.markOrders(orderIds);
-    if (orderIds.length !== 1 || !onlyNewOrder) ports.markOrderVisibilityDirty();
-  }
+  routeOrderChanges(orderIds, onlyNewOrder, membershipChanged, ports);
   if (visibilityChanges !== undefined) {
     if (onlyRemovals && ports.visibility.beginRemoval()) ports.invalidateVisibility(true);
     else invalidateVisibility(visibilityChanges, ports);
   }
   invalidateDetachedElements(delta, ports);
+}
+
+function routeOrderChanges(
+  orderIds: string[] | undefined,
+  onlyNewOrder: boolean,
+  membershipChanged: boolean,
+  ports: SceneDeltaRoutingPorts,
+): void {
+  // Membership shifts dense ranks while preserving retained SVG order.
+  if (membershipChanged) ports.detachedCache?.invalidateRanks();
+  if (orderIds === undefined) return;
+  ports.content.markOrders(orderIds);
+  if (orderIds.length !== 1 || !onlyNewOrder) ports.markOrderVisibilityDirty();
 }
 
 function completeRemoval(change: SceneDeltaEntry, membership: boolean): boolean {

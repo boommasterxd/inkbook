@@ -1,4 +1,5 @@
 import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
+import { clearTimeout, setTimeout } from "node:timers";
 import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../src/domain/schema/public";
 import { CoalescedExportTarget } from "../../../src/persistence/worker/coalesced-export";
 import type { ExportSuccess } from "../../../src/persistence/worker/protocol";
@@ -63,52 +64,65 @@ async function runLifecycle(
   const runtime = createRuntime(() => {
     transientPeak = Math.max(transientPeak, additionalBytes(baseline));
   });
-  let exported = await fullExport(runtime, snapshot);
-  checkpoint(checkpoints, baseline, run, "full-export");
-  let adopted = await handoff(runtime, exported, checkpoints, baseline, run, "full");
-  const fullOutputBytes = new TextEncoder().encode(adopted.output).byteLength;
-  exported = null as never;
-  checkpoint(checkpoints, baseline, run, "full-result-retained");
-  materializeVaultWrite(adopted.output, checkpoints, baseline, run, "full");
-  adopted = null as never;
-  runtime.requestPrewarm();
-  await waitForPrewarm(runtime, snapshot.elements.length);
-  checkpoint(checkpoints, baseline, run, "full-output-released-prewarmed");
+  let result: Omit<LifecycleResult, "released">;
+  try {
+    let exported = await fullExport(runtime, snapshot);
+    checkpoint(checkpoints, baseline, run, "full-export");
+    let adopted = await handoff(runtime, exported, checkpoints, baseline, run, "full");
+    const fullOutputBytes = new TextEncoder().encode(adopted.output).byteLength;
+    exported = null as never;
+    checkpoint(checkpoints, baseline, run, "full-result-retained");
+    materializeVaultWrite(adopted.output, checkpoints, baseline, run, "full");
+    adopted = null as never;
+    runtime.requestPrewarm();
+    await waitForPrewarm(runtime, snapshot.elements.length);
+    checkpoint(checkpoints, baseline, run, "full-output-released-prewarmed");
 
-  const coalesced = coalesceCommits(snapshot);
-  snapshot = coalesced.snapshot;
-  checkpoint(checkpoints, baseline, run, "five-commit-coalesced-target");
-  exported = await incrementalExport(runtime, coalesced.plan);
-  checkpoint(checkpoints, baseline, run, "incremental-export");
-  adopted = await handoff(runtime, exported, checkpoints, baseline, run, "incremental");
-  const recovery = recoveryRetention(adopted, snapshot.revision - COALESCED_COMMITS);
-  exported = null as never;
-  checkpoint(checkpoints, baseline, run, "conflict-recovery-retention");
-  materializeVaultWrite(adopted.output, checkpoints, baseline, run, "incremental");
-  if (recovery.proof.revision !== adopted.modelRevision) {
-    throw new Error("Invalid recovery proof.");
+    const coalesced = coalesceCommits(snapshot);
+    snapshot = coalesced.snapshot;
+    checkpoint(checkpoints, baseline, run, "five-commit-coalesced-target");
+    exported = await incrementalExport(runtime, coalesced.plan);
+    checkpoint(checkpoints, baseline, run, "incremental-export");
+    adopted = await handoff(runtime, exported, checkpoints, baseline, run, "incremental");
+    const recovery = recoveryRetention(adopted, snapshot.revision - COALESCED_COMMITS);
+    exported = null as never;
+    checkpoint(checkpoints, baseline, run, "conflict-recovery-retention");
+    materializeVaultWrite(adopted.output, checkpoints, baseline, run, "incremental");
+    if (recovery.proof.revision !== adopted.modelRevision) {
+      throw new Error("Invalid recovery proof.");
+    }
+    const outputBytes = new TextEncoder().encode(adopted.output).byteLength;
+    adopted = null as never;
+    snapshot = null;
+    runtime.requestPrewarm();
+    await waitForPrewarm(runtime, coalesced.snapshot.elements.length);
+    checkpoint(checkpoints, baseline, run, "incremental-output-released-prewarmed");
+    checkpoint(checkpoints, baseline, run, "save-cycle-retained");
+    const activeInstrumentation = runtime.instrumentation;
+    checkpoints.push({ bytes: transientPeak, phase: "worker-slice-transient-peak", run });
+    result = {
+      cacheBytes: activeInstrumentation.cacheBytes,
+      cacheElements: activeInstrumentation.cacheElements,
+      outputBytes: Math.max(fullOutputBytes, outputBytes),
+    };
+  } finally {
+    runtime.terminate();
   }
-  const outputBytes = new TextEncoder().encode(adopted.output).byteLength;
-  adopted = null as never;
-  snapshot = null;
-  runtime.requestPrewarm();
-  await waitForPrewarm(runtime, coalesced.snapshot.elements.length);
-  checkpoint(checkpoints, baseline, run, "incremental-output-released-prewarmed");
-  checkpoint(checkpoints, baseline, run, "save-cycle-retained");
-  const activeInstrumentation = runtime.instrumentation;
-  checkpoints.push({ bytes: transientPeak, phase: "worker-slice-transient-peak", run });
-  runtime.terminate();
-  return {
-    cacheBytes: activeInstrumentation.cacheBytes,
-    cacheElements: activeInstrumentation.cacheElements,
-    outputBytes: Math.max(fullOutputBytes, outputBytes),
-    released: runtime.instrumentation,
-  };
+  return { ...result, released: runtime.instrumentation };
 }
 
 async function waitForPrewarm(runtime: DocumentWorkerRuntime, elementCount: number): Promise<void> {
-  while (runtime.instrumentation.cacheElements < elementCount) {
-    await new Promise<void>((resolve) => setImmediate(resolve));
+  let expired = false;
+  const timeout = setTimeout(() => {
+    expired = true;
+  }, 10_000);
+  try {
+    while (runtime.instrumentation.cacheElements < elementCount) {
+      if (expired) throw new Error("Memory lifecycle prewarm exceeded its execution timeout.");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

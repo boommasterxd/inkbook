@@ -47,54 +47,40 @@ function createWindow() {
 }
 
 describe("production document worker factory", () => {
-  it("releases workers and owned URLs across repeated runtime cycles", async () => {
+  it("bootstraps named workers and releases each worker and URL once across repeated cycles", async () => {
     FakeWorker.instances = [];
     FakeWorker.constructionError = undefined;
-    const { owningWindow, revoked } = createWindow();
+    const { blobs, owningWindow, revoked } = createWindow();
 
     for (let cycle = 0; cycle < 25; cycle += 1) {
       const runtime = await createDocumentRuntime(
         `session-${String(cycle)}`,
         cycle + 1,
         owningWindow,
-        { workScheduler: createTestWorkScheduler(), frameIntervalMilliseconds: () => 1_000 / 60 },
+        { workScheduler: createTestWorkScheduler(), frameIntervalMilliseconds: () => 10 },
       );
+      expect(FakeWorker.instances[cycle]?.options).toEqual({ name: "inkbook-document-worker" });
+      expect(FakeWorker.instances[cycle]?.sentMessages).toEqual([
+        {
+          frameIntervalMilliseconds: 10,
+          sessionId: `session-${String(cycle)}`,
+          sliceMilliseconds: 8,
+          type: "inkbook-worker-bootstrap",
+          workerEpoch: cycle + 1,
+        },
+      ]);
       runtime.terminate();
+      runtime.terminate();
+      expect(revoked).toHaveLength(cycle + 1);
     }
 
     expect(FakeWorker.instances).toHaveLength(25);
     expect(FakeWorker.instances.every(({ terminated }) => terminated)).toBe(true);
     expect(revoked).toHaveLength(25);
-  });
-
-  it("creates one named worker and releases its Blob URL exactly once", async () => {
-    FakeWorker.instances = [];
-    FakeWorker.constructionError = undefined;
-    const { blobs, owningWindow, revoked } = createWindow();
-
-    const runtime = await createDocumentRuntime("session-a", 3, owningWindow, {
-      workScheduler: createTestWorkScheduler(),
-      frameIntervalMilliseconds: () => 10,
-    });
-
-    expect(FakeWorker.instances).toHaveLength(1);
-    expect(FakeWorker.instances[0]?.options).toEqual({ name: "inkbook-document-worker" });
-    expect(FakeWorker.instances[0]?.sentMessages).toEqual([
-      {
-        frameIntervalMilliseconds: 10,
-        sessionId: "session-a",
-        sliceMilliseconds: 8,
-        type: "inkbook-worker-bootstrap",
-        workerEpoch: 3,
-      },
-    ]);
     const workerBlob = blobs[0];
     if (workerBlob === undefined) throw new Error("Expected a worker Blob.");
     await expect(workerBlob.text()).resolves.toContain("inkbook-worker-bootstrap");
-    runtime.terminate();
-    runtime.terminate();
-    expect(FakeWorker.instances[0]?.terminated).toBe(true);
-    expect(revoked).toEqual(["blob:inkbook-worker"]);
+    expect(revoked.every((url) => url === "blob:inkbook-worker")).toBe(true);
   });
 
   it("rejects decompression errors before constructing a worker or Blob URL", async () => {

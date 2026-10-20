@@ -100,22 +100,10 @@ describe("bounded performance batch execution", () => {
     expect(args).toContain("--isolate");
     expect(args).toContain("--fileParallelism=false");
     expect(args).toContain("--reporter=json");
+    expect(args).not.toContain("--cache=false");
     expect(args.indexOf(file)).toBeLessThan(args.indexOf(secondFile));
     expect(options.env.INKBOOK_PERFORMANCE_REFRESH_RATE).toBe("240");
     expect(options.detached).toBeUndefined();
-  });
-
-  it("leaves ordinary contract cache behavior unchanged", async () => {
-    const child = mockChild();
-    const pending = runPerformanceBatch({
-      root,
-      testFiles: [file],
-      refreshRate: 240,
-    });
-    child.stdout.write(report().stdout);
-    child.emit("close", 0, null);
-    expect((await pending).violations).toEqual([]);
-    expect(vi.mocked(spawn).mock.calls[0][1]).not.toContain("--cache=false");
   });
 
   it("terminates its child when the fixed duration expires", async () => {

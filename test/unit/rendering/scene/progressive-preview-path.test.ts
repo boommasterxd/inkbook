@@ -26,11 +26,9 @@ describe("progressive canonical preview geometry", () => {
         ]).flat(),
       };
       const { job, step } = observeProgressivePath(element);
-      let steps = 1;
-      while (!step()) {
+      const steps = completePreview(step, () => {
         expect(job.parts).toBeUndefined();
-        steps += 1;
-      }
+      });
       expect(job.parts).toEqual(buildElementPathParts(element));
       if (count === 4096) expect(steps).toBeGreaterThan(60);
     },
@@ -52,9 +50,9 @@ describe("progressive canonical preview geometry", () => {
           ]).flat(),
         };
         const { job, step } = observeProgressivePath(element);
-        while (!step()) {
+        completePreview(step, () => {
           expect(job.parts).toBeUndefined();
-        }
+        });
         expect(job.parts).toEqual(buildElementPathParts(element));
         expect(job.parts![0]!.d.match(/M/gu)).toHaveLength(1);
       }
@@ -128,22 +126,23 @@ it("releases smoothed centers and partial strings after completing canonical geo
   expect(job.memoryUsage()).toBe(0);
   expect(job.step()).toBe(false);
   expect(job.memoryUsage()).toBeGreaterThan(0);
-  while (!job.step()) {
-    const retainedWindows = usage.mock.results.reduce(
-      (bytes, result) => bytes + Number(result.value),
-      0,
-    );
-    expect(job.memoryUsage()).toBeGreaterThanOrEqual(retainedWindows);
-  }
+  completePreview(
+    () => job.step(),
+    () => {
+      const retainedWindows = usage.mock.results.reduce(
+        (bytes, result) => bytes + Number(result.value),
+        0,
+      );
+      expect(job.memoryUsage()).toBeGreaterThanOrEqual(retainedWindows);
+    },
+  );
   expect(usage.mock.calls.length).toBeGreaterThan(0);
   expect(job.memoryUsage()).toBe(job.parts!.reduce((bytes, part) => bytes + part.d.length * 2, 0));
 });
 
 it("keeps completed path identity when stepped again", () => {
   const job = new ProgressivePreviewPath(indexedStroke(1));
-  while (!job.step()) {
-    /* Complete all geometry slices. */
-  }
+  completePreview(() => job.step());
   const parts = job.parts;
   expect(job.step()).toBe(true);
   expect(job.parts).toBe(parts);
@@ -167,17 +166,18 @@ it("obeys the supplied deadline and releases its suspended-job reserve", () => {
   };
   const job = new ProgressivePreviewPath(element);
   let maximum = 0;
-  while (job.parts === undefined) {
+  completePreview(() => {
     const before = operations;
     job.step();
     maximum = Math.max(maximum, operations - before);
     // Window capacity and bounded generator operations govern uninterrupted work.
-  }
+    return job.parts !== undefined;
+  });
   expect(maximum).toBeGreaterThan(0);
   const deferred = new ProgressivePreviewPath(element);
   let elapsed = 0;
   let suspended = false;
-  while (deferred.parts === undefined) {
+  completePreview(() => {
     elapsed = 0;
     const before = operations;
     deferred.step(17, () => elapsed++);
@@ -188,10 +188,11 @@ it("obeys the supplied deadline and releases its suspended-job reserve", () => {
         windowJobs.PRESSURE_WINDOW_SCRATCH_BYTES,
       );
     }
-  }
+    return deferred.parts !== undefined;
+  });
   expect(suspended).toBe(true);
   expect(deferred.memoryUsage()).toBe(
-    deferred.parts.reduce((bytes, part) => bytes + part.d.length * 2, 0),
+    deferred.parts!.reduce((bytes, part) => bytes + part.d.length * 2, 0),
   );
   expect(job.parts).toEqual(buildElementPathParts(element));
 });
@@ -208,7 +209,10 @@ it("keeps progressing past the former step quota while shared time remains", () 
   });
   const job = new ProgressivePreviewPath(pressureWindowStroke());
   const clock = vi.fn(() => 0);
-  while (operations === 0) job.step(1, clock);
+  completePreview(() => {
+    job.step(1, clock);
+    return operations > 0;
+  });
   expect(operations).toBe(5000);
   job.cancel();
   expect(job.memoryUsage()).toBe(0);
@@ -231,9 +235,7 @@ it("reuses canonical pressure paths and windows without repeating their union", 
     publishPath,
   };
   const fromWindows = new ProgressivePreviewPath(element, port);
-  while (!fromWindows.step()) {
-    /* Read bounded canonical windows without repeating the union. */
-  }
+  completePreview(() => fromWindows.step());
   expect(fromWindows.parts).toEqual(parts);
   expect(prepare).not.toHaveBeenCalled();
   expect(port.publishWindow).not.toHaveBeenCalled();
@@ -255,9 +257,7 @@ it("uses the store's exact window measurement during progressive preparation", (
       return { window, numericBytes: pressureWindows.pressureWindowMemoryUsage(window) };
     },
   });
-  while (!job.step()) {
-    /* Finish bounded windows. */
-  }
+  completePreview(() => job.step());
   expect(windows.length).toBeGreaterThan(0);
   expect(measurement).toHaveBeenCalledTimes(windows.length);
   expect(job.parts).toEqual(buildElementPathParts(element));
@@ -273,9 +273,7 @@ it("recounts a pressure window when a port reports another window's measurement"
       return { window: { kind: "window", additions: [], loops: [] }, numericBytes: 0 };
     },
   });
-  while (!job.step()) {
-    /* Finish bounded windows. */
-  }
+  completePreview(() => job.step());
   expect(published).toBeGreaterThan(0);
   expect(usage).toHaveBeenCalledTimes(published);
 });
@@ -284,7 +282,10 @@ it("cancels a suspended pressure union and releases every derived buffer", () =>
   const element = pressureWindowStroke();
   const prepare = vi.spyOn(windowJobs, "preparePressureWindowSteps");
   const job = new ProgressivePreviewPath(element);
-  while (prepare.mock.calls.length === 0) job.step(0, () => 1);
+  completePreview(() => {
+    job.step(0, () => 1);
+    return prepare.mock.calls.length > 0;
+  });
   expect(job.memoryUsage()).toBeGreaterThanOrEqual(windowJobs.PRESSURE_WINDOW_SCRATCH_BYTES);
   const iterator = prepare.mock.results[0]!.value as Generator;
   const resume = vi.spyOn(iterator, "next");
@@ -302,4 +303,13 @@ function pressureWindowStroke(): StrokeElementV1 {
     ...indexedStroke(1),
     points: Array.from({ length: 192 }, (_, i) => [i, i % 7, (i % 9) / 10]).flat(),
   };
+}
+
+function completePreview(step: () => boolean, onPending: () => void = () => undefined): number {
+  // Match the coarse reconciler-drain safety cap; this is not a performance budget.
+  for (let steps = 1; steps <= 10_000; steps += 1) {
+    if (step()) return steps;
+    onPending();
+  }
+  throw new Error("Preview preparation did not settle within 10,000 steps.");
 }

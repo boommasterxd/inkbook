@@ -70,6 +70,10 @@ describe("Inkbook settings modal", () => {
     }
     const enabledRow = required<HTMLElement>('[data-setting-name="Enable snapping"]');
     const toggle = requiredWithin<HTMLInputElement>(enabledRow, 'input[type="checkbox"]');
+    expect(toggle.getAttribute("aria-label")).toBe("Enable snapping");
+    for (const row of dependentRows) {
+      expect(row.querySelector("input")?.getAttribute("aria-label")).toBe(row.dataset.settingName);
+    }
     toggle.checked = false;
     toggle.dispatchEvent(new Event("change", { bubbles: true }));
 
@@ -111,6 +115,8 @@ describe("Inkbook settings modal scroll preservation", () => {
     const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
     const row = required<HTMLElement>('[data-setting-name="File placement"]');
     const dropdown = requiredWithin<HTMLSelectElement>(row, "select");
+    expect(dropdown.getAttribute("aria-label")).toBe("File placement");
+    dropdown.focus();
     modalContent.scrollTop = 320;
 
     dropdown.value = "custom-vault-folder";
@@ -121,6 +127,7 @@ describe("Inkbook settings modal scroll preservation", () => {
     );
     expect(required<HTMLElement>('[data-setting-name="Custom vault folder"]')).toBeTruthy();
     expect(modalContent.scrollTop).toBe(320);
+    expect(document.activeElement).toBe(required('[aria-label="File placement"]'));
     controller.dispose();
   });
 });
@@ -158,7 +165,10 @@ describe("Inkbook settings modal reset refresh", () => {
               '.inkbook-settings-performance-group [data-setting-name="Reset group to defaults"]',
             );
 
-      reset.click();
+      reset.focus();
+      reset.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
 
       await vi.waitFor(() => {
         expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(300);
@@ -174,6 +184,13 @@ describe("Inkbook settings modal reset refresh", () => {
         );
       });
       expect(modalContent.scrollTop).toBe(240);
+      expect(document.activeElement).toBe(
+        scope === "all"
+          ? required('[data-setting-name="Reset all Inkbook settings"]')
+          : required(
+              '.inkbook-settings-performance-group [data-setting-name="Reset group to defaults"]',
+            ),
+      );
       controller.dispose();
       vi.restoreAllMocks();
     },

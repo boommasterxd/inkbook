@@ -241,9 +241,9 @@ The deterministic semantic anchor order is: `box` positions in their `BoxAnchorV
 
 Resolve an anchor in the target's unrotated canonical geometry, then rotate it clockwise around the target pivot. `start` and `end` store the last successfully resolved page point and MUST equal the current resolved anchor within 0.001 page units while connected. A dangling target, incompatible anchor kind, invalid index, cycle, or mismatched resolved point makes a file invalid and read-only.
 
-The store maintains a derived reverse map from target ID to `{ linearId, endpoint }` references. A target move, scale, rotation, shape-handle edit, axis edit, or outer table geometry edit resolves only its dependents, updates their endpoint coordinates, bounds, path caches, and spatial-index records, then commits the target and dependents atomically. Header and inner separator edits do not change outer table anchors and therefore do not visit reverse dependencies. The bend remains in page coordinates. During a live target gesture, visible dependent paths update in the same frame without tweening.
+The store maintains a derived reverse map from target ID to `{ linearId, endpoint }` references. A target move, scale, rotation, shape-handle edit, axis edit, or outer table geometry edit resolves only its dependents, updates their endpoint coordinates, bounds, path caches, and spatial-index records, then commits the target and dependents atomically. Header and inner separator edits do not change outer table anchors and therefore do not visit reverse dependencies. The bend remains in page coordinates. During a live target gesture, visible dependent paths update in the same frame without tweening within the [exact-preview work limits](quality-and-testing.md#performance-architecture-rules). Larger targeted handle cohorts retain the edited line's immediate local feedback until their complete atomic commit.
 
-Bounds and geometry validation treat the target and all re-resolved dependents as one atomic candidate. Anchors and dependent bounds are recomputed from the exact proposed target transform. No target or dependent receives an edge correction. If any resulting line or arrow is shorter than 8 page units, or the complete candidate violates geometry, resource, or derived-height limits, the complete command is rejected. Connected linear geometry therefore never needs a zero-vector node-direction fallback.
+Bounds and geometry validation treat the target and all re-resolved dependents as one atomic candidate. Anchors and dependent bounds are recomputed from the exact proposed target transform. No target or dependent receives an edge correction. Connected endpoints may coincide, including when a target transform collapses a connected line or arrow to a point; collapsed geometry has no arrow node. If the complete candidate violates geometry, resource, or derived-height limits, the complete command is rejected.
 
 Dragging a connected endpoint previews a free point. Release on a valid candidate replaces the connection; release elsewhere stores `null` and the free point. Moving an entire line or arrow moves its bend and free endpoints; connected endpoints remain at their anchors. Removing a target first replaces every dependent connection with `null` at its last resolved endpoint in the same removal command. Undo and Redo restore both records atomically.
 
@@ -264,7 +264,7 @@ interface BoxShapeElementV1 extends ElementBaseV1 {
 
 - Width and height are nonnegative with no minimum size. Zero-size geometry remains valid.
 - Rotation occurs around the bounds center.
-- Dragging a closed shape in any direction sets `x = min(start.x, end.x)`, `y = min(start.y, end.y)`, `width = max(1, abs(end.x - start.x))`, and `height = max(1, abs(end.y - start.y))`.
+- Dragging a closed shape in any direction sets `x = min(start.x, end.x)`, `y = min(start.y, end.y)`, `width = abs(end.x - start.x)`, and `height = abs(end.y - start.y)`, with canonical rounding and no positive minimum extent.
 - Normalized vertices are triangle `[(0.5,0),(1,1),(0,1)]`, diamond `[(0.5,0),(1,0.5),(0.5,1),(0,0.5)]`, and parallelogram `[(0.2,0),(1,0),(0.8,1),(0,1)]`. For an octagon, let `i = min(width,height) * 0.293`, `rx = i / width`, and `ry = i / height`; its vertices are `[(rx,0),(1-rx,0),(1,ry),(1,1-ry),(1-rx,1),(rx,1),(0,1-ry),(0,ry)]`.
 - The parallelogram horizontal inset is 20 percent of width.
 - The octagon corner inset is `min(width, height) * 0.293`.
@@ -314,10 +314,10 @@ interface TableElementV1 extends ElementBaseV1 {
 
 - A table is one atomic element made from inner vertical column separators and one horizontal header separator. It has a logical outer rectangle for bounds, selection, culling, scaling, and connection anchors, but that rectangle is not rendered or hit-tested as painted table geometry. New tables start with equal-width columns; edited tables may retain explicit separator offsets.
 - It contains no row separators and no editable text.
-- Column count is an integer from 1 through 12 and defaults to 3.
+- Column count is an integer from 1 through 12. The built-in Table tool default is 2.
 - `columnWidth` is canonical persisted geometry. Total table width is always derived as `columns * columnWidth` and is not stored separately. Column width and total height are nonnegative with no minimum size.
 - `columnOffsets`, when present, contains exactly `columns - 1` nondecreasing local x positions in the inclusive range `0..columns * columnWidth`. Equal offsets and offsets on either logical outer edge are valid. Its absence is the equal-column representation, where separators are derived from `columnWidth`.
-- Initial header height is `min(max(24, height * 0.25), height / 2)`, rounded to canonical precision. Later separator editing accepts the inclusive logical range `0..height`.
+- Initial header height is `min(max(24, height * 0.25), height / 2)`, rounded to canonical precision and reduced by 0.001 if rounding would exceed half the height. Later separator editing accepts the inclusive logical range `0..height`.
 - For table creation, let `sx = end.x >= start.x ? 1 : -1` and `sy = end.y >= start.y ? 1 : -1`. Canonicalize `columnWidth = abs(end.x - start.x) / columns` once, then derive `width = columns * columnWidth`. Set `height = abs(end.y - start.y)`, `x = sx > 0 ? start.x : start.x - width`, and `y = sy > 0 ? start.y : start.y - height`. Crossing the start point therefore changes the expanding direction without producing negative dimensions. The derived width may differ from the raw drag width by the canonical rounding of one column, but every column remains exactly equal.
 - For a column-count edit from `columns` to `newColumns`, retain the canonical `columnWidth` unchanged and derive `oldWidth = columns * columnWidth` and `newWidth = newColumns * columnWidth`. Adding columns therefore extends the local right side, while removing columns removes local rightmost columns and shrinks the table. The command does not redistribute the retained columns across the old total width, and repeated count changes cannot accumulate column-width drift.
 - The rendered local left edge is the fixed anchor of a column-count edit. Let `R` rotate a vector clockwise by `rotation`, `oldPivot` be the pre-command pivot, and `deltaWidth = newWidth - oldWidth`. Calculate the unrounded candidate `newPivot = oldPivot + R({ x: deltaWidth / 2, y: 0 })`, `newX = newPivot.x - newWidth / 2`, and `newY = newPivot.y - height / 2`, then apply the normal canonical rounding once to the resulting stored coordinates. At zero rotation, `newX` equals the previous `x`. After canonicalization, each endpoint of the rendered left edge MUST remain within 0.003 page units of its immediately preceding position. This bound covers the worst-case independent three-decimal rounding of the pivot and bounds coordinates for one edit over the complete rotation range.
@@ -365,8 +365,9 @@ bufferUnit = layoutStep
 occupiedBottom = page.margin when elements is empty,
                  otherwise max(page.margin, maximum element bounds maxY)
 occupiedRows = ceil(max(0, occupiedBottom - page.margin) / layoutStep)
-activeWritableBottom = page.margin
-  + (occupiedRows + page.activeBufferLines) × layoutStep
+minimumEmptyRows = 3 when elements is empty, otherwise 0
+activeRows = max(occupiedRows + page.activeBufferLines, minimumEmptyRows)
+activeWritableBottom = page.margin + activeRows × layoutStep
 lockedStep = layoutStep when elements is empty or background.type is none,
              otherwise background.spacing
 lockedOccupiedRows = ceil(max(0, occupiedBottom - page.margin) / lockedStep)

@@ -10,7 +10,7 @@ import {
 
 import type { EditableDocumentModel } from "../vault-document-session";
 import { ClipboardAdoptionGuard } from "./clipboard-adoption-guard";
-import { applyDocumentHistoryMutation } from "./document-history";
+import { registerAppliedDocumentMutation } from "./document-history";
 import {
   readClipboardCandidates,
   readSynchronousClipboardCandidates,
@@ -113,7 +113,9 @@ function clipboardItem(
   }
   const data: Record<string, Promise<Blob>> = {};
   for (const [mime, text] of formats) {
-    data[mime] = text.then((value) => new ownerWindow.Blob([value], { type: mime }));
+    const blob = text.then((value) => new ownerWindow.Blob([value], { type: mime }));
+    void blob.catch(() => undefined);
+    data[mime] = blob;
   }
   return new ownerWindow.ClipboardItem(data);
 }
@@ -235,7 +237,7 @@ export class ActiveEditorClipboardController {
     if (applied === null) {
       return this.#reportUnavailable("paste", "stale-operation");
     }
-    this.#registerApplied(applied);
+    registerAppliedDocumentMutation(this.#history, this.#model, applied);
     this.#repeatState = invocation.kind === "context-menu" ? undefined : plan.repeatState;
     this.#setPasteAvailable(true);
     this.#onSelectionChanged(new Set(plan.selectedIds));
@@ -312,7 +314,7 @@ export class ActiveEditorClipboardController {
     if (prepared.token === null || cancelled() || !currentSelection()) return false;
     const applied = this.#model.commitPreparedElementMutation(prepared.token);
     if (applied === null) return false;
-    this.#registerApplied(applied);
+    registerAppliedDocumentMutation(this.#history, this.#model, applied);
     return true;
   }
 
@@ -340,27 +342,6 @@ export class ActiveEditorClipboardController {
     });
     if (prepared.token === null || cancelled() || !validatesCurrentDocument()) return null;
     return this.#model.commitPreparedElementMutation(prepared.token);
-  }
-
-  #registerApplied(applied: import("../../../domain/store/public").AppliedElementMutation): void {
-    this.#history.registerApplied({
-      payloadBytes: applied.payloadBytes,
-      redo: () => this.#applyMutation(applied.forward, applied),
-      undo: () => this.#applyMutation(applied.reverse, applied),
-    });
-  }
-
-  #applyMutation(
-    mutation: import("../../../domain/store/public").ElementMutation,
-    replay: import("../../../domain/store/public").AppliedElementMutation,
-  ): Promise<boolean> {
-    const operationGeneration = this.#beginOperation();
-    return applyDocumentHistoryMutation(
-      this.#model,
-      mutation,
-      replay,
-      () => !this.#isPresentationAttached() || !this.#isOperationCurrent(operationGeneration),
-    );
   }
 
   #beginOperation(): number {

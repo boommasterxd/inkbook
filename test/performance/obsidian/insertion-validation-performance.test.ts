@@ -3,6 +3,8 @@ import { expect, it } from "vitest";
 import { EmptyLineInsertionController } from "../../../src/obsidian/commands/empty-line-insertion";
 import { registerInkbookCommands } from "../../../src/obsidian/commands/command-registry";
 import type { Editor } from "obsidian";
+import { guardedRead } from "../../fixtures/obsidian/embed-paste";
+import { ownedFileRead } from "../../fixtures/obsidian/owned-file";
 
 function longNote(lineCount: number) {
   let reads = 0;
@@ -37,10 +39,13 @@ function insertionAttempt(implementation: {
       // Stop at the external validation boundary to exercise the synchronous command-validation boundary.
       verifyCreated: async () => false,
     },
-    files: { createAndReadBack: async (_path, content) => ({ content }) },
+    files: {
+      createOwnedAndReadBack: async (path, content, _maximumBytes, onCreated) =>
+        ownedFileRead(path, guardedRead(path, content), onCreated),
+    },
     links: { generateEmbed: () => "!inkbook[[new.svg]]" },
     notifications: { failed: finish, inserted: finish },
-    trash: { trash: async () => undefined },
+    trash: { trash: async () => undefined, trashCreated: async () => undefined },
   });
   const command = implementation.registerInkbookCommands(
     { addCommand: (registered) => registered },

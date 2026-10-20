@@ -48,3 +48,19 @@ export async function createRepository(files) {
   const base = await commit(root, files);
   return { root, base };
 }
+
+export async function mergeBranch(root, branch) {
+  await git(
+    root,
+    "-c",
+    "user.name=CI Test",
+    "-c",
+    "user.email=ci@example.invalid",
+    "merge",
+    "--quiet",
+    "--no-ff",
+    branch,
+    "-m",
+    "test: simulated merge",
+  );
+}

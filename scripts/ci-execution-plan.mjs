@@ -1,7 +1,5 @@
 import { relative, resolve } from "node:path";
-import { isDeepStrictEqual } from "node:util";
-
-import { validateSelection } from "./ci-selection.mjs";
+import { createSelection } from "./ci-selection.mjs";
 import { PERFORMANCE_TEST_MANIFEST } from "./performance-test-manifest.mjs";
 
 const NON_PRODUCTION = [
@@ -10,7 +8,7 @@ const NON_PRODUCTION = [
   /^test\//,
   /^\.github\//,
   /^\.gitignore$/,
-  /^scripts\/(?:ci-[\w-]+|run-ci|check-command-plan|check-execution|run-checks|run-dead-code-checks|verify-source-layout|verify-work-scheduling|performance-[\w-]+|run-performance-tests)\.mjs$/,
+  /^scripts\/(?:ci-[\w-]+|run-ci|check-command-plan|check-execution|run-checks|run-dead-code-checks|run-validated-tests|verify-source-layout|verify-work-scheduling|performance-[\w-]+|run-performance-tests)\.mjs$/,
   /^(?:vitest\.config\.ts|tsconfig\.(?:test|tooling)\.json|knip\.json|eslint\.config\.mjs|stylelint\.config\.mjs|\.jscpd\.json|\.gitleaks(?:\.toml|-version)|\.prettierignore|\.prettierrc(?:\.json)?|\.dependency-cruiser\.mjs)$/,
 ];
 
@@ -39,10 +37,22 @@ export function validateExpectedOutputs(outputs, environment = process.env) {
   }
 }
 
-export function assertSelectionMatches(plan, expected) {
-  validateSelection(plan);
-  validateSelection(expected);
-  if (!isDeepStrictEqual(plan, expected)) throw new Error("Stale or modified CI selection plan.");
+export async function createExecutionSelection(options, environment = process.env) {
+  const audit = environment["EXPECTED_AUDIT"];
+  if (audit !== undefined && audit !== "success") {
+    throw new Error("Selection audit did not complete successfully.");
+  }
+  if (
+    audit === "success" &&
+    ["MODE", "SHARED", "CADENCE", "BUILD"].some(
+      (name) => environment[`EXPECTED_${name}`] === undefined,
+    )
+  ) {
+    throw new Error("Selection audit requires complete expected selection outputs.");
+  }
+  const plan = await createSelection(options);
+  validateExpectedOutputs(selectionOutputs(plan, options.forceFull), environment);
+  return plan;
 }
 
 export function selectedPerformancePlan(plan, manifestPlan, root) {
@@ -65,7 +75,13 @@ export function selectedPerformancePlan(plan, manifestPlan, root) {
   );
 }
 
-export async function qualityCommands(plan, root, npmEntry, forceFull = false) {
+export async function qualityCommands(
+  plan,
+  root,
+  npmEntry,
+  forceFull = false,
+  auditVerified = false,
+) {
   if (plan.mode === "docs") throw new Error("Documentation plans have no application checks.");
   const tests = plan.tests.filter((file) => /^test\/(?:unit|integration)\//.test(file));
   if (tests.length === 0 && (plan.mode === "full" || !plan.tests.length || plan.coverage.length))
@@ -73,6 +89,7 @@ export async function qualityCommands(plan, root, npmEntry, forceFull = false) {
   const { createCheckCommandPlan } = await import("./check-command-plan.mjs");
   const commands = createCheckCommandPlan("ci:quality", [], npmEntry);
   return commands.flatMap((command) => {
+    if (command.label === "audit" && auditVerified) return [];
     if (
       ["build", "package:verify"].includes(command.label) &&
       selectionOutputs(plan, forceFull).build === "false"
@@ -86,12 +103,11 @@ export async function qualityCommands(plan, root, npmEntry, forceFull = false) {
         label: `test:coverage (${plan.mode === "full" ? "full" : "partial"})`,
         command: process.execPath,
         args: [
-          resolve(root, "node_modules/vitest/vitest.mjs"),
+          resolve(root, "scripts/run-validated-tests.mjs"),
+          ...tests,
+          "--",
           "run",
           ...tests,
-          "--reporter=default",
-          "--reporter=json",
-          "--outputFile=coverage/ci-tests.json",
           ...(coverage.length
             ? ["--coverage", ...coverage.map((file) => `--coverage.include=${file}`)]
             : []),

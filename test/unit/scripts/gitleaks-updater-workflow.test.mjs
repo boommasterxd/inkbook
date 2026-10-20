@@ -30,7 +30,7 @@ beforeAll(async () => {
     );
 });
 
-beforeEach(async () => {
+async function prepareFixture() {
   directory = await fs.mkdtemp(join(tmpdir(), "inkbook-gitleaks-updater-"));
   const commands = join(directory, "commands");
   const runnerTemp = join(directory, "runner");
@@ -58,11 +58,7 @@ beforeEach(async () => {
     await fs.writeFile(path, `#!${process.execPath}\n${providerBoundary}`);
     await fs.chmod(path, 0o755);
   }
-});
-
-afterEach(async () => {
-  await fs.rm(directory, { recursive: true, force: true });
-});
+}
 
 // The workflow's shell, jq transformations and file writes run unchanged. Provider
 // commands only record requests and return isolated responses; nothing is published.
@@ -121,13 +117,18 @@ async function expectUnchanged(result, status = 0) {
   expect(requests).not.toContainEqual(expect.arrayContaining(["create"]));
 }
 
+it("serializes monthly and manual updates without interrupting publication", () => {
+  expect(workflow).toContain('cron: "0 6 1 * *"');
+  expect(workflow).toContain("workflow_dispatch:");
+  expect(workflow).toContain("group: update-gitleaks\n  cancel-in-progress: false");
+  expect(workflow).toContain("timeout-minutes: 10");
+  expect(workflow).not.toContain("--auto");
+});
+
 describe("gitleaks updater workflow execution", () => {
-  it("serializes monthly and manual updates without interrupting publication", () => {
-    expect(workflow).toContain('cron: "0 6 1 * *"');
-    expect(workflow).toContain("workflow_dispatch:");
-    expect(workflow).toContain("group: update-gitleaks\n  cancel-in-progress: false");
-    expect(workflow).toContain("timeout-minutes: 10");
-    expect(workflow).not.toContain("--auto");
+  beforeEach(prepareFixture);
+  afterEach(async () => {
+    await fs.rm(directory, { recursive: true, force: true });
   });
 
   it.each([

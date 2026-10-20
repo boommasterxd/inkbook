@@ -75,8 +75,30 @@ export class SettingsModalContent {
 
   #renderPreservingScroll(): void {
     const scrollTop = this.#container.scrollTop;
+    const focused = this.#container.ownerDocument.activeElement;
+    const row = this.#container.contains(focused)
+      ? focused?.closest<HTMLElement>("[data-inkbook-setting-identity]")
+      : undefined;
+    const identity = row?.dataset.inkbookSettingIdentity;
+    const restoreRow = focused === row;
     this.#options.lifecycle?.prepareLayoutChange();
     this.#render();
+    if (identity !== undefined) {
+      const replacement = [
+        ...this.#container.querySelectorAll<HTMLElement>("[data-inkbook-setting-identity]"),
+      ].find((element) => element.dataset.inkbookSettingIdentity === identity);
+      const target = restoreRow
+        ? replacement
+        : [
+            ...(replacement?.querySelectorAll<HTMLElement>("button, input, select, [tabindex]") ??
+              []),
+          ].find(
+            (element) =>
+              element.tagName === focused?.tagName &&
+              element.getAttribute("aria-label") === focused.getAttribute("aria-label"),
+          );
+      target?.focus({ preventScroll: true });
+    }
     this.#container.scrollTop = scrollTop;
     this.#options.lifecycle?.requestLayout();
   }

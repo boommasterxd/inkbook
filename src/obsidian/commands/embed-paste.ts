@@ -3,6 +3,11 @@ import type { Editor, EditorPosition } from "obsidian";
 import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/markdown-embed";
 import type { MetadataGuardedFileRead } from "../../persistence/saving/save-ports";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import type {
+  CreatedVaultFile,
+  CreatedVaultFileRead,
+  TrackedCreatedVaultFile,
+} from "../vault/file-adapter";
 
 export type EmbedPasteChoice = "duplicate" | "reference";
 
@@ -11,11 +16,12 @@ interface EmbedPasteChoicePort {
 }
 
 interface EmbedPasteDocumentPort {
-  createAndReadBack(
+  createOwnedAndReadBack(
     path: string,
     content: string,
     maximumBytes: number,
-  ): Promise<MetadataGuardedFileRead>;
+    onCreated: (created: TrackedCreatedVaultFile) => void,
+  ): Promise<CreatedVaultFileRead>;
   readWithMetadataGuard(path: string, maximumBytes: number): Promise<MetadataGuardedFileRead>;
 }
 
@@ -29,7 +35,7 @@ interface EmbedPastePlacementPort {
 }
 
 interface EmbedPasteTrashPort {
-  trash(filePath: string): Promise<void>;
+  trashCreated(created: CreatedVaultFile): Promise<void>;
 }
 
 /** The implementation belongs to the document worker or its bounded fallback. */
@@ -195,34 +201,38 @@ export class EmbedPasteController {
     target: CapturedEditorTarget,
     sourceContent: string,
   ): Promise<EmbedPasteOutcome> {
-    let duplicatePath: string | null = null;
-    let created = false;
+    let created: TrackedCreatedVaultFile | undefined;
     try {
-      duplicatePath = await this.#dependencies.placement.preparePath(request.sourcePath);
+      const duplicatePath = await this.#dependencies.placement.preparePath(request.sourcePath);
       if (this.#isAborted()) return { kind: "cancelled" };
       if (!targetIsCurrent(request.editor, target)) return { cleanup: "not-needed", kind: "stale" };
-      const createdRead = await this.#dependencies.documents.createAndReadBack(
+      const { readBack: createdRead } = await this.#dependencies.documents.createOwnedAndReadBack(
         duplicatePath,
         sourceContent,
         FILE_SCHEMA_LIMITS.totalInputBytes,
+        (file) => {
+          created = file;
+        },
       );
-      created = true;
-      if (this.#isAborted()) return this.#discardStale(duplicatePath);
+      if (created === undefined) throw new Error("The duplicate has no creation ownership.");
+      if (this.#isAborted()) return await this.#discardStale(created);
       if (createdRead.identity.path !== duplicatePath || createdRead.content !== sourceContent) {
         throw new Error("The created duplicate did not pass read-back validation.");
       }
-      if (this.#isAborted()) return this.#discardStale(duplicatePath);
+      if (this.#isAborted()) return await this.#discardStale(created);
       const markdown = this.#dependencies.links.generateEmbed(duplicatePath, request.sourcePath);
       if (replaceIfCurrent(request.editor, target, markdown)) {
         return { kind: "inserted", mode: "duplicate" };
       }
-      return this.#discardStale(duplicatePath);
+      return await this.#discardStale(created);
     } catch (error: unknown) {
-      if (created && duplicatePath !== null && this.#isAborted()) {
-        return this.#discardStale(duplicatePath);
+      if (created !== undefined && this.#isAborted()) {
+        return await this.#discardStale(created);
       }
-      if (created && duplicatePath !== null) await this.#trashCreated(duplicatePath);
+      if (created !== undefined) await this.#trashCreated(created);
       return { error, kind: "failed" };
+    } finally {
+      created?.release();
     }
   }
 
@@ -230,8 +240,8 @@ export class EmbedPasteController {
     return this.#dependencies.signal?.aborted === true;
   }
 
-  async #discardStale(path: string): Promise<EmbedPasteOutcome> {
-    return { cleanup: (await this.#trashCreated(path)) ? "trashed" : "failed", kind: "stale" };
+  async #discardStale(created: CreatedVaultFile): Promise<EmbedPasteOutcome> {
+    return { cleanup: (await this.#trashCreated(created)) ? "trashed" : "failed", kind: "stale" };
   }
 
   #insertOriginal(request: EmbedPasteRequest, target: CapturedEditorTarget): EmbedPasteOutcome {
@@ -241,9 +251,9 @@ export class EmbedPasteController {
       : { cleanup: "not-needed", kind: "stale" };
   }
 
-  async #trashCreated(path: string): Promise<boolean> {
+  async #trashCreated(created: CreatedVaultFile): Promise<boolean> {
     try {
-      await this.#dependencies.trash.trash(path);
+      await this.#dependencies.trash.trashCreated(created);
       return true;
     } catch {
       return false;

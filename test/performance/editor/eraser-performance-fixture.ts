@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { eraserQuery } from "../../fixtures/editor/eraser-query";
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
@@ -88,4 +89,28 @@ export function countedEraserStroke(
       },
     }),
   });
+}
+
+export function observeIndexBuffers() {
+  let count = 0;
+  let bytes = 0;
+  vi.stubGlobal(
+    "Float64Array",
+    new Proxy(Float64Array, {
+      construct(target, args, newTarget) {
+        const buffer = Reflect.construct(target, args, newTarget) as Float64Array;
+        count += 1;
+        bytes += buffer.byteLength;
+        return buffer;
+      },
+    }),
+  );
+  return {
+    get count() {
+      return count;
+    },
+    get bytes() {
+      return bytes;
+    },
+  };
 }

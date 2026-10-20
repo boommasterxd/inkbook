@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assertFullPerformanceEnvironment } from "./performance-test-runner.mjs";
+
 export const checkProjectRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const nodeTask = (entry, ...args) => ({ entry, args });
@@ -16,6 +18,7 @@ const tasks = {
   audit: { npm: true, args: ["audit", "--audit-level=high"] },
   build: nodeTask("scripts/build.mjs"),
   "dead-code": nodeTask("scripts/run-dead-code-checks.mjs"),
+  "docs:check": nodeTask("scripts/ci-documentation.mjs"),
   duplication: nodeTask(fileURLToPath(import.meta.resolve("jscpd/run-jscpd.js"))),
   format: nodeTask(fileURLToPath(import.meta.resolve("prettier/bin/prettier.cjs")), "--write", "."),
   "format:check": nodeTask(
@@ -29,7 +32,10 @@ const tasks = {
   "package:verify": nodeTask("scripts/verify-package.mjs"),
   test: nodeTask("node_modules/vitest/vitest.mjs", "run", "test/unit", "test/integration"),
   "test:coverage": nodeTask(
-    "node_modules/vitest/vitest.mjs",
+    "scripts/run-validated-tests.mjs",
+    "test/unit",
+    "test/integration",
+    "--",
     "run",
     "test/unit",
     "test/integration",
@@ -62,6 +68,7 @@ const groups = {
   benchmark: ["test:performance"],
   ci: ["ci:quality", "benchmark"],
   "ci:quality": [
+    "docs:check",
     "format:check",
     "lint",
     "lint:styles",
@@ -84,9 +91,7 @@ export function createCheckCommandPlan(
   extraArgs = [],
   npmEntry = process.env["npm_execpath"],
 ) {
-  if (name === "ci" && (process.env["INKBOOK_PERFORMANCE_SUITE"] ?? "all") !== "all") {
-    throw new Error("npm run ci requires performance suite all; unset shard overrides.");
-  }
+  if (["ci", "benchmark", "test:performance"].includes(name)) assertFullPerformanceEnvironment();
   const group = Object.hasOwn(groups, name) ? groups[name] : undefined;
   if (group !== undefined) {
     if (extraArgs.length > 0 && group.length > 1) {

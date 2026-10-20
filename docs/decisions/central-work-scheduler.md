@@ -51,16 +51,18 @@ Interactive history preparation, including structural mutations, selection style
 Arrange, Store replacement, and their Undo/Redo replay, uses the same FIFO `frame`
 queue as rendering. It must not remain
 behind a scene that can consume the complete allowance on every frame. Pointer
-and camera `input` still precede both. Speculative scene reserves and document
-prewarming wait for interactive leases to finish; required visible publication
+and camera `input` still precede both. Document prewarming waits for interactive
+leases to finish; required visible publication
 continues through the shared frame budget. Other asynchronous preparation keeps
 its default `background` priority. The main-thread encoding and dispatch of a pending
 worker export also use `frame` admission, preserving overlap between export and
 scene work instead of holding the worker idle until rendering finishes. The
-autosave debounce remains unchanged. Required viewport contour preparation and
-its background-purpose model synchronization use frame admission during
-navigation; drawing still gates them. Other requests and result adoption retain
-background admission and defer during navigation. An already running worker
+autosave debounce remains unchanged. Required viewport contour preparation,
+its background-purpose model synchronization, and requests marked
+`navigationReserve: true` use frame admission during navigation. Drawing still
+gates required work and cancels navigation reserves; navigation alone does not
+cancel reserves. Reserves yield to required scene and model work. Other requests
+and result adoption retain background admission and defer during navigation. An already running worker
 export may finish within the central budget, with main-thread adoption deferred.
 This changes admission order,
 not the shared budget or the requirement to yield only when necessary.

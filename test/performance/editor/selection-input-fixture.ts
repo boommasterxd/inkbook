@@ -1,8 +1,4 @@
-import type {
-  InkElementV1,
-  LineElementV1,
-  StrokeElementV1,
-} from "../../../src/domain/schema/public";
+import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import type { SelectionScaleGesture } from "../../../src/editor/selection/selection-scale";
 import { maximumStroke } from "./maximum-stroke-fixture";
 
@@ -17,29 +13,6 @@ export const PASS_THROUGH_PLANNER = {
     replacements,
   }),
 };
-
-export function createHandleLine(): LineElementV1 {
-  return {
-    bend: null,
-    createdAt: 1,
-    end: { x: 400, y: 100 },
-    endConnection: null,
-    endNode: "none",
-    id: "20000000-0000-4000-8000-000000000011",
-    kind: "line",
-    pivot: { x: 250, y: 100 },
-    rotation: 0,
-    start: { x: 100, y: 100 },
-    startConnection: null,
-    startNode: "none",
-    style: {
-      outlineColor: { type: "theme-text" },
-      outlineOpacity: 1,
-      outlineStyle: "solid",
-      outlineWidth: 2,
-    },
-  };
-}
 
 export function createRotatedScaleFixture(
   typed: boolean,

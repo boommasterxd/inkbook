@@ -252,7 +252,10 @@ describe("document scheduler owning-window binding", () => {
       h.first.host.time = h.first.host.frameInterval;
       h.first.host.frame();
       await Promise.resolve();
-      expect(admit).toHaveBeenCalledExactlyOnceWith(caller.signal, "frame");
+      expect(admit).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ aborted: false }),
+        "frame",
+      );
       expect(h.second.host.pendingFrames).toBe(1);
       expect(settled).toBe(false);
       h.second.host.time = h.second.host.frameInterval;
@@ -324,7 +327,10 @@ describe("document scheduler transfer and fallback", () => {
     moveToSecond();
     first.scheduler.dispose();
     await Promise.resolve();
-    expect(nextFrame).toHaveBeenCalledWith(undefined, "background");
+    expect(nextFrame).toHaveBeenCalledWith(
+      expect.objectContaining({ aborted: false }),
+      "background",
+    );
     expect(second.host.pendingFrames).toBe(1);
     second.host.frame();
     await pending;
@@ -340,13 +346,19 @@ describe("document scheduler transfer and fallback", () => {
     first.host.time = first.host.budget;
     const pending = documentScheduler.checkpoint(caller.signal, "frame");
     expect(pending).toBeDefined();
-    expect(firstCheckpoint).toHaveBeenLastCalledWith(caller.signal, "frame");
+    expect(firstCheckpoint).toHaveBeenLastCalledWith(
+      expect.objectContaining({ aborted: false }),
+      "frame",
+    );
     moveToSecond();
     first.scheduler.dispose();
     await Promise.resolve();
     expect(second.host.pendingFrames).toBe(0);
     await pending;
-    expect(secondCheckpoint).toHaveBeenCalledExactlyOnceWith(caller.signal, "frame");
+    expect(secondCheckpoint).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ aborted: false }),
+      "frame",
+    );
 
     const aborted = new AbortController();
     const rejected = documentScheduler.nextFrame(aborted.signal);
@@ -364,30 +376,48 @@ describe("document scheduler transfer and fallback", () => {
     fixture.scheduler.dispose();
     await expect(pending).rejects.toBeInstanceOf(SchedulerDisposedError);
   });
+});
 
-  it("does not resume work after its document scheduler is disposed", async () => {
-    const { first, second, documentScheduler, moveToSecond } = documentTransferHarness();
-    const pending = documentScheduler.nextFrame();
+it.each(["checkpoint", "nextFrame"] as const)(
+  "cancels an owned %s on disposal without closing another document's shared scheduler",
+  async (method) => {
+    const { first, second, runtimes, documentScheduler, moveToSecond } = documentTransferHarness();
+    const caller = new AbortController();
+    const removeListener = vi.spyOn(caller.signal, "removeEventListener");
+    documentScheduler.deadline();
+    first.host.time = first.host.budget;
+    const pending = documentScheduler[method](caller.signal);
+    expect(pending).toBeDefined();
+    const cancelled = expect(pending).rejects.toBeInstanceOf(SchedulerDisposedError);
+    const otherDocument = runtimes.workScheduler("other.svg");
+    const otherPending = otherDocument.nextFrame();
     moveToSecond();
     documentScheduler.dispose();
-    first.scheduler.dispose();
-    await expect(pending).rejects.toBeInstanceOf(SchedulerDisposedError);
+    await cancelled;
+    expect(removeListener).toHaveBeenCalledOnce();
     expect(second.host.pendingFrames).toBe(0);
+    expect(first.host.pendingFrames).toBe(1);
+    first.host.time = first.host.frameInterval;
+    first.host.frame();
+    await otherPending;
+    await expect(documentScheduler[method]()).rejects.toBeInstanceOf(SchedulerDisposedError);
+    otherDocument.dispose();
+    first.scheduler.dispose();
     second.scheduler.dispose();
-  });
+  },
+);
 
-  it("warns once per owning window when fallback is activated", () => {
-    const fixture = windowHarness();
-    const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(fixture));
-    const first = runtimes.createFallback("session-a", 1, () => false, "drawing.svg");
-    const second = runtimes.createFallback("session-b", 1, () => false, "drawing.svg");
+it("warns once per owning window when fallback is activated", () => {
+  const fixture = windowHarness();
+  const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(fixture));
+  const first = runtimes.createFallback("session-a", 1, () => false, "drawing.svg");
+  const second = runtimes.createFallback("session-b", 1, () => false, "drawing.svg");
 
-    expect(fixture.warn).toHaveBeenCalledOnce();
-    expect(fixture.warn).toHaveBeenCalledWith(
-      "Inkbook: Document Worker unavailable or failed; using the bounded main-thread fallback. Performance may be reduced.",
-    );
-    first.terminate();
-    second.terminate();
-    fixture.scheduler.dispose();
-  });
+  expect(fixture.warn).toHaveBeenCalledOnce();
+  expect(fixture.warn).toHaveBeenCalledWith(
+    "Inkbook: Document Worker unavailable or failed; using the bounded main-thread fallback. Performance may be reduced.",
+  );
+  first.terminate();
+  second.terminate();
+  fixture.scheduler.dispose();
 });

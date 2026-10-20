@@ -10,6 +10,7 @@ import { serializeInkbookDocument } from "../../../../src/persistence/serializat
 import { chooseInkbookAction } from "../../../../src/obsidian/dialogs/action-dialog";
 import { CLIPBOARD, FakeEditor, pasteRequest } from "../../../fixtures/obsidian/embed-paste";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { createVaultEvents } from "../../../fixtures/obsidian/vault-events";
 
 const TestTFile = TFile as unknown as new (path: string, size?: number) => TFile;
 const validationScheduling = {
@@ -243,6 +244,7 @@ function createCompositionHarness(
       resolvedLinks: {},
     },
     vault: {
+      ...createVaultEvents(),
       create: async (path: string, text: string) => {
         const file = new TestTFile(path, text.length);
         files.set(path, { file, text });

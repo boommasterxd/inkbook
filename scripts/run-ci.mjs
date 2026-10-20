@@ -1,17 +1,13 @@
-import { readFile, realpath } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { checkProjectRoot } from "./check-command-plan.mjs";
 import { runExclusiveChecks } from "./check-execution.mjs";
 import {
-  assertSelectionMatches,
+  createExecutionSelection,
   qualityCommands,
   selectedPerformancePlan,
-  selectionOutputs,
-  validateExpectedOutputs,
 } from "./ci-execution-plan.mjs";
-import { createSelection, validateSelection } from "./ci-selection.mjs";
-import { parseBatchReport } from "./performance-batch.mjs";
 import {
   collectPerformanceTestPlan,
   reportPerformanceViolations,
@@ -19,19 +15,14 @@ import {
   selectPerformanceRuns,
 } from "./performance-test-runner.mjs";
 
-async function validatedPlan() {
-  const plan = validateSelection(
-    JSON.parse(await readFile(join(checkProjectRoot, ".ci-selection.json"), "utf8")),
-  );
-  const expected = await createSelection({
+function validatedPlan() {
+  return createExecutionSelection({
     root: checkProjectRoot,
     base: process.env["CI_BASE"],
     head: process.env["CI_HEAD"] || "HEAD",
+    merge: process.env["CI_MERGE"],
     forceFull: process.env["CI_EVENT"] !== "pull_request",
   });
-  assertSelectionMatches(plan, expected);
-  validateExpectedOutputs(selectionOutputs(plan, process.env["CI_EVENT"] !== "pull_request"));
-  return plan;
 }
 
 async function quality(plan) {
@@ -52,27 +43,11 @@ async function quality(plan) {
     checkProjectRoot,
     npmEntry,
     process.env["CI_EVENT"] !== "pull_request",
+    process.env["EXPECTED_AUDIT"] === "success",
   );
-  const status = await runExclusiveChecks(commands, {
+  return runExclusiveChecks(commands, {
     cwd: checkProjectRoot,
   });
-  if (status !== 0) return status;
-  const tests = plan.tests.filter((file) => /^test\/(?:unit|integration)\//.test(file));
-  if (!tests.length) {
-    process.stdout.write(
-      "Only performance tests selected; no Unit/Integration execution planned.\n",
-    );
-    return 0;
-  }
-  const result = parseBatchReport({
-    root: checkProjectRoot,
-    testFiles: tests,
-    refreshRate: 120,
-    stdout: await readFile(join(checkProjectRoot, "coverage/ci-tests.json"), "utf8"),
-  });
-  for (const violation of result.violations)
-    process.stderr.write(`${violation.file}: ${violation.message}\n`);
-  return result.violations.length ? 1 : 0;
 }
 
 try {

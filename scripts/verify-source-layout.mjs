@@ -241,10 +241,12 @@ function resolveBinding(scope, name) {
 function expressionNames(expression) {
   if (isIdentifier(expression)) return [expression.text];
   if (isPropertyAccessExpression(expression)) {
-    return [...expressionNames(expression.expression), expression.name.text];
+    const receiver = expressionNames(expression.expression);
+    return receiver.length ? [...receiver, expression.name.text] : [];
   }
   if (isElementAccessExpression(expression) && isStringLiteralLike(expression.argumentExpression)) {
-    return [...expressionNames(expression.expression), expression.argumentExpression.text];
+    const receiver = expressionNames(expression.expression);
+    return receiver.length ? [...receiver, expression.argumentExpression.text] : [];
   }
   if (isCallExpression(expression)) return expressionNames(expression.expression);
   if (isTaggedTemplateExpression(expression)) return expressionNames(expression.tag);

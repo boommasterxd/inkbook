@@ -1,10 +1,78 @@
 import { expect, it, vi } from "vitest";
 import { VisibilityClassification } from "../../../../src/rendering/scene/visibility-classification";
+import { ElementStore } from "../../../../src/domain/store/public";
+import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
+import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
+import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
+import { fakeNode } from "../../../unit/rendering/scene/fakes";
+import { uuid } from "../../../unit/domain/schema/fixtures";
 import {
   createSceneFixture,
   createViewportRectangleStore,
+  sceneDeltaEntries,
 } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
+
+it.each([
+  { tool: "pen", band: "content" },
+  { tool: "highlighter", band: "highlight" },
+] as const)(
+  "restores physical $band paint order after a partial deletion and presentation handoff",
+  async ({ tool, band }) => {
+    const source = createTestStroke();
+    const elements: StrokeElementV1[] = Array.from({ length: 9 }, (_, index) => ({
+      ...source,
+      id: uuid(index + 1),
+      tool,
+      style: { ...source.style, pressureEnabled: tool === "pen" },
+      pivot: { x: 25 + index, y: 20 },
+      points: [10 + index, 20, 0.5, 40 + index, 20, 1],
+    }));
+    const ids = elements.map(({ id }) => id);
+    const expectedPaths = elements.map((element) => buildElementPathParts(element)[0]!.d);
+    const store = new ElementStore(elements);
+    const deletion = store.removeWithHistory(ids.slice(1, 5))!;
+    const sceneStore = new ElementSceneStore(store);
+    // A newly attached presentation learns the survivors' compressed ranks.
+    const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, sceneStore);
+    renderer.setReducedMotion(true);
+    scheduler.runAll();
+    const group = fakeNode(renderer.svg).nodes[1]!.nodes[band === "highlight" ? 3 : 4]!;
+    const retainedRoots = [...group.nodes];
+    const unsubscribe = store.subscribe((delta) =>
+      renderer.applyDelta({
+        historyReplay: true,
+        affected: sceneDeltaEntries(delta),
+      }),
+    );
+    try {
+      renderer.resetInstrumentation();
+      const replay = await store.prepareHistoryReplay(
+        deletion.transition.reverse,
+        { shouldYield: () => false, yieldControl: async () => undefined },
+        deletion.transition,
+      );
+      if (replay.token === null) throw new Error("Expected a prepared history restoration.");
+      expect(store.commitPreparedElementMutation(replay.token).status).toBe("committed");
+      scheduler.runAll();
+      expect(store.materializeBandOrder(band)).toEqual(ids);
+      expect(renderer.mountedIds(band)).toEqual(ids);
+      const paintedPaths = group.nodes.map((root) =>
+        (root.tagName === "g" ? root.nodes[0]! : root).attributes.get("d"),
+      );
+      expect(paintedPaths).toEqual(expectedPaths);
+      expect(group.nodes.filter((root) => retainedRoots.includes(root))).toEqual(retainedRoots);
+      expect(renderer.instrumentation()).toMatchObject({ domEntrants: 4, domReorders: 0 });
+    } finally {
+      unsubscribe();
+      renderer.destroy();
+      sceneStore.release();
+      store.releasePreparedPressureGeometry();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+  },
+);
 
 it("keeps removal reuse after an offscreen deletion without an artificial scene commit", () => {
   const store = createViewportRectangleStore(3, (rank) => (rank === 0 ? 2_000 : 10));

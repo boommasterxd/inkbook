@@ -10,14 +10,65 @@ import { MAX_CLIPBOARD_ITEMS } from "../../../../src/obsidian/embeds/active-edit
 import { ActiveEditorClipboardController } from "../../../../src/obsidian/embeds/active-editor/controller-clipboard";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import {
   createClipboardDocumentModel,
+  createEncodedClipboardFixture,
   createDeferredPreparation,
   createPreparedToken,
 } from "./active-editor-clipboard-fixtures";
 
+declare function setImmediate(callback: () => void): void;
+
 describe("active editor prepared clipboard ownership", () => {
+  it("replays real cut and paste mutations after their presentation detaches", async () => {
+    const selected = rectangle();
+    const store = new ElementStore([selected]);
+    const plan = createPastePlan(rectangle(uuid(900)));
+    let revision = 0;
+    const model = createClipboardDocumentModel({
+      store,
+      ...elementMutationPorts(store, () => {
+        revision += 1;
+      }),
+      planClipboardPaste: async () => plan,
+      encodeClipboard: async () => createEncodedClipboardFixture(),
+      revision: () => revision,
+    });
+    const history = new ActiveEditorHistory(model);
+    let attached = true;
+    const controller = new ActiveEditorClipboardController({
+      workScheduler: immediateWorkScheduler(),
+      currentSelection: () => new Set([selected.id]),
+      history,
+      isPresentationAttached: () => attached,
+      model,
+      onPendingChanged: vi.fn(),
+      onResult: vi.fn(),
+      onSelectionChanged: vi.fn(),
+      ownerWindow: clipboardWindow([], async () => ""),
+    });
+
+    await expect(controller.cut(new Set([selected.id]))).resolves.toMatchObject({
+      kind: "committed",
+    });
+    expect(store.get(selected.id)).toBeUndefined();
+    await expect(controller.paste(toolbarPaste())).resolves.toMatchObject({ kind: "committed" });
+    expect(store.get(plan.selectedIds[0]!)).toBeDefined();
+    attached = false;
+    controller.dispose();
+
+    await expect(history.undoAsync()).resolves.toBe(true);
+    expect(store.size).toBe(0);
+    await expect(history.undoAsync()).resolves.toBe(true);
+    expect(store.get(selected.id)?.element).toEqual(selected);
+    await expect(history.redoAsync()).resolves.toBe(true);
+    await expect(history.redoAsync()).resolves.toBe(true);
+    expect(store.get(selected.id)).toBeUndefined();
+    expect(store.get(plan.selectedIds[0]!)?.element).toEqual(plan.elements[0]);
+  });
+
   it("uses captured selection IDs after asynchronous append preparation", async () => {
     const original = createPastePlan(rectangle(uuid(900)));
     const expectedId = original.selectedIds[0]!;
@@ -166,6 +217,38 @@ describe("active editor clipboard collection limits", () => {
     expect(readText).not.toHaveBeenCalled();
     expect(harness.plan).not.toHaveBeenCalled();
     harness.controller.dispose();
+  });
+});
+
+describe("active editor clipboard encoding failure", () => {
+  it("contains a rejected Blob payload when the host ClipboardItem constructor fails", async () => {
+    const selected = rectangle();
+    const store = new ElementStore([selected]);
+    const model = createModel(store, vi.fn(), vi.fn(), vi.fn());
+    const onResult = vi.fn();
+    const ownerWindow = {
+      ...clipboardWindow([], vi.fn()),
+      Blob,
+      ClipboardItem: class {
+        constructor() {
+          throw new Error("ClipboardItem construction failed.");
+        }
+      },
+    } as unknown as Window;
+    const controller = createController(model, ownerWindow, onResult);
+
+    await expect(controller.copy(new Set([selected.id]))).resolves.toEqual({
+      action: "copy",
+      kind: "unavailable",
+      reason: "encode-failed",
+    });
+    expect(onResult).toHaveBeenCalledOnce();
+    expect(controller.pending).toBe(false);
+    expect(controller.canPaste).toBe(false);
+    expect(store.get(selected.id)?.element).toEqual(selected);
+    // The host task boundary makes an unhandled derived Blob rejection fail this case.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    controller.dispose();
   });
 });
 

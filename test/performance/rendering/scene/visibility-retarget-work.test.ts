@@ -7,12 +7,12 @@ import { SceneEntrantPriority } from "../../../../src/rendering/scene/scene-entr
 import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
 import { commitVisibleBands } from "../../../../src/rendering/scene/visibility-order";
 import * as visibleOrder from "../../../../src/rendering/scene/visibility-order";
-import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
 import {
   createViewportRectangleStore,
   observeIndexedSceneQueries,
   createSceneFixture,
+  sceneDeltaEntries,
 } from "../../../fixtures/rendering/scene";
 import { FakeSceneStore, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
 import { createInteractionFixture, INTERACTION_PAGE } from "./interaction-refresh-profile-fixture";
@@ -116,14 +116,7 @@ it.each([false, true])(
     const sort = vi.spyOn(visibleOrder, "sortVisibleBand");
     const unsubscribe = fixture.store.subscribe((delta) =>
       renderer.applyDelta({
-        affected: delta.changes.map((change) => ({
-          id: change.id,
-          domains: change.domains,
-          before: (change.before?.element as InkElementV1 | undefined) ?? null,
-          after: (change.after?.element as InkElementV1 | undefined) ?? null,
-          beforeBounds: change.before?.bounds ?? null,
-          afterBounds: change.after?.bounds ?? null,
-        })),
+        affected: sceneDeltaEntries(delta),
       }),
     );
     try {

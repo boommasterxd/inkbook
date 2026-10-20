@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
-import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
 
 describe("chunked SHA-256", () => {
   it.each([
@@ -48,7 +47,7 @@ describe("chunked SHA-256", () => {
     { input: "a".repeat(55), name: "one-block padding boundary" },
     { input: "a".repeat(56), name: "two-block padding boundary" },
     { input: "a".repeat(1_000), name: "multiple blocks" },
-  ])("matches the document hash for $name", ({ input }) => {
+  ])("matches the platform reference across seven-byte chunks for $name", async ({ input }) => {
     const bytes = new TextEncoder().encode(input);
     const hash = new ChunkedSha256();
     for (let index = 0; index < bytes.length; index += 7) {
@@ -56,18 +55,16 @@ describe("chunked SHA-256", () => {
     }
 
     expect(hash.totalBytes).toBe(bytes.byteLength);
-    expect(hash.digestHex()).toBe(sha256Hex(input));
-    expect(hash.digestHex()).toBe(sha256Hex(input));
+    expect(hash.digestHex()).toBe(await referenceHash(bytes));
   });
 
-  it("rejects updates after finalization", async () => {
+  it("rejects updates after finalization", () => {
     const hash = new ChunkedSha256();
     hash.digestHex();
 
     expect(() => hash.update(new Uint8Array([1]))).toThrow(
       "Cannot update a finalized SHA-256 digest.",
     );
-    expect(hashChunks([new TextEncoder().encode("abc")])).toBe(await referenceHash("abc"));
   });
 });
 

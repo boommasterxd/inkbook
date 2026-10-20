@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { deriveRenderBands } from "../../../src/domain/commands/render-bands";
 import { buildElementPathParts } from "../../../src/domain/geometry/element-path";
@@ -12,12 +12,23 @@ const EXPECTED_METADATA_BYTES = 19_911_562;
 // compact centerline plus 8 KiB for the fixed envelope and background.
 const MAXIMUM_STATIC_MARKUP_BYTES = STRESS_STROKES * 200 + 8192;
 const MAXIMUM_BYTES_PER_STROKE_POINT = 14;
+let sourceSnapshot: ReturnType<typeof createStressLimitFixture> | undefined;
+
+afterAll(() => {
+  sourceSnapshot = undefined;
+});
+
+// Only source data is shared; validation, store preparation and export own fresh state.
+function stressSnapshot() {
+  sourceSnapshot ??= createStressLimitFixture();
+  return sourceSnapshot;
+}
 
 describe("combined persistence stress limits", () => {
   it("validates exactly 15,000 strokes and 2,000,000 points at the schema limits", async ({
     annotate,
   }) => {
-    const snapshot = createStressLimitFixture();
+    const snapshot = stressSnapshot();
     const metadataBytes = byteLength(JSON.stringify(snapshot));
     const validation = validateInkSnapshotV1(snapshot, {
       metadataBytes,
@@ -45,7 +56,7 @@ describe("combined persistence stress limits", () => {
   it("prepares the complete stress fixture for indexed and banded rendering", async ({
     annotate,
   }) => {
-    const snapshot = createStressLimitFixture();
+    const snapshot = stressSnapshot();
     const preparation = (() => {
       const bands = deriveRenderBands(snapshot.elements);
       const store = new ElementStore(snapshot.elements);
@@ -71,7 +82,7 @@ describe("combined persistence stress limits", () => {
   it("serializes the exact combined stress limits within file-size ceilings", async ({
     annotate,
   }) => {
-    const snapshot = createStressLimitFixture();
+    const snapshot = stressSnapshot();
     const serialized = serializeInkbookDocument(snapshot);
 
     if (!serialized.ok) {

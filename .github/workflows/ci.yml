@@ -15,6 +15,7 @@ permissions:
 env:
   CI_BASE: ${{ github.event.pull_request.base.sha }}
   CI_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  CI_MERGE: ${{ github.sha }}
   CI_EVENT: ${{ github.event_name }}
 
 jobs:
@@ -27,6 +28,7 @@ jobs:
       shared: ${{ steps.plan.outputs.shared }}
       cadence: ${{ steps.plan.outputs.cadence }}
       build: ${{ steps.plan.outputs.build }}
+      audit: ${{ steps.audit.outcome }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,6 +47,10 @@ jobs:
       - name: Install dependencies
         if: steps.preflight.outputs.docs != 'true'
         run: npm ci
+      - name: Check dependency vulnerabilities before fan-out
+        id: audit
+        if: steps.preflight.outputs.docs != 'true'
+        run: npm run audit
       - name: Plan and validate affected checks
         id: plan
         run: node scripts/ci-plan.mjs
@@ -52,9 +58,10 @@ jobs:
   quality:
     name: Quality gates
     needs: select
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ${{ needs.select.outputs.mode == 'docs' && 'ubuntu-slim' || 'ubuntu-latest' }}
+    timeout-minutes: ${{ needs.select.outputs.mode == 'docs' && 5 || 20 }}
     env:
+      EXPECTED_AUDIT: ${{ needs.select.outputs.audit }}
       EXPECTED_MODE: ${{ needs.select.outputs.mode }}
       EXPECTED_SHARED: ${{ needs.select.outputs.shared }}
       EXPECTED_CADENCE: ${{ needs.select.outputs.cadence }}
@@ -76,9 +83,6 @@ jobs:
       - name: Install dependencies
         if: needs.select.outputs.mode != 'docs'
         run: npm ci
-      - name: Recompute and validate selection
-        if: needs.select.outputs.mode != 'docs'
-        run: node scripts/ci-plan.mjs
       - name: Run quality gate
         if: needs.select.outputs.mode != 'docs'
         run: node scripts/run-ci.mjs quality
@@ -89,8 +93,8 @@ jobs:
   Performance:
     name: Performance (${{ matrix.label }})
     needs: select
-    runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.timeout_minutes }}
+    runs-on: ${{ needs.select.outputs[matrix.suite] == 'false' && 'ubuntu-slim' || 'ubuntu-latest' }}
+    timeout-minutes: ${{ needs.select.outputs[matrix.suite] == 'false' && 5 || 20 }}
     strategy:
       fail-fast: true
       max-parallel: 2
@@ -99,12 +103,11 @@ jobs:
           - label: shared
             suite: shared
             refresh-rate: "120"
-            timeout_minutes: 20
           - label: refresh profiles
             suite: cadence
             refresh-rate: "120"
-            timeout_minutes: 20
     env:
+      EXPECTED_AUDIT: ${{ needs.select.outputs.audit }}
       EXPECTED_MODE: ${{ needs.select.outputs.mode }}
       EXPECTED_SHARED: ${{ needs.select.outputs.shared }}
       EXPECTED_CADENCE: ${{ needs.select.outputs.cadence }}
@@ -128,9 +131,6 @@ jobs:
       - name: Install dependencies
         if: needs.select.outputs[matrix.suite] == 'true'
         run: npm ci
-      - name: Recompute and validate selection
-        if: needs.select.outputs[matrix.suite] == 'true'
-        run: node scripts/ci-plan.mjs
       - name: Run performance gate
         if: needs.select.outputs[matrix.suite] == 'true'
         run: node scripts/run-ci.mjs "${INKBOOK_PERFORMANCE_SUITE}"
@@ -154,6 +154,7 @@ jobs:
           SHARED: ${{ needs.select.outputs.shared }}
           CADENCE: ${{ needs.select.outputs.cadence }}
           BUILD: ${{ needs.select.outputs.build }}
+          AUDIT: ${{ needs.select.outputs.audit }}
         shell: bash
         run: |
           test "$SELECT_RESULT" = success
@@ -163,8 +164,8 @@ jobs:
             case "$value" in true|false) ;; *) exit 1 ;; esac
           done
           case "$MODE" in
-            docs) test "$SHARED/$CADENCE/$BUILD" = false/false/false ;;
-            full) test "$SHARED/$CADENCE" = true/true ;;
-            affected) ;;
+            docs) test "$SHARED/$CADENCE/$BUILD/$AUDIT" = false/false/false/skipped ;;
+            full) test "$SHARED/$CADENCE/$AUDIT" = true/true/success ;;
+            affected) test "$AUDIT" = success ;;
             *) exit 1 ;;
           esac
