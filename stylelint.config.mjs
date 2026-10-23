@@ -5,6 +5,11 @@ const ownedSurfaceSelector =
 export default {
   extends: ["stylelint-config-standard"],
   rules: {
+    "at-rule-disallowed-list": ["keyframes"],
+    "declaration-property-value-disallowed-list": {
+      "/^(?:animation|transition)(?:-property)?$/": ["/^(?!none$).+/"],
+    },
+    "property-disallowed-list": ["/^(?:animation|transition)-(?!property$).+/"],
     "max-nesting-depth": 2,
     "no-descending-specificity": true,
     "no-duplicate-selectors": true,

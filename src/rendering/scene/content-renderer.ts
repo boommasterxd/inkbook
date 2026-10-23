@@ -1,7 +1,7 @@
 import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
-import { sameStrokeShape } from "./stroke-position";
-import { CommittedPreviewGeometry } from "./committed-preview-geometry";
+import { sameStrokeShape } from "./content/stroke-position";
+import { CommittedPreviewGeometry } from "./presentation/committed-preview-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
@@ -13,22 +13,23 @@ import {
   updatePreviewTransform,
   setMountedElementMotion,
   type MountedSceneElement,
-} from "./mounted-element";
-import type { ScenePathCache } from "./path-cache";
-import type { ScenePublicationBudget } from "./mount-slice";
-import { SceneElementFades, type FadeSlice } from "./scene-element-fades";
-import { setHistoryFadeGate, type ElementFadeDirection } from "./element-fade-style";
-import { SceneSelectionTraces } from "./selection-traces";
+} from "./content/mounted-element";
+import type { ScenePathCache } from "./content/path-cache";
+import type { ScenePublicationBudget } from "./reconciliation/mount-slice";
+import { SceneElementFades, type FadeSlice } from "./presentation/scene-element-fades";
+import { setHistoryFadeGate, type ElementFadeDirection } from "./presentation/element-fade-style";
+import { SceneSelectionTraces } from "./presentation/selection-traces";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
-import type { SceneVisibilityState } from "./visibility-state";
-import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
-import { markSceneOrderDirty, writeDirtySet } from "./dirty-set-work";
-import { commitVisibleBands, mountedVisibleIds } from "./visibility-order";
-import { mountedPreviewIds } from "./preview-transform-selection";
+import type { SceneVisibilityState } from "./visibility/visibility-state";
+import { SceneVisibilityReconciler } from "./reconciliation/scene-visibility-reconciler";
+import type { PreviewTransform } from "./reconciliation/scene-visibility-reconciler";
+import { markSceneOrderDirty, writeDirtySet } from "./content/dirty-set-work";
+import { commitVisibleBands, mountedVisibleIds } from "./visibility/visibility-order";
+import { mountedPreviewIds } from "./presentation/preview-transform-selection";
 import type { PreviewMembershipContext } from "./types";
-import type { ScenePreparationOptions as ContentOptions } from "./reconciliation-state";
-import type { SceneVisibilityPriority } from "./scene-entrant-priority";
+import type { ScenePreparationOptions as ContentOptions } from "./reconciliation/reconciliation-state";
+import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priority";
 
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { iteratePressureContourQuantization } from "../../../src/domain/geometry/pressure-contour-quantization";
+import { iteratePressureContourQuantization } from "../../../src/domain/geometry/pressure/pressure-contour-quantization";
 import type { PointV1 } from "../../../src/domain/schema/types";
 import { finishGeometrySteps } from "../../fixtures/domain/geometry-steps";
 import { referencePressureQuantization } from "../../fixtures/domain/pressure-quantization-reference";

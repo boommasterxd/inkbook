@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import type { App, Plugin } from "obsidian";
@@ -79,11 +80,7 @@ describe("Inkbook settings modal", () => {
 
     await vi.waitFor(() => expect(store.getVaultSettings().snapping.enabled).toBe(false));
     for (const row of dependentRows) {
-      expect(row.dataset.resizing).toBe("true");
-      expect(row.hidden).toBe(false);
-      await vi.waitFor(() => expect(row.style.blockSize).toBe("0px"));
-      row.dispatchEvent(transitionEnd());
-      expect(row.hidden).toBe(true);
+      await vi.waitFor(() => expect(row.hidden).toBe(true));
       expect(row.inert).toBe(true);
     }
     expect(store.getVaultSettings().snapping.angles).toBe(true);
@@ -208,31 +205,17 @@ describe("Inkbook settings modal reset refresh", () => {
 });
 
 describe("Inkbook settings disclosure motion", () => {
-  it("finishes a reversed disclosure only when the new transition completes", () => {
+  it("finishes a reversed disclosure only when the new transition completes", async () => {
     const { controller } = openSettingsModalWithFullMotion();
     const trigger = required<HTMLButtonElement>(
       '.inkbook-settings-tool-trigger[aria-expanded="false"]',
     );
     const panel = required<HTMLElement>(`#${trigger.getAttribute("aria-controls") ?? "missing"}`);
-    const frames: FrameRequestCallback[] = [];
-    const request = vi
-      .spyOn(window, "requestAnimationFrame")
-      .mockImplementation((frame) => frames.push(frame));
-    vi.spyOn(panel, "getBoundingClientRect")
-      .mockReturnValueOnce(rectWithHeight(64))
-      .mockReturnValueOnce(rectWithHeight(30));
     trigger.click();
-    frames.shift()?.(0);
     trigger.click();
-    expect(panel.style.blockSize).toBe("30px");
-    frames.shift()?.(60);
-    panel.dispatchEvent(new TransitionEvent("transitioncancel", { propertyName: "block-size" }));
     expect(panel.hidden).toBe(false);
-    expect(panel.dataset.resizing).toBe("true");
-    expect(panel.style.blockSize).toBe("0px");
-    panel.dispatchEvent(transitionEnd());
-    expect(panel.hidden).toBe(true);
-    request.mockRestore();
+    expect(panel.inert).toBe(true);
+    await vi.waitFor(() => expect(panel.hidden).toBe(true));
     controller.dispose();
   });
 
@@ -247,31 +230,18 @@ describe("Inkbook settings disclosure motion", () => {
 
     const panels = triggers.map((trigger) => {
       const panel = required<HTMLElement>(`#${trigger.getAttribute("aria-controls") ?? "missing"}`);
-      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue(rectWithHeight(64));
       trigger.click();
       expect(panel.hidden).toBe(false);
-      expect(panel.dataset.resizing).toBe("true");
-      expect(panel.style.blockSize).toBe("0px");
+      expect(panel.inert).toBe(false);
       return panel;
-    });
-    await vi.waitFor(() => {
-      expect(panels.every((panel) => panel.style.blockSize === "64px")).toBe(true);
     });
 
     for (const [index, panel] of panels.entries()) {
-      panel.dispatchEvent(transitionEnd());
       triggers[index]?.click();
       expect(panel.hidden).toBe(false);
-      expect(panel.dataset.resizing).toBe("true");
-      expect(panel.style.blockSize).toBe("64px");
+      expect(panel.inert).toBe(true);
     }
-    await vi.waitFor(() => {
-      expect(panels.every((panel) => panel.style.blockSize === "0px")).toBe(true);
-    });
-    for (const panel of panels) {
-      panel.dispatchEvent(transitionEnd());
-      expect(panel.hidden).toBe(true);
-    }
+    await vi.waitFor(() => expect(panels.every((panel) => panel.hidden)).toBe(true));
     controller.dispose();
   });
 });
@@ -317,10 +287,4 @@ function rectWithHeight(height: number): DOMRect {
     y: 0,
     toJSON: () => undefined,
   };
-}
-
-function transitionEnd(): Event {
-  const event = new Event("transitionend", { bubbles: true });
-  Object.defineProperty(event, "propertyName", { value: "block-size" });
-  return event;
 }

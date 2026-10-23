@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ArrowElementV1 } from "../../../../src/domain/schema/public";
-import { SceneBackgroundCache } from "../../../../src/rendering/scene/background-cache";
+import { SceneBackgroundCache } from "../../../../src/rendering/scene/content/background-cache";
 import {
   PATH_CACHE_MAX_BYTES,
   PATH_CACHE_MAX_ENTRIES,
 } from "../../../../src/rendering/scene/constants";
-import { pathPresentation } from "../../../../src/rendering/scene/element-presentation";
-import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import { pathPresentation } from "../../../../src/rendering/scene/content/element-presentation";
+import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
 
 describe("scene caches", () => {
   it("enforces the 12,288-entry and 25-MiB recently-unmounted path caps", () => {

@@ -17,15 +17,15 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { confirmInkbookAction } from "../dialogs/action-dialog";
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
-import { dropdown, resetAction, settingsAction, toggle } from "./definition-helpers";
-import { createLabels, generalGroup } from "./general-definitions";
-import { pageDefaultsGroup } from "./page-defaults";
-import { performanceGroup } from "./performance-definitions";
-import { createObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
-import { snappingGroup } from "./snapping-definitions";
-import { shortcutGroup } from "./shortcut-definitions";
+import { dropdown, resetAction, settingsAction, toggle } from "./definitions/definition-helpers";
+import { createLabels, generalGroup } from "./definitions/general-definitions";
+import { pageDefaultsGroup } from "./definitions/page-defaults";
+import { performanceGroup } from "./definitions/performance-definitions";
+import { createObsidianHotkeyAccess } from "./shortcuts/obsidian-hotkey-conflicts";
+import { snappingGroup } from "./definitions/snapping-definitions";
+import { shortcutGroup } from "./shortcuts/shortcut-definitions";
 import { InkbookSettingsStore } from "./storage";
-import { drawingToolsGroup, shapesAndStructuresGroup } from "./tool-definitions";
+import { drawingToolsGroup, shapesAndStructuresGroup } from "./definitions/tool-definitions";
 
 export interface CustomFolderPort {
   createFolder(path: string): Promise<void>;
@@ -82,12 +82,15 @@ export class InkbookSettingTab extends PluginSettingTab {
   public override getSettingDefinitions(): SettingDefinitionItem<SettingsControlKey>[] {
     const pageValues = {
       get: (key: SettingsControlKey) => this.controls.get(key),
+      readMotion: () => this.store.getDeviceSettings().motion,
+      observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
       set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
       workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
     };
     const toolValues = {
       getDefaults: () => this.store.getVaultSettings().toolDefaults,
       getMotion: () => this.store.getDeviceSettings().motion,
+      observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
       workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
       set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
     };
@@ -99,6 +102,8 @@ export class InkbookSettingTab extends PluginSettingTab {
         reset: () => this.resetGeneral(),
       }),
       performanceGroup({
+        readMotion: () => this.store.getDeviceSettings().motion,
+        observeMotion: (listener) => this.store.subscribeDeviceSettings(listener),
         get: (key) => this.controls.get(key),
         set: (key, value) => this.controls.set(key, value),
         refreshRateStatus: () =>
@@ -112,6 +117,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       drawingToolsGroup(toolValues, () => this.resetDrawingTools()),
       shapesAndStructuresGroup(toolValues, () => this.resetShapesAndStructures()),
       snappingGroup({
+        observeMotion: (listener) => this.store.subscribeDeviceSettings(listener),
         get: (key) => this.controls.get(key),
         readMotion: () => this.store.getDeviceSettings().motion,
         workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
@@ -132,6 +138,15 @@ export class InkbookSettingTab extends PluginSettingTab {
     return this.scheduling.workScheduler(ownerWindow);
   }
 
+  private dialogOptions() {
+    return {
+      signal: this.scheduling?.lifetime,
+      readMotion: () => this.store.getDeviceSettings().motion,
+      observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
+      workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
+    };
+  }
+
   private isCustomFolder(): boolean {
     return this.store.getVaultSettings().filePlacement.mode === "custom-vault-folder";
   }
@@ -143,9 +158,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       title: "Create custom folder?",
       description: `Create the vault folder “${placement.folder}”?`,
       confirmLabel: "Create folder",
-      signal: this.scheduling?.lifetime,
-      readMotion: () => this.store.getDeviceSettings().motion,
-      workScheduler: (ownerWindow) => this.scheduler(ownerWindow),
+      ...this.dialogOptions(),
     });
     const current = this.store.getVaultSettings().filePlacement;
     if (
@@ -311,9 +324,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       title: "Reset all settings?",
       description: "Restore every built-in value. Existing files and elements will not change.",
       confirmLabel: "Reset settings",
-      signal: this.scheduling?.lifetime,
-      readMotion: () => this.store.getDeviceSettings().motion,
-      workScheduler: (ownerWindow) => this.scheduler(ownerWindow),
+      ...this.dialogOptions(),
       destructive: true,
     });
     if (!confirmed || !element.isConnected) return;

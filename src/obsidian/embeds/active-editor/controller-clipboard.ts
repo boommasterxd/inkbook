@@ -8,7 +8,7 @@ import {
   type VersionedSelectionRecord,
 } from "../../../persistence/clipboard/public";
 
-import type { EditableDocumentModel } from "../vault-document-session";
+import type { EditableDocumentModel } from "../document-session/vault-document-session";
 import { ClipboardAdoptionGuard } from "./clipboard-adoption-guard";
 import { registerAppliedDocumentMutation } from "./document-history";
 import {

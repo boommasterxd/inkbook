@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { SemanticAnchorCache } from "../../../src/domain/store/semantic-anchor-cache";
+import { SemanticAnchorCache } from "../../../src/domain/store/records/semantic-anchor-cache";
 import { rectangle } from "../../unit/domain/store/fixtures";
 
 it("bounds semantic-anchor retention and reports deterministic LRU evictions", async ({

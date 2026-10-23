@@ -1,6 +1,6 @@
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
-import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
+import { moveSelectionTimeSliced } from "../../../src/editor/selection/transform/transforms";
 import type { UniformSpatialIndex } from "../../../src/domain/spatial/index";
 import type { CellColumns, IndexedEntry } from "../../../src/domain/spatial/index-state";
 import { SpatialMap } from "../../../src/domain/spatial/spatial-map";

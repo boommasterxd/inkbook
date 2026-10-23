@@ -16,7 +16,7 @@ import { decodeMetadataTextSteps, measureUtf8BytesSteps } from "./safe-svg-metad
 import {
   COMPACT_METADATA_ENCODING,
   type SnapshotMetadataEncoding,
-} from "../serialization/stroke-sample-codec";
+} from "../serialization/metadata/stroke-sample-codec";
 const MAXIMUM_FILE_BYTES = 64 * 1024 * 1024;
 const MAXIMUM_METADATA_BYTES = 60 * 1024 * 1024;
 const MAXIMUM_PATHS = 60_004;

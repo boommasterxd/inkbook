@@ -1,11 +1,11 @@
 import type { PageV1 } from "../../domain/schema/public";
-import { patternCoveragePath, type SceneBackgroundCache } from "./background-cache";
+import { patternCoveragePath, type SceneBackgroundCache } from "./content/background-cache";
 import { SVG_NAMESPACE } from "./constants";
 import {
   PRESENTATION_ATTRIBUTES,
   type PathPresentation,
   type PresentationAttribute,
-} from "./element-presentation";
+} from "./content/element-presentation";
 import type { SceneDom } from "./scene-dom";
 import type {
   DocumentScheme,

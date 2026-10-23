@@ -1,4 +1,4 @@
-import type { PhoneSheetHostPort } from "../../menus/phone-sheet-host";
+import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import {
   EditorToolbarMenuSession,
   openContextMenu,

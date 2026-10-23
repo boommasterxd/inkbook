@@ -2,9 +2,9 @@ import { vi } from "vitest";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
 import type { SvgPathPart } from "../../../src/domain/geometry/element-path";
 import type { SceneContentRenderer } from "../../../src/rendering/scene/content-renderer";
-import { ProgressiveElementPreview } from "../../../src/rendering/scene/progressive-element-preview";
-import { ProgressivePreviewPath } from "../../../src/rendering/scene/progressive-preview-path";
-import * as pressureWindows from "../../../src/domain/geometry/pressure-window";
+import { ProgressiveElementPreview } from "../../../src/rendering/scene/presentation/progressive-element-preview";
+import { ProgressivePreviewPath } from "../../../src/rendering/scene/content/progressive-preview-path";
+import * as pressureWindows from "../../../src/domain/geometry/pressure/pressure-window";
 import { indexedStroke } from "../editor/stroke";
 
 export function createProgressivePreviewFixture(maximumBytes?: number) {

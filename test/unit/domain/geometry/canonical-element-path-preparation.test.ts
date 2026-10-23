@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
-import * as windows from "../../../../src/domain/geometry/pressure-window";
+import * as windows from "../../../../src/domain/geometry/pressure/pressure-window";
 import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import {
   createMultiWindowPressureStroke,

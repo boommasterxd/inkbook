@@ -1,5 +1,4 @@
 .inkbook-owned-menu {
-  animation: inkbook-owned-menu-enter var(--inkbook-owned-menu-duration) ease-out both;
   max-inline-size: calc(100vw - 10px);
   outline: none;
   overflow: auto;
@@ -36,16 +35,12 @@
   white-space: nowrap;
 }
 
-.inkbook-owned-menu-item:focus {
-  background: var(--background-modifier-hover);
-}
-
 .inkbook-owned-menu-item[data-disabled="true"] {
   color: var(--text-faint);
 }
 
 .inkbook-owned-menu-item[data-warning="true"][data-disabled="false"] {
-  color: var(--text-error);
+  color: var(--inkbook-tone-danger);
 }
 
 .inkbook-owned-menu-item[data-label="true"] {
@@ -78,7 +73,11 @@
 }
 
 .inkbook-owned-menu-item[data-warning="true"] .inkbook-owned-menu-icon {
-  color: var(--text-error);
+  color: var(--inkbook-tone-danger);
+}
+
+.inkbook-owned-menu-item .inkbook-owned-menu-icon [stroke="var(--color-orange)"] {
+  stroke: var(--inkbook-tone-caution);
 }
 
 .inkbook-owned-menu-item[data-disabled="true"] .inkbook-owned-menu-icon {
@@ -104,7 +103,6 @@
   font-size: var(--font-ui-medium);
   padding: var(--size-4-3) var(--size-4-4);
   position: relative;
-  transition: background-color 100ms ease-in-out;
 }
 
 .inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-item:first-child,
@@ -120,29 +118,12 @@
   border-end-start-radius: var(--touch-radius-xxs);
 }
 
-.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-item:focus {
-  background: var(--background-modifier-hover);
-}
-
 .inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-separator {
   border: 0;
   margin: var(--size-4-2) 0;
 }
 
-@keyframes inkbook-owned-menu-enter {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
-
-  to {
-    opacity: 1;
-    scale: 1;
-  }
-}
-
 .inkbook-owned-menu[data-state="closing"] {
-  animation: inkbook-wide-menu-exit var(--inkbook-owned-menu-duration) ease-out both;
   pointer-events: none;
 }
 

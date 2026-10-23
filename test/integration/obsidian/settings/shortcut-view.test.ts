@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
+import { MotionGlobalConfig } from "motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ShortcutSettingsView } from "../../../../src/obsidian/settings/shortcut-view";
-import type { ObsidianHotkeyAccess } from "../../../../src/obsidian/settings/obsidian-hotkey-conflicts";
+import { ShortcutSettingsView } from "../../../../src/obsidian/settings/shortcuts/shortcut-view";
+import type { ObsidianHotkeyAccess } from "../../../../src/obsidian/settings/shortcuts/obsidian-hotkey-conflicts";
 import type { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
@@ -12,6 +14,12 @@ import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-sto
 beforeEach(() => {
   installObsidianDomHelpers();
   document.body.replaceChildren();
+  MotionGlobalConfig.useManualTiming = true;
+});
+
+afterEach(() => {
+  MotionGlobalConfig.useManualTiming = false;
+  vi.useRealTimers();
 });
 
 describe("shortcut settings view", () => {
@@ -84,6 +92,60 @@ describe("shortcut settings view", () => {
     expect(container.textContent).toContain("ShiftF10");
 
     view.dispose();
+  });
+});
+
+describe("shortcut recording ownership", () => {
+  it("keeps recording focus and bindings through cancellation and releases active feedback", async () => {
+    vi.useFakeTimers();
+    const { container, store, view } = createView();
+    expand(container, "Canvas shortcuts");
+    await vi.runAllTimersAsync();
+    const recorder = required<HTMLButtonElement>(
+      container,
+      'button[aria-label="Change shortcut for Copy selection"]',
+    );
+    const binding = store.getDeviceSettings().keyboardShortcuts.copy;
+    const row = recorder.closest<HTMLElement>(".inkbook-shortcut-row")!;
+    const followingRow = row.nextElementSibling as HTMLElement;
+    const recorderMeasurement = vi.spyOn(recorder, "getBoundingClientRect");
+    const followingMeasurement = vi.spyOn(followingRow, "getBoundingClientRect");
+    recorder.click();
+    expect(recorderMeasurement).toHaveBeenCalled();
+    expect(followingMeasurement).toHaveBeenCalled();
+    expect(document.activeElement).toBe(recorder);
+    expect(recorder.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector('[data-shortcut-action="copy"]')).toBe(recorder);
+    recorder.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(recorder.getAttribute("aria-pressed")).toBe("false");
+    expect(document.activeElement).toBe(recorder);
+    expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+    recorder.click();
+    store.updateDeviceSettings((settings) => ({ ...settings, motion: "reduced" }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(recorder.getAttribute("aria-pressed")).toBe("true");
+    expect(vi.getTimerCount()).toBe(0);
+    const clear = required<HTMLButtonElement>(
+      container,
+      'button[aria-label="Clear Copy selection"]',
+    );
+    clear.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerType: "touch",
+        isPrimary: true,
+        pointerId: 4,
+      }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointercancel", { pointerType: "touch", isPrimary: true, pointerId: 4 }),
+    );
+    expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+    view.dispose();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", ctrlKey: true }));
+    expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
   });
 });
 

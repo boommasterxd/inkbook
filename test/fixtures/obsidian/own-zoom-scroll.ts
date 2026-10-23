@@ -2,11 +2,11 @@ import { vi } from "vitest";
 import {
   projectNavigationCursorLayout,
   readNavigationLayout,
-} from "../../../src/obsidian/embeds/active-editor/navigation-layout";
-import { bindActiveSceneScrollOwner } from "../../../src/obsidian/embeds/active-scene-scroll";
-import { readActiveSceneLayout } from "../../../src/obsidian/embeds/active-scene-viewport";
+} from "../../../src/obsidian/embeds/active-editor/navigation/navigation-layout";
+import { bindActiveSceneScrollOwner } from "../../../src/obsidian/embeds/active-scene/active-scene-scroll";
+import { readActiveSceneLayout } from "../../../src/obsidian/embeds/active-scene/active-scene-viewport";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling";
-import { layoutHarness } from "../../integration/obsidian/embeds/active-editor-layout-fixture";
+import { layoutHarness } from "../../integration/obsidian/embeds/active-editor/layout/active-editor-layout-fixture";
 import { domRect } from "./active-editor";
 
 export function ownZoomScrollFixture() {

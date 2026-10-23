@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
-import { pathPresentation } from "../../../../src/rendering/scene/element-presentation";
+import { pathPresentation } from "../../../../src/rendering/scene/content/element-presentation";
 import { arrow } from "../../domain/schema/fixtures";
 import { coordinateSystem, rectangle, table } from "../../domain/geometry/fixtures";
 import { createAllElementSnapshot } from "../../persistence/serialization/fixtures";

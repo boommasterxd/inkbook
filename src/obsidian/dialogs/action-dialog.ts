@@ -1,9 +1,11 @@
+import type { ObserveMotion } from "../runtime/effective-motion";
 import type { App } from "obsidian";
 
 import type { MotionPreference } from "../../rendering/motion/transitions";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import { InkbookModal } from "./inkbook-modal";
+import { registerNativeControlFeedback } from "../menus/feedback/native-control-feedback";
 
 interface DialogAction<T extends string> {
   readonly value: T;
@@ -20,6 +22,7 @@ interface ActionDialogOptions<T extends string> {
   readonly cancelLabel?: string;
   readonly signal?: AbortSignal | undefined;
   readonly readMotion?: (() => MotionPreference) | undefined;
+  readonly observeMotion?: ObserveMotion | undefined;
 }
 
 interface ConfirmationOptions {
@@ -31,19 +34,21 @@ interface ConfirmationOptions {
   readonly destructive?: boolean;
   readonly signal?: AbortSignal | undefined;
   readonly readMotion?: (() => MotionPreference) | undefined;
+  readonly observeMotion?: ObserveMotion | undefined;
 }
 
 class InkbookActionDialog<T extends string> extends InkbookModal {
   readonly #options: ActionDialogOptions<T>;
   readonly #resolve: (value: T | null) => void;
   #result: T | null = null;
+  #releaseFeedback: (() => void) | undefined;
 
   public constructor(
     app: App,
     options: ActionDialogOptions<T>,
     resolve: (value: T | null) => void,
   ) {
-    super(app, options.readMotion, options.workScheduler);
+    super(app, options.readMotion, options.workScheduler, options.observeMotion);
     this.#options = options;
     this.#resolve = resolve;
   }
@@ -62,6 +67,12 @@ class InkbookActionDialog<T extends string> extends InkbookModal {
     const cancel = this.#button(actions, this.#options.cancelLabel ?? "Cancel", () => this.close());
     cancel.autofocus = true;
     for (const action of this.#options.actions) this.#addAction(actions, action);
+    this.#releaseFeedback = registerNativeControlFeedback(actions, {
+      readMotion: this.#options.readMotion ?? (() => "system"),
+      ...(this.#options.observeMotion === undefined
+        ? {}
+        : { observeMotion: this.#options.observeMotion }),
+    });
     const cancelOwner = (): void => {
       this.#result = null;
       this.closeImmediately();
@@ -77,6 +88,8 @@ class InkbookActionDialog<T extends string> extends InkbookModal {
 
   public override onClose(): void {
     if (this.closed) return;
+    this.#releaseFeedback?.();
+    this.#releaseFeedback = undefined;
     super.onClose();
     this.#resolve(this.#result);
   }

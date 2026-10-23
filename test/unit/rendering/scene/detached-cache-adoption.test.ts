@@ -1,15 +1,15 @@
 import { expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
-import { DetachedSceneElementCache } from "../../../../src/rendering/scene/detached-element-cache";
+import { DetachedSceneElementCache } from "../../../../src/rendering/scene/content/detached-element-cache";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import {
   createMountedElement,
   type MountedSceneElement,
-} from "../../../../src/rendering/scene/mounted-element";
+} from "../../../../src/rendering/scene/content/mounted-element";
 import { SceneDom } from "../../../../src/rendering/scene/scene-dom";
-import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
-import { SceneVisibilityReconciler } from "../../../../src/rendering/scene/scene-visibility-reconciler";
-import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
+import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
+import { SceneVisibilityReconciler } from "../../../../src/rendering/scene/reconciliation/scene-visibility-reconciler";
+import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility/visibility-state";
 import type { SceneStorePort } from "../../../../src/rendering/scene/types";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { arrow } from "../../domain/schema/fixtures";

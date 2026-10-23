@@ -5,9 +5,9 @@ import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../domain/schema/p
 import { validateSafeSvg } from "../documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../documents/svg-envelope";
 import { serializeSvgNumber } from "../documents/svg-number";
-import { backgroundFitsStaticLimit, serializeBackgroundPaths } from "./background";
-import { canonicalSnapshot } from "./canonical-snapshot";
-import { serializeElementPaths } from "./path-markup";
+import { backgroundFitsStaticLimit, serializeBackgroundPaths } from "./output/background";
+import { canonicalSnapshot } from "./metadata/canonical-snapshot";
+import { serializeElementPaths } from "./output/path-markup";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import type {
   DocumentCodecError,

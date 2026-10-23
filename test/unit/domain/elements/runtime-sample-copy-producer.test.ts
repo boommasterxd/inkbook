@@ -5,7 +5,7 @@ import {
   isCapturedJsonSampleArray,
 } from "../../../../src/domain/elements/runtime-sample-copy-producer";
 import * as sampleCopy from "../../../../src/domain/elements/runtime-sample-copy";
-import { MutationPreparationScheduler } from "../../../../src/domain/store/mutation-preparation-scheduler";
+import { MutationPreparationScheduler } from "../../../../src/domain/store/mutations/mutation-preparation-scheduler";
 import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
 import { observeSchemaArray } from "../../../fixtures/domain/schema-array-work";
 

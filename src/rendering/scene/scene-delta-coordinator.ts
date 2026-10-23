@@ -1,5 +1,5 @@
-import type { SceneMotionController } from "./scene-motion-controller";
-import type { ScenePreviewCommitController } from "./preview-commit-handoff";
+import type { SceneMotionController } from "./presentation/scene-motion-controller";
+import type { ScenePreviewCommitController } from "./presentation/preview-commit-handoff";
 import type { SceneCommitCoordinator } from "./scene-commit-coordinator";
 import { routeSceneDelta, type SceneDeltaRoutingPorts } from "./scene-delta-router";
 import type { SceneStoreDelta } from "./types";

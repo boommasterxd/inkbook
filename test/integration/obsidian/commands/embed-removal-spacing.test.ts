@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { PresentationEmbedReference } from "../../../../src/obsidian/embeds/presentation-port";
+import type { PresentationEmbedReference } from "../../../../src/obsidian/embeds/presentation/presentation-port";
 import { createHarness } from "./embed-actions-fixture";
 
 const EMBED = "!inkbook[[drawings/page.svg]]";

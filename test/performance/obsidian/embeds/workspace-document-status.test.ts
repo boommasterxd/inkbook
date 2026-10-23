@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 
 import * as obsidian from "obsidian";
-import { expect, it, vi } from "vitest";
+import { MotionGlobalConfig } from "motion";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { DocumentSaveStatusSource } from "../../../../src/obsidian/embeds/document-save-status";
-import { WorkspaceDocumentStatus } from "../../../../src/obsidian/embeds/workspace-document-status";
+import { DocumentSaveStatusSource } from "../../../../src/obsidian/embeds/document-session/document-save-status";
+import { WorkspaceDocumentStatus } from "../../../../src/obsidian/embeds/workspace/workspace-document-status";
 import { mountDocumentStatusBar } from "../../../../src/obsidian/runtime/document-status-bar";
 import { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { documentStatusBarBindingFixture } from "../../../fixtures/obsidian/document-status-bar-binding";
-import { documentStatusBarMotionFixture } from "../../../fixtures/obsidian/document-status-bar-motion";
 import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import {
   AutosaveDocumentFixture,
@@ -18,6 +18,31 @@ import {
   serializeSnapshot,
 } from "../../../integration/persistence/saving/fixtures";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
+
+beforeEach(() => {
+  MotionGlobalConfig.useManualTiming = true;
+});
+afterEach(() => {
+  MotionGlobalConfig.useManualTiming = false;
+});
+
+function currentStatusContent(root: HTMLElement): HTMLElement {
+  return root.querySelector<HTMLElement>(
+    `.inkbook-status-bar-content[data-save-status='${root.dataset.saveStatus}']`,
+  )!;
+}
+
+function currentStatusIcon(root: HTMLElement): Element {
+  return currentStatusContent(root).querySelector(".inkbook-status-bar-icon")!;
+}
+
+function expectReleasedPalette(observer: MutationObserver, palette: Element): void {
+  // Unmount removes the owned palette from the detached status root exactly once.
+  const changes = observer.takeRecords();
+  expect(changes).toHaveLength(1);
+  expect([...changes[0]!.removedNodes]).toEqual([palette]);
+  expect(changes[0]!.addedNodes).toHaveLength(0);
+}
 
 function mockNativeStatusIcon() {
   return vi.spyOn(obsidian, "setIcon").mockImplementation((element) => {
@@ -44,13 +69,14 @@ function verifyRetainedStatusNodes(
   root: HTMLElement,
   observer: MutationObserver,
 ) {
-  const icon = root.querySelector(".inkbook-status-bar-icon")!;
+  const content = currentStatusContent(root);
+  const icon = content.querySelector(".inkbook-status-bar-icon")!;
   const glyph = icon.firstElementChild;
-  const label = root.querySelector(".inkbook-status-bar-label")!;
+  const label = content.querySelector(".inkbook-status-bar-label")!;
   for (let index = 0; index < 10_000; index += 1) workspace.setActivePane(container);
   expect(observer.takeRecords()).toHaveLength(0);
   expect(icon.firstElementChild).toBe(glyph);
-  expect(root.querySelector(".inkbook-status-bar-label")).toBe(label);
+  expect(currentStatusContent(root).querySelector(".inkbook-status-bar-label")).toBe(label);
   return glyph;
 }
 
@@ -99,64 +125,6 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: caches public pane ownership 
   }
 });
 
-it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds observed content width transitions without synchronous layout reads or frame work`, () => {
-  installObsidianDomHelpers();
-  const boundary = documentStatusBarMotionFixture();
-  const container = document.body.createDiv();
-  const status = new WorkspaceDocumentStatus();
-  const geometry = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
-  const width = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get");
-  const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get");
-  const frames = vi.spyOn(window, "requestAnimationFrame");
-  const timers = vi.spyOn(window, "setTimeout");
-  const intervals = vi.spyOn(window, "setInterval");
-  const { dispose } = mountDocumentStatusBar(container, status);
-  const root = container.firstElementChild as HTMLElement;
-  boundary.attach(root);
-  try {
-    boundary.resize(50);
-    boundary.resize(100);
-    const first = boundary.animations[0]!;
-    for (let index = 0; index < 10_000; index += 1) {
-      boundary.resize(100);
-      status.setActivePane(container);
-    }
-    expect(boundary.construct).toHaveBeenCalledOnce();
-    expect(boundary.observe).toHaveBeenCalledExactlyOnceWith(root.firstElementChild);
-    expect(boundary.animate).toHaveBeenCalledOnce();
-    expect(first.effect.getComputedTiming).not.toHaveBeenCalled();
-    expect(first.cancel).not.toHaveBeenCalled();
-    boundary.resize(80);
-    expect(first.effect.getComputedTiming).toHaveBeenCalledOnce();
-    expect(first.cancel).toHaveBeenCalledOnce();
-    expect(first.onfinish).toBeNull();
-    const second = boundary.animations[1]!;
-    expect(second.cancel).not.toHaveBeenCalled();
-    second.onfinish?.();
-    expect(second.cancel).toHaveBeenCalledOnce();
-    boundary.resize(120);
-    dispose();
-    dispose();
-    boundary.resize(160);
-    expect(boundary.animate).toHaveBeenCalledTimes(3);
-    expect(boundary.animations[2]?.cancel).toHaveBeenCalledOnce();
-    expect(boundary.disconnect).toHaveBeenCalledOnce();
-    expect(boundary.query.removeEventListener).toHaveBeenCalledOnce();
-    expect(geometry).not.toHaveBeenCalled();
-    expect(width).not.toHaveBeenCalled();
-    expect(clientWidth).not.toHaveBeenCalled();
-    expect(frames).not.toHaveBeenCalled();
-    expect(timers).not.toHaveBeenCalled();
-    expect(intervals).not.toHaveBeenCalled();
-  } finally {
-    dispose();
-    status.dispose();
-    container.remove();
-    boundary.cleanup();
-    vi.restoreAllMocks();
-  }
-});
-
 it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM work across 10,000 commits and layout refreshes and preserves inactivity debounce`, () => {
   installObsidianDomHelpers();
   const container = document.body.createDiv();
@@ -185,7 +153,6 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
   const containment = vi.spyOn(container, "contains");
   const { dispose } = mountDocumentStatusBar(container, workspaceStatus);
   const root = container.firstElementChild as HTMLElement;
-  const icon = root.querySelector(".inkbook-status-bar-icon")!;
   const geometry = vi.spyOn(SVGElement.prototype, "getBoundingClientRect");
   const observer = new MutationObserver(() => undefined);
   observer.observe(root, { attributes: true, childList: true, subtree: true });
@@ -214,9 +181,9 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
       workspaceStatus.setActivePane(container);
     }
     expect(root.dataset.saveStatus).toBe("pending");
-    // One transition updates content and normalizes the new SVG in three attribute writes.
     expect(observer.takeRecords().length).toBeLessThanOrEqual(9);
     expect(icons).toHaveBeenCalledTimes(2);
+    const icon = currentStatusIcon(root);
     expectNormalizedIcon(icon, "1 1 22 22");
     const pendingGlyph = verifyRetainedStatusNodes(workspaceStatus, container, root, observer);
     attachment.documentId = "renamed.svg";
@@ -235,9 +202,10 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
     expect(root.dataset.saveStatus).toBe("saving");
     expect(observer.takeRecords().length).toBeLessThanOrEqual(9);
     expect(icons).toHaveBeenCalledTimes(3);
-    expectNormalizedIcon(icon, "2 2 20 20");
+    expectNormalizedIcon(currentStatusIcon(root), "2 2 20 20");
     expect(geometry).not.toHaveBeenCalled();
     expect(containment).toHaveBeenCalledOnce();
+    const palette = root.querySelector("[hidden][aria-hidden='true']")!;
     dispose();
     dispose();
     workspaceStatus.dispose();
@@ -245,7 +213,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
     status.update({ dirty: true, status: "executor-failed" });
     expect(unsubscribe).toHaveBeenCalledOnce();
     expect(container.children).toHaveLength(0);
-    expect(observer.takeRecords()).toHaveLength(0);
+    expectReleasedPalette(observer, palette);
     expect(icons).toHaveBeenCalledTimes(3);
   } finally {
     observer.disconnect();

@@ -2,11 +2,16 @@ import { setIcon } from "obsidian";
 
 import type { StyleControl } from "../menus/editor-menu-types";
 import { createStyleMenuContent } from "../menus/style-menu-content";
+import {
+  registerNativeControlFeedback,
+  type NativeControlFeedbackOptions,
+} from "../menus/feedback/native-control-feedback";
+import { createSettingsValidationMotion } from "./settings-validation-motion";
 
 const INVALID_VALUE_MESSAGE = "Enter a valid setting value.";
 const SAVE_FAILURE_MESSAGE = "The setting could not be saved.";
 
-export interface SettingsControlContentOptions {
+export interface SettingsControlContentOptions extends NativeControlFeedbackOptions {
   readonly controls: () => readonly StyleControl[];
   readonly descriptions: Readonly<Record<string, string>>;
   readonly idPrefix: string;
@@ -17,9 +22,12 @@ export interface SettingsControlContentOptions {
 export function renderSettingsControlContent(
   container: HTMLElement,
   options: SettingsControlContentOptions,
-): void {
+): () => void {
   const latestCommits = new Map<string, number>();
+  const validation = createSettingsValidationMotion(container, options);
   let currentErrors = new Map<string, HTMLElement>();
+  let releaseFeedback: ReturnType<typeof registerNativeControlFeedback> | undefined;
+  let disposed = false;
 
   const render = (): Map<string, HTMLElement> => {
     const controls = options.controls();
@@ -30,25 +38,37 @@ export function renderSettingsControlContent(
       onChange: (controlId, value) => {
         const commit = (latestCommits.get(controlId) ?? 0) + 1;
         latestCommits.set(controlId, commit);
-        clearControlError(container, controlId);
+        const error = currentErrors.get(controlId);
+        if (error !== undefined) validation.set(error, "");
         void options.onChange(controlId, value).catch(() => {
-          if (commit !== latestCommits.get(controlId)) return;
-          const errors = render();
-          showControlError(errors.get(controlId), SAVE_FAILURE_MESSAGE);
+          if (disposed || commit !== latestCommits.get(controlId)) return;
+          restoreControlValues(container, options.controls());
+          releaseFeedback?.refresh();
+          if (error !== undefined) validation.set(error, SAVE_FAILURE_MESSAGE);
         });
       },
       ownerDocument: options.ownerDocument,
-      onInvalidValue: (controlId) =>
-        showControlError(currentErrors.get(controlId), INVALID_VALUE_MESSAGE),
+      onInvalidValue: (controlId) => {
+        const error = currentErrors.get(controlId);
+        if (error !== undefined) validation.set(error, INVALID_VALUE_MESSAGE);
+      },
       renderIcon: (element, icon) => setIcon(element, icon),
     });
     const errors = installControlAccessibility(fragment, controls, options.idPrefix);
     currentErrors = errors;
+    releaseFeedback?.();
     container.replaceChildren(fragment);
+    releaseFeedback = registerNativeControlFeedback(container, options);
     return errors;
   };
 
   render();
+  return () => {
+    disposed = true;
+    releaseFeedback?.();
+    releaseFeedback = undefined;
+    validation.dispose();
+  };
 }
 
 function installControlAccessibility(
@@ -60,6 +80,7 @@ function installControlAccessibility(
   for (const control of controls) {
     const section = fragment.querySelector<HTMLElement>(`[data-control="${control.id}"]`);
     if (section === null) continue;
+    section.classList.add("inkbook-settings-validation-surface");
     const description = section.querySelector<HTMLElement>(".inkbook-menu-control-description");
     const error = section.createDiv({ cls: "inkbook-settings-control-error" });
     const descriptionId = `${idPrefix}-${control.id}-description`;
@@ -77,16 +98,30 @@ function installControlAccessibility(
   return errors;
 }
 
-function clearControlError(container: HTMLElement, controlId: string): void {
-  const section = container.querySelector<HTMLElement>(`[data-control="${controlId}"]`);
-  const error = section?.querySelector<HTMLElement>(".inkbook-settings-control-error");
-  if (error === null || error === undefined) return;
-  error.textContent = "";
-  error.hidden = true;
+function restoreControlValues(container: HTMLElement, controls: readonly StyleControl[]): void {
+  for (const control of controls) {
+    const section = container.querySelector<HTMLElement>(`[data-control="${control.id}"]`);
+    if (section === null) continue;
+    if (control.kind === "choice") {
+      for (const button of section.querySelectorAll<HTMLButtonElement>("button[data-value]")) {
+        button.setAttribute("aria-pressed", String(button.dataset.value === control.value));
+      }
+    } else {
+      restoreInputs(section, control);
+    }
+  }
 }
 
-function showControlError(error: HTMLElement | undefined, message: string): void {
-  if (error === undefined) return;
-  error.textContent = message;
-  error.hidden = false;
+function restoreInputs(
+  section: HTMLElement,
+  control: Exclude<StyleControl, { kind: "choice" }>,
+): void {
+  for (const input of section.querySelectorAll<HTMLInputElement>("input")) {
+    if (control.kind === "toggle") input.checked = control.checked;
+    else {
+      const scale = control.id.includes("opacity") ? 100 : 1;
+      input.value = control.value === null ? "" : String(control.value * scale);
+      input.defaultValue = input.value;
+    }
+  }
 }

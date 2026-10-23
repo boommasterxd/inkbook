@@ -7,7 +7,7 @@ import {
   UNIFIED_HISTORY_LOCK_NOTICE,
 } from "../../../../../src/obsidian/embeds/active-editor/document-history";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
+import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { elementMutationPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 

@@ -1,12 +1,18 @@
-import { PreparedPressurePathCache } from "./prepared-pressure-path-cache";
-import { PreparedStrokeCenterCache, sameLocalSelectionShape } from "./prepared-stroke-center-cache";
+import { PreparedPressurePathCache } from "./records/prepared-pressure-path-cache";
+import {
+  PreparedStrokeCenterCache,
+  sameLocalSelectionShape,
+} from "./records/prepared-stroke-center-cache";
 import type { StrokeElementV1 } from "../schema/public";
-import type { PreparedPressureGeometryPort } from "../geometry/prepared-pressure-geometry";
-import { PreparedPressureWindowCache } from "./prepared-pressure-window-cache";
+import type { PreparedPressureGeometryPort } from "../geometry/pressure/prepared-pressure-geometry";
+import { PreparedPressureWindowCache } from "./records/prepared-pressure-window-cache";
 import { isAnchorTarget, type ResolvedShapeAnchor } from "../geometry/anchors";
 
-import { SemanticAnchorCache } from "./semantic-anchor-cache";
-import { applyStoreDeltaBytes, estimateInitialStoreBytes } from "./active-document-memory-estimate";
+import { SemanticAnchorCache } from "./records/semantic-anchor-cache";
+import {
+  applyStoreDeltaBytes,
+  estimateInitialStoreBytes,
+} from "./records/active-document-memory-estimate";
 import type {
   ElementRecord,
   ElementStoreMemoryUsage,

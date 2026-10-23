@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { commitVaultPage } from "../../../../src/obsidian/embeds/vault-document-model";
+import { commitVaultPage } from "../../../../src/obsidian/embeds/document-session/vault-document-model";
 import type { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
 import { rectangle, snapshot } from "../../persistence/worker/runtime/fixtures";
 

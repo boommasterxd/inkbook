@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { InkbookFeedbackManager } from "../../../../src/obsidian/feedback";
+import { animateOwnedElement } from "../../../../src/obsidian/runtime/element-motion";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+
+vi.mock("../../../../src/obsidian/runtime/element-motion", () => ({
+  animateOwnedElement: vi.fn((_element, _keyframes, options: { onComplete?: () => void }) => ({
+    cancel: vi.fn(),
+    complete: () => options.onComplete?.(),
+    finished: Promise.resolve(),
+  })),
+}));
 
 describe("Inkbook feedback manager", () => {
   it("renders one accessible icon-action message in the owning window", async () => {
@@ -55,33 +64,79 @@ describe("Inkbook feedback manager", () => {
     );
   });
 
-  it("keeps a closed message as an inaccessible exit surface until toolbar motion completes", () => {
-    const root = new FakePresentationElement();
-    const ownerWindow = root.ownerDocument.defaultView;
-    if (ownerWindow === null) throw new Error("Missing owner window.");
-    const scheduled: Array<() => void> = [];
-    (ownerWindow as unknown as { setTimeout(callback: () => void): number }).setTimeout = (
-      callback,
-    ) => {
-      scheduled.push(callback);
-      return 1;
-    };
-    const manager = new InkbookFeedbackManager();
-    const handle = manager.showInPresentation(root as unknown as HTMLElement, {
-      actions: [{ id: "dismiss", run: () => true }],
-      code: "clipboard-paste-read-failed",
-    });
+  it("closes immediately when the host cannot animate the exit surface", () => {
+    const { root, handle } = dismissibleFeedback();
 
     handle.close();
 
     const feedback = root.getElementsByClassName("inkbook-feedback").item(0);
-    expect(feedback?.dataset.inkbookFeedbackPresence).toBe("exiting");
-    expect(feedback?.attributes.get("aria-hidden")).toBe("true");
-    expect(root.getElementsByClassName("inkbook-feedback").length).toBe(1);
-    scheduled[0]?.();
+    expect(feedback).toBeNull();
     expect(root.getElementsByClassName("inkbook-feedback").length).toBe(0);
   });
+
+  it("keeps an animated exit inaccessible until Motion completes", () => {
+    const prototype = FakePresentationElement.prototype as unknown as { animate?: () => void };
+    prototype.animate = vi.fn();
+    try {
+      const { root, handle } = dismissibleFeedback();
+      handle.close();
+      const feedback = root.getElementsByClassName("inkbook-feedback").item(0);
+      expect(feedback?.dataset.inkbookFeedbackPresence).toBe("exiting");
+      expect(feedback?.attributes.get("aria-hidden")).toBe("true");
+      expect((feedback as unknown as HTMLElement | null)?.inert).toBe(true);
+      const calls = vi.mocked(animateOwnedElement).mock.results;
+      const exit = calls[calls.length - 1]?.value as { complete: () => void };
+      exit.complete();
+      expect(root.getElementsByClassName("inkbook-feedback").length).toBe(0);
+    } finally {
+      delete prototype.animate;
+      vi.mocked(animateOwnedElement).mockClear();
+    }
+  });
 });
+
+describe("feedback entrance interruption", () => {
+  it("starts an interrupted exit at the rendered entrance scale", () => {
+    const prototype = FakePresentationElement.prototype as unknown as { animate?: () => void };
+    prototype.animate = vi.fn();
+    try {
+      const { root, handle } = dismissibleFeedback();
+      const calls = vi.mocked(animateOwnedElement).mock.results;
+      const entrance = calls[calls.length - 1]?.value as {
+        cancel: ReturnType<typeof vi.fn>;
+      };
+      const ownerWindow = root.ownerDocument.defaultView;
+      if (ownerWindow === null) throw new Error("Missing owner window.");
+      const computed = vi.spyOn(ownerWindow, "getComputedStyle").mockImplementation(() => {
+        expect(entrance.cancel).not.toHaveBeenCalled();
+        return { scale: "0.37" } as CSSStyleDeclaration;
+      });
+
+      handle.close();
+
+      expect(computed).toHaveBeenCalledOnce();
+      expect(entrance.cancel).toHaveBeenCalled();
+      expect(vi.mocked(animateOwnedElement)).toHaveBeenLastCalledWith(
+        root.getElementsByClassName("inkbook-feedback").item(0),
+        { scale: [0.37, 0] },
+        expect.objectContaining({ duration: 0.22, ease: "easeIn" }),
+      );
+    } finally {
+      delete prototype.animate;
+      vi.mocked(animateOwnedElement).mockClear();
+    }
+  });
+});
+
+function dismissibleFeedback() {
+  const root = new FakePresentationElement();
+  const manager = new InkbookFeedbackManager();
+  const handle = manager.showInPresentation(root as unknown as HTMLElement, {
+    actions: [{ id: "dismiss", run: () => true }],
+    code: "clipboard-paste-read-failed",
+  });
+  return { root, handle };
+}
 
 describe("Inkbook feedback routing and cleanup", () => {
   it("mounts global feedback outside the active view and replaces its window slot", () => {

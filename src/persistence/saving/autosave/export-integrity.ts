@@ -6,7 +6,7 @@ import {
   sameDocumentIntegrityManifest,
   type DocumentIntegrityManifest,
 } from "../../serialization/public";
-import { CanonicalMetadataCache } from "../../serialization/canonical-metadata-cache";
+import { CanonicalMetadataCache } from "../../serialization/metadata/canonical-metadata-cache";
 import { createMainThreadCheckpoint } from "../../scheduling/main-thread-checkpoint";
 import { adoptOwnedSvgOutput } from "../../scheduling/owned-svg-output";
 

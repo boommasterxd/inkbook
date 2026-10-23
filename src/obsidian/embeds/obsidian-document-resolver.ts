@@ -1,6 +1,6 @@
 import { normalizePath, TFile, type App } from "obsidian";
 
-import type { ResolvedInkbookDocument } from "./presentation-port";
+import type { ResolvedInkbookDocument } from "./presentation/presentation-port";
 
 function decodeLinkpath(linkpath: string): string | undefined {
   try {

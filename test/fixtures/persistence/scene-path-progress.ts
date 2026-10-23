@@ -1,6 +1,6 @@
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/document-runtime";
 import type { DocumentRuntimeObserver } from "../../../src/persistence/worker/runtime/types";
-import { attachDocumentWorkerHost } from "../../../src/persistence/worker/runtime/worker-host";
+import { attachDocumentWorkerHost } from "../../../src/persistence/worker/runtime/bridge/worker-host";
 import { createWorkerBridgeClient, createWorkerBridgeEndpoints } from "./worker-bridge";
 import { createTestStroke, createWorkerSnapshot } from "./worker-snapshot";
 

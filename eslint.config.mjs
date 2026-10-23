@@ -208,7 +208,10 @@ export default [
     },
   },
   {
-    files: ["src/obsidian/embeds/editor-chrome-loader.ts", "src/obsidian/plugin-loader.ts"],
+    files: [
+      "src/obsidian/embeds/active-scene/editor-chrome-loader.ts",
+      "src/obsidian/plugin-loader.ts",
+    ],
     rules: {
       "no-unsanitized/method": [
         "error",
@@ -376,7 +379,7 @@ export default [
   },
   {
     // This semantic I/O adapter is shared with workers, where Window is unavailable.
-    files: ["src/persistence/worker/runtime/request-timeout.ts"],
+    files: ["src/persistence/worker/runtime/bridge/request-timeout.ts"],
     rules: { "obsidianmd/prefer-window-timers": "off" },
   },
   {
@@ -414,10 +417,18 @@ export default [
     },
   },
   {
-    // These Node-only resource contracts count Promise allocations via async_hooks.
+    // This Node-only fixture creates genuine foreign-realm worker payloads.
+    files: ["test/fixtures/persistence/worker-popout-realm.ts"],
+    rules: {
+      "obsidianmd/no-nodejs-modules": "off",
+    },
+  },
+  {
+    // These Node-only resource contracts observe allocations and native task boundaries.
     files: [
       "test/performance/editor/selection-hot-paths.test.ts",
-      "test/performance/persistence/clipboard.test.ts",
+      "test/performance/persistence/clipboard/clipboard.test.ts",
+      "test/performance/obsidian/menus/owned-menu-performance.test.ts",
     ],
     rules: {
       "obsidianmd/no-nodejs-modules": "off",

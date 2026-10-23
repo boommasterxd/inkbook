@@ -12,7 +12,7 @@
   display: none;
 }
 
-.inkbook-adaptive-panel,
+.inkbook-adaptive-panel-motion-surface,
 .inkbook-owned-menu {
   backdrop-filter: var(--menu-backdrop-filter);
   background: var(--menu-background);
@@ -27,22 +27,20 @@
 .inkbook-adaptive-panel {
   max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100vh) - 16px);
   outline: none;
-  overflow: hidden;
   pointer-events: auto;
   position: fixed;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"]
-  .inkbook-adaptive-panel[data-presence="entering"] {
-  animation: inkbook-adaptive-panel-wide-enter var(--inkbook-adaptive-panel-entry-duration) ease-out
-    both;
+.inkbook-adaptive-panel-motion-surface {
+  max-block-size: inherit;
+  overflow: hidden;
 }
 
 .inkbook-adaptive-panel[data-state="closing"] {
   pointer-events: none;
 }
 
-.inkbook-adaptive-panel-layer[data-mobile="true"] .inkbook-adaptive-panel {
+.inkbook-adaptive-panel-layer[data-mobile="true"] .inkbook-adaptive-panel-motion-surface {
   background: color-mix(in srgb, var(--menu-background) var(--blur-opacity-m), transparent);
   border: none;
 }
@@ -63,16 +61,10 @@
   padding: var(--menu-padding);
   scrollbar-gutter: stable;
   scrollbar-width: none;
-  transition: block-size var(--inkbook-adaptive-panel-duration)
-    var(--inkbook-motion-easing, cubic-bezier(0.2, 0, 0, 1));
 }
 
 .inkbook-adaptive-panel[data-state="open"] .inkbook-adaptive-panel-scroll {
   overflow-y: auto;
-}
-
-.inkbook-adaptive-panel[data-page-measuring] .inkbook-adaptive-panel-scroll {
-  transition: none;
 }
 
 .inkbook-adaptive-panel-scroll::-webkit-scrollbar {
@@ -105,13 +97,6 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
-.inkbook-adaptive-panel-back:hover,
-.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
-  .inkbook-adaptive-panel-back:focus {
-  background: var(--interactive-hover);
-  box-shadow: none;
-}
-
 .inkbook-adaptive-panel-back-icon,
 .inkbook-adaptive-panel-back-icon svg {
   block-size: var(--icon-s);
@@ -125,7 +110,6 @@
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] {
   pointer-events: auto;
-  transition: block-size var(--inkbook-adaptive-panel-duration) ease-out;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-backdrop {
@@ -138,14 +122,10 @@
 
 .inkbook-adaptive-panel-layer[data-platform="phone"]
   .inkbook-adaptive-panel-backdrop[data-state="closing"] {
-  animation: inkbook-adaptive-panel-backdrop-exit var(--inkbook-adaptive-panel-duration) ease-in
-    both;
   pointer-events: none;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel {
-  border: none;
-  border-radius: var(--touch-radius-s) var(--touch-radius-s) 0 0;
   inset-block: auto 0;
   inset-inline: var(--safe-area-inset-left) var(--safe-area-inset-right);
   inline-size: auto;
@@ -156,41 +136,21 @@
   translate: 0 var(--inkbook-adaptive-panel-drag, 0);
 }
 
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-motion-surface {
+  border: none;
+  border-radius: var(--touch-radius-s) var(--touch-radius-s) 0 0;
+}
+
 .inkbook-adaptive-panel-layer[data-platform="phone"]
   .inkbook-adaptive-panel[data-scroll-position="away"] {
   touch-action: pan-y;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"]
-  .inkbook-adaptive-panel[data-presence="entering"] {
-  animation: inkbook-adaptive-panel-sheet-enter var(--inkbook-adaptive-panel-entry-duration)
-    ease-out both;
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-state="closing"] {
-  animation: inkbook-adaptive-panel-sheet-exit var(--inkbook-adaptive-panel-duration) ease-in both;
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"]
   .inkbook-adaptive-panel[data-swipe-state="dragging"],
 .inkbook-adaptive-panel-layer[data-platform="phone"]
   .inkbook-adaptive-panel[data-swipe-state="settling"] {
-  animation: none;
   will-change: translate;
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"]
-  :is(
-    .inkbook-adaptive-panel[data-swipe-state="settling"],
-    .inkbook-adaptive-panel-backdrop[data-swipe-state="settling"]
-  ) {
-  transition-duration: var(--inkbook-adaptive-panel-duration);
-  transition-timing-function: var(--inkbook-motion-easing, cubic-bezier(0.2, 0, 0, 1));
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"]
-  .inkbook-adaptive-panel[data-swipe-state="settling"] {
-  transition-property: translate;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"]
@@ -198,11 +158,6 @@
 .inkbook-adaptive-panel-layer[data-platform="phone"]
   .inkbook-adaptive-panel-backdrop[data-swipe-state="settling"] {
   will-change: opacity;
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"]
-  .inkbook-adaptive-panel-backdrop[data-swipe-state="settling"] {
-  transition-property: opacity;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-drag-region {
@@ -256,48 +211,6 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
-@keyframes inkbook-adaptive-panel-wide-enter {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
-
-  to {
-    opacity: 1;
-    scale: 1;
-  }
-}
-
-@keyframes inkbook-adaptive-panel-sheet-enter {
-  from {
-    translate: 0 100%;
-  }
-
-  to {
-    translate: 0 var(--inkbook-adaptive-panel-drag, 0);
-  }
-}
-
-@keyframes inkbook-adaptive-panel-sheet-exit {
-  from {
-    translate: 0 var(--inkbook-adaptive-panel-drag, 0);
-  }
-
-  to {
-    translate: 0 100%;
-  }
-}
-
-@keyframes inkbook-adaptive-panel-backdrop-exit {
-  from {
-    opacity: var(--inkbook-adaptive-panel-backdrop-opacity, 1);
-  }
-
-  to {
-    opacity: 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .inkbook-adaptive-panel-layer,
   .inkbook-adaptive-panel,
@@ -307,54 +220,14 @@
   }
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-adaptive-panel[data-state="closing"] {
-  animation: inkbook-wide-menu-exit var(--inkbook-adaptive-panel-entry-duration) ease-out both;
-}
-
-@keyframes inkbook-wide-menu-exit {
-  from {
-    opacity: var(--inkbook-wide-menu-exit-opacity, 1);
-    scale: var(--inkbook-wide-menu-exit-scale, 1);
-  }
-
-  to {
-    opacity: 0;
-    scale: 0.96;
-  }
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-page-transition],
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-page-frozen] {
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-page-transition] {
   max-block-size: var(--inkbook-adaptive-panel-viewport-height);
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"]
   .inkbook-adaptive-panel[data-page-transition]
-  .inkbook-adaptive-panel-scroll,
-.inkbook-adaptive-panel-layer[data-platform="phone"]
-  .inkbook-adaptive-panel[data-page-frozen]
   .inkbook-adaptive-panel-scroll {
   max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height) - 16px);
-}
-
-.inkbook-adaptive-panel[data-page-transition] .inkbook-adaptive-panel-scroll > * {
-  animation: inkbook-phone-page-enter var(--inkbook-phone-page-duration) ease-out both;
-}
-
-.inkbook-adaptive-panel[data-page-transition="back"] {
-  --inkbook-phone-page-offset: -12px;
-}
-
-@keyframes inkbook-phone-page-enter {
-  from {
-    opacity: 0;
-    translate: var(--inkbook-phone-page-offset, 12px) 0;
-  }
-
-  to {
-    opacity: 1;
-    translate: 0 0;
-  }
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-phone-keyboard-inset {

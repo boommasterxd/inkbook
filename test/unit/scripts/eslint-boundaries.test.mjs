@@ -7,28 +7,36 @@ const linter = new Linter({ configType: "flat" });
 const eslint = new ESLint();
 
 it.each([
-  ["src/main.ts", true],
-  ["test/fixtures/persistence/isolated-node-process.ts", false],
-  ["test/unit/persistence/saving/isolated-node-process.test.ts", false],
-])("restricts Node process APIs to the isolated harness in %s", async (filePath, restricted) => {
-  const config = await eslint.calculateConfigForFile(filePath);
-  const messages = linter.verify(
-    'import { spawn } from "node:child_process";\nvoid spawn;\nvoid process.pid;\nvoid Buffer.byteLength("test");',
-    {
-      files: ["**/*.{ts,mjs}"],
-      languageOptions: { globals: config.languageOptions.globals },
-      plugins: { obsidianmd: config.plugins.obsidianmd },
-      rules: {
-        "obsidianmd/no-nodejs-modules": config.rules["obsidianmd/no-nodejs-modules"],
-        "no-undef": config.rules["no-undef"],
+  ["src/main.ts", true, true],
+  ["test/fixtures/persistence/isolated-node-process.ts", false, false],
+  ["test/unit/persistence/saving/isolated-node-process.test.ts", false, false],
+  ["test/fixtures/persistence/worker-popout-realm.ts", false, true],
+  ["test/performance/obsidian/menus/owned-menu-performance.test.ts", false, true],
+  ["test/fixtures/persistence/worker-bridge.ts", true, true],
+])(
+  "restricts Node APIs to their test boundary in %s",
+  async (filePath, restricted, globalsRestricted) => {
+    const config = await eslint.calculateConfigForFile(filePath);
+    const messages = linter.verify(
+      'import { spawn } from "node:child_process";\nvoid spawn;\nvoid process.pid;\nvoid Buffer.byteLength("test");',
+      {
+        files: ["**/*.{ts,mjs}"],
+        languageOptions: { globals: config.languageOptions.globals },
+        plugins: { obsidianmd: config.plugins.obsidianmd },
+        rules: {
+          "obsidianmd/no-nodejs-modules": config.rules["obsidianmd/no-nodejs-modules"],
+          "no-undef": config.rules["no-undef"],
+        },
       },
-    },
-    { filename: filePath },
-  );
+      { filename: filePath },
+    );
 
-  expect(messages.some(({ ruleId }) => ruleId === "obsidianmd/no-nodejs-modules")).toBe(restricted);
-  expect(messages.some(({ ruleId }) => ruleId === "no-undef")).toBe(restricted);
-});
+    expect(messages.some(({ ruleId }) => ruleId === "obsidianmd/no-nodejs-modules")).toBe(
+      restricted,
+    );
+    expect(messages.some(({ ruleId }) => ruleId === "no-undef")).toBe(globalsRestricted);
+  },
+);
 
 describe("dependency lint boundaries", () => {
   it("allows the development-only Moment security override", async () => {

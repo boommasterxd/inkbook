@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { RemoteScenePaths } from "../../../../src/rendering/scene/remote-scene-paths";
+import { RemoteScenePaths } from "../../../../src/rendering/scene/content/remote-scene-paths";
 import { createSceneRecord } from "../../../fixtures/rendering/scene";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { createGatedTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";

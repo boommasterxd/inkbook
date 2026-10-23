@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { capturePastePlan } from "../../../../src/persistence/clipboard/paste-plan-snapshot";
-import { createPastePlan } from "../../../integration/obsidian/embeds/active-editor-clipboard-fixtures";
+import { createPastePlan } from "../../../integration/obsidian/embeds/active-editor/active-editor-clipboard-fixtures";
 import { rectangle } from "../../domain/store/fixtures";
 
 it("owns plan metadata and reuses only the privately captured immutable wrapper", () => {

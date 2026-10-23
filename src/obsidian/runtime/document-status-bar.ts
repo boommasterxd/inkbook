@@ -1,9 +1,12 @@
+import { createElement } from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
 import { setIcon } from "obsidian";
 
 import type { DocumentSaveStatus } from "../../editor/session/session-port";
-import type { MotionPreference } from "../../rendering/motion/transitions";
-import type { WorkspaceDocumentSaveStatusSource } from "../embeds/workspace-document-status";
-import { DocumentStatusBarMotion } from "./document-status-bar-motion";
+import { isReducedMotion, type MotionPreference } from "../../rendering/motion/transitions";
+import { DocumentStatusBarContent } from "../../rendering/ui/document-status-bar-content";
+import type { WorkspaceDocumentSaveStatusSource } from "../embeds/workspace/workspace-document-status";
 
 const LABELS: Readonly<Record<DocumentSaveStatus, string>> = {
   saved: "Saved",
@@ -20,62 +23,90 @@ const ICONS: Readonly<Record<DocumentSaveStatus, { name: string; viewBox: string
   failed: { name: "circle-alert", viewBox: "1 1 22 22" },
 };
 
-/** Mounts one native status item and owns its content and motion lifetime. */
+function renderIcon(element: HTMLElement, name: string, viewBox: string): void {
+  setIcon(element, name);
+  const svg = element.querySelector("svg");
+  svg?.setAttribute("viewBox", viewBox);
+  svg?.removeAttribute("width");
+  svg?.removeAttribute("height");
+}
+
+/** Mounts one native status item and owns its React/Motion content lifetime. */
 export function mountDocumentStatusBar(
   container: HTMLElement,
   source: WorkspaceDocumentSaveStatusSource,
   readPreference: () => MotionPreference = () => "system",
-): { dispose: () => void; refreshMotion: () => void } {
-  const root = container.createSpan({ cls: "inkbook-status-bar" });
-  root.setAttribute("role", "status");
-  root.setAttribute("aria-label", "Inkbook save status");
-  root.setAttribute("aria-live", "polite");
-  root.setAttribute("aria-atomic", "true");
-  const content = root.createSpan({ cls: "inkbook-status-bar-content" });
-  const icon = content.createSpan({ cls: "inkbook-status-bar-icon" });
-  icon.setAttribute("aria-hidden", "true");
-  const label = content.createSpan({ cls: "inkbook-status-bar-label" });
-  const widthMotion = new DocumentStatusBarMotion(root, content, readPreference);
+): { dispose: () => void; refreshColors: () => void; refreshMotion: () => void } {
+  const ownerWindow = container.ownerDocument.defaultView;
+  const query = ownerWindow?.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const view = createRoot(container);
   let disposed = false;
-  let previousIcon: (typeof ICONS)[DocumentSaveStatus] | null = null;
-  const refreshMotion = (): void => {
-    if (disposed) return;
-    const motion = readPreference();
-    if (root.dataset.inkbookMotion !== motion) root.dataset.inkbookMotion = motion;
-    widthMotion.refreshMotion();
-  };
+  let root: HTMLElement | null = null;
+  let renderedStatus = "";
+  let renderedLabel = "";
+  let renderedMotion: MotionPreference | undefined;
+  let renderedReduced: boolean | undefined;
+  let renderedTitle = "";
+  let paletteRevision = 0;
+  let renderedPaletteRevision = -1;
   const update = (): void => {
     if (disposed) return;
-    refreshMotion();
     const current = source.current();
     const status = current?.status ?? "inactive";
-    if (root.dataset.saveStatus !== status) root.dataset.saveStatus = status;
-    const text = current === null ? "No Inkbook embed open" : LABELS[current.status];
-    if (label.textContent !== text) label.textContent = text;
-    const title = current === null ? text : `Inkbook: ${text}\n${current.path}`;
-    if (root.title !== title) root.title = title;
-    const nextIcon = current === null ? null : ICONS[current.status];
-    if (nextIcon === previousIcon) return;
-    previousIcon = nextIcon;
-    icon.hidden = nextIcon === null;
-    if (nextIcon === null) icon.replaceChildren();
-    else {
-      setIcon(icon, nextIcon.name);
-      const svg = icon.querySelector("svg");
-      svg?.setAttribute("viewBox", nextIcon.viewBox);
-      svg?.removeAttribute("width");
-      svg?.removeAttribute("height");
+    const label = current === null ? "No Inkbook embed open" : LABELS[current.status];
+    const title = current === null ? label : `Inkbook: ${label}\n${current.path}`;
+    const motionPreference = readPreference();
+    const reduced = isReducedMotion(motionPreference, query?.matches ?? false);
+    if (
+      root !== null &&
+      status === renderedStatus &&
+      label === renderedLabel &&
+      motionPreference === renderedMotion &&
+      reduced === renderedReduced &&
+      paletteRevision === renderedPaletteRevision
+    ) {
+      if (title !== renderedTitle) root.title = title;
+    } else {
+      flushSync(() =>
+        view.render(
+          createElement(DocumentStatusBarContent, {
+            icon: current === null ? null : ICONS[current.status],
+            label,
+            motionPreference,
+            paletteRevision,
+            reduced,
+            renderIcon,
+            status,
+            title,
+          }),
+        ),
+      );
+      root = container.querySelector(".inkbook-status-bar");
+      renderedStatus = status;
+      renderedLabel = label;
+      renderedMotion = motionPreference;
+      renderedReduced = reduced;
+      renderedPaletteRevision = paletteRevision;
     }
+    renderedTitle = title;
   };
-  icon.hidden = true;
+  query?.addEventListener("change", update);
   const unsubscribe = source.subscribe(update);
   update();
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
-    widthMotion.dispose();
+    query?.removeEventListener("change", update);
     unsubscribe();
-    root.remove();
+    view.unmount();
   };
-  return { dispose, refreshMotion };
+  return {
+    dispose,
+    refreshColors: () => {
+      if (disposed) return;
+      paletteRevision += 1;
+      update();
+    },
+    refreshMotion: update,
+  };
 }

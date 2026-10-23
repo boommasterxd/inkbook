@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/document-runtime";
-import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/worker-host";
-import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
+import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/bridge/worker-host";
+import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/bridge/worker-bridge";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { createWorkerBridgeEndpoints } from "../../../fixtures/persistence/worker-bridge";
 import {
@@ -9,7 +9,7 @@ import {
   createWorkerSnapshot,
 } from "../../../fixtures/persistence/worker-snapshot";
 import type { DocumentRuntimeRequest } from "../../../../src/persistence/worker/runtime/types";
-import * as sampleCodec from "../../../../src/persistence/serialization/stroke-sample-codec";
+import * as sampleCodec from "../../../../src/persistence/serialization/metadata/stroke-sample-codec";
 
 it("retains worker-owned shape points through hosted move, removal and restore requests", async () => {
   const { clientEndpoint, hostEndpoint } = createWorkerBridgeEndpoints();

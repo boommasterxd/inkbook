@@ -7,19 +7,19 @@ import {
 } from "../../../../../src/domain/geometry/stroke-position";
 import type { InkSnapshotV1, StrokeElementV1 } from "../../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../../src/domain/store/public";
-import { PreparedPressurePathCache } from "../../../../../src/domain/store/prepared-pressure-path-cache";
+import { PreparedPressurePathCache } from "../../../../../src/domain/store/records/prepared-pressure-path-cache";
 import { createExportRequest } from "../../../../../src/persistence/saving/autosave/export-request";
 import { AutosaveWorkerModelState } from "../../../../../src/persistence/saving/autosave/worker-model-state";
 import {
   MAX_PREPARED_PRESSURE_HINT_BYTES,
   preparedPressureHintBytes,
   preparedPressurePathHint,
-} from "../../../../../src/persistence/serialization/prepared-pressure-hints";
+} from "../../../../../src/persistence/serialization/output/prepared-pressure-hints";
 import {
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
 } from "../../../../../src/persistence/serialization/public";
-import { acceptPreparedPressurePaths } from "../../../../../src/persistence/worker/runtime/prepared-pressure-path-adoption";
+import { acceptPreparedPressurePaths } from "../../../../../src/persistence/worker/runtime/model/prepared-pressure-path-adoption";
 import {
   DocumentWorkerRuntime,
   type DocumentRuntimeResult,
@@ -27,7 +27,7 @@ import {
 import {
   decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
-} from "../../../../../src/persistence/worker/runtime/wire-codec";
+} from "../../../../../src/persistence/worker/runtime/wire/wire-codec";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { unlockCanonicalSnapshot } from "../../../../fixtures/persistence/canonical-worker-unlock";
 import { preparedHints } from "../../../../fixtures/persistence/prepared-pressure-hints";
@@ -404,7 +404,7 @@ it("does not seed geometry after cancellation", async () => {
   const controller = new AbortController();
   controller.abort();
   const { DocumentModelRuntime } =
-    await import("../../../../../src/persistence/worker/runtime/document-model");
+    await import("../../../../../src/persistence/worker/runtime/model/document-model");
   const model = new DocumentModelRuntime();
   const result = await model.export(request, {
     checkpoint: async () => undefined,

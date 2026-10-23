@@ -1,4 +1,4 @@
-import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
+import type { PreparedPressureGeometryPort } from "../../domain/geometry/pressure/prepared-pressure-geometry";
 import type { Bounds } from "../../domain/geometry/public";
 import type { InkElementV1 } from "../../domain/schema/public";
 
@@ -6,7 +6,7 @@ import {
   elementMatchesSelectionAreaSteps,
   type SelectionArea,
   type SelectionAreaInclusion,
-} from "./selection-area";
+} from "./query/selection-area";
 
 export type SelectionMode = "add" | "preserve-or-replace" | "replace";
 

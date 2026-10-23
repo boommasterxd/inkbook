@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { ScenePathReceiver } from "../../../../src/persistence/worker/runtime/scene-path-receiver";
-import { ScenePathValidationContext } from "../../../../src/persistence/worker/runtime/scene-path-limits";
-import type { BridgeScenePaths } from "../../../../src/persistence/worker/runtime/bridge-messages";
+import { ScenePathReceiver } from "../../../../src/persistence/worker/runtime/bridge/scene-path-receiver";
+import { ScenePathValidationContext } from "../../../../src/persistence/worker/runtime/model/scene-path-limits";
+import type { BridgeScenePaths } from "../../../../src/persistence/worker/runtime/bridge/bridge-messages";
 import type { PreparedScenePathsRuntimeSuccess } from "../../../../src/persistence/worker/runtime/types";
 
 it.each([false, true])(

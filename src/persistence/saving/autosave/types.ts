@@ -5,7 +5,7 @@ import type { DocumentRuntimePort } from "../../worker/runtime/public";
 import type { ExistingFilePort, MetadataGuardedFileRead, NewFilePort } from "../save-ports";
 import type { VaultBase } from "../../worker/protocol";
 import type { ActiveSaveProof, ExportSuccess } from "../../worker/protocol";
-import type { PreparedPressurePathHint } from "../../serialization/prepared-pressure-hints";
+import type { PreparedPressurePathHint } from "../../serialization/output/prepared-pressure-hints";
 
 export type AutosaveStatus =
   | "clean"

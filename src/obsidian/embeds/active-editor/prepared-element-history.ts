@@ -6,8 +6,8 @@ import {
   type SelectionMoveSnap,
 } from "../../../editor/selection/public";
 import { hasLinearConnectionDependencies } from "../../../editor/selection/selection-work-budget";
-import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
-import type { EditableDocumentModel } from "../vault-document-session";
+import type { TransformSliceScheduler } from "../../../editor/selection/transform/transforms";
+import type { EditableDocumentModel } from "../document-session/vault-document-session";
 import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ElementReplacementHistoryData } from "../../../domain/store/public";

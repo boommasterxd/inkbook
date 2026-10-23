@@ -1,6 +1,6 @@
 import { smoothStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
 import { simplifyStrokeCenters } from "../../../../src/domain/geometry/stroke-simplification";
-import { buildPressureOutline } from "../../../../src/domain/geometry/pressure-outline";
+import { buildPressureOutline } from "../../../../src/domain/geometry/pressure/pressure-outline";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 

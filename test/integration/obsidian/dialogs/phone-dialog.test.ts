@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { Modal, type App, type Plugin } from "obsidian";
@@ -193,4 +194,34 @@ describe("phone settings replacement", () => {
     expect(replacement.isConnected).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
+});
+
+it("retains saved Full over System Reduced and settles a live saved change while closing", async () => {
+  vi.spyOn(window, "matchMedia").mockReturnValue(
+    Object.assign(new EventTarget(), { matches: true }) as MediaQueryList,
+  );
+  let preference: "full" | "reduced" = "full";
+  let changed: () => void = () => undefined;
+  const unsubscribe = vi.fn();
+  const result = confirmInkbookAction(app(), {
+    title: "Delete embed?",
+    description: "Keep the SVG.",
+    confirmLabel: "Delete embed",
+    readMotion: () => preference,
+    observeMotion: (listener) => {
+      changed = listener;
+      return unsubscribe;
+    },
+    workScheduler: () => workSchedulerFromFrames(window),
+  });
+  const surface = sheet();
+  dialogButton("Delete embed").click();
+  expect(surface.isConnected).toBe(true);
+  expect(surface.inert).toBe(true);
+  preference = "reduced";
+  changed();
+  await expect(result).resolves.toBe(true);
+  expect(surface.isConnected).toBe(false);
+  expect(unsubscribe).toHaveBeenCalledTimes(2);
+  expect(vi.getTimerCount()).toBe(0);
 });

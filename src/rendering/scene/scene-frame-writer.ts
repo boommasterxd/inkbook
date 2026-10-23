@@ -1,7 +1,7 @@
-import { SceneLivePathCommits } from "./live-path-commits";
+import { SceneLivePathCommits } from "./content/live-path-commits";
 import { SceneToolCursorWriter, type SceneToolCursorFrameReader } from "./tool-cursor";
 import type { PageV1 } from "../../domain/schema/public";
-import type { SceneBackgroundCache } from "./background-cache";
+import type { SceneBackgroundCache } from "./content/background-cache";
 import {
   type AppliedLivePath,
   emptyAppliedLivePath,
@@ -12,9 +12,9 @@ import {
   writeScheme,
 } from "./frame-writes";
 import type { SceneDom } from "./scene-dom";
-import type { SceneElementPreviews } from "./scene-element-previews";
-import type { SceneMotionController } from "./scene-motion-controller";
-import type { SceneTransformPreviewController } from "./transform-preview-controller";
+import type { SceneElementPreviews } from "./presentation/scene-element-previews";
+import type { SceneMotionController } from "./presentation/scene-motion-controller";
+import type { SceneTransformPreviewController } from "./presentation/transform-preview-controller";
 import type {
   DocumentScheme,
   LivePathState,

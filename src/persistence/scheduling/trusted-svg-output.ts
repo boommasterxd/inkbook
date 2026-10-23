@@ -2,8 +2,9 @@ import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 import { validateSafeSvgSteps, type SafeSvgValidation } from "../documents/safe-svg-validator";
 import type { SafeSvgVersionPolicy } from "../documents/svg-envelope-root";
 import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
-import { hashExactUtf8Output } from "../serialization/chunked-output-assembler";
-import { SafeStaticProof } from "../serialization/safe-static-proof";
+import { hashExactUtf8Output } from "../serialization/output/chunked-output-assembler";
+import { SafeStaticProof } from "../serialization/input/safe-static-proof";
+import { isNativeArrayBuffer } from "../serialization/transfer-array";
 
 import { adoptUtf8Output, type Utf8AdoptionOptions } from "./utf8-adoption";
 import { createMainThreadCheckpoint } from "./main-thread-checkpoint";
@@ -270,7 +271,7 @@ function trustedOutput(inspected: InspectedOutput, safe: SafeSvgValidation): Tru
 
 function assertOwnedBytes(output: Uint8Array): void {
   if (
-    !(output.buffer instanceof ArrayBuffer) ||
+    !isNativeArrayBuffer(output.buffer) ||
     output.byteOffset !== 0 ||
     output.byteLength !== output.buffer.byteLength
   ) {

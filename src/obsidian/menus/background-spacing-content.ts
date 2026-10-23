@@ -8,6 +8,7 @@ export interface BackgroundSpacingContentOptions {
   readonly onChange: (spacing: BackgroundSpacing) => void;
   readonly onPreview: (spacing: BackgroundSpacing) => void;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
+  readonly registerUpdate?: (update: (spacing: BackgroundSpacing) => void) => void;
 }
 
 const SPACINGS = ["s", "m", "l", "xl"] as const satisfies readonly BackgroundSpacing[];
@@ -60,6 +61,10 @@ export function createBackgroundSpacingContent(
     options.onChange(SPACINGS[index]);
   });
   updateLocalValue();
+  options.registerUpdate?.((spacing) => {
+    range.value = String(SPACINGS.indexOf(spacing));
+    updateLocalValue();
+  });
   const sliderRow = win.createDiv({ cls: "inkbook-menu-spacing-slider-row" });
   sliderRow.append(range);
   root.append(header, sliderRow, labels);

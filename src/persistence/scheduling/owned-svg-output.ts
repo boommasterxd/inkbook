@@ -2,6 +2,7 @@ import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 import { parseSafeSvgRoot } from "../documents/svg-envelope-root";
 import { parseOpeningTag } from "../documents/svg-tag";
 import { adoptUtf8Output, type Utf8AdoptionOptions } from "./utf8-adoption";
+import { isNativeArrayBuffer } from "../serialization/transfer-array";
 
 const ROOT_PREFIX_LENGTH = 4 * 1024;
 const HASH = /^[0-9a-f]{64}$/u;
@@ -35,7 +36,7 @@ function assertOwnedOutput(output: string | Uint8Array, outputHash: string): voi
   if (!HASH.test(outputHash)) throw new TypeError("Invalid canonical output hash.");
   if (
     typeof output !== "string" &&
-    (!(output.buffer instanceof ArrayBuffer) ||
+    (!isNativeArrayBuffer(output.buffer) ||
       output.byteOffset !== 0 ||
       output.byteLength !== output.buffer.byteLength)
   )

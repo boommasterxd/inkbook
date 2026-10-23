@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { pointSegmentDistance } from "../../../../src/domain/geometry/primitives";
 import { transformedStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
-import { elementContainsPoint } from "../../../../src/editor/selection/hit-test";
+import { elementContainsPoint } from "../../../../src/editor/selection/query/hit-test";
 import { strokeSvgContainsPoint } from "../../../fixtures/domain/svg-path-fill";
 import { stroke } from "../../domain/schema/fixtures";
 

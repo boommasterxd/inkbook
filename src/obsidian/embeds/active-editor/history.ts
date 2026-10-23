@@ -1,7 +1,7 @@
 import { AppliedCommandHistory } from "../../../domain/commands/history";
 import type { RenderBand } from "../../../domain/commands/render-bands";
 import type { InkElementV1, PageV1 } from "../../../domain/schema/public";
-import type { DocumentMutationAvailability } from "../document-model-port";
+import type { DocumentMutationAvailability } from "../document-session/document-model-port";
 import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
 import type { ElementReplacementHistoryData } from "../../../domain/store/public";
 

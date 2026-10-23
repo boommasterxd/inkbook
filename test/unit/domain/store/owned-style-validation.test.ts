@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
 import * as validation from "../../../../src/domain/schema/element-validation";
 import { isValidatedInternalStyleReplacement } from "../../../../src/domain/elements/stroke-replacement-proof";
-import { moveSelection } from "../../../../src/editor/selection/transforms";
+import { moveSelection } from "../../../../src/editor/selection/transform/transforms";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { applySelectionStyleChange } from "../../../../src/editor/tools/style-change";
 import { indexedStroke } from "../../../fixtures/editor/stroke";

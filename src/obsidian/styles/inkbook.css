@@ -1,10 +1,9 @@
-@import url("./motion.css");
 @import url("./action-dialog.css");
+@import url("./action-tones.css");
 @import url("./modal.css");
 @import url("./feedback.css");
 @import url("./document-status-bar.css");
 @import url("./editor-toolbar.css");
-@import url("./editor-toolbar-motion.css");
 @import url("./adaptive-panel.css");
 @import url("./owned-menu.css");
 @import url("./phone-sheet-host.css");
@@ -18,7 +17,6 @@
   --inkbook-page-surface: #f6f6f6;
   --inkbook-motion-fast: 120ms;
   --inkbook-motion-toolbar: 220ms;
-  --inkbook-motion-toolbar-context-stagger: 50ms;
   --inkbook-motion-standard: 180ms;
   --inkbook-motion-layout: 240ms;
   --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
@@ -95,7 +93,6 @@
 .inkbook-root[data-inkbook-motion="reduced"] {
   --inkbook-motion-fast: 0ms;
   --inkbook-motion-toolbar: 0ms;
-  --inkbook-motion-toolbar-context-stagger: 0ms;
   --inkbook-motion-standard: 0ms;
   --inkbook-motion-layout: 0ms;
 }
@@ -167,7 +164,6 @@
 
 .inkbook-root.inkbook-active-preparing .inkbook-background-container,
 .inkbook-root.inkbook-active-transitioning .inkbook-background-container {
-  transition: block-size var(--inkbook-motion-layout) var(--inkbook-motion-layout-easing);
   will-change: block-size;
 }
 
@@ -414,8 +410,4 @@
 .inkbook-root .inkbook-operation-feedback-icon svg {
   block-size: 18px;
   inline-size: 18px;
-}
-
-.inkbook-root .inkbook-operation-feedback-icon {
-  animation: inkbook-operation-spin 800ms linear infinite;
 }

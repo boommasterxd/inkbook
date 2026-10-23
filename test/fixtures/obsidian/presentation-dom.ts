@@ -357,6 +357,10 @@ export class FakePresentationElement {
     return { length: elements.length, item: (index) => elements[index] ?? null };
   }
 
+  hasAttribute(name: string): boolean {
+    return this.attributes.has(name);
+  }
+
   public setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
   }

@@ -76,29 +76,60 @@ src/
 │   ├── commands/
 │   ├── elements/
 │   ├── geometry/
+│   │   └── pressure/
 │   ├── schema/
-│   └── spatial/
+│   ├── spatial/
+│   └── store/
+│       ├── mutations/
+│       ├── records/
+│       └── replacements/
 ├── editor/
 │   ├── input/
+│   ├── selection/
+│   │   ├── query/
+│   │   └── transform/
 │   └── session/
 ├── rendering/
 │   ├── motion/
 │   ├── scene/
+│   │   ├── content/
+│   │   ├── presentation/
+│   │   ├── reconciliation/
+│   │   └── visibility/
 │   └── ui/
 ├── persistence/
 │   ├── clipboard/
 │   ├── documents/
 │   ├── saving/
-│   └── worker/
+│   ├── serialization/
+│   │   ├── input/
+│   │   ├── metadata/
+│   │   └── output/
+│   └── worker/runtime/
+│       ├── bridge/
+│       ├── model/
+│       └── wire/
 └── obsidian/
     ├── inkbook-plugin.ts
     ├── embeds/
+    │   ├── active-editor/{input,layout,navigation,previews}/
+    │   ├── active-scene/
+    │   ├── document-session/
+    │   ├── live-preview/
+    │   ├── presentation/
+    │   ├── preview/
+    │   └── workspace/
+    ├── menus/{feedback,panels}/
     ├── settings/
+    │   ├── definitions/
+    │   └── shortcuts/
     ├── styles/
     └── vault/
 ```
 
 This tree defines ownership, not a requirement to create empty directories. A leaf directory is introduced only when it contains an implementation with that responsibility. `src/main.ts` is the build entry and composition root only; it exports the plugin and MUST NOT accumulate lifecycle, domain, rendering, or persistence logic.
+
+Within each area, group implementations by the responsibility they own. Store mutations, replacement planning, and retained records remain distinct; scene content, presentation, reconciliation, and visibility remain distinct. Serialization separates input validation, canonical metadata, and output generation, while the worker runtime separates model operations, wire codecs, and bridge lifecycle. Keep established public and build entry points stable instead of adding forwarding modules. Unit tests follow source responsibilities; Integration and performance tests group by the contract they exercise while retaining their existing discovery and performance classifications.
 
 Dependency arrows point inward: `editor`, `rendering`, and `persistence` may import `domain`; `obsidian` performs final composition and may import the other areas through their public entry points. Imports MUST follow the `May depend on` column above. In particular:
 

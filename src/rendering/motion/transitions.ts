@@ -14,10 +14,15 @@ export const MOTION_TOKENS = Object.freeze({
   layout: 240,
 } as const);
 
+export const STANDARD_EASING = [0.2, 0, 0, 1] as const;
+export const ERASE_EASING = [0.645, 0.045, 0.355, 1] as const;
+export const TOOLBAR_CONTEXT_STAGGER_MS = 50;
+const standardEasing = `cubic-bezier(${STANDARD_EASING.join(", ")})`;
+
 export const EASING_TOKENS = Object.freeze({
-  erase: "cubic-bezier(0.645, 0.045, 0.355, 1)",
-  standard: "cubic-bezier(0.2, 0, 0, 1)",
-  emphasized: "cubic-bezier(0.2, 0, 0, 1)",
+  erase: `cubic-bezier(${ERASE_EASING.join(", ")})`,
+  standard: standardEasing,
+  emphasized: standardEasing,
 } as const);
 
 export const TRANSITION_DURATIONS = Object.freeze({

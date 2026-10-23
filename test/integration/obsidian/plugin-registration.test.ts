@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import { EditorState } from "@codemirror/state";
 import { EditorView, type DecorationSet } from "@codemirror/view";
 import {
@@ -18,7 +20,7 @@ import {
   testIconRegistry,
   type Plugin as RegisteredPlugin,
 } from "../../adapters/obsidian/plugin";
-import { InkbookLoadingPreviewWidget } from "../../../src/obsidian/embeds/live-preview-loading-widget";
+import { InkbookLoadingPreviewWidget } from "../../../src/obsidian/embeds/live-preview/live-preview-loading-widget";
 import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
 
 const TestTFile = TFile as unknown as new (path: string) => TFile;
@@ -182,8 +184,10 @@ describe("plugin host registration", () => {
     expect(registrations.settingTabs).toHaveLength(1);
     const statusItems = (plugin as unknown as RegisteredPlugin).statusBarItems;
     expect(statusItems).toHaveLength(1);
-    expect(statusItems[0]?.classNames).toContain("inkbook-status-bar-item");
-    expect(statusItems[0]?.children[0]?.dataset.saveStatus).toBe("inactive");
+    expect(statusItems[0]?.classList.contains("inkbook-status-bar-item")).toBe(true);
+    expect((statusItems[0]?.children[0] as HTMLElement | undefined)?.dataset.saveStatus).toBe(
+      "inactive",
+    );
     expect(workspaceEvents.has("active-leaf-change")).toBe(true);
     expect(workspaceEvents.has("layout-change")).toBe(false);
     expectRegisteredCommands(registrations.commands);

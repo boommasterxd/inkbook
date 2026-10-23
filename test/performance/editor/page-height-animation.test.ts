@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { ActiveHeightTransition } from "../../../src/obsidian/embeds/active-editor/height-transition";
-import { TransitionScrollStability } from "../../../src/obsidian/embeds/transition-scroll-stability";
+import { ActiveHeightTransition } from "../../../src/obsidian/embeds/active-editor/layout/height-transition";
+import { TransitionScrollStability } from "../../../src/obsidian/embeds/presentation/transition-scroll-stability";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index";
 import { TRANSITION_DURATIONS } from "../../../src/rendering/motion/transitions";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { readyResponsiveFixture } from "../../integration/obsidian/embeds/active-editor-responsive-layout-fixture";
+import { readyResponsiveFixture } from "../../integration/obsidian/embeds/active-editor/layout/active-editor-responsive-layout-fixture";
 import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 describe("automatic page-height performance", () => {

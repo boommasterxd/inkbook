@@ -1,4 +1,4 @@
-import { buildPressureCapsule } from "../../../src/domain/geometry/pressure-joins";
+import { buildPressureCapsule } from "../../../src/domain/geometry/pressure/pressure-joins";
 
 /** Capacity pressure transitions force the exact union's lossless fallback. */
 export function createAdversarialPressureWindow() {

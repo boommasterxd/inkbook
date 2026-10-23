@@ -14,6 +14,31 @@ import type {
 import type { StrokeSampleExtrema } from "./stroke-sample-extrema";
 import { isCapturedJsonSampleArray } from "../elements/runtime-sample-copy-producer";
 
+const nativeObjectSource = Function.prototype.toString.call(Object);
+const nativeRecordPrototypes = new WeakSet<object>();
+
+/** Accept only an actual realm's Object.prototype, preserving custom-prototype rejection. */
+export function hasPlainJsonRecordPrototype(value: object): boolean {
+  const prototype = Reflect.getPrototypeOf(value);
+  if (prototype === null || prototype === Object.prototype || nativeRecordPrototypes.has(prototype))
+    return true;
+  if (Reflect.getPrototypeOf(prototype) !== null) return false;
+  const constructor = Object.getOwnPropertyDescriptor(prototype, "constructor");
+  if (
+    constructor === undefined ||
+    !("value" in constructor) ||
+    typeof constructor.value !== "function"
+  )
+    return false;
+  if (
+    Object.getOwnPropertyDescriptor(constructor.value, "prototype")?.value !== prototype ||
+    Function.prototype.toString.call(constructor.value) !== nativeObjectSource
+  )
+    return false;
+  nativeRecordPrototypes.add(prototype);
+  return true;
+}
+
 class ValidationFailure extends Error {
   readonly validationError: ValidationError;
 
@@ -187,8 +212,7 @@ function* visitRecordValues(
   path: string,
   options: JsonWalkOptions,
 ): Generator<void, void> {
-  const prototype = Object.getPrototypeOf(value) as unknown;
-  if (prototype !== Object.prototype && prototype !== null) {
+  if (!hasPlainJsonRecordPrototype(value)) {
     fail("invalid-json-value", path, "Objects must use a plain JSON object prototype.");
   }
   let entries = 0;

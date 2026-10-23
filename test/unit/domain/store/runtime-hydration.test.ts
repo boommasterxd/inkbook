@@ -11,9 +11,9 @@ import {
   immutableElementSteps,
   mutableElement,
   takeImmutableElementOwnership,
-} from "../../../../src/domain/store/immutability";
+} from "../../../../src/domain/store/records/immutability";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { rotateSelection } from "../../../../src/editor/selection/transforms";
+import { rotateSelection } from "../../../../src/editor/selection/transform/transforms";
 
 import {
   hydrateRuntimeStroke,

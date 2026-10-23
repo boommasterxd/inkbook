@@ -2,7 +2,7 @@ import { vi } from "vitest";
 
 import { SvgSceneRenderer } from "../../../src/rendering/scene";
 import { FakeSceneStore, FakeScheduler } from "../../unit/rendering/scene/fakes";
-import { page } from "../../integration/obsidian/embeds/active-editor-layout-fixture";
+import { page } from "../../integration/obsidian/embeds/active-editor/layout/active-editor-layout-fixture";
 
 /** Real style writes and host reads with independently delivered observer boundaries. */
 export function sceneSurfaceZoomFixture(observeTheme = true) {

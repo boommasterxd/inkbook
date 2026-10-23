@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
-import { containsBounds } from "../../../../src/rendering/scene/visibility-bounds";
+import { containsBounds } from "../../../../src/rendering/scene/visibility/visibility-bounds";
 
 it.each([0.5, 1, 2])("keeps the offscreen mount margins in screen pixels at zoom %s", (zoom) => {
   const viewport = { left: 100, top: 1_000, width: 400, height: 300 };

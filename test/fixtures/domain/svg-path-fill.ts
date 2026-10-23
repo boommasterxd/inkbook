@@ -1,5 +1,5 @@
 import { buildStrokePathParts } from "../../../src/domain/geometry/stroke-path";
-import type { PreparedPressureGeometryPort } from "../../../src/domain/geometry/prepared-pressure-geometry";
+import type { PreparedPressureGeometryPort } from "../../../src/domain/geometry/pressure/prepared-pressure-geometry";
 import type { StrokeElementV1 } from "../../../src/domain/schema/types";
 import type { PointV1 } from "../../../src/domain/schema/types";
 

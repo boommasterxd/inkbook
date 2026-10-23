@@ -100,13 +100,8 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
-.inkbook-shortcut-recorder:hover,
 .inkbook-shortcut-recorder[data-recording="true"] {
   border-color: var(--interactive-accent);
-}
-
-.inkbook-shortcut-recorder-static:hover {
-  border-color: var(--background-modifier-border);
 }
 
 .inkbook-shortcut-recorder kbd {
@@ -151,7 +146,25 @@
 }
 
 .inkbook-shortcut-status.is-error {
-  color: var(--text-error);
+  color: var(--inkbook-tone-danger);
+}
+
+.inkbook-shortcut-transition {
+  display: block;
+  inline-size: 100%;
+  position: relative;
+}
+
+.inkbook-shortcut-transition-content {
+  display: block;
+}
+
+.inkbook-shortcut-recorder .inkbook-shortcut-transition-content {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1);
+  justify-content: center;
 }
 
 .inkbook-shortcuts-group-reset {

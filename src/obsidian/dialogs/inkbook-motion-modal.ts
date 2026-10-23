@@ -1,4 +1,6 @@
 import { Platform, setIcon, type App } from "obsidian";
+import { observeEffectiveMotion, type ObserveMotion } from "../runtime/effective-motion";
+import { animateOwnedElement } from "../runtime/element-motion";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import {
@@ -6,8 +8,8 @@ import {
   isReducedMotion,
   type MotionPreference,
 } from "../../rendering/motion/transitions";
-import { AdaptivePanelSession } from "../menus/adaptive-panel";
-import { createPhoneSheetHost, type PhoneSheetHostPort } from "../menus/phone-sheet-host";
+import { AdaptivePanelSession } from "../menus/panels/adaptive-panel";
+import { createPhoneSheetHost, type PhoneSheetHostPort } from "../menus/panels/phone-sheet-host";
 import { menuDomWindow } from "../menus/menu-dom";
 import { NativeDialogShell } from "./native-dialog-shell";
 
@@ -22,9 +24,10 @@ export class InkbookMotionModal {
   readonly #native: NativeDialogShell | undefined;
   readonly #readMotion: () => MotionPreference;
   readonly #workScheduler: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
+  readonly #observeMotion: ObserveMotion | undefined;
+  #releasePreference: (() => void) | undefined;
   #phone: AdaptivePanelSession | undefined;
-  #animation: Animation | undefined;
-  #timer: number | undefined;
+  #animation: ReturnType<typeof animateOwnedElement> | undefined;
   #ownerWindow: Window | null = null;
   #closing = false;
   #hostClosing = false;
@@ -34,10 +37,12 @@ export class InkbookMotionModal {
     app: App,
     readMotion: () => MotionPreference = () => "system",
     workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
+    observeMotion?: ObserveMotion,
   ) {
     this.app = app;
     this.#readMotion = readMotion;
     this.#workScheduler = workScheduler;
+    this.#observeMotion = observeMotion;
     if (!Platform.isPhone) {
       this.#native = new NativeDialogShell(app, {
         open: () => this.onOpen(),
@@ -79,10 +84,22 @@ export class InkbookMotionModal {
     this.#ownerWindow = this.modalEl.ownerDocument.defaultView;
     this.#ownerWindow?.addEventListener("pagehide", this.#handlePageHide);
     if (this.#native !== undefined) this.#animate(false);
+    this.#releasePreference = observeEffectiveMotion(
+      this.modalEl,
+      this.#readMotion,
+      (reduced) => {
+        this.modalEl.dataset.inkbookMotion = this.#readMotion();
+        if (!reduced) return;
+        if (this.#closing) this.closeImmediately();
+        else this.#cancelMotion();
+      },
+      this.#observeMotion,
+    );
   }
 
   public onOpen(): void {
     this.#ownerWindow = this.modalEl.ownerDocument.defaultView;
+    this.modalEl.dataset.inkbookMotion = this.#readMotion();
     this.containerEl.classList.add("inkbook-modal-container");
     this.containerEl.dataset.inkbookModalPlatform = this.#native === undefined ? "phone" : "wide";
     this.modalEl.classList.add("inkbook-modal-surface");
@@ -102,6 +119,8 @@ export class InkbookMotionModal {
     if (!this.#opened || this.#hostClosing) return;
     this.#closing = true;
     this.#hostClosing = true;
+    this.#releasePreference?.();
+    this.#releasePreference = undefined;
     this.#cancelMotion();
     this.#ownerWindow?.removeEventListener("pagehide", this.#handlePageHide);
     if (this.#native !== undefined) this.#native.closeImmediately();
@@ -110,6 +129,8 @@ export class InkbookMotionModal {
   }
 
   public onClose(): void {
+    this.#releasePreference?.();
+    this.#releasePreference = undefined;
     this.#cancelMotion();
     this.#ownerWindow?.removeEventListener("pagehide", this.#handlePageHide);
     this.#opened = false;
@@ -143,7 +164,7 @@ export class InkbookMotionModal {
       anchor,
       canvasInputSurface: anchor,
       createContent: () => content,
-      durationMs: this.#duration("adaptiveMenu"),
+      motionAnchor: this.modalEl,
       initialFocus,
       keymap: this.app.keymap,
       kind: "dialog",
@@ -166,7 +187,7 @@ export class InkbookMotionModal {
   #animate(exiting: boolean): boolean {
     const ownerWindow = this.#ownerWindow;
     const duration = this.#duration();
-    if (ownerWindow === null || duration === 0 || typeof this.modalEl.animate !== "function") {
+    if (ownerWindow === null || duration === 0) {
       this.#cancelMotion();
       return false;
     }
@@ -174,25 +195,25 @@ export class InkbookMotionModal {
     const startScale = computed?.scale;
     const startOpacity = computed?.opacity;
     this.#cancelMotion();
-    this.#animation = this.modalEl.animate(
-      [
-        {
-          scale: !exiting ? "0.96" : !startScale || startScale === "none" ? "1" : startScale,
-          opacity: exiting ? startOpacity || "1" : "0",
-        },
-        { scale: exiting ? "0.96" : "1", opacity: exiting ? "0" : "1" },
-      ],
-      { duration, easing: "ease-out", fill: "both" },
-    );
-    // Interrupting entry or disposing the owner rejects the Web Animations completion promise.
-    void this.#animation.finished.catch(() => undefined);
     const finish = (): void => {
       if (exiting) this.closeImmediately();
       else this.#cancelMotion();
     };
-    this.#animation.onfinish = finish;
-    this.#animation.oncancel = finish;
-    this.#timer = ownerWindow.setTimeout(finish, duration);
+    const fromScale = exiting
+      ? Number(startScale && startScale !== "none" ? startScale : "1")
+      : 0.96;
+    const toScale = exiting ? 0.96 : 1;
+    const fromOpacity = exiting ? Number(startOpacity || "1") : 0;
+    const toOpacity = exiting ? 0 : 1;
+    this.#animation = animateOwnedElement(
+      this.modalEl,
+      { scale: [fromScale, toScale], opacity: [fromOpacity, toOpacity] },
+      {
+        duration: duration / 1000,
+        ease: "easeOut",
+        onComplete: finish,
+      },
+    );
     return true;
   }
 
@@ -203,13 +224,11 @@ export class InkbookMotionModal {
   }
 
   #cancelMotion(): void {
-    if (this.#timer !== undefined) this.#ownerWindow?.clearTimeout(this.#timer);
-    this.#timer = undefined;
     if (this.#animation !== undefined) {
-      this.#animation.onfinish = null;
-      this.#animation.oncancel = null;
-      this.#animation.cancel();
+      this.#animation.stop();
       this.#animation = undefined;
     }
+    this.modalEl.style.removeProperty("scale");
+    this.modalEl.style.removeProperty("opacity");
   }
 }

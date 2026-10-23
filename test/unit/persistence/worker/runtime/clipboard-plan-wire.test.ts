@@ -5,7 +5,7 @@ import {
   decodeRuntimeResultChunked,
   encodeRuntimeResult,
   encodeRuntimeResultChunked,
-} from "../../../../../src/persistence/worker/runtime/wire-codec";
+} from "../../../../../src/persistence/worker/runtime/wire/wire-codec";
 import { STROKE } from "./fixtures";
 import { maximumLengthHighlighter } from "../../../domain/store/fixtures";
 import type { PlanClipboardPasteRuntimeSuccess } from "../../../../../src/persistence/worker/runtime/types";

@@ -5,7 +5,7 @@ import { domRect } from "./active-editor";
 import { workSchedulerFromFrames } from "./work-scheduler";
 
 interface NavigationProfileApi {
-  readonly ActiveEditorNavigation: typeof import("../../../src/obsidian/embeds/active-editor/navigation").ActiveEditorNavigation;
+  readonly ActiveEditorNavigation: typeof import("../../../src/obsidian/embeds/active-editor/navigation/navigation").ActiveEditorNavigation;
   readonly createInputState: typeof import("../../../src/editor/input/index").createInputState;
   readonly OUTER_PAGE_WIDTH: number;
 }

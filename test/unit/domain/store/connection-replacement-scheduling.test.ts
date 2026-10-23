@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
-import { prepareReplacementCandidatesTimeSliced } from "../../../../src/domain/store/replacement-planner";
+import { prepareReplacementCandidatesTimeSliced } from "../../../../src/domain/store/replacements/replacement-planner";
 import type { StoreSliceScheduler } from "../../../../src/domain/store/types";
 import { connectionChain } from "../../../fixtures/domain/connection-chain";
 

@@ -1,6 +1,6 @@
 import type { PageV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import type { SceneElementRecord, SceneViewport } from "../../../src/rendering/scene/types";
-import { takeImmutableElementOwnership } from "../../../src/domain/store/immutability";
+import { takeImmutableElementOwnership } from "../../../src/domain/store/records/immutability";
 import { FakeSceneStore } from "../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../editor/stroke";
 import { createSceneFixture } from "./scene";

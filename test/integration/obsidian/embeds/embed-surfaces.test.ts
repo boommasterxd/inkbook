@@ -1,4 +1,4 @@
-import { InkbookLivePreviewWidget } from "../../../../src/obsidian/embeds/live-preview-widget";
+import { InkbookLivePreviewWidget } from "../../../../src/obsidian/embeds/live-preview/live-preview-widget";
 import { describe, expect, it, vi } from "vitest";
 
 import {

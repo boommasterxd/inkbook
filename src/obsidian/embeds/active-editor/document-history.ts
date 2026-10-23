@@ -7,8 +7,8 @@ import type {
 import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ElementStore } from "../../../domain/store/public";
-import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
-import type { EditableDocumentModel } from "../document-model-port";
+import type { TransformSliceScheduler } from "../../../editor/selection/transform/transforms";
+import type { EditableDocumentModel } from "../document-session/document-model-port";
 
 import type { ActiveEditorHistory } from "./history";
 

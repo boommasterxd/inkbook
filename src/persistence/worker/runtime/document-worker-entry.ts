@@ -1,5 +1,5 @@
 import { createProductionDocumentRuntime } from "./production-document-runtime";
-import { attachDocumentWorkerHost, type WorkerHostEndpoint } from "./worker-host";
+import { attachDocumentWorkerHost, type WorkerHostEndpoint } from "./bridge/worker-host";
 import { createWorkerWorkScheduler } from "./worker-work-scheduler";
 
 export interface DocumentWorkerBootstrap {

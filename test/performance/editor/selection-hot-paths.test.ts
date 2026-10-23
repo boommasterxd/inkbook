@@ -1,14 +1,14 @@
 import { createHook } from "node:async_hooks";
 import * as geometryBounds from "../../../src/domain/geometry/public";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
-import { elementMatchesSelectionAreaSteps } from "../../../src/editor/selection/selection-area";
+import { elementMatchesSelectionAreaSteps } from "../../../src/editor/selection/query/selection-area";
 
 import * as strokePosition from "../../../src/domain/geometry/stroke-position";
-import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
-import { strokePrimitiveSteps } from "../../../src/editor/selection/stroke-selection-geometry";
+import * as pressureUnion from "../../../src/domain/geometry/pressure/pressure-union";
+import { strokePrimitiveSteps } from "../../../src/editor/selection/query/stroke-selection-geometry";
 import { activeActions } from "../../fixtures/obsidian/editor-actions";
-import { createClipboardDocumentModel } from "../../integration/obsidian/embeds/active-editor-clipboard-fixtures";
-import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
+import { createClipboardDocumentModel } from "../../integration/obsidian/embeds/active-editor/active-editor-clipboard-fixtures";
+import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/document-model-port";
 import { selectBySelectionAreaQuery } from "../../fixtures/editor/selection-query";
 import { describe, expect, it, vi } from "vitest";
 
@@ -23,7 +23,7 @@ import {
 import {
   createLassoSelectionArea,
   type SelectionAreaInclusion,
-} from "../../../src/editor/selection/selection-area";
+} from "../../../src/editor/selection/query/selection-area";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 
 import { CheckpointSliceScheduler } from "../domain/domain-scenarios";
@@ -37,7 +37,7 @@ import {
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
 import type { SelectionHandleSessionOptions } from "../../../src/editor/selection/handle-types";
-import type { TransformSliceScheduler } from "../../../src/editor/selection/transforms";
+import type { TransformSliceScheduler } from "../../../src/editor/selection/transform/transforms";
 
 it("avoids pressure geometry builds for repeated gap lassos on a positioned 10,000-point stroke", () => {
   const offset = { x: -1_000, y: 200 };

@@ -1,17 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { InkbookDocumentRecognitionPort } from "../../../../src/obsidian/embeds/document-recognition";
+import type { InkbookDocumentRecognitionPort } from "../../../../src/obsidian/embeds/preview/document-recognition";
 import { createReadingViewPostProcessor } from "../../../../src/obsidian/embeds/reading-view";
-import * as previewBuilder from "../../../../src/obsidian/embeds/safe-preview-builder";
+import * as previewBuilder from "../../../../src/obsidian/embeds/preview/safe-preview-builder";
 import type {
   EmbedIntegrationPorts,
   PresentationAttachment,
-} from "../../../../src/obsidian/embeds/presentation-port";
-import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/presentation-lifecycle-registry";
+} from "../../../../src/obsidian/embeds/presentation/presentation-port";
+import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/presentation/presentation-lifecycle-registry";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 import { createDetachedPreviewHandoff } from "../../../fixtures/obsidian/active-preview-handoff";
+import type { MotionPreference } from "../../../../src/rendering/motion/transitions";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const FIRST_PREVIEW = {
@@ -136,6 +137,21 @@ describe("Reading-view active preview refresh", () => {
 });
 
 describe("Reading-view pending recognition", () => {
+  it("updates pending motion and releases its subscription when the preview takes over", async () => {
+    const harness = pendingReadingView();
+    const placeholder = harness.root.children[0]!;
+    expect(harness.motionListeners.size).toBe(1);
+    for (const listener of harness.motionListeners) listener("reduced");
+    expect(placeholder.dataset.inkbookMotion).toBe("reduced");
+    expect(
+      placeholder.style["--inkbook-loading-block-size" as keyof typeof placeholder.style],
+    ).toBe("48px");
+    harness.resolve(FIRST_PREVIEW);
+    await harness.processing;
+    expect(harness.attachments).toHaveLength(1);
+    expect(harness.motionListeners.size).toBe(0);
+    for (const child of harness.children) child.unload();
+  });
   it("immediately hides source until a validated preview adopts the placeholder", async () => {
     const harness = pendingReadingView();
     expect(harness.recognize).toHaveBeenCalledWith(
@@ -190,6 +206,7 @@ describe("Reading-view pending recognition", () => {
       await harness.processing;
       expect(harness.root.children).toEqual([harness.original]);
       expect(harness.attachments).toEqual([]);
+      expect(harness.motionListeners.size).toBe(0);
     },
   );
 
@@ -288,7 +305,7 @@ function pendingReadingView(prepare?: (root: FakePresentationElement) => void) {
   });
   const recognize = vi.fn(() => recognition);
   const attachments: PresentationAttachment[] = [];
-  const ports = createPorts(
+  const basePorts = createPorts(
     {
       cached: () => cached,
       recognize,
@@ -296,6 +313,16 @@ function pendingReadingView(prepare?: (root: FakePresentationElement) => void) {
     },
     attachments,
   );
+  const motionListeners = new Set<(motion: MotionPreference) => void>();
+  const ports: EmbedIntegrationPorts = {
+    ...basePorts,
+    subscribeMotionPreference: (listener) => {
+      motionListeners.add(listener);
+      return () => {
+        motionListeners.delete(listener);
+      };
+    },
+  };
   const root = new FakePresentationElement();
   const original = new FakePresentationElement(root.ownerDocument, "span");
   root.append(original);
@@ -315,6 +342,7 @@ function pendingReadingView(prepare?: (root: FakePresentationElement) => void) {
   );
   return {
     attachments,
+    motionListeners,
     children,
     original,
     ports,

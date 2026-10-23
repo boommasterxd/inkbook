@@ -1,10 +1,10 @@
 import { expect, it, vi } from "vitest";
 import type { SceneCamera, SceneViewport } from "../../../../src/rendering/scene/types";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
-import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
-import { DetachedSceneElementCache } from "../../../../src/rendering/scene/detached-element-cache";
+import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
+import { DetachedSceneElementCache } from "../../../../src/rendering/scene/content/detached-element-cache";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
-import { intersects } from "../../../../src/rendering/scene/visibility-bounds";
+import { intersects } from "../../../../src/rendering/scene/visibility/visibility-bounds";
 import {
   DETACHED_ELEMENT_CACHE_MAX_BYTES,
   PATH_CACHE_MAX_BYTES,

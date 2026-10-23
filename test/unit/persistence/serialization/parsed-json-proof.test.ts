@@ -5,14 +5,14 @@ import {
   validateParsedInkSnapshotV1Steps,
   validateRuntimeInkSnapshotV1,
 } from "../../../../src/domain/schema/snapshot-validation";
-import { decodeCompactSnapshotSteps } from "../../../../src/persistence/serialization/compact-snapshot";
-import { encodeStrokeSamples } from "../../../../src/persistence/serialization/stroke-sample-codec";
+import { decodeCompactSnapshotSteps } from "../../../../src/persistence/serialization/metadata/compact-snapshot";
+import { encodeStrokeSamples } from "../../../../src/persistence/serialization/metadata/stroke-sample-codec";
 import type { InkSnapshotV1, StrokeElementV1 } from "../../../../src/domain/schema/types";
 import {
   jsonContainerBudget,
   jsonNodeBudget,
 } from "../../../../src/domain/schema/validation-internals";
-import { parseChunkedJsonWithProof } from "../../../../src/persistence/serialization/chunked-json-parser";
+import { parseChunkedJsonWithProof } from "../../../../src/persistence/serialization/input/chunked-json-parser";
 import { createOneStrokeWorkerSnapshot } from "../../../fixtures/persistence/worker-bridge";
 import { finishGeometrySteps as complete } from "../../../fixtures/domain/geometry-steps";
 

@@ -1,6 +1,6 @@
 import type { ElementStore } from "../../../src/domain/store/public";
-import type { EditableDocumentModel } from "../../../src/obsidian/embeds/vault-document-session";
-import type { TransformSliceScheduler } from "../../../src/editor/selection/transforms";
+import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/vault-document-session";
+import type { TransformSliceScheduler } from "../../../src/editor/selection/transform/transforms";
 
 export function elementReplacementPorts(
   store: ElementStore,

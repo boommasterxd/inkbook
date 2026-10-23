@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
-import { liveStrokePresentation } from "../../../../src/rendering/scene/element-presentation";
+import { liveStrokePresentation } from "../../../../src/rendering/scene/content/element-presentation";
 import type { SceneToolCursorFrameReader } from "../../../../src/rendering/scene/tool-cursor";
 import { FakeNode, fakeNode } from "../../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../../../fixtures/editor/stroke";

@@ -24,7 +24,49 @@ class FakeStyle {
   }
 }
 
-export class FakeNode {
+export class FakeAnimation {
+  public onfinish: (() => void) | null = null;
+  public currentTime: number | null = 0;
+  public playbackRate = 1;
+  public playState: AnimationPlayState = "running";
+  public startTime: number | null = 0;
+  public readonly effect: Pick<KeyframeEffect, "getComputedTiming">;
+
+  public constructor(
+    private readonly owner: FakeNode,
+    public readonly keyframes: PropertyIndexedKeyframes,
+    public readonly options: KeyframeAnimationOptions,
+  ) {
+    this.effect = {
+      getComputedTiming: () => ({ duration: Number(options.duration ?? 0) }),
+    };
+  }
+
+  public cancel(): void {
+    this.playState = "idle";
+    this.owner.releaseAnimation(this);
+  }
+
+  public commitStyles(): void {
+    // The test clock does not interpolate; production paint is checked through keyframes.
+  }
+
+  public finish(): void {
+    this.currentTime = Number(this.options.duration ?? 0);
+    this.playState = "finished";
+    this.onfinish?.();
+  }
+
+  public pause(): void {
+    this.playState = "paused";
+  }
+
+  public play(): void {
+    this.playState = "running";
+  }
+}
+
+export class FakeNode extends EventTarget {
   public readonly attributes = new Map<string, string>();
   public readonly listeners = new Map<string, Set<EventListener>>();
   public readonly nodes: FakeNode[] = [];
@@ -33,12 +75,15 @@ export class FakeNode {
   public tabIndex = -1;
   public shadowRoot: FakeNode | null = null;
   public contentDocument: FakeDocument | null = null;
+  readonly #animations = new Set<FakeAnimation>();
 
   public constructor(
     public readonly ownerDocument: FakeDocument,
     public readonly tagName: string,
     public readonly fragment = false,
-  ) {}
+  ) {
+    super();
+  }
 
   public get children(): readonly FakeNode[] {
     return this.nodes;
@@ -60,6 +105,23 @@ export class FakeNode {
     if (this.shadowRoot !== null) throw new Error("Shadow root already attached.");
     this.shadowRoot = new FakeNode(this.ownerDocument, "#shadow-root");
     return this.shadowRoot;
+  }
+
+  public animate(
+    keyframes: PropertyIndexedKeyframes,
+    options: KeyframeAnimationOptions,
+  ): FakeAnimation {
+    const animation = new FakeAnimation(this, keyframes, options);
+    this.#animations.add(animation);
+    return animation;
+  }
+
+  public getAnimations(): FakeAnimation[] {
+    return [...this.#animations];
+  }
+
+  public releaseAnimation(animation: FakeAnimation): void {
+    this.#animations.delete(animation);
   }
 
   public append(...nodes: FakeNode[]): void {
@@ -106,13 +168,13 @@ export class FakeNode {
     this.attributes.delete(name);
   }
 
-  public addEventListener(name: string, listener: EventListener): void {
+  public override addEventListener(name: string, listener: EventListener): void {
     const listeners = this.listeners.get(name) ?? new Set<EventListener>();
     listeners.add(listener);
     this.listeners.set(name, listeners);
   }
 
-  public removeEventListener(name: string, listener: EventListener): void {
+  public override removeEventListener(name: string, listener: EventListener): void {
     this.listeners.get(name)?.delete(listener);
   }
 }
@@ -208,7 +270,9 @@ export class FakeScheduler {
     let frames = 0;
     while (this.#callbacks.size > 0) {
       if (frames >= limit) throw new Error("Frame limit exceeded.");
+      const previousTime = this.time;
       this.runNext();
+      if (this.#callbacks.size > 0 && this.time === previousTime) this.time += 1_000 / 120;
       frames += 1;
     }
   }

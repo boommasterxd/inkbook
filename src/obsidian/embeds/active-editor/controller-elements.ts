@@ -1,5 +1,5 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
-import type { PreparedPressureGeometryPort } from "../../../domain/geometry/prepared-pressure-geometry";
+import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { InputPoint, PointerSample } from "../../../editor/input/index";
 import {

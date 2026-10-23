@@ -17,7 +17,7 @@ import {
   spatialCellMembershipCount,
   type SpatialBounds,
 } from "../../domain/spatial/index";
-import type { AggregateFacts } from "../serialization/incremental-validation";
+import type { AggregateFacts } from "../serialization/output/incremental-validation";
 import { DOCUMENT_LIMITS, REPEATED_PASTE_OFFSET } from "./constants";
 import type {
   ClipboardResult,

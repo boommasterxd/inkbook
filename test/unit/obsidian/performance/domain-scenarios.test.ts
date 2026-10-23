@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { moveSelectionTimeSliced } from "../../../../src/editor/selection/transforms";
+import { moveSelectionTimeSliced } from "../../../../src/editor/selection/transform/transforms";
 import { createMaximumStroke } from "../../../performance/domain/standard-domain-fixture";
 
 import { CheckpointSliceScheduler } from "../../../performance/domain/domain-scenarios";

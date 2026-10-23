@@ -21,7 +21,7 @@ import {
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
 import type { PreparedElementHistory } from "./prepared-element-history";
-import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
+import type { TransformSliceScheduler } from "../../../editor/selection/transform/transforms";
 
 export interface ActiveEditorStyleSessionOptions {
   readonly defaults: ToolDefaultsV1;

@@ -1,16 +1,18 @@
 import { registerMenuPointerDismissal } from "./menu-pointer-dismissal";
-import type { PhoneSheetNavigation } from "./panel-page";
+import type { PhoneSheetNavigation } from "./panels/panel-page";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { Component, Platform, setIcon, type Keymap } from "obsidian";
 import { installMenuEscapeScope } from "./menu-escape-scope";
 
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
-import { AdaptivePanelSession, type AdaptivePanelCloseMode } from "./adaptive-panel";
+import { AdaptivePanelSession, type AdaptivePanelCloseMode } from "./panels/adaptive-panel";
 import type { MenuFactoryPort, MenuItemPort, MenuPort, MenuPosition } from "./menu-ports";
-import type { PhoneSheetHostPort } from "./phone-sheet-host";
-import { prepareWideMenuExit } from "./wide-menu-motion";
+import type { PhoneSheetHostPort } from "./panels/phone-sheet-host";
+import { animateWideMenuEntry, animateWideMenuExit } from "./feedback/wide-menu-motion";
+import { observeMenuMotionPreference, playMenuMotion } from "./feedback/menu-motion";
+import { registerMenuFeedback } from "./feedback/menu-feedback";
 import { menuDomWindow } from "./menu-dom";
-import { readMenuViewport } from "./menu-viewport";
+import { readMenuViewport } from "./panels/menu-viewport";
 import { navigateOwnedMenu, OwnedMenuItem, renderOwnedMenuItems } from "./owned-menu-item";
 
 export interface OwnedMenuFactoryOptions {
@@ -32,8 +34,9 @@ class OwnedMenu extends Component implements MenuPort {
   #panel: AdaptivePanelSession | undefined;
   #surface: HTMLElement | undefined;
   #buttons: HTMLElement[] = [];
-  #popupDuration = 0;
   #ownerWindow: Window | undefined;
+  #entryStop: (() => void) | undefined;
+  #exitStop: (() => void) | undefined;
 
   public constructor(options: OwnedMenuFactoryOptions, kind: "context" | "menu") {
     super();
@@ -90,7 +93,7 @@ class OwnedMenu extends Component implements MenuPort {
     }
     if (
       mode !== "animated" ||
-      this.#popupDuration === 0 ||
+      this.#popupDuration() === 0 ||
       this.#surface === undefined ||
       this.#ownerWindow === undefined
     ) {
@@ -98,13 +101,15 @@ class OwnedMenu extends Component implements MenuPort {
       return;
     }
     if (wasClosing || this.#closed) return;
-    prepareWideMenuExit(this.#surface, this.#ownerWindow);
     this.#surface.inert = true;
     this.#surface.setAttribute("aria-hidden", "true");
     this.#surface.dataset.state = "closing";
-    const ownerWindow = this.#ownerWindow;
-    const timer = ownerWindow.setTimeout(() => this.#finish(), this.#popupDuration);
-    this.register(() => ownerWindow.clearTimeout(timer));
+    this.#exitStop = animateWideMenuExit(
+      this.#surface,
+      this.#ownerWindow,
+      this.#popupDuration(),
+      () => this.#finish(),
+    );
   }
 
   public schedule(event: MouseEvent | PointerEvent): void {
@@ -201,10 +206,12 @@ class OwnedMenu extends Component implements MenuPort {
     surface.append(this.#createContent(ownerDocument));
     this.#ownerWindow = ownerWindow;
     const duration = effectiveTransitionDuration(this.#anchor, ownerWindow, "nativeModalEnterExit");
-    this.#popupDuration = duration;
     surface.style.setProperty("--inkbook-owned-menu-duration", `${String(duration)}ms`);
     ownerDocument.body.append(surface);
     this.register(() => surface.remove());
+    this.register(registerMenuFeedback(surface, this.#anchor, ownerWindow));
+    this.#entryStop = animateWideMenuEntry(surface, duration);
+    this.#observeReducedMotion(surface, ownerWindow);
     const viewport = readMenuViewport(ownerWindow);
     surface.style.setProperty("max-block-size", `${String(Math.max(0, viewport.height - 10))}px`);
     const width = surface.offsetWidth;
@@ -287,9 +294,30 @@ class OwnedMenu extends Component implements MenuPort {
     if (this.#closed) return;
     this.#closed = true;
     this.#closing = true;
+    this.#entryStop?.();
+    this.#exitStop?.();
     this.unload();
     this.#surface?.remove();
     for (const callback of this.#callbacks) callback();
+  }
+
+  #observeReducedMotion(surface: HTMLElement, ownerWindow: Window): void {
+    this.register(
+      observeMenuMotionPreference(this.#anchor, ownerWindow, () => {
+        if (this.#closing) {
+          if (this.#exitStop !== undefined) this.#finish();
+          return;
+        }
+        this.#entryStop?.();
+        this.#entryStop = undefined;
+        playMenuMotion(surface, { opacity: "1", scale: "1" }, 0);
+      }),
+    );
+  }
+
+  #popupDuration(): number {
+    if (this.#ownerWindow === undefined) return 0;
+    return effectiveTransitionDuration(this.#anchor, this.#ownerWindow, "nativeModalEnterExit");
   }
 }
 

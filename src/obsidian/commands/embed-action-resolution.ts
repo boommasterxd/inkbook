@@ -1,7 +1,10 @@
 import { MarkdownView, type App, type Editor } from "obsidian";
 
 import { findMarkdownInkbookEmbeds, MARKDOWN_EMBED_LIMITS } from "../embeds/markdown-embed";
-import type { PresentationEmbedReference, PresentationRemoval } from "../embeds/presentation-port";
+import type {
+  PresentationEmbedReference,
+  PresentationRemoval,
+} from "../embeds/presentation/presentation-port";
 import type { ObsidianLinkAdapter } from "../vault/links";
 import type { ObsidianVaultFileAdapter } from "../vault/file-adapter";
 import {

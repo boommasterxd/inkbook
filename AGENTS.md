@@ -31,6 +31,10 @@ Dependencies point inward from `obsidian` and thin boundary adapters for Obsidia
 
 The complete dependency and runtime flows are canonical in [`docs/specification.md`](docs/specification.md) and [`docs/architecture-flows.md`](docs/architecture-flows.md).
 
+### Animation Contract
+
+Before implementing or reviewing visible Inkbook UI, read and apply the available `animation:motion` skill and reuse the existing shared Motion components and presets. The normative [Animation Contract](docs/quality-and-testing.md#animation-contract) defines transition ownership, gestures, reduced motion, immediate-input exceptions, and verification. That local contract still applies when the skill is unavailable.
+
 ## Repository Layout
 
 | Path                    | Responsibility                                                    |

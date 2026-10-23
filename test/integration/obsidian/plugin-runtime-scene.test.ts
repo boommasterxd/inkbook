@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 import { useAsyncWindowFrames } from "../../fixtures/obsidian/async-presentation-window";
 import { Plugin, TFile, Tasks, type MarkdownRenderChild } from "obsidian";
@@ -9,13 +10,13 @@ import {
   type InkbookDeviceSettingsV2,
   type InkbookSettingsV4,
 } from "../../../src/domain/settings";
-import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
+import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/document-model-port";
 import type { InkbookColorScheme } from "../../../src/obsidian/theme/color-scheme";
 import { ColorSchemeBroadcaster } from "../../../src/obsidian/theme/color-scheme";
 import { activateInkbookPlugin } from "../../../src/obsidian/inkbook-plugin";
-import { ObsidianWorkspaceRuntime } from "../../../src/obsidian/embeds/workspace-runtime";
-import type { PresentationAttachment } from "../../../src/obsidian/embeds/presentation-port";
-import type { ActiveEditorViewState } from "../../../src/obsidian/embeds/active-editor/navigation";
+import { ObsidianWorkspaceRuntime } from "../../../src/obsidian/embeds/workspace/workspace-runtime";
+import type { PresentationAttachment } from "../../../src/obsidian/embeds/presentation/presentation-port";
+import type { ActiveEditorViewState } from "../../../src/obsidian/embeds/active-editor/navigation/navigation";
 import type { ObsidianEmbedActions } from "../../../src/obsidian/commands";
 import { InkbookFeedbackManager } from "../../../src/obsidian/feedback";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
@@ -24,7 +25,6 @@ import {
   GestureAwareSliceScheduler,
 } from "../../../src/persistence/worker/runtime/public";
 import { FakePresentationElement, inkbookRoot } from "../../fixtures/obsidian/presentation-dom";
-
 class InkbookPlugin extends Plugin {
   #deactivate: (() => void) | undefined;
   override async onload(): Promise<void> {
@@ -74,7 +74,7 @@ const scenes = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock("../../../src/obsidian/embeds/active-scene", () => ({
+vi.mock("../../../src/obsidian/embeds/active-scene/active-scene", () => ({
   ActiveInkbookScene: class {
     readonly dispose = vi.fn();
     readonly finishLock = vi.fn(async () => undefined);
@@ -478,7 +478,6 @@ describe("plugin workspace activation serialization", () => {
     releaseProcess();
   });
 });
-
 function livePreviewAttachment(attachmentGeneration: number): PresentationAttachment {
   const root = new FakePresentationElement();
   useAsyncWindowFrames(root.ownerDocument.defaultView!);

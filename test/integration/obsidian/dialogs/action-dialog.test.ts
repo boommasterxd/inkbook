@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 
 import type { App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";

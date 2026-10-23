@@ -1,7 +1,7 @@
 import { beforeAll, expect, it, vi } from "vitest";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { takeImmutableElementOwnership } from "../../../../src/domain/store/immutability";
+import { takeImmutableElementOwnership } from "../../../../src/domain/store/records/immutability";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";

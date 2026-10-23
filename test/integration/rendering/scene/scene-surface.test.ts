@@ -217,25 +217,6 @@ describe("scene theme and local presentation styles", () => {
     expect(drawingStyle(trace).stroke).toBe("#abcdef");
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--text-normal")).toBe("#fedcba");
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--inkbook-page")).toBe("");
-    const style = scene.svg.querySelector("style") as unknown as HTMLStyleElement;
-    expect([...style.sheet!.cssRules].filter((rule) => "name" in rule)).toHaveLength(6);
-    for (const [name, property] of [
-      ["inkbook-element-opacity-exit", "opacity"],
-      ["inkbook-element-fill-exit", "fill-opacity"],
-      ["inkbook-element-stroke-exit", "stroke-opacity"],
-      ["inkbook-element-opacity-enter", "opacity"],
-      ["inkbook-element-fill-enter", "fill-opacity"],
-      ["inkbook-element-stroke-enter", "stroke-opacity"],
-    ]) {
-      const animation = [...style.sheet!.cssRules].find(
-        (rule) => "name" in rule && rule.name === name,
-      ) as CSSKeyframesRule;
-      const frames = [...animation.cssRules].map((rule) => (rule as CSSKeyframeRule).style);
-      expect(frames.map((frame) => frame.getPropertyValue(property!))).toEqual(["0"]);
-      expect(frames.every((frame) => !frame.filter)).toBe(true);
-      expect(frames.every((frame) => !frame.transform)).toBe(true);
-      if (property !== "opacity") expect(frames.every((frame) => !frame.opacity)).toBe(true);
-    }
   });
 });
 

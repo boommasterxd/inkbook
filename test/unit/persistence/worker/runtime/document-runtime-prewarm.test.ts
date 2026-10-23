@@ -1,9 +1,9 @@
 import { expect, it, vi } from "vitest";
 
 import { createTestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
-import { IncrementalDocumentSerializer } from "../../../../../src/persistence/serialization/incremental-document-serializer";
-import { ElementFragmentCache } from "../../../../../src/persistence/serialization/element-fragment-cache";
-import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
+import { IncrementalDocumentSerializer } from "../../../../../src/persistence/serialization/output/incremental-document-serializer";
+import { ElementFragmentCache } from "../../../../../src/persistence/serialization/output/element-fragment-cache";
+import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/model/document-model";
 import {
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,

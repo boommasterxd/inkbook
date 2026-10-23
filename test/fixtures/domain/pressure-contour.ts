@@ -1,7 +1,7 @@
 import {
   pressureBoundaryPoint,
   type PressureBoundarySegment,
-} from "../../../src/domain/geometry/pressure-boundary-intersections";
+} from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
 
 /** Sample directed analytic edges for independent nonzero-fill assertions. */
 export function samplePressureContour(contour: readonly PressureBoundarySegment[]) {

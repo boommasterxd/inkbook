@@ -7,8 +7,8 @@ import {
 } from "../../../src/domain/store/public";
 
 import * as cellMembership from "../../../src/domain/spatial/cell-membership";
-import * as immutability from "../../../src/domain/store/immutability";
-import * as recordFactory from "../../../src/domain/store/record-factory";
+import * as immutability from "../../../src/domain/store/records/immutability";
+import * as recordFactory from "../../../src/domain/store/records/record-factory";
 import * as bounds from "../../../src/domain/geometry/bounds";
 import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
 import * as sampleValidation from "../../../src/domain/schema/stroke-sample-range-validation";
@@ -16,17 +16,17 @@ import * as strokePosition from "../../../src/domain/geometry/stroke-position";
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../src/domain/commands/history";
 import { UniformSpatialIndex } from "../../../src/domain/spatial/index";
-import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
-import { planElementMutation } from "../../../src/domain/store/element-mutation";
+import { DocumentCapacity } from "../../../src/domain/store/records/document-capacity";
+import { planElementMutation } from "../../../src/domain/store/mutations/element-mutation";
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
 import * as renderBands from "../../../src/domain/commands/render-bands";
 import type { ElementRank } from "../../../src/domain/store/types";
-import { restoreOwnedReplayBands } from "../../../src/domain/store/mutation-order";
+import { restoreOwnedReplayBands } from "../../../src/domain/store/mutations/mutation-order";
 import {
   captureOwnedMutationHistory,
   STABLE_RELATIVE_ORDER,
-} from "../../../src/domain/store/owned-mutation-history";
-import { MutationPreparationScheduler } from "../../../src/domain/store/mutation-preparation-scheduler";
+} from "../../../src/domain/store/mutations/owned-mutation-history";
+import { MutationPreparationScheduler } from "../../../src/domain/store/mutations/mutation-preparation-scheduler";
 
 import { CheckpointSliceScheduler } from "./domain-scenarios";
 import {

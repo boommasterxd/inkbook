@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import * as pressureWindows from "../../../../src/domain/geometry/pressure-path-serialization";
+import * as pressureWindows from "../../../../src/domain/geometry/pressure/pressure-path-serialization";
 import { buildStrokePathParts } from "../../../../src/domain/geometry/stroke-path";
 import type { RawStrokeSample } from "../../../../src/domain/geometry/public";
 import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../../../src/domain/schema/public";

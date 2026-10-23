@@ -8,20 +8,20 @@ import {
   backgroundFitsStaticLimit,
   backgroundPathDataByteLength,
   serializeBackgroundPaths,
-} from "../../../../../src/persistence/serialization/background";
+} from "../../../../../src/persistence/serialization/output/background";
 import {
   canonicalMetadataSha256,
   canonicalMetadataSha256Async,
   metadataPrefix,
-} from "../../../../../src/persistence/serialization/canonical-metadata";
-import { EncodedByteBudget } from "../../../../../src/persistence/serialization/encoded-byte-budget";
+} from "../../../../../src/persistence/serialization/metadata/canonical-metadata";
+import { EncodedByteBudget } from "../../../../../src/persistence/serialization/output/encoded-byte-budget";
 import {
   buildElementFragments,
   type ElementFragments,
-} from "../../../../../src/persistence/serialization/element-fragments";
-import { serializedPathDataByteLength } from "../../../../../src/persistence/serialization/path-markup";
+} from "../../../../../src/persistence/serialization/output/element-fragments";
+import { serializedPathDataByteLength } from "../../../../../src/persistence/serialization/output/path-markup";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
-import { serializeRuntimeSnapshotToUtf8 } from "../../../../../src/persistence/serialization/streaming-runtime-export";
+import { serializeRuntimeSnapshotToUtf8 } from "../../../../../src/persistence/serialization/output/streaming-runtime-export";
 import {
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,

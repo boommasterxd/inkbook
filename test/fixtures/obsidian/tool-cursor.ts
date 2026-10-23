@@ -3,7 +3,7 @@ import { vi } from "vitest";
 import { createBuiltInSettings } from "../../../src/domain/settings/defaults";
 import { createInputState, type InputState } from "../../../src/editor/input";
 import type { ToolSystemCursor } from "../../../src/editor/input/tool-cursor";
-import { ActiveToolCursorController } from "../../../src/obsidian/embeds/active-editor/tool-cursor-controller";
+import { ActiveToolCursorController } from "../../../src/obsidian/embeds/active-editor/input/tool-cursor-controller";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene";
 import type { SceneToolCursorFrame } from "../../../src/rendering/scene/tool-cursor";
 import { domRect } from "./active-editor";

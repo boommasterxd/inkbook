@@ -4,7 +4,7 @@ import { OUTER_PAGE_WIDTH } from "../../../src/editor/zoom/zoom";
 import {
   ActiveEditorNavigation,
   type ActiveEditorZoomLayoutUpdate,
-} from "../../../src/obsidian/embeds/active-editor/navigation";
+} from "../../../src/obsidian/embeds/active-editor/navigation/navigation";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene/index";
 import { domRect } from "./active-editor";

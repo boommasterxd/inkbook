@@ -1,9 +1,9 @@
 import { denseWaveSamples } from "../../fixtures/editor/stroke";
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as pressureWindows from "../../../src/domain/geometry/pressure-path-serialization";
+import * as pressureWindows from "../../../src/domain/geometry/pressure/pressure-path-serialization";
 import * as simplification from "../../../src/domain/geometry/stroke-simplification";
-import * as strokeSlices from "../../../src/domain/geometry/pressure-outline";
+import * as strokeSlices from "../../../src/domain/geometry/pressure/pressure-outline";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
 import { createMaximumStroke } from "./standard-domain-fixture";
 

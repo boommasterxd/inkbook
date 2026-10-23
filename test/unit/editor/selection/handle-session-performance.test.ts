@@ -1,4 +1,4 @@
-import { SelectionScaleGesture } from "../../../../src/editor/selection/selection-scale";
+import { SelectionScaleGesture } from "../../../../src/editor/selection/transform/selection-scale";
 import { describe, expect, it } from "vitest";
 
 import { MAX_STROKE_POINTS, type InkElementV1 } from "../../../../src/domain/schema/public";

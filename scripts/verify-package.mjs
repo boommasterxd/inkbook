@@ -67,6 +67,14 @@ for (const dependency of ["react", "react-dom", "scheduler"]) {
     throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
   }
 }
+for (const dependency of ["motion", "framer-motion", "motion-dom", "motion-utils"]) {
+  const dependencyLicense = (
+    await readFile(`node_modules/${dependency}/LICENSE.md`, "utf8")
+  ).trim();
+  if (!license.includes(dependencyLicense)) {
+    throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
+  }
+}
 if (!outputMain.startsWith(`/*!\n${license}\n*/\n`)) {
   throw new Error("dist/main.js must retain the complete LICENSE banner.");
 }

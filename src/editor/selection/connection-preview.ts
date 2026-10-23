@@ -10,7 +10,7 @@ import type { ElementStore } from "../../domain/store/public";
 
 import type { SelectionPreviewTransform } from "./handle-types";
 import { transformSelectionPoint } from "./overlay-geometry";
-import { editLinearEndpointFromWorld } from "./transforms";
+import { editLinearEndpointFromWorld } from "./transform/transforms";
 import { exceedsExactLinearPreviewWork } from "./selection-work-budget";
 
 type ConnectedLinear = Extract<InkElementV1, { kind: "arrow" | "line" }>;

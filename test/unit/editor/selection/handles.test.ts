@@ -20,9 +20,9 @@ import {
   createSelectionFrame,
   transformSelectionFrame,
 } from "../../../../src/editor/selection/selection-frame";
-import { mutableElement } from "../../../../src/domain/store/immutability";
+import { mutableElement } from "../../../../src/domain/store/records/immutability";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { scaleElement } from "../../../../src/editor/selection/transforms";
+import { scaleElement } from "../../../../src/editor/selection/transform/transforms";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
 import { coordinateSystem } from "../../domain/store/fixtures";
 import { straightHighlighter, table } from "../../domain/schema/fixtures";

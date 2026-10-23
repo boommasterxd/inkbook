@@ -1,4 +1,4 @@
-import { PresentationExit } from "../../../../src/obsidian/embeds/presentation-exit";
+import { PresentationExit } from "../../../../src/obsidian/embeds/presentation/presentation-exit";
 import type { MotionPreference } from "../../../../src/rendering/motion/transitions";
 import { createPresentationMotionWindow } from "../../../fixtures/obsidian/presentation-motion-window";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";

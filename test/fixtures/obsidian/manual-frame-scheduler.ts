@@ -1,4 +1,4 @@
-import type { HandleFrameScheduler } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
+import type { HandleFrameScheduler } from "../../../src/obsidian/embeds/active-editor/previews/handle-interaction";
 
 export class ManualFrameScheduler implements HandleFrameScheduler {
   readonly #callbacks = new Map<number, FrameRequestCallback>();

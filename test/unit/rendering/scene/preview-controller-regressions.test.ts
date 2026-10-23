@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
-import { SceneElementPreviewController } from "../../../../src/rendering/scene/element-preview-controller";
-import { SceneElementPreviews } from "../../../../src/rendering/scene/scene-element-previews";
-import { SceneTransformPreviewController } from "../../../../src/rendering/scene/transform-preview-controller";
+import { SceneElementPreviewController } from "../../../../src/rendering/scene/presentation/element-preview-controller";
+import { SceneElementPreviews } from "../../../../src/rendering/scene/presentation/scene-element-previews";
+import { SceneTransformPreviewController } from "../../../../src/rendering/scene/presentation/transform-preview-controller";
 
 import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
 

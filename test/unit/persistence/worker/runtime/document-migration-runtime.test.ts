@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { createTestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
 
-import { ChunkedInputCancelledError } from "../../../../../src/persistence/serialization/chunked-input-types";
+import { ChunkedInputCancelledError } from "../../../../../src/persistence/serialization/input/chunked-input-types";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
-import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
+import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/model/document-model";
 import {
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,
 } from "../../../../../src/persistence/worker/runtime/public";
 import { createProductionDocumentRuntime } from "../../../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimePort } from "../../../../../src/persistence/worker/runtime/types";
-import { isDocumentRuntimeWireResult } from "../../../../../src/persistence/worker/runtime/wire-codec";
+import { isDocumentRuntimeWireResult } from "../../../../../src/persistence/worker/runtime/wire/wire-codec";
 
 import { rectangle, snapshot } from "./fixtures";
 

@@ -1,7 +1,7 @@
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
-import { attachDocumentWorkerHost } from "../../../src/persistence/worker/runtime/worker-host";
-import { WorkerDocumentRuntimePort } from "../../../src/persistence/worker/runtime/worker-bridge";
+import { attachDocumentWorkerHost } from "../../../src/persistence/worker/runtime/bridge/worker-host";
+import { WorkerDocumentRuntimePort } from "../../../src/persistence/worker/runtime/bridge/worker-bridge";
 import { TestWorkScheduler } from "./work-scheduler";
 import { TestWorkerEndpoint } from "./worker-endpoint";
 import { createTestStroke, createWorkerSnapshot } from "./worker-snapshot";

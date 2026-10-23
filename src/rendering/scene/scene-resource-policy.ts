@@ -6,18 +6,18 @@ import {
 } from "./constants";
 import { DEFAULT_SCROLL_PRELOAD_MARGIN_PX } from "../../domain/settings/types";
 import { isScrollPreloadMarginPx } from "../../domain/settings/validation";
-import type { SceneMotionController } from "./scene-motion-controller";
-import type { ScenePathCache } from "./path-cache";
-import type { DetachedSceneElementCache } from "./detached-element-cache";
+import type { SceneMotionController } from "./presentation/scene-motion-controller";
+import type { ScenePathCache } from "./content/path-cache";
+import type { DetachedSceneElementCache } from "./content/detached-element-cache";
 import type {
   MutableSceneInstrumentation,
   SceneCamera,
   SceneInstrumentationSnapshot,
   SceneViewport,
 } from "./types";
-import type { SceneBackgroundCache } from "./background-cache";
+import type { SceneBackgroundCache } from "./content/background-cache";
 import * as stats from "./instrumentation";
-import type { VisibilityResult } from "./visibility-state";
+import type { VisibilityResult } from "./visibility/visibility-state";
 import type { ActiveDocumentMemoryScenePort } from "../../editor/session/active-document-memory-coordinator";
 
 export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
-import { normalizeStrokePaint } from "../../../../src/domain/geometry/pressure-paint";
+import { normalizeStrokePaint } from "../../../../src/domain/geometry/pressure/pressure-paint";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import {
   appendElementToFragment,
@@ -12,8 +12,9 @@ import {
   updateMountedGeometry,
   updateMountedPaint,
   updatePreviewTransform,
-} from "../../../../src/rendering/scene/mounted-element";
+} from "../../../../src/rendering/scene/content/mounted-element";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
+import { activeFade } from "../../../fixtures/rendering/scene-fades";
 import { FakeDocument, FakeNode, fakeNode, fakeRectangleRecord } from "./fakes";
 
 function setup(
@@ -125,15 +126,14 @@ describe("mounted pressure stroke groups", () => {
     expect(group.style.opacity).toBeUndefined();
     expect(group.attributes.get("opacity")).toBe(String(opacity));
     expect(group.style.filter).toBeUndefined();
-    expect(group.nodes[0]!.style.animation).toBe(
-      "inkbook-element-fill-exit 100ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards",
-    );
+    expect(activeFade(group.nodes[0]! as unknown as Element).keyframes.opacity).toEqual(["1", "0"]);
+    expect(activeFade(group.nodes[0]! as unknown as Element).options.duration).toBe(100);
     expect(group.nodes.every((node) => node.style.filter === undefined)).toBe(true);
     setMountedElementFade(entry, null);
     expect(entry.fadeActive).toBe(false);
     expect(group.style.opacity).toBeUndefined();
     expect(group.style.filter).toBeUndefined();
-    expect(group.nodes[0]!.style.getPropertyValue("animation")).toBe("");
+    expect(group.nodes[0]!.getAnimations()).toHaveLength(0);
     expect(removeMountedElementNode(entry)).toBe(true);
     expect(parent.nodes).toHaveLength(0);
   });
@@ -227,16 +227,16 @@ it.each(["kind", "pressure-style"] as const)(
     const motionOpacity = group.style.opacity;
     const motionTransform = group.style.transform;
     setMountedElementFade(entry, 400);
-    expect(path.style.animation).toContain("inkbook-element-fill-exit 400ms");
+    expect(activeFade(path as unknown as Element).keyframes.opacity).toEqual(["1", "0"]);
     entry.displayedElement =
       change === "kind"
         ? fakeRectangleRecord(record.id, 0, 0).element
         : { ...record.element, style: { ...record.element.style, pressureEnabled: false } };
     setMountedElementFade(entry, null);
     expect(entry.fadeActive).toBe(false);
-    expect(path.style.getPropertyValue("animation")).toBe("");
+    expect(path.getAnimations()).toHaveLength(0);
     expect(path.style.getPropertyValue("opacity")).toBe("");
-    expect(group.style.animation).toBeUndefined();
+    expect(group.getAnimations()).toHaveLength(0);
     expect(group.style.opacity).toBe(motionOpacity);
     expect(group.style.transform).toBe(motionTransform);
     expect(group.attributes.get("opacity")).toBe(originalOpacity);
@@ -261,19 +261,18 @@ it("fades multipart pressure at the group to preserve overlapping-path compositi
   const childrenUnchanged = () =>
     group.nodes.every(
       (path) =>
-        path.style.animation === undefined &&
+        path.getAnimations().length === 0 &&
         path.style.opacity === undefined &&
         path.style.filter === undefined,
     );
   setMountedElementFade(entry, 400);
-  expect(group.style.animation).toBe(
-    "inkbook-element-opacity-exit 400ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards",
-  );
+  expect(activeFade(group as unknown as Element).keyframes.opacity).toEqual([String(opacity), "0"]);
+  expect(activeFade(group as unknown as Element).options.duration).toBe(400);
   expect(group.attributes.get("opacity")).toBe(String(opacity));
   expect(childrenUnchanged()).toBe(true);
   setMountedElementFade(entry, null);
   expect(entry.fadeActive).toBe(false);
-  expect(group.style.getPropertyValue("animation")).toBe("");
+  expect(group.getAnimations()).toHaveLength(0);
   expect(group.style.getPropertyValue("opacity")).toBe("");
   expect(group.attributes.get("opacity")).toBe(String(opacity));
   expect(childrenUnchanged()).toBe(true);
@@ -294,9 +293,8 @@ describe("opacity-only removal feedback", () => {
       expect(opacity).toBe(kind === "pressure" ? "1" : String(record.element.style.opacity));
       setMountedElementFade(entry, 400);
       expect(entry.fadeActive).toBe(true);
-      expect(node.style.animation).toBe(
-        `inkbook-element-${kind === "pressure" ? "fill" : "stroke"}-exit 400ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards`,
-      );
+      expect(activeFade(node as unknown as Element).keyframes.opacity).toEqual(["1", "0"]);
+      expect(activeFade(node as unknown as Element).options.duration).toBe(400);
       expect(node.style.filter || "").toBe("");
       expect(node.style.getPropertyValue("opacity")).toBe("");
       expect(node.attributes.get(attribute)).toBe(opacity);
@@ -305,16 +303,16 @@ describe("opacity-only removal feedback", () => {
         expect(originalGroupOpacity).toBe(
           String(normalizeStrokePaint(record.element.style).opacity),
         );
-        expect(group.style.getPropertyValue("animation")).toBe("");
+        expect(group.getAnimations()).toHaveLength(0);
         expect(group.style.getPropertyValue("opacity")).toBe("");
       }
       setMountedElementFade(entry, null);
       expect(entry.fadeActive).toBe(false);
-      expect(node.style.getPropertyValue("animation")).toBe("");
+      expect(node.getAnimations()).toHaveLength(0);
       expect(node.style.filter || "").toBe("");
       expect(node.style.getPropertyValue("opacity")).toBe("");
       setMountedElementFade(entry, 0);
-      expect(node.style.getPropertyValue("animation")).toBe("");
+      expect(node.getAnimations()).toHaveLength(0);
       expect(node.style.filter || "").toBe("");
       expect(node.style.opacity).toBe("0");
       expect(node.attributes.get(attribute)).toBe(opacity);
@@ -334,13 +332,13 @@ describe("opacity-only removal feedback", () => {
     setMountedElementFade(entry, 400);
     entry.displayedElement = fakeRectangleRecord(record.id, 0, 0).element;
     setMountedElementFade(entry, 200);
-    expect(path.style.getPropertyValue("animation")).toBe("");
-    expect(group.style.animation).toContain("inkbook-element-opacity-exit 200ms");
+    expect(path.getAnimations()).toHaveLength(0);
+    expect(activeFade(group as unknown as Element).options.duration).toBe(200);
     expect(group.attributes.get("opacity")).toBe(groupOpacity);
     expect(path.style.filter).toBeUndefined();
     expect(group.style.filter).toBeUndefined();
     setMountedElementFade(entry, null);
-    expect(group.style.getPropertyValue("animation")).toBe("");
+    expect(group.getAnimations()).toHaveLength(0);
     expect(group.style.getPropertyValue("opacity")).toBe("");
   });
 
@@ -351,13 +349,13 @@ describe("opacity-only removal feedback", () => {
     const paint = [...node.attributes];
     setMountedElementFade(entry, 400);
     expect(node.style.filter).toBeUndefined();
-    expect(node.style.animation).toContain("inkbook-element-opacity-exit 400ms");
+    expect(activeFade(node as unknown as Element).options.duration).toBe(400);
     expect(node.style.getPropertyValue("opacity")).toBe("");
     expect([...node.attributes]).toEqual(paint);
     setMountedElementFade(entry, null);
-    expect(node.style.getPropertyValue("animation")).toBe("");
+    expect(node.getAnimations()).toHaveLength(0);
     setMountedElementFade(entry, 0);
-    expect(node.style.getPropertyValue("animation")).toBe("");
+    expect(node.getAnimations()).toHaveLength(0);
     expect(node.style.opacity).toBe("0");
     setMountedElementFade(entry, null);
     expect(node.style.getPropertyValue("opacity")).toBe("");

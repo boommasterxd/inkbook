@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/codec";
-import { encodeRuntimeRequest } from "../../../../src/persistence/worker/runtime/wire-codec";
-import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
+import { encodeRuntimeRequest } from "../../../../src/persistence/worker/runtime/wire/wire-codec";
+import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/bridge/worker-bridge";
 import {
   createOneStrokeWorkerSnapshot,
   createWorkerBridgeClient,

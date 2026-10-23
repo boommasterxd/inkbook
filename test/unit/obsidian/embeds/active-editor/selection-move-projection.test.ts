@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MovePreview } from "../../../../../src/obsidian/embeds/active-editor/move-preview";
+import { MovePreview } from "../../../../../src/obsidian/embeds/active-editor/previews/move-preview";
 import type { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";

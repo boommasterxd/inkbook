@@ -5,8 +5,17 @@ import config from "../../../stylelint.config.mjs";
 
 const codeFilename = "src/obsidian/styles/inkbook.css";
 
+async function expectRejected(code, rule, filename = codeFilename) {
+  const { errored, results } = await stylelint.lint({ code, codeFilename: filename, config });
+  expect(errored).toBe(true);
+  const warnings = results.flatMap((result) => result.warnings);
+  expect(warnings).toEqual(
+    expect.arrayContaining([expect.objectContaining({ rule, severity: "error" })]),
+  );
+}
+
 describe("owned stylesheet boundaries", () => {
-  it("allows owned surfaces, exact scroll leases, platform feedback and animation stages", async () => {
+  it("allows owned surfaces, exact scroll leases, platform feedback and host motion suppression", async () => {
     const result = await stylelint.lint({
       code: `
 .inkbook-root .inkbook-canvas-input,
@@ -20,9 +29,9 @@ describe("owned stylesheet boundaries", () => {
   display: block;
 }
 
-@keyframes inkbook-presence {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.inkbook-root {
+  animation: none;
+  transition: none;
 }
 `,
       codeFilename,
@@ -33,6 +42,19 @@ describe("owned stylesheet boundaries", () => {
   });
 
   it.each([
+    ["transition: color 120ms", "declaration-property-value-disallowed-list"],
+    ["transition-duration: 120ms", "property-disallowed-list"],
+    ["animation: owned 120ms", "declaration-property-value-disallowed-list"],
+    ["animation-name: owned", "property-disallowed-list"],
+  ])("rejects CSS motion through %s", async (declaration, rule) => {
+    await expectRejected(`.inkbook-root { ${declaration}; }`, rule);
+  });
+
+  it("rejects CSS keyframes", async () => {
+    await expectRejected("@keyframes owned { to { opacity: 0; } }", "at-rule-disallowed-list");
+  });
+
+  it.each([
     ".menu",
     ".inkbook-root .menu-scroll",
     ".inkbook-root, [data-inkbook-keyboard-navigation='false'] :focus",
@@ -40,18 +62,10 @@ describe("owned stylesheet boundaries", () => {
     ".inkbook-scroll-anchor-suppressed .host-child",
     "@media (width <= 600px) { .host-content",
   ])("rejects an unowned selector in %s", async (selector) => {
-    const result = await stylelint.lint({
-      code: `${selector} { display: block; }${selector.startsWith("@media") ? " }" : ""}`,
-      codeFilename:
-        selector === ".menu" ? "src/obsidian/styles/phone-sheet-host.css" : codeFilename,
-      config,
-    });
-
-    expect(result.errored).toBe(true);
-    expect(result.results.flatMap(({ warnings }) => warnings)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ rule: "selector-disallowed-list", severity: "error" }),
-      ]),
+    await expectRejected(
+      `${selector} { display: block; }${selector.startsWith("@media") ? " }" : ""}`,
+      "selector-disallowed-list",
+      selector === ".menu" ? "src/obsidian/styles/phone-sheet-host.css" : codeFilename,
     );
   });
 });

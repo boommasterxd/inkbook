@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { serializeElementPaths } from "../../../../src/persistence/serialization/path-markup";
+import { serializeElementPaths } from "../../../../src/persistence/serialization/output/path-markup";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { collapsedElements } from "../../../fixtures/domain/collapsed-elements";
 import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";

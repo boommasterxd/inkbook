@@ -7,7 +7,7 @@ import {
   type StoreDelta,
 } from "../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
-import { takeImmutableElementOwnership } from "../../../src/domain/store/immutability";
+import { takeImmutableElementOwnership } from "../../../src/domain/store/records/immutability";
 import { indexedStroke } from "../editor/stroke";
 import { createWorkerSnapshot } from "../persistence/worker-snapshot";
 import { calculateElementBounds } from "../../../src/domain/geometry/bounds";
@@ -17,8 +17,8 @@ import type {
   PreparedScenePathEntry,
   ScenePathPreparation,
 } from "../../../src/domain/geometry/prepared-scene-paths";
-import type { NavigationPathPreparation } from "../../../src/rendering/scene/navigation-path-preparation";
-import type { SceneVisibilityPriority } from "../../../src/rendering/scene/scene-entrant-priority";
+import type { NavigationPathPreparation } from "../../../src/rendering/scene/content/navigation-path-preparation";
+import type { SceneVisibilityPriority } from "../../../src/rendering/scene/visibility/scene-entrant-priority";
 import type { Bounds } from "../../../src/domain/geometry/public";
 import type { SceneDeltaEntry, SceneElementRecord } from "../../../src/rendering/scene/types";
 import type { InkElementV1, PageV1 } from "../../../src/domain/schema/public";

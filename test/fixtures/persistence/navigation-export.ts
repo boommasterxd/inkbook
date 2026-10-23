@@ -2,7 +2,7 @@ import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/document-runtime";
 import { GestureAwareSliceScheduler } from "../../../src/persistence/worker/runtime/slice-scheduler";
 import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
-import { attachDocumentWorkerHost } from "../../../src/persistence/worker/runtime/worker-host";
+import { attachDocumentWorkerHost } from "../../../src/persistence/worker/runtime/bridge/worker-host";
 import { createWorkerBridgeClient, createWorkerBridgeEndpoints } from "./worker-bridge";
 import { createTestStroke, createWorkerSnapshot } from "./worker-snapshot";
 import { TestWorkScheduler } from "./work-scheduler";

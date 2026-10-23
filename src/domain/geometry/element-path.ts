@@ -1,4 +1,4 @@
-import type { PreparedPressureGeometryPort } from "./prepared-pressure-geometry";
+import type { PreparedPressureGeometryPort } from "./pressure/prepared-pressure-geometry";
 import type {
   ArrowNodeV1,
   BoxShapeElementV1,

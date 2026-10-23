@@ -1,4 +1,5 @@
 import { MAX_JSON_DEPTH } from "../schema/constants";
+import { hasPlainJsonRecordPrototype } from "../schema/validation-internals";
 import {
   allocateSampleCopy,
   assertSampleCopyInput,
@@ -127,8 +128,7 @@ function cloneHeaderObject(value: object, budget: HeaderCopyBudget, depth: numbe
 }
 
 function assertHeaderRecord(value: object): void {
-  const prototype = Object.getPrototypeOf(value) as unknown;
-  if (prototype !== Object.prototype && prototype !== null) {
+  if (!hasPlainJsonRecordPrototype(value)) {
     throw new TypeError("Runtime element headers must use plain JSON object prototypes.");
   }
 }

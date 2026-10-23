@@ -1,10 +1,10 @@
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { SceneContentRenderer } from "./content-renderer";
-import type { SceneElementPreviews } from "./scene-element-previews";
+import type { SceneElementPreviews } from "./presentation/scene-element-previews";
 import type { SceneContentScheduler } from "./scene-content-scheduler";
-import type { SceneMotionController } from "./scene-motion-controller";
-import type { PreviewTransform } from "./scene-visibility-reconciler";
+import type { SceneMotionController } from "./presentation/scene-motion-controller";
+import type { PreviewTransform } from "./reconciliation/scene-visibility-reconciler";
 import { completeSceneFrame, type SceneFrameWorkResult } from "./scene-frame-completion";
 import type { SceneCommitCoordinator } from "./scene-commit-coordinator";
 import type { SceneFrameScheduler } from "./scene-frame-scheduler";

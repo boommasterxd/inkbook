@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   pressureBoundaryParameter,
   type PressureBoundarySegment,
-} from "../../../src/domain/geometry/pressure-boundary-intersections";
+} from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
 import {
   MAX_PRESSURE_BOUNDARY_SCALAR_ENTRIES,
   PressureBoundaryScalarCache,
-} from "../../../src/domain/geometry/pressure-boundary-scalars";
-import type { PressureBoundaryArc } from "../../../src/domain/geometry/pressure-joins";
-import { visitPreparedPressureOutline } from "../../../src/domain/geometry/pressure-outline";
-import { iteratePressureUnion } from "../../../src/domain/geometry/pressure-union";
+} from "../../../src/domain/geometry/pressure/pressure-boundary-scalars";
+import type { PressureBoundaryArc } from "../../../src/domain/geometry/pressure/pressure-joins";
+import { visitPreparedPressureOutline } from "../../../src/domain/geometry/pressure/pressure-outline";
+import { iteratePressureUnion } from "../../../src/domain/geometry/pressure/pressure-union";
 import { simplifyStrokeCenters } from "../../../src/domain/geometry/stroke-simplification";
 import { smoothStrokeCenters } from "../../../src/domain/geometry/stroke-path";
 import { finishGeometrySteps } from "../../fixtures/domain/geometry-steps";

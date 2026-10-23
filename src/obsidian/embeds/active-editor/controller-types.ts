@@ -1,4 +1,4 @@
-import type { PhoneSheetHostPort } from "../../menus/phone-sheet-host";
+import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import type {
   InkbookDeviceSettingsV2,
   SnappingSettingsV1,
@@ -9,16 +9,16 @@ import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { MenuFactoryPort } from "../../menus/index";
 import type { BrowserScrollElement } from "../../scrolling/index";
 import type { InkbookFeedbackCode } from "../../feedback";
-import type { EditableDocumentModel } from "../vault-document-session";
+import type { EditableDocumentModel } from "../document-session/vault-document-session";
 import type { PageV1 } from "../../../domain/schema/public";
 import type { ElementSceneStore } from "./scene-store";
-import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
+import type { ActiveEditorZoomLayoutUpdate } from "./navigation/navigation";
 import type { BackgroundSpacingDefaults } from "./controller-helpers";
 import type { ActiveEditorHistory } from "./history";
 import type { Keymap } from "obsidian";
-import type { EditorChromeOpenings } from "../editor-chrome-openings";
+import type { EditorChromeOpenings } from "../active-scene/editor-chrome-openings";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
-import type { NavigationCursorLayout } from "./navigation-layout";
+import type { NavigationCursorLayout } from "./navigation/navigation-layout";
 
 export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly container: HTMLElement;

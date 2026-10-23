@@ -1,5 +1,5 @@
 import type { ElementStore } from "../../../src/domain/store/public";
-import { preparedPressurePathHint } from "../../../src/persistence/serialization/prepared-pressure-hints";
+import { preparedPressurePathHint } from "../../../src/persistence/serialization/output/prepared-pressure-hints";
 
 /** Collect only the current bounded local paths accepted by the production producer. */
 export function preparedHints(store: ElementStore, revision: number) {

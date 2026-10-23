@@ -1,6 +1,6 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ElementStore } from "../../../domain/store/public";
-import { prepareConnectionCycleTargets } from "../../../domain/store/connection-cycle-targets";
+import { prepareConnectionCycleTargets } from "../../../domain/store/records/connection-cycle-targets";
 
 const SET_HEADER_BYTES = 128;
 const SET_ENTRY_BYTES = 48;

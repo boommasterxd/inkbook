@@ -4,7 +4,7 @@ import { vi } from "vitest";
 import {
   LIVE_PREVIEW_ZOOM_SCROLL_EXTENSION,
   LivePreviewZoomScrollBinding,
-} from "../../../src/obsidian/embeds/live-preview-zoom-scroll";
+} from "../../../src/obsidian/embeds/live-preview/live-preview-zoom-scroll";
 import { FrameHarness } from "./navigation";
 import { workSchedulerFromFrames } from "./work-scheduler";
 import { createDiv } from "./active-controller";

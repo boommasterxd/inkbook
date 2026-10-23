@@ -1,10 +1,10 @@
 import { calculateElementBounds } from "../../domain/geometry/public";
 import type { Bounds } from "../../domain/geometry/public";
 import type { SceneContentRenderer } from "./content-renderer";
-import type { ScenePathCache } from "./path-cache";
+import type { ScenePathCache } from "./content/path-cache";
 import type { SceneDeltaEntry, SceneStoreDelta, SceneStorePort } from "./types";
-import type { SceneVisibilityState } from "./visibility-state";
-import type { DetachedSceneElementCache } from "./detached-element-cache";
+import type { SceneVisibilityState } from "./visibility/visibility-state";
+import type { DetachedSceneElementCache } from "./content/detached-element-cache";
 
 export interface SceneDeltaRoutingPorts {
   readonly content: SceneContentRenderer;

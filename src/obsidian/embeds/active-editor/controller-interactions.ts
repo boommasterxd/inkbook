@@ -1,21 +1,24 @@
-import type { NavigationCursorLayout } from "./navigation-layout";
-import { activeSceneViewportFromBounds } from "../active-scene-viewport";
+import type { NavigationCursorLayout } from "./navigation/navigation-layout";
+import { activeSceneViewportFromBounds } from "../active-scene/active-scene-viewport";
 import * as Scrolling from "../../scrolling/index";
 import { createInputState, type InputState } from "../../../editor/input/index";
 import type { PointerSample } from "../../../editor/input/index";
 import { derivePageExtent } from "../../../domain/geometry/public";
 
-import { CoalescedPointerInput } from "./coalesced-input";
+import { CoalescedPointerInput } from "./input/coalesced-input";
 import { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
-import { ActiveEditorHandleInteraction } from "./handle-interaction";
+import { ActiveEditorHandleInteraction } from "./previews/handle-interaction";
 import type { ActiveEditorHistory } from "./history";
 import { ActiveEditorMenuController } from "./controller-menu";
-import { ActiveEditorNavigation, type ActiveEditorNavigationOptions } from "./navigation";
+import {
+  ActiveEditorNavigation,
+  type ActiveEditorNavigationOptions,
+} from "./navigation/navigation";
 import { PreparedElementHistory } from "./prepared-element-history";
 import { visibleSelectionCenter } from "./controller-elements";
 import type { ActiveEditorChromeState } from "./controller-chrome-state";
-import type { ActivePointerCaptureOwner } from "./pointer-capture";
+import type { ActivePointerCaptureOwner } from "./input/pointer-capture";
 import type { GestureController } from "../../../editor/gestures/public";
 import type { SelectionFrameSession } from "../../../editor/selection/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";

@@ -1,5 +1,4 @@
 .inkbook-root .inkbook-feedback {
-  animation: inkbook-toolbar-context-control-enter var(--inkbook-motion-toolbar) ease-out both;
   align-items: center;
   background: color-mix(in srgb, var(--background-primary) 96%, transparent);
   border: 1px solid var(--background-modifier-border-hover);
@@ -16,7 +15,6 @@
 }
 
 .inkbook-root .inkbook-feedback[data-inkbook-feedback-presence="exiting"] {
-  animation: inkbook-toolbar-context-control-exit var(--inkbook-motion-toolbar) ease-in both;
   pointer-events: none;
 }
 
@@ -150,11 +148,6 @@
   padding: 0;
 }
 
-.inkbook-root .inkbook-feedback-icon-button:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
 .inkbook-root .inkbook-feedback-icon-button[data-inkbook-feedback-tone="danger"] {
   color: var(--text-error);
 }
@@ -174,11 +167,5 @@
     gap: 0;
     justify-content: space-evenly;
     margin-inline-start: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .inkbook-root .inkbook-feedback {
-    animation: none;
   }
 }

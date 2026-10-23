@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import * as intersections from "../../../src/domain/geometry/pressure-boundary-intersections";
-import * as arcBounds from "../../../src/domain/geometry/pressure-arc-bounds";
-import { pressureArcPoint } from "../../../src/domain/geometry/pressure-joins";
-import { visitPreparedPressureOutline } from "../../../src/domain/geometry/pressure-outline";
-import * as pressureRadius from "../../../src/domain/geometry/pressure-radius";
-import * as joins from "../../../src/domain/geometry/pressure-joins";
-import * as windowPreparation from "../../../src/domain/geometry/pressure-window";
+import * as intersections from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
+import * as arcBounds from "../../../src/domain/geometry/pressure/pressure-arc-bounds";
+import { pressureArcPoint } from "../../../src/domain/geometry/pressure/pressure-joins";
+import { visitPreparedPressureOutline } from "../../../src/domain/geometry/pressure/pressure-outline";
+import * as pressureRadius from "../../../src/domain/geometry/pressure/pressure-radius";
+import * as joins from "../../../src/domain/geometry/pressure/pressure-joins";
+import * as windowPreparation from "../../../src/domain/geometry/pressure/pressure-window";
 import { finishGeometrySteps } from "../../fixtures/domain/geometry-steps";
-import { serializePressureWindows } from "../../../src/domain/geometry/pressure-path-serialization";
-import { StrokeShapeCache } from "../../../src/persistence/serialization/stroke-shape-cache";
-import { PreparedPressureWindowCache } from "../../../src/domain/store/prepared-pressure-window-cache";
+import { serializePressureWindows } from "../../../src/domain/geometry/pressure/pressure-path-serialization";
+import { StrokeShapeCache } from "../../../src/persistence/serialization/output/stroke-shape-cache";
+import { PreparedPressureWindowCache } from "../../../src/domain/store/records/prepared-pressure-window-cache";
 import { CanonicalElementPathPreparation } from "../../../src/domain/geometry/canonical-element-path-preparation";
 import {
   createMultiWindowPressureStroke,
@@ -18,7 +18,7 @@ import {
 import {
   iteratePressureUnion,
   pressureShapeBoundary,
-} from "../../../src/domain/geometry/pressure-union";
+} from "../../../src/domain/geometry/pressure/pressure-union";
 
 function denseDiskWindow() {
   return Array.from({ length: 64 }, (_, index) => ({

@@ -4,7 +4,7 @@ import {
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
 } from "../../../../src/persistence/serialization/public";
-import { ChunkedOutputCancelledError } from "../../../../src/persistence/serialization/chunked-output-assembler";
+import { ChunkedOutputCancelledError } from "../../../../src/persistence/serialization/output/chunked-output-assembler";
 import { createAllElementSnapshot } from "./fixtures";
 
 describe("chunked incremental document serialization", () => {

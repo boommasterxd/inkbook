@@ -4,6 +4,7 @@ import { transformedStrokeCenters } from "../../../../src/domain/geometry/stroke
 import { strokeCenterWindow } from "../../../../src/domain/geometry/stroke-center-window";
 import {
   strokeLocalGeometry,
+  sameStrokeLocalPivot,
   strokeWorldPoint,
   translatedStroke,
 } from "../../../../src/domain/geometry/stroke-position";
@@ -19,6 +20,7 @@ describe("stroke shape and position", () => {
       expect(moved.points).toBe(source.points);
       expect(strokeLocalGeometry(source)).toBe(source);
       expect(strokeLocalGeometry(moved)).toEqual(source);
+      expect(sameStrokeLocalPivot(source, moved)).toBe(true);
       expect(moved.offset).toEqual({ x: 100, y: -50 });
       const expected = transformedStrokeCenters(source).map((center) => ({
         ...center,

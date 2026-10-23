@@ -1,8 +1,8 @@
 import { expect } from "vitest";
 
 import type { WorkScheduler } from "../../../src/domain/scheduling/work-scheduler";
-import { ActiveScenePreviewHandoff } from "../../../src/obsidian/embeds/active-scene-handoff";
-import type { PresentationAttachment } from "../../../src/obsidian/embeds/presentation-port";
+import { ActiveScenePreviewHandoff } from "../../../src/obsidian/embeds/active-scene/active-scene-handoff";
+import type { PresentationAttachment } from "../../../src/obsidian/embeds/presentation/presentation-port";
 
 /** Prepare the locked surface, then complete the active scene's reduced-motion handoff. */
 export async function createDetachedPreviewHandoff(

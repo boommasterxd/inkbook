@@ -1,5 +1,5 @@
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
-import type { SelectionScaleGesture } from "../../../src/editor/selection/selection-scale";
+import type { SelectionScaleGesture } from "../../../src/editor/selection/transform/selection-scale";
 import { maximumStroke } from "./maximum-stroke-fixture";
 
 export const PASS_THROUGH_PLANNER = {

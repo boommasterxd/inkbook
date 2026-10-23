@@ -2,12 +2,12 @@
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { Modal, type App, type Plugin } from "obsidian";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import type {
   PhoneSheetNavigation,
   PhoneSheetPage,
-} from "../../../../src/obsidian/menus/panel-page";
+} from "../../../../src/obsidian/menus/panels/panel-page";
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
 import { InkbookSettingsModalController } from "../../../../src/obsidian/settings/settings-modal";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
@@ -36,7 +36,7 @@ describe("settings pages in an existing phone sheet", () => {
     pending?.dispose?.();
   });
 
-  it("edits settings and requests a measured resize for structural changes without another modal", async () => {
+  it("edits settings in the same sheet and commits structural layout changes", async () => {
     const { controller, store, navigation, lifecycle } = setup();
     const open = vi.spyOn(Modal.prototype, "open");
     controller.open("settings", navigation);
@@ -49,8 +49,7 @@ describe("settings pages in an existing phone sheet", () => {
       expect(store.getVaultSettings().filePlacement.mode).toBe("custom-vault-folder");
       expect(document.querySelector('[data-setting-name="Custom vault folder"]')).not.toBeNull();
     });
-    expect(lifecycle.prepareLayoutChange).toHaveBeenCalledOnce();
-    expect(lifecycle.requestLayout).toHaveBeenCalledOnce();
+    expect(lifecycle.mutateLayout).toHaveBeenCalledOnce();
     controller.dispose();
     expect(navigation.close).toHaveBeenCalledExactlyOnceWith("immediate");
     expect(document.querySelector(".inkbook-settings-modal")).toBeNull();
@@ -67,14 +66,18 @@ describe("settings pages in an existing phone sheet", () => {
 
   it("records shortcuts and releases subscriptions and active recording when leaving the page", () => {
     const { controller, store, navigation } = setup();
-    const unsubscribe = vi.fn();
+    const leases: Array<Mock<() => void>> = [];
+    const active = new Set<() => void>();
     const subscribe = store.subscribeDeviceSettings.bind(store);
     vi.spyOn(store, "subscribeDeviceSettings").mockImplementation((listener) => {
       const cleanup = subscribe(listener);
-      return () => {
+      const release = vi.fn((): void => {
         cleanup();
-        unsubscribe();
-      };
+        active.delete(release);
+      });
+      leases.push(release);
+      active.add(release);
+      return release;
     });
     controller.open("shortcuts", navigation);
     const selector = 'button[aria-label="Change shortcut for Copy selection"]';
@@ -87,8 +90,11 @@ describe("settings pages in an existing phone sheet", () => {
       modifiers: ["mod"],
     });
     required<HTMLButtonElement>(selector).click();
+    const ownedBeforeBack = [...active];
     navigation.back();
-    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(active.size).toBe(0);
+    for (const release of ownedBeforeBack) expect(release).toHaveBeenCalledOnce();
+    for (const release of leases) expect(release).toHaveBeenCalledOnce();
     expect(document.querySelector(".inkbook-shortcuts-view")).toBeNull();
     controller.dispose();
     expect(navigation.close).not.toHaveBeenCalled();
@@ -102,8 +108,7 @@ function setup(): {
     close: ReturnType<typeof vi.fn<PhoneSheetNavigation["close"]>>;
   };
   lifecycle: {
-    prepareLayoutChange: ReturnType<typeof vi.fn>;
-    requestLayout: ReturnType<typeof vi.fn>;
+    mutateLayout: ReturnType<typeof vi.fn<(update: () => void) => void>>;
   };
 } {
   const container = document.body.createDiv();
@@ -116,7 +121,7 @@ function setup(): {
     }),
     store,
   );
-  const lifecycle = { prepareLayoutChange: vi.fn(), requestLayout: vi.fn() };
+  const lifecycle = { mutateLayout: vi.fn((update: () => void) => update()) };
   let page: PhoneSheetPage | undefined;
   const back = (): boolean => {
     if (page === undefined) return false;

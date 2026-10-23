@@ -18,6 +18,7 @@ export function mountWindowFeedback(element: HTMLElement, source: HTMLElement): 
 export function bindFeedbackPresentationStyle(
   target: HTMLElement,
   source: HTMLElement,
+  onStyleChanged?: () => void,
 ): () => void {
   const syncStyle = (): void => {
     for (const key of ["inkbookScheme", "inkbookMotion"] as const) {
@@ -27,7 +28,10 @@ export function bindFeedbackPresentationStyle(
     }
   };
   syncStyle();
-  const observer = observeSourceStyle(source, syncStyle);
+  const observer = observeSourceStyle(source, () => {
+    syncStyle();
+    onStyleChanged?.();
+  });
   return () => observer?.disconnect();
 }
 

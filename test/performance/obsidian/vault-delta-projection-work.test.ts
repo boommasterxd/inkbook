@@ -1,8 +1,8 @@
 import { expect, it, vi } from "vitest";
 
 import { ElementStore, type StoreDelta } from "../../../src/domain/store/public";
-import { recordVaultStoreDelta } from "../../../src/obsidian/embeds/vault-document-model";
-import { VaultDocumentSessionMutations } from "../../../src/obsidian/embeds/vault-document-session-mutations";
+import { recordVaultStoreDelta } from "../../../src/obsidian/embeds/document-session/vault-document-model";
+import { VaultDocumentSessionMutations } from "../../../src/obsidian/embeds/document-session/vault-document-session-mutations";
 import type { AutosaveCoordinator } from "../../../src/persistence/saving/autosave/public";
 import {
   applyElementMutation,

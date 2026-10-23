@@ -3,9 +3,9 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { arrangeRenderBandSteps, type ArrangeAction } from "../../../src/domain/commands/arrange";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
-import { prepareArrangementMutation } from "../../../src/domain/store/arrangement-mutation";
+import { prepareArrangementMutation } from "../../../src/domain/store/mutations/arrangement-mutation";
 import type { ElementRank } from "../../../src/domain/store/types";
-import { ElementStoreOrdering } from "../../../src/domain/store/order-operations";
+import { ElementStoreOrdering } from "../../../src/domain/store/mutations/order-operations";
 
 function arrangeElement(index: number): BoxShapeElementV1 {
   const x = 25 + (index % 100) * 18;

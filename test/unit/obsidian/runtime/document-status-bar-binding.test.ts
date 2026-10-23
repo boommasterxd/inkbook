@@ -1,17 +1,22 @@
 // @vitest-environment happy-dom
 
 import type { Workspace } from "obsidian";
-import { afterEach, expect, it, vi } from "vitest";
+import { MotionGlobalConfig } from "motion";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { resolveDocumentStatusPane } from "../../../../src/obsidian/runtime/document-status-bar-binding";
 import { createHtmlElement } from "../../../adapters/obsidian/dom";
 import { documentStatusBarBindingFixture } from "../../../fixtures/obsidian/document-status-bar-binding";
 
 const cleanups: (() => void)[] = [];
+beforeEach(() => {
+  MotionGlobalConfig.useManualTiming = true;
+});
 afterEach(() => {
   for (const dispose of cleanups.splice(0)) dispose();
   vi.restoreAllMocks();
   document.body.replaceChildren();
+  MotionGlobalConfig.useManualTiming = false;
 });
 
 function fixture() {
@@ -70,6 +75,36 @@ it("cleans up once and ignores late layout readiness, events and settings", () =
   expect(value.unsubscribeSettings).toHaveBeenCalledOnce();
   expect(value.readPane).toHaveBeenCalledOnce();
   expect(value.refresh).toHaveBeenCalledOnce();
+});
+
+it("refreshes stylesheet colors on public css-change without replacing the current status", async () => {
+  const value = fixture();
+  const status = value.item.firstElementChild as HTMLElement;
+  const icon = status.querySelector(".inkbook-status-bar-icon");
+  const readStyle = vi.spyOn(window, "getComputedStyle");
+  const stylesheet = document.createElementNS("http://www.w3.org/1999/xhtml", "style");
+  stylesheet.textContent = ":root { --text-muted: rgb(40, 40, 40); }";
+  document.head.append(stylesheet);
+  try {
+    await new Promise<void>((resolve) => window.queueMicrotask(resolve));
+    expect(readStyle).not.toHaveBeenCalled();
+    value.emit("css-change");
+    expect(
+      readStyle.mock.calls.some(
+        ([element]) => element.getAttribute("style")?.includes("var(--text-muted)") === true,
+      ),
+    ).toBe(true);
+    expect(value.item.firstElementChild).toBe(status);
+    expect(status.querySelector(".inkbook-status-bar-icon")).toBe(icon);
+    expect(status.dataset.saveStatus).toBe("saved");
+    expect(status.textContent).toContain("Saved");
+    value.dispose();
+    readStyle.mockClear();
+    value.emit("css-change");
+    expect(readStyle).not.toHaveBeenCalled();
+  } finally {
+    stylesheet.remove();
+  }
 });
 
 it("resolves owning public Markdown leaf containers and rejects missing membership", () => {

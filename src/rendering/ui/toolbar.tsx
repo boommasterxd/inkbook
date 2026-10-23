@@ -1,5 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, Ref, RefObject } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useContext } from "react";
 
 import type {
   FlyoutId,
@@ -18,18 +20,13 @@ import {
   DRAWING_TOOL_ICON_IDS,
   type ActiveShapeIconState,
 } from "./icon-ids";
-import { ToolbarStyleIcon, type ToolbarStyleIconState } from "./style-icon";
-import {
-  type PresentToolbarButton,
-  type ToolbarButtonPresence,
-  useToolbarButtonPresence,
-} from "./toolbar-presence";
-import {
-  type ToolbarButtonMap,
-  useToolbarElementLayoutMotion,
-  useToolbarLayoutMotion,
-} from "./toolbar-layout-motion";
-import { ToolbarActionIcon } from "./toolbar-action-icon";
+import type { ToolbarStyleIconState } from "./style-icon";
+import { useToolbarPresenceOrder } from "./toolbar-presence";
+import { ToolbarIconButton, type ToolbarIconButtonProps } from "./toolbar-button";
+import { toolbarMotionContext, toolbarLayoutTransition } from "./toolbar-motion";
+import { TRANSITION_DURATIONS } from "../motion/transitions";
+
+type ToolbarButtonMap = Map<ToolbarAction, HTMLButtonElement>;
 
 const LEFT_BUTTONS: readonly ToolbarButtonDefinition[] = [
   { action: "finger-drawing", icon: "hand", label: "Finger drawing" },
@@ -70,63 +67,6 @@ const TOOLBAR_BUTTONS: readonly ToolbarButtonDefinition[] = [
   ...RIGHT_BUTTONS,
   ...CONTEXT_BUTTONS,
 ];
-
-interface IconButtonProps {
-  readonly buttonClassName?: string | undefined;
-  readonly confirmation: ToolbarState["actionConfirmation"];
-  readonly definition: ToolbarButtonDefinition;
-  readonly disabled: boolean;
-  readonly expanded: boolean | undefined;
-  readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
-  readonly onPresenceComplete: (action: ToolbarAction) => void;
-  readonly presence: ToolbarButtonPresence;
-  readonly presenceOrder: number;
-  readonly pressed: boolean | undefined;
-  readonly registerButton?:
-    ((action: ToolbarAction, element: HTMLButtonElement | null) => void) | undefined;
-  readonly renderIcon: (element: HTMLElement, icon: string) => void;
-  readonly styleIcon: ToolbarStyleIconState;
-  readonly tabIndex: number;
-}
-
-function IconButton(props: IconButtonProps) {
-  const flyout = flyoutForAction(props.definition.action);
-
-  return (
-    <button
-      aria-expanded={props.expanded}
-      aria-haspopup={flyout === null ? undefined : popupRoleForAction(props.definition.action)}
-      aria-label={props.definition.label}
-      aria-pressed={props.pressed}
-      aria-hidden={props.presence === "exiting" ? "true" : undefined}
-      className={["inkbook-toolbar-button", props.buttonClassName].filter(Boolean).join(" ")}
-      data-inkbook-action={props.definition.action}
-      data-inkbook-tool={isToolId(props.definition.action) ? "true" : undefined}
-      data-presence={props.presence === "present" ? undefined : props.presence}
-      data-presence-order={props.presence === "present" ? undefined : props.presenceOrder}
-      disabled={props.disabled || props.presence === "exiting"}
-      onAnimationEnd={(event) => {
-        if (props.presence !== "present" && event.currentTarget === event.target) {
-          props.onPresenceComplete(props.definition.action);
-        }
-      }}
-      onClick={(event) => props.onAction(props.definition.action, event.currentTarget)}
-      ref={(element) => props.registerButton?.(props.definition.action, element)}
-      tabIndex={props.tabIndex}
-      type="button"
-    >
-      {props.definition.action === "style" ? (
-        <ToolbarStyleIcon state={props.styleIcon} />
-      ) : (
-        <ToolbarActionIcon
-          confirmation={props.confirmation}
-          definition={props.definition}
-          renderIcon={props.renderIcon}
-        />
-      )}
-    </button>
-  );
-}
 
 function buttonVisible(action: ToolbarAction, state: ToolbarState): boolean {
   if (action === "finger-drawing") return state.fingerDrawingAvailable;
@@ -178,15 +118,13 @@ function isToolId(action: ToolbarAction): action is ToolId {
 }
 
 interface ToolbarGroupProps {
-  readonly activeToolIndicator?: boolean | undefined;
-  readonly buttonClassName?: string | undefined;
+  readonly contextButtons?: boolean | undefined;
   readonly buttons: readonly ToolbarButtonDefinition[];
   readonly className: string;
   readonly fallbackFocus?: (() => void) | undefined;
   readonly label: string;
-  readonly layoutMotionKey?: string | undefined;
   readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
-  readonly registerButton?: IconButtonProps["registerButton"] | undefined;
+  readonly registerButton?: ToolbarIconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly reverseNavigation?: boolean | undefined;
   readonly state: ToolbarState;
@@ -238,20 +176,12 @@ function ToolbarGroup(props: ToolbarGroupProps) {
   );
   const visibleActions = visibleButtons.map((button) => button.action);
   const enabledActions = enabledButtons.map((button) => button.action);
-  const visibleKey = visibleActions.join("\u0000");
   const enabledKey = enabledActions.join("\u0000");
-  const [presentButtons, completePresence] = useToolbarButtonPresence(
-    props.buttons,
-    visibleButtons,
-    visibleKey,
-  );
+  const presenceOrder = useToolbarPresenceOrder(visibleActions);
+  const lifecycle = useContext(toolbarMotionContext);
   const [activeIndex, setActiveIndex] = useState(0);
   const buttonElements = useRef<ToolbarButtonMap>(new Map());
-  const indicatorRef = useRef<HTMLSpanElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
-  const layoutKey = toolbarGroupLayoutKey(props.layoutMotionKey, presentButtons);
-  useToolbarLayoutMotion(layoutKey, buttonElements);
-  useToolbarElementLayoutMotion(props.layoutMotionKey, groupRef);
   const safeIndex = Math.min(activeIndex, Math.max(enabledButtons.length - 1, 0));
   useToolbarFocusRecovery(
     enabledKey,
@@ -261,13 +191,6 @@ function ToolbarGroup(props: ToolbarGroupProps) {
     buttonElements,
     setActiveIndex,
   );
-  useLayoutEffect(() => {
-    if (!props.activeToolIndicator) return;
-    positionActiveToolIndicator(
-      indicatorRef.current,
-      buttonElements.current.get(props.state.activeTool) ?? null,
-    );
-  });
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     const nextIndex = nextToolbarIndex(
       resolveToolbarNavigationKey(event.key, props.reverseNavigation === true),
@@ -280,11 +203,11 @@ function ToolbarGroup(props: ToolbarGroupProps) {
     const nextAction = enabledActions[nextIndex];
     if (nextAction !== undefined) buttonElements.current.get(nextAction)?.focus();
   }
-  if (presentButtons.length === 0) return null;
-
   return (
-    <div
-      aria-label={props.label}
+    <motion.div
+      layout="position"
+      transition={{ layout: toolbarLayoutTransition(lifecycle.reduced) }}
+      aria-label={visibleButtons.length > 0 ? props.label : undefined}
       className={`inkbook-toolbar-group ${props.className}`}
       onFocus={(event) => {
         const focusedAction = toolbarActionFromElement(event.target);
@@ -293,61 +216,43 @@ function ToolbarGroup(props: ToolbarGroupProps) {
       }}
       onKeyDown={handleKeyDown}
       ref={groupRef}
-      role="group"
+      role={visibleButtons.length > 0 ? "group" : undefined}
     >
-      {props.activeToolIndicator ? (
-        <span aria-hidden="true" className="inkbook-toolbar-active-indicator" ref={indicatorRef} />
-      ) : null}
-      {presentButtons.map(({ definition: button, presence, presenceOrder }) => {
-        const disabled = buttonDisabled(button.action, props.state);
-        const index = enabledActions.indexOf(button.action);
-        return (
-          <IconButton
-            buttonClassName={props.buttonClassName}
-            confirmation={props.state.actionConfirmation}
-            definition={button}
-            disabled={disabled}
-            expanded={expandedState(button.action, props.state)}
-            key={button.action}
-            onAction={props.onAction}
-            onPresenceComplete={completePresence}
-            presence={presence}
-            presenceOrder={presenceOrder}
-            pressed={pressedState(button.action, props.state)}
-            registerButton={(action, element) => {
-              if (element === null) buttonElements.current.delete(action);
-              else buttonElements.current.set(action, element);
-              props.registerButton?.(action, element);
-            }}
-            renderIcon={props.renderIcon}
-            styleIcon={props.styleIcon}
-            tabIndex={!disabled && presence !== "exiting" && index === safeIndex ? 0 : -1}
-          />
-        );
-      })}
-    </div>
+      <AnimatePresence initial={props.contextButtons === true} custom={presenceOrder}>
+        {visibleButtons.map((button) => {
+          const disabled = buttonDisabled(button.action, props.state);
+          const index = enabledActions.indexOf(button.action);
+          return (
+            <ToolbarIconButton
+              contextButton={props.contextButtons === true}
+              confirmation={props.state.actionConfirmation}
+              definition={button}
+              disabled={disabled}
+              expanded={expandedState(button.action, props.state)}
+              key={button.action}
+              onAction={props.onAction}
+              enterOrder={Math.max(0, presenceOrder.entering.indexOf(button.action))}
+              popupRole={
+                flyoutForAction(button.action) === null
+                  ? undefined
+                  : popupRoleForAction(button.action)
+              }
+              pressed={pressedState(button.action, props.state)}
+              registerButton={(action, element) => {
+                if (element === null) buttonElements.current.delete(action);
+                else buttonElements.current.set(action, element);
+                props.registerButton?.(action, element);
+              }}
+              renderIcon={props.renderIcon}
+              styleIcon={props.styleIcon}
+              tabIndex={!disabled && index === safeIndex ? 0 : -1}
+              tool={isToolId(button.action)}
+            />
+          );
+        })}
+      </AnimatePresence>
+    </motion.div>
   );
-}
-
-function toolbarGroupLayoutKey(
-  motionKey: string | undefined,
-  buttons: readonly PresentToolbarButton[],
-): string {
-  return [
-    motionKey,
-    ...buttons.map(({ definition, presence }) => `${definition.action}:${presence}`),
-  ].join("\u0000");
-}
-
-function positionActiveToolIndicator(
-  indicator: HTMLSpanElement | null,
-  button: HTMLButtonElement | null,
-): void {
-  if (indicator === null || button === null) return;
-  const buttonWidth = button.offsetWidth > 0 ? button.offsetWidth : 44;
-  const offset = button.offsetLeft + (buttonWidth - 36) / 2;
-  indicator.style.setProperty("--inkbook-toolbar-active-offset", `${String(offset)}px`);
-  indicator.dataset.ready = "true";
 }
 
 function toolbarActionFromElement(element: Element): ToolbarAction | null {
@@ -364,7 +269,7 @@ export interface InkbookToolbarProps {
   readonly layout: "wide" | "scrollable";
   readonly leftHanded?: boolean | undefined;
   readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
-  readonly registerButton?: IconButtonProps["registerButton"] | undefined;
+  readonly registerButton?: ToolbarIconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly selectionArea: SelectionAreaV1;
   readonly selectedShape: ShapeId;
@@ -375,6 +280,7 @@ export interface InkbookToolbarProps {
 }
 
 export function InkbookToolbar(props: InkbookToolbarProps) {
+  const lifecycle = useContext(toolbarMotionContext);
   const primaryButtons = useRef(new Map<ToolbarAction, HTMLButtonElement>());
   const focusContextNeighbor = useCallback(() => {
     const buttons = [...primaryButtons.current.values()];
@@ -397,16 +303,29 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
     .join(" ");
 
   return (
-    <div
+    <motion.div
+      layoutScroll
       aria-label="Inkbook tools"
       className={compositionClassName}
       ref={props.compositionRef}
       role="toolbar"
     >
       <div className="inkbook-toolbar-rail">
-        <div className={className} ref={props.toolbarRef}>
+        <motion.div
+          className={className}
+          ref={props.toolbarRef}
+          initial={{ scale: 0 }}
+          animate={{ scale: lifecycle.locking || lifecycle.preparing ? 0 : 1 }}
+          transition={{
+            type: "tween",
+            duration:
+              lifecycle.reduced || lifecycle.preparing
+                ? 0
+                : TRANSITION_DURATIONS.toolbarEnterExit / 1000,
+            ease: lifecycle.locking ? "easeIn" : "easeOut",
+          }}
+        >
           <ToolbarGroup
-            activeToolIndicator
             buttons={primaryButtonsForState(
               props.selectedShape,
               props.shapeIcon,
@@ -424,14 +343,13 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
             state={props.state}
             styleIcon={props.styleIcon}
           />
-        </div>
+        </motion.div>
         <ToolbarGroup
-          buttonClassName="inkbook-toolbar-context-button"
+          contextButtons
           buttons={CONTEXT_BUTTONS}
           className="inkbook-toolbar-context-actions"
           fallbackFocus={focusContextNeighbor}
           label="Editing actions"
-          layoutMotionKey={props.leftHanded ? "left" : "right"}
           onAction={props.onAction}
           registerButton={props.registerButton}
           renderIcon={props.renderIcon}
@@ -440,7 +358,7 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
           styleIcon={props.styleIcon}
         />
       </div>
-    </div>
+    </motion.div>
   );
 }
 

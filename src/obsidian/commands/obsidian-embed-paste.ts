@@ -8,7 +8,7 @@ import {
   validateDocumentOutput,
   type DocumentOutputScheduling,
 } from "./document-output-validation";
-import type { ObsidianInkbookDocumentRecognition } from "../embeds/document-recognition";
+import type { ObsidianInkbookDocumentRecognition } from "../embeds/preview/document-recognition";
 import {
   activeMarkdownOwnerWindow,
   createObsidianCommandVaultPorts,
@@ -36,6 +36,7 @@ export function createObsidianEmbedPasteController(
           workScheduler: scheduling?.workScheduler,
           ...(signal === undefined ? {} : { signal }),
           readMotion: () => settings.getDeviceSettings().motion,
+          observeMotion: (listener) => settings.subscribeDeviceSettings(listener),
           title: "Paste Inkbook embed",
           description: "Choose how this drawing should be inserted.",
           actions: [

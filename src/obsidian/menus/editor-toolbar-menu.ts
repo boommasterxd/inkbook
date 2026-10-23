@@ -1,4 +1,4 @@
-import type { PhoneSheetHostPort } from "./phone-sheet-host";
+import type { PhoneSheetHostPort } from "./panels/phone-sheet-host";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { Platform, type Keymap } from "obsidian";
 
@@ -14,7 +14,7 @@ import {
   type ActiveShapeIconState,
   CAUTION_ERASER_ICON_ID,
 } from "../../rendering/ui/icon-ids";
-import { AdaptivePanelSession, type AdaptivePanelContentLifecycle } from "./adaptive-panel";
+import { AdaptivePanelSession, type AdaptivePanelContentLifecycle } from "./panels/adaptive-panel";
 import { backgroundIconId, createBackgroundMenuContent } from "./background-menu-content";
 import { setMenuItemTitle } from "./menu-dom";
 import { createStyleMenuContent } from "./style-menu-content";
@@ -187,8 +187,7 @@ export class EditorToolbarMenuSession {
     return createBackgroundMenuContent({
       getState: () => this.#options.getState().background,
       initialState: state.background,
-      onBeforeLayoutChange: () => lifecycle.prepareLayoutChange(),
-      onLayoutChange: () => lifecycle.requestLayout(),
+      mutateLayout: (update) => lifecycle.mutateLayout(update),
       onSpacingChange: this.#options.handlers.onBackgroundSpacingChange,
       onSpacingPreview: this.#options.handlers.onBackgroundSpacingPreview,
       onTypeChange: this.#options.handlers.onBackgroundTypeChange,

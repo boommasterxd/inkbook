@@ -1,9 +1,9 @@
 import { vi } from "vitest";
 
 import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
-import * as canonical from "../../../src/persistence/serialization/canonical-snapshot";
+import * as canonical from "../../../src/persistence/serialization/metadata/canonical-snapshot";
 import { ChunkedSha256 } from "../../../src/persistence/serialization/chunked-output-sha256";
-import * as samples from "../../../src/persistence/serialization/stroke-sample-codec";
+import * as samples from "../../../src/persistence/serialization/metadata/stroke-sample-codec";
 
 const ARRAY_INDEX = /^(?:0|[1-9]\d*)$/u;
 
