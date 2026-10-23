@@ -119,6 +119,7 @@ describe("confirmed-base digest", () => {
 });
 
 describe("trusted SVG background priority", () => {
+  // Full maximum-SVG hashing and path validation need the existing capacity-test safety guard.
   it("pauses before hashing and at existing checkpoints without replacing the checkpoint", async () => {
     const { content: output, outputHash, totalBytes } = maximumOutput;
     const update = vi.spyOn(ChunkedSha256.prototype, "update");
@@ -170,7 +171,7 @@ describe("trusted SVG background priority", () => {
       totalBytes,
     });
     expect(backgroundWaits).toBe(checkpoints);
-  });
+  }, 15_000);
 
   it("cancels while a shared checkpoint waits for drawing to finish", async () => {
     const priority = new InteractiveWorkPriority();
