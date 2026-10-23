@@ -451,7 +451,6 @@ describe("retained DOM order after rank changes", () => {
     expect(original).toHaveLength(3);
     harness.renderer.setReducedMotion(false);
     harness.renderer.setElementFade([middle.id], 10_000);
-    harness.renderer.setReducedMotion(true);
     harness.renderer.setViewport({ height: 500, left: 0, top: 0, width: 500 });
     harness.store.records.set(first.id, { ...first, rank: 2 });
     harness.store.records.set(last.id, { ...last, rank: 0 });

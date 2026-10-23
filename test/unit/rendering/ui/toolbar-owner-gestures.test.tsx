@@ -61,10 +61,17 @@ function pointer(target: EventTarget, type: string, pointerType: string, pointer
   });
 }
 
-function key(target: EventTarget, type: "keydown" | "keyup", repeat = false): void {
+function key(
+  target: EventTarget,
+  type: "keydown" | "keyup",
+  value = "Enter",
+  repeat = false,
+): boolean {
+  const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: value, repeat });
   act(() => {
-    target.dispatchEvent(new KeyboardEvent(type, { bubbles: true, key: "Enter", repeat }));
+    target.dispatchEvent(event);
   });
+  return !event.defaultPrevented;
 }
 
 describe("toolbar pop-out owner gestures", () => {
@@ -111,29 +118,29 @@ describe("toolbar pop-out owner gestures", () => {
     }
   });
 
-  it("releases Enter press on keyup, blur and disable", () => {
+  it.each(["Enter", " "])("releases %j press on keyup, blur and disable", (value) => {
     const { popup, button, state, root } = mountPopout();
     act(() => button.focus());
-    key(button, "keydown");
+    expect(key(button, "keydown", value)).toBe(true);
     expect(state()).toBe("true:press");
-    key(button, "keydown", true);
+    key(button, "keydown", value, true);
     expect(state()).toBe("true:press");
-    key(button, "keyup");
+    expect(key(button, "keyup", value)).toBe(true);
     expect(state()).toBe("true:rest");
 
-    key(button, "keydown");
+    key(button, "keydown", value);
     act(() => {
       button.dispatchEvent(new FocusEvent("blur"));
     });
     expect(state()).toBe("true:rest");
 
-    key(button, "keydown");
+    key(button, "keydown", value);
     act(() => {
       popup.dispatchEvent(new Event("blur"));
     });
     expect(state()).toBe("true:rest");
 
-    key(button, "keydown");
+    key(button, "keydown", value);
     const removeListener = vi.spyOn(button, "removeEventListener");
     act(() => root.render(<GestureButton disabled />));
     expect(button.disabled).toBe(true);
@@ -141,7 +148,37 @@ describe("toolbar pop-out owner gestures", () => {
     for (const event of ["keydown", "keyup", "blur"]) {
       expect(removeListener.mock.calls.some(([name]) => name === event)).toBe(true);
     }
-    key(button, "keydown");
+    key(button, "keydown", value);
     expect(state()).toBe("true:rest");
+  });
+});
+
+describe("toolbar main-window owner gestures", () => {
+  it("keeps main-window Space presses across rerenders and releases them on pagehide or disable", () => {
+    const { button, state, root } = mountPopout(window);
+    act(() => button.focus());
+    expect(key(button, "keydown", " ")).toBe(true);
+    expect(state()).toBe("false:press");
+    act(() => root.render(<GestureButton />));
+    expect(state()).toBe("false:press");
+    expect(key(button, "keyup", " ")).toBe(true);
+    expect(state()).toBe("false:rest");
+
+    key(button, "keydown", " ");
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    expect(state()).toBe("false:rest");
+    key(button, "keydown", " ");
+    act(() => root.render(<GestureButton disabled />));
+    expect(button.disabled).toBe(true);
+    expect(state()).toBe("false:rest");
+    key(button, "keydown", " ");
+    expect(state()).toBe("false:rest");
+    act(() => root.render(<GestureButton />));
+    key(button, "keydown", " ");
+    expect(state()).toBe("false:press");
+    key(button, "keyup", " ");
+    expect(state()).toBe("false:rest");
   });
 });

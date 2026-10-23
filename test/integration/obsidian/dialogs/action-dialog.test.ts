@@ -111,6 +111,8 @@ describe("Obsidian action dialogs", () => {
     const dialog = document.querySelector<HTMLElement>(".inkbook-action-dialog");
     expect(dialog?.getAttribute("aria-label")).toBe(text);
     expect(dialog?.getAttribute("aria-modal")).toBe("true");
+    const title = document.getElementById(dialog?.getAttribute("aria-labelledby") ?? "");
+    expect(title?.textContent).toBe(text);
     const description = document.getElementById(dialog?.getAttribute("aria-describedby") ?? "");
     expect(description?.textContent).toBe(text);
     expect(dialog?.querySelector("img")).toBeNull();

@@ -103,7 +103,7 @@ const HOST_MICROTASK_SITES = new Map([
   ["src/obsidian/embeds/live-preview/live-preview-loading-widget.ts#toDOM", 1],
   ["src/obsidian/embeds/live-preview/live-preview.ts#subscribeRecognitions", 1],
   ["src/obsidian/menus/editor-toolbar-menu.ts##navigate", 1],
-  ["src/obsidian/menus/editor-toolbar-menu.ts#addSettingsActions", 1],
+  ["src/obsidian/menus/editor-toolbar-menu.ts#afterMenuHandoff", 1],
 ]);
 
 export function validateWorkScheduling(files, nativeAdapters = NATIVE_WORK_ADAPTERS) {

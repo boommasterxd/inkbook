@@ -22,6 +22,37 @@ afterEach(() => {
 
 describe("native modal motion", () => {
   it.each([false, true])(
+    "names desktop/tablet dialogs from their own stable title: %s",
+    (tablet) => {
+      Object.assign(Platform, { isMobile: tablet });
+      const first = setup().modal;
+      const second = setup().modal;
+      first.titleEl.id = "existing-dialog-title";
+      first.setTitle("Inkbook settings");
+      second.setTitle("Keyboard shortcuts");
+      first.open();
+      second.open();
+
+      for (const modal of [first, second]) {
+        expect(modal.modalEl.getAttribute("role")).toBe("dialog");
+        expect(modal.modalEl.getAttribute("aria-modal")).toBe("true");
+        expect(document.getElementById(modal.modalEl.getAttribute("aria-labelledby") ?? "")).toBe(
+          modal.titleEl,
+        );
+      }
+      expect(first.titleEl.id).toBe("existing-dialog-title");
+      expect(first.titleEl.id).not.toBe(second.titleEl.id);
+      const titleId = first.titleEl.id;
+      first.setTitle("Updated settings");
+      expect(document.getElementById(titleId)?.textContent).toBe("Updated settings");
+      second.closeImmediately();
+      expect(document.getElementById(titleId)).toBe(first.titleEl);
+      first.closeImmediately();
+      expect(document.getElementById(titleId)).toBeNull();
+    },
+  );
+
+  it.each([false, true])(
     "animates desktop/tablet and retains the native shell until exit: %s",
     (tablet) => {
       Object.assign(Platform, { isMobile: tablet });

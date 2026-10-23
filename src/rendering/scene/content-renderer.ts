@@ -274,7 +274,6 @@ export class SceneContentRenderer {
   public promoteVisible(id: string): boolean {
     return this.#reconciler.promote(id);
   }
-
   public applyPreviewTransform(
     id: string,
     transform: string | null,
@@ -298,7 +297,6 @@ export class SceneContentRenderer {
       this.#selectionTraces.transform(id, entry);
     }
   }
-
   public applyElementPreview(element: InkElementV1): boolean {
     if (this.#committedGeometry.has(element.id)) {
       this.#deferredPreviews.add(element.id);
@@ -341,7 +339,6 @@ export class SceneContentRenderer {
     else this.#selectionDirty.add(element.id);
     return true;
   }
-
   public clearElementPreview(id: string): void {
     if (this.#committedGeometry.has(id)) {
       this.#geometryDirty.add(id);
@@ -395,6 +392,10 @@ export class SceneContentRenderer {
   public interruptMembershipFades(): void {
     this.#fades.interruptMembership();
     this.#reconciler.invalidateExitReadiness();
+  }
+  public setReducedMotion(reduced: boolean): void {
+    this.#fades.setReducedMotion(reduced);
+    if (reduced) this.interruptMembershipFades();
   }
   public get pendingElementFades(): boolean {
     return this.#fades.pending;

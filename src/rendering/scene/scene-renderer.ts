@@ -333,7 +333,7 @@ export class SvgSceneRenderer {
   public setReducedMotion(reduced: boolean): void {
     this.assertActive();
     this.#motion.setReducedMotion(reduced);
-    if (reduced) this.#content.interruptMembershipFades();
+    this.#content.setReducedMotion(reduced);
     this.#frames.schedule();
   }
   public flushPointerFeedbackFrame(

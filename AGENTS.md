@@ -42,7 +42,7 @@ Before implementing or reviewing visible Inkbook UI, read and apply the availabl
 | `src/main.ts`           | Build entry point and the only source file directly under `src/`  |
 | `src/domain/`           | Pure model and geometry logic                                     |
 | `src/editor/`           | Editor orchestration and interaction logic                        |
-| `src/rendering/motion/` | Framework-free motion contracts                                   |
+| `src/rendering/motion/` | Framework-free motion contracts and gesture adapters              |
 | `src/rendering/scene/`  | Imperative SVG scene rendering                                    |
 | `src/rendering/ui/`     | React-owned application chrome                                    |
 | `src/persistence/`      | File formats, workers, export, validation, and save orchestration |

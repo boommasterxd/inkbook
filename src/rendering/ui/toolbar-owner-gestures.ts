@@ -1,7 +1,9 @@
 import { useLayoutEffect, useState } from "react";
 import type { RefObject } from "react";
 
-/** Motion 14.6 listens for gesture ends on its module window, which can differ in a pop-out. */
+import { registerKeyboardPress } from "../motion/keyboard-press";
+
+/** Complements Motion 14.6 Space presses and gesture ends in a pop-out's owning window. */
 export function useToolbarOwnerGestures(
   elementRef: RefObject<HTMLButtonElement | null>,
   disabled: boolean,
@@ -10,14 +12,8 @@ export function useToolbarOwnerGestures(
   useLayoutEffect(() => {
     const element = elementRef.current;
     const ownerWindow = element?.ownerDocument.defaultView;
-    if (
-      element === null ||
-      ownerWindow === undefined ||
-      ownerWindow === null ||
-      ownerWindow === window
-    )
-      return;
-    return bindOwnerGestures(element, disabled, setState);
+    if (element === null || ownerWindow === undefined || ownerWindow === null) return;
+    return bindOwnerGestures(element, disabled, setState, ownerWindow !== window);
   }, [disabled, elementRef]);
   return state;
 }
@@ -26,6 +22,7 @@ function bindOwnerGestures(
   element: HTMLButtonElement,
   disabled: boolean,
   publish: (state: { local: boolean; gesture: string }) => void,
+  local: boolean,
 ): (() => void) | undefined {
   const ownerWindow = element.ownerDocument.defaultView!;
   let hovering = false;
@@ -33,11 +30,24 @@ function bindOwnerGestures(
   let pointerId: number | undefined;
   const update = (): void =>
     publish({
-      local: true,
+      local,
       gesture: pointerId !== undefined || keyPressing ? "press" : hovering ? "hover" : "rest",
     });
   update();
   if (disabled) return;
+  const stopKeyboard = registerKeyboardPress(
+    element,
+    () => {
+      keyPressing = true;
+      update();
+      return () => {
+        keyPressing = false;
+        update();
+      };
+    },
+    local,
+  );
+  if (!local) return stopKeyboard;
   const enter = (event: PointerEvent): void => {
     if (event.pointerType !== "touch") {
       hovering = true;
@@ -66,38 +76,23 @@ function bindOwnerGestures(
     hovering = false;
     update();
   };
-  const keyDown = (event: KeyboardEvent): void => {
-    if (event.key === "Enter" && !event.repeat) {
-      keyPressing = true;
-      update();
-    }
-  };
-  const keyUp = (event?: KeyboardEvent): void => {
-    if (event !== undefined && event.key !== "Enter") return;
-    keyPressing = false;
-    update();
-  };
-  const elementBlur = (): void => keyUp();
   element.addEventListener("pointerenter", enter);
   element.addEventListener("pointerleave", leave);
   element.addEventListener("pointerdown", down);
   element.addEventListener("lostpointercapture", end);
-  element.addEventListener("keydown", keyDown);
-  element.addEventListener("keyup", keyUp);
-  element.addEventListener("blur", elementBlur);
   ownerWindow.addEventListener("pointerup", end);
   ownerWindow.addEventListener("pointercancel", end);
   ownerWindow.addEventListener("blur", blur);
+  ownerWindow.addEventListener("pagehide", blur);
   return () => {
+    stopKeyboard();
     element.removeEventListener("pointerenter", enter);
     element.removeEventListener("pointerleave", leave);
     element.removeEventListener("pointerdown", down);
     element.removeEventListener("lostpointercapture", end);
-    element.removeEventListener("keydown", keyDown);
-    element.removeEventListener("keyup", keyUp);
-    element.removeEventListener("blur", elementBlur);
     ownerWindow.removeEventListener("pointerup", end);
     ownerWindow.removeEventListener("pointercancel", end);
     ownerWindow.removeEventListener("blur", blur);
+    ownerWindow.removeEventListener("pagehide", blur);
   };
 }

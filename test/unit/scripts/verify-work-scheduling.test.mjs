@@ -111,8 +111,20 @@ it("permits only exact semantic host turn and microtask sites", () => {
         "class WindowRefreshRateProfiles { #start() { requestAnimationFrame(sample); } }",
         "src/obsidian/performance/window-refresh-rate.ts",
       ),
+      source(
+        "function afterMenuHandoff(ownerWindow, open) { ownerWindow.queueMicrotask(open); }",
+        "src/obsidian/menus/editor-toolbar-menu.ts",
+      ),
     ]),
   ).toEqual([]);
+  expect(
+    validateWorkScheduling([
+      source(
+        "function addSettingsActions() { queueMicrotask(open); }",
+        "src/obsidian/menus/editor-toolbar-menu.ts",
+      ),
+    ]),
+  ).toHaveLength(1);
   expect(
     validateWorkScheduling([
       source(

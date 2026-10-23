@@ -99,6 +99,12 @@ export class InkbookMotionModal {
 
   public onOpen(): void {
     this.#ownerWindow = this.modalEl.ownerDocument.defaultView;
+    if (this.#native !== undefined) {
+      this.titleEl.id ||= `inkbook-dialog-title-${crypto.randomUUID()}`;
+      this.modalEl.setAttribute("role", "dialog");
+      this.modalEl.setAttribute("aria-modal", "true");
+      this.modalEl.setAttribute("aria-labelledby", this.titleEl.id);
+    }
     this.modalEl.dataset.inkbookMotion = this.#readMotion();
     this.containerEl.classList.add("inkbook-modal-container");
     this.containerEl.dataset.inkbookModalPlatform = this.#native === undefined ? "phone" : "wide";

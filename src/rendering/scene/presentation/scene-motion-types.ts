@@ -1,5 +1,18 @@
 import type { InkElementV1 } from "../../../domain/schema/public";
+import type { Bounds } from "../../../domain/geometry/primitives";
+import type { ElementFadeDirection } from "./element-fade-style";
 import type { MotionVisual } from "./motion-visual";
+
+export interface PendingElementFade {
+  admittedDurationMs?: number;
+  finish?: number;
+  readonly bounds?: Bounds;
+  readonly durationMs: number;
+  readonly direction: ElementFadeDirection;
+  readonly generation?: number;
+  readonly exitVersion?: number;
+  index: number;
+}
 
 export interface PendingSuppression {
   readonly ids: ReadonlySet<string>;

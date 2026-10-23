@@ -356,6 +356,67 @@ it("shares initial capacity across calls and resumes multipart nodes", () => {
   expect(fades.isExitReady(ids[1]!, 360)).toBe(true);
 });
 
+it("settles a partially started multipart exit and queued exits without exposing removed paint", () => {
+  const { entries, ids, fades } = setup(2, 130);
+  fades.set(ids, 150, { deadline: Infinity, now: () => 0 });
+  fades.setReducedMotion(true);
+  expect(fades.isExitReady(ids[0]!, 25)).toBe(false);
+  for (let frame = 0; fades.pending; frame += 1) {
+    expect(frame).toBeLessThan(5);
+    fades.flush(Infinity, () => 25);
+  }
+  expect(fades.memoryUsage()).toBe(ids.length * (64 + 48));
+  expect(ids.every((id) => fades.isExitReady(id, 25))).toBe(true);
+  expect(fades.memoryUsage()).toBe(0);
+  expect(
+    entries
+      .flatMap((entry) => entry.paths)
+      .every(({ node }) => activeFades(node).length === 0 && fakeNode(node).style.opacity === "0"),
+  ).toBe(true);
+  fades.set([ids[0]!], null);
+  fades.releaseMounted(ids[1]!);
+  expect(entries[0]!.paths.every(({ node }) => !fakeNode(node).style.opacity)).toBe(true);
+  expect(fades.memoryUsage()).toBe(0);
+});
+
+it("does not settle stale exit ownership after eraser cancellation and Undo", () => {
+  const { entries, ids, fades } = setup(2);
+  fades.set(ids, 150, { deadline: Infinity, now: () => 0 });
+  fades.setReducedMotion(true);
+  fades.set([ids[0]!], null);
+  fades.setMembership(ids[1]!, "enter", 0);
+  fades.flush(Infinity, () => 25);
+  expect(fades.pending).toBe(false);
+  expect(entries.every((entry) => activeFades(entry.paths[0]!.node).length === 0)).toBe(true);
+  expect(entries.every((entry) => !fakeNode(entry.paths[0]!.node).style.opacity)).toBe(true);
+  expect(fades.memoryUsage()).toBe(0);
+});
+
+it("finishes interrupted exits after full motion returns while allowing new feedback", () => {
+  const { entries, ids, fades } = setup(131);
+  fades.set(ids.slice(0, 130), 150, { deadline: Infinity, now: () => 0 });
+  fades.setReducedMotion(true);
+  fades.setReducedMotion(false);
+  fades.set([ids[130]!], 80);
+  for (let frame = 0; fades.pending; frame += 1) {
+    expect(frame).toBeLessThan(5);
+    fades.flush(Infinity, () => 25);
+  }
+  expect(
+    entries
+      .slice(0, 130)
+      .every(
+        ({ paths }) =>
+          activeFades(paths[0]!.node).length === 0 &&
+          fakeNode(paths[0]!.node).style.opacity === "0",
+      ),
+  ).toBe(true);
+  expect(activeFade(entries[130]!.paths[0]!.node).options.duration).toBe(80);
+  expect(fades.isExitReady(ids[130]!, 104)).toBe(false);
+  expect(fades.isExitReady(ids[130]!, 105)).toBe(true);
+  fades.release();
+});
+
 it("makes minimum progress at an expired deadline without exceeding it further", () => {
   const { ids, entries, fades } = setup(130);
   fades.set(ids, 0, { deadline: 0 + 8, now: () => 0 });

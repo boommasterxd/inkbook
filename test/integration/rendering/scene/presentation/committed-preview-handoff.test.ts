@@ -130,6 +130,26 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
   };
 }
 
+function finishUndo(
+  { group, scheduler }: Pick<ReturnType<typeof pendingCommit>, "group" | "scheduler">,
+  target: string | undefined,
+  initial: string | undefined = scaledPath,
+) {
+  // Cache restoration needs start, intermediate, and final geometry, not every display frame.
+  scheduler.runFrame();
+  const startedAt = scheduler.time;
+  expect(group.nodes[0]!.attributes.get("d")).toBe(initial);
+  expect(group.attributes.has("transform")).toBe(false);
+  scheduler.time = startedAt + 60;
+  scheduler.runFrame();
+  const intermediate = group.nodes[0]!.attributes.get("d");
+  expect(intermediate).toMatch(/^M/u);
+  expect(intermediate).not.toBe(scaledPath);
+  expect(intermediate).not.toBe(target);
+  scheduler.time = startedAt + 120;
+  scheduler.runAll();
+}
+
 it("keeps committed feedback while preparing geometry and composes a subsequent gesture", () => {
   const {
     renderer,
@@ -169,7 +189,7 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   expect(group.attributes.has("transform")).toBe(false);
   const read = vi.spyOn(ScenePathCache.prototype, "read");
   commitSceneGeometry({ store, renderer }, moved, element, 3);
-  scheduler.runAll();
+  finishUndo({ group, scheduler }, original);
   const access = read.mock.calls.findIndex(([value]) => value === element);
   expect(access).toBeGreaterThanOrEqual(0);
   expect(read.mock.calls[access]![2]).toBe(3);
@@ -256,7 +276,8 @@ it("discards unfinished edited contours when a newer commit restores the cached 
   const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
   commitSceneGeometry({ store, renderer }, moved, element, 3);
   step.mockClear();
-  scheduler.runAll();
+  // The cancelled contour was never published, so the first frame restores the cached basis.
+  finishUndo({ group, scheduler }, original, original);
   expect(step).not.toHaveBeenCalled();
   const published = complete.mock.calls.filter(([value]) => value === moved);
   expect(published).toHaveLength(0);

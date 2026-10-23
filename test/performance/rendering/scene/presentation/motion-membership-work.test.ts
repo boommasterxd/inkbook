@@ -153,6 +153,68 @@ it("interrupts 600 geometry entries in one pass without cache recounts", () => {
   }
 });
 
+it.each(["queued", "running"] as const)(
+  "settles 10,000 %s eraser exits within the existing frame publication and work budgets",
+  (state) => {
+    const records = createViewportRectangleStore(10_000, () => 10);
+    const indexed = createIndexedSceneStore(records);
+    const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, indexed.store);
+    scheduler.runAll(200);
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const ids = [...records.records.keys()];
+    const retainedBefore = renderer.memoryUsage().pathCacheBytes;
+    const writeFade = fadeStyle.setElementFadeNode;
+    const fades = vi.spyOn(fadeStyle, "setElementFadeNode");
+    const animations = vi.spyOn(FakeNode.prototype, "animate");
+    try {
+      renderer.setElementFade(ids, 150);
+      expect(animations).toHaveBeenCalledTimes(128);
+      if (state === "running") {
+        for (let frame = 0; scheduler.pendingCount > 0; frame += 1) {
+          expect(frame).toBeLessThan(100);
+          scheduler.runNext();
+        }
+        expect(animations).toHaveBeenCalledTimes(10_000);
+      }
+      const before = fades.mock.calls.length;
+      const started = animations.mock.calls.length;
+      scheduler.time += 25;
+      renderer.setReducedMotion(true);
+      expect(fades).toHaveBeenCalledTimes(before);
+      fades.mockImplementation((...args) => {
+        scheduler.time += 2;
+        return writeFade(...args);
+      });
+      for (let frame = 0; scheduler.pendingCount > 0; frame += 1) {
+        expect(frame).toBeLessThan(2_600);
+        const writes = fades.mock.calls.length;
+        scheduler.runNext();
+        // Simulated target work consumes the actual shared eight-millisecond slice.
+        expect(fades.mock.calls.length - writes).toBeLessThanOrEqual(4);
+        expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
+      }
+      expect(fades.mock.calls.length - before).toBe(10_000);
+      expect(animations).toHaveBeenCalledTimes(started);
+      expect(content.nodes.every((node) => activeFades(node).length === 0)).toBe(true);
+      expect(content.nodes.every((node) => node.style.opacity === "0")).toBe(true);
+      // The estimate owns a 64-byte fade record and its 48-byte finish-index entry per exit.
+      expect(renderer.memoryUsage().pathCacheBytes - retainedBefore).toBe(10_000 * (64 + 48));
+      renderer.setReducedMotion(false);
+      renderer.clearElementFade(ids);
+      scheduler.runAll();
+      expect(content.nodes.every((node) => !node.style.opacity)).toBe(true);
+      expect(renderer.memoryUsage().pathCacheBytes).toBe(retainedBefore);
+      expect(indexed.fallback).not.toHaveBeenCalled();
+    } finally {
+      fades.mockRestore();
+      animations.mockRestore();
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+    expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+  },
+);
+
 function collectReplayFadeTargets(
   frame: () => Array<Parameters<typeof fadeStyle.setElementFadeNode>>,
   direction: "enter" | "exit",

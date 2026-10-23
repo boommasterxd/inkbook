@@ -1,5 +1,8 @@
 import { Platform, setIcon } from "obsidian";
-import { registerKeyboardPress, registerOwnedMotionPress } from "../runtime/keyboard-press";
+import {
+  registerKeyboardPress,
+  registerOwnedMotionPress,
+} from "../../rendering/motion/keyboard-press";
 import { observeEffectiveMotion, type ObserveMotion } from "../runtime/effective-motion";
 import { hover } from "motion";
 import {

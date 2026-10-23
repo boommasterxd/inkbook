@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { registerOwnedMotionPress } from "../../../../src/obsidian/runtime/keyboard-press";
+import { registerOwnedMotionPress } from "../../../../src/rendering/motion/keyboard-press";
 
 let release: (() => void) | undefined;
 afterEach(() => {

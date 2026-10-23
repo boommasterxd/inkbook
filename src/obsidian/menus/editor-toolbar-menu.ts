@@ -285,7 +285,7 @@ function populateOverflow(
     options.ownerDocument,
     "Erase all",
     state.overflow.canEraseAll ? CAUTION_ERASER_ICON_ID : "eraser",
-    () => handlers.onOverflowAction("erase-all"),
+    () => afterMenuHandoff(options.ownerWindow, () => handlers.onOverflowAction("erase-all")),
     {
       caution: true,
       disabled: !state.overflow.canEraseAll,
@@ -296,7 +296,7 @@ function populateOverflow(
     options.ownerDocument,
     "Delete embed",
     "trash-2",
-    () => handlers.onOverflowAction("delete-embed"),
+    () => afterMenuHandoff(options.ownerWindow, () => handlers.onOverflowAction("delete-embed")),
     { warning: true },
   );
 }
@@ -310,7 +310,7 @@ function addSettingsActions(menu: MenuPort, options: EditorToolbarMenuOptions): 
       icon,
       () => {
         const navigation = menu.getPhoneNavigation?.();
-        if (navigation === undefined) options.ownerWindow.queueMicrotask(() => open());
+        if (navigation === undefined) afterMenuHandoff(options.ownerWindow, () => open());
         else open(navigation);
       },
       { keepOpen: Platform.isPhone && menu.getPhoneNavigation !== undefined },
@@ -318,6 +318,11 @@ function addSettingsActions(menu: MenuPort, options: EditorToolbarMenuOptions): 
   };
   add("Settings", "settings", options.handlers.onOpenSettings);
   add("Keyboard shortcuts", "keyboard", options.handlers.onOpenShortcuts);
+}
+
+function afterMenuHandoff(ownerWindow: Window, open: () => void): void {
+  // Menu teardown restores the anchor before a dialog captures its return-focus target.
+  ownerWindow.queueMicrotask(open);
 }
 
 function populateShapes(

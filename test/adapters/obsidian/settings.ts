@@ -69,6 +69,7 @@ export class Modal {
   public onClose(): void {}
 
   public setTitle(title: string): this {
+    this.titleEl.textContent = title;
     this.modalEl.setAttribute("aria-label", title);
     return this;
   }

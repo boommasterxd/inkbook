@@ -29,6 +29,11 @@ describe("Inkbook settings modal", () => {
 
     controller.open("shortcuts");
 
+    const shortcutsDialog = required('.inkbook-settings-modal[role="dialog"][aria-modal="true"]');
+    const shortcutsTitle = document.getElementById(
+      shortcutsDialog.getAttribute("aria-labelledby") ?? "",
+    );
+    expect(shortcutsTitle?.textContent).toBe("Keyboard shortcuts");
     expect(required(".inkbook-settings-modal").getAttribute("aria-label")).toBe(
       "Keyboard shortcuts",
     );
@@ -38,6 +43,12 @@ describe("Inkbook settings modal", () => {
       document.querySelectorAll('.inkbook-shortcut-section-trigger[aria-expanded="false"]'),
     ).toHaveLength(4);
     controller.open("settings");
+    const settingsDialog = required('.inkbook-settings-modal[role="dialog"][aria-modal="true"]');
+    const settingsTitle = document.getElementById(
+      settingsDialog.getAttribute("aria-labelledby") ?? "",
+    );
+    expect(settingsTitle?.textContent).toBe("Inkbook settings");
+    expect(shortcutsTitle?.isConnected).toBe(false);
     expect(required(".inkbook-settings-modal").getAttribute("aria-label")).toBe("Inkbook settings");
     expect(document.querySelector(".setting-group")).not.toBeNull();
     expect(document.querySelector(".inkbook-shortcuts-group")).not.toBeNull();

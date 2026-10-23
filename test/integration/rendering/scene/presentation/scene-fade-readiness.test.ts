@@ -207,7 +207,7 @@ it("retargets Undo and Redo from the native committed paint and releases complet
 });
 
 it.each(["pointer", "reduced"] as const)(
-  "settles replay entrance and indexed exits on %s interruption without changing eraser feedback",
+  "settles replay fades and preserves the %s interruption policy for eraser feedback",
   (kind) => {
     const fixture = setup();
     const interrupt = () =>
@@ -235,7 +235,13 @@ it.each(["pointer", "reduced"] as const)(
       fixture.renderer.setReducedMotion(false);
       fixture.renderer.setElementFade([fixture.records[0]!.id], 400);
       interrupt();
-      expect(activeFade(fixture.content.nodes[0]!).options.duration).toBe(400);
+      fixture.scheduler.runNext();
+      if (kind === "pointer")
+        expect(activeFade(fixture.content.nodes[0]!).options.duration).toBe(400);
+      else {
+        expect(activeFades(fixture.content.nodes[0]!)).toHaveLength(0);
+        expect(fixture.content.nodes[0]!.style.opacity).toBe("0");
+      }
       fixture.renderer.clearElementFade([fixture.records[0]!.id]);
       fixture.remove(true);
       fixture.renderer.setReducedMotion(true);
@@ -259,6 +265,40 @@ it.each(["pointer", "reduced"] as const)(
   },
 );
 
+function setupTrackedFeedback() {
+  const fixture = setup();
+  return {
+    fixture,
+    original: [...fixture.content.nodes],
+    ids: fixture.records.map(({ id }) => id),
+  };
+}
+
+it("settles running and queued delete feedback on live reduced motion before removal and Undo", () => {
+  const { fixture, original, ids } = setupTrackedFeedback();
+  try {
+    fixture.renderer.setElementFade(ids, 150);
+    expect(original.filter((node) => activeFades(node).length === 1)).toHaveLength(128);
+    fixture.scheduler.time += 25;
+    fixture.renderer.setReducedMotion(true);
+    fixture.remove();
+    fixture.scheduler.runAll();
+    expect(fixture.renderer.mountedCount).toBe(0);
+    expect(fixture.renderer.hasPendingSceneCommit).toBe(false);
+    expect(original.every((node) => activeFades(node).length === 0)).toBe(true);
+    expect(fixture.scheduler.time).toBeLessThan(150);
+    fixture.restore(true);
+    fixture.scheduler.runAll();
+    expect(fixture.renderer.mountedIds("content")).toEqual(ids);
+    expect(
+      fixture.content.nodes.every((node) => activeFades(node).length === 0 && !node.style.opacity),
+    ).toBe(true);
+  } finally {
+    fixture.renderer.destroy();
+  }
+  expectReleased(fixture);
+});
+
 function startReplayEntrance(fixture: ReturnType<typeof setup>): void {
   fixture.renderer.setReducedMotion(false);
   fixture.restore(true);
@@ -267,9 +307,7 @@ function startReplayEntrance(fixture: ReturnType<typeof setup>): void {
 }
 
 it("cancels queued, running and completed opacity exits on Undo, then cleans a subsequent Redo", () => {
-  const fixture = setup();
-  const original = [...fixture.content.nodes];
-  const ids = fixture.records.map(({ id }) => id);
+  const { fixture, original, ids } = setupTrackedFeedback();
   try {
     fixture.renderer.setElementFade(ids, 10);
     fixture.remove();

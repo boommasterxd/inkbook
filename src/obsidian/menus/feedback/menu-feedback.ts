@@ -1,4 +1,7 @@
-import { registerKeyboardPress, registerOwnedMotionPress } from "../../runtime/keyboard-press";
+import {
+  registerKeyboardPress,
+  registerOwnedMotionPress,
+} from "../../../rendering/motion/keyboard-press";
 import { hover } from "motion";
 
 import { observeMenuMotionPreference } from "./menu-motion";

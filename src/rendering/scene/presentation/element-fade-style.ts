@@ -101,3 +101,26 @@ export function setHistoryFadeGate(
     node.style.removeProperty(visibility);
   }
 }
+
+export function showElementFadeRoots(entry: ElementFadeTargets): void {
+  const roots = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
+  for (const root of roots)
+    if (root.style.getPropertyValue("visibility")) root.style.removeProperty("visibility");
+}
+
+export function hideElementFadeRoots(
+  entry: ElementFadeTargets,
+  generation: number,
+  onStyled: (index: number) => void,
+): void {
+  const visibility = `var(--inkbook-history-visibility-${String(generation)}, hidden)`;
+  if (entry.group !== null) {
+    entry.group.style.visibility = visibility;
+    onStyled(0);
+  } else {
+    for (let index = 0; index < entry.paths.length; index += 1) {
+      entry.paths[index]!.node.style.visibility = visibility;
+      onStyled(index);
+    }
+  }
+}

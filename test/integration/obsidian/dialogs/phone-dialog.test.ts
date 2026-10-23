@@ -49,6 +49,8 @@ describe("shared phone dialog sheet", () => {
     const nativeOpen = vi.spyOn(Modal.prototype, "open");
     const result = confirmation();
     const surface = sheet();
+    expect(surface.getAttribute("aria-label")).toBe("Delete embed?");
+    expect(surface.hasAttribute("aria-labelledby")).toBe(false);
     vi.advanceTimersToNextFrame();
     expect(document.activeElement).toBe(dialogButton("Cancel"));
     expect(nativeOpen).toHaveBeenCalledOnce();
@@ -93,6 +95,10 @@ describe("shared phone dialog sheet", () => {
       const controller = new InkbookSettingsModalController(host, tab, store);
       controller.open(view);
       const surface = sheet();
+      expect(surface.getAttribute("aria-label")).toBe(
+        view === "settings" ? "Inkbook settings" : "Keyboard shortcuts",
+      );
+      expect(surface.hasAttribute("aria-labelledby")).toBe(false);
       vi.advanceTimersToNextFrame();
       expect(surface.contains(document.activeElement)).toBe(true);
       expect(simulateNativeModalBack(document)).toBe(true);

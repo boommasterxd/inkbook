@@ -1,5 +1,5 @@
-import { motion } from "motion/react";
-import { useContext, useRef } from "react";
+import { motion, useIsPresent } from "motion/react";
+import { useCallback, useContext, useRef } from "react";
 
 import { toolbarMotionContext, toolbarLayoutTransition } from "./toolbar-motion";
 import {
@@ -34,7 +34,20 @@ export interface ToolbarIconButtonProps {
 export function ToolbarIconButton(props: ToolbarIconButtonProps) {
   const lifecycle = useContext(toolbarMotionContext);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const gestures = useToolbarOwnerGestures(buttonRef, props.disabled || lifecycle.locking);
+  const present = useIsPresent();
+  const gestures = useToolbarOwnerGestures(
+    buttonRef,
+    props.disabled || !present || lifecycle.locking,
+  );
+  const { action } = props.definition;
+  const { registerButton } = props;
+  const setButton = useCallback(
+    (element: HTMLButtonElement | null) => {
+      buttonRef.current = element;
+      registerButton?.(action, element);
+    },
+    [action, registerButton],
+  );
   const { isPresent, controls, order } = useToolbarButtonAnimation(lifecycle, {
     enterOrder: props.enterOrder,
     action: props.definition.action,
@@ -85,10 +98,7 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
         ),
       }}
       onClick={(event) => props.onAction(props.definition.action, event.currentTarget)}
-      ref={(element) => {
-        buttonRef.current = element;
-        props.registerButton?.(props.definition.action, element);
-      }}
+      ref={setButton}
       tabIndex={disabled ? -1 : props.tabIndex}
       type="button"
     >
