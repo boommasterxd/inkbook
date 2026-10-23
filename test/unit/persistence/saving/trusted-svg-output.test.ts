@@ -122,34 +122,45 @@ describe("trusted SVG background priority", () => {
   it("pauses before hashing and at existing checkpoints without replacing the checkpoint", async () => {
     const { content: output, outputHash, totalBytes } = maximumOutput;
     const update = vi.spyOn(ChunkedSha256.prototype, "update");
-    const checkpoint = vi.fn(async () => undefined);
+    let checkpoints = 0;
+    let backgroundWaits = 0;
+    let backgroundReady = false;
+    const checkpoint = () => {
+      checkpoints += 1;
+      return undefined;
+    };
     let resume: () => void = () => undefined;
     let entered: () => void = () => undefined;
     let pending = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    const waitForBackground = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resume = resolve;
-          entered();
-        }),
-    );
+    const waitForBackground = () => {
+      backgroundWaits += 1;
+      if (backgroundReady) return undefined;
+      return new Promise<void>((resolve) => {
+        resume = resolve;
+        entered();
+      });
+    };
     const inspection = inspectTrustedSvgOutput(output, outputHash, {
       checkpoint,
       waitForBackground,
     });
     await pending;
     expect(update).not.toHaveBeenCalled();
-    expect(checkpoint).not.toHaveBeenCalled();
+    expect(checkpoints).toBe(0);
+    expect(backgroundWaits).toBe(1);
     pending = new Promise<void>((resolve) => {
       entered = resolve;
     });
     resume();
     await pending;
     expect(update).toHaveBeenCalledTimes(1);
-    expect(checkpoint).toHaveBeenCalledTimes(1);
-    waitForBackground.mockResolvedValue(undefined);
+    expect(checkpoints).toBe(1);
+    expect(backgroundWaits).toBe(2);
+    // Later checkpoints stay observable without retaining every chunk and resolved promise.
+    update.mockRestore();
+    backgroundReady = true;
     resume();
     await expect(inspection).resolves.toMatchObject({
       content: output,
@@ -158,8 +169,7 @@ describe("trusted SVG background priority", () => {
       revision: 3,
       totalBytes,
     });
-    expect(waitForBackground.mock.calls.length).toBe(checkpoint.mock.calls.length);
-    update.mockRestore();
+    expect(backgroundWaits).toBe(checkpoints);
   });
 
   it("cancels while a shared checkpoint waits for drawing to finish", async () => {
