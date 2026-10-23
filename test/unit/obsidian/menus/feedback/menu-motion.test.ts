@@ -61,6 +61,39 @@ it("keeps pop-out hover, keyboard focus, and press lifecycle in the owning windo
   ownerWindow.close();
 });
 
+it("releases interrupted pop-out pointer ownership before accepting another pointer", () => {
+  const ownerWindow = new HappyWindow() as unknown as Window;
+  const { item, release } = menuButtonFixture(ownerWindow, "reduced");
+  const Pointer = (ownerWindow as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent;
+  const ownerListeners = vi.spyOn(ownerWindow, "addEventListener");
+  const ownerRemovals = vi.spyOn(ownerWindow, "removeEventListener");
+  const activate = vi.fn();
+  item.addEventListener("click", activate);
+  for (const [index, interruption] of ["blur", "pagehide"].entries()) {
+    item.dispatchEvent(
+      new Pointer("pointerdown", {
+        bubbles: true,
+        pointerId: 7 + index,
+        pointerType: "touch",
+        isPrimary: true,
+      }),
+    );
+    expect(ownerListeners.mock.calls.filter(([name]) => name === "pointerup")).toHaveLength(
+      index + 1,
+    );
+    ownerWindow.dispatchEvent(new Event(interruption));
+    expect(ownerRemovals.mock.calls.filter(([name]) => name === "pointerup")).toHaveLength(
+      index + 1,
+    );
+    expect(ownerRemovals).toHaveBeenCalledWith("blur", expect.any(Function));
+    expect(ownerRemovals).toHaveBeenCalledWith("pagehide", expect.any(Function));
+  }
+  expect(activate).not.toHaveBeenCalled();
+  release();
+  expect(vi.getTimerCount()).toBe(0);
+  ownerWindow.close();
+});
+
 it("commits choice semantics immediately while retargeting owned paint and releases pending work", async () => {
   const root = menuRoot();
   const onChange = appendMenuControls(root, [OUTLINE_STYLE]);

@@ -248,13 +248,17 @@ function registerOwnedWindowPress(
 ): () => void {
   let pointerId: number | undefined;
   let pressed: HTMLElement | undefined;
-  const release = (event: PointerEvent): void => {
-    if (pointerId !== event.pointerId) return;
+  const finish = (): void => {
     pointerId = undefined;
     ownerWindow.removeEventListener("pointerup", release, true);
     ownerWindow.removeEventListener("pointercancel", release, true);
+    ownerWindow.removeEventListener("blur", finish);
+    ownerWindow.removeEventListener("pagehide", finish);
     change(pressed);
     pressed = undefined;
+  };
+  const release = (event: PointerEvent): void => {
+    if (pointerId === event.pointerId) finish();
   };
   const down = (event: PointerEvent): void => {
     if (pointerId !== undefined || !event.isPrimary || event.button !== 0) return;
@@ -264,13 +268,13 @@ function registerOwnedWindowPress(
     change(pressed, "var(--interactive-hover)");
     ownerWindow.addEventListener("pointerup", release, true);
     ownerWindow.addEventListener("pointercancel", release, true);
+    ownerWindow.addEventListener("blur", finish);
+    ownerWindow.addEventListener("pagehide", finish);
   };
   root.addEventListener("pointerdown", down);
   return () => {
     root.removeEventListener("pointerdown", down);
-    ownerWindow.removeEventListener("pointerup", release, true);
-    ownerWindow.removeEventListener("pointercancel", release, true);
-    change(pressed);
+    finish();
   };
 }
 
