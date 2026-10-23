@@ -8,16 +8,31 @@ type ElementMotionOptions = Pick<
   "ease" | "repeat" | "repeatType" | "onComplete"
 > & { readonly duration: number };
 
+export interface ElementMotionTarget {
+  readonly element: HTMLElement;
+  readonly keyframes: ElementKeyframes;
+}
+
 /** Full Motion's native API keeps explicit visual targets in their owning DOM realm. */
 export function animateOwnedElement(
   element: HTMLElement,
   keyframes: ElementKeyframes,
   options: ElementMotionOptions,
 ): GroupAnimationWithThen {
-  const entries = Object.entries(keyframes);
+  return animateOwnedElements([{ element, keyframes }], options);
+}
+
+/** Completes coordinated surfaces only after every owned property has finished. */
+export function animateOwnedElements(
+  targets: readonly ElementMotionTarget[],
+  options: ElementMotionOptions,
+): GroupAnimationWithThen {
+  const entries = targets.flatMap(({ element, keyframes }) =>
+    Object.entries(keyframes).map(([name, values]) => ({ element, name, values })),
+  );
   let remaining = entries.length;
   const animations = entries.map(
-    ([name, values]) =>
+    ({ element, name, values }) =>
       new NativeAnimation({
         ...options,
         element,
@@ -31,6 +46,7 @@ export function animateOwnedElement(
         },
       }),
   );
-  for (const animation of element.getAnimations()) void animation.finished.catch(() => undefined);
+  for (const { element } of targets)
+    for (const animation of element.getAnimations()) void animation.finished.catch(() => undefined);
   return new GroupAnimationWithThen(animations);
 }

@@ -19,7 +19,7 @@ import { registerPanelInteraction, registerPanelViewport } from "./adaptive-pane
 import { AdaptivePanelPlacement } from "./adaptive-panel-placement";
 import { PhoneSheetPages } from "./phone-sheet-pages";
 import type { AdaptivePanelContentLifecycle, PhoneSheetNavigation } from "./panel-page";
-import { animatePhoneSheetExit } from "./phone-sheet-motion";
+import { animatePhoneSheetEntry, animatePhoneSheetExit } from "./phone-sheet-motion";
 export type { AdaptivePanelContentLifecycle } from "./panel-page";
 
 export type AdaptivePanelCloseMode = "animated" | "handoff" | "immediate";
@@ -302,6 +302,7 @@ export class AdaptivePanelSession extends Component {
           this.#entryStop?.();
           this.#entryStop = undefined;
           playMenuMotion(this.#surface, { opacity: "1", scale: "1", translate: "0 0" }, 0);
+          playMenuMotion(this.#backdrop, { opacity: "1" }, 0);
           this.#finishEntry();
         }
       }),
@@ -311,12 +312,8 @@ export class AdaptivePanelSession extends Component {
     this.#position();
     this.#observeContentSize();
     this.#entryStop = Platform.isPhone
-      ? playMenuMotion(
-          this.#surface,
-          { translate: ["0 100%", "0 0"] },
-          this.#entryDuration(),
-          () => this.#finishEntry(),
-          "ease-out",
+      ? animatePhoneSheetEntry(this.#surface, this.#backdrop, this.#entryDuration(), () =>
+          this.#finishEntry(),
         )
       : animateWideMenuEntry(this.#surface, this.#entryDuration(), () => this.#finishEntry());
     this.#openFrame = this.#options.workScheduler.requestFrame(() => {
@@ -444,9 +441,10 @@ export class AdaptivePanelSession extends Component {
   }
 
   #returnFocus(): void {
-    if (this.#returnedFocus) return;
-    this.#returnedFocus = true;
     const { anchor, canvasInputSurface, ownerDocument } = this.#options;
+    // Native teardown may blur the early return target; preserve any deliberate new focus.
+    if (this.#returnedFocus && ownerDocument.activeElement !== ownerDocument.body) return;
+    this.#returnedFocus = true;
     const target =
       anchor.isConnected && anchor.ownerDocument === ownerDocument ? anchor : canvasInputSurface;
     target.focus({ preventScroll: true });

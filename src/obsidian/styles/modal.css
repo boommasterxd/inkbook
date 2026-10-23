@@ -1,3 +1,7 @@
+.inkbook-modal-backdrop {
+  opacity: var(--inkbook-modal-backdrop-opacity, 0.85);
+}
+
 .inkbook-adaptive-panel-layer[data-kind="dialog"] {
   z-index: var(--layer-modal);
 }
