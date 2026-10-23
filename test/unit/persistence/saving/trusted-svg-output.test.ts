@@ -1,5 +1,5 @@
 import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   hashConfirmedSvgContent,
@@ -11,9 +11,25 @@ import { createMaximumComplexitySvg } from "../../../fixtures/persistence/safe-s
 
 afterEach(() => vi.restoreAllMocks());
 
+let maximumOutput: Readonly<{ content: string; outputHash: string; totalBytes: number }>;
+
+beforeAll(async () => {
+  // Share immutable reference data; every inspection still owns fresh hashing and validation.
+  const content = createMaximumComplexitySvg();
+  const bytes = new TextEncoder().encode(content);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  maximumOutput = Object.freeze({
+    content,
+    outputHash: Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join(""),
+    totalBytes: bytes.byteLength,
+  });
+});
+
 describe("trusted SVG output validation slices", () => {
   it("rejects external output with literal markup hidden inside metadata", async () => {
-    const output = createMaximumComplexitySvg().replace(
+    const output = maximumOutput.content.replace(
       "</metadata>",
       "<script>bad()</script></metadata>",
     );
@@ -39,7 +55,7 @@ describe("trusted SVG output validation slices", () => {
   });
 
   it("honors cancellation while inspecting markup after string hashing completes", async () => {
-    const output = createMaximumComplexitySvg();
+    const output = maximumOutput.content;
     const chunkBytes = 64 * 1024;
     const firstInspectionCheckpoint = Math.ceil(output.length / chunkBytes) + 1;
     const controller = new AbortController();
@@ -104,12 +120,7 @@ describe("confirmed-base digest", () => {
 
 describe("trusted SVG background priority", () => {
   it("pauses before hashing and at existing checkpoints without replacing the checkpoint", async () => {
-    const output = createMaximumComplexitySvg();
-    const bytes = new TextEncoder().encode(output);
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    const outputHash = Array.from(new Uint8Array(digest), (byte) =>
-      byte.toString(16).padStart(2, "0"),
-    ).join("");
+    const { content: output, outputHash, totalBytes } = maximumOutput;
     const update = vi.spyOn(ChunkedSha256.prototype, "update");
     const checkpoint = vi.fn(async () => undefined);
     let resume: () => void = () => undefined;
@@ -145,7 +156,7 @@ describe("trusted SVG background priority", () => {
       lockedHeight: 148.6,
       outputHash,
       revision: 3,
-      totalBytes: bytes.byteLength,
+      totalBytes,
     });
     expect(waitForBackground.mock.calls.length).toBe(checkpoint.mock.calls.length);
     update.mockRestore();
