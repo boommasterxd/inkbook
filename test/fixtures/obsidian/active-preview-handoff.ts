@@ -5,7 +5,7 @@ import { ActiveScenePreviewHandoff } from "../../../src/obsidian/embeds/active-s
 import type { PresentationAttachment } from "../../../src/obsidian/embeds/presentation/presentation-port";
 
 /** Prepare the locked surface, then complete the active scene's reduced-motion handoff. */
-export async function createDetachedPreviewHandoff(
+export async function createHiddenPreviewHandoff(
   attachment: PresentationAttachment,
   workScheduler: WorkScheduler,
 ) {
@@ -21,6 +21,6 @@ export async function createDetachedPreviewHandoff(
   });
   handoff.ready();
   expect(preview.hidden).toBe(true);
-  expect(preview.isConnected).toBe(false);
+  expect(preview.isConnected).toBe(true);
   return { handoff, preview };
 }

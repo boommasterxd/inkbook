@@ -223,62 +223,23 @@
 }
 
 .inkbook-root .inkbook-locked-preview-media {
+  /* Shell layout changes stop at the isolated preview document's host. */
+  --inkbook-owner-inline-limit: initial;
+  --inkbook-container-width: initial;
+  --inkbook-shell-radius: initial;
+  --inkbook-presentation-block-size: initial;
+  --inkbook-page-height-envelope-block-size: initial;
+  --inkbook-presentation-exit-before: initial;
+  --inkbook-presentation-exit-after: initial;
+  --inkbook-active-scene-block-size: initial;
+  --inkbook-locked-container-block-size: initial;
+  --inkbook-toolbar-scrollport-padding: initial;
+
   aspect-ratio: var(--inkbook-preview-aspect-ratio);
   display: block;
   inline-size: 100%;
   pointer-events: none;
-}
-
-.inkbook-root .inkbook-locked-preview-svg {
-  display: block;
-  inline-size: 100%;
-  block-size: 100%;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-page {
-  fill: #f6f6f6ff;
-}
-
-.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-guide {
-  stroke: #ababab40;
-  vector-effect: non-scaling-stroke;
-}
-
-.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-stroke {
-  stroke: #222f;
-}
-
-.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-fill {
-  fill: #222f;
-}
-
-.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-stroke-fill {
-  fill: #222f;
-  stroke: #222f;
-}
-
-.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-page {
-  fill: #212121ff;
-}
-
-.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-guide {
-  stroke: #66666640;
-  vector-effect: non-scaling-stroke;
-}
-
-.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-stroke {
-  stroke: #dadadaff;
-}
-
-.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-fill {
-  fill: #dadadaff;
-}
-
-.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-stroke-fill {
-  fill: #dadadaff;
-  stroke: #dadadaff;
+  position: relative;
 }
 
 .inkbook-root .inkbook-locked-preview:focus {

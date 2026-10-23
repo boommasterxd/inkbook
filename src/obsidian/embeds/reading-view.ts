@@ -92,6 +92,7 @@ function recognizeReadingViewCandidate(
 
 class InkbookReadingRenderChild extends MarkdownRenderChild {
   readonly #button: HTMLButtonElement;
+  readonly #refreshPreview: () => void;
   readonly #controller: PresentationController;
   readonly #documentId: string;
   readonly #nativeHost: HTMLElement;
@@ -129,6 +130,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     );
     super(candidate.host);
     this.#button = button;
+    this.#refreshPreview = preview.refresh;
     this.#documentId = candidate.resolved.documentId;
     this.#nativeHost = candidate.host;
     this.#nativeChildren = nativeChildren;
@@ -168,6 +170,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
         contentIdentity: previewDescriptor.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
+        setColorScheme: preview.setColorScheme,
         dispose: preview.dispose,
         ensureReady: preview.ensureReady,
         setBackgroundWait: preview.setBackgroundWait,
@@ -180,9 +183,13 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
   }
 
   override onload(): void {
-    this.#releaseLifecycle = this.#lifecycle.register(this.#root, () => {
-      this.unload();
-    });
+    this.#releaseLifecycle = this.#lifecycle.register(
+      this.#root,
+      () => {
+        this.unload();
+      },
+      this.#refreshPreview,
+    );
     if (this.#releaseLifecycle === undefined) return;
     this.#controller.mount();
     this.#releaseRecognition = this.#ports.documents.subscribe((documentId) => {

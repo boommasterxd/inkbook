@@ -22,6 +22,7 @@ import {
 } from "../../adapters/obsidian/plugin";
 import { InkbookLoadingPreviewWidget } from "../../../src/obsidian/embeds/live-preview/live-preview-loading-widget";
 import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
+import { PresentationLifecycleRegistry } from "../../../src/obsidian/embeds/presentation/presentation-lifecycle-registry";
 
 const TestTFile = TFile as unknown as new (path: string) => TFile;
 
@@ -157,6 +158,10 @@ describe("plugin startup placeholders", () => {
 
 describe("plugin host registration", () => {
   it("loads settings and registers both embed surfaces, settings, theme, and commands", async () => {
+    const refreshOwners = vi.spyOn(
+      PresentationLifecycleRegistry.prototype,
+      "refreshOwnerDocuments",
+    );
     const { app, cssChange, layoutReady, metadataEvents, vaultEvents, workspaceEvents } =
       createApp();
     const plugin = new TestPlugin(app as never, {} as never);
@@ -189,7 +194,9 @@ describe("plugin host registration", () => {
       "inactive",
     );
     expect(workspaceEvents.has("active-leaf-change")).toBe(true);
-    expect(workspaceEvents.has("layout-change")).toBe(false);
+    workspaceEvents.get("layout-change")?.();
+    expect(refreshOwners).toHaveBeenCalledOnce();
+    refreshOwners.mockRestore();
     expectRegisteredCommands(registrations.commands);
     expect(cssChange).toHaveBeenCalledTimes(0);
     expect([...metadataEvents.keys()]).toEqual(["changed", "resolved"]);

@@ -217,6 +217,8 @@ export class ActiveScenePreviewHandoff {
   public restorePreview(): void {
     const preview = this.#preview;
     if (preview === undefined) return;
+    if (preview.ownerDocument !== this.#root.ownerDocument)
+      this.#root.ownerDocument.adoptNode(preview);
     preview.hidden = false;
     this.#refreshPreview?.();
     if (!preview.isConnected && this.#previewParent !== null) {
@@ -407,7 +409,6 @@ export class ActiveScenePreviewHandoff {
     this.#container.style.removeProperty(LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY);
     if (this.#preview !== undefined) {
       this.#preview.hidden = true;
-      (this.#preview as Partial<{ remove(): void }>).remove?.();
     }
     this.#notifyReady();
     if (!this.#initialRevealPending) this.#releaseTransitionStability();

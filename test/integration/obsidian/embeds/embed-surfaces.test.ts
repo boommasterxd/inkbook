@@ -367,10 +367,17 @@ describe("Live Preview widget lifecycle", () => {
     expect(activationButton.children[0]?.children).toHaveLength(0);
     const ensurePreviewReady = ports.attachments[0]?.ensurePreviewReady;
     expect(ensurePreviewReady).toBeTypeOf("function");
+    (root.ownerDocument.body as unknown as FakeElement).append(root);
     await ensurePreviewReady?.();
-    expect(activationButton?.children[0]?.children[0]?.classNames).toContain(
-      "inkbook-locked-preview-svg",
-    );
+    const surface = activationButton.children[0]!.shadowRoot as unknown as FakeElement;
+    const frame = surface.getElementsByTagName("iframe").item(0)!;
+    const graphic = (frame.contentDocument!.body as unknown as FakeElement)
+      .getElementsByTagName("svg")
+      .item(0);
+    expect(graphic?.ownerDocument).toBe(frame.contentDocument);
+    expect(graphic?.ownerDocument).not.toBe(root.ownerDocument);
+    expect(graphic?.attributes.get("aria-hidden")).toBe("true");
+    expect(activationButton?.getElementsByTagName("svg").length).toBe(0);
     activationButton?.dispatch("click");
     expect(ports.calls).toEqual(["mount:drawings/ink.svg", "activate:drawings/ink.svg"]);
     expect(ports.attachments[0]?.embedReference).toEqual({

@@ -64,9 +64,10 @@ function createFixture(
     setTimeout: setTimeoutSpy,
   } as unknown as Window;
   const rootClasses = new FakeClassList();
+  const ownerDocument = { defaultView: ownerWindow };
   const root = {
     classList: rootClasses,
-    ownerDocument: { defaultView: ownerWindow },
+    ownerDocument,
   } as unknown as HTMLElement;
   const style = {
     blockSize: "",
@@ -85,6 +86,7 @@ function createFixture(
   const measureContainer = vi.fn(() => ({ height: 240 }));
   const container = {
     classList: new FakeClassList(),
+    ownerDocument,
     getBoundingClientRect: measureContainer,
     style,
   } as unknown as HTMLElement;
@@ -97,6 +99,7 @@ function createFixture(
   };
   const preview = {
     classList: previewClasses,
+    ownerDocument,
     getBoundingClientRect: () => ({ height: 96 }),
     hidden: false,
     remove: vi.fn(),

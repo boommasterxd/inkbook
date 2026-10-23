@@ -12,6 +12,7 @@ import * as previewBuilder from "../../../../../src/obsidian/embeds/preview/safe
 import { ObsidianInkbookDocumentRecognition } from "../../../../../src/obsidian/embeds/preview/document-recognition";
 
 import { createInkbookLockedPreview } from "../../../../../src/obsidian/embeds/preview/locked-preview";
+import { lockedPreviewRoot } from "../../../../fixtures/obsidian/locked-preview";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { deferredPreviewRecognition } from "../../../../fixtures/obsidian/deferred-preview-recognition";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
@@ -71,6 +72,7 @@ it("restores the latest deferred content before the preview handoff completes", 
   });
   const root = createHtmlElement("div");
   root.append(button);
+  document.body.append(root);
   const handoff = new ActiveScenePreviewHandoff({
     root,
     container: createHtmlElement("div"),
@@ -82,7 +84,7 @@ it("restores the latest deferred content before the preview handoff completes", 
   await preview.ensureReady();
   handoff.restorePreview();
   expect(button.hidden).toBe(false);
-  expect(button.querySelector("path")).not.toBeNull();
+  expect(lockedPreviewRoot(button).querySelector("path")).not.toBeNull();
   handoff.dispose();
   preview.dispose();
 });
@@ -100,7 +102,8 @@ it.each(["descriptor", "dispose"] as const)(
         }),
     );
     const { button, preview } = await preparedPreview();
-    const original = button.querySelector("svg");
+    const surface = lockedPreviewRoot(button);
+    const original = surface.querySelector("svg");
     const pending = preview.setSource("app://old.svg");
     if (operation === "dispose") preview.dispose();
     else
@@ -111,7 +114,7 @@ it.each(["descriptor", "dispose"] as const)(
       });
     resolveFetch(new Response(serialized.value.svg));
     await expect(pending).resolves.toBeUndefined();
-    expect(button.querySelector("svg")).toBe(original);
+    expect(surface.querySelector("svg")).toBe(operation === "dispose" ? null : original);
     preview.dispose();
     await expect(preview.setSource("app://disposed.svg")).resolves.toBeUndefined();
     expect(fetch).toHaveBeenCalledOnce();
@@ -127,7 +130,7 @@ it.each([false, true])(
       .spyOn(window, "fetch")
       .mockImplementation(async () => new Response(serialized.value.svg));
     const parser = vi.spyOn(window.DOMParser.prototype, "parseFromString");
-    const button = createHtmlElement("button");
+    const button = document.body.appendChild(createHtmlElement("button"));
     const preview = createInkbookLockedPreview(
       button,
       {
@@ -149,10 +152,10 @@ it.each([false, true])(
     button.hidden = false;
     preview.refresh();
     expect(parser).not.toHaveBeenCalled();
-    const current = button.querySelector("svg");
+    const current = lockedPreviewRoot(button).querySelector("svg");
     fetch.mockResolvedValue(new Response("<svg/>"));
     await expect(preview.setSource("app://unsafe.svg")).rejects.toThrow("not safe SVG");
-    expect(button.querySelector("svg")).toBe(current);
+    expect(lockedPreviewRoot(button).querySelector("svg")).toBe(current);
     expect(parser).not.toHaveBeenCalled();
     preview.dispose();
   },
@@ -165,7 +168,7 @@ it("pauses detached preparation during input and publishes only the latest descr
     resume = resolve;
   });
   preview.setBackgroundWait(() => paused);
-  const creates = vi.spyOn(document, "createElementNS");
+  const creates = vi.spyOn(lockedPreviewRoot(button), "createElementNS");
   let ready: Promise<void> | undefined;
   for (const revision of [2, 3]) {
     preview.setDescriptor({
@@ -177,19 +180,19 @@ it("pauses detached preparation during input and publishes only the latest descr
     await Promise.resolve();
   }
   expect(creates).not.toHaveBeenCalled();
-  expect(button.querySelector("path")).toBeNull();
+  expect(lockedPreviewRoot(button).querySelector("path")).toBeNull();
   resume();
   await ready;
-  expect(button.querySelector("path")).toBeNull();
+  expect(lockedPreviewRoot(button).querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
   button.hidden = false;
   preview.refresh();
-  expect(button.querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
+  expect(lockedPreviewRoot(button).querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
   expect(creates).toHaveBeenCalledTimes(2);
   preview.dispose();
 });
 
 it("settles lock readiness when disposed during an input pause without building stale DOM", async () => {
-  const button = createHtmlElement("button");
+  const button = document.body.appendChild(createHtmlElement("button"));
   const preview = createInkbookLockedPreview(
     button,
     {
@@ -205,18 +208,20 @@ it("settles lock readiness when disposed during an input pause without building 
     contentIdentity: { ...CONTENT_IDENTITY, revision: 2 },
     safeSvg: SAFE_PREVIEW_SVG,
   });
-  const creates = vi.spyOn(document, "createElementNS");
+  const creates = vi.spyOn(lockedPreviewRoot(button), "createElementNS");
   const ready = preview.ensureReady();
   preview.dispose();
   await ready;
-  expect(creates).not.toHaveBeenCalled();
+  expect(
+    creates.mock.calls.filter(([namespace]) => namespace === "http://www.w3.org/2000/svg"),
+  ).toHaveLength(0);
 });
 
 it("cancels paused descriptor work when a hidden surface receives a newer revision", async () => {
   const { button, preview } = await preparedPreview();
   preview.setBackgroundWait(() => new Promise<void>(() => undefined));
   const builder = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
-  const creates = vi.spyOn(document, "createElementNS");
+  const creates = vi.spyOn(lockedPreviewRoot(button), "createElementNS");
   preview.setDescriptor({
     aspectRatio: 2,
     contentIdentity: { ...CONTENT_IDENTITY, revision: 2 },
@@ -237,10 +242,10 @@ it("cancels paused descriptor work when a hidden surface receives a newer revisi
   await preview.ensureReady();
   expect(builder).toHaveBeenCalledTimes(2);
   expect(creates).toHaveBeenCalledTimes(2);
-  expect(button.querySelector("path")).toBeNull();
+  expect(lockedPreviewRoot(button).querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
   button.hidden = false;
   preview.refresh();
-  expect(button.querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
+  expect(lockedPreviewRoot(button).querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
   preview.dispose();
 });
 
@@ -249,7 +254,7 @@ it("settles validated source identity while detached DOM preparation waits for i
   if (!serialized.ok) throw new Error("Invalid test snapshot");
   vi.spyOn(window, "fetch").mockImplementation(async () => new Response(serialized.value.svg));
   const { button, preview } = await preparedPreview();
-  const original = button.querySelector("svg");
+  const original = lockedPreviewRoot(button).querySelector("svg");
   let resume!: () => void;
   const paused = new Promise<void>((resolve) => {
     resume = resolve;
@@ -270,10 +275,10 @@ it("settles validated source identity while detached DOM preparation waits for i
   });
   await Promise.resolve();
   expect(ready).toBe(false);
-  expect(button.querySelector("svg")).toBe(original);
+  expect(lockedPreviewRoot(button).querySelector("svg")).toBe(original);
   resume();
   await pending;
-  expect(button.querySelector("svg")).not.toBe(original);
+  expect(lockedPreviewRoot(button).querySelector("svg")).not.toBe(original);
   preview.dispose();
 });
 
@@ -286,7 +291,7 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
   );
   const sourceLoader = { documentId: file.path, documents: recognition };
   const first = createInkbookLockedPreview(
-    createHtmlElement("button"),
+    document.body.appendChild(createHtmlElement("button")),
     {
       aspectRatio: 1,
       contentIdentity: CONTENT_IDENTITY,
@@ -296,7 +301,7 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
     sourceLoader,
   );
   const second = createInkbookLockedPreview(
-    createHtmlElement("button"),
+    document.body.appendChild(createHtmlElement("button")),
     {
       aspectRatio: 1,
       contentIdentity: CONTENT_IDENTITY,
@@ -317,9 +322,9 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
     revision: serialized.value.snapshot.revision,
   });
   await second.ensureReady();
-  expect(second.element.querySelector("svg")).not.toBeNull();
+  expect(lockedPreviewRoot(second.element).querySelector("svg")).not.toBeNull();
   const third = createInkbookLockedPreview(
-    createHtmlElement("button"),
+    document.body.appendChild(createHtmlElement("button")),
     {
       aspectRatio: 1,
       contentIdentity: CONTENT_IDENTITY,
@@ -331,7 +336,9 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
   await third.setSource(source);
   await third.ensureReady();
   expect(cachedRead).toHaveBeenCalledOnce();
-  expect(third.element.querySelector("svg")).not.toBe(second.element.querySelector("svg"));
+  expect(lockedPreviewRoot(third.element).querySelector("svg")).not.toBe(
+    lockedPreviewRoot(second.element).querySelector("svg"),
+  );
   await expect(
     third.setSource(`app://shared.svg?inkbook-revision=999-${serialized.value.hash}`),
   ).rejects.toThrow("changed while loading");
@@ -373,7 +380,7 @@ it("uses confirmed safe bytes without reading again and rejects a mismatched rev
     signature,
   );
   const preview = createInkbookLockedPreview(
-    createHtmlElement("button"),
+    document.body.appendChild(createHtmlElement("button")),
     { aspectRatio: 1, contentIdentity: CONTENT_IDENTITY, safeSvg: SAFE_PREVIEW_SVG },
     immediateWorkScheduler(),
     { documentId: file.path, documents: recognition },
@@ -409,10 +416,9 @@ it("uses confirmed safe bytes without reading again and rejects a mismatched rev
 });
 
 it("prepares initial content asynchronously under the owning-window scheduler", async () => {
-  const button = createHtmlElement("button");
+  const button = document.body.appendChild(createHtmlElement("button"));
   const shouldYield = vi.fn(() => false);
   const parser = vi.spyOn(window.DOMParser.prototype, "parseFromString");
-  const creates = vi.spyOn(document, "createElementNS");
   const preview = createInkbookLockedPreview(
     button,
     {
@@ -422,19 +428,20 @@ it("prepares initial content asynchronously under the owning-window scheduler", 
     },
     immediateWorkScheduler(shouldYield),
   );
-  expect(button.querySelector("svg")).toBeNull();
+  const creates = vi.spyOn(lockedPreviewRoot(button), "createElementNS");
+  expect(lockedPreviewRoot(button).querySelector("svg")).toBeNull();
   expect(creates.mock.calls.some(([namespace]) => namespace === "http://www.w3.org/2000/svg")).toBe(
     false,
   );
   await preview.ensureReady();
-  expect(button.querySelectorAll("path")).toHaveLength(64);
+  expect(lockedPreviewRoot(button).querySelectorAll("path")).toHaveLength(64);
   expect(shouldYield).toHaveBeenCalled();
   expect(parser).not.toHaveBeenCalled();
   preview.dispose();
 });
 
 async function preparedPreview(hidden = false) {
-  const button = createHtmlElement("button");
+  const button = document.body.appendChild(createHtmlElement("button"));
   const preview = createInkbookLockedPreview(
     button,
     {
@@ -450,7 +457,7 @@ async function preparedPreview(hidden = false) {
 }
 
 it("drains a newer hidden source received during lock preparation and retries failures", async () => {
-  const button = createHtmlElement("button");
+  const button = document.body.appendChild(createHtmlElement("button"));
   button.hidden = true;
   let release!: () => void;
   const first = new Promise<void>((resolve) => {
