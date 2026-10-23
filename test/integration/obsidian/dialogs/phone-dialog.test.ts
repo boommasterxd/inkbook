@@ -44,6 +44,43 @@ function confirmation(signal?: AbortSignal): Promise<boolean> {
   });
 }
 
+describe("phone dialog focus restoration", () => {
+  it.each(["lost", "replacement"])(
+    "restores swipe-dismissed focus after native teardown when focus is %s",
+    async (focus) => {
+      const anchor = document.body.createEl("button", { text: "Overflow" });
+      const replacement = document.body.createEl("button", { text: "Another action" });
+      anchor.focus();
+      const close = vi.spyOn(Modal.prototype, "close");
+      close.mockImplementation(function (this: Modal) {
+        close.mockRestore();
+        Modal.prototype.close.call(this);
+        if (focus === "lost") anchor.blur();
+      });
+      const result = confirmation();
+      const surface = sheet();
+      vi.advanceTimersByTime(220);
+      const grabber = surface.querySelector<HTMLElement>(".inkbook-adaptive-panel-drag-region")!;
+      for (const [type, clientY] of [
+        ["pointerdown", 0],
+        ["pointerup", 400],
+      ] as const) {
+        grabber.dispatchEvent(
+          new PointerEvent(type, { bubbles: true, pointerType: "touch", pointerId: 1, clientY }),
+        );
+      }
+      expect(surface.dataset.state).toBe("closing");
+      expect(document.activeElement).toBe(anchor);
+      if (focus === "replacement") replacement.focus();
+      await vi.advanceTimersByTimeAsync(220);
+      await expect(result).resolves.toBe(false);
+      expect(document.activeElement).toBe(focus === "lost" ? anchor : replacement);
+      expect(surface.isConnected).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+});
+
 describe("shared phone dialog sheet", () => {
   it("focuses Cancel after mounting and closes the action sheet after 220 ms", async () => {
     const nativeOpen = vi.spyOn(Modal.prototype, "open");

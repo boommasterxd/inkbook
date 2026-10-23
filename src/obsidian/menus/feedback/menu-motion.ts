@@ -1,9 +1,9 @@
-import { animateOwnedElement } from "../../runtime/element-motion";
+import { animateOwnedElements, type ElementMotionTarget } from "../../runtime/element-motion";
 
 import { EASING_TOKENS } from "../../../rendering/motion/transitions";
 import { effectiveTransitionDuration } from "../../runtime/effective-motion";
 
-type Keyframes = Parameters<typeof animateOwnedElement>[1];
+type Keyframes = ElementMotionTarget["keyframes"];
 
 /** A cancellable, lifecycle-owned animation with a completion that cannot fire after cancellation. */
 export function playMenuMotion(
@@ -13,25 +13,35 @@ export function playMenuMotion(
   onComplete?: () => void,
   easing: string = EASING_TOKENS.standard,
 ): () => void {
+  return playMenuMotionGroup([{ element, keyframes }], durationMs, onComplete, easing);
+}
+
+/** Keeps a shared exit alive until its surface and backdrop have both completed. */
+export function playMenuMotionGroup(
+  targets: readonly ElementMotionTarget[],
+  durationMs: number,
+  onComplete?: () => void,
+  easing: string = EASING_TOKENS.standard,
+): () => void {
   if (durationMs === 0) {
-    for (const [name, values] of Object.entries(keyframes)) {
-      const value: unknown = Array.isArray(values) ? values[values.length - 1] : values;
-      if (typeof value === "string" || typeof value === "number")
-        element.style.setProperty(toCssProperty(name), String(value));
-    }
+    for (const { element, keyframes } of targets)
+      for (const [name, values] of Object.entries(keyframes)) {
+        const value: unknown = Array.isArray(values) ? values[values.length - 1] : values;
+        if (typeof value === "string" || typeof value === "number")
+          element.style.setProperty(toCssProperty(name), String(value));
+      }
     onComplete?.();
     return () => undefined;
   }
   let canceled = false;
-  const animation = animateOwnedElement(element, keyframes, {
+  const animation = animateOwnedElements(targets, {
     duration: durationMs / 1000,
-    ease: easing as NonNullable<Parameters<typeof animateOwnedElement>[2]["ease"]>,
+    ease: easing as NonNullable<Parameters<typeof animateOwnedElements>[1]["ease"]>,
     onComplete: () => {
       if (!canceled) onComplete?.();
     },
   });
   // Native WAAPI rejects `finished` when an interrupted animation is canceled.
-  for (const native of element.getAnimations()) void native.finished.catch(() => undefined);
   void animation.finished.catch(() => undefined);
   return () => {
     canceled = true;

@@ -53,19 +53,24 @@ describe("native modal motion", () => {
   );
 
   it.each([false, true])(
-    "animates desktop/tablet and retains the native shell until exit: %s",
+    "dismisses desktop/tablet through its owned backdrop and retains the shell until exit: %s",
     (tablet) => {
       Object.assign(Platform, { isMobile: tablet });
       const { modal } = setup();
       const hostClose = vi.spyOn(Modal.prototype, "close");
+      const close = vi.spyOn(modal, "close");
       modal.open();
-      modal.close();
+      const backdrop = modal.containerEl.querySelector<HTMLElement>(".inkbook-modal-backdrop")!;
+      backdrop.click();
+      expect(close).toHaveBeenCalledOnce();
       expect(modal.modalEl.isConnected).toBe(true);
       expect(modal.modalEl.inert).toBe(true);
       expect(hostClose).not.toHaveBeenCalled();
       vi.advanceTimersByTime(120);
       expect(hostClose).toHaveBeenCalledOnce();
       expect(modal.modalEl.isConnected).toBe(false);
+      backdrop.click();
+      expect(close).toHaveBeenCalledOnce();
       expect(vi.getTimerCount()).toBe(0);
     },
   );

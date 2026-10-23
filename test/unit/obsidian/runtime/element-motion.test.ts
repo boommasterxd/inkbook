@@ -3,7 +3,10 @@
 import { Window as HappyWindow } from "happy-dom";
 import { describe, expect, it, vi } from "vitest";
 
-import { animateOwnedElement } from "../../../../src/obsidian/runtime/element-motion";
+import {
+  animateOwnedElement,
+  animateOwnedElements,
+} from "../../../../src/obsidian/runtime/element-motion";
 
 describe("owned native Motion lifecycle", () => {
   it("completes a foreign-window group only after all properties finish", async () => {
@@ -42,5 +45,43 @@ describe("owned native Motion lifecycle", () => {
     await Promise.resolve();
     expect(complete).not.toHaveBeenCalled();
     expect(element.getAnimations()).toHaveLength(0);
+  });
+
+  it("retains a shared exit until both surfaces finish and cancels all remaining targets", async () => {
+    const container = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+    const backdrop = container.appendChild(
+      document.createElementNS("http://www.w3.org/1999/xhtml", "div"),
+    );
+    const surface = container.appendChild(
+      document.createElementNS("http://www.w3.org/1999/xhtml", "div"),
+    );
+    document.body.append(container);
+    const remove = vi.fn(() => container.remove());
+    const targets = [
+      { element: surface, keyframes: { scale: [1, 0.96], opacity: [1, 0] } },
+      { element: backdrop, keyframes: { opacity: [1, 0] } },
+    ];
+    const controls = animateOwnedElements(targets, { duration: 0.12, onComplete: remove });
+    const surfaceAnimations = surface.getAnimations();
+    surfaceAnimations[0]!.finish();
+    await Promise.resolve();
+    expect(container.isConnected).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+    backdrop.getAnimations()[0]!.finish();
+    await Promise.resolve();
+    expect(container.isConnected).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+    surfaceAnimations[1]!.finish();
+    await controls.finished;
+    expect(remove).toHaveBeenCalledOnce();
+    expect(container.isConnected).toBe(false);
+
+    remove.mockClear();
+    const interrupted = animateOwnedElements(targets, { duration: 0.12, onComplete: remove });
+    interrupted.stop();
+    await Promise.resolve();
+    expect(remove).not.toHaveBeenCalled();
+    expect(surface.getAnimations()).toHaveLength(0);
+    expect(backdrop.getAnimations()).toHaveLength(0);
   });
 });

@@ -1,20 +1,24 @@
 import { vi } from "vitest";
 
 /** A clock-controlled WAAPI boundary for menu lifecycle tests in happy-dom. */
-vi.mock("../../../src/obsidian/runtime/element-motion", () => ({
-  animateOwnedElement: (
-    element: HTMLElement,
-    keyframes: Record<string, readonly (string | number)[]>,
+vi.mock("../../../src/obsidian/runtime/element-motion", () => {
+  type Target = {
+    element: HTMLElement;
+    keyframes: Record<string, readonly (string | number)[]>;
+  };
+  const animateOwnedElements = (
+    targets: readonly Target[],
     options: { duration: number; onComplete?: () => void },
   ) => {
-    for (const [name, values] of Object.entries(keyframes)) {
-      const value = values[0];
-      if (value !== undefined)
-        element.style.setProperty(
-          name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`),
-          String(value),
-        );
-    }
+    for (const { element, keyframes } of targets)
+      for (const [name, values] of Object.entries(keyframes)) {
+        const value = values[0];
+        if (value !== undefined)
+          element.style.setProperty(
+            name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`),
+            String(value),
+          );
+      }
     let finishPromise: () => void = () => undefined;
     const finished = new Promise<void>((resolve) => {
       finishPromise = resolve;
@@ -23,14 +27,15 @@ vi.mock("../../../src/obsidian/runtime/element-motion", () => ({
     const timer = window.setTimeout(() => {
       if (done) return;
       done = true;
-      for (const [name, values] of Object.entries(keyframes)) {
-        const value = values[values.length - 1];
-        if (value !== undefined)
-          element.style.setProperty(
-            name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`),
-            String(value),
-          );
-      }
+      for (const { element, keyframes } of targets)
+        for (const [name, values] of Object.entries(keyframes)) {
+          const value = values[values.length - 1];
+          if (value !== undefined)
+            element.style.setProperty(
+              name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`),
+              String(value),
+            );
+        }
       options.onComplete?.();
       finishPromise();
     }, options.duration * 1000);
@@ -41,5 +46,13 @@ vi.mock("../../../src/obsidian/runtime/element-motion", () => ({
       finishPromise();
     };
     return { cancel, finished, stop: cancel };
-  },
-}));
+  };
+  return {
+    animateOwnedElements,
+    animateOwnedElement: (
+      element: HTMLElement,
+      keyframes: Target["keyframes"],
+      options: Parameters<typeof animateOwnedElements>[1],
+    ) => animateOwnedElements([{ element, keyframes }], options),
+  };
+});

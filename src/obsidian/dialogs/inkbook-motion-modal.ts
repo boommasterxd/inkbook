@@ -1,6 +1,6 @@
 import { Platform, setIcon, type App } from "obsidian";
 import { observeEffectiveMotion, type ObserveMotion } from "../runtime/effective-motion";
-import { animateOwnedElement } from "../runtime/element-motion";
+import { animateOwnedElements } from "../runtime/element-motion";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import {
@@ -27,7 +27,7 @@ export class InkbookMotionModal {
   readonly #observeMotion: ObserveMotion | undefined;
   #releasePreference: (() => void) | undefined;
   #phone: AdaptivePanelSession | undefined;
-  #animation: ReturnType<typeof animateOwnedElement> | undefined;
+  #animation: ReturnType<typeof animateOwnedElements> | undefined;
   #ownerWindow: Window | null = null;
   #closing = false;
   #hostClosing = false;
@@ -197,9 +197,12 @@ export class InkbookMotionModal {
       this.#cancelMotion();
       return false;
     }
-    const computed = exiting ? ownerWindow.getComputedStyle(this.modalEl) : undefined;
-    const startScale = computed?.scale;
-    const startOpacity = computed?.opacity;
+    const backdrop = this.#native?.motionBackdropEl;
+    if (backdrop === undefined) return false;
+    const computed = ownerWindow.getComputedStyle(this.modalEl);
+    const startScale = computed.scale;
+    const surfaceOpacity = Number(computed.opacity || "1");
+    const backdropOpacity = Number(ownerWindow.getComputedStyle(backdrop).opacity || "1");
     this.#cancelMotion();
     const finish = (): void => {
       if (exiting) this.closeImmediately();
@@ -209,11 +212,20 @@ export class InkbookMotionModal {
       ? Number(startScale && startScale !== "none" ? startScale : "1")
       : 0.96;
     const toScale = exiting ? 0.96 : 1;
-    const fromOpacity = exiting ? Number(startOpacity || "1") : 0;
-    const toOpacity = exiting ? 0 : 1;
-    this.#animation = animateOwnedElement(
-      this.modalEl,
-      { scale: [fromScale, toScale], opacity: [fromOpacity, toOpacity] },
+    this.#animation = animateOwnedElements(
+      [
+        {
+          element: this.modalEl,
+          keyframes: {
+            scale: [fromScale, toScale],
+            opacity: [exiting ? surfaceOpacity : 0, exiting ? 0 : surfaceOpacity],
+          },
+        },
+        {
+          element: backdrop,
+          keyframes: { opacity: [exiting ? backdropOpacity : 0, exiting ? 0 : backdropOpacity] },
+        },
+      ],
       {
         duration: duration / 1000,
         ease: "easeOut",
@@ -236,5 +248,6 @@ export class InkbookMotionModal {
     }
     this.modalEl.style.removeProperty("scale");
     this.modalEl.style.removeProperty("opacity");
+    this.#native?.motionBackdropEl.style.removeProperty("opacity");
   }
 }
