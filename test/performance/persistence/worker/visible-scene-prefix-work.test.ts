@@ -1,11 +1,11 @@
 import { expect, it, vi } from "vitest";
-import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/incremental-document-serializer";
-import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/document-model";
+import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/output/incremental-document-serializer";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/model/document-model";
 import type { DocumentRuntimeRequest } from "../../../../src/persistence/worker/runtime/types";
 import {
   MAX_SCENE_PATH_BYTES,
   scenePathBytes,
-} from "../../../../src/persistence/worker/runtime/scene-path-limits";
+} from "../../../../src/persistence/worker/runtime/model/scene-path-limits";
 import {
   createScenePathProgressFixture,
   scenePathProgressIdentity as identity,

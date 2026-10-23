@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/chunked-input-codec";
+import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/input/chunked-input-codec";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
-import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/document-model";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/model/document-model";
 import { createSnapshot } from "./fixtures";
 
 function pressureDocument(points = [100, 100, 1, 200, 100, 1], rotation = 0) {

@@ -4,7 +4,7 @@ import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { SelectionHandleSession } from "../../../../src/editor/selection/handle-session";
-import { editLinearEndpoint } from "../../../../src/editor/selection/linear-transforms";
+import { editLinearEndpoint } from "../../../../src/editor/selection/transform/linear-transforms";
 import {
   createSelectionFrameAtRotation,
   selectionFramePoint,
@@ -13,7 +13,7 @@ import {
   editCoordinateAxis,
   editCoordinateOrigin,
   scaleElement,
-} from "../../../../src/editor/selection/transforms";
+} from "../../../../src/editor/selection/transform/transforms";
 import {
   arrow,
   coordinateSystem,

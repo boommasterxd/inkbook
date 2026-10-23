@@ -7,7 +7,7 @@ import {
 import type {
   LivePreviewEmbedReference,
   ReadingViewEmbedReference,
-} from "../../../../src/obsidian/embeds/presentation-port";
+} from "../../../../src/obsidian/embeds/presentation/presentation-port";
 import { createHarness } from "./embed-actions-fixture";
 
 function expectRemovedWithoutTrash(

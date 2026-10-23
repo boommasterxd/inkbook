@@ -85,7 +85,7 @@ it("keeps listed semantic timers while blocking new work timers and microtasks",
     validateWorkScheduling([
       source(
         "class LongPress { schedule() { ownerWindow.setTimeout(expire, 500); } }",
-        "src/obsidian/embeds/active-editor/long-press.ts",
+        "src/obsidian/embeds/active-editor/input/long-press.ts",
       ),
     ]),
   ).toEqual([]);
@@ -101,23 +101,35 @@ it("permits only exact semantic host turn and microtask sites", () => {
     validateWorkScheduling([
       source(
         "class CanvasTouchBoundary { #handlePointerTerminal() { setTimeout(expire, 0); } }",
-        "src/obsidian/embeds/canvas-touch-boundary.ts",
+        "src/obsidian/embeds/active-scene/canvas-touch-boundary.ts",
       ),
       source(
         "class InkbookLoadingPreviewWidget { toDOM() { queueMicrotask(notify); } }",
-        "src/obsidian/embeds/live-preview-loading-widget.ts",
+        "src/obsidian/embeds/live-preview/live-preview-loading-widget.ts",
       ),
       source(
         "class WindowRefreshRateProfiles { #start() { requestAnimationFrame(sample); } }",
         "src/obsidian/performance/window-refresh-rate.ts",
+      ),
+      source(
+        "function afterMenuHandoff(ownerWindow, open) { ownerWindow.queueMicrotask(open); }",
+        "src/obsidian/menus/editor-toolbar-menu.ts",
       ),
     ]),
   ).toEqual([]);
   expect(
     validateWorkScheduling([
       source(
+        "function addSettingsActions() { queueMicrotask(open); }",
+        "src/obsidian/menus/editor-toolbar-menu.ts",
+      ),
+    ]),
+  ).toHaveLength(1);
+  expect(
+    validateWorkScheduling([
+      source(
         "class CanvasTouchBoundary { #handlePointerTerminal() { setTimeout(one, 0); setTimeout(two, 0); } }",
-        "src/obsidian/embeds/canvas-touch-boundary.ts",
+        "src/obsidian/embeds/active-scene/canvas-touch-boundary.ts",
       ),
     ]),
   ).toHaveLength(1);
@@ -125,14 +137,14 @@ it("permits only exact semantic host turn and microtask sites", () => {
     validateWorkScheduling([
       source(
         "class LongPress { schedule() { setTimeout(requestAnimationFrame, 500); } }",
-        "src/obsidian/embeds/active-editor/long-press.ts",
+        "src/obsidian/embeds/active-editor/input/long-press.ts",
       ),
     ]),
   ).toHaveLength(1);
 });
 
 it("permits one host measurement throttle timer without admitting other native work", () => {
-  const path = "src/obsidian/embeds/host-zoom-measure-throttle.ts";
+  const path = "src/obsidian/embeds/live-preview/host-zoom-measure-throttle.ts";
   const permitted =
     "class HostZoomMeasureThrottle { #armTimer() { ownerWindow.setTimeout(() => scheduler.requestFrame(measure), 150); } }";
   expect(validateWorkScheduling([source(permitted, path)])).toEqual([]);

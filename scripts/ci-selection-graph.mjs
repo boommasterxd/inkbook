@@ -10,7 +10,10 @@ const embeddedEntries = new Map([
 ]);
 const dynamicEntries = new Map([
   ["src/obsidian/plugin-loader.ts", "./plugin-runtime-entry"],
-  ["src/obsidian/embeds/editor-chrome-loader.ts", "../../rendering/ui/editor-chrome-entry"],
+  [
+    "src/obsidian/embeds/active-scene/editor-chrome-loader.ts",
+    "../../../rendering/ui/editor-chrome-entry",
+  ],
 ]);
 
 function moduleLiteral(ts, node) {

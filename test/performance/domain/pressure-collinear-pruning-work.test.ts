@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { iteratePressureCollinearPruning } from "../../../src/domain/geometry/pressure-collinear-pruning";
+import { iteratePressureCollinearPruning } from "../../../src/domain/geometry/pressure/pressure-collinear-pruning";
 import type { PointV1 } from "../../../src/domain/schema/types";
 import { pressureCollinearBox } from "../../fixtures/domain/pressure-quantization-reference";
 

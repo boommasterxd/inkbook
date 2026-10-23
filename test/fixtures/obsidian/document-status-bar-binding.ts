@@ -1,8 +1,8 @@
 import type { Plugin } from "obsidian";
 import { vi } from "vitest";
 
-import { WorkspaceDocumentStatus } from "../../../src/obsidian/embeds/workspace-document-status";
-import type { ObsidianWorkspaceRuntime } from "../../../src/obsidian/embeds/workspace-runtime";
+import { WorkspaceDocumentStatus } from "../../../src/obsidian/embeds/workspace/workspace-document-status";
+import type { ObsidianWorkspaceRuntime } from "../../../src/obsidian/embeds/workspace/workspace-runtime";
 import {
   registerDocumentStatusBar,
   resolveDocumentStatusPane,

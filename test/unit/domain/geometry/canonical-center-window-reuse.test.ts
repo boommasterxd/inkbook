@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { CanonicalElementPathPreparation } from "../../../../src/domain/geometry/canonical-element-path-preparation";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { strokeLocalGeometry } from "../../../../src/domain/geometry/stroke-position";
-import type { PreparedPressureGeometryPort } from "../../../../src/domain/geometry/prepared-pressure-geometry";
+import type { PreparedPressureGeometryPort } from "../../../../src/domain/geometry/pressure/prepared-pressure-geometry";
 import { ElementStore } from "../../../../src/domain/store/public";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
-import { selectionStrokeCenterWindow } from "../../../../src/editor/selection/stroke-selection-centers";
-import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
+import { selectionStrokeCenterWindow } from "../../../../src/editor/selection/query/stroke-selection-centers";
+import { ProgressivePreviewPath } from "../../../../src/rendering/scene/content/progressive-preview-path";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 
 function source(count: number, pressureEnabled: boolean, rotation: number, positioned: boolean) {

@@ -1,4 +1,4 @@
-import type { PhoneSheetNavigation } from "./panel-page";
+import type { PhoneSheetNavigation } from "./panels/panel-page";
 
 /**
  * The menu layer depends on these small ports instead of importing Obsidian

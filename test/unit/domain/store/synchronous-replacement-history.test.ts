@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import * as recordFactory from "../../../../src/domain/store/record-factory";
+import * as recordFactory from "../../../../src/domain/store/records/record-factory";
 import type { ElementReplacementHistoryData } from "../../../../src/domain/store/types";
-import { moveSelection, rotateSelection } from "../../../../src/editor/selection/transforms";
+import {
+  moveSelection,
+  rotateSelection,
+} from "../../../../src/editor/selection/transform/transforms";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
 import { scaleSelectionUniformForTest } from "../../../fixtures/editor/selection-transform-reference";
 import { connectedLine, highlighter, rectangle } from "./fixtures";

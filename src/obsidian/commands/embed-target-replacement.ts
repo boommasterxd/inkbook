@@ -4,7 +4,7 @@ import type {
   LivePreviewEmbedReference,
   PresentationEmbedReference,
   ReadingViewEmbedReference,
-} from "../embeds/presentation-port";
+} from "../embeds/presentation/presentation-port";
 import { findMarkdownInkbookEmbeds, MARKDOWN_EMBED_LIMITS } from "../embeds/markdown-embed";
 import type { ObsidianLinkAdapter } from "../vault/links";
 import type { ObsidianVaultFileAdapter } from "../vault/file-adapter";

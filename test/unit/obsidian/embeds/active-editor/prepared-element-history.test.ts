@@ -7,7 +7,7 @@ import {
 } from "../../../../../src/domain/store/public";
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/vault-document-session";
+import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/vault-document-session";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";

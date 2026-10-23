@@ -5,12 +5,12 @@ import {
   createRectangleSelectionArea,
   type SelectionArea,
   type SelectionAreaInclusion,
-} from "../../../src/editor/selection/selection-area";
+} from "../../../src/editor/selection/query/selection-area";
 import {
   primitiveTouchesAreaSteps,
   type AreaPolygon,
   type VisibleSelectionPrimitive,
-} from "../../../src/editor/selection/selection-area-primitives";
+} from "../../../src/editor/selection/query/selection-area-primitives";
 import {
   selectBySelectionAreaCandidatesSteps,
   type SelectionAreaCandidate,

@@ -16,7 +16,7 @@ import {
   captureElementReplacementHistory,
 } from "../../../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
+import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import {
   axisConnectedLine,

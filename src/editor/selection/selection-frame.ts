@@ -1,6 +1,6 @@
 import { selectionCenterlineBounds } from "./centerline-bounds";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
-import { sameLocalSelectionShape } from "../../domain/store/prepared-stroke-center-cache";
+import { sameLocalSelectionShape } from "../../domain/store/records/prepared-stroke-center-cache";
 import {
   canonicalPoint,
   calculateElementBoundsSteps,
@@ -16,7 +16,7 @@ import type {
   SelectionPreviewFrame,
   SelectionPreviewTransform,
 } from "./handle-types";
-import { rotateSelection, type TransformSliceScheduler } from "./transforms";
+import { rotateSelection, type TransformSliceScheduler } from "./transform/transforms";
 
 export type OrientedSelectionFrame = SelectionPreviewFrame;
 

@@ -12,10 +12,13 @@ import {
 } from "../../unit/rendering/scene/fakes";
 import { SceneDom } from "../../../src/rendering/scene/scene-dom";
 import { createInstrumentation } from "../../../src/rendering/scene/instrumentation";
-import { createMountedElement, firstPath } from "../../../src/rendering/scene/mounted-element";
+import {
+  createMountedElement,
+  firstPath,
+} from "../../../src/rendering/scene/content/mounted-element";
 import { buildElementPathParts } from "../../../src/domain/geometry/element-path";
 import { arrow, stroke } from "../../unit/domain/schema/fixtures";
-import { SceneMountPreparation } from "../../../src/rendering/scene/scene-mount-preparation";
+import { SceneMountPreparation } from "../../../src/rendering/scene/reconciliation/scene-mount-preparation";
 import { createSceneFixture, createSceneRecord } from "./scene";
 import { NAVIGATION_PAGE } from "./pressure-navigation";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../src/rendering/scene/constants";

@@ -6,14 +6,14 @@ import * as svgFormat from "../../../src/domain/geometry/svg-format";
 import {
   visitVisibleElementPrimitives,
   type SelectionPrimitiveVisitor,
-} from "../../../src/editor/selection/element-selection-geometry";
+} from "../../../src/editor/selection/query/element-selection-geometry";
 import { arrow } from "../../unit/domain/schema/fixtures";
 
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { SpatialQueryScratch, UniformSpatialIndex } from "../../../src/domain/spatial/index";
 import { ElementStore } from "../../../src/domain/store/public";
-import { elementContainsPoint, HitTestScratch } from "../../../src/editor/selection/hit-test";
-import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
+import { elementContainsPoint, HitTestScratch } from "../../../src/editor/selection/query/hit-test";
+import { moveSelectionTimeSliced } from "../../../src/editor/selection/transform/transforms";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import {
   findSnapCandidate,

@@ -5,11 +5,11 @@ import { createObsidianEmbedPasteController } from "../../../../src/obsidian/com
 import { createBuiltInSettings } from "../../../../src/domain/settings";
 import type { FilePlacementV1 } from "../../../../src/domain/settings/types";
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
-import type { InkbookSettingsStore } from "../../../../src/obsidian/settings";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { chooseInkbookAction } from "../../../../src/obsidian/dialogs/action-dialog";
 import { CLIPBOARD, FakeEditor, pasteRequest } from "../../../fixtures/obsidian/embed-paste";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
 import { createVaultEvents } from "../../../fixtures/obsidian/vault-events";
 
 const TestTFile = TFile as unknown as new (path: string, size?: number) => TFile;
@@ -45,11 +45,23 @@ describe("Obsidian copied-embed dialog", () => {
 
       const readMotion = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].readMotion;
       const workScheduler = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].workScheduler;
+      const observeMotion = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].observeMotion;
       expect(readMotion).toBeTypeOf("function");
+      expect(observeMotion).toBeTypeOf("function");
+      const onMotion = vi.fn();
+      const releaseMotion = observeMotion?.(onMotion);
+      test.settings.updateDeviceSettings((settings) => ({ ...settings, motion: "reduced" }));
+      expect(readMotion?.()).toBe("reduced");
+      expect(onMotion).toHaveBeenCalledOnce();
+      releaseMotion?.();
+      test.settings.updateDeviceSettings((settings) => ({ ...settings, motion: "full" }));
+      expect(readMotion?.()).toBe("full");
+      expect(onMotion).toHaveBeenCalledOnce();
       expect(workScheduler).toBeTypeOf("function");
       expect(chooseInkbookAction).toHaveBeenCalledWith(test.app, {
         signal,
         readMotion,
+        observeMotion,
         workScheduler,
         title: "Paste Inkbook embed",
         description: "Choose how this drawing should be inserted.",
@@ -260,12 +272,11 @@ function createCompositionHarness(
       }),
     },
   } as unknown as App;
-  const settings = {
-    getVaultSettings: () => ({
-      ...createBuiltInSettings(),
-      filePlacement: options.placement ?? { mode: "obsidian-attachment-folder" as const },
-    }),
-  } as InkbookSettingsStore;
+  const settings = createTestSettingsStore();
+  vi.spyOn(settings, "getVaultSettings").mockImplementation(() => ({
+    ...createBuiltInSettings(),
+    filePlacement: options.placement ?? { mode: "obsidian-attachment-folder" as const },
+  }));
   return {
     app,
     get duplicatePath() {

@@ -2,9 +2,9 @@ import { expect, it, vi } from "vitest";
 import type { Bounds } from "../../../../src/domain/geometry/primitives";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
-import { createMountedElement } from "../../../../src/rendering/scene/mounted-element";
-import { SceneElementFades } from "../../../../src/rendering/scene/scene-element-fades";
-import * as fadeStyle from "../../../../src/rendering/scene/element-fade-style";
+import { createMountedElement } from "../../../../src/rendering/scene/content/mounted-element";
+import { SceneElementFades } from "../../../../src/rendering/scene/presentation/scene-element-fades";
+import * as fadeStyle from "../../../../src/rendering/scene/presentation/element-fade-style";
 import { FakeDocument, fakeNode, fakeRectangleRecord } from "./fakes";
 import { FakeSceneStore } from "./fakes";
 import {
@@ -14,6 +14,7 @@ import {
 } from "../../../fixtures/rendering/scene";
 import { createPublicationScene } from "../../../fixtures/rendering/scene-publication";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
+import { activeFade, activeFades, fadeFrames } from "../../../fixtures/rendering/scene-fades";
 import { arrow } from "../../domain/schema/fixtures";
 
 const VIEWPORT: Bounds = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
@@ -61,7 +62,7 @@ it.each(["clear", "retarget", "missing", "unmount", "interrupt", "release"] as c
         expect(write.mock.calls[0]![1]).toBe(0);
       }
       fades.flush(Infinity, () => 0);
-      expect(visible.node.style.getPropertyValue("animation")).toBe("");
+      expect(activeFades(visible.node)).toHaveLength(0);
       if (cancellation !== "release") expect(node.style.opacity).toBe("0");
       fades.releaseMounted(entry.id);
       fades.releaseMounted(visible.entry.id);
@@ -151,9 +152,9 @@ it.each(["offscreen", "return", "interrupt"] as const)(
     });
     fades.setMembership(entry.id, "exit", 400, record.bounds);
     expect(fades.flush(0, () => 0)).toBe(true);
-    expect(paths[0]!.style.animation).toContain("opacity-exit");
-    expect(paths[0]!.style.animation).toContain("--inkbook-history-duration-0, 400ms)");
-    expect(paths[1]!.style.getPropertyValue("animation")).toBe("");
+    expect(activeFade(paths[0]!).options.duration).toBe(400);
+    expect(fadeFrames(paths[0]!)[1]).toContain("--inkbook-history-active-0");
+    expect(activeFades(paths[1]!)).toHaveLength(0);
     expect(reserve.node.style.getPropertyValue("opacity")).toBe("");
     fades.setViewport(VIEWPORT);
     if (retarget === "return") fades.setViewport(record.bounds);
@@ -161,12 +162,11 @@ it.each(["offscreen", "return", "interrupt"] as const)(
     expect(fades.flush(Infinity, () => 10)).toBe(false);
     if (retarget === "interrupt") {
       expect(fades.isExitReady(entry.id, 10)).toBe(true);
-      expect(svg.style.getPropertyValue("--inkbook-history-duration-0")).toBe("0ms");
+      expect(svg.style.getPropertyValue("--inkbook-history-active-0")).toBe("0");
       expect(paths[1]!.style.opacity).toBe("0");
       expect(gate).toHaveBeenCalledWith(0, true);
     } else {
-      expect(paths[1]!.style.animation).toContain("--inkbook-history-duration-0, 400ms)");
-      expect(paths[1]!.style.animation).toContain("opacity-exit");
+      expect(fadeFrames(paths[1]!)[1]).toContain("--inkbook-history-active-0");
       expect(paths.every((node) => node.style.getPropertyValue("opacity") === "")).toBe(true);
       expect(fades.isExitReady(entry.id, 409)).toBe(false);
       expect(fades.isExitReady(entry.id, 410)).toBe(true);
@@ -176,7 +176,7 @@ it.each(["offscreen", "return", "interrupt"] as const)(
     fades.releaseMounted(reserve.entry.id);
     fades.releaseMounted(entry.id);
     expect(gate).toHaveBeenLastCalledWith(0, false);
-    expect(svg.style.getPropertyValue("--inkbook-history-duration-0")).toBe("");
+    expect(svg.style.getPropertyValue("--inkbook-history-active-0")).toBe("");
     expect(fades.memoryUsage()).toBe(0);
   },
 );
@@ -195,15 +195,16 @@ it.each(["enter", "exit"] as const)(
         expect(write.mock.calls[0]![1]).toBe(0);
         expect(node.style.opacity).toBe("0");
       }
-      expect(node.style.getPropertyValue("animation")).toBe("");
+      expect(activeFades(node)).toHaveLength(0);
       expect(readiness).toHaveBeenLastCalledWith(entry.id, 0);
       for (const bounds of [VIEWPORT, { ...OFFSCREEN, minY: 100 }, undefined]) {
         fades.setMembership(entry.id, direction, 400, bounds);
         fades.flush(Infinity, () => 10);
-        expect(node.style.animation).toContain(`${direction} var(`);
-        expect(node.style.animation).toContain("400ms)");
-        if (direction === "enter") expect(node.style.animation).toContain("reverse both");
+        const frames = fadeFrames(node);
+        expect(activeFade(node).options.duration).toBe(400);
+        if (direction === "enter") expect(frames?.[0]).toContain("--inkbook-history-active-");
         else {
+          expect(frames?.[1]).toContain("--inkbook-history-active-");
           expect(fades.isExitReady(entry.id, 409)).toBe(false);
           expect(fades.isExitReady(entry.id, 410)).toBe(true);
         }
@@ -252,13 +253,13 @@ it("cleans an already admitted exit on an offscreen Undo without a replacement a
   fades.setMembership(entry.id, "enter", 400, VIEWPORT);
   fades.flush(Infinity, () => 10);
   expect(fades.isExitReady(entry.id, 10)).toBe(true);
-  expect(node.style.getPropertyValue("animation")).toBe("");
+  expect(activeFades(node)).toHaveLength(0);
   expect(node.style.getPropertyValue("opacity")).toBe("");
   expect(fades.memoryUsage()).toBe(0);
   fades.setViewport(VIEWPORT);
   fades.setMembership(entry.id, "exit", 400, VIEWPORT);
   fades.flush(Infinity, () => 20);
-  expect(node.style.animation).toContain("400ms)");
+  expect(activeFade(node).options.duration).toBe(400);
   expect(fades.isExitReady(entry.id, 419)).toBe(false);
   expect(fades.isExitReady(entry.id, 420)).toBe(true);
   fades.releaseMounted(entry.id);
@@ -277,7 +278,7 @@ it.each([false, true])(
     fades.setViewport(OFFSCREEN);
     if (retarget) fades.setMembership(entry.id, "enter", 400, VIEWPORT);
     fades.flush(Infinity, () => 0);
-    expect(node.style.getPropertyValue("animation")).toBe("");
+    expect(activeFades(node)).toHaveLength(0);
     expect(node.style.getPropertyValue("visibility")).toBe("");
     expect(fades.memoryUsage()).toBe(0);
   },
@@ -293,12 +294,12 @@ it.each(["preview", "element-preview", "motion", "unmeasured"] as const)(
     if (state === "unmeasured") fades.setViewport(undefined);
     fades.setMembership(entry.id, "exit", 400, OFFSCREEN);
     fades.flush(Infinity, () => 0);
-    expect(node.style.animation).toContain("400ms)");
+    expect(activeFade(node).options.duration).toBe(400);
     fades.set([entry.id], null);
     entry.appliedPreviewTransform = null;
     fades.setViewport(VIEWPORT);
     fades.set([entry.id], 400, { deadline: Infinity, now: () => 20 });
-    expect(node.style.animation).toContain("opacity-exit 400ms");
+    expect(activeFade(node).options.duration).toBe(400);
     expect(fades.isExitReady(entry.id, 419)).toBe(false);
     expect(fades.isExitReady(entry.id, 420)).toBe(true);
     fades.release();
@@ -355,7 +356,7 @@ it("admits a full exit when a queued offscreen removal enters the clip before it
   fades.setMembership(entry.id, "exit", 400, OFFSCREEN);
   fades.setViewport(OFFSCREEN);
   fades.flush(Infinity, () => 10);
-  expect(node.style.animation).toContain("400ms)");
+  expect(activeFade(node).options.duration).toBe(400);
   expect(node.style.getPropertyValue("opacity")).toBe("");
   expect(fades.isExitReady(entry.id, 409)).toBe(false);
   expect(fades.isExitReady(entry.id, 410)).toBe(true);
@@ -378,9 +379,9 @@ it("keeps concealed reserve exits hidden across scroll while bounded physical cl
     replaySceneMembership(renderer, store, records, "exit");
     scheduler.runNext();
     expect(renderer.mountedCount).toBe(36);
-    expect(content.nodes.every((node) => node.style.opacity === "0" && !node.style.animation)).toBe(
-      true,
-    );
+    expect(
+      content.nodes.every((node) => node.style.opacity === "0" && activeFades(node).length === 0),
+    ).toBe(true);
     renderer.setViewport({ height: 1_000, left: 0, top: 1_000, width: 2_048 });
     expect(content.nodes.every((node) => node.style.opacity === "0")).toBe(true);
     scheduler.runAll();

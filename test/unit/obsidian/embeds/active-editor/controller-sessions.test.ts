@@ -19,10 +19,10 @@ import {
 } from "../../../../../src/obsidian/embeds/active-editor/controller-helpers";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import { ActiveEditorHistoryTraversal } from "../../../../../src/obsidian/embeds/active-editor/history-traversal";
-import { ActiveEditorLongPressScheduler } from "../../../../../src/obsidian/embeds/active-editor/long-press";
+import { ActiveEditorLongPressScheduler } from "../../../../../src/obsidian/embeds/active-editor/input/long-press";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { ActiveEditorStyleSession } from "../../../../../src/obsidian/embeds/active-editor/style-session";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/vault-document-session";
+import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/vault-document-session";
 import {
   axisConnectedLine,
   coordinateSystem,

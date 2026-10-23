@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import * as arrangement from "../../../src/domain/store/arrangement-mutation";
+import * as arrangement from "../../../src/domain/store/mutations/arrangement-mutation";
 import type { RenderBand } from "../../../src/domain/commands/render-bands";
 import { observeSchemaArray } from "./schema-array-work";
 

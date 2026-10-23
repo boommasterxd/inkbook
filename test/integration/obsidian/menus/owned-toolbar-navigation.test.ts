@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { type App, Platform } from "obsidian";
@@ -6,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EditorToolbarMenuSession } from "../../../../src/obsidian/menus/editor-toolbar-menu";
 import { createOwnedMenuFactory } from "../../../../src/obsidian/menus/owned-menu-factory";
-import { createPhoneSheetHost } from "../../../../src/obsidian/menus/phone-sheet-host";
+import { createPhoneSheetHost } from "../../../../src/obsidian/menus/panels/phone-sheet-host";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import {
   createEditorToolbarMenuOptions,
@@ -111,6 +112,7 @@ describe.each(["desktop", "tablet", "phone"])("owned toolbar navigation on %s", 
       }
       vi.mocked(callback).mockImplementation(() => {
         expect(document.querySelector('[role="menu"]')).toBeNull();
+        expect(document.activeElement).toBe(options.anchor);
         expect(nativeModalStack(document)).toHaveLength(0);
       });
       clickAction(title);
@@ -122,4 +124,31 @@ describe.each(["desktop", "tablet", "phone"])("owned toolbar navigation on %s", 
       expect(vi.getTimerCount()).toBe(0);
     },
   );
+
+  it.each([
+    ["Erase all", "erase-all"],
+    ["Delete embed", "delete-embed"],
+  ] as const)("hands keyboard focus back before opening %s confirmation", async (title, action) => {
+    const { options, session } = fixture();
+    const callback = vi.mocked(options.handlers.onOverflowAction);
+    callback.mockImplementation(() => {
+      expect(document.querySelector('[role="menu"]')).toBeNull();
+      expect(nativeModalStack(document)).toHaveLength(0);
+      expect(document.activeElement).toBe(options.anchor);
+    });
+    const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (element) => element.textContent === title,
+    );
+    expect(item).toBeDefined();
+    item!.focus();
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    expect(callback).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledExactlyOnceWith(action);
+    expect(options.onClosed).toHaveBeenCalledOnce();
+    session.close("immediate");
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

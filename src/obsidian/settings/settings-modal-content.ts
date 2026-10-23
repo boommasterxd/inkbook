@@ -1,12 +1,12 @@
 import { SettingGroup, type App } from "obsidian";
 
-import type { AdaptivePanelContentLifecycle } from "../menus/panel-page";
+import type { AdaptivePanelContentLifecycle } from "../menus/panels/panel-page";
 
-import { createObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
+import { createObsidianHotkeyAccess } from "./shortcuts/obsidian-hotkey-conflicts";
 import { SettingDefinitionRenderer } from "./setting-definition-renderer";
 import type { InkbookSettingTab } from "./setting-tab";
-import { mountShortcutSettingsView } from "./shortcut-definitions";
-import type { ShortcutSettingsView } from "./shortcut-view";
+import { mountShortcutSettingsView } from "./shortcuts/shortcut-definitions";
+import type { ShortcutSettingsView } from "./shortcuts/shortcut-view";
 import type { InkbookSettingsStore } from "./storage";
 
 export type InkbookSettingsView = "settings" | "shortcuts";
@@ -74,6 +74,12 @@ export class SettingsModalContent {
   }
 
   #renderPreservingScroll(): void {
+    const update = (): void => this.#replacePreservingScroll();
+    if (this.#options.lifecycle === undefined) update();
+    else this.#options.lifecycle.mutateLayout(update);
+  }
+
+  #replacePreservingScroll(): void {
     const scrollTop = this.#container.scrollTop;
     const focused = this.#container.ownerDocument.activeElement;
     const row = this.#container.contains(focused)
@@ -81,7 +87,6 @@ export class SettingsModalContent {
       : undefined;
     const identity = row?.dataset.inkbookSettingIdentity;
     const restoreRow = focused === row;
-    this.#options.lifecycle?.prepareLayoutChange();
     this.#render();
     if (identity !== undefined) {
       const replacement = [
@@ -100,7 +105,6 @@ export class SettingsModalContent {
       target?.focus({ preventScroll: true });
     }
     this.#container.scrollTop = scrollTop;
-    this.#options.lifecycle?.requestLayout();
   }
 
   #disposeControls(): void {

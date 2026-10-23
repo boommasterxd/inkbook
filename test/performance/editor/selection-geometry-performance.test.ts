@@ -1,18 +1,18 @@
 import { translatedStroke } from "../../../src/domain/geometry/stroke-position";
 import * as geometryPrimitives from "../../../src/domain/geometry/primitives";
 import * as strokeCenters from "../../../src/domain/geometry/stroke-path";
-import { strokePrimitiveSteps } from "../../../src/editor/selection/stroke-selection-geometry";
-import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
-import * as pressureIntersections from "../../../src/domain/geometry/pressure-boundary-intersections";
-import { pressurePaintAdditionSteps } from "../../../src/editor/selection/pressure-paint-additions";
+import { strokePrimitiveSteps } from "../../../src/editor/selection/query/stroke-selection-geometry";
+import * as pressureUnion from "../../../src/domain/geometry/pressure/pressure-union";
+import * as pressureIntersections from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
+import { pressurePaintAdditionSteps } from "../../../src/editor/selection/query/pressure-paint-additions";
 import { describe, expect, it, vi } from "vitest";
 
-import * as pressureWindows from "../../../src/domain/geometry/pressure-window";
-import * as pressureCapsuleSelection from "../../../src/domain/geometry/pressure-capsule-selection";
-import * as pressureJoins from "../../../src/domain/geometry/pressure-joins";
+import * as pressureWindows from "../../../src/domain/geometry/pressure/pressure-window";
+import * as pressureCapsuleSelection from "../../../src/domain/geometry/pressure/pressure-capsule-selection";
+import * as pressureJoins from "../../../src/domain/geometry/pressure/pressure-joins";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import * as geometryBounds from "../../../src/domain/geometry/public";
-import { LassoSelectionSession } from "../../../src/editor/selection/lasso-selection-session";
+import { LassoSelectionSession } from "../../../src/editor/selection/query/lasso-selection-session";
 import {
   selectionOverlayContainsPoint,
   selectionOverlayGeometry,
@@ -21,17 +21,17 @@ import {
   createRectangleSelectionArea,
   elementMatchesSelectionAreaSteps,
   createLassoSelectionArea,
-} from "../../../src/editor/selection/selection-area";
+} from "../../../src/editor/selection/query/selection-area";
 import { indexedStroke } from "../../fixtures/editor/stroke";
-import { visitVisibleElementPrimitives } from "../../../src/editor/selection/element-selection-geometry";
-import { elementContainsPoint } from "../../../src/editor/selection/hit-test";
+import { visitVisibleElementPrimitives } from "../../../src/editor/selection/query/element-selection-geometry";
+import { elementContainsPoint } from "../../../src/editor/selection/query/hit-test";
 import { coordinateSystem, rectangle } from "../../unit/domain/geometry/fixtures";
 import {
   primitiveEnclosedByAreaSteps,
   primitiveTouchesAreaSteps,
-} from "../../../src/editor/selection/selection-area-primitives";
+} from "../../../src/editor/selection/query/selection-area-primitives";
 import { maximumStroke } from "./maximum-stroke-fixture";
-import { indexedLassoEdges } from "../../../src/editor/selection/lasso-edge-index";
+import { indexedLassoEdges } from "../../../src/editor/selection/query/lasso-edge-index";
 
 it("charges and cancels dense lasso bin construction and duplicate query visits", () => {
   const points = Array.from({ length: 512 }, (_, index) => ({

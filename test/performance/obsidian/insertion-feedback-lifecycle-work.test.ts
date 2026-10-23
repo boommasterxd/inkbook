@@ -1,9 +1,8 @@
 import type { Vault } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { WorkspaceRuntimeLifecycle } from "../../../src/obsidian/embeds/workspace-runtime-lifecycle";
+import { WorkspaceRuntimeLifecycle } from "../../../src/obsidian/embeds/workspace/workspace-runtime-lifecycle";
 import { InkbookFeedbackManager } from "../../../src/obsidian/feedback";
-import { TRANSITION_DURATIONS } from "../../../src/rendering/motion/transitions";
 import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 import { FakePresentationElement } from "../../fixtures/obsidian/presentation-dom";
 import { ManualHost } from "../../fixtures/scheduling/manual-frame-host";
@@ -37,6 +36,63 @@ function createHarness() {
     });
   };
   return { host, lifecycle, ownerWindow, persistStroke, root };
+}
+
+function observeNativeFeedbackAnimations() {
+  const previousAnimate = Object.getOwnPropertyDescriptor(
+    FakePresentationElement.prototype,
+    "animate",
+  );
+  const previousGetAnimations = Object.getOwnPropertyDescriptor(
+    FakePresentationElement.prototype,
+    "getAnimations",
+  );
+  const animations: Array<{
+    cancel: ReturnType<typeof vi.fn>;
+    onfinish: (() => void) | null;
+  }> = [];
+  const animate = vi.fn((_keyframes: unknown, _options: unknown) => {
+    const animation = {
+      cancel: vi.fn(),
+      currentTime: 0,
+      finished: new Promise<void>(() => undefined),
+      onfinish: null as (() => void) | null,
+    };
+    animations.push(animation);
+    return animation as unknown as Animation;
+  });
+  Object.defineProperty(FakePresentationElement.prototype, "animate", {
+    configurable: true,
+    value: animate,
+  });
+  const getAnimations = vi.fn(
+    () =>
+      animations.filter(
+        (animation) => animation.cancel.mock.calls.length === 0,
+      ) as unknown as Animation[],
+  );
+  Object.defineProperty(FakePresentationElement.prototype, "getAnimations", {
+    configurable: true,
+    value: getAnimations,
+  });
+  return {
+    animate,
+    animations,
+    getAnimations,
+    cleanup: (): void => {
+      if (previousAnimate === undefined)
+        Reflect.deleteProperty(FakePresentationElement.prototype, "animate");
+      else Object.defineProperty(FakePresentationElement.prototype, "animate", previousAnimate);
+      if (previousGetAnimations === undefined)
+        Reflect.deleteProperty(FakePresentationElement.prototype, "getAnimations");
+      else
+        Object.defineProperty(
+          FakePresentationElement.prototype,
+          "getAnimations",
+          previousGetAnimations,
+        );
+    },
+  };
 }
 
 describe("insertion feedback ownership", () => {
@@ -77,37 +133,51 @@ describe("insertion feedback ownership", () => {
     "releases the insertion callback and action listener on feedback %s",
     (operation) => {
       const h = createHarness();
-      const manager = new InkbookFeedbackManager();
-      let release = (): void => undefined;
-      const undo = vi.fn(() => false);
-      const handle = manager.showInPresentation(h.root as unknown as HTMLElement, {
-        actions: [{ id: "undo-insertion", run: undo }],
-        code: "handwriting-inserted",
-        onClosed: () => release(),
-        timeoutMs: 5_000,
-      });
-      const button = h.root.getElementsByTagName("button").item(0)!;
-      const dismiss = vi.fn(() => handle.close());
-      release = h.lifecycle.queueAutoActivation("drawing.svg", h.ownerWindow, vi.fn(), dismiss);
-      if (operation === "replacement") {
-        manager.showInPresentation(h.root as unknown as HTMLElement, {
-          code: "drawing-load-failed",
+      const native = operation === "expiry" ? observeNativeFeedbackAnimations() : undefined;
+      try {
+        const manager = new InkbookFeedbackManager();
+        let release = (): void => undefined;
+        const undo = vi.fn(() => false);
+        const handle = manager.showInPresentation(h.root as unknown as HTMLElement, {
+          actions: [{ id: "undo-insertion", run: undo }],
+          code: "handwriting-inserted",
+          onClosed: () => release(),
+          timeoutMs: 5_000,
         });
-      } else if (operation === "dispose") manager.dispose();
-      else {
-        // Expiry starts the existing exit motion; its completion releases ownership.
-        h.host.timer(5_000);
-        h.host.timer(TRANSITION_DURATIONS.conditionalToolbarControl);
+        const button = h.root.getElementsByTagName("button").item(0)!;
+        const dismiss = vi.fn(() => handle.close());
+        release = h.lifecycle.queueAutoActivation("drawing.svg", h.ownerWindow, vi.fn(), dismiss);
+        if (operation === "replacement") {
+          manager.showInPresentation(h.root as unknown as HTMLElement, {
+            code: "drawing-load-failed",
+          });
+        } else if (operation === "dispose") manager.dispose();
+        else {
+          // Expiry starts the existing exit motion; its completion releases ownership.
+          h.host.timer(5_000);
+          expect(native?.animate).toHaveBeenCalledTimes(2);
+          expect(native?.getAnimations).toHaveBeenCalled();
+          expect(native?.animate).toHaveBeenLastCalledWith(
+            expect.objectContaining({ scale: [1, 0] }),
+            expect.objectContaining({ duration: 220 }),
+          );
+          expect(native?.animations[0]?.cancel).toHaveBeenCalled();
+          expect(button.listeners.get("click")?.size).toBe(1);
+          native?.animations[1]?.onfinish?.();
+          expect(native?.animations[1]?.cancel).toHaveBeenCalled();
+        }
+        expect(button.listeners.get("click")?.size).toBe(0);
+        button.dispatch("click");
+        h.persistStroke("drawing.svg");
+        expect(undo).not.toHaveBeenCalled();
+        expect(dismiss).not.toHaveBeenCalled();
+        handle.close("immediate");
+        manager.dispose();
+        h.lifecycle.dispose();
+        expect(h.host.pendingTimers).toBe(0);
+      } finally {
+        native?.cleanup();
       }
-      expect(button.listeners.get("click")?.size).toBe(0);
-      button.dispatch("click");
-      h.persistStroke("drawing.svg");
-      expect(undo).not.toHaveBeenCalled();
-      expect(dismiss).not.toHaveBeenCalled();
-      handle.close("immediate");
-      manager.dispose();
-      h.lifecycle.dispose();
-      expect(h.host.pendingTimers).toBe(0);
     },
   );
 });

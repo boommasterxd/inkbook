@@ -1,0 +1,477 @@
+import type { RenderBand } from "../../commands/render-bands";
+import type { StoreBands } from "./band-snapshots";
+import type { InkElementV1 } from "../../schema/public";
+import type { UniformSpatialIndex } from "../../spatial/index";
+
+import {
+  addConnectionReferences,
+  removeConnectionReferences,
+  assertResolvedConnections,
+  isAnchorTarget,
+  isConnectable,
+} from "../records/connections";
+import {
+  classifyReplacementSteps,
+  elementsEqualSteps,
+  hasConnections,
+} from "../records/element-comparison";
+import type { DocumentCapacity, DocumentCapacityPatch } from "../records/document-capacity";
+import type { PreparedSpatialMutation } from "../../spatial/mutation-preparation";
+import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
+import { buildIdSet, collectDesiredElements } from "./mutation-elements";
+import {
+  prepareMutationOrder,
+  mutationAffectedIds,
+  mutationOrderPreserved,
+  type MutationOrder,
+} from "./mutation-order";
+import { prepareMutationHistory } from "./mutation-history";
+import {
+  ownedHistoryPayloadBytes,
+  prepareOwnedMutationHistory,
+  restoreOwnedRecordSteps,
+  type OwnedMutationHistory,
+  type OwnedMutationReplay,
+} from "./owned-mutation-history";
+import {
+  assignRecordVersions,
+  createOwnedInitialRecordSteps,
+  createOwnedReplacementRecordSteps,
+  nextRecordVersion,
+} from "../records/record-factory";
+import { requireElementRecord } from "../records/record-access";
+import { resolveHistoryReplay } from "./owned-history-replay";
+import type {
+  AppliedElementMutation,
+  DeltaDomain,
+  ElementMutation,
+  ElementRank,
+  ElementRecord,
+  EndpointReference,
+  StoreDelta,
+  StoreSliceScheduler,
+} from "../types";
+
+export interface ElementMutationPlan {
+  readonly applied: AppliedElementMutation;
+  readonly bands: StoreBands;
+  readonly capacityPatch: DocumentCapacityPatch;
+  readonly delta: StoreDelta;
+  readonly indexPatch: PreparedSpatialMutation;
+  readonly ranks: Map<string, ElementRank>;
+  readonly ranksComplete?: boolean;
+  readonly records: Map<string, ElementRecord | null>;
+  readonly ownedHistory: OwnedMutationHistory | undefined;
+  readonly requested: ElementMutation;
+}
+
+export interface MutationSource {
+  readonly capacity: DocumentCapacity;
+  readonly index: UniformSpatialIndex<string>;
+  readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
+  readonly geometryVersion: number;
+  readonly paintVersion: number;
+  readonly ranks?: ReadonlyMap<string, ElementRank>;
+  readonly records: ReadonlyMap<string, ElementRecord>;
+  readonly reverseConnections: ReadonlyMap<string, readonly EndpointReference[]>;
+}
+
+export async function planElementMutation(
+  source: MutationSource,
+  requested: ElementMutation,
+  sourceScheduler: StoreSliceScheduler,
+  replay?: AppliedElementMutation,
+  proof: Readonly<{
+    trustedRemoval?: boolean;
+    ownedReplay?: OwnedMutationReplay;
+    trustedOrder?: MutationOrder;
+    retainedOnly?: boolean;
+  }> = {},
+): Promise<ElementMutationPlan | "cancelled" | null> {
+  const { trustedRemoval, ownedReplay, trustedOrder, retainedOnly } =
+    normalizedMutationProof(proof);
+  const scheduler = new MutationPreparationScheduler(sourceScheduler);
+  const direction = requested;
+  const resolved = resolveHistoryReplay(direction, replay, ownedReplay);
+  const ownedRecords = resolved.records;
+  requested = resolved.requested;
+  const sourceRanks = source.ranks ?? (await buildRanks(source.bands, scheduler));
+  if (sourceRanks === "cancelled") return sourceRanks;
+  const removeIds = await buildIdSet(requested.removeIds ?? [], scheduler);
+  if (removeIds === "cancelled") return removeIds;
+  const collected = await collectDesiredElements(
+    source,
+    requested.elements ?? [],
+    removeIds,
+    scheduler,
+    ownedRecords,
+    ownedReplay?.retainedMutation !== undefined,
+  );
+  if (collected === "cancelled") return collected;
+  const { desired, explicit } = collected;
+  const records = await buildRecords(source, desired, removeIds, scheduler, ownedRecords);
+  if (records === "cancelled") return records;
+  const order = await prepareMutationOrder(source, requested, records, sourceRanks, scheduler, {
+    trustedRemoval,
+    ownedReplay,
+    ownedRecords,
+    removeIds,
+    trustedOrder,
+  });
+  if (order === "cancelled") return order;
+  const { bands, ranks } = order;
+  const delta = await buildDelta(source, sourceRanks, records, order, scheduler);
+  if (delta === "cancelled") return delta;
+  if (delta === null) return null;
+  const derived = await buildDerivedState(
+    source,
+    records,
+    delta,
+    sourceScheduler,
+    retainedConnectionProof(ownedReplay, ownedRecords),
+  );
+  if (derived === "cancelled") return derived;
+  const { capacityPatch, indexPatch } = derived;
+  const ownedHistory = await prepareOwnedMutationHistory(
+    delta,
+    scheduler,
+    ownedReplay?.history,
+    replay !== undefined,
+    order.relativeOrderPreserved,
+  );
+  if (ownedHistory === "cancelled") return ownedHistory;
+  const applied = await prepareMutationHistory(
+    {
+      requested:
+        ownedReplay?.retainedMutation !== undefined
+          ? requested
+          : historyDirection(requested, bands, explicit, removeIds, trustedRemoval),
+      source,
+      desired,
+      removeIds,
+      ownedPayloadBytes: ownedHistoryPayloadBytes(ownedHistory),
+      dirtyBands: order.dirtyBands,
+      retainedReplay: ownedReplay?.retainedMutation !== undefined,
+      retainedOnly,
+    },
+    scheduler,
+    replay,
+    trustedRemoval,
+  );
+  if (applied === "cancelled") return applied;
+  return {
+    applied,
+    bands,
+    capacityPatch,
+    delta,
+    indexPatch,
+    ranks,
+    ranksComplete: order.ranksComplete === true,
+    records,
+    ownedHistory,
+    requested: direction,
+  };
+}
+
+function normalizedMutationProof(proof: Parameters<typeof planElementMutation>[4]) {
+  return {
+    trustedRemoval: proof?.trustedRemoval ?? false,
+    ownedReplay: proof?.ownedReplay,
+    trustedOrder: proof?.trustedOrder,
+    retainedOnly: proof?.retainedOnly ?? false,
+  };
+}
+
+function historyDirection(
+  requested: ElementMutation,
+  bands: StoreBands,
+  elements: readonly InkElementV1[],
+  removeIds: ReadonlySet<string>,
+  trustedRemoval: boolean,
+): ElementMutation {
+  return trustedRemoval ? requested : { bands, elements, removeIds: [...removeIds] };
+}
+
+function retainedConnectionProof(
+  replay: OwnedMutationReplay | undefined,
+  records: ReadonlyMap<string, ElementRecord> | undefined,
+): ReadonlyMap<string, ElementRecord> | undefined {
+  return replay?.retainedMutation === undefined ? undefined : records;
+}
+
+async function buildRecords(
+  source: MutationSource,
+  desired: ReadonlyMap<string, InkElementV1>,
+  removeIds: ReadonlySet<string>,
+  scheduler: MutationPreparationScheduler,
+  ownedRecords?: ReadonlyMap<string, ElementRecord>,
+): Promise<Map<string, ElementRecord | null> | "cancelled"> {
+  const records = new Map<string, ElementRecord | null>();
+  for (const id of removeIds) {
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    requireElementRecord(source.records, id);
+    records.set(id, null);
+  }
+  const versions = await mutationVersions(source, desired, scheduler);
+  if (versions === "cancelled") return versions;
+  for (const [id, element] of desired) {
+    const current = source.records.get(id);
+    const pendingRecord = scheduler.run(
+      buildRecord(element, current, ownedRecords?.get(id), versions),
+    );
+    const record = pendingRecord instanceof Promise ? await pendingRecord : pendingRecord;
+    if (record === "cancelled") return record;
+    if (record !== current) records.set(id, record);
+  }
+  return records;
+}
+
+async function mutationVersions(
+  source: MutationSource,
+  desired: ReadonlyMap<string, InkElementV1>,
+  scheduler: MutationPreparationScheduler,
+): Promise<{ geometryVersion: number; paintVersion: number } | "cancelled"> {
+  let changesGeometry = false;
+  let changesPaint = false;
+  for (const [id, element] of desired) {
+    const current = source.records.get(id);
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    if (current === undefined) {
+      changesGeometry = true;
+      changesPaint = true;
+    } else {
+      const pendingDomains = scheduler.run(classifyReplacementSteps(current.element, element));
+      const domains = pendingDomains instanceof Promise ? await pendingDomains : pendingDomains;
+      if (domains === "cancelled") return domains;
+      changesGeometry ||= domains.includes("geometry");
+      changesPaint ||= domains.includes("paint");
+    }
+  }
+  const geometryVersion = changesGeometry
+    ? nextRecordVersion(source.geometryVersion, "geometryVersion")
+    : source.geometryVersion;
+  const paintVersion = changesPaint
+    ? nextRecordVersion(source.paintVersion, "paintVersion")
+    : source.paintVersion;
+  return { geometryVersion, paintVersion };
+}
+
+function* buildRecord(
+  element: InkElementV1,
+  current: ElementRecord | undefined,
+  owned: ElementRecord | undefined,
+  versions: Readonly<{ geometryVersion: number; paintVersion: number }>,
+): Generator<void, ElementRecord> {
+  const restored = yield* restoreOwnedRecordSteps(element, current, owned, versions);
+  if (restored !== undefined) return restored;
+  if (current === undefined) {
+    const initial = yield* createOwnedInitialRecordSteps(element);
+    return assignRecordVersions(initial, versions.geometryVersion, versions.paintVersion);
+  }
+  if (yield* elementsEqualSteps(current.element, element)) return current;
+  const domains = yield* classifyReplacementSteps(current.element, element);
+  return yield* createOwnedReplacementRecordSteps(
+    element,
+    current,
+    domains.includes("geometry") ? versions.geometryVersion : current.geometryVersion,
+    domains.includes("paint") ? versions.paintVersion : current.paintVersion,
+  );
+}
+
+async function buildRanks(
+  bands: Readonly<Record<RenderBand, readonly string[]>>,
+  scheduler: MutationPreparationScheduler,
+): Promise<Map<string, ElementRank> | "cancelled"> {
+  const ranks = new Map<string, ElementRank>();
+  for (const band of ["highlight", "content"] as const) {
+    for (let rank = 0; rank < bands[band].length; rank += 1) {
+      if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+      ranks.set(bands[band][rank]!, { band, rank });
+    }
+  }
+  return ranks;
+}
+
+async function buildDelta(
+  source: MutationSource,
+  sourceRanks: ReadonlyMap<string, ElementRank>,
+  records: ReadonlyMap<string, ElementRecord | null>,
+  order: MutationOrder,
+  scheduler: MutationPreparationScheduler,
+): Promise<StoreDelta | "cancelled" | null> {
+  const changes: Array<StoreDelta["changes"][number]> = [];
+  let geometryVersion = source.geometryVersion;
+  let paintVersion = source.paintVersion;
+  for (const id of mutationAffectedIds(records, order)) {
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
+    if (id === null) continue;
+    const before = source.records.get(id) ?? null;
+    const after = records.has(id) ? (records.get(id) ?? null) : before;
+    const pendingDomains =
+      before === null || after === null
+        ? membershipDomains(before, after)
+        : scheduler.run(
+            mutationDomains(
+              before,
+              after,
+              sourceRanks.get(id),
+              order.ranks.get(id) ?? sourceRanks.get(id),
+              mutationOrderPreserved(order, sourceRanks, id),
+            ),
+          );
+    const domains = pendingDomains instanceof Promise ? await pendingDomains : pendingDomains;
+    if (domains === "cancelled") return domains;
+    if (domains.length === 0) continue;
+    if (after !== null) {
+      geometryVersion = Math.max(geometryVersion, after.geometryVersion);
+      paintVersion = Math.max(paintVersion, after.paintVersion);
+    }
+    changes.push(Object.freeze({ after, before, domains: Object.freeze(domains), id }));
+  }
+  if (changes.length === 0) return null;
+  return Object.freeze({
+    changes: Object.freeze(changes),
+    dirtyBands: Object.freeze(order.dirtyBands),
+    geometryVersion,
+    paintVersion,
+  });
+}
+
+/** Membership changes need neither rank comparisons nor a cooperative producer. */
+function membershipDomains(
+  before: ElementRecord | null,
+  after: ElementRecord | null,
+): DeltaDomain[] {
+  if (before === null && after !== null) {
+    const domains: DeltaDomain[] = ["geometry", "paint", "order", "visibility"];
+    if (hasConnections(after.element)) domains.push("connection");
+    return domains;
+  }
+  if (before !== null && after === null) {
+    const domains: DeltaDomain[] = ["order", "visibility"];
+    if (hasConnections(before.element) || isAnchorTarget(before.element))
+      domains.push("connection");
+    return domains;
+  }
+  return [];
+}
+
+function* mutationDomains(
+  before: ElementRecord,
+  after: ElementRecord,
+  previousRank: ElementRank | undefined,
+  nextRank: ElementRank | undefined,
+  relativeOrderPreserved: boolean,
+): Generator<void, DeltaDomain[]> {
+  if (nextRank === undefined) return [];
+  const domains =
+    before === after
+      ? []
+      : yield* classifyReplacementSteps(before.element, after.element as InkElementV1);
+  if (
+    previousRank?.band !== nextRank.band ||
+    (!relativeOrderPreserved && previousRank.rank !== nextRank.rank)
+  ) {
+    domains.push("order");
+  }
+  return domains;
+}
+
+async function buildDerivedState(
+  source: MutationSource,
+  records: ReadonlyMap<string, ElementRecord | null>,
+  delta: StoreDelta,
+  scheduler: StoreSliceScheduler,
+  ownedRecords?: ReadonlyMap<string, ElementRecord>,
+): Promise<
+  { capacityPatch: DocumentCapacityPatch; indexPatch: PreparedSpatialMutation } | "cancelled"
+> {
+  const work = new MutationPreparationScheduler(scheduler);
+  const removed: string[] = [];
+  const inserted: Array<{ id: string; bounds: ElementRecord["bounds"] }> = [];
+  let hasPrevious = false;
+  let hasNext = false;
+  const lookup = (id: string) =>
+    (records.has(id) ? records.get(id) : source.records.get(id))?.element;
+  for (const change of delta.changes) {
+    if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
+    if (change.before === change.after) continue;
+    if (change.after !== null) {
+      hasNext = true;
+      assertAffectedConnections(change.id, change.after, source, records, lookup, ownedRecords);
+      if (change.before === null || change.domains.includes("geometry")) {
+        inserted.push({ id: change.id, bounds: change.after.bounds });
+      }
+    }
+    if (change.before !== null) {
+      hasPrevious = true;
+      if (change.after === null || change.domains.includes("geometry")) removed.push(change.id);
+    }
+  }
+  const capacity = await source.capacity.prepareTimeSliced(
+    hasPrevious ? mutationCapacityRecords(delta, "before") : [],
+    hasNext ? mutationCapacityRecords(delta, "after") : [],
+    scheduler,
+  );
+  if (capacity === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
+  const indexPatch = await source.index.prepareMutationTimeSliced(removed, inserted, scheduler);
+  if (indexPatch === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
+  return {
+    capacityPatch: capacity.patch,
+    indexPatch,
+  };
+}
+
+/** Capacity keeps its removal-before-insertion semantics without staging record arrays. */
+function* mutationCapacityRecords(
+  delta: StoreDelta,
+  direction: "before" | "after",
+): Generator<ElementRecord | null> {
+  for (const change of delta.changes) {
+    // Null slots preserve shared-budget admission for absent and order-only records.
+    yield change.before === change.after ? null : change[direction];
+  }
+}
+
+function assertAffectedConnections(
+  id: string,
+  after: ElementRecord,
+  source: MutationSource,
+  records: ReadonlyMap<string, ElementRecord | null>,
+  lookup: (id: string) => ElementRecord["element"] | undefined,
+  ownedRecords?: ReadonlyMap<string, ElementRecord>,
+): void {
+  assertUnverifiedConnections(after, lookup, ownedRecords);
+  for (const { linearId } of source.reverseConnections.get(id) ?? []) {
+    const dependent = records.has(linearId) ? records.get(linearId) : source.records.get(linearId);
+    if (dependent != null) assertUnverifiedConnections(dependent, lookup, ownedRecords);
+  }
+}
+
+function assertUnverifiedConnections(
+  record: ElementRecord,
+  lookup: (id: string) => ElementRecord["element"] | undefined,
+  ownedRecords: ReadonlyMap<string, ElementRecord> | undefined,
+): void {
+  const element = record.element;
+  if (!isConnectable(element)) return;
+  // Collection already checked this exact immutable destination against the
+  // final membership. Record preparation only wraps it with current versions.
+  if (ownedRecords?.get(element.id)?.element !== element) {
+    assertResolvedConnections(element, lookup);
+  }
+}
+
+export function commitMutationDerivedState(
+  capacity: DocumentCapacity,
+  reverseConnections: Map<string, EndpointReference[]>,
+  plan: ElementMutationPlan,
+): void {
+  plan.indexPatch.commit();
+  capacity.commit(plan.capacityPatch);
+  for (const { before, after } of plan.delta.changes) {
+    if (before === after) continue;
+    if (before !== null) removeConnectionReferences(reverseConnections, before.element);
+    if (after !== null) addConnectionReferences(reverseConnections, after.element);
+  }
+}

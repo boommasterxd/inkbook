@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/chunked-input-codec";
+import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/input/chunked-input-codec";
 import {
   createOneStrokeWorkerSnapshot,
   createWorkerBridgeClient,

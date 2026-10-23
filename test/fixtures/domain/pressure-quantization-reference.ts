@@ -1,5 +1,5 @@
 import type { PointV1 } from "../../../src/domain/schema/types";
-import type { PressureTriangle } from "../../../src/domain/geometry/pressure-additions";
+import type { PressureTriangle } from "../../../src/domain/geometry/pressure/pressure-additions";
 
 /** Independent grid enumeration with pre-optimization arithmetic and earliest-removal semantics. */
 export function referencePressureQuantization(closed: readonly PointV1[], grid: number) {

@@ -8,7 +8,7 @@ import {
 } from "../../../fixtures/persistence/navigation-export";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { scenePathDeferred } from "../../../fixtures/persistence/scene-path-progress";
-import { SessionScenePaths } from "../../../../src/obsidian/embeds/session-scene-paths";
+import { SessionScenePaths } from "../../../../src/obsidian/embeds/document-session/session-scene-paths";
 import { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/coordinator";
 import {
   AutosaveDocumentFixture,

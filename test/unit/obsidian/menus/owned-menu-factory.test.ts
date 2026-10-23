@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { type App, Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createOwnedMenuFactory } from "../../../../src/obsidian/menus/owned-menu-factory";
-import { createPhoneSheetHost } from "../../../../src/obsidian/menus/phone-sheet-host";
+import { createPhoneSheetHost } from "../../../../src/obsidian/menus/panels/phone-sheet-host";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { nativeModalStack, simulateNativeModalBack } from "../../../adapters/obsidian/settings";
 
@@ -66,6 +67,28 @@ function expectReleased(test: ReturnType<typeof fixture>, element: HTMLElement):
 }
 
 describe("owned wide menus", () => {
+  it("finishes a running exit when motion is reduced", async () => {
+    const test = fixture();
+    const element = show(test);
+    test.menu.close();
+    expect(element.isConnected).toBe(true);
+    test.anchor.dataset.inkbookMotion = "reduced";
+    await Promise.resolve();
+    expectReleased(test, element);
+  });
+
+  it("uses live duration when motion is enabled after opening", async () => {
+    const test = fixture();
+    test.anchor.dataset.inkbookMotion = "reduced";
+    const element = show(test);
+    test.anchor.dataset.inkbookMotion = "full";
+    await Promise.resolve();
+    test.menu.close();
+    expect(element.isConnected).toBe(true);
+    vi.advanceTimersByTime(120);
+    expectReleased(test, element);
+  });
+
   it.each([false, true])("opens once with 120ms motion on tablet=%s", (tablet) => {
     Platform.isMobile = tablet;
     const test = fixture();
@@ -97,8 +120,8 @@ describe("owned wide menus", () => {
     computed.opacity = "0.4";
     const reads = vi.spyOn(window, "getComputedStyle").mockReturnValue(computed);
     test.menu.close();
-    expect(element.style.getPropertyValue("--inkbook-wide-menu-exit-scale")).toBe("0.975");
-    expect(element.style.getPropertyValue("--inkbook-wide-menu-exit-opacity")).toBe("0.4");
+    expect(element.style.scale).toBe("0.975");
+    expect(element.style.opacity).toBe("0.4");
     expect(element.inert).toBe(true);
     vi.advanceTimersByTime(60);
     test.menu.close();

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
@@ -147,7 +148,7 @@ describe("empty-canvas toolbar actions", () => {
 });
 
 describe("Style AdaptivePanel", () => {
-  it("marks mobile table steppers so host tap feedback clears after release", () => {
+  it("keeps mobile table stepper actions usable after touch release", () => {
     Platform.isMobile = true;
     const configured = connectedOptions({
       styleControls: [
@@ -166,16 +167,13 @@ describe("Style AdaptivePanel", () => {
 
     const steppers = document.querySelectorAll(".inkbook-menu-stepper-button");
     expect(steppers).toHaveLength(2);
-    expect(
-      [...steppers].every((stepper) =>
-        stepper.classList.contains("inkbook-menu-stepper-button-touch"),
-      ),
-    ).toBe(true);
-    const decrement = steppers[0]!;
-    decrement.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    expect(decrement.classList).toContain("inkbook-menu-stepper-button-pressed");
-    decrement.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-    expect(decrement.classList).not.toContain("inkbook-menu-stepper-button-pressed");
+    const increment = steppers[1] as HTMLButtonElement;
+    increment.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }),
+    );
+    increment.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch" }));
+    increment.click();
+    expect(configured.handlers.onStyleChange).toHaveBeenCalledWith("table-columns", 3);
     session.close("immediate");
   });
 

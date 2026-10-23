@@ -4,10 +4,10 @@ import type { StrokeCenter } from "../../../src/domain/geometry/stroke-path";
 import type {
   PreparedPressureGeometryPort,
   PressureWindow,
-} from "../../../src/domain/geometry/prepared-pressure-geometry";
-import * as radii from "../../../src/domain/geometry/pressure-radius";
-import * as unions from "../../../src/domain/geometry/pressure-union";
-import { pressurePaintAdditionSteps } from "../../../src/editor/selection/pressure-paint-additions";
+} from "../../../src/domain/geometry/pressure/prepared-pressure-geometry";
+import * as radii from "../../../src/domain/geometry/pressure/pressure-radius";
+import * as unions from "../../../src/domain/geometry/pressure/pressure-union";
+import { pressurePaintAdditionSteps } from "../../../src/editor/selection/query/pressure-paint-additions";
 
 afterEach(() => vi.restoreAllMocks());
 

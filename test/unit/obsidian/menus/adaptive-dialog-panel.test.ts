@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AdaptivePanelSession } from "../../../../src/obsidian/menus/adaptive-panel";
+import { AdaptivePanelSession } from "../../../../src/obsidian/menus/panels/adaptive-panel";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 
 beforeEach(() => {
@@ -70,7 +71,7 @@ describe("adaptive dialog reuse", () => {
     const contentHeight = vi.spyOn(scroll, "scrollHeight", "get");
     for (const height of [700, 560, 420, 300, 180]) {
       contentHeight.mockReturnValue(height);
-      fixture.session.requestLayout();
+      fixture.session.mutateLayout(() => undefined);
       vi.advanceTimersToNextFrame();
       expect(scroll.style.blockSize).toBe("");
     }
@@ -125,8 +126,7 @@ describe("adaptive dialog reuse", () => {
     if (scroll === null) throw new Error("Missing sheet scroll owner.");
     vi.spyOn(scroll, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 360, 100));
     vi.spyOn(scroll, "scrollHeight", "get").mockReturnValue(180);
-    fixture.session.prepareLayoutChange();
-    fixture.session.requestLayout();
+    fixture.session.mutateLayout(() => undefined);
     vi.advanceTimersToNextFrame();
     expect(fixture.surface.dataset.presence).toBe("entering");
     expect(scroll.style.blockSize).toBe("");

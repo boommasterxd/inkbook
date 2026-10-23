@@ -1,4 +1,4 @@
-import { ChunkedInkbookInputParser } from "../../../src/persistence/serialization/chunked-input-codec";
+import { ChunkedInkbookInputParser } from "../../../src/persistence/serialization/input/chunked-input-codec";
 import type {
   DocumentCodecResult,
   ParsedInkbookDocument,

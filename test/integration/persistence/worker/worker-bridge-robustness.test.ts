@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 
 import * as sampleCopy from "../../../../src/domain/elements/runtime-sample-copy";
-import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
-import { encodeUnlockBatchChunked } from "../../../../src/persistence/worker/runtime/wire-codec";
-import { SessionScenePaths } from "../../../../src/obsidian/embeds/session-scene-paths";
+import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/bridge/worker-bridge";
+import { encodeUnlockBatchChunked } from "../../../../src/persistence/worker/runtime/wire/wire-codec";
+import { SessionScenePaths } from "../../../../src/obsidian/embeds/document-session/session-scene-paths";
 import {
   createWorkerBridgeHarness,
   createWorkerBridgeClient,

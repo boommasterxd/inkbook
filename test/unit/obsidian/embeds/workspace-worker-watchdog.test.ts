@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-import { createWorkspaceDocumentRuntimes } from "../../../../src/obsidian/embeds/workspace-runtime-workers";
+import { createWorkspaceDocumentRuntimes } from "../../../../src/obsidian/embeds/workspace/workspace-runtime-workers";
 import * as documentRuntime from "../../../../src/persistence/worker/runtime/public";
-import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
+import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/bridge/worker-bridge";
 import { TestWorkerEndpoint } from "../../../fixtures/persistence/worker-endpoint";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 

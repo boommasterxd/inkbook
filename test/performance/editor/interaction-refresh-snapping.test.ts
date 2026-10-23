@@ -2,7 +2,7 @@ import { movingSnapLine } from "./connected-input-fixture";
 import { describe, expect, it, vi } from "vitest";
 
 import { createBuiltInSettings } from "../../../src/domain/settings/defaults";
-import { resolvePointAngleSnap } from "../../../src/editor/selection/angular-snap";
+import { resolvePointAngleSnap } from "../../../src/editor/selection/transform/angular-snap";
 import { ElementStore } from "../../../src/domain/store/public";
 import {
   ConnectedSelectionPreviewSession,
@@ -12,7 +12,7 @@ import {
   findSnapCandidate,
   SnapCandidateScratch,
 } from "../../../src/editor/snapping/snap-candidate";
-import { CreationPreview } from "../../../src/obsidian/embeds/active-editor/creation-preview";
+import { CreationPreview } from "../../../src/obsidian/embeds/active-editor/previews/creation-preview";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import { creationPreviewRenderer } from "../../fixtures/obsidian/active-editor";

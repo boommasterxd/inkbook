@@ -12,7 +12,7 @@ import {
   GestureAwareSliceScheduler,
 } from "../../../../../src/persistence/worker/runtime/public";
 import { createProductionDocumentRuntime } from "../../../../../src/persistence/worker/runtime/production-document-runtime";
-import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
+import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/model/document-model";
 import {
   executor,
   expectClipboardEncodeSuccess,

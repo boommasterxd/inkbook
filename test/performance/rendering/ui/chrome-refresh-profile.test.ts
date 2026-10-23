@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { Window as HappyWindow } from "happy-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
@@ -10,6 +11,7 @@ import { ActiveEditorChromeState } from "../../../../src/obsidian/embeds/active-
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { ActiveEditorStyleSession } from "../../../../src/obsidian/embeds/active-editor/style-session";
 import { mountEditorChrome } from "../../../../src/rendering/ui/mount-editor-chrome";
+import { createChromePalette } from "../../../../src/rendering/ui/chrome-palette";
 import { createEditorChromeProps } from "../../../fixtures/editor-chrome";
 import { activeEditorStoreHistory } from "../../../fixtures/obsidian/active-editor";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
@@ -27,6 +29,50 @@ beforeEach(() => {
 });
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz React chrome profile`, () => {
+  it("bounds native palette rasterization to theme changes and releases its single pixel", () => {
+    const ownerWindow = new HappyWindow() as unknown as Window & {
+      readonly HTMLCanvasElement: typeof HTMLCanvasElement;
+    };
+    const element = ownerWindow.document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+    ownerWindow.document.body.append(element);
+    let color = "color-mix(in oklch, black 6.7%, transparent)";
+    const style = vi
+      .spyOn(ownerWindow, "getComputedStyle")
+      .mockImplementation(() => ({ color }) as CSSStyleDeclaration);
+    const pixels = vi.fn(() => ({ data: new Uint8ClampedArray([0, 0, 0, 17]) }));
+    const context = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      fillStyle: "",
+      getImageData: pixels,
+    };
+    const openContext = vi
+      .spyOn(ownerWindow.HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const palette = createChromePalette(element);
+    try {
+      const initial = palette.read();
+      expect(initial).toBeDefined();
+      expect(pixels).toHaveBeenCalledTimes(8);
+      for (let update = 0; update < 12; update += 1) expect(palette.read()).toBe(initial);
+      expect(pixels).toHaveBeenCalledTimes(8);
+      color = "color-mix(in oklch, white 12%, transparent)";
+      expect(palette.read()).not.toBe(initial);
+      expect(pixels).toHaveBeenCalledTimes(16);
+      expect(openContext).toHaveBeenCalledOnce();
+      const canvas = openContext.mock.instances[0] as HTMLCanvasElement;
+      expect(canvas.width * canvas.height).toBe(1);
+      palette.dispose();
+      expect(canvas.width * canvas.height).toBe(0);
+      expect(element.childElementCount).toBe(0);
+    } finally {
+      palette.dispose();
+      style.mockRestore();
+      openContext.mockRestore();
+      ownerWindow.close();
+    }
+  });
+
   it("skips semantically unchanged chrome renders during continuous input", () => {
     const ownerDocument = {} as Document;
     const initial = createEditorChromeProps(ownerDocument);

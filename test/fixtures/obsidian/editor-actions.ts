@@ -2,7 +2,7 @@ import { vi } from "vitest";
 import { ActiveEditorActions } from "../../../src/obsidian/embeds/active-editor/controller-actions";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import type { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
-import type { EditableDocumentModel } from "../../../src/obsidian/embeds/vault-document-session";
+import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/vault-document-session";
 import { workSchedulerFromFrames } from "./work-scheduler";
 
 export function activeActions(

@@ -2,10 +2,10 @@ import { expect, it, vi } from "vitest";
 import { UniformSpatialIndex } from "../../../../src/domain/spatial";
 import { SpatialMap } from "../../../../src/domain/spatial/spatial-map";
 import type { CellColumns } from "../../../../src/domain/spatial/index-state";
-import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility-state";
-import { NavigationPathPreparation } from "../../../../src/rendering/scene/navigation-path-preparation";
+import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility/visibility-state";
+import { NavigationPathPreparation } from "../../../../src/rendering/scene/content/navigation-path-preparation";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
-import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
 import type { SceneElementRecord, SceneStorePort } from "../../../../src/rendering/scene/types";
 import {
   FakeSceneStore,

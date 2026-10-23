@@ -8,7 +8,7 @@ import {
   WorkerDocumentRuntimePort,
   type WorkerBridgeEndpoint,
   type WorkerDocumentRuntimePortOptions,
-} from "./worker-bridge";
+} from "./bridge/worker-bridge";
 import { DOCUMENT_WORKER_GZIP } from "./worker-source";
 import type { DocumentRuntimePort } from "./types";
 

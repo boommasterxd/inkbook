@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { type App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { AdaptivePanelSession } from "../../../../src/obsidian/menus/adaptive-panel";
-import { createPhoneSheetHost } from "../../../../src/obsidian/menus/phone-sheet-host";
+import { AdaptivePanelSession } from "../../../../src/obsidian/menus/panels/adaptive-panel";
+import { createPhoneSheetHost } from "../../../../src/obsidian/menus/panels/phone-sheet-host";
 import { installPhoneDialogTestLifecycle } from "../../../fixtures/obsidian/dialog";
 import { nativeModalStack, simulateNativeModalBack } from "../../../adapters/obsidian/settings";
 

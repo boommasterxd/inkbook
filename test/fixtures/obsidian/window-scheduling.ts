@@ -1,9 +1,9 @@
 import {
   OwnerWindowRegistry,
   resolveFallbackWindow,
-} from "../../../src/obsidian/embeds/owner-window-registry";
-import { WorkspaceRefreshProfiles } from "../../../src/obsidian/embeds/workspace-refresh-profiles";
-import { createWorkspaceDocumentRuntimes } from "../../../src/obsidian/embeds/workspace-runtime-workers";
+} from "../../../src/obsidian/embeds/presentation/owner-window-registry";
+import { WorkspaceRefreshProfiles } from "../../../src/obsidian/embeds/workspace/workspace-refresh-profiles";
+import { createWorkspaceDocumentRuntimes } from "../../../src/obsidian/embeds/workspace/workspace-runtime-workers";
 import { ManualHost } from "../scheduling/manual-frame-host";
 
 export function observedSchedulingWindow() {

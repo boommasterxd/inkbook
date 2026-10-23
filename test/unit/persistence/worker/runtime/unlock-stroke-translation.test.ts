@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import * as strokeSamples from "../../../../../src/domain/elements/public";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
-import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
+import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/model/document-model";
 import { executor, snapshot, STROKE } from "./fixtures";
 
 it("exports the first translated stroke after validated unlock without losing sample proofs", async () => {

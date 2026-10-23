@@ -120,10 +120,6 @@ export function createTab(
   );
 }
 
-export function setPlatformMobile(isMobile: boolean): void {
-  platform.isMobile = isMobile;
-}
-
 export function renders(
   group: SettingDefinitionGroup<SettingsControlKey>,
 ): SettingDefinitionRender[] {

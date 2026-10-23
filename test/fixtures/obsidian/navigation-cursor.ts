@@ -1,7 +1,7 @@
-import type { NavigationCursorLayout } from "../../../src/obsidian/embeds/active-editor/navigation-layout";
+import type { NavigationCursorLayout } from "../../../src/obsidian/embeds/active-editor/navigation/navigation-layout";
 import type { InputState } from "../../../src/editor/input";
 import { OUTER_PAGE_WIDTH } from "../../../src/editor/zoom/zoom";
-import { ActiveEditorNavigation } from "../../../src/obsidian/embeds/active-editor/navigation";
+import { ActiveEditorNavigation } from "../../../src/obsidian/embeds/active-editor/navigation/navigation";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene";
 import type { SceneToolCursorFrame } from "../../../src/rendering/scene/tool-cursor";

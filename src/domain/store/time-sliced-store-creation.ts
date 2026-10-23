@@ -4,11 +4,14 @@ import type { ElementValidationDerivation, InkElementV1 } from "../schema/public
 import { validateRuntimeInkElementV1Steps } from "../schema/element-validation";
 import { UniformSpatialIndex } from "../spatial/index";
 
-import { assertResolvedConnections, connectionReferences } from "./connections";
-import { DocumentCapacity } from "./document-capacity";
-import { createOwnedInitialRecordSteps, createOwnedValidatedInitialRecord } from "./record-factory";
-import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
-import { prepareRuntimeElement } from "./runtime-element-preparation";
+import { assertResolvedConnections, connectionReferences } from "./records/connections";
+import { DocumentCapacity } from "./records/document-capacity";
+import {
+  createOwnedInitialRecordSteps,
+  createOwnedValidatedInitialRecord,
+} from "./records/record-factory";
+import { MutationPreparationScheduler } from "./mutations/mutation-preparation-scheduler";
+import { prepareRuntimeElement } from "./records/runtime-element-preparation";
 import { StoreAppendBuilder } from "./store-append-builder";
 import type { ElementRecord, EndpointReference, StoreSliceScheduler } from "./types";
 

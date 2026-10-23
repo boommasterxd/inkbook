@@ -2,14 +2,14 @@ import { expect, it, vi } from "vitest";
 import type { InkSnapshotV1 } from "../../../../../src/domain/schema/public";
 import { validateRuntimeInkSnapshotV1 } from "../../../../../src/domain/schema/snapshot-validation";
 import { IncrementalDocumentSerializer } from "../../../../../src/persistence/serialization/public";
-import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
+import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/model/document-model";
 import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/runtime/document-runtime";
 import { createProductionDocumentRuntime } from "../../../../../src/persistence/worker/runtime/production-document-runtime";
-import { adoptTransferredStrokeSamples } from "../../../../../src/persistence/worker/runtime/runtime-elements";
+import { adoptTransferredStrokeSamples } from "../../../../../src/persistence/worker/runtime/model/runtime-elements";
 import {
   decodeRuntimeRequestChunked,
   encodeRuntimeRequest,
-} from "../../../../../src/persistence/worker/runtime/wire-codec";
+} from "../../../../../src/persistence/worker/runtime/wire/wire-codec";
 import { hydrateRuntimeStroke } from "../../../../fixtures/domain/runtime-stroke-store";
 import { createTestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
 import { executor, snapshot, STROKE } from "./fixtures";

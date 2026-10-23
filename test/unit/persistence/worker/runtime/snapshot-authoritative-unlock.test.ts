@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import * as paths from "../../../../../src/domain/geometry/element-path";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/document-codec";
-import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
+import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/model/document-model";
 import { createAllElementSnapshot } from "../../serialization/fixtures";
 import { rewriteDocumentMetadata } from "../../../../fixtures/persistence/metadata-rewrite";
 

@@ -30,10 +30,6 @@
   text-align: start;
 }
 
-.inkbook-menu-background-options .inkbook-menu-background-choice:hover {
-  background: var(--background-modifier-hover);
-}
-
 .inkbook-menu-background-choice-icon,
 .inkbook-menu-background-choice-icon svg,
 .inkbook-menu-background-choice-check,
@@ -95,7 +91,7 @@
 
 .inkbook-menu-spacing-labels {
   block-size: 1em;
-  color: var(--text-faint);
+  color: var(--text-normal);
   font-size: var(--font-ui-smaller);
   margin-inline: calc(var(--slider-thumb-width, 18px) / 2);
   overflow: visible;
@@ -202,18 +198,6 @@
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
   z-index: 1;
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
-  .inkbook-menu-background-options
-  .inkbook-menu-background-choice:hover {
-  background: var(--interactive-normal);
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
-  .inkbook-menu-background-options
-  .inkbook-menu-background-choice:active {
-  background: var(--interactive-hover);
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])

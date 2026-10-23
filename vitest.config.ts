@@ -2,21 +2,21 @@ import { fileURLToPath } from "node:url";
 
 import { configDefaults, defineConfig } from "vitest/config";
 
-const projectRoot = fileURLToPath(new URL(".", import.meta.url));
+const projectRoot = fileURLToPath(new URL("./", import.meta.url));
 const exposeGarbageCollector = process.execArgv.includes("--expose-gc");
 const serialCapacityTests = [
-  "test/integration/rendering/scene/history-contour-reuse.test.ts",
+  "test/integration/rendering/scene/content/history-contour-reuse.test.ts",
   "test/unit/domain/geometry/table-column-change.test.ts",
   "test/unit/persistence/documents/path-data-validator.test.ts",
   "test/unit/persistence/documents/safe-svg-validator.test.ts",
   "test/unit/persistence/saving/trusted-svg-output.test.ts",
   "test/unit/persistence/serialization/chunked-output-sha256.test.ts",
   "test/unit/persistence/serialization/pressure-stroke-capacity.test.ts",
-  "test/unit/persistence/worker/runtime/runtime-input-hash.test.ts",
+  "test/unit/persistence/worker/runtime/model/runtime-input-hash.test.ts",
 ];
 
 export default defineConfig({
-  cacheDir: fileURLToPath(new URL("./.vitest-cache/", import.meta.url)),
+  cacheDir: fileURLToPath(new URL(".vitest-cache/", import.meta.url)),
   resolve: {
     alias: {
       obsidian: fileURLToPath(new URL("./test/adapters/obsidian/plugin.ts", import.meta.url)),

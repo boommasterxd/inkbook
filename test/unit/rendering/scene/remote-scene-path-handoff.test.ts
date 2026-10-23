@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { RemoteScenePaths } from "../../../../src/rendering/scene/remote-scene-paths";
-import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import { RemoteScenePaths } from "../../../../src/rendering/scene/content/remote-scene-paths";
+import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
 import type { SceneElementRecord } from "../../../../src/rendering/scene/types";
 import type {
   PreparedScenePathEntry,

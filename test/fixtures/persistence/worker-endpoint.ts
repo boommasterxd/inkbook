@@ -1,5 +1,5 @@
-import { type WorkerBridgeEndpoint } from "../../../src/persistence/worker/runtime/worker-bridge";
-import { type WorkerHostEndpoint } from "../../../src/persistence/worker/runtime/worker-host";
+import { type WorkerBridgeEndpoint } from "../../../src/persistence/worker/runtime/bridge/worker-bridge";
+import { type WorkerHostEndpoint } from "../../../src/persistence/worker/runtime/bridge/worker-host";
 
 export class TestWorkerEndpoint implements WorkerBridgeEndpoint, WorkerHostEndpoint {
   peer: TestWorkerEndpoint | null = null;

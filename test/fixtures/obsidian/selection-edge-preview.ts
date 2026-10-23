@@ -1,6 +1,6 @@
 import { vi } from "vitest";
-import type { SelectionEdgeAutoScroller } from "../../../src/obsidian/embeds/active-editor/selection-edge-scroll";
-import type { SelectionEdgeDragPort } from "../../../src/obsidian/embeds/active-editor/selection-preview-contracts";
+import type { SelectionEdgeAutoScroller } from "../../../src/obsidian/embeds/active-editor/previews/selection-edge-scroll";
+import type { SelectionEdgeDragPort } from "../../../src/obsidian/embeds/active-editor/previews/selection-preview-contracts";
 
 export function createSelectionEdgePreview(
   scroller: Pick<SelectionEdgeAutoScroller, "finish" | "update">,

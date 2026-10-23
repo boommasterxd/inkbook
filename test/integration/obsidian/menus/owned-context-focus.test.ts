@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { type App, Platform } from "obsidian";
@@ -6,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { openContextMenu } from "../../../../src/obsidian/menus/context-menu";
 import { createOwnedMenuFactory } from "../../../../src/obsidian/menus/owned-menu-factory";
-import { createPhoneSheetHost } from "../../../../src/obsidian/menus/phone-sheet-host";
+import { createPhoneSheetHost } from "../../../../src/obsidian/menus/panels/phone-sheet-host";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { nativeModalStack, simulateNativeModalBack } from "../../../adapters/obsidian/settings";
 

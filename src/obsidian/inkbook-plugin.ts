@@ -1,4 +1,4 @@
-import { createPhoneSheetHost } from "./menus/phone-sheet-host";
+import { createPhoneSheetHost } from "./menus/panels/phone-sheet-host";
 import {
   registerDocumentStatusBar,
   resolveDocumentStatusPane,
@@ -14,7 +14,7 @@ import {
 } from "obsidian";
 
 import { confirmInkbookAction } from "./dialogs/action-dialog";
-import { showHeadlessRecoveryNotice } from "./embeds/recovery-notice";
+import { showHeadlessRecoveryNotice } from "./embeds/workspace/recovery-notice";
 
 import {
   createInsertionContextMenuExtension,
@@ -46,6 +46,7 @@ import {
   InkbookSettingTab,
 } from "./settings";
 import { ColorSchemeBroadcaster } from "./theme/color-scheme";
+import type { MotionPreference } from "../rendering/motion/transitions";
 import { ObsidianVaultFolderAdapter } from "./vault";
 
 export async function activateInkbookPlugin(
@@ -55,7 +56,7 @@ export async function activateInkbookPlugin(
   const settings = await loadSettings(plugin);
   if (!isActive()) return undefined;
   const unregisterIcons = registerInkbookIcons();
-  const feedback = new InkbookFeedbackManager();
+  const feedback = createFeedbackManager(settings);
   const lifetime = new AbortController();
   let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
   const workScheduler = schedulerFromRuntime(() => runtimeForSettings);
@@ -65,12 +66,7 @@ export async function activateInkbookPlugin(
     getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
   });
   let layoutReady = false;
-  const embedActions = createObsidianEmbedActions(
-    plugin.app,
-    observeMetadataReadiness(plugin),
-    () => settings.getDeviceSettings().motion,
-    workScheduler,
-  );
+  const embedActions = createPluginEmbedActions(plugin, settings, workScheduler);
   plugin.register(() => embedActions.dispose());
   const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, settingsModal);
   runtimeForSettings = runtime;
@@ -106,7 +102,8 @@ export async function activateInkbookPlugin(
     insertionCommand,
   );
   const lifecycle = new PresentationLifecycleRegistry();
-  const { documentRecognition, ports } = createEmbedIntegration(plugin, lifecycle, scheme, runtime);
+  const integration = createEmbedIntegration(plugin, lifecycle, scheme, runtime, settings);
+  const { documentRecognition, ports } = integration;
   const embedPaste = createObsidianEmbedPasteController(
     plugin.app,
     settings,
@@ -220,6 +217,7 @@ function createRuntime(
           description: "Remove every element from this drawing. You can undo this action.",
           confirmLabel: "Erase all",
           readMotion: () => settings.getDeviceSettings().motion,
+          observeMotion: (listener) => settings.subscribeDeviceSettings(listener),
           workScheduler: (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
           destructive: true,
           signal,
@@ -259,6 +257,7 @@ function createEmbedIntegration(
   lifecycle: PresentationLifecycleRegistry,
   scheme: ColorSchemeBroadcaster,
   runtime: ObsidianWorkspaceRuntime,
+  settings: InkbookSettingsStore,
 ) {
   const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault, {
     deferUntilLayoutReady: true,
@@ -286,6 +285,8 @@ function createEmbedIntegration(
       resolveDocument: createObsidianDocumentResolver(plugin.app),
       scheme,
       sessions: runtime,
+      subscribeMotionPreference: (listener: (motion: MotionPreference) => void) =>
+        settings.subscribeDeviceSettings((value) => listener(value.motion)),
     },
   };
 }
@@ -463,4 +464,25 @@ function observeMetadataReadiness(plugin: Plugin): () => boolean {
     }),
   );
   return () => resolved;
+}
+
+function createFeedbackManager(settings: InkbookSettingsStore): InkbookFeedbackManager {
+  return new InkbookFeedbackManager({
+    readMotion: () => settings.getDeviceSettings().motion,
+    observeMotion: (listener) => settings.subscribeDeviceSettings(listener),
+  });
+}
+
+function createPluginEmbedActions(
+  plugin: Plugin,
+  settings: InkbookSettingsStore,
+  workScheduler: Parameters<typeof createObsidianEmbedActions>[3],
+): ReturnType<typeof createObsidianEmbedActions> {
+  return createObsidianEmbedActions(
+    plugin.app,
+    observeMetadataReadiness(plugin),
+    () => settings.getDeviceSettings().motion,
+    workScheduler,
+    (listener) => settings.subscribeDeviceSettings(listener),
+  );
 }

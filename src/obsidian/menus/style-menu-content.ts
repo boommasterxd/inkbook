@@ -1,4 +1,3 @@
-import { Platform } from "obsidian";
 import { outlineDashPattern } from "../../domain/geometry/element-path";
 
 import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
@@ -307,20 +306,21 @@ function createStepper(
 ): HTMLElement {
   const { field, body } = createField(options, control);
   body.classList.add("inkbook-menu-stepper");
-  let current = control.value;
   const { valueField, value } = createNumberValueField(body, control);
+  value.defaultValue = value.value;
   value.inputMode = "numeric";
   const decrement = createStepperButton(options, "minus", `Decrease ${control.label}`);
   const increment = createStepperButton(options, "plus", `Increase ${control.label}`);
   const commit = (next: number) => {
-    current = clamp(Math.round(next), control.min, control.max);
+    const current = clamp(Math.round(next), control.min, control.max);
     value.value = formatNumber(current);
+    value.defaultValue = value.value;
     options.onChange(control.id, current);
   };
   value.addEventListener("change", () => {
     const next = valueInRange(value, value, options.numberInputMode);
     if (next === undefined) {
-      value.value = current === null ? "" : formatNumber(current);
+      value.value = value.defaultValue;
       options.onInvalidValue?.(control.id);
       return;
     }
@@ -331,8 +331,12 @@ function createStepper(
     event.preventDefault();
     value.blur();
   });
-  decrement.addEventListener("click", () => commit((current ?? control.min) - control.step));
-  increment.addEventListener("click", () => commit((current ?? control.min) + control.step));
+  const currentValue = (): number =>
+    Number.isFinite(value.valueAsNumber)
+      ? value.valueAsNumber
+      : Number(value.defaultValue || control.min);
+  decrement.addEventListener("click", () => commit(currentValue() - control.step));
+  increment.addEventListener("click", () => commit(currentValue() + control.step));
   body.append(decrement, valueField, increment);
   return field;
 }
@@ -345,27 +349,9 @@ function createStepperButton(
   const button = menuDomWindow(options.ownerDocument, "style menu").createEl("button");
   button.type = "button";
   button.className = "inkbook-menu-stepper-button";
-  addMobileStepperFeedback(button);
   button.setAttribute("aria-label", label);
   options.renderIcon(button, iconId);
   return button;
-}
-
-function addMobileStepperFeedback(button: HTMLButtonElement): void {
-  if (!Platform.isMobile) return;
-  button.classList.add("inkbook-menu-stepper-button-touch");
-  const clearPressed = (): void => {
-    button.classList.remove("inkbook-menu-stepper-button-pressed");
-  };
-  button.addEventListener("pointerdown", () => {
-    button.classList.add("inkbook-menu-stepper-button-pressed");
-  });
-  button.addEventListener("pointerup", clearPressed);
-  button.addEventListener("pointercancel", clearPressed);
-  button.addEventListener("pointerleave", clearPressed);
-  button.addEventListener("lostpointercapture", clearPressed);
-  button.addEventListener("click", clearPressed);
-  button.addEventListener("blur", clearPressed);
 }
 
 function createToggle(
@@ -391,7 +377,9 @@ function createToggle(
   input.checked = control.checked;
   input.setAttribute("aria-label", control.label);
   input.addEventListener("change", () => options.onChange(control.id, input.checked));
-  switchControl.createSpan({ cls: "inkbook-menu-switch-track" });
+  switchControl.createSpan({ cls: "inkbook-menu-switch-track" }).createSpan({
+    cls: "inkbook-menu-switch-thumb",
+  });
   return label;
 }
 

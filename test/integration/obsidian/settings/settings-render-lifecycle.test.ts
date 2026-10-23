@@ -3,8 +3,8 @@ import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-schedul
 
 import { Setting, SettingGroup } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { toolSectionDefinition } from "../../../../src/obsidian/settings/tool-section";
-import { ShortcutSettingsView } from "../../../../src/obsidian/settings/shortcut-view";
+import { toolSectionDefinition } from "../../../../src/obsidian/settings/definitions/tool-section";
+import { ShortcutSettingsView } from "../../../../src/obsidian/settings/shortcuts/shortcut-view";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
 
@@ -14,8 +14,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("builds tool controls from current defaults before measuring the first expansion and retains them", async () => {
-  const { container, trigger, panel, readDefaults, store, cleanup } = createTool();
+it("builds tool controls from current defaults on first expansion and retains them", async () => {
+  const { container, trigger, readDefaults, store, cleanup } = createTool();
   expect(container.querySelector("input")).toBeNull();
   expect(readDefaults).not.toHaveBeenCalled();
   await store.updateVaultSettings((settings) => {
@@ -23,12 +23,8 @@ it("builds tool controls from current defaults before measuring the first expans
     return settings;
   });
   store.updateDeviceSettings((settings) => ({ ...settings, motion: "full" }));
-  const measure = vi.spyOn(panel, "getBoundingClientRect").mockImplementation(() => {
-    expect(container.querySelector<HTMLInputElement>("input[type=number]")?.value).toBe("24");
-    return new DOMRect(0, 0, 300, 120);
-  });
   trigger.click();
-  expect(measure).toHaveBeenCalled();
+  expect(container.querySelector<HTMLInputElement>("input[type=number]")?.value).toBe("24");
   const input = container.querySelector("input");
   trigger.click();
   trigger.click();

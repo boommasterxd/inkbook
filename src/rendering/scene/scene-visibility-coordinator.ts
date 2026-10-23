@@ -13,19 +13,19 @@ import type {
   SceneStoreDelta,
   SceneViewport,
 } from "./types";
-import type { SceneVisibilityState } from "./visibility-state";
-import type { SceneTransformPreviewController } from "./transform-preview-controller";
-import type { SceneElementPreviews } from "./scene-element-previews";
+import type { SceneVisibilityState } from "./visibility/visibility-state";
+import type { SceneTransformPreviewController } from "./presentation/transform-preview-controller";
+import type { SceneElementPreviews } from "./presentation/scene-element-previews";
 import { sameViewport, validateViewport } from "./scene-runtime";
-import type { ScenePreviewCommitController } from "./preview-commit-handoff";
-import type { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
-import type { SceneLivePathCommits } from "./live-path-commits";
-import type { SceneMotionController } from "./scene-motion-controller";
+import type { ScenePreviewCommitController } from "./presentation/preview-commit-handoff";
+import type { SceneLiveStrokeRenderer } from "./content/live-stroke-renderer";
+import type { SceneLivePathCommits } from "./content/live-path-commits";
+import type { SceneMotionController } from "./presentation/scene-motion-controller";
 import type { Bounds } from "../../domain/geometry/primitives";
-import type { SceneVisibilityPriority } from "./scene-entrant-priority";
-import { NavigationPathPreparation } from "./navigation-path-preparation";
-import type { ScenePathCache } from "./path-cache";
-import { DocumentPathPreparation } from "./document-path-preparation";
+import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priority";
+import { NavigationPathPreparation } from "./content/navigation-path-preparation";
+import type { ScenePathCache } from "./content/path-cache";
+import { DocumentPathPreparation } from "./content/document-path-preparation";
 
 interface NavigationPreparationOptions {
   readonly cache: ScenePathCache;

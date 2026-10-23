@@ -1,3 +1,4 @@
+import type { ObserveMotion } from "../runtime/effective-motion";
 import type { App } from "obsidian";
 
 import type { MotionPreference } from "../../rendering/motion/transitions";
@@ -6,7 +7,10 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { confirmInkbookAction } from "../dialogs/action-dialog";
 
 import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/markdown-embed";
-import type { PresentationEmbedReference, PresentationRemoval } from "../embeds/presentation-port";
+import type {
+  PresentationEmbedReference,
+  PresentationRemoval,
+} from "../embeds/presentation/presentation-port";
 import type { ObsidianLinkAdapter } from "../vault/links";
 import type { ObsidianManagedFileAdapter } from "../vault/managed-files";
 import type { ObsidianVaultFileAdapter } from "../vault/file-adapter";
@@ -47,6 +51,7 @@ export interface EmbedActionPorts {
   readonly links: ObsidianLinkAdapter;
   readonly managedFiles: ObsidianManagedFileAdapter;
   readonly readMotion?: (() => MotionPreference) | undefined;
+  readonly observeMotion?: ObserveMotion | undefined;
 }
 
 export type EmbedActionTarget = ExactEmbedActionTarget;
@@ -87,6 +92,7 @@ export class ObsidianEmbedActions {
   readonly #links: ObsidianLinkAdapter;
   readonly #managedFiles: ObsidianManagedFileAdapter;
   readonly #lifetime = new AbortController();
+  readonly #observeMotion: ObserveMotion | undefined;
   readonly #readMotion: (() => MotionPreference) | undefined;
   readonly #workScheduler: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
   #deleting = false;
@@ -98,6 +104,7 @@ export class ObsidianEmbedActions {
     this.#links = ports.links;
     this.#managedFiles = ports.managedFiles;
     this.#readMotion = ports.readMotion;
+    this.#observeMotion = ports.observeMotion;
     this.#workScheduler = ports.workScheduler;
   }
 
@@ -168,6 +175,7 @@ export class ObsidianEmbedActions {
         destructive: true,
         signal: this.#lifetime.signal,
         readMotion: this.#readMotion,
+        observeMotion: this.#observeMotion,
         workScheduler: this.#workScheduler,
       }))
     ) {
@@ -184,6 +192,7 @@ export class ObsidianEmbedActions {
         destructive: true,
         signal: this.#lifetime.signal,
         readMotion: this.#readMotion,
+        observeMotion: this.#observeMotion,
         workScheduler: this.#workScheduler,
       }));
     reference = await this.#resolveReference(target);
@@ -285,6 +294,7 @@ export function createObsidianEmbedActions(
   isMetadataResolved: () => boolean,
   readMotion?: () => MotionPreference,
   workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
+  observeMotion?: ObserveMotion,
 ): ObsidianEmbedActions {
   const { files, links, managedFiles } = createObsidianCommandVaultPorts(app, isMetadataResolved);
   return new ObsidianEmbedActions({
@@ -294,5 +304,6 @@ export function createObsidianEmbedActions(
     links,
     managedFiles,
     readMotion,
+    observeMotion,
   });
 }

@@ -3,65 +3,54 @@ import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { ResolvedShapeAnchor } from "../geometry/anchors";
 import type { InkElementV1 } from "../schema/public";
 import { SpatialQueryScratch, UniformSpatialIndex, type SpatialBounds } from "../spatial/index";
-import { addConnectionReferences, assertResolvedConnections } from "./connections";
-import { prepareCreatedRecords } from "./creation-planner";
+import { addConnectionReferences, assertResolvedConnections } from "./records/connections";
+import { prepareCreatedRecords } from "./records/creation-planner";
 import { DeltaBuilder } from "./delta-builder";
-import { DocumentCapacity } from "./document-capacity";
+import { DocumentCapacity } from "./records/document-capacity";
 import { createElementStoreBuilder, type ElementStoreBuilder } from "./element-store-builder";
 import { ElementStoreRuntime } from "./element-store-runtime";
-import { hasConnections } from "./element-comparison";
-import { commitMutationDerivedState, type ElementMutationPlan } from "./element-mutation";
-import { removeElements } from "./element-removal";
-import { mutableElement } from "./immutability";
-import { mutableBand, type StoreBands } from "./band-snapshots";
+import { hasConnections } from "./records/element-comparison";
+import { commitMutationDerivedState, type ElementMutationPlan } from "./mutations/element-mutation";
+import { removeElements } from "./mutations/element-removal";
+import { mutableElement } from "./records/immutability";
+import { mutableBand, type StoreBands } from "./mutations/band-snapshots";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
-import { normalizeElementInput } from "./input-normalization";
-import { applyMutationRecordPatches } from "./mutation-record-patch";
-import { assertCompleteBandOrder, ElementStoreOrdering } from "./order-operations";
-import { prepareReplacementPlanTimeSliced, type ReplacementPlan } from "./replacement-plan";
-import { PreparedElementMutations } from "./prepared-element-mutations";
-import { PreparedElementReplacements } from "./prepared-element-replacements";
-import type { ElementReplacementPlan } from "./replacement-types";
-import { ReplacementHistory } from "./replacement-history";
-import { assignRecordVersions, createInitialRecord, nextRecordVersion } from "./record-factory";
+import { normalizeElementInput } from "./records/input-normalization";
+import { applyMutationRecordPatches } from "./mutations/mutation-record-patch";
+import { assertCompleteBandOrder, ElementStoreOrdering } from "./mutations/order-operations";
+import {
+  prepareReplacementPlanTimeSliced,
+  type ReplacementPlan,
+} from "./replacements/replacement-plan";
+import { PreparedElementMutations } from "./mutations/prepared-element-mutations";
+import { PreparedElementReplacements } from "./replacements/prepared-element-replacements";
+import type { ElementReplacementPlan } from "./replacements/replacement-types";
+import { ReplacementHistory } from "./replacements/replacement-history";
+import {
+  assignRecordVersions,
+  createInitialRecord,
+  nextRecordVersion,
+} from "./records/record-factory";
 import {
   assertValidElement,
   prepareReplacementCandidates,
   type ReplacementCandidate,
   type ReplacementPlannerPorts,
-} from "./replacement-planner";
-import { commitReplacementPlan } from "./time-sliced-element-replacement";
-import { materializeStoreSnapshot } from "./snapshot-materializer";
-import { StoreOrderCursor } from "./order-cursor";
-import { commitSynchronousReplacements } from "./synchronous-element-replacement";
-import { SynchronousReplacementPlans } from "./synchronous-replacement-plans";
+} from "./replacements/replacement-planner";
+import { commitReplacementPlan } from "./replacements/time-sliced-element-replacement";
+import { materializeStoreSnapshot } from "./records/snapshot-materializer";
+import { StoreOrderCursor } from "./mutations/order-cursor";
+import { commitSynchronousReplacements } from "./replacements/synchronous-element-replacement";
+import { SynchronousReplacementPlans } from "./replacements/synchronous-replacement-plans";
 import type { TimeSlicedStoreState } from "./time-sliced-store-creation";
-import type {
-  AppliedRemovalResult,
-  CreateOptions,
-  DeltaDomain,
-  ElementMutationCommitResult,
-  ElementReplacementCommitResult,
-  ElementReplacementHistoryData,
-  ElementRecord,
-  ElementStoreInstrumentation,
-  ElementStoreMemoryUsage,
-  ElementStyle,
-  EndpointReference,
-  MaterializedSnapshot,
-  ElementRank,
-  SnapshotMaterialization,
-  StoreDelta,
-  StoreDeltaListener,
-  StoreSliceScheduler,
-} from "./types";
+import type * as Store from "./types";
 
 export class ElementStore {
   #bands: StoreBands = { content: [], highlight: [] };
   #capacity = new DocumentCapacity();
-  #ranks = new Map<string, ElementRank>();
-  #records = new Map<string, ElementRecord>();
-  #reverseConnections = new Map<string, EndpointReference[]>();
+  #ranks = new Map<string, Store.ElementRank>();
+  #records = new Map<string, Store.ElementRecord>();
+  #reverseConnections = new Map<string, Store.EndpointReference[]>();
   #spatialIndex = new UniformSpatialIndex<string>();
   #geometryVersion = 0;
   #instrumentation: MutableStoreInstrumentation = { ...EMPTY_STORE_INSTRUMENTATION };
@@ -114,7 +103,7 @@ export class ElementStore {
   );
 
   public constructor(elements: readonly InkElementV1[] = []) {
-    const records = new Map<string, ElementRecord>();
+    const records = new Map<string, Store.ElementRecord>();
     for (const element of elements) {
       assertValidElement(element);
       if (records.has(element.id)) throw new RangeError(`Duplicate element ID: ${element.id}`);
@@ -138,13 +127,15 @@ export class ElementStore {
   }
   public static async createTimeSliced(
     elements: readonly InkElementV1[],
-    scheduler: StoreSliceScheduler,
+    scheduler: Store.StoreSliceScheduler,
   ): Promise<ElementStore | null> {
     const builder = this.createBuilder(scheduler);
     if ((await builder.append(elements)) === "cancelled") return null;
     return builder.finalize();
   }
-  public static createBuilder(scheduler: StoreSliceScheduler): ElementStoreBuilder<ElementStore> {
+  public static createBuilder(
+    scheduler: Store.StoreSliceScheduler,
+  ): ElementStoreBuilder<ElementStore> {
     return createElementStoreBuilder(scheduler, (state) => this.adoptTimeSlicedState(state));
   }
   public static adoptTimeSlicedState(state: TimeSlicedStoreState): ElementStore {
@@ -166,13 +157,13 @@ export class ElementStore {
   public get size(): number {
     return this.#records.size;
   }
-  public get instrumentation(): ElementStoreInstrumentation {
+  public get instrumentation(): Store.ElementStoreInstrumentation {
     return this.#runtime.instrumentation(this.#instrumentation);
   }
-  public get(id: string): ElementRecord | undefined {
+  public get(id: string): Store.ElementRecord | undefined {
     return this.#records.get(id);
   }
-  public getRank(id: string): Readonly<ElementRank> | undefined {
+  public getRank(id: string): Readonly<Store.ElementRank> | undefined {
     const rank = this.#ranks.get(id);
     return rank === undefined ? undefined : Object.freeze({ ...rank });
   }
@@ -188,20 +179,20 @@ export class ElementStore {
   public readonly preparedPressurePaths = (ids?: ReadonlySet<string>) =>
     this.#runtime.preparedPressurePaths((id) => this.#records.get(id), ids);
   public readonly releasePreparedPressureGeometry = () => this.#runtime.releasePressureGeometry();
-  public readonly activeDocumentMemoryUsage = (): ElementStoreMemoryUsage =>
+  public readonly activeDocumentMemoryUsage = (): Store.ElementStoreMemoryUsage =>
     this.#runtime.memoryUsage();
   public readonly subscribeMemoryUsage = (listener: () => void): (() => void) =>
     this.#runtime.subscribeMemoryUsage(listener);
   public setActiveDocumentMemoryPressure(active: boolean): void {
     this.#runtime.setActiveDocumentMemoryPressure(active);
   }
-  public subscribe(listener: StoreDeltaListener): () => void {
+  public subscribe(listener: Store.StoreDeltaListener): () => void {
     return this.#runtime.subscribe(listener);
   }
   public create(
     values: InkElementV1 | readonly InkElementV1[],
-    options: CreateOptions = {},
-  ): StoreDelta | null {
+    options: Store.CreateOptions = {},
+  ): Store.StoreDelta | null {
     const elements = normalizeElementInput(values);
     if (elements.length === 0) return null;
     const prepared = prepareCreatedRecords(elements, {
@@ -221,7 +212,7 @@ export class ElementStore {
       this.#records.set(record.element.id, record);
       addConnectionReferences(this.#reverseConnections, record.element);
       this.#ordering.insert(record.element, options.placement ?? "front", delta);
-      const domains: DeltaDomain[] = ["geometry", "paint", "order", "visibility"];
+      const domains: Store.DeltaDomain[] = ["geometry", "paint", "order", "visibility"];
       if (hasConnections(record.element)) domains.push("connection");
       delta.add(record.element.id, null, record, domains);
     }
@@ -230,14 +221,14 @@ export class ElementStore {
     this.#overflowCount = this.#spatialIndex.overflowCount;
     return this.#publish(delta.build(geometryVersion, paintVersion));
   }
-  public replace(id: string, replacement: InkElementV1): StoreDelta | null {
+  public replace(id: string, replacement: InkElementV1): Store.StoreDelta | null {
     if (id !== replacement.id) throw new RangeError("Replacement ID must match the requested ID.");
     return this.replaceMany([replacement]);
   }
   public replaceMany(
     replacements: readonly InkElementV1[],
-    capture?: (history: ElementReplacementHistoryData) => void,
-  ): StoreDelta | null {
+    capture?: (history: Store.ElementReplacementHistoryData) => void,
+  ): Store.StoreDelta | null {
     if (replacements.length === 0) return null;
     const candidates =
       this.#plannedReplacements.consume(replacements) ??
@@ -249,7 +240,7 @@ export class ElementStore {
 
   public async planReplacementsTimeSliced(
     replacements: readonly InkElementV1[],
-    scheduler: StoreSliceScheduler,
+    scheduler: Store.StoreSliceScheduler,
   ): Promise<ReplacementPlan | "cancelled" | null> {
     if (replacements.length === 0) return null;
     const mutationVersion = this.#mutationVersion;
@@ -273,7 +264,7 @@ export class ElementStore {
   public readonly commitPreparedElementReplacement = this.#preparedElementReplacements.commit.bind(
     this.#preparedElementReplacements,
   );
-  #adoptElementReplacement(plan: ElementReplacementPlan): ElementReplacementCommitResult {
+  #adoptElementReplacement(plan: ElementReplacementPlan): Store.ElementReplacementCommitResult {
     commitReplacementPlan(
       this.#capacity,
       this.#records,
@@ -308,7 +299,7 @@ export class ElementStore {
   public readonly commitPreparedElementMutation = this.#preparedElementMutations.commit.bind(
     this.#preparedElementMutations,
   );
-  #adoptElementMutation(plan: ElementMutationPlan): ElementMutationCommitResult {
+  #adoptElementMutation(plan: ElementMutationPlan): Store.ElementMutationCommitResult {
     commitMutationDerivedState(this.#capacity, this.#reverseConnections, plan);
     this.#ranks = applyMutationRecordPatches(this.#records, this.#ranks, plan);
     this.#overflowCount = this.#spatialIndex.overflowCount;
@@ -321,20 +312,20 @@ export class ElementStore {
       transition: plan.applied,
     };
   }
-  public updateStyle(id: string, style: ElementStyle): StoreDelta | null {
+  public updateStyle(id: string, style: Store.ElementStyle): Store.StoreDelta | null {
     const current = this.#requireRecord(id);
     const replacement = mutableElement(current.element);
     replacement.style = style;
     return this.replace(id, replacement);
   }
 
-  public remove(ids: ReadonlySet<string> | readonly string[]): StoreDelta | null {
+  public remove(ids: ReadonlySet<string> | readonly string[]): Store.StoreDelta | null {
     return this.#remove(ids);
   }
   #remove(
     ids: ReadonlySet<string> | readonly string[],
-    beforeNotify?: (delta: StoreDelta) => void,
-  ): StoreDelta | null {
+    beforeNotify?: (delta: Store.StoreDelta) => void,
+  ): Store.StoreDelta | null {
     const result = removeElements(
       {
         bands: this.#bands,
@@ -358,13 +349,13 @@ export class ElementStore {
 
   public removeWithHistory(
     ids: ReadonlySet<string> | readonly string[],
-  ): AppliedRemovalResult | null {
+  ): Store.AppliedRemovalResult | null {
     return this.#preparedElementMutations.removeWithHistory((beforeNotify) =>
       this.#remove(ids, beforeNotify),
     );
   }
 
-  public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): StoreDelta | null {
+  public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): Store.StoreDelta | null {
     const delta = new DeltaBuilder();
     for (const band of ["highlight", "content"] as const) {
       if (!this.#ordering.arrange(band, selectedIds, action, delta)) continue;
@@ -375,7 +366,7 @@ export class ElementStore {
 
   public reorderBands(
     orderedIds: Readonly<Record<RenderBand, readonly string[]>>,
-  ): StoreDelta | null {
+  ): Store.StoreDelta | null {
     for (const band of ["highlight", "content"] as const) {
       assertCompleteBandOrder(
         this.#bands[band],
@@ -407,7 +398,10 @@ export class ElementStore {
   public getMaximumBottom(): number | undefined {
     return this.#spatialIndex.getMaximumBottom();
   }
-  public visitDependents(targetId: string, visitor: (reference: EndpointReference) => void): void {
+  public visitDependents(
+    targetId: string,
+    visitor: (reference: Store.EndpointReference) => void,
+  ): void {
     const references = this.#reverseConnections.get(targetId);
     if (references === undefined) return;
     for (const reference of references) {
@@ -415,7 +409,7 @@ export class ElementStore {
       visitor(reference);
     }
   }
-  public *beginDependents(targetId: string): IterableIterator<EndpointReference> {
+  public *beginDependents(targetId: string): IterableIterator<Store.EndpointReference> {
     const references = this.#reverseConnections.get(targetId);
     if (references === undefined) return;
     for (const reference of references) {
@@ -438,7 +432,7 @@ export class ElementStore {
     this.#instrumentation.bandScans += 1;
     return Object.freeze([...this.#bands[band]]);
   }
-  public materializeSnapshot(input: SnapshotMaterialization): MaterializedSnapshot {
+  public materializeSnapshot(input: Store.SnapshotMaterialization): Store.MaterializedSnapshot {
     this.#instrumentation.snapshotMaterializations += 1;
     this.#instrumentation.fullStoreScans += 1;
     return materializeStoreSnapshot(this.#bands, this.#records, input);
@@ -449,8 +443,8 @@ export class ElementStore {
   }
   #commitReplacements(
     candidates: readonly ReplacementCandidate[],
-    capture?: (history: ElementReplacementHistoryData) => void,
-  ): StoreDelta {
+    capture?: (history: Store.ElementReplacementHistoryData) => void,
+  ): Store.StoreDelta {
     const result = commitSynchronousReplacements(
       {
         capacity: this.#capacity,
@@ -481,16 +475,16 @@ export class ElementStore {
       },
     };
   }
-  #requireRecord(id: string): ElementRecord {
+  #requireRecord(id: string): Store.ElementRecord {
     const record = this.#records.get(id);
     if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
     return record;
   }
   #publish(
-    delta: StoreDelta | null,
+    delta: Store.StoreDelta | null,
     plan?: ElementMutationPlan,
-    beforeNotify?: (delta: StoreDelta) => void,
-  ): StoreDelta | null {
+    beforeNotify?: (delta: Store.StoreDelta) => void,
+  ): Store.StoreDelta | null {
     if (delta === null) return null;
     this.#preparedElementMutations.publish(delta, plan);
     this.#mutationVersion += 1;

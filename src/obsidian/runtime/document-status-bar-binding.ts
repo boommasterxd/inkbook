@@ -1,6 +1,6 @@
 import { MarkdownView, type Plugin, type Workspace } from "obsidian";
 
-import type { ObsidianWorkspaceRuntime } from "../embeds/workspace-runtime";
+import type { ObsidianWorkspaceRuntime } from "../embeds/workspace/workspace-runtime";
 import type { InkbookSettingsStore } from "../settings/storage";
 import { mountDocumentStatusBar } from "./document-status-bar";
 
@@ -36,6 +36,7 @@ export function registerDocumentStatusBar(
   refreshPane();
   plugin.app.workspace.onLayoutReady(refreshPane);
   plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", refreshPane));
+  plugin.registerEvent(plugin.app.workspace.on("css-change", statusBar.refreshColors));
   const unsubscribeSettings = settings.subscribeDeviceSettings(() => {
     if (disposed) return;
     statusBar.refreshMotion();

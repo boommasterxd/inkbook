@@ -1,10 +1,10 @@
 import { WorkerJobQueue } from "../job-queue";
 import { exportIdentityKey, type ExecutorIdentity, type ExportIdentity } from "../protocol";
-import { DocumentModelRuntime, RuntimeModelError } from "./document-model";
-import { runtimeFailure } from "./runtime-model-error";
-import { DocumentPrewarm } from "./document-prewarm";
+import { DocumentModelRuntime, RuntimeModelError } from "./model/document-model";
+import { runtimeFailure } from "./model/runtime-model-error";
+import { DocumentPrewarm } from "./model/document-prewarm";
 import { InputActivityGate } from "./input-activity-gate";
-import { runClipboardRequest } from "./runtime-clipboard";
+import { runClipboardRequest } from "./model/runtime-clipboard";
 import {
   cancelsSpeculativeSceneRequest,
   blocksSpeculativeWork,
@@ -15,8 +15,8 @@ import {
   requestJobKind,
   supersedesSpeculativeSceneRequest,
 } from "./request-admission";
-import { runUnlockRequest, runVerifyOutputRequest } from "./runtime-document-operations";
-import { ScenePathOperation } from "./scene-path-operation";
+import { runUnlockRequest, runVerifyOutputRequest } from "./model/runtime-document-operations";
+import { ScenePathOperation } from "./model/scene-path-operation";
 import { runtimeSliceContext } from "./slice-scheduler";
 import { NavigationJobSuspension } from "./navigation-job-suspension";
 import type {

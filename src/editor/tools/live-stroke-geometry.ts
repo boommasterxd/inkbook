@@ -11,7 +11,7 @@ import {
 import {
   visitPreparedPressureOutline,
   type PressureOutlinePiece,
-} from "../../domain/geometry/pressure-outline";
+} from "../../domain/geometry/pressure/pressure-outline";
 import {
   preparePressureWindows,
   serializePressureWindows,
@@ -19,7 +19,7 @@ import {
   pressureWindowMemoryUsage,
   pressureOutlinePieceMemoryUsage,
   type PressureWindow,
-} from "../../domain/geometry/pressure-path-serialization";
+} from "../../domain/geometry/pressure/pressure-path-serialization";
 import type { StrokeStyleV1 } from "../../domain/schema/public";
 
 export const LIVE_STROKE_WINDOW = STROKE_SIMPLIFICATION_WINDOW;

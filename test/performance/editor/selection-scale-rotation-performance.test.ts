@@ -1,13 +1,13 @@
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 
-import { SelectionScalePreviewFramePlan } from "../../../src/editor/selection/scale-preview-frame";
-import { SelectionScaleGesture } from "../../../src/editor/selection/selection-scale";
+import { SelectionScalePreviewFramePlan } from "../../../src/editor/selection/transform/scale-preview-frame";
+import { SelectionScaleGesture } from "../../../src/editor/selection/transform/selection-scale";
 import { table } from "../../unit/domain/schema/fixtures";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { selectionOverlayGeometry } from "../../../src/editor/selection/overlay-geometry";
 import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
-import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
+import { moveSelectionTimeSliced } from "../../../src/editor/selection/transform/transforms";
 import { indexedStroke } from "../../fixtures/editor/stroke";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { PASS_THROUGH_PLANNER, createRotatedScaleFixture } from "./selection-input-fixture";

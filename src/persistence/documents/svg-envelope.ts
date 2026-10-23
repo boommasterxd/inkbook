@@ -1,6 +1,9 @@
 import type { InkSnapshotV1 } from "../../domain/schema/public";
-import { canonicalMetadataText, metadataSha256 } from "../serialization/canonical-metadata";
-import { COMPACT_METADATA_ENCODING } from "../serialization/stroke-sample-codec";
+import {
+  canonicalMetadataText,
+  metadataSha256,
+} from "../serialization/metadata/canonical-metadata";
+import { COMPACT_METADATA_ENCODING } from "../serialization/metadata/stroke-sample-codec";
 import { serializeSvgNumber } from "./svg-number";
 import { CANONICAL_THEME_STYLESHEET } from "./svg-theme";
 import { escapeXmlText } from "./xml-text";

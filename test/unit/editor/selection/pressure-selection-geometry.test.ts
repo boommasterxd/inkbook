@@ -4,13 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import { strokeSvgContainsPoint } from "../../../fixtures/domain/svg-path-fill";
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
 import { translatedStroke } from "../../../../src/domain/geometry/stroke-position";
-import * as pressureUnion from "../../../../src/domain/geometry/pressure-union";
+import * as pressureUnion from "../../../../src/domain/geometry/pressure/pressure-union";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
-import { elementContainsPoint } from "../../../../src/editor/selection/hit-test";
+import { elementContainsPoint } from "../../../../src/editor/selection/query/hit-test";
 import {
   createRectangleSelectionArea,
   createLassoSelectionArea,
-} from "../../../../src/editor/selection/selection-area";
+} from "../../../../src/editor/selection/query/selection-area";
 import { stroke } from "../../domain/schema/fixtures";
 
 function pressureStroke(points: number[]): StrokeElementV1 {

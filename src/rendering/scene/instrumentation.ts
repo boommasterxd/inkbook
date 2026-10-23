@@ -1,8 +1,8 @@
 import type { MutableSceneInstrumentation, SceneInstrumentationSnapshot } from "./types";
-import type { SceneBackgroundCache } from "./background-cache";
-import type { ScenePathCache } from "./path-cache";
-import type { DetachedSceneElementCache } from "./detached-element-cache";
-import type { MountYieldReason } from "./mount-slice";
+import type { SceneBackgroundCache } from "./content/background-cache";
+import type { ScenePathCache } from "./content/path-cache";
+import type { DetachedSceneElementCache } from "./content/detached-element-cache";
+import type { MountYieldReason } from "./reconciliation/mount-slice";
 
 /** Records the reconciler's actual final blocker, including zero-element slices. */
 export function recordVisibilityYield(

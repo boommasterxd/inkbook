@@ -2,7 +2,7 @@ import { vi, type Mock } from "vitest";
 import { createInputState } from "../../../src/editor/input";
 import { createControllerNavigation } from "../../../src/obsidian/embeds/active-editor/controller-interactions";
 import type { ActiveEditorControllerOptions } from "../../../src/obsidian/embeds/active-editor/controller-types";
-import { bindSceneScrollOwner } from "../../../src/obsidian/embeds/active-scene-runtime";
+import { bindSceneScrollOwner } from "../../../src/obsidian/embeds/active-scene/active-scene-runtime";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene";
 import type { SceneToolCursor } from "../../../src/rendering/scene/tool-cursor";

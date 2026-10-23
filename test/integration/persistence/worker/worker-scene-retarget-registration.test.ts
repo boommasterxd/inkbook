@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { SessionScenePaths } from "../../../../src/obsidian/embeds/session-scene-paths";
-import { RemoteScenePaths } from "../../../../src/rendering/scene/remote-scene-paths";
+import { SessionScenePaths } from "../../../../src/obsidian/embeds/document-session/session-scene-paths";
+import { RemoteScenePaths } from "../../../../src/rendering/scene/content/remote-scene-paths";
 import type { SceneElementRecord } from "../../../../src/rendering/scene/types";
 import type { PreparedScenePathEntry } from "../../../../src/domain/geometry/prepared-scene-paths";
 import {

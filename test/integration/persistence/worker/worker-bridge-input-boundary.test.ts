@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
-import { encodeUnlockBatchChunked } from "../../../../src/persistence/worker/runtime/wire-codec";
+import { encodeUnlockBatchChunked } from "../../../../src/persistence/worker/runtime/wire/wire-codec";
 import {
   createOneStrokeWorkerSnapshot,
   createWorkerBridgeClient,
@@ -39,6 +39,48 @@ async function expectRejectedBatch(
   });
   harness.client.terminate();
 }
+
+describe("document worker transfer-array input boundary", () => {
+  it.each([
+    [
+      "a different typed array with a forged Float64Array tag",
+      () =>
+        Object.defineProperty(new Float32Array(6), Symbol.toStringTag, { value: "Float64Array" }),
+    ],
+    ["a proxied typed array", () => new Proxy(new Float64Array(6), {})],
+    ["shared backing storage", () => new Float64Array(new SharedArrayBuffer(48))],
+    ["a partial backing-store view", () => new Float64Array(7).subarray(1)],
+    [
+      "a forged ArrayBuffer backing-store tag",
+      () =>
+        Object.defineProperty(new Float64Array(6), "buffer", {
+          value: { byteLength: 48, [Symbol.toStringTag]: "ArrayBuffer" },
+        }),
+    ],
+    [
+      "a proxied backing store",
+      () =>
+        Object.defineProperty(new Float64Array(6), "buffer", {
+          value: new Proxy(new ArrayBuffer(48), {}),
+        }),
+    ],
+  ])("rejects %s before any unlock observer sees samples", async (_name, points) => {
+    const harness = createBoundaryHarness();
+    const encoded = await encodeUnlockBatchChunked(
+      {
+        batchIndex: 0,
+        derivations: oneStrokeDerivations(),
+        elements: createOneStrokeWorkerSnapshot().elements,
+        identity: createWorkerUnlockRequest(new Uint8Array()).identity,
+      },
+      { checkpoint: () => undefined, signal: new AbortController().signal },
+    );
+    await expectRejectedBatch(harness, {
+      ...encoded.value,
+      elements: { ...encoded.value.elements, pointBuffers: [points() as Float64Array] },
+    });
+  });
+});
 
 describe("document worker bridge input boundary", () => {
   it("rejects malformed verification hash evidence from the owned worker channel", async () => {

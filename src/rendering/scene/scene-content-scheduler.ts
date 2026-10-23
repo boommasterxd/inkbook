@@ -2,8 +2,8 @@ import type { InkElementV1 } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "./constants";
 import type { SceneContentRenderer } from "./content-renderer";
-import type { ScenePublicationBudget } from "./mount-slice";
-import type { PreviewTransform } from "./scene-visibility-reconciler";
+import type { ScenePublicationBudget } from "./reconciliation/mount-slice";
+import type { PreviewTransform } from "./reconciliation/scene-visibility-reconciler";
 
 /** Gives each active queue the first remaining frame slice on alternating frames. */
 export class SceneContentScheduler {

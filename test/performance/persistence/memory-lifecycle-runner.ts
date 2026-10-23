@@ -7,7 +7,7 @@ import { createProductionDocumentRuntime } from "../../../src/persistence/worker
 import {
   decodeRuntimeResultChunked,
   encodeRuntimeResultChunked,
-} from "../../../src/persistence/worker/runtime/wire-codec";
+} from "../../../src/persistence/worker/runtime/wire/wire-codec";
 import type { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
 import type { MemoryCheckpoint, ReleasedInstrumentation } from "./memory-lifecycle-contract";

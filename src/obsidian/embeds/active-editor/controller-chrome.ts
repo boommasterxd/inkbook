@@ -10,7 +10,7 @@ import type { ActiveEditorBackgroundSession } from "./background-session";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorChromeState } from "./controller-chrome-state";
 import type { ActiveEditorStyleSession } from "./style-session";
-import type { EditableDocumentModel } from "../vault-document-session";
+import type { EditableDocumentModel } from "../document-session/vault-document-session";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import { backgroundState } from "./controller-helpers";

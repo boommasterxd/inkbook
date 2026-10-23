@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { PresentationAttachment } from "../../../../src/obsidian/embeds/presentation-port";
-import { ownsMarkdownEditorChange } from "../../../../src/obsidian/embeds/workspace-runtime-editor";
+import type { PresentationAttachment } from "../../../../src/obsidian/embeds/presentation/presentation-port";
+import { ownsMarkdownEditorChange } from "../../../../src/obsidian/embeds/workspace/workspace-runtime-editor";
 
 describe("workspace Markdown history ownership", () => {
   it("accepts only the attachment source in its owning pane", () => {

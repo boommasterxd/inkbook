@@ -152,7 +152,10 @@ describe("embedded module build mappings", () => {
 
   it.each([
     ["src/obsidian/plugin-loader.ts", "src/obsidian/plugin-runtime-entry.ts"],
-    ["src/obsidian/embeds/editor-chrome-loader.ts", "src/rendering/ui/editor-chrome-entry.ts"],
+    [
+      "src/obsidian/embeds/active-scene/editor-chrome-loader.ts",
+      "src/rendering/ui/editor-chrome-entry.ts",
+    ],
   ])("maps the known owned dynamic loader %s", async (loader, entry) => {
     const context = await fixture({
       [loader]:

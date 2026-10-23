@@ -1,6 +1,6 @@
 import type { ElementValidationDerivation } from "../../domain/schema/public";
-import type { DocumentIntegrityManifest } from "../serialization/document-integrity-manifest";
-import type { PreparedPressurePathHint } from "../serialization/prepared-pressure-hints";
+import type { DocumentIntegrityManifest } from "../serialization/metadata/document-integrity-manifest";
+import type { PreparedPressurePathHint } from "../serialization/output/prepared-pressure-hints";
 
 export type SessionId = string;
 export type ElementId = string;

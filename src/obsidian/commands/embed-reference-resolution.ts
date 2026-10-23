@@ -2,7 +2,7 @@ import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/
 import type {
   PresentationEmbedReference,
   ReadingViewEmbedReference,
-} from "../embeds/presentation-port";
+} from "../embeds/presentation/presentation-port";
 import type { ObsidianLinkAdapter } from "../vault/links";
 
 export interface ResolvedEmbedRange {

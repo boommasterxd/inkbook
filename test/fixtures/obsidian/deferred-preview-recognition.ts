@@ -1,7 +1,7 @@
 import { TFile, type Vault } from "obsidian";
 import { vi } from "vitest";
 
-import { ObsidianInkbookDocumentRecognition } from "../../../src/obsidian/embeds/document-recognition";
+import { ObsidianInkbookDocumentRecognition } from "../../../src/obsidian/embeds/preview/document-recognition";
 import { immediateWorkScheduler } from "./immediate-work-scheduler";
 
 export function deferredPreviewRecognition(path: string, size: number) {

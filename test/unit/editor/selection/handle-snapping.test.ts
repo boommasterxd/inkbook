@@ -15,7 +15,7 @@ import {
   SelectionHandleSession,
   type SelectionHandlePreview,
 } from "../../../../src/editor/selection/public";
-import { editLinearBend } from "../../../../src/editor/selection/linear-bend";
+import { editLinearBend } from "../../../../src/editor/selection/transform/linear-bend";
 import type { SelectionSnapPorts } from "../../../../src/editor/selection/handle-types";
 import { connectedLine, coordinateSystem, IDS, rectangle } from "../../domain/store/fixtures";
 import { straightHighlighter } from "../../domain/schema/fixtures";

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { MotionGlobalConfig, processFrame } from "motion";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,9 +55,14 @@ afterAll(() => {
   delete reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
 });
 
-beforeEach(installObsidianDomHelpers);
+beforeEach(() => {
+  installObsidianDomHelpers();
+  MotionGlobalConfig.useManualTiming = true;
+  processFrame(0);
+});
 
 afterEach(() => {
+  MotionGlobalConfig.useManualTiming = false;
   document.body.replaceChildren();
 });
 
@@ -123,8 +129,10 @@ describe("mounted Inkbook toolbar accessibility", () => {
     mounted.update(completeState, "rectangle", defaultStyleIcon, defaultShapeIcon, "lasso");
 
     expect(mounted.button("select")).toBe(select);
-    expect(requiredElement(select, ".inkbook-toolbar-icon")).toBe(icon);
-    expect(icon.dataset.icon).toBe(SELECTION_AREA_ICON_IDS.lasso);
+    expect(requiredElement(select, ".inkbook-toolbar-icon")).not.toBe(icon);
+    expect(requiredElement<HTMLElement>(select, ".inkbook-toolbar-icon").dataset.icon).toBe(
+      SELECTION_AREA_ICON_IDS.lasso,
+    );
     expect(select.getAttribute("aria-label")).toBe("Select: Lasso");
     mounted.unmount();
   });
@@ -159,36 +167,21 @@ describe("mounted Inkbook toolbar action confirmation", () => {
 });
 
 describe("mounted Inkbook toolbar responsiveness", () => {
-  it("keeps the active indicator inside the selected tool without replacing controls", () => {
+  it("keeps tool controls usable when the active tool changes", () => {
     const mounted = mountToolbar(completeState);
     const draw = mounted.button("draw");
     const select = mounted.button("select");
-    const indicator = requiredElement<HTMLSpanElement>(
-      mounted.container,
-      ".inkbook-toolbar-active-indicator",
-    );
-    const drawIcon = requiredElement<HTMLElement>(draw, ".inkbook-toolbar-icon");
-    const selectIcon = requiredElement<HTMLElement>(select, ".inkbook-toolbar-icon");
-    setButtonMetrics(draw, 196);
-    mounted.update(completeState);
-    const initialOffset = indicator.style.getPropertyValue("--inkbook-toolbar-active-offset");
-
-    setButtonMetrics(select, 104);
+    focus(draw);
 
     mounted.update({ ...completeState, activeTool: "select" });
 
-    expect(requiredElement(mounted.container, ".inkbook-toolbar-active-indicator")).toBe(indicator);
-    const selectedOffset = indicator.style.getPropertyValue("--inkbook-toolbar-active-offset");
-    expect(selectedOffset).not.toBe(initialOffset);
-    expect(Number.parseFloat(selectedOffset)).toBeGreaterThanOrEqual(select.offsetLeft);
-    expect(Number.parseFloat(selectedOffset)).toBeLessThan(select.offsetLeft + select.offsetWidth);
-    expect(indicator.getAttribute("aria-hidden")).toBe("true");
     expect(mounted.button("draw")).toBe(draw);
     expect(mounted.button("select")).toBe(select);
+    expect(document.activeElement).toBe(draw);
     expect(draw.getAttribute("aria-pressed")).toBe("false");
     expect(select.getAttribute("aria-pressed")).toBe("true");
-    expect(requiredElement(draw, ".inkbook-toolbar-icon")).toBe(drawIcon);
-    expect(requiredElement(select, ".inkbook-toolbar-icon")).toBe(selectIcon);
+    act(() => select.click());
+    expect(mounted.onAction).toHaveBeenLastCalledWith("select", select);
     mounted.unmount();
   });
 });
@@ -196,7 +189,7 @@ describe("mounted Inkbook toolbar responsiveness", () => {
 describe("mounted Inkbook toolbar focus recovery", () => {
   it.each([false, true])(
     "returns focus correctly after a context exit, leftHanded=%s",
-    (leftHanded) => {
+    async (leftHanded) => {
       const mounted = mountToolbar(noPasteState, "wide", leftHanded);
       const copy = mounted.button("copy");
       const cut = mounted.button("cut");
@@ -217,15 +210,8 @@ describe("mounted Inkbook toolbar focus recovery", () => {
       expect(cut.tabIndex).toBe(-1);
       expect(cut.getAttribute("aria-hidden")).toBe("true");
 
-      void act(() => {
-        copy.dispatchEvent(new Event("animationend", { bubbles: true }));
-        cut.dispatchEvent(new Event("animationend", { bubbles: true }));
-      });
-      expect(mounted.container.contains(copy)).toBe(true);
-      expect(mounted.container.contains(cut)).toBe(true);
-      expect(mounted.container.contains(deleteButton)).toBe(true);
-      void act(() => {
-        deleteButton.dispatchEvent(new Event("animationend", { bubbles: true }));
+      await act(async () => {
+        await Promise.resolve();
       });
       expect(mounted.container.contains(copy)).toBe(false);
       expect(mounted.container.contains(cut)).toBe(false);
@@ -236,14 +222,30 @@ describe("mounted Inkbook toolbar focus recovery", () => {
   );
 });
 
+describe("mounted Inkbook toolbar lifecycle", () => {
+  it("makes context actions unavailable as soon as editor locking starts", async () => {
+    const mounted = mountToolbar(noPasteState);
+    const copy = mounted.button("copy");
+    focus(copy);
+
+    mounted.presentation.dataset.inkbookState = "locking";
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(copy.disabled).toBe(true);
+    expect(copy.tabIndex).toBe(-1);
+    expect(copy.getAttribute("aria-hidden")).toBe("true");
+    mounted.unmount();
+  });
+});
+
 describe("mounted Inkbook style control", () => {
-  it("updates the style glyph in place when the active tool paint changes", () => {
+  it("retains the focused Style action while its tool paint changes repeatedly", async () => {
     const mounted = mountToolbar(completeState);
     const button = mounted.button("style");
     const icon = requiredElement<SVGSVGElement>(button, ".inkbook-toolbar-style-icon svg");
-    const path = requiredElement<SVGPathElement>(icon, "path");
-    expect(path.getAttribute("fill")).toBe("none");
-    expect(path.getAttribute("stroke-dasharray")).toBeNull();
+    focus(button);
     const paint: ToolbarStyleIconState = {
       fillColor: { type: "rgba", value: "#8B5CF6FF" },
       fillOpacity: 0.6,
@@ -251,23 +253,23 @@ describe("mounted Inkbook style control", () => {
       outlineStyle: "dashed",
     };
 
-    mounted.update(completeState, "rectangle", paint);
-
-    expect(mounted.button("style")).toBe(button);
-    expect(requiredElement(button, ".inkbook-toolbar-style-icon svg")).toBe(icon);
-    expect(icon.getAttribute("stroke")).toBe("#F97316FF");
-    expect(path.getAttribute("fill")).toBe("#8B5CF6FF");
-    expect(path.getAttribute("fill-opacity")).toBe(String(paint.fillOpacity));
-    const dashedPattern = path.getAttribute("stroke-dasharray");
-    expect(dashedPattern).toBeTruthy();
-    mounted.update(completeState, "rectangle", { ...paint, outlineStyle: "dotted" });
-    expect(path.getAttribute("stroke-dasharray")).toBeTruthy();
-    expect(path.getAttribute("stroke-dasharray")).not.toBe(dashedPattern);
-    mounted.update(completeState, "rectangle", { ...defaultStyleIcon, outlineColor: null });
-    expect(icon.getAttribute("stroke")).toBe("currentColor");
-    expect(path.getAttribute("fill")).toBe("none");
-    expect(path.getAttribute("fill-opacity")).toBeNull();
-    expect(path.getAttribute("stroke-dasharray")).toBeNull();
+    for (const state of [
+      paint,
+      { ...paint, outlineStyle: "dotted" as const },
+      { ...defaultStyleIcon, outlineColor: null },
+    ]) {
+      mounted.update(completeState, "rectangle", state);
+      await act(async () => {
+        processFrame(16);
+        await Promise.resolve();
+      });
+      expect(mounted.button("style")).toBe(button);
+      expect(requiredElement(button, ".inkbook-toolbar-style-icon svg")).toBe(icon);
+      expect(document.activeElement).toBe(button);
+      expect(button.getAttribute("aria-label")).toBe("Style");
+    }
+    act(() => button.click());
+    expect(mounted.onAction).toHaveBeenLastCalledWith("style", button);
     mounted.unmount();
   });
 });
@@ -359,6 +361,7 @@ interface MountedToolbar {
   readonly button: (action: ToolbarAction) => HTMLButtonElement;
   readonly container: HTMLDivElement;
   readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
+  readonly presentation: HTMLDivElement;
   readonly unmount: () => void;
   readonly update: (
     state: ToolbarState,
@@ -374,7 +377,9 @@ function mountToolbar(
   layout: "wide" | "scrollable" = "wide",
   leftHanded = false,
 ): MountedToolbar {
-  const container = document.body.createDiv();
+  const presentation = document.body.createDiv({ cls: "inkbook-root" });
+  presentation.dataset.inkbookMotion = "reduced";
+  const container = presentation.createDiv();
   const root = createRoot(container);
   const onAction = vi.fn<(action: ToolbarAction, trigger: HTMLButtonElement) => void>();
   const render = (
@@ -407,16 +412,10 @@ function mountToolbar(
       requiredElement<HTMLButtonElement>(container, `[data-inkbook-action='${action}']`),
     container,
     onAction,
+    presentation,
     unmount: () => act(() => root.unmount()),
     update: render,
   };
-}
-
-function setButtonMetrics(button: HTMLButtonElement, offsetLeft: number): void {
-  Object.defineProperties(button, {
-    offsetLeft: { configurable: true, value: offsetLeft },
-    offsetWidth: { configurable: true, value: 44 },
-  });
 }
 
 function requiredElement<T extends Element>(container: Element, selector: string): T {

@@ -7,11 +7,11 @@ import {
   type PointerSample,
 } from "../../../src/editor/input";
 import type { InputEffect } from "../../../src/editor/input/input-types";
-import { ActiveEditorPointerController } from "../../../src/obsidian/embeds/active-editor/controller-pointer";
-import { CoalescedPointerInput } from "../../../src/obsidian/embeds/active-editor/coalesced-input";
-import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
+import { ActiveEditorPointerController } from "../../../src/obsidian/embeds/active-editor/input/controller-pointer";
+import { CoalescedPointerInput } from "../../../src/obsidian/embeds/active-editor/input/coalesced-input";
+import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/previews/handle-interaction";
 import type { ActiveEditorMenuController } from "../../../src/obsidian/embeds/active-editor/controller-menu";
-import type { ActiveEditorNavigation } from "../../../src/obsidian/embeds/active-editor/navigation";
+import type { ActiveEditorNavigation } from "../../../src/obsidian/embeds/active-editor/navigation/navigation";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene";
 import { toolCursorHarness } from "./tool-cursor";

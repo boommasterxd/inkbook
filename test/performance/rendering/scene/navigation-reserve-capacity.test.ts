@@ -2,8 +2,8 @@ import { expect, it, vi } from "vitest";
 import { UniformSpatialIndex } from "../../../../src/domain/spatial";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { MAX_PREPARED_SCENE_PATH_IDS } from "../../../../src/domain/geometry/prepared-scene-paths";
-import { NavigationPathPreparation } from "../../../../src/rendering/scene/navigation-path-preparation";
-import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import { NavigationPathPreparation } from "../../../../src/rendering/scene/content/navigation-path-preparation";
+import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
 import type { SceneStorePort } from "../../../../src/rendering/scene/types";
 import {
   beginNavigationPathRequest,

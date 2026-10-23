@@ -20,7 +20,7 @@ import type {
   PurposeOperationIdentity,
   VerifiedPersistedOutput,
 } from "../protocol";
-import type { SafeStaticProof } from "../../serialization/safe-static-proof";
+import type { SafeStaticProof } from "../../serialization/input/safe-static-proof";
 
 export type DocumentExportRequest = ExportRequest<InkElementV1, PageV1, InkSnapshotV1>;
 

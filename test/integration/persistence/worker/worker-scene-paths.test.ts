@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
-import { scenePathBytes } from "../../../../src/persistence/worker/runtime/scene-path-limits";
+import { scenePathBytes } from "../../../../src/persistence/worker/runtime/model/scene-path-limits";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/document-runtime";
-import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/worker-host";
+import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/bridge/worker-host";
 import {
   createWorkerBridgeClient,
   createWorkerBridgeHarness,

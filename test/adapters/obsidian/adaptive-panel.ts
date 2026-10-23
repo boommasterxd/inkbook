@@ -5,7 +5,7 @@ import { Keymap } from "obsidian";
 import {
   AdaptivePanelSession,
   type AdaptivePanelContentLifecycle,
-} from "../../../src/obsidian/menus/adaptive-panel";
+} from "../../../src/obsidian/menus/panels/adaptive-panel";
 import { createHtmlElement } from "./dom";
 
 export function createAdaptivePanelFixture(

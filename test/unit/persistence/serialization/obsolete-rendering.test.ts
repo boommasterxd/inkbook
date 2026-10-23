@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
-import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/chunked-input-codec";
+import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/input/chunked-input-codec";
 import { PREVIOUS_STROKE_SVG } from "../../../fixtures/persistence/previous-stroke-rendering";
 import { LEGACY_OUTLINE_SVG } from "../../../fixtures/persistence/legacy-outline-rendering";
 import { ROUNDED_OUTLINE_SVG } from "../../../fixtures/persistence/rounded-outline-rendering";

@@ -6,8 +6,8 @@ import type {
   LineElementV1,
 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
-import * as connections from "../../../src/domain/store/connections";
-import * as recordFactory from "../../../src/domain/store/record-factory";
+import * as connections from "../../../src/domain/store/records/connections";
+import * as recordFactory from "../../../src/domain/store/records/record-factory";
 import { SelectionHandleSession } from "../../../src/editor/selection/public";
 import { connectedLine } from "../../unit/domain/store/fixtures";
 

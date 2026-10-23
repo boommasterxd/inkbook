@@ -5,11 +5,11 @@ import type { PointV1 } from "../../../../src/domain/schema/public";
 import {
   createLassoSelectionArea,
   createRectangleSelectionArea,
-} from "../../../../src/editor/selection/selection-area";
+} from "../../../../src/editor/selection/query/selection-area";
 import {
   primitiveEnclosedByAreaSteps,
   type VisibleSelectionPrimitive,
-} from "../../../../src/editor/selection/selection-area-primitives";
+} from "../../../../src/editor/selection/query/selection-area-primitives";
 
 const capsule: VisibleSelectionPrimitive = {
   kind: "pressure-capsule",

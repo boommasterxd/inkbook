@@ -1,4 +1,4 @@
-import type { buildPressureOutline } from "../../../src/domain/geometry/pressure-outline";
+import type { buildPressureOutline } from "../../../src/domain/geometry/pressure/pressure-outline";
 export function buildPressureResizeFrame(
   source: readonly { x: number; y: number; pressure: number }[],
   frame: number,

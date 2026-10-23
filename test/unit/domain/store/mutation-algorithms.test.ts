@@ -1,16 +1,16 @@
-import { DocumentCapacity } from "../../../../src/domain/store/document-capacity";
+import { DocumentCapacity } from "../../../../src/domain/store/records/document-capacity";
 import { UniformSpatialIndex } from "../../../../src/domain/spatial/index";
 import { describe, expect, it, vi } from "vitest";
 
-import { PreparedElementMutations } from "../../../../src/domain/store/prepared-element-mutations";
-import { planElementMutation } from "../../../../src/domain/store/element-mutation";
-import * as mutationOrder from "../../../../src/domain/store/mutation-order";
-import * as mutationElements from "../../../../src/domain/store/mutation-elements";
+import { PreparedElementMutations } from "../../../../src/domain/store/mutations/prepared-element-mutations";
+import { planElementMutation } from "../../../../src/domain/store/mutations/element-mutation";
+import * as mutationOrder from "../../../../src/domain/store/mutations/mutation-order";
+import * as mutationElements from "../../../../src/domain/store/mutations/mutation-elements";
 import { ElementStore } from "../../../../src/domain/store/public";
 import {
   assertOverflowCapacity,
   createInitialRecord,
-} from "../../../../src/domain/store/record-factory";
+} from "../../../../src/domain/store/records/record-factory";
 import { MAX_OVERFLOW_ELEMENTS } from "../../../../src/domain/spatial/index";
 
 import { rectangle } from "./fixtures";

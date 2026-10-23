@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { OwnerWindowRegistry } from "../../../../src/obsidian/embeds/owner-window-registry";
+import { OwnerWindowRegistry } from "../../../../src/obsidian/embeds/presentation/owner-window-registry";
 
 describe("document owner-window leases", () => {
   it("requires the current presentation owner before a retained realm or fallback", () => {

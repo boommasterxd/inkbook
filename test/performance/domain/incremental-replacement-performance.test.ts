@@ -9,19 +9,19 @@ import { ElementStore } from "../../../src/domain/store/public";
 import type { ElementReplacementHistoryData } from "../../../src/domain/store/public";
 import type { ImmutableInkElement } from "../../../src/domain/store/types";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
-import * as recordFactory from "../../../src/domain/store/record-factory";
+import * as recordFactory from "../../../src/domain/store/records/record-factory";
 import * as bounds from "../../../src/domain/geometry/bounds";
 import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
-import * as connections from "../../../src/domain/store/connections";
-import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
-import { ReplacementHistory } from "../../../src/domain/store/replacement-history";
+import * as connections from "../../../src/domain/store/records/connections";
+import { DocumentCapacity } from "../../../src/domain/store/records/document-capacity";
+import { ReplacementHistory } from "../../../src/domain/store/replacements/replacement-history";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../src/domain/commands/history";
 import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
 import {
   moveSelection,
   moveSelectionTimeSliced,
   rotateSelection,
-} from "../../../src/editor/selection/transforms";
+} from "../../../src/editor/selection/transform/transforms";
 import { scaleSelectionUniformForTest } from "../../fixtures/editor/selection-transform-reference";
 import { CheckpointSliceScheduler, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture, type StandardDomainFixture } from "./standard-domain-fixture";

@@ -72,21 +72,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.inkbook-settings-tool-section > .inkbook-settings-tool-trigger:active {
-  background: var(--background-modifier-hover);
-}
-
-.inkbook-settings-tool-section > .inkbook-settings-tool-trigger-touch.mobile-tap:not(:active) {
-  background: transparent;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .inkbook-settings-tool-section
-    > .inkbook-settings-tool-trigger:not(.inkbook-settings-tool-trigger-touch):hover {
-    background: var(--background-modifier-hover);
-  }
-}
-
 .inkbook-settings-tool-section > .inkbook-settings-tool-trigger:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
@@ -101,25 +86,14 @@
 
 .inkbook-settings-tool-chevron {
   color: var(--text-muted);
-  transition: rotate var(--inkbook-motion-fast) var(--inkbook-motion-easing);
-}
-
-.inkbook-settings-tool-section
-  > .inkbook-settings-tool-trigger[aria-expanded="true"]
-  .inkbook-settings-tool-chevron {
-  rotate: 90deg;
 }
 
 .inkbook-settings-tool-panel-content {
   padding: 0 var(--size-4-5) var(--size-4-3);
 }
 
-.inkbook-settings-tool-panel[data-resizing="true"],
-.inkbook-snapping-dependent-row[data-resizing="true"] {
-  box-sizing: border-box;
+.inkbook-settings-motion-content {
   overflow: hidden;
-  transition: block-size 180ms var(--inkbook-motion-easing);
-  will-change: block-size;
 }
 
 .inkbook-settings-tool-panel[hidden],
@@ -175,8 +149,13 @@
   inline-size: 72px;
 }
 
-.inkbook-settings-control-error {
-  color: var(--text-error);
+.inkbook-settings-validation-surface {
+  position: relative;
+}
+
+.inkbook-settings-control-error,
+.inkbook-settings-validation-visual {
+  color: var(--inkbook-tone-danger);
   font-size: var(--font-ui-smaller);
   line-height: var(--line-height-tight);
   margin-block-start: var(--size-4-1);
@@ -187,11 +166,11 @@
 }
 
 .setting-item.mod-action[data-inkbook-setting-action-tone="caution"] .setting-item-name {
-  color: var(--color-orange);
+  color: var(--inkbook-tone-caution);
 }
 
 .setting-item.mod-action[data-inkbook-setting-action-tone="danger"] .setting-item-name {
-  color: var(--text-error);
+  color: var(--inkbook-tone-danger);
 }
 
 .inkbook-settings-visual-info {
@@ -200,12 +179,6 @@
 
 .inkbook-settings-background-content {
   inline-size: 100%;
-}
-
-.inkbook-settings-background-content[data-resizing="true"] {
-  overflow: hidden;
-  transition: block-size 180ms cubic-bezier(0.2, 0, 0, 1);
-  will-change: block-size;
 }
 
 .inkbook-settings-background-content .inkbook-menu-background-options {
@@ -261,13 +234,5 @@
   .inkbook-settings-tool-controls .inkbook-menu-slider-row,
   .inkbook-settings-inline-controls .inkbook-menu-slider-row {
     grid-template-columns: minmax(100px, 1fr) 68px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .inkbook-settings-background-content[data-resizing="true"],
-  .inkbook-snapping-dependent-row[data-resizing="true"],
-  .inkbook-settings-tool-chevron {
-    transition: none;
   }
 }

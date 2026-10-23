@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ModelPointReferences } from "../../../../src/persistence/worker/runtime/model-point-references";
+import { ModelPointReferences } from "../../../../src/persistence/worker/runtime/bridge/model-point-references";
 import {
   createWorkerBridgeClient,
   createWorkerBridgeHarness,

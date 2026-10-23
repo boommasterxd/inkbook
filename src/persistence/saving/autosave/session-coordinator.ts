@@ -1,5 +1,5 @@
 import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
-import type { PreparedPressurePathHint } from "../../serialization/prepared-pressure-hints";
+import type { PreparedPressurePathHint } from "../../serialization/output/prepared-pressure-hints";
 import type { ExistingFilePort } from "../save-ports";
 
 import { AutosaveCoordinator } from "./coordinator";

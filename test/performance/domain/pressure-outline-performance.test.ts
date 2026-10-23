@@ -1,26 +1,26 @@
-import { iteratePressureBoundarySimplification } from "../../../src/domain/geometry/pressure-boundary-simplification";
-import { iteratePressureContourQuantization } from "../../../src/domain/geometry/pressure-contour-quantization";
+import { iteratePressureBoundarySimplification } from "../../../src/domain/geometry/pressure/pressure-boundary-simplification";
+import { iteratePressureContourQuantization } from "../../../src/domain/geometry/pressure/pressure-contour-quantization";
 import * as primitives from "../../../src/domain/geometry/primitives";
-import * as intersections from "../../../src/domain/geometry/pressure-boundary-intersections";
-import { buildPressureCapsule } from "../../../src/domain/geometry/pressure-joins";
+import * as intersections from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
+import { buildPressureCapsule } from "../../../src/domain/geometry/pressure/pressure-joins";
 import {
   measurePressureWindow,
   preparePressureWindows,
-} from "../../../src/domain/geometry/pressure-window";
-import { serializePressureWindows } from "../../../src/domain/geometry/pressure-path-serialization";
+} from "../../../src/domain/geometry/pressure/pressure-window";
+import { serializePressureWindows } from "../../../src/domain/geometry/pressure/pressure-path-serialization";
 import {
   iteratePressureUnion,
   pressureShapeBoundary,
   PRESSURE_UNION_OPERATIONS_PER_SHAPE,
   PRESSURE_PREPARATION_CHECK_INTERVAL as CHECK_INTERVAL,
-} from "../../../src/domain/geometry/pressure-union";
+} from "../../../src/domain/geometry/pressure/pressure-union";
 import { polygonWinding, sampleSvgPathContours } from "../../fixtures/domain/svg-path-fill";
 import { PRESSURE_REFERENCE } from "../../fixtures/domain/pressure-reference";
 import { smoothStrokeCenters } from "../../../src/domain/geometry/stroke-path";
 import { simplifyStrokeCenters } from "../../../src/domain/geometry/stroke-simplification";
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
-import { buildPressureOutline } from "../../../src/domain/geometry/pressure-outline";
+import { buildPressureOutline } from "../../../src/domain/geometry/pressure/pressure-outline";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
 import { buildPressureResizeFrame } from "./geometry-frame-fixture";
 import { createAdversarialPressureWindow } from "../../fixtures/domain/adversarial-pressure-window";

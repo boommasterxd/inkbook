@@ -15,17 +15,20 @@ import type {
   SelectionSnapPorts,
   TimeSlicedSelectionCommitPreparation,
 } from "./handle-types";
-import { selectionHandleSnapGuide, selectionRotationDelta } from "./handle-snap-resolution";
-import { assertFiniteHandlePoint } from "./handle-session-validation";
-import { SelectionScaleGesture } from "./selection-scale";
-import { selectionSnapFeatureEnabled } from "./snap-features";
+import {
+  selectionHandleSnapGuide,
+  selectionRotationDelta,
+} from "./transform/handle-snap-resolution";
+import { assertFiniteHandlePoint } from "./transform/handle-session-validation";
+import { SelectionScaleGesture } from "./transform/selection-scale";
+import { selectionSnapFeatureEnabled } from "./transform/snap-features";
 import {
   moveSelection,
   rotateSelection,
   type ScaleFactors,
   type TransformSliceScheduler,
-} from "./transforms";
-import { materializeTargetedHandle } from "./targeted-handle-action";
+} from "./transform/transforms";
+import { materializeTargetedHandle } from "./transform/targeted-handle-action";
 import {
   exceedsExactPreviewWork,
   exceedsReplacementWork,

@@ -2,7 +2,7 @@ import type { App } from "obsidian";
 
 import { InkbookMotionModal } from "../dialogs/inkbook-motion-modal";
 import { menuDomWindow } from "../menus/menu-dom";
-import type { PhoneSheetNavigation, PhoneSheetPage } from "../menus/panel-page";
+import type { PhoneSheetNavigation, PhoneSheetPage } from "../menus/panels/panel-page";
 
 import type { InkbookSettingTab } from "./setting-tab";
 import { SettingsModalContent, type InkbookSettingsView } from "./settings-modal-content";
@@ -98,6 +98,7 @@ class InkbookSettingsModal extends InkbookMotionModal {
       app,
       () => store.getDeviceSettings().motion,
       (ownerWindow) => settingTab.scheduler(ownerWindow),
+      (listener) => store.subscribeDeviceSettings(listener),
     );
     this.#onClosed = onClosed;
     this.#settingTab = settingTab;

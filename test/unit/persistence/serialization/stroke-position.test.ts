@@ -2,19 +2,19 @@ import { calculateElementBounds } from "../../../../src/domain/geometry/public";
 import {
   elementFactsSteps,
   validatedDeltaElementFactsSteps,
-} from "../../../../src/persistence/serialization/incremental-validation";
-import { completeSerializationSteps } from "../../../../src/persistence/serialization/serialization-model-preparation";
-import { StrokeShapeCache } from "../../../../src/persistence/serialization/stroke-shape-cache";
+} from "../../../../src/persistence/serialization/output/incremental-validation";
+import { completeSerializationSteps } from "../../../../src/persistence/serialization/output/serialization-model-preparation";
+import { StrokeShapeCache } from "../../../../src/persistence/serialization/output/stroke-shape-cache";
 import {
   adoptTransferredStrokeSamples,
   copySnapshotToRuntime,
-} from "../../../../src/persistence/worker/runtime/runtime-elements";
-import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/incremental-document-serializer";
+} from "../../../../src/persistence/worker/runtime/model/runtime-elements";
+import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/output/incremental-document-serializer";
 import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
-import { canonicalElement } from "../../../../src/persistence/serialization/canonical-snapshot";
-import { serializeElementPaths } from "../../../../src/persistence/serialization/path-markup";
+import { canonicalElement } from "../../../../src/persistence/serialization/metadata/canonical-snapshot";
+import { serializeElementPaths } from "../../../../src/persistence/serialization/output/path-markup";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createAllElementSnapshot, createSnapshot } from "./fixtures";
 

@@ -1,0 +1,136 @@
+import { normalizeStrokePaint } from "../../../domain/geometry/pressure/pressure-paint";
+import { buildElementPathParts } from "../../../domain/geometry/element-path";
+import type { InkElementV1 } from "../../../domain/schema/public";
+import { PRESENTATION_ATTRIBUTES, pathPresentation } from "../content/element-presentation";
+import { SVG_NAMESPACE } from "../constants";
+import { positionedTransform } from "../content/stroke-position";
+import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
+
+export interface MotionVisual {
+  readonly bytes: number;
+  readonly targets: readonly { node: SVGElement; opacity: number; position?: string }[];
+  readonly nodes: readonly SVGPathElement[];
+}
+
+export function createMotionVisual(
+  ownerDocument: Document,
+  parent: SVGGElement,
+  elements: readonly InkElementV1[],
+  remainingPaths: number,
+  remainingBytes: number,
+  readCanonicalPath?: (element: InkElementV1) => readonly SvgPathPart[] | undefined,
+): MotionVisual {
+  const nodes: SVGPathElement[] = [];
+  const targets: { node: SVGElement; opacity: number; position?: string }[] = [];
+  let bytes = 0;
+  for (const element of elements) {
+    if (motionBudgetExhausted(nodes.length, bytes, remainingPaths, remainingBytes)) {
+      return { bytes, nodes, targets };
+    }
+    const canonical = readCanonicalPath?.(element);
+    const parts = canonical ?? buildElementPathParts(element);
+    const grouped = element.kind === "stroke" && element.style.pressureEnabled;
+    const groupBytes = parts.reduce((total, part) => total + part.d.length * 2, 0);
+    if (
+      grouped &&
+      (nodes.length + parts.length > remainingPaths || bytes + groupBytes > remainingBytes)
+    ) {
+      return { bytes, nodes, targets };
+    }
+    const group = grouped ? ownerDocument.createElementNS(SVG_NAMESPACE, "g") : null;
+    if (group !== null && element.kind === "stroke") {
+      const opacity = normalizeStrokePaint(element.style).opacity;
+      group.setAttribute("opacity", String(opacity));
+      parent.append(group);
+      targets.push({ node: group, opacity });
+    }
+    for (const part of parts) {
+      const pathBytes = part.d.length * 2;
+      if (nodes.length >= remainingPaths || bytes + pathBytes > remainingBytes) {
+        return { bytes, nodes, targets };
+      }
+      const node = appendMotionPath(
+        ownerDocument,
+        group ?? parent,
+        element,
+        part,
+        canonical !== undefined,
+      );
+      if (group === null)
+        targets.push({
+          node,
+          opacity: 1,
+          position: canonical === undefined ? "" : strokeCssPosition(element),
+        });
+      nodes.push(node);
+      bytes += pathBytes;
+    }
+  }
+  return { bytes, nodes, targets };
+}
+
+function appendMotionPath(
+  ownerDocument: Document,
+  parent: SVGGElement,
+  element: InkElementV1,
+  part: ReturnType<typeof buildElementPathParts>[number],
+  canonical: boolean,
+): SVGPathElement {
+  const node = ownerDocument.createElementNS(SVG_NAMESPACE, "path");
+  node.setAttribute("d", part.d);
+  const transform = canonical ? positionedTransform(element, null) : null;
+  if (transform !== null) node.setAttribute("transform", transform);
+  node.setAttribute("pointer-events", "none");
+  node.setAttribute("aria-hidden", "true");
+  const presentation = pathPresentation(element, part);
+  for (const attribute of PRESENTATION_ATTRIBUTES) {
+    const value = presentation[attribute];
+    if (value !== null) node.setAttribute(attribute, value);
+  }
+  parent.append(node);
+  return node;
+}
+
+function motionBudgetExhausted(
+  paths: number,
+  bytes: number,
+  remainingPaths: number,
+  remainingBytes: number,
+): boolean {
+  return paths >= remainingPaths || bytes >= remainingBytes;
+}
+
+function strokeCssPosition(element: InkElementV1): string {
+  const offset = element.kind === "stroke" ? element.offset : undefined;
+  return offset === undefined ? "" : `translate(${offset.x}px, ${offset.y}px) `;
+}
+
+export function removeMotionVisual(visual: MotionVisual): void {
+  for (const target of visual.targets) target.node.remove();
+}
+
+export function writeMotionVisual(visual: MotionVisual, opacity: number, scale: number): void {
+  for (const target of visual.targets)
+    writeMotionStyle(target.node, opacity * target.opacity, scale, target.position);
+}
+
+export function writeMotionStyle(
+  node: SVGElement,
+  opacity: number,
+  scale: number,
+  position = "",
+): void {
+  node.style.setProperty("opacity", format(opacity));
+  node.style.setProperty("transform", `${position}scale(${format(scale)})`);
+  node.setAttribute("data-inkbook-motion", "");
+}
+
+export function clearMotionStyle(node: SVGElement): void {
+  node.style.removeProperty("opacity");
+  node.style.removeProperty("transform");
+  node.removeAttribute("data-inkbook-motion");
+}
+
+function format(value: number): string {
+  return String(Math.round(value * 10_000) / 10_000);
+}

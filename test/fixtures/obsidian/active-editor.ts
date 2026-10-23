@@ -5,10 +5,10 @@ import type {
   GestureControllerPorts,
   GesturePreviewStart,
 } from "../../../src/editor/gestures/public";
-import type { CreationPreviewRenderer } from "../../../src/obsidian/embeds/active-editor/creation-preview";
+import type { CreationPreviewRenderer } from "../../../src/obsidian/embeds/active-editor/previews/creation-preview";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../src/obsidian/embeds/active-editor/prepared-element-history";
-import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
+import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/document-model-port";
 import { immediateWorkScheduler } from "./immediate-work-scheduler";
 
 export function activeEditorStoreHistory(store: ElementStore): ActiveEditorHistory {

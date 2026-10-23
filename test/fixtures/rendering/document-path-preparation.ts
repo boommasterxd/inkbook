@@ -7,8 +7,8 @@ import type {
 import { buildElementPathParts } from "../../../src/domain/geometry/element-path";
 import { ElementStore } from "../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
-import { DocumentPathPreparation } from "../../../src/rendering/scene/document-path-preparation";
-import { ScenePathCache } from "../../../src/rendering/scene/path-cache";
+import { DocumentPathPreparation } from "../../../src/rendering/scene/content/document-path-preparation";
+import { ScenePathCache } from "../../../src/rendering/scene/content/path-cache";
 import { indexedStroke } from "../editor/stroke";
 
 /** Observes real lazy order reads and worker-boundary canonical path construction. */

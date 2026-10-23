@@ -1,6 +1,6 @@
 import { MAX_STROKE_POINTS } from "../schema/constants";
 import type { StrokeElementV1 } from "../schema/types";
-import type { PressureCenter } from "./pressure-joins";
+import type { PressureCenter } from "./pressure/pressure-joins";
 import { strokeWorldPoint } from "./stroke-position";
 import { strokeCenterAt } from "./stroke-path";
 import { simplifyStrokeCenters, STROKE_SIMPLIFICATION_WINDOW } from "./stroke-simplification";

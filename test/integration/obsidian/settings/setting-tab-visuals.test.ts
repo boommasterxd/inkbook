@@ -15,7 +15,6 @@ import {
   requiredElement,
   requiredRender,
   renders,
-  setPlatformMobile,
   VaultAdapter,
 } from "./setting-tab-fixture";
 
@@ -42,8 +41,6 @@ describe("InkbookSettingTab tool disclosures", () => {
       ".inkbook-settings-tool-trigger",
     );
     const linePanel = requiredElement<HTMLElement>(line.container, ".inkbook-settings-tool-panel");
-    vi.spyOn(rectanglePanel, "getBoundingClientRect").mockReturnValue(elementRect(240));
-    vi.spyOn(linePanel, "getBoundingClientRect").mockReturnValue(elementRect(180));
 
     expect(rectangleTrigger.firstElementChild).toMatchObject({
       className: "inkbook-settings-tool-title",
@@ -63,30 +60,16 @@ describe("InkbookSettingTab tool disclosures", () => {
     expect(rectangleTrigger.getAttribute("aria-expanded")).toBe("true");
     expect(rectanglePanel.hidden).toBe(false);
     expect(rectanglePanel.inert).toBe(false);
-    expect(rectanglePanel.dataset.resizing).toBe("true");
-    expect(rectanglePanel.style.blockSize).toBe("0px");
-    await vi.waitFor(() => expect(rectanglePanel.style.blockSize).toBe("240px"));
     expect(lineTrigger.getAttribute("aria-expanded")).toBe("false");
     expect(linePanel.hidden).toBe(true);
-    finishBlockSizeTransition(rectanglePanel);
-    expect(rectanglePanel.dataset.resizing).toBeUndefined();
-    expect(rectanglePanel.style.blockSize).toBe("");
 
     lineTrigger.click();
-    await vi.waitFor(() => expect(linePanel.style.blockSize).toBe("180px"));
-    finishBlockSizeTransition(linePanel);
     expect(rectanglePanel.hidden).toBe(false);
     expect(linePanel.hidden).toBe(false);
     rectangleTrigger.click();
     expect(rectanglePanel.hidden).toBe(false);
     expect(rectanglePanel.inert).toBe(true);
-    expect(rectanglePanel.dataset.resizing).toBe("true");
-    expect(rectanglePanel.style.blockSize).toBe("240px");
-    await vi.waitFor(() => expect(rectanglePanel.style.blockSize).toBe("0px"));
-    finishBlockSizeTransition(rectanglePanel);
-    expect(rectanglePanel.hidden).toBe(true);
-    expect(rectanglePanel.dataset.resizing).toBeUndefined();
-    expect(rectanglePanel.style.blockSize).toBe("");
+    await vi.waitFor(() => expect(rectanglePanel.hidden).toBe(true));
     expect(linePanel.hidden).toBe(false);
     rectangle.cleanup();
     line.cleanup();
@@ -95,9 +78,11 @@ describe("InkbookSettingTab tool disclosures", () => {
 
 describe("InkbookSettingTab tool disclosure motion preferences", () => {
   it("honors reduced and full device motion preferences", async () => {
-    const matchMedia = vi
-      .spyOn(window, "matchMedia")
-      .mockReturnValue({ matches: true } as MediaQueryList);
+    const matchMedia = vi.spyOn(window, "matchMedia").mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList);
     const reducedStore = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     reducedStore.updateDeviceSettings((settings) => ({ ...settings, motion: "reduced" }));
     const rendered = renderTool(createTab(reducedStore), "Drawing tools", "Pen");
@@ -111,8 +96,6 @@ describe("InkbookSettingTab tool disclosure motion preferences", () => {
     trigger.click();
     expect(panel.hidden).toBe(false);
     expect(panel.inert).toBe(false);
-    expect(panel.dataset.resizing).toBeUndefined();
-    expect(panel.style.blockSize).toBe("");
     trigger.click();
     expect(panel.hidden).toBe(true);
     expect(panel.inert).toBe(true);
@@ -126,44 +109,13 @@ describe("InkbookSettingTab tool disclosure motion preferences", () => {
       animated.container,
       ".inkbook-settings-tool-panel",
     );
-    vi.spyOn(animatedPanel, "getBoundingClientRect").mockReturnValue(elementRect(240));
     requiredElement<HTMLButtonElement>(
       animated.container,
       ".inkbook-settings-tool-trigger",
     ).click();
-    expect(animatedPanel.dataset.resizing).toBe("true");
-    expect(animatedPanel.style.blockSize).toBe("0px");
-    await vi.waitFor(() => expect(animatedPanel.style.blockSize).toBe("240px"));
-    finishBlockSizeTransition(animatedPanel);
+    expect(animatedPanel.hidden).toBe(false);
     animated.cleanup();
     matchMedia.mockRestore();
-  });
-});
-
-describe("InkbookSettingTab mobile tool disclosures", () => {
-  it("marks mobile triggers and table steppers so host tap feedback cannot remain highlighted", () => {
-    setPlatformMobile(true);
-    const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
-    const pen = renderTool(tab, "Drawing tools", "Pen");
-    const table = renderExpandedTool(tab, "Shapes and structures", "Table");
-    try {
-      expect(
-        requiredElement(pen.container, ".inkbook-settings-tool-trigger").classList.contains(
-          "inkbook-settings-tool-trigger-touch",
-        ),
-      ).toBe(true);
-      const steppers = table.container.querySelectorAll(".inkbook-menu-stepper-button");
-      expect(steppers).toHaveLength(2);
-      expect(
-        [...steppers].every((stepper) =>
-          stepper.classList.contains("inkbook-menu-stepper-button-touch"),
-        ),
-      ).toBe(true);
-    } finally {
-      pen.cleanup();
-      table.cleanup();
-      setPlatformMobile(false);
-    }
   });
 });
 
@@ -380,10 +332,46 @@ describe("InkbookSettingTab page defaults", () => {
     expect(tab.getControlValue("pageDefaults.backgroundType")).toBe("squares");
     background.cleanup();
   });
+
+  it("ignores a failed background save after the controls are disposed", async () => {
+    const vault = new VaultAdapter();
+    let rejectSave: ((error: Error) => void) | undefined;
+    const save = vi.spyOn(vault, "saveData").mockImplementation(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectSave = reject;
+        }),
+    );
+    const background = renderPageDefault(
+      createTab(new InkbookSettingsStore(vault, new DeviceAdapter())),
+      "Background",
+    );
+    const content = requiredElement<HTMLElement>(
+      background.container,
+      ".inkbook-settings-background-content",
+    );
+    const error = requiredElement<HTMLElement>(
+      background.container,
+      ".inkbook-settings-control-error",
+    );
+    background.container
+      .querySelector<HTMLButtonElement>("button[data-background-type='dots']")
+      ?.click();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    background.cleanup();
+    const originalContent = content.firstElementChild;
+    rejectSave?.(new Error("Save failed"));
+    await expect(save.mock.results[0]?.value).rejects.toThrow("Save failed");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(error.hidden).toBe(true);
+    expect(error.textContent).toBe("");
+    expect(content.firstElementChild).toBe(originalContent);
+  });
 });
 
 describe("InkbookSettingTab background layout motion", () => {
-  it("keeps the reverse transition alive when the interrupted transition cancels", () => {
+  it("keeps the same controls usable through a rapid layout reversal", () => {
     const background = renderPageDefault(
       createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter())),
       "Background",
@@ -392,103 +380,58 @@ describe("InkbookSettingTab background layout motion", () => {
       background.container,
       ".inkbook-settings-background-content",
     );
-    const frames: FrameRequestCallback[] = [];
-    const request = vi
-      .spyOn(window, "requestAnimationFrame")
-      .mockImplementation((frame) => frames.push(frame));
-    vi.spyOn(content, "getBoundingClientRect")
-      .mockReturnValueOnce(elementRect(340))
-      .mockReturnValueOnce(elementRect(220))
-      .mockReturnValueOnce(elementRect(280))
-      .mockReturnValueOnce(elementRect(340));
     background.container
       .querySelector<HTMLButtonElement>("button[data-background-type='none']")
       ?.click();
-    frames.shift()?.(0);
     background.container
       .querySelector<HTMLButtonElement>("button[data-background-type='lines']")
       ?.click();
-    expect(content.style.blockSize).toBe("280px");
-    content.dispatchEvent(new TransitionEvent("transitioncancel", { propertyName: "block-size" }));
-    expect(content.dataset.resizing).toBe("true");
-    frames.shift()?.(60);
-    content.dispatchEvent(new TransitionEvent("transitioncancel", { propertyName: "block-size" }));
-    expect(content.style.blockSize).toBe("340px");
-    expect(content.dataset.resizing).toBe("true");
-    finishBlockSizeTransition(content);
-    expect(content.style.blockSize).toBe("");
-    request.mockRestore();
+    expect(content.querySelector(".inkbook-menu-background-spacing input")).not.toBeNull();
+    expect(
+      content
+        .querySelector<HTMLButtonElement>("button[data-background-type='lines']")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
     background.cleanup();
   });
 
-  it("animates the spacing height when switching to and from none", async () => {
+  it("keeps spacing controls and selection state in sync through layout changes", () => {
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
     const background = renderPageDefault(tab, "Background");
     const content = requiredElement<HTMLElement>(
       background.container,
       ".inkbook-settings-background-content",
     );
-    vi.spyOn(content, "getBoundingClientRect")
-      .mockReturnValueOnce(elementRect(340))
-      .mockReturnValueOnce(elementRect(220))
-      .mockReturnValueOnce(elementRect(220))
-      .mockReturnValueOnce(elementRect(340));
+    for (const type of ["none", "lines"]) {
+      background.container
+        .querySelector<HTMLButtonElement>(`button[data-background-type='${type}']`)
+        ?.click();
+      expect(
+        content
+          .querySelector<HTMLButtonElement>(`button[data-background-type='${type}']`)
+          ?.getAttribute("aria-pressed"),
+      ).toBe("true");
+      expect(content.querySelector(".inkbook-menu-background-spacing input") !== null).toBe(
+        type !== "none",
+      );
+    }
 
+    const matchMedia = vi.spyOn(window, "matchMedia").mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList);
     background.container
       .querySelector<HTMLButtonElement>("button[data-background-type='none']")
       ?.click();
-    expect(content.dataset.resizing).toBe("true");
-    expect(content.style.blockSize).toBe("340px");
-    await vi.waitFor(() => expect(content.style.blockSize).toBe("220px"));
-    finishBlockSizeTransition(content);
-    expect(content.dataset.resizing).toBeUndefined();
-    expect(content.style.blockSize).toBe("");
-
-    background.container
-      .querySelector<HTMLButtonElement>("button[data-background-type='lines']")
-      ?.click();
-    expect(content.dataset.resizing).toBe("true");
-    expect(content.style.blockSize).toBe("220px");
-    await vi.waitFor(() => expect(content.style.blockSize).toBe("340px"));
-    finishBlockSizeTransition(content);
-    expect(content.dataset.resizing).toBeUndefined();
-    expect(content.style.blockSize).toBe("");
-
-    const matchMedia = vi
-      .spyOn(window, "matchMedia")
-      .mockReturnValue({ matches: true } as MediaQueryList);
-    background.container
-      .querySelector<HTMLButtonElement>("button[data-background-type='none']")
-      ?.click();
-    expect(content.dataset.resizing).toBeUndefined();
-    expect(content.style.blockSize).toBe("");
+    expect(content.querySelector(".inkbook-menu-background-spacing input")).toBeNull();
     matchMedia.mockRestore();
     background.cleanup();
   });
 });
 
-function elementRect(height: number): DOMRect {
-  return {
-    bottom: height,
-    height,
-    left: 0,
-    right: 100,
-    top: 0,
-    width: 100,
-    x: 0,
-    y: 0,
-    toJSON: () => ({}),
-  };
-}
-
 function renderPageDefault(tab: Parameters<typeof groups>[0], name: string) {
   const group = groups(tab).find((candidate) => candidate.heading === "Page defaults");
   if (group === undefined) throw new Error("Missing Page defaults group.");
   return renderDefinition(requiredRender(renders(group), name));
-}
-
-function finishBlockSizeTransition(element: HTMLElement): void {
-  const event = new Event("transitionend") as TransitionEvent;
-  Object.defineProperty(event, "propertyName", { value: "block-size" });
-  element.dispatchEvent(event);
 }

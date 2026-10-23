@@ -3,13 +3,13 @@ import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 
 import * as geometryBounds from "../../../src/domain/geometry/public";
-import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
+import * as pressureUnion from "../../../src/domain/geometry/pressure/pressure-union";
 import { ElementStore } from "../../../src/domain/store/public";
 import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
 import {
   createLassoSelectionArea,
   elementMatchesSelectionAreaSteps,
-} from "../../../src/editor/selection/selection-area";
+} from "../../../src/editor/selection/query/selection-area";
 import { maximumStroke } from "./maximum-stroke-fixture";
 
 describe("editor gesture hot paths", () => {

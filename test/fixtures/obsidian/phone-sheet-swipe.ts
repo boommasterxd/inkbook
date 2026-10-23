@@ -1,7 +1,7 @@
 import { workSchedulerFromFrames } from "./work-scheduler";
 import { vi } from "vitest";
 
-import { PhoneSheetSwipeController } from "../../../src/obsidian/menus/phone-sheet-swipe";
+import { PhoneSheetSwipeController } from "../../../src/obsidian/menus/panels/phone-sheet-swipe";
 import { createHtmlElement } from "../../adapters/obsidian/dom";
 
 interface SwipeFrameQueue {

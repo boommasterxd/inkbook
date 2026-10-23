@@ -9,7 +9,7 @@ import {
   moveSelection,
   rotateSelection,
   scaleElement,
-} from "../../../../src/editor/selection/transforms";
+} from "../../../../src/editor/selection/transform/transforms";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
 import { highlighter } from "./fixtures";
 

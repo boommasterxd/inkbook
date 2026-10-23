@@ -2,9 +2,9 @@ import { vi } from "vitest";
 import {
   projectNavigationCursorLayout,
   readNavigationLayout,
-} from "../../../src/obsidian/embeds/active-editor/navigation-layout";
+} from "../../../src/obsidian/embeds/active-editor/navigation/navigation-layout";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling";
-import { layoutHarness } from "../../integration/obsidian/embeds/active-editor-layout-fixture";
+import { layoutHarness } from "../../integration/obsidian/embeds/active-editor/layout/active-editor-layout-fixture";
 import { domRect } from "./active-editor";
 
 export function ownZoomResizeFixture() {

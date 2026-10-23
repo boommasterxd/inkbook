@@ -1,7 +1,7 @@
 import {
   PresentationEntrance,
   type PresentationEntranceState,
-} from "../../../../src/obsidian/embeds/presentation-entrance";
+} from "../../../../src/obsidian/embeds/presentation/presentation-entrance";
 import type { MotionPreference } from "../../../../src/rendering/motion/transitions";
 
 import { createPresentationMotionWindow } from "../../../fixtures/obsidian/presentation-motion-window";

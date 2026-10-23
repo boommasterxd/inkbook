@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { assertOverflowCapacity } from "../../../src/domain/store/record-factory";
+import { assertOverflowCapacity } from "../../../src/domain/store/records/record-factory";
 import type { ElementRecord } from "../../../src/domain/store/types";
 function record(index: number): ElementRecord {
   return {

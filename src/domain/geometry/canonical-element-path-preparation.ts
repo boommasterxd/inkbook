@@ -6,18 +6,24 @@ import type {
   PressureWindowMeasurement,
   PressurePathWindow,
   PressurePreparationMode,
-} from "./prepared-pressure-geometry";
+} from "./pressure/prepared-pressure-geometry";
 import { buildElementPathParts, type SvgPathPart } from "./element-path";
 import { buildCenterline } from "./stroke-path";
 import { type simplifyStrokeCenters, STROKE_SIMPLIFICATION_WINDOW } from "./stroke-simplification";
-import { visitPreparedPressureOutline, type PressureOutlinePiece } from "./pressure-outline";
+import {
+  visitPreparedPressureOutline,
+  type PressureOutlinePiece,
+} from "./pressure/pressure-outline";
 import {
   pressureWindowMemoryUsage,
   pressureOutlinePieceMemoryUsage,
   serializePressureWindows,
   type PressureWindow,
-} from "./pressure-path-serialization";
-import { preparePressureWindowSteps, PRESSURE_WINDOW_SCRATCH_BYTES } from "./pressure-window";
+} from "./pressure/pressure-path-serialization";
+import {
+  preparePressureWindowSteps,
+  PRESSURE_WINDOW_SCRATCH_BYTES,
+} from "./pressure/pressure-window";
 import type { InkElementV1, StrokeElementV1 } from "../schema/public";
 
 /** Prepares canonical simplification and contour pieces in bounded windows. */

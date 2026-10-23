@@ -13,11 +13,11 @@ import {
   SPATIAL_CELL_SIZE,
 } from "../../../domain/spatial/index";
 import type { ElementStore, StoreDelta, StoreSliceScheduler } from "../../../domain/store/public";
-import { MutationPreparationScheduler } from "../../../domain/store/mutation-preparation-scheduler";
+import { MutationPreparationScheduler } from "../../../domain/store/mutations/mutation-preparation-scheduler";
 import {
   prepareInsertionElementSteps,
   preparedInsertionBounds,
-} from "../../../domain/store/prepared-insertion-element";
+} from "../../../domain/store/mutations/prepared-insertion-element";
 import type { PastePlan } from "../../../persistence/clipboard/public";
 import { capturePastePlan } from "../../../persistence/clipboard/paste-plan-snapshot";
 

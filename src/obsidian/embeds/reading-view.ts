@@ -5,12 +5,15 @@ import {
 } from "obsidian";
 
 import { findMarkdownInkbookEmbeds } from "./markdown-embed";
-import type { InkbookDocumentRecognition } from "./document-recognition";
-import { createLoadingPlaceholder, type LoadingPlaceholder } from "./loading-placeholder";
-import { createInkbookLockedPreview } from "./locked-preview";
-import { PresentationController } from "./presentation-controller";
-import type { EmbedIntegrationPorts, ResolvedInkbookDocument } from "./presentation-port";
-import { samePreviewContentIdentity } from "./safe-preview-svg";
+import type { InkbookDocumentRecognition } from "./preview/document-recognition";
+import { createLoadingPlaceholder, type LoadingPlaceholder } from "./preview/loading-placeholder";
+import { createInkbookLockedPreview } from "./preview/locked-preview";
+import { PresentationController } from "./presentation/presentation-controller";
+import type {
+  EmbedIntegrationPorts,
+  ResolvedInkbookDocument,
+} from "./presentation/presentation-port";
+import { samePreviewContentIdentity } from "./preview/safe-preview-svg";
 
 let nextReadingAttachmentId = 0;
 
@@ -245,6 +248,7 @@ class PendingReadingRenderChild extends MarkdownRenderChild {
     this.children = Array.from(host.childNodes);
     this.#loading = createLoadingPlaceholder(host, {
       motion: ports.sessions.getMotionPreference?.() ?? "system",
+      subscribeMotionPreference: ports.subscribeMotionPreference,
       scheme: ports.scheme,
       workScheduler: ports.workScheduler(host.ownerDocument.defaultView),
     });

@@ -2,17 +2,17 @@ import { expect, it, vi } from "vitest";
 import { ElementStore } from "../../../src/domain/store/public";
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../src/domain/schema/public";
 import * as centers from "../../../src/domain/geometry/stroke-path";
-import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
+import * as pressureUnion from "../../../src/domain/geometry/pressure/pressure-union";
 import * as position from "../../../src/domain/geometry/stroke-position";
 import {
   createRectangleSelectionArea,
   elementMatchesSelectionAreaSteps,
-} from "../../../src/editor/selection/selection-area";
-import { elementContainsPoint } from "../../../src/editor/selection/hit-test";
+} from "../../../src/editor/selection/query/selection-area";
+import { elementContainsPoint } from "../../../src/editor/selection/query/hit-test";
 import { SelectionFrameSession } from "../../../src/editor/selection/selection-frame";
 import { selectionOverlayGeometry } from "../../../src/editor/selection/overlay-geometry";
-import { moveSelection } from "../../../src/editor/selection/transforms";
-import { strokePrimitiveSteps } from "../../../src/editor/selection/stroke-selection-geometry";
+import { moveSelection } from "../../../src/editor/selection/transform/transforms";
+import { strokePrimitiveSteps } from "../../../src/editor/selection/query/stroke-selection-geometry";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { rectangleSelectionAround } from "../../fixtures/editor/selection-query";
 

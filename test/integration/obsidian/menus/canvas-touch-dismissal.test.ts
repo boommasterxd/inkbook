@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
-import { CanvasTouchBoundary } from "../../../../src/obsidian/embeds/canvas-touch-boundary";
-import { AdaptivePanelSession } from "../../../../src/obsidian/menus/adaptive-panel";
+import { CanvasTouchBoundary } from "../../../../src/obsidian/embeds/active-scene/canvas-touch-boundary";
+import { AdaptivePanelSession } from "../../../../src/obsidian/menus/panels/adaptive-panel";
 import { createOwnedMenuFactory } from "../../../../src/obsidian/menus/owned-menu-factory";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";

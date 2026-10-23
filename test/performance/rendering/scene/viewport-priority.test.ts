@@ -2,8 +2,8 @@ import { expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
-import { SceneEntrantPriority } from "../../../../src/rendering/scene/scene-entrant-priority";
-import { MountSlice } from "../../../../src/rendering/scene/mount-slice";
+import { SceneEntrantPriority } from "../../../../src/rendering/scene/visibility/scene-entrant-priority";
+import { MountSlice } from "../../../../src/rendering/scene/reconciliation/mount-slice";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import {

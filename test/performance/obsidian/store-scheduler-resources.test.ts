@@ -1,10 +1,10 @@
 import { expect, it, vi } from "vitest";
 
 import { SharedFrameScheduler } from "../../../src/domain/scheduling/shared-frame-scheduler";
-import { createWorkspaceDocumentRuntimes } from "../../../src/obsidian/embeds/workspace-runtime-workers";
+import { createWorkspaceDocumentRuntimes } from "../../../src/obsidian/embeds/workspace/workspace-runtime-workers";
 import { ManualHost } from "../../fixtures/scheduling/manual-frame-host";
 import { ElementStore, type StoreSliceScheduler } from "../../../src/domain/store/public";
-import { verifyVaultUnlockIntegrity } from "../../../src/obsidian/embeds/vault-unlock-integrity";
+import { verifyVaultUnlockIntegrity } from "../../../src/obsidian/embeds/document-session/vault-unlock-integrity";
 import { createTestStroke, createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 import { windowBindingHarness } from "../../fixtures/obsidian/window-scheduling";
 import { SchedulerDisposedError } from "../../../src/domain/scheduling/work-scheduler";

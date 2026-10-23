@@ -57,6 +57,41 @@ it("reuses only privately captured immutable headers while keeping attached samp
   ).toBe(0);
 });
 
+it("rejects class prototypes and forged native Object constructors in both capture and validation", () => {
+  class CustomRecord {}
+  function ObjectImpostor() {}
+  const getter = vi.fn(() => Object);
+  const fake = Object.create(null) as object;
+  Object.defineProperty(fake, "constructor", { value: ObjectImpostor });
+  Object.defineProperty(ObjectImpostor, "prototype", { value: fake });
+  Object.defineProperty(ObjectImpostor, "name", { value: "Object" });
+  Object.defineProperty(ObjectImpostor, "toString", {
+    value: () => Function.prototype.toString.call(Object),
+  });
+  const nativeMismatch = Object.create(null) as object;
+  Object.defineProperty(nativeMismatch, "constructor", { value: Object });
+  const accessor = Object.create(null) as object;
+  Object.defineProperty(accessor, "constructor", { get: getter });
+  for (const prototype of [
+    CustomRecord.prototype,
+    Object.create(null) as object,
+    fake,
+    nativeMismatch,
+    accessor,
+  ]) {
+    const source = Object.assign(Object.create(prototype) as object, stroke());
+    expect(() => captureRuntimeElementHeader(source)).toThrow(TypeError);
+    expect(validateRuntimeInkElementV1(source)).toMatchObject({
+      ok: false,
+      error: { code: "invalid-json-value" },
+    });
+  }
+  expect(getter).not.toHaveBeenCalled();
+  const nullPrototype = Object.assign(Object.create(null) as object, stroke());
+  expect(captureRuntimeElementHeader(nullPrototype)).toMatchObject({ kind: "stroke" });
+  expect(validateRuntimeInkElementV1(nullPrototype)).toMatchObject({ ok: true });
+});
+
 it("registers copied JSON structure only after completion and never trusts external frozen arrays", () => {
   const external = Object.freeze([0, 0, 0.5]);
   expect(isCapturedJsonSampleArray(external)).toBe(false);

@@ -7,12 +7,12 @@ import {
   ElementStore,
   type ElementReplacementHistoryData,
 } from "../../../../../src/domain/store/public";
-import * as mutationPayload from "../../../../../src/domain/store/mutation-payload";
-import * as replacementPlanner from "../../../../../src/domain/store/replacement-planner";
+import * as mutationPayload from "../../../../../src/domain/store/mutations/mutation-payload";
+import * as replacementPlanner from "../../../../../src/domain/store/replacements/replacement-planner";
 import { ActiveDocumentHistory } from "../../../../../src/obsidian/embeds/active-editor/document-history";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
+import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { invalidatePendingHistory } from "../../../../fixtures/obsidian/active-editor";
 import {

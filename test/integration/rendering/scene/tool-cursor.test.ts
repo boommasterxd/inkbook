@@ -3,7 +3,7 @@ import { cursorPointerEvent, toolCursorHarness } from "../../../fixtures/obsidia
 import { sceneNavigationFixture } from "../../../fixtures/obsidian/scene-navigation";
 import { createInputState } from "../../../../src/editor/input";
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
-import { liveStrokePresentation } from "../../../../src/rendering/scene/element-presentation";
+import { liveStrokePresentation } from "../../../../src/rendering/scene/content/element-presentation";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import type { SceneToolCursor } from "../../../../src/rendering/scene/tool-cursor";

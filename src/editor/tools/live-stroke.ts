@@ -1,4 +1,4 @@
-import type { PressureWindow } from "../../domain/geometry/pressure-window";
+import type { PressureWindow } from "../../domain/geometry/pressure/pressure-window";
 import { roundCanonical } from "../../domain/geometry/public";
 import {
   LiveStrokeGeometry,

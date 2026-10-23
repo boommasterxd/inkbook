@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 
-import { IncrementalDocumentSerializer } from "../../../../../src/persistence/serialization/incremental-document-serializer";
-import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
+import { IncrementalDocumentSerializer } from "../../../../../src/persistence/serialization/output/incremental-document-serializer";
+import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/model/document-model";
 import { executor, rectangle, snapshot } from "./fixtures";
 
 function synchronizeOnce(model: DocumentModelRuntime): void {

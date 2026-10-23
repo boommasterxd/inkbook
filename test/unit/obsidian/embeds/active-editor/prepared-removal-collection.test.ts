@@ -4,7 +4,7 @@ import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { ActiveDocumentHistory } from "../../../../../src/obsidian/embeds/active-editor/document-history";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
+import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { invalidatePendingHistory } from "../../../../fixtures/obsidian/active-editor";
 import { elementMutationPorts } from "../../../../fixtures/obsidian/element-mutation-ports";

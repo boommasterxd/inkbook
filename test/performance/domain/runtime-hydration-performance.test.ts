@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { validateRuntimeInkSnapshotV1 } from "../../../src/domain/schema/snapshot-validation";
 import { ElementStore } from "../../../src/domain/store/public";
-import { MAX_UNLOCK_BATCH_ELEMENTS } from "../../../src/persistence/worker/runtime/unlock-batch-limits";
+import { MAX_UNLOCK_BATCH_ELEMENTS } from "../../../src/persistence/worker/runtime/wire/unlock-batch-limits";
 
 import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 import { CheckpointSliceScheduler } from "./domain-scenarios";

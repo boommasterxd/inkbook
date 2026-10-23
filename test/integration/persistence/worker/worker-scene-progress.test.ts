@@ -1,11 +1,11 @@
 import { expect, it, vi } from "vitest";
-import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/incremental-document-serializer";
+import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/output/incremental-document-serializer";
 import {
   MAX_SCENE_PATH_BYTES,
   scenePathBytes,
-} from "../../../../src/persistence/worker/runtime/scene-path-limits";
+} from "../../../../src/persistence/worker/runtime/model/scene-path-limits";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/document-runtime";
-import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
+import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/bridge/worker-bridge";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import {
   createWorkerBridgeClient,

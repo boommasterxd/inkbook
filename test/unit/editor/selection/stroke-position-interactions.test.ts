@@ -1,15 +1,15 @@
-import { elementContainsPoint } from "../../../../src/editor/selection/hit-test";
+import { elementContainsPoint } from "../../../../src/editor/selection/query/hit-test";
 import { describe, expect, it } from "vitest";
 import { stroke } from "../../domain/schema/fixtures";
 import { transformedStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
 import { strokeWorldPoint } from "../../../../src/domain/geometry/stroke-position";
 import { createSweptCapsuleCheck } from "../../../../src/editor/gestures/eraser-intersection";
-import { visibleElementPrimitiveSteps } from "../../../../src/editor/selection/element-selection-geometry";
+import { visibleElementPrimitiveSteps } from "../../../../src/editor/selection/query/element-selection-geometry";
 import {
   moveSelection,
   rotateSelection,
   scaleElement,
-} from "../../../../src/editor/selection/transforms";
+} from "../../../../src/editor/selection/transform/transforms";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 
 function positionedStroke(): StrokeElementV1 {

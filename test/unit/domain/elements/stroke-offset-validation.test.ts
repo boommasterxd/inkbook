@@ -8,7 +8,7 @@ import { MAX_ABSOLUTE_COORDINATE } from "../../../../src/domain/schema/constants
 import { validateInkElementV1 } from "../../../../src/domain/schema/element-validation";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/types";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { moveSelection } from "../../../../src/editor/selection/transforms";
+import { moveSelection } from "../../../../src/editor/selection/transform/transforms";
 import { stroke } from "../schema/fixtures";
 
 const limit = MAX_ABSOLUTE_COORDINATE;

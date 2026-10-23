@@ -11,8 +11,6 @@ export class InkbookModal extends InkbookMotionModal {
     this.modalEl.classList.add("inkbook-action-dialog");
     this.titleEl.classList.add("inkbook-dialog-content-spacing");
     this.contentEl.classList.add("inkbook-dialog-content-spacing");
-    this.modalEl.setAttribute("role", "dialog");
-    this.modalEl.setAttribute("aria-modal", "true");
   }
 
   public override onClose(): void {

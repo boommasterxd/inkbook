@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
-import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
+import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/bridge/worker-bridge";
 import {
   createOneStrokeWorkerSnapshot,
   createWorkerBridgeClient,

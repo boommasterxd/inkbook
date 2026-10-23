@@ -1,12 +1,12 @@
 import { expect, it, vi } from "vitest";
 
-import { prepareReplacementCandidatesTimeSliced } from "../../../src/domain/store/replacement-planner";
+import { prepareReplacementCandidatesTimeSliced } from "../../../src/domain/store/replacements/replacement-planner";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { EndpointReference } from "../../../src/domain/store/types";
 import { connectionChain } from "../../fixtures/domain/connection-chain";
 import * as anchors from "../../../src/domain/geometry/anchors";
 import { ConnectedSelectionPreviewSession } from "../../../src/editor/selection/public";
-import { editLinearEndpointFromWorld } from "../../../src/editor/selection/transforms";
+import { editLinearEndpointFromWorld } from "../../../src/editor/selection/transform/transforms";
 
 it("checks the shared deadline between record reads across 10,000 connected lines", async () => {
   const elements = connectionChain(10_000);

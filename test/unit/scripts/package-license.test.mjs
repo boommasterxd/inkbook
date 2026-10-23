@@ -19,6 +19,9 @@ const sourcePaths = [
   "package.json",
   "versions.json",
   ...["react", "react-dom", "scheduler"].map((name) => `node_modules/${name}/LICENSE`),
+  ...["motion", "framer-motion", "motion-dom", "motion-utils"].map(
+    (name) => `node_modules/${name}/LICENSE.md`,
+  ),
 ];
 const sources = Object.fromEntries(
   await Promise.all(
@@ -66,21 +69,27 @@ it.each([
   });
 });
 
-it("rejects removed attribution even when the source and bundle agree", async () => {
-  const incompleteLicense = license.replace(
-    "Copyright (c) Meta Platforms, Inc. and affiliates.",
-    "",
-  );
-  await expect(
-    verify({
-      LICENSE: incompleteLicense,
-      "dist/main.js": `/*!\n${incompleteLicense}\n*/\n${runtime}`,
-    }),
-  ).rejects.toMatchObject({
-    code: 1,
-    stderr: expect.stringContaining("LICENSE must contain the complete react license notice."),
-  });
-});
+it.each([
+  ["react", "Copyright (c) Meta Platforms, Inc. and affiliates."],
+  ["motion", "Copyright (c) 2024 [Motion](https://motion.dev) B.V."],
+  ["framer-motion", "Copyright (c) 2018 Framer B.V."],
+])(
+  "rejects removed %s attribution even when source and bundle agree",
+  async (dependency, notice) => {
+    const incompleteLicense = license.replace(notice, "");
+    await expect(
+      verify({
+        LICENSE: incompleteLicense,
+        "dist/main.js": `/*!\n${incompleteLicense}\n*/\n${runtime}`,
+      }),
+    ).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining(
+        `LICENSE must contain the complete ${dependency} license notice.`,
+      ),
+    });
+  },
+);
 
 it("rejects dependency license drift requiring refreshed attribution", async () => {
   await expect(

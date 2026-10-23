@@ -8,7 +8,7 @@ import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-e
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { ActiveEditorStyleSession } from "../../../../../src/obsidian/embeds/active-editor/style-session";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
+import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { elementReplacementPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";

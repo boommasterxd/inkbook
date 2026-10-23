@@ -6,7 +6,7 @@ import {
   resolveClipboardPayload,
 } from "../../../../src/persistence/clipboard/codec";
 import { planPaste, resolvePasteTarget } from "../../../../src/persistence/clipboard/operations";
-import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/document-model";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/model/document-model";
 import type { ClipboardResult, PastePlan } from "../../../../src/persistence/clipboard/types";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { ARROW_ID, page, RECTANGLE_ID, selectedElements, spatialRectangle } from "./fixtures";

@@ -4,6 +4,7 @@ import { gzipSync } from "node:zlib";
 
 import { build, context } from "esbuild";
 import { minify } from "terser";
+import { wrapPluginRuntime } from "./embedded-runtime-module.mjs";
 
 const production = !process.argv.includes("--watch");
 const licenseBanner = `/*!\n${(await readFile("LICENSE", "utf8")).trim()}\n*/`;
@@ -13,12 +14,6 @@ const editorChromeEntry = resolve("src/rendering/ui/editor-chrome-entry.ts");
 const editorChromeSourceModule = resolve("src/rendering/ui/editor-chrome-source.ts");
 const pluginRuntimeEntry = resolve("src/obsidian/plugin-runtime-entry.ts");
 const pluginRuntimeSourceModule = resolve("src/obsidian/plugin-runtime-source.ts");
-const pluginRuntimeHostModules = new Set([
-  "@codemirror/language",
-  "@codemirror/state",
-  "@codemirror/view",
-  "obsidian",
-]);
 const base91Alphabet =
   "!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_abcdefghijklmnopqrstuvwxyz{|}~";
 const terserOptions = {
@@ -129,23 +124,6 @@ const embeddedEditorChrome = embeddedJavaScript({
   sourceModule: editorChromeSourceModule,
   token: "__INKBOOK_EDITOR_CHROME_SOURCE__",
 });
-
-function wrapPluginRuntime(source) {
-  const requiredModules = [...source.matchAll(/require\("([^"]+)"\)/gu)].map((match) => match[1]);
-  const unsupportedModule = requiredModules.find(
-    (moduleId) => moduleId === undefined || !pluginRuntimeHostModules.has(moduleId),
-  );
-  if (unsupportedModule !== undefined) {
-    throw new Error(`Plugin runtime requires unsupported host module: ${unsupportedModule}`);
-  }
-  return `const hostModules=globalThis.__inkbookHostModules;
-if(hostModules===undefined)throw new Error("Inkbook host modules are unavailable.");
-const require=id=>{const dependency=hostModules[id];if(dependency===undefined)throw new Error("Unsupported Inkbook host module: "+id);return dependency;};
-const module={exports:{}},exports=module.exports;
-${source}
-const activateInkbookPlugin=module.exports.activateInkbookPlugin;
-export{activateInkbookPlugin};`;
-}
 
 const embeddedPluginRuntime = embeddedJavaScript({
   entry: pluginRuntimeEntry,

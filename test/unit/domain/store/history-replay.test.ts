@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../../src/domain/commands/history";
-import * as payload from "../../../../src/domain/store/mutation-payload";
-import * as recordFactory from "../../../../src/domain/store/record-factory";
+import * as payload from "../../../../src/domain/store/mutations/mutation-payload";
+import * as recordFactory from "../../../../src/domain/store/records/record-factory";
 import {
   ElementStore,
   type AppliedElementMutation,

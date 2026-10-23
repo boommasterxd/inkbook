@@ -1,10 +1,10 @@
-import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
+import type { PreparedPressureGeometryPort } from "../../domain/geometry/pressure/prepared-pressure-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { StrokePathGeometry } from "../../domain/geometry/stroke-path";
 import type { InkElementV1, PageV1 } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
-import type { PathPresentation } from "./element-presentation";
+import type { PathPresentation } from "./content/element-presentation";
 
 type SceneDirtyDomain = "connection" | "geometry" | "order" | "paint" | "visibility";
 
@@ -53,7 +53,7 @@ export interface SceneStorePort {
     import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation | undefined;
   pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
-  beginOrder?(): import("../../domain/store/order-cursor").StoreOrderCursor;
+  beginOrder?(): import("../../domain/store/mutations/order-cursor").StoreOrderCursor;
   beginQuery?(bounds: Bounds): SceneSpatialQueryCursor;
   query(bounds: Bounds, sink: SpatialQuerySink): void;
 }

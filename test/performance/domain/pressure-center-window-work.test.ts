@@ -5,7 +5,7 @@ import * as simplification from "../../../src/domain/geometry/stroke-simplificat
 import { strokeLocalGeometry } from "../../../src/domain/geometry/stroke-position";
 import { ElementStore } from "../../../src/domain/store/public";
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../src/domain/schema/public";
-import { selectionStrokeCenterWindow } from "../../../src/editor/selection/stroke-selection-centers";
+import { selectionStrokeCenterWindow } from "../../../src/editor/selection/query/stroke-selection-centers";
 import { indexedStroke } from "../../fixtures/editor/stroke";
 
 function fixture() {

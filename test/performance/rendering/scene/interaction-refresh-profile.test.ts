@@ -5,7 +5,7 @@ import {
   DETACHED_ELEMENT_CACHE_MAX_BYTES,
   PATH_CACHE_MAX_BYTES,
 } from "../../../../src/rendering/scene/constants";
-import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
+import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
 import {
   FakeScheduler,
   FakeNode,

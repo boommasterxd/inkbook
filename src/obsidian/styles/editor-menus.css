@@ -10,7 +10,7 @@
 }
 
 .inkbook-menu-title-content[data-tone="caution"] {
-  color: var(--color-orange);
+  color: var(--inkbook-tone-caution);
 }
 
 .inkbook-menu-control {
@@ -93,6 +93,17 @@
 
 .inkbook-menu-controls .inkbook-menu-choice,
 .inkbook-menu-controls .inkbook-menu-stepper-button {
+  --inkbook-menu-choice-selected-background: color-mix(
+    in srgb,
+    var(--interactive-accent) 15%,
+    var(--background-primary)
+  );
+  --inkbook-menu-choice-selected-border: color-mix(
+    in srgb,
+    var(--interactive-accent) 74%,
+    transparent
+  );
+
   align-items: center;
   appearance: none;
   background: var(--background-primary);
@@ -110,26 +121,10 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
-.inkbook-menu-stepper-button-touch.mobile-tap:not(:active, .inkbook-menu-stepper-button-pressed) {
-  background: var(--background-primary);
-}
-
-.inkbook-menu-choice:hover,
-.inkbook-menu-stepper-button:active,
-.inkbook-menu-stepper-button.inkbook-menu-stepper-button-pressed {
-  background: var(--background-modifier-hover);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .inkbook-menu-stepper-button:not(.inkbook-menu-stepper-button-touch):hover {
-    background: var(--background-modifier-hover);
-  }
-}
-
-.inkbook-menu-choice[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary));
-  border-color: color-mix(in srgb, var(--interactive-accent) 74%, transparent);
-  color: var(--interactive-accent);
+.inkbook-menu-choice[aria-pressed="true"]:not([data-inkbook-motion-choice]) {
+  background: var(--inkbook-menu-choice-selected-background);
+  border-color: var(--inkbook-menu-choice-selected-border);
+  color: var(--text-normal);
 }
 
 .inkbook-menu-choice-preview {
@@ -318,25 +313,22 @@
   display: block;
   inline-size: 40px;
   padding: 3px;
-  transition: background-color var(--inkbook-motion-fast) var(--inkbook-motion-easing);
 }
 
-.inkbook-menu-switch-track::before {
+.inkbook-menu-switch-thumb {
   background: var(--background-primary);
   border-radius: 999px;
   block-size: 16px;
   box-shadow: var(--shadow-s);
-  content: "";
   display: block;
   inline-size: 16px;
-  transition: translate var(--inkbook-motion-fast) var(--inkbook-motion-easing);
 }
 
 .inkbook-menu-switch input:checked + .inkbook-menu-switch-track {
   background: var(--interactive-accent);
 }
 
-.inkbook-menu-switch input:checked + .inkbook-menu-switch-track::before {
+.inkbook-menu-switch input:checked + .inkbook-menu-switch-track .inkbook-menu-switch-thumb {
   translate: 18px 0;
 }
 
@@ -454,11 +446,4 @@
   .inkbook-menu-line-preview {
   flex: 0 0 auto;
   inline-size: 22px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .inkbook-menu-switch-track,
-  .inkbook-menu-switch-track::before {
-    transition: none;
-  }
 }

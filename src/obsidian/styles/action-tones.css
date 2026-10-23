@@ -1,0 +1,25 @@
+:is(
+  .inkbook-owned-menu,
+  .inkbook-adaptive-panel,
+  .inkbook-settings-modal,
+  .inkbook-shortcuts-view,
+  .inkbook-settings-validation-surface
+) {
+  --inkbook-tone-caution: color-mix(in srgb, var(--color-orange) 55%, var(--text-normal));
+  --inkbook-tone-danger: color-mix(in srgb, var(--text-error) 50%, var(--text-normal));
+}
+
+.inkbook-dialog-actions {
+  --inkbook-dialog-danger-background: color-mix(
+    in srgb,
+    var(--background-modifier-error) 78%,
+    black
+  );
+  --inkbook-dialog-danger-hover: color-mix(in srgb, var(--background-modifier-error) 68%, black);
+  --inkbook-dialog-danger-pressed: color-mix(in srgb, var(--background-modifier-error) 58%, black);
+}
+
+.inkbook-dialog-actions[data-inkbook-feedback-owner] > .mod-warning {
+  background-color: var(--inkbook-dialog-danger-background);
+  color: var(--text-on-accent);
+}

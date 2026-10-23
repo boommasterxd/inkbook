@@ -1,8 +1,8 @@
-import type { PreparedPressureGeometryPort } from "./prepared-pressure-geometry";
+import type { PreparedPressureGeometryPort } from "./pressure/prepared-pressure-geometry";
 import { simplifyStrokeCenters } from "./stroke-simplification";
 import { MAX_STROKE_POINTS } from "../schema/constants";
 import type { SvgPathPart } from "./svg-path-part";
-import { buildPressureOutline } from "./pressure-outline";
+import { buildPressureOutline } from "./pressure/pressure-outline";
 import type { PointV1, StrokeElementV1 } from "../schema/types";
 import { strokeWorldPoint } from "./stroke-position";
 import { lineTo, moveTo } from "./svg-format";

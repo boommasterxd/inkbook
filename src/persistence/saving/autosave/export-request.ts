@@ -12,7 +12,7 @@ import {
   MAX_PREPARED_PRESSURE_HINTS,
   preparedPressureHintBytes,
   type PreparedPressurePathHint,
-} from "../../serialization/prepared-pressure-hints";
+} from "../../serialization/output/prepared-pressure-hints";
 
 export type ConcreteExportRequest = ExportRequest<InkElementV1, PageV1, InkSnapshotV1>;
 

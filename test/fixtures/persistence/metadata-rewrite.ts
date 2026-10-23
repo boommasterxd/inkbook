@@ -1,4 +1,4 @@
-import { metadataSha256 } from "../../../src/persistence/serialization/canonical-metadata";
+import { metadataSha256 } from "../../../src/persistence/serialization/metadata/canonical-metadata";
 
 export const CURRENT_METADATA_REWRITES = Object.freeze([
   Object.freeze({

@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 
 import * as sampleCopy from "../../../../src/domain/elements/runtime-sample-copy";
 import * as sampleValidation from "../../../../src/domain/schema/stroke-sample-range-validation";
-import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/incremental-document-serializer";
+import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/output/incremental-document-serializer";
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/constants";
 import {
   createTestStroke,

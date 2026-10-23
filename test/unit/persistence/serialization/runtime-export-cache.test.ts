@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
-import { BackgroundFragmentCache } from "../../../../src/persistence/serialization/background";
-import { buildElementFragments } from "../../../../src/persistence/serialization/element-fragments";
+import { BackgroundFragmentCache } from "../../../../src/persistence/serialization/output/background";
+import { buildElementFragments } from "../../../../src/persistence/serialization/output/element-fragments";
 import {
   IncrementalDocumentSerializer,
   serializeInkbookDocument,

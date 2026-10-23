@@ -1,4 +1,4 @@
-import type { PhoneSheetNavigation } from "./panel-page";
+import type { PhoneSheetNavigation } from "./panels/panel-page";
 import type { ShapeId } from "../../rendering/ui/toolbar-types";
 
 export type BackgroundType = "none" | "lines" | "dots" | "squares";

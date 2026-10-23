@@ -1,3 +1,5 @@
+const animationSubtreeAdapters = new WeakSet<object>();
+
 export function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
 ): HTMLElementTagNameMap[K] {
@@ -5,6 +7,7 @@ export function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
 }
 
 export function installObsidianDomHelpers(): void {
+  installAnimationSubtreeAdapter();
   const elementPrototype = window.HTMLElement.prototype as HTMLElement & {
     setCssProps(properties: Record<string, string>): void;
   };
@@ -58,4 +61,17 @@ export function installObsidianDomHelpers(): void {
   testWindow.createEl = create;
   testWindow.createSpan = (options) => create("span", options);
   testWindow.createFragment = () => new window.DocumentFragment();
+}
+
+function installAnimationSubtreeAdapter(): void {
+  const prototype = window.Element.prototype;
+  if (animationSubtreeAdapters.has(prototype)) return;
+  animationSubtreeAdapters.add(prototype);
+  const getAnimations = Object.getOwnPropertyDescriptor(prototype, "getAnimations")
+    ?.value as Element["getAnimations"];
+  // Happy DOM omits the native subtree option used by lifecycle cleanup boundaries.
+  prototype.getAnimations = function (this: Element, options): Animation[] {
+    const elements = options?.subtree ? [this, ...this.querySelectorAll("*")] : [this];
+    return elements.flatMap((element) => getAnimations.call(element));
+  };
 }

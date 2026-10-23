@@ -4,7 +4,7 @@ import { ElementStore } from "../../../../src/domain/store/public";
 import { ConnectedSelectionPreviewSession } from "../../../../src/editor/selection/public";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
 import { connectionChain } from "../../../fixtures/domain/connection-chain";
-import { editLinearEndpointFromWorld } from "../../../../src/editor/selection/transforms";
+import { editLinearEndpointFromWorld } from "../../../../src/editor/selection/transform/transforms";
 
 describe("connected selection transform preview", () => {
   it("moves an unselected dependent endpoint through the reverse connection map", () => {
