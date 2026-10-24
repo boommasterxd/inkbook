@@ -12,9 +12,3 @@ export function resolveToolbarLayout(measurements: ToolbarMeasurements): Toolbar
     ? "wide"
     : "scrollable";
 }
-
-export function toolbarMainHalfWidth(element: HTMLElement): number {
-  const layoutWidth = element.offsetWidth > 0 ? element.offsetWidth : element.scrollWidth;
-  const width = layoutWidth > 0 ? layoutWidth : element.getBoundingClientRect().width;
-  return Math.max(0, width) / 2;
-}

@@ -32,7 +32,7 @@ export function createHarness() {
   const sceneStore = new ElementSceneStore(store);
   const menu = new RecordedMenu();
   const renderer = rendererPort(input);
-  const model = documentModel(store);
+  const model = createActiveEditorModel(store);
   const controller = new ActiveEditorController({
     applyZoomLayout: vi.fn(),
     backgroundSpacing: () => ({ dots: 25, lines: 25, squares: 25 }),
@@ -127,7 +127,7 @@ export function createButton(): HTMLButtonElement {
   return document.createElementNS("http://www.w3.org/1999/xhtml", "button") as HTMLButtonElement;
 }
 
-function documentModel(store: ElementStore): EditableDocumentModel {
+export function createActiveEditorModel(store: ElementStore): EditableDocumentModel {
   return {
     mutationAvailability: "available",
     arrangeElements: vi.fn(),

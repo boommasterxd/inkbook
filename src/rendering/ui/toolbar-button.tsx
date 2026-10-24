@@ -35,10 +35,6 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
   const lifecycle = useContext(toolbarMotionContext);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const present = useIsPresent();
-  const gestures = useToolbarOwnerGestures(
-    buttonRef,
-    props.disabled || !present || lifecycle.locking,
-  );
   const { action } = props.definition;
   const { registerButton } = props;
   const setButton = useCallback(
@@ -51,7 +47,6 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
   const { isPresent, controls, order } = useToolbarButtonAnimation(lifecycle, {
     enterOrder: props.enterOrder,
     action: props.definition.action,
-    gesture: gestures.gesture,
     disabled: props.disabled,
     pressed: props.pressed,
   });
@@ -105,7 +100,7 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
       <ToolbarButtonSurface
         active={props.pressed === true && !props.tool}
         danger={props.definition.action === "delete"}
-        ownerGesture={gestures.gesture}
+        disabled={props.disabled || !present || lifecycle.locking}
       />
       {props.tool && props.pressed === true ? (
         <motion.span
@@ -132,13 +127,15 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
 function ToolbarButtonSurface({
   active,
   danger,
-  ownerGesture,
+  disabled,
 }: {
   readonly active: boolean;
   readonly danger: boolean;
-  readonly ownerGesture: string;
+  readonly disabled: boolean;
 }) {
   const { colors, reduced } = useContext(toolbarMotionContext);
+  const surfaceRef = useRef<HTMLSpanElement>(null);
+  const { gesture: ownerGesture } = useToolbarOwnerGestures(surfaceRef, disabled);
   const resting = {
     backgroundColor: active ? (colors?.activeBackground ?? CHROME_TRANSPARENT) : CHROME_TRANSPARENT,
     borderColor: active ? (colors?.activeBorder ?? CHROME_TRANSPARENT) : CHROME_TRANSPARENT,
@@ -151,6 +148,7 @@ function ToolbarButtonSurface({
     <motion.span
       aria-hidden="true"
       className="inkbook-toolbar-button-surface"
+      ref={surfaceRef}
       initial={{ backgroundColor: CHROME_TRANSPARENT, borderColor: CHROME_TRANSPARENT }}
       animate={{
         ...resting,
