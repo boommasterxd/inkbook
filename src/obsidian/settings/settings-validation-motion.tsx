@@ -1,9 +1,13 @@
 import { AnimatePresence, LayoutGroup, motion, MotionConfig } from "motion/react";
 import { createPortal, flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import type { ReactNode } from "react";
+import { useLayoutEffect, type ReactNode } from "react";
 
-import { getTransitionDuration, STANDARD_EASING } from "../../rendering/motion/transitions";
+import {
+  getTransitionDuration,
+  MOTION_TOKENS,
+  STANDARD_EASING,
+} from "../../rendering/motion/transitions";
 import type { NativeControlFeedbackOptions } from "../menus/feedback/native-control-feedback";
 import { observeEffectiveMotion } from "../runtime/effective-motion";
 import {
@@ -15,14 +19,20 @@ import {
 } from "./settings-motion-boundary";
 
 const GROUP_SELECTOR = ".inkbook-settings-page-group, .inkbook-settings-tool-group";
-const BOUNDARY_SELECTOR = `${GROUP_SELECTOR}, .setting-item, .inkbook-settings-visual-row, .inkbook-settings-tool-section, .inkbook-settings-tool-controls, .inkbook-menu-controls, .inkbook-menu-control`;
+const BACKGROUND_CONTENT_SELECTOR =
+  ".inkbook-settings-background-row .inkbook-settings-visual-info, .inkbook-settings-background-row .inkbook-menu-background-choices, .inkbook-settings-background-row .inkbook-menu-background-spacing";
+const BOUNDARY_SELECTOR = `${GROUP_SELECTOR}, .setting-item, .inkbook-settings-visual-row, .inkbook-settings-tool-section, .inkbook-settings-tool-controls, .inkbook-menu-controls, .inkbook-menu-control, ${BACKGROUND_CONTENT_SELECTOR}`;
 const owners = new WeakMap<HTMLElement, SettingsValidationMotion>();
 
 /** Shares one projection owner for validation rows and their following native settings. */
 export function createSettingsValidationMotion(
   container: HTMLElement,
   options: NativeControlFeedbackOptions,
-): { set: (error: HTMLElement, message: string) => void; dispose: () => void } {
+): {
+  set: (error: HTMLElement, message: string) => void;
+  mutate: (update: () => void) => void;
+  dispose: () => void;
+} {
   const scope =
     container.closest<HTMLElement>(GROUP_SELECTOR) ?? container.parentElement ?? container;
   let owner = owners.get(scope);
@@ -39,6 +49,9 @@ export function createSettingsValidationMotion(
       if (disposed) return;
       errors.add(error);
       shared.set(error, message);
+    },
+    mutate: (update) => {
+      if (!disposed) shared.mutate(update);
     },
     dispose: () => {
       if (disposed) return;
@@ -76,6 +89,7 @@ class SettingsValidationMotion {
   }
 
   public set(error: HTMLElement, message: string): void {
+    if (this.#messages.get(error) === message) return;
     if (!this.#messages.has(error)) this.#messages.set(error, "");
     if (!this.#reduced && message !== "") this.#ensureRoot();
     error.classList.add("inkbook-menu-visually-hidden");
@@ -84,6 +98,15 @@ class SettingsValidationMotion {
     this.#messages.set(error, message);
     if (this.#reduced || this.#root === undefined) this.#settle();
     else this.#render();
+  }
+
+  public mutate(update: () => void): void {
+    if (this.#reduced) {
+      update();
+      return;
+    }
+    this.#ensureRoot();
+    this.#render(update, MOTION_TOKENS.standard / 1000);
   }
 
   public release(errors: ReadonlySet<HTMLElement>): boolean {
@@ -104,7 +127,6 @@ class SettingsValidationMotion {
   #ensureRoot(): void {
     if (this.#root !== undefined) {
       this.#boundaries = settingsMotionBoundaries(this.#scope, BOUNDARY_SELECTOR, this.#boundaries);
-      this.#render();
       return;
     }
     for (const error of this.#messages.keys()) {
@@ -117,14 +139,17 @@ class SettingsValidationMotion {
     this.#render();
   }
 
-  #render(): void {
+  #render(
+    update?: () => void,
+    duration = getTransitionDuration("fallback", this.#reduced) / 1000,
+  ): void {
     if (this.#root === undefined) return;
     guardCanceledSettingsAnimations(this.#scope);
-    const duration = getTransitionDuration("fallback", this.#reduced) / 1000;
     flushSync(() => {
       this.#root?.render(
         <MotionConfig transition={{ duration, ease: STANDARD_EASING }}>
           <LayoutGroup>{this.#boundaries.map((boundary) => this.#boundary(boundary))}</LayoutGroup>
+          <SettingsLayoutMutation update={update} />
         </MotionConfig>,
       );
     });
@@ -133,7 +158,11 @@ class SettingsValidationMotion {
 
   #boundary(boundary: SettingsMotionBoundary): ReactNode {
     return (
-      <ExistingSettingsMotion element={boundary.element} key={boundary.key} layout>
+      <ExistingSettingsMotion
+        element={boundary.element}
+        key={boundary.key}
+        layout={boundary.element.matches(BACKGROUND_CONTENT_SELECTOR) ? "position" : true}
+      >
         {boundary.children.map((child) => this.#boundary(child))}
         {[...this.#messages].map(([error, message]) =>
           error.parentElement === boundary.element ? this.#visual(error, message) : null,
@@ -193,4 +222,9 @@ class SettingsValidationMotion {
       }
     }
   }
+}
+
+function SettingsLayoutMutation({ update }: { readonly update: (() => void) | undefined }): null {
+  useLayoutEffect(() => update?.(), [update]);
+  return null;
 }

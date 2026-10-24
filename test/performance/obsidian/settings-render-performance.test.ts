@@ -5,6 +5,7 @@ import type { App, Plugin } from "obsidian";
 import { expect, it, vi } from "vitest";
 import { InkbookSettingTab } from "../../../src/obsidian/settings/setting-tab";
 import { SettingsModalContent } from "../../../src/obsidian/settings/settings-modal-content";
+import { renderSettingsControlContent } from "../../../src/obsidian/settings/settings-control-content";
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../fixtures/obsidian/settings-store";
 import { runInteractionFrames } from "../interaction-refresh-profile";
@@ -46,5 +47,74 @@ it("keeps unopened settings bounded and unrelated device changes without rebuild
     content.dispose();
     container.remove();
     vi.restoreAllMocks();
+  }
+});
+
+it("projects one changed validation message and skips geometry work for repeated invalid and valid input", async () => {
+  installObsidianDomHelpers();
+  const group = document.body.createDiv({ cls: "inkbook-settings-tool-group" });
+  const row = group.createDiv({ cls: "setting-item" });
+  const following = group.createDiv({ cls: "setting-item" });
+  following.createEl("button", { text: "Reset tool" });
+  let saveResult = Promise.resolve();
+  const release = renderSettingsControlContent(row, {
+    controls: () => [
+      { id: "opacity", kind: "number", label: "Opacity", min: 0, max: 1, step: 0.01, value: 1 },
+    ],
+    descriptions: {},
+    idPrefix: "settings-work-opacity",
+    onChange: () => saveResult,
+    ownerDocument: document,
+    readMotion: () => "full",
+  });
+  const field = row.querySelector<HTMLInputElement>('input[type="number"]')!;
+  const error = row.querySelector<HTMLElement>(".inkbook-settings-control-error")!;
+  const geometry = vi.spyOn(window.Element.prototype, "getBoundingClientRect");
+  const submit = (value: string): void => {
+    field.value = value;
+    field.dispatchEvent(new Event("change"));
+  };
+  try {
+    field.focus();
+    submit("101");
+    await Promise.resolve();
+    expect(error.textContent).toBe("Enter a valid setting value.");
+    expect(geometry.mock.contexts).toContain(row);
+    expect(geometry.mock.contexts).toContain(following);
+    geometry.mockClear();
+    submit("102");
+    await Promise.resolve();
+    expect(geometry).not.toHaveBeenCalled();
+    expect(error.hidden).toBe(false);
+
+    submit("80");
+    await Promise.resolve();
+    // Every existing projection boundary needs at most its old and new geometry once.
+    const reads = new Map<unknown, number>();
+    for (const element of geometry.mock.contexts) reads.set(element, (reads.get(element) ?? 0) + 1);
+    expect(reads.size).toBeGreaterThan(0);
+    expect(Math.max(...reads.values())).toBeLessThanOrEqual(2);
+    expect(error.hidden).toBe(true);
+    geometry.mockClear();
+    let rejectSave: ((reason: Error) => void) | undefined;
+    saveResult = new Promise<void>((_resolve, reject) => {
+      rejectSave = reject;
+    });
+    submit("70");
+    await Promise.resolve();
+    expect(geometry).not.toHaveBeenCalled();
+    rejectSave?.(new Error("Save failed"));
+    await Promise.resolve();
+    expect(error.textContent).toBe("The setting could not be saved.");
+    reads.clear();
+    for (const element of geometry.mock.contexts) reads.set(element, (reads.get(element) ?? 0) + 1);
+    expect(reads.size).toBeGreaterThan(0);
+    expect(Math.max(...reads.values())).toBeLessThanOrEqual(2);
+    expect(document.activeElement).toBe(field);
+    expect(row.querySelector('input[type="number"]')).toBe(field);
+  } finally {
+    release();
+    group.remove();
+    geometry.mockRestore();
   }
 });

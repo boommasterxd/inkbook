@@ -63,6 +63,7 @@ export class ActiveInkbookScene {
   readonly #onFirstStrokeCommitted: (() => void) | undefined;
   #firstStrokeCommitted = false;
   #chromeUpdatePending = false;
+  #committedHistory = { canUndo: false, canRedo: false };
   readonly #removeViewportListeners: () => void;
   #readyForInput = false;
   #surfaceFailed = false;
@@ -455,12 +456,22 @@ export class ActiveInkbookScene {
 
   #updateChrome(): void {
     if (this.#disposed) return;
-    if (this.#renderer.hasPendingSceneCommit) {
-      this.#chromeUpdatePending = true;
-      return;
-    }
-    this.#chromeUpdatePending = false;
-    updateActiveSceneChrome(this.#chrome, this.#controller, this.#layout);
+    this.#chromeUpdatePending = this.#renderer.hasPendingSceneCommit;
+    if (this.#chrome === undefined) return;
+    const props = this.#controller.chromeProps();
+    const state = props.toolbarState;
+    // New history actions wait for committed content; feedback and disabling never do.
+    if (!this.#chromeUpdatePending)
+      this.#committedHistory = { canUndo: state.canUndo, canRedo: state.canRedo };
+    const history = {
+      canUndo: state.canUndo && this.#committedHistory.canUndo,
+      canRedo: state.canRedo && this.#committedHistory.canRedo,
+    };
+    updateActiveSceneChrome(
+      this.#chrome,
+      { chromeProps: () => ({ ...props, toolbarState: { ...state, ...history } }) },
+      this.#layout,
+    );
   }
 
   #flushPendingChromeUpdate(): void {

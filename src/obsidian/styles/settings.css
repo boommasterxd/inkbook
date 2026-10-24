@@ -177,6 +177,10 @@
   margin-block-end: var(--size-4-3);
 }
 
+.inkbook-settings-background-row {
+  overflow: hidden;
+}
+
 .inkbook-settings-background-content {
   inline-size: 100%;
 }

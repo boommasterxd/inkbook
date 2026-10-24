@@ -220,16 +220,6 @@
   }
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-page-transition] {
-  max-block-size: var(--inkbook-adaptive-panel-viewport-height);
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"]
-  .inkbook-adaptive-panel[data-page-transition]
-  .inkbook-adaptive-panel-scroll {
-  max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height) - 16px);
-}
-
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-phone-keyboard-inset {
   block-size: var(--keyboard-height, 0);
   inline-size: 0;
