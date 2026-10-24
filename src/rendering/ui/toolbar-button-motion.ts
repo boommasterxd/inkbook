@@ -14,13 +14,11 @@ export function useToolbarButtonAnimation(
   {
     enterOrder,
     action,
-    gesture,
     disabled,
     pressed,
   }: {
     readonly enterOrder: number;
     readonly action: ToolbarAction;
-    readonly gesture: string;
     readonly disabled: boolean;
     readonly pressed: boolean | undefined;
   },
@@ -44,10 +42,7 @@ export function useToolbarButtonAnimation(
     if (lifecycle.reduced || lifecycle.preparing) {
       controls.set(definition);
       if (!lifecycle.preparing) complete();
-    } else
-      void controls
-        .start(definition === "visible" && gesture !== "rest" ? [definition, gesture] : definition)
-        .then(complete);
+    } else void controls.start(definition).then(complete);
     return () => {
       current = false;
       controls.stop();
@@ -58,7 +53,6 @@ export function useToolbarButtonAnimation(
     disabled,
     enterOrder,
     exitOrder,
-    gesture,
     isPresent,
     lifecycle.preparing,
     lifecycle.colors,
@@ -82,9 +76,7 @@ export function toolbarButtonVariants(
   const shown = context
     ? { scale: 1, ...foreground }
     : { scale: 1, ...foreground, opacity: disabled ? 0.48 : 1, width: "44px", flexBasis: "44px" };
-  const hidden = context
-    ? { scale: 0 }
-    : { scale: 0.96, opacity: 0, width: "0px", flexBasis: "0px" };
+  const hidden = context ? { scale: 0 } : { scale: 0.96, opacity: 0 };
   const transition = (exiting: boolean, order = 0) => ({
     ...toolbarLayoutTransition(lifecycle.reduced),
     ...(context
