@@ -4,6 +4,33 @@ import { PresentationOperationFeedback } from "../../../../../src/obsidian/embed
 import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
+it("defers all feedback allocation and positioning until the manual-opening threshold", () => {
+  const { body, root, ownerWindow, frames } = createFramedPresentation();
+  let timers = 0;
+  Object.assign(ownerWindow, { setTimeout: () => ++timers });
+  const read = vi.spyOn(root, "getBoundingClientRect");
+  const insertion = vi.spyOn(body, "appendChild");
+  const allocation = vi.spyOn(root, "createDiv");
+  const feedback = new PresentationOperationFeedback(
+    root as unknown as HTMLElement,
+    undefined,
+    workSchedulerFromFrames(ownerWindow),
+  );
+  const operation = feedback.begin("opening");
+  expect(allocation).not.toHaveBeenCalled();
+  expect(root.children).toHaveLength(0);
+  expect(timers).toBe(1);
+  for (let event = 0; event < 1_000; event += 1)
+    root.ownerDocument.dispatchEvent(new Event("scroll"));
+  expect(read).not.toHaveBeenCalled();
+  expect(insertion).not.toHaveBeenCalled();
+  expect(frames.size).toBe(0);
+  operation.finish();
+  feedback.dispose();
+  expect(root.children).toHaveLength(0);
+  expect(body.children).toEqual([root]);
+});
+
 it("hands off overdue loading feedback synchronously with bounded work", () => {
   const { body, root } = createPresentation();
   const ownerWindow = root.ownerDocument.defaultView;

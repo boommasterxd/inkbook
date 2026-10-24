@@ -87,9 +87,7 @@ export function beginWorkspaceActivation(
   mounted.loadError = undefined;
   const activation: WorkspaceActivation = {
     autoActivationAttempt,
-    feedback: mounted.savingFeedback
-      ? undefined
-      : (mounted.initialLoading?.feedback ?? mounted.feedback.begin("loading")),
+    feedback: activationFeedback(mounted, autoActivationAttempt),
     release: () => {
       if (mounted.activation === activation) delete mounted.activation;
     },
@@ -97,6 +95,15 @@ export function beginWorkspaceActivation(
   delete mounted.initialLoading;
   mounted.activation = activation;
   return activation;
+}
+
+function activationFeedback(
+  mounted: WorkspaceMountedPresentation,
+  autoActivationAttempt: number | undefined,
+): WorkspaceActivation["feedback"] {
+  if (mounted.savingFeedback !== undefined) return undefined;
+  if (autoActivationAttempt === undefined) return mounted.feedback.begin("opening");
+  return mounted.initialLoading?.feedback ?? mounted.feedback.begin("loading");
 }
 
 /** Initial insertion waits for width measurement; ordinary unlocking waits for the preview. */

@@ -20,7 +20,6 @@ describe("shared placeholder loading feedback", () => {
     expect(root.children).toHaveLength(0);
     expect(root.dataset.inkbookMotion).toBe("reduced");
     runTimer();
-    expect(root.children).toHaveLength(0);
     const indicators = host.getElementsByClassName("inkbook-operation-feedback");
     expect(indicators.length).toBe(1);
     expect(indicators.item(0)?.dataset.inkbookOperation).toBe("loading");

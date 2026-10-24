@@ -5,6 +5,7 @@ import type { PresentationAttachment } from "../../../../../src/obsidian/embeds/
 import {
   cancelInitialWorkspaceLoading,
   createWorkspaceMountedPresentation,
+  createWorkspacePresentationStateSetter,
   finishInitialWorkspaceLoading,
   startInitialWorkspaceLoading,
   updateWorkspaceMountedSettings,
@@ -66,6 +67,15 @@ describe("mounted presentation initial entrance", () => {
   });
 });
 
+it("cancels failed activation feedback immediately while readiness can finish its visual lifetime", () => {
+  const harness = createHarness();
+  const setState = createWorkspacePresentationStateSetter(new Map());
+  setState(harness.mounted.attachment, "load-error", harness.initial);
+  expect(harness.initial.finish).toHaveBeenCalledExactlyOnceWith("immediate");
+  setState(harness.mounted.attachment, "active", harness.subsequent);
+  expect(harness.subsequent.finish).toHaveBeenCalledExactlyOnceWith();
+});
+
 describe("mounted presentation loading continuity", () => {
   it("ends initial loading when the locked preview becomes ready", async () => {
     const harness = createHarness();
@@ -84,8 +94,18 @@ describe("mounted presentation loading continuity", () => {
     harness.present(true);
     await Promise.resolve();
     const activation = beginWorkspaceActivation(harness.mounted, undefined);
-    expect(harness.begin).toHaveBeenLastCalledWith("loading");
+    expect(harness.begin).toHaveBeenLastCalledWith("opening");
     expect(activation?.feedback).toBe(harness.subsequent);
+  });
+
+  it("acknowledges a manual click while an initial reveal is still pending", async () => {
+    const harness = await startPendingActivation("before-presentation");
+    const activation = beginWorkspaceActivation(harness.mounted, undefined);
+    expect(harness.begin).toHaveBeenLastCalledWith("opening");
+    expect(activation?.feedback).toBe(harness.subsequent);
+    harness.present(true);
+    await Promise.resolve();
+    expect(harness.subsequent.finish).not.toHaveBeenCalled();
   });
 
   it.each(["before-presentation", "after-presentation"])(

@@ -9,7 +9,46 @@ import {
 } from "../../../../../src/obsidian/embeds/presentation/presentation-operation-feedback";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
+import { createOperationFeedbackPresentation } from "../../../../fixtures/obsidian/operation-feedback-presentation";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
+
+describe("PresentationOperationFeedback backdrop lifetime", () => {
+  it("releases completed and interrupted backdrop exits without retaining or closing a successor", async () => {
+    const root = createOperationFeedbackPresentation();
+    const feedback = new PresentationOperationFeedback(
+      root,
+      undefined,
+      workSchedulerFromFrames({ requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }),
+    );
+    const backdrop = () => root.querySelector<HTMLElement>(".inkbook-operation-backdrop");
+    try {
+      feedback.begin("loading", performance.now() - 1000).finish();
+      expect(document.querySelector('[role="status"]')).toBeNull();
+      const completed = backdrop()!;
+      completed.getAnimations()[0]!.finish();
+      await Promise.resolve();
+      expect(completed.isConnected).toBe(false);
+      expect(completed.getAnimations()).toHaveLength(0);
+      expect(backdrop()).toBeNull();
+
+      feedback.begin("loading", performance.now() - 1000).finish();
+      const interrupted = backdrop()!;
+      feedback.begin("loading", performance.now() - 1000);
+      await Promise.resolve();
+      expect(interrupted.isConnected).toBe(false);
+      expect(interrupted.getAnimations()).toHaveLength(0);
+      expect(document.querySelector('[role="status"]')).not.toBeNull();
+      expect(root.querySelectorAll(".inkbook-operation-backdrop")).toHaveLength(1);
+      feedback.dispose();
+      expect(backdrop()).toBeNull();
+      expect(document.querySelector('[role="status"]')).toBeNull();
+    } finally {
+      feedback.dispose();
+      root.remove();
+      vi.restoreAllMocks();
+    }
+  });
+});
 
 describe("PresentationOperationFeedback live motion preferences", () => {
   it.each(["loading", "saving"] as const)(
@@ -55,7 +94,11 @@ describe("PresentationOperationFeedback live motion preferences", () => {
         operation.finish();
         expect(icon.getAnimations()).toHaveLength(0);
         expect(icon.isConnected).toBe(false);
-        expect(disconnect).toHaveBeenCalledOnce();
+        expect(disconnect).not.toHaveBeenCalled();
+        root.dataset.inkbookMotion = "reduced";
+        await vi.waitFor(() => expect(disconnect).toHaveBeenCalledOnce());
+        expect(root.getElementsByClassName("inkbook-operation-backdrop")).toHaveLength(0);
+        root.dataset.inkbookMotion = "full";
         feedback.begin("loading", performance.now() - 1000);
         const replacement = document.querySelector<HTMLElement>(
           ".inkbook-operation-feedback-icon",
@@ -118,7 +161,8 @@ describe("PresentationOperationFeedback layout", () => {
     expect(host?.dataset.inkbookFeedbackSpace).toBe("viewport");
     expect(host?.dataset.inkbookScheme).toBe("dark");
     expect(host?.dataset.inkbookMotion).toBe("reduced");
-    expect(harness.root.children).toHaveLength(0);
+    const backdrop = harness.root.getElementsByClassName("inkbook-operation-backdrop").item(0);
+    expect(backdrop?.attributes.get("aria-hidden")).toBe("true");
     expect(harness.observeStyle).toHaveBeenCalledWith(harness.root, {
       attributes: true,
       attributeFilter: ["data-inkbook-scheme", "data-inkbook-motion"],
@@ -129,6 +173,7 @@ describe("PresentationOperationFeedback layout", () => {
     expect(host?.dataset.inkbookScheme).toBe("light");
     expect(host?.dataset.inkbookMotion).toBeUndefined();
     operation.finish();
+    expect(backdrop?.parentElement).toBeNull();
     expect(harness.body.children).toEqual([harness.root]);
     expect(harness.disconnectStyle).toHaveBeenCalledOnce();
     harness.feedback.dispose();
@@ -166,6 +211,7 @@ describe("PresentationOperationFeedback layout", () => {
     if (action === "replacement") harness.feedback.begin("saving");
     else harness.feedback.dispose();
     expect(host?.parentElement).toBeNull();
+    expect(harness.root.children).toHaveLength(0);
     expect(harness.disconnectStyle).toHaveBeenCalledOnce();
     expect(harness.disconnectResize).toHaveBeenCalledOnce();
     expect(harness.pendingFrames()).toBe(0);

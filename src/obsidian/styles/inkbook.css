@@ -359,6 +359,16 @@
   z-index: var(--layer-menu);
 }
 
+.inkbook-root .inkbook-operation-backdrop {
+  backdrop-filter: blur(3px);
+  background: rgb(0 0 0 / 52%);
+  border-radius: var(--inkbook-shell-radius);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: var(--layer-menu);
+}
+
 .inkbook-root .inkbook-feedback-unmeasured {
   inset-block-start: 50%;
   inset-inline-start: 50%;

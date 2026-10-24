@@ -217,7 +217,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
             outcome.sessionId,
           );
         if (!presented || context === undefined || current !== activation || !isActive()) {
-          loadFeedback?.finish();
+          loadFeedback?.finish("immediate");
           this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
           return;
         }

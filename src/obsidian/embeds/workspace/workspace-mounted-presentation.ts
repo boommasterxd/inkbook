@@ -21,7 +21,8 @@ export function createWorkspacePresentationStateSetter(
   feedback?: PresentationOperationFeedbackHandle,
 ) => void {
   return (attachment, state, feedback) => {
-    feedback?.finish();
+    if (state === "active") feedback?.finish();
+    else feedback?.finish("immediate");
     const mounted = presentations.get(presentationAttachmentKey(attachment));
     if (mounted !== undefined) mounted.attachment.root.dataset.inkbookState = state;
   };
