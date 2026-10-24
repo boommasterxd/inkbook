@@ -12,7 +12,8 @@ export function activeFade(node: Element | FakeNode): FakeAnimation {
 }
 
 export function fadeFrames(node: Element | FakeNode): readonly string[] {
-  const opacity = activeFade(node).keyframes.opacity;
+  const keyframes = activeFade(node).keyframes;
+  const opacity = keyframes.opacity ?? keyframes.fillOpacity;
   if (!Array.isArray(opacity) || !opacity.every((frame) => typeof frame === "string"))
     throw new Error("Expected string opacity keyframes");
   return opacity;

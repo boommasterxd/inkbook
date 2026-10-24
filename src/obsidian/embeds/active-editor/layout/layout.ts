@@ -10,19 +10,18 @@ import {
   observeStableWidth,
 } from "../../../../editor/zoom/index";
 import type { StableWidthState } from "../../../../editor/zoom/resize";
-import type { ToolbarLayoutStage } from "../../../../rendering/ui/index";
 import type { ActiveEditorLayoutOptions } from "./layout-contracts";
 import type { ActiveEditorZoomLayoutUpdate } from "../navigation/navigation";
 import { calculateActiveEditorResize, type ActiveEditorResizeAnchor } from "./layout-resize";
 import { ActivePageLayout, maximumHeight, type PageHeightUpdate } from "./page-layout";
 import { ToolbarResizeObservation } from "./toolbar-resize-observation";
-import { measureToolbarLayout } from "./toolbar-measurement";
+import { ToolbarLayoutMeasurement } from "./toolbar-measurement";
 import {
   ActiveEditorMotion,
   motionPreference,
   type ActiveEditorMotionPreference,
 } from "./layout-motion";
-import { measureElementBox } from "./element-content-box";
+import { measureElementBox, type ElementBoxMeasurement } from "./element-content-box";
 import { ActiveHeightTransition } from "./height-transition";
 import { OwnZoomResize } from "./own-zoom-resize";
 import type { NavigationCursorLayout } from "../navigation/navigation-layout";
@@ -46,7 +45,6 @@ export class ActiveEditorLayout {
   #fitZoom: number | undefined;
   #forcePageHeight = false;
   #frame: number | undefined;
-  #layoutStage: ToolbarLayoutStage | undefined;
   #previewPage: PageV1 | undefined;
   #chromeLayoutKey: string | undefined;
   #ready = false;
@@ -55,7 +53,7 @@ export class ActiveEditorLayout {
   #suspended = false;
   #selectionMoveActive = false;
   #toolbar: HTMLElement | undefined;
-  #toolbarLayoutDirty = true;
+  readonly #toolbarMeasurement = new ToolbarLayoutMeasurement();
   readonly #resizeObservation = new ToolbarResizeObservation();
   readonly #ownZoomResize = new OwnZoomResize();
   readonly #ownZoomScroll: OwnZoomScrollProof;
@@ -86,7 +84,7 @@ export class ActiveEditorLayout {
             if (!this.#ownZoomResize.consume(entries, options.root, options.readNavigationLayout))
               this.#options.renderer.invalidateLayout();
             if (!this.#resizeObservation.affectsToolbar(entries, options.root)) return;
-            this.#toolbarLayoutDirty = true;
+            this.#toolbarMeasurement.invalidate();
             this.scheduleMeasurement();
           });
     this.#observer?.observe(options.root);
@@ -132,7 +130,7 @@ export class ActiveEditorLayout {
   public chromeChanged(layoutKey?: string): void {
     if (layoutKey !== undefined && layoutKey === this.#chromeLayoutKey) return;
     this.#chromeLayoutKey = layoutKey;
-    this.#toolbarLayoutDirty = true;
+    this.#toolbarMeasurement.invalidate();
     this.scheduleMeasurement();
   }
 
@@ -252,13 +250,12 @@ export class ActiveEditorLayout {
     if (this.#suspended || !this.#chromeMounted || this.#frame !== undefined) return;
     this.#frame = this.#workScheduler.requestFrame(() => {
       this.#frame = undefined;
-      if (this.#suspended) return;
-      this.measure();
+      if (!this.#suspended) this.measure();
     });
   }
 
   #handleChromeMutation(): void {
-    this.#toolbarLayoutDirty = true;
+    this.#toolbarMeasurement.invalidate();
     this.#observeToolbar();
     this.scheduleMeasurement();
   }
@@ -268,7 +265,7 @@ export class ActiveEditorLayout {
     if (toolbar === null || toolbar === this.#toolbar) return;
     if (this.#toolbar !== undefined) this.#observer?.unobserve(this.#toolbar);
     this.#toolbar = toolbar;
-    this.#toolbarLayoutDirty = true;
+    this.#toolbarMeasurement.invalidate();
     this.#observer?.observe(toolbar);
   }
 
@@ -283,10 +280,17 @@ export class ActiveEditorLayout {
       if (Number.isFinite(measuredWidth) && measuredWidth > 0) this.scheduleMeasurement();
       return;
     }
-    this.#measureStableLayout(acceptedWidth, reduction.observation !== undefined);
+    this.#measureStableLayout(measurement, reduction.observation !== undefined);
   }
 
-  #measureStableLayout(width: number, widthChanged: boolean): void {
+  #measureStableLayout(measurement: ElementBoxMeasurement, widthChanged: boolean): void {
+    const width = measurement.contentBox.width;
+    const toolbar = this.#toolbarMeasurement.measure(this.#options.chromeHost, width, widthChanged);
+    if (toolbar.changed) this.scheduleMeasurement();
+    const anchor =
+      widthChanged && this.#fitZoom !== undefined
+        ? this.#options.readResizeAnchor?.(measurement)
+        : undefined;
     const page = this.#options.page();
     const heightUpdate = this.#pageLayout.committed(
       page,
@@ -294,19 +298,19 @@ export class ActiveEditorLayout {
       this.#forcePageHeight,
     );
     this.#forcePageHeight = false;
-    this.#applyHeightUpdate(heightUpdate);
+    const frameRead = this.#readHeightFrame(measurement.borderBox.height);
+    this.#applyHeightUpdate(heightUpdate, undefined, frameRead);
     const fitZoom = width / PAGE_WIDTH;
-    if (widthChanged || this.#fitZoom === undefined) this.#applyWidth(width, fitZoom);
-    this.#options.onLayout(this.#resolveLayoutAndSchedule(width, widthChanged));
+    if (widthChanged || this.#fitZoom === undefined) this.#applyWidth(width, fitZoom, anchor);
+    this.#options.onLayout(toolbar.stage);
     this.#markReady();
   }
 
-  #applyWidth(width: number, fitZoom: number): void {
+  #applyWidth(width: number, fitZoom: number, anchor?: ActiveEditorResizeAnchor): void {
     const previousFitZoom = this.#fitZoom;
     const previousZoom = this.#zoom;
     const pageHeight = this.#pageLayout.height;
     if (previousFitZoom !== undefined && previousZoom !== undefined && pageHeight !== undefined) {
-      const anchor = this.#options.readResizeAnchor?.();
       if (anchor !== undefined && this.#options.onResize !== undefined) {
         this.#applyAnchoredResize(
           width,
@@ -355,13 +359,16 @@ export class ActiveEditorLayout {
     this.#options.renderer.invalidateLayout();
   }
 
-  #applyHeightUpdate(update: PageHeightUpdate | undefined, page = this.#renderPage()): void {
+  #applyHeightUpdate(
+    update: PageHeightUpdate | undefined,
+    page = this.#renderPage(),
+    frameRead?: { readonly renderedHeight: number },
+  ): void {
     if (update === undefined) return;
     const minimumHeight = this.#requiredContentHeight(page);
     this.#pageLayout.retainMinimumHeight(minimumHeight);
     const targetHeight = Math.max(update.height, minimumHeight);
     const zoom = this.#zoom;
-    const frameRead = zoom === undefined ? undefined : this.#readHeightFrame();
     if (zoom === undefined) {
       this.#options.renderer.setPage(page, targetHeight);
       return;
@@ -374,7 +381,9 @@ export class ActiveEditorLayout {
       return;
     }
     const currentRenderedHeight =
-      frameRead?.renderedHeight ?? targetHeight * zoom + this.#blockInsets;
+      frameRead?.renderedHeight ??
+      this.#readHeightFrame()?.renderedHeight ??
+      targetHeight * zoom + this.#blockInsets;
     const targetRenderedHeight = targetHeight * zoom + this.#blockInsets;
     const currentPageHeight = (currentRenderedHeight - this.#blockInsets) / zoom;
     const preparationHeight = alignPageHeightToWritingLine(
@@ -449,8 +458,11 @@ export class ActiveEditorLayout {
     this.#options.renderer.invalidateLayout();
   }
 
-  #readHeightFrame(): { readonly renderedHeight: number } | undefined {
-    const renderedHeight = Math.max(0, this.#container.getBoundingClientRect().height);
+  #readHeightFrame(measuredHeight?: number): { readonly renderedHeight: number } | undefined {
+    const renderedHeight = Math.max(
+      0,
+      measuredHeight ?? this.#container.getBoundingClientRect().height,
+    );
     if (!Number.isFinite(renderedHeight)) return undefined;
     return { renderedHeight };
   }
@@ -473,19 +485,6 @@ export class ActiveEditorLayout {
       limits.minZoom,
       Math.min(limits.maxZoom, (this.#zoom / this.#fitZoom) * fitZoom),
     );
-  }
-
-  #resolveLayoutAndSchedule(availableWidth: number, widthChanged: boolean): ToolbarLayoutStage {
-    if (!widthChanged && !this.#toolbarLayoutDirty && this.#layoutStage !== undefined) {
-      return this.#layoutStage;
-    }
-    this.#toolbarLayoutDirty = false;
-    const stage = measureToolbarLayout(this.#options.chromeHost, availableWidth);
-    if (stage !== this.#layoutStage) {
-      this.#layoutStage = stage;
-      this.scheduleMeasurement();
-    }
-    return stage;
   }
 
   #markReady(): void {

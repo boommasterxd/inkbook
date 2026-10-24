@@ -39,6 +39,7 @@ export interface PresentationPreviewLifecycle {
   readonly element: HTMLElement;
   readonly entranceState?: PresentationEntranceState;
   readonly refresh?: () => void;
+  readonly setColorScheme?: (scheme: InkbookColorScheme) => void;
   readonly ensureReady?: () => Promise<void>;
   readonly setBackgroundWait?: (wait: (() => Promise<void> | undefined) | undefined) => void;
   readonly dispose?: () => void;
@@ -181,6 +182,7 @@ export class PresentationController {
       if (previousScheme === nextScheme) return;
       this.#appliedScheme = nextScheme;
       applyColorScheme(attachment.root, nextScheme);
+      this.#previewLifecycle?.setColorScheme?.(nextScheme);
       if (previousScheme !== undefined) this.#previewLifecycle?.refresh?.();
     });
     this.#transitionObserver = this.#createTransitionObserver(attachment.root, owningWindow);
@@ -245,6 +247,7 @@ export class PresentationController {
     if (owningWindow === null) return;
     this.#frame = this.#workScheduler.requestFrame(() => {
       this.#frame = undefined;
+      this.#previewLifecycle?.refresh?.();
       if (!this.#mounted || !this.#scroll.mount()) return;
       this.#observer = new owningWindow.ResizeObserver(() => {
         this.#requestHostMeasure();

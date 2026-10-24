@@ -3,7 +3,13 @@ import { ERASE_EASING } from "../../motion/transitions";
 import type { SceneElementRecord } from "../types";
 
 const FADE_ANIMATION = Symbol("inkbook-fade-animation");
-type FadeNode = SVGElement & { [FADE_ANIMATION]?: NativeAnimation<string> };
+type FadeProperty = "opacity" | "fill-opacity";
+type FadeNode = SVGElement & {
+  [FADE_ANIMATION]?: {
+    readonly animation: NativeAnimation<string>;
+    readonly property: FadeProperty;
+  };
+};
 
 interface ElementFadeTargets {
   readonly displayedElement: SceneElementRecord["element"];
@@ -11,8 +17,30 @@ interface ElementFadeTargets {
   readonly paths: readonly { readonly node: SVGElement }[];
 }
 
+interface MountedElementFadeState extends ElementFadeTargets {
+  fadeActive: boolean;
+  fadePresentation: ElementFadePresentation | null;
+}
+
 export type ElementFadePresentation = "opacity" | "fill" | "stroke";
 export type ElementFadeDirection = "enter" | "exit";
+
+export function setMountedElementFade(
+  entry: MountedElementFadeState,
+  durationMs: number | null,
+): void {
+  const presentation = elementFadePresentation(entry);
+  const previousPresentation = entry.fadePresentation ?? presentation;
+  if (durationMs !== null && entry.fadeActive && previousPresentation !== presentation)
+    setMountedElementFade(entry, null);
+  const targetPresentation = durationMs === null ? previousPresentation : presentation;
+  entry.fadeActive = durationMs !== null;
+  entry.fadePresentation = durationMs === null ? null : presentation;
+  for (let index = 0; index < elementFadeTargetCount(entry, targetPresentation); index += 1) {
+    const node = elementFadeTarget(entry, index, targetPresentation);
+    if (node !== undefined) setElementFadeNode(node, durationMs, targetPresentation);
+  }
+}
 
 export function elementFadePresentation(entry: ElementFadeTargets): ElementFadePresentation {
   const element = entry.displayedElement;
@@ -49,21 +77,13 @@ export function setElementFadeNode(
 ): void {
   // Scene nodes belong to an isolated SVG document without Obsidian's setCssProps.
   const fadeNode = node as FadeNode;
-  const previous = fadeNode[FADE_ANIMATION];
-  // Motion commits the current native paint before stopping. Read only that
-  // committed inline value for this admitted target, without a computed-style read.
-  if (durationMs !== null && durationMs > 0) previous?.stop();
-  else previous?.cancel();
-  const current = previous === undefined ? "" : node.style.getPropertyValue("opacity");
-  delete fadeNode[FADE_ANIMATION];
-  // Motion commits the final keyframe inline after completion. Restore the
-  // underlying SVG paint or pressure-group opacity before any replacement.
-  if (node.style.getPropertyValue("opacity")) node.style.removeProperty("opacity");
+  const property: FadeProperty = presentation === "fill" ? "fill-opacity" : "opacity";
+  const current = releaseFadeAnimation(fadeNode, property, durationMs);
   if (durationMs === null) return;
-  const base = presentation === "opacity" ? (node.getAttribute("opacity") ?? "1") : "1";
+  const base = node.getAttribute(property) ?? "1";
   if (durationMs === 0) {
     const hiddenOpacity = "0";
-    if (direction === "exit") node.style.setProperty("opacity", hiddenOpacity);
+    if (direction === "exit") node.style.setProperty(property, hiddenOpacity);
     return;
   }
   const hidden =
@@ -71,13 +91,36 @@ export function setElementFadeNode(
       ? "0"
       : `calc(${base} * (1 - var(--inkbook-history-active-${String(generation)}, 1)))`;
   const frames = direction === "enter" ? [current || hidden, base] : [current || base, hidden];
-  fadeNode[FADE_ANIMATION] = new NativeAnimation({
-    element: node,
-    name: "opacity",
-    keyframes: frames,
-    duration: durationMs,
-    ease: ERASE_EASING,
-  });
+  fadeNode[FADE_ANIMATION] = {
+    property,
+    animation: new NativeAnimation({
+      element: node,
+      name: property === "fill-opacity" ? "fillOpacity" : "opacity",
+      keyframes: frames,
+      duration: durationMs,
+      ease: ERASE_EASING,
+    }),
+  };
+}
+
+function releaseFadeAnimation(
+  node: FadeNode,
+  property: FadeProperty,
+  durationMs: number | null,
+): string {
+  const previous = node[FADE_ANIMATION];
+  // Motion commits the current native paint before stopping; only that owned
+  // inline value is needed for interruption, without a computed-style read.
+  if (durationMs !== null && durationMs > 0) previous?.animation.stop();
+  else previous?.animation.cancel();
+  const previousProperty = previous?.property ?? property;
+  const current =
+    previous === undefined || previousProperty !== property
+      ? ""
+      : node.style.getPropertyValue(property);
+  delete node[FADE_ANIMATION];
+  if (node.style.getPropertyValue(previousProperty)) node.style.removeProperty(previousProperty);
+  return current;
 }
 
 function usesPaintOpacity(presentation: ElementFadePresentation): boolean {

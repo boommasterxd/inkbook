@@ -129,7 +129,7 @@ export async function activateInkbookPlugin(
       }),
     ]);
   });
-  registerWorkspaceLifecycle(plugin, runtime, scheme);
+  registerWorkspaceLifecycle(plugin, runtime, scheme, lifecycle);
 
   return () => {
     disposeStatus();
@@ -438,7 +438,11 @@ function registerWorkspaceLifecycle(
   plugin: Plugin,
   runtime: ObsidianWorkspaceRuntime,
   scheme: ColorSchemeBroadcaster,
+  lifecycle: PresentationLifecycleRegistry,
 ): void {
+  plugin.registerEvent(
+    plugin.app.workspace.on("layout-change", () => lifecycle.refreshOwnerDocuments()),
+  );
   plugin.registerEvent(
     plugin.app.workspace.on("quit", (tasks) => {
       tasks.add(() => runtime.prepareForQuit());

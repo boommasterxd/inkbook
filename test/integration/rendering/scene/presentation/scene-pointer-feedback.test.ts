@@ -89,7 +89,7 @@ describe("canonical pressure preview staging", () => {
     expectCanonicalPressure(content, replacement);
     renderer.clearElementPreviews();
     scheduler.runAll();
-    expectPressureGroup(content.nodes[0]!, committedOutline);
+    expectPressureRoot(content.nodes[0]!, committedOutline);
     expect(store.records.get(stroke.id)?.element).toBe(stroke);
     renderer.destroy();
   });
@@ -249,24 +249,18 @@ function paintedGeometry(node: FakeNode): string {
     .join(" ");
 }
 
-function expectPressureGroup(group: FakeNode, expectedD: string | undefined): void {
-  expect(group.tagName).toBe("g");
-  expect(paintedGeometry(group)).toBe(expectedD);
-  expect(group.nodes).toHaveLength(1);
-  for (const path of group.nodes) {
-    expect(path.tagName).toBe("path");
-    expect(path.attributes.get("fill")).not.toBe("none");
-    expect(path.attributes.get("stroke")).toBe("none");
-    expect(path.attributes.get("fill-rule")).toBe("nonzero");
-    expect(path.attributes.has("stroke-width")).toBe(false);
-    expect(path.attributes.has("transform")).toBe(false);
-    expect(path.attributes.has("vector-effect")).toBe(false);
-  }
+function expectPressureRoot(path: FakeNode, expectedD: string | undefined): void {
+  expect(paintedGeometry(path)).toBe(expectedD);
+  expect(path.attributes.get("fill")).not.toBe("none");
+  expect(path.attributes.get("stroke")).toBe("none");
+  expect(path.attributes.get("fill-rule")).toBe("nonzero");
+  expect(path.attributes.has("stroke-width")).toBe(false);
+  expect(path.attributes.has("vector-effect")).toBe(false);
 }
 
 function expectCanonicalPressure(content: FakeNode, stroke: StrokeElementV1): void {
   expect(content.nodes).toHaveLength(1);
-  expectPressureGroup(
+  expectPressureRoot(
     content.nodes[0]!,
     buildElementPathParts(stroke)
       .map(({ d }) => d)

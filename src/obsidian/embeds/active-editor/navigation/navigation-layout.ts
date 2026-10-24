@@ -3,7 +3,11 @@ import type { ZoomAnchor } from "../../../../editor/zoom/index";
 import { clampScrollTop, type ScrollBounds } from "../../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../../scrolling/index";
 import { readScrollOwnerViewport } from "../../active-scene/active-scene-viewport";
-import { measureElementBox, type ElementContentBox } from "../layout/element-content-box";
+import {
+  measureElementBox,
+  type ElementBoxMeasurement,
+  type ElementContentBox,
+} from "../layout/element-content-box";
 
 interface ViewportRect {
   readonly bottom: number;
@@ -52,8 +56,9 @@ export function projectNavigationCursorLayout(
 export function readNavigationLayout(
   container: HTMLElement,
   scrollOwner: BrowserScrollElement,
+  measurement: ElementBoxMeasurement = measureElementBox(container),
 ): NavigationLayoutRead | undefined {
-  const { borderBox, contentBox: containerBounds } = measureElementBox(container);
+  const { borderBox, contentBox: containerBounds } = measurement;
   if (!Number.isFinite(containerBounds.width) || containerBounds.width <= 0) return undefined;
   const ownerViewport = readScrollOwnerViewport(scrollOwner);
   const scrollTop = browserScrollMetrics.getScrollTop(scrollOwner);

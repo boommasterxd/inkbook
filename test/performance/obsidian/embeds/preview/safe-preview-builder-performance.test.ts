@@ -7,10 +7,10 @@ import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-
 
 afterEach(() => vi.restoreAllMocks());
 
-it("builds ten thousand detached paths with bounded DOM writes between checkpoints", async () => {
+it("builds ten thousand opaque pressure paths without neutral group allocations and bounds DOM writes", async () => {
   const source =
     '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata><g>' +
-    '<path d="M0 0L1 1" fill="none" stroke="#000000FF"/>'.repeat(10_000) +
+    '<g opacity="1"><path d="M0 0L1 1L0 1Z" fill="#000000FF"/></g>'.repeat(10_000) +
     "</g></svg>";
   const create = vi.spyOn(document, "createElementNS");
   const attributes = vi.spyOn(window.Element.prototype, "setAttribute");
@@ -26,7 +26,7 @@ it("builds ten thousand detached paths with bounded DOM writes between checkpoin
       append.mock.calls.length,
     ];
     expect(calls[0]! - previous[0]!).toBeLessThanOrEqual(256);
-    expect(calls[1]! - previous[1]!).toBeLessThanOrEqual(256 * 3 + 5);
+    expect(calls[1]! - previous[1]!).toBeLessThanOrEqual(256 * 2 + 5);
     expect(calls[2]! - previous[2]!).toBeLessThanOrEqual(256);
     previous = calls;
   };

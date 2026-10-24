@@ -41,7 +41,7 @@ describe("complete pressure preview commit handoff", () => {
         const element = replacements.get(id)!;
         if (element.kind !== "stroke") throw new Error("Expected a stroke");
         const node = nodes.get(id)!;
-        expect(node.nodes[0]!.attributes.get("d")).toBe(
+        expect(node.attributes.get("d")).toBe(
           buildElementPathParts(strokeLocalGeometry(element))[0]!.d,
         );
         expect(node.attributes.get("transform") ?? "").not.toContain("scale");

@@ -12,3 +12,24 @@ export function measureToolbarLayout(
     contentWidth: track?.scrollWidth ?? toolbar.scrollWidth,
   });
 }
+
+/** Retains toolbar-stage convergence without measuring clean chrome on height-only updates. */
+export class ToolbarLayoutMeasurement {
+  #dirty = true;
+  #stage: ToolbarLayoutStage | undefined;
+
+  public invalidate(): void {
+    this.#dirty = true;
+  }
+
+  public measure(chromeHost: HTMLElement, width: number, widthChanged: boolean) {
+    if (!widthChanged && !this.#dirty && this.#stage !== undefined) {
+      return { changed: false, stage: this.#stage };
+    }
+    this.#dirty = false;
+    const stage = measureToolbarLayout(chromeHost, width);
+    const changed = stage !== this.#stage;
+    this.#stage = stage;
+    return { changed, stage };
+  }
+}

@@ -50,11 +50,22 @@ function appendElement(ownerDocument: Document, markup: string, parents: Element
   if (tag === null || !["svg", "g", "path"].includes(tag.name)) {
     throw new Error("The validated Inkbook preview has unexpected markup.");
   }
+  const parent = parents[parents.length - 1];
+  if (
+    parent !== undefined &&
+    tag.name === "g" &&
+    tag.attributes.size === 1 &&
+    tag.attributes.get("opacity") === "1"
+  ) {
+    // Neutral pressure groups retain their nesting without another DOM node.
+    if (!tag.selfClosing) parents.push(parent);
+    return parent;
+  }
   const element = ownerDocument.createElementNS(SVG_NAMESPACE, tag.name);
   for (const [name, value] of tag.attributes) {
     element.setAttribute(name, value);
   }
-  parents[parents.length - 1]?.append(element);
+  parent?.append(element);
   if (!tag.selfClosing) parents.push(element);
   return element;
 }

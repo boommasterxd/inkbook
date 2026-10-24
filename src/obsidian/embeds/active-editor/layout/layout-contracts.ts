@@ -4,6 +4,7 @@ import type { ToolbarLayoutStage } from "../../../../rendering/ui/index";
 import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
 import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler";
 import type { NavigationLayoutRead } from "../navigation/navigation-layout";
+import type { ElementBoxMeasurement } from "./element-content-box";
 
 export interface ActiveEditorLayoutOptions {
   readonly workScheduler: WorkScheduler;
@@ -15,7 +16,9 @@ export interface ActiveEditorLayoutOptions {
   readonly onResize?: (update: ActiveEditorResizeUpdate) => void;
   readonly onZoom: (zoom: number) => void;
   readonly page: () => PageV1;
-  readonly readResizeAnchor?: () => ActiveEditorResizeAnchor | undefined;
+  readonly readResizeAnchor?: (
+    measurement: ElementBoxMeasurement,
+  ) => ActiveEditorResizeAnchor | undefined;
   readonly readNavigationLayout?: () => NavigationLayoutRead | undefined;
   readonly readHostGeometryRevision?: () => number;
   readonly renderer: SvgSceneRenderer;

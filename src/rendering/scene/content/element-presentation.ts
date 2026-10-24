@@ -41,6 +41,14 @@ export const PRESENTATION_ATTRIBUTES: readonly PresentationAttribute[] = [
   "stroke-width",
 ];
 
+export function isPressureStroke(element: InkElementV1): element is StrokeElementV1 {
+  return element.kind === "stroke" && element.style.pressureEnabled;
+}
+
+export function pressureRootOpacity(element: InkElementV1): number {
+  return isPressureStroke(element) ? normalizeStrokePaint(element.style).opacity : 1;
+}
+
 export function pathPresentation(element: InkElementV1, part: SvgPathPart): PathPresentation {
   if (element.kind === "stroke" || element.kind === "straight-highlighter") {
     const style =

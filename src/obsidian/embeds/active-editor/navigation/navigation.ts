@@ -12,7 +12,7 @@ import {
 } from "../../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../../scrolling/index";
 import { pointerSampleFromEvent } from "../controller-helpers";
-import { measureElementBox } from "../layout/element-content-box";
+import { measureElementBox, type ElementBoxMeasurement } from "../layout/element-content-box";
 import {
   localScreenPointAnchor,
   projectNavigationCursorLayout,
@@ -256,8 +256,10 @@ export class ActiveEditorNavigation {
     );
     return true;
   }
-  public readResizeAnchor(): ActiveEditorResizeAnchor | undefined {
-    const layout = readNavigationLayout(this.#container, this.#scrollOwner);
+  public readResizeAnchor(
+    measurement?: ElementBoxMeasurement,
+  ): ActiveEditorResizeAnchor | undefined {
+    const layout = readNavigationLayout(this.#container, this.#scrollOwner, measurement);
     if (layout === undefined) return undefined;
     return {
       ...navigationResizeAnchor(layout),

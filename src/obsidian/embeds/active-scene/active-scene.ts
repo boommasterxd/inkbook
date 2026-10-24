@@ -160,7 +160,7 @@ export class ActiveInkbookScene {
       },
       page: () => options.model.page,
       renderer: this.#renderer,
-      readResizeAnchor: () => this.#controller.readResizeAnchor(),
+      readResizeAnchor: (measurement) => this.#controller.readResizeAnchor(measurement),
       readNavigationLayout: () =>
         readNavigationLayout(this.#container, scrollBinding?.current() ?? scrollOwner),
       root: options.root,

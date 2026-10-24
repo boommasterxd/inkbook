@@ -99,7 +99,7 @@ describe("progressive resize pointer feedback", () => {
 
   it("bridges every pressure resize frame with relative transforms and publishes only complete outlines", () => {
     const { renderer, scheduler, nodes, request, materialize } = setup(true);
-    const paths = nodes.map((node) => node.nodes[0]!);
+    const paths = nodes;
     const original = paths.map((node) => node.attributes.get("d")!);
     const canonicalScales = new Map(original.map((d) => [d, 1]));
     let publications = 0;
@@ -143,7 +143,7 @@ describe("progressive resize pointer feedback", () => {
 
   it("publishes canonical rotated shapes on every pointer frame beside long pressure strokes", () => {
     const { renderer, scheduler, nodes, request } = setup(true, true);
-    const pressurePaths = nodes.slice(0, 2).map((node) => node.nodes[0]!.attributes.get("d"));
+    const pressurePaths = nodes.slice(0, 2).map((node) => node.attributes.get("d"));
     const steps = chargePreviewSteps(scheduler);
     for (const scale of [2, 3, 4]) {
       scheduler.time += 16;
@@ -155,9 +155,7 @@ describe("progressive resize pointer feedback", () => {
         expect(nodes[1]!.attributes.get("transform")).toBe(`scale(${scale} 1)`);
       }, "input");
       scheduler.runFrame();
-      expect(nodes.slice(0, 2).map((node) => node.nodes[0]!.attributes.get("d"))).toEqual(
-        pressurePaths,
-      );
+      expect(nodes.slice(0, 2).map((node) => node.attributes.get("d"))).toEqual(pressurePaths);
     }
     expect(steps.mock.calls.length).toBeGreaterThan(4);
     renderer.destroy();

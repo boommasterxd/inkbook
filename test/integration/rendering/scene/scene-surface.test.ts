@@ -8,6 +8,7 @@ import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import { PORTABLE_PALETTE_V1 } from "../../../../src/domain/schema/public";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { sceneSurfaceZoomFixture } from "../../../fixtures/rendering/scene-surface-zoom";
+import { expectInertIsolatedFrame } from "../../../fixtures/rendering/isolated-scene-frame";
 
 const scenes: SceneDom[] = [];
 const surfaces: SceneSurface[] = [];
@@ -98,13 +99,7 @@ describe("isolated scene surface", () => {
     const { container, host, pointerdown, scene } = fixture();
     expect(host.shadowRoot?.mode).toBe("open");
     const frame = host.shadowRoot?.querySelector("iframe") as HTMLIFrameElement;
-    expect(frame.localName).toBe("iframe");
-    expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
-    expect(frame.getAttribute("aria-hidden")).toBe("true");
-    expect(frame.hasAttribute("inert")).toBe(true);
-    expect(frame.tabIndex).toBe(-1);
-    expect(frame.hasAttribute("src")).toBe(false);
-    expect(frame.hasAttribute("srcdoc")).toBe(false);
+    expectInertIsolatedFrame(frame);
     expect(frame.contentDocument?.body.firstElementChild).toBe(scene.svg);
     expect(scene.svg.ownerDocument).toBe(frame.contentDocument);
     expect(container.querySelector("svg")).toBeNull();

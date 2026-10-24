@@ -18,6 +18,27 @@ interface FakePresentationEvent {
   stopped: boolean;
 }
 
+function presentationDocumentEvents() {
+  const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+  return {
+    addEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
+      const callbacks = listeners.get(type) ?? new Set();
+      callbacks.add(callback);
+      listeners.set(type, callbacks);
+    },
+    removeEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
+      listeners.get(type)?.delete(callback);
+    },
+    dispatchEvent: (event: Event) => {
+      for (const callback of listeners.get(event.type) ?? []) {
+        if (typeof callback === "function") callback(event);
+        else callback.handleEvent(event);
+      }
+      return true;
+    },
+  };
+}
+
 export class FakePresentationElement {
   readonly attributes = new Map<string, string>();
   readonly children: FakePresentationElement[] = [];
@@ -55,12 +76,38 @@ export class FakePresentationElement {
   clientWidth = 600;
   currentSrc = "";
   hidden = false;
-  isConnected = true;
+  #connected = true;
+
+  public get isConnected(): boolean {
+    return this.#connected;
+  }
+
+  public set isConnected(connected: boolean) {
+    this.#connected = connected;
+    for (const child of this.children) child.isConnected = connected;
+    if (this.shadowRoot !== null)
+      (this.shadowRoot as unknown as FakePresentationElement).isConnected = connected;
+  }
   parentElement: FakePresentationElement | null = null;
   scrollHeight = 200;
   scrollTop = 0;
   src = "";
+  shadowRoot: ShadowRoot | null = null;
   textContent = "";
+  #frameDocument: Document | undefined;
+
+  public get contentDocument(): Document | null {
+    if (this.localName !== "iframe") return null;
+    this.#frameDocument ??= new FakePresentationElement().ownerDocument;
+    return this.#frameDocument;
+  }
+
+  public attachShadow(): ShadowRoot {
+    const shadow = new FakePresentationElement(this.ownerDocument);
+    shadow.isConnected = this.isConnected;
+    this.shadowRoot = shadow as unknown as ShadowRoot;
+    return this.shadowRoot;
+  }
 
   public constructor(ownerDocument?: Document, tagName = "div") {
     this.tagName = tagName.toUpperCase();
@@ -78,6 +125,7 @@ export class FakePresentationElement {
       body: FakePresentationElement;
       defaultView: unknown;
       documentElement: FakePresentationElement;
+      head: FakePresentationElement;
       importNode: (node: FakePresentationElement, deep: boolean) => FakePresentationElement;
       scrollingElement: FakePresentationElement | null;
     } = {
@@ -85,28 +133,23 @@ export class FakePresentationElement {
       body: this,
       defaultView: undefined,
       documentElement: this,
+      head: new FakePresentationElement({} as Document, "head"),
       importNode: (node, deep) => node.cloneNode(deep),
       scrollingElement: this,
     };
-    const documentListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+    Object.defineProperty(documentPort.head, "ownerDocument", { value: documentPort });
     Object.assign(documentPort, {
+      ...presentationDocumentEvents(),
+      adoptNode: (node: FakePresentationElement) => {
+        const adopt = (element: FakePresentationElement): void => {
+          Object.defineProperty(element, "ownerDocument", { value: documentPort });
+          for (const child of element.children) adopt(child);
+        };
+        adopt(node);
+        return node;
+      },
       createElementNS: (_namespace: string, name: string) =>
         new FakePresentationElement(documentPort as unknown as Document, name),
-      addEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
-        const listeners = documentListeners.get(type) ?? new Set();
-        listeners.add(callback);
-        documentListeners.set(type, listeners);
-      },
-      removeEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
-        documentListeners.get(type)?.delete(callback);
-      },
-      dispatchEvent: (event: Event) => {
-        for (const callback of documentListeners.get(event.type) ?? []) {
-          if (typeof callback === "function") callback(event);
-          else callback.handleEvent(event);
-        }
-        return true;
-      },
     });
     const windowListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
     let frameTime = 0;
@@ -195,14 +238,16 @@ export class FakePresentationElement {
     this.listeners.get(type)?.delete(callback);
   }
 
-  public append(child: FakePresentationElement): void {
-    if (child.parentElement !== null) {
-      const previousIndex = child.parentElement.children.indexOf(child);
-      if (previousIndex >= 0) child.parentElement.children.splice(previousIndex, 1);
+  public append(...children: FakePresentationElement[]): void {
+    for (const child of children) {
+      if (child.parentElement !== null) {
+        const previousIndex = child.parentElement.children.indexOf(child);
+        if (previousIndex >= 0) child.parentElement.children.splice(previousIndex, 1);
+      }
+      child.parentElement = this;
+      child.isConnected = this.isConnected;
+      this.children.push(child);
     }
-    child.parentElement = this;
-    child.isConnected = this.isConnected;
-    this.children.push(child);
   }
 
   public appendChild(child: FakePresentationElement): FakePresentationElement {

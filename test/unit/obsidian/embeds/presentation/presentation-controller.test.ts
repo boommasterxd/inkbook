@@ -34,24 +34,32 @@ describe("locked-preview scheme replacement", () => {
     const root = new FakePresentationElement();
     const preview = root.createDiv();
     const refresh = vi.fn();
+    const setColorScheme = vi.fn();
     const controller = new PresentationController(
       createPresentationAttachment(root, "reading-owned-preview"),
       { activate: vi.fn(), detach: vi.fn(), mount: vi.fn() },
       scheme,
-      { element: preview as unknown as HTMLElement, refresh },
+      { element: preview as unknown as HTMLElement, refresh, setColorScheme },
       workSchedulerFromFrames(root.ownerDocument.defaultView as Window),
     );
     controller.mount();
+    expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
 
     scheme.refresh();
     expect(refresh).not.toHaveBeenCalled();
+    expect(setColorScheme.mock.calls).toEqual([["light"]]);
     dark = true;
     scheme.refresh();
     expect(refresh).toHaveBeenCalledOnce();
     scheme.refresh();
     expect(refresh).toHaveBeenCalledOnce();
+    expect(setColorScheme.mock.calls).toEqual([["light"], ["dark"]]);
 
     controller.dispose();
+    dark = false;
+    scheme.refresh();
+    expect(setColorScheme.mock.calls).toEqual([["light"], ["dark"]]);
   });
 });
 

@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SharedFrameScheduler } from "../../../../../src/domain/scheduling/shared-frame-scheduler";
 import { createInkbookLockedPreview } from "../../../../../src/obsidian/embeds/preview/locked-preview";
+import { lockedPreviewRoot } from "../../../../fixtures/obsidian/locked-preview";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { ManualHost } from "../../../../fixtures/scheduling/manual-frame-host";
 
@@ -26,7 +27,11 @@ it("replaces a queued obsolete preparation before another frame and coalesces th
     contentIdentity: { outputHash: "a".repeat(64), revision },
     safeSvg: `<svg xmlns="http://www.w3.org/2000/svg"><path d="M${String(revision)} 0"/></svg>`,
   });
-  const preview = createInkbookLockedPreview(createHtmlElement("button"), descriptor(1), scheduler);
+  const preview = createInkbookLockedPreview(
+    document.body.appendChild(createHtmlElement("button")),
+    descriptor(1),
+    scheduler,
+  );
   await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledOnce());
   expect(host.pendingFrames).toBe(1);
   preview.setDescriptor(descriptor(2));
@@ -35,12 +40,12 @@ it("replaces a queued obsolete preparation before another frame and coalesces th
   await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledTimes(2));
   expect(host.frameRequests).toBe(2);
   expect(cancelFrame).toHaveBeenCalledOnce();
-  expect(preview.element.querySelector("svg")).toBeNull();
+  expect(lockedPreviewRoot(preview.element).querySelector("svg")).toBeNull();
   host.time = host.frameInterval;
   host.frame();
   await preview.ensureReady();
-  expect(preview.element.querySelector("path")?.getAttribute("d")).toBe("M3 0");
-  expect(preview.element.querySelectorAll("svg")).toHaveLength(1);
+  expect(lockedPreviewRoot(preview.element).querySelector("path")?.getAttribute("d")).toBe("M3 0");
+  expect(lockedPreviewRoot(preview.element).querySelectorAll("svg")).toHaveLength(1);
   preview.dispose();
   scheduler.dispose();
   expect(host.pendingFrames).toBe(0);

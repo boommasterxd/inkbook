@@ -42,6 +42,7 @@ function fixture(mode: "full" | "reduced" | "system" | "initial", activeHeight =
   let hidden = false;
   const preview = {
     classList: new FakeClassList(),
+    ownerDocument: document,
     getBoundingClientRect: () => ({ height: 96 }),
     get hidden() {
       return hidden;

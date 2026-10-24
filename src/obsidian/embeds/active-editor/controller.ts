@@ -305,7 +305,8 @@ export class ActiveEditorController {
     return this.#navigation.applyResize(update);
   }
   public readonly getViewState = (): ActiveEditorViewState => this.#navigation.getViewState();
-  public readonly readResizeAnchor = () => this.#navigation.readResizeAnchor();
+  public readonly readResizeAnchor: ActiveEditorNavigation["readResizeAnchor"] = (box) =>
+    this.#navigation.readResizeAnchor(box);
   public recordMarkdownHistory(): void {
     if (this.#availability.acceptsInput) this.#keyboard.recordMarkdownHistory();
   }
@@ -406,9 +407,7 @@ export class ActiveEditorController {
     this.#chromeState.closeFlyout();
     this.#menus.closeToolbar();
   }
-  #createInputControllers(
-    options: ActiveEditorControllerOptions,
-  ): readonly [ActiveEditorKeyboardController, GestureController] {
+  #createInputControllers(options: ActiveEditorControllerOptions) {
     return createActiveEditorInputControllers({
       actions: this.#actions,
       availability: this.#availability,

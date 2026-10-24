@@ -11,7 +11,7 @@ import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/p
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
-import { createDetachedPreviewHandoff } from "../../../fixtures/obsidian/active-preview-handoff";
+import { createHiddenPreviewHandoff } from "../../../fixtures/obsidian/active-preview-handoff";
 import type { MotionPreference } from "../../../../src/rendering/motion/transitions";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
@@ -92,7 +92,7 @@ describe("Reading-view preview content identity", () => {
 });
 
 describe("Reading-view active preview refresh", () => {
-  it("refreshes a visible sibling while deferring the removed active preview", async () => {
+  it("refreshes a visible sibling while deferring the hidden active preview", async () => {
     let current = FIRST_PREVIEW;
     const listeners = new Set<(documentId: string) => void>();
     const documents: InkbookDocumentRecognitionPort = {
@@ -107,7 +107,7 @@ describe("Reading-view active preview refresh", () => {
     const sibling = mountReadingView(documents);
     const attachment = active.attachments[0]!;
     await sibling.attachments[0]!.ensurePreviewReady?.();
-    const { handoff } = await createDetachedPreviewHandoff(
+    const { handoff } = await createHiddenPreviewHandoff(
       attachment,
       nativeFrameWorkScheduler(attachment.root.ownerDocument.defaultView),
     );
@@ -121,7 +121,9 @@ describe("Reading-view active preview refresh", () => {
       expect(attachment.previewContentIdentity).toEqual(SECOND_PREVIEW.contentIdentity);
       expect(active.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("12");
       expect(builder).toHaveBeenCalledOnce();
-      expect(builder.mock.calls[0]?.[0]).toBe(sibling.root.ownerDocument);
+      const surface = sibling.previewMedia.shadowRoot as unknown as FakePresentationElement;
+      const frame = surface.getElementsByTagName("iframe").item(0)!;
+      expect(builder.mock.calls[0]?.[0]).toBe(frame.contentDocument);
       await handoff.ensurePreviewReady();
       handoff.restorePreview();
       expect(active.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("4");

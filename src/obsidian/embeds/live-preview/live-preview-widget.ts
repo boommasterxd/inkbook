@@ -139,6 +139,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
         contentIdentity: this.#embed.preview.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
+        setColorScheme: preview.setColorScheme,
         dispose: preview.dispose,
         requestHostMeasure: () => view.requestMeasure(),
         removeMarkdown: (range, expectedSource, mutate) =>
@@ -167,13 +168,17 @@ export class InkbookLivePreviewWidget extends WidgetType {
       controller.activate();
     };
     button.addEventListener("click", activate);
-    const releaseLifecycle = this.#ports.lifecycle.register(root, () => {
-      releaseHeight();
-      hostZoomScroll.dispose();
-      button.removeEventListener("click", activate);
-      mountedControllers.delete(root);
-      controller.dispose();
-    });
+    const releaseLifecycle = this.#ports.lifecycle.register(
+      root,
+      () => {
+        releaseHeight();
+        hostZoomScroll.dispose();
+        button.removeEventListener("click", activate);
+        mountedControllers.delete(root);
+        controller.dispose();
+      },
+      preview.refresh,
+    );
     if (releaseLifecycle === undefined) {
       releaseHeight();
       hostZoomScroll.dispose();

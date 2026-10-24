@@ -1,5 +1,4 @@
 import { positionedTransform } from "./stroke-position";
-import { normalizeStrokePaint } from "../../../domain/geometry/pressure/pressure-paint";
 import type { SvgPathPart } from "../../../domain/geometry/element-path";
 import { SVG_NAMESPACE } from "../constants";
 import {
@@ -7,18 +6,20 @@ import {
   scaledStrokeWidth,
   PRESENTATION_ATTRIBUTES,
   pathPresentation,
+  isPressureStroke,
+  pressureRootOpacity,
   type PathPresentation,
   type PresentationAttribute,
 } from "./element-presentation";
 import type { MutableSceneInstrumentation, SceneElementRecord } from "../types";
 import {
-  elementFadePresentation,
-  elementFadeTarget,
-  elementFadeTargetCount,
+  setMountedElementFade,
   setElementFadeNode,
   type ElementFadePresentation,
 } from "../presentation/element-fade-style";
 import { clearMotionStyle, writeMotionStyle } from "../presentation/motion-visual";
+
+export { setMountedElementFade } from "../presentation/element-fade-style";
 
 interface MountedPath {
   appliedD: string;
@@ -82,7 +83,7 @@ export function createMountedElement(
     displayedElement: record.element,
     displayedPathParts: parts,
     group,
-    groupOpacity: pressureGroupOpacity(record),
+    groupOpacity: pressureRootOpacity(record.element),
     appliedPreviewTransform: null,
     appliedTransform: null,
     geometryVersion: record.geometryVersion,
@@ -137,7 +138,10 @@ export function updateMountedGeometry(
   parent: SVGGElement,
   instrumentation: MutableSceneInstrumentation,
 ): void {
-  if (entry.paths.length !== parts.length || (entry.group !== null) !== isPressureStroke(record)) {
+  if (
+    entry.paths.length !== parts.length ||
+    (entry.group !== null) !== (isPressureStroke(record.element) && parts.length > 1)
+  ) {
     replacePathTopology(entry, record, parts, {
       instrumentation,
       ownerDocument,
@@ -168,11 +172,18 @@ export function updateMountedPaint(
   parts: readonly SvgPathPart[],
   instrumentation: MutableSceneInstrumentation,
 ): void {
-  const opacity = pressureGroupOpacity(record);
-  if (entry.group !== null && entry.groupOpacity !== opacity) {
-    writeRaw(entry.group, "opacity", String(opacity), instrumentation, false);
-    entry.groupOpacity = opacity;
+  const opacity = pressureRootOpacity(record.element);
+  const pressure = isPressureStroke(record.element);
+  const previousPressure = isPressureStroke(entry.displayedElement);
+  if (pressure !== previousPressure) {
+    setMountedElementFade(entry, null);
+    setMountedElementMotion(entry, null);
   }
+  if (entry.groupOpacity !== opacity || pressure !== previousPressure) {
+    const node = firstPath(entry);
+    writeRaw(node, "opacity", pressure ? String(opacity) : null, instrumentation, false);
+  }
+  entry.groupOpacity = opacity;
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
     const path = entry.paths[index];
@@ -257,7 +268,10 @@ function updateMountedPreviewGeometry(
   parts: readonly SvgPathPart[],
   options: TopologyUpdateOptions,
 ): void {
-  if (entry.paths.length !== parts.length || (entry.group !== null) !== isPressureStroke(record)) {
+  if (
+    entry.paths.length !== parts.length ||
+    (entry.group !== null) !== (isPressureStroke(record.element) && parts.length > 1)
+  ) {
     replacePathTopology(entry, record, parts, options);
     return;
   }
@@ -269,20 +283,6 @@ function updateMountedPreviewGeometry(
     }
   }
   updateMountedPaint(entry, record, parts, options.instrumentation);
-}
-
-export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
-  const presentation = elementFadePresentation(entry);
-  const previousPresentation = entry.fadePresentation ?? presentation;
-  if (durationMs !== null && entry.fadeActive && previousPresentation !== presentation)
-    setMountedElementFade(entry, null);
-  const targetPresentation = durationMs === null ? previousPresentation : presentation;
-  entry.fadeActive = durationMs !== null;
-  entry.fadePresentation = durationMs === null ? null : presentation;
-  for (let index = 0; index < elementFadeTargetCount(entry, targetPresentation); index += 1) {
-    const node = elementFadeTarget(entry, index, targetPresentation);
-    if (node !== undefined) setElementFadeNode(node, durationMs, targetPresentation);
-  }
 }
 
 export function setMountedElementMotion(
@@ -349,7 +349,7 @@ function replacePathTopology(
   entry.detachedPathCount = 0;
   entry.group = group;
   entry.motionActive = false;
-  entry.groupOpacity = pressureGroupOpacity(record);
+  entry.groupOpacity = pressureRootOpacity(record.element);
   entry.appliedPreviewTransform = null;
   entry.appliedTransform = null;
   entry.paths.splice(0, entry.paths.length, ...paths);
@@ -363,26 +363,22 @@ function replacePathTopology(
   );
 }
 
-function isPressureStroke(record: SceneElementRecord): boolean {
-  return record.element.kind === "stroke" && record.element.style.pressureEnabled;
-}
-
-function pressureGroupOpacity(record: SceneElementRecord): number {
-  return isPressureStroke(record) && record.element.kind === "stroke"
-    ? normalizeStrokePaint(record.element.style).opacity
-    : 1;
-}
-
 function createPressureGroup(
   ownerDocument: Document,
   record: SceneElementRecord,
   paths: readonly MountedPath[],
   instrumentation: MutableSceneInstrumentation,
 ): SVGGElement | null {
-  if (!isPressureStroke(record)) return null;
-  const group = ownerDocument.createElementNS(SVG_NAMESPACE, "g");
-  writeRaw(group, "opacity", String(pressureGroupOpacity(record)), instrumentation, false);
-  for (const path of paths) group.append(path.node);
+  if (!isPressureStroke(record.element)) return null;
+  const group = paths.length === 1 ? null : ownerDocument.createElementNS(SVG_NAMESPACE, "g");
+  writeRaw(
+    group ?? paths[0]!.node,
+    "opacity",
+    String(pressureRootOpacity(record.element)),
+    instrumentation,
+    false,
+  );
+  if (group !== null) for (const path of paths) group.append(path.node);
   return group;
 }
 

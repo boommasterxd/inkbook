@@ -138,7 +138,7 @@ it("finishes cold pressure mounting during uninterrupted zoom and reuses dense o
   expect(content.nodes).toHaveLength(NAVIGATION_VISIBLE_STROKES);
   expect(content.nodes.filter((node) => original.has(node))).toHaveLength(retainedNodes);
   expect(nodes.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(recreated);
-  expect(nodes.mock.calls.filter(([, tag]) => tag === "g")).toHaveLength(recreated);
+  expect(nodes.mock.calls.filter(([, tag]) => tag === "g")).toHaveLength(0);
   renderer.destroy();
   expect(renderer.instrumentation().pathCacheEntries).toBe(0);
   expect(scheduler.pendingCount).toBe(0);

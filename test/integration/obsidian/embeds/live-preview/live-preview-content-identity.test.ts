@@ -10,7 +10,7 @@ import type {
 import { ColorSchemeBroadcaster } from "../../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
 import { nativeFrameWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
-import { createDetachedPreviewHandoff } from "../../../../fixtures/obsidian/active-preview-handoff";
+import { createHiddenPreviewHandoff } from "../../../../fixtures/obsidian/active-preview-handoff";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
@@ -77,14 +77,14 @@ describe("Live Preview widget content identity", () => {
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
   });
 
-  it("retargets a removed active preview through updateDOM without preparing its SVG", async () => {
+  it("retargets a hidden active preview through updateDOM without preparing its SVG", async () => {
     const ports = createPorts();
     const widget = new InkbookLivePreviewWidget(embed(), ports);
     const host = new FakePresentationElement();
     const root = widget.toDOM({ plugin: () => null, dom: host } as never);
     host.append(root as unknown as FakePresentationElement);
     const attachment = ports.attachments[0]!;
-    const { handoff, preview } = await createDetachedPreviewHandoff(
+    const { handoff, preview } = await createHiddenPreviewHandoff(
       attachment,
       ports.workScheduler(root.ownerDocument.defaultView),
     );

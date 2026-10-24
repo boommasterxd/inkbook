@@ -192,32 +192,45 @@ it("requires every multipart root to detach before caching committed ownership",
   cache.dispose();
 });
 
-it("retains a detached pressure group with its owned children and preserves root identity", () => {
-  const { instrumentation, record } = fixture();
-  const element = createTestStroke();
-  const current = { ...record, id: element.id, element };
-  const document = new FakeDocument();
-  const entry = createMountedElement(
-    asDocument(document),
-    current,
-    buildElementPathParts(element),
-    instrumentation,
-  );
-  const group = entry.group;
-  if (group === null) throw new Error("Expected pressure group.");
-  const cache = new DetachedSceneElementCache();
-  expect(entry.paths.every(({ node }) => node.parentNode === group)).toBe(true);
-  expect(cache.retain(entry)).toBe(true);
-  const bytes = cache.statistics().bytes;
-  expect(cache.retainedRoots).toBe(1);
-  expect(cache.take(current, instrumentation)).toBe(entry);
-  const band = document.createElementNS("", "g");
-  band.append(fakeNode(group));
-  expect(cache.retain(entry)).toBe(false);
-  fakeNode(group).remove();
-  expect(cache.retain(entry)).toBe(true);
-  expect(cache.statistics().bytes).toBe(bytes);
-  cache.dispose();
-  expect(cache.retainedRoots).toBe(0);
-  expect(cache.memoryUsage()).toBe(0);
-});
+it.each([1, 2])(
+  "retains %i detached pressure paths and updates root alpha on reuse",
+  (partCount) => {
+    const { instrumentation, record } = fixture();
+    const element = createTestStroke();
+    const current = { ...record, id: element.id, element };
+    const document = new FakeDocument();
+    const parts = buildElementPathParts(element);
+    const entry = createMountedElement(
+      asDocument(document),
+      current,
+      Array.from({ length: partCount }, () => parts[0]!),
+      instrumentation,
+    );
+    const root = entry.group ?? entry.paths[0]!.node;
+    const cache = new DetachedSceneElementCache();
+    expect(entry.paths.every(({ node }) => node.parentNode === entry.group)).toBe(true);
+    expect(cache.retain(entry)).toBe(true);
+    const bytes = cache.statistics().bytes;
+    expect(cache.retainedRoots).toBe(1);
+    const next = {
+      ...current,
+      paintVersion: current.paintVersion + 1,
+      element: { ...element, style: { ...element.style, opacity: 0.5 } },
+    };
+    const geometry = entry.paths.map(({ node }) => fakeNode(node).attributes.get("d"));
+    const create = vi.spyOn(document, "createElementNS");
+    expect(cache.take(next, instrumentation)).toBe(entry);
+    expect(fakeNode(root).attributes.get("opacity")).toBe("0.5");
+    expect(entry.paths.map(({ node }) => fakeNode(node).attributes.get("d"))).toEqual(geometry);
+    expect(create).not.toHaveBeenCalled();
+    const band = document.createElementNS("", "g");
+    band.append(fakeNode(root));
+    expect(cache.retain(entry)).toBe(false);
+    fakeNode(root).remove();
+    expect(cache.retain(entry)).toBe(true);
+    expect(cache.statistics().bytes).toBe(bytes);
+    cache.dispose();
+    expect(cache.retainedRoots).toBe(0);
+    expect(cache.memoryUsage()).toBe(0);
+  },
+);
