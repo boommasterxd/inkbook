@@ -6,7 +6,7 @@ Status: Accepted
 
 An inspected 74-stroke document contains 44 pressure strokes with 10,588 samples. The previous pressure renderer expands those strokes into 10,470 closed subpaths and 1,255,969 ASCII path bytes. Adjacent pieces use different chord normals and almost never meet the exact cross-section equality required for packing. One SVG path per element therefore does not bound its internal drawing complexity.
 
-The reference acceptance target is at most 130 pressure subpaths and 41,177 pressure path bytes, in addition to geometric correctness and responsive interaction. These are document-specific output budgets, not a universal limit or a latency measurement.
+The original reference acceptance target was at most 130 pressure subpaths and 41,177 pressure path bytes. The accepted finer pressure-contour target raises the byte ceiling to 57,325 while retaining the 130-subpath limit, geometric correctness and responsive interaction. These are document-specific output budgets, not a universal limit or a latency measurement.
 
 ## Decision
 
@@ -15,6 +15,8 @@ Implement Inkbook-owned compact contour construction from mathematical requireme
 Keep only current stroke and shape contour generation and verification. Inkbook is still pre-production, and the working reference drawing has been saved with current geometry. Maintaining earlier geometry profiles would retain duplicate serializers and unlock work without a supported deployed-document requirement. This original decision rejected earlier geometry without migration. Snapshot-authoritative loading later superseded that rejection: safe static contours can differ from current output, while export verification still checks current canonical geometry. Exact stylesheet compatibility, supported snapshot-version migration, and accepted schema widths remain unchanged.
 
 The canonical algorithm, streaming ownership and work bounds belong in [Rendering and Performance](../rendering-and-performance.md). Snapshot-authoritative input acceptance, canonical output verification, and retained envelope compatibility belong in [SVG Envelope](../svg-envelope.md). Selection preparation and essential-feedback behavior belong in [Editor Tools](../editor-tools.md).
+
+Broad pressure strokes retain finer center and radius detail rather than long straight transitions between pressure regions. The selected contour produces 57,325 ASCII path bytes and 101 pressure subpaths for the same 44-stroke reference, compared with 41,149 bytes and 81 subpaths before this refinement. The explicit byte-budget increase accepts this detail; it is not a complete-file size comparison or a speed guarantee. Raw samples, the nib diameter formula, position smoothing, constant-width strokes and the sample codec remain unchanged. The tighter combined error bound also limits derived pressure averaging, as defined in the canonical algorithm.
 
 ## Verification
 

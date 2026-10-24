@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
+import { strokeLocalGeometry } from "../../../../../src/domain/geometry/stroke-position";
 import * as windowJobs from "../../../../../src/domain/geometry/pressure/pressure-window";
 import * as pressureWindows from "../../../../../src/domain/geometry/pressure/pressure-path-serialization";
 import * as pressureOutline from "../../../../../src/domain/geometry/pressure/pressure-outline";
@@ -122,7 +123,10 @@ it("releases smoothed centers and partial strings after completing canonical geo
     points: Array.from({ length: 4096 }, (_, index) => [index, index % 2, 0.5]).flat(),
   };
   const usage = vi.spyOn(pressureWindows, "pressureWindowMemoryUsage");
-  const job = new ProgressivePreviewPath(element);
+  const job = new ProgressivePreviewPath(element, {
+    readWindow: () => undefined,
+    publishWindow: () => undefined,
+  });
   expect(job.memoryUsage()).toBe(0);
   expect(job.step()).toBe(false);
   expect(job.memoryUsage()).toBeGreaterThan(0);
@@ -151,8 +155,8 @@ it("keeps completed path identity when stepped again", () => {
 it("obeys the supplied deadline and releases its suspended-job reserve", () => {
   const original = windowJobs.preparePressureWindowSteps;
   let operations = 0;
-  vi.spyOn(windowJobs, "preparePressureWindowSteps").mockImplementation(function* (pieces) {
-    const job = original(pieces);
+  vi.spyOn(windowJobs, "preparePressureWindowSteps").mockImplementation(function* (pieces, mode) {
+    const job = original(pieces, mode);
     for (;;) {
       operations++;
       const step = job.next();
@@ -200,12 +204,12 @@ it("obeys the supplied deadline and releases its suspended-job reserve", () => {
 it("keeps progressing past the former step quota while shared time remains", () => {
   const prepare = windowJobs.preparePressureWindowSteps;
   let operations = 0;
-  vi.spyOn(windowJobs, "preparePressureWindowSteps").mockImplementation(function* (pieces) {
+  vi.spyOn(windowJobs, "preparePressureWindowSteps").mockImplementation(function* (pieces, mode) {
     for (let index = 0; index < 5000; index += 1) {
       operations += 1;
       yield;
     }
-    return yield* prepare(pieces);
+    return yield* prepare(pieces, mode);
   });
   const job = new ProgressivePreviewPath(pressureWindowStroke());
   const clock = vi.fn(() => 0);
@@ -262,6 +266,26 @@ it("uses the store's exact window measurement during progressive preparation", (
   expect(measurement).toHaveBeenCalledTimes(windows.length);
   expect(job.parts).toEqual(buildElementPathParts(element));
 });
+
+it.each([false, true])(
+  "isolates positioned contours from world-space publication ports (local port: %s)",
+  (hasLocalPort) => {
+    const element = { ...pressureWindowStroke(), rotation: 37, offset: { x: 12, y: 25 } };
+    const publish = vi.fn();
+    const local = { readWindow: () => undefined, publishWindow: publish };
+    const world = {
+      readWindow: vi.fn(() => undefined),
+      publishWindow: vi.fn(),
+      ...(hasLocalPort ? { local: () => local } : {}),
+    };
+    const job = new ProgressivePreviewPath(element, world);
+    completePreview(() => job.step());
+    expect(job.parts).toEqual(buildElementPathParts(strokeLocalGeometry(element)));
+    expect(world.readWindow).not.toHaveBeenCalled();
+    expect(world.publishWindow).not.toHaveBeenCalled();
+    expect(publish.mock.calls.length > 0).toBe(hasLocalPort);
+  },
+);
 
 it("recounts a pressure window when a port reports another window's measurement", () => {
   const usage = vi.spyOn(pressureWindows, "pressureWindowMemoryUsage");

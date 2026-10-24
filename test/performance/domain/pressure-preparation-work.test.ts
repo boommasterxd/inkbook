@@ -11,6 +11,8 @@ import { serializePressureWindows } from "../../../src/domain/geometry/pressure/
 import { StrokeShapeCache } from "../../../src/persistence/serialization/output/stroke-shape-cache";
 import { PreparedPressureWindowCache } from "../../../src/domain/store/records/prepared-pressure-window-cache";
 import { CanonicalElementPathPreparation } from "../../../src/domain/geometry/canonical-element-path-preparation";
+import { ProgressivePreviewPath } from "../../../src/rendering/scene/content/progressive-preview-path";
+import { maximumStroke } from "../editor/maximum-stroke-fixture";
 import {
   createMultiWindowPressureStroke,
   createTestStroke,
@@ -289,6 +291,52 @@ describe("path-only pressure preparation work", () => {
       endpoints.mockRestore();
     }
   });
+});
+
+describe("scene path-only preparation resources", () => {
+  it.each([createMultiWindowPressureStroke, () => maximumStroke(0)])(
+    "omits selection-window measurement and triangle-only arc work without a publication port",
+    (createStroke) => {
+      const stroke = createStroke();
+      const samples = stroke.points;
+      const measure = vi.spyOn(windowPreparation, "pressureWindowMemoryUsage");
+      const endpoints = vi.spyOn(joins, "pressureArcPoint");
+      try {
+        const full = new CanonicalElementPathPreparation(stroke);
+        while (!full.stepOperation()) {
+          /* Complete the reference contour through bounded production operations. */
+        }
+        const fullEndpoints = endpoints.mock.calls.length;
+        expect(measure.mock.calls.length).toBeGreaterThan(0);
+        measure.mockClear();
+        endpoints.mockClear();
+        const path = new ProgressivePreviewPath(stroke);
+        let complete = false;
+        while (!complete) {
+          const before = measure.mock.calls.length;
+          complete = path.stepOperation();
+          expect(measure).toHaveBeenCalledTimes(before);
+          const bytes = path.memoryUsage();
+          const accounted = measure.mock.calls.length;
+          expect(path.memoryUsage()).toBe(bytes);
+          expect(measure).toHaveBeenCalledTimes(accounted);
+        }
+        expect(path.parts).toEqual(full.parts);
+        expect(stroke.points).toBe(samples);
+        const measured = measure.mock.calls.map(([window]) => window);
+        expect(measured.length).toBeGreaterThan(0);
+        expect(measured.every((window) => window.kind === "path-window")).toBe(true);
+        expect(new Set(measured).size).toBe(measured.length);
+        expect(endpoints.mock.calls.length).toBeLessThan(fullEndpoints);
+        expect(path.memoryUsage()).toBe(path.parts![0]!.d.length * 2);
+        path.cancel();
+        expect(path.memoryUsage()).toBe(0);
+      } finally {
+        endpoints.mockRestore();
+        measure.mockRestore();
+      }
+    },
+  );
 });
 
 describe("worker path-only preparation resources", () => {

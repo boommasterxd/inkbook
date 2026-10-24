@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import * as pressureWindows from "../../../../src/domain/geometry/pressure/pressure-path-serialization";
+import * as pressureJoins from "../../../../src/domain/geometry/pressure/pressure-joins";
+import * as pressureChains from "../../../../src/domain/geometry/pressure/pressure-chain-contour";
 import { buildStrokePathParts } from "../../../../src/domain/geometry/stroke-path";
 import type { RawStrokeSample } from "../../../../src/domain/geometry/public";
 import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../../../src/domain/schema/public";
@@ -158,6 +159,17 @@ describe("live stroke preview geometry", () => {
 });
 
 describe("live stroke commit continuity", () => {
+  it("retains single-point pen taps without deferring their canonical circle", () => {
+    const builder = new LiveStrokeBuilder({
+      input: { pressureSource: "pen", zoom: 1 },
+      style: penStyle,
+    });
+    builder.append({ x: 10, y: 20, pressure: 0.5, time: 0 });
+    const commit = builder.finish();
+    expect(commit.deferGeometryPreparation).toBe(false);
+    expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
+  });
+
   it("packs live window boundaries into the canonical continuous pressure contour", () => {
     const builder = new LiveStrokeBuilder({
       input: { pressureSource: "pen", zoom: 1 },
@@ -178,24 +190,28 @@ describe("live stroke commit continuity", () => {
   });
 
   it("reuses finalized unions and materializes the bounded canonical tail only once", () => {
-    const prepare = vi.spyOn(pressureWindows, "preparePressureWindows");
+    const nibs = vi.spyOn(pressureJoins, "preparePressureNib");
+    const chains = vi.spyOn(pressureChains, "pressureChainContour");
     try {
       const builder = new LiveStrokeBuilder({
         input: { pressureSource: "pen", zoom: 1 },
         style: penStyle,
       });
       for (let index = 0; index < 500; index += 1) builder.append(sample(index));
-      const prepared = prepare.mock.calls.length;
       const commit = builder.finish();
-      expect(prepare).toHaveBeenCalledTimes(prepared);
+      expect(commit.deferGeometryPreparation).toBe(false);
+      const preparedNibs = nibs.mock.calls.length;
+      const preparedChains = chains.mock.calls.length;
       const geometry = commit.geometry;
-      expect(prepare).toHaveBeenCalledTimes(prepared + 1);
-      expect(prepare.mock.calls[prepared]![0].length).toBeLessThanOrEqual(192);
+      expect(nibs).toHaveBeenCalledTimes(preparedNibs);
+      expect(chains).toHaveBeenCalledTimes(preparedChains);
       expect(commit.geometry).toBe(geometry);
-      expect(prepare).toHaveBeenCalledTimes(prepared + 1);
+      expect(nibs).toHaveBeenCalledTimes(preparedNibs);
+      expect(chains).toHaveBeenCalledTimes(preparedChains);
       expect(geometry).toEqual(onePassPath(commit.points, penStyle));
     } finally {
-      prepare.mockRestore();
+      nibs.mockRestore();
+      chains.mockRestore();
     }
   });
 

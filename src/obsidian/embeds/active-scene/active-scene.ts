@@ -111,8 +111,7 @@ export class ActiveInkbookScene {
     this.#prewarm = new ActiveScenePrewarmBinding(options.root, (enabled) =>
       this.#renderer.setDocumentPrewarmEnabled(enabled),
     );
-    this.#previewHandoff.onSceneReveal = this.#renderer.revealSurface;
-    this.#previewHandoff.onReducedMotionChange = this.#updateReducedMotion;
+    this.#bindPreviewHandoff(options.releasePreview);
     this.#memory.attach(this.#renderer);
     this.#renderer.setScheme(options.scheme);
     this.#renderer.setSelectionHighlightsEnabled(options.selectionHighlightsEnabled ?? true);
@@ -185,6 +184,15 @@ export class ActiveInkbookScene {
     this.#layout.suspend();
     this.#beginLockTransition();
   }
+
+  #bindPreviewHandoff(releasePreview: (() => void) | undefined): void {
+    this.#previewHandoff.onSceneReveal = this.#renderer.revealSurface;
+    this.#previewHandoff.onReducedMotionChange = this.#updateReducedMotion;
+    this.#previewHandoff.onUnlockSettled = () => {
+      if (!this.#disposed && !this.#surfaceFailed && this.#lockStartedAt === undefined)
+        releasePreview?.();
+    };
+  }
   public enableInput(): void {
     if (!this.#readyForInput) return;
     this.#cancelLockTransition();
@@ -199,9 +207,15 @@ export class ActiveInkbookScene {
     this.#layout.resume();
   }
   public finishLock(): Promise<void> {
-    if (this.#disposed || this.#surfaceFailed) return Promise.resolve();
+    if (this.#disposed) return Promise.resolve();
     this.#beginLockTransition();
-    this.#lockPromise ??= this.#finishLockTransition(this.#lockGeneration);
+    if (this.#lockPromise === undefined) {
+      const task = this.#finishLockTransition(this.#lockGeneration).catch((error: unknown) => {
+        if (this.#lockPromise === task) this.#lockPromise = undefined;
+        throw error;
+      });
+      this.#lockPromise = task;
+    }
     return this.#lockPromise;
   }
   public dispose(): void {
@@ -342,7 +356,6 @@ export class ActiveInkbookScene {
     this.#readyForInput = false;
     this.#controller.setEnabled(false);
     this.#layout.suspend();
-    this.#previewHandoff.dispose();
     this.#resolveReady(false);
     onLock();
   }
@@ -395,6 +408,7 @@ export class ActiveInkbookScene {
     transition?.releaseViewportStability();
     this.#preLockBlockSize = undefined;
     this.#preLockViewState = undefined;
+    this.#previewHandoff.releaseHiddenPreview();
   }
 
   async #finishLockTransition(generation: number): Promise<void> {
@@ -404,7 +418,8 @@ export class ActiveInkbookScene {
     try {
       const elapsed = ownerWindow.performance.now() - (this.#lockStartedAt ?? 0);
       const reduced = this.#previewHandoff.reducedMotion;
-      const remaining = reduced ? 0 : Math.max(0, LOCK_PRESENTATION_DURATION_MS - elapsed);
+      const remaining =
+        reduced || this.#surfaceFailed ? 0 : Math.max(0, LOCK_PRESENTATION_DURATION_MS - elapsed);
       if (remaining > 0) {
         await this.#lockDelay.wait(remaining);
       }

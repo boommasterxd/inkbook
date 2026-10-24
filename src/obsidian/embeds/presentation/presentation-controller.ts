@@ -35,6 +35,7 @@ interface PresentationMeasurement {
 }
 
 export interface PresentationPreviewLifecycle {
+  readonly releaseHiddenSurface?: () => void;
   readonly contentIdentity?: PreviewContentIdentity;
   readonly element: HTMLElement;
   readonly entranceState?: PresentationEntranceState;
@@ -206,6 +207,9 @@ export class PresentationController {
     const loadingStartedAt = preview?.entranceState?.loadingStartedAt;
     if (preview?.entranceState !== undefined) delete preview.entranceState.loadingStartedAt;
     return {
+      ...(preview?.releaseHiddenSurface === undefined
+        ? {}
+        : { releasePreview: preview.releaseHiddenSurface }),
       ...(preview?.ensureReady === undefined ? {} : { ensurePreviewReady: preview.ensureReady }),
       ...(preview?.setBackgroundWait === undefined
         ? {}

@@ -20,6 +20,7 @@ export interface InkbookLockedPreviewDescriptor {
 
 /** Presentation callbacks shared by attached previews and their active scene. */
 export interface LockedPreviewPresentation {
+  readonly releasePreview?: () => void;
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly refreshPreview?: () => void;
   readonly ensurePreviewReady?: () => Promise<void>;
@@ -28,6 +29,7 @@ export interface LockedPreviewPresentation {
 }
 
 export interface InkbookLockedPreviewSurface {
+  readonly releaseHiddenSurface: () => void;
   readonly element: HTMLButtonElement;
   readonly refresh: () => void;
   readonly ensureReady: () => Promise<void>;
@@ -53,7 +55,7 @@ export function createInkbookLockedPreview(
 
 class LockedPreview implements InkbookLockedPreviewSurface {
   readonly #media: HTMLDivElement;
-  readonly #surface: StaticPreviewSurface;
+  #surface: StaticPreviewSurface | undefined;
   readonly #scheduler: PreviewIdleScheduler;
   #descriptor: InkbookLockedPreviewDescriptor;
   #mountedIdentity: PreviewContentIdentity | undefined;
@@ -67,6 +69,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   #preparationAbort: AbortController | undefined;
   #readinessRequests = 0;
   #failure: Error | undefined;
+  #releaseRequested = false;
 
   public constructor(
     public readonly element: HTMLButtonElement,
@@ -96,17 +99,18 @@ class LockedPreview implements InkbookLockedPreviewSurface {
 
   public readonly setColorScheme = (scheme: InkbookColorScheme): void => {
     this.#media.dataset.inkbookScheme = scheme;
-    this.#surface.setColorScheme(scheme);
+    this.#surface?.setColorScheme(scheme);
   };
 
   public readonly refresh = (): void => {
     if (this.#disposed) return;
-    this.#surface.refresh();
+    if (!this.element.hidden) this.#releaseRequested = false;
+    this.#surface?.refresh();
     if (this.element.hidden && this.#readinessRequests === 0) return;
     this.#startPreparation();
     if (this.#prepared === undefined) return;
     this.setAspectRatio(this.#descriptor.aspectRatio);
-    this.#surface.setSvg(this.#prepared);
+    this.#surface?.setSvg(this.#prepared);
     this.#prepared = undefined;
     this.#mountedIdentity = this.#descriptor.contentIdentity;
   };
@@ -118,6 +122,8 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   };
 
   public readonly ensureReady = async (): Promise<void> => {
+    if (this.#disposed) return;
+    this.#releaseRequested = false;
     this.#readinessRequests += 1;
     try {
       this.#startPreparation();
@@ -127,10 +133,24 @@ class LockedPreview implements InkbookLockedPreviewSurface {
       }
       if (this.#failure !== undefined) throw this.#failure;
       this.refresh();
-      if (!this.#disposed && this.element.isConnected) await this.#surface.ensureMounted();
+      if (!this.#disposed && !this.#releaseRequested && this.element.isConnected)
+        await this.#surface?.ensureMounted();
     } finally {
       this.#readinessRequests -= 1;
+      if (this.#releaseRequested) this.releaseHiddenSurface();
     }
+  };
+
+  public readonly releaseHiddenSurface = (): void => {
+    if (this.#disposed || !this.element.hidden) return;
+    this.#releaseRequested = true;
+    this.#generation += 1;
+    this.#preparationAbort?.abort();
+    this.#prepared = undefined;
+    this.#mountedIdentity = undefined;
+    if (this.#readinessRequests > 0) return;
+    this.#surface?.dispose();
+    this.#surface = undefined;
   };
 
   public readonly setDescriptor = (descriptor: InkbookLockedPreviewDescriptor): void => {
@@ -195,7 +215,8 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     this.#prepared = undefined;
     this.#sourceGeneration += 1;
     this.#scheduler.dispose();
-    this.#surface.dispose();
+    this.#surface?.dispose();
+    this.#surface = undefined;
   };
 
   #matchesMounted(identity: PreviewContentIdentity): boolean {
@@ -220,6 +241,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   #startPreparation(): void {
     if (
       this.#disposed ||
+      (this.#releaseRequested && this.element.hidden) ||
       (this.element.hidden && this.#readinessRequests === 0) ||
       this.#prepared !== undefined ||
       this.#failure !== undefined ||
@@ -239,10 +261,13 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     const isCancelled = (): boolean =>
       this.#disposed ||
       abort.signal.aborted ||
+      target !== this.#generation ||
       (this.element.hidden && this.#readinessRequests === 0);
     try {
+      const surface = (this.#surface ??= new StaticPreviewSurface(this.#media));
+      surface.setColorScheme(this.#media.dataset.inkbookScheme === "dark" ? "dark" : "light");
       const svg = await createPreviewSvgAsync(
-        this.#surface.drawingDocument ?? this.element.ownerDocument,
+        surface.drawingDocument ?? this.element.ownerDocument,
         this.#descriptor.safeSvg,
         {
           checkpoint: (initial) => this.#scheduler.checkpoint(initial, abort.signal),

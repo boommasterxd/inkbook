@@ -493,8 +493,8 @@ it("drains a newer hidden source received during lock preparation and retries fa
   expect(ensure).toHaveBeenCalledOnce();
   await handoff.setPreviewSource("last");
   handoff.dispose();
-  await vi.waitFor(() => expect(load).toHaveBeenLastCalledWith("last"));
   expect(button.hidden).toBe(false);
   await handoff.setPreviewSource("disposed");
-  expect(load).toHaveBeenCalledTimes(4);
+  expect(load).toHaveBeenCalledTimes(3);
+  expect(ensure).toHaveBeenCalledOnce();
 });

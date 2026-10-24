@@ -131,3 +131,28 @@ it.each(["full", "reduced", "system", "initial"] as const)(
     expect(h.scheduler.pendingCount).toBe(0);
   },
 );
+
+it.each(["full", "reduced", "initial"] as const)(
+  "releases the hidden preview only after the visual %s unlock settles",
+  async (mode) => {
+    const h = fixture(mode);
+    const release = vi.fn();
+    h.handoff.onUnlockSettled = release;
+    try {
+      h.handoff.ready(undefined, () => h.renderer.sceneCommitProof);
+      if (mode !== "reduced") {
+        h.scheduler.runNext();
+        h.scheduler.runNext();
+        expect(release).not.toHaveBeenCalled();
+        h.scheduler.runAll();
+        await Promise.resolve();
+      }
+      expect(release).toHaveBeenCalledOnce();
+      expect(h.preview.hidden).toBe(true);
+    } finally {
+      h.handoff.dispose();
+      h.entrance?.dispose();
+      h.renderer.destroy();
+    }
+  },
+);

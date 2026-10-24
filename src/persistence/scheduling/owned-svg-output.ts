@@ -1,10 +1,13 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 import { parseSafeSvgRoot } from "../documents/svg-envelope-root";
 import { parseOpeningTag } from "../documents/svg-tag";
-import { adoptUtf8Output, type Utf8AdoptionOptions } from "./utf8-adoption";
+import {
+  adoptUtf8OutputWithPrefix,
+  UTF8_OUTPUT_PREFIX_CODE_UNITS,
+  type Utf8AdoptionOptions,
+} from "./utf8-adoption";
 import { isNativeArrayBuffer } from "../serialization/transfer-array";
 
-const ROOT_PREFIX_LENGTH = 4 * 1024;
 const HASH = /^[0-9a-f]{64}$/u;
 
 /** Adopts output from our bounded canonical serializer, never an external SVG. */
@@ -20,9 +23,9 @@ export async function adoptOwnedSvgOutput(
   const ready = options.waitForBackground?.();
   if (ready !== undefined) await ready;
   options.signal?.throwIfAborted();
-  const content = await adoptUtf8Output(output, options);
+  const { content, prefix } = await adoptUtf8OutputWithPrefix(output, options);
   options.signal?.throwIfAborted();
-  return describeOwnedOutput(content, outputHash);
+  return describeOwnedOutput(content, outputHash, prefix);
 }
 
 export function adoptOwnedSvgOutputSync(output: string | Uint8Array, outputHash: string) {
@@ -48,8 +51,12 @@ function assertOwnedOutput(output: string | Uint8Array, outputHash: string): voi
   }
 }
 
-function describeOwnedOutput(content: string, outputHash: string) {
-  const tag = parseOpeningTag(content.slice(0, ROOT_PREFIX_LENGTH), 0);
+function describeOwnedOutput(
+  content: string,
+  outputHash: string,
+  prefix = content.slice(0, UTF8_OUTPUT_PREFIX_CODE_UNITS),
+) {
+  const tag = parseOpeningTag(prefix, 0);
   const root = tag === null ? null : parseSafeSvgRoot(tag, "current");
   if (root === null) throw new TypeError("Invalid canonical SVG root.");
   return {

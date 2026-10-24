@@ -111,4 +111,20 @@ describe("static preview document ownership", () => {
     expect(svg.isConnected).toBe(false);
     await expect(surface.ensureMounted()).rejects.toThrow("disposed");
   });
+
+  it("rebuilds one isolated surface in the same owned shadow root after release", async () => {
+    const { container, surface, svg } = fixture();
+    surface.setSvg(svg);
+    await surface.ensureMounted();
+    const shadow = container.shadowRoot;
+    surface.dispose();
+    const replacement = new StaticPreviewSurface(container);
+    surfaces.push(replacement);
+    replacement.setSvg(document.createElementNS(SVG_NAMESPACE, "svg"));
+    await replacement.ensureMounted();
+    expect(container.shadowRoot).toBe(shadow);
+    expect(shadow!.querySelectorAll("iframe")).toHaveLength(1);
+    expect(surface.drawingDocument).toBeUndefined();
+    expect(replacement.drawingDocument!.body.querySelectorAll("svg")).toHaveLength(1);
+  });
 });

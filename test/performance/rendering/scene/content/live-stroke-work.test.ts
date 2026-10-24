@@ -8,6 +8,8 @@ import {
   type LiveStrokePreview,
 } from "../../../../../src/editor/tools/live-stroke";
 import { fakeNode, FakeNode } from "../../../../unit/rendering/scene/fakes";
+import { tightPressureLoopSamples } from "../../../../fixtures/editor/stroke";
+import * as pressureIntersections from "../../../../../src/domain/geometry/pressure/pressure-boundary-intersections";
 import {
   createInteractionRenderer,
   createLivePressureSample,
@@ -18,6 +20,32 @@ import {
 
 // Pen pressure geometry is independent of sample timing; use the invariant 120 Hz fixture.
 const SAMPLE_INTERVAL_MS = 1_000 / 120;
+
+it.for([
+  { count: 120, turns: 2 },
+  { count: 1536, turns: 12 },
+  { count: MAX_STROKE_POINTS, turns: 200 },
+])("defers exact unions for $count tight pressure samples through release", ({ count, turns }) => {
+  const intersect = vi.spyOn(pressureIntersections, "intersectPressureBoundaries");
+  try {
+    const builder = new LiveStrokeBuilder({
+      input: { pressureSource: "pen", zoom: 1 },
+      style: { ...LIVE_PRESSURE_STYLE, width: 22 },
+    });
+    const samples = tightPressureLoopSamples(count, turns);
+    for (let start = 0; start < samples.length; start += 4)
+      builder.appendBatch(samples.slice(start, start + 4));
+    const commit = builder.finish();
+    expect(commit.deferGeometryPreparation).toBe(true);
+    expect(intersect).not.toHaveBeenCalled();
+    expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(131);
+    expect(commit.instrumentation.maximumPendingPressurePieces).toBeLessThanOrEqual(64);
+    // Retain canonical samples and the bounded tail, never every deferred capsule window.
+    expect(commit.geometryMemoryBytes - commit.points.length * 8).toBeLessThanOrEqual(262_144);
+  } finally {
+    intersect.mockRestore();
+  }
+});
 
 it.for(["smooth", "dense zigzag"] as const)(
   "bounds %s live pressure-stroke work across a growing stroke",

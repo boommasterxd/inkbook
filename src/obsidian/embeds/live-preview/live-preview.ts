@@ -215,16 +215,10 @@ function subscribeRecognitions(
 ): () => void {
   let disposed = false;
   let scheduled = false;
-  let queuedBlocks = view.state.field(field).blocks;
   const pending = new Set<string>();
   const release = ports.documents.subscribe((documentId) => {
     const ownerWindow = view.dom.ownerDocument.defaultView;
     if (ownerWindow === null || !view.state.field(field).blocks.has(documentId)) return;
-    const blocks = view.state.field(field).blocks;
-    if (blocks !== queuedBlocks) {
-      for (const id of pending) if (!blocks.has(id)) pending.delete(id);
-      queuedBlocks = blocks;
-    }
     pending.add(documentId);
     if (scheduled) return;
     scheduled = true;

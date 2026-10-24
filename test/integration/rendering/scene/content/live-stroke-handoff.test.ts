@@ -1,16 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import * as pressureWindows from "../../../../../src/domain/geometry/pressure/pressure-path-serialization";
+import * as pressureJoins from "../../../../../src/domain/geometry/pressure/pressure-joins";
 import * as elementPaths from "../../../../../src/domain/geometry/element-path";
 import { LiveStrokeBuilder } from "../../../../../src/editor/tools/live-stroke";
-import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
-import { indexedStroke } from "../../../../fixtures/editor/stroke";
-import {
-  asElement,
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-} from "../../../../unit/rendering/scene/fakes";
+import { indexedStroke, tightPressureLoopSamples } from "../../../../fixtures/editor/stroke";
+import { createSceneFixture, createSceneRecord } from "../../../../fixtures/rendering/scene";
+import { buildStrokePathParts } from "../../../../../src/domain/geometry/stroke-path";
+import { FakeNode, FakeSceneStore, fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 const page = {
   activeBufferLines: 3,
@@ -27,14 +22,7 @@ describe("live stroke canonical handoff", () => {
     Object.assign(store, {
       pressureGeometry: () => ({ readWindow: () => undefined, publishWindow }),
     });
-    const scheduler = new FakeScheduler();
-    const renderer = new SvgSceneRenderer({
-      container: asElement(new FakeNode(new FakeDocument(), "div")),
-      store,
-      workScheduler: scheduler.workScheduler,
-      page,
-      layout: { readViewport: () => ({ left: 0, top: 0, width: 1000, height: 1000 }) },
-    });
+    const { renderer, scheduler } = createSceneFixture(page, store);
     renderer.setPage(page, 1000);
     scheduler.runAll();
     const stroke = indexedStroke(0);
@@ -51,36 +39,30 @@ describe("live stroke canonical handoff", () => {
       })),
     );
     renderer.updateLiveStroke(preview, stroke.style, "pen");
-    const prepare = vi.spyOn(pressureWindows, "preparePressureWindows");
+    const prepare = vi.spyOn(pressureJoins, "preparePressureNib");
     const fullBuild = vi.spyOn(elementPaths, "buildElementPathParts");
     try {
       const commit = builder.finish();
+      expect(commit.deferGeometryPreparation).toBe(false);
+      const preparedNibs = prepare.mock.calls.length;
+      expect(preparedNibs).toBeLessThanOrEqual(192);
       const element = { ...stroke, points: commit.points };
-      store.records.set(stroke.id, {
-        id: stroke.id,
-        element,
-        geometryVersion: 1,
-        paintVersion: 1,
-        rank: 0,
-        band: "content",
-        bounds: { minX: 0, minY: 0, maxX: 610, maxY: 40 },
-      });
+      store.records.set(stroke.id, createSceneRecord(element));
       renderer.applyDelta({
         affected: [{ id: stroke.id, after: element, domains: ["geometry", "visibility", "order"] }],
       });
       renderer.commitLiveStroke(stroke.id, commit);
-      expect(prepare).not.toHaveBeenCalled();
+      expect(prepare).toHaveBeenCalledTimes(preparedNibs);
       scheduler.runAll();
       expect(renderer.mountedIds("content")).toEqual([stroke.id]);
       expect(fullBuild).not.toHaveBeenCalled();
-      expect(prepare).toHaveBeenCalledTimes(1);
-      expect(prepare.mock.calls[0]![0].length).toBeLessThanOrEqual(192);
+      expect(prepare).toHaveBeenCalledTimes(preparedNibs);
       expect(publishWindow).toHaveBeenCalledTimes(commit.pressureWindows!.length);
       for (const [index, window] of publishWindow.mock.calls)
         expect(window).toBe(commit.pressureWindows![index as number]);
       const geometry = commit.geometry;
       expect(commit.geometry).toBe(geometry);
-      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare).toHaveBeenCalledTimes(preparedNibs);
     } finally {
       renderer.destroy();
       prepare.mockRestore();
@@ -88,3 +70,59 @@ describe("live stroke canonical handoff", () => {
     }
   });
 });
+
+describe("deferred live stroke canonical handoff", () => {
+  it("keeps a short ambiguous live tail until cooperative canonical mounting without lazy reads", () => {
+    const store = new FakeSceneStore();
+    const { renderer, scheduler } = createSceneFixture(page, store);
+    renderer.setPage(page, 1000);
+    scheduler.runAll();
+    const initial = indexedStroke(0);
+    const stroke = { ...initial, style: { ...initial.style, width: 22 as const } };
+    const builder = new LiveStrokeBuilder({
+      input: { pressureSource: "pen", zoom: 1 },
+      style: stroke.style,
+    });
+    const preview = builder.appendBatch(tightPressureLoopSamples(120, 2));
+    expect(preview.finalizedChunks).toHaveLength(0);
+    renderer.updateLiveStroke(preview, stroke.style, "pen");
+    const commit = builder.finish();
+    expect(commit.deferGeometryPreparation).toBe(true);
+    const element = { ...stroke, points: commit.points };
+    store.records.set(stroke.id, createSceneRecord(element));
+    const unexpectedRead = (): never => {
+      throw new Error("The deferred handoff must not demand synchronous geometry");
+    };
+    try {
+      renderer.applyDelta({
+        affected: [{ id: stroke.id, after: element, domains: ["geometry", "visibility", "order"] }],
+      });
+      renderer.commitLiveStroke(stroke.id, {
+        deferGeometryPreparation: true,
+        geometryMemoryBytes: commit.geometryMemoryBytes,
+        get geometry() {
+          return unexpectedRead();
+        },
+        get pressureWindows() {
+          return unexpectedRead();
+        },
+      });
+      expect(renderer.mountedIds("content")).toEqual([]);
+      expect(scenePaths(fakeNode(renderer.svg))).toContain(preview.tail.geometry[0]!.d);
+      expect(renderer.instrumentation().liveTailNodesRemoved).toBe(0);
+      scheduler.runAll();
+      expect(renderer.mountedIds("content")).toEqual([stroke.id]);
+      expect(scenePaths(fakeNode(renderer.svg))).toContain(buildStrokePathParts(element)[0]!.d);
+      expect(renderer.instrumentation().liveTailNodesRemoved).toBe(1);
+    } finally {
+      renderer.destroy();
+    }
+  });
+});
+
+function scenePaths(node: FakeNode): string[] {
+  return [
+    ...(node.tagName === "path" ? [node.attributes.get("d") ?? ""] : []),
+    ...node.nodes.flatMap(scenePaths),
+  ];
+}

@@ -6,6 +6,7 @@ import { localPressureGeometry } from "./stroke-position";
 /** Scene adapter for the shared canonical contour preparation. */
 export class ProgressivePreviewPath extends CanonicalElementPathPreparation {
   public constructor(element: InkElementV1, geometry?: PreparedPressureGeometryPort) {
-    super(element, localPressureGeometry(element, geometry));
+    const local = localPressureGeometry(element, geometry);
+    super(element, local, local === undefined ? "path-only" : "full");
   }
 }

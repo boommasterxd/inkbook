@@ -111,6 +111,8 @@ describe("Reading-view active preview refresh", () => {
       attachment,
       nativeFrameWorkScheduler(attachment.root.ownerDocument.defaultView),
     );
+    const activeSurface = active.previewMedia.shadowRoot as unknown as FakePresentationElement;
+    expect(activeSurface.getElementsByTagName("iframe").length).toBe(0);
     const builder = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
     try {
       current = SECOND_PREVIEW;
@@ -125,6 +127,7 @@ describe("Reading-view active preview refresh", () => {
       const frame = surface.getElementsByTagName("iframe").item(0)!;
       expect(builder.mock.calls[0]?.[0]).toBe(frame.contentDocument);
       await handoff.ensurePreviewReady();
+      expect(activeSurface.getElementsByTagName("iframe").length).toBe(1);
       handoff.restorePreview();
       expect(active.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("4");
       expect(builder).toHaveBeenCalledTimes(2);

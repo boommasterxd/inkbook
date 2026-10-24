@@ -30,3 +30,15 @@ export function denseWaveSamples(): readonly RawStrokeSample[] {
     time: index,
   }));
 }
+
+export function tightPressureLoopSamples(count = 1536, turns = 12): RawStrokeSample[] {
+  return Array.from({ length: count }, (_, index) => {
+    const angle = (2 * turns * Math.PI * index) / (count - 1);
+    return {
+      x: 400 + 8 * Math.sin(angle),
+      y: 250 - 6 * Math.cos(angle),
+      pressure: 0.2 + 0.65 * (0.5 - 0.5 * Math.cos(angle / 3)),
+      time: (index * 1000) / 240,
+    };
+  });
+}

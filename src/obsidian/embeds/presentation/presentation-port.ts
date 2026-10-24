@@ -91,6 +91,7 @@ export type PresentationAttachmentInput = Omit<
   | "scrollRangeReserve"
   | "setPreviewAspectRatio"
   | "refreshPreview"
+  | "releasePreview"
   | "ensurePreviewReady"
   | "setPreviewBackgroundWait"
   | "setPreviewSource"
@@ -106,11 +107,15 @@ export function presentationPreviewOptions(
   | "scrollRangeReserve"
   | "setPreviewAspectRatio"
   | "refreshPreview"
+  | "releasePreview"
   | "ensurePreviewReady"
   | "setPreviewBackgroundWait"
   | "setPreviewSource"
 > {
   return {
+    ...(attachment.releasePreview === undefined
+      ? {}
+      : { releasePreview: attachment.releasePreview }),
     ...(attachment.hostZoomScroll === undefined
       ? {}
       : { hostZoomScroll: attachment.hostZoomScroll }),

@@ -53,6 +53,7 @@ export interface LiveStrokeCommit {
   readonly geometry: StrokePathGeometry;
   readonly geometryMemoryBytes: number;
   readonly pressureWindows: readonly PressureWindow[] | undefined;
+  readonly deferGeometryPreparation: boolean;
   readonly instrumentation: LiveStrokeInstrumentation;
 }
 
@@ -131,16 +132,18 @@ export class LiveStrokeBuilder {
     this.finished = true;
     const points = this.canonicalPoints;
     const builder = this.geometry;
+    const deferGeometryPreparation = builder.prepareCommit();
     let cachedGeometry: StrokePathGeometry | undefined;
     this.commitBuilds += 1;
     return {
       points,
       get geometry() {
-        return (cachedGeometry ??= builder.finish());
+        return (cachedGeometry ??= builder.finish(points));
       },
       get pressureWindows() {
-        return builder.pressureWindows();
+        return builder.pressureWindows(points);
       },
+      deferGeometryPreparation,
       geometryMemoryBytes: points.length * 8 + builder.memoryUsage(),
       instrumentation: this.instrumentation(),
     };

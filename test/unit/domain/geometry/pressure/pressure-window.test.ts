@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import * as approximation from "../../../../../src/domain/geometry/pressure/pressure-contour-approximation";
+import * as chains from "../../../../../src/domain/geometry/pressure/pressure-chain-contour";
+import * as intersections from "../../../../../src/domain/geometry/pressure/pressure-boundary-intersections";
 import { buildPressureCapsule } from "../../../../../src/domain/geometry/pressure/pressure-joins";
 import {
   preparePressureWindowSteps,
   preparePressureWindows,
   pressureWindowMemoryUsage,
   PRESSURE_WINDOW_SCRATCH_BYTES,
+  tryPrepareLivePressureWindow,
+  completeLivePressureWindow,
 } from "../../../../../src/domain/geometry/pressure/pressure-window";
 import { serializePressureWindows } from "../../../../../src/domain/geometry/pressure/pressure-path-serialization";
 import type { PressureWindow } from "../../../../../src/domain/geometry/pressure/prepared-pressure-geometry";
@@ -24,6 +28,41 @@ function pieces(count: number): PressureOutlinePiece[] {
     return { kind: "strip", capsule, width: 22 };
   });
 }
+
+describe("live pressure windows", () => {
+  it("prepares a regular live window from one chain calculation with canonical output", () => {
+    const source = pieces(64);
+    const expected = preparePressureWindows(source)[0]!;
+    const chain = vi.spyOn(chains, "pressureChainContour");
+    try {
+      const prepared = tryPrepareLivePressureWindow(source);
+      expect(prepared).toBeDefined();
+      expect(completeLivePressureWindow(prepared!)).toEqual(expected);
+      expect(chain).toHaveBeenCalledOnce();
+    } finally {
+      chain.mockRestore();
+    }
+  });
+
+  it("rejects a tight live loop without beginning exact boundary intersections", () => {
+    const centers = Array.from({ length: 65 }, (_, index) => ({
+      x: 8 * Math.cos((2 * Math.PI * index) / 64),
+      y: 6 * Math.sin((2 * Math.PI * index) / 64),
+      pressure: 0.85,
+    }));
+    const source = centers.slice(1).map((end, index): PressureOutlinePiece => {
+      const capsule = buildPressureCapsule(centers[index]!, end, 22);
+      return capsule.kind === "dot" ? capsule : { kind: "strip", capsule, width: 22 };
+    });
+    const intersect = vi.spyOn(intersections, "intersectPressureBoundaries");
+    try {
+      expect(tryPrepareLivePressureWindow(source)).toBeUndefined();
+      expect(intersect).not.toHaveBeenCalled();
+    } finally {
+      intersect.mockRestore();
+    }
+  });
+});
 
 describe("canonical pressure windows", () => {
   it("reuses the owner cache by emitted-piece partition without recomputing geometry", () => {

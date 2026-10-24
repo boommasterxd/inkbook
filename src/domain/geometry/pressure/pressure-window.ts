@@ -8,7 +8,11 @@ import type {
 import { iteratePressureContourApproximation } from "./pressure-contour-approximation";
 import type { PointV1 } from "../../schema/types";
 import type { PressureOutlinePiece } from "./pressure-outline-piece";
-import { iteratePressureUnion } from "./pressure-union";
+import {
+  iteratePressureUnion,
+  pressureUnionFastPath,
+  type PressureUnionResult,
+} from "./pressure-union";
 import { pressureAdditionCount, type PressureAdditions } from "./pressure-additions";
 import { MAX_PRESSURE_BOUNDARY_SCALAR_ENTRIES } from "./pressure-boundary-scalars";
 
@@ -73,6 +77,39 @@ export function* preparePressureWindowSteps(
 ): Generator<void, PressureWindow | PressurePathWindow> {
   const capsules = pieces.map((piece) => (piece.kind === "dot" ? piece : piece.capsule));
   const result = yield* iteratePressureUnion(capsules);
+  return yield* preparePressureWindowResult(pieces, result, mode);
+}
+
+export interface LivePressureWindowPreparation {
+  readonly pieces: readonly PressureOutlinePiece[];
+  readonly union: PressureUnionResult;
+}
+
+/** Live input handles regular geometry directly and leaves exact clipping to canonical preparation. */
+export function tryPrepareLivePressureWindow(
+  pieces: readonly PressureOutlinePiece[],
+): LivePressureWindowPreparation | undefined {
+  const union = pressureUnionFastPath(
+    pieces.map((piece) => (piece.kind === "dot" ? piece : piece.capsule)),
+  );
+  return union === undefined ? undefined : { pieces: pieces.slice(), union };
+}
+
+/** Reuse the classified union when deferred live-tail geometry is first demanded. */
+export function completeLivePressureWindow(
+  prepared: LivePressureWindowPreparation,
+): PressureWindow {
+  const job = preparePressureWindowResult(prepared.pieces, prepared.union, "full");
+  let step = job.next();
+  while (!step.done) step = job.next();
+  return step.value as PressureWindow;
+}
+
+function* preparePressureWindowResult(
+  pieces: readonly PressureOutlinePiece[],
+  result: PressureUnionResult,
+  mode: PressurePreparationMode,
+): Generator<void, PressureWindow | PressurePathWindow> {
   const additions: PressureAdditions = mode === "full" ? [] : { count: 0 };
   const width = pieces.find((piece) => piece.kind === "strip")?.width;
   const loops = [];

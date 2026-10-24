@@ -2,6 +2,7 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { createMainThreadCheckpoint } from "./main-thread-checkpoint";
 
 const DEFAULT_CHUNK_BYTES = 256 * 1024;
+export const UTF8_OUTPUT_PREFIX_CODE_UNITS = 4 * 1024;
 
 export interface Utf8AdoptionOptions {
   readonly checkpoint?: () => Promise<void> | undefined;
@@ -10,9 +11,29 @@ export interface Utf8AdoptionOptions {
   readonly workScheduler?: WorkScheduler;
 }
 
-export async function adoptUtf8Output(
+export function adoptUtf8Output(
   output: string | Uint8Array,
   options: Utf8AdoptionOptions = {},
+): Promise<string> {
+  return decodeUtf8Output(output, options);
+}
+
+export async function adoptUtf8OutputWithPrefix(
+  output: string | Uint8Array,
+  options: Utf8AdoptionOptions = {},
+): Promise<{ readonly content: string; readonly prefix: string }> {
+  if (typeof output === "string") {
+    return { content: output, prefix: output.slice(0, UTF8_OUTPUT_PREFIX_CODE_UNITS) };
+  }
+  const prefix = new DecodedPrefix();
+  const content = await decodeUtf8Output(output, options, prefix);
+  return { content, prefix: prefix.finish() };
+}
+
+async function decodeUtf8Output(
+  output: string | Uint8Array,
+  options: Utf8AdoptionOptions,
+  prefix?: DecodedPrefix,
 ): Promise<string> {
   if (typeof output === "string") return output;
   const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
@@ -28,19 +49,38 @@ export async function adoptUtf8Output(
   for (let offset = 0; offset < output.byteLength; offset += chunkBytes) {
     options.signal?.throwIfAborted();
     const end = Math.min(output.byteLength, offset + chunkBytes);
-    appendSegment(
-      segments,
-      decoder.decode(output.subarray(offset, end), { stream: end < output.byteLength }),
-    );
+    const decoded = decoder.decode(output.subarray(offset, end), {
+      stream: end < output.byteLength,
+    });
+    prefix?.append(decoded);
+    appendSegment(segments, decoded);
     const pending = checkpoint();
     if (pending !== undefined) await pending;
   }
   options.signal?.throwIfAborted();
-  appendSegment(segments, decoder.decode());
+  const decoded = decoder.decode();
+  prefix?.append(decoded);
+  appendSegment(segments, decoded);
   const finalCheckpoint = checkpoint();
   if (finalCheckpoint !== undefined) await finalCheckpoint;
   options.signal?.throwIfAborted();
   return concatenateSegments(segments);
+}
+
+class DecodedPrefix {
+  readonly #codeUnits = new Uint16Array(UTF8_OUTPUT_PREFIX_CODE_UNITS);
+  #length = 0;
+
+  public append(decoded: string): void {
+    const length = Math.min(decoded.length, this.#codeUnits.length - this.#length);
+    for (let index = 0; index < length; index += 1) {
+      this.#codeUnits[this.#length++] = decoded.charCodeAt(index);
+    }
+  }
+
+  public finish(): string {
+    return String.fromCharCode(...this.#codeUnits.subarray(0, this.#length));
+  }
 }
 
 function appendSegment(segments: Array<string | undefined>, decoded: string): void {

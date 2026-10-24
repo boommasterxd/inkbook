@@ -20,6 +20,11 @@ import {
   pressureOutlinePieceMemoryUsage,
   type PressureWindow,
 } from "../../domain/geometry/pressure/pressure-path-serialization";
+import {
+  tryPrepareLivePressureWindow,
+  completeLivePressureWindow,
+  type LivePressureWindowPreparation,
+} from "../../domain/geometry/pressure/pressure-window";
 import type { StrokeStyleV1 } from "../../domain/schema/public";
 
 export const LIVE_STROKE_WINDOW = STROKE_SIMPLIFICATION_WINDOW;
@@ -38,6 +43,8 @@ export class LiveStrokeGeometry {
   private tail: StrokePathGeometry | undefined;
   private tailCenters: readonly StrokeCenter[] = [];
   private completedWindows: readonly PressureWindow[] | undefined;
+  private deferredGeometryPreparation = false;
+  private commitWindows: LivePressureWindowPreparation[] | undefined;
 
   constructor(private readonly style: StrokeStyleV1) {}
 
@@ -60,10 +67,22 @@ export class LiveStrokeGeometry {
         this.pendingPieces.push(piece);
         this.maximumPendingPieces = Math.max(this.maximumPendingPieces, this.pendingPieces.length);
         if (this.pendingPieces.length === 64) {
-          const windows = preparePressureWindows(this.pendingPieces);
-          this.committedWindows.push(...windows);
+          const prepared = tryPrepareLivePressureWindow(this.pendingPieces);
+          const window = prepared === undefined ? undefined : completeLivePressureWindow(prepared);
+          if (window === undefined) {
+            this.deferredGeometryPreparation = true;
+            this.committedWindows.length = 0;
+          } else if (!this.deferredGeometryPreparation) this.committedWindows.push(window);
+          geometry = [
+            {
+              d:
+                window === undefined
+                  ? serializePressureCapsules(this.pendingPieces)
+                  : serializePressureWindows([window]),
+              paint: "fill",
+            },
+          ];
           this.pendingPieces.length = 0;
-          geometry = [{ d: serializePressureWindows(windows), paint: "fill" }];
         }
       }
     } else {
@@ -80,6 +99,24 @@ export class LiveStrokeGeometry {
 
   get maximumPendingPressurePieces(): number {
     return this.maximumPendingPieces;
+  }
+
+  prepareCommit(): boolean {
+    if (!this.style.pressureEnabled || this.deferredGeometryPreparation)
+      return this.deferredGeometryPreparation;
+    const pieces = [...this.pendingPieces, ...this.pressurePieces(this.tailCenters, [], true)];
+    const prepared: LivePressureWindowPreparation[] = [];
+    for (let start = 0; start < pieces.length; start += 64) {
+      const window = tryPrepareLivePressureWindow(pieces.slice(start, start + 64));
+      if (window === undefined) {
+        this.deferredGeometryPreparation = true;
+        this.committedWindows.length = 0;
+        return true;
+      }
+      prepared.push(window);
+    }
+    this.commitWindows = prepared;
+    return false;
   }
 
   preview(points: readonly number[], first: number): StrokePathGeometry {
@@ -110,12 +147,12 @@ export class LiveStrokeGeometry {
     return this.tail;
   }
 
-  finish(): StrokePathGeometry {
+  finish(points: readonly number[]): StrokePathGeometry {
     if (this.tail === undefined) throw new RangeError("A live stroke requires geometry.");
     if (this.style.pressureEnabled) {
       return [
         {
-          d: serializePressureWindows(this.pressureWindows() ?? []),
+          d: serializePressureWindows(this.pressureWindows(points) ?? []),
           paint: "fill",
         },
       ];
@@ -131,15 +168,25 @@ export class LiveStrokeGeometry {
     ];
   }
 
-  pressureWindows(): readonly PressureWindow[] | undefined {
+  pressureWindows(points: readonly number[]): readonly PressureWindow[] | undefined {
     if (!this.style.pressureEnabled) return undefined;
-    return (this.completedWindows ??= [
-      ...this.committedWindows,
-      ...preparePressureWindows([
-        ...this.pendingPieces,
-        ...this.pressurePieces(this.tailCenters, [], true),
-      ]),
-    ]);
+    if (this.deferredGeometryPreparation) {
+      return (this.completedWindows ??= this.prepareDeferredWindows(points));
+    }
+    if (this.completedWindows !== undefined) return this.completedWindows;
+    const tail = (this.commitWindows ?? []).map(completeLivePressureWindow);
+    this.commitWindows = undefined;
+    return (this.completedWindows = [...this.committedWindows, ...tail]);
+  }
+
+  private prepareDeferredWindows(points: readonly number[]): readonly PressureWindow[] {
+    const centers = simplifyStrokeCenters(smoothStrokeCenters(points), this.style.width, true);
+    const pieces: PressureOutlinePiece[] = [];
+    visitPreparedPressureOutline(centers, this.style.width, (piece) => {
+      pieces.push(piece);
+      return false;
+    });
+    return preparePressureWindows(pieces);
   }
 
   memoryUsage(): number {
@@ -160,7 +207,14 @@ export class LiveStrokeGeometry {
       ...this.pendingPaths.values(),
       this.pendingPiecesPath,
     ].reduce((bytes, path) => bytes + path.length * 2, 0);
-    return windows + pieces + centers * 24 + paths + (this.tail?.[0]?.d.length ?? 0) * 2;
+    const commit = (this.commitWindows ?? []).reduce(
+      (bytes, window) =>
+        bytes +
+        pressureWindowMemoryUsage({ kind: "path-window", loops: window.union.contours }) +
+        window.pieces.reduce((total, piece) => total + pressureOutlinePieceMemoryUsage(piece), 0),
+      0,
+    );
+    return windows + pieces + commit + centers * 24 + paths + (this.tail?.[0]?.d.length ?? 0) * 2;
   }
 
   private capsulePreview(centers: readonly StrokeCenter[]): string {

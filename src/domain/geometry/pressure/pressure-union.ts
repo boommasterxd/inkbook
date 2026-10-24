@@ -1,6 +1,8 @@
 import { pressureChainContour } from "./pressure-chain-contour";
 import type { PointV1 } from "../../schema/types";
 import type { PressureBoundaryArc, PressureCapsule, PressureDisk } from "./pressure-joins";
+import { pressureShapeBoundary } from "./pressure-joins";
+export { pressureShapeBoundary } from "./pressure-joins";
 import {
   intersectPressureBoundaries,
   pressureBoundaryParameter,
@@ -60,8 +62,8 @@ interface Interval {
 }
 interface BoundaryClip {
   readonly boundary: PressureBoundarySegment;
-  readonly source: Source;
-  readonly earlier: boolean;
+  source: Source;
+  earlier: boolean;
   readonly context: UnionContext;
 }
 interface Edge {
@@ -82,20 +84,9 @@ const PARAMETER_ERROR = 64 * Number.EPSILON;
 export function* iteratePressureUnion(
   shapes: readonly Shape[],
 ): Generator<void, PressureUnionResult> {
-  if (shapes.length > MAX_PRESSURE_UNION_SHAPES)
-    throw new RangeError("Pressure union capacity exceeded");
-  const work = {
-    intersectionTests: 0,
-    containmentTests: 0,
-    boundaryTests: 0,
-    intervalTests: 0,
-    peakIntervals: 0,
-    visibleFragments: 0,
-  };
-  const chain = pressureChainContour(shapes);
-  if (chain !== undefined) return { contours: [chain], usedFallback: false, work };
-  if (shapes.length === 1 && shapes[0]!.kind === "capsule")
-    return { contours: [pressureShapeBoundary(shapes[0]!)], usedFallback: false, work };
+  const fast = pressureUnionFastPath(shapes);
+  if (fast !== undefined) return fast;
+  const work = emptyUnionWork();
   const context: UnionContext = {
     work,
     arcAngles: new WeakMap<PressureBoundaryArc, number>(),
@@ -108,6 +99,38 @@ export function* iteratePressureUnion(
   } finally {
     context.scalarCache.clear();
   }
+}
+
+/** Classify regular geometry without entering exact clipping or allocating its scratch state. */
+export function pressureUnionFastPath(shapes: readonly Shape[]): PressureUnionResult | undefined {
+  if (shapes.length > MAX_PRESSURE_UNION_SHAPES)
+    throw new RangeError("Pressure union capacity exceeded");
+  const chain = pressureChainContour(shapes);
+  if (chain !== undefined)
+    return { contours: [chain], usedFallback: false, work: emptyUnionWork() };
+  const single = shapes.length === 1 ? shapes[0] : undefined;
+  if (
+    single !== undefined &&
+    (single.kind === "capsule" ||
+      2 * single.radius > endpointTolerance([{ bounds: shapeBounds(single) }]))
+  )
+    return {
+      contours: [mergeContour(pressureShapeBoundary(single))],
+      usedFallback: false,
+      work: emptyUnionWork(),
+    };
+  return undefined;
+}
+
+function emptyUnionWork(): PressureUnionWork {
+  return {
+    intersectionTests: 0,
+    containmentTests: 0,
+    boundaryTests: 0,
+    intervalTests: 0,
+    peakIntervals: 0,
+    visibleFragments: 0,
+  };
 }
 
 function* prepareUnion(
@@ -131,7 +154,8 @@ function* prepareUnion(
   const visible: PressureBoundarySegment[] = [];
   for (let index = 0; index < sources.length; index += 1) {
     const source = sources[index]!;
-    for (const [boundaryIndex, boundary] of source.boundaries.entries()) {
+    for (let boundaryIndex = 0; boundaryIndex < source.boundaries.length; boundaryIndex += 1) {
+      const boundary = source.boundaries[boundaryIndex]!;
       const intervals = yield* clipBoundary(
         boundary,
         index,
@@ -170,37 +194,6 @@ function fallback(sources: readonly Source[], work: PressureUnionWork): Pressure
   return { contours: sources.map((source) => source.boundaries), usedFallback: true, work };
 }
 
-export function pressureShapeBoundary(shape: Shape): PressureBoundarySegment[] {
-  if (shape.kind === "capsule") {
-    return [
-      shape.left,
-      shape.endCap,
-      { ...shape.right, start: shape.right.end, end: shape.right.start },
-      shape.startCap,
-    ];
-  }
-  const left = { x: shape.center.x - shape.radius, y: shape.center.y };
-  const right = { x: shape.center.x + shape.radius, y: shape.center.y };
-  return [
-    {
-      kind: "arc",
-      center: shape.center,
-      radius: shape.radius,
-      start: left,
-      end: right,
-      sweep: -Math.PI,
-    },
-    {
-      kind: "arc",
-      center: shape.center,
-      radius: shape.radius,
-      start: right,
-      end: left,
-      sweep: -Math.PI,
-    },
-  ];
-}
-
 function* clipBoundary(
   boundary: PressureBoundarySegment,
   owner: number,
@@ -210,11 +203,16 @@ function* clipBoundary(
 ): Generator<void, Interval[] | undefined> {
   const { work, arcAngles } = context;
   let intervals = [{ first: 0, last: 1 }];
+  let next: Interval[] = [];
+  const cuts: number[] = [];
+  const clip: BoundaryClip = { boundary, source: sources[owner]!, earlier: false, context };
   for (let other = 0; other < sources.length && intervals.length > 0; other += 1) {
     if (other === owner || !overlaps(extent, sources[other]!.bounds)) continue;
     const source = sources[other]!;
-    const cuts = [0, 1];
-    for (const [index, edge] of source.boundaries.entries()) {
+    cuts.length = 0;
+    cuts.push(0, 1);
+    for (let index = 0; index < source.boundaries.length; index += 1) {
+      const edge = source.boundaries[index]!;
       if (!overlaps(extent, source.boundaryBounds[index]!)) continue;
       work.intersectionTests += 1;
       for (const intersection of intersectPressureBoundaries(
@@ -226,15 +224,18 @@ function* clipBoundary(
         cuts.push(intersection.first);
     }
     cuts.sort((a, b) => a - b);
-    const next: Interval[] = [];
-    const clip = { boundary, source, earlier: other < owner, context };
+    next.length = 0;
+    clip.source = source;
+    clip.earlier = other < owner;
     for (const interval of intervals) {
       retainCutIntervals(next, interval, cuts, clip);
       if (operationCount(work) > context.maximumOperations) return undefined;
       if (++context.inspectedIntervals % PRESSURE_PREPARATION_CHECK_INTERVAL === 0) yield;
     }
     work.peakIntervals = Math.max(work.peakIntervals, next.length);
+    const previous = intervals;
     intervals = next;
+    next = previous;
   }
   yield;
   return intervals;
@@ -246,41 +247,30 @@ function retainCutIntervals(
   cuts: readonly number[],
   clip: BoundaryClip,
 ): void {
-  const { boundary, source, earlier, context } = clip;
   let first = interval.first;
   for (const cut of cuts) {
     if (cut <= first + PARAMETER_ERROR || cut >= interval.last - PARAMETER_ERROR) continue;
-    retainInterval(output, boundary, { first, last: cut }, source, earlier, context);
+    retainInterval(output, first, cut, clip);
     first = cut;
   }
-  retainInterval(output, boundary, { first, last: interval.last }, source, earlier, context);
+  retainInterval(output, first, interval.last, clip);
 }
 
 function operationCount(work: PressureUnionWork): number {
   return work.intersectionTests + work.containmentTests + work.boundaryTests + work.intervalTests;
 }
 
-function retainInterval(
-  output: Interval[],
-  boundary: PressureBoundarySegment,
-  interval: Interval,
-  source: Source,
-  earlier: boolean,
-  context: UnionContext,
-): void {
+function retainInterval(output: Interval[], first: number, last: number, clip: BoundaryClip): void {
+  const { boundary, source, earlier, context } = clip;
   const { work } = context;
   work.intervalTests += 1;
-  if (interval.last - interval.first <= PARAMETER_ERROR) return;
-  const point = pressureBoundaryPoint(
-    boundary,
-    (interval.first + interval.last) / 2,
-    context.arcAngles,
-  );
+  if (last - first <= PARAMETER_ERROR) return;
+  const point = pressureBoundaryPoint(boundary, (first + last) / 2, context.arcAngles);
   if (covered(boundary, point, source, earlier, context)) return;
   const previous = output[output.length - 1];
-  if (previous !== undefined && Math.abs(previous.last - interval.first) <= PARAMETER_ERROR)
-    previous.last = interval.last;
-  else output.push(interval);
+  if (previous !== undefined && Math.abs(previous.last - first) <= PARAMETER_ERROR)
+    previous.last = last;
+  else output.push({ first, last });
 }
 
 function covered(
@@ -291,7 +281,8 @@ function covered(
   context: UnionContext,
 ): boolean {
   const { work, arcAngles } = context;
-  for (const [index, edge] of source.boundaries.entries()) {
+  for (let index = 0; index < source.boundaries.length; index += 1) {
+    const edge = source.boundaries[index]!;
     if (!containsPoint(source.boundaryBounds[index]!, point)) continue;
     work.boundaryTests += 1;
     if (pressureBoundaryParameter(edge, point, arcAngles, context.scalarCache) === undefined)
@@ -372,7 +363,8 @@ function* stitch(
   const nodes: Node[] = [];
   const buckets = new Map<number, Map<number, number[]>>();
   const edges: Edge[] = [];
-  for (const [index, boundary] of boundaries.entries()) {
+  for (let index = 0; index < boundaries.length; index += 1) {
+    const boundary = boundaries[index]!;
     const start = nodeFor(boundary.start, nodes, buckets, tolerance);
     const end = nodeFor(boundary.end, nodes, buckets, tolerance);
     nodes[start]!.outgoing.push(index);
@@ -470,7 +462,7 @@ function overlaps(first: Bounds, second: Bounds): boolean {
   );
 }
 
-function endpointTolerance(sources: readonly Source[]): number {
+function endpointTolerance(sources: readonly { readonly bounds: Bounds }[]): number {
   let magnitude = 1;
   for (const { bounds } of sources)
     magnitude = Math.max(

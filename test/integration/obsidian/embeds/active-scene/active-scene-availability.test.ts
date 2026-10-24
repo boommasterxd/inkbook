@@ -152,6 +152,7 @@ vi.mock("../../../../../src/obsidian/embeds/active-scene/active-scene-runtime", 
             dispose: ports.disposeHandoff,
             updateMotion: vi.fn(),
             stopUnlockHeight: vi.fn(),
+            releaseHiddenPreview: vi.fn(),
             ensurePreviewReady: () => ports.previewReady,
             handoffToPreview: (_chrome: HTMLElement, resolve: () => void, before: () => void) => {
               ports.handoffToPreview();
@@ -305,10 +306,12 @@ it.each(["full", "reduced", "cancel"] as const)(
       }),
     );
     const scheduler = new FakeScheduler();
+    const releasePreview = vi.fn();
     const scene = new ActiveInkbookScene({
       root,
       preview,
       workScheduler: scheduler.workScheduler,
+      releasePreview,
       scrollOwner: () => root,
       model: {
         page: NAVIGATION_PAGE,
@@ -329,6 +332,7 @@ it.each(["full", "reduced", "cancel"] as const)(
       expect(unlockingHeight).toBeGreaterThan(96);
       expect(unlockingHeight).toBeLessThan(640);
       scene.disableInput();
+      expect(releasePreview).not.toHaveBeenCalled();
       expect(Number.parseFloat(container.style.blockSize)).toBe(unlockingHeight);
       expect(scheduler.pendingCount).toBe(1);
       if (completion === "cancel") scene.restoreAfterFailedLock();
@@ -341,6 +345,7 @@ it.each(["full", "reduced", "cancel"] as const)(
           : (derivePageExtent(NAVIGATION_PAGE, 0).lockedHeight * 1_000) / PAGE_WIDTH;
       expect(Number.parseFloat(container.style.blockSize)).toBeCloseTo(expected);
       expect(scheduler.pendingCount).toBe(0);
+      expect(releasePreview).toHaveBeenCalledTimes(completion === "cancel" ? 1 : 0);
     } finally {
       scene.dispose();
       root.remove();
@@ -383,6 +388,24 @@ it("pauses once when finishLock starts without an earlier input-disable call", a
 });
 
 it.each([false, true])(
+  "retries failed preview readiness after surfaceFailed=%s",
+  async (failed) => {
+    const h = fixture();
+    try {
+      if (failed) ports.rendererOptions?.onSurfaceFailure?.();
+      ports.previewReady = Promise.reject(new Error("preview unavailable"));
+      await expect(h.scene.finishLock()).rejects.toThrow("preview unavailable");
+      expect(ports.handoffToPreview).not.toHaveBeenCalled();
+      ports.previewReady = Promise.resolve();
+      await expect(h.scene.finishLock()).resolves.toBeUndefined();
+      expect(ports.handoffToPreview).toHaveBeenCalledOnce();
+    } finally {
+      h.scene.dispose();
+    }
+  },
+);
+
+it.each([false, true])(
   "permanently rejects interaction after drawing-document failure when ready=%s",
   async (ready) => {
     const h = fixture();
@@ -397,7 +420,7 @@ it.each([false, true])(
       ports.rendererOptions?.onSurfaceFailure?.();
       expect(ports.enabled).toHaveBeenCalledExactlyOnceWith(false);
       expect(ports.suspend).toHaveBeenCalledOnce();
-      expect(ports.disposeHandoff).toHaveBeenCalledOnce();
+      expect(ports.disposeHandoff).not.toHaveBeenCalled();
       expect(h.onLock).toHaveBeenCalledOnce();
       expect(ports.releaseMemory).not.toHaveBeenCalled();
       ports.enabled.mockClear();
@@ -412,7 +435,16 @@ it.each([false, true])(
       expect(ports.resume).not.toHaveBeenCalled();
       expect(ports.focus).not.toHaveBeenCalled();
       expect(ports.execute).not.toHaveBeenCalled();
-      await expect(h.scene.finishLock()).resolves.toBeUndefined();
+      let previewReady!: () => void;
+      ports.previewReady = new Promise<void>((resolve) => {
+        previewReady = resolve;
+      });
+      const finish = h.scene.finishLock();
+      await Promise.resolve();
+      expect(ports.handoffToPreview).not.toHaveBeenCalled();
+      previewReady();
+      await expect(finish).resolves.toBeUndefined();
+      expect(ports.handoffToPreview).toHaveBeenCalledOnce();
       await expect(h.scene.ready).resolves.toBe(ready);
     } finally {
       h.scene.dispose();

@@ -9,7 +9,10 @@ import {
   finishInitialWorkspaceLoading,
   startInitialWorkspaceLoading,
   updateWorkspaceMountedSettings,
+  releaseWorkspaceScene,
+  disposeWorkspaceMountedPresentations,
 } from "../../../../../src/obsidian/embeds/workspace/workspace-mounted-presentation";
+import type { ActiveInkbookScene } from "../../../../../src/obsidian/embeds/active-scene/active-scene";
 import { beginWorkspaceActivation } from "../../../../../src/obsidian/embeds/workspace/workspace-runtime-scene-readiness";
 import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
@@ -184,3 +187,57 @@ async function startPendingActivation(order: string) {
   }
   return harness;
 }
+
+function releaseHarness() {
+  const { mounted } = createHarness();
+  let finish!: () => void;
+  let fail!: (error: Error) => void;
+  const ready = new Promise<void>((resolve, reject) => {
+    finish = resolve;
+    fail = reject;
+  });
+  const scene = { disableInput: vi.fn(), dispose: vi.fn(), finishLock: vi.fn(() => ready) };
+  mounted.scene = scene as unknown as ActiveInkbookScene;
+  const options = { waitForPreview: true, onLocked: vi.fn(), onFailure: vi.fn() };
+  return { mounted, scene, options, finish, fail };
+}
+
+it("keeps a connected inactive scene until its safe preview is ready", async () => {
+  const h = releaseHarness();
+  releaseWorkspaceScene(h.mounted, h.options);
+  expect(h.scene.disableInput).toHaveBeenCalledOnce();
+  expect(h.scene.dispose).not.toHaveBeenCalled();
+  h.finish();
+  await Promise.resolve();
+  expect(h.scene.dispose).toHaveBeenCalledOnce();
+  expect(h.mounted.scene).toBeUndefined();
+  expect(h.options.onLocked).toHaveBeenCalledOnce();
+});
+
+it.each(["reactivate", "detach", "unload"] as const)(
+  "cannot publish an obsolete preview release after %s",
+  async (action) => {
+    const h = releaseHarness();
+    releaseWorkspaceScene(h.mounted, h.options);
+    if (action === "reactivate") beginWorkspaceActivation(h.mounted, undefined);
+    else if (action === "detach")
+      releaseWorkspaceScene(h.mounted, { ...h.options, waitForPreview: false });
+    else disposeWorkspaceMountedPresentations([h.mounted]);
+    const disposed = h.scene.dispose.mock.calls.length;
+    h.finish();
+    await Promise.resolve();
+    expect(h.scene.dispose).toHaveBeenCalledTimes(disposed);
+    expect(h.options.onLocked).toHaveBeenCalledTimes(action === "detach" ? 1 : 0);
+  },
+);
+
+it("keeps the disabled image and reports preview reconstruction failure", async () => {
+  const h = releaseHarness();
+  releaseWorkspaceScene(h.mounted, h.options);
+  h.fail(new Error("unsafe replacement"));
+  await Promise.resolve();
+  expect(h.scene.dispose).not.toHaveBeenCalled();
+  expect(h.mounted.scene).toBe(h.scene);
+  expect(h.options.onFailure).toHaveBeenCalledOnce();
+  expect(h.options.onLocked).not.toHaveBeenCalled();
+});

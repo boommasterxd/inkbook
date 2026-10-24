@@ -19,6 +19,7 @@ import {
 import { assertResultMatchesRequest } from "../../../../src/persistence/worker/runtime/bridge/request-result-validation";
 import { createStandardPersistenceFixture } from "../fixtures";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import { UTF8_OUTPUT_PREFIX_CODE_UNITS } from "../../../../src/persistence/scheduling/utf8-adoption";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -33,7 +34,10 @@ describe("owned canonical export adoption work", () => {
       hash.mock.calls.reduce((bytes, [chunk]) => bytes + chunk.byteLength, 0) +
       nativeHash.mock.calls.reduce((bytes, [, input]) => bytes + input.byteLength, 0);
     const options = { checkpoint: async () => {}, signal: new AbortController().signal };
+    const prefixWork = observePrefixWork();
     const decoded = await decodeRuntimeResultChunked(transfer.value, options);
+    prefixWork.restore();
+    expect(prefixWork.reads).toEqual({ completeOutputSlices: 0, decodedCodeUnits: 4096 });
     if (decoded.type !== "export-success") throw new Error("Expected canonical export");
     await expect(
       assertResultMatchesRequest(
@@ -118,6 +122,36 @@ describe("owned canonical export adoption work", () => {
     );
   });
 });
+
+function observePrefixWork() {
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Forward the actual string receiver at each observed boundary.
+  const originalSlice = String.prototype.slice;
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Forward the actual decoded string receiver.
+  const originalCharacter = String.prototype.charCodeAt;
+  const reads = { completeOutputSlices: 0, decodedCodeUnits: 0 };
+  const slice = vi.spyOn(String.prototype, "slice").mockImplementation(function (
+    this: string,
+    start,
+    end,
+  ) {
+    if (this.length > UTF8_OUTPUT_PREFIX_CODE_UNITS) reads.completeOutputSlices += 1;
+    return originalSlice.call(this, start, end);
+  });
+  const character = vi.spyOn(String.prototype, "charCodeAt").mockImplementation(function (
+    this: string,
+    index,
+  ) {
+    if (this.length > UTF8_OUTPUT_PREFIX_CODE_UNITS) reads.decodedCodeUnits += 1;
+    return originalCharacter.call(this, index);
+  });
+  return {
+    reads,
+    restore: () => {
+      slice.mockRestore();
+      character.mockRestore();
+    },
+  };
+}
 
 function prepareCanonicalTransfer() {
   const snapshot = createStandardPersistenceFixture(2);
