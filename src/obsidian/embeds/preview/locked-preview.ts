@@ -67,6 +67,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   #prepared: SVGSVGElement | undefined;
   #pending: Promise<void> | undefined;
   #preparationAbort: AbortController | undefined;
+  #mountAbort: AbortController | undefined;
   #readinessRequests = 0;
   #failure: Error | undefined;
   #releaseRequested = false;
@@ -134,7 +135,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
       if (this.#failure !== undefined) throw this.#failure;
       this.refresh();
       if (!this.#disposed && !this.#releaseRequested && this.element.isConnected)
-        await this.#surface?.ensureMounted();
+        await this.#ensureMounted();
     } finally {
       this.#readinessRequests -= 1;
       if (this.#releaseRequested) this.releaseHiddenSurface();
@@ -146,6 +147,8 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     this.#releaseRequested = true;
     this.#generation += 1;
     this.#preparationAbort?.abort();
+    this.#mountAbort?.abort();
+    this.#mountAbort = undefined;
     this.#prepared = undefined;
     this.#mountedIdentity = undefined;
     if (this.#readinessRequests > 0) return;
@@ -212,12 +215,23 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     this.#disposed = true;
     this.#sourceAbort?.abort();
     this.#preparationAbort?.abort();
+    this.#mountAbort?.abort();
+    this.#mountAbort = undefined;
     this.#prepared = undefined;
     this.#sourceGeneration += 1;
     this.#scheduler.dispose();
     this.#surface?.dispose();
     this.#surface = undefined;
   };
+
+  async #ensureMounted(): Promise<void> {
+    const abort = (this.#mountAbort ??= new AbortController());
+    try {
+      await this.#surface?.ensureMounted(abort.signal);
+    } catch (error: unknown) {
+      if (!abort.signal.aborted) throw error;
+    }
+  }
 
   #matchesMounted(identity: PreviewContentIdentity): boolean {
     return (
