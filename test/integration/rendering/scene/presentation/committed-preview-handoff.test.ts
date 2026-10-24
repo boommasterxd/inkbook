@@ -76,8 +76,8 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
     renderer.setSelectedElements(new Set(ids));
     scheduler.runAll();
   }
-  const group = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
-  const original = group.nodes[0]!.attributes.get("d");
+  const root = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
+  const original = root.attributes.get("d");
   renderer.setPreviewTransform(ids, "scale(1.1 1)", 1);
   renderer.flushPointerFeedbackFrame();
   const handoff = renderer.beginPreviewCommit();
@@ -114,14 +114,14 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
   expect(step.mock.calls.length).toBeGreaterThan(0);
   expect(step.mock.calls.length).toBeLessThanOrEqual(8);
   expect(fullBuild).not.toHaveBeenCalled();
-  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
-  expect(group.attributes.get("transform")).toBe("scale(1.1 1)");
+  expect(root.attributes.get("d")).toBe(original);
+  expect(root.attributes.get("transform")).toBe("scale(1.1 1)");
   return {
     renderer,
     scheduler,
     element,
     moved,
-    group,
+    root,
     original,
     fullBuild,
     step,
@@ -131,18 +131,18 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
 }
 
 function finishUndo(
-  { group, scheduler }: Pick<ReturnType<typeof pendingCommit>, "group" | "scheduler">,
+  { root, scheduler }: Pick<ReturnType<typeof pendingCommit>, "root" | "scheduler">,
   target: string | undefined,
   initial: string | undefined = scaledPath,
 ) {
   // Cache restoration needs start, intermediate, and final geometry, not every display frame.
   scheduler.runFrame();
   const startedAt = scheduler.time;
-  expect(group.nodes[0]!.attributes.get("d")).toBe(initial);
-  expect(group.attributes.has("transform")).toBe(false);
+  expect(root.attributes.get("d")).toBe(initial);
+  expect(root.attributes.has("transform")).toBe(false);
   scheduler.time = startedAt + 60;
   scheduler.runFrame();
-  const intermediate = group.nodes[0]!.attributes.get("d");
+  const intermediate = root.attributes.get("d");
   expect(intermediate).toMatch(/^M/u);
   expect(intermediate).not.toBe(scaledPath);
   expect(intermediate).not.toBe(target);
@@ -156,7 +156,7 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
     scheduler,
     element,
     moved,
-    group,
+    root,
     original,
     fullBuild,
     step,
@@ -165,10 +165,10 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   } = pendingCommit();
   renderer.setPreviewTransform([element.id], "translate(5 0)", 2);
   renderer.flushPointerFeedbackFrame();
-  expect(group.attributes.get("transform")).toBe("translate(5 0) scale(1.1 1)");
+  expect(root.attributes.get("transform")).toBe("translate(5 0) scale(1.1 1)");
   renderer.clearPreviewTransforms();
   renderer.flushPointerFeedbackFrame();
-  expect(group.attributes.get("transform")).toBe("scale(1.1 1)");
+  expect(root.attributes.get("transform")).toBe("scale(1.1 1)");
   renderer.setPreviewTransform([element.id], "translate(5 0)", 3);
   renderer.flushPointerFeedbackFrame();
   while (scheduler.pendingCount > 0) {
@@ -177,19 +177,19 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
     expect(step.mock.calls.length).toBeLessThanOrEqual(8);
   }
   expect(fullBuild).not.toHaveBeenCalled();
-  expect(group.nodes[0]!.attributes.get("d")).toBe(scaledPath);
-  expect(group.attributes.get("transform")).toBe("translate(5 0)");
+  expect(root.attributes.get("d")).toBe(scaledPath);
+  expect(root.attributes.get("transform")).toBe("translate(5 0)");
   const union = vi.spyOn(pressureUnion, "iteratePressureUnion");
   expect(elementPath.buildElementPathParts(moved, pressureGeometry(element.id, 2))[0]!.d).toBe(
-    group.nodes[0]!.attributes.get("d"),
+    root.attributes.get("d"),
   );
   expect(union).not.toHaveBeenCalled();
   renderer.clearPreviewTransforms();
   scheduler.runAll();
-  expect(group.attributes.has("transform")).toBe(false);
+  expect(root.attributes.has("transform")).toBe(false);
   const read = vi.spyOn(ScenePathCache.prototype, "read");
   commitSceneGeometry({ store, renderer }, moved, element, 3);
-  finishUndo({ group, scheduler }, original);
+  finishUndo({ root, scheduler }, original);
   const access = read.mock.calls.findIndex(([value]) => value === element);
   expect(access).toBeGreaterThanOrEqual(0);
   expect(read.mock.calls[access]![2]).toBe(3);
@@ -198,29 +198,29 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   if (!(cache instanceof ScenePathCache)) throw new Error("Expected the scene contour cache.");
   expect(cache.has(element.id, 3)).toBe(true);
   expect(cache.has(element.id, 2)).toBe(false);
-  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
+  expect(root.attributes.get("d")).toBe(original);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
   expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
 });
 
 it("defers a new canonical preview until the committed geometry basis is current", () => {
-  const { renderer, scheduler, moved, group, original, fullBuild } = pendingCommit();
+  const { renderer, scheduler, moved, root, original, fullBuild } = pendingCommit();
   const newer = {
     ...moved,
     points: moved.points.map((value, index) => (index % 3 === 1 ? value + 20 : value)),
   };
   renderer.setElementPreviews([newer], 2);
   renderer.flushPointerFeedbackFrame();
-  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
-  expect(group.attributes.get("transform")).toBe("scale(1.1 1)");
+  expect(root.attributes.get("d")).toBe(original);
+  expect(root.attributes.get("transform")).toBe("scale(1.1 1)");
   expect(fullBuild).not.toHaveBeenCalled();
   while (scheduler.pendingCount > 0) scheduler.runFrame();
-  expect(group.nodes[0]!.attributes.get("d")).toBe(elementPath.buildElementPathParts(newer)[0]!.d);
-  expect(group.attributes.has("transform")).toBe(false);
+  expect(root.attributes.get("d")).toBe(elementPath.buildElementPathParts(newer)[0]!.d);
+  expect(root.attributes.has("transform")).toBe(false);
   renderer.clearElementPreviews();
   scheduler.runAll();
-  expect(group.nodes[0]!.attributes.get("d")).toBe(elementPath.buildElementPathParts(moved)[0]!.d);
+  expect(root.attributes.get("d")).toBe(elementPath.buildElementPathParts(moved)[0]!.d);
   renderer.destroy();
 });
 
@@ -272,23 +272,23 @@ it("drops committed preparation when its element is removed before publication",
 });
 
 it("discards unfinished edited contours when a newer commit restores the cached shape", () => {
-  const { renderer, scheduler, store, element, moved, step, group, original } = pendingCommit();
+  const { renderer, scheduler, store, element, moved, step, root, original } = pendingCommit();
   const complete = vi.spyOn(ScenePathCache.prototype, "completePreparation");
   commitSceneGeometry({ store, renderer }, moved, element, 3);
   step.mockClear();
   // The cancelled contour was never published, so the first frame restores the cached basis.
-  finishUndo({ group, scheduler }, original, original);
+  finishUndo({ root, scheduler }, original, original);
   expect(step).not.toHaveBeenCalled();
   const published = complete.mock.calls.filter(([value]) => value === moved);
   expect(published).toHaveLength(0);
-  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
+  expect(root.attributes.get("d")).toBe(original);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
   expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
 
 it("finishes selection dismissal on schedule while canonical commit geometry remains pending", () => {
-  const { renderer, scheduler, group, original } = pendingCommit();
+  const { renderer, scheduler, root, original } = pendingCommit();
   renderer.setSelectionOverlayPath("M0 0L100 0L100 50Z", "accent", "M0 0L5 5");
   renderer.flushPointerFeedbackFrame();
   const overlay = fakeNode(renderer.svg).nodes[2]!.nodes[1]!;
@@ -299,22 +299,22 @@ it("finishes selection dismissal on schedule while canonical commit geometry rem
   scheduler.time += 60;
   scheduler.runFrame();
   expect(Number(handles.style.opacity)).toBeLessThan(1);
-  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
+  expect(root.attributes.get("d")).toBe(original);
   scheduler.time += 60;
   scheduler.runFrame();
   expect(handles.attributes.get("d")).toBe("");
   expect(overlay.attributes.get("d")).toBe("");
-  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
+  expect(root.attributes.get("d")).toBe(original);
   renderer.destroy();
 });
 
 it("removes deselected stroke halos before pending committed geometry finishes", () => {
-  const { renderer, scheduler, group, original } = pendingCommit([], true);
+  const { renderer, scheduler, root, original } = pendingCommit([], true);
   const traces = fakeNode(renderer.svg).nodes[1]!.nodes[8]!;
   expect(traces.nodes.length).toBeGreaterThan(0);
   renderer.setSelectedElements(new Set());
   scheduler.runFrame();
-  expect(group.nodes[0]!.attributes.get("d")).toBe(original);
+  expect(root.attributes.get("d")).toBe(original);
   expect(traces.nodes).toHaveLength(0);
   renderer.destroy();
 });

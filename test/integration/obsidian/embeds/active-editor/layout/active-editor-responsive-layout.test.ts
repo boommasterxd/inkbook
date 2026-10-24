@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { derivePageExtent } from "../../../../../../src/domain/geometry/public";
+import { layoutHarness, page } from "./active-editor-layout-fixture";
 import {
   readyResponsiveFixture,
   responsiveFixture,
@@ -79,4 +81,28 @@ it("still measures observed toolbar changes after repeated root-height notificat
   h.flushFrames();
   expect(h.toolbarReads()).toBeGreaterThan(reads);
   h.layout.dispose();
+});
+
+it("retains a background preview through combined content growth and width resize", () => {
+  const test = layoutHarness("reduced");
+  test.layout.chromeMounted();
+  test.work.flushFrames();
+  const preview = { ...page(), background: { spacing: 100 as const, type: "squares" as const } };
+  test.layout.previewPage(preview);
+  test.setPage.mockClear();
+
+  test.setMaximumBottom(1000);
+  test.rect.width = 800;
+  test.layout.contentChanged();
+  test.work.flushFrames();
+
+  expect(test.setPage).toHaveBeenCalled();
+  expect(test.setPage.mock.calls.every(([paintPage]) => paintPage === preview)).toBe(true);
+  expect(test.onResize).toHaveBeenCalledOnce();
+  test.layout.finishPagePreview(false);
+  expect(test.setPage).toHaveBeenLastCalledWith(
+    page(),
+    derivePageExtent(page(), 1000).activeHeight,
+  );
+  test.layout.dispose();
 });

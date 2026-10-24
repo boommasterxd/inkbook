@@ -10,6 +10,7 @@ import {
   setMountedElementFade,
   setMountedElementMotion,
   updateMountedGeometry,
+  updateMountedElementPreview,
   updateMountedPaint,
   updatePreviewTransform,
 } from "../../../../src/rendering/scene/content/mounted-element";
@@ -47,6 +48,15 @@ function setup(
   appendElementToFragment(entry, fragment as unknown as DocumentFragment);
   parent.append(fragment);
   return { entry, instrumentation, ownerDocument, parent, parts, record };
+}
+
+function expectSameMountedStrokeRoot(
+  entry: ReturnType<typeof setup>["entry"],
+  parent: ReturnType<typeof setup>["parent"],
+  original: ReturnType<typeof firstPath>,
+) {
+  expect(parent.nodes).toHaveLength(1);
+  expect(firstPath(entry)).toBe(original);
 }
 
 function observeFilterWrites(node: FakeNode) {
@@ -103,42 +113,37 @@ function setupOpacityFade(kind: "pressure" | "flat" | "highlighter" | "straight-
   return { ...fixture, entry, record };
 }
 
-describe("mounted pressure stroke groups", () => {
+describe("mounted pressure stroke roots", () => {
   it("composites continuous pressure ink once and fades its fill paint", () => {
     const { entry, record, parent } = setup();
-    const group = fakeNode(firstPath(entry));
+    const path = fakeNode(firstPath(entry));
     const opacity = normalizeStrokePaint(record.element.style).opacity;
-    expect(group.tagName).toBe("g");
-    expect(group.parent).toBe(parent);
-    expect(group.attributes.get("opacity")).toBe(String(opacity));
-    expect(group.nodes).toHaveLength(1);
-    for (const path of group.nodes) {
-      expect(path.attributes.get("fill")).toBe("#123456FF");
-      expect(path.attributes.get("fill-opacity")).toBe("1");
-    }
+    expect(entry.group).toBeNull();
+    expect(path.parent).toBe(parent);
+    expect(path.attributes.get("opacity")).toBe(String(opacity));
+    expect(path.attributes.get("fill")).toBe("#123456FF");
+    expect(path.attributes.get("fill-opacity")).toBe("1");
     setMountedElementMotion(entry, 0.5, 1.2);
-    expect(group.style.opacity).toBe(String(Math.round(opacity * 0.5 * 10000) / 10000));
-    expect(group.nodes.every((node) => node.style.opacity === undefined)).toBe(true);
+    expect(path.style.opacity).toBe(String(Math.round(opacity * 0.5 * 10000) / 10000));
     setMountedElementMotion(entry, null);
-    expect(group.style.opacity).toBeUndefined();
+    expect(path.style.opacity).toBeUndefined();
     setMountedElementFade(entry, 100);
     expect(entry.fadeActive).toBe(true);
-    expect(group.style.opacity).toBeUndefined();
-    expect(group.attributes.get("opacity")).toBe(String(opacity));
-    expect(group.style.filter).toBeUndefined();
-    expect(activeFade(group.nodes[0]! as unknown as Element).keyframes.opacity).toEqual(["1", "0"]);
-    expect(activeFade(group.nodes[0]! as unknown as Element).options.duration).toBe(100);
-    expect(group.nodes.every((node) => node.style.filter === undefined)).toBe(true);
+    expect(path.style.opacity).toBeUndefined();
+    expect(path.attributes.get("opacity")).toBe(String(opacity));
+    expect(path.style.filter).toBeUndefined();
+    expect(activeFade(path).keyframes.fillOpacity).toEqual(["1", "0"]);
+    expect(activeFade(path).options.duration).toBe(100);
     setMountedElementFade(entry, null);
     expect(entry.fadeActive).toBe(false);
-    expect(group.style.opacity).toBeUndefined();
-    expect(group.style.filter).toBeUndefined();
-    expect(group.nodes[0]!.getAnimations()).toHaveLength(0);
+    expect(path.style.opacity).toBeUndefined();
+    expect(path.style.filter).toBeUndefined();
+    expect(path.getAnimations()).toHaveLength(0);
     expect(removeMountedElementNode(entry)).toBe(true);
     expect(parent.nodes).toHaveLength(0);
   });
 
-  it("writes one group transform per movement without adding stroke presentation to the outline", () => {
+  it("writes one root transform per movement without adding stroke presentation to the outline", () => {
     const { entry, instrumentation } = setup();
     updatePreviewTransform(entry, "scale(2 3)", 1, 2, instrumentation);
     const paths = entry.paths.map((path) => fakeNode(path.node));
@@ -146,13 +151,14 @@ describe("mounted pressure stroke groups", () => {
     const before = instrumentation.attributeWrites;
     updatePreviewTransform(entry, "scale(3 4)", 2, 2, instrumentation);
     expect(instrumentation.attributeWrites - before).toBe(1);
-    expect(paths.every((path) => !path.attributes.has("transform"))).toBe(true);
+    expect(paths[0]!.attributes.get("transform")).toBe("scale(3 4)");
     updatePreviewTransform(entry, null, 3, null, instrumentation);
     expect(paths.every((path) => !path.attributes.has("vector-effect"))).toBe(true);
   });
 
-  it("preserves group transform when continuous outline geometry changes", () => {
+  it("preserves root transform and identity when continuous outline geometry changes", () => {
     const { entry, record, parent, ownerDocument, instrumentation } = setup();
+    const original = firstPath(entry);
     updatePreviewTransform(entry, "scale(2 3)", 1, 2, instrumentation);
     const next = { ...record, element: { ...record.element, points: [0, 0, 0.5, 30, 30, 0.5] } };
     const parts = buildElementPathParts(next.element);
@@ -164,15 +170,16 @@ describe("mounted pressure stroke groups", () => {
       parent as unknown as SVGGElement,
       instrumentation,
     );
-    expect(parent.nodes).toHaveLength(1);
+    expectSameMountedStrokeRoot(entry, parent, original);
     expect(fakeNode(firstPath(entry)).attributes.get("transform")).toBe("scale(2 3)");
     expect(entry.paths).toHaveLength(1);
     expect(fakeNode(entry.paths[0]!.node).attributes.get("d")).toBe(parts[0]!.d);
     expect(fakeNode(entry.paths[0]!.node).attributes.has("stroke-width")).toBe(false);
   });
 
-  it("switches between flat constant-width ink and grouped pressure ink in place", () => {
+  it("switches between flat constant-width and pressure ink without replacing its single root", () => {
     const { entry, record, parent, ownerDocument, instrumentation } = setup(false);
+    const original = firstPath(entry);
     const next = {
       ...record,
       element: { ...record.element, style: { ...record.element.style, pressureEnabled: true } },
@@ -185,8 +192,10 @@ describe("mounted pressure stroke groups", () => {
       parent as unknown as SVGGElement,
       instrumentation,
     );
-    expect(parent.nodes).toHaveLength(1);
-    expect(fakeNode(firstPath(entry)).tagName).toBe("g");
+    expectSameMountedStrokeRoot(entry, parent, original);
+    expect(fakeNode(firstPath(entry)).attributes.get("opacity")).toBe(
+      String(normalizeStrokePaint(next.element.style).opacity),
+    );
     updateMountedGeometry(
       entry,
       record,
@@ -197,11 +206,38 @@ describe("mounted pressure stroke groups", () => {
     );
     expect(parent.nodes).toHaveLength(1);
     expect(fakeNode(firstPath(entry)).tagName).toBe("path");
+    expect(fakeNode(firstPath(entry)).attributes.has("opacity")).toBe(false);
   });
 });
 
+it("preserves alpha and preview placement across single and multipart pressure geometry", () => {
+  const { entry, record, parts, parent, ownerDocument, instrumentation } = setup();
+  const pointCount = record.element.points.length;
+  const opacity = normalizeStrokePaint(record.element.style).opacity;
+  updatePreviewTransform(entry, "translate(12 9)", 1, null, instrumentation);
+  for (const next of [[parts[0]!, parts[0]!], parts]) {
+    updateMountedGeometry(
+      entry,
+      record,
+      next,
+      ownerDocument,
+      parent as unknown as SVGGElement,
+      instrumentation,
+    );
+    const root = fakeNode(firstPath(entry));
+    expect(parent.nodes).toEqual([root]);
+    expect(root.attributes.get("opacity")).toBe(String(opacity));
+    expect(root.attributes.get("transform")).toBe("translate(12 9)");
+    expect(entry.paths.map(({ node }) => fakeNode(node).attributes.get("d"))).toEqual(
+      next.map(({ d }) => d),
+    );
+    expect(entry.group !== null).toBe(next.length > 1);
+    expect(record.element.points).toHaveLength(pointCount);
+  }
+});
+
 describe("mounted pressure paint", () => {
-  it("updates group alpha when stroke paint changes", () => {
+  it("updates root alpha when stroke paint changes without rebuilding geometry", () => {
     const { entry, record, parts, instrumentation } = setup();
     const next = {
       ...record,
@@ -214,20 +250,63 @@ describe("mounted pressure paint", () => {
   });
 });
 
+it.each(["commit", "preview"] as const)(
+  "clears old fade and motion channels through %s updates that toggle pressure",
+  (mode) => {
+    const { entry, record, ownerDocument, parent, instrumentation } = setup(false);
+    const original = firstPath(entry);
+    const path = fakeNode(original);
+    for (const pressureEnabled of [true, false]) {
+      setMountedElementFade(entry, 100);
+      setMountedElementMotion(entry, 0.5, 1.2);
+      const next = {
+        ...record,
+        element: { ...record.element, style: { ...record.element.style, pressureEnabled } },
+      };
+      const parts = buildElementPathParts(next.element);
+      if (mode === "commit") {
+        updateMountedGeometry(
+          entry,
+          next,
+          parts,
+          ownerDocument,
+          parent as unknown as SVGGElement,
+          instrumentation,
+        );
+      } else {
+        updateMountedElementPreview(entry, record, next.element, parts, {
+          ownerDocument,
+          parent: parent as unknown as SVGGElement,
+          instrumentation,
+        });
+      }
+      expect(firstPath(entry)).toBe(original);
+      expect(path.getAnimations()).toHaveLength(0);
+      expect(entry.fadeActive).toBe(false);
+      expect(entry.motionActive).toBe(false);
+      expect(path.style.getPropertyValue("fill-opacity")).toBe("");
+      expect(path.style.getPropertyValue("opacity")).toBe("");
+      expect(path.style.getPropertyValue("transform")).toBe("");
+      expect(path.attributes.get("opacity")).toBe(
+        pressureEnabled ? String(normalizeStrokePaint(next.element.style).opacity) : undefined,
+      );
+      expect(path.attributes.get("d")).toBe(parts[0]!.d);
+    }
+  },
+);
+
 it.each(["kind", "pressure-style"] as const)(
   "cancels original pressure-paint feedback after the displayed %s changes",
   (change) => {
     const { entry, record } = setup();
     const path = fakeNode(entry.paths[0]!.node);
-    const group = fakeNode(entry.group!);
-    const originalOpacity = group.attributes.get("opacity");
+    const originalOpacity = path.attributes.get("opacity");
     const writePathFilter = observeFilterWrites(path);
-    const writeGroupFilter = observeFilterWrites(group);
     setMountedElementMotion(entry, 0.5, 1.2);
-    const motionOpacity = group.style.opacity;
-    const motionTransform = group.style.transform;
+    const motionOpacity = path.style.opacity;
+    const motionTransform = path.style.transform;
     setMountedElementFade(entry, 400);
-    expect(activeFade(path as unknown as Element).keyframes.opacity).toEqual(["1", "0"]);
+    expect(activeFade(path as unknown as Element).keyframes.fillOpacity).toEqual(["1", "0"]);
     entry.displayedElement =
       change === "kind"
         ? fakeRectangleRecord(record.id, 0, 0).element
@@ -235,13 +314,11 @@ it.each(["kind", "pressure-style"] as const)(
     setMountedElementFade(entry, null);
     expect(entry.fadeActive).toBe(false);
     expect(path.getAnimations()).toHaveLength(0);
-    expect(path.style.getPropertyValue("opacity")).toBe("");
-    expect(group.getAnimations()).toHaveLength(0);
-    expect(group.style.opacity).toBe(motionOpacity);
-    expect(group.style.transform).toBe(motionTransform);
-    expect(group.attributes.get("opacity")).toBe(originalOpacity);
+    expect(path.style.getPropertyValue("fill-opacity")).toBe("");
+    expect(path.style.opacity).toBe(motionOpacity);
+    expect(path.style.transform).toBe(motionTransform);
+    expect(path.attributes.get("opacity")).toBe(originalOpacity);
     expect(writePathFilter).not.toHaveBeenCalled();
-    expect(writeGroupFilter).not.toHaveBeenCalled();
   },
 );
 
@@ -293,8 +370,9 @@ describe("opacity-only removal feedback", () => {
       expect(opacity).toBe(kind === "pressure" ? "1" : String(record.element.style.opacity));
       setMountedElementFade(entry, 400);
       expect(entry.fadeActive).toBe(true);
-      expect(activeFade(node as unknown as Element).keyframes.opacity).toEqual(["1", "0"]);
-      expect(activeFade(node as unknown as Element).options.duration).toBe(400);
+      const frames = activeFade(node).keyframes;
+      expect(kind === "pressure" ? frames.fillOpacity : frames.opacity).toEqual(["1", "0"]);
+      expect(activeFade(node).options.duration).toBe(400);
       expect(node.style.filter || "").toBe("");
       expect(node.style.getPropertyValue("opacity")).toBe("");
       expect(node.attributes.get(attribute)).toBe(opacity);
@@ -314,7 +392,9 @@ describe("opacity-only removal feedback", () => {
       setMountedElementFade(entry, 0);
       expect(node.getAnimations()).toHaveLength(0);
       expect(node.style.filter || "").toBe("");
-      expect(node.style.opacity).toBe("0");
+      expect(node.style.getPropertyValue(kind === "pressure" ? "fill-opacity" : "opacity")).toBe(
+        "0",
+      );
       expect(node.attributes.get(attribute)).toBe(opacity);
       expect(group?.attributes.get("opacity")).toBe(originalGroupOpacity);
       expect(group?.style.getPropertyValue("opacity") || "").toBe("");
@@ -327,19 +407,20 @@ describe("opacity-only removal feedback", () => {
   it("clears the original fill fade before restarting on a changed element kind", () => {
     const { entry, record } = setup();
     const path = fakeNode(entry.paths[0]!.node);
-    const group = fakeNode(entry.group!);
-    const groupOpacity = group.attributes.get("opacity");
+    const rootOpacity = path.attributes.get("opacity");
     setMountedElementFade(entry, 400);
     entry.displayedElement = fakeRectangleRecord(record.id, 0, 0).element;
     setMountedElementFade(entry, 200);
-    expect(path.getAnimations()).toHaveLength(0);
-    expect(activeFade(group as unknown as Element).options.duration).toBe(200);
-    expect(group.attributes.get("opacity")).toBe(groupOpacity);
+    expect(path.getAnimations()).toHaveLength(1);
+    expect(activeFade(path).keyframes.fillOpacity).toBeUndefined();
+    expect(activeFade(path).keyframes.opacity).toEqual([rootOpacity, "0"]);
+    expect(activeFade(path).options.duration).toBe(200);
+    expect(path.attributes.get("opacity")).toBe(rootOpacity);
     expect(path.style.filter).toBeUndefined();
-    expect(group.style.filter).toBeUndefined();
     setMountedElementFade(entry, null);
-    expect(group.getAnimations()).toHaveLength(0);
-    expect(group.style.getPropertyValue("opacity")).toBe("");
+    expect(path.getAnimations()).toHaveLength(0);
+    expect(path.style.getPropertyValue("opacity")).toBe("");
+    expect(path.style.getPropertyValue("fill-opacity")).toBe("");
   });
 
   it("fades filled shapes from their original root opacity without filter writes", () => {
@@ -349,7 +430,7 @@ describe("opacity-only removal feedback", () => {
     const paint = [...node.attributes];
     setMountedElementFade(entry, 400);
     expect(node.style.filter).toBeUndefined();
-    expect(activeFade(node as unknown as Element).options.duration).toBe(400);
+    expect(activeFade(node).options.duration).toBe(400);
     expect(node.style.getPropertyValue("opacity")).toBe("");
     expect([...node.attributes]).toEqual(paint);
     setMountedElementFade(entry, null);

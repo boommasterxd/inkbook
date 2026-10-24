@@ -188,8 +188,8 @@ it("targets pressure paths and restores queued feedback before reuse", () => {
   const fades = new SceneElementFades(new Map(entries.map((entry) => [entry.id, entry])));
   fades.set(ids, 160, { deadline: 8, now: () => 0 });
   expect(entries.filter((entry) => entry.fadeActive)).toHaveLength(128);
-  expect(entries.every((entry) => activeFades(entry.group!).length === 0)).toBe(true);
-  expect(activeFade(entries[0]!.paths[0]!.node).keyframes.opacity).toEqual(["1", "0"]);
+  expect(entries.every((entry) => entry.group === null)).toBe(true);
+  expect(activeFade(entries[0]!.paths[0]!.node).keyframes.fillOpacity).toEqual(["1", "0"]);
   fades.set(ids, null);
   expect(fades.pending).toBe(false);
   expect(entries.every((entry) => !entry.fadeActive)).toBe(true);
@@ -197,7 +197,6 @@ it("targets pressure paths and restores queued feedback before reuse", () => {
   expect(ids.every((id) => fades.isExitReady(id, 0))).toBe(true);
   fades.flush(Infinity, () => 20);
   fades.set([ids[0]!], 50, { deadline: 28, now: () => 20 });
-  expect(activeFades(entries[0]!.group!)).toHaveLength(0);
   expect(activeFade(entries[0]!.paths[0]!.node).options.duration).toBe(50);
   expect(fades.isExitReady(ids[0]!, 69)).toBe(false);
   expect(fades.isExitReady(ids[0]!, 70)).toBe(true);
@@ -285,7 +284,7 @@ it("lets eraser feedback own a running history entrance until its full exit comp
 });
 
 it.each([1, 2])(
-  "restores %i pressure paths through their original paint and group alpha",
+  "restores %i pressure paths through their original paint and root alpha",
   (parts) => {
     const { mounted, fades } = setup(0);
     const owner = new FakeDocument() as unknown as Document;
@@ -307,18 +306,18 @@ it.each([1, 2])(
     fades.setMembership(entry.id, "enter", 400);
     mounted.set(entry.id, entry);
     fades.bindMounted(entry);
-    const group = fakeNode(entry.group!);
-    expect(group.attributes.get("opacity")).toBe("0.35");
-    expect(group.style.visibility).toContain(", hidden)");
+    const root = fakeNode(entry.group ?? entry.paths[0]!.node);
+    expect(root.attributes.get("opacity")).toBe("0.35");
+    expect(root.style.visibility).toContain(", hidden)");
     fades.flush(Infinity, () => 0);
-    const target = parts === 1 ? fakeNode(entry.paths[0]!.node) : group;
+    const target = root;
     expect(fadeFrames(target)[1]).toBe(parts === 1 ? "1" : "0.35");
-    expect(group.attributes.get("opacity")).toBe("0.35");
+    expect(root.attributes.get("opacity")).toBe("0.35");
     expect(entry.paths.every((path) => !fakeNode(path.node).style.opacity)).toBe(true);
     fades.flush(Infinity, () => 400);
     expect(fades.memoryUsage()).toBe(0);
     expect(activeFades(target)).toHaveLength(0);
-    expect(group.attributes.get("opacity")).toBe("0.35");
+    expect(root.attributes.get("opacity")).toBe("0.35");
   },
 );
 

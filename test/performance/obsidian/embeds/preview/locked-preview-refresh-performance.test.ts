@@ -12,6 +12,15 @@ import { createHtmlElement, installObsidianDomHelpers } from "../../../../adapte
 
 declare function setImmediate(callback: () => void): void;
 
+function observeSvgAllocations(button: HTMLButtonElement) {
+  const create = vi.spyOn(lockedPreviewRoot(button), "createElementNS");
+  return {
+    create,
+    count: () =>
+      create.mock.calls.filter(([namespace]) => namespace === "http://www.w3.org/2000/svg").length,
+  };
+}
+
 beforeEach(() => {
   installObsidianDomHelpers();
   vi.spyOn(window, "setTimeout").mockImplementation((callback) => {
@@ -39,10 +48,7 @@ it("defers hidden descriptor trees across saves and builds only the latest on de
     contentIdentity: { revision, outputHash: "a".repeat(64) },
   });
   const preview = createInkbookLockedPreview(button, descriptor(1), immediateWorkScheduler());
-  const drawingDocument = lockedPreviewRoot(button);
-  const create = vi.spyOn(drawingDocument, "createElementNS");
-  const svgAllocations = () =>
-    create.mock.calls.filter(([namespace]) => namespace === "http://www.w3.org/2000/svg").length;
+  const { create, count: svgAllocations } = observeSvgAllocations(button);
   await preview.ensureReady();
   const original = lockedPreviewRoot(button).querySelector("svg");
   expect(original).not.toBeNull();
@@ -107,9 +113,7 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
     immediateWorkScheduler(),
   );
   const drawingDocument = lockedPreviewRoot(button);
-  const create = vi.spyOn(drawingDocument, "createElementNS");
-  const svgAllocations = () =>
-    create.mock.calls.filter(([namespace]) => namespace === "http://www.w3.org/2000/svg").length;
+  const { create, count: svgAllocations } = observeSvgAllocations(button);
   await preview.ensureReady();
   const oldSvg = lockedPreviewRoot(button).querySelector("svg");
   expect(oldSvg).not.toBeNull();

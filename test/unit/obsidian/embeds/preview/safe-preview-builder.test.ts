@@ -4,8 +4,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createPreviewSvgAsync } from "../../../../../src/obsidian/embeds/preview/safe-preview-builder";
 import { configurePreviewSvg } from "../../../../../src/obsidian/embeds/preview/safe-preview-svg";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
-import { createSnapshot } from "../../../persistence/serialization/fixtures";
+import { createSnapshot, uuid } from "../../../persistence/serialization/fixtures";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
 
 function budgetScheduler(now: () => number, budget: () => number) {
   let started = now();
@@ -55,10 +56,49 @@ it("cancels before building any SVG when the initial idle wait is invalidated", 
   expect(create).not.toHaveBeenCalled();
 });
 
+it("flattens opaque pressure groups while preserving path order, paint and non-neutral groups", async () => {
+  const stroke = createTestStroke();
+  const serialized = serializeInkbookDocument(
+    createSnapshot(
+      [0, 1, 2, 3].map((index) => ({
+        ...stroke,
+        id: uuid(index + 1),
+        style: { ...stroke.style, width: index === 0 ? 2 : 4, opacity: index === 2 ? 0.5 : 1 },
+        ...(index === 3 ? { offset: { x: 5, y: 6 } } : {}),
+      })),
+    ),
+  );
+  if (!serialized.ok) throw new Error("Fixture serialization failed.");
+  const expected = new DOMParser().parseFromString(serialized.value.svg, "image/svg+xml");
+  const svg = await createPreviewSvgAsync(document, serialized.value.svg, {
+    checkpoint: () => undefined,
+    workScheduler: immediateWorkScheduler(),
+    isCancelled: () => false,
+  });
+  const content = svg!.querySelector("#inkbook-content")!;
+  const paths = [...content.querySelectorAll("path")];
+  expect(paths.map((path) => path.outerHTML)).toEqual(
+    [...expected.querySelectorAll("#inkbook-content path")].map((path) => path.outerHTML),
+  );
+  expect(paths).toHaveLength(4);
+  expect(paths[0]!.parentNode).toBe(content);
+  expect(paths[1]!.parentNode).toBe(content);
+  const translucent = content.querySelector('[opacity="0.5"]')!;
+  expect(paths[2]!.parentNode).toBe(translucent);
+  expect(paths[3]!.parentElement!.getAttribute("opacity")).toBe("1");
+  expect(paths[3]!.parentElement!.getAttribute("transform")).toBe("translate(5 6)");
+  expect([...svg!.children].map((group) => group.id)).toEqual([
+    "inkbook-background",
+    "inkbook-highlights",
+    "inkbook-content",
+  ]);
+  expect(svg!.getAttribute("viewBox")).toBe(expected.documentElement.getAttribute("viewBox"));
+});
+
 it("bounds element creation and cancels a partially built detached tree", async () => {
   const source =
     '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata>' +
-    '<g opacity="0.5"><path d="M0 0L1 1"/></g>'.repeat(10_000) +
+    '<g opacity="1"><path d="M0 0L1 1"/></g>'.repeat(10_000) +
     "</svg>";
   const create = vi.spyOn(document, "createElementNS");
   let previous = 0;

@@ -12,7 +12,10 @@ import * as previewBuilder from "../../../../../src/obsidian/embeds/preview/safe
 import { ObsidianInkbookDocumentRecognition } from "../../../../../src/obsidian/embeds/preview/document-recognition";
 
 import { createInkbookLockedPreview } from "../../../../../src/obsidian/embeds/preview/locked-preview";
-import { lockedPreviewRoot } from "../../../../fixtures/obsidian/locked-preview";
+import {
+  expectLockedPreviewPath,
+  lockedPreviewRoot,
+} from "../../../../fixtures/obsidian/locked-preview";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { deferredPreviewRecognition } from "../../../../fixtures/obsidian/deferred-preview-recognition";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
@@ -183,10 +186,10 @@ it("pauses detached preparation during input and publishes only the latest descr
   expect(lockedPreviewRoot(button).querySelector("path")).toBeNull();
   resume();
   await ready;
-  expect(lockedPreviewRoot(button).querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
+  expectLockedPreviewPath(button, "M0 0L3 3");
   button.hidden = false;
   preview.refresh();
-  expect(lockedPreviewRoot(button).querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
+  expectLockedPreviewPath(button, "M0 0L3 3");
   expect(creates).toHaveBeenCalledTimes(2);
   preview.dispose();
 });

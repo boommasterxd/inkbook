@@ -74,7 +74,7 @@ it.each(
       );
       const ids = entrants.map((item) => item.id);
       const multipleRoots = kind === "multipart" || kind === "siblings";
-      expect(entry.group === null).toBe(kind !== "pressure");
+      expect(entry.group).toBeNull();
       expect(roots).toHaveLength(multipleRoots ? 2 : 1);
       expect(publish(run, { dom, instrumentation, mounted, store }, 7, true)).toEqual(ids);
       expect(fragment.mock.calls.length).toBe(multipleRoots ? 1 : 0);
@@ -216,7 +216,8 @@ it.each([0, 8])(
       expect(frames.reduce((sum, count) => sum + count, 0)).toBe(
         SCENE_PUBLICATION_ROOTS_PER_FRAME + 1,
       );
-      const pressureRoot = content.nodes.find((node) => node.tagName === "g");
+      const pressureD = buildElementPathParts(store.get(pressure.id)!.element)[0]!.d;
+      const pressureRoot = content.nodes.find((node) => node.attributes.get("d") === pressureD);
       expect(pressureRoot?.attributes.get("opacity")).toBe("0.25");
       expect(Math.max(...publicationCounts)).toBeLessThanOrEqual(17);
       expect(Math.max(...publicationCounts)).toBeGreaterThan(1);

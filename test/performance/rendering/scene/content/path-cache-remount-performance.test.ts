@@ -374,9 +374,9 @@ it.each([false, true])(
         expect(boundary.mock.calls.length).toBe(canonicalIntersections);
         expect(renderer.instrumentation().geometryBuilds).toBe(1);
         // The retained path cache must reuse the completed output on remount.
-        expect(
-          fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!.nodes[0]!.attributes.get("d"),
-        ).toBe(expected[0]!.d);
+        expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!.attributes.get("d")).toBe(
+          expected[0]!.d,
+        );
         renderer.setCamera({ x: -100_000, zoom: 1 });
         scheduler.runAll();
         renderer.setCamera({ x: 0, zoom: 1 });

@@ -14,6 +14,8 @@ fitZoom = containerWidth / outerPageWidth
 
 `containerWidth` is the positive content-box width of Inkbook's own background container after the native-scrollbar lease and any owner-client-edge clamp have settled. It is never the full pane or scroll-owner width. The first visible width requires two equal animation-frame measurements. After that initialization, every changed positive width is accepted in the next coalesced frame so the camera, SVG, container height, and native-scroll anchor track a continuous window resize without a delayed jump.
 
+The active editor reads its container box, responsive toolbar stage, and resize anchor together before applying the layout pass's height, camera, native-scroll, and chrome updates. The anchor and height update reuse the captured container box. Scene viewport reads retain their existing live geometry path and scheduler ordering.
+
 The outer page width is:
 
 ```

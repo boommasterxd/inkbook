@@ -182,16 +182,20 @@ function verifyEraserFeedback(
   }
   expect(styleWrites()).toBe(STROKES);
   expect(cameraGroup.nodes[3]!.nodes.every((node) => activeFades(node).length === 1)).toBe(true);
-  expect(
-    cameraGroup.nodes[4]!.nodes.every((node) => activeFades(node.nodes[0]!).length === 1),
-  ).toBe(true);
+  for (const node of cameraGroup.nodes[4]!.nodes)
+    expect(activeFades(node).map((fade) => fade.keyframes.fillOpacity)).toEqual([["1", "0"]]);
   expect(scheduler.pendingCount).toBe(0);
   renderer.clearElementFade(ids);
   expect(styleWrites()).toBe(STROKES * 2);
   expect(
     nodes
       .flatMap((node) => [node, ...node.nodes])
-      .every((node) => activeFades(node).length === 0 && node.style.filter === undefined),
+      .every(
+        (node) =>
+          activeFades(node).length === 0 &&
+          node.style.filter === undefined &&
+          node.style.getPropertyValue("fill-opacity") === "",
+      ),
   ).toBe(true);
   const fadeFrames = Math.ceil(STROKES / 128);
   expect(renderer.instrumentation()).toEqual({
@@ -415,7 +419,7 @@ function observeFadeWrites(
       };
       return animation;
     };
-    for (const property of ["filter", "opacity"]) {
+    for (const property of ["filter", "opacity", "fill-opacity"]) {
       let value = node.style[property];
       Object.defineProperty(node.style, property, {
         configurable: true,
@@ -434,6 +438,7 @@ function observeFadeWrites(
         Reflect.deleteProperty(node, "animate");
         Reflect.deleteProperty(node.style, "filter");
         Reflect.deleteProperty(node.style, "opacity");
+        Reflect.deleteProperty(node.style, "fill-opacity");
       }
     },
   });

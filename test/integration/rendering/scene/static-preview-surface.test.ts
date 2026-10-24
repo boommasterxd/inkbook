@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StaticPreviewSurface } from "../../../../src/rendering/scene/static-preview-surface";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
+import { expectInertIsolatedFrame } from "../../../fixtures/rendering/isolated-scene-frame";
 
 const surfaces: StaticPreviewSurface[] = [];
 
@@ -33,12 +34,7 @@ function fixture(connected = true) {
 describe("static preview document ownership", () => {
   it("mounts the retained drawing in an isolated inert document without another input target", async () => {
     const { container, surface, frame, svg } = fixture();
-    expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
-    expect(frame.getAttribute("aria-hidden")).toBe("true");
-    expect(frame.hasAttribute("inert")).toBe(true);
-    expect(frame.tabIndex).toBe(-1);
-    expect(frame.hasAttribute("src")).toBe(false);
-    expect(frame.hasAttribute("srcdoc")).toBe(false);
+    expectInertIsolatedFrame(frame);
     surface.setSvg(svg);
     await surface.ensureMounted();
     expect(svg.ownerDocument).toBe(surface.drawingDocument);

@@ -27,9 +27,9 @@ it("mounts validated unlock paths without unions and rebuilds after a geometry c
   const first = createSceneFixture(createWorkerSnapshot([]).page, sceneStore);
   first.scheduler.runAll();
   expect(union).not.toHaveBeenCalled();
-  expect(
-    fakeNode(first.renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!.nodes[0]!.attributes.get("d"),
-  ).toBe(geometry[0]!.d);
+  expect(fakeNode(first.renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!.attributes.get("d")).toBe(
+    geometry[0]!.d,
+  );
   first.renderer.destroy();
   store.replace(element.id, { ...element, rotation: 30 });
   port.publishPath!(geometry);
@@ -69,7 +69,7 @@ it("remounts retained rotated local contours after movement without point or uni
   try {
     scene.scheduler.runAll();
     const group = fakeNode(scene.renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
-    const path = group.nodes[0]!;
+    const path = group;
     expect(path.attributes.get("d")).toBe(prepared[0]!.d);
     expect(group.attributes.get("transform")).toBe("translate(12.007 0.003)");
     expect(samples).not.toHaveBeenCalled();
