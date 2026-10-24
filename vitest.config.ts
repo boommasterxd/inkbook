@@ -39,6 +39,18 @@ export default defineConfig({
       },
     },
     environment: "node",
+    environmentOptions: {
+      happyDOM: {
+        settings: {
+          enableIframePageLoading: true,
+          navigation: {
+            disableChildFrameNavigation: true,
+            disableChildPageNavigation: true,
+            disableFallbackToSetURL: true,
+          },
+        },
+      },
+    },
     projects: [
       {
         test: {
