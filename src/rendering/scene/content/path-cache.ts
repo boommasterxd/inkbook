@@ -21,6 +21,7 @@ export interface PreparedScenePath {
   readonly geometry: readonly SvgPathPart[];
   readonly geometryMemoryBytes: number;
   readonly pressureWindows?: readonly PressureWindow[] | undefined;
+  readonly deferGeometryPreparation?: boolean;
 }
 
 interface CachedPath {
@@ -367,6 +368,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     pressureGeometry?: PreparedPressureGeometryPort,
   ): void {
     this.#lastAccess = undefined;
+    if (prepared.deferGeometryPreparation === true) return;
     if (!this.retentionEnabled) return;
     const bytes = SHARED_LOOKUP_OVERHEAD_BYTES + id.length * 2 + prepared.geometryMemoryBytes;
     if (bytes > this.#maximumBytes) return;

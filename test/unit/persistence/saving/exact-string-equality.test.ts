@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { exactStringEqual } from "../../../../src/persistence/saving/exact-string-equality";
 
 describe("exact string equality", () => {
-  it("accepts identical content across chunk boundaries", () => {
+  it("accepts equal large concatenated and decoded Unicode strings", () => {
     const value = "a".repeat(300_000) + "🖋️" + "b".repeat(300_000);
     const copy = new TextDecoder().decode(new TextEncoder().encode(value));
 
@@ -20,7 +20,18 @@ describe("exact string equality", () => {
     },
   );
 
-  it("rejects different lengths before chunking", () => {
+  it("compares isolated surrogate code units without replacing them", () => {
+    const value = "🖋️\ud800x\udc00";
+    const copy = ["🖋️", "\ud800", "x", "\udc00"].join("");
+
+    expect(exactStringEqual(value, copy)).toBe(true);
+    expect(exactStringEqual(value, "🖋️\ufffdx\udc00")).toBe(false);
+    expect(exactStringEqual(value, "🖋️\ud800x\ufffd")).toBe(false);
+  });
+
+  it("handles empty strings and different lengths", () => {
+    expect(exactStringEqual("", "")).toBe(true);
+    expect(exactStringEqual("", "a")).toBe(false);
     expect(exactStringEqual("same", "same ")).toBe(false);
   });
 });

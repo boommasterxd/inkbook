@@ -217,6 +217,10 @@ describe("compact reference pressure geometry", () => {
         ),
       ),
     );
+    for (const loop of loops)
+      loop.slice = () => {
+        throw new Error("Pressure serialization must not copy source loops.");
+      };
     const windows = [{ kind: "window" as const, additions: [], loops }];
     const format = vi.fn(String);
     vi.stubGlobal("String", format);
@@ -230,8 +234,7 @@ describe("compact reference pressure geometry", () => {
     }
     expect(path.match(/M/g)).toHaveLength(64);
     expect(calls).toBeGreaterThan(0);
-    // Each capsule scores two line starts (8), writes a move (2), one line (4),
-    // and four quarter arcs (5 each). Reformatting separator operands exceeds this bound.
+    // Per capsule: two line scores (8), move (2), line (4), four quarter arcs (5 each).
     expect(calls).toBeLessThanOrEqual(64 * 34);
   });
 
@@ -244,7 +247,8 @@ describe("compact reference pressure geometry", () => {
       contours += (path!.d.match(/M/g) ?? []).length;
     }
     expect(PRESSURE_REFERENCE).toHaveLength(44);
-    expect(bytes).toBeLessThanOrEqual(41177);
+    // The finer pressure center/radius budget retains more contour detail.
+    expect(bytes).toBeLessThanOrEqual(57325);
     expect(contours).toBeLessThanOrEqual(130);
   });
 

@@ -19,6 +19,7 @@ export async function createHiddenPreviewHandoff(
     preview,
     workScheduler,
   });
+  handoff.onUnlockSettled = attachment.releasePreview;
   handoff.ready();
   expect(preview.hidden).toBe(true);
   expect(preview.isConnected).toBe(true);

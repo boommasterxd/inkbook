@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createInputState } from "../../../../../../src/editor/input";
+import { strokePrimitiveSteps } from "../../../../../../src/editor/selection/query/stroke-selection-geometry";
+import * as centers from "../../../../../../src/domain/geometry/stroke-path";
+import type { StrokeElementV1 } from "../../../../../../src/domain/schema/public";
 import { indexedStroke } from "../../../../../fixtures/editor/stroke";
 import { effectTypes } from "../../../../../fixtures/editor/input-actions";
 import { activeEditorPointerHarness as harness } from "../../../../../fixtures/obsidian/active-editor-pointer";
@@ -25,6 +28,43 @@ function contactFields(pointerType = "mouse", overrides: Partial<PointerEvent> =
 }
 
 describe("active Select press arbitration", () => {
+  it("reuses selection-prepared non-pressure centers when a click resolves through the scene store", () => {
+    const source = indexedStroke(0);
+    const h = selectHarness([
+      {
+        ...source,
+        points: [20, 20, 0.2, 60, 20, 0.9, 100, 20, 0.4],
+        style: { ...source.style, pressureEnabled: false },
+      },
+    ]);
+    const record = h.store.get(source.id)!;
+    const prepared = h.store.pressureGeometry(source.id, record.geometryVersion);
+    Array.from(strokePrimitiveSteps(record.element as StrokeElementV1, { prepared }));
+    const read = vi.spyOn(centers, "smoothStrokeCenters");
+    const contact = contactFields("mouse", {
+      clientX: 60 + h.bounds.left,
+      clientY: 20 + h.bounds.top,
+    });
+    try {
+      h.pointer.handlePointerDown(sample(10, contact));
+      h.pointer.handlePointerUp(sample(20, { ...contact, buttons: 0 }));
+      expect(h.effects).toContainEqual({
+        type: "select-element",
+        elementId: source.id,
+        mode: "replace",
+      });
+      expect(h.hit).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ x: 60, y: 20 }),
+        "mouse",
+        1,
+      );
+      expect(read).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+      h.controller.dispose();
+    }
+  });
+
   it.each(["mouse", "pen"] as const)(
     "starts an area over an unselected stroke using %s without hit testing",
     (pointerType) => {

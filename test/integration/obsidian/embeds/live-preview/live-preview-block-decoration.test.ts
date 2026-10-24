@@ -341,6 +341,39 @@ describe("Live Preview pending lifecycle", () => {
   });
 });
 
+describe("Live Preview recognition during note edits", () => {
+  beforeEach(() => installObsidianDomHelpers());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    removeObsidianDomHelpers();
+  });
+
+  it("applies queued recognition to the current range after an intervening note edit", async () => {
+    const control: RecognitionControl = { notify: undefined, value: undefined };
+    const ports = integrationPorts(control);
+    const mount = vi.spyOn(ports.sessions, "mount");
+    const { parent, view } = mountView(ports);
+    try {
+      control.notify?.("drawings/page.svg");
+      view.dispatch({ changes: { from: 0, insert: "Before\n\n" } });
+      control.value = {
+        aspectRatio: 3,
+        contentIdentity: { outputHash: "c".repeat(64), revision: 3 },
+        safeSvg: SAFE_PREVIEW_SVG,
+      };
+      control.notify?.("drawings/page.svg");
+      await Promise.resolve();
+      const attachment = mount.mock.calls[mount.mock.calls.length - 1]![0];
+      expect(attachment.embedReference).toMatchObject({ from: 8, to: view.state.doc.length });
+      expect(attachment.previewContentIdentity).toEqual(control.value.contentIdentity);
+      expect(parent.querySelector(".inkbook-root")).toBe(attachment.root);
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
+  });
+});
+
 function mountView(ports: EmbedIntegrationPorts) {
   configureTestEditorState({ file: { path: "notes/note.md" }, livePreview: true });
   const parent = document.body.createDiv();

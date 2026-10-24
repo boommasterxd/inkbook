@@ -48,6 +48,7 @@ import {
   createWorkspaceMountedPresentation,
   createWorkspacePresentationStateSetter,
   disposeWorkspaceMountedPresentations,
+  releaseWorkspaceScene,
   cancelInitialWorkspaceLoading,
   startInitialWorkspaceLoading,
   updateWorkspaceMountedSettings,
@@ -228,6 +229,10 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           backgroundSpacing: () => this.#settings().vault.pageDefaults.backgroundSpacing,
           deviceSettings: settings.device,
           editorContext: context,
+          isActivationCurrent: () =>
+            this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
+            mounted.activation === activation &&
+            isActive(),
           embedActions: this.#embedActions,
           isCurrent: (scene) =>
             this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
@@ -270,7 +275,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
   detach(attachment: PresentationAttachment): void {
     this.#coordinator.detachAttachment(attachment);
-    this.#releaseScene(attachment);
+    this.#releaseScene(attachment, true);
     this.#mounted.delete(presentationAttachmentKey(attachment));
     this.refreshRateProfiles.release(presentationAttachmentKey(attachment));
     this.#lifecycle.detachAutoActivation(attachment);
@@ -365,7 +370,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     const mounted = this.#mounted.get(presentationAttachmentKey(current.attachment));
     if (mounted !== undefined) this.activate(mounted.attachment);
   }
-  #releaseScene(attachment: AttachmentIdentity): void {
+  #releaseScene(attachment: AttachmentIdentity, immediate = false): void {
     this.documentStatus.detach(attachment);
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
@@ -381,23 +386,18 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     mounted.recovery = undefined;
     mounted.loadError?.close();
     mounted.loadError = undefined;
-    const scene = mounted.scene;
-    if (
-      scene !== undefined &&
-      current?.documentId === mounted.attachment.documentId &&
-      current.phase === "locked"
-    ) {
-      void scene.finishLock().then(() => {
-        if (mounted.scene !== scene) return;
-        scene.dispose();
-        mounted.scene = undefined;
-        this.#setState(attachment, "locked");
-      });
-      return;
-    }
-    scene?.dispose();
-    mounted.scene = undefined;
-    this.#setState(attachment, "locked");
+    releaseWorkspaceScene(mounted, {
+      waitForPreview:
+        !immediate &&
+        !this.#disposed &&
+        (mounted.attachment.root.isConnected ||
+          (current?.documentId === mounted.attachment.documentId && current.phase === "locked")),
+      onLocked: () => this.#setState(attachment, "locked"),
+      onFailure: () => {
+        this.#setState(attachment, "load-error");
+        this.#showLoadError(mounted, "editor-start-failed");
+      },
+    });
   }
   #showAttachedRecovery(notice: {
     readonly attachmentGeneration: number;

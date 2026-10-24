@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { roundCanonical } from "../../../../../src/domain/geometry/primitives";
 import {
   buildPressureOutline,
-  visitPressureOutline,
+  visitPreparedPressureOutline,
 } from "../../../../../src/domain/geometry/pressure/pressure-outline";
 import {
   decodeSvgPathCommands,
@@ -23,7 +23,7 @@ function horizontalPath(start: number, end: number, y = 200000): string {
 
 function capsulePath(centers: readonly { x: number; y: number; pressure: number }[]): string {
   const pieces: PressureOutlinePiece[] = [];
-  visitPressureOutline(centers, 8, (piece) => {
+  visitPreparedPressureOutline(centers, 8, (piece) => {
     pieces.push(piece);
     return false;
   });
@@ -107,6 +107,41 @@ describe("compact continuous outline serialization", () => {
         .sort(),
     );
   });
+});
+
+describe("deterministic pressure path spelling", () => {
+  it.each([
+    {
+      points: [
+        [0, 0],
+        [1, 1],
+        [0, 1],
+      ],
+      expected: "M0 0L1 1h-1Z",
+    },
+    {
+      points: [
+        [100, 100],
+        [101, 102],
+        [99, 105],
+        [96, 102],
+      ],
+      expected: "M96 102l4-2l1 2-2 3Z",
+    },
+  ])(
+    "preserves absolute ties, rotation and implicit relative lines: $expected",
+    ({ points, expected }) => {
+      const vertices = points.map(([x, y]) => ({ x: x!, y: y! }));
+      const loop = vertices.map((start, index) => ({
+        kind: "line" as const,
+        start,
+        end: vertices[(index + 1) % vertices.length]!,
+      }));
+      expect(serializePressureWindows([{ kind: "window", additions: [], loops: [loop] }])).toBe(
+        expected,
+      );
+    },
+  );
 });
 
 describe("independent SVG path decoding", () => {

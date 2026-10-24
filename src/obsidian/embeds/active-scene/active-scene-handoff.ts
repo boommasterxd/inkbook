@@ -26,6 +26,7 @@ interface PreviewHandoffOptions {
 }
 
 export class ActiveScenePreviewHandoff {
+  public onUnlockSettled: (() => void) | undefined;
   public onSceneReveal: (() => void) | undefined;
   public onReducedMotionChange: ((reduced: boolean) => void) | undefined;
   readonly #beginScrollStability: (() => () => void) | undefined;
@@ -95,6 +96,7 @@ export class ActiveScenePreviewHandoff {
     if (this.#disposed) return;
     this.#disposed = true;
     this.onSceneReveal = undefined;
+    this.onUnlockSettled = undefined;
     this.onReducedMotionChange = undefined;
     this.#onDispose?.();
     this.#initialRevealPending = false;
@@ -118,7 +120,7 @@ export class ActiveScenePreviewHandoff {
     this.#preview?.classList.remove("inkbook-preview-handoff");
     this.#resetPreviewLayer();
     this.#resetEditorLayer(this.#lockEditor);
-    this.restorePreview();
+    this.restorePreview(false);
     this.#initialEntrance?.resumePreview();
   }
 
@@ -214,13 +216,13 @@ export class ActiveScenePreviewHandoff {
     });
   }
 
-  public restorePreview(): void {
+  public restorePreview(prepare = true): void {
     const preview = this.#preview;
     if (preview === undefined) return;
     if (preview.ownerDocument !== this.#root.ownerDocument)
       this.#root.ownerDocument.adoptNode(preview);
     preview.hidden = false;
-    this.#refreshPreview?.();
+    if (prepare) this.#refreshPreview?.();
     if (!preview.isConnected && this.#previewParent !== null) {
       if (this.#previewNextSibling?.parentNode === this.#previewParent) {
         this.#previewParent.insertBefore(preview, this.#previewNextSibling);
@@ -228,12 +230,25 @@ export class ActiveScenePreviewHandoff {
         this.#previewParent.appendChild(preview);
       }
     }
-    if (this.#pendingPreviewSource !== undefined || this.#sourcePreparation !== undefined) {
+    if (
+      prepare &&
+      (this.#pendingPreviewSource !== undefined || this.#sourcePreparation !== undefined)
+    ) {
       void this.ensurePreviewReady().then(
         () => this.#refreshPreview?.(),
         () => undefined,
       );
     }
+  }
+
+  public releaseHiddenPreview(): void {
+    if (
+      !this.#disposed &&
+      !this.#initialRevealPending &&
+      this.#root.classList.contains("inkbook-active-ready") &&
+      this.#preview?.hidden === true
+    )
+      this.onUnlockSettled?.();
   }
 
   public async ensurePreviewReady(): Promise<void> {
@@ -411,13 +426,17 @@ export class ActiveScenePreviewHandoff {
       this.#preview.hidden = true;
     }
     this.#notifyReady();
-    if (!this.#initialRevealPending) this.#releaseTransitionStability();
+    if (!this.#initialRevealPending) {
+      this.#releaseTransitionStability();
+      this.releaseHiddenPreview();
+    }
   }
 
   readonly #finishInitialReveal = (): void => {
     if (!this.#initialRevealPending) return;
     this.#initialRevealPending = false;
     this.#releaseTransitionStability();
+    this.releaseHiddenPreview();
   };
 
   #releaseTransitionStability(): void {

@@ -288,3 +288,38 @@ describe("pressure boundary scalar resource ownership", () => {
     }
   });
 });
+
+it("reuses bounded clipping cuts without allocating entry iterators", () => {
+  const shapes = denseDisks();
+  const arrays = new Set<readonly unknown[]>();
+  const originalSort = Array.prototype.sort;
+  let sorts = 0;
+  let maximumCuts = 0;
+  const sort = vi.spyOn(Array.prototype, "sort").mockImplementation(function (
+    this: unknown[],
+    compare,
+  ) {
+    if (this[0] === 0 && this[1] === 1) {
+      sorts += 1;
+      maximumCuts = Math.max(maximumCuts, this.length);
+      arrays.add(this);
+    }
+    return Reflect.apply(originalSort, this, [compare]) as unknown[];
+  });
+  const entries = vi.spyOn(Array.prototype, "entries");
+  let entryCalls = 0;
+  let intersections = 0;
+  try {
+    intersections = finishGeometrySteps(iteratePressureUnion(shapes)).work.intersectionTests;
+    entryCalls = entries.mock.calls.length;
+  } finally {
+    sort.mockRestore();
+    entries.mockRestore();
+  }
+  // Two directed half-circle boundaries per disk own one cut buffer each.
+  expect(sorts).toBeGreaterThan(shapes.length * 2);
+  expect(arrays.size).toBeLessThanOrEqual(shapes.length * 2);
+  expect(maximumCuts).toBeLessThanOrEqual(26);
+  expect(intersections).toBeGreaterThan(0);
+  expect(entryCalls).toBe(0);
+});

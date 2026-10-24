@@ -15,6 +15,7 @@ import { FakePresentationElement } from "../../../../fixtures/obsidian/presentat
 import { SafeStaticProof } from "../../../../../src/persistence/serialization/input/safe-static-proof";
 import type { VaultDocumentSessionHooks } from "../../../../../src/obsidian/embeds/document-session/vault-document-recovery";
 import type { DocumentRuntimeFactories } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
+import type { ActiveInkbookScene } from "../../../../../src/obsidian/embeds/active-scene/active-scene";
 
 const boundary = vi.hoisted(() => {
   const snapshot: WorkspaceEditorCoordinatorSnapshot = { disposed: false };
@@ -145,6 +146,39 @@ const runtimes: ObsidianWorkspaceRuntime[] = [];
 afterEach(() => {
   for (const runtime of runtimes.splice(0)) runtime.dispose();
 });
+
+it.each(["detach", "replace", "unload"] as const)(
+  "does not recreate an editor after %s while its previous preview handoff is pending",
+  async (change) => {
+    const h = startActivation();
+    h.finishEntrance(true);
+    await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledOnce());
+    const scene = boundary.createScene.mock.results[0]!.value as Pick<
+      ActiveInkbookScene,
+      "finishLock" | "disableInput" | "dispose"
+    >;
+    let finish!: () => void;
+    scene.finishLock = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    scene.disableInput = vi.fn();
+    h.runtime.activate(h.attachment);
+    await vi.waitFor(() => expect(scene.finishLock).toHaveBeenCalledOnce());
+    if (change === "unload") h.runtime.dispose();
+    else {
+      h.runtime.detach(h.attachment);
+      if (change === "replace") h.runtime.mount({ ...h.attachment, attachmentGeneration: 2 });
+    }
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(boundary.createScene).toHaveBeenCalledOnce();
+    expect(scene.dispose).toHaveBeenCalledOnce();
+  },
+);
 
 it("refreshes a remounted presentation owner without recreating its document scheduler", () => {
   const { runtime, attachment } = createHarness();

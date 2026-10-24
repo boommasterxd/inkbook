@@ -52,6 +52,10 @@ function roundoff(first: PointV1, second: PointV1, third: PointV1, fourth = firs
 function withinRoundoff(first: PointV1, second: PointV1, epsilon: number): boolean {
   const dx = first.x - second.x;
   const dy = first.y - second.y;
+  return withinRoundoffDelta(dx, dy, epsilon);
+}
+
+function withinRoundoffDelta(dx: number, dy: number, epsilon: number): boolean {
   // A Euclidean distance cannot be smaller than either coordinate difference.
   return Math.abs(dx) <= epsilon && Math.abs(dy) <= epsilon && Math.hypot(dx, dy) <= epsilon;
 }
@@ -85,7 +89,11 @@ function boundaryParameter(
   const fraction =
     ((point.x - boundary.start.x) * dx + (point.y - boundary.start.y) * dy) / lengthSquared;
   if (fraction < 0 || fraction > 1) return undefined;
-  return withinRoundoff(pressureBoundaryPoint(boundary, fraction), point, epsilon)
+  return withinRoundoffDelta(
+    boundary.start.x + dx * fraction - point.x,
+    boundary.start.y + dy * fraction - point.y,
+    epsilon,
+  )
     ? fraction
     : undefined;
 }
@@ -186,8 +194,11 @@ function addIntersection(
   first: number,
   second: number,
 ): void {
-  if (!result.some((entry) => entry.first === first && entry.second === second))
-    result.push({ first, second });
+  for (let index = 0; index < result.length; index += 1) {
+    const entry = result[index]!;
+    if (entry.first === first && entry.second === second) return;
+  }
+  result.push({ first, second });
 }
 
 function addEndpoints(
@@ -198,7 +209,7 @@ function addEndpoints(
   firstScalars?: PressureBoundaryScalars,
   secondScalars?: PressureBoundaryScalars,
 ): void {
-  for (const fraction of [0, 1]) {
+  for (let fraction = 0; fraction <= 1; fraction += 1) {
     const point = fraction === 0 ? first.start : first.end;
     const parameter = boundaryParameter(second, point, arcAngles, secondScalars);
     if (parameter !== undefined) addIntersection(result, fraction, parameter);

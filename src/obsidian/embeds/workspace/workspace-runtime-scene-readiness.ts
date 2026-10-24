@@ -37,16 +37,28 @@ function observeActiveSceneReadiness(options: {
     });
 }
 
-export function mountWorkspaceActiveScene(
+export async function mountWorkspaceActiveScene(
   options: WorkspaceActiveSceneOptions & {
     readonly mounted: SceneMount;
     readonly onFailure: () => void;
     readonly onReady: () => void;
     readonly colorScheme: ColorSchemeBroadcaster;
+    readonly isActivationCurrent: () => boolean;
   },
 ): Promise<void> {
   const mounted = options.mounted;
-  mounted.scene?.dispose();
+  const previous = mounted.scene;
+  if (previous !== undefined) {
+    try {
+      await previous.finishLock();
+    } catch (error: unknown) {
+      if (!options.isActivationCurrent()) return;
+      throw error;
+    }
+    if (!options.isActivationCurrent()) return;
+    if (mounted.scene !== undefined && mounted.scene !== previous) return;
+    previous.dispose();
+  }
   mounted.disposeScheme?.();
   const scene = createWorkspaceActiveScene(options);
   mounted.scene = scene;
@@ -54,7 +66,7 @@ export function mountWorkspaceActiveScene(
   return observeActiveSceneReadiness({
     ...options,
     scene,
-    isCurrent: () => options.isCurrent(scene),
+    isCurrent: () => options.isActivationCurrent() && options.isCurrent(scene),
   });
 }
 

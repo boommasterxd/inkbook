@@ -16,7 +16,7 @@ export function simplifyStrokeCenters(
   if (centers.length <= 2) return centers.slice();
   const result: Center[] = [centers[0]!];
   // Bound center plus radius displacement to one thirty-second of the nominal width.
-  const tolerance = Math.min(1, width / 32);
+  const tolerance = Math.min(pressureEnabled ? 0.125 : 1, width / 32);
   for (let start = 0; start < centers.length - 1; start += STROKE_SIMPLIFICATION_WINDOW) {
     const end = Math.min(centers.length - 1, start + STROKE_SIMPLIFICATION_WINDOW);
     appendWindow(result, centers, {

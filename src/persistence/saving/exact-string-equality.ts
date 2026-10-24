@@ -3,11 +3,7 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 const COMPARISON_CHUNK_CODE_UNITS = 256 * 1024;
 
 export function exactStringEqual(left: string, right: string): boolean {
-  if (left.length !== right.length) return false;
-  for (let offset = 0; offset < left.length; offset += COMPARISON_CHUNK_CODE_UNITS) {
-    if (!equalChunk(left, right, offset)) return false;
-  }
-  return true;
+  return left === right;
 }
 
 export async function exactStringEqualScheduled(

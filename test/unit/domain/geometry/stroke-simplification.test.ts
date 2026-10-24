@@ -59,6 +59,16 @@ describe("bounded stroke simplification", () => {
     expect(simplifyStrokeCenters(source, 0.1, false)).toHaveLength(3);
     expect(source[1]!.y).toBe(0.02);
   });
+
+  it("caps pressure center and radius error independently of broad nominal widths", () => {
+    const bend = [center(0), center(1, 0.2), center(2)];
+    expect(simplifyStrokeCenters(bend, 22, true)).toEqual(bend);
+    expect(simplifyStrokeCenters(bend, 22, false)).toEqual([bend[0], bend[2]]);
+    const pressure = [center(0), center(1, 0, 0.52), center(2)];
+    expect(simplifyStrokeCenters(pressure, 22, true)).toEqual(pressure);
+    const thin = [center(0), center(1, 0.08), center(2)];
+    expect(simplifyStrokeCenters(thin, 2, true)).toEqual(thin);
+  });
 });
 
 describe("pressure filtering within the original sample error budget", () => {
@@ -67,7 +77,7 @@ describe("pressure filtering within the original sample error budget", () => {
     const original = Array.from({ length: 190 }, (_, index) => ({
       x: index,
       y: Math.sin(index / 11) * 1.5,
-      pressure: 0.5 + Math.sin(index / 7) * 0.15 + (index % 2 ? 0.02 : -0.02),
+      pressure: 0.5 + Math.sin(index / 7) * 0.15 + (index % 2 ? 0.005 : -0.005),
     }));
     const snapshot = original.map((point) => ({ ...point }));
     const selected = simplifyStrokeCenters(original, width, true);
@@ -88,7 +98,7 @@ describe("pressure filtering within the original sample error budget", () => {
         Math.abs(point.pressure - start.pressure - t * (end.pressure - start.pressure)) *
         width *
         0.325;
-      expect(position + radius).toBeLessThanOrEqual(width / 32 + 1e-10);
+      expect(position + radius).toBeLessThanOrEqual(Math.min(0.125, width / 32) + 1e-10);
     }
     expect(original).toEqual(snapshot);
     for (const index of [0, 64, 128, 189])

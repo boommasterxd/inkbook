@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ActiveScenePreviewHandoff } from "../../../../../src/obsidian/embeds/active-scene/active-scene-handoff";
+import * as previewBuilder from "../../../../../src/obsidian/embeds/preview/safe-preview-builder";
 import { serializeSvgEnvelope } from "../../../../../src/persistence/documents/svg-envelope";
 import { createSnapshot } from "../../../../unit/persistence/serialization/fixtures";
 
@@ -19,6 +20,26 @@ function observeSvgAllocations(button: HTMLButtonElement) {
     count: () =>
       create.mock.calls.filter(([namespace]) => namespace === "http://www.w3.org/2000/svg").length,
   };
+}
+
+function observePreviewBuildAllocations() {
+  const original = previewBuilder.createPreviewSvgAsync;
+  const counts = new Map<Document, () => number>();
+  vi.spyOn(previewBuilder, "createPreviewSvgAsync").mockImplementation(
+    (target, source, options) => {
+      if (!counts.has(target)) {
+        const create = vi.spyOn(target, "createElementNS");
+        counts.set(
+          target,
+          () =>
+            create.mock.calls.filter(([namespace]) => namespace === "http://www.w3.org/2000/svg")
+              .length,
+        );
+      }
+      return original(target, source, options);
+    },
+  );
+  return () => [...counts.values()].reduce((total, count) => total + count(), 0);
 }
 
 beforeEach(() => {
@@ -93,6 +114,7 @@ it("defers hidden descriptor trees across saves and builds only the latest on de
 });
 
 it("does no fetch or SVG construction for hidden saves and prepares only the latest source on lock", async () => {
+  const svgAllocations = observePreviewBuildAllocations();
   const button = document.body.appendChild(createHtmlElement("button"));
   const root = createHtmlElement("div");
   root.append(button);
@@ -113,7 +135,6 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
     immediateWorkScheduler(),
   );
   const drawingDocument = lockedPreviewRoot(button);
-  const { create, count: svgAllocations } = observeSvgAllocations(button);
   await preview.ensureReady();
   const oldSvg = lockedPreviewRoot(button).querySelector("svg");
   expect(oldSvg).not.toBeNull();
@@ -133,6 +154,7 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
       adoptedIdentity = await preview.setSource(source);
     },
   });
+  handoff.onUnlockSettled = preview.releaseHiddenSurface;
   expect(previewBounds).toHaveBeenCalledOnce();
   handoff.ready();
   for (let revision = 1; revision <= 20; revision += 1) {
@@ -146,22 +168,21 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
   }
   expect(fetch).not.toHaveBeenCalled();
   expect(svgAllocations()).toBe(initialNodes);
-  expect(create).toHaveBeenCalledTimes(initialNodes);
   expect(adoptedIdentity).toBeUndefined();
   expect(button.isConnected).toBe(true);
   expect(button.hidden).toBe(true);
-  expect(lockedPreviewRoot(button)).toBe(drawingDocument);
+  expect(drawingDocument.querySelector("svg, style")).toBeNull();
+  expect(button.firstElementChild?.shadowRoot?.querySelector("iframe")).toBeNull();
   await handoff.ensurePreviewReady();
   expect(fetch).toHaveBeenCalledExactlyOnceWith("app://saved.svg?revision=20", expect.anything());
   // One SVG root, three render groups, and the 10,000 retained paths.
   expect(svgAllocations()).toBe(initialNodes + 10_004);
-  expect(create).toHaveBeenCalledTimes(initialNodes + 10_004);
   expect(adoptedIdentity).toMatchObject({ revision: createSnapshot().revision });
   handoff.restorePreview();
   expect(button.isConnected).toBe(true);
   expect(button.hidden).toBe(false);
-  expect(lockedPreviewRoot(button)).toBe(drawingDocument);
-  expect(drawingDocument.querySelector("svg")).not.toBe(oldSvg);
+  expect(lockedPreviewRoot(button)).not.toBe(drawingDocument);
+  expect(lockedPreviewRoot(button).querySelector("svg")).not.toBe(oldSvg);
   expect(lockedPreviewRoot(button).querySelectorAll("path")).toHaveLength(10_000);
   handoff.dispose();
   preview.dispose();

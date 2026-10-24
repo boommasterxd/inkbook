@@ -110,7 +110,7 @@ it("repairs a pop-out frame document using the retained SVG and current scheme",
   }
 });
 
-it("retains the connected hidden preview across active handoff and lock", async () => {
+it("releases the hidden drawing after handoff and rebuilds unchanged content with the current scheme", async () => {
   const { button, preview } = preparedPreview();
   const root = document.body.appendChild(createHtmlElement("div"));
   root.append(button);
@@ -123,19 +123,30 @@ it("retains the connected hidden preview across active handoff and lock", async 
     motion: "reduced",
     preview: button,
     refreshPreview: preview.refresh,
+    ensurePreviewReady: preview.ensureReady,
     workScheduler: immediateWorkScheduler(),
   });
+  handoff.onUnlockSettled = preview.releaseHiddenSurface;
+  const fetch = vi.spyOn(window, "fetch");
   try {
     handoff.ready();
     expect(button.isConnected).toBe(true);
     expect(button.hidden).toBe(true);
+    expect(button.firstElementChild?.shadowRoot?.children).toHaveLength(0);
+    expect(surface.querySelector("svg, style")).toBeNull();
     preview.setColorScheme("dark");
-    expect(surface.documentElement.dataset.inkbookScheme).toBe("dark");
+    preview.refresh();
+    expect(button.firstElementChild?.shadowRoot?.children).toHaveLength(0);
+    await handoff.ensurePreviewReady();
     handoff.restorePreview();
     expect(button.isConnected).toBe(true);
     expect(button.hidden).toBe(false);
-    expect(lockedPreviewRoot(button)).toBe(surface);
-    expect(surface.querySelector("svg")).toBe(svg);
+    const rebuilt = lockedPreviewRoot(button);
+    expect(rebuilt).not.toBe(surface);
+    expect(rebuilt.querySelector("svg")).not.toBe(svg);
+    expect(rebuilt.querySelector("path")?.getAttribute("d")).toBe("M0 0L1 1");
+    expect(rebuilt.documentElement.dataset.inkbookScheme).toBe("dark");
+    expect(fetch).not.toHaveBeenCalled();
   } finally {
     handoff.dispose();
     preview.dispose();

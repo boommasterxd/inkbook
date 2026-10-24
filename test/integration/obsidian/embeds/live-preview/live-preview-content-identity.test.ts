@@ -76,35 +76,74 @@ describe("Live Preview widget content identity", () => {
     reconciled.destroy(root);
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
   });
+});
 
-  it("retargets a hidden active preview through updateDOM without preparing its SVG", async () => {
-    const ports = createPorts();
-    const widget = new InkbookLivePreviewWidget(embed(), ports);
-    const host = new FakePresentationElement();
-    const root = widget.toDOM({ plugin: () => null, dom: host } as never);
-    host.append(root as unknown as FakePresentationElement);
-    const attachment = ports.attachments[0]!;
-    const { handoff, preview } = await createHiddenPreviewHandoff(
-      attachment,
-      ports.workScheduler(root.ownerDocument.defaultView),
+it("keeps successive preview updates and removal measurements scoped to the current range", async () => {
+  const ports = createPorts();
+  const lineBlockAt = vi.fn((position: number) => ({
+    top: position * 10,
+    bottom: position * 10 + 10,
+  }));
+  const view = { plugin: () => null, dom: new FakePresentationElement(), lineBlockAt };
+  const initial = new InkbookLivePreviewWidget(embed(), ports);
+  const root = initial.toDOM(view as never);
+  let latest = initial;
+  for (const revision of [2, 3]) {
+    latest = new InkbookLivePreviewWidget(
+      embed({ outputHash: String(revision).repeat(64), revision }),
+      ports,
     );
-    const builder = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
-    try {
-      const latest = embed({ outputHash: "b".repeat(64), revision: 2 });
-      expect(new InkbookLivePreviewWidget(latest, ports).updateDOM(root)).toBe(true);
-      expect(attachment.previewContentIdentity).toEqual(latest.preview.contentIdentity);
-      expect(builder).not.toHaveBeenCalled();
-      await handoff.ensurePreviewReady();
-      expect(builder).toHaveBeenCalledOnce();
-      handoff.restorePreview();
-      expect(preview.hidden).toBe(false);
-      expect(preview.parentElement).toBe(root);
-    } finally {
-      builder.mockRestore();
-      handoff.dispose();
-      widget.destroy(root);
-    }
-  });
+    expect(latest.updateDOM(root)).toBe(true);
+    expect(ports.attachments[0]!.previewContentIdentity?.revision).toBe(revision);
+  }
+  const shifted = latest.withRange(14, 38);
+  expect(shifted.updateDOM(root)).toBe(false);
+  latest.destroy(root);
+  const shiftedRoot = shifted.toDOM(view as never);
+  try {
+    const attachment = ports.attachments[1]!;
+    expect(attachment.embedReference).toMatchObject({ from: 14, to: 38 });
+    expect(attachment.previewContentIdentity?.revision).toBe(3);
+    const exit = attachment.removal!.begin({ from: 13, to: 39 });
+    expect(lineBlockAt.mock.calls).toEqual([[14], [13], [38]]);
+    attachment.removal!.reset();
+    await exit;
+  } finally {
+    shifted.destroy(shiftedRoot);
+  }
+});
+
+it("retargets a hidden active preview through updateDOM without preparing its SVG", async () => {
+  const ports = createPorts();
+  const widget = new InkbookLivePreviewWidget(embed(), ports);
+  const host = new FakePresentationElement();
+  const root = widget.toDOM({ plugin: () => null, dom: host } as never);
+  host.append(root as unknown as FakePresentationElement);
+  const attachment = ports.attachments[0]!;
+  const { handoff, preview } = await createHiddenPreviewHandoff(
+    attachment,
+    ports.workScheduler(root.ownerDocument.defaultView),
+  );
+  const media = (preview as unknown as FakePresentationElement).children[0]!;
+  const shadow = media.shadowRoot as unknown as FakePresentationElement;
+  expect(shadow.getElementsByTagName("iframe").length).toBe(0);
+  const builder = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
+  try {
+    const latest = embed({ outputHash: "b".repeat(64), revision: 2 });
+    expect(new InkbookLivePreviewWidget(latest, ports).updateDOM(root)).toBe(true);
+    expect(attachment.previewContentIdentity).toEqual(latest.preview.contentIdentity);
+    expect(builder).not.toHaveBeenCalled();
+    await handoff.ensurePreviewReady();
+    expect(shadow.getElementsByTagName("iframe").length).toBe(1);
+    expect(builder).toHaveBeenCalledOnce();
+    handoff.restorePreview();
+    expect(preview.hidden).toBe(false);
+    expect(preview.parentElement).toBe(root);
+  } finally {
+    builder.mockRestore();
+    handoff.dispose();
+    widget.destroy(root);
+  }
 });
 
 function embed(contentIdentity = CONTENT_IDENTITY) {

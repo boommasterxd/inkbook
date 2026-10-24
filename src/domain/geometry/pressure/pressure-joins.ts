@@ -40,6 +40,40 @@ export interface PressureDisk extends PressureNib {
   readonly kind: "dot";
 }
 
+/** Closed directed boundaries shared by exact unions and transient capsule paint. */
+export function pressureShapeBoundary(
+  shape: PressureCapsule | PressureDisk,
+): (PressureBoundaryLine | PressureBoundaryArc)[] {
+  if (shape.kind === "capsule") {
+    return [
+      shape.left,
+      shape.endCap,
+      { ...shape.right, start: shape.right.end, end: shape.right.start },
+      shape.startCap,
+    ];
+  }
+  const left = { x: shape.center.x - shape.radius, y: shape.center.y };
+  const right = { x: shape.center.x + shape.radius, y: shape.center.y };
+  return [
+    {
+      kind: "arc",
+      center: shape.center,
+      radius: shape.radius,
+      start: left,
+      end: right,
+      sweep: -Math.PI,
+    },
+    {
+      kind: "arc",
+      center: shape.center,
+      radius: shape.radius,
+      start: right,
+      end: left,
+      sweep: -Math.PI,
+    },
+  ];
+}
+
 /** The convex hull of two nib disks, including the larger disk when one contains the other. */
 export function buildPressureCapsule(
   first: PressureCenter,

@@ -102,6 +102,35 @@ export function disposeWorkspaceMountedPresentations(
     mounted.loadError?.close();
     mounted.recovery?.close();
     mounted.scene?.dispose();
+    mounted.scene = undefined;
     mounted.attachment.root.dataset.inkbookState = "locked";
   }
+}
+
+/** Keep the last painted scene until a connected presentation can show its safe preview. */
+export function releaseWorkspaceScene(
+  mounted: WorkspaceMountedPresentation,
+  options: {
+    readonly waitForPreview: boolean;
+    readonly onLocked: () => void;
+    readonly onFailure: () => void;
+  },
+): void {
+  const scene = mounted.scene;
+  const activation = mounted.activation;
+  const current = () => mounted.scene === scene && mounted.activation === activation;
+  const finish = () => {
+    if (!current()) return;
+    scene?.dispose();
+    mounted.scene = undefined;
+    options.onLocked();
+  };
+  if (scene === undefined || !options.waitForPreview) {
+    finish();
+    return;
+  }
+  scene.disableInput();
+  void scene.finishLock().then(finish, () => {
+    if (current()) options.onFailure();
+  });
 }

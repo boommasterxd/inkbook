@@ -34,6 +34,7 @@ export class CanonicalElementPathPreparation {
   readonly #windows: (PressureWindow | PressurePathWindow)[] = [];
   readonly #pendingPieces: PressureOutlinePiece[] = [];
   #windowBytes = 0;
+  #measuredWindows = 0;
   #windowJob: Generator<void, PressureWindow | PressurePathWindow> | undefined;
   #geometryPrepared = false;
   readonly #chunks: string[] = [];
@@ -62,17 +63,18 @@ export class CanonicalElementPathPreparation {
   }
 
   public memoryUsage(): number {
+    if (this.mode === "path-only") {
+      for (; this.#measuredWindows < this.#windows.length; this.#measuredWindows += 1) {
+        this.#windowBytes += pressureWindowMemoryUsage(this.#windows[this.#measuredWindows]!);
+      }
+    }
     const geometry =
       this.#parts?.reduce((bytes, part) => bytes + part.d.length * 2, 0) ??
       this.#chunks.reduce((bytes, chunk) => bytes + chunk.length * 2, 0);
-    const windowBytes =
-      this.mode === "path-only"
-        ? this.#windows.reduce((bytes, window) => bytes + pressureWindowMemoryUsage(window), 0)
-        : this.#windowBytes;
     return (
       geometry +
       this.#selected.length * 32 +
-      windowBytes +
+      this.#windowBytes +
       (this.#windowJob === undefined ? 0 : PRESSURE_WINDOW_SCRATCH_BYTES) +
       this.#pendingPieces.reduce(
         (bytes, piece) => bytes + pressureOutlinePieceMemoryUsage(piece),
@@ -160,6 +162,7 @@ export class CanonicalElementPathPreparation {
     this.#pendingPieces.length = 0;
     this.#chunks.length = 0;
     this.#windowBytes = 0;
+    this.#measuredWindows = 0;
   }
 
   private hasPendingWindow(): boolean {
@@ -184,6 +187,7 @@ export class CanonicalElementPathPreparation {
     this.#selected.length = 0;
     this.#windows.length = 0;
     this.#windowBytes = 0;
+    this.#measuredWindows = 0;
     return true;
   }
   private advancePressureWindow(

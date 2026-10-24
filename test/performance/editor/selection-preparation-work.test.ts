@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { ElementStore } from "../../../src/domain/store/public";
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../src/domain/schema/public";
 import * as centers from "../../../src/domain/geometry/stroke-path";
+import * as simplification from "../../../src/domain/geometry/stroke-simplification";
 import * as pressureUnion from "../../../src/domain/geometry/pressure/pressure-union";
 import * as position from "../../../src/domain/geometry/stroke-position";
 import {
@@ -13,6 +14,7 @@ import { SelectionFrameSession } from "../../../src/editor/selection/selection-f
 import { selectionOverlayGeometry } from "../../../src/editor/selection/overlay-geometry";
 import { moveSelection } from "../../../src/editor/selection/transform/transforms";
 import { strokePrimitiveSteps } from "../../../src/editor/selection/query/stroke-selection-geometry";
+import { selectionStrokeCenterWindow } from "../../../src/editor/selection/query/stroke-selection-centers";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { rectangleSelectionAround } from "../../fixtures/editor/selection-query";
 
@@ -47,6 +49,107 @@ function frameFixture(rotation: number) {
   const selected = [{ element: record.element as StrokeElementV1, bounds: record.bounds }];
   return { store, selected, session: new SelectionFrameSession() };
 }
+
+it.each([false, true])(
+  "reuses complete maximum-stroke centers in a cold non-pressure hit index (positioned=%s)",
+  (positioned) => {
+    const baseline = fixture(false, false);
+    const test = fixture(false, positioned);
+    const read = vi.spyOn(centers, "smoothStrokeCenters");
+    const simplify = vi.spyOn(simplification, "simplifyStrokeCenters");
+    const distance = vi.spyOn(Math, "hypot");
+    const readPrepared = vi.spyOn(test.prepared.local!(), "readCenters");
+    try {
+      expect(elementContainsPoint(baseline.element, { x: 8000, y: 50 }, 0)).toBe(false);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read.mock.results[0]!.value).toHaveLength(MAX_STROKE_POINTS);
+      expect(simplify).toHaveBeenCalledTimes(1);
+      expect(distance.mock.calls.length).toBeGreaterThan(0);
+      expect(distance.mock.calls.length).toBeLessThanOrEqual(MAX_STROKE_POINTS);
+      // The existing selection pipeline owns preparation; hit testing never prewarms it.
+      Array.from(strokePrimitiveSteps(test.element, { prepared: test.prepared }));
+      read.mockClear();
+      simplify.mockClear();
+      distance.mockClear();
+      readPrepared.mockClear();
+      const { x, y } = test.offset;
+      expect(elementContainsPoint(test.element, { x: 8000 + x, y: 50 + y }, 0, test.prepared)).toBe(
+        false,
+      );
+      expect(readPrepared).toHaveBeenCalledTimes(MAX_STROKE_POINTS / 64);
+      expect(read).not.toHaveBeenCalled();
+      expect(simplify).not.toHaveBeenCalled();
+      expect(distance).not.toHaveBeenCalled();
+      readPrepared.mockClear();
+      expect(
+        elementContainsPoint(test.element, { x: 8000 + x, y: 100 + y }, 0, test.prepared),
+      ).toBe(true);
+      expect(readPrepared).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+      expect(simplify).not.toHaveBeenCalled();
+      expect(distance).not.toHaveBeenCalled();
+      expect(
+        test.store.activeDocumentMemoryUsage().selectionGeometryCacheBytes,
+      ).toBeLessThanOrEqual(2 * 1024 * 1024);
+    } finally {
+      readPrepared.mockRestore();
+      read.mockRestore();
+      simplify.mockRestore();
+      distance.mockRestore();
+      baseline.store.releasePreparedPressureGeometry();
+      test.store.releasePreparedPressureGeometry();
+    }
+    expect(test.store.activeDocumentMemoryUsage().selectionGeometryCacheBytes).toBe(0);
+  },
+);
+
+it("falls back once after retained centers are cleared under memory pressure", () => {
+  const test = fixture(false, false);
+  Array.from(strokePrimitiveSteps(test.element, { prepared: test.prepared }));
+  test.store.setActiveDocumentMemoryPressure(true);
+  const read = vi.spyOn(centers, "smoothStrokeCenters");
+  const simplify = vi.spyOn(simplification, "simplifyStrokeCenters");
+  try {
+    expect(elementContainsPoint(test.element, { x: 8000, y: 50 }, 0, test.prepared)).toBe(false);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.mock.results[0]!.value).toHaveLength(MAX_STROKE_POINTS);
+    expect(simplify).toHaveBeenCalledTimes(1);
+    expect(test.store.activeDocumentMemoryUsage().selectionGeometryCacheBytes).toBe(0);
+    read.mockClear();
+    simplify.mockClear();
+    expect(elementContainsPoint(test.element, { x: 8000, y: 100 }, 0, test.prepared)).toBe(true);
+    expect(read).not.toHaveBeenCalled();
+    expect(simplify).not.toHaveBeenCalled();
+    test.store.setActiveDocumentMemoryPressure(false);
+    Array.from(strokePrimitiveSteps(test.element, { prepared: test.prepared }));
+    expect(test.store.activeDocumentMemoryUsage().selectionGeometryCacheBytes).toBeGreaterThan(0);
+  } finally {
+    read.mockRestore();
+    simplify.mockRestore();
+    test.store.releasePreparedPressureGeometry();
+  }
+  expect(test.store.activeDocumentMemoryUsage().selectionGeometryCacheBytes).toBe(0);
+});
+
+it("does not reconstruct partial maximum-stroke windows before falling back", () => {
+  const test = fixture(false, false);
+  selectionStrokeCenterWindow(test.element, 0, test.prepared);
+  const read = vi.spyOn(centers, "smoothStrokeCenters");
+  const simplify = vi.spyOn(simplification, "simplifyStrokeCenters");
+  const readPrepared = vi.spyOn(test.prepared, "readCenters");
+  try {
+    expect(elementContainsPoint(test.element, { x: 8000, y: 50 }, 0, test.prepared)).toBe(false);
+    expect(readPrepared).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.mock.results[0]!.value).toHaveLength(MAX_STROKE_POINTS);
+    expect(simplify).toHaveBeenCalledTimes(1);
+  } finally {
+    readPrepared.mockRestore();
+    read.mockRestore();
+    simplify.mockRestore();
+    test.store.releasePreparedPressureGeometry();
+  }
+});
 
 it.each(
   [false, true].flatMap((pressureEnabled) =>

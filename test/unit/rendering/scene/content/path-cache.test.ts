@@ -19,6 +19,28 @@ function immutableStroke() {
 }
 
 describe("scene-owned immutable stroke reuse", () => {
+  it("leaves deferred live geometry to cooperative preparation without reading its lazy payload", () => {
+    const cache = new ScenePathCache();
+    const unexpectedRead = (): never => {
+      throw new Error("Deferred geometry must not be read or retained synchronously");
+    };
+    cache.retainPrepared("deferred-stroke", 1, {
+      deferGeometryPreparation: true,
+      get geometry() {
+        return unexpectedRead();
+      },
+      get geometryMemoryBytes() {
+        return unexpectedRead();
+      },
+      get pressureWindows() {
+        return unexpectedRead();
+      },
+    });
+    expect(cache.take("deferred-stroke", 1)).toBeUndefined();
+    expect(cache.cacheMemoryUsage()).toBe(0);
+    cache.release();
+  });
+
   it("reuses actual geometry across paint and identity changes and shares prepared windows", () => {
     const build = vi.spyOn(geometry, "buildElementPathParts");
     try {

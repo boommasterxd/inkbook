@@ -1,7 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
-import { exactStringEqualScheduled } from "../../../../src/persistence/saving/exact-string-equality";
+import {
+  exactStringEqual,
+  exactStringEqualScheduled,
+} from "../../../../src/persistence/saving/exact-string-equality";
 import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
 
 const CHUNK_CODE_UNITS = 256 * 1024;
@@ -24,6 +27,20 @@ function observeReads(sources: readonly string[], onRead?: () => void) {
   });
   return reads;
 }
+
+it("compares full-capacity synchronous content without allocating string slices", () => {
+  const source = `${"a".repeat(FILE_SCHEMA_LIMITS.totalInputBytes - 1)}z`;
+  const copy = new TextDecoder().decode(new TextEncoder().encode(source));
+  const mismatch = `${copy.substring(0, copy.length - 1)}b`;
+  const longer = `${copy}a`;
+  const reads = observeReads([source, copy, mismatch, longer]);
+
+  expect(exactStringEqual(source, copy)).toBe(true);
+  expect(exactStringEqual(source, mismatch)).toBe(false);
+  expect(exactStringEqual(source, longer)).toBe(false);
+  expect(reads.calls).toBe(0);
+  expect(reads.codeUnits).toBe(0);
+});
 
 it("reads full ASCII file capacity once per side in bounded chunks without forced handoffs", async () => {
   const source = "a".repeat(FILE_SCHEMA_LIMITS.totalInputBytes);

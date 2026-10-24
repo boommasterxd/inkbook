@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as pressureWindows from "../../../src/domain/geometry/pressure/pressure-path-serialization";
 import * as simplification from "../../../src/domain/geometry/stroke-simplification";
 import * as strokeSlices from "../../../src/domain/geometry/pressure/pressure-outline";
+import * as intersections from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
 import { createMaximumStroke } from "./standard-domain-fixture";
 
@@ -50,6 +51,7 @@ describe("maximum live-stroke primitives", () => {
       const outlines = vi.spyOn(strokeSlices, "visitPreparedPressureOutline");
       const simplify = vi.spyOn(simplification, "simplifyStrokeCenters");
       const prepareWindows = vi.spyOn(pressureWindows, "preparePressureWindows");
+      const boundaryIntersections = vi.spyOn(intersections, "intersectPressureBoundaries");
       const batchSize = 9;
       let stableChunk: LiveStrokeChunk | undefined;
       for (let start = 0; start < samples.length; start += batchSize) {
@@ -60,10 +62,13 @@ describe("maximum live-stroke primitives", () => {
       const outlineCalls = outlines.mock.calls.length;
       const simplifyCalls = simplify.mock.calls.length;
       const preparedWindowCalls = prepareWindows.mock.calls.length;
+      const intersectionCalls = boundaryIntersections.mock.calls.length;
       const commit = builder.finish();
-      expect(outlines).toHaveBeenCalledTimes(outlineCalls);
+      expect(outlines).toHaveBeenCalledTimes(outlineCalls + 1);
+      expect(outlines.mock.calls[outlineCalls]![0].length).toBeLessThanOrEqual(131);
       expect(simplify).toHaveBeenCalledTimes(simplifyCalls);
       expect(prepareWindows).toHaveBeenCalledTimes(preparedWindowCalls);
+      expect(boundaryIntersections).toHaveBeenCalledTimes(intersectionCalls);
       const { retainedSamples, bufferGrowths, tailBuilds } = commit.instrumentation;
       expect(commit.instrumentation.maximumPendingPressurePieces).toBeLessThanOrEqual(64);
 
@@ -77,9 +82,9 @@ describe("maximum live-stroke primitives", () => {
       expect(bufferGrowths).toBeLessThanOrEqual(Math.ceil(Math.log2(retainedSamples / 16)));
       expect(tailBuilds).toBe(samples.length / batchSize);
       // Each raw window prepares one cached capsule preview and one canonical piece batch.
-      // Each input batch prepares only its incomplete preview tail.
+      // Each input batch prepares only its incomplete preview tail; release classifies it once.
       expect(outlines.mock.calls.length).toBeLessThanOrEqual(
-        tailBuilds + 2 * Math.ceil(retainedSamples / 64),
+        tailBuilds + 2 * Math.ceil(retainedSamples / 64) + 1,
       );
       assertGeometryWork(
         builder.instrumentation().retainedSamples,
@@ -156,7 +161,8 @@ describe("maximum live-stroke capacity", () => {
       simplify.mockClear();
       prepareWindows.mockClear();
       expect(builder.finish().points).toHaveLength(MAX_STROKE_POINTS * 3);
-      expect(outlines).not.toHaveBeenCalled();
+      expect(outlines).toHaveBeenCalledOnce();
+      expect(outlines.mock.calls[0]![0].length).toBeLessThanOrEqual(131);
       expect(simplify).not.toHaveBeenCalled();
       expect(prepareWindows).not.toHaveBeenCalled();
     },

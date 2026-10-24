@@ -81,6 +81,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
     const mounted = mountedControllers.get(dom);
     if (mounted === undefined || !this.#sameAttachment(mounted.widget)) return false;
     mounted.controller.updatePreview(this.#embed.preview);
+    mountedControllers.set(dom, { controller: mounted.controller, widget: this });
     return true;
   }
 
@@ -95,6 +96,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
+    const embedFrom = this.#embed.from;
     const root = view.dom.createDiv({
       attr: { contenteditable: "false" },
       cls: "inkbook-root inkbook-embed-root",
@@ -139,13 +141,14 @@ export class InkbookLivePreviewWidget extends WidgetType {
         contentIdentity: this.#embed.preview.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
+        releaseHiddenSurface: preview.releaseHiddenSurface,
         setColorScheme: preview.setColorScheme,
         dispose: preview.dispose,
         requestHostMeasure: () => view.requestMeasure(),
         removeMarkdown: (range, expectedSource, mutate) =>
           removeLivePreviewMarkdown(view, range, expectedSource, mutate),
         measureRemovalSpacing: (range) => {
-          const block = view.lineBlockAt(this.#embed.from);
+          const block = view.lineBlockAt(embedFrom);
           const first = view.lineBlockAt(range.from);
           const last = view.lineBlockAt(Math.max(range.from, range.to - 1));
           return { before: block.top - first.top, after: last.bottom - block.bottom };

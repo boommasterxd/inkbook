@@ -21,7 +21,7 @@ export class StaticPreviewSurface {
       .inkbook-scene-frame { position: absolute; inset: 0; }
     `;
     frame.addEventListener("load", this.#handleLoad);
-    container.attachShadow({ mode: "open" }).append(style, frame);
+    (container.shadowRoot ?? container.attachShadow({ mode: "open" })).append(style, frame);
     this.refresh();
   }
 
