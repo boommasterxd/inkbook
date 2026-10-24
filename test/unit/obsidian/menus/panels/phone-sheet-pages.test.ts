@@ -8,6 +8,10 @@ import { AdaptivePanelSession } from "../../../../../src/obsidian/menus/panels/a
 import type { PhoneSheetPage } from "../../../../../src/obsidian/menus/panels/panel-page";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 
+const hostStyles = Platform.isDesktop
+  ? (await import("node:fs")).readFileSync("src/obsidian/styles/adaptive-panel.css", "utf8")
+  : "";
+
 beforeEach(() => {
   installObsidianDomHelpers();
   vi.useFakeTimers();
@@ -18,6 +22,7 @@ afterEach(() => {
   Platform.isPhone = false;
   Platform.isMobile = false;
   document.body.replaceChildren();
+  document.adoptedStyleSheets = [];
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
@@ -148,6 +153,38 @@ it("commits page changes in both directions and completes page motion after 220m
   expect(f.modalEl.dataset.pageTransition).toBeUndefined();
   expect(f.scroll.style.blockSize).toBe("");
   f.session.close("immediate");
+});
+
+it("keeps the sheet and scroll height limits stable through forward and interrupted Back motion", () => {
+  vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+  const stylesheet = new CSSStyleSheet();
+  stylesheet.replaceSync(hostStyles);
+  document.adoptedStyleSheets = [stylesheet];
+  const f = fixture();
+  const limits = () => [
+    getComputedStyle(f.modalEl).maxBlockSize,
+    getComputedStyle(f.scroll).maxBlockSize,
+  ];
+  const initial = limits();
+  expect(Number.parseFloat(initial[0]!)).toBeLessThan(window.innerHeight);
+  try {
+    f.session.navigation?.push(f.page);
+    const forward = limits();
+    expect(Number.parseFloat(forward[0]!)).toBeLessThan(window.innerHeight);
+    vi.advanceTimersByTime(100);
+    f.session.navigation?.back();
+    expect(limits()).toEqual(initial);
+    vi.advanceTimersByTime(220);
+    expect(limits()).toEqual(initial);
+
+    f.session.navigation?.push(f.page);
+    expect(limits()).toEqual(forward);
+    vi.advanceTimersByTime(220);
+    expect(limits()).toEqual(forward);
+    expect(f.scroll.querySelector("input")?.isConnected).toBe(true);
+  } finally {
+    f.session.close("immediate");
+  }
 });
 
 it("Escape returns to root and outside contact disposes the entire sheet during transition", () => {

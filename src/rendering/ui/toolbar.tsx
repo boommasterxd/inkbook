@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, Ref, RefObject } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useContext } from "react";
@@ -179,10 +179,16 @@ function ToolbarGroup(props: ToolbarGroupProps) {
   const enabledKey = enabledActions.join("\u0000");
   const presenceOrder = useToolbarPresenceOrder(visibleActions);
   const lifecycle = useContext(toolbarMotionContext);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndex = useRef(0);
   const buttonElements = useRef<ToolbarButtonMap>(new Map());
   const groupRef = useRef<HTMLDivElement>(null);
-  const safeIndex = Math.min(activeIndex, Math.max(enabledButtons.length - 1, 0));
+  const safeIndex = Math.min(activeIndex.current, Math.max(enabledButtons.length - 1, 0));
+  const setActiveIndex = (index: number): void => {
+    activeIndex.current = index;
+    for (const [action, button] of buttonElements.current) {
+      button.tabIndex = enabledActions[index] === action ? 0 : -1;
+    }
+  };
   useToolbarFocusRecovery(
     enabledKey,
     enabledActions,
@@ -191,10 +197,13 @@ function ToolbarGroup(props: ToolbarGroupProps) {
     buttonElements,
     setActiveIndex,
   );
+  useLayoutEffect(() => {
+    setActiveIndex(Math.min(activeIndex.current, Math.max(enabledButtons.length - 1, 0)));
+  }, [enabledKey]);
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     const nextIndex = nextToolbarIndex(
       resolveToolbarNavigationKey(event.key, props.reverseNavigation === true),
-      safeIndex,
+      Math.min(activeIndex.current, Math.max(enabledButtons.length - 1, 0)),
       enabledButtons.length,
     );
     if (nextIndex === null) return;
@@ -312,11 +321,13 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
     >
       <div className="inkbook-toolbar-rail">
         <motion.div
+          layout
           className={className}
           ref={props.toolbarRef}
           initial={{ scale: 0 }}
           animate={{ scale: lifecycle.locking || lifecycle.preparing ? 0 : 1 }}
           transition={{
+            layout: toolbarLayoutTransition(lifecycle.reduced),
             type: "tween",
             duration:
               lifecycle.reduced || lifecycle.preparing

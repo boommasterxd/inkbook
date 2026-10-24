@@ -11,8 +11,12 @@
 
 .inkbook-root .inkbook-toolbar-rail {
   block-size: 48px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
   inset-block-start: 1px;
   inline-size: 100%;
+  padding-inline: 8px;
   pointer-events: none;
   position: relative;
 }
@@ -54,6 +58,9 @@
 
 .inkbook-root .inkbook-toolbar-wide {
   display: flex;
+  grid-column: 2;
+  grid-row: 1;
+  max-inline-size: none;
   width: max-content;
 }
 
@@ -81,19 +88,21 @@
   border: 0;
   box-shadow: none;
   gap: 8px;
-  inset-block-start: 0;
-  inset-inline-start: calc(50% + var(--inkbook-toolbar-main-half, 0px) + 8px);
-  max-inline-size: max(0px, calc(50% - var(--inkbook-toolbar-main-half, 0px) - 16px));
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: start;
+  margin-inline-start: 8px;
+  max-inline-size: calc(100% - 8px);
   overflow-x: auto;
   pointer-events: auto;
-  position: absolute;
   scrollbar-width: none;
 }
 
 .inkbook-root .inkbook-toolbar-composition-left-handed .inkbook-toolbar-context-actions {
   direction: rtl;
-  left: auto;
-  right: calc(50% + var(--inkbook-toolbar-main-half, 0px) + 8px);
+  grid-column: 1;
+  justify-self: end;
+  margin-inline: 8px 0;
 }
 
 .inkbook-root .inkbook-toolbar-context-actions:empty {
@@ -108,6 +117,7 @@
   flex: 0 0 auto;
   inset: auto;
   margin-block-start: 0;
+  margin-inline: 0;
   max-inline-size: none;
   overflow: visible;
   position: static;
@@ -219,7 +229,7 @@
 
 .inkbook-root .inkbook-toolbar-shell .inkbook-toolbar {
   inset-block-start: 0;
-  margin-inline: auto;
+  margin-inline: 0;
   pointer-events: auto;
   position: relative;
   translate: 0 0;

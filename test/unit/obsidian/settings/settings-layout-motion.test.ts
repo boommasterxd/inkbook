@@ -1,32 +1,12 @@
 // @vitest-environment happy-dom
-import { createElement, forwardRef, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { createSettingsLayoutMotion } from "../../../../src/obsidian/settings/settings-layout-motion";
+import { createSettingsValidationMotion } from "../../../../src/obsidian/settings/settings-validation-motion";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
-
-const motionState = vi.hoisted(() => ({ durations: [] as number[] }));
-
-vi.mock("motion/react", () => ({
-  motion: {
-    div: forwardRef<
-      HTMLDivElement,
-      {
-        children?: ReactNode;
-        layout?: string;
-        transition?: { duration: number };
-      }
-    >(({ children, layout, transition }, ref) => {
-      if (layout === "size" && transition !== undefined)
-        motionState.durations.push(transition.duration);
-      return createElement("div", { ref }, children);
-    }),
-  },
-}));
 
 beforeEach(() => {
   installObsidianDomHelpers();
-  motionState.durations.length = 0;
 });
 
 afterEach(() => {
@@ -35,19 +15,37 @@ afterEach(() => {
 });
 
 it.each([
-  { preference: "reduced" as const, systemReduced: false, duration: 0 },
-  { preference: "full" as const, systemReduced: true, duration: 0.18 },
+  { preference: "reduced" as const, systemReduced: false, measured: false },
+  { preference: "full" as const, systemReduced: true, measured: true },
 ])(
   "honors $preference device motion over the system preference",
-  ({ preference, systemReduced, duration }) => {
+  ({ preference, systemReduced, measured }) => {
     vi.spyOn(window, "matchMedia").mockReturnValue({ matches: systemReduced } as MediaQueryList);
-    const content = document.body.createDiv();
+    const group = document.body.createDiv({ cls: "inkbook-settings-page-group" });
+    const row = group.createDiv({ cls: "inkbook-settings-background-row setting-item" });
+    const heading = row.createDiv({ cls: "inkbook-settings-visual-info" });
+    const content = row.createDiv();
+    const choices = content.createDiv({ cls: "inkbook-menu-background-choices" });
+    const spacing = content.createDiv({ cls: "inkbook-menu-background-spacing" });
+    const following = group.createDiv({ cls: "setting-item" });
+    const rowReads = vi.spyOn(row, "getBoundingClientRect");
+    const followingReads = vi.spyOn(following, "getBoundingClientRect");
+    const contentReads = [heading, choices, spacing].map((element) =>
+      vi.spyOn(element, "getBoundingClientRect"),
+    );
     const layout = createSettingsLayoutMotion(content, () => preference);
     layout.mutate(() => {
-      content.createEl("button");
+      spacing.createEl("input", { cls: "inkbook-menu-spacing-slider" });
     });
-    expect(content.querySelector("button")).not.toBeNull();
-    expect(motionState.durations[motionState.durations.length - 1]).toBe(duration);
+    expect(spacing.querySelector("input")).not.toBeNull();
+    expect(rowReads.mock.calls.length > 0).toBe(measured);
+    expect(followingReads.mock.calls.length > 0).toBe(measured);
+    for (const reads of contentReads) expect(reads.mock.calls.length > 0).toBe(measured);
+    expect(content.parentElement).toBe(row);
+    expect(following.parentElement).toBe(group);
+    expect(spacing.parentElement).toBe(content);
+    layout.mutate(() => spacing.replaceChildren());
+    expect(spacing.childElementCount).toBe(0);
     layout.dispose();
   },
 );
@@ -65,25 +63,39 @@ it("retargets running layout to Reduced without replacing the focused native con
   let preference: "full" | "reduced" = "full";
   let changed: () => void = () => undefined;
   const unsubscribe = vi.fn();
-  const content = document.body.createDiv();
+  const group = document.body.createDiv({ cls: "inkbook-settings-page-group" });
+  const row = group.createDiv({ cls: "setting-item" });
+  const content = row.createDiv();
   const input = content.createEl("input");
-  const layout = createSettingsLayoutMotion(
-    content,
-    () => preference,
-    (listener) => {
-      changed = listener;
-      return unsubscribe;
-    },
-  );
+  const error = row.createDiv();
+  error.id = "native-layout-error";
+  error.setAttribute("aria-live", "polite");
+  const observeMotion = vi.fn((listener: () => void) => {
+    changed = listener;
+    return unsubscribe;
+  });
+  const validation = createSettingsValidationMotion(content, {
+    readMotion: () => preference,
+    observeMotion,
+  });
+  const layout = createSettingsLayoutMotion(content, () => preference, observeMotion);
+  group.scrollTop = 40;
   input.focus();
+  validation.set(error, "The setting could not be saved.");
   layout.mutate(() => {
     content.createEl("button");
   });
   preference = "reduced";
   changed();
-  expect(motionState.durations[motionState.durations.length - 1]).toBe(0);
+  expect(content.style.transform).toBe("");
   expect(content.querySelector("input")).toBe(input);
   expect(document.activeElement).toBe(input);
+  expect(group.scrollTop).toBe(40);
+  expect(error.hidden).toBe(false);
+  expect(error.getAttribute("aria-live")).toBe("polite");
+  expect(observeMotion).toHaveBeenCalledOnce();
   layout.dispose();
+  expect(unsubscribe).not.toHaveBeenCalled();
+  validation.dispose();
   expect(unsubscribe).toHaveBeenCalledOnce();
 });

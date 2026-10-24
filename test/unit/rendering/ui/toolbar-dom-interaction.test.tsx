@@ -326,6 +326,19 @@ describe("mounted Inkbook shape controls", () => {
 });
 
 describe("mounted Inkbook history controls", () => {
+  it("keeps the recovered focus stop when history actions become unavailable", () => {
+    const mounted = mountToolbar(completeState);
+    focus(mounted.button("redo"));
+    mounted.update({ ...completeState, canUndo: false, canRedo: false });
+    const select = mounted.button("select");
+    expect(document.activeElement).toBe(select);
+    expect(select.tabIndex).toBe(0);
+    expect(mounted.button("eraser").tabIndex).toBe(-1);
+    key(select, "ArrowRight");
+    expect(document.activeElement).toBe(mounted.button("eraser"));
+    mounted.unmount();
+  });
+
   it("retains disabled controls and skips them during roving keyboard navigation", () => {
     const mounted = mountToolbar({
       ...noPasteState,
