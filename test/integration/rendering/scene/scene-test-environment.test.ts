@@ -15,7 +15,10 @@ afterEach(async () => {
 });
 
 function createFrame(): HTMLIFrameElement {
-  const frame = document.createElementNS("http://www.w3.org/1999/xhtml", "iframe");
+  const frame = document.createElementNS(
+    "http://www.w3.org/1999/xhtml",
+    "iframe",
+  ) as HTMLIFrameElement;
   frame.setAttribute("sandbox", "allow-same-origin");
   frame.setAttribute("inert", "");
   document.body.append(frame);
