@@ -1,8 +1,10 @@
 import { setIcon } from "obsidian";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { STANDARD_EASING } from "../../../rendering/motion/transitions";
 import { bindFeedbackPresentationStyle } from "../../feedback/window-feedback-host";
 import { effectiveTransitionDuration } from "../../runtime/effective-motion";
 import { animateOwnedElement } from "../../runtime/element-motion";
+import { OperationFeedbackLayer } from "./operation-feedback-layer";
 
 import {
   createPresentationFeedbackPositionLifecycle,
@@ -10,12 +12,14 @@ import {
 } from "../../feedback";
 
 export const PRESENTATION_LOADING_FEEDBACK_DELAY_MS = 500;
+export const PRESENTATION_OPENING_FEEDBACK_DELAY_MS = 250;
+export const PRESENTATION_OPENING_FEEDBACK_MIN_VISIBLE_MS = 250;
 export const PRESENTATION_SAVING_FEEDBACK_DELAY_MS = 150;
 
-export type PresentationOperationKind = "loading" | "saving";
+export type PresentationOperationKind = "loading" | "opening" | "saving";
 
 export interface PresentationOperationFeedbackHandle {
-  finish(): void;
+  finish(mode?: "immediate"): void;
 }
 
 const FINISHED_FEEDBACK = Object.freeze({ finish: (): void => undefined });
@@ -29,8 +33,23 @@ export class PresentationOperationFeedback {
   #unbindStyle: (() => void) | undefined;
   #positioning: PresentationFeedbackPositionLifecycle | undefined;
   #spin: ReturnType<typeof animateOwnedElement> | undefined;
+  #indicatorEntrance: ReturnType<typeof animateOwnedElement> | undefined;
+  #kind: PresentationOperationKind | undefined;
+  #shownAt: number | undefined;
+  #settlingOpening = false;
   readonly #motionQuery: MediaQueryList | undefined;
-  readonly #motionChanged = (): void => this.#syncSpin();
+  readonly #motionChanged = (): void => {
+    if (
+      this.#settlingOpening &&
+      effectiveTransitionDuration(this.#root, this.#ownerWindow, "styleChange") === 0
+    ) {
+      this.#clearCurrent();
+      return;
+    }
+    this.#syncSpin();
+    this.#backdrop.syncMotion();
+  };
+  readonly #backdrop: OperationFeedbackLayer;
   readonly #ownerWindow: Window;
   readonly #workScheduler: WorkScheduler;
   readonly #root: HTMLElement;
@@ -51,6 +70,7 @@ export class PresentationOperationFeedback {
       throw new Error("Presentation feedback requires a work scheduler.");
     this.#workScheduler = workScheduler;
     this.#root = root;
+    this.#backdrop = new OperationFeedbackLayer(root);
     this.#onLoadingShown = onLoadingShown;
     this.#motionQuery = ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
     this.#motionQuery?.addEventListener("change", this.#motionChanged);
@@ -63,14 +83,13 @@ export class PresentationOperationFeedback {
     if (this.#disposed) return FINISHED_FEEDBACK;
     this.#clearCurrent();
     const token = ++this.#activeToken;
+    this.#kind = kind;
     const delay = this.#remainingDelay(kind, startedAt);
     if (delay === 0) {
       this.#show(kind);
-      return { finish: () => this.#finish(token) };
+      return { finish: (mode) => this.#finish(token, mode) };
     }
-    this.#timer = this.#ownerWindow.setTimeout(() => {
-      this.#timer = undefined;
-      if (this.#disposed || token !== this.#activeToken) return;
+    this.#scheduleTimer(() => {
       if (kind === "saving") {
         this.#show(kind);
         return;
@@ -81,13 +100,34 @@ export class PresentationOperationFeedback {
         this.#show(kind);
       });
     }, delay);
-    return { finish: () => this.#finish(token) };
+    return { finish: (mode) => this.#finish(token, mode) };
   }
 
-  public finish(): void {
+  public finish(mode?: "immediate"): void {
     if (this.#disposed) return;
     this.#activeToken += 1;
-    this.#clearCurrent();
+    this.#clearCurrent(mode !== "immediate");
+  }
+
+  #complete(): void {
+    if (this.#disposed || this.#settlingOpening) return;
+    this.#activeToken += 1;
+    if (
+      this.#kind === "opening" &&
+      this.#shownAt !== undefined &&
+      effectiveTransitionDuration(this.#root, this.#ownerWindow, "styleChange") > 0
+    ) {
+      this.#settlingOpening = true;
+      this.#indicator?.setAttribute("aria-hidden", "true");
+      const remaining = Math.max(
+        0,
+        PRESENTATION_OPENING_FEEDBACK_MIN_VISIBLE_MS - (this.#now() - this.#shownAt),
+      );
+      if (remaining === 0) this.#fadeOpening();
+      else this.#scheduleTimer(() => this.#fadeOpening(), remaining);
+      return;
+    }
+    this.#clearCurrent(true);
   }
 
   public dispose(): void {
@@ -107,31 +147,28 @@ export class PresentationOperationFeedback {
     return Math.max(0, delay - Math.max(0, now - startedAt));
   }
 
-  #finish(token: number): void {
+  #finish(token: number, mode?: "immediate"): void {
     if (this.#disposed || token !== this.#activeToken) return;
-    this.finish();
+    if (mode === "immediate") this.finish("immediate");
+    else this.#complete();
   }
 
   #show(kind: PresentationOperationKind): void {
-    if (kind === "loading") this.#onLoadingShown?.();
-    const label = kind === "loading" ? "Loading drawing" : "Saving drawing";
+    if (kind !== "saving") this.#onLoadingShown?.();
+    const label = kind === "saving" ? "Saving drawing" : "Loading drawing";
     const indicator = (this.#ownerWindow as Window & { createDiv: typeof createDiv }).createDiv({
       cls: "inkbook-operation-feedback",
     });
     indicator.setAttribute("role", "status");
     indicator.setAttribute("aria-atomic", "true");
     indicator.setAttribute("aria-label", label);
-    indicator.dataset.inkbookOperation = kind;
+    indicator.dataset.inkbookOperation = kind === "opening" ? "loading" : kind;
     const icon = indicator.createSpan({ cls: "inkbook-operation-feedback-icon" });
     icon.setAttribute("aria-hidden", "true");
     setIcon(icon, "loader-circle");
     this.#indicator = indicator;
-    const host = (this.#ownerWindow as Window & { createDiv: typeof createDiv }).createDiv({
-      cls: "inkbook-root inkbook-operation-feedback-host",
-    });
+    const host = this.#ensureHost();
     host.appendChild(indicator);
-    this.#host = host;
-    this.#unbindStyle = bindFeedbackPresentationStyle(host, this.#root, this.#motionChanged);
     this.#positioning = createPresentationFeedbackPositionLifecycle(
       indicator,
       this.#root,
@@ -139,13 +176,79 @@ export class PresentationOperationFeedback {
       this.#workScheduler,
       host,
     );
+    this.#backdrop.show();
+    if (kind === "opening") {
+      this.#shownAt = this.#now();
+      this.#revealIndicator(indicator);
+    }
     this.#syncSpin();
+  }
+
+  #now(): number {
+    return this.#ownerWindow.performance?.now() ?? performance.now();
+  }
+
+  #scheduleTimer(callback: () => void, delay: number): void {
+    const token = this.#activeToken;
+    this.#timer = this.#ownerWindow.setTimeout(() => {
+      if (this.#disposed || token !== this.#activeToken) return;
+      this.#timer = undefined;
+      callback();
+    }, delay);
+  }
+
+  #fadeOpening(): void {
+    const indicator = this.#indicator;
+    const duration = effectiveTransitionDuration(
+      this.#root,
+      this.#ownerWindow,
+      "conditionalToolbarControl",
+    );
+    if (indicator === undefined || duration === 0 || typeof indicator.animate !== "function") {
+      this.#clearCurrent();
+      return;
+    }
+    const opacity = Number.parseFloat(this.#ownerWindow.getComputedStyle(indicator).opacity);
+    this.#indicatorEntrance?.cancel();
+    this.#indicatorEntrance = animateOwnedElement(
+      indicator,
+      { opacity: [Number.isFinite(opacity) ? opacity : 1, 0] },
+      { duration: duration / 1000, ease: [...STANDARD_EASING] },
+    );
+    void this.#indicatorEntrance.finished.catch(() => undefined);
+    this.#backdrop.hide(() => this.#clearCurrent());
+  }
+
+  #ensureHost(): HTMLElement {
+    if (this.#host !== undefined) return this.#host;
+    const host = (this.#ownerWindow as Window & { createDiv: typeof createDiv }).createDiv({
+      cls: "inkbook-root inkbook-operation-feedback-host",
+    });
+    this.#host = host;
+    this.#unbindStyle = bindFeedbackPresentationStyle(host, this.#root, this.#motionChanged);
+    return host;
+  }
+
+  #revealIndicator(indicator: HTMLElement): void {
+    const duration = effectiveTransitionDuration(indicator, this.#ownerWindow, "styleChange");
+    if (duration === 0 || typeof indicator.animate !== "function") return;
+    this.#indicatorEntrance = animateOwnedElement(
+      indicator,
+      { opacity: [0, 1] },
+      { duration: duration / 1000, ease: [...STANDARD_EASING] },
+    );
+    void this.#indicatorEntrance.finished.catch(() => undefined);
   }
 
   #syncSpin(): void {
     const icon = this.#indicator?.firstElementChild as HTMLElement | null | undefined;
     if (icon == null) return;
     const allowed = effectiveTransitionDuration(icon, this.#ownerWindow, "styleChange") > 0;
+    if (!allowed) {
+      this.#indicatorEntrance?.cancel();
+      this.#indicatorEntrance = undefined;
+      this.#indicator?.setCssProps({ opacity: "1" });
+    }
     if (!allowed && this.#spin !== undefined) {
       this.#spin.cancel();
       this.#spin = undefined;
@@ -165,17 +268,27 @@ export class PresentationOperationFeedback {
     void this.#spin.finished.catch(() => undefined);
   }
 
-  #clearCurrent(): void {
+  #clearCurrent(animateBackdrop = false): void {
+    this.#kind = undefined;
+    this.#shownAt = undefined;
+    this.#settlingOpening = false;
+    const unbindStyle = this.#unbindStyle;
+    this.#unbindStyle = undefined;
+    if (animateBackdrop) this.#backdrop.hide(unbindStyle);
+    else {
+      this.#backdrop.dispose();
+      unbindStyle?.();
+    }
     this.#spin?.cancel();
     this.#spin = undefined;
+    this.#indicatorEntrance?.cancel();
+    this.#indicatorEntrance = undefined;
     if (this.#timer !== undefined) this.#ownerWindow.clearTimeout(this.#timer);
     this.#timer = undefined;
     if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#positioning?.dispose();
     this.#positioning = undefined;
-    this.#unbindStyle?.();
-    this.#unbindStyle = undefined;
     this.#host?.remove();
     this.#host = undefined;
     this.#indicator?.remove();
@@ -184,6 +297,7 @@ export class PresentationOperationFeedback {
 }
 
 function feedbackDelay(kind: PresentationOperationKind): number {
+  if (kind === "opening") return PRESENTATION_OPENING_FEEDBACK_DELAY_MS;
   return kind === "loading"
     ? PRESENTATION_LOADING_FEEDBACK_DELAY_MS
     : PRESENTATION_SAVING_FEEDBACK_DELAY_MS;

@@ -96,6 +96,21 @@ it("keeps listed semantic timers while blocking new work timers and microtasks",
   );
 });
 
+it("limits feedback delays and minimum display to one owned semantic timer site", () => {
+  const path = "src/obsidian/embeds/presentation/presentation-operation-feedback.ts";
+  const check = (body) =>
+    validateWorkScheduling([source(`class Feedback { #scheduleTimer() { ${body} } }`, path)]);
+  expect(check("ownerWindow.setTimeout(expire, delay);")).toEqual([]);
+  expect(
+    check("ownerWindow.setTimeout(one, delay); ownerWindow.setTimeout(two, delay);"),
+  ).toHaveLength(1);
+  expect(
+    validateWorkScheduling([
+      source("class Feedback { begin() { ownerWindow.setTimeout(work, delay); } }", path),
+    ]),
+  ).toHaveLength(1);
+});
+
 it("permits only exact semantic host turn and microtask sites", () => {
   expect(
     validateWorkScheduling([
