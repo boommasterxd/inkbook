@@ -7,7 +7,7 @@ import {
   PRESENTATION_OPENING_FEEDBACK_MIN_VISIBLE_MS,
   PresentationOperationFeedback,
 } from "../../../../../src/obsidian/embeds/presentation/presentation-operation-feedback";
-import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
+import { createOperationFeedbackPresentation } from "../../../../fixtures/obsidian/operation-feedback-presentation";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
 let harness: ReturnType<typeof createHarness>;
@@ -152,10 +152,7 @@ it("settles a retired overlay immediately when reduced motion is enabled", async
 });
 
 function createHarness() {
-  installObsidianDomHelpers();
-  const root = document.body.createDiv({ cls: "inkbook-root" });
-  root.dataset.inkbookMotion = "full";
-  vi.spyOn(root, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 100));
+  const root = createOperationFeedbackPresentation();
   let show: (() => void) | undefined;
   const timer = vi.spyOn(window, "setTimeout").mockImplementation((callback) => {
     if (typeof callback === "function") show = callback;

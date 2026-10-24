@@ -9,14 +9,12 @@ import {
 } from "../../../../../src/obsidian/embeds/presentation/presentation-operation-feedback";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
+import { createOperationFeedbackPresentation } from "../../../../fixtures/obsidian/operation-feedback-presentation";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
 describe("PresentationOperationFeedback backdrop lifetime", () => {
   it("releases completed and interrupted backdrop exits without retaining or closing a successor", async () => {
-    installObsidianDomHelpers();
-    const root = document.body.createDiv({ cls: "inkbook-root" });
-    root.dataset.inkbookMotion = "full";
-    vi.spyOn(root, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 100));
+    const root = createOperationFeedbackPresentation();
     const feedback = new PresentationOperationFeedback(
       root,
       undefined,
