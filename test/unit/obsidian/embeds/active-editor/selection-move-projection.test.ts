@@ -3,7 +3,7 @@ import { MovePreview } from "../../../../../src/obsidian/embeds/active-editor/pr
 import type { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
-import type { ElementStore } from "../../../../../src/domain/store/public";
+import { ElementStore } from "../../../../../src/domain/store/public";
 
 const pointer = (x: number, y: number) => ({ pointerId: 10, pointerType: "mouse" as const, x, y });
 
@@ -45,7 +45,7 @@ describe("selection move edge-scroll projection", () => {
         pointer: pointer(10, 20),
         tool: "select",
       },
-      store: { get: () => undefined } as unknown as ElementStore,
+      store: new ElementStore([]),
       viewportToPage: ({ x, y }) => ({ x, y: y + scrollOffset }),
       zoom: () => zoom,
     });

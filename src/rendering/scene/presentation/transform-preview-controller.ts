@@ -99,7 +99,8 @@ export class SceneTransformPreviewController {
     this.#contextDirty = false;
   }
 
-  public clear(): void {
+  public clear(): boolean {
+    if (this.#source === undefined) return false;
     for (const id of this.#transforms.keys()) {
       this.setTransform(id, {
         strokeWidthScale: null,
@@ -114,6 +115,7 @@ export class SceneTransformPreviewController {
     this.#preview = undefined;
     this.#source = undefined;
     this.#candidates.clear();
+    return true;
   }
 
   public write(): void {

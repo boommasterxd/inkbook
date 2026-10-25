@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ElementStore } from "../../../../../../src/domain/store/public";
 import { createSelectionEdgePreview } from "../../../../../fixtures/obsidian/selection-edge-preview";
 
 import {
@@ -270,7 +271,7 @@ describe("selection edge-scroll frame arbitration", () => {
       history: {} as SelectionPreviewOptions["history"],
       preparedHistory: {} as SelectionPreviewOptions["preparedHistory"],
       sceneStore: {} as SelectionPreviewOptions["sceneStore"],
-      store: {} as SelectionPreviewOptions["store"],
+      store: new ElementStore([]),
       setSelection: vi.fn(),
       frameScheduler: {
         cancelFrame: frames.cancel,

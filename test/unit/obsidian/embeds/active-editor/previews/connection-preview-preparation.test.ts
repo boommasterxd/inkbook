@@ -1,4 +1,6 @@
 import { expect, it, vi } from "vitest";
+import { ConnectedSelectionPreviewSession } from "../../../../../../src/editor/selection/public";
+import { connectionChain } from "../../../../../fixtures/domain/connection-chain";
 import { ElementStore } from "../../../../../../src/domain/store/public";
 import { ConnectionPreviewPreparation } from "../../../../../../src/obsidian/embeds/active-editor/previews/connection-preview-preparation";
 import { ElementSceneStore } from "../../../../../../src/obsidian/embeds/active-editor/scene-store";
@@ -84,4 +86,31 @@ it.each(["shape", "none", "scheduler"])("skips preparation for unsupported %s in
   expect(test.prepare).not.toHaveBeenCalled();
   preparation.dispose();
   test.sceneStore.release();
+});
+
+it("retains the last immutable materializer while prepared history owns the preview handoff", async () => {
+  const elements = connectionChain(300);
+  const store = new ElementStore(elements);
+  const sceneStore = new ElementSceneStore(store);
+  const selected = elements[0]!;
+  const connected = new ConnectedSelectionPreviewSession(store, [selected], new Set([selected.id]));
+  const preparation = new ConnectionPreviewPreparation(
+    { store, sceneStore, scheduler: immediateWorkScheduler() },
+    undefined,
+    vi.fn(),
+  );
+  try {
+    preparation.prepareConnected(connected, vi.fn());
+    await Promise.resolve();
+    const preview = connected.update({ kind: "translate", delta: { x: 30, y: 40 } });
+    const release = preparation.retainPreview();
+    expect(preview.progressive!.materialize(elements[299]!.id)).toMatchObject({
+      start: { x: 130, y: 140 },
+    });
+    release();
+    expect(preview.progressive!.materialize(elements[299]!.id)).toBeUndefined();
+  } finally {
+    preparation.dispose();
+    sceneStore.release();
+  }
 });

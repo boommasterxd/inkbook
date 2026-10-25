@@ -1,3 +1,4 @@
+import type { ConnectedSelectionPreviewSession } from "../../../../editor/selection/public";
 import type { InkElementV1 } from "../../../../domain/schema/public";
 import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler";
 import type { ElementStore } from "../../../../domain/store/public";
@@ -9,6 +10,8 @@ export class ConnectionPreviewPreparation {
   readonly #unsubscribe: () => void = () => {};
   readonly #prepare: () => void = () => {};
   #dirty = true;
+  readonly #scheduler: WorkScheduler | undefined;
+  #connected: ConnectedSelectionPreviewSession | undefined;
 
   public constructor(
     ports: {
@@ -20,6 +23,7 @@ export class ConnectionPreviewPreparation {
     onReady: () => void,
   ) {
     const scheduler = ports.scheduler;
+    this.#scheduler = scheduler;
     if (
       scheduler === undefined ||
       element === undefined ||
@@ -51,14 +55,32 @@ export class ConnectionPreviewPreparation {
     this.ensure();
   }
 
+  public prepareConnected(session: ConnectedSelectionPreviewSession, onReady: () => void): void {
+    this.#connected = session;
+    if (this.#scheduler === undefined) return;
+    void session.prepare(this.#scheduler, this.#abort.signal).then(
+      (ready) => {
+        if (ready && !this.#abort.signal.aborted) onReady();
+      },
+      () => {
+        /* Invalid or cancelled preparation publishes no dependent preview. */
+      },
+    );
+  }
+
   public ensure(): void {
     if (!this.#dirty || this.#abort.signal.aborted) return;
     this.#dirty = false;
     this.#prepare();
   }
 
-  public dispose(): void {
+  public retainPreview(): () => void {
     this.#abort.abort();
     this.#unsubscribe();
+    return () => this.#connected?.dispose();
+  }
+
+  public dispose(): void {
+    this.retainPreview()();
   }
 }

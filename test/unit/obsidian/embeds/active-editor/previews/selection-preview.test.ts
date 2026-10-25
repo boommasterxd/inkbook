@@ -18,7 +18,7 @@ import { connectedLine, rectangle } from "../../../../domain/store/fixtures";
 const selectedOverlayCall = [expect.any(String), "accent", expect.any(String)];
 
 function createPreview(edgeDrag: SelectionEdgeDragPort) {
-  const store = { get: () => undefined } as unknown as ElementStore;
+  const store = new ElementStore([]);
   return new MovePreview({
     history: {} as ActiveEditorHistory,
     pageToScreen: ({ x, y }) => ({ x: x + 10, y: y + 20 }),

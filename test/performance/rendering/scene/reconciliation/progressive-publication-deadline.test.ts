@@ -303,6 +303,7 @@ it("reads one physical sibling snapshot when a full fallback refreshes stale ord
     const orderWrites = insert.mock.calls.length;
     // Older proof generations require the real physical-order fallback without a reorder.
     for (const entry of entries) entry.committedOrderEpoch = -1;
+    renderer.setProgressiveElementPreviews([ids[0]!], (id) => store.get(id)?.element, 1);
     renderer.clearProgressiveElementPreviews();
     scheduler.runAll(200);
     expect(snapshots).toBe(1);

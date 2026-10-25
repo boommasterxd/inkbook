@@ -21,6 +21,13 @@ interface SelectionPreviewRenderer {
   clearElementPreviews?(): void;
   clearPreviewTransforms(): void;
   flushPointerFeedbackFrame?(): void;
+  setProgressiveElementPreviews?(
+    ids: readonly string[],
+    materialize: (id: string) => InkElementV1 | undefined,
+    version: number,
+    feedback: undefined,
+    purpose: "connected",
+  ): void;
   setElementPreviews?(elements: readonly InkElementV1[], version: number): void;
   setOverlayPath(d: string | null): void;
   setSelectionOverlayPath?(

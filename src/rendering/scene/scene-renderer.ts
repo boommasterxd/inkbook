@@ -7,6 +7,7 @@ import { DetachedSceneElementCache } from "./content/detached-element-cache";
 import { DEFAULT_CAMERA } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import type { ProgressivePreviewTransform } from "./presentation/progressive-element-preview";
+import type { ProgressivePreviewPurpose } from "./presentation/connected-preview-cohort";
 import { SceneElementPreviews } from "./presentation/scene-element-previews";
 import { createFadeActions } from "./presentation/element-fade-controller";
 import type { SceneElementFadeController } from "./presentation/element-fade-controller";
@@ -365,7 +366,7 @@ export class SvgSceneRenderer {
   public clearPreviewTransforms(): void {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
-    this.#transformPreviews.clear();
+    if (!this.#transformPreviews.clear()) return;
     this.#visibilityCoordinator.releasePreviews();
     this.#frames.schedule();
   }
@@ -379,26 +380,24 @@ export class SvgSceneRenderer {
     materialize: (id: string) => Schema.InkElementV1 | undefined,
     version: number,
     feedback?: ProgressivePreviewTransform,
+    mode?: ProgressivePreviewPurpose,
   ): void {
     this.assertActive();
     runtime.validatePreviewVersion(version, "Progressive element preview");
-    this.#elementPreviews.setProgressive(
-      { feedback, ids, materialize, version },
-      this.#viewport,
-      this.#camera,
-    );
+    const request = { feedback, ids, materialize, version };
+    this.#elementPreviews.setProgressive(request, this.#viewport, this.#camera, mode);
     this.#frames.schedule();
   }
   public clearProgressiveElementPreviews(): void {
     this.assertActive();
-    this.#elementPreviews.clearProgressive();
+    if (!this.#elementPreviews.clearProgressive()) return;
     this.#visibilityCoordinator.releasePreviews();
     this.#frames.schedule();
   }
   public clearElementPreviews(): void {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
-    this.#elementPreviews.clear();
+    if (!this.#elementPreviews.clear()) return;
     this.#visibilityCoordinator.releasePreviews();
     this.#frames.schedule();
   }

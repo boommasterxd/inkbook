@@ -62,6 +62,7 @@ export class SelectionHandleSession {
   readonly #action: SelectionHandleAction;
   readonly #elements: readonly InkElementV1[];
   readonly #planner: SelectionReplacementPlanner;
+  readonly #requiresConnectionPreparation: () => boolean;
   readonly #scale: SelectionScaleGesture | undefined;
   readonly #snapScratch = new SnapCandidateScratch();
   readonly #snap: SelectionSnapPorts | undefined;
@@ -83,6 +84,7 @@ export class SelectionHandleSession {
     this.#action = options.action;
     this.#elements = options.elements;
     this.#planner = options.planner;
+    this.#requiresConnectionPreparation = options.requiresConnectionPreparation ?? (() => false);
     this.#scale =
       options.action.kind === "scale"
         ? new SelectionScaleGesture(
@@ -173,15 +175,13 @@ export class SelectionHandleSession {
     if (!this.#hasChanged()) return this.#emptyPreview();
     if (
       this.#affineScalePreview ||
+      this.#requiresConnectionPreparation() ||
       exceedsExactPreviewWork(this.#elements, this.#planner, this.#replacementWorkOptions())
     ) {
       this.#valid = true;
       const transform = this.#previewTransform(true);
       return {
-        exactElements:
-          this.#action.kind === "linear-endpoint" || this.#action.kind === "linear-bend"
-            ? this.#replaceActionTarget()
-            : [],
+        exactElements: "elementId" in this.#action ? this.#replaceActionTarget() : [],
         exactPreviewTruncated: true,
         previewFrame: this.#previewFrame(),
         snapCandidate: this.#snapCandidate,
@@ -447,12 +447,15 @@ export class SelectionHandleSession {
   }
 
   #requiresTimeSlicedCommit(): boolean {
-    return exceedsReplacementWork(
-      this.#elements,
-      this.#planner,
-      SYNCHRONOUS_SELECTION_LIMIT,
-      SYNCHRONOUS_SELECTION_WORK_LIMIT,
-      this.#replacementWorkOptions(),
+    return (
+      this.#requiresConnectionPreparation() ||
+      exceedsReplacementWork(
+        this.#elements,
+        this.#planner,
+        SYNCHRONOUS_SELECTION_LIMIT,
+        SYNCHRONOUS_SELECTION_WORK_LIMIT,
+        this.#replacementWorkOptions(),
+      )
     );
   }
 

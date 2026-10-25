@@ -195,10 +195,7 @@ export class SceneVisibilityCoordinator {
 
   private get hasPreviews(): boolean {
     return (
-      this.#transforms.activeIds.length > 0 ||
-      this.#elements.immediate.values.size > 0 ||
-      this.#elements.progressive.pending ||
-      this.#elements.progressive.values.size > 0
+      this.#transforms.activeIds.length > 0 || this.#elements.pending || this.#elements.hasValues
     );
   }
 
@@ -312,7 +309,7 @@ export class SceneVisibilityCoordinator {
     }
     this.#preloadMarginDirty = false;
     this.#transforms.setContext(camera, viewport, envelope);
-    this.#elements.refreshProgressiveContext(viewport, camera, envelope, true);
+    this.#elements.refreshProgressiveContext(viewport, camera, envelope, result.changed);
     this.#content.settleMembershipVisibility((id) => this.#visibility.contains(id));
     if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) {
       if (this.#content.hasPendingWork) this.prepareNavigation();
@@ -343,9 +340,9 @@ export class SceneVisibilityCoordinator {
       this.#orderDirty ||
       this.#queryPending ||
       this.#content.hasPendingViewportWork ||
-      this.#elements.progressive.pending ||
+      this.#elements.pending ||
       this.#transforms.values.size > 0 ||
-      this.#elements.values.size > 0
+      this.#elements.hasValues
     ) {
       this.cancelNavigationFrame();
       this.#documentPaths?.pause();

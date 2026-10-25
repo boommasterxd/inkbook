@@ -30,7 +30,6 @@ import { mountedPreviewIds } from "./presentation/preview-transform-selection";
 import type { PreviewMembershipContext } from "./types";
 import type { ScenePreparationOptions as ContentOptions } from "./reconciliation/reconciliation-state";
 import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priority";
-
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
 export class SceneContentRenderer {
@@ -303,10 +302,10 @@ export class SceneContentRenderer {
       return false;
     }
     const entry = this.#mounted.get(element.id);
-    const parts =
-      entry !== undefined && sameStrokeShape(entry.displayedElement, element)
-        ? entry.displayedPathParts
-        : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);
+    if (entry === undefined) return false;
+    const parts = sameStrokeShape(entry.displayedElement, element)
+      ? entry.displayedPathParts
+      : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);
     return this.applyCanonicalElementPreview(element, parts);
   }
   public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
@@ -345,8 +344,9 @@ export class SceneContentRenderer {
       return;
     }
     const entry = this.#mounted.get(id);
+    if (entry === undefined) return;
     const record = this.#store.get(id);
-    if (entry === undefined || record === undefined) return;
+    if (record === undefined) return;
     if (
       entry.geometryVersion !== record.geometryVersion &&
       record.element.kind === "stroke" &&

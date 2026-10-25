@@ -71,6 +71,14 @@ export class MovePreview implements GesturePreview {
     this.#lastPointer = options.start.pointer;
     this.#currentViewport = (options.pageToViewport ?? options.pageToScreen)(options.start.pointer);
     options.selectionEdgeDrag?.begin(() => this.#refreshAfterViewportChange());
+    const refreshConnections = () => {
+      if (
+        !this.#finished &&
+        (this.#pendingPointer !== undefined || this.#lastPointer !== options.start.pointer)
+      ) {
+        this.update(this.#pendingPointer ?? this.#lastPointer);
+      }
+    };
     this.#connectionPreparation = new ConnectionPreviewPreparation(
       {
         store: options.store,
@@ -78,22 +86,16 @@ export class MovePreview implements GesturePreview {
         ...(options.workScheduler === undefined ? {} : { scheduler: options.workScheduler }),
       },
       this.#elements.length === 1 ? this.#elements[0] : undefined,
-      () => {
-        if (
-          !this.#finished &&
-          (this.#pendingPointer !== undefined || this.#lastPointer !== options.start.pointer)
-        ) {
-          this.update(this.#pendingPointer ?? this.#lastPointer);
-        }
-      },
+      refreshConnections,
     );
+    this.#connectionPreparation.prepareConnected(this.#connectedPreview, refreshConnections);
   }
 
   public commit(): boolean {
     this.#assertActive();
     this.#flushPendingPointer();
     this.#finished = true;
-    this.#connectionPreparation.dispose();
+    const releaseConnectedPreview = this.#connectionPreparation.retainPreview();
     let committed = false;
     let prepared = false;
     try {
@@ -113,12 +115,17 @@ export class MovePreview implements GesturePreview {
           },
           effect,
           this.#moveSnap,
+          {
+            onSettled: releaseConnectedPreview,
+            requiresPreparation: this.#connectedPreview.requiresPreparation,
+          },
         );
         committed = prepared || this.#commitSynchronous(effect);
       }
     } catch (error: unknown) {
       if (!(error instanceof RangeError)) throw error;
     } finally {
+      if (!prepared) releaseConnectedPreview();
       this.#options.renderer.clearPreviewTransforms();
       this.#options.renderer.clearElementPreviews?.();
       this.#options.renderer.setSnapMarkerPath?.(null);
@@ -169,6 +176,7 @@ export class MovePreview implements GesturePreview {
 
   #commitSynchronous(effect: SelectionFrameHistoryEffect | undefined): boolean {
     if (
+      this.#connectedPreview.requiresPreparation ||
       hasLinearConnectionDependencies(this.#elements) ||
       this.#moveSnap?.candidate.anchor.kind === "linear-endpoint"
     )
@@ -252,6 +260,15 @@ export class MovePreview implements GesturePreview {
     try {
       const connected = this.#connectedPreview.update(transform);
       this.#options.renderer.setElementPreviews(connected.elements, this.#version);
+      if (connected.progressive !== undefined) {
+        this.#options.renderer.setProgressiveElementPreviews?.(
+          connected.progressive.ids,
+          connected.progressive.materialize,
+          this.#version,
+          undefined,
+          "connected",
+        );
+      }
       return connected;
     } catch (error: unknown) {
       if (!(error instanceof RangeError)) throw error;

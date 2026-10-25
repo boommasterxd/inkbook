@@ -1,3 +1,4 @@
+import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 import { movingSnapLine } from "./connected-input-fixture";
 import { describe, expect, it, vi } from "vitest";
 
@@ -58,9 +59,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
     sceneStore.release();
   });
 
-  it("keeps reverse-map connection previews with bounded work", () => {
+  it("keeps reverse-map connection previews with bounded work", async () => {
     const { selectedIds, store, target } = createConnectedTranslationFixture();
     const session = new ConnectedSelectionPreviewSession(store, [target], selectedIds);
+    await session.prepare(immediateWorkScheduler(), new AbortController().signal);
     session.update({ delta: { x: 1, y: 1 }, kind: "translate" });
     store.resetInstrumentation();
     let previewCount = 0;
@@ -74,6 +76,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
         kind: "translate",
       });
       previewCount += preview.elements.length;
+      for (const id of preview.progressive?.ids ?? []) {
+        if (preview.progressive?.materialize(id) !== undefined) previewCount += 1;
+      }
     });
 
     expect(previewCount).toBe(CONNECTED_DEPENDENT_COUNT * INTERACTION_REFRESH_PROFILE.sampleCount);
@@ -81,6 +86,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
       fullStoreScans: 0,
       reverseDependencyVisits: 0,
     });
+    session.dispose();
   });
 
   it("keeps whole-line endpoint snapping with bounded work", () => {

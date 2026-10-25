@@ -144,25 +144,30 @@ export class PreparedElementHistory {
     session: SelectionHandleSession,
     onCompleted?: (committed: boolean) => void,
     frameEffect?: SelectionFrameEffectFactory,
+    onSettled?: () => void,
   ): boolean {
     if (this.#pending || this.#disposed) return false;
     const previewCommit = this.#motion.beginPreviewCommit();
-    this.#run(async (generation) => {
-      try {
-        const prepared = await session.prepareCommitTimeSliced(this.#scheduler(generation));
-        if (prepared.status !== "ready") return false;
-        const effect = frameEffect?.(prepared.replacements);
-        return await this.#commitApplied(
-          prepared.previous,
-          prepared.replacements,
-          generation,
-          previewCommit,
-          effect,
-        );
-      } finally {
-        previewCommit.cancel();
-      }
-    }, onCompleted);
+    this.#run(
+      async (generation) => {
+        try {
+          const prepared = await session.prepareCommitTimeSliced(this.#scheduler(generation));
+          if (prepared.status !== "ready") return false;
+          const effect = frameEffect?.(prepared.replacements);
+          return await this.#commitApplied(
+            prepared.previous,
+            prepared.replacements,
+            generation,
+            previewCommit,
+            effect,
+          );
+        } finally {
+          previewCommit.cancel();
+        }
+      },
+      onCompleted,
+      onSettled,
+    );
     return true;
   }
 
@@ -172,27 +177,42 @@ export class PreparedElementHistory {
     onCompleted?: (committed: boolean) => void,
     effect?: SelectionFrameHistoryEffect,
     snap: SelectionMoveSnap | null = null,
+    preview?: { readonly onSettled: () => void; readonly requiresPreparation: boolean },
   ): boolean {
-    if (!requiresSlicedMove(elements, snap) || this.#pending || this.#disposed) {
+    if (
+      (!preview?.requiresPreparation && !requiresSlicedMove(elements, snap)) ||
+      this.#pending ||
+      this.#disposed
+    ) {
       return false;
     }
     if (snap !== null && elements.length !== 1) {
       throw new RangeError("Snapped movement requires one selected element.");
     }
     const previewCommit = this.#motion.beginPreviewCommit();
-    this.#run(async (generation) => {
-      try {
-        const scheduler = this.#scheduler(generation);
-        const replacements =
-          snap === null
-            ? await moveSelectionTimeSliced(elements, delta, scheduler)
-            : moveSelectionWithSnap(elements, delta, snap);
-        if (replacements === null) return false;
-        return await this.#commitApplied(elements, replacements, generation, previewCommit, effect);
-      } finally {
-        previewCommit.cancel();
-      }
-    }, onCompleted);
+    this.#run(
+      async (generation) => {
+        try {
+          const scheduler = this.#scheduler(generation);
+          const replacements =
+            snap === null
+              ? await moveSelectionTimeSliced(elements, delta, scheduler)
+              : moveSelectionWithSnap(elements, delta, snap);
+          if (replacements === null) return false;
+          return await this.#commitApplied(
+            elements,
+            replacements,
+            generation,
+            previewCommit,
+            effect,
+          );
+        } finally {
+          previewCommit.cancel();
+        }
+      },
+      onCompleted,
+      preview?.onSettled,
+    );
     return true;
   }
 
@@ -277,6 +297,7 @@ export class PreparedElementHistory {
   #run(
     operation: (generation: number) => Promise<boolean>,
     onCompleted?: (committed: boolean) => void,
+    onSettled?: () => void,
   ): void {
     const generation = ++this.#generation;
     const release = this.#model.beginInteractiveOperation?.();
@@ -284,8 +305,12 @@ export class PreparedElementHistory {
     void operation(generation)
       .catch(() => false)
       .finally(() => {
-        release?.();
-        this.#setPending(false);
+        try {
+          release?.();
+          this.#setPending(false);
+        } finally {
+          onSettled?.();
+        }
       })
       .then((committed) => {
         if (!this.#disposed && generation === this.#generation) onCompleted?.(committed);

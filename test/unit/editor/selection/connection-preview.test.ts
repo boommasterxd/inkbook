@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { canonicalPoint } from "../../../../src/domain/geometry/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { ConnectedSelectionPreviewSession } from "../../../../src/editor/selection/public";
-import { connectedLine, rectangle } from "../../domain/store/fixtures";
+import {
+  axisConnectedLine,
+  coordinateSystem,
+  connectedLine,
+  rectangle,
+} from "../../domain/store/fixtures";
 import { connectionChain } from "../../../fixtures/domain/connection-chain";
 import { editLinearEndpointFromWorld } from "../../../../src/editor/selection/transform/transforms";
 
@@ -71,5 +77,76 @@ it("propagates targeted endpoint edits through the prepared dependent order with
     expect(store.instrumentation).toMatchObject({ fullStoreScans: 0, reverseDependencyVisits: 0 });
   } finally {
     vi.restoreAllMocks();
+  }
+});
+
+it("preserves canonical endpoint ancestry from a rotated linear root through bent dual-connected followers", () => {
+  const elements = connectionChain(5);
+  const source = { ...elements[0]!, rotation: 90 };
+  const worldStart = { x: 250, y: -50 };
+  const roots = [
+    source,
+    ...elements.slice(1).map((element) => ({
+      ...element,
+      start: worldStart,
+      end: { x: 250, y: 250 },
+      endConnection: {
+        targetId: source.id,
+        anchor: { kind: "linear-endpoint" as const, endpoint: "end" as const },
+      },
+      bend: { x: 300.001, y: 150.999 },
+      pivot: { x: 275.001, y: 100 },
+    })),
+  ];
+  const store = new ElementStore(roots);
+  const session = new ConnectedSelectionPreviewSession(store, [source], new Set([source.id]));
+  try {
+    const delta = { x: 0.001, y: -0.999 };
+    const preview = session.update({ kind: "translate", delta });
+    expect(preview.elements).toHaveLength(4);
+    for (const element of preview.elements) {
+      expect(canonicalPoint(element.start)).toEqual(
+        canonicalPoint({ x: worldStart.x + delta.x, y: worldStart.y + delta.y }),
+      );
+      expect(canonicalPoint(element.end)).toEqual(
+        canonicalPoint({ x: 250 + delta.x, y: 250 + delta.y }),
+      );
+      expect(element.startConnection).toEqual(
+        roots.find(({ id }) => id === element.id)!.startConnection,
+      );
+      expect(element.endConnection).toEqual(
+        roots.find(({ id }) => id === element.id)!.endConnection,
+      );
+    }
+  } finally {
+    session.dispose();
+  }
+});
+
+it("propagates exact 3D-axis handle targets through transitive line endpoint ancestry", () => {
+  const target = coordinateSystem();
+  if (target.dimension !== "3d") throw new Error("Expected a 3D coordinate-system fixture.");
+  const first = axisConnectedLine();
+  const follower = {
+    ...first,
+    id: "00000000-0000-4000-8000-000000000099",
+    startConnection: {
+      targetId: first.id,
+      anchor: { kind: "linear-endpoint" as const, endpoint: "start" as const },
+    },
+  };
+  const store = new ElementStore([target, first, follower]);
+  const session = new ConnectedSelectionPreviewSession(store, [target], new Set([target.id]));
+  const endpoint = { x: 250.001, y: 450.999 };
+  try {
+    const edited = {
+      ...target,
+      axes: [target.axes[0], target.axes[1], endpoint] as typeof target.axes,
+    };
+    const preview = session.updateTargets([edited]);
+    expect(preview.elements).toHaveLength(2);
+    for (const element of preview.elements) expect(canonicalPoint(element.start)).toEqual(endpoint);
+  } finally {
+    session.dispose();
   }
 });

@@ -119,6 +119,7 @@ export interface SelectionHandleSessionOptions {
   readonly action: SelectionHandleAction;
   readonly elements: readonly InkElementV1[];
   readonly planner: SelectionReplacementPlanner;
+  readonly requiresConnectionPreparation?: () => boolean;
   readonly preparedFrame?: SelectionPreviewFrame | null;
   readonly snap?: SelectionSnapPorts;
   readonly startPointer: PointV1;

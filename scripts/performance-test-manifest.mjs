@@ -130,6 +130,8 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/content/path-cache-remount-performance.test.ts",
     "test/performance/rendering/scene/content/path-cache-access-performance.test.ts",
     "test/performance/rendering/scene/presentation/preview-selection-work.test.ts",
+    "test/performance/rendering/scene/presentation/connected-preview-work.test.ts",
+    "test/performance/rendering/scene/presentation/mixed-preview-work.test.ts",
     "test/performance/rendering/scene/presentation/preview-membership-work.test.ts",
     "test/performance/rendering/scene/presentation/preview-memory-work.test.ts",
     "test/performance/rendering/scene/content/pressure-snapshot-supersession.test.ts",

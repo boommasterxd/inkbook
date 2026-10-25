@@ -12,6 +12,8 @@ import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { elementReplacementPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
+import { ConnectedSelectionPreviewSession } from "../../../../../src/editor/selection/public";
+import { connectionChain } from "../../../../fixtures/domain/connection-chain";
 import { rectangle } from "../../../domain/store/fixtures";
 
 const PREPARED_TOKEN = Object.freeze({}) as PreparedElementReplacement;
@@ -182,6 +184,49 @@ describe("committed prepared replacement", () => {
     await vi.waitFor(() => expect(registerApplied).toHaveBeenCalledOnce());
   });
 });
+
+it.each(["cancel", "dispose"] as const)(
+  "releases retained connection snapshots on prepared history %s without invoking stale UI callbacks",
+  async (action) => {
+    const elements = connectionChain(300);
+    const store = new ElementStore(elements);
+    const selected = elements[1]!;
+    const connected = new ConnectedSelectionPreviewSession(
+      store,
+      [selected],
+      new Set([selected.id]),
+    );
+    await connected.prepare(immediateWorkScheduler(), new AbortController().signal);
+    const preview = connected.update({ kind: "translate", delta: { x: 30, y: 40 } });
+    let resolvePreparation!: (value: { status: "cancelled"; token: null }) => void;
+    const gate = new Promise<{ status: "cancelled"; token: null }>((resolve) => {
+      resolvePreparation = resolve;
+    });
+    const prepareElementReplacement = vi.fn(() => gate);
+    const model = { store, prepareElementReplacement } as unknown as EditableDocumentModel;
+    const prepared = createPreparedHistory(model, motionPort(), () => true, []);
+    const onCompleted = vi.fn();
+    const onSettled = vi.fn(() => connected.dispose());
+    try {
+      expect(
+        prepared.commitMove([selected], { x: 30, y: 40 }, onCompleted, undefined, null, {
+          onSettled,
+          requiresPreparation: true,
+        }),
+      ).toBe(true);
+      await vi.waitFor(() => expect(prepareElementReplacement).toHaveBeenCalledOnce());
+      expect(preview.progressive!.materialize(elements[299]!.id)).toBeDefined();
+      prepared[action]();
+      resolvePreparation({ status: "cancelled", token: null });
+      await vi.waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
+      expect(onCompleted).not.toHaveBeenCalled();
+      expect(preview.progressive!.materialize(elements[299]!.id)).toBeUndefined();
+    } finally {
+      prepared.dispose();
+      connected.dispose();
+    }
+  },
+);
 
 function createPreparedHistory(
   model: EditableDocumentModel,

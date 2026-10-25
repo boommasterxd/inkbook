@@ -33,7 +33,7 @@ export class SceneFrameWork {
     frames: SceneFrameScheduler,
   ): void {
     completeSceneFrame(
-      work,
+      this.ports.elements.pending ? { ...work, pendingPreview: true } : work,
       {
         query: this.ports.queryPending?.() === true,
         motion: this.ports.motion.pending,
@@ -63,7 +63,7 @@ export class SceneFrameWork {
     elements: ReadonlyMap<string, InkElementV1>,
   ): SceneFrameWorkResult {
     const { content, contentScheduler, motion, scheduler } = this.ports;
-    const preview = this.ports.elements.progressive;
+    const preview = this.ports.elements;
     const now = () => scheduler.now();
     const deferredFirst = this.#preferDeferred;
     let pendingPreview = preview.pending;
@@ -131,7 +131,7 @@ export class SceneFrameWork {
       backgroundDeferred: this.ports.backgroundPending(),
       pendingFades: content.pendingElementFades,
       pendingMotion: this.ports.motion.pending,
-      pendingPreview: this.ports.elements.progressive.pending,
+      pendingPreview: this.ports.elements.pending,
       pendingVisibility,
       waitingForPaths: content.waitingForPaths,
     };
@@ -139,7 +139,7 @@ export class SceneFrameWork {
 
   private hasDeferredWork(): boolean {
     return (
-      this.ports.elements.progressive.pending ||
+      this.ports.elements.pending ||
       this.ports.content.pendingElementFades ||
       this.ports.motion.pending ||
       this.ports.backgroundPending()
@@ -151,8 +151,8 @@ export class SceneFrameWork {
     const now = () => scheduler.now();
     for (let offset = 0; offset < 4; offset += 1) {
       const lane = (this.#nextDeferredLane + offset) % 4;
-      if (lane === 0 && elements.progressive.pending) {
-        elements.progressive.write(deadline, now, true);
+      if (lane === 0 && elements.pending) {
+        elements.write(deadline, now, true);
       } else if (lane === 1 && content.pendingElementFades) {
         content.flushElementFades(deadline, now);
       } else if (lane === 2 && motion.pending) {
