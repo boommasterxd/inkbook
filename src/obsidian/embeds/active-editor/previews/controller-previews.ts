@@ -22,6 +22,7 @@ import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler
 
 export interface ActiveEditorPreviewOptions {
   readonly defaults: ToolDefaultsV1;
+  readonly isCurrent?: () => boolean;
   readonly history: ActiveEditorHistory;
   readonly model: EditableDocumentModel;
   readonly ownerWindow: Window;
@@ -100,15 +101,20 @@ export function createActiveEditorPreview(
     onStrokeCapacityReached: () => options.onFeedback?.("stroke-point-limit-reached"),
     defaults: options.defaults,
     history: options.history,
+    ...(options.isCurrent === undefined ? {} : { isCurrent: options.isCurrent }),
+    model: options.model,
+    readRevision: () => options.model.revision,
+    ...(options.selectionSignal === undefined ? {} : { refinementSignal: options.selectionSignal }),
+    workScheduler: options.workScheduler,
     identity: { createdAt: Date.now(), id: options.ownerWindow.crypto.randomUUID() },
     renderer: options.renderer,
     snap: {
       angles: () => snapFeatures().angles,
       connections: () => snapFeatures().connections,
       pageToScreen: options.pageToScreen,
-      spatial: { query: (bounds, sink) => options.sceneStore.query(bounds, sink) },
+      spatial: options.sceneStore,
       targets: {
-        get: (id) => options.sceneStore.getSnapTarget(id),
+        get: (id, bounds) => options.sceneStore.getSnapTarget(id, bounds),
       },
       zoom,
     },

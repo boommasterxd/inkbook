@@ -157,6 +157,9 @@ export class ElementStore {
   public get size(): number {
     return this.#records.size;
   }
+  public get mutationVersion(): number {
+    return this.#mutationVersion;
+  }
   public get instrumentation(): Store.ElementStoreInstrumentation {
     return this.#runtime.instrumentation(this.#instrumentation);
   }

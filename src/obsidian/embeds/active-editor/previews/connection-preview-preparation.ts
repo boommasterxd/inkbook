@@ -75,9 +75,11 @@ export class ConnectionPreviewPreparation {
   }
 
   public retainPreview(): () => void {
-    this.#abort.abort();
     this.#unsubscribe();
-    return () => this.#connected?.dispose();
+    return () => {
+      this.#abort.abort();
+      this.#connected?.dispose();
+    };
   }
 
   public dispose(): void {

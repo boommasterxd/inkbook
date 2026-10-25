@@ -8,6 +8,7 @@ import type {
 } from "../snapping/snap-candidate";
 
 import type { SelectionReplacementPlanner } from "./selection-work-budget";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 export interface SelectedElementGeometry {
   readonly bounds: Bounds;
@@ -100,6 +101,7 @@ export type SelectionSnapGuide =
     };
 
 export interface SelectionSnapPorts {
+  readonly scheduler?: WorkScheduler;
   readonly canConnect?: (sourceId: string, targetId: string) => boolean;
   readonly features?: SelectionSnapFeatures;
   readonly pointerType: SnapLookupInput["pointerType"];
@@ -116,6 +118,7 @@ export interface SelectionSnapFeatures {
 }
 
 export interface SelectionHandleSessionOptions {
+  readonly onPreviewReady?: (preview: SelectionHandlePreview) => void;
   readonly action: SelectionHandleAction;
   readonly elements: readonly InkElementV1[];
   readonly planner: SelectionReplacementPlanner;

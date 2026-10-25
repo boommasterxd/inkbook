@@ -1,6 +1,6 @@
 import type { InkElementV1, PointV1 } from "../../../../domain/schema/public";
 import type { SnappingSettingsV1 } from "../../../../domain/settings/types";
-import type { WorkPriority, WorkScheduler } from "../../../../domain/scheduling/work-scheduler";
+import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler";
 import type { ToolSystemCursor } from "../../../../editor/input/tool-cursor";
 import type { PointerSample } from "../../../../editor/input/index";
 import {
@@ -17,7 +17,6 @@ import {
   type SelectionHandlePreview,
 } from "../../../../editor/selection/public";
 import type { EditableDocumentModel } from "../../document-session/vault-document-session";
-
 import {
   selectionCursorContainsPoint,
   selectionCursorRadius,
@@ -32,7 +31,7 @@ import { commitHandlePreview } from "./handle-preview-commit";
 import { SelectionScalePreviewPlan } from "./selection-scale-preview";
 import { SelectionHandlePresentation, type HandleInteractionRenderer } from "./handle-presentation";
 import { ConnectionPreviewPreparation } from "./connection-preview-preparation";
-
+import type { SelectionPreviewFrameScheduler } from "./selection-preview-contracts";
 export interface ActiveEditorHandleInteractionOptions {
   readonly frameScheduler: HandleFrameScheduler;
   readonly workScheduler?: WorkScheduler;
@@ -52,14 +51,9 @@ export interface ActiveEditorHandleInteractionOptions {
   readonly snapping?: () => SnappingSettingsV1;
   readonly zoom: () => number;
 }
-
 export type { HandleInteractionRenderer } from "./handle-presentation";
-
 const NO_SCALE_TRANSFORM_IDS: readonly string[] = [];
-export interface HandleFrameScheduler {
-  cancelFrame(handle: number): void;
-  requestFrame(callback: FrameRequestCallback, priority?: WorkPriority): number;
-}
+export type HandleFrameScheduler = SelectionPreviewFrameScheduler;
 
 interface PendingHandleSample {
   readonly pointer: PointerSample;
@@ -235,18 +229,23 @@ export class ActiveEditorHandleInteraction {
       scalePreview,
       snapping,
       session: new SelectionHandleSession({
+        onPreviewReady: (preview) => {
+          const active = this.#active;
+          if (active?.session.preview === preview) this.#renderActivePreview(active, preview);
+        },
         action,
         elements,
         planner: this.#model.store,
         requiresConnectionPreparation: () => connectedPreview.requiresPreparation,
         preparedFrame: frame,
         snap: {
+          ...(this.#workScheduler === undefined ? {} : { scheduler: this.#workScheduler }),
           canConnect: (sourceId, targetId) => this.#sceneStore.canConnect(sourceId, targetId),
           features: activeSnapFeatures(snapping, snappingInverted),
           pointerType: pointer.pointerType,
-          spatial: { query: (bounds, sink) => this.#sceneStore.query(bounds, sink) },
+          spatial: this.#sceneStore,
           targets: {
-            get: (id) => this.#sceneStore.getSnapTarget(id),
+            get: (id, bounds) => this.#sceneStore.getSnapTarget(id, bounds),
           },
           zoom: this.#zoom(),
         },
@@ -302,6 +301,9 @@ export class ActiveEditorHandleInteraction {
         uniformScale,
       },
     );
+    this.#renderActivePreview(active, preview);
+  }
+  #renderActivePreview(active: ActiveHandleGesture, preview: SelectionHandlePreview): void {
     const materializeScale = active.session.createScalePreviewMaterializer();
     const scaleMaterializer =
       materializeScale === undefined

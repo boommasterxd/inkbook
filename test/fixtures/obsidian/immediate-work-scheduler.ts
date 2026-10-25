@@ -18,6 +18,27 @@ export function immediateWorkScheduler(shouldYield: () => boolean = () => false)
   };
 }
 
+/** Holds cooperative continuations until the test admits the next slice. */
+export function pausedWorkScheduler() {
+  let paused = true;
+  const waiters = new Set<() => void>();
+  return {
+    scheduler: {
+      ...immediateWorkScheduler(),
+      shouldYield: () => paused,
+      checkpoint: () => new Promise<void>((resolve) => waiters.add(resolve)),
+    },
+    pause: () => {
+      paused = true;
+    },
+    resume: () => {
+      paused = false;
+      for (const release of waiters) release();
+      waiters.clear();
+    },
+  };
+}
+
 /** Preserves a fixture window's visual-frame behavior while work continuation stays immediate. */
 export function nativeFrameWorkScheduler(ownerWindow: Window | null): WorkScheduler {
   if (ownerWindow === null) throw new Error("The test presentation has no owning window.");

@@ -9,21 +9,20 @@ import type {
 import type { ToolDefaultsV1 } from "../../../../domain/settings/types";
 import type { GesturePreview, GesturePreviewStart } from "../../../../editor/gestures/public";
 import { resolvePointAngleSnap } from "../../../../editor/selection/public";
-import {
-  findSnapCandidate,
-  SnapCandidateScratch,
-  type SnapCandidate,
-  type SnapTargetReader,
-  type SpatialCandidateQuery,
-} from "../../../../editor/snapping/snap-candidate";
+import { type SnapCandidate } from "../../../../editor/snapping/snap-candidate";
+import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler";
 import { LiveStrokeBuilder, type LiveStrokeCommit } from "../../../../editor/tools/live-stroke";
 import { createDragElement, createFreehandElement } from "../../../../editor/tools/public";
 import { pathPresentation } from "../../../../rendering/scene/content/element-presentation";
 import type { LivePathState } from "../../../../rendering/scene/index";
 
 import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "../input/coalesced-input";
-import type { ActiveEditorHistory } from "../history";
+import type { ActiveEditorHistory, RefinableElementCreate } from "../history";
+import type { EditableDocumentModel } from "../../document-session/document-model-port";
+import type { ElementRecord } from "../../../../domain/store/types";
 import { selectionSnapGuidePath, snapMarkerPath } from "./snap-marker-path";
+import { CreationSnapping, type CreationSnapPorts } from "./creation-snapping";
+export type { CreationSnapPorts } from "./creation-snapping";
 
 export interface CreationPreviewRenderer {
   clearLiveStroke(): void;
@@ -39,24 +38,20 @@ export interface CreationPreviewRenderer {
   ): void;
 }
 
-export interface CreationSnapPorts {
-  readonly angles?: boolean | (() => boolean);
-  readonly connections?: boolean | (() => boolean);
-  readonly pageToScreen: (point: PointV1) => PointV1;
-  readonly spatial: SpatialCandidateQuery;
-  readonly targets: SnapTargetReader;
-  readonly zoom: number;
-}
-
 export interface CreationPreviewOptions {
   readonly defaults: ToolDefaultsV1;
   readonly now?: () => number;
   readonly onStrokeCapacityReached?: () => void;
   readonly history: ActiveEditorHistory;
+  readonly model?: EditableDocumentModel;
+  readonly isCurrent?: () => boolean;
+  readonly readRevision?: () => number;
+  readonly refinementSignal?: AbortSignal;
   readonly identity: { readonly createdAt: number; readonly id: string };
   readonly renderer: CreationPreviewRenderer;
   readonly snap?: CreationSnapPorts;
   readonly strokeInput?: { readonly pressureSource: "pen" | "simulated"; readonly zoom: number };
+  readonly workScheduler?: WorkScheduler;
   readonly start: GesturePreviewStart;
 }
 
@@ -67,7 +62,13 @@ export class CreationPreview implements GesturePreview {
   readonly #history: ActiveEditorHistory;
   readonly #identity: CreationPreviewOptions["identity"];
   readonly #renderer: CreationPreviewRenderer;
-  readonly #snapScratch = new SnapCandidateScratch();
+  readonly #snapping: CreationSnapping | undefined;
+  readonly #isCurrent: () => boolean;
+  #completion: Promise<boolean> | undefined;
+  readonly #model: EditableDocumentModel | undefined;
+  readonly #refinementSignal: AbortSignal | undefined;
+  #refinementFence: number | undefined;
+  #cancelled = false;
   readonly #snap: CreationSnapPorts | undefined;
   readonly #stroke: LiveStrokeBuilder | null;
   #strokeCommit: LiveStrokeCommit | undefined;
@@ -80,7 +81,6 @@ export class CreationPreview implements GesturePreview {
   #finished = false;
   #sampleTime = 0;
   #startSnap: SnapCandidate | null = null;
-  #startSnapResolved = false;
 
   public get frameSampleMode(): CoalescedFrameSampleMode {
     return this.#stroke === null ? "latest" : "preserve";
@@ -92,9 +92,34 @@ export class CreationPreview implements GesturePreview {
     this.#onStrokeCapacityReached = options.onStrokeCapacityReached;
     this.#sampleTime = this.#now?.() ?? 0;
     this.#history = options.history;
+    this.#model = options.model;
+    this.#refinementSignal = options.refinementSignal;
     this.#identity = options.identity;
     this.#renderer = options.renderer;
     this.#snap = options.snap;
+    this.#isCurrent = () => !options.history.isDisposed && (options.isCurrent?.() ?? true);
+    if (options.snap !== undefined) {
+      this.#snapping = new CreationSnapping({
+        snap: {
+          ...options.snap,
+          targets: {
+            get: (id, bounds) => {
+              if (id === options.identity.id) return null;
+              if (this.#refinementFence !== undefined) {
+                const version = this.#model?.store.get(id)?.geometryVersion;
+                if (version === undefined || version >= this.#refinementFence) return null;
+              }
+              return options.snap!.targets.get(id, bounds);
+            },
+          },
+        },
+        ...(options.workScheduler === undefined ? {} : { scheduler: options.workScheduler }),
+        start: options.start.pointer,
+        readRevision: options.readRevision ?? (() => 0),
+        isCurrent: () => !this.#cancelled && this.#isCurrent(),
+        onReady: () => this.#snapReady(),
+      });
+    }
     this.#start = options.start;
     this.#current = options.start.pointer;
     this.#strokeStyle = isFreehand(this.#start.tool)
@@ -123,6 +148,27 @@ export class CreationPreview implements GesturePreview {
 
   public commit(): boolean {
     this.#assertActive();
+    if (!this.#isCurrent()) {
+      this.revert();
+      return false;
+    }
+    if (this.#stroke === null) {
+      this.#updateSnapCandidates(true);
+    }
+    if (this.#snapping?.pending) {
+      return this.#commitPendingSnap();
+    }
+    const committed = this.#commitNow();
+    this.#completion = Promise.resolve(committed);
+    return committed;
+  }
+
+  public get completion(): Promise<boolean> {
+    return this.#completion ?? Promise.resolve(false);
+  }
+
+  #commitNow(): boolean {
+    if (this.#cancelled || !this.#isCurrent()) return false;
     const element = this.#commitElement();
     this.#finished = true;
     this.#renderer.setSnapMarkerPath(null);
@@ -147,6 +193,8 @@ export class CreationPreview implements GesturePreview {
   }
 
   public revert(): void {
+    this.#snapping?.cancel();
+    this.#cancelled = true;
     if (this.#finished) return;
     this.#finished = true;
     this.#renderer.setSnapMarkerPath(null);
@@ -220,16 +268,19 @@ export class CreationPreview implements GesturePreview {
       );
       return;
     }
-    const element = this.#commitElementWithoutFinishing();
+    this.#renderer.setLivePath(this.#elementPath(this.#commitElementWithoutFinishing()));
+    this.#renderSnapMarkers();
+  }
+
+  #elementPath(element: InkElementV1): LivePathState {
     const parts = buildElementPathParts(element);
-    this.#renderer.setLivePath({
+    return {
       band: this.#start.tool === "straight-highlighter" ? "highlight" : "content",
       parts: parts.map((part) => ({
         d: part.d,
         presentation: pathPresentation(element, part),
       })),
-    });
-    this.#renderSnapMarkers();
+    };
   }
 
   #commitElementWithoutFinishing(): InkElementV1 {
@@ -296,44 +347,93 @@ export class CreationPreview implements GesturePreview {
     this.#renderer.setSnapMarkerPath(path.length === 0 ? null : path);
   }
 
-  #updateSnapCandidates(): void {
-    const snap = this.#snap;
-    if (
-      snap === undefined ||
-      !this.#snapFeatureEnabled("connections") ||
-      !supportsConnections(this.#start.tool)
-    ) {
-      this.#startSnap = null;
-      this.#endSnap = null;
-      this.#startSnapResolved = false;
-      return;
-    }
-    if (!this.#startSnapResolved) {
-      this.#startSnap = findSnapCandidate(
-        {
-          current: null,
-          pointer: this.#start.pointer,
-          pointerType: this.#start.pointer.pointerType,
-          zoom: snap.zoom,
-        },
-        snap.spatial,
-        snap.targets,
-        this.#snapScratch,
-      );
-      this.#startSnapResolved = true;
-    }
-    const candidate = findSnapCandidate(
-      {
-        current: this.#endSnap,
-        pointer: this.#current,
-        pointerType: this.#start.pointer.pointerType,
-        zoom: snap.zoom,
-      },
-      snap.spatial,
-      snap.targets,
-      this.#snapScratch,
+  #updateSnapCandidates(revalidate = false): void {
+    this.#snapping?.update(
+      this.#current,
+      this.#snapFeatureEnabled("connections") && supportsConnections(this.#start.tool),
+      revalidate,
     );
-    this.#endSnap = candidate;
+    this.#startSnap = this.#snapping?.start ?? null;
+    this.#endSnap = this.#snapping?.end ?? null;
+  }
+
+  #snapReady(): void {
+    if (this.#finished) return;
+    this.#startSnap = this.#snapping?.start ?? null;
+    this.#endSnap = this.#snapping?.end ?? null;
+    this.#render();
+  }
+
+  #commitPendingSnap(): boolean {
+    const element = this.#commitElement();
+    this.#finished = true;
+    this.#renderer.setSnapMarkerPath(null);
+    this.#renderer.setLivePath(this.#elementPath(element));
+    this.#renderer.suppressMotionForNextDelta([element.id]);
+    let retained: RefinableElementCreate | null;
+    try {
+      retained = this.#history.createRefinable(element, () => {
+        this.#cancelled = true;
+        this.#snapping?.cancel();
+      });
+    } catch (error) {
+      this.#snapping?.cancel();
+      this.#renderer.setLivePath(null);
+      throw error;
+    }
+    if (retained === null) {
+      this.#snapping?.cancel();
+      this.#renderer.setLivePath(null);
+      return false;
+    }
+    this.#renderer.commitLivePath(element.id);
+    const original = this.#model?.store.get(element.id);
+    if (original === undefined) {
+      retained.finish();
+      this.#snapping?.cancel();
+      this.#completion = Promise.resolve(false);
+    } else {
+      this.#refinementFence = original.geometryVersion;
+      this.#updateSnapCandidates(true);
+      this.#completion = this.#refineSnap(retained, original);
+    }
+    return true;
+  }
+
+  async #refineSnap(retained: RefinableElementCreate, original: ElementRecord): Promise<boolean> {
+    const model = this.#model!;
+    const release = model.beginInteractiveOperation?.();
+    const signal = this.#refinementSignal;
+    const abort = () => {
+      this.#cancelled = true;
+      this.#snapping?.cancel();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    const cancelled = () =>
+      this.#cancelled ||
+      !this.#isCurrent() ||
+      model.store.get(original.element.id) !== original ||
+      !model.store.beginDependents(original.element.id).next().done;
+    try {
+      if (cancelled() || !(await this.#snapping!.settle())) return false;
+      this.#startSnap = this.#snapping!.start;
+      this.#endSnap = this.#snapping!.end;
+      const element = this.#commitElement();
+      if (cancelled() || !retained.canRefine(element)) return false;
+      const prepared = await model.prepareElementReplacement([element], { isCancelled: cancelled });
+      if (prepared.token === null || cancelled() || !retained.canRefine(element)) return false;
+      const status = model.commitPreparedElementReplacement(prepared.token);
+      if (status !== "committed" && status !== "noop") return false;
+      return retained.acceptRefinement(element);
+    } catch {
+      return false;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      retained.finish();
+      this.#snapping?.cancel();
+      release?.();
+    }
   }
 
   #snapFeatureEnabled(feature: "angles" | "connections"): boolean {

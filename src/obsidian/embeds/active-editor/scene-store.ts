@@ -9,6 +9,8 @@ import type { SceneStorePort, SpatialQuerySink } from "../../../rendering/scene/
 import type { ActiveDocumentMemoryStorePort } from "../../../editor/session/active-document-memory-coordinator";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { ConnectionCycleCache } from "./connection-cycle-cache";
+import { isAnchorTarget } from "../../../domain/geometry/anchors";
+import { mayHaveAnchorInBounds } from "../../../domain/geometry/anchor-query";
 
 export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemoryStorePort {
   readonly #hitScratch = new HitTestScratch();
@@ -48,6 +50,10 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
     return this.#store.beginQuery(bounds);
   }
 
+  public readRevision(): number {
+    return this.#store.mutationVersion;
+  }
+
   public beginOrder(): ReturnType<ElementStore["beginOrder"]> {
     return this.#store.beginOrder();
   }
@@ -57,7 +63,16 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
     for (let index = 0; index < count; index += 1) sink.add(this.#scratch.at(index));
   }
 
-  public getSnapTarget(id: string): SnapTarget | null {
+  public getSnapTarget(id: string, bounds?: Bounds): SnapTarget | null {
+    if (bounds !== undefined) {
+      const element = this.#store.get(id)?.element;
+      if (
+        element === undefined ||
+        !isAnchorTarget(element) ||
+        !mayHaveAnchorInBounds(element, bounds)
+      )
+        return null;
+    }
     const anchors = this.#store.getSemanticAnchors(id);
     const rank = this.#store.getRank(id);
     return anchors === null || rank === undefined

@@ -247,6 +247,7 @@ function preparedHistory(data: ReturnType<typeof replacementData>, supported = t
     handle,
     history,
     notification,
+    model,
     prepare,
     prepared,
     release,
@@ -255,11 +256,37 @@ function preparedHistory(data: ReturnType<typeof replacementData>, supported = t
 }
 
 describe("prepared replacement history capture", () => {
+  it.each(["cancel", "dispose", "revision"] as const)(
+    "rejects a frame effect made stale by %s before preparing the store replacement",
+    async (reason) => {
+      const fixture = preparedHistory(replacementData());
+      let resolveEffect!: (effect: typeof fixture.effect) => void;
+      const pendingEffect = new Promise<typeof fixture.effect>((resolve) => {
+        resolveEffect = resolve;
+      });
+      const factory = vi.fn(() => pendingEffect);
+      const settled = vi.fn();
+      fixture.prepared.commitHandle(fixture.handle, fixture.completed, factory, settled);
+      await vi.waitFor(() => expect(factory).toHaveBeenCalledOnce());
+      expect(fixture.prepare).not.toHaveBeenCalled();
+      expect(fixture.release).not.toHaveBeenCalled();
+      if (reason === "revision") Object.assign(fixture.model, { revision: 1 });
+      else fixture.prepared[reason]();
+      resolveEffect(fixture.effect);
+      await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+      expect(fixture.prepare).not.toHaveBeenCalled();
+      expect(fixture.commit).not.toHaveBeenCalled();
+      expect(fixture.effect.apply).not.toHaveBeenCalled();
+      expect(fixture.history.commandCount).toBe(0);
+      expect(fixture.release).toHaveBeenCalledOnce();
+    },
+  );
+
   it("records captured propagation exactly once and reuses captured arrays for traversal", async () => {
     const data = replacementData();
     const fixture = preparedHistory(data);
     expect(
-      fixture.prepared.commitHandle(fixture.handle, fixture.completed, () => fixture.effect),
+      fixture.prepared.commitHandle(fixture.handle, fixture.completed, async () => fixture.effect),
     ).toBe(true);
     await vi.waitFor(() => expect(fixture.completed).toHaveBeenCalledWith(true));
     expect(fixture.commit).toHaveBeenCalledOnce();

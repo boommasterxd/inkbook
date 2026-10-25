@@ -1,9 +1,10 @@
 import { type ResolvedShapeAnchor } from "../../domain/geometry/anchors";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { PointV1, ShapeAnchorV1 } from "../../domain/schema/public";
+import type { SpatialQueryCursor } from "../../domain/spatial/query-cursor";
 
-const SNAP_RADIUS = { mouse: 12, pen: 12, touch: 16 } as const;
-const HYSTERESIS_PIXELS = 4;
+export const SNAP_RADIUS = { mouse: 12, pen: 12, touch: 16 } as const;
+export const HYSTERESIS_PIXELS = 4;
 
 export type SnapPointerType = keyof typeof SNAP_RADIUS;
 
@@ -17,6 +18,8 @@ export interface SnapCandidate {
 }
 
 export interface SpatialCandidateQuery {
+  readRevision?(): number;
+  beginQuery?(bounds: Bounds): SpatialQueryCursor<string>;
   query(bounds: Bounds, sink: SpatialCandidateSink): void;
 }
 
@@ -65,7 +68,7 @@ export class SnapCandidateScratch implements SpatialCandidateSink {
 }
 
 export interface SnapTargetReader {
-  get(id: string): SnapTarget | null;
+  get(id: string, bounds?: Bounds): SnapTarget | null;
 }
 
 export interface SnapTarget {
@@ -80,7 +83,7 @@ export interface SnapLookupInput {
   readonly zoom: number;
 }
 
-function pageQueryBounds(point: PointV1, radiusPixels: number, zoom: number): Bounds {
+export function pageQueryBounds(point: PointV1, radiusPixels: number, zoom: number): Bounds {
   const radius = radiusPixels / zoom;
   return {
     minX: point.x - radius,
@@ -94,7 +97,7 @@ function screenDistance(left: PointV1, right: PointV1, zoom: number): number {
   return Math.hypot(right.x - left.x, right.y - left.y) * zoom;
 }
 
-function candidateFromAnchor(
+export function candidateFromAnchor(
   targetId: string,
   rank: number,
   anchor: ResolvedShapeAnchor,
@@ -111,7 +114,19 @@ function candidateFromAnchor(
   };
 }
 
-function candidatePrecedes(left: SnapCandidate, right: SnapCandidate): boolean {
+export function anchorInSnapSquare(
+  anchor: ResolvedShapeAnchor,
+  pointer: PointV1,
+  radiusPixels: number,
+  zoom: number,
+): boolean {
+  return (
+    Math.abs(anchor.point.x - pointer.x) * zoom <= radiusPixels &&
+    Math.abs(anchor.point.y - pointer.y) * zoom <= radiusPixels
+  );
+}
+
+export function candidatePrecedes(left: SnapCandidate, right: SnapCandidate): boolean {
   if (left.distancePixels !== right.distancePixels)
     return left.distancePixels < right.distancePixels;
   if (left.rank !== right.rank) return left.rank > right.rank;
@@ -119,7 +134,7 @@ function candidatePrecedes(left: SnapCandidate, right: SnapCandidate): boolean {
   return targetComparison !== 0 ? targetComparison < 0 : left.anchorOrder < right.anchorOrder;
 }
 
-function retainCurrent(
+export function retainCurrent(
   input: SnapLookupInput,
   targets: SnapTargetReader,
   releaseRadius: number,
@@ -157,9 +172,10 @@ export function findSnapCandidate(
   try {
     for (let index = 0; index < scratch.count; index += 1) {
       const targetId = scratch.at(index);
-      const target = targets.get(targetId);
+      const target = targets.get(targetId, bounds);
       if (target === null) continue;
       for (const anchor of target.anchors) {
+        if (!anchorInSnapSquare(anchor, input.pointer, radius, input.zoom)) continue;
         const candidate = candidateFromAnchor(
           targetId,
           target.rank,

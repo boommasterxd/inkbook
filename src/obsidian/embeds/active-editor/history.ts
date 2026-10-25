@@ -34,6 +34,14 @@ export interface AppliedAsyncHistoryTransition {
 
 type CommitListener = () => void;
 
+export interface RefinableElementCreate {
+  finish(): void;
+  canRefine(element: InkElementV1): boolean;
+  acceptRefinement(element: InkElementV1): boolean;
+}
+
+const CREATE_REFINEMENT_RESERVATION_BYTES = 1_024;
+
 export class ActiveEditorHistory {
   readonly #committedListeners = new Set<CommitListener>();
   #disposed = false;
@@ -80,6 +88,61 @@ export class ActiveEditorHistory {
       payloadBytes: estimateElementHistoryPayloadBytes(elements),
       revert: () => this.#model.removeElements(elements.map(({ id }) => id)),
     });
+  }
+
+  public createRefinable(element: InkElementV1, onUndo: () => void): RefinableElementCreate | null {
+    if (element.kind !== "line" && element.kind !== "arrow") {
+      throw new TypeError("Only line and arrow creation can be refined.");
+    }
+    let retained: InkElementV1 = element;
+    const id = element.id;
+    const kind = element.kind;
+    let cancel: (() => void) | undefined = onUndo;
+    let applied = false;
+    let cancelled = false;
+    let settled = false;
+    // Two UUID/semantic-anchor references and six canonical coordinates fit within 1 KiB.
+    // Reject larger refinements rather than growing retained history after registration.
+    const payloadBytes =
+      estimateElementHistoryPayloadBytes([element]) + CREATE_REFINEMENT_RESERVATION_BYTES;
+    const finish = () => {
+      settled = true;
+      cancel = undefined;
+    };
+    const canRefine = (next: InkElementV1) =>
+      applied &&
+      !cancelled &&
+      !settled &&
+      !this.#disposed &&
+      !this.isTraversing &&
+      next.id === id &&
+      next.kind === kind &&
+      new TextEncoder().encode(JSON.stringify(next)).byteLength <= payloadBytes;
+    const committed = this.#execute({
+      payloadBytes,
+      apply: () => {
+        this.#model.commitElements([retained]);
+        applied = true;
+      },
+      revert: () => {
+        cancelled = true;
+        applied = false;
+        cancel?.();
+        finish();
+        this.#model.removeElements([id]);
+      },
+    });
+    return committed
+      ? {
+          finish,
+          canRefine,
+          acceptRefinement: (next) => {
+            if (!canRefine(next)) return false;
+            retained = next;
+            return true;
+          },
+        }
+      : null;
   }
 
   public reorder(previous: ActiveEditorBandOrder, replacement: ActiveEditorBandOrder): boolean {

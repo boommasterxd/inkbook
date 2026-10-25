@@ -1,11 +1,10 @@
 import { calculateElementBounds } from "../../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../../domain/schema/public";
 import type { GesturePreview } from "../../../../editor/gestures/public";
-import { SnapCandidateScratch } from "../../../../editor/snapping/snap-candidate";
+import { ScheduledMoveSnap } from "../../../../editor/selection/transform/scheduled-move-snap";
 import {
   ConnectedSelectionPreviewSession,
   moveSelectionWithSnap,
-  resolveSelectionMoveSnap,
   type ConnectedSelectionPreview,
   type OrientedSelectionFrame,
   type SelectedElementGeometry,
@@ -33,7 +32,7 @@ export class MovePreview implements GesturePreview {
   readonly #selectedGeometry: readonly SelectedElementGeometry[];
   readonly #selectedMaximumBottom: number;
   readonly #selectionFrame: OrientedSelectionFrame | null;
-  readonly #snapScratch = new SnapCandidateScratch();
+  readonly #moveLookup: ScheduledMoveSnap;
   readonly #transformIds: readonly string[];
   #current = { x: 0, y: 0 };
   #currentViewport: PointV1 | undefined;
@@ -52,6 +51,14 @@ export class MovePreview implements GesturePreview {
     this.#selectedIds = options.selection();
     const selectedGeometry = options.selectionGeometry?.() ?? this.#readSelectedGeometry();
     this.#elements = selectedGeometry.map(({ element }) => element);
+    this.#moveLookup = new ScheduledMoveSnap({
+      canConnect: (sourceId, targetId) => options.sceneStore.canConnect(sourceId, targetId),
+      element: this.#elements.length === 1 ? this.#elements[0] : undefined,
+      pointerType: options.start.pointer.pointerType,
+      ...(options.workScheduler === undefined ? {} : { scheduler: options.workScheduler }),
+      spatial: options.sceneStore,
+      targets: { get: (id, bounds) => options.sceneStore.getSnapTarget(id, bounds) },
+    });
     this.#selectedGeometry = selectedGeometry;
     this.#selectedMaximumBottom = selectedGeometry.reduce(
       (maximum, selected) => Math.max(maximum, selected.bounds.maxY),
@@ -94,6 +101,9 @@ export class MovePreview implements GesturePreview {
   public commit(): boolean {
     this.#assertActive();
     this.#flushPendingPointer();
+    const rawDelta = this.#rawDelta(this.#lastPointer);
+    this.#moveSnap = this.#resolveMoveSnap(rawDelta);
+    this.#current = this.#moveSnap?.delta ?? rawDelta;
     this.#finished = true;
     const releaseConnectedPreview = this.#connectionPreparation.retainPreview();
     let committed = false;
@@ -116,8 +126,13 @@ export class MovePreview implements GesturePreview {
           effect,
           this.#moveSnap,
           {
-            onSettled: releaseConnectedPreview,
-            requiresPreparation: this.#connectedPreview.requiresPreparation,
+            onSettled: () => {
+              this.#moveLookup.cancel();
+              releaseConnectedPreview();
+            },
+            requiresPreparation:
+              this.#connectedPreview.requiresPreparation || this.#moveLookup.pending,
+            ...(this.#moveLookup.pending ? { prepareSnap: () => this.#prepareSnap(rawDelta) } : {}),
           },
         );
         committed = prepared || this.#commitSynchronous(effect);
@@ -125,7 +140,10 @@ export class MovePreview implements GesturePreview {
     } catch (error: unknown) {
       if (!(error instanceof RangeError)) throw error;
     } finally {
-      if (!prepared) releaseConnectedPreview();
+      if (!prepared) {
+        this.#moveLookup.cancel();
+        releaseConnectedPreview();
+      }
       this.#options.renderer.clearPreviewTransforms();
       this.#options.renderer.clearElementPreviews?.();
       this.#options.renderer.setSnapMarkerPath?.(null);
@@ -153,6 +171,7 @@ export class MovePreview implements GesturePreview {
     if (this.#finished) return;
     this.#discardPendingPointer();
     this.#finished = true;
+    this.#moveLookup.cancel();
     this.#connectionPreparation.dispose();
     this.#options.renderer.clearPreviewTransforms();
     this.#options.renderer.clearElementPreviews?.();
@@ -176,6 +195,7 @@ export class MovePreview implements GesturePreview {
 
   #commitSynchronous(effect: SelectionFrameHistoryEffect | undefined): boolean {
     if (
+      this.#moveLookup.pending ||
       this.#connectedPreview.requiresPreparation ||
       hasLinearConnectionDependencies(this.#elements) ||
       this.#moveSnap?.candidate.anchor.kind === "linear-endpoint"
@@ -192,13 +212,10 @@ export class MovePreview implements GesturePreview {
     });
   }
 
-  #renderUpdate(pointer: SelectionPreviewOptions["start"]["pointer"]): number {
+  #renderUpdate(pointer: SelectionPreviewOptions["start"]["pointer"], resolved = false): number {
     this.#lastRenderedZoom = this.#selectionZoom();
-    const rawDelta = {
-      x: pointer.x - this.#options.start.pointer.x,
-      y: pointer.y - this.#options.start.pointer.y,
-    };
-    this.#moveSnap = this.#resolveMoveSnap(rawDelta);
+    const rawDelta = this.#rawDelta(pointer);
+    this.#moveSnap = resolved ? this.#moveLookup.value : this.#resolveMoveSnap(rawDelta);
     this.#current = this.#moveSnap?.delta ?? rawDelta;
     this.#version += 1;
     const transform = this.#translationTransform();
@@ -336,19 +353,35 @@ export class MovePreview implements GesturePreview {
     this.#connectionPreparation.ensure();
     if (this.#selectedIds.size !== 1) return null;
     const configured = this.#options.connectionSnapping;
-    if (typeof configured === "function" ? !configured() : configured === false) return null;
-    return resolveSelectionMoveSnap({
-      canConnect: (sourceId, targetId) => this.#options.sceneStore.canConnect(sourceId, targetId),
-      current: this.#moveSnap,
-      elements: this.#elements,
-      pointerType: this.#options.start.pointer.pointerType,
-      rawDelta,
-      scratch: this.#snapScratch,
-      selectedIds: this.#selectedIds,
-      spatial: { query: (bounds, sink) => this.#options.sceneStore.query(bounds, sink) },
-      targets: { get: (id) => this.#options.sceneStore.getSnapTarget(id) },
-      zoom: this.#selectionZoom(),
+    if (typeof configured === "function" ? !configured() : configured === false) {
+      this.#moveLookup.cancel();
+      return null;
+    }
+    this.#moveLookup.update(rawDelta, this.#moveSnap, this.#selectionZoom(), () => {
+      if (this.#finished) return;
+      const maximumBottom = this.#renderUpdate(this.#lastPointer, true);
+      this.#options.selectionEdgeDrag?.updatePreviewBottom(maximumBottom);
+      this.#options.renderer.flushPointerFeedbackFrame?.();
     });
+    return this.#moveLookup.value;
+  }
+
+  #rawDelta(pointer: PointV1): PointV1 {
+    return {
+      x: pointer.x - this.#options.start.pointer.x,
+      y: pointer.y - this.#options.start.pointer.y,
+    };
+  }
+
+  async #prepareSnap(rawDelta: PointV1) {
+    const snap = await this.#moveLookup.settle();
+    if (snap === "cancelled") return "cancelled" as const;
+    const delta = snap?.delta ?? rawDelta;
+    const effect = this.#options.selectionFrames?.transition(this.#selectionFrame, {
+      delta,
+      kind: "translate",
+    });
+    return { delta, snap, ...(effect === undefined ? {} : { effect }) };
   }
 
   #translationTransform(): SelectionPreviewTransform {

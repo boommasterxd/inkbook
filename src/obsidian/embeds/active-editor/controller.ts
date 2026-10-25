@@ -358,6 +358,7 @@ export class ActiveEditorController {
         selectionSignal: this.#pendingSelection.signal,
         selectionGeometry: () => this.#handles.selectionGeometry(),
         defaults: this.#styles.defaults,
+        isCurrent: () => this.#availability.attached,
         history: this.#history,
         model: this.#model,
         ownerWindow: this.#ownerWindow,

@@ -157,6 +157,15 @@ export function rotatePointClockwise(point: PointV1, pivot: PointV1, degrees: nu
   return addPoints(pivot, rotated);
 }
 
+export function boundsContainPoint(bounds: Bounds, point: PointV1): boolean {
+  return (
+    point.x >= bounds.minX &&
+    point.x <= bounds.maxX &&
+    point.y >= bounds.minY &&
+    point.y <= bounds.maxY
+  );
+}
+
 export function boundsFromPoints(points: readonly PointV1[]): Bounds {
   const first = points[0];
   if (first === undefined) {

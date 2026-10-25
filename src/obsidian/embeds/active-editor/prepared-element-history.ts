@@ -33,11 +33,25 @@ export interface PreparedElementHistoryOptions {
 
 type SelectionFrameEffectFactory = (
   replacements: readonly InkElementV1[],
-) => SelectionFrameHistoryEffect | undefined;
+  scheduler: TransformSliceScheduler,
+) => SelectionFrameHistoryEffect | undefined | Promise<SelectionFrameHistoryEffect | undefined>;
 
 interface ReplacementCommitConditions {
   readonly isCancelled?: () => boolean;
   readonly maxHistoryPayloadBytes?: number;
+}
+
+interface PreparedMovePreview {
+  readonly onSettled: () => void;
+  readonly requiresPreparation: boolean;
+  readonly prepareSnap?: () => Promise<
+    | {
+        readonly delta: PointV1;
+        readonly snap: SelectionMoveSnap | null;
+        readonly effect?: SelectionFrameHistoryEffect;
+      }
+    | "cancelled"
+  >;
 }
 
 export interface PreparedStyleChange {
@@ -151,15 +165,28 @@ export class PreparedElementHistory {
     this.#run(
       async (generation) => {
         try {
-          const prepared = await session.prepareCommitTimeSliced(this.#scheduler(generation));
-          if (prepared.status !== "ready") return false;
-          const effect = frameEffect?.(prepared.replacements);
+          const basisRevision = this.#model.revision;
+          const sessionGeneration = session.generation;
+          const scheduler = this.#scheduler(generation);
+          const handleScheduler = {
+            ...scheduler,
+            isCancelled: () =>
+              scheduler.isCancelled?.() === true ||
+              this.#history.isTraversing ||
+              this.#model.revision !== basisRevision ||
+              session.generation !== sessionGeneration,
+          };
+          const prepared = await session.prepareCommitTimeSliced(handleScheduler);
+          if (prepared.status !== "ready" || handleScheduler.isCancelled()) return false;
+          const effect = await frameEffect?.(prepared.replacements, handleScheduler);
+          if (handleScheduler.isCancelled()) return false;
           return await this.#commitApplied(
             prepared.previous,
             prepared.replacements,
             generation,
             previewCommit,
             effect,
+            { isCancelled: handleScheduler.isCancelled },
           );
         } finally {
           previewCommit.cancel();
@@ -177,7 +204,7 @@ export class PreparedElementHistory {
     onCompleted?: (committed: boolean) => void,
     effect?: SelectionFrameHistoryEffect,
     snap: SelectionMoveSnap | null = null,
-    preview?: { readonly onSettled: () => void; readonly requiresPreparation: boolean },
+    preview?: PreparedMovePreview,
   ): boolean {
     if (
       (!preview?.requiresPreparation && !requiresSlicedMove(elements, snap)) ||
@@ -193,18 +220,31 @@ export class PreparedElementHistory {
     this.#run(
       async (generation) => {
         try {
+          const basisRevision = this.#model.revision;
+          const preparedSnap = await preview?.prepareSnap?.();
+          if (
+            preparedSnap === "cancelled" ||
+            this.#isCancelled(generation) ||
+            this.#model.revision !== basisRevision
+          )
+            return false;
+          const movement = preparedSnap ?? { delta, effect, snap };
+          if (movement.snap !== null && elements.length !== 1) {
+            throw new RangeError("Snapped movement requires one selected element.");
+          }
           const scheduler = this.#scheduler(generation);
           const replacements =
-            snap === null
-              ? await moveSelectionTimeSliced(elements, delta, scheduler)
-              : moveSelectionWithSnap(elements, delta, snap);
+            movement.snap === null
+              ? await moveSelectionTimeSliced(elements, movement.delta, scheduler)
+              : moveSelectionWithSnap(elements, movement.delta, movement.snap);
           if (replacements === null) return false;
           return await this.#commitApplied(
             elements,
             replacements,
             generation,
             previewCommit,
-            effect,
+            movement.effect,
+            { isCancelled: () => this.#model.revision !== basisRevision },
           );
         } finally {
           previewCommit.cancel();

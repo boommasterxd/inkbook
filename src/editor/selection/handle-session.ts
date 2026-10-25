@@ -1,9 +1,6 @@
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
-import {
-  findSnapCandidate,
-  SnapCandidateScratch,
-  type SnapCandidate,
-} from "../snapping/snap-candidate";
+import type { SnapCandidate } from "../snapping/snap-candidate";
+import { HandleSnapLookup } from "./transform/handle-snap-lookup";
 import type {
   SelectionCommitPreparation,
   SelectionHandleAction,
@@ -21,7 +18,6 @@ import {
 } from "./transform/handle-snap-resolution";
 import { assertFiniteHandlePoint } from "./transform/handle-session-validation";
 import { SelectionScaleGesture } from "./transform/selection-scale";
-import { selectionSnapFeatureEnabled } from "./transform/snap-features";
 import {
   moveSelection,
   rotateSelection,
@@ -64,7 +60,8 @@ export class SelectionHandleSession {
   readonly #planner: SelectionReplacementPlanner;
   readonly #requiresConnectionPreparation: () => boolean;
   readonly #scale: SelectionScaleGesture | undefined;
-  readonly #snapScratch = new SnapCandidateScratch();
+  readonly #snapLookup: HandleSnapLookup;
+  readonly #onPreviewReady: SelectionHandleSessionOptions["onPreviewReady"];
   readonly #snap: SelectionSnapPorts | undefined;
   #snapFeatures: SelectionSnapPorts["features"];
   readonly #startPointer: PointV1;
@@ -95,6 +92,8 @@ export class SelectionHandleSession {
           )
         : undefined;
     this.#snap = options.snap;
+    this.#snapLookup = new HandleSnapLookup(options.action, options.snap);
+    this.#onPreviewReady = options.onPreviewReady;
     this.#snapFeatures = options.snap?.features;
     this.#startPointer = options.startPointer;
     this.#currentPointer = options.startPointer;
@@ -105,6 +104,10 @@ export class SelectionHandleSession {
 
   public get preview(): SelectionHandlePreview {
     return this.#preview;
+  }
+
+  public get generation(): number {
+    return this.#generation;
   }
 
   public createScalePreviewMaterializer(): ((element: InkElementV1) => InkElementV1) | undefined {
@@ -120,6 +123,7 @@ export class SelectionHandleSession {
   }
 
   public cancel(): void {
+    this.#snapLookup.cancel();
     this.#cancelled = true;
     this.#generation += 1;
     this.#snapCandidate = null;
@@ -143,6 +147,8 @@ export class SelectionHandleSession {
 
   public prepareCommit(): SelectionCommitPreparation {
     this.#assertActive();
+    this.#updateSnapCandidate();
+    this.#preview = this.#createPreview();
     if (!this.#hasChanged() || !this.#valid) return { status: "noop" };
     if (this.#requiresTimeSlicedCommit()) {
       return { status: "time-sliced-required" };
@@ -163,6 +169,11 @@ export class SelectionHandleSession {
     this.#assertActive();
     if (!this.#hasChanged() || !this.#valid) return { status: "noop" };
     const generation = this.#generation;
+    const snap = await this.#snapLookup.settle();
+    if (snap === "cancelled" || this.#preparationCancelled(scheduler, generation))
+      return { status: "cancelled" };
+    this.#snapCandidate = snap;
+    this.#preview = this.#createPreview();
     const pointer = this.#currentPointer;
     const materialized = await this.#materializeTimeSliced(scheduler, generation, pointer);
     if (materialized === null) return { status: "cancelled" };
@@ -317,35 +328,16 @@ export class SelectionHandleSession {
   }
 
   #updateSnapCandidate(): void {
-    const snap = this.#currentSnap();
-    if (
-      this.#action.kind !== "linear-endpoint" ||
-      snap === undefined ||
-      !selectionSnapFeatureEnabled(snap, "connections")
-    ) {
-      this.#snapCandidate = null;
-      return;
-    }
-    const target = this.#targetElement(this.#action.elementId);
-    if (target.kind !== "line" && target.kind !== "arrow") {
-      this.#snapCandidate = null;
-      return;
-    }
-    this.#snapCandidate = findSnapCandidate(
-      {
-        current: this.#snapCandidate,
-        pointer: this.#currentPointer,
-        pointerType: snap.pointerType,
-        zoom: snap.zoom,
+    this.#snapCandidate = this.#snapLookup.update(
+      this.#currentPointer,
+      this.#snapCandidate,
+      this.#currentSnap(),
+      (candidate) => {
+        if (this.#cancelled) return;
+        this.#snapCandidate = candidate;
+        this.#preview = this.#createPreview();
+        this.#onPreviewReady?.(this.#preview);
       },
-      snap.spatial,
-      {
-        get: (id) =>
-          id === target.id || !(snap.canConnect?.(target.id, id) ?? true)
-            ? null
-            : (snap.targets.get(id) ?? null),
-      },
-      this.#snapScratch,
     );
   }
 
@@ -449,6 +441,7 @@ export class SelectionHandleSession {
   #requiresTimeSlicedCommit(): boolean {
     return (
       this.#requiresConnectionPreparation() ||
+      this.#snapLookup.pending ||
       exceedsReplacementWork(
         this.#elements,
         this.#planner,
