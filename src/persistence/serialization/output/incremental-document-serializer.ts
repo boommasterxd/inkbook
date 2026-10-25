@@ -458,8 +458,7 @@ export class IncrementalDocumentSerializer {
     this.#runtimeStrokeBuffers = false;
     this.#aggregateFacts = incrementalValidation.emptyAggregateFacts();
   }
-  #fragmentsFor(element: InkElementV1): ElementFragments {
-    const cached = this.#cache.current(element);
+  #fragmentsFor(element: InkElementV1, cached = this.#cache.current(element)): ElementFragments {
     if (cached !== undefined) {
       this.#fragmentHits += 1;
       this.#cache.touch(element.id);
@@ -475,13 +474,15 @@ export class IncrementalDocumentSerializer {
     this.#cache.retainIfSpace(element.id, fragments);
     return fragments;
   }
-  async #fragmentsForSliced(
+  #fragmentsForSliced(
     element: InkElementV1,
     options: ChunkedOutputAssemblyOptions,
     maximumBytes = Infinity,
-  ): Promise<ElementFragments> {
+  ): ElementFragments | Promise<ElementFragments> {
+    const cached = this.#cache.current(element);
+    if (cached && cached.bytes <= maximumBytes) return this.#fragmentsFor(element, cached);
     const epoch = this.#epoch;
-    const { fragments, built } = await this.#cache.resolveSliced({
+    const pending = this.#cache.resolveSliced({
       element,
       bottom: this.#facts.get(element.id)!.bottom,
       shapeCache: this.#shapeCache,
@@ -490,8 +491,10 @@ export class IncrementalDocumentSerializer {
       maximumBytes,
       isCurrent: () => epoch === this.#epoch && this.#elements.get(element.id) === element,
     });
-    if (built) this.#fragmentBuilds += 1;
-    else if (fragments.bytes <= maximumBytes) this.#fragmentHits += 1;
-    return fragments;
+    return pending.then(({ fragments, built }) => {
+      if (built) this.#fragmentBuilds += 1;
+      else if (fragments.bytes <= maximumBytes) this.#fragmentHits += 1;
+      return fragments;
+    });
   }
 }

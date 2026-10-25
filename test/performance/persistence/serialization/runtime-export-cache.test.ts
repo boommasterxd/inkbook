@@ -20,6 +20,7 @@ import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/constants";
 import { createWorkerWorkScheduler } from "../../../../src/persistence/worker/runtime/worker-work-scheduler";
 import { ManualWorkerTiming } from "../../../fixtures/persistence/manual-worker-timing";
 import { adoptTransferredStrokeSamples } from "../../../../src/persistence/worker/runtime/model/runtime-elements";
+import { ElementFragmentCache } from "../../../../src/persistence/serialization/output/element-fragment-cache";
 
 // Sequential scenarios share read-only samples; each serializer, proxy and scheduler is fresh.
 const maximumStrokeSamples = createMaximumStrokeSamples();
@@ -121,14 +122,12 @@ describe("runtime model synchronization performance", () => {
 describe("runtime export cache performance", () => {
   it("bounds warm and one-element-change UTF-8 encoding across the 11,000-element fixture", async () => {
     const snapshot = createStandardPersistenceFixture();
+    const decode = vi.spyOn(TextDecoder.prototype, "decode");
     const { serializer, cold } = await warmSerializer(snapshot);
     const warmed = serializer.instrumentation;
+    const resolve = vi.spyOn(ElementFragmentCache.prototype, "resolveSliced");
     const encode = vi.spyOn(TextEncoder.prototype, "encode");
     const encodeInto = vi.spyOn(TextEncoder.prototype, "encodeInto");
-    const decode = vi.spyOn(TextDecoder.prototype, "decode");
-    const sampleWriter = new SampleBase64Writer();
-    sampleWriter.append(0);
-    sampleWriter.finish();
     const sampleDecoder = decode.mock.contexts[0];
     try {
       for (const changed of [undefined, replaceFirstStroke(snapshot, snapshot.revision + 1)]) {
@@ -155,6 +154,7 @@ describe("runtime export cache performance", () => {
         }
         const result = await serializer.serializeRuntimeChunked({});
         if (!result.ok) throw new Error(result.error.code);
+        expect(resolve).toHaveBeenCalledTimes(changed === undefined ? 0 : 1);
         if (changed === undefined) {
           expect(result.value.hash).toBe(cold.value.hash);
           expect(result.value.totalBytes).toBe(cold.value.totalBytes);
@@ -190,6 +190,7 @@ describe("runtime export cache performance", () => {
       encode.mockRestore();
       encodeInto.mockRestore();
       decode.mockRestore();
+      resolve.mockRestore();
       serializer.clear();
     }
     expect(warmed.cacheElements).toBe(11_000);
