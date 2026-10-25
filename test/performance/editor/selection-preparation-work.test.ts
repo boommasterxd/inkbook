@@ -17,6 +17,8 @@ import { strokePrimitiveSteps } from "../../../src/editor/selection/query/stroke
 import { selectionStrokeCenterWindow } from "../../../src/editor/selection/query/stroke-selection-centers";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { rectangleSelectionAround } from "../../fixtures/editor/selection-query";
+import { rectangle } from "../../unit/domain/store/fixtures";
+import { createSelectionFrameAtRotation } from "../../../src/editor/selection/selection-frame";
 
 function fixture(pressureEnabled: boolean, positioned: boolean) {
   const source = maximumStroke(0);
@@ -49,6 +51,52 @@ function frameFixture(rotation: number) {
   const selected = [{ element: record.element as StrokeElementV1, bounds: record.bounds }];
   return { store, selected, session: new SelectionFrameSession() };
 }
+
+it("rebases a 10,000-shape frame through interruptible source reads without preparing followers", async () => {
+  let reads = 0;
+  const elements = Array.from({ length: 10_000 }, (_, index) => {
+    const element = { ...rectangle(String(index), index * 5, index * 3), rotation: 37 };
+    return {
+      ...element,
+      get x() {
+        reads += 1;
+        return element.x;
+      },
+    };
+  });
+  const frame = createSelectionFrameAtRotation([elements[0]!, elements[1]!], 37)!;
+  const session = new SelectionFrameSession();
+  let cancelled = false;
+  reads = 0;
+  expect(
+    await session.rebaseTimeSliced(frame, elements, {
+      shouldYield: () => reads > 0,
+      yieldControl: async () => {
+        cancelled = true;
+      },
+      isCancelled: () => cancelled,
+    }),
+  ).toBeUndefined();
+  // One shape's rigid rotation reads its source x for the copy and transformed geometry.
+  expect(reads).toBe(2);
+  reads = 0;
+  const effect = await session.rebaseTimeSliced(frame, elements, {
+    shouldYield: () => false,
+    yieldControl: async () => undefined,
+  });
+  expect(effect).toBeDefined();
+  expect(reads).toBe(elements.length * 2);
+  reads = 0;
+  expect(
+    await session.rebaseTimeSliced(
+      frame,
+      elements,
+      { shouldYield: () => false, yieldControl: async () => undefined },
+      new Set([elements[0]!.id, elements[1]!.id]),
+    ),
+  ).toBeDefined();
+  expect(reads).toBe(4);
+});
 
 it.each([false, true])(
   "reuses complete maximum-stroke centers in a cold non-pressure hit index (positioned=%s)",

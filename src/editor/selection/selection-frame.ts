@@ -85,11 +85,17 @@ export class SelectionFrameSession {
     frame: OrientedSelectionFrame | null,
     elements: readonly InkElementV1[],
     scheduler: TransformSliceScheduler,
+    selectedIds?: ReadonlySet<string>,
   ): Promise<SelectionFrameHistoryEffect | undefined> {
-    if (frame === null || elements.length < 2) return undefined;
+    if (
+      frame === null ||
+      elements.length < 2 ||
+      (selectedIds !== undefined && selectedIds.size < 2)
+    )
+      return undefined;
     const revision = this.#revision;
     const replacement = await prepareFrame(
-      createSelectionFrameAtRotationSteps(elements, frame.rotation),
+      createSelectionFrameAtRotationSteps(elements, frame.rotation, selectedIds),
       scheduler,
     );
     if (replacement === null || revision !== this.#revision || scheduler.isCancelled?.())
@@ -198,9 +204,14 @@ export function createSelectionFrameAtRotation(
 function* createSelectionFrameAtRotationSteps(
   elements: readonly InkElementV1[],
   rotation: number,
+  selectedIds?: ReadonlySet<string>,
 ): Generator<void, OrientedSelectionFrame | null> {
   let bounds: Bounds | null = null;
   for (const source of elements) {
+    if (selectedIds !== undefined && !selectedIds.has(source.id)) {
+      yield;
+      continue;
+    }
     const element = selectionFrameElementAtRotation(source, rotation);
     const painted = yield* calculateElementBoundsSteps(element);
     const current = selectionCenterlineBounds(element, painted);

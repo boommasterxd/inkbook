@@ -3,7 +3,6 @@ import type {
   SelectionFrameSession,
   SelectionHandleSession,
 } from "../../../../editor/selection/public";
-import type { InkElementV1 } from "../../../../domain/schema/public";
 import type { ActiveEditorHistory } from "../history";
 import type { PreparedElementHistory } from "../prepared-element-history";
 import type { HandleInteractionRenderer } from "./handle-presentation";
@@ -26,17 +25,18 @@ interface HandleCommitOptions {
 /** Transfers the gesture snapshot to atomic history preparation while retaining its preview. */
 export function commitHandlePreview(options: HandleCommitOptions, onSettled?: () => void): boolean {
   const { active } = options;
-  const commit = active.session.prepareCommit();
-  const frameEffect = (replacements: readonly InkElementV1[]) =>
-    active.session.preview.transform?.kind === "scale"
-      ? options.selectionFrames.rebase(
-          active.frame,
-          replacements.filter(({ id }) => active.selectedIds.has(id)),
-        )
-      : options.selectionFrames.transition(active.frame, active.session.preview.transform);
+  const transform = active.session.preview.transform;
+  const requiresFramePreparation =
+    transform?.kind === "scale" && active.frame !== null && active.selectedIds.size > 1;
+  const commit = requiresFramePreparation
+    ? ({ status: "time-sliced-required" } as const)
+    : active.session.prepareCommit();
   if (commit.status === "ready") {
     const committed = commitPreviewReplacement({
-      effect: frameEffect(commit.replacements),
+      effect:
+        active.session.preview.transform?.kind === "scale"
+          ? undefined
+          : options.selectionFrames.transition(active.frame, active.session.preview.transform),
       history: options.history,
       motion: options.renderer,
       previous: commit.previous,
@@ -47,7 +47,15 @@ export function commitHandlePreview(options: HandleCommitOptions, onSettled?: ()
     const accepted = options.preparedHistory.commitHandle(
       active.session,
       (committed) => options.layout?.finish(committed, options.previewMaximumBottom),
-      frameEffect,
+      (replacements, scheduler) =>
+        active.session.preview.transform?.kind === "scale"
+          ? options.selectionFrames.rebaseTimeSliced(
+              active.frame,
+              replacements,
+              scheduler,
+              active.selectedIds,
+            )
+          : options.selectionFrames.transition(active.frame, active.session.preview.transform),
       onSettled,
     );
     if (!accepted) options.layout?.finish(false);

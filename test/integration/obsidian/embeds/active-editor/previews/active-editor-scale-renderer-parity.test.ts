@@ -2,7 +2,7 @@ import {
   strokeLocalGeometry,
   strokeWorldPoint,
 } from "../../../../../../src/domain/geometry/stroke-position";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   calculateElementBounds,
@@ -21,6 +21,9 @@ import { createAllElementSnapshot } from "../../../../../unit/persistence/serial
 import { fakeNode, type FakeNode } from "../../../../../unit/rendering/scene/fakes";
 import type { StoreDelta } from "../../../../../../src/domain/store/public";
 import type { SceneStoreDelta } from "../../../../../../src/rendering/scene/types";
+import { PreparedElementHistory } from "../../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
+import { elementReplacementPorts } from "../../../../../fixtures/obsidian/element-mutation-ports";
+import { immediateWorkScheduler } from "../../../../../fixtures/obsidian/immediate-work-scheduler";
 
 /** Adapt real store publications without introducing a different mutation or rendering path. */
 function sceneStoreDelta(delta: StoreDelta): SceneStoreDelta {
@@ -51,9 +54,17 @@ function setup(pressureCount: number) {
   const model = {
     store,
     setGestureActive: () => undefined,
-    replaceElements: (replacements: readonly InkElementV1[]) => store.replaceMany(replacements),
+    ...elementReplacementPorts(store),
   } as unknown as EditableDocumentModel;
   const history = new ActiveEditorHistory(model);
+  const preparedHistory = new PreparedElementHistory({
+    model,
+    history,
+    isAttached: () => true,
+    motion: renderer,
+    onPendingChanged: () => undefined,
+    workScheduler: immediateWorkScheduler(),
+  });
   const interaction = new ActiveEditorHandleInteraction({
     model,
     history,
@@ -63,16 +74,26 @@ function setup(pressureCount: number) {
     pageToScreen: (point) => point,
     zoom: () => 1,
     selection: () => new Set(elements.map(({ id }) => id)),
-    preparedHistory: {} as never,
+    preparedHistory,
   });
   scheduler.runAll();
-  return { elements, store, renderer, scheduler, interaction, history, sceneStore, unsubscribe };
+  return {
+    elements,
+    store,
+    renderer,
+    scheduler,
+    interaction,
+    history,
+    sceneStore,
+    unsubscribe,
+    preparedHistory,
+  };
 }
 
 describe("mixed element scale commit renderer parity", () => {
   it.each([3, 513, 4096])(
     "retains the committed graphic after resizing mixed tools with %i pressure samples",
-    (count) => {
+    async (count) => {
       const fixture = setup(count);
       const { elements, store, renderer, scheduler, interaction, history } = fixture;
       const selected = elements.map((element) => ({
@@ -88,6 +109,8 @@ describe("mixed element scale commit renderer parity", () => {
       interaction.pointerMove({ ...pointer, x: pointer.x + 120, y: pointer.y + 80 });
       if (count !== 4096) scheduler.runAll();
       expect(interaction.pointerUp(1)).toBe(true);
+      expect(history.commandCount).toBe(0);
+      await vi.waitFor(() => expect(history.commandCount).toBe(1));
       scheduler.runAll();
       expect(history.commandCount).toBe(1);
       const committed = elements.map(({ id }) => store.get(id)!.element as InkElementV1);
@@ -95,6 +118,7 @@ describe("mixed element scale commit renderer parity", () => {
       const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
       assertCommittedGraphic(content, committed);
       interaction.dispose();
+      fixture.preparedHistory.dispose();
       fixture.unsubscribe();
       renderer.destroy();
       fixture.sceneStore.release();
