@@ -109,6 +109,7 @@ export class CreationPreview implements GesturePreview {
       this.#strokeStyle === null
         ? null
         : new LiveStrokeBuilder({
+            tool: this.#start.tool === "highlighter" ? "highlighter" : "pen",
             input: options.strokeInput ?? {
               pressureSource: this.#strokePressureSource,
               zoom: 1,

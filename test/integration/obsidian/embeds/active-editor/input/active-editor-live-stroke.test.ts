@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createBuiltInSettings } from "../../../../../../src/domain/settings/defaults";
+import { buildElementPathParts } from "../../../../../../src/domain/geometry/public";
 import { ElementStore } from "../../../../../../src/domain/store/public";
 import { CreationPreview } from "../../../../../../src/obsidian/embeds/active-editor/previews/creation-preview";
 import { CoalescedPointerInput } from "../../../../../../src/obsidian/embeds/active-editor/input/coalesced-input";
@@ -10,6 +11,9 @@ import {
   creationPreviewRenderer,
 } from "../../../../../fixtures/obsidian/active-editor";
 import { ManualFrameScheduler } from "../../../../../fixtures/obsidian/manual-frame-scheduler";
+import { createWorkerSnapshot } from "../../../../../fixtures/persistence/worker-snapshot";
+import { parseInkbookDocumentForTest } from "../../../../../fixtures/persistence/parse-document";
+import { serializeInkbookDocument } from "../../../../../../src/persistence/serialization/public";
 
 describe("active editor live stroke preview", () => {
   it("consumes coalesced samples and commits the incremental stroke", () => {
@@ -85,6 +89,47 @@ describe("active editor live stroke preview", () => {
     const element = store.get("00000000-0000-4000-8000-000000000023")?.element;
     expect(element?.kind === "stroke" ? element.points : []).toHaveLength(15);
     expect(element?.kind === "stroke" ? element.points.slice(-3) : []).toEqual([50, 50, 0.8999]);
+  });
+});
+
+describe("active editor highlighter durability", () => {
+  it("flushes a constant-pressure highlighter through commit and durable round trip", async () => {
+    const id = "00000000-0000-4000-8000-000000000025";
+    const scheduler = new ManualFrameScheduler();
+    const { input, routed, store, updateLiveStroke } = createLiveStrokeHarness(
+      id,
+      scheduler,
+      "highlighter",
+    );
+    input.dispatch(
+      coalescedEvent(
+        Array.from({ length: 48 }, (_, index) =>
+          pointerEvent(11 + index, 10 + (index % 3), index % 2 === 0 ? 0.25 : 0.75, index + 1),
+        ),
+      ),
+    );
+    expect(updateLiveStroke).toHaveBeenCalledOnce();
+    expect(routed.commit()).toBe(true);
+    const element = store.get(id)?.element;
+    if (element?.kind !== "stroke") throw new Error("Expected a committed highlighter.");
+    expect(element.tool).toBe("highlighter");
+    expect(element.points).toHaveLength(49 * 3);
+    expect(element.points.slice(-3)).toEqual([58, 12, 0]);
+    expect(element.points.filter((_, index) => index % 3 === 2)).toEqual(Array<number>(49).fill(0));
+    const canonical = { ...element, points: [...element.points] };
+    const legacy = {
+      ...element,
+      points: element.points.map((value, index) => (index % 3 === 2 ? 0.75 : value)),
+    };
+    expect(buildElementPathParts(canonical)).toEqual(buildElementPathParts(legacy));
+    for (const stroke of [canonical, legacy]) {
+      const saved = serializeInkbookDocument(createWorkerSnapshot([stroke]));
+      if (!saved.ok) throw new Error(saved.error.code);
+      const parsed = await parseInkbookDocumentForTest(saved.value.svg);
+      if (!parsed.ok) throw new Error(parsed.error.code);
+      expect(parsed.value.snapshot.elements[0]).toEqual(stroke);
+    }
+    expect(scheduler.pendingCount).toBe(0);
   });
 });
 
@@ -178,7 +223,11 @@ describe("active editor live stroke limits", () => {
   });
 });
 
-function createLiveStrokeHarness(identity: string, frameScheduler?: ManualFrameScheduler) {
+function createLiveStrokeHarness(
+  identity: string,
+  frameScheduler?: ManualFrameScheduler,
+  tool: "draw" | "highlighter" = "draw",
+) {
   const store = new ElementStore();
   const history = activeEditorStoreHistory(store);
   const commitLiveStroke = vi.fn();
@@ -195,7 +244,7 @@ function createLiveStrokeHarness(identity: string, frameScheduler?: ManualFrameS
       additive: false,
       kind: "tool-gesture",
       pointer: { pointerId: 1, pointerType: "pen", pressure: 0.5, x: 10, y: 10 },
-      tool: "draw",
+      tool,
     },
   });
   let routed: GesturePreview = preview;

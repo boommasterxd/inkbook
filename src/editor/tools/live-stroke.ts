@@ -5,7 +5,11 @@ import {
   LIVE_STROKE_WINDOW,
   MAX_LIVE_TAIL_SAMPLES,
 } from "./live-stroke-geometry";
-import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../domain/schema/public";
+import {
+  MAX_STROKE_POINTS,
+  type StrokeElementV1,
+  type StrokeStyleV1,
+} from "../../domain/schema/public";
 import type {
   RawStrokeSample,
   StrokeInputOptions,
@@ -14,7 +18,6 @@ import type {
 
 const VALUES_PER_SAMPLE = 5;
 const SIMULATED_SPEED_RESPONSE_MS = 32;
-const INITIAL_SAMPLE_CAPACITY = 16;
 const MAX_SAMPLES = MAX_STROKE_POINTS;
 
 export interface LiveStrokeChunk {
@@ -60,10 +63,12 @@ export interface LiveStrokeCommit {
 export interface LiveStrokeBuilderOptions {
   readonly input: StrokeInputOptions;
   readonly style: StrokeStyleV1;
+  readonly tool?: StrokeElementV1["tool"];
 }
 
 export class LiveStrokeBuilder {
-  private buffer = new Float64Array(INITIAL_SAMPLE_CAPACITY * VALUES_PER_SAMPLE);
+  // Tip replacement needs the current tip and its predecessor, never the raw prefix.
+  private readonly buffer = new Float64Array(2 * VALUES_PER_SAMPLE);
   private readonly canonicalPoints: number[] = [];
   private retainedSamples = 0;
   private mutableTipTravel = 0;
@@ -75,7 +80,6 @@ export class LiveStrokeBuilder {
   private exhausted = false;
   private appendedInputSamples = 0;
   private replacedTipSamples = 0;
-  private bufferGrowths = 0;
   private finalizedChunkBuilds = 0;
   private tailBuilds = 0;
   private commitBuilds = 0;
@@ -154,7 +158,7 @@ export class LiveStrokeBuilder {
       appendedInputSamples: this.appendedInputSamples,
       retainedSamples: this.retainedSamples,
       replacedTipSamples: this.replacedTipSamples,
-      bufferGrowths: this.bufferGrowths,
+      bufferGrowths: 0,
       sampleBufferBytes: this.buffer.byteLength,
       finalizedChunkBuilds: this.finalizedChunkBuilds,
       tailBuilds: this.tailBuilds,
@@ -182,7 +186,6 @@ export class LiveStrokeBuilder {
     if (this.retainedSamples === MAX_SAMPLES) {
       throw new RangeError(`A stroke cannot contain more than ${MAX_SAMPLES} retained samples.`);
     }
-    this.ensureCapacity(this.retainedSamples + 1);
     this.writeSample(this.retainedSamples, sample, this.retainedSamples - 1);
     this.retainedSamples += 1;
     this.mutableTipTravel = 0;
@@ -192,7 +195,7 @@ export class LiveStrokeBuilder {
     const pen = this.options.input.pressureSource === "pen";
     const measuredPressure = Math.min(1, Math.max(0, sample.pressure));
     if (previousIndex < 0) return pen ? measuredPressure : 0.5;
-    const previousPressure = this.buffer[previousIndex * VALUES_PER_SAMPLE + 2] as number;
+    const previousPressure = this.buffer[this.sampleOffset(previousIndex) + 2] as number;
     const distance = this.distanceToSample(previousIndex, sample) * this.options.input.zoom;
     const target = pen ? measuredPressure : 1 / (1 + (speed / 0.35) ** 2);
     // A distance-based response suppresses slow pressure jitter without depending on event rate.
@@ -236,12 +239,18 @@ export class LiveStrokeBuilder {
   }
 
   private writeSample(index: number, sample: RawStrokeSample, previousIndex: number): void {
-    const offset = index * VALUES_PER_SAMPLE;
+    const offset = this.sampleOffset(index);
+    if (this.options.tool === "highlighter") {
+      this.buffer[offset] = sample.x;
+      this.buffer[offset + 1] = sample.y;
+      this.writeCanonicalSample(index, sample, 0);
+      return;
+    }
     const stationary =
       this.options.input.pressureSource === "simulated" &&
       this.retainedSamples > 0 &&
       this.distanceToSample(this.retainedSamples - 1, sample) === 0;
-    const latestOffset = (this.retainedSamples - 1) * VALUES_PER_SAMPLE;
+    const latestOffset = this.sampleOffset(this.retainedSamples - 1);
     const speed = stationary
       ? (this.buffer[latestOffset + 4] as number)
       : this.resolveSpeed(sample, previousIndex);
@@ -255,6 +264,10 @@ export class LiveStrokeBuilder {
     this.buffer[offset + 1] = sample.y;
     this.buffer[offset + 2] = pressure;
     this.buffer[offset + 3] = time;
+    this.writeCanonicalSample(index, sample, pressure);
+  }
+
+  private writeCanonicalSample(index: number, sample: RawStrokeSample, pressure: number): void {
     const canonicalOffset = index * 3;
     this.canonicalPoints[canonicalOffset] = roundCanonical(sample.x);
     this.canonicalPoints[canonicalOffset + 1] = roundCanonical(sample.y);
@@ -263,7 +276,7 @@ export class LiveStrokeBuilder {
 
   private resolveSpeed(sample: RawStrokeSample, previousIndex: number): number {
     if (this.options.input.pressureSource === "pen" || previousIndex < 0) return -1;
-    const offset = previousIndex * VALUES_PER_SAMPLE;
+    const offset = this.sampleOffset(previousIndex);
     const elapsed = Math.max(1, sample.time - (this.buffer[offset + 3] as number));
     const speed =
       (this.distanceToSample(previousIndex, sample) * this.options.input.zoom) / elapsed;
@@ -275,23 +288,15 @@ export class LiveStrokeBuilder {
   }
 
   private distanceToSample(index: number, sample: RawStrokeSample): number {
-    const offset = index * VALUES_PER_SAMPLE;
+    const offset = this.sampleOffset(index);
     return Math.hypot(
       (this.buffer[offset] as number) - sample.x,
       (this.buffer[offset + 1] as number) - sample.y,
     );
   }
 
-  private ensureCapacity(requiredSamples: number): void {
-    if (requiredSamples * VALUES_PER_SAMPLE <= this.buffer.length) return;
-    const nextCapacity = Math.min(
-      MAX_SAMPLES,
-      Math.max(requiredSamples, (this.buffer.length / VALUES_PER_SAMPLE) * 2),
-    );
-    const next = new Float64Array(nextCapacity * VALUES_PER_SAMPLE);
-    next.set(this.buffer.subarray(0, this.retainedSamples * VALUES_PER_SAMPLE));
-    this.buffer = next;
-    this.bufferGrowths += 1;
+  private sampleOffset(index: number): number {
+    return (index % 2) * VALUES_PER_SAMPLE;
   }
 
   private assertSample(sample: RawStrokeSample): void {

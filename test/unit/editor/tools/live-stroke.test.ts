@@ -79,7 +79,7 @@ describe("live stroke builder", () => {
     expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(131);
     expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(131);
     expect(commit.instrumentation.retainedSamples).toBe(MAX_STROKE_POINTS);
-    expect(commit.instrumentation.bufferGrowths).toBe(Math.log2(MAX_STROKE_POINTS / 16));
+    expect(commit.instrumentation.bufferGrowths).toBe(0);
     expect(commit.instrumentation.tailBuilds).toBe(MAX_STROKE_POINTS);
     expect(firstChunk).toBeDefined();
   }, 20_000);

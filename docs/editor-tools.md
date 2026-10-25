@@ -104,6 +104,8 @@ The highlighter uses the same input and rendering path as the pen, but differs v
 
 This keeps text or ink beneath the highlighter visible.
 
+New freehand highlighter samples store canonical pressure `0` and skip pressure and velocity simulation. Position retention, smoothing, and derived centerline geometry use the shared stroke pipeline. Existing files retain their stored pressure values unchanged; highlighter rendering remains independent of those values.
+
 ## Straight Highlighter
 
 The straight highlighter uses the same input and rendering path as lines, but differs visually:

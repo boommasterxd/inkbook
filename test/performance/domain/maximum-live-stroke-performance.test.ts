@@ -74,12 +74,10 @@ describe("maximum live-stroke primitives", () => {
 
       expect(pressureResponse.mock.calls.length).toBeGreaterThanOrEqual(samples.length - 1);
       expect(pressureResponse.mock.calls.length).toBeLessThanOrEqual(2 * (samples.length - 1));
-      expect(commit.instrumentation.sampleBufferBytes).toBeLessThanOrEqual(
-        2 * retainedSamples * 5 * 8,
-      );
+      expect(commit.instrumentation.sampleBufferBytes).toBe(80);
       expect(retainedSamples).toBeGreaterThan(300);
       expect(retainedSamples).toBeLessThan(samples.length);
-      expect(bufferGrowths).toBeLessThanOrEqual(Math.ceil(Math.log2(retainedSamples / 16)));
+      expect(bufferGrowths).toBe(0);
       expect(tailBuilds).toBe(samples.length / batchSize);
       // Each raw window prepares one cached capsule preview and one canonical piece batch.
       // Each input batch prepares only its incomplete preview tail; release classifies it once.
@@ -120,13 +118,11 @@ describe("maximum live-stroke capacity", () => {
         const preview = builder.preview();
         if (stableChunk !== undefined) expect(preview.finalizedChunks[0]).toBe(stableChunk);
         stableChunk ??= preview.finalizedChunks[0];
-        expect(builder.instrumentation().sampleBufferBytes).toBeLessThanOrEqual(
-          MAX_STROKE_POINTS * 5 * 8,
-        );
+        expect(builder.instrumentation().sampleBufferBytes).toBe(80);
       }
       const retained = builder.preview();
       const before = builder.instrumentation();
-      expect(before.sampleBufferBytes).toBe(MAX_STROKE_POINTS * 5 * 8);
+      expect(before.sampleBufferBytes).toBe(80);
       expect(pressureResponse.mock.calls.length).toBeGreaterThanOrEqual(MAX_STROKE_POINTS - 1);
       expect(pressureResponse.mock.calls.length).toBeLessThanOrEqual(2 * (MAX_STROKE_POINTS - 1));
       expect(outlines.mock.calls.length).toBeLessThanOrEqual(
@@ -167,6 +163,41 @@ describe("maximum live-stroke capacity", () => {
       expect(prepareWindows).not.toHaveBeenCalled();
     },
   );
+});
+
+it("retains maximum highlighter geometry without unused pressure work or raw-prefix allocation", () => {
+  const style = { ...createMaximumStroke().style, pressureEnabled: false };
+  const builder = new LiveStrokeBuilder({
+    input: { pressureSource: "simulated", zoom: 1 },
+    style,
+    tool: "highlighter",
+  });
+  const pressureResponse = vi.spyOn(Math, "expm1");
+  const outlines = vi.spyOn(strokeSlices, "visitPreparedPressureOutline");
+  for (let start = 0; start < MAX_STROKE_POINTS; start += 8) {
+    builder.appendBatch(
+      Array.from({ length: 8 }, (_, offset) => ({
+        x: 100 + Math.abs((((start + offset) * 0.8) % 1600) - 800),
+        y: 100,
+        pressure: 0.5,
+        time: start + offset,
+      })),
+    );
+    expect(builder.instrumentation().sampleBufferBytes).toBe(80);
+  }
+  const accepted = builder.preview();
+  builder.append({ x: 1000, y: 100, pressure: 0.5, time: MAX_STROKE_POINTS });
+  expect(builder.capacityExhausted).toBe(true);
+  expect(builder.preview().tail).toBe(accepted.tail);
+  const commit = builder.finish();
+  expect(commit.points).toHaveLength(MAX_STROKE_POINTS * 3);
+  expect(commit.points.filter((_, index) => index % 3 === 2).every((value) => value === 0)).toBe(
+    true,
+  );
+  expect(commit.instrumentation.bufferGrowths).toBe(0);
+  expect(commit.geometry[0]!.paint).toBe("stroke");
+  expect(pressureResponse).not.toHaveBeenCalled();
+  expect(outlines).not.toHaveBeenCalled();
 });
 
 function assertGeometryWork(
