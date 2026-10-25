@@ -20,18 +20,10 @@ import {
   ChunkedOutputCancelledError,
   type ChunkedOutputAssemblyOptions,
 } from "./chunked-output-assembler";
-import {
-  envelope,
-  orderedSnapshotValue,
-  snapshotMetadata,
-  snapshotValue,
-} from "./document-assembly";
+import * as document from "./document-assembly";
 import { buildElementFragments, type ElementFragments, type RenderBand } from "./element-fragments";
 import { ElementFragmentCache } from "./element-fragment-cache";
-import {
-  prepareDocumentDeltaSteps,
-  validateDocumentDeltaSteps,
-} from "./incremental-document-delta";
+import * as deltaValidation from "./incremental-document-delta";
 import {
   prepareSerializationModelSteps,
   consumeSerializationSteps,
@@ -71,6 +63,7 @@ export class IncrementalDocumentSerializer {
     );
   });
   #facts = new Map<string, incrementalValidation.ElementFacts>();
+  #connectionTargets = new Map<string, number>();
   #orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
   #ranks: SerializationRanks = { content: new Map(), highlight: new Map() };
   #epoch = 0;
@@ -91,6 +84,7 @@ export class IncrementalDocumentSerializer {
       ...this.sampleEncodingCache.instrumentation,
       cacheBytes: this.#cache.retainedBytes,
       cacheElements: this.#cache.size,
+      connectionTargetEntries: this.#connectionTargets.size,
       derivedBoundsReuses: this.#derivedBoundsReuses,
       fragmentBuilds: this.#fragmentBuilds,
       fragmentHits: this.#fragmentHits,
@@ -99,7 +93,7 @@ export class IncrementalDocumentSerializer {
     };
   }
   public currentSnapshot(): InkSnapshotV1 | null {
-    return orderedSnapshotValue(this.#revision, this.#page, this.#elements, this.#orders);
+    return document.orderedSnapshotValue(this.#revision, this.#page, this.#elements, this.#orders);
   }
   public currentRevision(): number | null {
     return this.#revision;
@@ -241,6 +235,7 @@ export class IncrementalDocumentSerializer {
     this.#cache = cache;
     this.#elements = model.elements;
     this.#facts = model.facts;
+    this.#connectionTargets = model.connectionTargets;
     this.#orders = model.orders;
     this.#ranks = model.ranks;
     this.#page = model.page;
@@ -293,7 +288,7 @@ export class IncrementalDocumentSerializer {
         "Delta base revision does not match the model.",
       );
     }
-    const prepared = yield* prepareDocumentDeltaSteps(
+    const prepared = yield* deltaValidation.prepareDocumentDeltaSteps(
       {
         currentElements: this.#elements,
         currentOrders: this.#orders,
@@ -303,11 +298,12 @@ export class IncrementalDocumentSerializer {
       nodesPerStep,
     );
     if (!prepared.ok) return prepared;
-    const facts = yield* validateDocumentDeltaSteps(
+    const facts = yield* deltaValidation.validateDocumentDeltaSteps(
       {
         aggregate: this.#aggregateFacts,
         currentElements: this.#elements,
         currentFacts: this.#facts,
+        connectionTargets: this.#connectionTargets,
         currentPage: this.#page!,
         pageChanged: delta.page !== undefined,
         prepared: prepared.value,
@@ -325,6 +321,7 @@ export class IncrementalDocumentSerializer {
       changed.set(element.id, canonicalElement(element, this.#runtimeStrokeBuffers, !ownsSamples));
       if (changed.size % nodesPerStep === 0) yield;
     }
+    yield;
     signal?.throwIfAborted();
     if (epoch !== this.#epoch)
       return codecFailure("base-revision-mismatch", "The staged model is stale.");
@@ -348,6 +345,7 @@ export class IncrementalDocumentSerializer {
     this.#page = canonicalPage(prepared.value.page);
     this.#revision = delta.modelRevision;
     this.#aggregateFacts = facts.value.aggregate;
+    this.#connectionTargets = facts.value.connectionTargets;
     this.#derivedBoundsReuses += prepared.value.derivations.size;
     this.#incrementalValidationRuns += 1;
     this.#epoch += 1;
@@ -379,12 +377,12 @@ export class IncrementalDocumentSerializer {
       metadataBudget,
     });
     if (!assembly.ok) return assembly;
-    const metadata = snapshotMetadata(revision, page, assembly.value.metadata);
+    const metadata = document.snapshotMetadata(revision, page, assembly.value.metadata);
     const metadataHash = canonicalMetadataFragmentsSha256(
       canonicalMetadataPrefix(revision, page),
       assembly.value.canonicalMetadata,
     );
-    const svg = envelope(
+    const svg = document.envelope(
       revision,
       lockedHeight,
       { hash: metadataHash, text: metadata },
@@ -394,7 +392,7 @@ export class IncrementalDocumentSerializer {
     );
     const metadataBytes = metadataBudget.usedBytes;
     const totalBytes = outputBudget.usedBytes;
-    const snapshot = snapshotValue(revision, page, assembly.value.elements);
+    const snapshot = document.snapshotValue(revision, page, assembly.value.elements);
     return {
       ok: true,
       value: {
@@ -450,6 +448,7 @@ export class IncrementalDocumentSerializer {
     this.#backgroundCache.clear();
     this.#elements.clear();
     this.#facts.clear();
+    this.#connectionTargets.clear();
     this.#ranks.content.clear();
     this.#ranks.highlight.clear();
     this.#orders.content = [];

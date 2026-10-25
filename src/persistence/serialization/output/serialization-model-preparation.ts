@@ -22,10 +22,12 @@ import {
 } from "./serialization-input-preparation";
 import { toValidationError } from "../../../domain/schema/validation-internals";
 import { prepareSerializationRanks, type SerializationRanks } from "./serialization-selection";
+import { updateConnectionTargetCounts } from "./connection-target-counts";
 
 export interface PreparedSerializationModel {
   readonly elements: Map<string, InkElementV1>;
   readonly facts: Map<string, facts.ElementFacts>;
+  readonly connectionTargets: Map<string, number>;
   readonly aggregate: facts.AggregateFacts;
   readonly orders: Record<RenderBand, string[]>;
   readonly ranks: SerializationRanks;
@@ -68,6 +70,7 @@ export function* prepareSerializationModelSteps(
     return codecFailure("invalid-delta", "Validated element derivations are incomplete.");
   const elements = new Map<string, InkElementV1>();
   const elementFacts = new Map<string, facts.ElementFacts>();
+  const connectionTargets = new Map<string, number>();
   const orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
   try {
     for (let index = 0; index < snapshot.elements.length; index += 1) {
@@ -79,6 +82,7 @@ export function* prepareSerializationModelSteps(
       );
       elements.set(element.id, element);
       elementFacts.set(element.id, derived);
+      updateConnectionTargetCounts(connectionTargets, element, 1);
       orders[elementRenderBand(element)].push(element.id);
       if ((index + 1) % nodesPerStep === 0) yield;
     }
@@ -91,6 +95,7 @@ export function* prepareSerializationModelSteps(
     value: {
       elements,
       facts: elementFacts,
+      connectionTargets,
       aggregate,
       orders,
       ranks: yield* prepareSerializationRanks(orders, nodesPerStep),

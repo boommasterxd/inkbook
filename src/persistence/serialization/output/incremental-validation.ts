@@ -49,6 +49,7 @@ export interface AggregateFacts {
 export interface ValidatedDeltaFacts {
   readonly aggregate: AggregateFacts;
   readonly changed: ReadonlyMap<string, ElementFacts>;
+  readonly connectionTargets: Map<string, number>;
 }
 
 export function* elementFactsSteps(
@@ -203,6 +204,7 @@ export function* connectionRelationsAffectedSteps(
   currentElements: ReadonlyMap<string, InkElementV1>,
   changed: ReadonlyMap<string, InkElementV1>,
   removed: ReadonlySet<string>,
+  connectionTargets: ReadonlyMap<string, number>,
   nodesPerStep = 256,
 ): Generator<void, boolean> {
   const changedTargets = yield* collectChangedAnchorTargets(
@@ -212,10 +214,12 @@ export function* connectionRelationsAffectedSteps(
     nodesPerStep,
   );
   if (changedTargets === null) return true;
-  return (
-    changedTargets.size > 0 &&
-    (yield* hasConnectionToTarget(currentElements, changedTargets, nodesPerStep))
-  );
+  let visited = 0;
+  for (const id of changedTargets) {
+    if (connectionTargets.has(id)) return true;
+    if (++visited % nodesPerStep === 0) yield;
+  }
+  return false;
 }
 
 function* collectChangedAnchorTargets(
@@ -247,27 +251,6 @@ function* collectChangedAnchorTargets(
     if (isAnchorTarget(current)) changedTargets.add(id);
   }
   return changedTargets;
-}
-
-function* hasConnectionToTarget(
-  currentElements: ReadonlyMap<string, InkElementV1>,
-  changedTargets: ReadonlySet<string>,
-  nodesPerStep: number,
-): Generator<void, boolean> {
-  let visited = 0;
-  for (const element of currentElements.values()) {
-    if (++visited % nodesPerStep === 0) yield;
-    if (element.kind !== "line" && element.kind !== "arrow") continue;
-    const startTarget = element.startConnection?.targetId;
-    const endTarget = element.endConnection?.targetId;
-    if (
-      (startTarget !== undefined && changedTargets.has(startTarget)) ||
-      (endTarget !== undefined && changedTargets.has(endTarget))
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 export function validateAggregateFacts(

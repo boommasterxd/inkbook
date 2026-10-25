@@ -33,6 +33,7 @@ export interface FragmentSerializerInstrumentation {
   readonly sampleEncodingCacheElements: number;
   readonly cacheBytes: number;
   readonly cacheElements: number;
+  readonly connectionTargetEntries: number;
   readonly derivedBoundsReuses: number;
   readonly fragmentBuilds: number;
   readonly fragmentHits: number;
