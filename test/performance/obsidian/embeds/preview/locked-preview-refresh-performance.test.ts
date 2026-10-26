@@ -45,7 +45,7 @@ function observePreviewBuildAllocations() {
 beforeEach(() => {
   installObsidianDomHelpers();
   vi.spyOn(window, "setTimeout").mockImplementation((callback) => {
-    queueMicrotask(callback as () => void);
+    queueMicrotask(callback);
     return 1 as unknown as ReturnType<typeof window.setTimeout>;
   });
 });

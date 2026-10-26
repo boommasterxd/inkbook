@@ -53,7 +53,7 @@ function emptySnapshot(settings: InkbookSettingsStore): InkSnapshotV1 {
   };
 }
 
-function fillRandomBytes(app: App, bytes: Uint8Array): void {
+function fillRandomBytes(app: App, bytes: Uint8Array<ArrayBuffer>): void {
   activeMarkdownOwnerWindow(app).crypto.getRandomValues(bytes);
 }
 

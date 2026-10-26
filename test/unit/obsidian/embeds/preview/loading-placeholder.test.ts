@@ -54,7 +54,7 @@ function placeholderHost() {
   const host = new FakePresentationElement();
   let timer: (() => void) | undefined;
   vi.spyOn(host.ownerDocument.defaultView!, "setTimeout").mockImplementation((callback) => {
-    timer = callback as () => void;
+    timer = callback;
     return 1 as unknown as ReturnType<typeof setTimeout>;
   });
   const clearTimeout = vi.spyOn(host.ownerDocument.defaultView!, "clearTimeout");
