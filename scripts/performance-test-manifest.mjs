@@ -21,6 +21,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/rendering/scene/presentation/progressive-feedback-reuse.test.ts",
     "test/performance/rendering/scene/presentation/selection-run-plan-memory.test.ts",
     "test/performance/rendering/scene/presentation/preview-matrix-retention.test.ts",
     "test/performance/rendering/scene/presentation/selection-run-move-feedback.test.ts",

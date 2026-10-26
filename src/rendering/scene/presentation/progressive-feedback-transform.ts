@@ -1,5 +1,5 @@
 import type { PreviewTransform } from "../reconciliation/scene-mount-preparation";
-import type { ProgressivePreviewTransform } from "./progressive-preview-request";
+import type { PreviewRequest, ProgressivePreviewTransform } from "./progressive-preview-request";
 import type { SceneContentRenderer } from "../content-renderer";
 import {
   composeMatrices,
@@ -37,6 +37,49 @@ export function progressiveFeedbackTransform(
         ? `${feedback.transform}${basis === undefined ? "" : ` ${basis.inverse}`}`
         : matrixString(matrix),
   };
+}
+
+/** Reuses one no-basis result; individual canonical snapshot bases keep their own calculation. */
+export class ProgressiveFeedbackTransformCache {
+  #request: PreviewRequest | undefined;
+  #version = 0;
+  #zoom = 1;
+  #preview: PreviewTransform | undefined;
+
+  public resolve(
+    request: PreviewRequest | undefined,
+    basis: ProgressivePreviewTransform | undefined,
+    zoom: number,
+  ): PreviewTransform {
+    const version = request?.version ?? 0;
+    if (basis !== undefined)
+      return progressiveFeedbackTransform(request?.feedback, basis, version, zoom);
+    if (
+      this.#preview === undefined ||
+      request !== this.#request ||
+      version !== this.#version ||
+      zoom !== this.#zoom
+    ) {
+      this.#request = request;
+      this.#version = version;
+      this.#zoom = zoom;
+      this.#preview = progressiveFeedbackTransform(request?.feedback, undefined, version, zoom);
+    }
+    return this.#preview;
+  }
+
+  public memoryUsage(): number {
+    const preview = this.#preview;
+    // Reserve one result and six numeric coefficients even for opaque or null feedback.
+    return preview === undefined
+      ? 0
+      : 128 + 6 * Float64Array.BYTES_PER_ELEMENT + (preview.transform?.length ?? 0) * 2;
+  }
+
+  public clear(): void {
+    this.#request = undefined;
+    this.#preview = undefined;
+  }
 }
 
 /** Optional numeric metadata supplements the existing legacy writer contract. */

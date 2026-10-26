@@ -1,4 +1,4 @@
-import { progressiveFeedbackTransform, writeFeedback } from "./progressive-feedback-transform";
+import { ProgressiveFeedbackTransformCache, writeFeedback } from "./progressive-feedback-transform";
 import { strokeLocalGeometry } from "../../../domain/geometry/stroke-position";
 import { buildElementPathParts } from "../../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../../domain/schema/public";
@@ -35,6 +35,7 @@ export class ProgressiveElementPreview {
   readonly #snapshotFeedback = new Map<string, ProgressivePreviewTransform>();
   readonly #renderedFeedback = new Map<string, ProgressivePreviewTransform>();
   readonly #feedbackMembers = new Set<string>();
+  readonly #feedbackTransform = new ProgressiveFeedbackTransformCache();
   #feedbackSource: readonly string[] | undefined;
   #membershipBytes = 0;
   #elementBytes = 0;
@@ -79,10 +80,11 @@ export class ProgressiveElementPreview {
     bytes +=
       this.#membershipBytes + this.#feedbackBytes + this.#transformBytes + this.#replacementBytes;
     if (this.#pending !== undefined) bytes += elementBytes(this.#pending.element);
-    return bytes + this.#elementBytes;
+    return bytes + this.#elementBytes + this.#feedbackTransform.memoryUsage();
   }
 
   public set(request: PreviewRequest): void {
+    this.#feedbackTransform.clear();
     if (this.#request === undefined)
       this.#sharedFeedback = this.#content.canUseSelectionFeedback?.(request.feedback) === true;
     if (this.#reuseConnected(request)) return;
@@ -281,6 +283,7 @@ export class ProgressiveElementPreview {
   }
 
   public release(): void {
+    this.#feedbackTransform.clear();
     this.#replacement = undefined;
     this.#replacementBytes = 0;
     this.#feedbackIds.clear();
@@ -446,8 +449,7 @@ export class ProgressiveElementPreview {
     if (feedback === undefined && !this.#feedbackIds.has(id)) return;
     const basis = this.#renderedFeedback.get(id);
     this.#content.setSelectionFeedbackBasis?.(id, basis);
-    const version = this.#request?.version ?? 0;
-    const preview = progressiveFeedbackTransform(feedback, basis, version, this.#zoom);
+    const preview = this.#feedbackTransform.resolve(this.#request, basis, this.#zoom);
     this.#feedbackIds.add(id);
     this.#setTransform(id, preview.transform === null ? undefined : preview);
     writeFeedback(this.#content, id, preview);

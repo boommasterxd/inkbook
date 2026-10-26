@@ -130,7 +130,10 @@ it("accounts 10000 feedback entries and 256 snapshots exactly across eviction an
     0,
   );
   const feedbackIds = selected.length * 40;
-  expect(readMemoryWithoutMapVisits(preview)).toBe(initial + transforms + feedbackIds);
+  const commonFeedbackBytes = 128 + 6 * 8 + feedback.transform.length * 2;
+  expect(readMemoryWithoutMapVisits(preview)).toBe(
+    initial + transforms + feedbackIds + commonFeedbackBytes,
+  );
   expect(preview.write(Infinity, () => 0)).toBe(false);
   const snapshotBytes = elements.length * (128 + 3 * 8 + 40);
   const basisBytes = snapshots.reduce(
@@ -143,7 +146,13 @@ it("accounts 10000 feedback entries and 256 snapshots exactly across eviction an
     0,
   );
   const completed =
-    initial + transforms + feedbackIds + snapshotBytes + basisBytes * 2 - snapshotTransforms;
+    initial +
+    transforms +
+    feedbackIds +
+    snapshotBytes +
+    basisBytes * 2 -
+    snapshotTransforms +
+    commonFeedbackBytes;
   expect(readMemoryWithoutMapVisits(preview)).toBe(completed);
   preview.applyMounted(snapshots);
   expect(readMemoryWithoutMapVisits(preview)).toBe(

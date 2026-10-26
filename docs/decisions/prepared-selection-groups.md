@@ -40,6 +40,11 @@ per-element path. A ready full-selection Move uses the same group owner and lazy
 transform view as Resize; it does not construct another per-element transform
 map or materialize new model geometry for pointer feedback.
 
+A preview owner retains at most one computed feedback transform for members
+without a canonical snapshot basis. Its key includes request identity, version
+and zoom. Individual snapshot bases remain independent; request replacement and
+release clear the retained result.
+
 Production matrix metadata composes retained transforms numerically across
 overlapping commits. The existing commit handoff, visibility reconciliation and
 central canonical drain preserve the last complete preview. Offscreen members
