@@ -4,6 +4,10 @@ import type { PreviewBoundsTransform } from "../types";
 import type { ProgressivePreviewPath } from "../content/progressive-preview-path";
 
 export interface ProgressivePreviewTransform {
+  readonly matrix?: readonly [number, number, number, number, number, number];
+  readonly selection?: ReadonlySet<string>;
+  readonly selectionSize?: number;
+  readonly invertible?: boolean;
   readonly transformBounds?: PreviewBoundsTransform;
   readonly transform: string;
   readonly inverse: string;
@@ -33,4 +37,17 @@ export interface PendingPath {
   readonly version: number;
   readonly pressureEnabled: boolean;
   readonly replay?: boolean;
+}
+
+/** Keeps canonical snapshot work pending until every requested member is prepared. */
+export function hasPendingPreviewSnapshots(
+  request: PreviewRequest | undefined,
+  versions: ReadonlyMap<string, number>,
+  remainingConnected: number,
+  replayCount: number,
+): boolean {
+  if (replayCount > 0) return true;
+  return request?.connected
+    ? remainingConnected > 0
+    : (request?.ids.some((id) => versions.get(id) !== request.version) ?? false);
 }

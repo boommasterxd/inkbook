@@ -11,6 +11,11 @@ import type { MutableSceneInstrumentation, SceneStorePort } from "../types";
 import type { MountSlice, MountYieldReason, ScenePublicationBudget } from "./mount-slice";
 import type { DetachedSceneElementCache } from "../content/detached-element-cache";
 import type { VisibilityExitReadiness } from "./visibility-exit-readiness";
+import {
+  resolveSceneRootParent,
+  resolveSceneRootTarget,
+  type SceneRootPlacement,
+} from "./root-placement";
 
 export interface PendingMutationRun {
   band: RenderBand;
@@ -23,6 +28,7 @@ export interface PendingMutationRun {
 }
 
 interface PublicationOptions {
+  readonly placement?: SceneRootPlacement;
   readonly onMount?: (entry: MountedSceneElement) => void;
   readonly onUnmount?: (id: string) => void;
   readonly detachedCache?: DetachedSceneElementCache | undefined;
@@ -36,27 +42,38 @@ interface PublicationOptions {
 class PendingPublicationNode {
   #node: Node | undefined;
   #fragment: DocumentFragment | undefined;
+  #last: MountedSceneElement | undefined;
+  #parent: SVGGElement | undefined;
 
-  public constructor(private readonly document: Document) {}
+  public constructor(private readonly options: PublicationOptions) {}
 
   public append(entry: MountedSceneElement): void {
+    const parent = resolveSceneRootParent(entry, this.options);
+    if (this.#parent !== undefined && this.#parent !== parent) this.flush(entry);
+    this.#parent = parent;
+    this.#last = entry;
     if (this.#node === undefined && mountedRootCount(entry) === 1) {
       this.#node = firstPath(entry);
       entry.detachedPathCount = 0;
       return;
     }
-    this.#fragment ??= createFragment(this.document);
+    this.#fragment ??= createFragment(this.options.dom.ownerDocument);
     if (this.#node !== undefined && this.#node !== this.#fragment)
       this.#fragment.append(this.#node);
     appendElementToFragment(entry, this.#fragment);
     this.#node = this.#fragment;
   }
 
-  public flush(group: SVGGElement, successor: MountedSceneElement | undefined): boolean {
-    if (this.#node === undefined) return false;
-    group.insertBefore(this.#node, successor === undefined ? null : firstPath(successor));
+  public flush(successor: MountedSceneElement | undefined): void {
+    if (this.#node === undefined || this.#last === undefined) return;
+    const target = resolveSceneRootTarget(this.#last, successor, this.options);
+    if (target.parent !== this.#parent)
+      throw new Error("Scene root placement changed during an atomic publication.");
+    target.parent.insertBefore(this.#node, target.before);
     this.#node = undefined;
-    return true;
+    this.#last = undefined;
+    this.#parent = undefined;
+    this.options.instrumentation.domFragmentRuns += 1;
   }
 }
 
@@ -96,7 +113,7 @@ export function publishStableEntrantRun(
   epoch: number,
 ): string[] {
   const ids: string[] = [];
-  const publication = new PendingPublicationNode(options.dom.ownerDocument);
+  const publication = new PendingPublicationNode(options);
   for (let index = run.count - 1; index >= 0; index -= 1) {
     const entry = run.entries[index];
     if (entry === undefined) continue;
@@ -105,8 +122,7 @@ export function publishStableEntrantRun(
     if (connected) continue;
     publication.append(entry);
   }
-  if (publication.flush(options.dom.group(run.band), run.successor))
-    options.instrumentation.domFragmentRuns += 1;
+  publication.flush(run.successor);
   return ids;
 }
 
@@ -136,13 +152,12 @@ export function scanVisibilityExits(
   }
 }
 
-/** Checks stale retained entries against one physical sibling snapshot per band. */
+/** Checks retained paint order across element roots and order-preserving SVG wrappers. */
 export class RetainedDomOrder {
   readonly #previous: Partial<Record<RenderBand, MountedSceneElement>> = {};
-  readonly #positions: Partial<Record<RenderBand, Map<Node, number>>> = {};
 
   public constructor(
-    private readonly dom: SceneDom,
+    private readonly dom: Pick<SceneDom, "group">,
     private readonly epoch: number,
   ) {}
 
@@ -155,19 +170,18 @@ export class RetainedDomOrder {
       (previous === undefined || previous.committedOrderEpoch === this.epoch)
     )
       return previous === undefined || entry.committedRank < previous.committedRank;
-    const positions = (this.#positions[band] ??= this.index(band));
-    const current = this.firstPosition(entry, positions);
-    const next = previous === undefined ? undefined : this.firstPosition(previous, positions);
-    const count = entry.group === null ? entry.paths.length : 1;
-    return (
-      current !== undefined &&
-      (previous === undefined || (next !== undefined && current + count <= next))
-    );
+    const last = this.lastContiguousRoot(entry, band);
+    if (last === undefined) return false;
+    if (previous === undefined) return true;
+    const next = firstPath(previous);
+    if (this.lastContiguousRoot(previous, band) === undefined) return false;
+    const position = last.compareDocumentPosition(next);
+    // Following alone preserves paint order; disconnected and ancestor relations do not.
+    return (position & (1 | 8 | 16)) === 0 && (position & 4) !== 0;
   }
 
   public invalidate(): void {
-    delete this.#positions.content;
-    delete this.#positions.highlight;
+    // Native comparisons observe the current tree without a retained position snapshot.
   }
 
   public release(): void {
@@ -177,34 +191,21 @@ export class RetainedDomOrder {
   }
 
   public memoryUsage(): number {
-    return (this.#positions.content?.size ?? 0) * 32 + (this.#positions.highlight?.size ?? 0) * 32;
+    return 0;
   }
 
-  private index(band: RenderBand): Map<Node, number> {
-    // The scene owns this SVG band; one bounded sibling snapshot avoids repeated native reorders.
-    // eslint-disable-next-line no-restricted-syntax -- This one bounded scan reads the scene-owned SVG band.
-    const nodes = this.dom.group(band).childNodes;
-    const positions = new Map<Node, number>();
-    const count = nodes.length;
-    for (let index = 0; index < count; index += 1) {
-      const node = nodes[index];
-      if (node !== undefined) positions.set(node, index);
-    }
-    return positions;
-  }
-
-  private firstPosition(
-    entry: MountedSceneElement,
-    positions: ReadonlyMap<Node, number>,
-  ): number | undefined {
-    const first = positions.get(firstPath(entry));
-    if (first === undefined) return undefined;
+  private lastContiguousRoot(entry: MountedSceneElement, band: RenderBand): SVGElement | undefined {
+    let last = firstPath(entry);
+    if (!this.dom.group(band).contains(last)) return undefined;
     if (entry.group === null) {
       for (let index = 1; index < entry.paths.length; index += 1) {
-        if (positions.get(entry.paths[index]!.node) !== first + index) return undefined;
+        const next = entry.paths[index]!.node;
+        // eslint-disable-next-line no-restricted-syntax -- Only this element's owned multipart roots are inspected.
+        if (last.nextSibling !== next) return undefined;
+        last = next;
       }
     }
-    return first;
+    return last;
   }
 }
 
@@ -216,10 +217,9 @@ export function publishVisibilityRun(
   retainedOrderPreserved: boolean,
 ): string[] {
   const ids: string[] = [];
-  const publication = new PendingPublicationNode(options.dom.ownerDocument);
+  const publication = new PendingPublicationNode(options);
   const flush = (successor: MountedSceneElement | undefined): void => {
-    if (publication.flush(options.dom.group(run.band), successor))
-      options.instrumentation.domFragmentRuns += 1;
+    publication.flush(successor);
   };
   for (let index = run.count - 1; index >= 0; index -= 1) {
     const entry = run.entries[index];
@@ -345,7 +345,7 @@ function restoreProtectedExit(
   const roots = mountedRootCount(entry);
   if ((publication?.remainingRoots ?? Infinity) < roots) return false;
   let anchor = firstPath(entry);
-  const group = options.dom.group(entry.band);
+  const group = resolveSceneRootParent(entry, options);
   for (let index = entry.paths.length - 1; index >= 0; index -= 1) {
     const node = entry.paths[index]!.node;
     group.insertBefore(node, anchor);

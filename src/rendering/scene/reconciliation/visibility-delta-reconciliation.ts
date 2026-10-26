@@ -42,6 +42,7 @@ export function completeDeltaPublication(
 }
 
 interface DeltaStageOptions {
+  readonly onRetain?: (entry: MountedSceneElement) => void;
   readonly detachedCache?: DetachedSceneElementCache;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly mounted: Map<string, MountedSceneElement>;
@@ -134,25 +135,39 @@ function stageDeferredCandidates(
     if (!slice.canPublish) return "budget";
     const id = delta.ids[delta.index]!;
     const record = options.store.get(id);
+    const mounted = options.mounted.get(id);
+    if (record !== undefined) notifyRetained(mounted, options);
     if (record === undefined || !options.visibility.contains(id) || options.mounted.has(id)) {
       delta.index += 1;
       slice.record();
       continue;
     }
-    if (!pending.entrants.has(id)) options.stage(pending, record, slice, previews);
-    if (!pending.entrants.has(id)) {
-      if (options.waiting()) return "paths";
-      const prepared = options.prepareDeferred();
-      if (prepared === undefined) return "deadline";
-      const index = prepared === id ? delta.index : delta.ids.indexOf(prepared, delta.index);
-      if (index < 0) throw new Error("Prepared scene path is outside the deferred target.");
-      delta.ids[index] = id;
-      delta.ids[delta.index] = prepared;
-    }
+    const preparation = prepareDeferredCandidate(record, pending, slice, previews, options);
+    if (preparation !== undefined) return preparation;
     const reason = stageDeltaEntry(delta.ids[delta.index]!, pending, slice, previews, options);
     if (reason !== undefined) return reason;
     delta.index += 1;
   }
+  return undefined;
+}
+
+function prepareDeferredCandidate(
+  record: SceneElementRecord,
+  pending: PendingReconciliation,
+  slice: MountSlice,
+  previews: ReadonlyMap<string, PreviewTransform>,
+  options: DeltaStageOptions,
+): MountYieldReason | undefined {
+  if (!pending.entrants.has(record.id)) options.stage(pending, record, slice, previews);
+  if (pending.entrants.has(record.id)) return undefined;
+  if (options.waiting()) return "paths";
+  const prepared = options.prepareDeferred();
+  if (prepared === undefined) return "deadline";
+  const delta = pending.delta!;
+  const index = prepared === record.id ? delta.index : delta.ids.indexOf(prepared, delta.index);
+  if (index < 0) throw new Error("Prepared scene path is outside the deferred target.");
+  delta.ids[index] = record.id;
+  delta.ids[delta.index] = prepared;
   return undefined;
 }
 
@@ -191,7 +206,9 @@ function stageDeltaEntry(
   options: DeltaStageOptions,
 ): MountYieldReason | undefined {
   options.instrumentation.visibilityReconcileVisits += 1;
-  if (options.mounted.has(id)) {
+  const mounted = options.mounted.get(id);
+  if (mounted !== undefined) {
+    if (options.visibility.contains(id)) options.onRetain?.(mounted);
     slice.record();
     return undefined;
   }
@@ -292,4 +309,8 @@ function successorStart(
     else high = middle;
   }
   return low;
+}
+
+function notifyRetained(entry: MountedSceneElement | undefined, options: DeltaStageOptions): void {
+  if (entry !== undefined && options.visibility.contains(entry.id)) options.onRetain?.(entry);
 }

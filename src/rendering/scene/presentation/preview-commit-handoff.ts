@@ -18,7 +18,11 @@ export class ScenePreviewCommitController {
   #committed = false;
   #nextToken = 0;
 
-  public constructor(motion: SceneMotionController, onCancelledClear: () => void) {
+  public constructor(
+    motion: SceneMotionController,
+    onCancelledClear: () => void,
+    private readonly onConsumed: () => void = () => undefined,
+  ) {
     this.#motion = motion;
     this.#onCancelledClear = onCancelledClear;
   }
@@ -43,6 +47,7 @@ export class ScenePreviewCommitController {
     }
     this.#active = undefined;
     this.#committed = true;
+    this.onConsumed();
     return true;
   }
 

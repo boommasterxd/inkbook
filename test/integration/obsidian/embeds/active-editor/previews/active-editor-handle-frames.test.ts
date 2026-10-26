@@ -99,7 +99,11 @@ describe("active editor handle frames", () => {
       expect.any(Number),
       "preserve",
       expect.any(Function),
+      feedback?.matrix,
     );
+    expect(feedback?.matrix).toHaveLength(6);
+    expect(feedback?.matrix?.every(Number.isFinite)).toBe(true);
+    expect(feedback?.matrix?.[0]).toBeGreaterThan(1);
     const captured = materialize(stroke.id);
     expect(captured).not.toEqual(stroke);
     expect(captured?.style).toEqual(stroke.style);

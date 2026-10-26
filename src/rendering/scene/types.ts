@@ -21,6 +21,8 @@ export interface SceneElementRecord {
 export interface SceneDeltaEntry {
   readonly after?: InkElementV1 | null;
   readonly afterBounds?: Bounds | null;
+  readonly afterGeometryVersion?: number;
+  readonly afterPaintVersion?: number;
   readonly before?: InkElementV1 | null;
   readonly beforeBounds?: Bounds | null;
   readonly domains: readonly SceneDirtyDomain[];

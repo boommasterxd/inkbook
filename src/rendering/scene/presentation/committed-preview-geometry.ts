@@ -1,3 +1,4 @@
+import { composeMatrices, matrixString, IDENTITY_MATRIX } from "./selection-run-residuals";
 import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
 import type { SvgPathPart } from "../../../domain/geometry/element-path";
 import { ProgressivePreviewPath } from "../content/progressive-preview-path";
@@ -8,6 +9,7 @@ import type { MountedSceneElement } from "../content/mounted-element";
 
 interface RetainedTransform {
   readonly base: string | null;
+  readonly matrix: PreviewTransform["matrix"];
   readonly strokeWidthScale: number | null;
   bytes: number;
   desired: PreviewTransform;
@@ -33,18 +35,35 @@ export class CommittedPreviewGeometry {
         continue;
       const entry = context.mounted.get(id);
       if (entry !== undefined)
-        this.retain(id, entry.appliedPreviewTransform, entry.previewStrokeWidthScale);
+        this.retain(
+          id,
+          entry.appliedPreviewTransform,
+          entry.previewStrokeWidthScale,
+          entry.appliedPreviewMatrix,
+        );
     }
   }
 
-  public retain(id: string, base: string | null, strokeWidthScale: number | null): void {
-    const bytes = 40 + 2 * (id.length + (base?.length ?? 0));
+  public retain(
+    id: string,
+    base: string | null,
+    strokeWidthScale: number | null,
+    matrix?: PreviewTransform["matrix"],
+  ): void {
+    matrix = knownMatrix(base, matrix);
+    if (base !== null && matrix !== undefined) base = matrixString(matrix);
+    const bytes = 88 + 2 * (id.length + (base?.length ?? 0));
     this.#transformBytes += bytes - (this.#transforms.get(id)?.bytes ?? 0);
     this.#transforms.set(id, {
       base,
+      matrix,
       bytes,
       strokeWidthScale,
-      desired: { transform: null, strokeWidthScale: null, version: Number.MAX_SAFE_INTEGER },
+      desired: {
+        transform: null,
+        strokeWidthScale: null,
+        version: Number.MAX_SAFE_INTEGER,
+      },
     });
     if (this.#job?.id === id) {
       this.#job.path.cancel();
@@ -60,14 +79,24 @@ export class CommittedPreviewGeometry {
     const retained = this.#transforms.get(id);
     if (retained === undefined) return desired;
     const bytes =
-      40 + 2 * (id.length + (retained.base?.length ?? 0) + (desired.transform?.length ?? 0));
+      136 + 2 * (id.length + (retained.base?.length ?? 0) + (desired.transform?.length ?? 0));
     this.#transformBytes += bytes - retained.bytes;
     retained.bytes = bytes;
     retained.desired = desired;
-    const transform = [desired.transform, retained.base].filter(Boolean).join(" ") || null;
+    const next = knownMatrix(desired.transform, desired.matrix);
+    const composed =
+      retained.matrix === undefined || next === undefined
+        ? undefined
+        : composeMatrices(next, retained.matrix);
+    const matrix = composed?.every(Number.isFinite) ? composed : undefined;
+    const transform =
+      matrix === undefined
+        ? [desired.transform, retained.base].filter(Boolean).join(" ") || null
+        : matrixString(matrix);
     return {
       ...desired,
       transform,
+      matrix,
       strokeWidthScale: desired.strokeWidthScale ?? retained.strokeWidthScale,
     };
   }
@@ -116,4 +145,12 @@ export class CommittedPreviewGeometry {
     this.#job?.path.cancel();
     this.#job = undefined;
   }
+}
+
+function knownMatrix(
+  transform: string | null,
+  matrix: PreviewTransform["matrix"],
+): PreviewTransform["matrix"] {
+  if (transform === null) return IDENTITY_MATRIX;
+  return matrix?.every(Number.isFinite) ? matrix : undefined;
 }

@@ -40,7 +40,11 @@ it("accounts 10000 committed transforms without scanning retained entries on mem
   const base = "translate(5 0)";
   for (const id of ids) geometry.retain(id, base, null);
   const initial = readMemoryWithoutMapVisits(geometry);
-  expect(initial).toBe(40 * ids.length + 2 * (ids.join("").length + ids.length * base.length));
+  // Conservative accounting reserves six numeric coefficients for each retained matrix.
+  const matrixReservation = 6 * 8;
+  expect(initial).toBe(
+    (40 + matrixReservation) * ids.length + 2 * (ids.join("").length + ids.length * base.length),
+  );
   for (const transform of ["scale(2)", "rotate(30 0 0)", null]) {
     for (const id of ids) {
       expect(
@@ -48,11 +52,14 @@ it("accounts 10000 committed transforms without scanning retained entries on mem
       ).toBe(transform === null ? base : `${transform} ${base}`);
     }
     expect(readMemoryWithoutMapVisits(geometry)).toBe(
-      initial + 2 * ids.length * (transform?.length ?? 0),
+      initial + ids.length * (matrixReservation + 2 * (transform?.length ?? 0)),
     );
   }
   geometry.retain(ids[0]!, null, null);
-  expect(readMemoryWithoutMapVisits(geometry)).toBe(initial - base.length * 2);
+  // Resolution reserves another matrix for desired feedback; replacement drops that slot.
+  expect(readMemoryWithoutMapVisits(geometry)).toBe(
+    initial + matrixReservation * (ids.length - 1) - base.length * 2,
+  );
   for (const id of ids) geometry.finish(id);
   geometry.finish(ids[0]!);
   expect(readMemoryWithoutMapVisits(geometry)).toBe(0);

@@ -34,6 +34,7 @@ interface NavigationPreparationOptions {
 }
 
 export class SceneVisibilityCoordinator {
+  #capturedPreviewRelease = false;
   readonly #content: SceneContentRenderer;
   readonly #resources: SceneResourcePolicy;
   readonly #visibility: SceneVisibilityState;
@@ -205,11 +206,22 @@ export class SceneVisibilityCoordinator {
   }
 
   public releaseCommittedPreview(commits: ScenePreviewCommitController): void {
+    if (this.#capturedPreviewRelease) {
+      this.#capturedPreviewRelease = false;
+      this.releasePreviews();
+    }
     if (!commits.releaseCommitted()) return;
     this.#elements.retainCommittedGeometry(this.#transforms.values);
     this.#transforms.clear();
     this.#elements.clear();
     this.releasePreviews();
+  }
+  public captureCommittedPreview(commits: ScenePreviewCommitController): void {
+    if (!commits.releaseCommitted()) return;
+    this.#elements.retainCommittedGeometry(this.#transforms.values);
+    this.#transforms.clear();
+    this.#elements.release();
+    this.#capturedPreviewRelease = true;
   }
 
   public finishMountedFrame(

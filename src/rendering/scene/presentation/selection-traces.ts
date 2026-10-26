@@ -23,6 +23,7 @@ export class SceneSelectionTraces {
     group: SVGGElement,
     instrumentation: MutableSceneInstrumentation,
     frame: SVGPathElement,
+    private readonly bindRun?: (entry: MountedSceneElement) => void,
   ) {
     this.#group = group;
     this.#instrumentation = instrumentation;
@@ -30,6 +31,9 @@ export class SceneSelectionTraces {
   }
   public needsUpdate(id: string, element?: InkElementV1): boolean {
     return this.#traces.has(id) || (element !== undefined && this.includes(element));
+  }
+  public node(id: string): SVGPathElement | undefined {
+    return this.#traces.get(id)?.node;
   }
   public markMountedDirty(
     mounted: ReadonlyMap<string, MountedSceneElement>,
@@ -94,6 +98,7 @@ export class SceneSelectionTraces {
     trace.update(entry, element, parts, cachedCenterPath);
     this.#bytes += trace.memoryUsage() - before;
     if (created) this.#group.append(trace.node);
+    this.bindRun?.(entry);
     this.syncFrameOutline();
     return true;
   }

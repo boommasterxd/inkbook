@@ -22,7 +22,9 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
   let onlyNewOrder = true;
   let membershipChanged = false;
   let onlyRemovals = !ports.content.hasVisibilityWork;
+  let geometryOnly = delta.affected.length > 0;
   for (const affected of delta.affected) {
+    geometryOnly &&= reusableGeometryChange(affected);
     const localMembership = completeMembershipChange(affected, ports.store);
     membershipChanged ||= localMembership;
     onlyRemovals &&= completeRemoval(affected, localMembership);
@@ -31,7 +33,7 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
     let visibilityDirty = false;
     for (const domain of affected.domains) {
       if (domain === "geometry") {
-        ports.content.markGeometry(affected.id);
+        ports.content.markGeometry(affected.id, affected);
         geometryDirty = true;
         visibilityDirty = true;
       } else if (domain === "paint") ports.content.markPaint(affected.id);
@@ -50,6 +52,7 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
     visibilityChanges.push(affected);
   }
   routeOrderChanges(orderIds, onlyNewOrder, membershipChanged, ports);
+  ports.content.finishGeometryDelta(geometryOnly);
   if (visibilityChanges !== undefined) {
     if (onlyRemovals && ports.visibility.beginRemoval()) ports.invalidateVisibility(true);
     else invalidateVisibility(visibilityChanges, ports);
@@ -149,4 +152,12 @@ function currentBounds(
 
 function elementBounds(element: SceneDeltaEntry["before"]): Bounds | null | undefined {
   return element === undefined || element === null ? element : calculateElementBounds(element);
+}
+
+function reusableGeometryChange(change: SceneDeltaEntry): boolean {
+  return (
+    change.before != null &&
+    change.after != null &&
+    change.domains.every((domain) => domain === "geometry" || domain === "connection")
+  );
 }

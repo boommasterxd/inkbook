@@ -27,7 +27,7 @@ import type { PreparedElementHistory } from "../prepared-element-history";
 import type { ElementSceneStore } from "../scene-store";
 import { selectionHandleAction } from "./selection-handle-action";
 import { activeSnapFeatures } from "./snapping-settings";
-import { commitHandlePreview } from "./handle-preview-commit";
+import { commitHandlePreview, type ActiveHandleGesture } from "./handle-preview-commit";
 import { SelectionScalePreviewPlan } from "./selection-scale-preview";
 import { SelectionHandlePresentation, type HandleInteractionRenderer } from "./handle-presentation";
 import { ConnectionPreviewPreparation } from "./connection-preview-preparation";
@@ -59,21 +59,6 @@ interface PendingHandleSample {
   readonly pointer: PointerSample;
   readonly snappingInverted: boolean;
   readonly uniformScale: boolean;
-}
-
-interface ActiveHandleGesture {
-  readonly cursor: ToolSystemCursor;
-  readonly connectedPreview: ConnectedSelectionPreviewSession;
-  readonly connectedTransformIds: readonly string[];
-  readonly grabOffset: PointV1;
-  readonly pointerId: number;
-  readonly pointerType: PointerSample["pointerType"];
-  readonly selected: readonly SelectedElementGeometry[];
-  readonly frame: OrientedSelectionFrame | null;
-  readonly selectedIds: ReadonlySet<string>;
-  readonly scalePreview: SelectionScalePreviewPlan;
-  readonly session: SelectionHandleSession;
-  readonly snapping: SnappingSettingsV1 | undefined;
 }
 
 export class ActiveEditorHandleInteraction {
@@ -213,6 +198,7 @@ export class ActiveEditorHandleInteraction {
     const scalePreview = new SelectionScalePreviewPlan(selected);
     const connectedTransformIds = ids.filter((id) => !connectedPreview.selectedPreviewIds.has(id));
     this.#active = {
+      selectionSource: this.#selection(),
       cursor:
         handle.kind === "rotate" ? "grabbing" : selectionHandleCursor(handle, this.#cursorRotation),
       connectedPreview,
@@ -327,6 +313,9 @@ export class ActiveEditorHandleInteraction {
         scaleMaterializer,
         preview.transform,
         connected.progressive,
+        connected.elements.length === 0 && connected.selectedPreviewIds.size === 0
+          ? active.selectionSource
+          : undefined,
       );
     }
     this.#renderer.flushPointerFeedbackFrame();

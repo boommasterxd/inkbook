@@ -50,6 +50,7 @@ export interface MountedSceneElement {
   group: SVGGElement | null;
   groupOpacity: number;
   appliedPreviewTransform: string | null;
+  appliedPreviewMatrix?: readonly [number, number, number, number, number, number] | undefined;
   appliedTransform: string | null;
   geometryVersion: number;
   readonly id: string;
@@ -204,8 +205,10 @@ export function updatePreviewTransform(
   version: number,
   strokeWidthScale: number | null,
   instrumentation: MutableSceneInstrumentation,
+  matrix?: MountedSceneElement["appliedPreviewMatrix"],
 ): void {
   entry.appliedPreviewTransform = transform;
+  entry.appliedPreviewMatrix = matrix?.every(Number.isFinite) ? matrix : undefined;
   transform = positionedTransform(entry.displayedElement, transform);
   if (entry.group !== null) {
     if (entry.appliedTransform !== transform) {
@@ -335,6 +338,7 @@ function replacePathTopology(
   options: TopologyUpdateOptions,
 ): void {
   const transform = entry.appliedPreviewTransform;
+  const matrix = entry.appliedPreviewMatrix;
   const strokeWidthScale = entry.previewStrokeWidthScale;
   const reference = firstPath(entry);
   const fragment = createFragment(options.ownerDocument);
@@ -344,7 +348,8 @@ function replacePathTopology(
   const group = createPressureGroup(options.ownerDocument, record, paths, options.instrumentation);
   if (group === null) for (const path of paths) fragment.append(path.node);
   else fragment.append(group);
-  options.parent.insertBefore(fragment, reference);
+  const parent = reference.parentNode ?? options.parent;
+  parent.insertBefore(fragment, reference);
   removeMountedElement(entry);
   entry.detachedPathCount = 0;
   entry.group = group;
@@ -360,6 +365,7 @@ function replacePathTopology(
     entry.previewTransformVersion,
     strokeWidthScale,
     options.instrumentation,
+    matrix,
   );
 }
 
@@ -483,5 +489,6 @@ function refreshPosition(
     entry.previewTransformVersion,
     entry.previewStrokeWidthScale,
     instrumentation,
+    entry.appliedPreviewMatrix,
   );
 }

@@ -1,5 +1,9 @@
 import type { SceneCamera, SceneViewport } from "./types";
 
+export function assertSceneActive(disposed: boolean): void {
+  if (disposed) throw new Error("The SVG scene renderer has been destroyed.");
+}
+
 export function validateCamera(camera: SceneCamera): void {
   if (!Number.isFinite(camera.x) || !Number.isFinite(camera.zoom) || camera.zoom <= 0) {
     throw new RangeError("Camera coordinates must be finite and zoom must be positive.");

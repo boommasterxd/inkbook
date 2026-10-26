@@ -1,5 +1,7 @@
 export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
   cadenceSensitive: Object.freeze([
+    "test/performance/rendering/scene/presentation/selection-run-drain-admission.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-late-admission.test.ts",
     "test/performance/domain/shared-frame-scheduler-budget.test.ts",
     "test/performance/editor/eraser-finalization-refresh-profile.test.ts",
     "test/performance/editor/page-height-animation.test.ts",
@@ -19,6 +21,16 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/rendering/scene/presentation/selection-run-plan-memory.test.ts",
+    "test/performance/rendering/scene/presentation/preview-matrix-retention.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-move-feedback.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-overlapping-ownership.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-paint-work.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-pressure-exception-admission.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-retained-work.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-safe-grouping-work.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-traces-admission.test.ts",
+    "test/performance/rendering/scene/presentation/selection-run-width-accounting.test.ts",
     "test/performance/rendering/ui/toolbar-feedback-work.test.tsx",
     "test/performance/obsidian/insertion-feedback-lifecycle-work.test.ts",
     "test/performance/domain/connection-replacement-work.test.ts",

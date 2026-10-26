@@ -57,6 +57,8 @@ export class SceneElementPreviews {
     viewport: SceneViewport | undefined,
     camera: SceneCamera,
   ): readonly string[] {
+    const prepared = this.content.selectionFeedbackIds?.(this.#request?.feedback);
+    if (prepared !== undefined) return prepared;
     const previous = this.#selection;
     if (previous?.ids === ids && previous.viewport === viewport && previous.camera === camera) {
       return previous.selected;
@@ -101,7 +103,8 @@ export class SceneElementPreviews {
       this.#purpose === "connected"
         ? NO_IDS
         : this.selectProgressiveIds(request.ids, viewport, camera);
-    const snapshots = this.snapshotIds(ids);
+    const snapshots =
+      this.content.selectionFeedbackSnapshotIds?.(request.feedback) ?? this.snapshotIds(ids);
     const connected = this.connectedIds(request.ids, viewport, camera);
     this.progressive.set({
       ...request,

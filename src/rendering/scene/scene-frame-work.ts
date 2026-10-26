@@ -32,8 +32,9 @@ export class SceneFrameWork {
     commits: SceneCommitCoordinator,
     frames: SceneFrameScheduler,
   ): void {
+    const pendingPreview = work.pendingPreview || this.ports.elements.pending;
     completeSceneFrame(
-      this.ports.elements.pending ? { ...work, pendingPreview: true } : work,
+      pendingPreview === work.pendingPreview ? work : { ...work, pendingPreview },
       {
         query: this.ports.queryPending?.() === true,
         motion: this.ports.motion.pending,

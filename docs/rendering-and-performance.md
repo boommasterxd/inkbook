@@ -476,7 +476,7 @@ Standalone output, theme classes, external fidelity, and the strict serialized s
 
 ## Related Documentation
 
-See [Core model](core-model.md), [File format](file-format.md), [Implementation specification](specification.md), [Quality and testing](quality-and-testing.md), [Zoom functionality](zoom.md), [Feature behavior](features.md), [Obsidian integration](obsidian-integration.md), and [Standalone SVG envelope and theme rendering](svg-envelope.md).
+See [Core model](core-model.md), [File format](file-format.md), [Implementation specification](specification.md), [Quality and testing](quality-and-testing.md), [Zoom functionality](zoom.md), [Feature behavior](features.md), [Obsidian integration](obsidian-integration.md), and [Standalone SVG envelope and theme rendering](svg-envelope.md). The [prepared selection groups decision](decisions/prepared-selection-groups.md) defines cooperative group admission, canonical fallback, and shared Move/Resize feedback.
 
 ## Reusing Owned Validation and Integrity Work
 

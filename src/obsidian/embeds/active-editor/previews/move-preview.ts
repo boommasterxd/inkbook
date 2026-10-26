@@ -57,7 +57,9 @@ export class MovePreview implements GesturePreview {
       pointerType: options.start.pointer.pointerType,
       ...(options.workScheduler === undefined ? {} : { scheduler: options.workScheduler }),
       spatial: options.sceneStore,
-      targets: { get: (id, bounds) => options.sceneStore.getSnapTarget(id, bounds) },
+      targets: {
+        get: (id, bounds) => options.sceneStore.getSnapTarget(id, bounds),
+      },
     });
     this.#selectedGeometry = selectedGeometry;
     this.#selectedMaximumBottom = selectedGeometry.reduce(
@@ -161,7 +163,10 @@ export class MovePreview implements GesturePreview {
     for (const id of this.#selectedIds) {
       const record = this.#options.store.get(id);
       if (record !== undefined) {
-        geometry.push({ bounds: record.bounds, element: record.element as InkElementV1 });
+        geometry.push({
+          bounds: record.bounds,
+          element: record.element as InkElementV1,
+        });
       }
     }
     return geometry;
@@ -220,12 +225,26 @@ export class MovePreview implements GesturePreview {
     this.#version += 1;
     const transform = this.#translationTransform();
     const connected = this.#renderConnectedElements(transform);
+    const translation = `translate(${String(this.#current.x)} ${String(this.#current.y)})`;
+    const matrix = [1, 0, 0, 1, this.#current.x, this.#current.y] as const;
+    const bounds = selectionPreviewBounds(transform);
     this.#options.renderer.setPreviewTransform(
       this.#transformIds,
-      `translate(${String(this.#current.x)} ${String(this.#current.y)})`,
+      translation,
       this.#version,
       "scale",
-      selectionPreviewBounds(transform),
+      bounds,
+      this.#transformIds.length === this.#selectedIds.size
+        ? {
+            matrix,
+            selection: this.#selectedIds,
+            selectionSize: this.#selectedIds.size,
+            invertible: true,
+            transform: translation,
+            inverse: `translate(${String(-this.#current.x)} ${String(-this.#current.y)})`,
+            transformBounds: bounds,
+          }
+        : matrix,
     );
     this.#renderSelectionOverlay(transform, connected);
     this.#options.renderer.setSnapMarkerPath?.(
@@ -296,7 +315,10 @@ export class MovePreview implements GesturePreview {
 
   #renderSelectionOverlay(
     transform: SelectionPreviewTransform | null,
-    connected: ConnectedSelectionPreview = { elements: [], selectedPreviewIds: new Set() },
+    connected: ConnectedSelectionPreview = {
+      elements: [],
+      selectedPreviewIds: new Set(),
+    },
   ): void {
     const exact =
       this.#selectedGeometry.length === 1 &&

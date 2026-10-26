@@ -1,3 +1,12 @@
+import type { PointV1 } from "../../../../domain/schema/public";
+import type { SnappingSettingsV1 } from "../../../../domain/settings/types";
+import type { ToolSystemCursor } from "../../../../editor/input/tool-cursor";
+import type { PointerSample } from "../../../../editor/input/index";
+import type {
+  ConnectedSelectionPreviewSession,
+  SelectedElementGeometry,
+} from "../../../../editor/selection/public";
+import type { SelectionScalePreviewPlan } from "./selection-scale-preview";
 import type {
   OrientedSelectionFrame,
   SelectionFrameSession,
@@ -8,12 +17,24 @@ import type { PreparedElementHistory } from "../prepared-element-history";
 import type { HandleInteractionRenderer } from "./handle-presentation";
 import { commitPreviewReplacement } from "./preview-replacement-commit";
 
+export interface ActiveHandleGesture {
+  readonly selectionSource: ReadonlySet<string>;
+  readonly cursor: ToolSystemCursor;
+  readonly connectedPreview: ConnectedSelectionPreviewSession;
+  readonly connectedTransformIds: readonly string[];
+  readonly grabOffset: PointV1;
+  readonly pointerId: number;
+  readonly pointerType: PointerSample["pointerType"];
+  readonly selected: readonly SelectedElementGeometry[];
+  readonly frame: OrientedSelectionFrame | null;
+  readonly selectedIds: ReadonlySet<string>;
+  readonly scalePreview: SelectionScalePreviewPlan;
+  readonly session: SelectionHandleSession;
+  readonly snapping: SnappingSettingsV1 | undefined;
+}
+
 interface HandleCommitOptions {
-  readonly active: {
-    readonly frame: OrientedSelectionFrame | null;
-    readonly selectedIds: ReadonlySet<string>;
-    readonly session: SelectionHandleSession;
-  };
+  readonly active: Pick<ActiveHandleGesture, "frame" | "selectedIds" | "session">;
   readonly history: ActiveEditorHistory;
   readonly layout: { finish(committed: boolean, previewMaximumBottom?: number): void } | undefined;
   readonly preparedHistory: PreparedElementHistory;

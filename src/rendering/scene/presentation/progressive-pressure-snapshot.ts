@@ -3,6 +3,18 @@ import { immutableLocalShape } from "../content/stroke-position";
 import { ProgressivePreviewPath } from "../content/progressive-preview-path";
 import type { PendingPath, PreviewRequest } from "./progressive-preview-request";
 
+export function shouldRefreshPressureSnapshot(
+  pending: PendingPath,
+  request: PreviewRequest,
+): boolean {
+  return (
+    request.feedback !== undefined &&
+    !pending.replay &&
+    pending.version !== request.version &&
+    pending.pressureEnabled
+  );
+}
+
 /** Retains only canonical pressure work that still represents the requested local shape. */
 export function refreshPressureSnapshot(
   pending: PendingPath,

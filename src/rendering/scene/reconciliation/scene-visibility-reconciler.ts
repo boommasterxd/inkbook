@@ -396,6 +396,7 @@ export class SceneVisibilityReconciler {
     if (entrant !== undefined) return this.stagePreparedEntrant(entrant, pending, slice, previews);
     const mounted = this.options.mounted.get(id);
     if (mounted !== undefined) {
+      this.options.onRetain?.(mounted);
       if (
         mounted.committedOrderEpoch === this.#orderEpoch &&
         !this.options.orderDirty[pending.cursor.band].has(id) &&

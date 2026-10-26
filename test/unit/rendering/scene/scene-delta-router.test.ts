@@ -117,12 +117,10 @@ describe("scene delta routing", () => {
 
     expect(spies.prepareElementRemoval).not.toHaveBeenCalled();
     expect(spies.markGeometry).toHaveBeenCalledTimes(2);
-    expect(spies.markGeometry).toHaveBeenNthCalledWith(1, "a");
-    expect(spies.markGeometry).toHaveBeenNthCalledWith(2, "b");
+    expectGeometryMarks(spies.markGeometry, spies.finishGeometryDelta, spies.invalidateVisibility);
     expect(spies.markPaint).toHaveBeenCalledOnce();
     expect(spies.invalidateForChanges).toHaveBeenCalledOnce();
     expect(spies.invalidateForChanges).toHaveBeenCalledWith();
-    expect(spies.invalidateVisibility).toHaveBeenCalledOnce();
   });
 
   it("batches order cancellation and releases removed visibility state once", () => {
@@ -168,7 +166,12 @@ describe("scene delta routing", () => {
 
     expect(spies.markOrders).toHaveBeenCalledWith([element.id]);
     expect(spies.markOrderVisibilityDirty).not.toHaveBeenCalled();
-    expect(spies.markGeometry).toHaveBeenCalledWith(element.id);
+    expectSingleGeometryMark(spies.markGeometry, element.id, [
+      "geometry",
+      "paint",
+      "order",
+      "visibility",
+    ]);
     expect(spies.invalidateVisibility).toHaveBeenCalledOnce();
     expect(spies.setElementFade).toHaveBeenCalledWith([element.id], null);
   });
@@ -215,6 +218,7 @@ function routingPorts(): {
     | "markPaint"
     | "releaseId"
     | "setElementFade"
+    | "finishGeometryDelta"
     | "prepareElementRemoval",
     ReturnType<typeof vi.fn>
   >;
@@ -231,6 +235,7 @@ function routingPorts(): {
     markOrderVisibilityDirty: vi.fn(),
     markOrders: vi.fn(),
     markPaint: vi.fn(),
+    finishGeometryDelta: vi.fn(),
     releaseId: vi.fn(),
     setElementFade: vi.fn(),
     prepareElementRemoval: vi.fn(),
@@ -246,6 +251,7 @@ function routingPorts(): {
       markOrder: vi.fn(),
       markOrders: spies.markOrders,
       markPaint: spies.markPaint,
+      finishGeometryDelta: spies.finishGeometryDelta,
       setElementFade: spies.setElementFade,
       prepareElementRemoval: spies.prepareElementRemoval,
     },
@@ -260,4 +266,36 @@ function routingPorts(): {
     },
   } as unknown as SceneDeltaRoutingPorts;
   return { ports, spies };
+}
+
+function expectGeometryMarks(
+  mark: ReturnType<typeof vi.fn>,
+  finish: ReturnType<typeof vi.fn>,
+  invalidateVisibility: ReturnType<typeof vi.fn>,
+): void {
+  expect(mark).toHaveBeenNthCalledWith(
+    1,
+    "a",
+    expect.objectContaining({ id: "a", domains: ["geometry"] }),
+  );
+  expect(mark).toHaveBeenNthCalledWith(
+    2,
+    "b",
+    expect.objectContaining({ id: "b", domains: ["geometry", "paint"] }),
+  );
+  expectGeometryDeltaFinalized(finish, false);
+  expect(invalidateVisibility).toHaveBeenCalledOnce();
+}
+
+function expectSingleGeometryMark(
+  mark: ReturnType<typeof vi.fn>,
+  id: string,
+  domains: readonly string[],
+) {
+  expect(mark).toHaveBeenCalledWith(id, expect.objectContaining({ id, domains }));
+}
+
+function expectGeometryDeltaFinalized(finish: ReturnType<typeof vi.fn>, reusable: boolean): void {
+  expect(finish).toHaveBeenCalledOnce();
+  expect(finish).toHaveBeenCalledWith(reusable);
 }

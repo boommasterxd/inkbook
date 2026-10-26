@@ -58,7 +58,14 @@ export function createProgressiveVisibilityDelta(
       new SceneEntrantPriority(
         entrantIds(visibility, delta === undefined ? undefined : [...delta.entered]),
         options.store,
-        { has: (id) => options.mounted.has(id) || !options.visibility.contains(id) },
+        {
+          has: (id) => {
+            const mounted = options.mounted.get(id);
+            const visible = options.visibility.contains(id);
+            if (mounted !== undefined && visible) options.onRetain?.(mounted);
+            return mounted !== undefined || !visible;
+          },
+        },
         options.instrumentation,
         priority,
       ),

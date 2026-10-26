@@ -1,34 +1,29 @@
-import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
-import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
-import { sameStrokeShape } from "./content/stroke-position";
-import { CommittedPreviewGeometry } from "./presentation/committed-preview-geometry";
+import { SceneGeometryPublication } from "./content/geometry-publication";
+import { SceneSelectionRuns } from "./presentation/selection-runs";
+import type { ProgressivePreviewTransform } from "./presentation/progressive-preview-request";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
-import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
+import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
-import {
-  updateMountedGeometry,
-  updateMountedElementPreview,
-  updateMountedPaint,
-  updatePreviewTransform,
-  setMountedElementMotion,
-  type MountedSceneElement,
-} from "./content/mounted-element";
+import { setMountedElementMotion, type MountedSceneElement } from "./content/mounted-element";
 import type { ScenePathCache } from "./content/path-cache";
 import type { ScenePublicationBudget } from "./reconciliation/mount-slice";
 import { SceneElementFades, type FadeSlice } from "./presentation/scene-element-fades";
 import { setHistoryFadeGate, type ElementFadeDirection } from "./presentation/element-fade-style";
 import { SceneSelectionTraces } from "./presentation/selection-traces";
 import type { SceneDom } from "./scene-dom";
-import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
+import type { MutableSceneInstrumentation, SceneStorePort, SceneDeltaEntry } from "./types";
 import type { SceneVisibilityState } from "./visibility/visibility-state";
 import { SceneVisibilityReconciler } from "./reconciliation/scene-visibility-reconciler";
 import type { PreviewTransform } from "./reconciliation/scene-visibility-reconciler";
-import { markSceneOrderDirty, writeDirtySet } from "./content/dirty-set-work";
+import { markSceneOrderDirty } from "./content/dirty-set-work";
 import { commitVisibleBands, mountedVisibleIds } from "./visibility/visibility-order";
 import { mountedPreviewIds } from "./presentation/preview-transform-selection";
 import type { PreviewMembershipContext } from "./types";
-import type { ScenePreparationOptions as ContentOptions } from "./reconciliation/reconciliation-state";
+import type { ScenePreparationOptions } from "./reconciliation/reconciliation-state";
+type ContentOptions = ScenePreparationOptions & {
+  readonly zoom?: () => number;
+};
 import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priority";
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
@@ -38,12 +33,10 @@ export class SceneContentRenderer {
     content: [],
     highlight: [],
   };
-  readonly #committedCounts: Record<RenderBand, number> = { content: 0, highlight: 0 };
-  readonly #geometryDirty = new Set<string>();
-  readonly #committedGeometry = new CommittedPreviewGeometry();
-  readonly #deferredPreviews = new Set<string>();
-  #committedPreviewIds: string[] = [];
-  readonly #instrumentation: MutableSceneInstrumentation;
+  readonly #committedCounts: Record<RenderBand, number> = {
+    content: 0,
+    highlight: 0,
+  };
   readonly #mounted = new Map<string, MountedSceneElement>();
   readonly #fades = new SceneElementFades(
     this.#mounted,
@@ -55,13 +48,12 @@ export class SceneContentRenderer {
     content: new Set(),
     highlight: new Set(),
   };
-  readonly #paintDirty = new Set<string>();
-  readonly #pathCache: ScenePathCache;
   readonly #reconciler: SceneVisibilityReconciler;
   readonly #store: SceneStorePort;
   readonly #visibility: SceneVisibilityState;
   readonly #selectionTraces: SceneSelectionTraces;
-  readonly #selectionDirty = new Set<string>();
+  readonly #selectionRuns: SceneSelectionRuns;
+  readonly #publication: SceneGeometryPublication;
   readonly #detachedCache: ContentOptions["detachedCache"];
   public constructor(
     dom: SceneDom,
@@ -77,11 +69,29 @@ export class SceneContentRenderer {
       dom.selectionTraceGroup,
       instrumentation,
       dom.selectionOverlayPath,
+      (entry) => this.#selectionRuns.bindTrace(entry),
     );
+    this.#selectionRuns = new SceneSelectionRuns({
+      dom,
+      mounted: this.#mounted,
+      store,
+      instrumentation,
+      trace: (id) => this.#selectionTraces.node(id),
+      zoom: options.zoom ?? (() => 1),
+      visible: (id) => this.#visibility.contains(id),
+      syncTrace: (entry) => this.#selectionTraces.transform(entry.id, entry),
+    });
+    this.#publication = new SceneGeometryPublication({
+      dom,
+      mounted: this.#mounted,
+      store,
+      pathCache,
+      instrumentation,
+      selectionRuns: this.#selectionRuns,
+      selectionTraces: this.#selectionTraces,
+    });
     this.#store = store;
     this.#visibility = visibility;
-    this.#pathCache = pathCache;
-    this.#instrumentation = instrumentation;
     this.#reconciler = new SceneVisibilityReconciler({
       ...options,
       dom,
@@ -89,8 +99,16 @@ export class SceneContentRenderer {
       isExitReady: (id, now) => this.#fades.isExitReady(id, now),
       exitReadyAt: (id) => this.#fades.readyAt(id),
       mounted: this.#mounted,
-      onMount: (entry) => this.#fades.bindMounted(entry),
-      onUnmount: (id) => this.#fades.releaseMounted(id),
+      onMount: (entry) => {
+        this.#fades.bindMounted(entry);
+        this.#selectionRuns.mounted(entry);
+      },
+      onUnmount: (id) => {
+        this.#fades.releaseMounted(id);
+        this.#selectionRuns.unmounted(id);
+      },
+      onRetain: (entry) => this.#publication.retain(entry),
+      placement: this.#selectionRuns.groups,
       orderDirty: this.#orderDirty,
       pathCache,
       store,
@@ -98,23 +116,36 @@ export class SceneContentRenderer {
     });
   }
   public setSelectedElements(ids: ReadonlySet<string>): void {
-    if (this.#selectionTraces.setSelection(ids))
-      this.#selectionTraces.markMountedDirty(this.#mounted, this.#selectionDirty);
+    this.#selectionRuns.setSelection(ids);
+    if (this.#selectionTraces.setSelection(ids)) this.#publication.markSelectionDirty();
+  }
+  public refreshSelectionFeedbackZoom(): void {
+    this.#selectionRuns.refreshZoom();
+  }
+  public get hasSharedSelectionCommitFeedback(): boolean {
+    return this.#selectionRuns.hasRetainableFeedback;
+  }
+  public get hasRunCommitOwnership(): boolean {
+    return this.#selectionRuns.committing;
+  }
+  public stageSelectionFeedback(feedback: ProgressivePreviewTransform | undefined): void {
+    this.#selectionRuns.stage(feedback);
   }
   public setSelectionHighlightsEnabled(enabled: boolean): void {
-    if (this.#selectionTraces.setHighlightsEnabled(enabled))
-      this.#selectionTraces.markMountedDirty(this.#mounted, this.#selectionDirty);
+    if (this.#selectionTraces.setHighlightsEnabled(enabled)) this.#publication.markSelectionDirty();
   }
   public flushSelectionContext(): void {
     this.#selectionTraces.flushContext();
   }
   public previewMemoryUsage(): number {
     return (
+      // Reserve one six-coefficient preview matrix per mounted entry, including aliases.
+      this.#mounted.size * 6 * 8 +
       this.#selectionTraces.memoryUsage() +
-      this.#committedGeometry.memoryUsage() +
+      this.#selectionRuns.memoryUsage() +
+      this.#publication.memoryUsage() +
       this.#reconciler.memoryUsage() +
-      this.#fades.memoryUsage() +
-      (this.#deferredPreviews.size + this.#committedPreviewIds.length) * 8
+      this.#fades.memoryUsage()
     );
   }
   public get mountedCount(): number {
@@ -135,14 +166,17 @@ export class SceneContentRenderer {
     this.#newlyMountedIds = EMPTY_IDS;
     return ids;
   }
-  public markGeometry(id: string): void {
-    if (this.#mounted.has(id)) this.#geometryDirty.add(id);
-    this.#pathCache.invalidate(id);
+  public markGeometry(id: string, change?: SceneDeltaEntry): void {
+    this.#publication.markGeometry(id, change);
   }
   public markPaint(id: string): void {
-    this.#paintDirty.add(id);
+    this.#publication.markPaint(id);
+  }
+  public finishGeometryDelta(geometryOnly: boolean): void {
+    this.#selectionRuns.finishDelta(geometryOnly);
   }
   public markOrders(ids: readonly string[]): void {
+    this.#selectionRuns.invalidate();
     for (const id of ids) {
       markSceneOrderDirty(id, this.#store, this.#orderDirty, this.#detachedCache);
     }
@@ -152,52 +186,24 @@ export class SceneContentRenderer {
     previews: ReadonlyMap<string, PreviewTransform>,
     elements: ReadonlyMap<string, InkElementV1>,
   ): void {
-    this.#committedGeometry.retainPreviews(previews, elements, {
-      dirty: this.#geometryDirty,
-      mounted: this.#mounted,
-    });
+    this.#publication.materializePreviewGeometry(previews, elements);
   }
   public takeCommittedPreviewIds(): readonly string[] {
-    if (this.#committedPreviewIds.length === 0) return EMPTY_IDS;
-    const ids = this.#committedPreviewIds;
-    this.#committedPreviewIds = [];
-    return ids;
+    return this.#publication.takeCommittedPreviewIds();
   }
   public writeMountedChanges(
     deadline: number,
     now: () => number,
     publication: ScenePublicationBudget,
+    admittedFirstStep = false,
   ): boolean {
-    if (this.#geometryDirty.size > 0) {
-      if (
-        writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
-          this.writeGeometry(id, deadline, now, publication),
-        )
-      )
-        return true;
-      if (now() >= deadline) return this.#paintDirty.size > 0 || this.#selectionDirty.size > 0;
-    }
-    if (this.#paintDirty.size > 0) {
-      if (writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id, publication)))
-        return true;
-      if (now() >= deadline) return this.#selectionDirty.size > 0;
-    }
-    return this.#selectionTraces.writeDirty(
-      this.#selectionDirty,
-      this.#mounted,
-      this.#store,
-      deadline,
-      now,
-      publication,
-    );
+    return this.#publication.writeMountedChanges(deadline, now, publication, admittedFirstStep);
   }
   public get hasPendingExitCleanup(): boolean {
     return this.#reconciler.hasPendingCleanup;
   }
   public get hasMountedWork(): boolean {
-    return (
-      this.#geometryDirty.size > 0 || this.#paintDirty.size > 0 || this.#selectionDirty.size > 0
-    );
+    return this.#publication.hasMountedWork;
   }
   public get hasVisibilityWork(): boolean {
     return this.#reconciler.hasPendingWork;
@@ -263,12 +269,8 @@ export class SceneContentRenderer {
       this.#selectionTraces.prune(this.#mounted);
     }
     this.#newlyMountedIds = result.newlyMountedIds;
-    this.#selectionTraces.markMountedDirty(
-      this.#mounted,
-      this.#selectionDirty,
-      result.newlyMountedIds,
-    );
-    return result.pending || this.#selectionDirty.size > 0;
+    this.#publication.markSelectionDirty(result.newlyMountedIds);
+    return result.pending || this.#publication.hasSelectionWork;
   }
   public promoteVisible(id: string): boolean {
     return this.#reconciler.promote(id);
@@ -278,91 +280,24 @@ export class SceneContentRenderer {
     transform: string | null,
     version: number,
     strokeWidthScale: number | null,
+    matrix?: PreviewTransform["matrix"],
   ): void {
-    const entry = this.#mounted.get(id);
-    if (entry !== undefined) {
-      const resolved = this.#committedGeometry.resolve(id, {
-        transform,
-        version,
-        strokeWidthScale,
-      });
-      updatePreviewTransform(
-        entry,
-        resolved.transform,
-        resolved.version,
-        resolved.strokeWidthScale,
-        this.#instrumentation,
-      );
-      this.#selectionTraces.transform(id, entry);
-    }
+    this.#publication.applyPreviewTransform(id, transform, version, strokeWidthScale, matrix);
   }
   public applyElementPreview(element: InkElementV1): boolean {
-    if (this.#committedGeometry.has(element.id)) {
-      this.#deferredPreviews.add(element.id);
-      return false;
-    }
-    const entry = this.#mounted.get(element.id);
-    if (entry === undefined) return false;
-    const parts = sameStrokeShape(entry.displayedElement, element)
-      ? entry.displayedPathParts
-      : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);
-    return this.applyCanonicalElementPreview(element, parts);
+    return this.#publication.applyElementPreview(element);
   }
   public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
-    const entry = this.#mounted.get(element.id);
-    return element.kind === "stroke" &&
-      (Object.isFrozen(element.points) || isStoredStroke(element)) &&
-      entry !== undefined &&
-      sameStrokeShape(entry.displayedElement, element)
-      ? entry.displayedPathParts
-      : undefined;
+    return this.#publication.readCanonicalStrokePath(element);
   }
   public applyCanonicalElementPreview(
     element: InkElementV1,
     parts: readonly SvgPathPart[],
   ): boolean {
-    if (this.#committedGeometry.has(element.id)) {
-      this.#deferredPreviews.add(element.id);
-      return false;
-    }
-    const entry = this.#mounted.get(element.id);
-    const record = this.#store.get(element.id);
-    if (entry === undefined || record === undefined) return false;
-    updateMountedElementPreview(entry, record, element, parts, {
-      instrumentation: this.#instrumentation,
-      ownerDocument: this.#dom.ownerDocument,
-      parent: this.#dom.group(entry.band),
-    });
-    if (this.#selectionTraces.update(entry, element, parts))
-      this.#selectionDirty.delete(element.id);
-    else this.#selectionDirty.add(element.id);
-    return true;
+    return this.#publication.applyCanonicalElementPreview(element, parts);
   }
   public clearElementPreview(id: string): void {
-    if (this.#committedGeometry.has(id)) {
-      this.#geometryDirty.add(id);
-      return;
-    }
-    const entry = this.#mounted.get(id);
-    if (entry === undefined) return;
-    const record = this.#store.get(id);
-    if (record === undefined) return;
-    if (
-      entry.geometryVersion !== record.geometryVersion &&
-      record.element.kind === "stroke" &&
-      record.element.style.pressureEnabled
-    ) {
-      this.#geometryDirty.add(id);
-      return;
-    }
-    const parts =
-      entry.geometryVersion === record.geometryVersion
-        ? entry.pathParts
-        : this.#pathCache.build(
-            record.element,
-            this.#store.pressureGeometry?.(record.id, record.geometryVersion),
-          );
-    this.updateGeometry(entry, record, parts);
+    this.#publication.clearElementPreview(id);
   }
   public setElementFade(
     ids: readonly string[],
@@ -410,15 +345,11 @@ export class SceneContentRenderer {
     }
   }
   public release(): void {
-    this.#committedGeometry.release();
-    this.#deferredPreviews.clear();
-    this.#committedPreviewIds = [];
+    this.#selectionRuns.release();
+    this.#publication.release();
     this.#fades.release();
     this.#selectionTraces.release();
-    this.#selectionDirty.clear();
     this.#reconciler.release();
-    this.#geometryDirty.clear();
-    this.#paintDirty.clear();
     this.#orderDirty.content.clear();
     this.#orderDirty.highlight.clear();
     this.#mounted.clear();
@@ -429,72 +360,43 @@ export class SceneContentRenderer {
     this.#committedCounts.content = 0;
     this.#committedCounts.highlight = 0;
   }
-  private writeGeometry(
+  public selectionFeedbackIds(
+    feedback: ProgressivePreviewTransform | undefined,
+  ): readonly string[] | undefined {
+    return this.#selectionRuns.ids(feedback);
+  }
+  public selectionFeedbackSnapshotIds(
+    feedback: ProgressivePreviewTransform | undefined,
+  ): readonly string[] | undefined {
+    return this.#selectionRuns.snapshotIds(feedback);
+  }
+  public canUseSelectionFeedback(feedback: ProgressivePreviewTransform | undefined): boolean {
+    return this.#selectionRuns.canUse(feedback);
+  }
+  public selectionFeedbackExceptionIds(
+    feedback: ProgressivePreviewTransform | undefined,
+  ): readonly string[] | undefined {
+    return this.#selectionRuns.exceptionIds(feedback);
+  }
+  public publishSelectionFeedback(feedback: ProgressivePreviewTransform, version: number): boolean {
+    return this.#selectionRuns.publish(feedback, version);
+  }
+  public setSelectionFeedbackBasis(
     id: string,
-    deadline: number,
-    now: () => number,
-    publication: ScenePublicationBudget,
-  ): boolean {
-    const entry = this.#mounted.get(id);
-    const record = this.#store.get(id);
-    if (
-      entry === undefined ||
-      record === undefined ||
-      entry.geometryVersion === record.geometryVersion
-    ) {
-      this.#committedGeometry.finish(id);
-      this.#deferredPreviews.delete(id);
-      return true;
-    }
-    const pressure = this.#store.pressureGeometry?.(record.id, record.geometryVersion);
-    const pending =
-      this.#committedGeometry.has(id) ||
-      (record.element.kind === "stroke" && record.element.style.pressureEnabled);
-    const parts =
-      (sameStrokeShape(entry.displayedElement, record.element)
-        ? entry.displayedPathParts
-        : undefined) ??
-      this.#pathCache.read(record.element, pressure, record.geometryVersion) ??
-      (pending
-        ? this.#committedGeometry.prepare(record, deadline, now, pressure)
-        : this.#pathCache.build(record.element, pressure));
-    if (parts === undefined) return false;
-    this.updateGeometry(entry, record, parts, publication);
-    const desired = this.#committedGeometry.finish(id);
-    if (this.#deferredPreviews.delete(id)) this.#committedPreviewIds.push(id);
-    if (desired !== undefined)
-      this.applyPreviewTransform(id, desired.transform, desired.version, desired.strokeWidthScale);
-    return true;
-  }
-  private updateGeometry(
-    entry: MountedSceneElement,
-    record: SceneElementRecord,
-    parts: readonly SvgPathPart[],
-    publication?: ScenePublicationBudget,
+    basis: ProgressivePreviewTransform | undefined,
   ): void {
-    const geometryChanged = entry.geometryVersion !== record.geometryVersion;
-    if (geometryChanged && !this.#pathCache.has(record.id, record.geometryVersion))
-      this.#pathCache.completePreparation(record.element, parts, record.geometryVersion);
-    updateMountedGeometry(
-      entry,
-      record,
-      parts,
-      this.#dom.ownerDocument,
-      this.#dom.group(entry.band),
-      this.#instrumentation,
-    );
-    if (this.#selectionTraces.update(entry, record.element, parts, publication))
-      this.#selectionDirty.delete(entry.id);
-    else this.#selectionDirty.add(entry.id);
+    this.#selectionRuns.basis(id, basis);
   }
-  private writePaint(id: string, publication: ScenePublicationBudget): void {
-    const entry = this.#mounted.get(id);
-    const record = this.#store.get(id);
-    if (entry === undefined || record === undefined || entry.paintVersion === record.paintVersion)
-      return;
-    updateMountedPaint(entry, record, entry.pathParts, this.#instrumentation);
-    entry.displayedElement = record.element;
-    if (!this.#selectionTraces.update(entry, record.element, entry.displayedPathParts, publication))
-      this.#selectionDirty.add(id);
+  public clearSelectionFeedback(): void {
+    this.#selectionRuns.clear();
+  }
+  public get selectionFeedbackTransforms(): ReadonlyMap<string, PreviewTransform> {
+    return this.#selectionRuns.transforms;
+  }
+  public get deferVisibilityForRunCommit(): boolean {
+    return (
+      this.#selectionRuns.structuralRetirement ||
+      (this.#selectionRuns.cleaning && !this.#selectionRuns.active)
+    );
   }
 }

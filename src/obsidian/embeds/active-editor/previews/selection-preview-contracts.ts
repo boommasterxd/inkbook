@@ -42,6 +42,17 @@ interface SelectionPreviewRenderer {
     version: number,
     strokeWidth?: PreviewStrokeWidth,
     transformBounds?: PreviewBoundsTransform,
+    affine?:
+      | readonly [number, number, number, number, number, number]
+      | {
+          readonly matrix: readonly [number, number, number, number, number, number];
+          readonly selection: ReadonlySet<string>;
+          readonly selectionSize: number;
+          readonly invertible: boolean;
+          readonly transform: string;
+          readonly inverse: string;
+          readonly transformBounds?: PreviewBoundsTransform;
+        },
   ): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }

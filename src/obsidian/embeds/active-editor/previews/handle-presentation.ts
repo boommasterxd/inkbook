@@ -1,3 +1,4 @@
+import { selectionPreviewMatrix } from "../../../../editor/selection/transform/selection-preview-matrix";
 import type { ProgressivePreviewPurpose } from "../../../../rendering/scene/presentation/connected-preview-cohort";
 import { calculateElementBounds } from "../../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../../domain/schema/public";
@@ -48,6 +49,7 @@ export interface HandleInteractionRenderer {
     version: number,
     strokeWidth?: "preserve" | "scale",
     transformBounds?: PreviewBoundsTransform,
+    matrix?: ProgressivePreviewTransform["matrix"],
   ): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }
@@ -181,6 +183,7 @@ export class SelectionHandlePresentation {
     materialize: (id: string) => InkElementV1 | undefined,
     transform: Extract<SelectionPreviewTransform, { kind: "scale" }>,
     connected?: ProgressivePreviewPurpose,
+    selection?: ReadonlySet<string>,
   ): void {
     this.#version += 1;
     const inverse = transformString({
@@ -193,6 +196,12 @@ export class SelectionHandlePresentation {
       materialize,
       this.#version,
       {
+        ...(connected === undefined && selection !== undefined
+          ? { selection, selectionSize: ids.length }
+          : {}),
+        invertible:
+          Number.isFinite(1 / transform.factors.x) && Number.isFinite(1 / transform.factors.y),
+        matrix: selectionPreviewMatrix(transform)!,
         transformBounds: selectionPreviewBounds(transform),
         transform: transformString(transform)!,
         inverse: `${inverse} translate(${String(-transform.delta.x)} ${String(-transform.delta.y)})`,
@@ -212,6 +221,7 @@ export class SelectionHandlePresentation {
       this.#version,
       transform?.kind === "scale" ? "preserve" : "scale",
       transform === null ? undefined : selectionPreviewBounds(transform),
+      selectionPreviewMatrix(transform),
     );
   }
 }
