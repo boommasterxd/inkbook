@@ -39,10 +39,34 @@ export function selectionHandleAction(
         }
       : { elementId: only.id, kind: handle.kind };
   }
+  if (selected.length > 1 && frame !== null) return framedHandleAction(handle, frame);
   const bounds = selectionBounds(selected);
   if (bounds === null) throw new Error("Selection bounds are unavailable.");
   if (handle.kind === "rotate") return rotationHandleAction(only, bounds, frame);
   return scaleHandleAction(handle, only, bounds, frame);
+}
+
+function framedHandleAction(
+  handle: Extract<SelectionHandle, { kind: "scale" | "rotate" }>,
+  frame: OrientedSelectionFrame,
+): SelectionHandleAction {
+  const opposite = selectionFramePoint(
+    frame,
+    oppositeBoxAnchor(handle.kind === "rotate" ? "top-center" : handle.position),
+  );
+  return handle.kind === "rotate"
+    ? {
+        center: frameCenter(frame)!,
+        kind: "rotate",
+        opposite,
+        referenceRotation: frame.rotation,
+      }
+    : {
+        anchor: opposite,
+        kind: "scale",
+        position: handle.position,
+        rotation: frame.rotation,
+      };
 }
 
 function scaleHandleAction(

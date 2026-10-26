@@ -2,9 +2,15 @@ import { expect, it, vi } from "vitest";
 
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../../src/domain/store/public";
+import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
 import * as strokePosition from "../../../../../src/domain/geometry/stroke-position";
 import { layoutSelectionHandles } from "../../../../../src/editor/selection/handles";
-import { SelectionFrameSession } from "../../../../../src/editor/selection/public";
+import {
+  createSelectionFrameAtRotation,
+  oppositeBoxAnchor,
+  selectionFramePoint,
+  SelectionFrameSession,
+} from "../../../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../../../src/obsidian/embeds/active-editor/previews/handle-interaction";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { selectionHandleAction } from "../../../../../src/obsidian/embeds/active-editor/previews/selection-handle-action";
@@ -13,6 +19,51 @@ import { createSelectionPreviewRenderer } from "../../../../fixtures/obsidian/se
 import { observePointReads } from "../../../../fixtures/rendering/point-reads";
 import { maximumStroke } from "../../../editor/maximum-stroke-fixture";
 import { STROKE_FRAME_CASES } from "../../../../fixtures/editor/stroke-frame";
+import { rectangle } from "../../../../unit/domain/geometry/fixtures";
+
+it.each([0, 37])(
+  "reuses a prepared 10,000-element frame without reading member bounds at %s degrees",
+  (rotation) => {
+    const elements = Array.from({ length: 10_000 }, (_, index) => {
+      const x = (index % 100) * 120;
+      const y = Math.floor(index / 100) * 70;
+      return rectangle({ id: `shape-${index}`, x, y, pivot: { x: x + 50, y: y + 25 }, rotation });
+    });
+    const frame = createSelectionFrameAtRotation(elements, rotation)!;
+    let boundsReads = 0;
+    const selected = elements.map((element) => {
+      const bounds = calculateElementBounds(element);
+      return {
+        element,
+        get bounds() {
+          boundsReads += 1;
+          return bounds;
+        },
+      };
+    });
+    const handles = layoutSelectionHandles(selected, { frame, zoom: 1 });
+    for (const handle of handles) {
+      const action = selectionHandleAction(handle, selected, frame);
+      if (action.kind === "scale") {
+        expect(action.anchor).toEqual(
+          selectionFramePoint(frame, oppositeBoxAnchor(action.position)),
+        );
+        expect(action.rotation).toBe(rotation);
+      } else if (action.kind === "rotate") {
+        expect(action.center).toEqual({
+          x: (frame.points[0].x + frame.points[2].x) / 2,
+          y: (frame.points[0].y + frame.points[2].y) / 2,
+        });
+        expect(action.opposite).toEqual(selectionFramePoint(frame, "bottom-center"));
+        expect(action.referenceRotation).toBe(rotation);
+      } else throw new Error("Expected a box handle action.");
+    }
+    expect(boundsReads).toBe(0);
+    // The same observer must detect the supported uncached fallback's real traversal.
+    selectionHandleAction(handles[0]!, selected, null);
+    expect(boundsReads).toBe(10_000);
+  },
+);
 
 it.each(STROKE_FRAME_CASES)(
   "starts warm maximum-stroke handles without sample reads at $rotation degrees, collapsed=$collapsed, extreme pivot=$extremePivot",
