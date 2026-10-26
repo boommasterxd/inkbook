@@ -19,7 +19,7 @@ function formatLocalTimestamp(date: Date): string {
 }
 
 export interface RandomBytesSource {
-  fill(bytes: Uint8Array): void;
+  fill(bytes: Uint8Array<ArrayBuffer>): void;
 }
 
 export function createInkbookFilename(date: Date, random: RandomBytesSource): string {

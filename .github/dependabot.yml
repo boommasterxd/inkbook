@@ -13,6 +13,14 @@ updates:
     ignore:
       - dependency-name: "@codemirror/state"
       - dependency-name: "@codemirror/view"
+      # Keep declarations aligned with the approved Node.js 24 runtime.
+      # Reassess when a reviewed Node.js LTS upgrade advances the runtime major.
+      - dependency-name: "@types/node"
+        versions: [">=25"]
+      # The CI import graph and supported lint/architecture tools use the TS6 API.
+      # Remove after the complete stable TS7 toolchain is supported and verified.
+      - dependency-name: "typescript"
+        versions: [">=7"]
     groups:
       minor-patch:
         update-types:
