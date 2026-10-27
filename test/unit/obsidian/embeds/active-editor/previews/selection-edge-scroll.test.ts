@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ElementStore } from "../../../../../../src/domain/store/public";
 import { createSelectionEdgePreview } from "../../../../../fixtures/obsidian/selection-edge-preview";
 
 import {
@@ -270,7 +271,7 @@ describe("selection edge-scroll frame arbitration", () => {
       history: {} as SelectionPreviewOptions["history"],
       preparedHistory: {} as SelectionPreviewOptions["preparedHistory"],
       sceneStore: {} as SelectionPreviewOptions["sceneStore"],
-      store: {} as SelectionPreviewOptions["store"],
+      store: new ElementStore([]),
       setSelection: vi.fn(),
       frameScheduler: {
         cancelFrame: frames.cancel,
@@ -308,6 +309,14 @@ describe("selection edge-scroll frame arbitration", () => {
       2,
       "scale",
       expect.any(Function),
+      expect.objectContaining({
+        matrix: [1, 0, 0, 1, 0, y - 300],
+        selection: new Set(),
+        selectionSize: 0,
+        invertible: true,
+        transform: `translate(0 ${String(y - 300)})`,
+        inverse: `translate(0 ${String(300 - y)})`,
+      }),
     );
     if (y === 300) {
       expect(onScroll).toHaveBeenCalledOnce();

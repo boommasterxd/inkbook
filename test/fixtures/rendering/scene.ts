@@ -103,6 +103,12 @@ export function sceneDeltaEntries(delta: StoreDelta): SceneDeltaEntry[] {
     after: (change.after?.element as InkElementV1 | undefined) ?? null,
     beforeBounds: change.before?.bounds ?? null,
     afterBounds: change.after?.bounds ?? null,
+    ...(change.after === null
+      ? {}
+      : {
+          afterGeometryVersion: change.after.geometryVersion,
+          afterPaintVersion: change.after.paintVersion,
+        }),
   }));
 }
 
@@ -151,11 +157,7 @@ export function createHistoryContourScene(inputs?: {
   const unsubscribe = store.subscribe((delta) =>
     scene.renderer.applyDelta({
       historyReplay,
-      affected: delta.changes.map((change) => ({
-        ...change,
-        before: (change.before?.element as InkElementV1 | undefined) ?? null,
-        after: (change.after?.element as InkElementV1 | undefined) ?? null,
-      })),
+      affected: sceneDeltaEntries(delta),
     }),
   );
   return {

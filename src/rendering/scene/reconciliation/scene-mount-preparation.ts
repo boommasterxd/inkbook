@@ -15,6 +15,7 @@ import type { DetachedSceneElementCache } from "../content/detached-element-cach
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 export interface PreviewTransform {
+  readonly matrix?: readonly [number, number, number, number, number, number] | undefined;
   readonly strokeWidthScale: number | null;
   readonly transform: string | null;
   readonly version: number;
@@ -131,6 +132,7 @@ export class SceneMountPreparation {
         preview.version,
         preview.strokeWidthScale,
         this.options.instrumentation,
+        preview.matrix,
       );
     return entry;
   }

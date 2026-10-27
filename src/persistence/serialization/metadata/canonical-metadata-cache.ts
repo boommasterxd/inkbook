@@ -226,6 +226,7 @@ function joinBytes(
   fragments: readonly Uint8Array<ArrayBuffer>[],
   length = fragments.reduce((sum, fragment) => sum + fragment.byteLength, 0),
 ): Uint8Array<ArrayBuffer> {
+  if (fragments.length === 1) return fragments[0]!;
   const bytes = new Uint8Array(length);
   let offset = 0;
   for (const fragment of fragments) {

@@ -1,11 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { LineElementV1 } from "../../../../../src/domain/schema/public";
-import {
-  moveSelectionWithSnap,
-  resolveSelectionMoveSnap,
-} from "../../../../../src/editor/selection/public";
-import { SnapCandidateScratch } from "../../../../../src/editor/snapping/snap-candidate";
+import { moveSelectionWithSnap } from "../../../../../src/editor/selection/public";
+import { ScheduledMoveSnap } from "../../../../../src/editor/selection/transform/scheduled-move-snap";
 
 const LINE_ID = "00000000-0000-4000-8000-000000000001";
 const TARGET_ID = "00000000-0000-4000-8000-000000000002";
@@ -38,13 +35,10 @@ function resolve(
   options: { readonly selectedTarget?: boolean; readonly zoom?: number } = {},
 ) {
   const query = vi.fn((_bounds, sink: { add(id: string): void }) => sink.add(TARGET_ID));
-  const result = resolveSelectionMoveSnap({
-    current: null,
-    elements: [element],
+  const lookup = new ScheduledMoveSnap({
+    element: options.selectedTarget ? undefined : element,
+    canConnect: () => true,
     pointerType: "mouse",
-    rawDelta: { x: 47, y: 48 },
-    scratch: new SnapCandidateScratch(),
-    selectedIds: new Set(options.selectedTarget ? [LINE_ID, TARGET_ID] : [LINE_ID]),
     spatial: { query },
     targets: {
       get: () => ({
@@ -58,8 +52,10 @@ function resolve(
         rank: 1,
       }),
     },
-    zoom: options.zoom ?? 1,
   });
+  lookup.update({ x: 47, y: 48 }, null, options.zoom ?? 1, () => undefined);
+  const result = lookup.value;
+  lookup.cancel();
   return { query, result };
 }
 
@@ -102,22 +98,19 @@ describe("selection move snapping", () => {
     expect(resolve(line(), { zoom: 4 }).result).toBeNull();
   });
 
-  it.each([0, 2, 1_001])("does not query snap targets for %i moving elements", (count) => {
+  it("does not query snap targets without a single moving element", () => {
     const query = vi.fn();
 
-    const result = resolveSelectionMoveSnap({
-      current: null,
-      elements: new Array(count).fill(line()),
+    const lookup = new ScheduledMoveSnap({
+      element: undefined,
+      canConnect: () => true,
       pointerType: "touch",
-      rawDelta: { x: 1, y: 1 },
-      scratch: new SnapCandidateScratch(),
-      selectedIds: new Set([LINE_ID]),
       spatial: { query },
       targets: { get: () => null },
-      zoom: 1,
     });
-
-    expect(result).toBeNull();
+    lookup.update({ x: 1, y: 1 }, null, 1, () => undefined);
+    expect(lookup.value).toBeNull();
     expect(query).not.toHaveBeenCalled();
+    lookup.cancel();
   });
 });

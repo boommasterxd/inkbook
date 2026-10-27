@@ -22,6 +22,7 @@ import type {
 } from "./incremental-document-serializer-types";
 import type { DocumentCodecResult } from "../types";
 import { prepareSerializationOrdersSteps } from "./serialization-order-preparation";
+import { prepareConnectionTargetCounts } from "./connection-target-counts";
 
 interface PrepareDeltaOptions {
   readonly currentElements: ReadonlyMap<string, InkElementV1>;
@@ -33,6 +34,7 @@ interface PrepareDeltaOptions {
 interface ValidateDeltaOptions {
   readonly aggregate: incrementalValidation.AggregateFacts;
   readonly currentElements: ReadonlyMap<string, InkElementV1>;
+  readonly connectionTargets: Map<string, number>;
   readonly currentFacts: ReadonlyMap<string, incrementalValidation.ElementFacts>;
   readonly currentPage: PageV1;
   readonly pageChanged: boolean;
@@ -111,6 +113,7 @@ export function* validateDocumentDeltaSteps(
       options.currentElements,
       options.prepared.changed,
       options.prepared.removed,
+      options.connectionTargets,
       nodesPerStep,
     ))
   ) {
@@ -130,7 +133,20 @@ export function* validateDocumentDeltaSteps(
     options.pageChanged ? options.prepared.page : options.currentPage,
   );
   return aggregateError === null
-    ? { ok: true, value: { aggregate, changed: changedFacts.value } }
+    ? {
+        ok: true,
+        value: {
+          aggregate,
+          changed: changedFacts.value,
+          connectionTargets: yield* prepareConnectionTargetCounts(
+            options.connectionTargets,
+            options.currentElements,
+            options.prepared.changed,
+            options.prepared.removed,
+            nodesPerStep,
+          ),
+        },
+      }
     : invalidSnapshot(aggregateError);
 }
 

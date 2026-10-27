@@ -118,6 +118,8 @@ function detachedElementBytes(entry: MountedSceneElement): number {
     entry.displayedElement.kind === "stroke" ? entry.displayedElement.points.length * 8 : 256;
   return (
     576 +
+    // A detached entry may retain its six-coefficient preview matrix until take/release.
+    6 * 8 +
     entry.id.length * 2 +
     elementBytes +
     (entry.group === null ? 0 : 512) +

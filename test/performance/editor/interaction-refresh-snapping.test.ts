@@ -1,13 +1,14 @@
+import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 import { movingSnapLine } from "./connected-input-fixture";
 import { describe, expect, it, vi } from "vitest";
 
 import { createBuiltInSettings } from "../../../src/domain/settings/defaults";
 import { resolvePointAngleSnap } from "../../../src/editor/selection/transform/angular-snap";
 import { ElementStore } from "../../../src/domain/store/public";
-import {
-  ConnectedSelectionPreviewSession,
-  resolveSelectionMoveSnap,
-} from "../../../src/editor/selection/public";
+import { SpatialQueryCursor } from "../../../src/domain/spatial/query-cursor";
+import { ScheduledSnapCandidate } from "../../../src/editor/snapping/scheduled-snap-candidate";
+import { ConnectedSelectionPreviewSession } from "../../../src/editor/selection/public";
+import { ScheduledMoveSnap } from "../../../src/editor/selection/transform/scheduled-move-snap";
 import {
   findSnapCandidate,
   SnapCandidateScratch,
@@ -16,6 +17,11 @@ import { CreationPreview } from "../../../src/obsidian/embeds/active-editor/prev
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import { creationPreviewRenderer } from "../../fixtures/obsidian/active-editor";
+import {
+  anchorFreePoint,
+  SNAP_TARGET_FAMILIES,
+  snappingTarget,
+} from "../../fixtures/editor/snapping-targets";
 import { connectedLine, rectangle } from "../../unit/domain/store/fixtures";
 import { INTERACTION_REFRESH_PROFILE, runInteractionFrames } from "../interaction-refresh-profile";
 import {
@@ -58,9 +64,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
     sceneStore.release();
   });
 
-  it("keeps reverse-map connection previews with bounded work", () => {
+  it("keeps reverse-map connection previews with bounded work", async () => {
     const { selectedIds, store, target } = createConnectedTranslationFixture();
     const session = new ConnectedSelectionPreviewSession(store, [target], selectedIds);
+    await session.prepare(immediateWorkScheduler(), new AbortController().signal);
     session.update({ delta: { x: 1, y: 1 }, kind: "translate" });
     store.resetInstrumentation();
     let previewCount = 0;
@@ -74,6 +81,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
         kind: "translate",
       });
       previewCount += preview.elements.length;
+      for (const id of preview.progressive?.ids ?? []) {
+        if (preview.progressive?.materialize(id) !== undefined) previewCount += 1;
+      }
     });
 
     expect(previewCount).toBe(CONNECTED_DEPENDENT_COUNT * INTERACTION_REFRESH_PROFILE.sampleCount);
@@ -81,49 +91,135 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
       fullStoreScans: 0,
       reverseDependencyVisits: 0,
     });
+    session.dispose();
   });
 
   it("keeps whole-line endpoint snapping with bounded work", () => {
-    const { sceneStore, scratch, store, targets } = createSnapFixture();
+    const { sceneStore, store, targets } = createSnapFixture();
     const moving = movingSnapLine();
     const selectedIds = new Set([moving.id]);
+    const lookup = moveLookup(sceneStore, moving, selectedIds);
     let matched = 0;
-    expect(
-      findMoveSnap(sceneStore, scratch, moving, selectedIds, targets[1_010]!, 0),
-    ).not.toBeNull();
+    expect(findMoveSnap(lookup, targets[1_010]!, 0)).not.toBeNull();
     store.resetInstrumentation();
-    const allocationsBefore = scratch.allocationCount;
+    const read = vi.spyOn(sceneStore, "getSnapTarget");
 
     runInteractionFrames((frame) => {
       const target = targets[(frame * 17) % targets.length]!;
-      if (findMoveSnap(sceneStore, scratch, moving, selectedIds, target, frame) !== null)
-        matched += 1;
+      if (findMoveSnap(lookup, target, frame) !== null) matched += 1;
     });
 
-    expectSnapProfile({ allocationsBefore, matched, scratch, store });
-
+    expect(matched).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    // At most six overlapping columns, three rows and two free endpoints.
+    expect(read.mock.calls.length).toBeLessThanOrEqual(
+      36 * INTERACTION_REFRESH_PROFILE.sampleCount,
+    );
+    expect(store.instrumentation.fullStoreScans).toBe(0);
+    lookup.cancel();
     sceneStore.release();
   });
 });
 
 describe("multi-selection snap work", () => {
   it("skips indexed endpoint lookup at every refresh rate for group movement", () => {
-    const { sceneStore, scratch, store, targets } = createSnapFixture();
+    const { sceneStore, store, targets } = createSnapFixture();
     const query = vi.spyOn(sceneStore, "query");
+    const begin = vi.spyOn(sceneStore, "beginQuery");
     const read = vi.spyOn(sceneStore, "getSnapTarget");
     const moving = movingSnapLine();
     const selectedIds = new Set([moving.id, targets[1]!.id]);
-    const allocations = scratch.allocationCount;
+    const lookup = moveLookup(sceneStore, moving, selectedIds);
     store.resetInstrumentation();
     runInteractionFrames((frame) => {
-      expect(findMoveSnap(sceneStore, scratch, moving, selectedIds, targets[0]!, frame)).toBeNull();
+      expect(findMoveSnap(lookup, targets[0]!, frame)).toBeNull();
     });
     expect(query).not.toHaveBeenCalled();
+    expect(begin).not.toHaveBeenCalled();
     expect(read).not.toHaveBeenCalled();
-    expect(scratch.allocationCount).toBe(allocations);
     expect(store.instrumentation.fullStoreScans).toBe(0);
+    lookup.cancel();
     sceneStore.release();
   });
+});
+
+describe("dense anchor query work", () => {
+  it.each(SNAP_TARGET_FAMILIES)(
+    "yields inside a cold dense %s query without building anchors for misses",
+    async (family) => {
+      const target = snappingTarget(family, 37);
+      const pointer = anchorFreePoint(target);
+      const elements = Array.from({ length: SNAP_TARGET_COUNT }, (_, index) => ({
+        ...target,
+        id: `40000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      }));
+      const store = new ElementStore(elements);
+      const scene = new ElementSceneStore(store);
+      const advance = vi.spyOn(SpatialQueryCursor.prototype, "advance");
+      const read = vi.spyOn(store, "get");
+      const anchors = vi.spyOn(store, "getSemanticAnchors");
+      const hypot = vi.spyOn(Math, "hypot");
+      const synchronousQuery = vi.spyOn(scene, "query");
+      let sliceStart = 0;
+      const slices: number[] = [];
+      const scheduler = {
+        ...immediateWorkScheduler(),
+        shouldYield: () => advance.mock.calls.length - sliceStart >= 64,
+        checkpoint: () => {
+          slices.push(advance.mock.calls.length - sliceStart);
+          sliceStart = advance.mock.calls.length;
+          return Promise.resolve();
+        },
+      };
+      const lookup = new ScheduledSnapCandidate(
+        scene,
+        {
+          get: (id, bounds) => scene.getSnapTarget(id, bounds),
+        },
+        scheduler,
+      );
+      try {
+        for (const offset of [0, 1, 2]) {
+          const before = advance.mock.calls.length;
+          sliceStart = before;
+          lookup.update(
+            {
+              current: null,
+              pointer: { x: pointer.x + offset, y: pointer.y },
+              pointerType: "mouse",
+              zoom: 1,
+            },
+            () => undefined,
+          );
+          expect(lookup.pending).toBe(true);
+          expect(advance.mock.calls.length - before).toBe(64);
+          expect(lookup.value).toBeNull();
+          expect(lookup.memoryUsage()).toBeLessThanOrEqual(512 + SNAP_TARGET_COUNT * 32);
+          expect(await lookup.settle()).toBeNull();
+          expect(advance.mock.calls.length - before).toBeLessThanOrEqual(SNAP_TARGET_COUNT + 10);
+          expect(lookup.memoryUsage()).toBe(0);
+        }
+        expect(slices.every((work) => work === 64)).toBe(true);
+        expect(read).toHaveBeenCalledTimes(SNAP_TARGET_COUNT * 3);
+        expect(anchors).not.toHaveBeenCalled();
+        expect(hypot).not.toHaveBeenCalled();
+        expect(synchronousQuery).not.toHaveBeenCalled();
+        expect(store.instrumentation).toMatchObject({
+          anchorBuilds: 0,
+          anchorCacheEntries: 0,
+          anchorCacheEvictions: 0,
+          fullStoreScans: 0,
+        });
+      } finally {
+        lookup.cancel();
+        advance.mockRestore();
+        read.mockRestore();
+        anchors.mockRestore();
+        hypot.mockRestore();
+        synchronousQuery.mockRestore();
+        scene.release();
+      }
+    },
+  );
 });
 
 describe("straight highlighter creation work", () => {
@@ -222,11 +318,23 @@ function findCandidate(
   );
 }
 
-function findMoveSnap(
+function moveLookup(
   sceneStore: ElementSceneStore,
-  scratch: SnapCandidateScratch,
   moving: ReturnType<typeof connectedLine>,
   selectedIds: ReadonlySet<string>,
+) {
+  return new ScheduledMoveSnap({
+    element: selectedIds.size === 1 ? moving : undefined,
+    canConnect: () => true,
+    pointerType: "pen",
+    scheduler: immediateWorkScheduler(),
+    spatial: sceneStore,
+    targets: { get: (id, bounds) => sceneStore.getSnapTarget(id, bounds) },
+  });
+}
+
+function findMoveSnap(
+  lookup: ScheduledMoveSnap,
   target: ReturnType<typeof rectangle>,
   frame: number,
 ) {
@@ -234,17 +342,8 @@ function findMoveSnap(
     x: target.x + (frame % 3) * 0.1,
     y: target.y + (frame % 5) * 0.1,
   };
-  return resolveSelectionMoveSnap({
-    current: null,
-    elements: [moving],
-    pointerType: "pen",
-    rawDelta,
-    scratch,
-    selectedIds,
-    spatial: sceneStore,
-    targets: { get: (id) => sceneStore.getSnapTarget(id) },
-    zoom: 1,
-  });
+  lookup.update(rawDelta, null, 1, () => undefined);
+  return lookup.value;
 }
 
 function expectSnapProfile(input: {

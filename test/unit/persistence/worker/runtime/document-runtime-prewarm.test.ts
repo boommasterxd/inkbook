@@ -153,9 +153,9 @@ it.each(["cancelled", "failed"] as const)(
   "preserves prewarming after a %s export",
   async (mode) => {
     const model = new DocumentModelRuntime();
-    model.initialize(rectangleDocument(3));
+    const snapshot = rectangleDocument(3);
+    model.initialize(snapshot);
     const controller = new AbortController();
-    let checkpoints = 0;
     try {
       const result = await model.export(
         {
@@ -168,14 +168,15 @@ it.each(["cancelled", "failed"] as const)(
         },
         {
           checkpoint: () => {
-            checkpoints += 1;
-            if (checkpoints === 3) controller.abort();
+            if (model.instrumentation.cacheElements === snapshot.elements.length)
+              controller.abort();
             return undefined;
           },
           signal: controller.signal,
         },
       );
       expect(result.ok).toBe(false);
+      expect(controller.signal.aborted).toBe(mode === "cancelled");
       expect(model.instrumentation.cacheElements).toBe(mode === "cancelled" ? 3 : 0);
       const checkpoint = vi.fn(() => undefined);
       expect(await model.prewarmOne({ checkpoint, signal: new AbortController().signal })).toBe(

@@ -1,3 +1,5 @@
+import { selectionPreviewMatrix } from "../../../../editor/selection/transform/selection-preview-matrix";
+import type { ProgressivePreviewPurpose } from "../../../../rendering/scene/presentation/connected-preview-cohort";
 import { calculateElementBounds } from "../../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../../domain/schema/public";
 import type { ProgressivePreviewTransform } from "../../../../rendering/scene/presentation/progressive-element-preview";
@@ -8,6 +10,7 @@ import {
   type OrientedSelectionFrame,
   type SelectedElementGeometry,
   type SelectionHandlePreview,
+  type ConnectedSelectionPreview,
   type SelectionOutline,
   type SelectionOverlayGeometry,
   type SelectionPreviewTransform,
@@ -32,6 +35,7 @@ export interface HandleInteractionRenderer {
     materialize: (id: string) => InkElementV1 | undefined,
     version: number,
     feedback?: ProgressivePreviewTransform,
+    purpose?: ProgressivePreviewPurpose,
   ): void;
   setSelectionOverlayPath(
     d: string | null,
@@ -45,6 +49,7 @@ export interface HandleInteractionRenderer {
     version: number,
     strokeWidth?: "preserve" | "scale",
     transformBounds?: PreviewBoundsTransform,
+    matrix?: ProgressivePreviewTransform["matrix"],
   ): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }
@@ -53,11 +58,6 @@ interface HandlePreviewContext {
   readonly frame: OrientedSelectionFrame | null;
   readonly selected: readonly SelectedElementGeometry[];
   readonly selectedIds: ReadonlySet<string>;
-}
-
-interface ConnectedHandlePreview {
-  readonly elements: readonly InkElementV1[];
-  readonly selectedPreviewIds: ReadonlySet<string>;
 }
 
 export class SelectionHandlePresentation {
@@ -114,7 +114,7 @@ export class SelectionHandlePresentation {
   public renderPreview(
     context: HandlePreviewContext,
     preview: SelectionHandlePreview,
-    connected: ConnectedHandlePreview,
+    connected: ConnectedSelectionPreview,
     scaleElements: readonly InkElementV1[],
   ): number | undefined {
     const exactGeometry = preview.exactElements.map((element) => ({
@@ -150,6 +150,7 @@ export class SelectionHandlePresentation {
       uniquePreviewElements(basePreviewElements, scaleElements),
       this.#version,
     );
+    this.#renderConnectedPreview(connected, preview.transform);
     const previewFrame = exactOverlay.length === 0 ? preview.previewFrame : null;
     const selected = exactOverlay.length === 0 ? context.selected : exactOverlay;
     const geometry = selectionOverlayGeometry(
@@ -162,10 +163,27 @@ export class SelectionHandlePresentation {
     return previewMaximumBottom(exactGeometry, connected.elements, outline);
   }
 
+  #renderConnectedPreview(
+    connected: ConnectedSelectionPreview,
+    transform: SelectionPreviewTransform | null,
+  ): void {
+    if (connected.progressive !== undefined && transform?.kind !== "scale") {
+      this.#renderer.setProgressiveElementPreviews?.(
+        connected.progressive.ids,
+        connected.progressive.materialize,
+        this.#version,
+        undefined,
+        "connected",
+      );
+    }
+  }
+
   public renderProgressive(
     ids: readonly string[],
     materialize: (id: string) => InkElementV1 | undefined,
     transform: Extract<SelectionPreviewTransform, { kind: "scale" }>,
+    connected?: ProgressivePreviewPurpose,
+    selection?: ReadonlySet<string>,
   ): void {
     this.#version += 1;
     const inverse = transformString({
@@ -173,11 +191,23 @@ export class SelectionHandlePresentation {
       delta: { x: 0, y: 0 },
       factors: { x: 1 / transform.factors.x, y: 1 / transform.factors.y },
     });
-    this.#renderer.setProgressiveElementPreviews?.(ids, materialize, this.#version, {
-      transformBounds: selectionPreviewBounds(transform),
-      transform: transformString(transform)!,
-      inverse: `${inverse} translate(${String(-transform.delta.x)} ${String(-transform.delta.y)})`,
-    });
+    this.#renderer.setProgressiveElementPreviews?.(
+      ids,
+      materialize,
+      this.#version,
+      {
+        ...(connected === undefined && selection !== undefined
+          ? { selection, selectionSize: ids.length }
+          : {}),
+        invertible:
+          Number.isFinite(1 / transform.factors.x) && Number.isFinite(1 / transform.factors.y),
+        matrix: selectionPreviewMatrix(transform)!,
+        transformBounds: selectionPreviewBounds(transform),
+        transform: transformString(transform)!,
+        inverse: `${inverse} translate(${String(-transform.delta.x)} ${String(-transform.delta.y)})`,
+      },
+      connected,
+    );
   }
 
   public renderTransform(
@@ -191,6 +221,7 @@ export class SelectionHandlePresentation {
       this.#version,
       transform?.kind === "scale" ? "preserve" : "scale",
       transform === null ? undefined : selectionPreviewBounds(transform),
+      selectionPreviewMatrix(transform),
     );
   }
 }

@@ -14,6 +14,7 @@ import { pressureCapsuleContains } from "./pressure-capsule-containment";
 import { pressureArcBounds } from "./pressure-arc-bounds";
 import { pressureLineBounds } from "./pressure-line-bounds";
 import { PressureBoundaryScalarCache } from "./pressure-boundary-scalars";
+import { boundsContainPoint } from "../primitives";
 
 export const MAX_PRESSURE_UNION_SHAPES = 64;
 /** Bounded geometry/cancellation intervals; consumers still use the shared time budget. */
@@ -283,7 +284,7 @@ function covered(
   const { work, arcAngles } = context;
   for (let index = 0; index < source.boundaries.length; index += 1) {
     const edge = source.boundaries[index]!;
-    if (!containsPoint(source.boundaryBounds[index]!, point)) continue;
+    if (!boundsContainPoint(source.boundaryBounds[index]!, point)) continue;
     work.boundaryTests += 1;
     if (pressureBoundaryParameter(edge, point, arcAngles, context.scalarCache) === undefined)
       continue;
@@ -473,13 +474,4 @@ function endpointTolerance(sources: readonly { readonly bounds: Bounds }[]): num
       Math.abs(bounds.maxY),
     );
   return Math.max(1e-10, 128 * Number.EPSILON * magnitude);
-}
-
-function containsPoint(bounds: Bounds, point: PointV1): boolean {
-  return (
-    point.x >= bounds.minX &&
-    point.x <= bounds.maxX &&
-    point.y >= bounds.minY &&
-    point.y <= bounds.maxY
-  );
 }

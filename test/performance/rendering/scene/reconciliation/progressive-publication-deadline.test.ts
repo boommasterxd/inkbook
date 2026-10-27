@@ -267,7 +267,7 @@ it.each(["resume", "retarget", "destroy"])(
   },
 );
 
-it("reads one physical sibling snapshot when a full fallback refreshes stale order epochs", () => {
+it("bounds native physical-order checks when a full fallback refreshes stale epochs", () => {
   const store = new FakeSceneStore();
   const capacity = 10_000;
   for (let rank = 0; rank < capacity; rank += 1) {
@@ -285,32 +285,39 @@ it("reads one physical sibling snapshot when a full fallback refreshes stale ord
     store.records.set(id, { ...record, rank: capacity - record.rank });
   }
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-  let snapshots = 0;
-  let nodeReads = 0;
-  const children = vi.spyOn(content, "childNodes", "get").mockImplementation(() => {
-    snapshots += 1;
-    return new Proxy(content.nodes, {
-      get(target: FakeNode[], key, receiver) {
-        if (typeof key === "string" && /^\d+$/.test(key)) nodeReads += 1;
-        return Reflect.get(target, key, receiver) as unknown;
-      },
-    });
-  });
+  const children = vi.spyOn(content, "childNodes", "get");
+  const comparisons = vi.spyOn(FakeNode.prototype, "compareDocumentPosition");
+  const parents = vi.spyOn(content, "contains");
   const insert = vi.spyOn(content, "insertBefore");
   try {
     renderer.applyDelta({ affected: ids.map((id) => ({ id, domains: ["order"] })) });
     scheduler.runAll(200);
     const orderWrites = insert.mock.calls.length;
+    const original = store.get(ids[0]!)!.element;
+    const preview = { ...original, rotation: 15 };
+    renderer.setProgressiveElementPreviews([preview.id], () => preview, 1);
+    scheduler.runAll(200);
+    const published = entries.find((entry) => entry.id === preview.id)!;
+    expect(firstPath(published).getAttribute("d")).toBe(buildElementPathParts(preview)[0]!.d);
+    expect(firstPath(published).getAttribute("d")).not.toBe(buildElementPathParts(original)[0]!.d);
     // Older proof generations require the real physical-order fallback without a reorder.
     for (const entry of entries) entry.committedOrderEpoch = -1;
+    children.mockClear();
+    comparisons.mockClear();
+    parents.mockClear();
     renderer.clearProgressiveElementPreviews();
     scheduler.runAll(200);
-    expect(snapshots).toBe(1);
-    expect(nodeReads).toBe(capacity);
+    // Each adjacent pair is compared once; the first root needs one parent check.
+    expect(comparisons).toHaveBeenCalledTimes(capacity - 1);
+    expect(parents).toHaveBeenCalledTimes(2 * capacity - 1);
+    expect(children).not.toHaveBeenCalled();
     expect(insert.mock.calls.length).toBe(orderWrites);
     expect(renderer.mountedIds("content")).toEqual([...ids].reverse());
+    expect(firstPath(published).getAttribute("d")).toBe(buildElementPathParts(original)[0]!.d);
   } finally {
     children.mockRestore();
+    comparisons.mockRestore();
+    parents.mockRestore();
     insert.mockRestore();
     renderer.destroy();
   }

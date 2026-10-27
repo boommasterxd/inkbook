@@ -4,8 +4,46 @@ import type { SceneContentRenderer } from "../../../../src/rendering/scene/conte
 import { SceneElementPreviewController } from "../../../../src/rendering/scene/presentation/element-preview-controller";
 import { SceneElementPreviews } from "../../../../src/rendering/scene/presentation/scene-element-previews";
 import { SceneTransformPreviewController } from "../../../../src/rendering/scene/presentation/transform-preview-controller";
+import { PreviewElementMap } from "../../../../src/rendering/scene/presentation/preview-element-map";
 
 import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
+
+it("reads live preview owners without copying and preserves duplicate priority and iteration order", () => {
+  const selected = fakeRectangleRecord("selected", 0, 10).element;
+  const following = fakeRectangleRecord("following", 1, 30).element;
+  const exact = { ...selected, width: 60 };
+  const immediate = new Map([
+    [selected.id, selected],
+    [following.id, following],
+  ]);
+  const progressive = new Map([[selected.id, exact]]);
+  const view = new PreviewElementMap(immediate, progressive);
+  const immediateEntries = vi.spyOn(immediate, Symbol.iterator);
+  const progressiveEntries = vi.spyOn(progressive, Symbol.iterator);
+  expect(view.get(selected.id)).toBe(exact);
+  expect(view.has(following.id)).toBe(true);
+  expect(view.has("removed")).toBe(false);
+  expect(immediateEntries).not.toHaveBeenCalled();
+  expect(progressiveEntries).not.toHaveBeenCalled();
+  expect(view.size).toBe(2);
+  expect([...view]).toEqual([
+    [selected.id, exact],
+    [following.id, following],
+  ]);
+  expect([...view.keys()]).toEqual([selected.id, following.id]);
+  expect([...view.values()]).toEqual([exact, following]);
+  const visit = vi.fn();
+  view.forEach(visit);
+  expect(visit.mock.calls).toEqual([
+    [exact, selected.id, view],
+    [following, following.id, view],
+  ]);
+  progressive.clear();
+  immediate.delete(following.id);
+  expect(view.size).toBe(1);
+  expect(view.get(selected.id)).toBe(selected);
+  expect(view.has(following.id)).toBe(false);
+});
 
 describe("progressive scene preview candidate selection", () => {
   it("refreshes bounded progressive candidates on viewport changes and stops after clear", () => {

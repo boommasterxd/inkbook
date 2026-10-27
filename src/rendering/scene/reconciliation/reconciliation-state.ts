@@ -11,13 +11,16 @@ import type { VisibleMountOrder } from "./visible-mount-order";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
 import type { VisibilityExitReadiness } from "./visibility-exit-readiness";
+import type { SceneRootPlacement } from "./root-placement";
 
 export interface ScenePreparationOptions {
+  readonly placement?: SceneRootPlacement;
   readonly onPathsReady?: () => void;
   readonly detachedCache?: DetachedSceneElementCache;
   readonly scheduler?: WorkScheduler;
   readonly takePreparedPath?: (record: SceneElementRecord) => readonly SvgPathPart[] | undefined;
   readonly onMount?: (entry: MountedSceneElement) => void;
+  readonly onRetain?: (entry: MountedSceneElement) => void;
   readonly onUnmount?: (id: string) => void;
 }
 

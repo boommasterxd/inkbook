@@ -12,13 +12,14 @@ import {
   type HandleInteractionRenderer,
 } from "../../../../../../src/obsidian/embeds/active-editor/previews/handle-interaction";
 import { ActiveEditorHistory } from "../../../../../../src/obsidian/embeds/active-editor/history";
-import type { PreparedElementHistory } from "../../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { ManualFrameScheduler } from "../../../../../fixtures/obsidian/manual-frame-scheduler";
 import { rectangle } from "../../../../../unit/domain/store/fixtures";
 import { maximumStroke } from "../../../../../performance/editor/maximum-stroke-fixture";
 import { indexedStroke } from "../../../../../fixtures/editor/stroke";
+import { activeEditorPreparedHistory } from "../../../../../fixtures/obsidian/active-editor";
+import { elementReplacementPorts } from "../../../../../fixtures/obsidian/element-mutation-ports";
 
 describe("active editor large mixed resize routing", () => {
   it("uses a single progressive candidate list for pressure and fixed-width strokes", () => {
@@ -49,7 +50,7 @@ describe("active editor large mixed resize routing", () => {
 describe("active editor rotated shape resize parity", () => {
   it.each(["ellipse", "rectangle"] as const)(
     "uses canonical %s geometry throughout a nonuniform group resize and commit",
-    (kind) => {
+    async (kind) => {
       const target = { ...rectangle(), kind, rotation: 15 };
       const other = rectangle("00000000-0000-4000-8000-000000000099", 500, 350);
       const fixture = harness(target, [other]);
@@ -68,6 +69,8 @@ describe("active editor rotated shape resize parity", () => {
       expect(fixture.renderer.setPreviewTransform.mock.lastCall?.[0]).toEqual([]);
 
       fixture.interaction.pointerUp(start.pointerId);
+      expect(fixture.store.get(target.id)?.element).toEqual(target);
+      await vi.waitFor(() => expect(fixture.history.commandCount).toBe(1));
       const committed = fixture.store.get(target.id)?.element;
       expect(preview).toEqual(committed);
       expect(buildElementPathParts(preview!)).toEqual(
@@ -96,7 +99,11 @@ describe("active editor handle frames", () => {
       expect.any(Number),
       "preserve",
       expect.any(Function),
+      feedback?.matrix,
     );
+    expect(feedback?.matrix).toHaveLength(6);
+    expect(feedback?.matrix?.every(Number.isFinite)).toBe(true);
+    expect(feedback?.matrix?.[0]).toBeGreaterThan(1);
     const captured = materialize(stroke.id);
     expect(captured).not.toEqual(stroke);
     expect(captured?.style).toEqual(stroke.style);
@@ -179,25 +186,26 @@ function harness(shape: InkElementV1, others: readonly InkElementV1[] = []) {
   const store = new ElementStore(elements);
   const model = {
     mutationAvailability: "available",
-    replaceElements: (elements: readonly InkElementV1[]) => store.replaceMany(elements),
+    ...elementReplacementPorts(store),
     setGestureActive: vi.fn(),
     store,
   } as unknown as EditableDocumentModel;
   const scheduler = new ManualFrameScheduler();
   const previewTransforms: Array<string | null> = [];
   const renderer = rendererPort(previewTransforms);
+  const history = new ActiveEditorHistory(model);
   const interaction = new ActiveEditorHandleInteraction({
     frameScheduler: scheduler,
-    history: new ActiveEditorHistory(model),
+    history,
     model,
     pageToScreen: (point) => point,
-    preparedHistory: {} as PreparedElementHistory,
+    preparedHistory: activeEditorPreparedHistory(model, history),
     renderer,
     sceneStore: new ElementSceneStore(store),
     selection: () => new Set(elements.map(({ id }) => id)),
     zoom: () => 1,
   });
-  return { interaction, previewTransforms, renderer, scheduler, store };
+  return { interaction, previewTransforms, renderer, scheduler, store, history };
 }
 
 function rendererPort(previewTransforms: Array<string | null>) {

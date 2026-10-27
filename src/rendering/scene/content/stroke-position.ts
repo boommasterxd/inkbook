@@ -1,5 +1,6 @@
 import { sameStrokeLocalPivot } from "../../../domain/geometry/stroke-position";
-import type { InkElementV1 } from "../../../domain/schema/public";
+import type { InkElementV1, StrokeElementV1 } from "../../../domain/schema/public";
+import { isStoredStroke } from "../../../domain/elements/stroke-replacement-proof";
 import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
 
 /** Scene paths remain in stroke shape space; previews operate on their positioned result. */
@@ -36,5 +37,16 @@ export function sameStrokeShape(a: InkElementV1, b: InkElementV1): boolean {
     a.style.smoothing === b.style.smoothing &&
     a.style.pressureEnabled === b.style.pressureEnabled &&
     sameStrokeLocalPivot(a, b)
+  );
+}
+
+export function immutableLocalShape(element: StrokeElementV1): boolean {
+  return (
+    isStoredStroke(element) ||
+    (Object.isFrozen(element) &&
+      Object.isFrozen(element.points) &&
+      Object.isFrozen(element.style) &&
+      Object.isFrozen(element.pivot) &&
+      (element.offset === undefined || Object.isFrozen(element.offset)))
   );
 }

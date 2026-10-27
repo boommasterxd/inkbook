@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { BackgroundFragmentCache } from "../../../../src/persistence/serialization/output/background";
 import { buildElementFragments } from "../../../../src/persistence/serialization/output/element-fragments";
+import { ElementFragmentCache } from "../../../../src/persistence/serialization/output/element-fragment-cache";
 import {
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
@@ -64,22 +65,53 @@ describe("runtime export cache reuse", () => {
       expect(serializer.instrumentation.backgroundBuilds).toBe(index + 2);
     }
   });
+});
 
-  it("uses cached metadata byte counts without encoding each warm fragment to count it", async () => {
-    const snapshot = createAllElementSnapshot();
-    const serializer = new IncrementalDocumentSerializer();
-    expect(serializer.resetRuntime(snapshot).ok).toBe(true);
-    await serializer.serializeRuntimeChunked({});
-    const metadata = new Set(
-      snapshot.elements.map((element) => buildElementFragments(element).metadata),
-    );
-    const encode = vi.spyOn(TextEncoder.prototype, "encode");
+it("resolves unchanged fragments synchronously and slices only replaced elements", async () => {
+  const snapshot = createAllElementSnapshot();
+  const serializer = new IncrementalDocumentSerializer();
+  expect(serializer.resetRuntime(snapshot).ok).toBe(true);
+  const resolve = vi.spyOn(ElementFragmentCache.prototype, "resolveSliced");
+  await serializer.serializeRuntimeChunked({});
+  expect(resolve).toHaveBeenCalledTimes(snapshot.elements.length);
+  resolve.mockClear();
+  const metadata = new Set(
+    snapshot.elements.map((element) => buildElementFragments(element).metadata),
+  );
+  const encode = vi.spyOn(TextEncoder.prototype, "encode");
+  const hitsPerCheckpoint: number[] = [];
+  let previousHits = serializer.instrumentation.fragmentHits;
+  const checkpoint = () => {
+    const hits = serializer.instrumentation.fragmentHits;
+    if (hits > previousHits) hitsPerCheckpoint.push(hits - previousHits);
+    previousHits = hits;
+    return undefined;
+  };
 
-    expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
-    expect(
-      encode.mock.calls.filter(([value]) => value !== undefined && metadata.has(value)),
-    ).toHaveLength(0);
+  expect((await serializer.serializeRuntimeChunked({ checkpoint })).ok).toBe(true);
+  expect(resolve).not.toHaveBeenCalled();
+  expect(hitsPerCheckpoint).toEqual(Array<number>(snapshot.elements.length).fill(1));
+  expect(
+    encode.mock.calls.filter(([value]) => value !== undefined && metadata.has(value)),
+  ).toHaveLength(0);
+  const original = snapshot.elements.find((element) => element.kind === "rectangle")!;
+  const changed = { ...original, style: { ...original.style, outlineOpacity: 0.25 } };
+  expect(
+    serializer.applyDelta({
+      baseModelRevision: snapshot.revision,
+      modelRevision: snapshot.revision + 1,
+      changedElements: [changed],
+    }).ok,
+  ).toBe(true);
+  await expectEquivalentExport(serializer, {
+    ...snapshot,
+    revision: snapshot.revision + 1,
+    elements: snapshot.elements.map((element) => (element.id === changed.id ? changed : element)),
   });
+  expect(resolve).toHaveBeenCalledOnce();
+  expect(resolve.mock.calls[0]![0].element.id).toBe(changed.id);
+  serializer.clear();
+  expect(serializer.instrumentation).toMatchObject({ cacheBytes: 0, cacheElements: 0 });
 });
 
 describe("runtime export cache cancellation and budgets", () => {

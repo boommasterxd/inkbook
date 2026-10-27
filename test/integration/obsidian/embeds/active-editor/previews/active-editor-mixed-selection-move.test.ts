@@ -116,6 +116,12 @@ describe("active editor rotated table move", () => {
         1,
         "scale",
         expect.any(Function),
+        expect.objectContaining({
+          matrix: [1, 0, 0, 1, previewDelta.x, previewDelta.y],
+          selection: new Set([table.id]),
+          selectionSize: 1,
+          invertible: true,
+        }),
       );
       expect(fixture.setSelectionOverlayPath).toHaveBeenLastCalledWith(
         expect.stringContaining("M "),

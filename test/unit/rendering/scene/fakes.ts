@@ -101,6 +101,44 @@ export class FakeNode extends EventTarget {
     return this.parent ?? null;
   }
 
+  public get nextSibling(): FakeNode | null {
+    if (this.parent === undefined) return null;
+    return this.parent.nodes[this.parent.nodes.indexOf(this) + 1] ?? null;
+  }
+
+  public hasChildNodes(): boolean {
+    return this.nodes.length > 0;
+  }
+  public contains(other: FakeNode): boolean {
+    for (let node: FakeNode | undefined = other; node !== undefined; node = node.parent)
+      if (node === this) return true;
+    return false;
+  }
+
+  public compareDocumentPosition(other: FakeNode): number {
+    if (this === other) return 0;
+    if (this.contains(other)) return 4 | 16;
+    if (other.contains(this)) return 2 | 8;
+    const path = (start: FakeNode): FakeNode[] => {
+      const nodes: FakeNode[] = [];
+      for (let node: FakeNode | undefined = start; node !== undefined; node = node.parent)
+        nodes.push(node);
+      return nodes;
+    };
+    const left = path(this);
+    const right = path(other);
+    if (left[left.length - 1] !== right[right.length - 1]) return 1;
+    while (left[left.length - 1] === right[right.length - 1]) {
+      left.pop();
+      right.pop();
+    }
+    const parent = left[left.length - 1]!.parent!;
+    return parent.nodes.indexOf(left[left.length - 1]!) <
+      parent.nodes.indexOf(right[right.length - 1]!)
+      ? 4
+      : 2;
+  }
+
   public attachShadow(_options: ShadowRootInit): FakeNode {
     if (this.shadowRoot !== null) throw new Error("Shadow root already attached.");
     this.shadowRoot = new FakeNode(this.ownerDocument, "#shadow-root");

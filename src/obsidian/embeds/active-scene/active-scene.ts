@@ -300,6 +300,12 @@ export class ActiveInkbookScene {
       affected: delta.changes.map((change) => ({
         after: change.after === null ? null : (change.after.element as InkElementV1),
         afterBounds: change.after?.bounds ?? null,
+        ...(change.after === null
+          ? {}
+          : {
+              afterGeometryVersion: change.after.geometryVersion,
+              afterPaintVersion: change.after.paintVersion,
+            }),
         before: change.before === null ? null : (change.before.element as InkElementV1),
         beforeBounds: change.before?.bounds ?? null,
         domains: change.domains,

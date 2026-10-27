@@ -62,6 +62,7 @@ export class SceneFrameWriter {
     dom: SceneDom,
     backgroundCache: SceneBackgroundCache,
     instrumentation: MutableSceneInstrumentation,
+    private readonly onCameraWrite: () => void = () => undefined,
   ) {
     this.livePathCommits = new SceneLivePathCommits(dom);
     this.toolCursor = new SceneToolCursorWriter(dom.toolCursor, instrumentation);
@@ -187,6 +188,7 @@ export class SceneFrameWriter {
     this.writeLivePath();
     this.writeToolCursor();
     if (this.#cameraDirty) {
+      this.onCameraWrite();
       this.#appliedCamera = writeCamera(
         this.#dom,
         this.#instrumentation,

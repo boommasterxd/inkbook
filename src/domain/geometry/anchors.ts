@@ -68,16 +68,20 @@ const BOX_POSITIONS: readonly BoxAnchorV1[] = [
   "bottom-left",
   "middle-left",
 ];
+const CARDINAL_ANGLES = [0, 90, 180, 270] as const;
+
+type LocalAnchorVisitor = (point: PointV1, kind: ShapeAnchorV1["kind"], index: number) => boolean;
 
 export function semanticAnchors(target: AnchorTargetView): ResolvedShapeAnchor[] {
-  const anchors = anchorIdentifiers(target);
   const resolved: ResolvedShapeAnchor[] = [];
-  for (let order = 0; order < anchors.length; order += 1) {
-    const anchor = anchors[order];
-    if (anchor === undefined) continue;
-    const point = resolveShapeAnchor(target, anchor);
-    if (point !== null) resolved.push({ anchor, point, order });
-  }
+  visitLocalAnchorPoints(target, (local, kind, index) => {
+    resolved.push({
+      anchor: anchorIdentifier(kind, index),
+      point: canonicalPoint(rotatePointClockwise(local, target.pivot, target.rotation)),
+      order: resolved.length,
+    });
+    return false;
+  });
   return resolved;
 }
 
@@ -90,31 +94,50 @@ export function resolveShapeAnchor(
   return canonicalPoint(rotatePointClockwise(unrotated, target.pivot, target.rotation));
 }
 
-function anchorIdentifiers(target: AnchorTargetView): ShapeAnchorV1[] {
+/** Visits in semantic order and stops at the first accepted point without building anchor DTOs. */
+export function visitLocalAnchorPoints(
+  target: AnchorTargetView,
+  visit: LocalAnchorVisitor,
+): boolean {
   if (target.kind === "line" || target.kind === "arrow") {
-    return [
-      { endpoint: "start", kind: "linear-endpoint" },
-      { endpoint: "end", kind: "linear-endpoint" },
-    ];
+    return visit(target.start, "linear-endpoint", 0) || visit(target.end, "linear-endpoint", 1);
   }
   if (target.kind === "rectangle" || target.kind === "table") {
-    return BOX_POSITIONS.map((position) => ({ kind: "box", position }));
+    const points = boxAnchorPoints(target);
+    return BOX_POSITIONS.some((position, index) => visit(points[position], "box", index));
   }
   if (target.kind === "ellipse") {
-    return ([0, 90, 180, 270] as const).map((angle) => ({ kind: "ellipse-cardinal", angle }));
+    return CARDINAL_ANGLES.some((angle, index) =>
+      visit(resolveEllipseAnchor(target, angle), "ellipse-cardinal", index),
+    );
   }
   if (target.kind === "coordinate-system") {
-    return [
-      { kind: "coordinate-origin" },
-      ...target.axes.map((_, index): ShapeAnchorV1 => ({ kind: "coordinate-axis-end", index })),
-    ];
+    return (
+      visit(target.origin, "coordinate-origin", 0) ||
+      target.axes.some((point, index) => visit(point, "coordinate-axis-end", index))
+    );
   }
-  if (!isPolygonAnchorTarget(target)) return [];
+  return isPolygonAnchorTarget(target) && visitPolygonAnchorPoints(target, visit);
+}
+
+function visitPolygonAnchorPoints(target: PolygonAnchorTarget, visit: LocalAnchorVisitor): boolean {
   const vertices = shapeVertices(target);
-  return [
-    ...vertices.map((_, index): ShapeAnchorV1 => ({ kind: "polygon-vertex", index })),
-    ...vertices.map((_, index): ShapeAnchorV1 => ({ kind: "polygon-edge-midpoint", index })),
-  ];
+  if (vertices.some((point, index) => visit(point, "polygon-vertex", index))) return true;
+  return vertices.some((point, index) =>
+    visit(
+      midpoint(point, vertices[(index + 1) % vertices.length]!),
+      "polygon-edge-midpoint",
+      index,
+    ),
+  );
+}
+
+function anchorIdentifier(kind: ShapeAnchorV1["kind"], index: number): ShapeAnchorV1 {
+  if (kind === "linear-endpoint") return { kind, endpoint: index === 0 ? "start" : "end" };
+  if (kind === "box") return { kind, position: BOX_POSITIONS[index]! };
+  if (kind === "ellipse-cardinal") return { kind, angle: CARDINAL_ANGLES[index]! };
+  if (kind === "coordinate-origin") return { kind };
+  return { kind, index };
 }
 
 function resolveUnrotatedAnchor(target: AnchorTargetView, anchor: ShapeAnchorV1): PointV1 | null {
@@ -157,6 +180,12 @@ function resolveBoxAnchor(
   target: TableAnchorTarget | BoxAnchorTarget,
   position: BoxAnchorV1,
 ): PointV1 {
+  return boxAnchorPoints(target)[position];
+}
+
+function boxAnchorPoints(
+  target: TableAnchorTarget | BoxAnchorTarget,
+): Record<BoxAnchorV1, PointV1> {
   const width = target.kind === "table" ? tableWidth(target) : target.width;
   const left = target.x;
   const centerX = left + width / 2;
@@ -164,7 +193,7 @@ function resolveBoxAnchor(
   const top = target.y;
   const centerY = top + target.height / 2;
   const bottom = top + target.height;
-  const values: Record<BoxAnchorV1, PointV1> = {
+  return {
     "top-left": { x: left, y: top },
     "top-center": { x: centerX, y: top },
     "top-right": { x: right, y: top },
@@ -174,7 +203,6 @@ function resolveBoxAnchor(
     "bottom-left": { x: left, y: bottom },
     "middle-left": { x: left, y: centerY },
   };
-  return values[position];
 }
 
 function resolveEllipseAnchor(ellipse: BoxAnchorTarget, angle: 0 | 90 | 180 | 270): PointV1 {

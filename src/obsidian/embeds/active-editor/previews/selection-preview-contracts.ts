@@ -21,6 +21,13 @@ interface SelectionPreviewRenderer {
   clearElementPreviews?(): void;
   clearPreviewTransforms(): void;
   flushPointerFeedbackFrame?(): void;
+  setProgressiveElementPreviews?(
+    ids: readonly string[],
+    materialize: (id: string) => InkElementV1 | undefined,
+    version: number,
+    feedback: undefined,
+    purpose: "connected",
+  ): void;
   setElementPreviews?(elements: readonly InkElementV1[], version: number): void;
   setOverlayPath(d: string | null): void;
   setSelectionOverlayPath?(
@@ -35,6 +42,17 @@ interface SelectionPreviewRenderer {
     version: number,
     strokeWidth?: PreviewStrokeWidth,
     transformBounds?: PreviewBoundsTransform,
+    affine?:
+      | readonly [number, number, number, number, number, number]
+      | {
+          readonly matrix: readonly [number, number, number, number, number, number];
+          readonly selection: ReadonlySet<string>;
+          readonly selectionSize: number;
+          readonly invertible: boolean;
+          readonly transform: string;
+          readonly inverse: string;
+          readonly transformBounds?: PreviewBoundsTransform;
+        },
   ): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }

@@ -54,9 +54,11 @@ export class SceneElementPreviewController {
     this.#dirty.clear();
   }
 
-  public clear(): void {
+  public clear(): boolean {
+    const changed = this.#elements.size > 0;
     for (const id of this.#elements.keys()) this.#dirty.add(id);
     this.#reset();
+    return changed;
   }
 
   public release(): void {

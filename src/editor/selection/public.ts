@@ -6,7 +6,7 @@ export { LassoSelectionSession } from "./query/lasso-selection-session";
 export { ConnectedSelectionPreviewSession } from "./connection-preview";
 export type { ConnectedSelectionPreview } from "./connection-preview";
 export { elementContainsPoint, HitTestScratch } from "./query/hit-test";
-export { moveSelectionWithSnap, resolveSelectionMoveSnap } from "./transform/move-snap";
+export { moveSelectionWithSnap } from "./transform/move-snap";
 export type { SelectionMoveSnap } from "./transform/move-snap";
 export { moveSelectionTimeSliced } from "./transform/transforms";
 export {

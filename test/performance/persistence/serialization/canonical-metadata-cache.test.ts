@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { CanonicalMetadataCache } from "../../../../src/persistence/serialization/metadata/canonical-metadata-cache";
 import * as canonical from "../../../../src/persistence/serialization/metadata/canonical-snapshot";
 import { serializeCanonicalElementMetadata } from "../../../../src/persistence/serialization/metadata/canonical-element-fragments";
+import { canonicalMetadataSha256 } from "../../../../src/persistence/serialization/metadata/canonical-metadata";
 import {
   createTestStroke,
   createWorkerSnapshot,
@@ -92,6 +93,60 @@ function trackedSamples(values: readonly number[], onRead: () => void): number[]
     },
   });
 }
+
+it("reuses newly encoded shape buffers without copying metadata leaves at 10,000 elements", async () => {
+  const elements = Array.from({ length: 10_000 }, (_, index) =>
+    Object.freeze({ ...rectangle(), id: elementId(index) }),
+  );
+  const snapshot = createWorkerSnapshot(elements);
+  const expected = canonicalMetadataSha256(snapshot);
+  const canonicalTexts = new Set(
+    elements.map((element) => serializeCanonicalElementMetadata(element)),
+  );
+  const encodedBuffers = new WeakSet<ArrayBufferLike>();
+  const originalEncode = Reflect.get<TextEncoder, "encode">(TextEncoder.prototype, "encode");
+  const originalSet = Reflect.get<Uint8Array, "set">(Uint8Array.prototype, "set");
+  let encodedElements = 0;
+  let leafCopyBytes = 0;
+  const encode = vi.spyOn(TextEncoder.prototype, "encode").mockImplementation(function (
+    this: TextEncoder,
+    text,
+  ) {
+    const bytes = originalEncode.call(this, text);
+    if (text !== undefined && canonicalTexts.has(text)) {
+      encodedBuffers.add(bytes.buffer);
+      encodedElements += 1;
+    }
+    return bytes;
+  });
+  const copy = vi.spyOn(Uint8Array.prototype, "set").mockImplementation(function (
+    this: Uint8Array,
+    source,
+    offset,
+  ) {
+    if (
+      source instanceof Uint8Array &&
+      encodedBuffers.has(source.buffer) &&
+      this.byteLength === source.buffer.byteLength
+    )
+      leafCopyBytes += source.byteLength;
+    originalSet.call(this, source, offset);
+  });
+  const cache = new CanonicalMetadataCache(Object.isFrozen);
+  try {
+    expect(await cache.digest(snapshot, () => undefined)).toBe(expected);
+    expect(encodedElements).toBe(elements.length);
+    // Full-document assembly still copies the leaves; only the duplicate leaf buffers disappear.
+    expect(leafCopyBytes).toBe(0);
+    expect(await cache.digest(snapshot, () => undefined)).toBe(expected);
+    expect(encodedElements).toBe(elements.length);
+    expect(leafCopyBytes).toBe(0);
+  } finally {
+    cache.clear();
+    encode.mockRestore();
+    copy.mockRestore();
+  }
+});
 
 it("evicts the least recently used element after 20,000 retained identities", async () => {
   const elements = Array.from({ length: 20_000 }, (_, index) =>

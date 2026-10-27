@@ -77,6 +77,30 @@ async function moveSnapHarness(
   };
 }
 
+function expectMovePreview(
+  callMock: ReturnType<typeof vi.fn>,
+  ids: readonly string[],
+  deltaPoint: { readonly x: number; readonly y: number },
+  version: number,
+): void {
+  const transform = `translate(${String(deltaPoint.x)} ${String(deltaPoint.y)})`;
+  expect(callMock).toHaveBeenLastCalledWith(
+    ids,
+    transform,
+    version,
+    "scale",
+    expect.any(Function),
+    expect.objectContaining({
+      matrix: [1, 0, 0, 1, deltaPoint.x, deltaPoint.y],
+      selection: new Set(ids),
+      selectionSize: ids.length,
+      invertible: true,
+      transform,
+      inverse: `translate(${String(-deltaPoint.x)} ${String(-deltaPoint.y)})`,
+    }),
+  );
+}
+
 describe("selection move snapping settings", () => {
   it("snaps a moved free line endpoint to a shape and renders an offset target marker", async () => {
     const { line, preview, sceneStore, setPreviewTransform, setSnapMarkerPath, store, target } =
@@ -84,13 +108,7 @@ describe("selection move snapping settings", () => {
 
     preview.update(pointer(47, 48));
 
-    expect(setPreviewTransform).toHaveBeenLastCalledWith(
-      [line.id],
-      "translate(50 50)",
-      1,
-      "scale",
-      expect.any(Function),
-    );
+    expectMovePreview(setPreviewTransform, [line.id], { x: 50, y: 50 }, 1);
     expect(setSnapMarkerPath).toHaveBeenLastCalledWith("M 88 100 L 112 100 M 100 88 L 100 112");
     expect(preview.commit()).toBe(true);
     expect(store.get(line.id)?.element).toMatchObject({
@@ -110,13 +128,7 @@ describe("selection move snapping settings", () => {
 
     preview.update(pointer(47, 48));
 
-    expect(setPreviewTransform).toHaveBeenLastCalledWith(
-      [line.id],
-      "translate(47 48)",
-      1,
-      "scale",
-      expect.any(Function),
-    );
+    expectMovePreview(setPreviewTransform, [line.id], { x: 47, y: 48 }, 1);
     expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
     expect(preview.commit()).toBe(true);
     expect(store.get(line.id)?.element).toMatchObject({
@@ -132,34 +144,16 @@ describe("selection move snapping settings", () => {
       await moveSnapHarness(() => snappingEnabled);
 
     preview.update(pointer(47, 48));
-    expect(setPreviewTransform).toHaveBeenLastCalledWith(
-      [line.id],
-      "translate(50 50)",
-      1,
-      "scale",
-      expect.any(Function),
-    );
+    expectMovePreview(setPreviewTransform, [line.id], { x: 50, y: 50 }, 1);
 
     snappingEnabled = false;
     preview.update(pointer(47, 48));
-    expect(setPreviewTransform).toHaveBeenLastCalledWith(
-      [line.id],
-      "translate(47 48)",
-      2,
-      "scale",
-      expect.any(Function),
-    );
+    expectMovePreview(setPreviewTransform, [line.id], { x: 47, y: 48 }, 2);
     expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
 
     snappingEnabled = true;
     preview.update(pointer(47, 48));
-    expect(setPreviewTransform).toHaveBeenLastCalledWith(
-      [line.id],
-      "translate(50 50)",
-      3,
-      "scale",
-      expect.any(Function),
-    );
+    expectMovePreview(setPreviewTransform, [line.id], { x: 50, y: 50 }, 3);
     sceneStore.release();
   });
 });
@@ -176,13 +170,7 @@ describe("group move snapping boundary", () => {
     for (const [index, enabled] of [true, false, true].entries()) {
       snappingEnabled = enabled;
       preview.update(pointer(47, 48));
-      expect(setPreviewTransform).toHaveBeenLastCalledWith(
-        ids,
-        "translate(47 48)",
-        index + 1,
-        "scale",
-        expect.any(Function),
-      );
+      expectMovePreview(setPreviewTransform, ids, { x: 47, y: 48 }, index + 1);
       expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
     }
     expect(preview.commit()).toBe(true);

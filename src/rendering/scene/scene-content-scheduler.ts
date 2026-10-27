@@ -26,17 +26,24 @@ export class SceneContentScheduler {
       remainingRoots: SCENE_PUBLICATION_ROOTS_PER_FRAME,
     };
     const reconcile = () =>
-      this.content.reconcileVisibility(
-        deadline,
-        now,
-        previewTransforms,
-        previewElements,
-        publication,
-      );
+      this.content.deferVisibilityForRunCommit
+        ? this.content.hasVisibilityWork
+        : this.content.reconcileVisibility(
+            deadline,
+            now,
+            previewTransforms,
+            previewElements,
+            publication,
+          );
     const writeMounted = () => {
+      const admittedFirstStep = publication.allowLatePreparedUnit === true;
       publication.allowLatePreparedUnit = false;
-      return this.content.writeMountedChanges(deadline, now, publication);
+      return this.content.writeMountedChanges(deadline, now, publication, admittedFirstStep);
     };
+    if (this.content.deferVisibilityForRunCommit) {
+      const mountedPending = writeMounted();
+      return mountedPending || this.content.hasVisibilityWork;
+    }
     if (this.#preferVisibility || !this.content.hasMountedWork) {
       const visibilityPending = this.content.hasVisibilityWork ? reconcile() : false;
       const mountedPending = now() < deadline ? writeMounted() : this.content.hasMountedWork;

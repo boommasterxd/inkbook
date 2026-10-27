@@ -1,44 +1,27 @@
+import { ProgressiveFeedbackTransformCache, writeFeedback } from "./progressive-feedback-transform";
 import { strokeLocalGeometry } from "../../../domain/geometry/stroke-position";
-import { isStoredStroke } from "../../../domain/elements/stroke-replacement-proof";
-import { sameLocalSelectionShape } from "../../../domain/store/records/prepared-stroke-center-cache";
-import { buildElementPathParts, type SvgPathPart } from "../../../domain/geometry/element-path";
-import type { InkElementV1, StrokeElementV1 } from "../../../domain/schema/public";
+import { buildElementPathParts } from "../../../domain/geometry/element-path";
+import type { InkElementV1 } from "../../../domain/schema/public";
 import type { SceneContentRenderer } from "../content-renderer";
 import type { PreviewTransform } from "../reconciliation/scene-visibility-reconciler";
-import type { PreviewBoundsTransform } from "../types";
 import { PATH_CACHE_MAX_BYTES } from "../constants";
 import { ProgressivePreviewPath } from "../content/progressive-preview-path";
+import {
+  elementBytes,
+  pathBytes,
+  storePreviewElement,
+  storePreviewFeedback,
+  storePreviewTransform,
+} from "./preview-memory";
 
-export interface ProgressivePreviewTransform {
-  readonly transformBounds?: PreviewBoundsTransform;
-  readonly transform: string;
-  readonly inverse: string;
-}
-
-interface PreviewRequest {
-  readonly feedback?: ProgressivePreviewTransform | undefined;
-  readonly ids: readonly string[];
-  readonly feedbackIds?: readonly string[];
-  readonly isImmediate?: (id: string) => boolean;
-  readonly affineElement?: ((id: string) => InkElementV1 | undefined) | undefined;
-  readonly materialize: (id: string) => InkElementV1 | undefined;
-  readonly version: number;
-}
-
-interface CompletedPath {
-  readonly feedback: ProgressivePreviewTransform | undefined;
-  readonly element: InkElementV1;
-  readonly parts: readonly SvgPathPart[];
-}
-
-interface PendingPath {
-  readonly feedback: ProgressivePreviewTransform | undefined;
-  readonly element: InkElementV1;
-  readonly path: ProgressivePreviewPath;
-  readonly version: number;
-  readonly pressureEnabled: boolean;
-  readonly replay?: boolean;
-}
+import type { PreviewRequest, ProgressivePreviewTransform } from "./progressive-preview-request";
+import type { CompletedPath, PendingPath } from "./progressive-preview-request";
+import { hasPendingPreviewSnapshots } from "./progressive-preview-request";
+import {
+  refreshPressureSnapshot,
+  shouldRefreshPressureSnapshot,
+} from "./progressive-pressure-snapshot";
+export type { ProgressivePreviewTransform } from "./progressive-preview-request";
 
 /** Retains complete canonical snapshots while coalescing updates to a bounded selection. */
 export class ProgressiveElementPreview {
@@ -52,12 +35,14 @@ export class ProgressiveElementPreview {
   readonly #snapshotFeedback = new Map<string, ProgressivePreviewTransform>();
   readonly #renderedFeedback = new Map<string, ProgressivePreviewTransform>();
   readonly #feedbackMembers = new Set<string>();
+  readonly #feedbackTransform = new ProgressiveFeedbackTransformCache();
   #feedbackSource: readonly string[] | undefined;
   #membershipBytes = 0;
   #elementBytes = 0;
   #feedbackBytes = 0;
   #transformBytes = 0;
   #zoom = 1;
+  #sharedFeedback = false;
   readonly #maximumBytes: number;
   #completedBytes = 0;
   #request: PreviewRequest | undefined;
@@ -65,6 +50,9 @@ export class ProgressiveElementPreview {
   #pending: PendingPath | undefined;
   #cursor = 0;
   #immediateCursor = 0;
+  #remainingConnected = 0;
+  #replacement: Generator<void> | undefined;
+  #replacementBytes = 0;
 
   public constructor(content: SceneContentRenderer, maximumBytes = PATH_CACHE_MAX_BYTES) {
     this.#content = content;
@@ -76,6 +64,8 @@ export class ProgressiveElementPreview {
   }
 
   public get transforms(): ReadonlyMap<string, PreviewTransform> {
+    const shared = this.#content.selectionFeedbackTransforms;
+    if (shared !== undefined && shared.size > 0) return shared;
     return this.#transforms;
   }
 
@@ -87,15 +77,41 @@ export class ProgressiveElementPreview {
     let bytes = this.#completedBytes + (this.#pending?.path.memoryUsage() ?? 0);
     bytes += (this.#request?.ids.length ?? 0) * 8 + (this.#request?.feedbackIds?.length ?? 0) * 8;
     bytes += (this.#versions.size + this.#replayIds.size + this.#feedbackIds.size) * 40;
-    bytes += this.#membershipBytes + this.#feedbackBytes + this.#transformBytes;
+    bytes +=
+      this.#membershipBytes + this.#feedbackBytes + this.#transformBytes + this.#replacementBytes;
     if (this.#pending !== undefined) bytes += elementBytes(this.#pending.element);
-    return bytes + this.#elementBytes;
+    return bytes + this.#elementBytes + this.#feedbackTransform.memoryUsage();
   }
 
   public set(request: PreviewRequest): void {
-    const retained = new Set(request.ids);
+    this.#feedbackTransform.clear();
+    if (this.#request === undefined)
+      this.#sharedFeedback = this.#content.canUseSelectionFeedback?.(request.feedback) === true;
+    if (this.#reuseConnected(request)) return;
+    if (request.connected) {
+      if (this.#pending !== undefined) this.#versions.delete(this.#pending.element.id);
+      this.#pending?.path.cancel();
+      this.#pending = undefined;
+      this.#request = request;
+      this.#remainingConnected = request.ids.length;
+      this.#replacementBytes = 0;
+      this.#replacement = this.#replace(request);
+    } else {
+      this.#replacement = undefined;
+      this.#replacementBytes = 0;
+      for (const step of this.#replace(request)) void step;
+    }
+  }
+
+  *#replace(request: PreviewRequest): Generator<void> {
+    const retained = new Set<string>();
+    for (const id of request.ids) {
+      retained.add(id);
+      this.#replacementBytes += 32 + id.length * 2;
+      yield;
+    }
     const feedbackIds = request.feedbackIds ?? request.ids;
-    if (feedbackIds !== this.#feedbackSource) {
+    if (!this.#sharedFeedback && feedbackIds !== this.#feedbackSource) {
       this.#feedbackSource = feedbackIds;
       this.#feedbackMembers.clear();
       this.#membershipBytes = 0;
@@ -103,43 +119,85 @@ export class ProgressiveElementPreview {
         if (this.#feedbackMembers.has(id)) continue;
         this.#feedbackMembers.add(id);
         this.#membershipBytes += 32 + id.length * 2;
+        yield;
       }
     }
     for (const id of this.#feedbackIds) {
-      if (!this.#feedbackMembers.has(id)) this.#clearFeedback(id);
+      if (!this.#keepsFeedback(id, retained)) this.#clearFeedback(id);
+      yield;
     }
     for (const id of this.#versions.keys()) {
       if (!retained.has(id)) {
         this.#versions.delete(id);
         this.#replayIds.delete(id);
       }
+      yield;
     }
     for (const id of this.#elements.keys()) {
-      if (retained.has(id)) continue;
+      if (retained.has(id)) {
+        yield;
+        continue;
+      }
       this.#content.clearElementPreview(id);
       this.#setElement(id, undefined);
       this.#removeReplay(id);
       this.#versions.delete(id);
       this.#setFeedback(this.#snapshotFeedback, id, undefined);
       this.#setFeedback(this.#renderedFeedback, id, undefined);
+      yield;
     }
     if (this.#pending !== undefined && !retained.has(this.#pending.element.id)) {
       this.#pending?.path.cancel();
       this.#pending = undefined;
     }
-    this.#request = request;
+    if (!request.connected) this.#request = request;
     for (const id of request.ids) {
       const affine = request.affineElement?.(id);
       if (affine !== undefined) this.#retainAffine(affine, request.version);
       this.#content.promoteVisible(id);
+      yield;
     }
+    this.#replacementBytes = 0;
+  }
+
+  #keepsFeedback(id: string, retained: ReadonlySet<string>): boolean {
+    return this.#sharedFeedback ? retained.has(id) : this.#feedbackMembers.has(id);
+  }
+  #reuseConnected(request: PreviewRequest): boolean {
+    if (!request.connected) return false;
+    if (
+      this.#request?.connected &&
+      this.#request.ids === request.ids &&
+      this.#request.version === request.version
+    )
+      return true;
+    this.#remainingConnected = 0;
+    if (!this.#request?.connected || this.#request.ids !== request.ids) return false;
+    this.#remainingConnected = request.ids.length;
+    if (this.#pending !== undefined && !this.#pending.replay) this.#cursor -= 1;
+    this.#pending?.path.cancel();
+    this.#pending = undefined;
+    this.#request = request;
+    return true;
   }
 
   public writeFeedback(zoom: number, deadline: number, now: () => number): void {
     const request = this.#request;
+    if (request?.connected && request.feedback === undefined) return;
     if (request === undefined || (request === this.#appliedRequest && zoom === this.#zoom)) return;
     this.#zoom = zoom;
     this.#appliedRequest = request;
+    if (
+      this.#sharedFeedback &&
+      request.feedback !== undefined &&
+      this.#content.publishSelectionFeedback?.(request.feedback, request.version)
+    ) {
+      for (const id of request.ids) {
+        if (now() < deadline && this.#writeImmediate(id, request)) continue;
+        this.#applyFeedback(id);
+      }
+      return;
+    }
     const start = this.#immediateCursor;
     const ids = request.feedbackIds ?? request.ids;
     const snapshots = new Set(request.ids);
@@ -157,10 +215,17 @@ export class ProgressiveElementPreview {
     let stepped = false;
     while (true) {
       if ((stepped || !admittedFirstStep) && now() >= deadline) return this.#hasPending();
+      if (this.#replacement !== undefined) {
+        const next = this.#replacement.next();
+        stepped = true;
+        if (next.done) this.#replacement = undefined;
+        continue;
+      }
       const refreshed = this.#refreshPressureSnapshot();
       if (refreshed && now() >= deadline) return this.#hasPending();
       const starting = refreshed || this.#pending === undefined;
-      const pending = this.#pending ?? this.#startNext();
+      const pending = this.#pending ?? this.#startNext(deadline, now);
+      if (pending === false) return true;
       if (pending === undefined) return false;
       this.#pending = pending;
       // Materialization itself can exhaust the budget before the next geometry unit.
@@ -168,7 +233,11 @@ export class ProgressiveElementPreview {
       stepped = true;
       if (!pending.path.step(deadline, now)) continue;
       this.#complete(
-        { element: pending.element, feedback: pending.feedback, parts: pending.path.parts! },
+        {
+          element: pending.element,
+          feedback: pending.feedback,
+          parts: pending.path.parts!,
+        },
         pending.version,
       );
       this.#pending?.path.cancel();
@@ -209,16 +278,21 @@ export class ProgressiveElementPreview {
   public clear(): void {
     for (const id of this.#feedbackIds) this.#clearFeedback(id);
     for (const id of this.#elements.keys()) this.#content.clearElementPreview(id);
+    this.#content.clearSelectionFeedback?.();
     this.release();
   }
 
   public release(): void {
+    this.#feedbackTransform.clear();
+    this.#replacement = undefined;
+    this.#replacementBytes = 0;
     this.#feedbackIds.clear();
     this.#transforms.clear();
     this.#snapshotFeedback.clear();
     this.#renderedFeedback.clear();
     this.#feedbackMembers.clear();
     this.#feedbackSource = undefined;
+    this.#sharedFeedback = false;
     this.#membershipBytes = 0;
     this.#elementBytes = 0;
     this.#feedbackBytes = 0;
@@ -229,6 +303,7 @@ export class ProgressiveElementPreview {
     this.#pending = undefined;
     this.#cursor = 0;
     this.#immediateCursor = 0;
+    this.#remainingConnected = 0;
     this.#elements.clear();
     this.#completed.clear();
     this.#replayIds.clear();
@@ -290,35 +365,17 @@ export class ProgressiveElementPreview {
     const request = this.#request;
     if (
       pending === undefined ||
-      request?.feedback === undefined ||
-      pending.replay ||
-      pending.version === request.version ||
-      !pending.pressureEnabled
+      request === undefined ||
+      !shouldRefreshPressureSnapshot(pending, request)
     )
       return false;
-    const element = request.materialize(pending.element.id);
-    const reusable =
-      pending.element.kind === "stroke" &&
-      element?.kind === "stroke" &&
-      immutableLocalShape(pending.element) &&
-      immutableLocalShape(element) &&
-      sameLocalSelectionShape(pending.element, element);
-    if (!reusable) pending.path.cancel();
+    const refreshed = refreshPressureSnapshot(pending, request);
     this.#versions.set(pending.element.id, request.version);
-    this.#pending =
-      element === undefined
-        ? undefined
-        : {
-            element,
-            feedback: request.feedback,
-            path: reusable ? pending.path : new ProgressivePreviewPath(element),
-            version: request.version,
-            pressureEnabled: element.kind === "stroke" && element.style.pressureEnabled,
-          };
+    this.#pending = refreshed;
     return true;
   }
 
-  #startNext(): PendingPath | undefined {
+  #startNext(deadline: number, now: () => number): PendingPath | false | undefined {
     const request = this.#request;
     if (request === undefined) return undefined;
     const replayId = this.#replayIds.values().next().value;
@@ -334,10 +391,16 @@ export class ProgressiveElementPreview {
         replay: true,
       };
     }
+    if (request.connected && this.#remainingConnected === 0) return undefined;
     for (let scanned = 0; scanned < request.ids.length; scanned += 1) {
+      if (request.connected && this.#remainingConnected <= 0) return undefined;
       const id = request.ids[this.#cursor % request.ids.length]!;
       this.#cursor += 1;
-      if (this.#versions.get(id) === request.version) continue;
+      if (request.connected) this.#remainingConnected -= 1;
+      if (this.#versions.get(id) === request.version) {
+        if (request.connected && now() >= deadline) return false;
+        continue;
+      }
       const element = request.materialize(id);
       this.#versions.set(id, request.version);
       if (element !== undefined) {
@@ -349,6 +412,7 @@ export class ProgressiveElementPreview {
           pressureEnabled: element.kind === "stroke" && element.style.pressureEnabled,
         };
       }
+      if (request.connected && now() >= deadline) return false;
     }
     return undefined;
   }
@@ -375,35 +439,24 @@ export class ProgressiveElementPreview {
   #apply(completed: CompletedPath): void {
     const id = completed.element.id;
     if (!this.#content.applyCanonicalElementPreview(completed.element, completed.parts)) return;
+    this.#content.setSelectionFeedbackBasis?.(id, completed.feedback);
     this.#setFeedback(this.#renderedFeedback, id, completed.feedback);
     this.#applyFeedback(id);
   }
 
   #applyFeedback(id: string): void {
-    const request = this.#request;
-    const feedback = request?.feedback;
+    const feedback = this.#request?.feedback;
     if (feedback === undefined && !this.#feedbackIds.has(id)) return;
     const basis = this.#renderedFeedback.get(id);
-    const transform =
-      feedback === undefined || feedback.transform === basis?.transform
-        ? null
-        : `${feedback.transform}${basis === undefined ? "" : ` ${basis.inverse}`}`;
+    this.#content.setSelectionFeedbackBasis?.(id, basis);
+    const preview = this.#feedbackTransform.resolve(this.#request, basis, this.#zoom);
     this.#feedbackIds.add(id);
-    const preview = {
-      transform,
-      version: request?.version ?? 0,
-      strokeWidthScale: transform === null ? null : this.#zoom,
-    };
-    this.#setTransform(id, transform === null ? undefined : preview);
-    this.#content.applyPreviewTransform(
-      id,
-      preview.transform,
-      preview.version,
-      preview.strokeWidthScale,
-    );
+    this.#setTransform(id, preview.transform === null ? undefined : preview);
+    writeFeedback(this.#content, id, preview);
   }
 
   #clearFeedback(id: string): void {
+    this.#content.setSelectionFeedbackBasis?.(id, undefined);
     this.#content.applyPreviewTransform(id, null, Number.MAX_SAFE_INTEGER, null);
     this.#feedbackIds.delete(id);
     this.#setTransform(id, undefined);
@@ -411,12 +464,7 @@ export class ProgressiveElementPreview {
   }
 
   #setElement(id: string, element: InkElementV1 | undefined): void {
-    const previous = this.#elements.get(id);
-    this.#elementBytes +=
-      (element === undefined ? 0 : elementBytes(element)) -
-      (previous === undefined ? 0 : elementBytes(previous));
-    if (element === undefined) this.#elements.delete(id);
-    else this.#elements.set(id, element);
+    this.#elementBytes += storePreviewElement(this.#elements, id, element);
   }
 
   #setFeedback(
@@ -424,55 +472,23 @@ export class ProgressiveElementPreview {
     id: string,
     feedback: ProgressivePreviewTransform | undefined,
   ): void {
-    const previous = entries.get(id);
-    this.#feedbackBytes +=
-      (feedback === undefined ? 0 : feedbackBytes(id, feedback)) -
-      (previous === undefined ? 0 : feedbackBytes(id, previous));
-    if (feedback === undefined) entries.delete(id);
-    else entries.set(id, feedback);
+    this.#feedbackBytes += storePreviewFeedback(entries, id, feedback);
   }
 
   #setTransform(id: string, preview: PreviewTransform | undefined): void {
-    const previous = this.#transforms.get(id);
-    this.#transformBytes +=
-      (preview === undefined ? 0 : transformBytes(id, preview)) -
-      (previous === undefined ? 0 : transformBytes(id, previous));
-    if (preview === undefined) this.#transforms.delete(id);
-    else this.#transforms.set(id, preview);
+    this.#transformBytes += storePreviewTransform(this.#transforms, id, preview);
   }
 
   #hasPending(): boolean {
     return (
       this.#pending !== undefined ||
-      this.#replayIds.size > 0 ||
-      (this.#request?.ids.some((id) => this.#versions.get(id) !== this.#request?.version) ?? false)
+      this.#replacement !== undefined ||
+      hasPendingPreviewSnapshots(
+        this.#request,
+        this.#versions,
+        this.#remainingConnected,
+        this.#replayIds.size,
+      )
     );
   }
-}
-
-function elementBytes(element: InkElementV1): number {
-  return 128 + (element.kind === "stroke" ? element.points.length * 8 : 0);
-}
-
-function immutableLocalShape(element: StrokeElementV1): boolean {
-  return (
-    isStoredStroke(element) ||
-    (Object.isFrozen(element) &&
-      Object.isFrozen(element.points) &&
-      Object.isFrozen(element.style) &&
-      Object.isFrozen(element.pivot) &&
-      (element.offset === undefined || Object.isFrozen(element.offset)))
-  );
-}
-
-function pathBytes(parts: readonly SvgPathPart[]): number {
-  return parts.reduce((bytes, part) => bytes + part.d.length * 2, 0);
-}
-
-function feedbackBytes(id: string, feedback: ProgressivePreviewTransform): number {
-  return 64 + (id.length + feedback.transform.length + feedback.inverse.length) * 2;
-}
-
-function transformBytes(id: string, preview: PreviewTransform): number {
-  return 80 + (id.length + (preview.transform?.length ?? 0)) * 2;
 }

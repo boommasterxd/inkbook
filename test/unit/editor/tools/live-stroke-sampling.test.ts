@@ -64,4 +64,24 @@ describe("live stroke sample retention", () => {
     );
     expect(commit.instrumentation.replacedTipSamples).toBe(4);
   });
+
+  it.each([
+    ["pen", [0.2, 0.2, 0.3743, 0.4564, 0.5064, 0.6246]],
+    ["simulated", [0.5, 0.5, 0.6127, 0.6546, 0.7432, 0.7954]],
+  ] as const)(
+    "preserves %s pressure history across replaced and stationary tips",
+    (source, expected) => {
+      const stroke = builder(false, source);
+      const positions = [0, 0, 1, 1, 1.1, 1.2, 1.1, 1.2, 1.8, 1.8, 3, 4];
+      const times = [0, 1, 2, 10, 11, 11, 12, 13, 14, 99, 99, 100];
+      const pressures = [0.2, 0.3, 0.8, 1, 0.1, 0.9, 0.2, 0.7, 0.4, 0.8, 0.6, 0.9];
+      for (const [index, x] of positions.entries()) {
+        stroke.append({ x, y: 0, pressure: pressures[index]!, time: times[index]! });
+      }
+      const points = stroke.finish().points;
+      expect(points.filter((_, index) => index % 3 === 0)).toEqual([0, 0, 1.2, 1.8, 3, 4]);
+      // Fixed-width Pen still retains its genuine pressure history for later style changes.
+      expect(points.filter((_, index) => index % 3 === 2)).toEqual(expected);
+    },
+  );
 });

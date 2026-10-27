@@ -307,7 +307,7 @@ describe("active editor ordinary selection move", () => {
 });
 
 describe("active editor large selection handles", () => {
-  it("keeps a transformed group box current when exact preview materialization is truncated", () => {
+  it("keeps a transformed group box current when exact preview materialization is truncated", async () => {
     const target = rectangle();
     const dependent = dependentLine();
     const selectedElements = [
@@ -315,7 +315,7 @@ describe("active editor large selection handles", () => {
       ...Array.from({ length: 300 }, (_, index) => indexedStroke(index)),
     ];
     const selection = new Set(selectedElements.map(({ id }) => id));
-    const { elementPreviews, interaction, overlays, store } = harness(
+    const { elementPreviews, history, interaction, overlays, store } = harness(
       [...selectedElements, dependent],
       selection,
     );
@@ -334,9 +334,9 @@ describe("active editor large selection handles", () => {
     );
     expect(previewLine).toBeDefined();
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    await vi.waitFor(() => expect(history.commandCount).toBe(1));
     expect(store.get(dependent.id)?.element).toEqual(previewLine);
   });
-
   it("prepares a large mixed move in slices and keeps async undo and redo atomic", async () => {
     const shape = rectangle();
     const strokes = Array.from({ length: 1_000 }, (_, index) => indexedStroke(index));

@@ -17,6 +17,91 @@ import { ManualFrameScheduler } from "../../../../fixtures/obsidian/manual-frame
 import { CanonicalElementPathPreparation } from "../../../../../src/domain/geometry/canonical-element-path-preparation";
 import { selectionOverlayPaths } from "../../../../../src/obsidian/embeds/active-editor/previews/selection-overlay-path";
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
+import * as elementPath from "../../../../../src/domain/geometry/element-path";
+import { createViewportRectangleStore } from "../../../../fixtures/rendering/scene";
+import { fakeNode } from "../../../../unit/rendering/scene/fakes";
+
+it.each([1_000, 10_000])(
+  "does no scene work when clearing absent previews with %s mounted elements",
+  (count) => {
+    const store = createViewportRectangleStore(count, () => 20);
+    const { renderer, scheduler } = createSceneFixture(createAllElementSnapshot().page, store);
+    renderer.setReducedMotion(true);
+    scheduler.runAll();
+    expect(renderer.mountedCount).toBe(count);
+    const get = vi.spyOn(store, "get");
+    const build = vi.spyOn(elementPath, "buildElementPathParts");
+    renderer.resetInstrumentation();
+    try {
+      for (let input = 0; input < 2; input += 1) {
+        renderer.clearProgressiveElementPreviews();
+        renderer.clearElementPreviews();
+        renderer.clearPreviewTransforms();
+      }
+      expect(get).not.toHaveBeenCalled();
+      expect(build).not.toHaveBeenCalled();
+      expect(scheduler.pendingCount).toBe(0);
+      expect(renderer.instrumentation().attributeWrites).toBe(0);
+    } finally {
+      get.mockRestore();
+      build.mockRestore();
+      renderer.destroy();
+    }
+  },
+);
+
+it("builds exact preview geometry only for mounted elements and adopts it on viewport reentry", () => {
+  const store = createViewportRectangleStore(10_000, (rank) => rank * 1_000);
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(
+    createAllElementSnapshot().page,
+    store,
+    viewport,
+  );
+  renderer.setReducedMotion(true);
+  scheduler.runAll();
+  expect(renderer.mountedCount).toBe(1);
+  const previews = [...store.records.values()].map(({ element }) => {
+    if (element.kind !== "rectangle") throw new TypeError("Expected a rectangle.");
+    return { ...element, width: 40 };
+  });
+  const build = vi.spyOn(elementPath, "buildElementPathParts");
+  const get = vi.spyOn(store, "get");
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  try {
+    renderer.setElementPreviews(previews, 1);
+    renderer.flushPointerFeedbackFrame();
+    expect(build).toHaveBeenCalledExactlyOnceWith(previews[0]);
+    expect(get).toHaveBeenCalledExactlyOnceWith(previews[0]!.id);
+    renderer.setViewport({ ...viewport, top: 9_999_000 });
+    scheduler.runAll();
+    const latest = previews[9_999]!;
+    expect(renderer.mountedIds("content")).toEqual([latest.id]);
+    expect(content.nodes[content.nodes.length - 1]!.attributes.get("d")).toBe(
+      elementPath.buildElementPathParts(latest)[0]!.d,
+    );
+    renderer.clearElementPreviews();
+    scheduler.runAll();
+    expect(get.mock.calls.every(([id]) => id === previews[0]!.id || id === latest.id)).toBe(true);
+    expect(renderer.mountedCount).toBe(1);
+    expect(content.nodes).toHaveLength(1);
+    expect(content.nodes[0]!.attributes.get("d")).toBe(
+      elementPath.buildElementPathParts(store.records.get(latest.id)!.element)[0]!.d,
+    );
+    get.mockClear();
+    build.mockClear();
+    renderer.clearElementPreviews();
+    expect(get).not.toHaveBeenCalled();
+    expect(build).not.toHaveBeenCalled();
+    expect(scheduler.pendingCount).toBe(0);
+  } finally {
+    get.mockRestore();
+    build.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+  expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+});
 
 describe("progressive snapshot ownership", () => {
   it("rechecks one owned shape per admitted version while retaining its path until cancellation", () => {
