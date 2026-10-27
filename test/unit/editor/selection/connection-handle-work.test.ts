@@ -1,8 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import type { InkElementV1, LineElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { SelectionHandleSession } from "../../../../src/editor/selection/public";
+import type { SelectionHandleSessionOptions } from "../../../../src/editor/selection/handle-types";
 import { connectionChain } from "../../../fixtures/domain/connection-chain";
 import { uuid } from "../../domain/schema/fixtures";
 import { rectangle } from "../../domain/store/fixtures";
@@ -11,6 +12,18 @@ import type { WorkScheduler } from "../../../../src/domain/scheduling/work-sched
 
 afterEach(() => vi.restoreAllMocks());
 
+function endpointOptions(
+  store: ElementStore,
+  source: LineElementV1,
+): SelectionHandleSessionOptions {
+  return {
+    action: { kind: "linear-endpoint", elementId: source.id, endpoint: "end" },
+    elements: [store.get(source.id)!.element as InkElementV1],
+    planner: store,
+    startPointer: source.end,
+  };
+}
+
 function connectedEndpointSession(scheduler?: WorkScheduler) {
   const elements = connectionChain(3);
   const source = elements[elements.length - 1]!;
@@ -18,10 +31,7 @@ function connectedEndpointSession(scheduler?: WorkScheduler) {
   const store = new ElementStore([...elements, target]);
   const onPreviewReady = vi.fn();
   const session = new SelectionHandleSession({
-    action: { kind: "linear-endpoint", elementId: source.id, endpoint: "end" },
-    elements: [store.get(source.id)!.element as InkElementV1],
-    planner: store,
-    startPointer: source.end,
+    ...endpointOptions(store, source),
     onPreviewReady,
     snap: {
       features: { angles: false, bends: true, connections: true, structures: true },
@@ -99,12 +109,7 @@ it("defers a terminal line handle whose forward graph is invisible to the revers
   const store = new ElementStore(elements);
   const last = elements[elements.length - 1]!;
   const plan = vi.spyOn(store, "planReplacements");
-  const session = new SelectionHandleSession({
-    action: { kind: "linear-endpoint", elementId: last.id, endpoint: "end" },
-    elements: [store.get(last.id)!.element as InkElementV1],
-    planner: store,
-    startPointer: last.end,
-  });
+  const session = new SelectionHandleSession(endpointOptions(store, last));
 
   expect(store.countReverseDependencies([last.id], 256)).toBe(0);
   const preview = session.update({ x: 450, y: 120 });
@@ -136,10 +141,7 @@ it("defers a newly snapped linear target while keeping free endpoint previews im
   const store = new ElementStore([...elements, source]);
   const plan = vi.spyOn(store, "planReplacements");
   const session = new SelectionHandleSession({
-    action: { kind: "linear-endpoint", elementId: source.id, endpoint: "end" },
-    elements: [store.get(source.id)!.element as InkElementV1],
-    planner: store,
-    startPointer: source.end,
+    ...endpointOptions(store, source),
     snap: {
       pointerType: "mouse",
       zoom: 1,
