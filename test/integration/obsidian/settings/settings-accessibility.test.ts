@@ -23,7 +23,12 @@ afterEach(() => {
 const app = (): App => ({ workspace: { containerEl: document.body } }) as App;
 
 describe("settings and confirmation semantic accessibility gate", () => {
-  it.each(["settings", "shortcuts"] as const)("scans the open %s view", async (view) => {
+  it.each([
+    { view: "settings", group: undefined },
+    { view: "settings", group: "Drawing tools" },
+    { view: "settings", group: "Shapes and structures" },
+    { view: "shortcuts", group: undefined },
+  ] as const)("scans the open $view view, group=$group", async ({ view, group }) => {
     const store = createTestSettingsStore();
     store.updateDeviceSettings((settings) => ({ ...settings, motion: "reduced" }));
     const tab = new InkbookSettingTab(app(), {} as Plugin, store, undefined, undefined, {
@@ -34,14 +39,26 @@ describe("settings and confirmation semantic accessibility gate", () => {
       controller.open(view);
       const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
       expect(dialog).not.toBeNull();
-      await assertAccessibleSemantics(dialog!, ["aria-dialog-name", "button-name"]);
-      for (const trigger of dialog!.querySelectorAll<HTMLButtonElement>(
-        '.inkbook-settings-tool-trigger[aria-expanded="false"]',
-      ))
-        trigger.click();
+      const surface =
+        group === undefined
+          ? dialog!
+          : [...dialog!.querySelectorAll<HTMLElement>(".setting-group")].find(
+              (candidate) => candidate.querySelector("h3")?.textContent === group,
+            );
+      expect(surface).toBeDefined();
+      if (group !== undefined || view === "shortcuts") {
+        for (const trigger of surface!.querySelectorAll<HTMLButtonElement>(
+          '.inkbook-settings-tool-trigger[aria-expanded="false"]',
+        ))
+          trigger.click();
+      }
       await assertAccessibleSemantics(
-        dialog!,
-        view === "settings" ? ["label", "select-name", "button-name"] : ["button-name"],
+        surface!,
+        group !== undefined
+          ? ["label", "button-name"]
+          : view === "settings"
+            ? ["aria-dialog-name", "label", "select-name", "button-name"]
+            : ["aria-dialog-name", "button-name"],
       );
     } finally {
       controller.dispose();
