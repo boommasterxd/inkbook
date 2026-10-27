@@ -8,6 +8,7 @@ import { selectionSnapFeatureEnabled } from "./snap-features";
 export class HandleSnapLookup {
   readonly #lookup: ScheduledSnapCandidate | undefined;
   readonly #snap: SelectionSnapPorts | undefined;
+  #active = false;
 
   public constructor(action: SelectionHandleAction, snap: SelectionSnapPorts | undefined) {
     this.#snap = snap;
@@ -38,6 +39,7 @@ export class HandleSnapLookup {
       this.cancel();
       return null;
     }
+    this.#active = true;
     this.#lookup.update(
       { current, pointer, pointerType: this.#snap!.pointerType, zoom: this.#snap!.zoom },
       () => onReady(this.#lookup!.value),
@@ -46,10 +48,12 @@ export class HandleSnapLookup {
   }
 
   public async settle() {
+    if (!this.#active) return null;
     return (await this.#lookup?.settle()) ?? null;
   }
 
   public cancel(): void {
+    this.#active = false;
     this.#lookup?.cancel();
   }
 }
