@@ -38,7 +38,69 @@ describe("Obsidian action dialogs", () => {
     await expect(result).resolves.toBe(accepted);
     expect(document.querySelector(".inkbook-action-dialog")).toBeNull();
   });
+});
 
+describe("native dialog keyboard navigation", () => {
+  it("cycles Tab and Shift+Tab inside the dialog and releases its scope on close", async () => {
+    const host = document.body.createEl("button", { text: "Host navigation" });
+    const result = confirm();
+    const tab = (shiftKey = false): KeyboardEvent => {
+      const event = new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      document.activeElement?.dispatchEvent(event);
+      return event;
+    };
+    expect(tab().defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button("Delete embed"));
+    expect(tab().defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button("Close"));
+    expect(tab().defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button("Cancel"));
+    expect(tab(true).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button("Close"));
+    button("Delete embed").disabled = true;
+    button("Delete embed").tabIndex = 0;
+    expect(tab(true).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button("Cancel"));
+    button("Close").hidden = true;
+    expect(tab().defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button("Cancel"));
+    button("Cancel").click();
+    await expect(result).resolves.toBe(false);
+    host.focus();
+    expect(tab().defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(host);
+  });
+
+  it("keeps the newest native dialog's Tab scope active until it closes", async () => {
+    const first = confirm();
+    const firstCancel = button("Cancel");
+    const second = chooseInkbookAction(app(), {
+      title: "Resolve conflict",
+      description: "Choose which version to keep.",
+      cancelLabel: "Keep current",
+      actions: [{ value: "replace", label: "Use other version" }],
+    });
+    const event = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.activeElement?.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button("Use other version"));
+    button("Keep current").click();
+    await expect(second).resolves.toBeNull();
+    firstCancel.click();
+    await expect(first).resolves.toBe(false);
+  });
+});
+
+describe("Obsidian action dialog lifecycle", () => {
   it.each(["Escape", "Close", "backdrop"])("cancels through host %s", async (method) => {
     const result = confirm();
     if (method === "Escape")

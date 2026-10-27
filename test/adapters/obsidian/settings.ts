@@ -1,3 +1,5 @@
+import { Scope } from "./keymap";
+
 interface TestApp {
   readonly workspace: { readonly containerEl: HTMLElement };
 }
@@ -18,13 +20,21 @@ export function simulateNativeModalBack(ownerDocument: Document): boolean {
 }
 
 export class Modal {
+  readonly scope = new Scope();
   readonly containerEl: HTMLElement;
   readonly titleEl: HTMLElement;
   readonly contentEl: HTMLElement;
   readonly modalEl: HTMLElement;
   readonly #escape = (event: KeyboardEvent): void => {
     const stack = nativeModalStack(this.modalEl.ownerDocument);
-    if (event.key === "Escape" && !event.defaultPrevented && stack[stack.length - 1] === this) {
+    if (event.defaultPrevented || stack[stack.length - 1] !== this) return;
+    for (const handler of this.scope.handlers) {
+      if (handler.key !== null && handler.key !== event.key) continue;
+      if (handler.callback(event) !== false) continue;
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
       event.preventDefault();
       this.close();
     }
@@ -170,16 +180,20 @@ class TextComponent {
 export class Setting {
   readonly settingEl: HTMLElement;
   readonly infoEl: HTMLElement;
+  readonly nameEl: HTMLElement;
   readonly controlEl: HTMLElement;
 
   public constructor(container: HTMLElement) {
     this.settingEl = container;
     this.infoEl = container.appendChild(createOwnedElement(container.ownerDocument, "div"));
+    this.nameEl = this.infoEl.appendChild(createOwnedElement(container.ownerDocument, "div"));
+    this.nameEl.className = "setting-item-name";
     this.controlEl = container.appendChild(createOwnedElement(container.ownerDocument, "div"));
   }
 
   public setName(name: string): this {
     this.settingEl.dataset.settingName = name;
+    this.nameEl.textContent = name;
     return this;
   }
 

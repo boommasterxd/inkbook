@@ -57,6 +57,8 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     const { scroll } = this.#options;
     const content = page.createContent(this.#options.lifecycle);
     this.#resetPageMotion();
+    // Nested roots must unmount before the outer layout commit can detach their portals.
+    this.#page?.dispose?.();
     this.#options.layout.mutate(() => {
       if (this.#page === undefined) {
         const active = this.ownerDocument.activeElement;
@@ -64,7 +66,7 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
           active !== null && scroll.contains(active) ? (active as HTMLElement) : undefined;
         this.#rootScroll = scroll.scrollTop;
         this.#root.append(...scroll.childNodes);
-      } else this.#page.dispose?.();
+      }
       this.#page = page;
       scroll.replaceChildren();
       const body = scroll.createDiv({ cls: "inkbook-phone-sheet-page" });
@@ -101,8 +103,8 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     if (this.#closed || this.#page === undefined) return false;
     const { scroll } = this.#options;
     this.#resetPageMotion();
+    this.#page.dispose?.();
     this.#options.layout.mutate(() => {
-      this.#page?.dispose?.();
       this.#page = undefined;
       scroll.replaceChildren(this.#root);
       this.#show(this.#rootKind, this.#rootLabel);

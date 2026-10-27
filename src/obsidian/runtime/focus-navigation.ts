@@ -42,3 +42,15 @@ export function registerFocusNavigation(root: HTMLElement, initial = false): () 
     delete root.dataset.inkbookKeyboardNavigation;
   };
 }
+
+/** Cycles a modal surface's current controls without letting Tab reach the host. */
+export function cycleModalFocus(event: KeyboardEvent, focusable: readonly HTMLElement[]): void {
+  if (event.key !== "Tab" || event.defaultPrevented || focusable.length === 0) return;
+  const active = focusable[0]?.ownerDocument.activeElement;
+  const index = focusable.indexOf(active as HTMLElement);
+  const next = event.shiftKey
+    ? focusable[(index <= 0 ? focusable.length : index) - 1]
+    : focusable[(index + 1) % focusable.length];
+  event.preventDefault();
+  next?.focus({ preventScroll: true });
+}

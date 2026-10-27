@@ -1,4 +1,5 @@
 import { Component, Platform } from "obsidian";
+import { cycleModalFocus } from "../../runtime/focus-navigation";
 
 import { registerMenuPointerDismissal } from "../menu-pointer-dismissal";
 import { trapPhoneSheetFocus } from "./phone-sheet-focus";
@@ -31,15 +32,7 @@ export function registerPanelInteraction(options: PanelInteractionOptions): void
       options.backOrClose();
       return;
     }
-    if (event.key !== "Tab") return;
-    const focusable = options.focusable();
-    if (focusable.length === 0) return;
-    const index = focusable.indexOf(ownerDocument.activeElement as HTMLElement);
-    const next = event.shiftKey
-      ? focusable[(index <= 0 ? focusable.length : index) - 1]
-      : focusable[(index + 1) % focusable.length];
-    event.preventDefault();
-    next?.focus({ preventScroll: true });
+    if (event.key === "Tab") cycleModalFocus(event, options.focusable());
   };
   const onOutsidePointer = (event: PointerEvent): void => {
     if (!options.topmost()) return;

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
+import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
-import { Modal, type App, type Plugin } from "obsidian";
+import { Modal, Platform, type App, type Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import type {
@@ -11,12 +12,16 @@ import type {
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
 import { InkbookSettingsModalController } from "../../../../src/obsidian/settings/settings-modal";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { createAdaptivePanelFixture } from "../../../adapters/obsidian/adaptive-panel";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
 
 beforeEach(installObsidianDomHelpers);
 afterEach(() => {
   vi.restoreAllMocks();
   document.body.replaceChildren();
+  Platform.isPhone = false;
+  Platform.isMobile = false;
+  vi.useRealTimers();
 });
 
 describe("settings pages in an existing phone sheet", () => {
@@ -63,9 +68,18 @@ describe("settings pages in an existing phone sheet", () => {
     controller.dispose();
     expect(navigation.close).not.toHaveBeenCalled();
   });
+});
 
-  it("records shortcuts and releases subscriptions and active recording when leaving the page", () => {
+describe("recording cleanup in the real phone sheet layout", () => {
+  it.each(["back", "replace"])("releases recorder portals before a phone page %s", async (exit) => {
+    vi.useFakeTimers();
+    Platform.isPhone = true;
+    Platform.isMobile = true;
     const { controller, store, navigation } = setup();
+    const sheet = createAdaptivePanelFixture("style", { motion: "full" });
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(220);
+    const phoneNavigation = sheet.session.navigation!;
     const leases: Array<Mock<() => void>> = [];
     const active = new Set<() => void>();
     const subscribe = store.subscribeDeviceSettings.bind(store);
@@ -79,24 +93,48 @@ describe("settings pages in an existing phone sheet", () => {
       active.add(release);
       return release;
     });
-    controller.open("shortcuts", navigation);
-    const selector = 'button[aria-label="Change shortcut for Copy selection"]';
-    required<HTMLButtonElement>(selector).click();
-    required<HTMLButtonElement>(selector).dispatchEvent(
-      new KeyboardEvent("keydown", { bubbles: true, key: "k", ctrlKey: true }),
-    );
-    expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual({
-      key: "k",
-      modifiers: ["mod"],
-    });
-    required<HTMLButtonElement>(selector).click();
-    const ownedBeforeBack = [...active];
-    navigation.back();
+    const errors = vi.spyOn(console, "error");
+    try {
+      controller.open("shortcuts", phoneNavigation);
+      required<HTMLButtonElement>(
+        '.inkbook-shortcut-section-trigger[aria-expanded="false"]',
+      ).click();
+      const selector = 'button[data-shortcut-action="copy"]';
+      required<HTMLButtonElement>(selector).click();
+      required<HTMLButtonElement>(selector).dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "k", ctrlKey: true }),
+      );
+      expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual({
+        key: "k",
+        modifiers: ["mod"],
+      });
+      required<HTMLButtonElement>(selector).click();
+      required<HTMLButtonElement>(selector).dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
+      );
+      expect(document.querySelectorAll(".inkbook-shortcut-transition").length).toBeGreaterThan(0);
+      const ownedBeforeBack = [...active];
+      if (exit === "back") {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }),
+        );
+        expect(document.querySelector(".inkbook-shortcuts-view")).toBeNull();
+        expect(sheet.control.isConnected).toBe(true);
+        expect(active.size).toBe(0);
+      } else {
+        controller.open("settings", phoneNavigation);
+        expect(document.querySelector('[data-view="settings"]')).not.toBeNull();
+      }
+      await Promise.resolve();
+      for (const release of ownedBeforeBack) expect(release).toHaveBeenCalledOnce();
+      expect(document.querySelector(".inkbook-shortcut-transition")).toBeNull();
+    } finally {
+      controller.dispose();
+      sheet.session.close("immediate");
+    }
     expect(active.size).toBe(0);
-    for (const release of ownedBeforeBack) expect(release).toHaveBeenCalledOnce();
     for (const release of leases) expect(release).toHaveBeenCalledOnce();
-    expect(document.querySelector(".inkbook-shortcuts-view")).toBeNull();
-    controller.dispose();
+    expect(errors).not.toHaveBeenCalled();
     expect(navigation.close).not.toHaveBeenCalled();
   });
 });
