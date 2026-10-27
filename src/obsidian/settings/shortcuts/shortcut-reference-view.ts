@@ -58,5 +58,6 @@ function renderReadOnlyShortcut(
     cls: "inkbook-shortcut-recorder inkbook-shortcut-recorder-static",
   });
   renderReadOnlyShortcutBinding(display, entry.keyGroups);
+  display.setAttribute("role", "group");
   display.setAttribute("aria-label", `${ariaPrefix} for ${entry.label}: ${display.textContent}`);
 }

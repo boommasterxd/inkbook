@@ -261,7 +261,7 @@ When reduced motion is active:
 
 ## Accessibility Acceptance
 
-The editor targets WCAG 2.2 AA within the capabilities of the Obsidian host.
+The editor targets WCAG 2.2 AA within the capabilities of the Obsidian host. Blocking axe-core integration tests scan mounted production toolbar, owned menus and adaptive panels, settings, shortcuts, and confirmation dialogs through the existing Unit/Integration CI gate and dependency-based selection. The shared `test/fixtures/accessibility.ts` runs WCAG 2 A/AA, 2.1 A/AA, and 2.2 AA tagged semantic rules plus dialog naming, rejects violations and incomplete results, and requires actual passes for each surface's core rules. Mutation checks prove that unnamed controls and invalid ARIA state fail. Its explicit native-rule exclusions cover contrast, target geometry, scrolling, orientation, visible-label matching and visual styling because happy-dom has no layout engine; no geometry or contrast result is inferred from these scans. Native Obsidian checks must cover those exclusions, keyboard/focus, reflow and existing themes in desktop, tablet and phone modes. Automated semantic passes do not establish full WCAG conformance or replace native verification.
 
 - Every icon-only control has an accessible name and tooltip.
 - The canvas input surface is keyboard-focusable, has an accessible name, and shows a visible `focus-visible` indicator without changing document geometry.

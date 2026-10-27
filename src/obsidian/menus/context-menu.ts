@@ -229,7 +229,14 @@ export function openContextMenu(
     focusAfterClose(invocation);
     invocation.onClosed?.();
   });
-  populateContextMenu(menu, invocation.ownerDocument, state, handlers);
+  populateContextMenu(menu, invocation.ownerDocument, state, {
+    ...handlers,
+    eraseAll: () => {
+      // Restore focus before the confirmation dialog captures its return target.
+      menu.close("handoff");
+      handlers.eraseAll();
+    },
+  });
   if (invocation.type === "position") {
     menu.showAtPosition(invocation.position, invocation.ownerDocument);
   }

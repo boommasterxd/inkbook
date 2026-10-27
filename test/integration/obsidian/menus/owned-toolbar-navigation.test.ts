@@ -1,19 +1,13 @@
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
-import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
-import { type App, Platform } from "obsidian";
+import { Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EditorToolbarMenuSession } from "../../../../src/obsidian/menus/editor-toolbar-menu";
-import { createOwnedMenuFactory } from "../../../../src/obsidian/menus/owned-menu-factory";
-import { createPhoneSheetHost } from "../../../../src/obsidian/menus/panels/phone-sheet-host";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
-import {
-  createEditorToolbarMenuOptions,
-  installNativeMenuMeasurementStyles,
-} from "../../../adapters/obsidian/editor-toolbar-menu";
+import { installNativeMenuMeasurementStyles } from "../../../adapters/obsidian/editor-toolbar-menu";
 import { nativeModalStack } from "../../../adapters/obsidian/settings";
+import { createOwnedToolbarMenuFixture as fixture } from "../../../fixtures/obsidian/owned-toolbar-menu";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -27,22 +21,6 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
-
-function fixture() {
-  const options = createEditorToolbarMenuOptions();
-  options.anchor.className = "inkbook-root";
-  options.anchor.dataset.inkbookMotion = "full";
-  document.body.append(options.anchor);
-  const app = { workspace: { containerEl: document.body } } as App;
-  const host = () => createPhoneSheetHost(app);
-  const factory = createOwnedMenuFactory({
-    anchor: options.anchor,
-    workScheduler: workSchedulerFromFrames(window),
-    createPhoneSheetHost: host,
-  });
-  const session = new EditorToolbarMenuSession({ ...options, factory, createPhoneSheetHost: host });
-  return { options, session };
-}
 
 function clickAction(title: string): void {
   const action = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(

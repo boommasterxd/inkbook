@@ -87,9 +87,9 @@ export class ShortcutRecordingView {
     const recorder = controls.createEl("button", { cls: "inkbook-shortcut-recorder" });
     recorder.type = "button";
     recorder.dataset.shortcutAction = action;
-    recorder.setAttribute("aria-label", `Change shortcut for ${reference.label}`);
     recorder.setAttribute("aria-pressed", "false");
     renderShortcutBinding(recorder, binding);
+    this.#labelRecorder(recorder, action, recorder);
     this.#recorders.set(action, { button: recorder, status });
     recorder.addEventListener("click", () => {
       this.#startRecording(action);
@@ -125,6 +125,7 @@ export class ShortcutRecordingView {
     entry.button.setAttribute("aria-pressed", "true");
     this.#motion.replace(entry.button, (content) => {
       content.textContent = "Press shortcut…";
+      this.#labelRecorder(entry.button, action, content);
     });
     this.#showStatus(entry.status, "Press a shortcut, or Escape to cancel.", false);
     this.#installRecordingCapture(action, entry.status);
@@ -140,10 +141,22 @@ export class ShortcutRecordingView {
     if (entry === undefined) return;
     entry.button.dataset.recording = "false";
     entry.button.setAttribute("aria-pressed", "false");
-    this.#motion.replace(entry.button, (content) =>
-      renderShortcutBinding(content, this.#store.getDeviceSettings().keyboardShortcuts[action]),
-    );
+    this.#motion.replace(entry.button, (content) => {
+      renderShortcutBinding(content, this.#store.getDeviceSettings().keyboardShortcuts[action]);
+      this.#labelRecorder(entry.button, action, content);
+    });
     this.#showStatus(entry.status, "", false);
+  }
+
+  #labelRecorder(
+    button: HTMLButtonElement,
+    action: ConfigurableShortcutActionV1,
+    content: HTMLElement,
+  ): void {
+    button.setAttribute(
+      "aria-label",
+      `${content.textContent ?? ""}: Change shortcut for ${CONFIGURABLE_SHORTCUT_REFERENCE[action].label}`,
+    );
   }
 
   #showStatus(status: HTMLElement, message: string, error: boolean): void {
@@ -177,7 +190,7 @@ export class ShortcutRecordingView {
       return;
     }
     if (this.#showHostConflict(capture.binding, status)) return;
-    this.#recordingAction = undefined;
+    this.#stopRecording();
     this.#store.updateDeviceSettings((settings) => ({
       ...settings,
       keyboardShortcuts: { ...settings.keyboardShortcuts, [action]: capture.binding },
@@ -197,7 +210,7 @@ export class ShortcutRecordingView {
       return;
     }
     if (binding !== null && this.#showHostConflict(binding, status)) return;
-    this.#recordingAction = undefined;
+    this.#stopRecording();
     this.#store.updateDeviceSettings((settings) => ({
       ...settings,
       keyboardShortcuts: { ...settings.keyboardShortcuts, [action]: binding },
@@ -206,7 +219,7 @@ export class ShortcutRecordingView {
   }
 
   #clear(action: ConfigurableShortcutActionV1): void {
-    this.#recordingAction = undefined;
+    this.#stopRecording();
     this.#store.updateDeviceSettings((settings) => ({
       ...settings,
       keyboardShortcuts: { ...settings.keyboardShortcuts, [action]: null },
@@ -225,7 +238,7 @@ export class ShortcutRecordingView {
       );
       return;
     }
-    this.#recordingAction = undefined;
+    this.#stopRecording();
     this.#store.updateDeviceSettings((settings) => ({
       ...settings,
       keyboardShortcuts: defaults,

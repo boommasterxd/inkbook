@@ -1,4 +1,5 @@
 import { Modal, type App } from "obsidian";
+import { cycleModalFocus } from "../runtime/focus-navigation";
 
 interface NativeDialogCallbacks {
   open(): void;
@@ -20,6 +21,7 @@ export class NativeDialogShell extends Modal {
       attr: { "aria-hidden": "true" },
     });
     this.containerEl.replaceChildren(this.motionBackdropEl, this.modalEl);
+    this.scope.register(null, "Tab", this.#cycleFocus);
   }
 
   public override onOpen(): void {
@@ -39,6 +41,22 @@ export class NativeDialogShell extends Modal {
     this.motionBackdropEl.removeEventListener("click", this.#requestClose);
     this.#callbacks.closed();
   }
+
+  #cycleFocus = (event: KeyboardEvent): false => {
+    const controls = [
+      ...this.modalEl.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter(
+      (element) =>
+        !element.hasAttribute("disabled") &&
+        element.tabIndex !== -1 &&
+        element.closest("[hidden], [inert]") === null,
+    );
+    if (controls.length === 0) this.modalEl.tabIndex = -1;
+    cycleModalFocus(event, controls.length === 0 ? [this.modalEl] : controls);
+    return false;
+  };
 
   #requestClose = (): void => this.close();
 }

@@ -43,9 +43,7 @@ describe("shortcut settings view", () => {
       ),
     ).toBe(true);
     expect(container.querySelectorAll(".inkbook-shortcut-row")).toHaveLength(10);
-    expect(
-      container.querySelector('button[aria-label="Change shortcut for Copy selection"]'),
-    ).toBeTruthy();
+    expect(container.querySelector('button[data-shortcut-action="copy"]')).toBeTruthy();
     expect(container.textContent).toContain("Fixed system shortcuts");
     expect(container.textContent).toContain("Obsidian commands");
     expect(container.textContent).toContain("Paste a validated clipboard selection");
@@ -99,53 +97,53 @@ describe("shortcut recording ownership", () => {
   it("keeps recording focus and bindings through cancellation and releases active feedback", async () => {
     vi.useFakeTimers();
     const { container, store, view } = createView();
-    expand(container, "Canvas shortcuts");
-    await vi.runAllTimersAsync();
-    const recorder = required<HTMLButtonElement>(
-      container,
-      'button[aria-label="Change shortcut for Copy selection"]',
-    );
-    const binding = store.getDeviceSettings().keyboardShortcuts.copy;
-    const row = recorder.closest<HTMLElement>(".inkbook-shortcut-row")!;
-    const followingRow = row.nextElementSibling as HTMLElement;
-    const recorderMeasurement = vi.spyOn(recorder, "getBoundingClientRect");
-    const followingMeasurement = vi.spyOn(followingRow, "getBoundingClientRect");
-    recorder.click();
-    expect(recorderMeasurement).toHaveBeenCalled();
-    expect(followingMeasurement).toHaveBeenCalled();
-    expect(document.activeElement).toBe(recorder);
-    expect(recorder.getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector('[data-shortcut-action="copy"]')).toBe(recorder);
-    recorder.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    expect(recorder.getAttribute("aria-pressed")).toBe("false");
-    expect(document.activeElement).toBe(recorder);
-    expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
-    recorder.click();
-    store.updateDeviceSettings((settings) => ({ ...settings, motion: "reduced" }));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(recorder.getAttribute("aria-pressed")).toBe("true");
-    expect(vi.getTimerCount()).toBe(0);
-    const clear = required<HTMLButtonElement>(
-      container,
-      'button[aria-label="Clear Copy selection"]',
-    );
-    clear.dispatchEvent(
-      new PointerEvent("pointerdown", {
-        bubbles: true,
-        pointerType: "touch",
-        isPrimary: true,
-        pointerId: 4,
-      }),
-    );
-    window.dispatchEvent(
-      new PointerEvent("pointercancel", { pointerType: "touch", isPrimary: true, pointerId: 4 }),
-    );
-    expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
-    view.dispose();
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", ctrlKey: true }));
-    expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
-    expect(vi.getTimerCount()).toBe(0);
-    vi.useRealTimers();
+    try {
+      expand(container, "Canvas shortcuts");
+      await vi.runAllTimersAsync();
+      const recorder = required<HTMLButtonElement>(
+        container,
+        'button[data-shortcut-action="copy"]',
+      );
+      const binding = store.getDeviceSettings().keyboardShortcuts.copy;
+      recorder.click();
+      expect(document.activeElement).toBe(recorder);
+      expect(recorder.getAttribute("aria-pressed")).toBe("true");
+      expect(container.querySelector('[data-shortcut-action="copy"]')).toBe(recorder);
+      recorder.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      expect(recorder.getAttribute("aria-pressed")).toBe("false");
+      expect(recorder.getAttribute("aria-label")).toBe("CtrlC: Change shortcut for Copy selection");
+      expect(document.activeElement).toBe(recorder);
+      expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+      expectFollowingKeyReleased(recorder);
+      expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+      recorder.click();
+      store.updateDeviceSettings((settings) => ({ ...settings, motion: "reduced" }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(recorder.getAttribute("aria-pressed")).toBe("true");
+      expect(vi.getTimerCount()).toBe(0);
+      const clear = required<HTMLButtonElement>(
+        container,
+        'button[aria-label="Clear Copy selection"]',
+      );
+      clear.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerType: "touch",
+          isPrimary: true,
+          pointerId: 4,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent("pointercancel", { pointerType: "touch", isPrimary: true, pointerId: 4 }),
+      );
+      expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+      view.dispose();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", ctrlKey: true }));
+      expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      view.dispose();
+    }
   });
 });
 
@@ -161,6 +159,9 @@ describe("shortcut settings editing", () => {
       key: "k",
       modifiers: ["mod"],
     });
+    expect(
+      required(container, 'button[data-shortcut-action="copy"]').getAttribute("aria-label"),
+    ).toBe("CtrlK: Change shortcut for Copy selection");
 
     record(container, "Copy selection", "p", { ctrlKey: true });
     expect(container.textContent).toContain(
@@ -182,6 +183,9 @@ describe("shortcut settings editing", () => {
     click(container, 'button[aria-label="Clear Copy selection"]');
     expect(store.getDeviceSettings().keyboardShortcuts.copy).toBeNull();
     expect(container.textContent).toContain("Not assigned");
+    expect(
+      required(container, 'button[data-shortcut-action="copy"]').getAttribute("aria-label"),
+    ).toBe("Not assigned: Change shortcut for Copy selection");
 
     click(container, 'button[aria-label="Reset Copy selection"]');
     expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual({
@@ -220,6 +224,82 @@ describe("shortcut settings editing", () => {
     view.dispose();
   });
 });
+
+describe("shortcut recording completion", () => {
+  it.each([
+    ["recording the existing binding", undefined],
+    ["resetting the default binding", 'button[aria-label="Reset Copy selection"]'],
+    ["resetting the default group", ".inkbook-shortcuts-group-reset"],
+    ["clearing an unassigned binding", 'button[aria-label="Clear Copy selection"]'],
+  ])("stops capture after %s without a settings change", (operation, selector) => {
+    const { container, store, view } = createView();
+    try {
+      store.updateDeviceSettings((settings) => ({
+        ...settings,
+        keyboardShortcuts: {
+          ...settings.keyboardShortcuts,
+          copy:
+            operation === "clearing an unassigned binding" ? null : settings.keyboardShortcuts.copy,
+        },
+      }));
+      expand(container, "Canvas shortcuts");
+      const recorder = required<HTMLButtonElement>(
+        container,
+        'button[data-shortcut-action="copy"]',
+      );
+      const binding = store.getDeviceSettings().keyboardShortcuts.copy;
+      const label = recorder.textContent;
+      expect(recorder.getAttribute("aria-label")).toBe(
+        `${label}: Change shortcut for Copy selection`,
+      );
+      recorder.click();
+      expect(recorder.getAttribute("aria-pressed")).toBe("true");
+      expect(recorder.getAttribute("aria-label")).toBe(
+        "Press shortcut…: Change shortcut for Copy selection",
+      );
+      if (selector === undefined) {
+        recorder.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true }),
+        );
+      } else click(container, selector);
+      expect(container.querySelector('[data-shortcut-action="copy"]')).toBe(recorder);
+      expect(recorder.getAttribute("aria-pressed")).toBe("false");
+      expect(accessibleText(recorder)).toBe(label);
+      expect(recorder.getAttribute("aria-label")).toBe(
+        `${label}: Change shortcut for Copy selection`,
+      );
+      expect(accessibleText(recorder.closest(".inkbook-shortcut-row")!)).not.toContain(
+        "Escape to cancel",
+      );
+      expect(document.activeElement).toBe(
+        selector === ".inkbook-shortcuts-group-reset"
+          ? container.querySelector(selector)
+          : recorder,
+      );
+      expectFollowingKeyReleased(recorder);
+      expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+    } finally {
+      view.dispose();
+    }
+  });
+});
+
+function expectFollowingKeyReleased(recorder: HTMLButtonElement): void {
+  const event = new KeyboardEvent("keydown", {
+    key: "q",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  recorder.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(false);
+}
+
+function accessibleText(element: HTMLElement): string | null {
+  const clone = element.cloneNode(true) as HTMLElement;
+  for (const hidden of clone.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+  return clone.textContent;
+}
 
 function createView(hostAccess?: ObsidianHotkeyAccess): {
   readonly container: HTMLElement;
@@ -274,12 +354,12 @@ function record(
 ): void {
   const recorder = required<HTMLButtonElement>(
     container,
-    `button[aria-label="Change shortcut for ${label}"]`,
+    `button[aria-label$="Change shortcut for ${label}"]`,
   );
   recorder.click();
   required<HTMLButtonElement>(
     container,
-    `button[aria-label="Change shortcut for ${label}"]`,
+    `button[aria-label$="Change shortcut for ${label}"]`,
   ).dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key, ...options }));
 }
 

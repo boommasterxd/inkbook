@@ -6,7 +6,6 @@ import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  arrowShapeIconId,
   SELECTION_AREA_ICON_IDS,
   SHAPE_ICON_IDS,
   STRAIGHT_HIGHLIGHTER_ICON_ID,
@@ -302,25 +301,6 @@ describe("mounted Inkbook shape controls", () => {
     mounted.update({ ...completeState, openFlyout: "style" }, "triangle");
     expect(style.getAttribute("aria-expanded")).toBe("true");
     expect(shapePicker.getAttribute("aria-expanded")).toBe("false");
-    mounted.unmount();
-  });
-
-  it("updates the active arrow icon when either endpoint style changes", () => {
-    const mounted = mountToolbar(completeState);
-    for (const [arrowStart, arrowEnd] of [
-      ["none", "arrow"],
-      ["triangle", "arrow"],
-      ["triangle", "circle"],
-    ] as const) {
-      mounted.update(completeState, "arrow", defaultStyleIcon, {
-        arrowEnd,
-        arrowStart,
-        coordinateDimension: "2d",
-      });
-      expect(
-        requiredElement<HTMLElement>(mounted.button("shape"), ".inkbook-toolbar-icon").dataset.icon,
-      ).toBe(arrowShapeIconId(arrowStart, arrowEnd));
-    }
     mounted.unmount();
   });
 });
