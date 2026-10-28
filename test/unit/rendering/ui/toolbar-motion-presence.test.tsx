@@ -105,7 +105,7 @@ describe("Motion toolbar glyph lifecycle", () => {
 });
 
 describe("Motion toolbar color continuity", () => {
-  it("keeps the current active and disabled state through hover, theme changes and quick returns", async () => {
+  it("preserves stylesheet overrides through interpolated hover, theme changes and quick returns", async () => {
     vi.stubGlobal("EventTarget", HappyEventTarget);
     let colors: ChromePalette.ChromeColors = {
       accent: "rgba(120, 80, 200, 1)",
@@ -123,6 +123,15 @@ describe("Motion toolbar color continuity", () => {
     });
     const warnings = vi.spyOn(console, "warn");
     const mounted = mountSelectedToolbar();
+    const snippet = document.createElementNS("http://www.w3.org/1999/xhtml", "style");
+    snippet.textContent = `
+      .inkbook-root .inkbook-toolbar-button { color: rebeccapurple; }
+      .inkbook-root .inkbook-toolbar-button-surface {
+        background-color: rebeccapurple;
+        border-color: rebeccapurple;
+      }
+    `;
+    mounted.presentation.prepend(snippet);
     const state = {
       ...createEditorChromeProps(document).toolbarState,
       canUndo: true,
@@ -132,17 +141,27 @@ describe("Motion toolbar color continuity", () => {
     await advanceMotionBy(400);
     const finger = mounted.button("finger-drawing");
     const surface = finger.querySelector<HTMLElement>(".inkbook-toolbar-button-surface")!;
+    const snippetForeground = getComputedStyle(finger).color;
+    const snippetBackground = getComputedStyle(surface).backgroundColor;
+    const snippetBorder = getComputedStyle(surface).borderColor;
+    const background = (): string => surface.style.getPropertyValue("--inkbook-toolbar-background");
     act(() => finger.focus());
     mouse(finger, "pointerenter");
     await advanceMotionBy(64);
-    expect(surface.style.backgroundColor).not.toBe(ChromePalette.CHROME_TRANSPARENT);
-    expect(surface.style.backgroundColor).not.toBe(colors.hover);
+    expect(background()).not.toBe(ChromePalette.CHROME_TRANSPARENT);
+    expect(background()).not.toBe(colors.hover);
+    expect(getComputedStyle(surface).backgroundColor).toBe(snippetBackground);
     mouse(finger, "pointerleave");
     await advanceMotionBy(16);
     mouse(finger, "pointerenter");
     mounted.setChromeProps({ toolbarState: { ...state, fingerDrawingEnabled: true } });
     expect(finger.getAttribute("aria-pressed")).toBe("true");
     expect(document.activeElement).toBe(finger);
+    await advanceMotionBy(64);
+    const foreground = finger.style.getPropertyValue("--inkbook-toolbar-foreground");
+    expect(foreground).toMatch(/^rgba?\(/);
+    expect(foreground).not.toBe(colors.muted);
+    expect(foreground).not.toBe(colors.accent);
     colors = {
       ...colors,
       accent: "rgba(40, 160, 220, 1)",
@@ -153,10 +172,12 @@ describe("Motion toolbar color continuity", () => {
     document.body.classList.add("theme-dark");
     await flushRootMutation();
     await advanceMotionBy(400);
-    expect(surface.style.backgroundColor).toBe(colors.hover);
+    expect(background()).toBe(colors.hover);
     mouse(finger, "pointerleave");
     await advanceMotionBy(400);
-    expect(surface.style.backgroundColor).toBe(colors.activeBackground);
+    expect(background()).toBe(colors.activeBackground);
+    expect(getComputedStyle(finger).color).toBe(snippetForeground);
+    expect(getComputedStyle(surface).borderColor).toBe(snippetBorder);
     expect(mounted.button("finger-drawing")).toBe(finger);
     expect(document.activeElement).toBe(finger);
 
@@ -171,7 +192,9 @@ describe("Motion toolbar color continuity", () => {
     mouse(undo, "pointerleave");
     await advanceMotionBy(400);
     expect(
-      undo.querySelector<HTMLElement>(".inkbook-toolbar-button-surface")!.style.backgroundColor,
+      undo
+        .querySelector<HTMLElement>(".inkbook-toolbar-button-surface")!
+        .style.getPropertyValue("--inkbook-toolbar-background"),
     ).toBe(ChromePalette.CHROME_TRANSPARENT);
     expect(
       warnings.mock.calls.filter((args) =>

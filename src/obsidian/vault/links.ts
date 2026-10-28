@@ -15,6 +15,33 @@ export interface CurrentSourceReferenceCount {
   readonly sourcePath: string;
 }
 
+interface ObsidianSvgLinkResolution {
+  readonly fileClass: ObsidianFileClasses["file"];
+  readonly metadataCache: Pick<MetadataCache, "getFirstLinkpathDest">;
+  readonly normalizePath: PathNormalizer;
+  readonly resolveFile: (path: string) => TFile | null;
+}
+
+export function resolveObsidianSvgLink(
+  linkpath: string,
+  sourcePath: string,
+  ports: ObsidianSvgLinkResolution,
+): TFile | null {
+  try {
+    const path = linkpath.trim();
+    if (path.length === 0 || path.includes("\0") || /^(?:[\\/]|[a-z][a-z\d+.-]*:)/iu.test(path)) {
+      return null;
+    }
+    const source = normalizeSourcePath(sourcePath, ports.normalizePath);
+    const file = ports.metadataCache.getFirstLinkpathDest(ports.normalizePath(path), source);
+    if (!(file instanceof ports.fileClass) || !/\.svg$/iu.test(file.path)) return null;
+    const normalized = normalizeVaultPath(file.path, ports.normalizePath);
+    return normalized === file.path && ports.resolveFile(normalized) === file ? file : null;
+  } catch {
+    return null;
+  }
+}
+
 function isCompleteMarkdownLink(value: string): boolean {
   if (value.includes("\n") || value.includes("\r")) return false;
   return (
@@ -58,15 +85,12 @@ export class ObsidianLinkAdapter {
   }
 
   resolveLinkTarget(linkpath: string, sourcePath: string): TFile | null {
-    let normalizedLinkpath: string;
-    try {
-      normalizedLinkpath = normalizeVaultPath(linkpath, this.#normalizePath);
-    } catch {
-      return null;
-    }
-    const source = normalizeSourcePath(sourcePath, this.#normalizePath);
-    const file = this.#metadataCache.getFirstLinkpathDest(normalizedLinkpath, source);
-    return file instanceof this.#classes.file ? file : null;
+    return resolveObsidianSvgLink(linkpath, sourcePath, {
+      fileClass: this.#classes.file,
+      metadataCache: this.#metadataCache,
+      normalizePath: this.#normalizePath,
+      resolveFile: (path) => this.#files.resolveFile(path),
+    });
   }
 
   referenceKnowledge(

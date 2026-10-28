@@ -91,7 +91,7 @@ it("refreshes stylesheet colors on public css-change without replacing the curre
     value.emit("css-change");
     expect(
       readStyle.mock.calls.some(
-        ([element]) => element.getAttribute("style")?.includes("var(--text-muted)") === true,
+        ([element]) => element.getAttribute("data-inkbook-chrome-color") === "muted",
       ),
     ).toBe(true);
     expect(value.item.firstElementChild).toBe(status);

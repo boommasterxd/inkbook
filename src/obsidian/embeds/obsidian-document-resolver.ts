@@ -1,44 +1,19 @@
 import { normalizePath, TFile, type App } from "obsidian";
 
+import { resolveObsidianSvgLink } from "../vault/links";
 import type { ResolvedInkbookDocument } from "./presentation/presentation-port";
-
-function decodeLinkpath(linkpath: string): string | undefined {
-  try {
-    return decodeURIComponent(linkpath);
-  } catch {
-    return undefined;
-  }
-}
-
-function isSafeVaultLinkpath(linkpath: string): boolean {
-  const withoutFragment = linkpath.split("#", 1)[0]?.trim() ?? "";
-  const decoded = decodeLinkpath(withoutFragment);
-  if (
-    decoded === undefined ||
-    decoded.length === 0 ||
-    decoded.startsWith("/") ||
-    decoded.startsWith("\\") ||
-    /^[a-z][a-z\d+.-]*:/iu.test(decoded)
-  ) {
-    return false;
-  }
-  const segments = decoded.replaceAll("\\", "/").split("/");
-  return !segments.some((segment) => segment === ".." || segment === ".");
-}
 
 export function createObsidianDocumentResolver(
   app: App,
 ): (linkpath: string, sourcePath: string) => ResolvedInkbookDocument | undefined {
   return (linkpath, sourcePath) => {
-    if (!isSafeVaultLinkpath(linkpath)) {
-      return undefined;
-    }
-    const targetPath = linkpath.split("#", 1)[0]?.trim();
-    if (targetPath === undefined) {
-      return undefined;
-    }
-    const target = app.metadataCache.getFirstLinkpathDest(targetPath, normalizePath(sourcePath));
-    if (!(target instanceof TFile) || target.extension.toLowerCase() !== "svg") {
+    const target = resolveObsidianSvgLink(linkpath, sourcePath, {
+      fileClass: TFile,
+      metadataCache: app.metadataCache,
+      normalizePath,
+      resolveFile: (path) => app.vault.getFileByPath(path),
+    });
+    if (target === null) {
       return undefined;
     }
     return {

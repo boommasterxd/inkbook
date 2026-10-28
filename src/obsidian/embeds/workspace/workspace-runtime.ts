@@ -274,10 +274,12 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       .finally(activation.release);
   }
   detach(attachment: PresentationAttachment): void {
+    const key = presentationAttachmentKey(attachment);
     this.#coordinator.detachAttachment(attachment);
     this.#releaseScene(attachment, true);
-    this.#mounted.delete(presentationAttachmentKey(attachment));
-    this.refreshRateProfiles.release(presentationAttachmentKey(attachment));
+    this.#mounted.get(key)?.feedback.dispose();
+    this.#mounted.delete(key);
+    this.refreshRateProfiles.release(key);
     this.#lifecycle.detachAutoActivation(attachment);
     pruneOwnerWindowRegistry(
       this.#ownerWindows,

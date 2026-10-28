@@ -165,12 +165,10 @@ it.each(["full", "reduced"] as const)(
     const track = requiredElement<HTMLElement>(pressure, ".inkbook-menu-switch-track");
     const thumb = requiredElement<HTMLElement>(pressure, ".inkbook-menu-switch-thumb");
     const error = requiredElement<HTMLElement>(pressure, ".inkbook-settings-control-error");
-    const activeColor = track.style.backgroundColor;
-    const activePosition = thumb.style.translate;
     expect(input.checked).toBe(true);
     input.focus();
     input.click();
-    await vi.waitFor(() => expect(thumb.style.translate).toBe("0 0"));
+    await vi.waitFor(() => expect(track.dataset.inkbookSwitchState).toBe("unchecked"));
     expect(input.checked).toBe(false);
     expect(save).toHaveBeenCalledOnce();
     rejectSave?.(new Error("Save failed"));
@@ -181,8 +179,9 @@ it.each(["full", "reduced"] as const)(
     expect(input.checked).toBe(true);
     expect(store.getVaultSettings().toolDefaults.pen.pressureEnabled).toBe(true);
     await vi.waitFor(() => {
-      expect(track.style.backgroundColor).toBe(activeColor);
-      expect(thumb.style.translate).toBe(activePosition);
+      expect(track.dataset.inkbookSwitchState).toBe("checked");
+      expect(track.style.backgroundColor).toBe("");
+      expect(thumb.style.translate).toBe("");
     });
     expect(document.activeElement).toBe(input);
     expect(requiredElement(pressure, 'input[type="checkbox"]')).toBe(input);
@@ -190,8 +189,7 @@ it.each(["full", "reduced"] as const)(
     input.click();
     await vi.waitFor(() => {
       expect(store.getVaultSettings().toolDefaults.pen.pressureEnabled).toBe(false);
-      expect(thumb.style.translate).toBe("0 0");
-      expect(track.style.backgroundColor).not.toBe(activeColor);
+      expect(track.dataset.inkbookSwitchState).toBe("unchecked");
     });
     expect(error.hidden).toBe(true);
     expect(document.activeElement).toBe(input);

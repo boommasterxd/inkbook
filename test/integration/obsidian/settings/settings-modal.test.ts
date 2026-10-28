@@ -2,7 +2,7 @@
 import "../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
-import type { App, Plugin } from "obsidian";
+import { Keymap, type App, type Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
@@ -21,7 +21,10 @@ beforeEach(() => {
 describe("Inkbook settings modal", () => {
   it("opens each requested view without an in-modal view switcher", () => {
     const workspaceContainer = document.body.createDiv();
-    const app = { workspace: { containerEl: workspaceContainer } } as unknown as App;
+    const app = {
+      keymap: new Keymap(),
+      workspace: { containerEl: workspaceContainer },
+    } as unknown as App;
     const plugin = {} as Plugin;
     const store = createTestSettingsStore();
     const tab = new InkbookSettingTab(app, plugin, store, undefined, undefined, {
@@ -372,7 +375,10 @@ function openSettingsModalWithFullMotion(store = createTestSettingsStore()): {
   tab: InkbookSettingTab;
 } {
   const workspaceContainer = document.body.createDiv();
-  const app = { workspace: { containerEl: workspaceContainer } } as unknown as App;
+  const app = {
+    keymap: new Keymap(),
+    workspace: { containerEl: workspaceContainer },
+  } as unknown as App;
   store.updateDeviceSettings((settings) => ({ ...settings, motion: "full" }));
   const tab = new InkbookSettingTab(app, {} as Plugin, store, undefined, undefined, {
     workScheduler: () => workSchedulerFromFrames(window),

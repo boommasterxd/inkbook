@@ -1,4 +1,4 @@
-import type { Setting, SettingDefinitionGroup } from "obsidian";
+import type { Keymap, Setting, SettingDefinitionGroup } from "obsidian";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 import type { SettingsControlKey } from "../control-values";
@@ -8,6 +8,7 @@ import type { InkbookSettingsStore } from "../storage";
 
 export function shortcutGroup(
   store: InkbookSettingsStore,
+  keymap: Pick<Keymap, "pushScope" | "popScope">,
   hostHotkeys?: ObsidianHotkeyAccess,
   workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
 ): SettingDefinitionGroup<SettingsControlKey> {
@@ -20,7 +21,13 @@ export function shortcutGroup(
         name: "Keyboard shortcuts",
         desc: "Configure device-local Inkbook shortcuts and review fixed system controls.",
         render: (setting) => {
-          const view = mountShortcutSettingsView(setting, store, hostHotkeys, workScheduler);
+          const view = mountShortcutSettingsView(
+            setting,
+            store,
+            keymap,
+            hostHotkeys,
+            workScheduler,
+          );
           return () => view.dispose();
         },
       },
@@ -31,10 +38,17 @@ export function shortcutGroup(
 export function mountShortcutSettingsView(
   setting: Setting,
   store: InkbookSettingsStore,
+  keymap: Pick<Keymap, "pushScope" | "popScope">,
   hostHotkeys?: ObsidianHotkeyAccess,
   workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
 ): ShortcutSettingsView {
   setting.settingEl.classList.add("inkbook-shortcuts-setting-row");
   setting.settingEl.replaceChildren();
-  return new ShortcutSettingsView(setting.settingEl.createDiv(), store, hostHotkeys, workScheduler);
+  return new ShortcutSettingsView(
+    setting.settingEl.createDiv(),
+    store,
+    keymap,
+    hostHotkeys,
+    workScheduler,
+  );
 }

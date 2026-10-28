@@ -18,7 +18,7 @@ function createLinkAdapter(options: {
   const files = new ObsidianVaultFileAdapter(vault, fakeObsidianFileClasses, (path) => path);
   const generateMarkdownLink = vi.fn(() => options.generatedLink ?? "[[../drawings/page.svg]]");
   const getFirstLinkpathDest = vi.fn((linkpath: string) =>
-    linkpath === "page.svg" ? target : null,
+    ["page.svg", "../drawings/page.svg"].includes(linkpath) ? target : null,
   );
   const adapter = new ObsidianLinkAdapter({
     classes: fakeObsidianFileClasses,
@@ -67,7 +67,7 @@ describe("Obsidian link boundary", () => {
 
     expect(adapter.resolveLinkTarget("page.svg", "notes/note.md")).toBe(target);
     expect(adapter.resolveLinkTarget("missing.svg", "notes/note.md")).toBeNull();
-    expect(adapter.resolveLinkTarget("../page.svg", "notes/note.md")).toBeNull();
+    expect(adapter.resolveLinkTarget("../drawings/page.svg", "notes/note.md")).toBe(target);
     expect(getFirstLinkpathDest).toHaveBeenCalledWith("page.svg", "notes/note.md");
   });
 

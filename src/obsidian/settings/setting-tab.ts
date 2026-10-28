@@ -152,8 +152,11 @@ export class InkbookSettingTab extends PluginSettingTab {
         set: (key, value) => this.controls.set(key, value),
       }),
       ...this.deviceGroups(),
-      shortcutGroup(this.store, createObsidianHotkeyAccess(this.app), (ownerWindow) =>
-        this.scheduler(ownerWindow),
+      shortcutGroup(
+        this.store,
+        this.app.keymap,
+        createObsidianHotkeyAccess(this.app),
+        (ownerWindow) => this.scheduler(ownerWindow),
       ),
       this.resetAllAction(),
     ];

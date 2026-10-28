@@ -14,6 +14,9 @@ import { InkbookSettingsModalController } from "../../../../src/obsidian/setting
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createAdaptivePanelFixture } from "../../../adapters/obsidian/adaptive-panel";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
+import { keymapCaptureFixture } from "../../../fixtures/obsidian/keymap-capture";
+
+const captureKeymap = keymapCaptureFixture();
 
 beforeEach(installObsidianDomHelpers);
 afterEach(() => {
@@ -150,7 +153,8 @@ function setup(): {
   };
 } {
   const container = document.body.createDiv();
-  const app = { workspace: { containerEl: container } } as unknown as App;
+  const keymap = captureKeymap(window);
+  const app = { keymap, workspace: { containerEl: container } } as unknown as App;
   const store = createTestSettingsStore();
   const controller = new InkbookSettingsModalController(
     app,

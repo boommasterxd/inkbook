@@ -23,22 +23,23 @@ export function sameChromeColors(
 
 /** Resolve nested host tokens to concrete paint values in the owning document. */
 export function createChromePalette(element: HTMLElement) {
-  const probes = {
-    accent: "var(--interactive-accent)",
-    danger: "var(--text-error)",
-    faint: "var(--text-faint)",
-    muted: "var(--text-muted)",
-    activeBackground: "color-mix(in srgb, var(--interactive-accent) 14%, transparent)",
-    activeBorder: "color-mix(in srgb, var(--interactive-accent) 45%, transparent)",
-    dangerHover: "color-mix(in srgb, var(--text-error) 12%, transparent)",
-    hover: "var(--background-modifier-hover)",
-  };
+  const probes = [
+    "accent",
+    "danger",
+    "faint",
+    "muted",
+    "activeBackground",
+    "activeBorder",
+    "dangerHover",
+    "hover",
+  ] as const;
   const container = element.ownerDocument.createElementNS("http://www.w3.org/1999/xhtml", "span");
   container.hidden = true;
   container.setAttribute("aria-hidden", "true");
-  const samples = Object.entries(probes).map(([name, color]) => {
+  const samples = probes.map((name) => {
     const sample = element.ownerDocument.createElementNS("http://www.w3.org/1999/xhtml", "span");
-    sample.style.color = color;
+    sample.classList.add("inkbook-chrome-color-probe");
+    sample.dataset.inkbookChromeColor = name;
     container.append(sample);
     return [name, sample] as const;
   });

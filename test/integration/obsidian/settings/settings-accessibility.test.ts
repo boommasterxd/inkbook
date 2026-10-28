@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
-import type { App, Plugin } from "obsidian";
+import { Keymap, type App, type Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { confirmInkbookAction } from "../../../../src/obsidian/dialogs/action-dialog";
@@ -20,7 +20,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const app = (): App => ({ workspace: { containerEl: document.body } }) as App;
+const app = (): App => ({ keymap: new Keymap(), workspace: { containerEl: document.body } }) as App;
 
 describe("settings and confirmation semantic accessibility gate", () => {
   it.each([

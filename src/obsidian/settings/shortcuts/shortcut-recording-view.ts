@@ -1,4 +1,4 @@
-import { setIcon } from "obsidian";
+import { Scope, setIcon, type Keymap } from "obsidian";
 import { registerNativeControlFeedback } from "../../menus/feedback/native-control-feedback";
 import { ShortcutRecordingMotion } from "./shortcut-recording-motion";
 
@@ -19,6 +19,7 @@ import type { InkbookSettingsStore } from "../storage";
 export class ShortcutRecordingView {
   readonly #container: HTMLElement;
   readonly #hostHotkeys: ObsidianHotkeyAccess;
+  readonly #keymap: Pick<Keymap, "pushScope" | "popScope">;
   readonly #motion: ShortcutRecordingMotion;
   readonly #recorders = new Map<
     ConfigurableShortcutActionV1,
@@ -33,14 +34,17 @@ export class ShortcutRecordingView {
     container: HTMLElement,
     store: InkbookSettingsStore,
     hostHotkeys: ObsidianHotkeyAccess,
+    keymap: Pick<Keymap, "pushScope" | "popScope">,
   ) {
     this.#container = container;
     this.#store = store;
     this.#hostHotkeys = hostHotkeys;
+    this.#keymap = keymap;
     this.#motion = new ShortcutRecordingMotion(container, () => store.getDeviceSettings().motion);
   }
 
   public prepareRender(): void {
+    this.#recordingAction = undefined;
     this.#removeRecordingCapture();
     for (const cleanup of this.#hoverCleanup) cleanup();
     this.#hoverCleanup = [];
@@ -273,12 +277,13 @@ export class ShortcutRecordingView {
   }
 
   #installRecordingCapture(action: ConfigurableShortcutActionV1, status: HTMLElement): void {
-    const ownerWindow = this.#container.ownerDocument.defaultView;
-    if (ownerWindow === null) return;
-    const listener = (event: KeyboardEvent): void => this.#capture(event, action, status);
-    ownerWindow.addEventListener("keydown", listener, { capture: true });
-    this.#recordingCleanup = () =>
-      ownerWindow.removeEventListener("keydown", listener, { capture: true });
+    const scope = new Scope();
+    scope.register(null, null, (event) => {
+      this.#capture(event, action, status);
+      return false;
+    });
+    this.#keymap.pushScope(scope);
+    this.#recordingCleanup = () => this.#keymap.popScope(scope);
   }
 
   #removeRecordingCapture(): void {

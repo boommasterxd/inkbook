@@ -20,20 +20,24 @@ export const MARKDOWN_EMBED_LIMITS = Object.freeze({
 });
 
 function linkpathFromWikiTarget(target: string): string {
-  return target.split("|", 1)[0]?.trim() ?? "";
+  return target.split(/[|#]/u, 1)[0]?.trim() ?? "";
 }
 
 function linkpathFromMarkdownTarget(target: string): string {
   const trimmed = target.trim();
-  if (trimmed.startsWith("<") && trimmed.endsWith(">")) {
-    return trimmed.slice(1, -1).trim();
+  const path =
+    trimmed.startsWith("<") && trimmed.endsWith(">")
+      ? trimmed.slice(1, -1).trim()
+      : (trimmed.split(/\s+["']/u, 1)[0] ?? "");
+  try {
+    return decodeURIComponent(path.split("#", 1)[0] ?? "");
+  } catch {
+    return "";
   }
-  return trimmed.split(/\s+["']/u, 1)[0] ?? "";
 }
 
 function isSvgLinkpath(linkpath: string): boolean {
-  const pathWithoutFragment = linkpath.split("#", 1)[0] ?? "";
-  return pathWithoutFragment.toLowerCase().endsWith(".svg");
+  return linkpath.toLowerCase().endsWith(".svg");
 }
 
 function isStandaloneLine(text: string, from: number, to: number): boolean {

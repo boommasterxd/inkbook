@@ -2,11 +2,7 @@ import { motion, useIsPresent } from "motion/react";
 import { useCallback, useContext, useRef } from "react";
 
 import { toolbarMotionContext, toolbarLayoutTransition } from "./toolbar-motion";
-import {
-  toolbarButtonForeground,
-  toolbarButtonVariants,
-  useToolbarButtonAnimation,
-} from "./toolbar-button-motion";
+import { toolbarButtonVariants, useToolbarButtonAnimation } from "./toolbar-button-motion";
 import { useToolbarOwnerGestures } from "./toolbar-owner-gestures";
 import { ToolbarActionIcon } from "./toolbar-action-icon";
 import { ToolbarStyleIcon, type ToolbarStyleIconState } from "./style-icon";
@@ -84,14 +80,6 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
       data-inkbook-tool={props.tool ? "true" : undefined}
       data-presence={!isPresent ? "exiting" : undefined}
       disabled={disabled}
-      style={{
-        color: toolbarButtonForeground(
-          props.definition.action,
-          lifecycle.colors,
-          props.disabled,
-          props.pressed,
-        ),
-      }}
       onClick={(event) => props.onAction(props.definition.action, event.currentTarget)}
       ref={setButton}
       tabIndex={disabled ? -1 : props.tabIndex}
@@ -137,19 +125,27 @@ function ToolbarButtonSurface({
   const surfaceRef = useRef<HTMLSpanElement>(null);
   const { gesture: ownerGesture } = useToolbarOwnerGestures(surfaceRef, disabled);
   const resting = {
-    backgroundColor: active ? (colors?.activeBackground ?? CHROME_TRANSPARENT) : CHROME_TRANSPARENT,
-    borderColor: active ? (colors?.activeBorder ?? CHROME_TRANSPARENT) : CHROME_TRANSPARENT,
+    "--inkbook-toolbar-background": active
+      ? (colors?.activeBackground ?? CHROME_TRANSPARENT)
+      : CHROME_TRANSPARENT,
+    "--inkbook-toolbar-border": active
+      ? (colors?.activeBorder ?? CHROME_TRANSPARENT)
+      : CHROME_TRANSPARENT,
     scale: active ? 0.96 : 1,
   };
   const hover = {
-    backgroundColor: (danger ? colors?.dangerHover : colors?.hover) ?? CHROME_TRANSPARENT,
+    "--inkbook-toolbar-background":
+      (danger ? colors?.dangerHover : colors?.hover) ?? CHROME_TRANSPARENT,
   };
   return (
     <motion.span
       aria-hidden="true"
       className="inkbook-toolbar-button-surface"
       ref={surfaceRef}
-      initial={{ backgroundColor: CHROME_TRANSPARENT, borderColor: CHROME_TRANSPARENT }}
+      initial={{
+        "--inkbook-toolbar-background": CHROME_TRANSPARENT,
+        "--inkbook-toolbar-border": CHROME_TRANSPARENT,
+      }}
       animate={{
         ...resting,
         ...(ownerGesture === "hover" ? hover : {}),
@@ -158,7 +154,7 @@ function ToolbarButtonSurface({
       variants={{
         hover,
         press: { scale: 0.92 },
-        focus: { borderColor: colors?.accent ?? CHROME_TRANSPARENT },
+        focus: { "--inkbook-toolbar-border": colors?.accent ?? CHROME_TRANSPARENT },
       }}
       transition={toolbarLayoutTransition(reduced)}
     />
