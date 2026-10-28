@@ -1,7 +1,7 @@
-import { AnimatePresence, LayoutGroup, motion, MotionConfig } from "motion/react";
+import { AnimatePresence, LayoutGroup, MotionConfig, usePresence } from "motion/react";
 import { createPortal, flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import { useLayoutEffect, type ReactNode } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from "react";
 
 import {
   getTransitionDuration,
@@ -10,6 +10,7 @@ import {
 } from "../../rendering/motion/transitions";
 import type { NativeControlFeedbackOptions } from "../menus/feedback/native-control-feedback";
 import { observeEffectiveMotion } from "../runtime/effective-motion";
+import { playMenuMotion } from "../menus/feedback/menu-motion";
 import {
   ExistingSettingsMotion,
   guardCanceledSettingsAnimations,
@@ -176,18 +177,7 @@ class SettingsValidationMotion {
     return createPortal(
       <AnimatePresence initial={false} mode="popLayout" root={error.ownerDocument.head}>
         {message === "" ? null : (
-          <motion.div
-            animate={{ opacity: 1 }}
-            aria-hidden="true"
-            className="inkbook-settings-validation-visual"
-            exit={{ opacity: 0 }}
-            inert
-            initial={{ opacity: 0 }}
-            key={message}
-            layout
-          >
-            {message}
-          </motion.div>
+          <SettingsValidationVisual key={message}>{message}</SettingsValidationVisual>
         )}
       </AnimatePresence>,
       error.parentElement,
@@ -223,6 +213,47 @@ class SettingsValidationMotion {
     }
   }
 }
+
+/** Native opacity runs in the visible element's window independently of React projection frames. */
+const SettingsValidationVisual = forwardRef<HTMLDivElement, { readonly children: ReactNode }>(
+  function SettingsValidationVisual({ children }, ref) {
+    const element = useRef<HTMLDivElement>(null);
+    useImperativeHandle(ref, () => element.current!, []);
+    const first = useRef(true);
+    const [isPresent, safeToRemove] = usePresence();
+    useLayoutEffect(() => {
+      const node = element.current;
+      if (node === null) return;
+      const readOpacity = (): string =>
+        node.ownerDocument.defaultView?.getComputedStyle(node).opacity || "1";
+      const from = first.current ? "0" : readOpacity();
+      first.current = false;
+      const release = playMenuMotion(
+        node,
+        { opacity: [from, isPresent ? "1" : "0"] },
+        getTransitionDuration("fallback", false),
+        () => {
+          if (!isPresent) safeToRemove?.();
+        },
+      );
+      return () => {
+        node.style.opacity = readOpacity();
+        release();
+      };
+    }, [isPresent, safeToRemove]);
+    return (
+      <div
+        aria-hidden="true"
+        className="inkbook-settings-validation-visual"
+        inert
+        ref={element}
+        style={{ opacity: 1 }}
+      >
+        {children}
+      </div>
+    );
+  },
+);
 
 function SettingsLayoutMutation({ update }: { readonly update: (() => void) | undefined }): null {
   useLayoutEffect(() => update?.(), [update]);

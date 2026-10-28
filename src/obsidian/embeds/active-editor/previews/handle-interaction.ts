@@ -122,6 +122,11 @@ export class ActiveEditorHandleInteraction {
   public get activePointerId(): number | undefined {
     return this.#active?.pointerId;
   }
+  public setKeyboardFocus(index: number | null): void {
+    if (this.#presentation.keyboardFocus === index) return;
+    this.#presentation.keyboardFocus = index;
+    this.renderSelection();
+  }
   public get activePointerType(): PointerSample["pointerType"] | undefined {
     return this.#active?.pointerType;
   }

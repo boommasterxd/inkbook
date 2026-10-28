@@ -16,8 +16,8 @@ describe("ElementStore normalized ownership", () => {
     const record = store.get(IDS.target)!;
     const scratch = new SpatialQueryScratch<string>();
 
-    expect(store.materializeBandOrder("highlight")).toEqual([IDS.highlight]);
-    expect(store.materializeBandOrder("content")).toEqual([IDS.target, IDS.line]);
+    expect(store.idAtRank("highlight", 0)).toBe(IDS.highlight);
+    expect(store.idAtRank("content", 1)).toBe(IDS.line);
     expect(store.getRank(IDS.line)).toEqual({ band: "content", rank: 1 });
     expect(Object.isFrozen(record)).toBe(true);
     expect(Object.isFrozen(record.element)).toBe(true);

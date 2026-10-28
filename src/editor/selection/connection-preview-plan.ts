@@ -17,10 +17,16 @@ export function* connectedPreviewPlanSteps(
   store: ElementStore,
   selectedIds: ReadonlySet<string>,
   roots: Iterable<string>,
+  selectedPreviewIds: Iterable<string> = [],
 ): Generator<number, ConnectedPreviewPlan> {
   const elements = new Map<string, ConnectedLinear>();
   const queue: string[] = [];
   const visited = new Set<string>();
+  const ids: string[] = [];
+  for (const id of selectedPreviewIds) {
+    ids.push(id);
+    yield ids.length;
+  }
   for (const id of roots) {
     queue.push(id);
     visited.add(id);
@@ -47,7 +53,6 @@ export function* connectedPreviewPlanSteps(
   }
   const { indegrees, downstream, ready } = yield* dependentOrderSteps(elements);
   const bindings = new Map<string, ConnectedPreviewBinding>();
-  const ids: string[] = [];
   for (let index = 0; index < ready.length; index += 1) {
     const id = ready[index]!;
     const element = elements.get(id)!;

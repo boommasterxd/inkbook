@@ -8,6 +8,7 @@ import {
   collectPerformanceTestPlan,
   collectTestFiles,
   createPerformanceTestPlan,
+  projectRoot,
   selectPerformanceRuns,
   SUPPORTED_REFRESH_RATES,
 } from "../../../scripts/performance-test-runner.mjs";
@@ -67,6 +68,19 @@ describe("performance test plan", () => {
         .filter(({ label }) => label === "cadence-sensitive")
         .every(({ testFiles }) => testFiles === plan.cadenceSensitive),
     ).toBe(true);
+  });
+
+  it("runs pressure scheduling at every rate and independent interaction work only once", () => {
+    const runs = selectPerformanceRuns(plan, "all");
+    const ratesFor = (filename) =>
+      runs
+        .filter(({ testFiles }) =>
+          testFiles.includes(join(projectRoot, "test/performance/rendering/scene", filename)),
+        )
+        .map(({ refreshRate }) => refreshRate);
+
+    expect(ratesFor("interaction-refresh-profile.test.ts")).toEqual(SUPPORTED_REFRESH_RATES);
+    expect(ratesFor("interaction-work.test.ts")).toEqual([120]);
   });
 
   it("partitions hosted coverage without dropping or duplicating local file/profile contracts", () => {

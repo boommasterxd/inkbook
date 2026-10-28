@@ -126,10 +126,11 @@ directions may reuse proven order as defined in [History Replay Reuse](history-r
 Structural shadows collect grid extent entries once and construct their bottom
 heap in linear work with bottom-up heapification. Each indivisible sift uses the
 same shared scheduler admission and generation checks as retained and inserted
-entries. Overflow maxima retain their separate bounded path. A complete clear
-skips the retained-entry traversal only after every removal ID has been proved
-distinct and present, the removal count equals the current index size, and there
-are no insertions. Heap comparisons, actual index visits, full-clear enumeration,
+entries. Overflow maxima retain their separate bounded path. A complete clear or
+replacement skips the retained-entry traversal only after every removal ID has
+been proved distinct and present and the removal count equals the current index
+size. New entries and the extent heap still prepare under the shared deadline.
+Heap comparisons, actual index visits, full-clear enumeration,
 and cancellation before atomic publication have deterministic work coverage;
 these bounds do not establish physical-device latency.
 The worker reuses confirmed

@@ -2,8 +2,8 @@
 
 import { Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAdaptivePanelFixture } from "../../../../adapters/obsidian/adaptive-panel";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
+import { touchPointer } from "../../../../fixtures/obsidian/phone-sheet-swipe";
 import {
   createPhoneSheetEditableFixture,
   installKeyboardInsetObserver,
@@ -60,19 +60,91 @@ describe("phone sheet editable fixture restoration", () => {
   });
 });
 
-describe("phone sheet keyboard viewport", () => {
-  it.each(["full", "reduced"] as const)(
-    "applies %s motion to the keyboard-moving layer",
-    (motion) => {
-      const fixture = createAdaptivePanelFixture("style", { motion });
-      const layer = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-layer")!;
-      expect(layer.style.getPropertyValue("--inkbook-adaptive-panel-duration")).toBe(
-        motion === "full" ? "220ms" : "0ms",
-      );
+describe("phone sheet keyboard motion", () => {
+  it("reveals the focused field again after keyboard motion, independently of swipe", async () => {
+    const fixture = createPhoneSheetEditableFixture(true, "full");
+    try {
+      const layer = fixture.input.closest<HTMLElement>(".inkbook-adaptive-panel-layer")!;
+      const surface = fixture.input.closest<HTMLElement>(".inkbook-adaptive-panel")!;
+      await fixture.advanceMotion(300);
+      surface
+        .querySelector(".inkbook-adaptive-panel-drag-region")!
+        .dispatchEvent(touchPointer("pointerdown", 10, 1, 0));
+      surface.dispatchEvent(touchPointer("pointermove", 40, 1, 100));
+      fixture.frames.runNext(1);
+      fixture.viewport.height = 300;
+      fixture.viewport.dispatchEvent(new Event("resize"));
+      fixture.frames.runNext(1);
+      expect(fixture.inputRead).toHaveBeenCalledOnce();
+      await fixture.advanceMotion(100);
+      expect(Number.parseFloat(layer.style.blockSize)).toBeGreaterThan(300);
+      expect(Number.parseFloat(layer.style.blockSize)).toBeLessThan(400);
+      expect(fixture.inputRead).toHaveBeenCalledOnce();
+      fixture.scroll.scrollTop = 100;
+      await fixture.advanceMotion(200);
+      fixture.frames.runNext(2);
+      expect(fixture.inputRead).toHaveBeenCalledTimes(2);
+      expect(fixture.scroll.scrollTop).toBe(260);
+      expect(document.activeElement).toBe(fixture.input);
+      expect(surface.style.translate).toBe("0 30px");
+      expect(fixture.frames.pendingCount).toBe(0);
+    } finally {
       fixture.session.close("immediate");
-    },
-  );
+      fixture.restore();
+    }
+  });
 
+  it("retargets keyboard motion and finishes Reduced immediately without a stale correction", async () => {
+    const fixture = createPhoneSheetEditableFixture(true, "full");
+    try {
+      const layer = fixture.input.closest<HTMLElement>(".inkbook-adaptive-panel-layer")!;
+      const root = fixture.anchor.closest<HTMLElement>(".inkbook-root")!;
+      fixture.viewport.height = 250;
+      fixture.viewport.dispatchEvent(new Event("resize"));
+      fixture.frames.runNext(1);
+      await fixture.advanceMotion(100);
+      fixture.viewport.height = 500;
+      fixture.viewport.dispatchEvent(new Event("resize"));
+      fixture.frames.runNext(2);
+      await fixture.advanceMotion(100);
+      expect(fixture.inputRead).toHaveBeenCalledTimes(2);
+      root.dataset.inkbookMotion = "reduced";
+      await Promise.resolve();
+      expect(layer.style.blockSize).toBe("500px");
+      fixture.frames.runNext(3);
+      expect(fixture.inputRead).toHaveBeenCalledTimes(3);
+      await fixture.advanceMotion(300);
+      expect(fixture.frames.pendingCount).toBe(0);
+      fixture.viewport.height = 350;
+      fixture.viewport.dispatchEvent(new Event("resize"));
+      fixture.frames.runNext(4);
+      expect(layer.style.blockSize).toBe("350px");
+      expect(fixture.inputRead).toHaveBeenCalledTimes(4);
+      expect(fixture.frames.pendingCount).toBe(0);
+    } finally {
+      fixture.session.close("immediate");
+      fixture.restore();
+    }
+  });
+
+  it("discards a pending keyboard-motion correction when the sheet closes", async () => {
+    const fixture = createPhoneSheetEditableFixture(true, "full");
+    try {
+      fixture.viewport.height = 300;
+      fixture.viewport.dispatchEvent(new Event("resize"));
+      fixture.frames.runNext(1);
+      fixture.session.close("immediate");
+      await fixture.advanceMotion(300);
+      expect(fixture.inputRead).toHaveBeenCalledOnce();
+      expect(fixture.frames.pendingCount).toBe(0);
+    } finally {
+      fixture.session.close("immediate");
+      fixture.restore();
+    }
+  });
+});
+
+describe("phone sheet keyboard viewport", () => {
   it("repositions and reveals input after a host inset change without viewport events", () => {
     const { fixture, inset, layer } = keyboardOverlayFixture();
     const probe = layer.querySelector(".inkbook-phone-keyboard-inset")!;

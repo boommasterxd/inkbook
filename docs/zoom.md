@@ -47,13 +47,13 @@ The following controls work in the active handwriting embed:
 - `Ctrl` or `Cmd` plus `-`
 - two-finger pinch on a touchscreen
 
-The keyboard shortcuts only take effect when the pointer is over the active canvas. Otherwise, the normal Obsidian zoom functions remain active.
+Keyboard shortcut eligibility follows the [canvas keyboard ownership contract](keyboard-shortcuts.md#ownership-and-scope). A focused canvas accepts zoom without pointer hover; document-level handling requires the pointer over the active embed. Outside that scope, the normal Obsidian zoom functions remain active.
 
 One keyboard step or modifier-wheel line/page event changes the zoom by exactly a factor of 1.08. All modifier-wheel pixel events use continuous magnitude-based zoom with `factor = exp(-deltaY / 100)`, matching Chromium's synthetic touchpad-pinch scale. There is no delta-magnitude threshold that switches a gesture to discrete steps. Browsers do not expose a reliable wheel-device identity: a mouse emitting pixel-mode events follows this same continuous mapping. Pixel input is coalesced once per animation frame and never waits for a complete discrete wheel step. Opposing deltas received before that frame combine algebraically instead of discarding unfinished input. Touch pinch uses the absolute distance ratio from the gesture's initial valid separation.
 
 ## Anchored Zoom
 
-Zooming is centered on the pointer position or the midpoint of the touch gesture.
+Zooming is centered on the pointer position, the midpoint of the touch gesture, or the visible canvas center for keyboard zoom without pointer hover. Keyboard layout aliases and anchor ownership follow the [configured keyboard zoom contract](keyboard-shortcuts.md#configurable-canvas-bindings).
 
 A touch pinch retains the page point beneath its initial midpoint. The current finger separation determines the bounded zoom target, and the current midpoint determines that retained point's new screen position. Moving both fingers together therefore pans the content even when their separation does not change. Horizontal camera and native vertical scroll limits still take precedence at page boundaries. Returning toward the initial separation immediately changes the next frame's target; no earlier scale change is replayed after reversal or release. Gesture cancellation restores its origin and releases its pending target through the existing navigation lifecycle. External resize, scroll-owner transfer, or view restoration cancels the active pinch and its pointer ownership; later samples require a new explicit gesture start instead of reapplying the old distance ratio.
 

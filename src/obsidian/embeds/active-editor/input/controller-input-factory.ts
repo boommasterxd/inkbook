@@ -1,8 +1,11 @@
 import type { GestureController, GestureControllerPorts } from "../../../../editor/gestures/public";
 import type { InputAction, PointerSample } from "../../../../editor/input/index";
 import type { LongPressAction } from "../../../../editor/input/input-types";
-import type { KeyboardShortcutSettingsV1 } from "../../../../domain/settings/index";
-import { selectElement } from "../../../../editor/selection/public";
+import { selectElement, type SelectionFrameSession } from "../../../../editor/selection/public";
+import type { ActiveEditorControllerOptions } from "../controller-types";
+import type { ActiveEditorHandleInteraction } from "../previews/handle-interaction";
+import type { PreparedElementHistory } from "../prepared-element-history";
+import { CanvasKeyboardSelection } from "./canvas-keyboard-selection";
 
 import type { ActiveEditorActions } from "../controller-actions";
 import type { ActiveEditorAvailability } from "../controller-availability";
@@ -16,11 +19,16 @@ import type { ActiveEditorMenuController } from "../controller-menu";
 import type { ActiveEditorNavigation } from "../navigation/navigation";
 import type { ActivePointerCaptureOwner } from "./pointer-capture";
 import type { EditableDocumentModel } from "../../document-session/vault-document-session";
-import type { InkbookFeedbackCode } from "../../../feedback";
 
 interface ActiveEditorInputFactoryOptions {
+  readonly controller: ActiveEditorControllerOptions;
+  readonly geometry: readonly [
+    ActiveEditorHandleInteraction,
+    SelectionFrameSession,
+    PreparedElementHistory,
+  ];
   readonly actions: ActiveEditorActions;
-  readonly availability: Pick<ActiveEditorAvailability, "setPending">;
+  readonly availability: Pick<ActiveEditorAvailability, "setPending" | "acceptsInput">;
   readonly beginPreview: GestureControllerPorts["beginPreview"];
   readonly cancelActiveGesture: () => boolean;
   readonly capturePointer: (pointerId: number) => void;
@@ -29,16 +37,13 @@ interface ActiveEditorInputFactoryOptions {
   readonly dispatch: (action: InputAction) => void;
   readonly hasStableGeometryGesture: () => boolean;
   readonly history: ActiveEditorHistory;
-  readonly keyboardShortcuts: KeyboardShortcutSettingsV1;
   readonly lastScreenPointer: () => PointerSample | null;
   readonly longPress: ActiveEditorLongPressScheduler;
   readonly longPressTarget: (pointerId: number) => LongPressAction["target"];
   readonly menus: ActiveEditorMenuController;
   readonly model: EditableDocumentModel;
   readonly navigation: ActiveEditorNavigation;
-  readonly onFeedback: (code: InkbookFeedbackCode) => void;
   readonly onStateChanged: () => void;
-  readonly ownerWindow: Window;
   readonly selection: () => ReadonlySet<string>;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
 }
@@ -59,24 +64,38 @@ export function createActiveEditorInputControllers(
         ...options.model.store.materializeBandOrder("content"),
       ]),
     );
+  const [handles, frames, preparedHistory] = options.geometry;
+  const ownerDocument = options.controller.renderer.inputSurface.ownerDocument;
+  const canvasSelection = new CanvasKeyboardSelection({
+    controller: options.controller,
+    handles,
+    frames,
+    preparedHistory,
+    navigation: options.navigation,
+    selection: options.selection,
+    setSelection: options.setSelection,
+    enabled: () => options.availability.acceptsInput && !options.hasStableGeometryGesture(),
+    zoom: () => options.navigation.zoom,
+  });
   const keyboard = createActiveEditorKeyboardController(
     [
       options.actions,
       options.history,
       options.navigation,
-      options.ownerWindow.document,
-      options.onFeedback,
+      ownerDocument,
+      options.controller.onFeedback,
       (pending) => options.availability.setPending(pending),
     ],
     [options.lastScreenPointer, () => !options.hasStableGeometryGesture()],
     [clearSelection, selectAll, () => options.selection().size],
     [
-      () => options.ownerWindow.document.activeElement,
+      () => ownerDocument.activeElement,
       options.cancelActiveGesture,
       closeFlyout,
       (position) => options.dispatch({ type: "context-menu", source: "keyboard", ...position }),
     ],
-    options.keyboardShortcuts,
+    options.controller.deviceSettings.keyboardShortcuts,
+    canvasSelection,
   );
   const openContextMenu: GestureControllerPorts["openContextMenu"] = (source, position) =>
     options.menus.openFromSource(

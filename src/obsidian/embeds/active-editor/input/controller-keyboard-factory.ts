@@ -3,7 +3,10 @@ import type { KeyboardShortcutSettingsV1 } from "../../../../domain/settings/ind
 import type { InkbookFeedbackCode } from "../../../feedback";
 
 import type { ActiveEditorActions } from "../controller-actions";
-import { ActiveEditorKeyboardController } from "./controller-keyboard";
+import {
+  ActiveEditorKeyboardController,
+  type ActiveEditorKeyboardOptions,
+} from "./controller-keyboard";
 import type { ActiveEditorHistory } from "../history";
 import type { ActiveEditorNavigation } from "../navigation/navigation";
 
@@ -36,6 +39,7 @@ export function createActiveEditorKeyboardController(
   [clearSelection, selectAll, selectionSize]: KeyboardSelection,
   [activeElement, cancelGesture, closeFlyout, openKeyboardMenu]: KeyboardSession,
   keyboardShortcuts: KeyboardShortcutSettingsV1,
+  canvasSelection?: ActiveEditorKeyboardOptions["canvasSelection"],
 ): ActiveEditorKeyboardController {
   return new ActiveEditorKeyboardController({
     activeElement,
@@ -54,5 +58,6 @@ export function createActiveEditorKeyboardController(
     ownerDocument,
     selectAll,
     selectionSize,
+    ...(canvasSelection === undefined ? {} : { canvasSelection }),
   });
 }

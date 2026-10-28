@@ -2,14 +2,20 @@ import { describe, expect, it } from "vitest";
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
 import { shouldHandleClipboardShortcut } from "../../../../src/persistence/clipboard/public";
 import {
-  encodeRuntimeSelection,
-  resolveClipboardPayload,
-} from "../../../../src/persistence/clipboard/codec";
-import { planPaste, resolvePasteTarget } from "../../../../src/persistence/clipboard/operations";
+  planPaste,
+  planPasteSliced,
+  resolvePasteTarget,
+  type PlanPasteOptions,
+} from "../../../../src/persistence/clipboard/operations";
 import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/model/document-model";
 import type { ClipboardResult, PastePlan } from "../../../../src/persistence/clipboard/types";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
-import { ARROW_ID, page, RECTANGLE_ID, selectedElements, spatialRectangle } from "./fixtures";
+import {
+  createDecodedClipboardFixture as decodedFixture,
+  page,
+  selectedElements,
+  spatialRectangle,
+} from "./fixtures";
 
 const NEW_RECTANGLE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const NEW_ARROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -21,25 +27,35 @@ const expectSpatialCapacityFailure = (result: ClipboardResult<PastePlan>): void 
   expect(result.error.message).toMatch(/spatial-index capacity/);
 };
 
-const decodedFixture = () => {
-  const encoded = encodeRuntimeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
-  if (!encoded.ok) throw new Error(encoded.error.message);
-  const decoded = resolveClipboardPayload({ customText: encoded.value.customText });
-  if (!decoded.ok) throw new Error(decoded.error.message);
-  return decoded.value;
-};
-
-const planCenteredPaste = () => {
+const centeredPasteOptions = (overrides: Partial<PlanPasteOptions> = {}): PlanPasteOptions => {
   const ids = [NEW_RECTANGLE_ID, NEW_ARROW_ID];
-  return planPaste({
+  return {
     decoded: decodedFixture(),
     existingElements: [],
     page: page(),
     target: { x: 500, y: 500 },
     commandTimestamp: 9_000,
     createId: () => ids.shift()!,
-  });
+    ...overrides,
+  };
 };
+
+const planCenteredPaste = () => planPaste(centeredPasteOptions());
+
+const slicedPaste = (options: PlanPasteOptions) =>
+  planPasteSliced(
+    options,
+    { signal: new AbortController().signal, checkpoint: () => undefined },
+    () => undefined,
+  );
+
+const failurePasteOptions = (failure: string) =>
+  centeredPasteOptions({
+    existingElements:
+      failure === "collision" ? [{ ...selectedElements()[0]!, id: NEW_RECTANGLE_ID }] : [],
+    target: { x: 500, y: failure === "height" ? 999_800 : 500 },
+    ...(failure === "invalid-id" ? { createId: () => "invalid" } : {}),
+  });
 
 describe("paste planning", () => {
   it("resolves toolbar, context-menu, and shortcut placement points", () => {
@@ -81,6 +97,20 @@ describe("paste planning", () => {
 });
 
 describe("paste record planning", () => {
+  it("preserves remapping and placement through centrally admitted planning", async () => {
+    const result = await slicedPaste(centeredPasteOptions());
+    expect(result).toEqual(planCenteredPaste());
+  });
+
+  it.each(["invalid-id", "collision", "height"])(
+    "retains the synchronous %s failure during sliced planning",
+    async (failure) => {
+      const result = await slicedPaste(failurePasteOptions(failure));
+      expect(result.ok).toBe(false);
+      expect(result).toEqual(planPaste(failurePasteOptions(failure)));
+    },
+  );
+
   it("injects fresh IDs and one timestamp, remaps connections, and centers the group", () => {
     const plan = planCenteredPaste();
 
@@ -127,15 +157,7 @@ describe("paste record planning", () => {
   });
 
   it("preserves negative placement and rejects invalid UUID injection atomically", () => {
-    const normalizedIds = [NEW_RECTANGLE_ID, NEW_ARROW_ID];
-    const normalized = planPaste({
-      decoded: decodedFixture(),
-      existingElements: [],
-      page: page(),
-      target: { x: -100, y: -100 },
-      commandTimestamp: 9_000,
-      createId: () => normalizedIds.shift()!,
-    });
+    const normalized = planPaste(centeredPasteOptions({ target: { x: -100, y: -100 } }));
     expect(normalized.ok).toBe(true);
     if (normalized.ok) {
       expect(
@@ -146,24 +168,10 @@ describe("paste record planning", () => {
       ).toBe(true);
     }
 
-    const invalid = planPaste({
-      decoded: decodedFixture(),
-      existingElements: [],
-      page: page(),
-      target: { x: 500, y: 500 },
-      commandTimestamp: 9_000,
-      createId: () => "not-a-uuid",
-    });
+    const invalid = planPaste(centeredPasteOptions({ createId: () => "not-a-uuid" }));
     expect(invalid).toMatchObject({ ok: false, error: { code: "invalid-schema" } });
 
-    const invalidTarget = planPaste({
-      decoded: decodedFixture(),
-      existingElements: [],
-      page: page(),
-      target: { x: Number.NaN, y: 500 },
-      commandTimestamp: 9_000,
-      createId: () => NEW_RECTANGLE_ID,
-    });
+    const invalidTarget = planPaste(centeredPasteOptions({ target: { x: Number.NaN, y: 500 } }));
     expect(invalidTarget).toMatchObject({ ok: false, error: { code: "invalid-schema" } });
   });
 });

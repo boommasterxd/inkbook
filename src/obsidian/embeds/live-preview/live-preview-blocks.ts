@@ -29,6 +29,7 @@ export class LivePreviewBlocks {
         const resolved = ports.resolveDocument(embed.linkpath, context.sourcePath);
         if (resolved === undefined) continue;
         const candidate = {
+          ...(embed.description === undefined ? {} : { description: embed.description }),
           from: embed.from,
           to: embed.to,
           resolved,
@@ -152,6 +153,7 @@ function decorate(
         ? new InkbookLoadingPreviewWidget(embed.resolved.documentId, ports, entrance)
         : new InkbookLivePreviewWidget(
             {
+              ...(embed.description === undefined ? {} : { description: embed.description }),
               from: embed.from,
               to: embed.to,
               resolved: embed.resolved,

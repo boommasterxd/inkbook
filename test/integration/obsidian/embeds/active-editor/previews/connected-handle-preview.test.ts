@@ -328,6 +328,49 @@ it("prepares a shape-root move and its complete dependent graph without synchron
   }
 });
 
+it("moves a large selected connected cohort through lazy previews and one complete commit", async () => {
+  const target = rectangle();
+  const elements = shapeChain(target).map((element) => ({
+    ...element,
+    startConnection: {
+      targetId: target.id,
+      anchor: { kind: "box" as const, position: "top-left" as const },
+    },
+  }));
+  const test = fixture(
+    [target, ...elements],
+    elements.map(({ id }) => id),
+  );
+  const move = movePreview(test, {
+    workScheduler: immediateWorkScheduler(),
+    connectionSnapping: false,
+  });
+  try {
+    await Promise.resolve();
+    move.update(sample({ x: 30, y: 40 }));
+    expect(test.renderer.setElementPreviews.mock.lastCall![0]).toEqual([]);
+    const request = test.renderer.setProgressiveElementPreviews.mock.lastCall!;
+    expect(request[0]).toEqual(elements.map(({ id }) => id));
+    expect(request[4]).toBe("connected");
+    const last = elements[299]!;
+    const expected = {
+      id: last.id,
+      start: last.start,
+      end: { x: last.end.x + 30, y: last.end.y + 40 },
+      startConnection: last.startConnection,
+    };
+    expect(request[1](last.id)).toMatchObject(expected);
+    expect(test.store.instrumentation.publishedDeltas).toBe(0);
+    await commitMove(test, move);
+    expect(test.store.instrumentation.publishedDeltas).toBe(1);
+    expect(test.store.get(last.id)?.element).toMatchObject(expected);
+    expect(test.store.get(target.id)?.element).toEqual(target);
+    expect(request[1](last.id)).toBeUndefined();
+  } finally {
+    dispose(test);
+  }
+});
+
 it("projects follower anchors from the canonical rotated shape during mixed nonuniform scaling", async () => {
   const target = { ...rectangle(), rotation: 37 };
   const companion = rectangle("00000000-0000-4000-8000-000000000099", 600, 400);

@@ -24,8 +24,13 @@ export class LivePreviewEntrances {
     const updated = new LivePreviewEntrances(sourcePath);
     for (const entry of this.#entries.values()) {
       let touched = false;
-      changes.iterChangedRanges((from, to) => {
-        if (from < entry.to && to > entry.from) touched = true;
+      changes.iterChangedRanges((from, to, newFrom, newTo) => {
+        if (
+          from < entry.to &&
+          to > entry.from &&
+          (from <= entry.from || to >= entry.to || to - from !== newTo - newFrom)
+        )
+          touched = true;
       });
       if (touched) continue;
       const from = changes.mapPos(entry.from, 1);

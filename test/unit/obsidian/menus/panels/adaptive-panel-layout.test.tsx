@@ -133,3 +133,30 @@ it("applies reduced geometry to both projections without replacing the focused c
   expect(control.textContent).toBe("Compact");
   layout.dispose();
 });
+
+it("settles the latest viewport target immediately without replaying canceled completions", async () => {
+  installObsidianDomHelpers();
+  const layer = document.body.createDiv();
+  const surface = layer.createEl("section");
+  const grabber = createDiv();
+  const scroll = createDiv();
+  const control = scroll.createEl("input");
+  const completed = vi.fn();
+  const layout = new AdaptivePanelLayout(surface, grabber, scroll);
+  cleanups.push(() => layout.dispose());
+  control.focus();
+  layout.setViewportHeight(layer, 800, 220, completed);
+  layout.setViewportHeight(layer, 400, 220, completed);
+  layout.setViewportHeight(layer, 600, 220, completed);
+
+  layout.finish();
+
+  expect(layer.style.blockSize).toBe("600px");
+  expect(completed).toHaveBeenCalledOnce();
+  expect(document.activeElement).toBe(control);
+  await Promise.resolve();
+  expect(completed).toHaveBeenCalledOnce();
+  layout.dispose();
+  layout.setViewportHeight(layer, 300, 220, completed);
+  expect(completed).toHaveBeenCalledOnce();
+});

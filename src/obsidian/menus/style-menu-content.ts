@@ -20,6 +20,8 @@ export interface StyleMenuContentOptions {
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
 }
 
+let nextControlLabel = 0;
+
 const CONTROL_ICONS: Readonly<Record<string, string>> = {
   color: "palette",
   "stroke-width": "minus",
@@ -87,6 +89,9 @@ function createField(
   const icon = header.createSpan({ cls: "inkbook-menu-control-icon" });
   options.renderIcon(icon, CONTROL_ICONS[control.id] ?? "settings-2");
   const label = header.createSpan();
+  label.id = `inkbook-style-label-${++nextControlLabel}`;
+  field.setAttribute("role", "group");
+  field.setAttribute("aria-labelledby", label.id);
   label.textContent =
     "mixed" in control && control.mixed === true ? `${control.label} · Mixed` : control.label;
   const description = options.controlDescriptions?.[control.id];

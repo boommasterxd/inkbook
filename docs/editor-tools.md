@@ -16,6 +16,8 @@ The icon and ring are decorative additions to the native cursor; Inkbook does no
 
 The Select tool is used to select and edit existing elements.
 
+The focused canvas also supports logical object navigation and explicit geometry editing through the fixed [canvas keyboard controls](keyboard-shortcuts.md#canvas-object-navigation-and-geometry-editing). Keyboard edits reuse the same Move, resize, rotation, endpoint, bend, coordinate-system, and table-separator handles that the current selection exposes, together with the existing validation, history, and cancellation boundaries. The keyboard contract defines exact step sizes, disabled snapping, announcements, reveal behavior, and normal focus exit.
+
 Available interactions:
 
 - With mouse or pen input, click an element to select it while Select is active. Selection resolves at release from the initial press position, and a plain click replaces the current selection. Movement up to and including 6 CSS pixels remains a click. The threshold uses the greatest excursion in each validated coalesced batch, so moving outward and returning before the batch ends still starts an area. That complete batch reaches the area preview once. Pending presses, including their cancellation, do not change selection; noncontact pen release coordinates do not turn a tap into a drag.

@@ -173,6 +173,9 @@ export class ElementStore {
   public bandSize(band: RenderBand): number {
     return this.#bands[band].length;
   }
+  public idAtRank(band: RenderBand, rank: number): string | undefined {
+    return this.#bands[band][rank];
+  }
   public getSemanticAnchors(id: string): readonly ResolvedShapeAnchor[] | null {
     return this.#runtime.semanticAnchors(this.#records.get(id));
   }

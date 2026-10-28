@@ -12,7 +12,6 @@ export function registerFocusNavigation(root: HTMLElement, initial = false): () 
   const pointer = (): void => setNavigation(false);
   const keyboard = (event: KeyboardEvent): void => {
     if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
-      setNavigation(false);
       return;
     }
     if (event.key === "Tab") {
@@ -29,8 +28,6 @@ export function registerFocusNavigation(root: HTMLElement, initial = false): () 
       (target as Element).closest('[role="toolbar"], .inkbook-adaptive-panel') !== null;
     if (navigable && /^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(event.key)) {
       setNavigation(true);
-    } else if (!["Shift", "Enter", " ", "Escape"].includes(event.key)) {
-      setNavigation(false);
     }
   };
   setNavigation(initial);

@@ -2,6 +2,7 @@ import { type EditorView, WidgetType } from "@codemirror/view";
 
 import type { InkbookDocumentRecognition } from "../preview/document-recognition";
 import { createInkbookLockedPreview } from "../preview/locked-preview";
+import { updateEmbedDescription } from "../presentation/embed-description";
 import { removeLivePreviewMarkdown } from "./live-preview-removal";
 import { LivePreviewWidgetHeight } from "./live-preview-widget-height";
 import { LivePreviewZoomScrollBinding } from "./live-preview-zoom-scroll";
@@ -12,6 +13,7 @@ import type { PresentationEntranceState } from "../presentation/presentation-ent
 import type { ResolvedInkbookDocument } from "../presentation/presentation-port";
 
 export interface VisibleEmbed {
+  readonly description?: string;
   readonly from: number;
   readonly resolved: ResolvedInkbookDocument;
   readonly sourcePath: string;
@@ -58,6 +60,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
   override eq(other: InkbookLivePreviewWidget): boolean {
     return (
       this.#sameAttachment(other) &&
+      this.#embed.description === other.#embed.description &&
       samePreviewContentIdentity(
         this.#embed.preview.contentIdentity,
         other.#embed.preview.contentIdentity,
@@ -72,14 +75,14 @@ export class InkbookLivePreviewWidget extends WidgetType {
       this.#embed.from === other.#embed.from &&
       this.#embed.to === other.#embed.to &&
       this.#embed.sourcePath === other.#embed.sourcePath &&
-      this.#embed.resolved.documentId === other.#embed.resolved.documentId &&
-      this.#embed.resolved.resourceUrl === other.#embed.resolved.resourceUrl
+      this.#embed.resolved.documentId === other.#embed.resolved.documentId
     );
   }
 
   override updateDOM(dom: HTMLElement): boolean {
     const mounted = mountedControllers.get(dom);
     if (mounted === undefined || !this.#sameAttachment(mounted.widget)) return false;
+    updateEmbedDescription(dom, undefined, this.#embed.description);
     mounted.controller.updatePreview(this.#embed.preview);
     mountedControllers.set(dom, { controller: mounted.controller, widget: this });
     return true;
@@ -112,6 +115,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       this.#ports.workScheduler(button.ownerDocument.defaultView),
       { documentId: this.#embed.resolved.documentId, documents: this.#ports.documents },
     );
+    updateEmbedDescription(root, button, this.#embed.description);
 
     const attachmentId = `live-preview-${++nextLivePreviewAttachmentId}`;
     const hostZoomScroll = new LivePreviewZoomScrollBinding(

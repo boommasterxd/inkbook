@@ -30,6 +30,11 @@ export interface ActiveEditorKeyboardOptions {
   readonly selectAll: () => void;
   readonly lastScreenPointer: () => InputPoint | null;
   readonly selectionSize: () => number;
+  readonly canvasSelection?: {
+    handle(event: KeyboardEvent): boolean;
+    cancel(): boolean;
+    dispose(): void;
+  };
 }
 
 export class ActiveEditorKeyboardController {
@@ -54,13 +59,18 @@ export class ActiveEditorKeyboardController {
   }
 
   public dispose(): void {
+    this.#options.canvasSelection?.dispose();
     this.#unsubscribeHistory();
     this.#paneHistory.clear();
+  }
+  public cancelSelection(): void {
+    this.#options.canvasSelection?.cancel();
   }
 
   public handleKeyDown(event: KeyboardEvent): boolean {
     const textFieldFocused = isTextField(event.target, this.#options.activeElement());
     if (textFieldFocused) return false;
+    if (this.#options.canvasSelection?.handle(event)) return true;
     if (event.key === "F10" && event.shiftKey) {
       this.#options.openKeyboardMenu(this.#options.navigation.visibleCenter());
       return true;
@@ -87,6 +97,7 @@ export class ActiveEditorKeyboardController {
 
   public handlePendingClipboardKeyDown(event: KeyboardEvent): boolean {
     if (isTextField(event.target, this.#options.activeElement())) return false;
+    if (event.key === "Escape") return this.#options.canvasSelection?.cancel() ?? false;
     const action = resolveConfiguredShortcut(event, this.#shortcuts);
     if (action === "copy" || action === "cut") {
       if (!this.#clipboardActionAvailable(action, true)) return false;
@@ -99,24 +110,30 @@ export class ActiveEditorKeyboardController {
   public handleHoverZoom(event: KeyboardEvent): boolean {
     const action = resolveConfiguredShortcut(event, this.#shortcuts);
     if (action !== "zoom-in" && action !== "zoom-out") return false;
-    return this.#handleZoom(event, action === "zoom-in" ? 1 : -1);
+    return this.#handleZoom(event, action === "zoom-in" ? 1 : -1, false);
   }
 
   public updateShortcuts(shortcuts: KeyboardShortcutSettingsV1): void {
     this.#shortcuts = structuredClone(shortcuts);
   }
 
-  #handleZoom(event: KeyboardEvent, step: -1 | 1): boolean {
+  #handleZoom(event: KeyboardEvent, step: -1 | 1, surfaceOwned: boolean): boolean {
     if (
       event.view !== null &&
       event.view !== undefined &&
       event.view.document !== this.#options.ownerDocument
     )
       return false;
-    if (!this.#pointerOver || isTextField(event.target, this.#options.activeElement()))
+    if (
+      (!surfaceOwned && !this.#pointerOver) ||
+      isTextField(event.target, this.#options.activeElement())
+    )
       return false;
     if (!this.#options.navigationEnabled()) return true;
-    return this.#options.navigation.updateKeyboardStep(step, this.#options.lastScreenPointer());
+    return this.#options.navigation.updateKeyboardStep(
+      step,
+      this.#pointerOver ? this.#options.lastScreenPointer() : null,
+    );
   }
 
   public handlePaste(data: SynchronousClipboardData | null, surfaceOwned = false): boolean {
@@ -152,7 +169,7 @@ export class ActiveEditorKeyboardController {
     const action = resolveConfiguredShortcut(event, this.#shortcuts);
     if (action === undefined) return false;
     if (action === "zoom-in" || action === "zoom-out") {
-      return this.#handleZoom(event, action === "zoom-in" ? 1 : -1);
+      return this.#handleZoom(event, action === "zoom-in" ? 1 : -1, surfaceOwned);
     }
     if (action === "select-all") {
       this.#options.selectAll();
@@ -186,6 +203,7 @@ export class ActiveEditorKeyboardController {
 
   #handleEscape(): boolean {
     if (this.#options.closeFlyout()) return true;
+    if (this.#options.canvasSelection?.cancel()) return true;
     if (this.#options.cancelGesture()) return true;
     if (this.#options.selectionSize() === 0) return false;
     this.#options.clearSelection();

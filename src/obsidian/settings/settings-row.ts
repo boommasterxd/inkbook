@@ -39,7 +39,7 @@ export function bindSettingsAction(
   tone?: InkbookSettingActionTone,
 ): () => void {
   element.classList.add("mod-action", "tappable");
-  if (tone !== undefined) element.dataset.inkbookSettingActionTone = tone;
+  element.dataset.inkbookSettingActionTone = tone ?? "neutral";
   element.tabIndex = 0;
   element.setAttribute("role", "button");
   const onKeyDown = (event: KeyboardEvent): void => {

@@ -84,7 +84,7 @@ describe("InkbookSettingTab definitions", () => {
     const device = new DeviceAdapter();
     const tab = createTab(new InkbookSettingsStore(vault, device));
 
-    const definitions = tab.getSettingDefinitions();
+    const definitions = tab.getControlDefinitions();
 
     expect(groups(tab).map((group) => group.heading)).toEqual([
       undefined,
@@ -112,7 +112,7 @@ describe("InkbookSettingTab definitions", () => {
       (item): item is SettingDefinitionRender =>
         item.name === "Reset group to defaults" && "render" in item,
     );
-    const definitions = tab.getSettingDefinitions();
+    const definitions = tab.getControlDefinitions();
     const resetAll = definitions[definitions.length - 1];
     if (generalReset === undefined || resetAll === undefined || !isRenderDefinition(resetAll)) {
       throw new Error("Missing rendered reset definitions.");
@@ -251,7 +251,7 @@ describe("InkbookSettingTab snapping and refresh definitions", () => {
 describe("InkbookSettingTab visible labels", () => {
   it("uses sentence case for every multi-word designation", () => {
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
-    const definitions = tab.getSettingDefinitions();
+    const definitions = tab.getControlDefinitions();
     const shapes = groups(tab).find((group) => group.heading === "Shapes and structures");
     if (shapes === undefined) throw new Error("Missing Shapes and structures group");
     const shapeLabels = renders(shapes).flatMap(renderedLabels);
@@ -392,7 +392,7 @@ describe("InkbookSettingTab full reset integration", () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     await store.load();
     await store.updateVaultSettings((settings) => ({ ...settings, startupTool: "arrow" }));
-    const definitions = createTab(store).getSettingDefinitions();
+    const definitions = createTab(store).getControlDefinitions();
     const rendered = renderDefinition(
       definitions[definitions.length - 1] as SettingDefinitionRender,
     );
@@ -419,7 +419,7 @@ describe("InkbookSettingTab full reset integration", () => {
     await store.updateVaultSettings((settings) => ({ ...settings, startupTool: "arrow" }));
     device.value.motion = "full";
     const tab = createTab(store);
-    const definitions = tab.getSettingDefinitions();
+    const definitions = tab.getControlDefinitions();
     const action = definitions[definitions.length - 1] as SettingDefinitionRender;
     const confirmMock = confirmAction.mockResolvedValue(false);
     const rendered = renderDefinition(action);

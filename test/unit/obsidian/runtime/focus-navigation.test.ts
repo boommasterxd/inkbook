@@ -60,10 +60,10 @@ describe("explicit focus navigation", () => {
     { key: "Tab", altKey: true },
     { key: "Enter", metaKey: true },
     { key: "Tab", isComposing: true },
-  ])("does not mistake shortcuts or composition for navigation: %j", (keys) => {
+  ])("retains keyboard focus through shortcuts and composition: %j", (keys) => {
     const { root, button } = fixture(true);
     button.dispatchEvent(new KeyboardEvent("keydown", { ...keys, bubbles: true }));
-    expect(root.dataset.inkbookKeyboardNavigation).toBe("false");
+    expect(root.dataset.inkbookKeyboardNavigation).toBe("true");
   });
 
   it.each(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"])(

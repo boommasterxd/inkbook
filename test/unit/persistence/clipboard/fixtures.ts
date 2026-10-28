@@ -4,6 +4,11 @@ import type {
   InkElementV1,
   PageV1,
 } from "../../../../src/domain/schema/public";
+import {
+  encodeRuntimeSelection,
+  resolveClipboardPayload,
+} from "../../../../src/persistence/clipboard/codec";
+import type { DecodedClipboard } from "../../../../src/persistence/clipboard/types";
 
 export const RECTANGLE_ID = "11111111-1111-4111-8111-111111111111";
 export const ARROW_ID = "22222222-2222-4222-8222-222222222222";
@@ -49,6 +54,16 @@ export const arrow = (targetId = RECTANGLE_ID): ArrowElementV1 => ({
 });
 
 export const selectedElements = (): InkElementV1[] => [rectangle(), arrow()];
+
+export function createDecodedClipboardFixture(
+  elements: readonly InkElementV1[] = selectedElements(),
+): DecodedClipboard {
+  const encoded = encodeRuntimeSelection(elements, new Set(elements.map(({ id }) => id)));
+  if (!encoded.ok) throw new Error(encoded.error.message);
+  const decoded = resolveClipboardPayload({ customText: encoded.value.customText });
+  if (!decoded.ok) throw new Error(decoded.error.message);
+  return decoded.value;
+}
 
 export const spatialRectangle = (index: number, width = 1_019): BoxShapeElementV1 => ({
   ...rectangle(),

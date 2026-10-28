@@ -59,6 +59,18 @@ describe("Live Preview occurrence entrance state", () => {
     expect(entrances.stateFor(0, 10, "other.svg")).not.toBe(token);
   });
 
+  it("retains equal-length interior edits while rechecking the resolved document identity", () => {
+    const entrances = new LivePreviewEntrances("note.md");
+    const token = entrances.stateFor(0, 20, "drawing.svg");
+    token.presented = true;
+    const changed = entrances.update(
+      ChangeSet.of({ from: 5, to: 8, insert: "two" }, 20),
+      "note.md",
+    );
+    expect(changed.stateFor(0, 20, "drawing.svg")).toBe(token);
+    expect(changed.stateFor(0, 20, "another.svg")).not.toBe(token);
+  });
+
   it("bounds retained tokens and frees deleted occurrence capacity", () => {
     let entrances = new LivePreviewEntrances("note.md");
     const limit = MARKDOWN_EMBED_LIMITS.matches;

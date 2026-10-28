@@ -61,6 +61,7 @@ interface HandlePreviewContext {
 }
 
 export class SelectionHandlePresentation {
+  public keyboardFocus: number | null = null;
   readonly #pageToScreen: (point: PointV1) => PointV1;
   readonly #renderer: HandleInteractionRenderer;
   readonly #zoom: () => number;
@@ -97,6 +98,7 @@ export class SelectionHandlePresentation {
       {
         pageToScreen: this.#pageToScreen,
         zoom: this.#zoom(),
+        focusedHandleIndex: this.keyboardFocus,
       },
       geometry,
     );

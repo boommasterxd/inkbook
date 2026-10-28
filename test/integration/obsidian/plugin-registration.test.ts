@@ -23,6 +23,8 @@ import {
 import { InkbookLoadingPreviewWidget } from "../../../src/obsidian/embeds/live-preview/live-preview-loading-widget";
 import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
 import { PresentationLifecycleRegistry } from "../../../src/obsidian/embeds/presentation/presentation-lifecycle-registry";
+import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
+import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 
 const TestTFile = TFile as unknown as new (path: string) => TFile;
 
@@ -113,8 +115,11 @@ describe("plugin startup placeholders", () => {
     "shows a startup placeholder without early reads; unload=%s",
     async (unload) => {
       const { app, layoutReady } = createApp();
-      const file = new TestTFile("drawing.svg");
-      const cachedRead = vi.fn(async () => "<svg/>");
+      const serialized = serializeInkbookDocument(createSnapshot());
+      if (!serialized.ok) throw new Error("Expected a canonical Inkbook fixture.");
+      const file = new TestTFile(unload ? "drawing.svg" : "external.SVG");
+      file.stat.size = new TextEncoder().encode(serialized.value.svg).byteLength;
+      const cachedRead = vi.fn(async () => serialized.value.svg);
       const plugin = new TestPlugin(
         {
           ...app,
@@ -123,7 +128,7 @@ describe("plugin startup placeholders", () => {
             ...app.vault,
             cachedRead,
             getFileByPath: () => file,
-            getResourcePath: () => "app://drawing.svg",
+            getResourcePath: () => `app://${file.path}`,
           },
         } as never,
         {} as never,
@@ -132,7 +137,7 @@ describe("plugin startup placeholders", () => {
       configureTestEditorState({ file: { path: "note.md" }, livePreview: true });
       const registrations = plugin as unknown as { editorExtensions: [] };
       const state = EditorState.create({
-        doc: "!inkbook[[drawing.svg]]",
+        doc: `!inkbook[[${file.path}]]`,
         extensions: [editorInfoField, editorLivePreviewField, ...registrations.editorExtensions],
       });
       let widget: InkbookLoadingPreviewWidget | undefined;
@@ -149,7 +154,15 @@ describe("plugin startup placeholders", () => {
       expect(cachedRead).not.toHaveBeenCalled();
       if (unload) deactivate?.();
       layoutReady();
-      await expect(recognition).resolves.toBe(false);
+      if (unload) await expect(recognition).resolves.toBe(false);
+      else
+        await expect(recognition).resolves.toMatchObject({
+          safeSvg: serialized.value.svg,
+          contentIdentity: {
+            outputHash: serialized.value.hash,
+            revision: serialized.value.snapshot.revision,
+          },
+        });
       expect(cachedRead).toHaveBeenCalledTimes(unload ? 0 : 1);
       if (!unload) deactivate?.();
     },

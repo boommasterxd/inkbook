@@ -7,13 +7,14 @@ import type { SettingsControlKey } from "../control-values";
 import { resetAction } from "./definition-helpers";
 import { SettingsPanelMotion } from "../settings-panel-motion";
 import { nameSettingToggle } from "../settings-row";
+import { createSettingsWriteError, SettingsWriteFeedback } from "../settings-write-feedback";
 
 export interface SnappingGroupCallbacks {
   readonly observeMotion?: ObserveMotion;
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly get: (key: SettingsControlKey) => unknown;
   readonly readMotion: () => InkbookDeviceSettingsV2["motion"];
-  readonly reset: () => void;
+  readonly reset: () => void | Promise<void>;
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
 }
 
@@ -68,13 +69,9 @@ function enabledDefinition(
     name: "Enable snapping",
     desc: "Enable all configured snapping behavior.",
     render: (setting) => {
-      setting.addToggle((toggle) => {
-        nameSettingToggle(toggle.toggleEl, "Enable snapping");
-        toggle.setValue(callbacks.get("snapping.enabled") === true).onChange((enabled) => {
-          void callbacks.set("snapping.enabled", enabled).then(() => {
-            for (const motion of dependentMotions) motion.setExpanded(enabled);
-          });
-        });
+      return renderSnappingToggle(setting, callbacks, "snapping.enabled", "Enable snapping", () => {
+        const enabled = callbacks.get("snapping.enabled") === true;
+        for (const motion of dependentMotions) motion.setExpanded(enabled);
       });
     },
   };
@@ -106,16 +103,43 @@ function renderDependentToggle(
   const enabled = callbacks.get("snapping.enabled") === true;
   row.hidden = !enabled;
   row.inert = !enabled;
-  setting.addToggle((toggle) => {
-    nameSettingToggle(toggle.toggleEl, name);
-    toggle
-      .setValue(callbacks.get(key) === true)
-      .onChange((value) => void callbacks.set(key, value));
-  });
+  const releaseToggle = renderSnappingToggle(setting, callbacks, key, name);
   const motion = new SettingsPanelMotion(row, callbacks.readMotion, callbacks.observeMotion);
   dependentMotions.add(motion);
   return () => {
     dependentMotions.delete(motion);
     motion.dispose();
+    releaseToggle();
+  };
+}
+
+function renderSnappingToggle(
+  setting: Setting,
+  callbacks: SnappingGroupCallbacks,
+  key: SettingsControlKey,
+  name: string,
+  saved?: () => void,
+): () => void {
+  const writes = new SettingsWriteFeedback();
+  const error = createSettingsWriteError(setting.settingEl, callbacks);
+  setting.addToggle((toggle) => {
+    nameSettingToggle(toggle.toggleEl, name);
+    error.associate(toggle.toggleEl);
+    const restore = (): void => {
+      toggle.setValue(callbacks.get(key) === true);
+      saved?.();
+    };
+    restore();
+    toggle.onChange((value) => {
+      void writes.run(key, () => callbacks.set(key, value), {
+        error: error.set,
+        restore,
+        ...(saved === undefined ? {} : { saved }),
+      });
+    });
+  });
+  return () => {
+    writes.dispose();
+    error.dispose();
   };
 }

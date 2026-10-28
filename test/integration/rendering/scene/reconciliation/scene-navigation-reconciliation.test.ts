@@ -1,7 +1,6 @@
 import { expect, it, vi } from "vitest";
 
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
-import { CanonicalElementPathPreparation } from "../../../../../src/domain/geometry/canonical-element-path-preparation";
 import { ViewportPreviewSelection } from "../../../../../src/rendering/scene/presentation/preview-transform-selection";
 import type { SvgSceneRenderer } from "../../../../../src/rendering/scene";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../../src/rendering/scene/constants";
@@ -13,6 +12,7 @@ import {
   createViewportRectangleStore,
 } from "../../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
+import { observePathPreparationSteps } from "../../../../fixtures/rendering/path-preparation-work";
 import { expectReleasedPublicationScene } from "../../../../fixtures/rendering/scene-publication";
 import {
   FakeNode,
@@ -211,17 +211,9 @@ it("cleans an obsolete delta exit while a cold entrant is suspended, then cancel
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(["old"]);
-  const originalStep = Object.getOwnPropertyDescriptor(
-    CanonicalElementPathPreparation.prototype,
-    "step",
-  )!.value as CanonicalElementPathPreparation["step"];
-  const step = vi
-    .spyOn(CanonicalElementPathPreparation.prototype, "step")
-    .mockImplementation(function (this: CanonicalElementPathPreparation, deadline, now) {
-      const complete = originalStep.call(this, deadline, now);
-      scheduler.time += 8;
-      return complete;
-    });
+  const step = observePathPreparationSteps(() => {
+    scheduler.time += 8;
+  });
   renderer.setViewport({ height: 100, left: 0, top: 120, width: 100 });
   let remaining = 100;
   while (renderer.mountedCount > 0 || step.mock.calls.length === 0) {

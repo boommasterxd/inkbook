@@ -1,5 +1,8 @@
 export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
   cadenceSensitive: Object.freeze([
+    "test/performance/rendering/scene/interaction-refresh-profile.test.ts",
+    "test/performance/obsidian/embeds/active-editor/selected-connected-preview-work.test.ts",
+    "test/performance/persistence/clipboard/clipboard-planning-slices.test.ts",
     "test/performance/rendering/scene/presentation/selection-run-drain-admission.test.ts",
     "test/performance/rendering/scene/presentation/selection-run-late-admission.test.ts",
     "test/performance/domain/shared-frame-scheduler-budget.test.ts",
@@ -21,6 +24,8 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/obsidian/embeds/active-editor/keyboard-selection-work.test.ts",
+    "test/performance/obsidian/vault-event-read-work.test.ts",
     "test/performance/rendering/scene/presentation/progressive-feedback-reuse.test.ts",
     "test/performance/rendering/scene/presentation/selection-run-plan-memory.test.ts",
     "test/performance/rendering/scene/presentation/preview-matrix-retention.test.ts",
@@ -69,7 +74,6 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/serialization/preview-proof-reuse.test.ts",
     "test/performance/persistence/serialization/stroke-sample-encoding-cache.test.ts",
     "test/performance/obsidian/embeds/active-editor/selection-camera-work.test.ts",
-    "test/performance/obsidian/embeds/active-editor/clipboard-candidate-probe.test.ts",
     "test/performance/persistence/serialization/owned-export-adoption.test.ts",
     "test/performance/persistence/saving/confirmed-base-verification.test.ts",
     "test/performance/obsidian/embeds/active-editor/tool-cursor-raw-input.test.ts",
@@ -114,7 +118,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/serialization/safe-svg-validation.test.ts",
     "test/performance/persistence/worker/wire-preparation-and-adoption.test.ts",
     "test/performance/persistence/serialization/serialization-band-work.test.ts",
-    "test/performance/rendering/scene/interaction-refresh-profile.test.ts",
+    "test/performance/rendering/scene/interaction-work.test.ts",
     "test/performance/rendering/scene/presentation/selection-handoff-performance.test.ts",
     "test/performance/rendering/scene/content/local-pressure-path-work.test.ts",
     "test/performance/rendering/scene/presentation/selection-traces-performance.test.ts",

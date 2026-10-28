@@ -297,7 +297,7 @@ function registerVaultLifecycle(
   recognition: ObsidianInkbookDocumentRecognition,
 ): void {
   const handleFileChange = (file: unknown): void => {
-    if (!(file instanceof TFile)) return;
+    if (!(file instanceof TFile) || file.extension.toLowerCase() !== "svg") return;
     recognition.deferRefresh(file.path);
     runtime.handleVaultModification(file.path, (output) => {
       if (output === undefined) recognition.invalidate(file.path);

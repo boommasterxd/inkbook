@@ -35,14 +35,14 @@ const OUTLINE_DESCRIPTIONS = {
 
 export function drawingToolsGroup(
   values: ToolSectionValues,
-  reset: () => void,
+  reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
   return toolDefinitionsGroup("Drawing tools", drawingToolSpecs(), values, reset);
 }
 
 export function shapesAndStructuresGroup(
   values: ToolSectionValues,
-  reset: () => void,
+  reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
   return toolDefinitionsGroup("Shapes and structures", shapeToolSpecs(), values, reset);
 }
@@ -51,7 +51,7 @@ function toolDefinitionsGroup(
   heading: string,
   specs: readonly ToolSectionSpec[],
   values: ToolSectionValues,
-  reset: () => void,
+  reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
   return {
     type: "group",

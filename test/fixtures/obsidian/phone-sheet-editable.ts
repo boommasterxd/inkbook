@@ -1,9 +1,14 @@
 import { vi } from "vitest";
+import { MotionGlobalConfig, processFrame } from "motion";
 
 import { createAdaptivePanelFixture } from "../../adapters/obsidian/adaptive-panel";
 import { ManualFrameScheduler } from "./manual-frame-scheduler";
 
-export function createPhoneSheetEditableFixture(recordCalls = true) {
+export function createPhoneSheetEditableFixture(
+  recordCalls = true,
+  motion: "full" | "reduced" = "reduced",
+) {
+  const motionDriver = createEditableMotionDriver(motion);
   const restoreWindow = preserveProperties(window, [
     "requestAnimationFrame",
     "cancelAnimationFrame",
@@ -31,6 +36,7 @@ export function createPhoneSheetEditableFixture(recordCalls = true) {
     Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
     const input = window.createEl("input");
     const fixture = createAdaptivePanelFixture("style", {
+      motion,
       createContent: () => {
         const fragment = window.createFragment();
         fragment.append(input);
@@ -75,6 +81,7 @@ export function createPhoneSheetEditableFixture(recordCalls = true) {
       scroll,
       scrollRead,
       inputRead,
+      advanceMotion: motionDriver.advance,
       get inputReadCount() {
         return recordCalls ? inputRead.mock.calls.length : inputReadCount;
       },
@@ -85,12 +92,37 @@ export function createPhoneSheetEditableFixture(recordCalls = true) {
         restoreInput();
         restoreScroll();
         restoreWindow();
+        motionDriver.restore();
       },
     };
   } catch (error) {
     restoreWindow();
+    motionDriver.restore();
     throw error;
   }
+}
+
+function createEditableMotionDriver(motion: "full" | "reduced") {
+  const manualTiming = MotionGlobalConfig.useManualTiming;
+  let motionTime = 0;
+  if (motion === "full") {
+    MotionGlobalConfig.useManualTiming = true;
+    processFrame(0);
+  }
+  return {
+    advance: async (duration: number): Promise<void> => {
+      const end = motionTime + duration;
+      while (motionTime < end) {
+        motionTime = Math.min(end, motionTime + 1000 / 120);
+        processFrame(motionTime);
+        await Promise.resolve();
+      }
+    },
+    restore: (): void => {
+      if (manualTiming === undefined) delete MotionGlobalConfig.useManualTiming;
+      else MotionGlobalConfig.useManualTiming = manualTiming;
+    },
+  };
 }
 
 function preserveProperties(target: object, keys: readonly string[]): () => void {

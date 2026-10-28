@@ -11,6 +11,7 @@ import {
 const HANDLE_DRAW_RADIUS_PIXELS = 5;
 
 export interface SelectionOverlayPathOptions {
+  readonly focusedHandleIndex?: number | null;
   readonly frame?: OrientedSelectionFrame | null;
   readonly pageToScreen: (point: PointV1) => PointV1;
   readonly transform?: SelectionPreviewTransform | null;
@@ -40,7 +41,13 @@ export function selectionOverlayPaths(
 
   return {
     handles: geometry.handles
-      .map((handle) => screenCircle(options.pageToScreen(handle.point)))
+      .map((handle, index) => {
+        const point = options.pageToScreen(handle.point);
+        const circle = screenCircle(point);
+        return options.focusedHandleIndex === index
+          ? `${circle} ${screenCircle(point, 9)}`
+          : circle;
+      })
       .join(" "),
     outline:
       geometry.outline.kind === "linear"
@@ -70,7 +77,6 @@ function outlinePath(
   return parts.join(" ");
 }
 
-function screenCircle(point: PointV1): string {
-  const radius = HANDLE_DRAW_RADIUS_PIXELS;
+function screenCircle(point: PointV1, radius = HANDLE_DRAW_RADIUS_PIXELS): string {
   return `M ${String(point.x - radius)} ${String(point.y)} a ${radius} ${radius} 0 1 0 ${radius * 2} 0 a ${radius} ${radius} 0 1 0 ${-radius * 2} 0`;
 }

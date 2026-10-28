@@ -86,7 +86,7 @@ function requireOwnedPreview(
   activationButton: FakeElement | undefined,
 ): FakeElement {
   expect(activationButton?.tagName).toBe("BUTTON");
-  expect(activationButton?.attributes.get("aria-label")).toBe("Edit handwriting");
+  expect(activationButton?.attributes.get("aria-label")).toMatch(/^Edit handwriting(?:$|: )/);
   expect(activationButton?.attributes.get("type")).toBe("button");
   expect(activationButton?.children[0]?.classNames).toContain("inkbook-locked-preview-media");
   expect(root.getElementsByTagName("img").length).toBe(0);
@@ -94,6 +94,16 @@ function requireOwnedPreview(
   return activationButton;
 }
 describe("Markdown embed recognition", () => {
+  it("retains author descriptions independently of the resolved SVG path", () => {
+    expect(
+      findMarkdownInkbookEmbeds(
+        "!inkbook[Supply and demand](drawing.svg)\n!inkbook[[other.svg|A triangle]]",
+      ),
+    ).toMatchObject([
+      { linkpath: "drawing.svg", description: "Supply and demand" },
+      { linkpath: "other.svg", description: "A triangle" },
+    ]);
+  });
   it("parses standalone Inkbook embeds without treating native SVG embeds as ink", () => {
     expect(
       findMarkdownInkbookEmbeds(

@@ -1,4 +1,5 @@
 export interface MarkdownInkbookEmbed {
+  readonly description?: string;
   readonly from: number;
   readonly linkpath: string;
   readonly markdown: string;
@@ -11,7 +12,7 @@ interface MarkdownSuppressedRange {
 }
 
 const WIKI_EMBED_PATTERN = /!inkbook\[\[([^\]\n]+)\]\]/gu;
-const MARKDOWN_EMBED_PATTERN = /!inkbook\[[^\]\n]*\]\(([^)\n]+)\)/gu;
+const MARKDOWN_EMBED_PATTERN = /!inkbook\[(?<description>[^\]\n]*)\]\(([^)\n]+)\)/gu;
 
 export const MARKDOWN_EMBED_LIMITS = Object.freeze({
   inputBytes: 8 * 1024 * 1024,
@@ -206,7 +207,7 @@ function collectMatches(
     if (candidateCount >= maximumMatches) return undefined;
     candidateCount += 1;
     const markdown = match[0];
-    const target = match[1];
+    const target = match.groups === undefined ? match[1] : match[2];
     const from = match.index;
     if (markdown === undefined || target === undefined || from === undefined) {
       continue;
@@ -217,7 +218,8 @@ function collectMatches(
     if (linkpath.length === 0 || !isSvgLinkpath(linkpath) || !isStandaloneLine(text, from, to)) {
       continue;
     }
-    matches.push({ from, linkpath, markdown, to });
+    const description = (match.groups?.description ?? target.split("|").slice(1).join("|")).trim();
+    matches.push({ from, linkpath, markdown, to, ...(description ? { description } : {}) });
   }
   return matches;
 }

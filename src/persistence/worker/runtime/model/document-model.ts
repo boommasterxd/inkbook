@@ -14,7 +14,7 @@ import type {
   StrokeSamplesV1,
 } from "../../../../domain/schema/public";
 import { resolveClipboardPayload } from "../../../clipboard/codec";
-import { planPaste, resolvePasteTarget } from "../../../clipboard/operations";
+import { planPaste, planPasteSliced, resolvePasteTarget } from "../../../clipboard/operations";
 import type {
   ClipboardCandidates,
   ClipboardResult,
@@ -367,20 +367,27 @@ export class DocumentModelRuntime {
     candidates: ClipboardCandidates,
     options: SlicedPasteOptions,
   ): Promise<ClipboardResult<PastePlan>> {
+    options.context.signal.throwIfAborted();
     this.#validatedPasteState(basisRevision);
     const decoded = await decodeClipboardChunked(candidates, options.context);
-    if (!decoded.ok) return decoded;
-    await options.context.checkpoint();
+    options.context.signal.throwIfAborted();
     const { page, facts } = this.#validatedPasteState(basisRevision);
-    return planPaste({
-      commandTimestamp: options.commandTimestamp,
-      createId: options.createId,
-      decoded: decoded.value,
-      page,
-      ...(options.previousRepeat === undefined ? {} : { previousRepeat: options.previousRepeat }),
-      target: resolvePasteTarget(options.invocation),
-      validatedModel: { facts, hasExistingId: (id) => this.#serializer.hasElement(id) },
-    });
+    if (!decoded.ok) return decoded;
+    return planPasteSliced(
+      {
+        commandTimestamp: options.commandTimestamp,
+        createId: options.createId,
+        decoded: decoded.value,
+        page,
+        ...(options.previousRepeat === undefined ? {} : { previousRepeat: options.previousRepeat }),
+        target: resolvePasteTarget(options.invocation),
+        validatedModel: { facts, hasExistingId: (id) => this.#serializer.hasElement(id) },
+      },
+      options.context,
+      () => {
+        this.#validatedPasteState(basisRevision);
+      },
+    );
   }
 
   public async prewarmOne(context: RuntimeSliceContext): Promise<boolean> {

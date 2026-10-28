@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { flushSync } from "react-dom";
 
 import { createSettingsLayoutMotion } from "../../../../src/obsidian/settings/settings-layout-motion";
 import { createSettingsValidationMotion } from "../../../../src/obsidian/settings/settings-validation-motion";
@@ -98,4 +99,65 @@ it("retargets running layout to Reduced without replacing the focused native con
   expect(unsubscribe).not.toHaveBeenCalled();
   validation.dispose();
   expect(unsubscribe).toHaveBeenCalledOnce();
+});
+
+it("starts error feedback before a frame and retains native presence through reversal and completion", () => {
+  const group = document.body.createDiv();
+  const row = group.createDiv({ cls: "setting-item" });
+  const error = row.createDiv();
+  error.id = "native-presence-error";
+  const validation = createSettingsValidationMotion(row, { readMotion: () => "full" });
+  validation.set(error, "Saving failed");
+  const visual = group.querySelector<HTMLElement>(".inkbook-settings-validation-visual")!;
+  const entrance = visual.getAnimations();
+  // No frame or microtask has run: native feedback must already be admitted.
+  expect(entrance).toHaveLength(1);
+  expect(visual.style.opacity).toBe("1");
+  flushSync(() => entrance[0]!.finish());
+  expect(visual.style.opacity).toBe("1");
+  validation.set(error, "");
+  expect(error.hidden).toBe(true);
+  const exit = visual.getAnimations()[0]!;
+  expect(exit).toBeDefined();
+  validation.set(error, "Saving failed");
+  expect(exit.playState).toBe("idle");
+  expect(visual.isConnected).toBe(true);
+  flushSync(() => visual.getAnimations()[0]!.finish());
+  validation.set(error, "");
+  flushSync(() => visual.getAnimations()[0]!.finish());
+  expect(group.querySelector(".inkbook-settings-validation-visual")).toBeNull();
+  validation.dispose();
+});
+
+it("cancels native error feedback when reduced motion settles or its owner is disposed", () => {
+  let preference: "full" | "reduced" = "full";
+  let changed = (): void => undefined;
+  const group = document.body.createDiv();
+  const row = group.createDiv({ cls: "setting-item" });
+  const error = row.createDiv();
+  error.id = "native-disposal-error";
+  const validation = createSettingsValidationMotion(row, {
+    readMotion: () => preference,
+    observeMotion: (listener) => {
+      changed = listener;
+      return () => undefined;
+    },
+  });
+  validation.set(error, "Saving failed");
+  const visual = group.querySelector<HTMLElement>(".inkbook-settings-validation-visual")!;
+  const entrance = visual.getAnimations()[0]!;
+  preference = "reduced";
+  changed();
+  expect(entrance.playState).toBe("idle");
+  expect(group.querySelector(".inkbook-settings-validation-visual")?.textContent).toBe(
+    "Saving failed",
+  );
+  preference = "full";
+  changed();
+  validation.set(error, "Saving still failed");
+  const replacement = group.querySelector<HTMLElement>(".inkbook-settings-validation-visual")!;
+  const replacementEntrance = replacement.getAnimations()[0]!;
+  validation.dispose();
+  expect(replacementEntrance.playState).toBe("idle");
+  expect(group.querySelector(".inkbook-settings-validation-visual")).toBeNull();
 });

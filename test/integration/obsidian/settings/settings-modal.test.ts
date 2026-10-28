@@ -10,6 +10,8 @@ import { InkbookSettingsModalController } from "../../../../src/obsidian/setting
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
 import * as actionDialog from "../../../../src/obsidian/dialogs/action-dialog";
+import { createBuiltInSettings, type InkbookSettingsV4 } from "../../../../src/domain/settings";
+import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -257,14 +259,120 @@ describe("Inkbook settings disclosure motion", () => {
   });
 });
 
-function openSettingsModalWithFullMotion(): {
+it.each(["Enable snapping", "Angle snapping"])(
+  "restores %s after a failed save and allows retry without replacing the focused toggle",
+  async (name) => {
+    const { store, save } = settingsPersistenceFixture();
+    const { controller } = openSettingsModalWithFullMotion(store);
+    const row = required<HTMLElement>(`[data-setting-name="${name}"]`);
+    const toggle = requiredWithin<HTMLInputElement>(row, "input");
+    save.mockRejectedValueOnce(new Error("Vault unavailable"));
+    try {
+      toggle.focus();
+      toggle.click();
+      await vi.waitFor(() =>
+        expect(row.querySelector(".inkbook-settings-control-error")?.textContent).toBe(
+          "The setting could not be saved.",
+        ),
+      );
+      const error = requiredWithin<HTMLElement>(row, ".inkbook-settings-control-error");
+      expect(toggle.checked).toBe(true);
+      expect(store.getVaultSettings().snapping.enabled).toBe(true);
+      expect(store.getVaultSettings().snapping.angles).toBe(true);
+      expect(toggle.getAttribute("aria-describedby")?.split(" ")).toContain(error.id);
+      expect(document.activeElement).toBe(toggle);
+      expect(required('[data-setting-name="Angle snapping"]').hidden).toBe(false);
+      expect(save).toHaveBeenCalledOnce();
+      toggle.click();
+      await vi.waitFor(() =>
+        expect(
+          name === "Enable snapping"
+            ? store.getVaultSettings().snapping.enabled
+            : store.getVaultSettings().snapping.angles,
+        ).toBe(false),
+      );
+      expect(error.hidden).toBe(true);
+      expect(row.querySelector("input")).toBe(toggle);
+      expect(document.activeElement).toBe(toggle);
+      expect(save).toHaveBeenCalledTimes(2);
+    } finally {
+      controller.dispose();
+    }
+  },
+);
+
+it.each(["group", "all"])(
+  "reports a failed %s reset and permits keyboard retry with the confirmed values intact",
+  async (scope) => {
+    const { store, save } = settingsPersistenceFixture();
+    await store.updateVaultSettings((value) => ({
+      ...value,
+      startupTool: "arrow",
+      snapping: { ...value.snapping, enabled: false },
+    }));
+    const confirmed = store.getVaultSettings();
+    const { controller } = openSettingsModalWithFullMotion(store);
+    const confirm = vi.spyOn(actionDialog, "confirmInkbookAction").mockResolvedValue(true);
+    const selector =
+      scope === "all"
+        ? '[data-setting-name="Reset all Inkbook settings"]'
+        : '.inkbook-snapping-group [data-setting-name="Reset group to defaults"]';
+    const action = required<HTMLElement>(selector);
+    const activate = (): void => {
+      action.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+    };
+    save.mockClear();
+    save.mockRejectedValueOnce(new Error("Vault unavailable"));
+    try {
+      action.focus();
+      activate();
+      await vi.waitFor(() =>
+        expect(action.querySelector(".inkbook-settings-control-error")?.textContent).toBe(
+          "The setting could not be saved.",
+        ),
+      );
+      expect(store.getVaultSettings()).toEqual(confirmed);
+      expect(required(selector)).toBe(action);
+      expect(document.activeElement).toBe(action);
+      expect(save).toHaveBeenCalledOnce();
+      activate();
+      await vi.waitFor(() =>
+        expect(store.getVaultSettings().snapping).toEqual(createBuiltInSettings().snapping),
+      );
+      expect(store.getVaultSettings().startupTool).toBe(
+        scope === "all" ? createBuiltInSettings().startupTool : "arrow",
+      );
+      expect(required(selector).querySelector(".inkbook-settings-control-error")).toBeNull();
+      expect(document.activeElement).toBe(required(selector));
+      expect(save).toHaveBeenCalledTimes(2);
+    } finally {
+      controller.dispose();
+      confirm.mockRestore();
+    }
+  },
+);
+
+function settingsPersistenceFixture() {
+  const save = vi.fn(async (_value: InkbookSettingsV4) => undefined);
+  const store = new InkbookSettingsStore(
+    { loadData: async () => null, saveData: save },
+    {
+      loadLocalStorage: () => undefined,
+      saveLocalStorage: () => undefined,
+    },
+  );
+  return { store, save };
+}
+
+function openSettingsModalWithFullMotion(store = createTestSettingsStore()): {
   controller: InkbookSettingsModalController;
   store: ReturnType<typeof createTestSettingsStore>;
   tab: InkbookSettingTab;
 } {
   const workspaceContainer = document.body.createDiv();
   const app = { workspace: { containerEl: workspaceContainer } } as unknown as App;
-  const store = createTestSettingsStore();
   store.updateDeviceSettings((settings) => ({ ...settings, motion: "full" }));
   const tab = new InkbookSettingTab(app, {} as Plugin, store, undefined, undefined, {
     workScheduler: () => workSchedulerFromFrames(window),

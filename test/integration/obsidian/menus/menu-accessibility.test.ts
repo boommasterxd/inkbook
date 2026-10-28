@@ -42,6 +42,13 @@ describe.each([false, true])("owned menu semantic accessibility, phone=%s", (pho
     try {
       const surface = document.querySelector<HTMLElement>('[role="menu"], [role="dialog"]');
       expect(surface).not.toBeNull();
+      if (menu === "style") {
+        const choices = surface!.querySelector<HTMLElement>('[data-control="color"]');
+        expect(choices?.getAttribute("role")).toBe("group");
+        const label = document.getElementById(choices!.getAttribute("aria-labelledby")!);
+        expect(label?.textContent).toBe("Color");
+        expect(choices?.querySelector('[aria-label="Red"]')).not.toBeNull();
+      }
       await assertAccessibleSemantics(surface!, [
         menu === "style"
           ? "button-name"

@@ -7,9 +7,9 @@ import {
   type NativeControlFeedbackOptions,
 } from "../menus/feedback/native-control-feedback";
 import { createSettingsValidationMotion } from "./settings-validation-motion";
+import { SettingsWriteFeedback } from "./settings-write-feedback";
 
 const INVALID_VALUE_MESSAGE = "Enter a valid setting value.";
-const SAVE_FAILURE_MESSAGE = "The setting could not be saved.";
 
 export interface SettingsControlContentOptions extends NativeControlFeedbackOptions {
   readonly controls: () => readonly StyleControl[];
@@ -23,11 +23,10 @@ export function renderSettingsControlContent(
   container: HTMLElement,
   options: SettingsControlContentOptions,
 ): () => void {
-  const latestCommits = new Map<string, number>();
+  const writes = new SettingsWriteFeedback();
   const validation = createSettingsValidationMotion(container, options);
   let currentErrors = new Map<string, HTMLElement>();
   let releaseFeedback: ReturnType<typeof registerNativeControlFeedback> | undefined;
-  let disposed = false;
 
   const render = (): Map<string, HTMLElement> => {
     const controls = options.controls();
@@ -36,19 +35,20 @@ export function renderSettingsControlContent(
       controls,
       numberInputMode: "reject",
       onChange: (controlId, value) => {
-        const commit = (latestCommits.get(controlId) ?? 0) + 1;
-        latestCommits.set(controlId, commit);
         const error = currentErrors.get(controlId);
-        if (error !== undefined) validation.set(error, "");
-        void options.onChange(controlId, value).catch(() => {
-          if (disposed || commit !== latestCommits.get(controlId)) return;
-          restoreControlValues(container, options.controls());
-          releaseFeedback?.refresh();
-          if (error !== undefined) validation.set(error, SAVE_FAILURE_MESSAGE);
+        void writes.run(controlId, () => options.onChange(controlId, value), {
+          error: (message) => {
+            if (error !== undefined) validation.set(error, message);
+          },
+          restore: () => {
+            restoreControlValues(container, options.controls());
+            releaseFeedback?.refresh();
+          },
         });
       },
       ownerDocument: options.ownerDocument,
       onInvalidValue: (controlId) => {
+        writes.invalidate(controlId);
         const error = currentErrors.get(controlId);
         if (error !== undefined) validation.set(error, INVALID_VALUE_MESSAGE);
       },
@@ -64,7 +64,7 @@ export function renderSettingsControlContent(
 
   render();
   return () => {
-    disposed = true;
+    writes.dispose();
     releaseFeedback?.();
     releaseFeedback = undefined;
     validation.dispose();

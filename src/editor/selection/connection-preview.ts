@@ -32,6 +32,7 @@ export class ConnectedSelectionPreviewSession {
   readonly #selectedIds: ReadonlySet<string>;
   readonly #selected = new Map<string, InkElementV1>();
   readonly #selectedPreviewIds = new Set<string>();
+  readonly #selectedPreviewOrder: string[] = [];
   readonly #steps: Generator<number, ConnectedPreviewPlan>;
   #plan: ConnectedPreviewPlan | undefined;
   #valid = true;
@@ -46,9 +47,19 @@ export class ConnectedSelectionPreviewSession {
     this.#selectedIds = selectedIds;
     for (const element of selectedElements) {
       if (isAnchorTarget(element)) this.#selected.set(element.id, element);
-      if (isConnectedLinear(element)) this.#selectedPreviewIds.add(element.id);
+      if (isConnectedLinear(element)) {
+        this.#selectedPreviewIds.add(element.id);
+        this.#selectedPreviewOrder.push(element.id);
+      }
     }
-    this.#steps = connectedPreviewPlanSteps(store, selectedIds, this.#selected.keys());
+    this.#steps = connectedPreviewPlanSteps(
+      store,
+      selectedIds,
+      this.#selected.keys(),
+      exceedsExactLinearPreviewWork(this.#selectedPreviewIds.size)
+        ? this.#selectedPreviewOrder
+        : [],
+    );
     this.#unsubscribe = store.subscribe(() => {
       this.#valid = false;
     });
@@ -93,15 +104,10 @@ export class ConnectedSelectionPreviewSession {
     materializeRoot?: (id: string) => InkElementV1 | undefined,
   ): ConnectedSelectionPreview {
     const targets = new Map<string, InkElementV1>();
-    for (const id of this.#selectedPreviewIds) {
-      const element = this.#selected.get(id)! as ConnectedLinear;
-      const exact = materializeRoot?.(id);
-      targets.set(
-        id,
-        exact?.kind === "line" || exact?.kind === "arrow"
-          ? exact
-          : transformLinear(element, this.#selectedIds, transform, true),
-      );
+    if (!exceedsExactLinearPreviewWork(this.#selectedPreviewIds.size)) {
+      for (const id of this.#selectedPreviewIds) {
+        this.#selectedPreview(id, targets, transform, materializeRoot);
+      }
     }
     return this.#preview(targets, transform, materializeRoot);
   }
@@ -127,12 +133,16 @@ export class ConnectedSelectionPreviewSession {
     if (!this.#valid) return { elements: [], selectedPreviewIds: this.#selectedPreviewIds };
     const roots = new Map<EndpointConnectionV1, PointV1 | null>();
     const plan = this.#plan;
-    if (plan === undefined || plan.ids.length === 0) {
+    const selectedProgressive = exceedsExactLinearPreviewWork(this.#selectedPreviewIds.size);
+    const ids = plan?.ids ?? (selectedProgressive ? this.#selectedPreviewOrder : []);
+    if (ids.length === 0) {
       return { elements, selectedPreviewIds: this.#selectedPreviewIds };
     }
     const materialize = (id: string): ConnectedLinear | undefined => {
       if (!this.#valid || generation !== this.#generation) return undefined;
-      const binding = plan.bindings.get(id);
+      if (this.#selectedPreviewIds.has(id))
+        return this.#selectedPreview(id, targets, transform, materializeRoot);
+      const binding = plan?.bindings.get(id);
       if (binding === undefined) return undefined;
       let resolved = binding.element;
       for (const endpoint of ["start", "end"] as const) {
@@ -149,8 +159,12 @@ export class ConnectedSelectionPreviewSession {
       }
       return resolved;
     };
-    if (!exceedsExactLinearPreviewWork(plan.ids.length + targets.size)) {
-      for (const id of plan.ids) {
+    const extraTargets = selectedProgressive
+      ? Math.max(0, targets.size - this.#selectedPreviewIds.size)
+      : targets.size;
+    if (!exceedsExactLinearPreviewWork(ids.length + extraTargets)) {
+      for (const id of ids) {
+        if (targets.has(id)) continue;
         const element = materialize(id);
         if (element !== undefined) elements.push(element);
       }
@@ -159,8 +173,28 @@ export class ConnectedSelectionPreviewSession {
     return {
       elements,
       selectedPreviewIds: this.#selectedPreviewIds,
-      progressive: { ids: plan.ids, materialize },
+      progressive: { ids, materialize },
     };
+  }
+
+  #selectedPreview(
+    id: string,
+    targets: Map<string, InkElementV1>,
+    transform: SelectionPreviewTransform | null,
+    materializeRoot?: (id: string) => InkElementV1 | undefined,
+  ): ConnectedLinear | undefined {
+    const existing = targets.get(id);
+    if (existing?.kind === "line" || existing?.kind === "arrow") return existing;
+    const element = this.#selected.get(id)! as ConnectedLinear;
+    const exact = materializeRoot?.(id);
+    const resolved =
+      exact?.kind === "line" || exact?.kind === "arrow"
+        ? exact
+        : transform === null
+          ? undefined
+          : transformLinear(element, this.#selectedIds, transform, true);
+    if (resolved !== undefined) targets.set(id, resolved);
+    return resolved;
   }
 
   #rootPoint(

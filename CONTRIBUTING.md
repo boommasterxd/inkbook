@@ -4,11 +4,13 @@
 
 1. Create a working branch from `main`.
 2. Make focused changes that preserve the architecture and contracts under `docs/`.
-3. Run `npm run ci` locally.
+3. Run focused checks during implementation and complete the verification required for the change type once the result is stable, following [Testing and Acceptance](AGENTS.md#testing-and-acceptance).
 4. Open a pull request with a Conventional Commits title such as `feat(editor): add pen gesture state`.
 5. Merge through squash only after all required checks pass.
 
 Do not commit generated `main.js`, `dist/`, coverage output, dependencies, secrets, or local vault data.
+
+Use `npm run ci` when complete local quality and performance verification is required. Documentation-only changes follow the content, link, fence, and index checks in the linked acceptance contract.
 
 ## Quality requirements
 
