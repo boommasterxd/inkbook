@@ -2,23 +2,20 @@ import {
   SettingGroup,
   type Setting,
   type SettingDefinition,
-  type SettingDefinitionControl,
   type SettingDefinitionGroup,
   type SettingDefinitionItem,
-  type SettingTab,
 } from "obsidian";
 
-import { bindSettingsAction, nameSettingToggle } from "./settings-row";
+import { bindSettingsAction } from "./settings-row";
+import { renderSettingControl, type SettingsControlHost } from "./setting-control-renderer";
+import { createSettingsWriteError, SettingsWriteFeedback } from "./settings-write-feedback";
 
 export class SettingDefinitionRenderer {
   readonly #cleanups: (() => void)[] = [];
-  readonly #host: Pick<SettingTab, "getControlValue" | "setControlValue">;
+  readonly #host: SettingsControlHost;
   readonly #onChanged: (key: string | undefined) => void;
 
-  public constructor(
-    host: Pick<SettingTab, "getControlValue" | "setControlValue">,
-    onChanged: (key: string | undefined) => void,
-  ) {
+  public constructor(host: SettingsControlHost, onChanged: (key: string | undefined) => void) {
     this.#host = host;
     this.#onChanged = onChanged;
   }
@@ -78,7 +75,7 @@ export class SettingDefinitionRenderer {
       } else if (definition.action !== undefined) {
         this.#renderAction(setting, definition, index);
       } else if (definition.control !== undefined) {
-        this.#renderControl(setting, definition);
+        this.#cleanups.push(renderSettingControl(setting, definition, this.#host, this.#onChanged));
       }
     });
   }
@@ -86,56 +83,26 @@ export class SettingDefinitionRenderer {
   #renderAction(setting: Setting, definition: SettingDefinition, index: number): void {
     if (definition.action === undefined) return;
     const element = setting.settingEl;
+    const writes = new SettingsWriteFeedback();
+    const error = createSettingsWriteError(
+      element,
+      this.#host.settingsFeedback ?? {
+        readMotion: () => "system",
+      },
+    );
+    error.associate(element);
     const activate = (): void => {
-      definition.action?.(element, index);
-      this.#onChanged(undefined);
+      void writes.run("action", () => definition.action?.(element, index), {
+        error: error.set,
+        restore: () => undefined,
+        saved: () => this.#onChanged(undefined),
+      });
     };
     this.#cleanups.push(bindSettingsAction(element, activate));
-  }
-
-  #renderControl(setting: Setting, definition: SettingDefinitionControl): void {
-    const control = definition.control;
-    setting.settingEl.classList.add("inkbook-setting-control-row");
-    setting.settingEl.classList.toggle(
-      "inkbook-setting-stacked-control",
-      control.type !== "toggle",
-    );
-    setting.infoEl.classList.add("inkbook-setting-info");
-    setting.controlEl.classList.add("inkbook-setting-controls");
-    const value = this.#host.getControlValue(control.key);
-    if (control.type === "toggle") {
-      setting.addToggle((toggle) => {
-        nameSettingToggle(toggle.toggleEl, definition.name);
-        toggle.setValue(value === true).onChange((next) => this.#commit(control.key, next));
-      });
-      return;
-    }
-    if (control.type === "dropdown") {
-      setting.addDropdown((dropdown) => {
-        dropdown.selectEl.setAttribute("aria-label", definition.name);
-        dropdown.addOptions(control.options).setValue(String(value));
-        dropdown.onChange((next) => this.#commit(control.key, next));
-      });
-      return;
-    }
-    if (control.type === "folder" || control.type === "text") {
-      setting.addText((text) => {
-        text.inputEl.setAttribute("aria-label", definition.name);
-        text.setValue(typeof value === "string" ? value : "");
-        if (control.placeholder !== undefined) text.setPlaceholder(control.placeholder);
-        text.onChange((next) => {
-          void Promise.resolve(control.validate?.(next)).then((error) => {
-            setting.setErrorMessage(error ?? null);
-            if (error === undefined || error === "") void this.#commit(control.key, next);
-          });
-        });
-      });
-    }
-  }
-
-  async #commit(key: string, value: unknown): Promise<void> {
-    await this.#host.setControlValue(key, value);
-    this.#onChanged(key);
+    this.#cleanups.push(() => {
+      writes.dispose();
+      error.dispose();
+    });
   }
 }
 

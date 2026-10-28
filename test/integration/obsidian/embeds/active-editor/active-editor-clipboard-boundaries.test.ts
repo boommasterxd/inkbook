@@ -247,7 +247,7 @@ describe("active editor clipboard encoding failure", () => {
     });
     expect(onResult).toHaveBeenCalledOnce();
     expect(controller.pending).toBe(false);
-    expect(controller.canPaste).toBe(false);
+    expect(controller.canPaste).toBe(true);
     expect(store.get(selected.id)?.element).toEqual(selected);
     // The host task boundary makes an unhandled derived Blob rejection fail this case.
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -265,7 +265,7 @@ describe("active editor native paste boundary", () => {
         shortcutPaste(),
       ),
     ).toBe(true);
-    expect(harness.controller.canPaste).toBe(false);
+    expect(harness.controller.canPaste).toBe(true);
     expect(harness.plan).not.toHaveBeenCalled();
     expect(harness.onResult).toHaveBeenCalledWith({
       action: "paste",
@@ -274,19 +274,27 @@ describe("active editor native paste boundary", () => {
     });
   });
 
-  it("passes the last valid pointer placement with supported synchronous data", async () => {
-    const harness = createHarness(new ElementStore([rectangle()]), [], vi.fn());
+  it("uses synchronous Paste data and pointer placement when Clipboard.read is absent", async () => {
+    const plan = vi.fn(async () => null);
+    const model = createModel(new ElementStore([rectangle()]), plan, vi.fn(), vi.fn());
+    const readText = vi.fn(async () => "must-not-fallback");
+    const controller = createController(model, {
+      navigator: { clipboard: { readText } },
+    } as unknown as Window);
     const invocation = shortcutPaste({ x: 40, y: 50 });
     const customText = '{"format":"inkbook-elements"}';
 
+    expect(controller.canPaste).toBe(false);
     expect(
-      harness.controller.pasteFromClipboardData(
+      controller.pasteFromClipboardData(
         { getData: () => customText, types: [INKBOOK_CLIPBOARD_WEB_MIME] },
         invocation,
       ),
     ).toBe(true);
-    await vi.waitFor(() => expect(harness.plan).toHaveBeenCalled());
-    expect(harness.plan).toHaveBeenCalledWith({ customText }, invocation, undefined);
+    await vi.waitFor(() => expect(plan).toHaveBeenCalled());
+    expect(plan).toHaveBeenCalledWith({ customText }, invocation, undefined);
+    expect(readText).not.toHaveBeenCalled();
+    controller.dispose();
   });
 });
 

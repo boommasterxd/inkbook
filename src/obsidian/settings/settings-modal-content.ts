@@ -70,7 +70,7 @@ export class SettingsModalContent {
         this.#renderPreservingScroll();
       }
     });
-    this.#definitionRenderer.render(body, settingTab.getSettingDefinitions());
+    this.#definitionRenderer.render(body, settingTab.getControlDefinitions());
   }
 
   #renderPreservingScroll(): void {

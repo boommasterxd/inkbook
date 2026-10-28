@@ -18,6 +18,7 @@ import { resetAction } from "./definition-helpers";
 import { renderSettingsControlContent } from "../settings-control-content";
 import { createSettingsLayoutMotion } from "../settings-layout-motion";
 import { createSettingsValidationMotion } from "../settings-validation-motion";
+import { SettingsWriteFeedback } from "../settings-write-feedback";
 import {
   registerNativeControlFeedback,
   type NativeControlFeedbackOptions,
@@ -36,9 +37,9 @@ interface BackgroundRenderContext {
   readonly descriptionId: string;
   readonly error: HTMLElement;
   readonly validation: ReturnType<typeof createSettingsValidationMotion>;
+  readonly writes: SettingsWriteFeedback;
   readonly ownerDocument: Document;
   readonly state: {
-    readonly latestCommits: Map<SettingsControlKey, number>;
     disposed: boolean;
     mutateLayout?: (update: () => void) => void;
     restoreMenu?: (state: BackgroundMenuState) => void;
@@ -50,7 +51,7 @@ interface BackgroundRenderContext {
 
 export function pageDefaultsGroup(
   values: PageDefaultsValues,
-  reset: () => void,
+  reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
   return {
     type: "group",
@@ -95,8 +96,9 @@ function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): 
     descriptionId: description.id,
     error,
     validation: createSettingsValidationMotion(content, values),
+    writes: new SettingsWriteFeedback(),
     ownerDocument: setting.settingEl.ownerDocument,
-    state: { disposed: false, latestCommits: new Map(), menu: backgroundState(values) },
+    state: { disposed: false, menu: backgroundState(values) },
     values,
   };
   renderBackgroundMenu(context);
@@ -104,6 +106,7 @@ function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): 
   context.state.mutateLayout = layout.mutate;
   return () => {
     context.state.disposed = true;
+    context.writes.dispose();
     context.state.releaseFeedback?.();
     context.validation.dispose();
     layout.dispose();
@@ -162,18 +165,16 @@ function commitBackgroundValue(
   key: SettingsControlKey,
   value: unknown,
 ): void {
-  const commit = (context.state.latestCommits.get(key) ?? 0) + 1;
-  context.state.latestCommits.set(key, commit);
-  void context.values.set(key, value).catch(() => {
-    if (!context.state.disposed && commit === context.state.latestCommits.get(key))
-      recoverBackground(context);
+  void context.writes.run(key, () => context.values.set(key, value), {
+    error: (message) => context.validation.set(context.error, message),
+    failureMessage: "The background default could not be saved.",
+    restore: () => recoverBackground(context),
   });
 }
 
 function recoverBackground(context: BackgroundRenderContext): void {
   context.state.menu = backgroundState(context.values);
   context.state.restoreMenu?.(context.state.menu);
-  context.validation.set(context.error, "The background default could not be saved.");
 }
 
 function bufferDefinition(values: PageDefaultsValues): SettingDefinitionRender {

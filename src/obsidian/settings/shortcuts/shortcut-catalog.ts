@@ -23,8 +23,14 @@ export const CONFIGURABLE_SHORTCUT_REFERENCE: Readonly<
     label: "Delete selection",
     description: "Remove the current selection as one undo step.",
   },
-  "zoom-in": { label: "Zoom in", description: "Zoom around the latest canvas pointer." },
-  "zoom-out": { label: "Zoom out", description: "Zoom around the latest canvas pointer." },
+  "zoom-in": {
+    label: "Zoom in",
+    description: "Zoom the focused canvas, or the hovered canvas around its pointer.",
+  },
+  "zoom-out": {
+    label: "Zoom out",
+    description: "Zoom the focused canvas, or the hovered canvas around its pointer.",
+  },
   "bring-forward": {
     label: "Bring forward",
     description: "Move the selection one position toward the front.",
@@ -44,6 +50,28 @@ export const CONFIGURABLE_SHORTCUT_REFERENCE: Readonly<
 });
 
 export const FIXED_SHORTCUT_REFERENCE = [
+  {
+    description: "Select the previous or next object; Shift adds it to the selection.",
+    keyGroups: [["PageUp"], ["PageDown"]],
+    label: "Navigate objects",
+  },
+  {
+    description: "Select the first or last object in the drawing.",
+    keyGroups: [["Home"], ["End"]],
+    label: "First or last object",
+  },
+  {
+    description:
+      "Enter geometry editing or leave it. Page Up and Page Down choose Move or a handle.",
+    keyGroups: [["Enter"]],
+    label: "Edit geometry",
+  },
+  {
+    description:
+      "Adjust the active geometry operation by 1 document unit or degree; Shift uses 10.",
+    keyGroups: [["ArrowLeft"], ["ArrowRight"], ["ArrowUp"], ["ArrowDown"]],
+    label: "Adjust geometry",
+  },
   {
     description: "Paste a validated clipboard selection at the current canvas target.",
     keyGroups: [["Mod", "V"]],

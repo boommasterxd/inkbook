@@ -102,6 +102,14 @@ function keyboardHarness(
 }
 
 describe("active editor keyboard controller", () => {
+  it("zooms a focused canvas without hover using the default viewport anchor", () => {
+    const harness = keyboardHarness({ pointerOver: false, lastScreenPointer: { x: 500, y: 300 } });
+    harness.updateKeyboardStep.mockReturnValue(true);
+    expect(harness.controller.handleKeyDown(key("+", { ctrlKey: true }))).toBe(true);
+    expect(harness.updateKeyboardStep).toHaveBeenCalledWith(1, null);
+    expect(harness.controller.handleHoverZoom(key("+", { ctrlKey: true }))).toBe(false);
+    harness.controller.dispose();
+  });
   it("routes navigation, menus, deletion, and selection cancellation without host leakage", () => {
     const lastScreenPointer = { x: 125, y: 275 };
     const harness = keyboardHarness({ lastScreenPointer, selectionSize: 1 });
@@ -196,11 +204,9 @@ describe("active editor clipboard keyboard controller", () => {
   it("keeps direct canvas Clipboard shortcuts owned after Android touch hover ends", () => {
     const harness = keyboardHarness({ canPaste: true, pointerOver: false, selectionSize: 1 });
     harness.isAvailable.mockReturnValue(true);
-    harness.updateKeyboardStep.mockReturnValue(true);
 
     expect(harness.controller.handleKeyDown(key("c", { ctrlKey: true }))).toBe(true);
     expect(harness.controller.handleKeyDown(key("v", { metaKey: true }))).toBe(true);
-    expect(harness.controller.handleKeyDown(key("+", { ctrlKey: true }))).toBe(false);
     expect(harness.controller.handleDocumentKeyDown(key("Delete"))).toBe(false);
     expect(harness.execute).toHaveBeenCalledWith("copy");
     expect(harness.shortcutPaste).toHaveBeenCalledOnce();

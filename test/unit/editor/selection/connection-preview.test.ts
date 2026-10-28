@@ -11,6 +11,7 @@ import {
 } from "../../domain/store/fixtures";
 import { connectionChain } from "../../../fixtures/domain/connection-chain";
 import { editLinearEndpointFromWorld } from "../../../../src/editor/selection/transform/transforms";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 describe("connected selection transform preview", () => {
   it("moves an unselected dependent endpoint through the reverse connection map", () => {
@@ -51,6 +52,47 @@ describe("connected selection transform preview", () => {
     const collapsed = session.update({ delta: { x: -300, y: 0 }, kind: "translate" });
     expect(collapsed.elements).toMatchObject([{ end: line.start, id: line.id, start: line.start }]);
   });
+});
+
+it("materializes large selected connected roots lazily and rejects obsolete generations", async () => {
+  const elements = connectionChain(502);
+  const selected = elements.slice(1, 501);
+  const selection = new Set(selected.map(({ id }) => id));
+  const store = new ElementStore(elements);
+  const session = new ConnectedSelectionPreviewSession(store, selected, selection);
+  const materialize = vi.fn((id: string) => {
+    const element = store.get(id)?.element;
+    if (element?.kind !== "line") throw new Error("Expected a connected line fixture.");
+    return { ...element, end: { x: 700, y: 800 } };
+  });
+  try {
+    const initial = session.update({ kind: "translate", delta: { x: 20, y: 30 } }, materialize);
+    expect(initial.elements).toEqual([]);
+    expect(initial.progressive?.ids).toHaveLength(500);
+    expect(materialize).not.toHaveBeenCalled();
+    expect(initial.progressive?.materialize(selected[499]!.id)).toMatchObject({
+      id: selected[499]!.id,
+      end: { x: 700, y: 800 },
+    });
+    expect(materialize).toHaveBeenCalledExactlyOnceWith(selected[499]!.id);
+    expect(await session.prepare(immediateWorkScheduler(), new AbortController().signal)).toBe(
+      true,
+    );
+    materialize.mockClear();
+    const current = session.update({ kind: "translate", delta: { x: 40, y: 50 } }, materialize);
+    expect(initial.progressive?.materialize(selected[0]!.id)).toBeUndefined();
+    expect(current.progressive?.ids).toHaveLength(501);
+    expect(new Set(current.progressive?.ids).size).toBe(501);
+    expect(materialize).not.toHaveBeenCalled();
+    const successor = session.update({ kind: "translate", delta: { x: -20, y: 10 } }, materialize);
+    expect(successor.progressive?.ids).toBe(current.progressive?.ids);
+    expect(current.progressive?.materialize(selected[0]!.id)).toBeUndefined();
+    session.dispose();
+    expect(successor.progressive?.materialize(selected[0]!.id)).toBeUndefined();
+    expect(store.mutationVersion).toBe(0);
+  } finally {
+    session.dispose();
+  }
 });
 
 it("propagates targeted endpoint edits through the prepared dependent order without store reads", () => {

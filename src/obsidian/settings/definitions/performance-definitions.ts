@@ -11,7 +11,7 @@ interface PerformanceGroupCallbacks extends NativeControlFeedbackOptions {
   readonly get: (key: SettingsControlKey) => unknown;
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
   readonly refreshRateStatus: () => RefreshRateProfileStatus;
-  readonly reset: () => void;
+  readonly reset: () => void | Promise<void>;
 }
 
 export function performanceGroup(

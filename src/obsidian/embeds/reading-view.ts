@@ -5,6 +5,7 @@ import {
 } from "obsidian";
 
 import { findMarkdownInkbookEmbeds } from "./markdown-embed";
+import { updateEmbedDescription } from "./presentation/embed-description";
 import type { InkbookDocumentRecognition } from "./preview/document-recognition";
 import { createLoadingPlaceholder, type LoadingPlaceholder } from "./preview/loading-placeholder";
 import { createInkbookLockedPreview } from "./preview/locked-preview";
@@ -18,6 +19,7 @@ import { samePreviewContentIdentity } from "./preview/safe-preview-svg";
 let nextReadingAttachmentId = 0;
 
 interface ReadingViewCandidate {
+  readonly description?: string;
   readonly host: HTMLElement;
   readonly markdown: string;
   readonly range: { readonly from: number; readonly to: number };
@@ -81,6 +83,7 @@ function recognizeReadingViewCandidate(
   const resolved = resolveDocument(embed.linkpath, context.sourcePath);
   if (resolved === undefined) return undefined;
   return {
+    ...(embed.description === undefined ? {} : { description: embed.description }),
     host: element,
     markdown: embed.markdown,
     range: { from: embed.from, to: embed.to },
@@ -128,6 +131,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       ports.workScheduler(button.ownerDocument.defaultView),
       { documentId: candidate.resolved.documentId, documents: ports.documents },
     );
+    updateEmbedDescription(root, button, candidate.description);
     super(candidate.host);
     this.#button = button;
     this.#refreshPreview = preview.refresh;

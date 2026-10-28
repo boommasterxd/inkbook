@@ -1,0 +1,70 @@
+import { describe, expect, it, vi } from "vitest";
+
+import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
+import type { FakeScheduler } from "../../../unit/rendering/scene/fakes";
+import {
+  INTERACTION_ELEMENT_COUNT,
+  createInteractionFixture,
+  createInteractionRenderer,
+} from "./interaction-refresh-profile-fixture";
+
+const PREVIEW_FRAMES = 12;
+
+describe("scene interaction work", () => {
+  it("retains geometry through camera and selection preview updates", () => {
+    const fixture = createInteractionFixture();
+    const { renderer, scheduler } = createInteractionRenderer(fixture.store);
+    scheduler.runAll();
+    renderer.resetInstrumentation();
+    const mounted = new Set(renderer.mountedIds("content"));
+    const preparations = vi.spyOn(ScenePathCache.prototype, "startPreparation");
+
+    runCameraFrames(renderer, scheduler);
+    const cameraStats = renderer.instrumentation();
+    expect(cameraStats.spatialQueries).toBe(0);
+    expect(cameraStats.visibilityHysteresisHits).toBe(PREVIEW_FRAMES);
+    expect(cameraStats).toMatchObject({ domEntrants: 0, domExits: 0 });
+    // The rightward strip covers at most 14 ten-unit columns and 39 nonnegative rows.
+    // Local preparation may finish this indexed region without a transport-ID CPU quota.
+    expect(cameraStats.geometryBuilds).toBeLessThanOrEqual(14 * 39);
+    expect(preparations.mock.calls.length).toBe(cameraStats.geometryBuilds);
+    expect(new Set(preparations.mock.calls.map(([element]) => element.id)).size).toBe(
+      preparations.mock.calls.length,
+    );
+    expect(preparations.mock.calls.every(([element]) => !mounted.has(element.id))).toBe(true);
+    preparations.mockRestore();
+
+    renderer.setPreviewTransform(fixture.ids, "translate(0 0)", 1);
+    scheduler.runAll();
+    renderer.resetInstrumentation();
+    runSelectionFrames(renderer, scheduler, fixture.ids);
+    expect(renderer.instrumentation()).toMatchObject({
+      domEntrants: 0,
+      domExits: 0,
+      geometryBuilds: 0,
+    });
+    expect(renderer.mountedCount).toBeLessThan(INTERACTION_ELEMENT_COUNT);
+    renderer.destroy();
+  });
+});
+
+function runCameraFrames(renderer: SvgSceneRenderer, scheduler: FakeScheduler): void {
+  for (let frame = 0; frame < PREVIEW_FRAMES; frame += 1) {
+    renderer.setCamera({ x: -10 + Math.sin(frame / 30) * 10, zoom: 1 });
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.runAll();
+  }
+}
+
+function runSelectionFrames(
+  renderer: SvgSceneRenderer,
+  scheduler: FakeScheduler,
+  ids: readonly string[],
+): void {
+  for (let frame = 0; frame < PREVIEW_FRAMES; frame += 1) {
+    renderer.setPreviewTransform(ids, `translate(${String(frame / 10)} 0)`, frame + 2);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.runAll();
+  }
+}

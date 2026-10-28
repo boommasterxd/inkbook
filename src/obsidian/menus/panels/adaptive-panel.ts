@@ -437,8 +437,21 @@ export class AdaptivePanelSession extends Component {
   }
 
   #position(): void {
-    this.#placement.position();
+    const height = this.#placement.position();
+    if (height !== undefined)
+      this.#layout.setViewportHeight(
+        this.#layer,
+        height,
+        this.#panelDuration(),
+        this.#viewportSettled,
+      );
   }
+
+  readonly #viewportSettled = (): void => {
+    if (!this.#isTopmostLayer()) return;
+    this.#revealEditable = true;
+    this.#scheduleLayout();
+  };
 
   #returnFocus(): void {
     const { anchor, canvasInputSurface, ownerDocument } = this.#options;

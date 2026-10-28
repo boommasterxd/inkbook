@@ -2,7 +2,7 @@ import type { SettingDefinition, SettingDefinitionGroup } from "obsidian";
 
 import { STARTUP_TOOLS, validateCustomVaultFolderPath } from "../../../domain/settings";
 import type { SettingsControlKey } from "../control-values";
-import { dropdown, resetAction, sentenceCaseLabel } from "./definition-helpers";
+import { dropdown, resetAction, sentenceCaseLabel, settingsAction } from "./definition-helpers";
 
 const createLabels = (values: readonly string[]): Record<string, string> =>
   Object.fromEntries(values.map((value) => [value, sentenceCaseLabel(value)]));
@@ -30,8 +30,8 @@ function customFolderDefinition(
 export interface GeneralGroupCallbacks {
   readonly isCustomFolder: () => boolean;
   readonly canCreateFolder: () => boolean;
-  readonly createFolder: (element: HTMLElement) => void;
-  readonly reset: () => void;
+  readonly createFolder: (element: HTMLElement) => void | Promise<void>;
+  readonly reset: () => void | Promise<void>;
 }
 
 export function generalGroup(
@@ -59,10 +59,14 @@ export function generalGroup(
       ),
       customFolderDefinition(callbacks.isCustomFolder),
       {
-        name: "Create custom folder",
-        desc: "Create the selected custom folder after explicit confirmation.",
+        ...settingsAction(
+          "Create custom folder",
+          "Create the selected custom folder after explicit confirmation.",
+          undefined,
+          callbacks.createFolder,
+          "The folder could not be created.",
+        ),
         visible: callbacks.canCreateFolder,
-        action: callbacks.createFolder,
       },
       resetAction("Reset group to defaults", callbacks.reset),
     ],

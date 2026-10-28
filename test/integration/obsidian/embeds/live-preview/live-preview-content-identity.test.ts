@@ -16,6 +16,30 @@ const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></me
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
 
 describe("Live Preview widget content identity", () => {
+  it("updates author descriptions without detaching an unchanged drawing", () => {
+    const ports = createPorts();
+    const initial = new InkbookLivePreviewWidget({ ...embed(), description: "A triangle" }, ports);
+    const root = initial.toDOM({ plugin: () => null, dom: new FakePresentationElement() } as never);
+    const button = (root as unknown as FakePresentationElement).children[0]!;
+    try {
+      expect(button.attributes.get("aria-label")).toBe("Edit handwriting: A triangle");
+      const changed = new InkbookLivePreviewWidget(
+        { ...embed(), description: "<img src=x>" },
+        ports,
+      );
+      expect(initial.eq(changed)).toBe(false);
+      expect(changed.updateDOM(root)).toBe(true);
+      expect(button.attributes.get("aria-label")).toBe("Edit handwriting: <img src=x>");
+      expect((root as unknown as FakePresentationElement).getElementsByTagName("img").length).toBe(
+        0,
+      );
+      expect(ports.calls).toEqual([]);
+      expect(new InkbookLivePreviewWidget(embed(), ports).updateDOM(root)).toBe(true);
+      expect(button.attributes.get("aria-label")).toBe("Edit handwriting");
+    } finally {
+      initial.destroy(root);
+    }
+  });
   it("includes the validated content identity in widget equality", () => {
     const ports = createPorts();
     const widget = new InkbookLivePreviewWidget(embed(), ports);
@@ -28,18 +52,26 @@ describe("Live Preview widget content identity", () => {
     ).toBe(false);
   });
 
-  it("retains path, range, and resource URL equality checks", () => {
+  it("retains attachment identity across resource cachebusters but rejects changed paths and ranges", () => {
     const ports = createPorts();
     const widget = new InkbookLivePreviewWidget(embed(), ports);
 
     expect(
       widget.eq(
         new InkbookLivePreviewWidget(
-          { ...embed(), resolved: { documentId: "drawings/ink.svg", resourceUrl: "changed" } },
+          {
+            ...embed(),
+            resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg?2" },
+          },
           ports,
         ),
       ),
+    ).toBe(true);
+    expect(
+      widget.eq(new InkbookLivePreviewWidget({ ...embed(), sourcePath: "other.md" }, ports)),
     ).toBe(false);
+    const resolved = { documentId: "other.svg", resourceUrl: "app://vault/other.svg" };
+    expect(widget.eq(new InkbookLivePreviewWidget({ ...embed(), resolved }, ports))).toBe(false);
     expect(widget.eq(new InkbookLivePreviewWidget({ ...embed(), from: 5 }, ports))).toBe(false);
   });
 

@@ -19,6 +19,16 @@ beforeEach(() => {
 });
 
 describe("active editor keyboard DOM boundary", () => {
+  it("claims zoom on the focused canvas after pointer departure", () => {
+    const harness = createHarness();
+    try {
+      harness.input.focus();
+      harness.input.dispatchEvent(new PointerEvent("pointerleave"));
+      expect(harness.key("+", { ctrlKey: true }).defaultPrevented).toBe(true);
+    } finally {
+      harness.dispose();
+    }
+  });
   it("consumes hover zoom from the owning document without canvas focus", () => {
     const harness = createHarness();
     const toolbarButton = createDiv();
@@ -77,7 +87,9 @@ describe("active editor keyboard DOM boundary", () => {
       if (cleanup === "disable") harness.dispose();
     },
   );
+});
 
+describe("active editor keyboard state and clipboard boundary", () => {
   it("consumes Escape only while it closes the highest-priority active state", () => {
     const harness = createHarness();
     const trigger = createButton();

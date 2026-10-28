@@ -3,15 +3,16 @@ import { MAX_ELEMENT_CELLS, SPATIAL_CELL_SIZE } from "./uniform-spatial-index";
 
 import type { SpatialCapacityMeasurement } from "./capacity";
 
-export function measureSpatialCapacity(
+export function* measureSpatialCapacitySteps(
   boundsValues: Iterable<SpatialBounds>,
-): SpatialCapacityMeasurement {
+): Generator<void, SpatialCapacityMeasurement> {
   let cellMemberships = 0;
   let overflowElements = 0;
   for (const bounds of boundsValues) {
     const memberships = spatialCellMembershipCount(bounds);
     if (memberships > MAX_ELEMENT_CELLS) overflowElements += 1;
     else cellMemberships += memberships;
+    yield;
   }
   return Object.freeze({ cellMemberships, overflowElements });
 }

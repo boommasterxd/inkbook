@@ -52,6 +52,17 @@ describe("settings and confirmation semantic accessibility gate", () => {
         ))
           trigger.click();
       }
+      if (group === "Drawing tools" || group === "Shapes and structures") {
+        const choices = surface!.querySelectorAll<HTMLElement>(
+          '.inkbook-menu-control[role="group"]',
+        );
+        expect(choices.length).toBeGreaterThan(0);
+        for (const choice of choices) {
+          expect(
+            document.getElementById(choice.getAttribute("aria-labelledby")!)?.textContent,
+          ).toBeTruthy();
+        }
+      }
       await assertAccessibleSemantics(
         surface!,
         group !== undefined

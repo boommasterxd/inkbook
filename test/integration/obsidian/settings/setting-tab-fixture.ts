@@ -99,7 +99,7 @@ export class DeviceAdapter implements DeviceSettingsPort {
 
 export function groups(tab: InkbookSettingTab): SettingDefinitionGroup<SettingsControlKey>[] {
   return tab
-    .getSettingDefinitions()
+    .getControlDefinitions()
     .filter(
       (item): item is SettingDefinitionGroup<SettingsControlKey> =>
         "type" in item && item.type === "group",

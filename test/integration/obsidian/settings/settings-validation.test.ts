@@ -175,6 +175,9 @@ it.each(["full", "reduced"] as const)(
     expect(save).toHaveBeenCalledOnce();
     rejectSave?.(new Error("Save failed"));
     await vi.waitFor(() => expect(error.textContent).toBe("The setting could not be saved."));
+    const feedback = requiredElement<HTMLElement>(pressure, ".inkbook-settings-validation-visual");
+    for (const animation of feedback.getAnimations({ subtree: true })) animation.finish();
+    expect(window.getComputedStyle(feedback).opacity).not.toBe("0");
     expect(input.checked).toBe(true);
     expect(store.getVaultSettings().toolDefaults.pen.pressureEnabled).toBe(true);
     await vi.waitFor(() => {

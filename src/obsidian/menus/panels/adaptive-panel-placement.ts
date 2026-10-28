@@ -63,7 +63,7 @@ export class AdaptivePanelPlacement {
     );
   }
 
-  public position(): void {
+  public position(): number | undefined {
     const { layer, surface, anchor: trigger } = this.#options;
     const viewport = this.viewport();
     const maximumHeight = Platform.isPhone ? this.#maximumScrollHeight(viewport) + 16 : 0;
@@ -78,7 +78,7 @@ export class AdaptivePanelPlacement {
         "--inkbook-adaptive-panel-maximum-height",
         `${String(maximumHeight)}px`,
       );
-      return;
+      return viewport.height;
     }
     const anchor = trigger.getBoundingClientRect();
     const panel = { width: surface.offsetWidth, height: surface.offsetHeight };
@@ -97,5 +97,6 @@ export class AdaptivePanelPlacement {
         : Math.max(viewport.top + 8, above);
     surface.style.setProperty("inset-inline-start", `${String(left)}px`);
     surface.style.setProperty("inset-block-start", `${String(top)}px`);
+    return undefined;
   }
 }

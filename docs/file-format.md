@@ -265,7 +265,7 @@ interface BoxShapeElementV1 extends ElementBaseV1 {
 - Width and height are nonnegative with no minimum size. Zero-size geometry remains valid.
 - Rotation occurs around the bounds center.
 - Dragging a closed shape in any direction sets `x = min(start.x, end.x)`, `y = min(start.y, end.y)`, `width = abs(end.x - start.x)`, and `height = abs(end.y - start.y)`, with canonical rounding and no positive minimum extent.
-- Normalized vertices are triangle `[(0.5,0),(1,1),(0,1)]`, diamond `[(0.5,0),(1,0.5),(0.5,1),(0,0.5)]`, and parallelogram `[(0.2,0),(1,0),(0.8,1),(0,1)]`. For an octagon, let `i = min(width,height) * 0.293`, `rx = i / width`, and `ry = i / height`; its vertices are `[(rx,0),(1-rx,0),(1,ry),(1,1-ry),(1-rx,1),(rx,1),(0,1-ry),(0,ry)]`.
+- Normalized vertices are triangle `[(0.5,0),(1,1),(0,1)]`, diamond `[(0.5,0),(1,0.5),(0.5,1),(0,0.5)]`, and parallelogram `[(0.2,0),(1,0),(0.8,1),(0,1)]`. For an octagon, let `i = min(width,height) * 0.293`, `rx = width === 0 ? 0 : i / width`, and `ry = height === 0 ? 0 : i / height`; its vertices are `[(rx,0),(1-rx,0),(1,ry),(1,1-ry),(1-rx,1),(rx,1),(0,1-ry),(0,ry)]`.
 - The parallelogram horizontal inset is 20 percent of width.
 - The octagon corner inset is `min(width, height) * 0.293`.
 - Scaling changes bounds and vertex positions, never outline width.

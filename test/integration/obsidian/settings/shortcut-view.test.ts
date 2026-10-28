@@ -74,7 +74,19 @@ describe("shortcut settings view", () => {
       expect(row.querySelectorAll(".inkbook-shortcut-icon-button")).toHaveLength(0);
       expect(row.querySelector(".inkbook-shortcut-readonly-actions")).toBeNull();
     }
-    expect(container.querySelectorAll(".inkbook-shortcut-readonly-row")).toHaveLength(17);
+    expect(container.querySelectorAll(".inkbook-shortcut-readonly-row")).toHaveLength(21);
+    const fixed = shortcutSection(container, "Fixed system shortcuts");
+    for (const name of [
+      "Navigate objects",
+      "First or last object",
+      "Edit geometry",
+      "Adjust geometry",
+    ]) {
+      expect(fixed.textContent).toContain(name);
+    }
+    expect(fixed.textContent).toContain("Shift uses 10");
+    expect(fixed.textContent).toContain("PageUp");
+    expect(fixed.textContent).toContain("ArrowRight");
     const gestures = shortcutSection(container, "Pointer and gesture modifiers");
     expect(gestures.querySelectorAll(".inkbook-shortcut-readonly-row")).toHaveLength(7);
     expect(gestures.querySelectorAll(".inkbook-shortcut-recorder-static")).toHaveLength(7);

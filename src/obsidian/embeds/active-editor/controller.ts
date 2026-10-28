@@ -77,6 +77,7 @@ export class ActiveEditorController {
   readonly #touchMode: ActiveEditorTouchMode;
   #leftHanded: boolean;
   readonly #resetForDisable = (): void => {
+    this.#keyboard?.cancelSelection();
     this.#preparedHistory?.cancel();
     this.#cursor?.clear();
     this.#snappingInversion = undefined;
@@ -97,8 +98,7 @@ export class ActiveEditorController {
     const ownerWindow = Helpers.activeEditorWindow(options.container);
     this.#ownerWindow = ownerWindow;
     this.#longPress = new ActiveEditorLongPressScheduler(ownerWindow);
-    this.#renderIcon = options.renderIcon;
-    this.#workScheduler = options.workScheduler;
+    [this.#renderIcon, this.#workScheduler] = [options.renderIcon, options.workScheduler];
     [this.#renderer, this.#sceneStore] = [options.renderer, options.sceneStore];
     this.#captures = new ActivePointerCaptureOwner(options.renderer.inputSurface);
     this.#scrollOwner = options.scrollOwner;
@@ -205,10 +205,10 @@ export class ActiveEditorController {
     this.#gestures.cancelActivePreview();
     this.#longPress.dispose();
     this.#menus.dispose();
+    this.#keyboard.dispose();
     this.#handles.dispose();
     this.#preparedHistory.dispose();
     this.#historyTraversal.dispose();
-    this.#keyboard.dispose();
     this.#penGuard.stop();
     this.#navigation.dispose();
     this.#model.setGestureActive(false);
@@ -227,7 +227,6 @@ export class ActiveEditorController {
   readonly handlePointerCancel = (event: PointerEvent) => this.#pointer.handlePointerCancel(event);
   public handlePointerBoundary(pointerOver: boolean): void {
     this.#keyboard.setPointerOver(pointerOver);
-    if (pointerOver) void this.#actions.refreshPasteAvailability();
   }
   readonly handlePointerDown = (event: PointerEvent) => this.#pointer.handlePointerDown(event);
   readonly handlePointerMove = (event: PointerEvent) => this.#pointer.handlePointerMove(event);
@@ -294,7 +293,6 @@ export class ActiveEditorController {
   public setEnabled(enabled: boolean): void {
     if (!enabled) this.#actions.cancelPendingConfirmation();
     this.#availability.setEnabled(enabled);
-    if (enabled) void this.#actions.refreshPasteAvailability();
   }
   public readonly setLayout = (layout: ToolbarLayoutStage): void =>
     this.#chromeState.setLayout(layout);
@@ -410,6 +408,8 @@ export class ActiveEditorController {
   }
   #createInputControllers(options: ActiveEditorControllerOptions) {
     return createActiveEditorInputControllers({
+      controller: options,
+      geometry: [this.#handles, this.#selectionFrames, this.#preparedHistory],
       actions: this.#actions,
       availability: this.#availability,
       beginPreview: (start) => this.#beginPreview(start, options),
@@ -421,16 +421,13 @@ export class ActiveEditorController {
       hasStableGeometryGesture: () =>
         Interactions.hasStableGeometryGesture(this.#input, this.#handles),
       history: this.#history,
-      keyboardShortcuts: options.deviceSettings.keyboardShortcuts,
       lastScreenPointer: () => this.#cursor.lastScreenPointer,
       longPress: this.#longPress,
       longPressTarget: (pointerId) => this.#pointer.longPressTarget(pointerId),
       menus: this.#menus,
       model: this.#model,
       navigation: this.#navigation,
-      onFeedback: options.onFeedback,
       onStateChanged: this.#onStateChanged,
-      ownerWindow: this.#ownerWindow,
       selection: () => this.#selection,
       setSelection: (selection) => this.#setSelection(selection),
     });
@@ -488,6 +485,7 @@ export class ActiveEditorController {
   #setSelection(selection: ReadonlySet<string>): void {
     this.#pendingSelection.cancel();
     if (selection === this.#selection) return;
+    this.#keyboard?.cancelSelection();
     this.#preparedHistory.cancel();
     if (!Helpers.sameSelectionMembers(selection, this.#selection)) this.#selectionFrames.reset();
     this.#selection = selection;

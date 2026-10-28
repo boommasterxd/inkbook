@@ -21,27 +21,32 @@ import type {
 import { createActiveEditorMenuController } from "../../../../fixtures/obsidian/active-editor-menu-controller";
 import { createClipboardModelDefaults } from "./active-editor-clipboard-fixtures";
 
-describe("active editor Clipboard discovery", () => {
-  it("exposes a toolbar candidate without planning and defers the full plan until Paste", async () => {
+describe("active editor explicit Clipboard access", () => {
+  it("exposes Paste from API capability and opens menus without reading Clipboard content", async () => {
     const candidate = createLargeClipboardCandidate();
-    const { actions, planClipboardPaste, stateChanged } = clipboardDiscovery(
-      clipboardWindowWithRead(candidate),
-    );
+    const getType = vi.fn(async () => new Blob([candidate]));
+    const read = vi.fn(async () => [
+      { types: [INKBOOK_CLIPBOARD_WEB_MIME], getType, presentationStyle: "unspecified" as const },
+    ]);
+    const { actions, planClipboardPaste, stateChanged } = clipboardDiscovery(clipboardWindow(read));
 
-    expect(actions.canPaste).toBe(false);
-    await expect(actions.refreshPasteAvailability()).resolves.toBe(true);
     expect(actions.canPaste).toBe(true);
-    expect(stateChanged).toHaveBeenCalledOnce();
+    expect(actions.pasteVisible).toBe(true);
+    expect(contextMenuTitles(actions)).toContain("Paste");
+    expect(read).not.toHaveBeenCalled();
+    expect(getType).not.toHaveBeenCalled();
+    expect(stateChanged).not.toHaveBeenCalled();
     expect(planClipboardPaste).not.toHaveBeenCalled();
     actions.execute("paste");
     await vi.waitFor(() => expect(planClipboardPaste).toHaveBeenCalledOnce());
+    expect(read).toHaveBeenCalledOnce();
+    expect(getType).toHaveBeenCalledExactlyOnceWith(INKBOOK_CLIPBOARD_WEB_MIME);
     expect(planClipboardPaste).toHaveBeenCalledWith(
       expect.objectContaining({ customText: candidate }),
       { kind: "toolbar", visibleCanvasCenter: { x: 100, y: 100 } },
       undefined,
     );
 
-    expect(contextMenuTitles(actions)).toContain("Paste");
     actions.dispose();
   });
 
@@ -62,48 +67,47 @@ describe("active editor Clipboard discovery", () => {
       vi.fn(),
     );
 
-    await expect(actions.refreshPasteAvailability()).resolves.toBe(false);
-    expect(actions.canPaste).toBe(false);
+    expect(firstText).not.toHaveBeenCalled();
+    actions.execute("paste");
+    await vi.waitFor(() => expect(planClipboardPaste).toHaveBeenCalledOnce());
+    expect(actions.canPaste).toBe(true);
     expect(firstText).toHaveBeenCalledOnce();
     expect(secondText).not.toHaveBeenCalled();
     actions.dispose();
   });
 
-  it("keeps context-menu Paste retryable without exposing the toolbar button after a failed probe", async () => {
+  it("keeps toolbar and context-menu Paste retryable after denied read permission", async () => {
     const planClipboardPaste = vi.fn(async () => null);
     const model = documentModel(planClipboardPaste);
+    const read = vi.fn(async () => {
+      throw new Error("Clipboard read permission denied.");
+    });
+    const feedback = vi.fn();
     const actions = activeActions(
       model,
       new ElementSceneStore(model.store),
-      clipboardWindowWithRejectedRead(),
+      clipboardWindow(read),
       vi.fn(),
+      new Set(),
+      feedback,
     );
 
-    await expect(actions.refreshPasteAvailability()).resolves.toBe(false);
-    expect(actions.canPaste).toBe(false);
+    expect(actions.canPaste).toBe(true);
+    actions.execute("paste");
+    await vi.waitFor(() => {
+      expect(feedback).toHaveBeenCalledWith("clipboard-paste-read-failed");
+      expect(actions.canPaste).toBe(true);
+    });
+    expect(actions.pasteVisible).toBe(true);
     expect(actions.canRequestPaste).toBe(true);
     expect(planClipboardPaste).not.toHaveBeenCalled();
-
     expect(contextMenuTitles(actions)).toContain("Paste");
-    actions.dispose();
-  });
-
-  it("ignores a Clipboard probe that finishes after the editor is disposed", async () => {
-    let completeRead: ((items: ClipboardItem[]) => void) | undefined;
-    const read = new Promise<ClipboardItem[]>((resolve) => {
-      completeRead = resolve;
+    actions.execute("paste", { kind: "context-menu", invocationPoint: { x: 20, y: 30 } });
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(actions.canPaste).toBe(true);
     });
-    const { actions, planClipboardPaste, stateChanged } = clipboardDiscovery(
-      clipboardWindow(() => read),
-    );
-
-    const probe = actions.refreshPasteAvailability();
     actions.dispose();
-    completeRead?.([]);
-
-    await expect(probe).resolves.toBe(false);
-    expect(planClipboardPaste).not.toHaveBeenCalled();
-    expect(stateChanged).not.toHaveBeenCalled();
   });
 });
 
@@ -149,8 +153,7 @@ describe("active editor Clipboard action feedback", () => {
     actions.dispose();
   });
 
-  it("reports invalid Clipboard feedback when a previously visible toolbar Paste becomes stale", async () => {
-    let readCount = 0;
+  it("reports invalid toolbar Clipboard data and leaves Paste available for retry", async () => {
     const model = documentModel(
       vi.fn(async (candidates: ClipboardCandidates) =>
         candidates.customText === undefined ? null : pastePlan(),
@@ -160,25 +163,17 @@ describe("active editor Clipboard action feedback", () => {
     const actions = activeActions(
       model,
       new ElementSceneStore(model.store),
-      clipboardWindow(async () => {
-        readCount += 1;
-        return [
-          readCount === 1
-            ? clipboardItem(INKBOOK_CLIPBOARD_WEB_MIME, async () => "INKBOOK/1:{}")
-            : clipboardItem("text/plain", async () => "ordinary text"),
-        ];
-      }),
+      clipboardWindowWithRead("ordinary text", "text/plain"),
       vi.fn(),
       new Set(),
       onFeedback,
     );
 
-    await expect(actions.refreshPasteAvailability()).resolves.toBe(true);
     expect(actions.canPaste).toBe(true);
     actions.execute("paste");
 
     await vi.waitFor(() => expect(onFeedback).toHaveBeenCalledWith("clipboard-paste-invalid"));
-    expect(actions.canPaste).toBe(false);
+    await vi.waitFor(() => expect(actions.canPaste).toBe(true));
     actions.dispose();
   });
 
@@ -404,12 +399,6 @@ function clipboardItem(mime: string, text: () => Promise<string>): ClipboardItem
     },
     types: [mime],
   } as unknown as ClipboardItem;
-}
-
-function clipboardWindowWithRejectedRead(): Window {
-  return clipboardWindow(async () => {
-    throw new Error("Clipboard read permission denied.");
-  });
 }
 
 function clipboardWindowWithEmptyRead(): Window {

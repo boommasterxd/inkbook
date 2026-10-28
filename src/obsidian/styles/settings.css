@@ -165,6 +165,10 @@
   display: none;
 }
 
+.setting-item.mod-action[data-inkbook-setting-action-tone="neutral"] .setting-item-name {
+  color: var(--text-normal);
+}
+
 .setting-item.mod-action[data-inkbook-setting-action-tone="caution"] .setting-item-name {
   color: var(--inkbook-tone-caution);
 }

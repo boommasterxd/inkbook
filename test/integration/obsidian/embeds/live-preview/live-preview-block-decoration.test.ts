@@ -15,6 +15,7 @@ const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></me
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
 
 interface RecognitionControl {
+  resourceUrl?: string;
   notify: ((documentId: string) => void) | undefined;
   value:
     | false
@@ -65,7 +66,7 @@ function integrationPorts(control?: RecognitionControl): EmbedIntegrationPorts {
     },
     resolveDocument: () => ({
       documentId: "drawings/page.svg",
-      resourceUrl: "app://vault/drawings/page.svg",
+      resourceUrl: control?.resourceUrl ?? "app://vault/drawings/page.svg",
     }),
     scheme: { subscribe: () => () => undefined },
     sessions: {
@@ -93,10 +94,14 @@ describe("Live Preview block-decoration source", () => {
     const ports = integrationPorts(control);
     const mount = vi.spyOn(ports.sessions, "mount");
     const detach = vi.spyOn(ports.sessions, "detach");
-    const { parent, view } = mountView(ports);
+    const { parent, view } = mountView(ports, "!inkbook[Author one](drawings/page.svg)");
     const attachment = mount.mock.calls[0]![0];
+    expect(parent.querySelector(".inkbook-locked-preview")?.getAttribute("aria-label")).toBe(
+      "Edit handwriting: Author one",
+    );
     attachment.root.dataset.inkbookState = "active";
     for (const revision of [2, 3]) {
+      control.resourceUrl = `app://vault/drawings/page.svg?${revision}`;
       control.value = undefined;
       control.notify?.("drawings/page.svg");
       await Promise.resolve();
@@ -117,6 +122,13 @@ describe("Live Preview block-decoration source", () => {
           ?.style.getPropertyValue("--inkbook-preview-aspect-ratio"),
       ).toBe(String(revision));
     }
+    const from = view.state.doc.toString().indexOf("one");
+    view.dispatch({ changes: { from, to: from + 3, insert: "two" } });
+    expect(parent.querySelector(".inkbook-root")).toBe(attachment.root);
+    expect(attachment.root.dataset.inkbookState).toBe("active");
+    expect(parent.querySelector(".inkbook-locked-preview")?.getAttribute("aria-label")).toBe(
+      "Edit handwriting: Author two",
+    );
     expect(mount).toHaveBeenCalledTimes(1);
     expect(detach).not.toHaveBeenCalled();
     view.destroy();
@@ -212,7 +224,8 @@ describe("Live Preview pending recognition", () => {
       const control: RecognitionControl = { notify: undefined, value: undefined };
       const ports = integrationPorts(control);
       const recognize = vi.spyOn(ports.documents, "recognize");
-      const { parent, view } = mountView(ports);
+      const doc = "!inkbook[Pending drawing](drawings/page.svg)";
+      const { parent, view } = mountView(ports, doc);
       expect(parent.querySelector(".inkbook-loading-placeholder")).not.toBeNull();
       expect(parent.querySelector("svg")).toBeNull();
       expect(parent.textContent).not.toContain("!inkbook");
@@ -232,8 +245,11 @@ describe("Live Preview pending recognition", () => {
       control.notify?.("drawings/page.svg");
       await Promise.resolve();
       expect(parent.querySelector(".inkbook-loading-placeholder")).toBeNull();
-      if (valid) expect(parent.querySelector(".inkbook-locked-preview")).not.toBeNull();
-      else expect(parent.textContent).toContain("!inkbook[[drawings/page.svg]]");
+      if (valid)
+        expect(parent.querySelector(".inkbook-locked-preview")?.getAttribute("aria-label")).toBe(
+          "Edit handwriting: Pending drawing",
+        );
+      else expect(parent.textContent).toContain(doc);
       view.destroy();
       expect(control.notify).toBeUndefined();
       parent.remove();
@@ -374,13 +390,13 @@ describe("Live Preview recognition during note edits", () => {
   });
 });
 
-function mountView(ports: EmbedIntegrationPorts) {
+function mountView(ports: EmbedIntegrationPorts, doc = "!inkbook[[drawings/page.svg]]") {
   configureTestEditorState({ file: { path: "notes/note.md" }, livePreview: true });
   const parent = document.body.createDiv();
   const view = new EditorView({
     parent,
     state: EditorState.create({
-      doc: "!inkbook[[drawings/page.svg]]",
+      doc,
       extensions: [editorInfoField, editorLivePreviewField, createLivePreviewExtension(ports)],
     }),
   });
@@ -414,6 +430,14 @@ function installObsidianDomHelpers(): void {
         return element;
       },
     },
+    createSpan: {
+      configurable: true,
+      value(this: HTMLElement) {
+        const element = createOwnedElement(this, "span");
+        this.append(element);
+        return element;
+      },
+    },
     setCssProps: {
       configurable: true,
       value(this: HTMLElement, properties: Record<string, string>) {
@@ -431,6 +455,7 @@ function createOwnedElement(owner: HTMLElement, tag: string): HTMLElement {
 function removeObsidianDomHelpers(): void {
   Reflect.deleteProperty(HTMLElement.prototype, "createDiv");
   Reflect.deleteProperty(HTMLElement.prototype, "createEl");
+  Reflect.deleteProperty(HTMLElement.prototype, "createSpan");
   Reflect.deleteProperty(HTMLElement.prototype, "setCssProps");
   document.body.replaceChildren();
 }

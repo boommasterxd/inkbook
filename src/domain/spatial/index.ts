@@ -1,5 +1,5 @@
 export type { SpatialBounds } from "./bounds";
-export { measureSpatialCapacity, spatialCellMembershipCount } from "./capacity-measurement";
+export { measureSpatialCapacitySteps, spatialCellMembershipCount } from "./capacity-measurement";
 export { SpatialQueryScratch } from "./query-scratch";
 export {
   MAX_ELEMENT_CELLS,

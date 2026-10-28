@@ -136,7 +136,6 @@ export class ActiveEditorClipboardController {
   readonly #workScheduler: WorkScheduler;
   #operationGeneration = 0;
   #pending = false;
-  #pasteAvailable = false;
   #repeatState: PasteRepeatState | undefined;
   #sessionPayload: ClipboardWritePayload | undefined;
   #sessionPayloadFresherThanSystem = false;
@@ -157,11 +156,14 @@ export class ActiveEditorClipboardController {
   }
 
   get canPaste(): boolean {
-    return !this.#pending && this.#pasteAvailable;
+    return (
+      !this.#pending &&
+      (typeof this.#ownerWindow.navigator.clipboard?.read === "function" || this.hasPastePayload)
+    );
   }
 
   get hasPastePayload(): boolean {
-    return this.#pasteAvailable;
+    return this.#sessionPayload !== undefined;
   }
 
   get canCopyOrCut(): boolean {
@@ -170,10 +172,6 @@ export class ActiveEditorClipboardController {
 
   get pending(): boolean {
     return this.#pending;
-  }
-
-  setProbedPasteAvailable(available: boolean): void {
-    if (available || !this.#sessionPayloadFresherThanSystem) this.#setPasteAvailable(available);
   }
 
   dispose(): void {
@@ -199,12 +197,10 @@ export class ActiveEditorClipboardController {
   ): boolean {
     const candidates = readSynchronousClipboardCandidates(data);
     if (candidates === null) {
-      this.#setPasteAvailable(false);
       this.#reportUnavailable("paste", this.#pending ? "busy" : "invalid-payload");
       return true;
     }
     this.#sessionPayloadFresherThanSystem = false;
-    this.#setPasteAvailable(true);
     void this.#runExclusive("paste", (operation) => this.#paste(invocation, operation, candidates));
     return true;
   }
@@ -220,7 +216,6 @@ export class ActiveEditorClipboardController {
       return this.#reportUnavailable("paste", "stale-operation");
     }
     if (candidates === null) {
-      this.#setPasteAvailable(false);
       return this.#reportUnavailable("paste", "clipboard-read-failed");
     }
     const previousRepeat = invocation.kind === "context-menu" ? undefined : this.#repeatState;
@@ -230,7 +225,6 @@ export class ActiveEditorClipboardController {
       return this.#reportUnavailable("paste", "stale-operation");
     }
     if (plan === null) {
-      this.#setPasteAvailable(false);
       return this.#reportUnavailable("paste", "invalid-payload");
     }
     const applied = await this.#commitPaste(plan, expectedRevision, operationGeneration);
@@ -239,7 +233,6 @@ export class ActiveEditorClipboardController {
     }
     registerAppliedDocumentMutation(this.#history, this.#model, applied);
     this.#repeatState = invocation.kind === "context-menu" ? undefined : plan.repeatState;
-    this.#setPasteAvailable(true);
     this.#onSelectionChanged(new Set(plan.selectedIds));
     this.#onPasteCommitted?.(plan.activateTool, invocation);
     return this.#report({ action: "paste", kind: "committed" });
@@ -404,17 +397,12 @@ export class ActiveEditorClipboardController {
     return {
       createItem: (formats) => clipboardItem(this.#ownerWindow, formats),
       retainSessionPayload: (payload) => {
+        const wasAvailable = this.hasPastePayload;
         this.#sessionPayload = payload;
         this.#sessionPayloadFresherThanSystem = true;
-        this.#setPasteAvailable(true);
+        if (!wasAvailable) this.#onPasteAvailabilityChanged?.(true);
       },
       write: (items) => this.#ownerWindow.navigator.clipboard.write([...items]),
     };
-  }
-
-  #setPasteAvailable(available: boolean): void {
-    if (available === this.#pasteAvailable) return;
-    this.#pasteAvailable = available;
-    this.#onPasteAvailabilityChanged?.(available);
   }
 }

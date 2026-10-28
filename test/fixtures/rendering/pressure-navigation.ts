@@ -1,9 +1,9 @@
 import type { PageV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import type { SceneElementRecord, SceneViewport } from "../../../src/rendering/scene/types";
 import { takeImmutableElementOwnership } from "../../../src/domain/store/records/immutability";
-import { FakeSceneStore } from "../../unit/rendering/scene/fakes";
+import { FakeSceneStore, FakeScheduler } from "../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../editor/stroke";
-import { createSceneFixture } from "./scene";
+import { createIndexedSceneStore, createSceneFixture } from "./scene";
 
 export const NAVIGATION_PAGE: PageV1 = {
   activeBufferLines: 3,
@@ -51,11 +51,14 @@ export function createPressureNavigationRecords(): readonly SceneElementRecord[]
 export function createPressureNavigationHarness(
   viewport: SceneViewport = { height: 100, left: 0, top: 0, width: 100 },
   records: readonly SceneElementRecord[] = createPressureNavigationRecords(),
+  scheduler = new FakeScheduler(),
+  queryMode: "direct" | "indexed" = "direct",
 ) {
   const store = new FakeSceneStore();
   for (const record of records) store.records.set(record.id, record);
+  const sceneStore = queryMode === "indexed" ? createIndexedSceneStore(store).store : store;
   return {
-    ...createSceneFixture(NAVIGATION_PAGE, store, viewport),
+    ...createSceneFixture(NAVIGATION_PAGE, sceneStore, viewport, {}, scheduler),
     store,
   };
 }

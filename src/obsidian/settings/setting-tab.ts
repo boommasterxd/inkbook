@@ -17,7 +17,14 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { confirmInkbookAction } from "../dialogs/action-dialog";
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
-import { dropdown, resetAction, settingsAction, toggle } from "./definitions/definition-helpers";
+import { nativeSettingDefinitions } from "./setting-control-renderer";
+import {
+  dropdown,
+  resetAction,
+  settingsAction,
+  toggle,
+  withSettingsActionFeedback,
+} from "./definitions/definition-helpers";
 import { createLabels, generalGroup } from "./definitions/general-definitions";
 import { pageDefaultsGroup } from "./definitions/page-defaults";
 import { performanceGroup } from "./definitions/performance-definitions";
@@ -45,6 +52,10 @@ function cloneDefaults<K extends keyof InkbookSettingsV4["toolDefaults"]>(
 export class InkbookSettingTab extends PluginSettingTab {
   private readonly controls: SettingsControlValues;
   private readonly updateListeners = new Set<() => void>();
+  readonly settingsFeedback = {
+    readMotion: () => this.store.getDeviceSettings().motion,
+    observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
+  };
 
   public constructor(
     app: App,
@@ -80,6 +91,10 @@ export class InkbookSettingTab extends PluginSettingTab {
   }
 
   public override getSettingDefinitions(): SettingDefinitionItem<SettingsControlKey>[] {
+    return nativeSettingDefinitions(this.getControlDefinitions(), this, this.scheduling?.lifetime);
+  }
+
+  public getControlDefinitions(): SettingDefinitionItem<SettingsControlKey>[] {
     const pageValues = {
       get: (key: SettingsControlKey) => this.controls.get(key),
       readMotion: () => this.store.getDeviceSettings().motion,
@@ -98,8 +113,11 @@ export class InkbookSettingTab extends PluginSettingTab {
       generalGroup({
         isCustomFolder: () => this.isCustomFolder(),
         canCreateFolder: () => this.folderPort !== undefined && this.isCustomFolder(),
-        createFolder: (element) => void this.createCustomFolder(element),
-        reset: () => this.resetGeneral(),
+        createFolder: withSettingsActionFeedback(
+          (element: HTMLElement) => this.createCustomFolder(element),
+          this.settingsFeedback,
+        ),
+        reset: withSettingsActionFeedback(() => this.resetGeneral(), this.settingsFeedback),
       }),
       performanceGroup({
         readMotion: () => this.store.getDeviceSettings().motion,
@@ -111,17 +129,26 @@ export class InkbookSettingTab extends PluginSettingTab {
             kind: "detecting",
             refreshRate: DEFAULT_REFRESH_RATE,
           },
-        reset: () => this.resetPerformance(),
+        reset: withSettingsActionFeedback(() => this.resetPerformance(), this.settingsFeedback),
       }),
-      pageDefaultsGroup(pageValues, () => this.resetPageDefaults()),
-      drawingToolsGroup(toolValues, () => this.resetDrawingTools()),
-      shapesAndStructuresGroup(toolValues, () => this.resetShapesAndStructures()),
+      pageDefaultsGroup(
+        pageValues,
+        withSettingsActionFeedback(() => this.resetPageDefaults(), this.settingsFeedback),
+      ),
+      drawingToolsGroup(
+        toolValues,
+        withSettingsActionFeedback(() => this.resetDrawingTools(), this.settingsFeedback),
+      ),
+      shapesAndStructuresGroup(
+        toolValues,
+        withSettingsActionFeedback(() => this.resetShapesAndStructures(), this.settingsFeedback),
+      ),
       snappingGroup({
         observeMotion: (listener) => this.store.subscribeDeviceSettings(listener),
         get: (key) => this.controls.get(key),
         readMotion: () => this.store.getDeviceSettings().motion,
         workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
-        reset: () => this.resetSnapping(),
+        reset: withSettingsActionFeedback(() => this.resetSnapping(), this.settingsFeedback),
         set: (key, value) => this.controls.set(key, value),
       }),
       ...this.deviceGroups(),
@@ -171,9 +198,9 @@ export class InkbookSettingTab extends PluginSettingTab {
     }
   }
 
-  private resetGeneral(): void {
+  private resetGeneral(): Promise<void> {
     const defaults = createBuiltInSettings();
-    void this.store
+    return this.store
       .updateVaultSettings((settings) => ({
         ...settings,
         startupTool: defaults.startupTool,
@@ -182,9 +209,9 @@ export class InkbookSettingTab extends PluginSettingTab {
       .then(() => this.update());
   }
 
-  private resetPerformance(): void {
+  private resetPerformance(): Promise<void> {
     const defaults = createBuiltInSettings();
-    void this.store
+    return this.store
       .updateVaultSettings((settings) => ({
         ...settings,
         selectionHighlightsEnabled: defaults.selectionHighlightsEnabled,
@@ -199,9 +226,9 @@ export class InkbookSettingTab extends PluginSettingTab {
       });
   }
 
-  private resetPageDefaults(): void {
+  private resetPageDefaults(): Promise<void> {
     const defaults = createBuiltInSettings();
-    void this.store
+    return this.store
       .updateVaultSettings((settings) => ({
         ...settings,
         pageDefaults: structuredClone(defaults.pageDefaults),
@@ -209,8 +236,8 @@ export class InkbookSettingTab extends PluginSettingTab {
       .then(() => this.update());
   }
 
-  private resetDrawingTools(): void {
-    void this.store
+  private resetDrawingTools(): Promise<void> {
+    return this.store
       .updateVaultSettings((settings) => {
         settings.toolDefaults.select = cloneDefaults("select");
         settings.toolDefaults.pen = cloneDefaults("pen");
@@ -222,8 +249,8 @@ export class InkbookSettingTab extends PluginSettingTab {
       .then(() => this.update());
   }
 
-  private resetShapesAndStructures(): void {
-    void this.store
+  private resetShapesAndStructures(): Promise<void> {
+    return this.store
       .updateVaultSettings((settings) => {
         settings.toolDefaults.shapes = cloneDefaults("shapes");
         settings.toolDefaults.arrow = cloneDefaults("arrow");
@@ -234,9 +261,9 @@ export class InkbookSettingTab extends PluginSettingTab {
       .then(() => this.update());
   }
 
-  private resetSnapping(): void {
+  private resetSnapping(): Promise<void> {
     const defaults = createBuiltInSettings();
-    void this.store
+    return this.store
       .updateVaultSettings((settings) => ({
         ...settings,
         snapping: structuredClone(defaults.snapping),
@@ -267,14 +294,17 @@ export class InkbookSettingTab extends PluginSettingTab {
           "Pen-tap insertion",
           "Insert an Inkbook embed when tapping with a pen.",
         ),
-        resetAction("Reset group to defaults", () => {
-          this.store.updateDeviceSettings((settings) => ({
-            ...settings,
-            fingerDrawingEnabled: defaults.fingerDrawingEnabled,
-            penTapInsertion: defaults.penTapInsertion,
-          }));
-          this.update();
-        }),
+        resetAction(
+          "Reset group to defaults",
+          withSettingsActionFeedback(() => {
+            this.store.updateDeviceSettings((settings) => ({
+              ...settings,
+              fingerDrawingEnabled: defaults.fingerDrawingEnabled,
+              penTapInsertion: defaults.penTapInsertion,
+            }));
+            this.update();
+          }, this.settingsFeedback),
+        ),
       ],
     };
   }
@@ -298,14 +328,17 @@ export class InkbookSettingTab extends PluginSettingTab {
           "Choose how Inkbook presents non-essential motion.",
           createLabels(MOTION_PREFERENCES),
         ),
-        resetAction("Reset group to defaults", () => {
-          this.store.updateDeviceSettings((settings) => ({
-            ...settings,
-            leftHandedToolbar: defaults.leftHandedToolbar,
-            motion: defaults.motion,
-          }));
-          this.update();
-        }),
+        resetAction(
+          "Reset group to defaults",
+          withSettingsActionFeedback(() => {
+            this.store.updateDeviceSettings((settings) => ({
+              ...settings,
+              leftHandedToolbar: defaults.leftHandedToolbar,
+              motion: defaults.motion,
+            }));
+            this.update();
+          }, this.settingsFeedback),
+        ),
       ],
     };
   }
@@ -315,7 +348,10 @@ export class InkbookSettingTab extends PluginSettingTab {
       "Reset all Inkbook settings",
       "Restore every built-in value without changing existing files or elements.",
       "danger",
-      (element) => void this.confirmResetAll(element),
+      withSettingsActionFeedback(
+        (element: HTMLElement) => this.confirmResetAll(element),
+        this.settingsFeedback,
+      ),
     );
   }
 

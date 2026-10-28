@@ -81,8 +81,8 @@ describe("active editor context paste", () => {
 });
 
 describe("active editor context Paste menu", () => {
-  it("opens synchronously without consuming user activation in a Clipboard probe", () => {
-    const refreshPasteAvailability = vi.fn(async () => false);
+  it("opens synchronously before a Paste action is selected", () => {
+    const execute = vi.fn();
     const create = vi.fn(() => clickableMenu(new Map()));
     const actions = {
       arrangeAvailability: () => ({
@@ -93,15 +93,14 @@ describe("active editor context Paste menu", () => {
       }),
       canPaste: false,
       canRequestPaste: true,
-      execute: vi.fn(),
-      refreshPasteAvailability,
+      execute,
     } as unknown as ActiveEditorActions;
     const menus = createActiveEditorMenuController(actions, { create, forEvent: create }, 0);
 
     menus.openFromSource("touch", { x: 10, y: 20 });
 
     expect(create).toHaveBeenCalledOnce();
-    expect(refreshPasteAvailability).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
     menus.dispose();
   });
 
@@ -119,7 +118,6 @@ describe("active editor context Paste menu", () => {
       canPaste: true,
       canRequestPaste: true,
       execute,
-      refreshPasteAvailability: vi.fn(async () => true),
     } as unknown as ActiveEditorActions;
     const menus = createActiveEditorMenuController(
       actions,

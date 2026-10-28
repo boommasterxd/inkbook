@@ -1,4 +1,5 @@
 import type { InputPoint, InputState, PointerSample } from "../../../../editor/input/index";
+import type { Bounds } from "../../../../domain/geometry/public";
 import { reduceInput } from "../../../../editor/input/index";
 import {
   accumulateWheelSteps,
@@ -449,6 +450,31 @@ export class ActiveEditorNavigation {
     const layout = readNavigationLayout(this.#container, this.#scrollOwner);
     if (layout === undefined) return { x: 0, y: 0 };
     return visibleCenterPoint(layout, this.#cameraX, this.#zoom);
+  }
+
+  public revealBounds(bounds: Bounds): void {
+    this.cancelNavigation();
+    this.begin();
+    const layout = this.#gestureLayout;
+    if (layout === undefined) return;
+    const viewport = layout.ownerViewport;
+    const box = layout.containerBounds;
+    const left = Math.max(box.left, viewport.left) + 16;
+    const right = Math.min(box.right, viewport.right) - 16;
+    const top = viewport.top + 16;
+    const bottom = viewport.bottom - 16;
+    const x = box.left + (bounds.minX + this.#cameraX) * this.#zoom;
+    const y = box.top + bounds.minY * this.#zoom;
+    const width = Math.min((bounds.maxX - bounds.minX) * this.#zoom, Math.max(0, right - left));
+    const height = Math.min((bounds.maxY - bounds.minY) * this.#zoom, Math.max(0, bottom - top));
+    const panX = x < left ? left - x : Math.min(0, right - x - width);
+    const panY = y < top ? top - y : Math.min(0, bottom - y - height);
+    if (panX === 0 && panY === 0) {
+      this.finish();
+      return;
+    }
+    this.#pending.frame = accumulateZoomInput(this.#pending.frame, { panX, panY });
+    this.#scheduleFrame();
   }
 
   #hasPendingFrame(): boolean {

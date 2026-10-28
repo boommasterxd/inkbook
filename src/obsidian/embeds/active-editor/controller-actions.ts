@@ -11,7 +11,7 @@ import type { ContextMenuAction } from "../../menus/index";
 import type { EditableDocumentModel } from "../document-session/vault-document-session";
 
 import { ActiveEditorClipboardController } from "./controller-clipboard";
-import { probeClipboardCandidate, type SynchronousClipboardData } from "./clipboard-reader";
+import type { SynchronousClipboardData } from "./clipboard-reader";
 import { isClipboardAction } from "./controller-helpers";
 import { arrangeSelectionAvailability, canArrangeSelection } from "./controller-elements";
 import { ActiveDocumentHistory } from "./document-history";
@@ -67,8 +67,6 @@ export class ActiveEditorActions {
   #actionConfirmation: ToolbarActionConfirmation | null = null;
   #confirmationSequence = 0;
   #confirmationTimer: number | undefined;
-  #pasteProbe: Promise<boolean> | undefined;
-  #pasteProbeGeneration = 0;
 
   public constructor(options: ActiveEditorActionsOptions) {
     this.#renderer = options.renderer;
@@ -137,7 +135,7 @@ export class ActiveEditorActions {
   }
 
   public get pasteVisible(): boolean {
-    return this.#clipboard.hasPastePayload;
+    return this.#systemClipboardReadable || this.#clipboard.hasPastePayload;
   }
 
   public get actionConfirmation(): ToolbarActionConfirmation | null {
@@ -150,7 +148,6 @@ export class ActiveEditorActions {
 
   public dispose(): void {
     this.cancelPendingConfirmation();
-    this.#pasteProbeGeneration += 1;
     this.#clearConfirmationTimer();
     this.#clipboard.dispose();
     this.#documentHistory.dispose();
@@ -167,17 +164,6 @@ export class ActiveEditorActions {
 
   public arrangeAvailability(): Readonly<Record<ArrangeAction, boolean>> {
     return arrangeSelectionAvailability(this.#sceneStore, this.#currentSelection());
-  }
-
-  public refreshPasteAvailability(): Promise<boolean> {
-    if (!this.#isEnabled()) return Promise.resolve(this.canPaste);
-    if (this.#pasteProbe !== undefined) return this.#pasteProbe;
-    const generation = this.#invalidatePasteProbe();
-    const probe = this.#probeSystemClipboard(generation).finally(() => {
-      if (this.#pasteProbe === probe) this.#pasteProbe = undefined;
-    });
-    this.#pasteProbe = probe;
-    return probe;
   }
 
   public execute(action: ContextMenuAction, invocation?: PasteInvocation): void {
@@ -223,7 +209,6 @@ export class ActiveEditorActions {
       this.#onFeedback?.("clipboard-operation-busy");
       return true;
     }
-    this.#invalidatePasteProbe();
     const accepted = this.#clipboard.pasteFromClipboardData(data, {
       kind: "shortcut",
       lastSessionPointer: this.#lastSessionPointer(),
@@ -243,7 +228,7 @@ export class ActiveEditorActions {
     const selection = this.#currentSelection();
     if (action === "copy") void this.#clipboard.copy(selection);
     else if (action === "cut") void this.#clipboard.cut(selection);
-    else this.#paste(invocation ?? this.#toolbarPaste());
+    else void this.#clipboard.paste(invocation ?? this.#toolbarPaste());
   }
 
   #arrange(action: ArrangeAction): void {
@@ -256,34 +241,6 @@ export class ActiveEditorActions {
         () => this.#isAttached() && this.#currentSelection() === selection,
       )
       .then(() => this.#onStateChanged());
-  }
-
-  async #probeSystemClipboard(generation: number): Promise<boolean> {
-    const valid = await probeClipboardCandidate(this.#ownerWindow.navigator.clipboard);
-    if (valid === null || generation !== this.#pasteProbeGeneration || !this.#isEnabled()) {
-      return this.canPaste;
-    }
-    this.#clipboard.setProbedPasteAvailable(valid);
-    return this.canPaste;
-  }
-
-  #invalidatePasteProbe(): number {
-    this.#pasteProbeGeneration += 1;
-    this.#pasteProbe = undefined;
-    return this.#pasteProbeGeneration;
-  }
-
-  #paste(invocation: PasteInvocation): void {
-    const generation = this.#invalidatePasteProbe();
-    void this.#clipboard.paste(invocation).then((result) => {
-      if (
-        generation === this.#pasteProbeGeneration &&
-        result.kind === "unavailable" &&
-        (result.reason === "clipboard-read-failed" || result.reason === "invalid-payload")
-      ) {
-        this.#clipboard.setProbedPasteAvailable(false);
-      }
-    });
   }
 
   #confirmClipboardAction(action: "copy" | "cut" | "paste"): void {

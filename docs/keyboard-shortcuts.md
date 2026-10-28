@@ -2,30 +2,30 @@
 
 ## Ownership and Scope
 
-Inkbook separates canvas-local keyboard bindings from Obsidian commands. A canvas-local binding is handled by the active editor only when no text input, text area, select control, or content-editable element owns the event. A key or native Paste event dispatched directly to the focused canvas remains canvas-owned after Android touch hover ends; document-level handling outside that surface additionally requires the pointer to remain over the complete active embed, including its toolbar. Clipboard work restores canvas focus after its temporary inert interval unless the user moved focus elsewhere, preserving immediate repeated shortcuts without pointer hover. Copy and Cut are claimed only when a selection exists. Paste is claimed when the platform can perform a bounded system Clipboard read, a validated in-session payload exists, or another claimed Clipboard operation is still pending; on older platforms, the native Paste event provides the synchronous payload instead. Every claimed trigger uses the same success animation and explicit invalid, permission, pipeline-failure, or busy feedback instead of failing silently.
+Inkbook separates canvas-local keyboard bindings from Obsidian commands. A canvas-local binding is handled by the active editor only when no text input, text area, select control, or content-editable element owns the event. A key or native Paste event dispatched directly to the focused canvas remains canvas-owned after Android touch hover ends; document-level handling outside that surface additionally requires the pointer to remain over the complete active embed, including its toolbar. Clipboard work restores canvas focus after its temporary inert interval unless the user moved focus elsewhere, preserving immediate repeated shortcuts without pointer hover. Copy and Cut are claimed only when a selection exists. Paste is claimed when the platform exposes `Clipboard.read()`, a validated in-session payload exists, or another claimed Clipboard operation is still pending. This capability does not assert clipboard contents or permission; the explicit Paste action reads the complete supported Blob representations subject to the [application limits and validation](features.md#copy-cut-delete-and-paste-elements). Without the API, the native Paste event supplies synchronous data. Every claimed trigger uses the same success animation and explicit invalid, permission, pipeline-failure, or busy feedback instead of failing silently; a failed or invalid system read leaves Paste available for retry.
 
 `Mod` means `Cmd` on macOS and `Ctrl` on other platforms. Configurable bindings are local to one device and vault. They are not written into an Inkbook SVG and do not synchronize through plugin data.
 
 ## Configurable Canvas Bindings
 
-| Action           | Built-in binding      | Availability                                               |
-| ---------------- | --------------------- | ---------------------------------------------------------- |
-| Select all       | `Mod+A`               | An active Inkbook editor exists                            |
-| Copy selection   | `Mod+C`               | A selection exists and the canvas owns the key event       |
-| Cut selection    | `Mod+X`               | A selection exists and the canvas owns the key event       |
-| Delete selection | `Delete`              | A selection exists                                         |
-| Zoom in          | `Mod++`               | Navigation is available and the pointer is over the editor |
-| Zoom out         | `Mod+-`               | Navigation is available and the pointer is over the editor |
-| Bring forward    | `Mod+ArrowUp`         | The selection can move one rank forward                    |
-| Send backward    | `Mod+ArrowDown`       | The selection can move one rank backward                   |
-| Bring to front   | `Mod+Shift+ArrowUp`   | The selection can move to the front of its render band     |
-| Send to back     | `Mod+Shift+ArrowDown` | The selection can move to the back of its render band      |
+| Action           | Built-in binding      | Availability                                           |
+| ---------------- | --------------------- | ------------------------------------------------------ |
+| Select all       | `Mod+A`               | An active Inkbook editor exists                        |
+| Copy selection   | `Mod+C`               | A selection exists and the canvas owns the key event   |
+| Cut selection    | `Mod+X`               | A selection exists and the canvas owns the key event   |
+| Delete selection | `Delete`              | A selection exists                                     |
+| Zoom in          | `Mod++`               | The canvas owns the event and navigation is available  |
+| Zoom out         | `Mod+-`               | The canvas owns the event and navigation is available  |
+| Bring forward    | `Mod+ArrowUp`         | The selection can move one rank forward                |
+| Send backward    | `Mod+ArrowDown`       | The selection can move one rank backward               |
+| Bring to front   | `Mod+Shift+ArrowUp`   | The selection can move to the front of its render band |
+| Send to back     | `Mod+Shift+ArrowDown` | The selection can move to the back of its render band  |
 
-Each binding may be recorded, cleared, or reset independently. `Reset all` restores this complete table. Two canvas actions cannot share one canonical binding. Modifier order and letter case do not create distinct bindings. Bare printable characters, accessibility navigation keys, bindings reserved by the fixed system controls, and currently effective Obsidian command bindings are rejected with an inline error. The recorder owns the key event in the capture phase while active, so a rejected Obsidian binding does not execute its host command. A cleared action remains unassigned until it is recorded or reset.
+Each binding may be recorded, cleared, or reset independently. `Reset all` restores this complete table. Two canvas actions cannot share one canonical binding. Modifier order and letter case do not create distinct bindings. Bare printable characters, `Escape`, `Tab`, `Enter`, `ContextMenu`, `F10`, fixed clipboard/history bindings, and currently effective Obsidian command bindings are rejected with an inline error. The recorder owns the key event in the capture phase while active, so a rejected Obsidian binding does not execute its host command. A cleared action remains unassigned until it is recorded or reset.
 
 The current Obsidian API does not publicly expose effective host bindings. One isolated read-only gateway therefore reads `app.hotkeyManager.defaultKeys` and `app.hotkeyManager.customKeys`. A custom entry replaces the corresponding default completely, including an empty array that deliberately clears a default. The gateway validates the private data shape, reads it again for every recording attempt, mutates no host state, and fails open when the private structure is unavailable or malformed. No other Inkbook feature may consume this private manager. The gateway must be replaced as soon as Obsidian provides an equivalent public API.
 
-Keyboard zoom accepts the layout-equivalent `=` and numeric-keypad `Add` events for Zoom in, and `_` and numeric-keypad `Subtract` events for Zoom out. The zoom step and pointer anchor remain identical regardless of which equivalent key event the active keyboard layout produces.
+Keyboard zoom accepts the layout-equivalent `=` and numeric-keypad `Add` events for Zoom in, and `_` and numeric-keypad `Subtract` events for Zoom out. The zoom step and anchor remain identical regardless of which equivalent key event the active keyboard layout produces. A focused canvas accepts zoom without pointer hover and uses its visible center; while the pointer is over the editor, the last session pointer remains the anchor.
 
 ## Fixed System Bindings
 
@@ -36,10 +36,30 @@ These bindings are intentionally not editable because their event ownership or h
 | Paste           | `Mod+V`       | Cooperates with the system clipboard event and validated Inkbook payload boundary |
 | Undo            | `Mod+Z`       | Traverses the pane-scoped unified Markdown and canvas history                     |
 | Redo            | `Mod+Shift+Z` | Traverses the same unified history without creating a parallel undo path          |
-| Cancel or close | `Escape`      | Closes a surface, cancels a gesture, then clears selection in that order          |
+| Cancel or close | `Escape`      | Closes surfaces and geometry editing, cancels gestures, then clears selection     |
 | Context menu    | `Shift+F10`   | Preserves the platform accessibility convention                                   |
 
 Toolbar Undo and Redo still operate directly on canvas history. The fixed keyboard bindings use the pane-scoped unified history and pass a Markdown-owned step back to Obsidian. Canvas command commits, including configurable Delete and arrange bindings, remain exactly one undo step.
+
+## Canvas Object Navigation and Geometry Editing
+
+The following fixed controls act only when the focused canvas input surface owns the event. Text controls, composition events, and keys modified with Ctrl, Cmd, or Alt remain available to their existing owners. Focused-canvas navigation and geometry editing take priority over configurable bindings.
+
+| Context                                 | Binding               | Behavior                                                                                     |
+| --------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
+| Object navigation                       | `PageUp` / `PageDown` | Select the previous or next object in stable back-to-front band order.                       |
+| Object navigation                       | `Home` / `End`        | Select the first or last object.                                                             |
+| Object navigation                       | Hold `Shift`          | Add the navigated object to the selection instead of replacing it.                           |
+| Selected objects                        | `Enter`               | Enter geometry editing, initially on Move. Press again to leave editing.                     |
+| Geometry editing                        | `PageUp` / `PageDown` | Cycle through Move and the handles available for the current selection.                      |
+| Geometry editing                        | Arrow keys            | Adjust Move or the chosen handle by 1 document unit, or rotate by 1 degree.                  |
+| Geometry editing                        | `Shift` + arrow keys  | Use a 10-unit or 10-degree step.                                                             |
+| Geometry editing or pending preparation | `Escape`              | Leave editing and cancel unfinished preparation.                                             |
+| Canvas                                  | `Tab`                 | Leave editing, cancel unfinished preparation, and retain normal sequential focus navigation. |
+
+Object navigation spans the complete logical document, including culled objects, with highlight-band objects before content-band objects. It reveals the selected object's bounds through the existing camera and native note-scroll adapter without introducing another scroll owner. A polite canvas status announces the object kind, position in the document, and selection count; geometry editing announces the current operation, first selected object's bounds and rotation, and the edit outcome. The selected handle has distinct visible focus feedback.
+
+Each geometry step reuses the existing handle sessions, validation, prepared-history path, and atomic command commit. Keyboard steps disable snapping for exact increments without changing the saved snapping preferences. Larger preparations remain centrally scheduled and cancellable. Leaving editing preserves already committed steps; Escape does not undo them. Undo and Redo use the existing history. Freehand creation remains pointer-driven.
 
 ## Pointer and Gesture Modifiers
 
