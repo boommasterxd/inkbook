@@ -2,12 +2,14 @@
 @import url("./action-tones.css");
 @import url("./modal.css");
 @import url("./feedback.css");
+@import url("./chrome-palette.css");
 @import url("./document-status-bar.css");
 @import url("./editor-toolbar.css");
 @import url("./adaptive-panel.css");
 @import url("./owned-menu.css");
 @import url("./phone-sheet-host.css");
 @import url("./editor-menus.css");
+@import url("./menu-feedback.css");
 @import url("./background-menu.css");
 @import url("./settings.css");
 @import url("./shortcut-settings.css");

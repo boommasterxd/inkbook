@@ -1,3 +1,4 @@
+import type { Keymap } from "obsidian";
 import type { InkbookSettingsStore } from "../storage";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { isReducedMotion } from "../../../rendering/motion/transitions";
@@ -26,13 +27,14 @@ export class ShortcutSettingsView {
   public constructor(
     container: HTMLElement,
     store: InkbookSettingsStore,
+    keymap: Pick<Keymap, "pushScope" | "popScope">,
     hostHotkeys: ObsidianHotkeyAccess = EMPTY_OBSIDIAN_HOTKEY_ACCESS,
     workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
   ) {
     this.#container = container;
     this.#store = store;
     if (workScheduler === undefined) throw new Error("Shortcut settings require a work scheduler.");
-    this.#recordingView = new ShortcutRecordingView(container, store, hostHotkeys);
+    this.#recordingView = new ShortcutRecordingView(container, store, hostHotkeys, keymap);
     this.#referenceView = new ShortcutReferenceView(hostHotkeys);
     let shortcuts = JSON.stringify(store.getDeviceSettings().keyboardShortcuts);
     this.#unsubscribe = store.subscribeDeviceSettings((settings) => {

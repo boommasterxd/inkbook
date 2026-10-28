@@ -16,14 +16,18 @@ export function registerMenuSwitchFeedback(
     if (track === null || thumb === null) continue;
     let stopTrack: (() => void) | undefined;
     let stopThumb: (() => void) | undefined;
+    const restore = (): void => {
+      track.style.removeProperty("background-color");
+      thumb.style.removeProperty("translate");
+    };
+    const syncState = (): void => {
+      track.dataset.inkbookSwitchState = input.checked ? "checked" : "unchecked";
+    };
     const finish = (): void => {
       stopTrack?.();
       stopThumb?.();
-      track.style.setProperty(
-        "background-color",
-        input.checked ? "var(--interactive-accent)" : "var(--background-modifier-border-hover)",
-      );
-      thumb.style.setProperty("translate", input.checked ? "18px 0" : "0 0");
+      syncState();
+      restore();
     };
     const onChange = (): void => {
       const duration = effectiveTransitionDuration(anchor, ownerWindow, "toolActiveState");
@@ -31,25 +35,28 @@ export function registerMenuSwitchFeedback(
       const thumbPosition = ownerWindow.getComputedStyle(thumb).translate;
       stopTrack?.();
       stopThumb?.();
+      syncState();
+      restore();
+      const targetColor = ownerWindow.getComputedStyle(track).backgroundColor;
+      const targetPosition = ownerWindow.getComputedStyle(thumb).translate;
       track.style.backgroundColor = trackColor;
       thumb.style.translate = thumbPosition;
       stopTrack = playMenuMotion(
         track,
         {
-          backgroundColor: [
-            trackColor,
-            input.checked ? "var(--interactive-accent)" : "var(--background-modifier-border-hover)",
-          ],
+          backgroundColor: [trackColor, targetColor],
         },
         duration,
+        () => track.style.removeProperty("background-color"),
       );
       stopThumb = playMenuMotion(
         thumb,
-        { translate: [thumbPosition, input.checked ? "18px 0" : "0 0"] },
+        { translate: [thumbPosition || "0 0", targetPosition || "0 0"] },
         duration,
+        () => thumb.style.removeProperty("translate"),
       );
     };
-    // Own the initial paint before the browser changes :checked on the first activation.
+    // Retain the visual state separately from immediate native checkbox semantics.
     finish();
     input.addEventListener("change", onChange);
     finishes.push(finish);
@@ -58,6 +65,8 @@ export function registerMenuSwitchFeedback(
       input.removeEventListener("change", onChange);
       stopTrack?.();
       stopThumb?.();
+      restore();
+      delete track.dataset.inkbookSwitchState;
     });
   }
   return {

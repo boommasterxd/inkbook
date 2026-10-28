@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="#get-started"><img src="https://img.shields.io/badge/Obsidian-1.13.0%2B-A99AF5?style=flat-square" alt="Requires Obsidian 1.13.0 or later"></a>
+  <a href="#get-started"><img src="https://img.shields.io/badge/Obsidian-1.13.4%2B-A99AF5?style=flat-square" alt="Requires Obsidian 1.13.4 or later"></a>
   <a href="#make-room-for-your-ideas"><img src="https://img.shields.io/badge/Desktop_%26_Mobile-7C6FE8?style=flat-square" alt="Desktop, iOS, and Android"></a>
   <a href="#your-files-in-your-vault"><img src="https://img.shields.io/badge/Portable_SVG-7BD8BD?style=flat-square" alt="Portable SVG files"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-A99AF5?style=flat-square" alt="MIT license"></a>
@@ -40,7 +40,7 @@ Inkbook supports tabs, split panes, and pop-out windows, with one active drawing
 
 ## Get started
 
-Requires **Obsidian 1.13.0 or newer** and an installed Inkbook build. See [Build from source](#build-from-source) for installation.
+Requires **Obsidian 1.13.4 or newer** and an installed Inkbook build. See [Build from source](#build-from-source) for installation.
 
 1. Open a Markdown note in editing mode and place the cursor on an empty line.
 2. Run **Inkbook: Insert handwriting embed** from Obsidian's command palette.

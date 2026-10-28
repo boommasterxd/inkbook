@@ -17,7 +17,7 @@ export function createMenuColorAnimator(
   isActive: (item: HTMLElement) => boolean,
   items: readonly HTMLElement[] = [...root.querySelectorAll<HTMLElement>(PAINT_SELECTOR)],
 ): { change: ChangeMenuColor; finish: () => void; dispose: () => void } {
-  const active = new Map<HTMLElement, { stop: () => void; target: Paint }>();
+  const active = new Map<HTMLElement, () => void>();
   const originals = new Map<HTMLElement, InlinePaint>();
   const read = (item: HTMLElement): Paint => {
     const style = ownerWindow.getComputedStyle(item);
@@ -32,39 +32,21 @@ export function createMenuColorAnimator(
     if (originals.has(item)) return;
     originals.set(item, readInlinePaint(item));
   };
-  const resting = (item: HTMLElement): Paint => {
-    restore(item);
-    if (item.matches(".inkbook-shortcut-recorder")) return recorderPaint(item, isActive(item));
-    const paint = read(item);
-    return item.matches(`${CHOICE_SELECTOR}[aria-pressed='true']`)
-      ? {
-          "background-color": "var(--inkbook-menu-choice-selected-background)",
-          "border-color": "var(--inkbook-menu-choice-selected-border)",
-          color: "var(--text-normal)",
-        }
-      : paint;
-  };
-  const settle = (item: HTMLElement, target: Paint): void => {
-    restore(item);
-    if (item.matches(`${CHOICE_SELECTOR}[aria-pressed='true'], .inkbook-shortcut-recorder`))
-      writePaint(item, target);
-    else if (isActive(item)) item.style.backgroundColor = target["background-color"];
-  };
   const change: ChangeMenuColor = (item, color) => {
     if (item === undefined) return;
-    const current = buttonStartPaint(item, read(item));
+    const current = read(item);
     remember(item);
-    active.get(item)?.stop();
-    const target = {
-      ...resting(item),
-      ...(color !== undefined || isActive(item)
-        ? { "background-color": gestureColor(item, color) }
-        : {}),
-    };
+    active.get(item)?.();
+    restore(item);
+    syncPaintState(item);
+    if (color !== undefined || isActive(item))
+      item.dataset.inkbookMenuGesture = color === "var(--interactive-hover)" ? "press" : "hover";
+    else delete item.dataset.inkbookMenuGesture;
+    const target = read(item);
     writePaint(item, current);
-    active.set(item, {
-      target,
-      stop: playMenuMotion(
+    active.set(
+      item,
+      playMenuMotion(
         item,
         {
           backgroundColor: [current["background-color"], target["background-color"]],
@@ -72,33 +54,34 @@ export function createMenuColorAnimator(
           color: [current.color, target.color],
         },
         effectiveTransitionDuration(anchor, ownerWindow, "toolActiveState"),
-        () => settle(item, target),
+        () => restore(item),
       ),
-    });
+    );
   };
   for (const item of items) {
     if (!item.matches(PAINT_SELECTOR) || item.closest("[data-inkbook-feedback-owner]") !== root)
       continue;
     remember(item);
-    item.dataset.inkbookMotionChoice = "true";
-    settle(item, resting(item));
+    syncPaintState(item);
   }
   const observer = observeSelection(root, ownerWindow, change);
   return {
     change,
     finish: () => {
-      for (const [item, animation] of active) {
-        animation.stop();
-        settle(item, animation.target);
+      for (const [item, stop] of active) {
+        stop();
+        restore(item);
       }
       active.clear();
     },
     dispose: () => {
       observer.disconnect();
-      for (const animation of active.values()) animation.stop();
+      for (const stop of active.values()) stop();
       for (const item of originals.keys()) {
         restore(item);
-        delete item.dataset.inkbookMotionChoice;
+        delete item.dataset.inkbookMenuGesture;
+        delete item.dataset.inkbookChoiceState;
+        delete item.dataset.inkbookRecordingState;
       }
       active.clear();
       originals.clear();
@@ -106,44 +89,13 @@ export function createMenuColorAnimator(
   };
 }
 
-function recorderPaint(item: HTMLElement, active: boolean): Paint {
-  return {
-    "background-color": "var(--background-primary)",
-    "border-color":
-      item.dataset.recording === "true" || active
-        ? "var(--interactive-accent)"
-        : "var(--background-modifier-border)",
-    color: "var(--text-normal)",
-  };
-}
-
-function buttonStartPaint(item: HTMLElement, paint: Paint): Paint {
-  if (!item.matches(".inkbook-dialog-actions button") || item.style.backgroundColor !== "")
-    return paint;
-  return {
-    ...paint,
-    "background-color": dialogButtonBackground(item, "rest"),
-  };
-}
-
-function gestureColor(item: HTMLElement, color: string | undefined): string {
-  if (item.matches(".inkbook-shortcut-recorder")) return "var(--background-primary)";
-  if (item.matches(".inkbook-dialog-actions button"))
-    return dialogButtonBackground(item, color === "var(--interactive-hover)" ? "press" : "hover");
-  return color ?? "var(--background-modifier-hover)";
-}
-
-/** Host variants keep their paired foreground, including destructive buttons with white text. */
-function dialogButtonBackground(item: HTMLElement, phase: "rest" | "hover" | "press"): string {
-  if (item.classList.contains("mod-warning")) {
-    if (phase === "press") return "var(--inkbook-dialog-danger-pressed)";
-    return phase === "hover"
-      ? "var(--inkbook-dialog-danger-hover)"
-      : "var(--inkbook-dialog-danger-background)";
-  }
-  if (item.classList.contains("mod-cta"))
-    return phase === "rest" ? "var(--interactive-accent)" : "var(--interactive-accent-hover)";
-  return phase === "rest" ? "var(--interactive-normal)" : "var(--interactive-hover)";
+/** Keep the previously painted state until the immediate semantic update can be animated. */
+function syncPaintState(item: HTMLElement): void {
+  if (item.matches(CHOICE_SELECTOR))
+    item.dataset.inkbookChoiceState =
+      item.getAttribute("aria-pressed") === "true" ? "selected" : "unselected";
+  else if (item.matches(".inkbook-shortcut-recorder"))
+    item.dataset.inkbookRecordingState = item.dataset.recording === "true" ? "true" : "false";
 }
 
 function writePaint(item: HTMLElement, paint: Paint): void {

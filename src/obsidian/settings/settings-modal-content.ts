@@ -59,6 +59,7 @@ export class SettingsModalContent {
         this.#shortcutView = mountShortcutSettingsView(
           setting,
           store,
+          app.keymap,
           createObsidianHotkeyAccess(app),
           (ownerWindow) => settingTab.scheduler(ownerWindow),
         );

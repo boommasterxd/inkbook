@@ -1,0 +1,33 @@
+.inkbook-root [data-inkbook-menu-gesture="hover"],
+.inkbook-dialog-actions[data-inkbook-feedback-owner] > [data-inkbook-menu-gesture="hover"] {
+  background-color: var(--inkbook-menu-hover-background, var(--background-modifier-hover));
+}
+
+.inkbook-root [data-inkbook-menu-gesture="press"],
+.inkbook-dialog-actions[data-inkbook-feedback-owner] > [data-inkbook-menu-gesture="press"] {
+  background-color: var(--inkbook-menu-press-background, var(--interactive-hover));
+}
+
+.inkbook-dialog-actions button {
+  --inkbook-menu-hover-background: var(--interactive-hover);
+  --inkbook-menu-press-background: var(--interactive-hover);
+}
+
+.inkbook-dialog-actions .mod-cta {
+  --inkbook-menu-hover-background: var(--interactive-accent-hover);
+  --inkbook-menu-press-background: var(--interactive-accent-hover);
+}
+
+.inkbook-dialog-actions .mod-warning {
+  --inkbook-menu-hover-background: var(--inkbook-dialog-danger-hover);
+  --inkbook-menu-press-background: var(--inkbook-dialog-danger-pressed);
+}
+
+.inkbook-shortcut-recorder {
+  --inkbook-menu-hover-background: var(--background-primary);
+  --inkbook-menu-press-background: var(--background-primary);
+}
+
+.inkbook-shortcut-recorder[data-inkbook-menu-gesture] {
+  border-color: var(--interactive-accent);
+}

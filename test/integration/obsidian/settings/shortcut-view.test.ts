@@ -10,6 +10,9 @@ import type { ObsidianHotkeyAccess } from "../../../../src/obsidian/settings/sho
 import type { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
+import { keymapCaptureFixture } from "../../../fixtures/obsidian/keymap-capture";
+
+const captureKeymap = keymapCaptureFixture();
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -320,10 +323,11 @@ function createView(hostAccess?: ObsidianHotkeyAccess): {
 } {
   const store = createTestSettingsStore();
   const container = document.body.createDiv();
+  const keymap = captureKeymap(window);
   return {
     container,
     store,
-    view: new ShortcutSettingsView(container, store, hostAccess, () =>
+    view: new ShortcutSettingsView(container, store, keymap, hostAccess, () =>
       workSchedulerFromFrames(window),
     ),
   };

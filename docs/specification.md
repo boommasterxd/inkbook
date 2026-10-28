@@ -43,7 +43,7 @@ The first release does not include:
 ## Platform Baseline
 
 - The plugin MUST use TypeScript and the Obsidian plugin API.
-- `manifest.json` MUST set `minAppVersion` to `1.13.0` and `isDesktopOnly` to `false`.
+- `manifest.json` MUST set `minAppVersion` to `1.13.4` and `isDesktopOnly` to `false`.
 - Desktop, iOS, and Android Obsidian MUST be supported.
 - Runtime code MUST use Web APIs and Obsidian APIs only. Node.js and Electron APIs are forbidden because they are unavailable on mobile.
 - Settings MUST use the declarative settings API available in Obsidian 1.13.

@@ -22,7 +22,6 @@ import {
 interface ShortcutContent {
   readonly key: string;
   readonly nodes: readonly Node[];
-  readonly color: string;
 }
 
 const BOUNDARY_SELECTOR =
@@ -35,7 +34,7 @@ const Content = forwardRef(function Content(
   const present = useIsPresent();
   return (
     <motion.span
-      animate={{ opacity: 1, color: content.color }}
+      animate={{ opacity: 1 }}
       aria-hidden={present ? undefined : true}
       className="inkbook-shortcut-transition-content"
       exit={{ opacity: 0 }}
@@ -112,15 +111,9 @@ export class ShortcutRecordingMotion {
 
   #content(element: HTMLElement, nodes: readonly Node[]): ShortcutContent {
     const error = element.classList.contains("is-error");
-    const recorder = element.tagName === "BUTTON";
     return {
       key: `${nodes.map((node) => node.textContent).join("")}:${String(error)}`,
       nodes,
-      color: recorder
-        ? "var(--text-normal)"
-        : error
-          ? "var(--inkbook-tone-danger)"
-          : "var(--text-accent)",
     };
   }
 

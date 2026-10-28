@@ -72,7 +72,7 @@ export function toolbarButtonVariants(
   pressed: boolean | undefined,
 ): Variants {
   const color = toolbarButtonForeground(action, lifecycle.colors, disabled, pressed);
-  const foreground = color === undefined ? {} : { color };
+  const foreground = color === undefined ? {} : { "--inkbook-toolbar-foreground": color };
   const shown = context
     ? { scale: 1, ...foreground }
     : { scale: 1, ...foreground, opacity: disabled ? 0.48 : 1, width: "44px", flexBasis: "44px" };
@@ -92,7 +92,7 @@ export function toolbarButtonVariants(
       ...shown,
       transition: {
         ...transition(false, enterOrder),
-        color: toolbarLayoutTransition(lifecycle.reduced),
+        "--inkbook-toolbar-foreground": toolbarLayoutTransition(lifecycle.reduced),
       },
     },
     preparing: { ...(context ? hidden : shown), transition: { duration: 0 } },

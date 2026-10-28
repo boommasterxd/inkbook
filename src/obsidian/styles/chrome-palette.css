@@ -1,0 +1,47 @@
+.inkbook-root,
+.inkbook-status-bar {
+  --inkbook-chrome-accent: var(--interactive-accent);
+  --inkbook-chrome-danger: var(--text-error);
+  --inkbook-chrome-faint: var(--text-faint);
+  --inkbook-chrome-muted: var(--text-muted);
+  --inkbook-chrome-active-background: color-mix(
+    in srgb,
+    var(--interactive-accent) 14%,
+    transparent
+  );
+  --inkbook-chrome-active-border: color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+  --inkbook-chrome-danger-hover: color-mix(in srgb, var(--text-error) 12%, transparent);
+  --inkbook-chrome-hover: var(--background-modifier-hover);
+}
+
+.inkbook-chrome-color-probe[data-inkbook-chrome-color="accent"] {
+  color: var(--inkbook-chrome-accent);
+}
+
+.inkbook-chrome-color-probe[data-inkbook-chrome-color="danger"] {
+  color: var(--inkbook-chrome-danger);
+}
+
+.inkbook-chrome-color-probe[data-inkbook-chrome-color="faint"] {
+  color: var(--inkbook-chrome-faint);
+}
+
+.inkbook-chrome-color-probe[data-inkbook-chrome-color="muted"] {
+  color: var(--inkbook-chrome-muted);
+}
+
+.inkbook-chrome-color-probe[data-inkbook-chrome-color="activeBackground"] {
+  color: var(--inkbook-chrome-active-background);
+}
+
+.inkbook-chrome-color-probe[data-inkbook-chrome-color="activeBorder"] {
+  color: var(--inkbook-chrome-active-border);
+}
+
+.inkbook-chrome-color-probe[data-inkbook-chrome-color="dangerHover"] {
+  color: var(--inkbook-chrome-danger-hover);
+}
+
+.inkbook-chrome-color-probe[data-inkbook-chrome-color="hover"] {
+  color: var(--inkbook-chrome-hover);
+}

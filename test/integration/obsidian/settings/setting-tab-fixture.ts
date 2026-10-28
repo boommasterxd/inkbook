@@ -6,6 +6,7 @@ import {
   type SettingDefinitionRender,
 } from "obsidian";
 import { vi } from "vitest";
+import { Keymap } from "../../../adapters/obsidian/keymap";
 
 import {
   createBuiltInDeviceSettings,
@@ -111,7 +112,7 @@ export function createTab(
   refreshRateStatus?: () => RefreshRateProfileStatus,
 ): InkbookSettingTab {
   return new InkbookSettingTab(
-    {} as ConstructorParameters<typeof InkbookSettingTab>[0],
+    { keymap: new Keymap() } as unknown as ConstructorParameters<typeof InkbookSettingTab>[0],
     {} as ConstructorParameters<typeof InkbookSettingTab>[1],
     store,
     undefined,

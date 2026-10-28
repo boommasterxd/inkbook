@@ -1,8 +1,74 @@
 import { expect, it, vi } from "vitest";
+import type { FileManager, Vault } from "obsidian";
 
+import {
+  createBuiltInDeviceSettings,
+  createBuiltInSettings,
+} from "../../../../../src/domain/settings";
 import { PresentationOperationFeedback } from "../../../../../src/obsidian/embeds/presentation/presentation-operation-feedback";
+import type { PresentationAttachment } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
+import { ObsidianWorkspaceRuntime } from "../../../../../src/obsidian/embeds/workspace/workspace-runtime";
+import type { ObsidianEmbedActions } from "../../../../../src/obsidian/commands";
+import { InkbookFeedbackManager } from "../../../../../src/obsidian/feedback";
+import { ColorSchemeBroadcaster } from "../../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
+
+it("releases presentation motion listeners on detach before workspace unload", () => {
+  const { root, ownerWindow } = createFramedPresentation();
+  const listeners = new Set<EventListenerOrEventListenerObject>();
+  Object.assign(ownerWindow, {
+    matchMedia: () => ({
+      addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+        listeners.add(listener),
+      removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+        listeners.delete(listener),
+    }),
+  });
+  const settings = {
+    device: createBuiltInDeviceSettings(),
+    vault: { ...createBuiltInSettings(), refreshRatePreference: 120 as const },
+  };
+  const runtime = new ObsidianWorkspaceRuntime(
+    {} as Vault,
+    {} as FileManager,
+    new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
+    () => settings,
+    {} as ObsidianEmbedActions,
+    {
+      fallbackOwnerWindow: () => ownerWindow,
+      manager: new InkbookFeedbackManager(),
+      onOpenSettings: () => undefined,
+      onOpenShortcuts: () => undefined,
+    },
+  );
+  try {
+    for (let generation = 1; generation <= 100; generation += 1) {
+      const attachment: PresentationAttachment = {
+        attachmentId: "embed",
+        attachmentGeneration: generation,
+        documentId: "drawing.svg",
+        embedReference: {
+          kind: "live-preview",
+          documentId: "drawing.svg",
+          from: 0,
+          to: 20,
+          sourcePath: "note.md",
+        },
+        root: root as unknown as HTMLElement,
+        scrollOwner: () => root as unknown as HTMLElement,
+      };
+      runtime.mount(attachment);
+      expect(listeners.size).toBe(1);
+      runtime.detach(attachment);
+      expect(listeners.size).toBe(0);
+    }
+    runtime.dispose();
+    expect(listeners.size).toBe(0);
+  } finally {
+    runtime.dispose();
+  }
+});
 
 it("defers all feedback allocation and positioning until the manual-opening threshold", () => {
   const { body, root, ownerWindow, frames } = createFramedPresentation();

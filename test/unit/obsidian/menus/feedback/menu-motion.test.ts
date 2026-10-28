@@ -2,6 +2,7 @@
 import "../../../../fixtures/obsidian/menu-motion";
 
 import { Window as HappyWindow } from "happy-dom";
+import { Platform } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { registerMenuFeedback } from "../../../../../src/obsidian/menus/feedback/menu-feedback";
@@ -9,7 +10,16 @@ import type { StyleControl } from "../../../../../src/obsidian/menus/editor-menu
 import { createStyleMenuContent } from "../../../../../src/obsidian/menus/style-menu-content";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 
-beforeEach(() => vi.useFakeTimers());
+const feedbackStyles = Platform.isDesktop
+  ? (await import("node:fs")).readFileSync("src/obsidian/styles/menu-feedback.css", "utf8")
+  : "";
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  const stylesheet = new CSSStyleSheet();
+  stylesheet.replaceSync(feedbackStyles);
+  document.adoptedStyleSheets = [stylesheet];
+});
 afterEach(() => {
   vi.useRealTimers();
   document.body.replaceChildren();
@@ -30,7 +40,7 @@ it("keeps pop-out hover, keyboard focus, and press lifecycle in the owning windo
   item.disabled = false;
   item.dispatchEvent(new Pointer("pointerover", { bubbles: true, pointerType: "mouse" }));
   vi.advanceTimersByTime(120);
-  expect(item.style.backgroundColor).toBe("var(--background-modifier-hover)");
+  expect(item.style.backgroundColor).toBe("");
   root.dispatchEvent(new Pointer("pointerleave", { pointerType: "mouse" }));
   vi.advanceTimersByTime(120);
   expect(item.style.backgroundColor).toBe("");
@@ -39,9 +49,9 @@ it("keeps pop-out hover, keyboard focus, and press lifecycle in the owning windo
   ownerWindow.document.dispatchEvent(new Key("keydown", { key: "Tab", bubbles: true }));
   item.focus();
   vi.advanceTimersByTime(120);
-  expect(item.style.backgroundColor).toBe("var(--background-modifier-hover)");
+  expect(item.style.backgroundColor).toBe("");
   item.dispatchEvent(new Pointer("pointerover", { bubbles: true, pointerType: "touch" }));
-  expect(item.style.backgroundColor).toBe("var(--background-modifier-hover)");
+  expect(item.style.backgroundColor).toBe("");
   item.dispatchEvent(
     new Pointer("pointerdown", {
       bubbles: true,
@@ -113,7 +123,7 @@ it("commits choice semantics immediately while retargeting owned paint and relea
   expect(vi.getTimerCount()).toBeGreaterThan(0);
   release();
   expect(vi.getTimerCount()).toBe(0);
-  expect(buttons.every((button) => !button.hasAttribute("data-inkbook-motion-choice"))).toBe(true);
+  expect(buttons.every((button) => button.style.backgroundColor === "")).toBe(true);
   solid!.click();
   await vi.advanceTimersByTimeAsync(0);
   expect(vi.getTimerCount()).toBe(0);
@@ -159,6 +169,67 @@ it("does not bind nested settings choices twice or add a wrapper tab stop", asyn
 });
 
 it.each(["full", "reduced"])(
+  "returns choice paint to the theme cascade after interrupted %s motion",
+  async (motion) => {
+    const root = menuRoot();
+    root.dataset.inkbookMotion = motion;
+    appendMenuControls(root, [OUTLINE_STYLE]);
+    const theme = new CSSStyleSheet();
+    const rule = ".inkbook-root .inkbook-menu-choice[aria-pressed='true']";
+    theme.replaceSync(`${rule} { color: rgb(10, 20, 30); }`);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, theme];
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>("button")];
+    const release = registerMenuFeedback(root, root, window);
+    for (const button of [buttons[1]!, buttons[0]!, buttons[1]!]) {
+      button.click();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    await vi.advanceTimersByTimeAsync(120);
+    const selected = buttons[1]!;
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
+    expect(window.getComputedStyle(selected).color).toBe("rgb(10, 20, 30)");
+    theme.replaceSync(`${rule} { color: rgb(40, 50, 60); }`);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets];
+    expect(window.getComputedStyle(selected).color).toBe("rgb(40, 50, 60)");
+    expect(selected.style.color).toBe("");
+    release();
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+it("keeps settled choice and recorder paint at their previous state when semantics change", async () => {
+  const root = menuRoot();
+  appendMenuControls(root, [OUTLINE_STYLE]);
+  const recorder = root.createEl("button", { cls: "inkbook-shortcut-recorder" });
+  const theme = new CSSStyleSheet();
+  theme.replaceSync(`
+    .inkbook-menu-choice, .inkbook-shortcut-recorder { border-color: rgb(10, 20, 30); }
+    .inkbook-menu-choice[data-inkbook-choice-state="selected"],
+    .inkbook-shortcut-recorder[data-inkbook-recording-state="true"] {
+      border-color: rgb(40, 50, 60);
+    }
+  `);
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, theme];
+  const choice = root.querySelector<HTMLButtonElement>("button[data-value='dashed']")!;
+  const release = registerMenuFeedback(root, root, window);
+  for (const [item, attribute] of [
+    [choice, "aria-pressed"],
+    [recorder, "data-recording"],
+  ] as const) {
+    const before = window.getComputedStyle(item).borderColor;
+    item.setAttribute(attribute, "true");
+    expect(item.getAttribute(attribute)).toBe("true");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(window.getComputedStyle(item).borderColor).toBe(before);
+    await vi.advanceTimersByTimeAsync(120);
+    expect(window.getComputedStyle(item).borderColor).not.toBe(before);
+    expect(item.style.borderColor).toBe("");
+  }
+  release();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["full", "reduced"])(
   "preserves readable destructive action contrast through first hover and canceled press with %s motion",
   async (preference) => {
     installObsidianDomHelpers();
@@ -168,7 +239,7 @@ it.each(["full", "reduced"])(
     theme.replaceSync(
       ".inkbook-dialog-actions .mod-warning { background-color: rgb(181.74, 38.22, 55.38); color: white; }",
     );
-    document.adoptedStyleSheets = [theme];
+    document.adoptedStyleSheets = [theme, ...document.adoptedStyleSheets];
     const button = root.createEl("button", { cls: "mod-warning", text: "Delete embed" });
     const activate = vi.fn();
     button.addEventListener("click", activate);
@@ -248,7 +319,7 @@ it.each([
     const { root, item, release } = menuButtonFixture(ownerWindow, "reduced");
     item.focus();
     item.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    expect(item.style.backgroundColor).toBe("var(--interactive-hover)");
+    expect(item.style.backgroundColor).toBe("");
     item.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
     expect(item.style.backgroundColor).toBe("");
     item.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
@@ -262,12 +333,12 @@ it.each([
     item.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
     item.disabled = false;
     item.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    expect(item.style.backgroundColor).toBe("var(--interactive-hover)");
+    expect(item.style.backgroundColor).toBe("");
     ownerWindow.dispatchEvent(new Event("blur"));
     expect(ownerWindow.document.activeElement).toBe(item);
     expect(item.style.backgroundColor).toBe("");
     item.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    expect(item.style.backgroundColor).toBe("var(--interactive-hover)");
+    expect(item.style.backgroundColor).toBe("");
     ownerWindow.dispatchEvent(new Event("pagehide"));
     expect(item.style.backgroundColor).toBe("");
     release();
@@ -307,6 +378,11 @@ function appendMenuControls(root: HTMLElement, controls: readonly StyleControl[]
 }
 
 function menuButtonFixture(ownerWindow: Window, preference: "full" | "reduced") {
+  const Stylesheet = (ownerWindow as Window & { CSSStyleSheet: typeof CSSStyleSheet })
+    .CSSStyleSheet;
+  const stylesheet = new Stylesheet();
+  stylesheet.replaceSync(feedbackStyles);
+  ownerWindow.document.adoptedStyleSheets = [stylesheet];
   const root = ownerWindow.document.createElementNS("http://www.w3.org/1999/xhtml", "div");
   root.className = "inkbook-root";
   root.dataset.inkbookMotion = preference;

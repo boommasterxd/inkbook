@@ -7,6 +7,9 @@ import { toolSectionDefinition } from "../../../../src/obsidian/settings/definit
 import { ShortcutSettingsView } from "../../../../src/obsidian/settings/shortcuts/shortcut-view";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
+import { keymapCaptureFixture } from "../../../fixtures/obsidian/keymap-capture";
+
+const captureKeymap = keymapCaptureFixture();
 
 beforeEach(installObsidianDomHelpers);
 afterEach(() => {
@@ -87,10 +90,11 @@ it("refreshes changed bindings, ignores equivalent clones and releases its subsc
 function createShortcuts() {
   const container = document.body.createDiv();
   const store = createTestSettingsStore();
+  const keymap = captureKeymap(window);
   return {
     container,
     store,
-    view: new ShortcutSettingsView(container, store, undefined, () =>
+    view: new ShortcutSettingsView(container, store, keymap, undefined, () =>
       workSchedulerFromFrames(window),
     ),
   };

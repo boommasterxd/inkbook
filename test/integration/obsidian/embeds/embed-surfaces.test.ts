@@ -94,6 +94,19 @@ function requireOwnedPreview(
   return activationButton;
 }
 describe("Markdown embed recognition", () => {
+  it("decodes Markdown paths once while preserving literal Wiki names and separating fragments", () => {
+    expect(
+      findMarkdownInkbookEmbeds(
+        [
+          "!inkbook[[../drawings/My%20page.svg#section|My drawing]]",
+          "!inkbook[My drawing](../drawings/My%20page.svg#section)",
+          "!inkbook[Hash](../drawings/100%25%23.svg)",
+          "!inkbook[Invalid](../drawings/bad%ZZ.svg)",
+        ].join("\n"),
+      ).map((embed) => embed.linkpath),
+    ).toEqual(["../drawings/My%20page.svg", "../drawings/My page.svg", "../drawings/100%#.svg"]);
+  });
+
   it("retains author descriptions independently of the resolved SVG path", () => {
     expect(
       findMarkdownInkbookEmbeds(
