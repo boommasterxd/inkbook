@@ -2,6 +2,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { PhoneSheetNavigation } from "../../menus/panels/panel-page";
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import type { Keymap } from "obsidian";
+import type { OnboardingPreferencePort } from "../../settings/onboarding-preference";
 
 import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../../domain/settings/types";
 import type { InkbookFeedbackCode } from "../../feedback";
@@ -20,7 +21,7 @@ export interface WorkspaceRuntimeSettings {
 }
 
 export interface WorkspaceActiveSceneOptions {
-  readonly onDismissOnboarding?: (() => void) | undefined;
+  readonly onboardingPreference?: OnboardingPreferencePort | undefined;
   readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
   readonly attachment: PresentationAttachment;
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
@@ -78,7 +79,7 @@ export function createWorkspaceActiveScene(
     onFirstStrokeCommitted: options.markFirstStroke,
     onOpenSettings: options.onOpenSettings,
     onOpenShortcuts: options.onOpenShortcuts,
-    onDismissOnboarding: options.onDismissOnboarding,
+    onboardingPreference: options.onboardingPreference,
     root: attachment.root,
     scheme: options.scheme,
     scrollOwner: attachment.scrollOwner,

@@ -9,7 +9,7 @@ type OnboardingOptions = Pick<
   | "container"
   | "deviceSettings"
   | "keymap"
-  | "onDismissOnboarding"
+  | "onboardingPreference"
   | "onFeedback"
   | "onStateChanged"
   | "renderer"
@@ -68,7 +68,7 @@ export class ActiveEditorOnboarding {
       this.#tour.close();
       return;
     }
-    if (this.#offered || this.#dismissed || this.#options.onDismissOnboarding === undefined) return;
+    if (this.#offered || !this.#options.onboardingPreference?.claimInvitation()) return;
     this.#offered = true;
     this.#visible = true;
     this.#tour.showInvitation(true);
@@ -103,7 +103,7 @@ export class ActiveEditorOnboarding {
   #rememberInvitation(): void {
     if (this.#dismissed) return;
     try {
-      this.#options.onDismissOnboarding?.();
+      this.#options.onboardingPreference?.dismiss();
       this.#dismissed = true;
     } catch {
       this.#options.onFeedback("onboarding-preference-failed");

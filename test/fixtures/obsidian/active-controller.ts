@@ -16,7 +16,7 @@ import type { SceneToolCursorFrame } from "../../../src/rendering/scene/tool-cur
 import { workSchedulerFromFrames } from "./work-scheduler";
 export function createHarness(
   options: Partial<
-    Pick<ActiveEditorControllerOptions, "deviceSettings" | "onDismissOnboarding" | "onFeedback">
+    Pick<ActiveEditorControllerOptions, "deviceSettings" | "onboardingPreference" | "onFeedback">
   > = {},
 ) {
   const input = createDiv();
