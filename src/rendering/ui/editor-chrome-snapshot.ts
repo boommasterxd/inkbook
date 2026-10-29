@@ -6,6 +6,7 @@ export function sameEditorChromeProps(
   right: InkbookEditorChromeProps,
 ): boolean {
   return (
+    sameOnboarding(left.onboarding, right.onboarding) &&
     left.onToolbarAction === right.onToolbarAction &&
     left.ownerDocument === right.ownerDocument &&
     left.renderIcon === right.renderIcon &&
@@ -21,6 +22,17 @@ export function sameEditorChromeProps(
   );
 }
 
+function sameOnboarding(
+  left: InkbookEditorChromeProps["onboarding"],
+  right: InkbookEditorChromeProps["onboarding"],
+): boolean {
+  return (
+    left?.container === right?.container &&
+    left?.onStart === right?.onStart &&
+    left?.onDismiss === right?.onDismiss
+  );
+}
+
 export function editorChromeLayoutKey(props: InkbookEditorChromeProps): string {
   const state = props.toolbarState;
   return [
@@ -29,6 +41,7 @@ export function editorChromeLayoutKey(props: InkbookEditorChromeProps): string {
     state.fingerDrawingAvailable ? "finger" : "no-finger",
     state.hasSelection ? "selection" : "no-selection",
     state.pasteVisible ? "paste" : "no-paste",
+    state.onboardingContextPreview === true ? "tour-context" : "no-tour-context",
   ].join(":");
 }
 
@@ -48,6 +61,7 @@ function sameToolbarState(
     a.fingerDrawingAvailable === b.fingerDrawingAvailable &&
     a.fingerDrawingEnabled === b.fingerDrawingEnabled &&
     a.hasSelection === b.hasSelection &&
+    (a.onboardingContextPreview ?? false) === (b.onboardingContextPreview ?? false) &&
     a.openFlyout === b.openFlyout &&
     a.pasteVisible === b.pasteVisible
   );

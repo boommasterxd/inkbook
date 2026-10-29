@@ -2,7 +2,7 @@ import { SceneFrameScheduler } from "./scene-frame-scheduler";
 import type { SceneToolCursorFrameReader } from "./tool-cursor";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type * as Schema from "../../domain/schema/public";
-import { SceneBackgroundCache } from "./content/background-cache";
+import { SceneBackgroundController } from "./scene-background-controller";
 import { DetachedSceneElementCache } from "./content/detached-element-cache";
 import { DEFAULT_CAMERA } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
@@ -30,8 +30,7 @@ import type * as Scene from "./types";
 import { SceneTransformPreviewController } from "./presentation/transform-preview-controller";
 import { SceneVisibilityState } from "./visibility/visibility-state";
 export class SvgSceneRenderer {
-  #backgroundDirty = true;
-  readonly #backgroundCache = new SceneBackgroundCache();
+  readonly #background: SceneBackgroundController;
   #camera: Scene.SceneCamera = DEFAULT_CAMERA;
   readonly #content: SceneContentRenderer;
   readonly #contentScheduler: SceneContentScheduler;
@@ -49,8 +48,6 @@ export class SvgSceneRenderer {
   #layoutInvalidationVersion = 0;
   readonly #liveStroke: SceneLiveStrokeRenderer;
   readonly #motion: SceneMotionController;
-  #page: Schema.PageV1;
-  #pageHeight = 1;
   readonly #previewInput: ScenePreviewInput;
   readonly #resourcePolicy: SceneResourcePolicy;
   readonly #pathCache = new ScenePathCache();
@@ -66,14 +63,14 @@ export class SvgSceneRenderer {
     if (options.scrollPreloadMarginPx !== undefined)
       validateScrollPreloadMargin(options.scrollPreloadMarginPx);
     this.#options = options;
-    this.#page = options.page;
     this.#scheduler = options.workScheduler;
+    this.#background = new SceneBackgroundController(options.page, this.#scheduler, this.#stats);
     const render = this.renderFrame.bind(this);
     this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, render);
     this.#dom = SceneDom.create(options);
     this.#dom.onSurfaceInvalidated = (themeChanged) =>
       themeChanged === true ? this.invalidateLayout() : this.#frames.schedule();
-    this.#frameWriter = new SceneFrameWriter(this.#dom, this.#backgroundCache, this.#stats, () =>
+    this.#frameWriter = new SceneFrameWriter(this.#dom, this.#background.cache, this.#stats, () =>
       this.#content.refreshSelectionFeedbackZoom(),
     );
     this.#visibility = new SceneVisibilityState(options.store, this.#stats);
@@ -124,7 +121,7 @@ export class SvgSceneRenderer {
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
     this.#frameWork = new SceneFrameWork({
-      backgroundPending: () => this.#backgroundDirty && this.#viewport !== undefined,
+      backgroundPending: () => this.#background.dirty && this.#viewport !== undefined,
       queryPending: () => this.#visibilityCoordinator.hasPendingQuery,
       content: this.#content,
       contentScheduler: this.#contentScheduler,
@@ -172,7 +169,7 @@ export class SvgSceneRenderer {
   }
   public applyDelta(delta: Scene.SceneStoreDelta): void {
     runtime.assertSceneActive(this.#disposed);
-    if (this.#layoutDirty || this.#backgroundDirty || !this.#visibilityCoordinator.canReuseRemoval)
+    if (this.#layoutDirty || this.#background.dirty || !this.#visibilityCoordinator.canReuseRemoval)
       this.#visibility.removalReuse.invalidate();
     this.#deltas.apply(delta, this.#visibilityCoordinator);
     this.#elementPreviews.applyMounted(this.#content.takeCommittedPreviewIds());
@@ -217,7 +214,9 @@ export class SvgSceneRenderer {
     this.#camera = camera;
     this.#frameWriter.setCamera(camera);
     this.#visibilityCoordinator.setContext(camera, this.#viewport);
-    if (zoomChanged) this.#backgroundDirty = true;
+    if (zoomChanged && this.#background.invalidateZoom()) {
+      this.#sceneCommits.markPending();
+    }
     this.#frames.schedule();
   }
   public setViewport(viewport: Scene.SceneViewport): void {
@@ -239,14 +238,15 @@ export class SvgSceneRenderer {
       this.#sceneCommits.markPending();
     this.#frames.schedule();
   }
-  public setPage(page: Schema.PageV1, height = this.#pageHeight): void {
+  public setPage(page: Schema.PageV1, height?: number): void {
     runtime.assertSceneActive(this.#disposed);
-    if (!Number.isFinite(height) || height <= 0)
-      throw new RangeError("Page height must be finite and positive.");
-    if (page === this.#page && height === this.#pageHeight) return;
-    this.#page = page;
-    this.#pageHeight = height;
-    this.#backgroundDirty = true;
+    if (!this.#background.setPage(page, height)) return;
+    this.#sceneCommits.markPending();
+    this.#frames.schedule();
+  }
+  public setMinimumBackgroundBlockSize(value: number): void {
+    runtime.assertSceneActive(this.#disposed);
+    if (!this.#background.setMinimumBlockSize(value)) return;
     this.#sceneCommits.markPending();
     this.#frames.schedule();
   }
@@ -395,13 +395,13 @@ export class SvgSceneRenderer {
     if (this.#content.promoteVisible(id)) this.#frames.schedule();
   }
   public instrumentation(): Scene.SceneInstrumentationSnapshot {
-    return this.#resourcePolicy.instrumentation(this.#stats, this.#backgroundCache);
+    return this.#resourcePolicy.instrumentation(this.#stats, this.#background.cache);
   }
   public get layoutInvalidationVersion(): number {
     return this.#layoutInvalidationVersion;
   }
   public resetInstrumentation(): void {
-    this.#resourcePolicy.resetInstrumentation(this.#stats, this.#backgroundCache);
+    this.#resourcePolicy.resetInstrumentation(this.#stats, this.#background.cache);
   }
   public readonly mountedIds = (band: RenderBand) => this.#content.mountedIds(band);
   public replaceGeneration(): void {
@@ -422,7 +422,7 @@ export class SvgSceneRenderer {
     this.#motion.release();
     this.#deltas.release();
     this.#dom.release();
-    this.#backgroundCache.clear();
+    this.#background.cache.clear();
     this.#content.release();
     this.#transformPreviews.release();
     this.#elementPreviews.release();
@@ -431,7 +431,7 @@ export class SvgSceneRenderer {
   }
   private renderFrame(frameTime: number, scene: boolean): void {
     if (!scene) return this.#frameWriter.flushToolCursor();
-    if (this.#layoutDirty || this.#backgroundDirty) this.#visibility.removalReuse.invalidate();
+    if (this.#layoutDirty || this.#background.dirty) this.#visibility.removalReuse.invalidate();
     this.#motion.expireSuppression();
     const startedAt = Number.isFinite(frameTime) ? frameTime : this.#scheduler.now();
     const deadline = this.#scheduler.deadline();
@@ -478,14 +478,9 @@ export class SvgSceneRenderer {
     if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
   }
   private writeBackground(deadline: number, allowAtomic = false): boolean {
-    if (!this.#backgroundDirty || this.#viewport === undefined) return false;
-    if (!allowAtomic && this.#scheduler.now() >= deadline) {
-      this.#stats.backgroundBudgetDeferrals += 1;
-      return true;
-    }
-    this.#frameWriter.writeBackground(this.#page, this.#pageHeight, this.#camera.zoom);
-    this.#backgroundDirty = false;
-    return false;
+    return this.#viewport === undefined
+      ? false
+      : this.#background.write(this.#frameWriter, this.#camera.zoom, deadline, allowAtomic);
   }
   private createPreviewInput(): ScenePreviewInput {
     return new ScenePreviewInput(this.#motion, this.#content, {

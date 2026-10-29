@@ -3,6 +3,7 @@ import * as Settings from "../../../src/domain/settings";
 import { ElementStore } from "../../../src/domain/store/public";
 import { createDragElement } from "../../../src/editor/tools/public";
 import { ActiveEditorController } from "../../../src/obsidian/embeds/active-editor/controller";
+import type { ActiveEditorControllerOptions } from "../../../src/obsidian/embeds/active-editor/controller-types";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { attachActiveSceneInputListeners } from "../../../src/obsidian/embeds/active-scene/active-scene-input";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
@@ -13,7 +14,11 @@ import type { SvgSceneRenderer } from "../../../src/rendering/scene/index";
 
 import type { SceneToolCursorFrame } from "../../../src/rendering/scene/tool-cursor";
 import { workSchedulerFromFrames } from "./work-scheduler";
-export function createHarness() {
+export function createHarness(
+  options: Partial<
+    Pick<ActiveEditorControllerOptions, "deviceSettings" | "onboardingPreference" | "onFeedback">
+  > = {},
+) {
   const input = createDiv();
   input.tabIndex = 0;
   const captured = new Set<number>();
@@ -61,6 +66,7 @@ export function createHarness() {
     scrollOwner: owner,
     snapping: Settings.createBuiltInSettings().snapping,
     startupTool: "draw",
+    ...options,
   });
   const removeInputListeners = attachActiveSceneInputListeners(
     renderer as unknown as SvgSceneRenderer,
@@ -183,6 +189,8 @@ function rendererPort(inputSurface: HTMLDivElement) {
     inputSurface,
     interruptMotionForPointerDown: vi.fn(),
     setCamera: vi.fn(),
+    setMinimumBackgroundBlockSize: vi.fn(),
+    sceneCommitProof: 0,
     setViewport: vi.fn<SvgSceneRenderer["setViewport"]>(),
     setElementFade: vi.fn(),
     setElementPreviews: vi.fn(),

@@ -68,7 +68,15 @@ const TOOLBAR_BUTTONS: readonly ToolbarButtonDefinition[] = [
   ...CONTEXT_BUTTONS,
 ];
 
+function buttonPreview(action: ToolbarAction, state: ToolbarState): boolean {
+  return (
+    state.onboardingContextPreview === true &&
+    CONTEXT_BUTTONS.some((button) => button.action === action)
+  );
+}
+
 function buttonVisible(action: ToolbarAction, state: ToolbarState): boolean {
+  if (buttonPreview(action, state)) return true;
   if (action === "finger-drawing") return state.fingerDrawingAvailable;
   if (action === "copy" || action === "cut" || action === "delete") return state.hasSelection;
   if (action === "paste") return state.pasteVisible;
@@ -76,6 +84,7 @@ function buttonVisible(action: ToolbarAction, state: ToolbarState): boolean {
 }
 
 function buttonDisabled(action: ToolbarAction, state: ToolbarState): boolean {
+  if (buttonPreview(action, state)) return true;
   if (action === "undo") return !state.canUndo;
   if (action === "redo") return !state.canRedo;
   return false;
@@ -237,6 +246,7 @@ function ToolbarGroup(props: ToolbarGroupProps) {
               confirmation={props.state.actionConfirmation}
               definition={button}
               disabled={disabled}
+              preview={buttonPreview(button.action, props.state)}
               expanded={expandedState(button.action, props.state)}
               key={button.action}
               onAction={props.onAction}

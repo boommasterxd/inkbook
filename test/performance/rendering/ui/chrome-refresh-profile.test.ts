@@ -125,17 +125,21 @@ async function verifySelectedStyleCache(): Promise<void> {
   const reads = vi.spyOn(store, "get");
   const summaries = vi.spyOn(StyleSummary, "summarizeSelectionStyle");
   const refresh = (canUndo: boolean, canRedo = false) =>
-    createActiveEditorChromeProps(
-      [chromeState, styles],
-      [
-        "select",
-        false,
-        initial.onToolbarAction,
-        initial.ownerDocument,
-        initial.renderIcon,
-        { ...initial.toolbarState, activeTool: "select", hasSelection: true, canUndo, canRedo },
-      ],
-    );
+    createActiveEditorChromeProps({
+      state: [chromeState, styles],
+      activeTool: "select",
+      leftHanded: false,
+      onToolbarAction: initial.onToolbarAction,
+      ownerDocument: initial.ownerDocument,
+      renderIcon: initial.renderIcon,
+      toolbarState: {
+        ...initial.toolbarState,
+        activeTool: "select",
+        hasSelection: true,
+        canUndo,
+        canRedo,
+      },
+    });
   const mounted = mountEditorChrome(
     { ownerDocument: initial.ownerDocument } as HTMLElement,
     refresh(false),

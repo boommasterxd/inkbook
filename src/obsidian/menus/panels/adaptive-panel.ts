@@ -369,6 +369,7 @@ export class AdaptivePanelSession extends Component {
     if (this.#closed || this.#layoutFrame !== undefined) return;
     this.#layoutFrame = this.#options.workScheduler.requestFrame(() => {
       this.#layoutFrame = undefined;
+      if (this.#closed) return;
       if (!Platform.isPhone || this.#positionRequested) this.#position();
       this.#positionRequested = false;
       if (this.#revealEditable && Platform.isPhone && this.#isTopmostLayer()) {

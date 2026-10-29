@@ -30,6 +30,14 @@ Precedence from highest to lowest:
 
 On editor activation, session tool values are initialized from vault defaults. Switching tools restores that tool's own session values. File background values come from the file and are not replaced by vault defaults after creation.
 
+## Onboarding Preference
+
+Device settings include `onboardingDismissed`, a boolean that defaults to `false`. Valid earlier version 1 or version 2 device settings without this field receive `false` without a diagnostic. An invalid present value receives the normal field diagnostic and built-in fallback.
+
+The first ready active embed consumes the invitation by storing `true` through the existing Obsidian device-and-vault local-storage API. This flag records that the invitation has been offered, not whether the tour was completed. Ignoring or declining it never causes another automatic invitation. Resetting general settings preserves the flag; `More options` → `Quick tour` remains available regardless of its value. The flag contains no identifier or drawing data and is never stored in the SVG. The presentation contract is defined in [Embed UI](embed-ui.md#optional-quick-tour).
+
+If local storage fails, a warning explains that the preference was not saved and the invitation may reappear after restart. Drawing remains available, the current session does not repeatedly offer the invitation, and Start tour or Skip tour retries saving the preference.
+
 ## Settings Root
 
 ```ts
@@ -69,6 +77,7 @@ interface SnappingSettingsV1 {
 
 interface InkbookDeviceSettingsV2 {
   version: 2;
+  onboardingDismissed: boolean;
   fingerDrawingEnabled: boolean;
   penTapInsertion: "off" | "handwriting";
   leftHandedToolbar: boolean;

@@ -54,6 +54,16 @@ class DeviceMapFake implements DeviceSettingsPort {
   }
 }
 
+async function createSubscribedDeviceStore() {
+  const vault = new VaultFake(createBuiltInSettings());
+  const device = new DeviceFake(createBuiltInDeviceSettings());
+  const store = new InkbookSettingsStore(vault, device);
+  await store.load();
+  const listener = vi.fn();
+  store.subscribeDeviceSettings(listener);
+  return { vault, device, store, listener };
+}
+
 describe("InkbookSettingsStore", () => {
   it("loads vault and device settings through their documented boundaries", async () => {
     const vaultValue = createBuiltInSettings();
@@ -113,6 +123,7 @@ describe("InkbookSettingsStore device migration", () => {
     expect(store.getDeviceSettings()).toEqual({
       ...legacy,
       version: 2,
+      onboardingDismissed: false,
       scrollPreloadMarginPx: 300,
       keyboardShortcuts: createBuiltInDeviceSettings().keyboardShortcuts,
     });
@@ -123,6 +134,28 @@ describe("InkbookSettingsStore device migration", () => {
 });
 
 describe("InkbookSettingsStore persistence", () => {
+  it("persists onboarding dismissal locally across reload and settings reset", async () => {
+    const { vault, device, store, listener } = await createSubscribedDeviceStore();
+
+    store.updateDeviceSettings((settings) => ({ ...settings, onboardingDismissed: true }));
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith({
+      ...createBuiltInDeviceSettings(),
+      onboardingDismissed: true,
+    });
+    expect(device.saves).toEqual([
+      { key: DEVICE_SETTINGS_STORAGE_KEY, data: store.getDeviceSettings() },
+    ]);
+    expect(vault.saves).toEqual([]);
+    const reloaded = new InkbookSettingsStore(vault, new DeviceFake(device.saves[0]?.data));
+    await reloaded.load();
+    expect(reloaded.getDeviceSettings().onboardingDismissed).toBe(true);
+
+    await reloaded.resetAll();
+    expect(reloaded.getDeviceSettings().onboardingDismissed).toBe(true);
+  });
+
   it("uses field-level loader fallback and reports persisted-data diagnostics", async () => {
     const vaultValue = createBuiltInSettings() as unknown as Record<string, unknown>;
     vaultValue.startupTool = "invalid";
@@ -253,12 +286,7 @@ describe("InkbookSettingsStore vault subscriptions", () => {
 
 describe("InkbookSettingsStore preload margin persistence", () => {
   it("notifies on margin changes, persists under the existing key, reloads, and resets", async () => {
-    const vault = new VaultFake(createBuiltInSettings());
-    const device = new DeviceFake(createBuiltInDeviceSettings());
-    const store = new InkbookSettingsStore(vault, device);
-    await store.load();
-    const listener = vi.fn();
-    store.subscribeDeviceSettings(listener);
+    const { vault, device, store, listener } = await createSubscribedDeviceStore();
 
     store.updateDeviceSettings((settings) => ({ ...settings, scrollPreloadMarginPx: 800 }));
     store.updateDeviceSettings((settings) => settings);
@@ -284,24 +312,23 @@ describe("InkbookSettingsStore preload margin persistence", () => {
     expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(300);
     expect(listener).toHaveBeenCalledTimes(2);
   });
+});
 
-  it("keeps the prior margin and emits nothing when device storage fails", async () => {
-    const device = new DeviceFake(createBuiltInDeviceSettings());
-    const store = new InkbookSettingsStore(new VaultFake(createBuiltInSettings()), device);
-    await store.load();
-    const listener = vi.fn();
-    store.subscribeDeviceSettings(listener);
-    vi.spyOn(device, "saveLocalStorage").mockImplementation(() => {
-      throw new Error("Storage unavailable");
-    });
+describe("InkbookSettingsStore device write failures", () => {
+  it.each([{ onboardingDismissed: true }, { scrollPreloadMarginPx: 100 }])(
+    "preserves confirmed settings and emits nothing when persisting %o fails",
+    async (change) => {
+      const { device, store, listener } = await createSubscribedDeviceStore();
+      const confirmed = store.getDeviceSettings();
+      vi.spyOn(device, "saveLocalStorage").mockImplementation(() => {
+        throw new Error("Storage unavailable");
+      });
 
-    expect(() =>
-      store.updateDeviceSettings((settings) => ({
-        ...settings,
-        scrollPreloadMarginPx: 100,
-      })),
-    ).toThrow("Storage unavailable");
-    expect(store.getDeviceSettings().scrollPreloadMarginPx).toBe(300);
-    expect(listener).not.toHaveBeenCalled();
-  });
+      expect(() => store.updateDeviceSettings((settings) => ({ ...settings, ...change }))).toThrow(
+        "Storage unavailable",
+      );
+      expect(store.getDeviceSettings()).toEqual(confirmed);
+      expect(listener).not.toHaveBeenCalled();
+    },
+  );
 });

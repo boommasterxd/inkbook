@@ -55,6 +55,7 @@ describe("editor toolbar action menus", () => {
       "Copy embed",
       "Settings",
       "Keyboard shortcuts",
+      "Quick tour",
       "Erase all",
       "Delete embed",
     ]);

@@ -1,4 +1,5 @@
 import { createPhoneSheetHost } from "./menus/panels/phone-sheet-host";
+import { OnboardingPreference } from "./settings/onboarding-preference";
 import {
   registerDocumentStatusBar,
   resolveDocumentStatusPane,
@@ -238,6 +239,7 @@ function createRuntime(
         showHeadlessRecoveryNotice(plugin.app, actions, () => settings.getDeviceSettings().motion),
       onOpenSettings: (navigation) => settingsModal.open("settings", navigation),
       onOpenShortcuts: (navigation) => settingsModal.open("shortcuts", navigation),
+      onboardingPreference: new OnboardingPreference(settings),
     },
   );
   return runtime;

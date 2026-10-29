@@ -42,6 +42,7 @@ describe("active scene chrome updates", () => {
         fingerDrawingAvailable: true,
         hasSelection: false,
         pasteVisible: true,
+        onboardingContextPreview: false,
       },
     };
     const chrome = { update: vi.fn() };
@@ -51,9 +52,15 @@ describe("active scene chrome updates", () => {
     updateActiveSceneChrome(chrome as never, controller as never, layout);
 
     expect(chrome.update).toHaveBeenCalledWith(props);
-    expect(layout.chromeChanged).toHaveBeenCalledWith("wide:right:finger:no-selection:paste");
+    const initialKey = layout.chromeChanged.mock.calls[0]?.[0] as string;
+    expect(initialKey).toBe("wide:right:finger:no-selection:paste:no-tour-context");
     props.toolbarState.canPaste = true;
     updateActiveSceneChrome(chrome as never, controller as never, layout);
-    expect(layout.chromeChanged).toHaveBeenLastCalledWith("wide:right:finger:no-selection:paste");
+    expect(layout.chromeChanged).toHaveBeenLastCalledWith(initialKey);
+    props.toolbarState.onboardingContextPreview = true;
+    updateActiveSceneChrome(chrome as never, controller as never, layout);
+    expect(layout.chromeChanged).toHaveBeenLastCalledWith(
+      "wide:right:finger:no-selection:paste:tour-context",
+    );
   });
 });

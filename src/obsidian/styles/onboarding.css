@@ -1,0 +1,248 @@
+.inkbook-root .inkbook-onboarding-invitation,
+.inkbook-onboarding-layer {
+  --inkbook-guide-ink: #37322f;
+  --inkbook-guide-paper: #f6f6f6;
+
+  color: var(--inkbook-guide-ink);
+}
+
+.inkbook-onboarding-layer.inkbook-onboarding-hidden {
+  visibility: hidden;
+}
+
+.inkbook-root .inkbook-onboarding-insets {
+  block-size: 0;
+  box-sizing: content-box;
+  inline-size: 0;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  padding-block: env(safe-area-inset-top, 0) env(safe-area-inset-bottom, 0);
+  pointer-events: none;
+  position: absolute;
+  visibility: hidden;
+}
+
+.inkbook-root .inkbook-onboarding-insets[data-phone="true"] {
+  padding-block: calc(
+      var(--view-header-height, 0px) +
+        max(var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px))
+    )
+    calc(
+      max(var(--mobile-toolbar-height, 0px), var(--navbar-height, 0px)) +
+        max(
+          var(--navbar-bottom-offset, 0px),
+          var(--safe-area-inset-bottom, 0px),
+          env(safe-area-inset-bottom, 0px)
+        )
+    );
+}
+
+.inkbook-root .inkbook-onboarding-invitation,
+.inkbook-onboarding-note,
+.inkbook-onboarding-navigation {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+}
+
+.inkbook-root .inkbook-onboarding-invitation {
+  block-size: calc(100% - 16px);
+  inline-size: calc(100% - 40px);
+  inset-block-start: 16px;
+  inset-inline-start: 50%;
+  pointer-events: none;
+  position: absolute;
+  translate: -50% 0;
+  z-index: 1;
+}
+
+.inkbook-root[data-inkbook-scheme="dark"] .inkbook-onboarding-invitation,
+.inkbook-onboarding-layer[data-inkbook-scheme="dark"] {
+  --inkbook-guide-ink: #eee7dc;
+  --inkbook-guide-paper: #212121;
+}
+
+.inkbook-onboarding-layer {
+  border-radius: inherit;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+  position: absolute;
+  z-index: var(--layer-popover);
+}
+
+.inkbook-onboarding-tour {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.inkbook-onboarding-note {
+  background: transparent;
+  pointer-events: auto;
+  position: absolute;
+}
+
+.inkbook-onboarding-navigation {
+  pointer-events: auto;
+  position: absolute;
+  translate: -50% 0;
+}
+
+.inkbook-handwriting-title,
+.inkbook-handwriting-line,
+.inkbook-onboarding-arrow {
+  color: inherit;
+  fill: none;
+  pointer-events: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.inkbook-handwriting-title,
+.inkbook-handwriting-line {
+  display: block;
+  max-inline-size: 100%;
+  object-fit: contain;
+  object-position: center;
+  overflow: visible;
+}
+
+.inkbook-handwriting-title {
+  block-size: 54px;
+  stroke-width: 0.65px;
+}
+
+.inkbook-handwriting-line {
+  block-size: 40px;
+  stroke-width: 0.55px;
+}
+
+.inkbook-onboarding-progress {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  margin: 8px 0 0;
+  min-inline-size: 24px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.inkbook-onboarding-actions {
+  align-items: center;
+  background: var(--inkbook-guide-paper);
+  border: 1px solid var(--menu-border-color);
+  border-radius: 999px;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  inline-size: max-content;
+  margin-block-start: 12px;
+  margin-inline: auto;
+  max-inline-size: 100%;
+  padding: 1px;
+}
+
+.inkbook-onboarding-navigation .inkbook-onboarding-actions {
+  margin-block-start: 4px;
+}
+
+.inkbook-onboarding-invitation .inkbook-onboarding-actions {
+  inset-block-end: 16px;
+  inset-inline-start: 50%;
+  margin: 0;
+  position: absolute;
+  pointer-events: auto;
+  translate: -50% 0;
+}
+
+.inkbook-onboarding-actions .inkbook-onboarding-action {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  color: var(--text-normal);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: var(--font-ui-small);
+  gap: 8px;
+  justify-content: center;
+  margin: 0;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: 0 16px;
+  position: relative;
+}
+
+.inkbook-onboarding-actions .inkbook-onboarding-icon-action {
+  inline-size: 44px;
+  padding: 0;
+}
+
+.inkbook-onboarding-actions .inkbook-onboarding-action:is(:hover, :active, :focus) {
+  background: transparent;
+  box-shadow: none;
+}
+
+.inkbook-onboarding-actions .inkbook-onboarding-action:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.inkbook-onboarding-actions .inkbook-onboarding-action:focus-visible {
+  outline: 2px solid var(--text-normal);
+  outline-offset: 1px;
+}
+
+.inkbook-onboarding-action-icon,
+.inkbook-onboarding-action-icon svg {
+  block-size: 18px;
+  inline-size: 18px;
+}
+
+.inkbook-onboarding-action-icon {
+  display: inline-flex;
+  position: relative;
+}
+
+.inkbook-onboarding-arrow {
+  block-size: 100%;
+  inline-size: 100%;
+  inset: 0;
+  position: absolute;
+  stroke-width: 2px;
+}
+
+.inkbook-onboarding-layer[data-compact="true"] .inkbook-onboarding-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 12px;
+  justify-items: center;
+}
+
+.inkbook-onboarding-layer[data-compact="true"] .inkbook-handwriting-title {
+  block-size: 24px;
+  grid-column: 1 / -1;
+}
+
+.inkbook-onboarding-layer[data-compact="true"] .inkbook-handwriting-line {
+  block-size: 20px;
+}
+
+.inkbook-onboarding-layer[data-compact="true"] .inkbook-onboarding-progress {
+  inset-block-start: 50%;
+  inset-inline-end: calc(100% + 8px);
+  position: absolute;
+  translate: 0 -50%;
+}
+
+.inkbook-onboarding-layer[data-compact="true"] .inkbook-onboarding-progress,
+.inkbook-onboarding-layer[data-compact="true"] .inkbook-onboarding-actions {
+  margin: 0;
+}

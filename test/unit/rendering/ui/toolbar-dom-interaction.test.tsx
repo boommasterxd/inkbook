@@ -350,6 +350,56 @@ describe("mounted Inkbook history controls", () => {
   });
 });
 
+it.each([false, true])(
+  "previews context actions without granting availability, leftHanded=%s",
+  async (leftHanded) => {
+    const real = { ...noPasteState, hasSelection: false, canUndo: false };
+    const mounted = mountToolbar({ ...real, onboardingContextPreview: true }, "wide", leftHanded);
+    try {
+      const actions = ["paste", "copy", "cut", "delete"] as const;
+      for (const action of actions) {
+        const button = mounted.button(action);
+        expect(button.disabled).toBe(true);
+        expect(button.tabIndex).toBe(-1);
+        expect(button.getAttribute("data-inkbook-tour-preview")).toBe("true");
+        expect(button.getAttribute("aria-label")).toBe(action[0]!.toUpperCase() + action.slice(1));
+        expect(button.getAttribute("aria-description")).toBe(
+          action === "paste" ? "Available with copied ink" : "Available after selecting ink",
+        );
+        expect(button.closest('[role="group"]')?.getAttribute("aria-label")).toBe(
+          "Editing actions",
+        );
+        act(() => {
+          button.click();
+          button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+      }
+      expect(mounted.onAction).not.toHaveBeenCalled();
+      expect(mounted.button("undo").disabled).toBe(true);
+      expect(mounted.button("draw").getAttribute("aria-pressed")).toBe("true");
+      mounted.update(real);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      for (const action of actions)
+        expect(mounted.container.querySelector(`[data-inkbook-action="${action}"]`)).toBeNull();
+      mounted.update({ ...completeState, onboardingContextPreview: true });
+      expect(mounted.button("copy").disabled).toBe(true);
+      mounted.update(completeState);
+      for (const action of actions) {
+        const button = mounted.button(action);
+        expect(button.disabled).toBe(false);
+        expect(button.hasAttribute("data-inkbook-tour-preview")).toBe(false);
+        expect(button.hasAttribute("aria-description")).toBe(false);
+        act(() => button.click());
+        expect(mounted.onAction).toHaveBeenLastCalledWith(action, button);
+      }
+    } finally {
+      mounted.unmount();
+    }
+  },
+);
+
 interface MountedToolbar {
   readonly button: (action: ToolbarAction) => HTMLButtonElement;
   readonly container: HTMLDivElement;

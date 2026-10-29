@@ -44,6 +44,7 @@ interface StyleNumberControl {
 export type StyleControl = StyleChoiceControl | StyleNumberControl | StyleToggleControl;
 
 export interface EditorMenuCallbacks {
+  readonly onOpenTour?: (() => void) | undefined;
   readonly onBackgroundSpacingChange: (spacing: BackgroundSpacing) => void;
   readonly onBackgroundSpacingPreview: (spacing: BackgroundSpacing) => void;
   readonly onBackgroundTypeChange: (type: BackgroundType) => void;

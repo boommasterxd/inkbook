@@ -2,11 +2,25 @@
 
 import { Window as HappyWindow } from "happy-dom";
 import { describe, expect, it, vi } from "vitest";
+import { createSvgElement } from "../../../adapters/obsidian/dom";
 
 import {
   animateOwnedElement,
   animateOwnedElements,
 } from "../../../../src/obsidian/runtime/element-motion";
+
+it("uses seconds for SVG drawing delays and cancels the owned pen animation", () => {
+  const path = createSvgElement("path");
+  const controls = animateOwnedElement(
+    path,
+    { strokeDashoffset: ["1", "0"] },
+    { duration: 0.5, delay: 0.78 },
+  );
+  const animation = path.getAnimations()[0]!;
+  expect(animation.effect?.getTiming()).toMatchObject({ duration: 500, delay: 780 });
+  controls.cancel();
+  expect(path.getAnimations()).toHaveLength(0);
+});
 
 describe("owned native Motion lifecycle", () => {
   it("completes a foreign-window group only after all properties finish", async () => {

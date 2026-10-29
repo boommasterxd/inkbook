@@ -48,6 +48,8 @@ export interface ToolbarState {
   readonly fingerDrawingAvailable: boolean;
   readonly fingerDrawingEnabled: boolean;
   readonly hasSelection: boolean;
+  /** Presentation-only context actions for the optional tour; never grants availability. */
+  readonly onboardingContextPreview?: boolean;
   readonly openFlyout: FlyoutId | null;
   readonly pasteVisible: boolean;
 }

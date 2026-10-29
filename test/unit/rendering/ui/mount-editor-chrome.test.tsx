@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { editorChromeLayoutKey } from "../../../../src/rendering/ui/editor-chrome-snapshot";
 import { mountEditorChrome } from "../../../../src/rendering/ui/mount-editor-chrome";
 import { createEditorChromeProps } from "../../../fixtures/editor-chrome";
 
@@ -50,4 +51,27 @@ describe("editor chrome mount", () => {
     );
     mounted.unmount();
   });
+});
+
+it("publishes context previews through snapshot comparison and layout identity", () => {
+  const ownerDocument = {} as Document;
+  const initial = createEditorChromeProps(ownerDocument);
+  const mounted = mountEditorChrome({ ownerDocument } as HTMLElement, initial);
+  const preview = {
+    ...initial,
+    toolbarState: { ...initial.toolbarState, onboardingContextPreview: true },
+  };
+  mounted.update(preview);
+  expect(reactRoot.render).toHaveBeenCalledTimes(2);
+  expect(editorChromeLayoutKey(preview)).not.toBe(editorChromeLayoutKey(initial));
+  mounted.update(initial);
+  expect(reactRoot.render).toHaveBeenCalledTimes(3);
+  const explicitFalse = {
+    ...initial,
+    toolbarState: { ...initial.toolbarState, onboardingContextPreview: false },
+  };
+  mounted.update(explicitFalse);
+  expect(reactRoot.render).toHaveBeenCalledTimes(3);
+  expect(editorChromeLayoutKey(explicitFalse)).toBe(editorChromeLayoutKey(initial));
+  mounted.unmount();
 });
