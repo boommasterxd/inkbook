@@ -156,6 +156,18 @@ function coverageScope(graph, tests, changes, files) {
   return [...scope].filter((file) => file.startsWith("src/") && files.has(file)).sort();
 }
 
+function needsCompleteRuntimeTests(graph, selected, coverage, plan) {
+  if (!coverage.length || coverage.length !== plan.coverage.length) return false;
+  const selectedTests = new Set(selected);
+  const productConsumers = affectedFiles([graph], coverage);
+  return plan.tests.some(
+    (file) =>
+      !file.startsWith("test/performance/") &&
+      !selectedTests.has(file) &&
+      productConsumers.has(file),
+  );
+}
+
 async function comparisonState(root, base, head, merge) {
   const fallback = {
     base: null,
@@ -223,6 +235,12 @@ export async function createSelection({
     const coverage = coverageScope(graphs[0], selected, comparison.changes, files);
     if (coverage.length && !selected.some((file) => !file.startsWith("test/performance/"))) {
       throw new Error("Affected production sources have no Unit or Integration coverage");
+    }
+    if (needsCompleteRuntimeTests(graphs[0], selected, coverage, plan)) {
+      return validateSelection({
+        ...plan,
+        reason: "Complete runtime coverage requires all product tests",
+      });
     }
     return validateSelection({
       ...plan,
