@@ -134,18 +134,23 @@ export function unchangedEffects(state: InputState): InputReduction {
 }
 
 export function isReservedContextPointer(action: PointerDownAction): boolean {
-  return action.pointerType === "mouse" && (action.button === 2 || action.isPlatformContextClick);
+  return (
+    action.pointerType === "mouse" &&
+    penRole(action) === "normal" &&
+    (action.button === 2 || action.isPlatformContextClick)
+  );
 }
 
 export function usesTemporaryEraser(action: PointerDownAction): boolean {
-  if (action.pointerType === "pen" && penRole(action) !== "normal") {
+  if (penRole(action) !== "normal") {
     return true;
   }
   return (action.pointerType === "mouse" || action.pointerType === "pen") && action.controlOrMeta;
 }
 
 export function penRole(action: PointerDownAction): "normal" | "eraser" | "side-button" {
-  return action.pointerType === "pen" ? (action.penRole ?? "normal") : "normal";
+  if (action.pointerType === "pen") return action.penRole ?? "normal";
+  return action.pointerType === "mouse" && action.penRole === "eraser" ? "eraser" : "normal";
 }
 
 export function hasActiveNormalPen(interaction: InputInteraction | undefined): boolean {

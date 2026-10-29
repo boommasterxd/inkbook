@@ -115,6 +115,7 @@ describe("tool cursor erasing and hints", () => {
   it("reserves temporary eraser hover before selection hints except in Select", () => {
     for (const temporary of [
       { pointerType: "mouse", controlOrMeta: true },
+      { pointerType: "mouse", penRole: "eraser" },
       { pointerType: "pen", penRole: "eraser" },
       { pointerType: "pen", penRole: "side-button" },
     ] as const) {
@@ -131,7 +132,7 @@ describe("tool cursor erasing and hints", () => {
     expect(
       resolve({ pointer: { ...pointer, pointerType: "pen", penRole: "normal" } }).overlay?.kind,
     ).toBe("tool");
-    expect(resolve({ pointer: { ...pointer, penRole: "eraser" } }).overlay?.kind).toBe("tool");
+    expect(resolve({ pointer: { ...pointer, penRole: "side-button" } }).overlay?.kind).toBe("tool");
   });
 
   it("accepts precise system hints without any tool overlay", () => {

@@ -30,6 +30,7 @@ describe("pointer-down classification", () => {
     ],
     ["temporary Eraser modifier", { button: 0, controlOrMeta: true }],
     ["non-primary contact", { button: 0, isPrimary: false }],
+    ["mouse hardware eraser", { button: 5, buttons: 1 }],
   ] as const)("keeps %s away from selection handles", (_label, overrides) => {
     expect(classify(overrides).handleEligible).toBe(false);
   });
@@ -90,8 +91,19 @@ describe("pen button and contact classification", () => {
     expect(classifyPenRole({ pointerType: "pen", button, buttons: 8 })).toBe(role);
   });
 
-  it.each(["mouse", "touch"] as const)("does not claim %s buttons", (pointerType) => {
-    expect(classifyPenRole({ pointerType, button: 5, buttons: 38 })).toBe("normal");
+  it.each([
+    [5, 1, "eraser"],
+    [-1, 32, "eraser"],
+    [-1, 33, "eraser"],
+    [2, 2, "normal"],
+    [1, 4, "normal"],
+    [5, 0, "normal"],
+  ] as const)("classifies mouse button %s with mask %s as %s", (button, buttons, role) => {
+    expect(classifyPenRole({ pointerType: "mouse", button, buttons })).toBe(role);
+  });
+
+  it("does not claim touch buttons", () => {
+    expect(classifyPenRole({ pointerType: "touch", button: 5, buttons: 38 })).toBe("normal");
   });
 
   it.each([

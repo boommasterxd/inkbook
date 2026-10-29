@@ -1,6 +1,6 @@
 import { MAX_ABSOLUTE_COORDINATE } from "../../domain/schema/public";
 
-import type { PointerDownAction, PointerSample } from "./input-types";
+import type { InputState, PointerDownAction, PointerSample } from "./input-types";
 
 type PenPointerRole = "normal" | "eraser" | "side-button";
 
@@ -26,6 +26,7 @@ export function classifyPointerDown(
   const penRole = classifyPenRole(input);
   const isPlatformContextClick =
     input.pointerType === "mouse" &&
+    penRole === "normal" &&
     (input.button === 2 || (input.button === 0 && input.controlKey && input.isMacPlatform));
   const normalPrimary =
     input.isPrimary &&
@@ -33,7 +34,7 @@ export function classifyPointerDown(
     input.buttons === 1 &&
     !input.controlOrMeta &&
     !isPlatformContextClick &&
-    (input.pointerType !== "pen" || penRole === "normal");
+    penRole === "normal";
   return { handleEligible: normalPrimary, isPlatformContextClick, penRole };
 }
 
@@ -64,8 +65,9 @@ export function isValidInputPoint(value: Pick<PointerSample, "x" | "y">): boolea
 export function classifyPenRole(
   input: Pick<PointerDownClassificationInput, "pointerType" | "button" | "buttons">,
 ): PenPointerRole {
-  if (input.pointerType !== "pen") return "normal";
+  if (input.pointerType !== "pen" && input.pointerType !== "mouse") return "normal";
   if ((input.buttons & 32) !== 0 || (input.button === 5 && input.buttons !== 0)) return "eraser";
+  if (input.pointerType !== "pen") return "normal";
   if ((input.buttons & 6) !== 0) return "side-button";
   // A contact-only mask can accompany a chorded release of the side button.
   if (input.buttons !== 0 && (input.buttons & 1) === 0) {
@@ -79,6 +81,23 @@ export function hasPenContact(input: {
   readonly pressure?: number;
 }): boolean {
   return (input.pressure ?? 0) > 0 || (input.buttons & 33) !== 0;
+}
+
+export function usesPenContactLifecycle(
+  pointer: { readonly pointerId: number; readonly pointerType: string },
+  role: PenPointerRole,
+  interaction: InputState["interaction"],
+): boolean {
+  return (
+    pointer.pointerType === "pen" ||
+    (pointer.pointerType === "mouse" &&
+      (role === "eraser" ||
+        (interaction !== undefined &&
+          interaction.phase !== "pinch" &&
+          interaction.pointerType === "mouse" &&
+          interaction.penRole === "eraser" &&
+          interaction.pointerId === pointer.pointerId)))
+  );
 }
 
 function isBoundedCoordinate(value: number): boolean {
