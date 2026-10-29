@@ -65,48 +65,59 @@ describe("raw tool cursor input work bounds", () => {
   );
 });
 
-it.each([2, 4, 32])("retains hover geometry across pen button %s press and release", (buttons) => {
-  const h = harness();
-  const input = h.controls.input;
-  h.controller.record(sample(1, { pointerType: "pen" }), "move");
-  expect(h.read().cursor?.kind).toBe("tool");
-  h.measure.mockClear();
-  h.icon.mockClear();
-  h.request.mockClear();
-  try {
-    for (const [index, held] of [buttons, 0].entries()) {
-      const time = 10 + index * 200;
-      h.controller.record(sample(time, { pointerType: "pen", buttons: held }), "move");
-      expect(h.request).toHaveBeenCalledOnce();
-      if (held === 0) h.flushTimers();
-      expect(h.read().cursor?.kind).toBe(held === 0 ? "tool" : "eraser");
-      // Releasing restores the existing tool icon; the eraser needs no icon lookup.
-      expect(h.icon).toHaveBeenCalledTimes(held === 0 ? 1 : 0);
-      h.request.mockClear();
-      h.icon.mockClear();
-      h.move.mockClear();
-      for (let position = 0; position < 128; position += 1)
-        h.surface.dispatchEvent(
-          sample(
-            time + position + 1,
-            {
-              pointerType: "pen",
-              buttons: held,
-              clientX: 121 + position,
-            },
-            "pointerrawupdate",
-          ),
-        );
-      expect(h.move).toHaveBeenCalledTimes(128);
-      expect(h.request).not.toHaveBeenCalled();
-      expect(h.icon).not.toHaveBeenCalled();
-      expect(h.measure).not.toHaveBeenCalled();
-      expect(h.controls.input).toBe(input);
+it.each([
+  ["pen", 2],
+  ["pen", 4],
+  ["pen", 32],
+  ["mouse", 32],
+] as const)(
+  "retains hover geometry across %s button %s press and release",
+  (pointerType, buttons) => {
+    const h = harness();
+    const input = h.controls.input;
+    h.controller.record(sample(1, { pointerType }), "move");
+    expect(h.read().cursor?.kind).toBe("tool");
+    h.measure.mockClear();
+    h.icon.mockClear();
+    h.request.mockClear();
+    try {
+      for (const [index, held] of [buttons, 0].entries()) {
+        const time = 10 + index * 200;
+        h.controller.record(sample(time, { pointerType, buttons: held }), "move");
+        expect(h.request).toHaveBeenCalledOnce();
+        if (pointerType === "mouse") {
+          expect(h.window.setTimeout).not.toHaveBeenCalled();
+          expect(h.timers.size).toBe(0);
+        } else if (held === 0) h.flushTimers();
+        expect(h.read().cursor?.kind).toBe(held === 0 ? "tool" : "eraser");
+        // Releasing restores the existing tool icon; the eraser needs no icon lookup.
+        expect(h.icon).toHaveBeenCalledTimes(held === 0 ? 1 : 0);
+        h.request.mockClear();
+        h.icon.mockClear();
+        h.move.mockClear();
+        for (let position = 0; position < 128; position += 1)
+          h.surface.dispatchEvent(
+            sample(
+              time + position + 1,
+              {
+                pointerType,
+                buttons: held,
+                clientX: 121 + position,
+              },
+              "pointerrawupdate",
+            ),
+          );
+        expect(h.move).toHaveBeenCalledTimes(128);
+        expect(h.request).not.toHaveBeenCalled();
+        expect(h.icon).not.toHaveBeenCalled();
+        expect(h.measure).not.toHaveBeenCalled();
+        expect(h.controls.input).toBe(input);
+      }
+    } finally {
+      h.controller.dispose();
     }
-  } finally {
-    h.controller.dispose();
-  }
-});
+  },
+);
 
 it("owns one pen release timer across hover moves and cancels it on repress and disposal", () => {
   const h = harness();
