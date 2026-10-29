@@ -30,6 +30,12 @@ function clickAction(title: string): void {
   action.click();
 }
 
+function finishHandoff({ options, session }: ReturnType<typeof fixture>): void {
+  expect(options.onClosed).toHaveBeenCalledOnce();
+  session.close("immediate");
+  expect(vi.getTimerCount()).toBe(0);
+}
+
 describe.each(["desktop", "tablet", "phone"])("owned toolbar navigation on %s", (mode) => {
   beforeEach(() => {
     Platform.isMobile = mode !== "desktop";
@@ -97,9 +103,7 @@ describe.each(["desktop", "tablet", "phone"])("owned toolbar navigation on %s", 
       expect(callback).not.toHaveBeenCalled();
       await Promise.resolve();
       expect(callback).toHaveBeenCalledOnce();
-      expect(options.onClosed).toHaveBeenCalledOnce();
-      session.close("immediate");
-      expect(vi.getTimerCount()).toBe(0);
+      finishHandoff({ options, session });
     },
   );
 
@@ -125,8 +129,24 @@ describe.each(["desktop", "tablet", "phone"])("owned toolbar navigation on %s", 
     expect(callback).not.toHaveBeenCalled();
     await Promise.resolve();
     expect(callback).toHaveBeenCalledExactlyOnceWith(action);
-    expect(options.onClosed).toHaveBeenCalledOnce();
-    session.close("immediate");
-    expect(vi.getTimerCount()).toBe(0);
+    finishHandoff({ options, session });
   });
 });
+
+it.each(["desktop", "tablet", "phone"])(
+  "closes More options before explicitly opening the quick tour on %s",
+  async (mode) => {
+    Platform.isMobile = mode !== "desktop";
+    Platform.isPhone = mode === "phone";
+    const { options, session } = fixture();
+    const callback = vi.mocked(options.handlers.onOpenTour!);
+    callback.mockImplementation(() => {
+      expect(document.querySelector('[role="menu"]')).toBeNull();
+      expect(nativeModalStack(document)).toHaveLength(0);
+    });
+    clickAction("Quick tour");
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledOnce();
+    finishHandoff({ options, session });
+  },
+);

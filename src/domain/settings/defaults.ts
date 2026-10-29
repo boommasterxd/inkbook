@@ -114,6 +114,7 @@ export function createBuiltInSettings(): InkbookSettingsV4 {
 export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV2 {
   return {
     version: 2,
+    onboardingDismissed: false,
     scrollPreloadMarginPx: DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
     fingerDrawingEnabled: false,
     penTapInsertion: "off",

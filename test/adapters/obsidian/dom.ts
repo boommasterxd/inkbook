@@ -1,4 +1,12 @@
 const animationSubtreeAdapters = new WeakSet<object>();
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+export function createSvgElement<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  ownerDocument: Document = document,
+): SVGElementTagNameMap[K] {
+  return ownerDocument.createElementNS<K>(SVG_NAMESPACE, tag);
+}
 
 export function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -21,6 +29,7 @@ export function installObsidianDomHelpers(): void {
       options?: { readonly cls?: string; readonly text?: string },
     ) => HTMLElementTagNameMap[K];
     createSpan: (options?: { readonly cls?: string; readonly text?: string }) => HTMLSpanElement;
+    createSvg: <K extends keyof SVGElementTagNameMap>(tag: K) => SVGElementTagNameMap[K];
     readonly win: Window;
   };
   const create = <K extends keyof HTMLElementTagNameMap>(
@@ -47,6 +56,11 @@ export function installObsidianDomHelpers(): void {
   };
   nodePrototype.createSpan = function (options) {
     const element = create("span", options);
+    this.appendChild(element);
+    return element;
+  };
+  nodePrototype.createSvg = function (tag) {
+    const element = createSvgElement(tag, this.ownerDocument ?? document);
     this.appendChild(element);
     return element;
   };

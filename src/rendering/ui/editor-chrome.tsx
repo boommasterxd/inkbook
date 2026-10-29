@@ -1,9 +1,11 @@
 import { useId, useRef } from "react";
-import { LayoutGroup, MotionConfig } from "motion/react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, LayoutGroup, MotionConfig } from "motion/react";
 
 import { InkbookToolbar } from "./toolbar";
 import type { InkbookEditorChromeProps } from "./editor-chrome-types";
 import { toolbarMotionContext, useToolbarMotion } from "./toolbar-motion";
+import { OnboardingInvitation } from "./onboarding-invitation";
 
 export type { InkbookEditorChromeProps } from "./editor-chrome-types";
 
@@ -32,8 +34,30 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
               styleIcon={props.styleIcon}
             />
           </div>
+          <AnimatePresence>
+            {props.onboarding === undefined ? null : (
+              <PortalInvitation
+                key="onboarding"
+                invitation={props.onboarding}
+                renderIcon={props.renderIcon}
+              />
+            )}
+          </AnimatePresence>
         </LayoutGroup>
       </MotionConfig>
     </toolbarMotionContext.Provider>
+  );
+}
+
+function PortalInvitation({
+  invitation,
+  renderIcon,
+}: {
+  readonly invitation: NonNullable<InkbookEditorChromeProps["onboarding"]>;
+  readonly renderIcon: InkbookEditorChromeProps["renderIcon"];
+}) {
+  return createPortal(
+    <OnboardingInvitation {...invitation} renderIcon={renderIcon} />,
+    invitation.container,
   );
 }

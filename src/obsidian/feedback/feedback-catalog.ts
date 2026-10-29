@@ -31,6 +31,7 @@ export type InkbookFeedbackCode =
   | "insertion-undo-file-kept"
   | "insertion-undo-note-changed"
   | "placement-folder-fallback"
+  | "onboarding-preference-failed"
   | "recovery-copy-saved"
   | "stroke-point-limit-reached";
 
@@ -43,6 +44,11 @@ export interface InkbookFeedbackContent {
 }
 
 const FEEDBACK: Readonly<Record<InkbookFeedbackCode, InkbookFeedbackContent>> = {
+  "onboarding-preference-failed": {
+    detail: "You can keep drawing. The invitation may appear again after restarting Obsidian.",
+    severity: "warning",
+    title: "The tour preference couldn't be saved.",
+  },
   "stroke-point-limit-reached": {
     detail: "Lift the pen to start a new stroke.",
     severity: "warning",

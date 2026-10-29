@@ -394,6 +394,7 @@ const LEGACY_DEVICE_SETTINGS_V2_KEYS = [...DEVICE_SETTINGS_V1_KEYS, "keyboardSho
 const DEVICE_SETTINGS_V2_KEYS = [
   ...LEGACY_DEVICE_SETTINGS_V2_KEYS,
   "scrollPreloadMarginPx",
+  "onboardingDismissed",
 ] as const;
 
 function migrateDeviceSettingsV1(input: unknown, fallback: InkbookDeviceSettingsV2): unknown {
@@ -401,6 +402,7 @@ function migrateDeviceSettingsV1(input: unknown, fallback: InkbookDeviceSettings
     ? {
         ...input,
         version: 2,
+        onboardingDismissed: fallback.onboardingDismissed,
         keyboardShortcuts: structuredClone(fallback.keyboardShortcuts),
         scrollPreloadMarginPx: fallback.scrollPreloadMarginPx,
       }
@@ -411,10 +413,18 @@ function addLegacyDeviceSettingsDefaults(
   input: unknown,
   fallback: InkbookDeviceSettingsV2,
 ): unknown {
-  return isRecord(input) &&
-    input.version === 2 &&
-    hasExactKeys(input, LEGACY_DEVICE_SETTINGS_V2_KEYS)
-    ? { ...input, scrollPreloadMarginPx: fallback.scrollPreloadMarginPx }
+  if (!isRecord(input) || input.version !== 2) return input;
+  const keys = [
+    ...LEGACY_DEVICE_SETTINGS_V2_KEYS,
+    ...("scrollPreloadMarginPx" in input ? ["scrollPreloadMarginPx"] : []),
+    ...("onboardingDismissed" in input ? ["onboardingDismissed"] : []),
+  ];
+  return hasExactKeys(input, keys)
+    ? {
+        scrollPreloadMarginPx: fallback.scrollPreloadMarginPx,
+        onboardingDismissed: fallback.onboardingDismissed,
+        ...input,
+      }
     : input;
 }
 
@@ -433,6 +443,13 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
   return {
     value: {
       version: 2,
+      onboardingDismissed: validOrDefault(
+        value.onboardingDismissed,
+        fallback.onboardingDismissed,
+        booleanValue,
+        diagnostics,
+        "onboardingDismissed",
+      ),
       scrollPreloadMarginPx: validOrDefault(
         value.scrollPreloadMarginPx,
         fallback.scrollPreloadMarginPx,

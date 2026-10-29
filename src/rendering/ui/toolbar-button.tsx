@@ -1,4 +1,4 @@
-import { motion, useIsPresent } from "motion/react";
+import { motion } from "motion/react";
 import { useCallback, useContext, useRef } from "react";
 
 import { toolbarMotionContext, toolbarLayoutTransition } from "./toolbar-motion";
@@ -7,6 +7,10 @@ import { useToolbarOwnerGestures } from "./toolbar-owner-gestures";
 import { ToolbarActionIcon } from "./toolbar-action-icon";
 import { ToolbarStyleIcon, type ToolbarStyleIconState } from "./style-icon";
 import { CHROME_TRANSPARENT } from "./chrome-palette";
+import {
+  toolbarButtonFeedback,
+  toolbarButtonFeedbackTransition,
+} from "../motion/toolbar-button-feedback";
 import type { ToolbarAction, ToolbarButtonDefinition, ToolbarState } from "./toolbar-types";
 
 export interface ToolbarIconButtonProps {
@@ -19,6 +23,7 @@ export interface ToolbarIconButtonProps {
   readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
   readonly popupRole: "dialog" | "menu" | undefined;
   readonly pressed: boolean | undefined;
+  readonly preview?: boolean;
   readonly registerButton?:
     ((action: ToolbarAction, element: HTMLButtonElement | null) => void) | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
@@ -30,7 +35,7 @@ export interface ToolbarIconButtonProps {
 export function ToolbarIconButton(props: ToolbarIconButtonProps) {
   const lifecycle = useContext(toolbarMotionContext);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const present = useIsPresent();
+  const visualDisabled = props.disabled && !props.preview;
   const { action } = props.definition;
   const { registerButton } = props;
   const setButton = useCallback(
@@ -43,10 +48,10 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
   const { isPresent, controls, order } = useToolbarButtonAnimation(lifecycle, {
     enterOrder: props.enterOrder,
     action: props.definition.action,
-    disabled: props.disabled,
+    disabled: visualDisabled,
     pressed: props.pressed,
   });
-  const disabled = props.disabled || !isPresent || lifecycle.locking;
+  const disabled = props.disabled || props.preview === true || !isPresent || lifecycle.locking;
   return (
     <motion.button
       animate={controls}
@@ -57,7 +62,7 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
         props.definition.action,
         props.enterOrder,
         lifecycle,
-        props.disabled,
+        visualDisabled,
         props.pressed,
       )}
       layout="position"
@@ -69,6 +74,7 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
       aria-expanded={props.expanded}
       aria-haspopup={props.popupRole}
       aria-label={props.definition.label}
+      aria-description={previewDescription(action, props.preview)}
       aria-pressed={props.pressed}
       aria-hidden={!isPresent || lifecycle.locking ? "true" : undefined}
       className={
@@ -77,10 +83,13 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
           : "inkbook-toolbar-button"
       }
       data-inkbook-action={props.definition.action}
+      data-inkbook-tour-preview={props.preview ? "true" : undefined}
       data-inkbook-tool={props.tool ? "true" : undefined}
       data-presence={!isPresent ? "exiting" : undefined}
       disabled={disabled}
-      onClick={(event) => props.onAction(props.definition.action, event.currentTarget)}
+      onClick={(event) => {
+        if (!disabled) props.onAction(props.definition.action, event.currentTarget);
+      }}
       ref={setButton}
       tabIndex={disabled ? -1 : props.tabIndex}
       type="button"
@@ -88,7 +97,7 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
       <ToolbarButtonSurface
         active={props.pressed === true && !props.tool}
         danger={props.definition.action === "delete"}
-        disabled={props.disabled || !present || lifecycle.locking}
+        disabled={disabled}
       />
       {props.tool && props.pressed === true ? (
         <motion.span
@@ -112,6 +121,14 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
   );
 }
 
+function previewDescription(
+  action: ToolbarAction,
+  preview: boolean | undefined,
+): string | undefined {
+  if (!preview) return undefined;
+  return action === "paste" ? "Available with copied ink" : "Available after selecting ink";
+}
+
 function ToolbarButtonSurface({
   active,
   danger,
@@ -124,19 +141,7 @@ function ToolbarButtonSurface({
   const { colors, reduced } = useContext(toolbarMotionContext);
   const surfaceRef = useRef<HTMLSpanElement>(null);
   const { gesture: ownerGesture } = useToolbarOwnerGestures(surfaceRef, disabled);
-  const resting = {
-    "--inkbook-toolbar-background": active
-      ? (colors?.activeBackground ?? CHROME_TRANSPARENT)
-      : CHROME_TRANSPARENT,
-    "--inkbook-toolbar-border": active
-      ? (colors?.activeBorder ?? CHROME_TRANSPARENT)
-      : CHROME_TRANSPARENT,
-    scale: active ? 0.96 : 1,
-  };
-  const hover = {
-    "--inkbook-toolbar-background":
-      (danger ? colors?.dangerHover : colors?.hover) ?? CHROME_TRANSPARENT,
-  };
+  const feedback = toolbarButtonFeedback(colors, active, danger);
   return (
     <motion.span
       aria-hidden="true"
@@ -147,16 +152,16 @@ function ToolbarButtonSurface({
         "--inkbook-toolbar-border": CHROME_TRANSPARENT,
       }}
       animate={{
-        ...resting,
-        ...(ownerGesture === "hover" ? hover : {}),
-        ...(ownerGesture === "press" ? { scale: 0.92 } : {}),
+        ...feedback.rest,
+        ...(ownerGesture === "hover" ? feedback.hover : {}),
+        ...(ownerGesture === "press" ? feedback.press : {}),
       }}
       variants={{
-        hover,
-        press: { scale: 0.92 },
-        focus: { "--inkbook-toolbar-border": colors?.accent ?? CHROME_TRANSPARENT },
+        hover: feedback.hover,
+        press: feedback.press,
+        focus: feedback.focus,
       }}
-      transition={toolbarLayoutTransition(reduced)}
+      transition={{ type: "tween", ...toolbarButtonFeedbackTransition(reduced) }}
     />
   );
 }

@@ -245,6 +245,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           onLock: () => this.lockActivePresentation(),
           onOpenSettings: this.#host.onOpenSettings,
           onOpenShortcuts: this.#host.onOpenShortcuts,
+          onDismissOnboarding: this.#host.onDismissOnboarding,
           scheme: attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light",
           showFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
           workScheduler: this.refreshRateProfiles.workScheduler(

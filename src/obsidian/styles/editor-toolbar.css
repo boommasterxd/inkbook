@@ -189,11 +189,16 @@
   box-shadow: none;
 }
 
-.inkbook-root .inkbook-toolbar-button:disabled {
+.inkbook-root .inkbook-toolbar-button:disabled:not([data-inkbook-tour-preview="true"]) {
   --inkbook-toolbar-foreground-target: var(--inkbook-chrome-faint);
 
   cursor: default;
   opacity: 0.48;
+}
+
+.inkbook-root .inkbook-toolbar-button[data-inkbook-tour-preview="true"] {
+  cursor: default;
+  opacity: 1;
 }
 
 .inkbook-root[data-inkbook-keyboard-navigation="true"] .inkbook-toolbar-button:focus {

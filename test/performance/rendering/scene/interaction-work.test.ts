@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
-import type { FakeScheduler } from "../../../unit/rendering/scene/fakes";
+import { type FakeScheduler, fakeNode } from "../../../unit/rendering/scene/fakes";
+import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import {
   INTERACTION_ELEMENT_COUNT,
+  INTERACTION_PAGE,
   createInteractionFixture,
   createInteractionRenderer,
 } from "./interaction-refresh-profile-fixture";
@@ -12,6 +14,58 @@ import {
 const PREVIEW_FRAMES = 12;
 
 describe("scene interaction work", () => {
+  it("extends and restores background coverage without touching 10,000 retained strokes", () => {
+    const fixture = createInteractionFixture();
+    const { renderer, scheduler } = createInteractionRenderer(fixture.store);
+    renderer.setPage({ ...INTERACTION_PAGE, background: { type: "squares", spacing: 50 } }, 200);
+    scheduler.runAll();
+    renderer.resetInstrumentation();
+    const reads = vi.spyOn(ElementSceneStore.prototype, "get");
+    const preparations = vi.spyOn(ScenePathCache.prototype, "startPreparation");
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    try {
+      renderer.setMinimumBackgroundBlockSize(360);
+      scheduler.runAll();
+      expect(renderer.instrumentation().backgroundBuilds).toBe(1);
+      expect(renderer.instrumentation()).toMatchObject({
+        contentAttributeWrites: 0,
+        geometryBuilds: 0,
+        visibilityCandidateVisits: 0,
+      });
+      expect(reads).not.toHaveBeenCalled();
+      expect(preparations).not.toHaveBeenCalled();
+      for (const height of [220, 280, 360, 300, 240, 100]) {
+        renderer.setMinimumBackgroundBlockSize(360);
+        renderer.setViewport({ height, left: 0, top: 0, width: 100 });
+        scheduler.runAll();
+      }
+      expect(renderer.instrumentation().backgroundBuilds).toBe(1);
+      renderer.resetInstrumentation();
+      reads.mockClear();
+      preparations.mockClear();
+      const retained = [...content.nodes];
+      renderer.setMinimumBackgroundBlockSize(0);
+      scheduler.runAll();
+      expect(renderer.instrumentation()).toMatchObject({
+        backgroundBuilds: 1,
+        contentAttributeWrites: 0,
+        contentGeometryWrites: 0,
+        domEntrants: 0,
+        domExits: 0,
+        geometryBuilds: 0,
+        visibilityCandidateVisits: 0,
+      });
+      expect(reads).not.toHaveBeenCalled();
+      expect(preparations).not.toHaveBeenCalled();
+      expect(content.nodes).toEqual(retained);
+    } finally {
+      reads.mockRestore();
+      preparations.mockRestore();
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
   it("retains geometry through camera and selection preview updates", () => {
     const fixture = createInteractionFixture();
     const { renderer, scheduler } = createInteractionRenderer(fixture.store);

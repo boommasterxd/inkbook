@@ -20,6 +20,7 @@ export interface WorkspaceRuntimeSettings {
 }
 
 export interface WorkspaceActiveSceneOptions {
+  readonly onDismissOnboarding?: (() => void) | undefined;
   readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
   readonly attachment: PresentationAttachment;
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
@@ -77,6 +78,7 @@ export function createWorkspaceActiveScene(
     onFirstStrokeCommitted: options.markFirstStroke,
     onOpenSettings: options.onOpenSettings,
     onOpenShortcuts: options.onOpenShortcuts,
+    onDismissOnboarding: options.onDismissOnboarding,
     root: attachment.root,
     scheme: options.scheme,
     scrollOwner: attachment.scrollOwner,

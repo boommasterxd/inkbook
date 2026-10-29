@@ -8,7 +8,7 @@ import * as Scrolling from "../../scrolling/index";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./input/coalesced-input";
-import { createActiveEditorChromeProps, createChromeCallbacks } from "./controller-chrome";
+import { createActiveEditorChromeProps, createActiveEditorChrome } from "./controller-chrome";
 import { applyInputAction, cancelHandle, configureInputTool } from "./input/controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import * as Interactions from "./controller-interactions";
@@ -37,6 +37,7 @@ import { resolveSnappingPointerOverride } from "./previews/snapping-settings";
 import * as ToolCursor from "./input/tool-cursor-controller";
 import { PendingSelection } from "./previews/pending-selection";
 export class ActiveEditorController {
+  readonly #onboarding: ReturnType<typeof createActiveEditorChrome>;
   readonly #pendingSelection = new PendingSelection();
   readonly #cursor: ToolCursor.ActiveToolCursorController;
   readonly #actions: ActiveEditorActions;
@@ -176,26 +177,26 @@ export class ActiveEditorController {
       () => this.#scrollOwner.getBoundingClientRect(),
     );
     this.#pointer = this.#createPointerController(ownerWindow);
-    createChromeCallbacks(
+    this.#onboarding = createActiveEditorChrome(
       [this.#actions, this.#background, this.#chromeState, this.#styles, options],
       [() => this.#input.activeTool, (tool) => this.#configureTool(tool)],
       [this.#menus, this.#model, () => this.#selection.size, this.#renderIcon],
+      () => this.#scrollOwner,
     );
   }
-  public chromeProps() {
-    return createActiveEditorChromeProps(
-      [this.#chromeState, this.#styles],
-      [
-        this.#input.activeTool,
-        this.#leftHanded,
-        this.#toolbarAction,
-        this.#ownerWindow.document,
-        this.#renderIcon,
-        this.toolbarState(),
-      ],
-    );
-  }
+  public readonly chromeProps = () =>
+    createActiveEditorChromeProps({
+      state: [this.#chromeState, this.#styles],
+      activeTool: this.#input.activeTool,
+      leftHanded: this.#leftHanded,
+      onToolbarAction: this.#toolbarAction,
+      ownerDocument: this.#ownerWindow.document,
+      renderIcon: this.#renderIcon,
+      toolbarState: this.#onboarding.withTourPreview(this.toolbarState()),
+      onboarding: this.#onboarding.invitation,
+    });
   public dispose(): void {
+    this.#onboarding.dispose();
     this.#pendingSelection.cancel();
     this.#cursor.dispose();
     this.#styles.dispose();
@@ -225,9 +226,8 @@ export class ActiveEditorController {
   public readonly handleDocumentKeyDown = (event: KeyboardEvent): boolean =>
     this.#availability.acceptsInput && this.#keyboard.handleDocumentKeyDown(event);
   readonly handlePointerCancel = (event: PointerEvent) => this.#pointer.handlePointerCancel(event);
-  public handlePointerBoundary(pointerOver: boolean): void {
+  public readonly handlePointerBoundary = (pointerOver: boolean): void =>
     this.#keyboard.setPointerOver(pointerOver);
-  }
   readonly handlePointerDown = (event: PointerEvent) => this.#pointer.handlePointerDown(event);
   readonly handlePointerMove = (event: PointerEvent) => this.#pointer.handlePointerMove(event);
   readonly handlePointerUp = (event: PointerEvent): void => this.#pointer.handlePointerUp(event);
@@ -291,6 +291,7 @@ export class ActiveEditorController {
   public readonly executeAction = (action: ContextMenuAction): void =>
     this.#actions.execute(action);
   public setEnabled(enabled: boolean): void {
+    this.#onboarding.setEnabled(enabled);
     if (!enabled) this.#actions.cancelPendingConfirmation();
     this.#availability.setEnabled(enabled);
   }
@@ -318,6 +319,7 @@ export class ActiveEditorController {
     return true;
   }
   public updateDeviceSettings(settings: ActiveEditorControllerOptions["deviceSettings"]): void {
+    this.#onboarding.updateDismissed(settings.onboardingDismissed);
     const changed =
       settings.fingerDrawingEnabled !== this.#touchMode.available ||
       settings.leftHandedToolbar !== this.#leftHanded;

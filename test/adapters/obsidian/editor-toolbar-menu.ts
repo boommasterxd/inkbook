@@ -160,6 +160,7 @@ export function createEditorToolbarMenuOptions(
       onOverflowAction: vi.fn(),
       onOpenSettings: vi.fn(),
       onOpenShortcuts: vi.fn(),
+      onOpenTour: vi.fn(),
       onShapeChange: vi.fn(),
       onStyleChange: vi.fn(),
     },

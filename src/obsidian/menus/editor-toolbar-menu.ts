@@ -318,6 +318,11 @@ function addSettingsActions(menu: MenuPort, options: EditorToolbarMenuOptions): 
   };
   add("Settings", "settings", options.handlers.onOpenSettings);
   add("Keyboard shortcuts", "keyboard", options.handlers.onOpenShortcuts);
+  const openTour = options.handlers.onOpenTour;
+  if (openTour !== undefined)
+    addAction(menu, options.ownerDocument, "Quick tour", "circle-help", () =>
+      afterMenuHandoff(options.ownerWindow, openTour),
+    );
 }
 
 function afterMenuHandoff(ownerWindow: Window, open: () => void): void {

@@ -159,6 +159,7 @@ export interface InkbookSettingsV4 {
 
 export interface InkbookDeviceSettingsV2 {
   version: 2;
+  onboardingDismissed: boolean;
   scrollPreloadMarginPx: number;
   fingerDrawingEnabled: boolean;
   penTapInsertion: (typeof PEN_TAP_INSERTIONS)[number];

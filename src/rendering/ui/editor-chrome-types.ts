@@ -5,6 +5,11 @@ import type { ActiveShapeIconState } from "./icon-ids";
 import type { SelectionAreaV1 } from "../../domain/settings/types";
 
 export interface InkbookEditorChromeProps {
+  readonly onboarding?: {
+    readonly container: HTMLElement;
+    readonly onStart: () => void;
+    readonly onDismiss: () => void;
+  };
   readonly layout: ToolbarLayoutStage;
   readonly leftHanded?: boolean;
   readonly onToolbarAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;

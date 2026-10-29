@@ -238,6 +238,8 @@ function createRuntime(
         showHeadlessRecoveryNotice(plugin.app, actions, () => settings.getDeviceSettings().motion),
       onOpenSettings: (navigation) => settingsModal.open("settings", navigation),
       onOpenShortcuts: (navigation) => settingsModal.open("shortcuts", navigation),
+      onDismissOnboarding: () =>
+        settings.updateDeviceSettings((value) => ({ ...value, onboardingDismissed: true })),
     },
   );
   return runtime;

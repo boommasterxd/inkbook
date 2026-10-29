@@ -14,13 +14,15 @@ import type { EditableDocumentModel } from "../document-session/vault-document-s
 import type { ActiveEditorMenuController } from "./controller-menu";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import { backgroundState } from "./controller-helpers";
+import { ActiveEditorOnboarding } from "./onboarding";
+import type { BrowserScrollElement } from "../../scrolling/index";
 
 type ActiveEditorChromeDependencies = readonly [
   actions: ActiveEditorActions,
   background: ActiveEditorBackgroundSession,
   chromeState: ActiveEditorChromeState,
   styles: ActiveEditorStyleSession,
-  openings: Pick<ActiveEditorControllerOptions, "onOpenSettings" | "onOpenShortcuts">,
+  openings: ActiveEditorControllerOptions,
 ];
 
 type ActiveEditorChromeHandlers = readonly [
@@ -28,7 +30,7 @@ type ActiveEditorChromeHandlers = readonly [
   configureTool: (tool: EditorTool) => void,
 ];
 
-export function createChromeCallbacks(
+export function createActiveEditorChrome(
   [actions, background, chromeState, styles, openings]: ActiveEditorChromeDependencies,
   [activeTool, configureTool]: ActiveEditorChromeHandlers,
   [menus, model, selectionSize, renderIcon]: readonly [
@@ -37,7 +39,9 @@ export function createChromeCallbacks(
     () => number,
     InkbookEditorChromeProps["renderIcon"],
   ],
-): EditorMenuCallbacks {
+  scrollOwner: () => BrowserScrollElement,
+): ActiveEditorOnboarding {
+  const onboarding = new ActiveEditorOnboarding(openings, scrollOwner);
   const callbacks: EditorMenuCallbacks = {
     onBackgroundSpacingChange: (spacing) => background.changeSpacing(spacing),
     onBackgroundSpacingPreview: (spacing) => background.previewSpacing(spacing),
@@ -48,6 +52,7 @@ export function createChromeCallbacks(
     },
     onOpenSettings: openings.onOpenSettings,
     onOpenShortcuts: openings.onOpenShortcuts,
+    onOpenTour: onboarding.open,
     onShapeChange: (shape) => configureTool(chromeState.selectShape(shape)),
     onStyleChange: (id, value) => styles.apply(activeTool(), id, value),
   };
@@ -55,10 +60,11 @@ export function createChromeCallbacks(
     [menus, actions, chromeState, styles, model],
     [activeTool, selectionSize, callbacks, renderIcon],
   );
-  return callbacks;
+  return onboarding;
 }
 
 interface ActiveEditorChromeOptions {
+  readonly onboarding?: InkbookEditorChromeProps["onboarding"];
   readonly layout: ToolbarLayoutStage;
   readonly leftHanded: boolean;
   readonly onToolbarAction: InkbookEditorChromeProps["onToolbarAction"];
@@ -75,6 +81,7 @@ interface ActiveEditorChromeOptions {
 
 function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChromeProps {
   return {
+    ...(options.onboarding === undefined ? {} : { onboarding: options.onboarding }),
     layout: options.layout,
     leftHanded: options.leftHanded,
     onToolbarAction: options.onToolbarAction,
@@ -88,29 +95,32 @@ function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChr
   };
 }
 
-export function createActiveEditorChromeProps(
-  [chromeState, styles]: readonly [ActiveEditorChromeState, ActiveEditorStyleSession],
-  [activeTool, leftHanded, onToolbarAction, ownerDocument, renderIcon, toolbarState]: readonly [
-    EditorTool,
-    boolean,
-    InkbookEditorChromeProps["onToolbarAction"],
-    Document,
-    InkbookEditorChromeProps["renderIcon"],
-    ToolbarState,
-  ],
-): InkbookEditorChromeProps {
+interface ChromePresentationOptions {
+  readonly state: readonly [ActiveEditorChromeState, ActiveEditorStyleSession];
+  readonly activeTool: EditorTool;
+  readonly leftHanded: boolean;
+  readonly onToolbarAction: InkbookEditorChromeProps["onToolbarAction"];
+  readonly ownerDocument: Document;
+  readonly renderIcon: InkbookEditorChromeProps["renderIcon"];
+  readonly toolbarState: ToolbarState;
+  readonly onboarding?: InkbookEditorChromeProps["onboarding"];
+}
+
+export function createActiveEditorChromeProps({
+  state: [chromeState, styles],
+  activeTool,
+  onboarding,
+  ...props
+}: ChromePresentationOptions): InkbookEditorChromeProps {
   const style = styles.presentation(activeTool);
   return createChromeProps({
     layout: chromeState.layout,
-    leftHanded,
-    onToolbarAction,
-    ownerDocument,
-    renderIcon,
+    ...props,
     selectionArea: style.selectionArea,
     selectedShape: chromeState.selectedShape,
     shapeIcon: style.shapeIcon,
     style,
-    toolbarState,
+    ...(onboarding === undefined ? {} : { onboarding }),
   });
 }
 

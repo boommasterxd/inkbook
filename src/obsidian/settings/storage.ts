@@ -33,6 +33,7 @@ function deviceSettingsEqual(
   right: InkbookDeviceSettingsV2,
 ): boolean {
   return (
+    left.onboardingDismissed === right.onboardingDismissed &&
     left.scrollPreloadMarginPx === right.scrollPreloadMarginPx &&
     left.fingerDrawingEnabled === right.fingerDrawingEnabled &&
     left.penTapInsertion === right.penTapInsertion &&
@@ -123,6 +124,7 @@ export class InkbookSettingsStore {
     const vault = createBuiltInSettings();
     const device = createBuiltInDeviceSettings();
     await this.replaceVaultSettings(vault);
+    device.onboardingDismissed = this.deviceSettings.onboardingDismissed;
     this.replaceDeviceSettings(device);
   }
 

@@ -317,6 +317,31 @@ describe("vault settings current-version validation", () => {
   });
 });
 
+describe("device onboarding settings compatibility", () => {
+  it("adds onboarding defaults to earlier V2 records without replacing saved preferences", () => {
+    const current = { ...createBuiltInDeviceSettings(), leftHandedToolbar: true };
+    const legacy = structuredClone(current) as unknown as Record<string, unknown>;
+    delete legacy.onboardingDismissed;
+
+    expect(loadDeviceSettings(legacy)).toEqual({ value: current, diagnostics: [] });
+    delete legacy.scrollPreloadMarginPx;
+    expect(loadDeviceSettings(legacy)).toEqual({ value: current, diagnostics: [] });
+  });
+
+  it("preserves dismissal and rejects malformed stored dismissal without resetting preferences", () => {
+    const current = {
+      ...createBuiltInDeviceSettings(),
+      onboardingDismissed: true,
+      leftHandedToolbar: true,
+    };
+    expect(loadDeviceSettings(current)).toEqual({ value: current, diagnostics: [] });
+    expect(loadDeviceSettings({ ...current, onboardingDismissed: "true" })).toEqual({
+      value: { ...current, onboardingDismissed: false },
+      diagnostics: [{ code: "settings.invalid-field", path: "onboardingDismissed" }],
+    });
+  });
+});
+
 describe("device settings loading", () => {
   it("loads valid values", () => {
     const input = {
@@ -331,6 +356,7 @@ describe("device settings loading", () => {
       value: {
         ...input,
         version: 2,
+        onboardingDismissed: false,
         scrollPreloadMarginPx: 300,
         keyboardShortcuts: createBuiltInKeyboardShortcuts(),
       },
@@ -349,6 +375,7 @@ describe("device settings loading", () => {
 
     expect(result.value).toEqual({
       version: 2,
+      onboardingDismissed: false,
       scrollPreloadMarginPx: 300,
       fingerDrawingEnabled: false,
       penTapInsertion: "off",

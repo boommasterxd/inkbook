@@ -79,6 +79,8 @@ When updating, replace those three files and reload Obsidian. Keep the existing 
 3. Write with a pen or mouse, highlight an idea, or choose a shape.
 4. Choose **Lock** in the toolbar to save and return to the preview. Activate the preview when you want to edit again.
 
+Your first opened embed offers an optional toolbar tour. Choose **Start tour** or **Skip tour**, and skip the remaining steps whenever you like. The invitation will not appear again on this device and vault. You can always reopen it through **More options → Quick tour**.
+
 Inkbook creates the SVG attachment and inserts its reference for you. A reference occupies its own Markdown block:
 
 ```markdown
