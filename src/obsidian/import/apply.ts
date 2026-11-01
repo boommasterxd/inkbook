@@ -1,5 +1,6 @@
 import { createVerified, ImportJournalStore, runFolder, safeImportPath } from "./journal";
 import { applyImportPatches, createImportPatch, withImportedContexts } from "./patches";
+import { resolveInkReferences } from "./references";
 import { MAX_IMPORT_FILE_CHARS } from "./scan";
 import type {
   InkImportNoteRecord,
@@ -10,6 +11,21 @@ import type {
 
 function issue(store: ImportJournalStore, path: string): void {
   store.journal.issues.push(`Import conflict or write failure: ${path}`);
+}
+
+async function referenceTargetsMatch(
+  ports: InkImportPorts,
+  note: string,
+  record: InkImportNoteRecord,
+): Promise<boolean> {
+  const references = await resolveInkReferences({
+    note,
+    notePath: record.path,
+    resolve: ports.resolveLink.bind(ports),
+    scheduler: ports.workScheduler,
+  });
+  const sources = new Map(references.map((reference) => [reference.start, reference.sourcePath]));
+  return record.patches.every((patch) => sources.get(patch.start) === patch.sourcePath);
 }
 
 async function importSource(options: {
@@ -119,7 +135,13 @@ async function importNote(options: {
       return;
     }
   }
-  if (!(await ports.compareAndWrite(path, note, next)) || (await ports.read(path)) !== next) {
+  if (!(await referenceTargetsMatch(ports, note, record))) {
+    record.status = "conflict";
+    issue(store, path);
+  } else if (
+    !(await ports.compareAndWrite(path, note, next)) ||
+    (await ports.read(path)) !== next
+  ) {
     record.status = "conflict";
     issue(store, path);
   } else {

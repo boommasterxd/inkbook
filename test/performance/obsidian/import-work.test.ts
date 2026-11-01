@@ -17,7 +17,18 @@ describe("Obsidian Ink import work ownership", () => {
     expect(preview.sources[0]?.references).toHaveLength(1000);
     expect(preview.notes["note.md"]).toMatch(/^[a-f\d]{64}$/u);
     expect(fixture.writes).toEqual([]);
-    await fixture.service.apply(preview);
+    const applyListFiles = vi.spyOn(fixture.ports, "listFiles");
+    const applyResolveLink = vi.spyOn(fixture.ports, "resolveLink");
+    try {
+      await fixture.service.apply(preview);
+      // One note pass resolves every reference once; only run-history detection lists the vault.
+      expect(applyResolveLink).toHaveBeenCalled();
+      expect(applyResolveLink.mock.calls.length).toBeLessThanOrEqual(1000);
+      expect(applyListFiles.mock.calls.length).toBeLessThanOrEqual(1);
+    } finally {
+      applyListFiles.mockRestore();
+      applyResolveLink.mockRestore();
+    }
     expect(fixture.conversions).toEqual(["private source body", "private source body"]);
     expect(fixture.reads.filter((path) => path === "Ink/example.svg")).toHaveLength(5);
     expect(fixture.writes.filter((write) => write.path === "Ink/example.inkbook.svg")).toHaveLength(

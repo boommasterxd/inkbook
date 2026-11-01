@@ -2,6 +2,65 @@ import { describe, expect, it } from "vitest";
 
 import { appliedImportFixture, importFixture, writingEmbed } from "./import-fixture";
 
+function aliasImportFixture(link = "example.svg") {
+  const original = writingEmbed(link);
+  const fixture = importFixture({
+    "B/note.md": original,
+    "A/example.svg": "selected writing source",
+  });
+  fixture.ports.resolveLink = (path, notePath) => {
+    if (fixture.files.has(path)) return path;
+    const relative = `${notePath.slice(0, notePath.lastIndexOf("/") + 1)}${path}`;
+    if (fixture.files.has(relative)) return relative;
+    return [...fixture.files.keys()].find((file) => file.endsWith(`/${path}`));
+  };
+  return { ...fixture, original };
+}
+
+describe("Obsidian Ink source alias conflicts", () => {
+  it.each(["after preview", "during note backup"])(
+    "preserves a basename reference whose resolved source changes %s",
+    async (boundary) => {
+      const fixture = aliasImportFixture();
+      const preview = await fixture.service.scan();
+      expect(preview.sources.map((source) => source.path)).toEqual(["A/example.svg"]);
+      let noteWrites = 0;
+      fixture.setFault((kind, path) => {
+        if (kind === "write" && path === "B/note.md") noteWrites += 1;
+        if (boundary === "during note backup" && kind === "created" && path.endsWith("note-0.md"))
+          fixture.files.set("B/example.svg", "new local writing source");
+      });
+      if (boundary === "after preview")
+        fixture.files.set("B/example.svg", "new local writing source");
+
+      const result = await fixture.service.apply(preview);
+
+      expect(fixture.files.get("B/note.md")).toBe(fixture.original);
+      expect(fixture.files.get("B/example.svg")).toBe("new local writing source");
+      expect(fixture.files.get("A/example.svg")).toBe("selected writing source");
+      expect(fixture.files.get("A/example.inkbook.svg")).toBe(
+        '<svg data-native="selected writing source"/>',
+      );
+      expect(result.conflicts).toBeGreaterThan(0);
+      expect(result.journal.notes[0]?.status).toBe("conflict");
+      expect(noteWrites).toBe(0);
+    },
+  );
+
+  it("imports an explicit source path despite a new local source with the same basename", async () => {
+    const fixture = aliasImportFixture("A/example.svg");
+    const preview = await fixture.service.scan();
+    fixture.files.set("B/example.svg", "new local writing source");
+
+    const result = await fixture.service.apply(preview);
+
+    expect(result.conflicts).toBe(0);
+    expect(fixture.files.get("B/note.md")).toBe("!inkbook[[A/example.inkbook.svg]]");
+    expect(fixture.files.get("B/example.svg")).toBe("new local writing source");
+    expect(fixture.files.get("A/example.svg")).toBe("selected writing source");
+  });
+});
+
 describe("Obsidian Ink conflict and recovery boundaries", () => {
   it.each(["write", "written"])(
     "recovers an undo interrupted at the %s boundary",
