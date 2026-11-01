@@ -58,6 +58,7 @@ export class ActiveScenePreviewHandoff {
   #lockEditor: HTMLElement | undefined;
   #releaseScrollStability: (() => void) | undefined;
   #started = false;
+  #locking = false;
   #initialRevealPending = false;
   #frame: number | undefined;
 
@@ -299,6 +300,7 @@ export class ActiveScenePreviewHandoff {
   }
 
   public stopUnlockHeight(): string | undefined {
+    this.#locking = true;
     this.#toolbarSpacing?.setOpen(false, this.#reducedMotion());
     if (!this.#unlockHeight.active) return undefined;
     const activeBlockSize = this.#container.style.getPropertyValue(
@@ -318,6 +320,7 @@ export class ActiveScenePreviewHandoff {
   }
 
   public restoreActiveSpacing(): void {
+    this.#locking = false;
     this.#toolbarSpacing?.setOpen(true, this.#reducedMotion());
   }
 
@@ -418,6 +421,7 @@ export class ActiveScenePreviewHandoff {
         this.#scheduleUnlockTransition(this.#container.style.blockSize);
         return;
       }
+      if (!this.#locking) this.restoreActiveSpacing();
       this.#complete();
     }
   }
