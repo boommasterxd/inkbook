@@ -7,6 +7,7 @@ import type {
 } from "../schema/types";
 
 import { translatedStroke } from "./stroke-position";
+import { tableWidth } from "./creation";
 import { addPoints, canonicalPoint } from "./primitives";
 
 export function translateElementGeometry(
@@ -25,12 +26,13 @@ export function translateElementGeometry(
   if (element.kind === "coordinate-system") {
     return translateCoordinateSystem(element, translation);
   }
-  const pivot = translatePoint(element.pivot, translation);
+  const { x, y } = translatePoint(element, translation);
+  const width = element.kind === "table" ? tableWidth(element) : element.width;
   return {
     ...element,
-    pivot,
-    x: canonicalPoint({ x: element.x + translation.x, y: element.y }).x,
-    y: canonicalPoint({ x: element.x, y: element.y + translation.y }).y,
+    pivot: canonicalPoint({ x: x + width / 2, y: y + element.height / 2 }),
+    x,
+    y,
   };
 }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ActiveHeightTransition } from "../../../src/obsidian/embeds/active-editor/layout/height-transition";
 import { TransitionScrollStability } from "../../../src/obsidian/embeds/presentation/transition-scroll-stability";
@@ -7,8 +7,50 @@ import { TRANSITION_DURATIONS } from "../../../src/rendering/motion/transitions"
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { readyResponsiveFixture } from "../../integration/obsidian/embeds/active-editor/layout/active-editor-responsive-layout-fixture";
 import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
+import { ToolbarSpacing } from "../../../src/obsidian/embeds/active-scene/toolbar-spacing";
+import { createPresentationMotionWindow } from "../../fixtures/obsidian/presentation-motion-window";
+import { FakeClassList } from "../../fixtures/obsidian/class-list";
 
 describe("automatic page-height performance", () => {
+  it("bounds toolbar-spacing writes and frame ownership without per-frame layout reads", () => {
+    const frames = createPresentationMotionWindow();
+    const readStyle = vi.fn(() => ({ getPropertyValue: () => "68px" }));
+    const write = vi.fn();
+    const remove = vi.fn();
+    const root = {
+      ownerDocument: { defaultView: { getComputedStyle: readStyle } },
+      style: { setProperty: write, removeProperty: remove },
+    } as unknown as HTMLElement;
+    const chrome = {
+      classList: new FakeClassList(),
+      style: { setProperty: () => undefined, removeProperty: () => undefined },
+    } as unknown as HTMLElement;
+    let now = 0;
+    const spacing = new ToolbarSpacing(
+      root,
+      chrome,
+      workSchedulerFromFrames(frames.ownerWindow, { now: () => now }),
+    );
+    const cadence = INTERACTION_REFRESH_PROFILE.frameDurationMs;
+    for (const open of [true, false]) {
+      spacing.setOpen(open, false);
+      const maximum = Math.ceil(TRANSITION_DURATIONS.lockedToActiveHeight / cadence) + 1;
+      for (let step = 0; step < maximum && frames.frames.size > 0; step += 1) {
+        expect(frames.frames.size).toBe(1);
+        const before = write.mock.calls.length;
+        frames.frame((now += cadence));
+        expect(write.mock.calls.length - before).toBe(1);
+      }
+      expect(frames.frames.size).toBe(0);
+      expect(write).toHaveBeenLastCalledWith("--inkbook-toolbar-spacing", open ? "68px" : "0px");
+    }
+    expect(readStyle).toHaveBeenCalledOnce();
+    spacing.setOpen(true, false);
+    spacing.dispose();
+    expect(frames.frames.size).toBe(0);
+    expect(remove).toHaveBeenCalledWith("--inkbook-toolbar-spacing");
+  });
+
   it(`keeps ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz growth and shrink animation frames bounded`, () => {
     const harness = transitionHarness(INTERACTION_REFRESH_PROFILE.frameDurationMs);
     for (let transition = 0; transition < 4; transition += 1) {

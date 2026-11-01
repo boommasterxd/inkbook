@@ -4,8 +4,12 @@ import "../../../fixtures/obsidian/menu-motion";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { InkImportJournal, InkImportResult } from "../../../../src/obsidian/import/types";
-import { renderImportResult } from "../../../../src/obsidian/settings/import/import-view";
+import {
+  renderImportJournal,
+  renderImportResult,
+} from "../../../../src/obsidian/settings/import/import-view";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { importFixture } from "../import/import-fixture";
 
 const activeViews = new Set<() => void>();
 
@@ -114,6 +118,36 @@ it("does not report a successful restore before the journal is durably undone", 
   const { container } = view(value, "undo");
   expect(container.querySelector("h3")?.textContent).toContain("review");
   expect(container.textContent).not.toContain("Obsidian Ink embeds restored");
+});
+
+it("shows the affected note and persisted undo reason in both result and history issues", async () => {
+  const fixture = importFixture();
+  const preview = await fixture.service.scan();
+  await fixture.service.apply(preview);
+  fixture.files.set("note.md", "User replacement");
+  const undone = await fixture.service.undo(preview.id);
+  const resultView = view(undone, "undo");
+  const historyContainer = document.body.createDiv();
+  const disposers: Array<() => void> = [];
+  renderImportJournal(historyContainer, (await fixture.service.history())[0]!, {
+    mutate: (update) => update(),
+    readMotion: () => "reduced",
+    own: (dispose) => disposers.push(dispose),
+  });
+  activeViews.add(() => disposers.forEach((dispose) => dispose()));
+  for (const container of [resultView.container, historyContainer]) {
+    const disclosure = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Issues (1)"),
+    );
+    expect(disclosure).toBeDefined();
+    disclosure!.click();
+    const issues = container.querySelector('ul[aria-label="Issues"]');
+    expect(issues?.textContent).toContain("note.md");
+    expect(issues?.textContent).toContain(
+      "an imported embed that was changed, removed, or could not be uniquely identified",
+    );
+    expect(issues?.textContent).toContain("Later edits were kept");
+  }
 });
 
 it.each([

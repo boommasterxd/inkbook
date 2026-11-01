@@ -52,6 +52,15 @@ export class ActiveEditorOnboarding {
       onStateChanged: options.onStateChanged,
       ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
     });
+    this.#unsubscribeContent = options.model.store.subscribe(() => {
+      if (!this.#enabled || options.model.store.size === 0) return;
+      if (this.#visible) this.#dismiss();
+      this.#tour.close(false);
+    });
+  }
+
+  public get available(): boolean {
+    return this.#enabled && this.#options.model.store.size === 0;
   }
 
   public get invitation(): InkbookEditorChromeProps["onboarding"] {
@@ -78,14 +87,11 @@ export class ActiveEditorOnboarding {
     this.#offered = true;
     this.#visible = true;
     this.#tour.showInvitation(true);
-    this.#unsubscribeContent = this.#options.model.store.subscribe(() => {
-      if (this.#options.model.store.size > 0) this.#dismiss();
-    });
     this.#rememberInvitation();
   }
 
   public readonly open = (): void => {
-    if (!this.#enabled) return;
+    if (!this.available) return;
     this.#tour.open(
       this.#root.querySelector<HTMLElement>('[data-inkbook-action="overflow"]') ?? undefined,
     );
@@ -112,8 +118,6 @@ export class ActiveEditorOnboarding {
 
   #hideInvitation(): void {
     this.#visible = false;
-    this.#unsubscribeContent?.();
-    this.#unsubscribeContent = undefined;
     this.#tour.showInvitation(false);
   }
 

@@ -14,14 +14,19 @@ import {
 import { undoInkImport } from "./undo";
 
 function result(store: ImportJournalStore, signal?: AbortSignal): InkImportResult {
+  const conflictingPaths = new Set(
+    store.journal.notes.filter((note) => note.status === "conflict").map((note) => note.path),
+  );
   return {
     journal: store.journal,
     imported: store.journal.sources.filter(
       (source) => source.status === "created" || source.status === "cleaned",
     ).length,
     conflicts:
-      store.journal.issues.length +
-      store.journal.notes.filter((note) => note.status === "conflict").length,
+      store.journal.issues.filter((issue) => {
+        const separator = issue.lastIndexOf(": Undo ");
+        return separator === -1 || !conflictingPaths.has(issue.slice(0, separator));
+      }).length + conflictingPaths.size,
     cancelled: signal?.aborted === true || store.journal.status === "cancelled",
   };
 }

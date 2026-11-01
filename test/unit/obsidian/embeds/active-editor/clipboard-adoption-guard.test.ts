@@ -3,6 +3,10 @@ import { ClipboardAdoptionGuard } from "../../../../../src/obsidian/embeds/activ
 import { ElementStore } from "../../../../../src/domain/store/public";
 import type { PastePlan } from "../../../../../src/persistence/clipboard/types";
 import { highlighter, PAGE } from "../../../domain/store/fixtures";
+import { rectangle } from "../../../domain/geometry/fixtures";
+import { createDecodedClipboardFixture } from "../../../persistence/clipboard/fixtures";
+import { planPaste } from "../../../../../src/persistence/clipboard/operations";
+import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
 
 function plan(): PastePlan {
   const element = highlighter();
@@ -18,6 +22,40 @@ function plan(): PastePlan {
     repeatState: { fingerprint: "test", pasteCount: 1 },
   };
 }
+
+it("admits a copied rotated shape after translation across a canonical rounding boundary", async () => {
+  const source = rectangle({
+    x: 921.576,
+    y: 171.422,
+    width: 220.122,
+    height: 122.073,
+    pivot: { x: 1031.637, y: 232.458 },
+    rotation: 10,
+  });
+  const bounds = calculateElementBounds(source);
+  const result = planPaste({
+    decoded: createDecodedClipboardFixture([source]),
+    existingElements: [],
+    page: PAGE,
+    target: { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 + 100 },
+    commandTimestamp: 1,
+    createId: () => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  });
+  if (!result.ok) throw new Error(result.error.message);
+  expect(result.value.translation).toEqual({ x: 0, y: 100 });
+  const guard = new ClipboardAdoptionGuard(new ElementStore());
+  try {
+    const prepared = await guard.prepare(result.value, {
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    expect(prepared).not.toBeNull();
+    expect(guard.accepts(prepared!, PAGE)).toBe(true);
+    expect(prepared?.elements[0]?.pivot).toEqual({ x: 1031.637, y: 332.459 });
+  } finally {
+    guard.dispose();
+  }
+});
 
 it("captures plan membership before the first yield and rejects changed element IDs", async () => {
   const guard = new ClipboardAdoptionGuard(new ElementStore());

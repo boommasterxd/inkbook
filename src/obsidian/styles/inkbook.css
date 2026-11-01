@@ -88,6 +88,7 @@
   box-shadow: var(--inkbook-surface-shadow);
   content: "";
   inset: 0;
+  inset-block-start: var(--inkbook-toolbar-spacing, 0);
   pointer-events: none;
   position: absolute;
   z-index: 0;
@@ -126,8 +127,12 @@
 
 .inkbook-root.inkbook-presentation-activating .inkbook-background-container {
   clip-path: inset(
-    0 0 max(0px, calc(100% - var(--inkbook-presentation-block-size))) 0 round
-      var(--inkbook-shell-radius)
+    0 0
+      max(
+        0px,
+        calc(100% - var(--inkbook-presentation-block-size) + var(--inkbook-toolbar-spacing, 0px))
+      )
+      0 round var(--inkbook-shell-radius)
   );
 }
 
@@ -288,6 +293,7 @@
 .inkbook-root .inkbook-editor-chrome {
   display: flow-root;
   inline-size: 100%;
+  padding-block-start: var(--inkbook-toolbar-spacing, 0);
   position: relative;
   z-index: 1;
 }
