@@ -6,16 +6,26 @@ const referenced = "Cleanup skipped referenced or unverified source: Ink/example
 const changed = "Cleanup skipped changed source or backup: Ink/example.svg";
 const independent = "An unrelated import warning remains unresolved.";
 
+async function appliedTwoSourceFixture() {
+  const fixture = importFixture({
+    "Ink/example.svg": "writing source",
+    "other.svg": "other source",
+    "note.md": `${writingEmbed()}\n${writingEmbed("other.svg")}`,
+  });
+  const preview = await fixture.service.scan();
+  const { journal } = await fixture.service.apply(preview);
+  return {
+    ...fixture,
+    preview,
+    journal,
+    journalPath: `inkbook-imports/${preview.id}/journal.json`,
+  };
+}
+
 describe("Obsidian Ink cleanup feedback recovery", () => {
   it("refreshes retry reasons, repairs persisted duplicates, and clears resolved cleanup warnings", async () => {
-    const fixture = importFixture({
-      "Ink/example.svg": "writing source",
-      "other.svg": "other source",
-      "note.md": `${writingEmbed()}\n${writingEmbed("other.svg")}`,
-    });
-    const preview = await fixture.service.scan();
-    const { journal } = await fixture.service.apply(preview);
-    const journalPath = `inkbook-imports/${preview.id}/journal.json`;
+    const fixture = await appliedTwoSourceFixture();
+    const { preview, journal, journalPath } = fixture;
     fixture.files.set("another.md", "[ordinary reference](Ink/example.svg)");
     const partial = await fixture.service.cleanup(preview.id);
     expect(partial.journal.issues).toEqual([referenced]);
@@ -76,13 +86,8 @@ describe("Obsidian Ink cleanup feedback recovery", () => {
 
 describe("Obsidian Ink cleanup cancellation recovery", () => {
   it("preserves unvisited source reasons when Stop interrupts a partial retry", async () => {
-    const fixture = importFixture({
-      "Ink/example.svg": "writing source",
-      "other.svg": "other source",
-      "note.md": `${writingEmbed()}\n${writingEmbed("other.svg")}`,
-    });
-    const preview = await fixture.service.scan();
-    await fixture.service.apply(preview);
+    const fixture = await appliedTwoSourceFixture();
+    const { preview } = fixture;
     fixture.files.set("references.md", "Ink/example.svg other.svg");
     const skipped = await fixture.service.cleanup(preview.id);
     expect(skipped.journal.issues).toHaveLength(2);
@@ -102,13 +107,8 @@ describe("Obsidian Ink cleanup cancellation recovery", () => {
   });
 
   it("durably records removal failures before admitting another source", async () => {
-    const fixture = importFixture({
-      "Ink/example.svg": "writing source",
-      "other.svg": "other source",
-      "note.md": `${writingEmbed()}\n${writingEmbed("other.svg")}`,
-    });
-    const preview = await fixture.service.scan();
-    await fixture.service.apply(preview);
+    const fixture = await appliedTwoSourceFixture();
+    const { preview } = fixture;
     let failed = false;
     const checkpoint = fixture.ports.workScheduler.checkpoint.bind(fixture.ports.workScheduler);
     fixture.ports.workScheduler.checkpoint = () => {
