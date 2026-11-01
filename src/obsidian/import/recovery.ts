@@ -1,4 +1,5 @@
 import type { ImportJournalStore } from "./journal";
+import { refreshCleanupIssues } from "./cleanup-issues";
 import type { InkImportNoteRecord, InkImportPorts } from "./types";
 import type { InkImportSourceRecord } from "./types";
 
@@ -61,5 +62,6 @@ export async function reconcileJournal(
     } else if (hash !== note.originalHash) note.status = "conflict";
   }
   if (store.journal.status === "running") store.journal.status = "cancelled";
+  refreshCleanupIssues(store.journal);
   if (before !== JSON.stringify(store.journal)) await store.save();
 }

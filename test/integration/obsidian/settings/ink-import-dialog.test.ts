@@ -17,6 +17,7 @@ import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
 import { dialogButton } from "../../../fixtures/obsidian/dialog";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
+import { appliedImportFixture } from "../import/import-fixture";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -283,6 +284,50 @@ it("hides private failure details and returns to the start or settings", async (
   expect(service.history).not.toHaveBeenCalled();
   dialogButton("Close").click();
   expect(dialog.isClosed).toBe(true);
+});
+
+it.each([
+  ["undo", "missing"],
+  ["undo", "changed"],
+  ["cleanup", "missing"],
+  ["cleanup", "changed"],
+] as const)("explains a %s failure caused by a %s note backup", async (operation, fault) => {
+  const imported = await appliedImportFixture();
+  const note = imported.journal.notes[0]!;
+  if (fault === "missing") imported.files.delete(note.backupPath);
+  else imported.files.set(note.backupPath, "Changed backup contents must not appear");
+  const before = new Map(imported.files);
+  imported.writes.length = 0;
+  const { dialog, service } = fixture(undefined, imported.journal);
+  service[operation].mockImplementation((id, signal) => imported.service[operation](id, signal));
+  dialogButton(operation === "undo" ? "Undo import" : "Clean up originals").click();
+  dialogButton(operation === "undo" ? "Restore embeds" : "Move to trash").click();
+  const heading = fault === "missing" ? "Recovery backup unavailable" : "Recovery backup changed";
+  await settle(heading);
+  expect(document.activeElement?.textContent).toBe(heading);
+  expect(dialog.contentEl.textContent).toContain(`Note: ${note.path}`);
+  expect(dialog.contentEl.textContent).toContain(`Recovery backup: ${note.backupPath}`);
+  expect(dialog.contentEl.textContent).toContain("Restore the exact original backup");
+  expect(dialog.contentEl.textContent).toContain("Do not replace it with the current note");
+  expect(dialog.contentEl.textContent).not.toContain("Changed backup contents");
+  expect(dialog.contentEl.querySelector('[aria-busy="true"]')).toBeNull();
+  expect(imported.files).toEqual(before);
+  expect(imported.writes).toEqual([]);
+  await assertAccessibleSemantics(dialog.modalEl, ["aria-dialog-name", "button-name"]);
+  dialogButton("Close").click();
+  expect(dialog.isClosed).toBe(true);
+});
+
+it.each(["undo", "cleanup"] as const)("keeps unknown %s failures private", async (operation) => {
+  const { dialog, service } = fixture(undefined, journal());
+  service[operation].mockRejectedValueOnce(new Error("Private filesystem diagnostics"));
+  dialogButton(operation === "undo" ? "Undo import" : "Clean up originals").click();
+  dialogButton(operation === "undo" ? "Restore embeds" : "Move to trash").click();
+  await settle("The operation could not finish");
+  expect(document.activeElement?.textContent).toBe("The operation could not finish");
+  expect(dialog.contentEl.textContent).toContain("Some changes may already be complete");
+  expect(dialog.contentEl.textContent).not.toContain("Private filesystem diagnostics");
+  expect(dialog.contentEl.textContent).not.toContain("Recovery backup:");
 });
 
 it("opens a selected import directly and requires explicit recovery confirmations", async () => {

@@ -1,4 +1,5 @@
 import { createVerified, type ImportJournalStore } from "./journal";
+import { refreshCleanupIssues } from "./cleanup-issues";
 import { applyImportPatches, reverseImportPatches, withImportedContexts } from "./patches";
 import { resolveInkReferences } from "./references";
 import type { InkImportNoteRecord, InkImportPorts } from "./types";
@@ -179,5 +180,6 @@ export async function undoInkImport(
     : store.journal.notes.every((note) => note.status === "undone")
       ? "undone"
       : "conflict";
+  refreshCleanupIssues(store.journal);
   await store.save();
 }

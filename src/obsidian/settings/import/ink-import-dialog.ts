@@ -20,6 +20,7 @@ import {
   type ImportViewContext,
 } from "./import-view";
 import { renderImportStatus, type PendingImportOperation } from "./import-status";
+import { renderImportFailure } from "./import-failure";
 
 export interface InkImportDialogOptions {
   readonly service: Pick<
@@ -345,8 +346,8 @@ export class InkImportDialog extends InkbookModal {
     try {
       const result = await operation(controller.signal);
       if (!this.closed && !this.closing) complete(result);
-    } catch {
-      if (!this.closed && !this.closing) this.#failure(controller.signal.aborted, kind);
+    } catch (error) {
+      if (!this.closed && !this.closing) this.#failure(controller.signal.aborted, kind, error);
     } finally {
       this.#operation = undefined;
       this.#notifyClosed();
@@ -358,24 +359,11 @@ export class InkImportDialog extends InkbookModal {
     }
   }
 
-  #failure(cancelled: boolean, operation: PendingImportOperation): void {
+  #failure(cancelled: boolean, operation: PendingImportOperation, error: unknown): void {
     this.#view(() => {
-      this.#body.createEl("h3", {
-        text: cancelled ? "Operation stopped" : "The operation could not finish",
-      });
-      this.#body.createEl("p", {
-        text:
-          operation === "scan"
-            ? "Your files are unchanged. Go back to scan again, or close this window and try later."
-            : "Some changes may already be complete. Go to Settings → Inkbook → Import → Import history to review or undo this run before retrying.",
-      });
+      this.#status.textContent = renderImportFailure(this.#body, cancelled, operation, error);
       this.#button("Back", () => this.#entry());
       this.#button("Close", () => this.close(), true);
     });
-    this.#status.textContent = cancelled
-      ? operation === "scan"
-        ? "Stopped. Your files are unchanged."
-        : "Stopped. Check import history for completed changes."
-      : "The operation could not finish.";
   }
 }
