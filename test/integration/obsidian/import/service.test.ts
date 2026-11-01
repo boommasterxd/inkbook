@@ -174,11 +174,11 @@ describe("Obsidian Ink import source cleanup", () => {
     await fixture.service.cleanup(preview.id);
     expect(fixture.files.get("Ink/example.svg")).toBe("User changed original");
     const cleanupIssues = (await fixture.service.history())[0]!.issues;
-    expect(cleanupIssues).toHaveLength(2);
+    expect(cleanupIssues).toEqual(["Cleanup skipped changed source or backup: Ink/example.svg"]);
     fixture.files.set("Ink/example.svg", "writing source");
     const restored = await fixture.service.undo(preview.id);
     expect(restored.journal.status).toBe("undone");
-    expect(restored.journal.issues).toEqual(cleanupIssues);
+    expect(restored.journal.issues).toEqual([]);
   });
 
   it.each(["missing", "edited"])(

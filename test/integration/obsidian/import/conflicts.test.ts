@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { inkImportReferenceState } from "../../../../src/obsidian/import/reference-state";
+import { InkImportNoteBackupError } from "../../../../src/obsidian/import/note-backup-error";
 import { appliedImportFixture, importFixture, writingEmbed } from "./import-fixture";
 
 function aliasImportFixture(link = "example.svg") {
@@ -190,8 +191,43 @@ describe("Obsidian Ink conflict and recovery boundaries", () => {
         modified.notes[0].patches[0].prefix = "incorrect context";
       if (change !== "backup") fixture.files.set(journalPath, JSON.stringify(modified));
       const before = fixture.files.get("note.md");
-      await expect(fixture.service.undo(preview.id)).rejects.toThrow();
+      const undo = fixture.service.undo(preview.id);
+      if (change === "backup")
+        await expect(undo).rejects.toMatchObject({
+          name: "InkImportNoteBackupError",
+          reason: "changed",
+          notePath: "note.md",
+          backupPath: "inkbook-imports/run-1/note-0.md",
+        });
+      else await expect(undo).rejects.toThrow();
       expect(fixture.files.get("note.md")).toBe(before);
+    },
+  );
+});
+
+describe("Obsidian Ink note backup access", () => {
+  it.each(["undo", "cleanup"] as const)(
+    "stops %s on an unreadable note backup and can retry after access is restored",
+    async (operation) => {
+      const fixture = await appliedImportFixture();
+      const note = fixture.journal.notes[0]!;
+      const before = new Map(fixture.files);
+      fixture.writes.length = 0;
+      fixture.setFault((kind, path) => {
+        if (kind === "read" && path === note.backupPath)
+          throw new Error("Private filesystem diagnostics");
+      });
+      await expect(fixture.service[operation](fixture.preview.id)).rejects.toBeInstanceOf(
+        InkImportNoteBackupError,
+      );
+      expect(fixture.files).toEqual(before);
+      expect(fixture.writes).toEqual([]);
+      fixture.setFault();
+      const restored = await fixture.service[operation](fixture.preview.id);
+      expect(restored.conflicts).toBe(0);
+      expect(
+        operation === "undo" ? restored.journal.status : restored.journal.sources[0]?.status,
+      ).toBe(operation === "undo" ? "undone" : "cleaned");
     },
   );
 });

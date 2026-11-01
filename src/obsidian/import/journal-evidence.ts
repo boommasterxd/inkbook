@@ -1,4 +1,5 @@
 import { findMarkdownInkbookEmbeds } from "../embeds/markdown-embed";
+import { InkImportNoteBackupError } from "./note-backup-error";
 import { applyImportPatches, withImportedContexts } from "./patches";
 import { findInkCandidates } from "./references";
 import { MAX_IMPORT_FILE_CHARS } from "./scan";
@@ -60,12 +61,17 @@ export async function verifyJournalEvidence(
   };
   for (const note of journal.notes) {
     await ports.workScheduler.checkpoint(undefined, "background");
-    const original = await ports.read(note.backupPath);
+    let original: string;
+    try {
+      original = await ports.read(note.backupPath);
+    } catch {
+      throw new InkImportNoteBackupError(note.path, note.backupPath, "unavailable");
+    }
     if (
       original.length > MAX_IMPORT_FILE_CHARS ||
       (await ports.hash(original)) !== note.originalHash
     ) {
-      throw new Error("The original note backup changed; recovery stopped.");
+      throw new InkImportNoteBackupError(note.path, note.backupPath, "changed");
     }
     const unchangedOriginal = await hasUnchangedOriginal(ports, note);
     for (const patch of note.patches) {
