@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { inkImportReferenceState } from "../../../../src/obsidian/import/reference-state";
 import { appliedImportFixture, importFixture, writingEmbed } from "./import-fixture";
 
 function aliasImportFixture(link = "example.svg") {
@@ -15,6 +16,18 @@ function aliasImportFixture(link = "example.svg") {
     return [...fixture.files.keys()].find((file) => file.endsWith(`/${path}`));
   };
   return { ...fixture, original };
+}
+
+async function mixedAliasImportFixture() {
+  const fixture = aliasImportFixture();
+  fixture.files.set("first.md", writingEmbed("A/example.svg"));
+  fixture.files.set("other.svg", "independent writing source");
+  fixture.files.set("other.md", writingEmbed("other.svg"));
+  fixture.ports.referenceState = (path) => inkImportReferenceState(fixture.ports, path);
+  const preview = await fixture.service.scan();
+  fixture.files.set("B/example.svg", "new local writing source");
+  const result = await fixture.service.apply(preview);
+  return { ...fixture, preview, result };
 }
 
 describe("Obsidian Ink source alias conflicts", () => {
@@ -58,6 +71,58 @@ describe("Obsidian Ink source alias conflicts", () => {
     expect(fixture.files.get("B/note.md")).toBe("!inkbook[[A/example.inkbook.svg]]");
     expect(fixture.files.get("B/example.svg")).toBe("new local writing source");
     expect(fixture.files.get("A/example.svg")).toBe("selected writing source");
+  });
+});
+
+describe("Obsidian Ink skipped alias conflict recovery", () => {
+  it("undoes successful notes while preserving the untouched alias-conflict note", async () => {
+    const fixture = await mixedAliasImportFixture();
+    expect(fixture.result.journal.notes.map((note) => note.status)).toEqual([
+      "conflict",
+      "applied",
+      "applied",
+    ]);
+
+    const result = await fixture.service.undo(fixture.preview.id);
+
+    expect(result.journal.status).toBe("undone");
+    expect(fixture.files.get("first.md")).toBe(writingEmbed("A/example.svg"));
+    expect(fixture.files.get("other.md")).toBe(writingEmbed("other.svg"));
+    expect(fixture.files.get("B/note.md")).toBe(fixture.original);
+    expect(fixture.files.get("B/example.svg")).toBe("new local writing source");
+    expect(fixture.files.get("A/example.svg")).toBe("selected writing source");
+    expect(fixture.files.has("A/example.inkbook.svg")).toBe(true);
+    expect((await fixture.service.undo(fixture.preview.id)).journal.status).toBe("undone");
+  });
+
+  it("cleans an eligible imported original while retaining an original with a basename mention", async () => {
+    const fixture = await mixedAliasImportFixture();
+
+    const result = await fixture.service.cleanup(fixture.preview.id);
+
+    expect(result.journal.sources.find((source) => source.path === "other.svg")?.status).toBe(
+      "cleaned",
+    );
+    expect(fixture.files.has("other.svg")).toBe(false);
+    expect(fixture.files.has("other.inkbook.svg")).toBe(true);
+    expect(fixture.files.get("first.md")).toBe("!inkbook[[A/example.inkbook.svg]]");
+    expect(fixture.files.get("B/note.md")).toBe(fixture.original);
+    expect(fixture.files.get("B/example.svg")).toBe("new local writing source");
+    expect(fixture.files.get("A/example.svg")).toBe("selected writing source");
+  });
+
+  it("retains strict evidence checks when the skipped conflict note was subsequently edited", async () => {
+    const fixture = await mixedAliasImportFixture();
+    const edited = `${fixture.original}\nUser added a paragraph`;
+    fixture.files.set("B/note.md", edited);
+
+    await expect(fixture.service.undo(fixture.preview.id)).rejects.toThrow(
+      "original writing reference",
+    );
+
+    expect(fixture.files.get("first.md")).toBe("!inkbook[[A/example.inkbook.svg]]");
+    expect(fixture.files.get("B/note.md")).toBe(edited);
+    expect(fixture.files.get("B/example.svg")).toBe("new local writing source");
   });
 });
 

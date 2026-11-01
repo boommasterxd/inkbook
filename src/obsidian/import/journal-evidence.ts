@@ -2,7 +2,7 @@ import { findMarkdownInkbookEmbeds } from "../embeds/markdown-embed";
 import { applyImportPatches, withImportedContexts } from "./patches";
 import { findInkCandidates } from "./references";
 import { MAX_IMPORT_FILE_CHARS } from "./scan";
-import type { InkImportJournal, InkImportPorts } from "./types";
+import type { InkImportJournal, InkImportNoteRecord, InkImportPorts } from "./types";
 
 function relativePath(path: string, notePath: string): string {
   const parts = notePath.split("/").slice(0, -1);
@@ -18,14 +18,35 @@ interface EvidenceLinks {
   readonly resolve: InkImportPorts["resolveLink"];
 }
 
-function matchesSource(link: string, path: string, note: string, links: EvidenceLinks): boolean {
+function matchesSource(
+  link: string,
+  path: string,
+  note: string,
+  links: EvidenceLinks,
+  unchangedOriginal = false,
+): boolean {
   const resolved = links.resolve(link, note);
-  if (resolved !== undefined && links.paths.has(path)) return resolved === path;
+  if (!unchangedOriginal && resolved !== undefined && links.paths.has(path))
+    return resolved === path;
   return (
     link === path ||
     relativePath(link, note) === path ||
     (!link.includes("/") && path.split("/").pop() === link)
   );
+}
+
+async function hasUnchangedOriginal(
+  ports: InkImportPorts,
+  note: InkImportNoteRecord,
+): Promise<boolean> {
+  try {
+    const current = await ports.read(note.path);
+    return (
+      current.length <= MAX_IMPORT_FILE_CHARS && (await ports.hash(current)) === note.originalHash
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function verifyJournalEvidence(
@@ -46,6 +67,7 @@ export async function verifyJournalEvidence(
     ) {
       throw new Error("The original note backup changed; recovery stopped.");
     }
+    const unchangedOriginal = await hasUnchangedOriginal(ports, note);
     for (const patch of note.patches) {
       const source = sources.get(patch.sourcePath);
       const candidates = await findInkCandidates(patch.before, ports.workScheduler);
@@ -56,7 +78,7 @@ export async function verifyJournalEvidence(
         candidate === undefined ||
         candidate.start !== 0 ||
         candidate.original !== patch.before ||
-        !matchesSource(candidate.link, source.path, note.path, links)
+        !matchesSource(candidate.link, source.path, note.path, links, unchangedOriginal)
       ) {
         throw new Error("The journal does not describe an original writing reference.");
       }

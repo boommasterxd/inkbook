@@ -44,6 +44,7 @@ describe("Obsidian Ink import work ownership", () => {
     expect(fixture.files.get("Ink/example.svg")).toBe("private source body");
     const listFiles = vi.spyOn(fixture.ports, "listFiles");
     const resolveLink = vi.spyOn(fixture.ports, "resolveLink");
+    fixture.reads.length = 0;
     try {
       const restored = await fixture.service.undo(preview.id);
       expect(restored.journal.status).toBe("undone");
@@ -52,6 +53,8 @@ describe("Obsidian Ink import work ownership", () => {
       expect(listFiles.mock.calls.length).toBeLessThanOrEqual(3);
       // Evidence resolves before/after links; the restored note is resolved once more.
       expect(resolveLink.mock.calls.length).toBeLessThanOrEqual(3000);
+      // Evidence, undo preparation and write readback each read the live note once.
+      expect(fixture.reads.filter((path) => path === "note.md").length).toBeLessThanOrEqual(3);
     } finally {
       listFiles.mockRestore();
       resolveLink.mockRestore();
