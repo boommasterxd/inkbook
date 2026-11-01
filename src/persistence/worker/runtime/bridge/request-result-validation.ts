@@ -50,6 +50,16 @@ export async function assertResultMatchesRequest(
   if (!matchesRequestIdentity(request, result)) {
     throw new TypeError("Worker result does not match its exact request identity and purpose.");
   }
+  if (request.type === "import-ink" && result.type === "import-ink-success") {
+    const exported = result.exported;
+    if (
+      exported.sessionId !== request.identity.sessionId ||
+      exported.workerEpoch !== request.identity.workerEpoch ||
+      exported.exportGeneration !== request.identity.operationId ||
+      exported.modelRevision !== 0
+    )
+      throw new TypeError("Worker import output does not match its request.");
+  }
   if (request.type === "prepare-scene-paths" && result.type === "prepare-scene-paths-success") {
     return validatePreparedScenePaths(request, result, options, scenePaths);
   }
@@ -113,6 +123,7 @@ const SUCCESS_TYPE_BY_REQUEST = {
   "clipboard-decode": "clipboard-decode-success",
   "clipboard-encode": "clipboard-encode-success",
   "clipboard-plan-paste": "clipboard-plan-paste-success",
+  "import-ink": "import-ink-success",
   "model-sync-full": "model-sync-success",
   "model-sync-incremental": "model-sync-success",
   "prepare-scene-paths": "prepare-scene-paths-success",

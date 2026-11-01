@@ -1,9 +1,13 @@
-.inkbook-root [data-inkbook-menu-gesture="hover"],
+[data-inkbook-feedback-owner] [data-inkbook-menu-gesture="hover"],
+.inkbook-adaptive-panel[data-inkbook-feedback-owner]
+  .inkbook-owned-menu-item[data-inkbook-menu-gesture="hover"],
 .inkbook-dialog-actions[data-inkbook-feedback-owner] > [data-inkbook-menu-gesture="hover"] {
   background-color: var(--inkbook-menu-hover-background, var(--background-modifier-hover));
 }
 
-.inkbook-root [data-inkbook-menu-gesture="press"],
+[data-inkbook-feedback-owner] [data-inkbook-menu-gesture="press"],
+.inkbook-adaptive-panel[data-inkbook-feedback-owner]
+  .inkbook-owned-menu-item[data-inkbook-menu-gesture="press"],
 .inkbook-dialog-actions[data-inkbook-feedback-owner] > [data-inkbook-menu-gesture="press"] {
   background-color: var(--inkbook-menu-press-background, var(--interactive-hover));
 }

@@ -33,6 +33,8 @@ import { snappingGroup } from "./definitions/snapping-definitions";
 import { shortcutGroup } from "./shortcuts/shortcut-definitions";
 import { InkbookSettingsStore } from "./storage";
 import { drawingToolsGroup, shapesAndStructuresGroup } from "./definitions/tool-definitions";
+import type { InkImportSettingsAccess } from "./import/import-access";
+import { importSettingsGroup } from "./import/import-settings";
 
 export interface CustomFolderPort {
   createFolder(path: string): Promise<void>;
@@ -40,6 +42,7 @@ export interface CustomFolderPort {
 
 interface SettingsScheduling {
   readonly lifetime?: AbortSignal;
+  readonly inkImport?: InkImportSettingsAccess;
   readonly workScheduler?: (ownerWindow: Window | null) => WorkScheduler;
 }
 
@@ -158,6 +161,15 @@ export class InkbookSettingTab extends PluginSettingTab {
         createObsidianHotkeyAccess(this.app),
         (ownerWindow) => this.scheduler(ownerWindow),
       ),
+      ...(this.scheduling?.inkImport === undefined
+        ? []
+        : [
+            importSettingsGroup({
+              access: this.scheduling.inkImport,
+              signal: this.scheduling.lifetime,
+              ...this.settingsFeedback,
+            }),
+          ]),
       this.resetAllAction(),
     ];
   }

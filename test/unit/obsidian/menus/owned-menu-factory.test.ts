@@ -199,7 +199,7 @@ describe("owned wide menu close lifecycle", () => {
     expect(document.querySelector(".inkbook-owned-menu")).toBeNull();
     menu.addItem((item) => item.setTitle("Deferred"));
     vi.runOnlyPendingTimers();
-    expect(surface().textContent).toBe("Deferred");
+    expect(surface().querySelector('[role="menuitem"]')?.textContent).toBe("Deferred");
     menu.close("immediate");
     const canceled = test.factory.forEvent(new MouseEvent("contextmenu"));
     const hidden = vi.fn();

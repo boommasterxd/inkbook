@@ -1,0 +1,216 @@
+.inkbook-import-summary-block {
+  margin-block-end: var(--size-4-5);
+}
+
+.inkbook-import-guidance {
+  max-inline-size: 64ch;
+}
+
+.inkbook-import-summary-copy {
+  min-inline-size: 0;
+}
+
+.inkbook-import-body .inkbook-import-step {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-block: 0 var(--size-4-2);
+}
+
+.inkbook-import-body .inkbook-import-journey {
+  margin-block: 0 var(--size-4-4);
+  padding-inline-start: var(--size-4-5);
+}
+
+.inkbook-import-journey li {
+  padding-inline-start: var(--size-4-2);
+}
+
+.inkbook-import-journey li + li {
+  margin-block-start: var(--size-4-3);
+}
+
+.inkbook-import-journey li::marker {
+  color: var(--text-muted);
+}
+
+.inkbook-import-journey strong {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.inkbook-import-body .inkbook-import-journey p {
+  color: var(--text-muted);
+  margin-block: var(--size-4-1) 0;
+}
+
+.inkbook-import-body .inkbook-import-storage-note {
+  align-items: flex-start;
+  color: var(--text-muted);
+  display: flex;
+  font-size: var(--font-ui-smaller);
+  gap: var(--size-4-2);
+  margin-block: var(--size-4-3) var(--size-4-4);
+}
+
+.inkbook-import-storage-icon,
+.inkbook-import-storage-icon svg {
+  block-size: 16px;
+  flex: 0 0 16px;
+  inline-size: 16px;
+}
+
+.inkbook-import-summary-block .inkbook-import-summary {
+  margin: 0;
+}
+
+.inkbook-import-notice {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  display: grid;
+  gap: var(--size-4-3);
+  grid-template-columns: 20px minmax(0, 1fr);
+  margin-block-end: var(--size-4-3);
+  padding: var(--size-4-3);
+}
+
+.inkbook-import-notice[data-tone="caution"] {
+  background: color-mix(in srgb, var(--inkbook-tone-caution) 7%, var(--background-primary));
+  border-color: color-mix(
+    in srgb,
+    var(--inkbook-tone-caution) 35%,
+    var(--background-modifier-border)
+  );
+}
+
+.inkbook-import-notice-icon,
+.inkbook-import-disclosure-icon,
+.inkbook-import-file-icon {
+  color: var(--text-muted);
+  display: inline-flex;
+  flex: 0 0 20px;
+  margin-block-start: 1px;
+}
+
+.inkbook-import-notice-icon svg,
+.inkbook-import-disclosure-icon svg,
+.inkbook-import-file-icon svg {
+  block-size: 20px;
+  inline-size: 20px;
+}
+
+.inkbook-import-notice[data-tone="caution"] .inkbook-import-notice-icon,
+.inkbook-import-disclosure-trigger[data-tone="caution"] .inkbook-import-disclosure-icon,
+.inkbook-import-finding-row[data-tone="caution"] .inkbook-import-file-icon {
+  color: var(--inkbook-tone-caution);
+}
+
+.inkbook-import-notice-title {
+  color: var(--text-normal);
+  display: block;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  margin-block-end: var(--size-4-1);
+}
+
+.inkbook-import-notice .inkbook-import-notice-copy p {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.inkbook-import-disclosure {
+  border-block-start: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  margin: 0;
+}
+
+.inkbook-import-content .inkbook-import-disclosure > .inkbook-import-disclosure-trigger {
+  block-size: auto;
+  border-radius: var(--radius-s);
+  display: grid;
+  gap: var(--size-4-3);
+  grid-template-columns: 20px minmax(0, 1fr) var(--icon-s);
+  min-block-size: 52px;
+  padding: var(--size-4-3) 0;
+  white-space: normal;
+}
+
+.inkbook-import-disclosure-trigger .inkbook-settings-tool-title {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.inkbook-import-disclosure-content {
+  padding: 0 0 var(--size-4-3);
+}
+
+.inkbook-import-file-choice,
+.inkbook-import-finding-row {
+  align-items: start;
+  display: grid;
+  gap: var(--size-4-3);
+  grid-template-columns: 20px minmax(0, 1fr);
+  padding-block: var(--size-4-3);
+}
+
+.inkbook-import-file-choice,
+.inkbook-import-select-all {
+  cursor: pointer;
+}
+
+.inkbook-import-select-all {
+  align-items: center;
+  display: grid;
+  gap: var(--size-4-3);
+  grid-template-columns: 20px minmax(0, 1fr);
+  min-block-size: 44px;
+}
+
+.inkbook-import-file-choice input,
+.inkbook-import-select-all input {
+  justify-self: start;
+  margin: 2px 0 0;
+}
+
+.inkbook-import-select-all input:indeterminate {
+  background-color: var(--checkbox-color);
+  background-image: linear-gradient(var(--checkbox-marker-color), var(--checkbox-marker-color));
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 10px 2px;
+  border-color: var(--checkbox-color);
+}
+
+.inkbook-import-affected-paths {
+  margin-block-start: var(--size-4-2);
+}
+
+.inkbook-import-file-copy,
+.inkbook-import-finding-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1);
+  min-inline-size: 0;
+}
+
+.inkbook-import-file-name,
+.inkbook-import-finding-message {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+
+.inkbook-import-file-path,
+.inkbook-import-finding-source,
+.inkbook-import-finding-detail,
+.inkbook-import-file-target-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  overflow-wrap: anywhere;
+}
+
+.inkbook-import-file-target {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1);
+  margin-block-start: var(--size-4-1);
+}

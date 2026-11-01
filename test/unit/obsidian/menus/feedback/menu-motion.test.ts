@@ -26,6 +26,46 @@ afterEach(() => {
   document.adoptedStyleSheets = [];
 });
 
+it.each([false, true])(
+  "tracks first hover and reentry in the owning window: pop-out %s",
+  (popout) => {
+    const ownerWindow = popout ? (new HappyWindow() as unknown as Window) : window;
+    const { root, item, release } = menuButtonFixture(ownerWindow, "full");
+    const second = item.cloneNode() as HTMLButtonElement;
+    root.append(second);
+    const Pointer = (ownerWindow as Window & { PointerEvent: typeof PointerEvent }).PointerEvent;
+    const removals = vi.spyOn(root, "removeEventListener");
+    const over = (target: HTMLElement, pointerType = "mouse") =>
+      target.dispatchEvent(new Pointer("pointerover", { bubbles: true, pointerType }));
+    const enter = (target: HTMLElement) =>
+      target.dispatchEvent(new Pointer("pointerenter", { pointerType: "mouse" }));
+    const leave = () => root.dispatchEvent(new Pointer("pointerleave", { pointerType: "mouse" }));
+
+    over(item, "touch");
+    expect(item.dataset.inkbookMenuGesture).toBeUndefined();
+    for (let entry = 0; entry < 2; entry++) {
+      over(item);
+      expect(item.dataset.inkbookMenuGesture).toBe("hover");
+      enter(root);
+      enter(item);
+      expect(item.dataset.inkbookMenuGesture).toBe("hover");
+      over(second);
+      expect(item.dataset.inkbookMenuGesture).toBeUndefined();
+      expect(second.dataset.inkbookMenuGesture).toBe("hover");
+      leave();
+      expect(second.dataset.inkbookMenuGesture).toBeUndefined();
+    }
+    over(item);
+    release();
+    expect(item.dataset.inkbookMenuGesture).toBeUndefined();
+    expect(removals.mock.calls.some(([name]) => name === "pointerover")).toBe(true);
+    over(item);
+    expect(item.dataset.inkbookMenuGesture).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+    if (popout) ownerWindow.close();
+  },
+);
+
 it("keeps pop-out hover, keyboard focus, and press lifecycle in the owning window", () => {
   const ownerWindow = new HappyWindow() as unknown as Window;
   const { root, item, release } = menuButtonFixture(ownerWindow, "full");

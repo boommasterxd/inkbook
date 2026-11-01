@@ -15,6 +15,7 @@ import {
 import type { RefreshRateProfileStatus } from "../../../../src/obsidian/performance";
 import type { SettingsControlKey } from "../../../../src/obsidian/settings/control-values";
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
+import type { InkImportSettingsAccess } from "../../../../src/obsidian/settings/import/import-access";
 import {
   InkbookSettingsStore,
   type DeviceSettingsPort,
@@ -29,7 +30,8 @@ vi.mock("../../../../src/obsidian/dialogs/action-dialog", () => ({
   confirmInkbookAction: confirmActionMock,
 }));
 
-vi.mock("obsidian", () => ({
+vi.mock("obsidian", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("obsidian")>()),
   Platform: platform,
   PluginSettingTab: class {
     public updates = 0;
@@ -110,6 +112,7 @@ export function groups(tab: InkbookSettingTab): SettingDefinitionGroup<SettingsC
 export function createTab(
   store: InkbookSettingsStore,
   refreshRateStatus?: () => RefreshRateProfileStatus,
+  inkImport?: InkImportSettingsAccess,
 ): InkbookSettingTab {
   return new InkbookSettingTab(
     { keymap: new Keymap() } as unknown as ConstructorParameters<typeof InkbookSettingTab>[0],
@@ -117,7 +120,10 @@ export function createTab(
     store,
     undefined,
     refreshRateStatus,
-    { workScheduler: () => workSchedulerFromFrames(window) },
+    {
+      workScheduler: () => workSchedulerFromFrames(window),
+      ...(inkImport === undefined ? {} : { inkImport }),
+    },
   );
 }
 

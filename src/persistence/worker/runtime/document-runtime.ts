@@ -19,6 +19,7 @@ import { runUnlockRequest, runVerifyOutputRequest } from "./model/runtime-docume
 import { ScenePathOperation } from "./model/scene-path-operation";
 import { runtimeSliceContext } from "./slice-scheduler";
 import { NavigationJobSuspension } from "./navigation-job-suspension";
+import { runImportInkRequest } from "./model/runtime-ink-import";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeObserver,
@@ -340,6 +341,8 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       return this.#prepareScenePaths(request, sliceContext, signal, observer);
     if (request.type === "unlock")
       return runUnlockRequest(this.#model, request, sliceContext, observer);
+    if (request.type === "import-ink")
+      return runImportInkRequest(this.#model, request, sliceContext!, signal);
     if (
       request.type === "clipboard-encode" ||
       request.type === "clipboard-decode" ||

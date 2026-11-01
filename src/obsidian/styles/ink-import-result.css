@@ -1,0 +1,94 @@
+.inkbook-import-result {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  padding-block: var(--size-4-4) var(--size-4-6);
+  text-align: center;
+}
+
+.inkbook-import-completion {
+  block-size: 104px;
+  color: var(--interactive-accent);
+  inline-size: 104px;
+  margin-block: var(--size-4-2) var(--size-4-4);
+  transform-origin: center;
+}
+
+.inkbook-import-completion-circle {
+  fill: color-mix(in srgb, currentcolor 9%, var(--background-primary));
+  stroke: currentcolor;
+  stroke-opacity: 0.3;
+  stroke-width: 2px;
+}
+
+.inkbook-import-completion-check {
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4px;
+}
+
+.inkbook-import-result-attention {
+  color: var(--inkbook-tone-caution);
+  display: inline-flex;
+  margin-block: var(--size-4-3) var(--size-4-5);
+}
+
+.inkbook-import-result-attention svg {
+  block-size: 48px;
+  inline-size: 48px;
+}
+
+.inkbook-import-body .inkbook-import-result .inkbook-import-heading {
+  font-size: var(--font-ui-large);
+  margin-block-end: var(--size-4-3);
+}
+
+.inkbook-import-body .inkbook-import-result-count {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+  margin-block-end: var(--size-4-2);
+}
+
+.inkbook-import-body .inkbook-import-result-description {
+  color: var(--text-muted);
+  margin: 0;
+  max-inline-size: 52ch;
+}
+
+.inkbook-import-next-step {
+  border-block: 1px solid var(--background-modifier-border);
+  padding-block: var(--size-4-5);
+}
+
+.inkbook-import-next-step h4 {
+  font-size: var(--font-ui-medium);
+  margin: 0 0 var(--size-4-2);
+}
+
+.inkbook-import-next-step > p {
+  max-inline-size: 64ch;
+}
+
+.inkbook-import-next-step > :last-child {
+  margin-block-end: 0;
+}
+
+.inkbook-import-next-step .inkbook-import-disclosure {
+  border: 0;
+}
+
+.inkbook-import-result-recovery {
+  align-items: flex-start;
+  color: var(--text-muted);
+  display: flex;
+  font-size: var(--font-ui-small);
+  gap: var(--size-4-3);
+  padding-block: var(--size-4-5) var(--size-4-2);
+}
+
+.inkbook-import-body .inkbook-import-result-recovery p {
+  margin: 0;
+  max-inline-size: 64ch;
+}

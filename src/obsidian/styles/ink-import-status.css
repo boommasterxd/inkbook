@@ -1,0 +1,46 @@
+.inkbook-import-progress {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  padding-block: var(--size-4-5) var(--size-4-3);
+  text-align: center;
+}
+
+.inkbook-import-scan {
+  block-size: 104px;
+  color: var(--interactive-accent);
+  flex: 0 0 auto;
+  inline-size: 104px;
+  margin-block-end: var(--size-4-4);
+}
+
+.inkbook-import-scan-paper {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+  stroke-width: 1.5px;
+}
+
+.inkbook-import-scan-ink {
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5px;
+}
+
+.inkbook-import-scan-beam {
+  fill: currentcolor;
+  opacity: 0.65;
+}
+
+.inkbook-import-progress .inkbook-import-progress-description {
+  color: var(--text-normal);
+  margin-block-end: var(--size-4-2);
+}
+
+.inkbook-import-progress .inkbook-import-progress-safety {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 0;
+  max-inline-size: 38ch;
+}

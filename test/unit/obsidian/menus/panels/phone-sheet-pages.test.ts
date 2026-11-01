@@ -118,12 +118,18 @@ it("retains one host and detaches root actions until native Back restores them",
   expect(document.querySelectorAll(".inkbook-adaptive-panel-layer")).toHaveLength(1);
   expect(f.modalEl.dataset.state).toBe("open");
   expect(f.modalEl.dataset.presence).toBeUndefined();
-  expect(f.modalEl.getAttribute("aria-label")).toBe("Inkbook settings");
+  expect(f.modalEl.hasAttribute("aria-label")).toBe(false);
+  expect(document.getElementById(f.modalEl.getAttribute("aria-labelledby")!)?.textContent).toBe(
+    "Inkbook settings",
+  );
   expect(f.modalEl.querySelector(".inkbook-phone-dialog-title")).toBeNull();
   expect(f.modalEl.dataset.pageTransition).toBe("forward");
   expect(f.containerEl.dataset.inkbookKeyboardNavigation).toBe("false");
   f.requestClose();
   expect(f.rootButton.isConnected).toBe(true);
+  expect(document.getElementById(f.modalEl.getAttribute("aria-labelledby")!)?.textContent).toBe(
+    "More options",
+  );
   expect(document.activeElement).toBe(f.modalEl);
   expect(f.scroll.scrollTop).toBe(80);
   expect(f.dispose).toHaveBeenCalledOnce();

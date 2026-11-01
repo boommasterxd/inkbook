@@ -42,6 +42,17 @@ describe.each([false, true])("owned menu semantic accessibility, phone=%s", (pho
     try {
       const surface = document.querySelector<HTMLElement>('[role="menu"], [role="dialog"]');
       expect(surface).not.toBeNull();
+      if (menu === "overflow" || menu === "style") {
+        const labelledElements = [...surface!.querySelectorAll<HTMLElement>("[aria-label]")];
+        expect(surface!.hasAttribute("aria-label")).toBe(false);
+        const label = document.getElementById(surface!.getAttribute("aria-labelledby")!);
+        expect(label?.textContent).toBe(menu === "style" ? "Style" : "Menu");
+        for (const element of labelledElements) {
+          expect(element.getAttribute("aria-label")).not.toBe("");
+          expect(element.getAttribute("data-tooltip-delay")).toBe("700");
+          expect(element.hasAttribute("title")).toBe(false);
+        }
+      }
       if (menu === "style") {
         const choices = surface!.querySelector<HTMLElement>('[data-control="color"]');
         expect(choices?.getAttribute("role")).toBe("group");

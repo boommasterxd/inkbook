@@ -11,7 +11,7 @@ import type { PhoneSheetHostPort } from "./panels/phone-sheet-host";
 import { animateWideMenuEntry, animateWideMenuExit } from "./feedback/wide-menu-motion";
 import { observeMenuMotionPreference, playMenuMotion } from "./feedback/menu-motion";
 import { registerMenuFeedback } from "./feedback/menu-feedback";
-import { menuDomWindow } from "./menu-dom";
+import { configureMenuTooltips, menuDomWindow, setMenuSurfaceLabel } from "./menu-dom";
 import { readMenuViewport } from "./panels/menu-viewport";
 import { navigateOwnedMenu, OwnedMenuItem, renderOwnedMenuItems } from "./owned-menu-item";
 
@@ -131,7 +131,7 @@ class OwnedMenu extends Component implements MenuPort {
     const content = menuDomWindow(ownerDocument, "owned menu").createDiv();
     content.className = "inkbook-owned-menu-content";
     content.setAttribute("role", "menu");
-    content.setAttribute("aria-label", this.#kind === "context" ? "Context menu" : "Menu");
+    setMenuSurfaceLabel(content, this.#kind === "context" ? "Context menu" : "Menu");
     this.#buttons = renderOwnedMenuItems(content, this.#items, (item, event) => {
       if (this.#closing || this.#closed || !content.isConnected) return;
       this.#closing = !item.keepOpen;
@@ -141,6 +141,7 @@ class OwnedMenu extends Component implements MenuPort {
         if (!item.keepOpen) this.close("handoff");
       }
     });
+    configureMenuTooltips(content);
     this.registerDomEvent(
       ownerDocument,
       "keydown",

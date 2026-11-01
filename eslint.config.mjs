@@ -106,6 +106,7 @@ export default [
       "max-lines-per-function": ["error", { max: 100, skipBlankLines: false, skipComments: false }],
       "max-params": ["error", 6],
       "sonarjs/cognitive-complexity": ["error", 25],
+      "obsidianmd/ui/sentence-case": ["error", { ignoreWords: ["Inkbook", "Ink"] }],
     },
   },
   {

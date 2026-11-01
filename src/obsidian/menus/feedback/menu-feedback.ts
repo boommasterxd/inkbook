@@ -36,7 +36,7 @@ function createMenuChoiceController(
   ownerWindow: Window,
 ): MenuChoiceController {
   const selector =
-    ".inkbook-adaptive-panel-back, .inkbook-owned-menu-item[tabindex], .inkbook-menu-choice, .inkbook-menu-stepper-button, .inkbook-menu-background-choice, .inkbook-dialog-actions button, .inkbook-shortcut-icon-button, .inkbook-shortcut-recorder, .inkbook-shortcuts-group-reset";
+    ".inkbook-adaptive-panel-back, .inkbook-owned-menu-item[tabindex], .inkbook-menu-choice, .inkbook-menu-stepper-button, .inkbook-menu-background-choice, .inkbook-dialog-actions button, .inkbook-import-actions button, .inkbook-import-history-row, .inkbook-import-page-button, .inkbook-import-history-retry, .inkbook-shortcut-icon-button, .inkbook-shortcut-recorder, .inkbook-shortcuts-group-reset";
   const itemAt = menuItemLookup(root, selector);
   let hovered: HTMLElement | undefined;
   let pressed: HTMLElement | undefined;
@@ -71,7 +71,6 @@ function createMenuChoiceController(
     update(next, "var(--background-modifier-hover)");
   };
   const finishHover = (): void => {
-    root.removeEventListener("pointerover", moveHover);
     const previous = hovered;
     hovered = undefined;
     update(previous);
@@ -148,14 +147,11 @@ function registerMenuChoiceFeedback(
   root.addEventListener("pointerdown", state.onPointerDown);
   root.addEventListener("focusin", state.onFocusIn);
   root.addEventListener("focusout", state.onFocusOut);
+  root.addEventListener("pointerover", state.moveHover);
   const popout = ownerWindow !== window;
   const leaveHover = popout
-    ? registerOwnedWindowHover(root, state.moveHover, state.finishHover)
-    : hover([root], (_, event) => {
-        state.moveHover(event);
-        root.addEventListener("pointerover", state.moveHover);
-        return state.finishHover;
-      });
+    ? registerOwnedWindowHover(root, state.finishHover)
+    : hover([root], () => state.finishHover);
   const leavePress = popout
     ? registerOwnedWindowPress(root, ownerWindow, state.itemAt, state.change)
     : registerOwnedMotionPress(state.items, (_, event) => {
@@ -221,21 +217,12 @@ export function registerMenuFeedback(
 }
 
 /** Motion gestures bind release to the main window; pop-outs need their owning window. */
-function registerOwnedWindowHover(
-  root: HTMLElement,
-  move: (event: PointerEvent) => void,
-  finish: () => void,
-): () => void {
-  const onOver = (event: PointerEvent): void => {
-    if (event.pointerType !== "touch") move(event);
-  };
+function registerOwnedWindowHover(root: HTMLElement, finish: () => void): () => void {
   const onLeave = (event: PointerEvent): void => {
     if (event.pointerType !== "touch") finish();
   };
-  root.addEventListener("pointerover", onOver);
   root.addEventListener("pointerleave", onLeave);
   return () => {
-    root.removeEventListener("pointerover", onOver);
     root.removeEventListener("pointerleave", onLeave);
   };
 }

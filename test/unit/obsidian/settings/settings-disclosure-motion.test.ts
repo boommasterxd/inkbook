@@ -27,6 +27,47 @@ function disclosure(ownerDocument: Document = document) {
   };
 }
 
+function popoutPanel(supportsIntrinsicSize = true) {
+  const popout = new Window();
+  const css = popout.CSS;
+  Object.defineProperty(popout, "CSS", { value: css });
+  vi.spyOn(css, "supports").mockImplementation((property) =>
+    property === "interpolate-size" ? supportsIntrinsicSize : true,
+  );
+  const panel = popout.document.createElementNS(
+    "http://www.w3.org/1999/xhtml",
+    "div",
+  ) as unknown as HTMLElement;
+  popout.document.body.append(panel as unknown as typeof popout.document.body);
+  panel.hidden = true;
+  let preference: "full" | "reduced" = "full";
+  let changed = (): void => undefined;
+  const unsubscribe = vi.fn();
+  const motion = new SettingsPanelMotion(
+    panel,
+    () => preference,
+    (listener) => {
+      changed = listener;
+      return unsubscribe;
+    },
+  );
+  const content = panel.parentElement!;
+  return {
+    panel,
+    content,
+    motion,
+    unsubscribe,
+    setReduced: () => {
+      preference = "reduced";
+      changed();
+    },
+    cleanup: () => {
+      motion.dispose();
+      popout.close();
+    },
+  };
+}
+
 describe("settings disclosure motion", () => {
   it("retargets the chevron from its current angle", () => {
     const view = disclosure();
@@ -80,24 +121,102 @@ describe("settings disclosure motion", () => {
     expect(remove).toHaveBeenCalledWith("pointercancel", expect.any(Function), true);
     popout.close();
   });
+});
 
-  it("keeps a pop-out disclosure operable through open and close", async () => {
-    const popout = new Window();
-    const panel = popout.document.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "div",
-    ) as unknown as HTMLElement;
-    popout.document.body.append(panel as unknown as typeof popout.document.body);
-    panel.hidden = true;
-    const motion = new SettingsPanelMotion(panel, () => "full");
-    motion.setExpanded(true);
-    expect(panel.hidden).toBe(false);
-    expect(panel.inert).toBe(false);
-    motion.setExpanded(false);
-    expect(panel.inert).toBe(true);
-    await vi.waitFor(() => expect(panel.hidden).toBe(true));
-    motion.dispose();
-    popout.close();
+describe("pop-out settings panel motion", () => {
+  it("retargets loaded content with one pre-mutation height read and one animation owner", () => {
+    const view = popoutPanel();
+    view.motion.setExpanded(true);
+    const previous = view.content.getAnimations()[0]!;
+    const ownerWindow = view.content.ownerDocument.defaultView!;
+    const reads = vi.spyOn(ownerWindow, "getComputedStyle");
+    const update = vi.fn(() => {
+      expect(reads).toHaveBeenCalledOnce();
+      view.panel.append("Loaded import history.");
+    });
+    view.motion.updateContent(update);
+    expect(update).toHaveBeenCalledOnce();
+    expect(reads).toHaveBeenCalledOnce();
+    expect(previous.playState).toBe("idle");
+    expect(view.content.getAnimations()).toHaveLength(1);
+    view.content.getAnimations()[0]!.finish();
+    view.motion.setExpanded(false);
+    view.content.getAnimations()[0]!.finish();
+    reads.mockClear();
+    view.motion.updateContent(() => view.panel.replaceChildren());
+    expect(reads).not.toHaveBeenCalled();
+    view.cleanup();
+    reads.mockRestore();
+  });
+
+  it("exposes pop-out controls after native expansion and hides them only after collapse", () => {
+    const view = popoutPanel();
+    view.motion.setExpanded(true);
+    expect(view.panel.hidden).toBe(false);
+    expect(view.panel.inert).toBe(false);
+    view.content.getAnimations()[0]!.finish();
+    expect(view.content.style.height).toBe("auto");
+    view.motion.setExpanded(false);
+    expect(view.panel.inert).toBe(true);
+    expect(view.panel.hidden).toBe(false);
+    view.content.getAnimations()[0]!.finish();
+    expect(view.panel.hidden).toBe(true);
+    expect(view.content.style.height).toBe("0px");
+    expect(view.content.getAnimations()).toHaveLength(0);
+    view.cleanup();
+  });
+
+  it("keeps reversed pop-out expansion usable and releases interrupted animations on disposal", () => {
+    const view = popoutPanel();
+    const originalParent = view.content.parentElement!.parentElement;
+    view.motion.setExpanded(true);
+    view.content.getAnimations()[0]!.finish();
+    view.motion.setExpanded(false);
+    const collapse = view.content.getAnimations()[0]!;
+    view.motion.setExpanded(true);
+    expect(collapse.playState).toBe("idle");
+    expect(view.content.getAnimations()).toHaveLength(1);
+    view.content.getAnimations()[0]!.finish();
+    expect(view.panel.hidden).toBe(false);
+    expect(view.panel.inert).toBe(false);
+    expect(view.content.style.height).toBe("auto");
+    view.motion.setExpanded(false);
+    view.motion.dispose();
+    expect(view.content.getAnimations()).toHaveLength(0);
+    expect(view.panel.parentElement).toBe(originalParent);
+    expect(view.content.isConnected).toBe(false);
+    expect(view.unsubscribe).toHaveBeenCalledOnce();
+    view.cleanup();
+  });
+
+  it("settles interrupted pop-out transitions when reduced motion changes live", () => {
+    const view = popoutPanel();
+    view.motion.setExpanded(true);
+    view.setReduced();
+    expect(view.content.getAnimations()).toHaveLength(0);
+    expect(view.content.style.height).toBe("auto");
+    expect(view.panel.hidden).toBe(false);
+    view.motion.setExpanded(false);
+    expect(view.content.style.height).toBe("0px");
+    expect(view.panel.inert).toBe(true);
+    expect(view.panel.hidden).toBe(true);
+    view.cleanup();
+  });
+
+  it("keeps pop-out controls usable without native intrinsic-size interpolation", () => {
+    const view = popoutPanel(false);
+    view.motion.setExpanded(true);
+    expect(view.content.style.height).toBe("auto");
+    expect(view.panel.hidden).toBe(false);
+    expect(view.panel.inert).toBe(false);
+    expect(view.content.getAnimations()).toHaveLength(0);
+    view.motion.setExpanded(false);
+    expect(view.panel.hidden).toBe(true);
+    expect(view.panel.inert).toBe(true);
+    view.motion.setExpanded(true);
+    expect(view.content.style.height).toBe("auto");
+    expect(view.panel.hidden).toBe(false);
+    view.cleanup();
   });
 });
 

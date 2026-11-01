@@ -88,7 +88,7 @@
 .inkbook-root
   .inkbook-feedback[data-inkbook-feedback-severity="error"]
   .inkbook-feedback-status-icon {
-  color: var(--text-error);
+  color: var(--inkbook-tone-danger);
 }
 
 .inkbook-root
@@ -100,7 +100,7 @@
 .inkbook-root
   .inkbook-feedback[data-inkbook-feedback-severity="warning"]
   .inkbook-feedback-status-icon {
-  color: var(--text-warning);
+  color: var(--inkbook-tone-caution);
 }
 
 .inkbook-root .inkbook-feedback-copy {
@@ -149,7 +149,7 @@
 }
 
 .inkbook-root .inkbook-feedback-icon-button[data-inkbook-feedback-tone="danger"] {
-  color: var(--text-error);
+  color: var(--inkbook-tone-danger);
 }
 
 .inkbook-root .inkbook-feedback-icon-button:focus-visible {
