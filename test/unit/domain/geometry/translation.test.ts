@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { type ArrowElementV1, type LineElementV1 } from "../../../../src/domain/schema/public";
 import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { translateElementGeometry } from "../../../../src/domain/geometry/public";
-import { coordinateSystem, rectangle } from "./fixtures";
+import { validateInkElementV1 } from "../../../../src/domain/schema/element-validation";
+import { coordinateSystem, rectangle, table } from "./fixtures";
 
 const outlineStyle = {
   outlineColor: { type: "theme-text" as const },
@@ -51,6 +52,32 @@ describe("runtime geometry translation", () => {
   it("returns the original element for a zero translation", () => {
     const source = rectangle();
     expect(translateElementGeometry(source, { x: 0, y: 0 })).toBe(source);
+  });
+
+  it.each([
+    rectangle({
+      x: 921.576,
+      y: 171.422,
+      width: 220.122,
+      height: 122.073,
+      pivot: { x: 1031.637, y: 232.458 },
+      rotation: 10,
+    }),
+    table({
+      x: 171.422,
+      y: 171.422,
+      columnWidth: 40.691,
+      height: 122.073,
+      pivot: { x: 232.459, y: 232.458 },
+      rotation: 10,
+    }),
+  ])("preserves canonical bounds-centered pivots when translating a $kind", (source) => {
+    expect(validateInkElementV1(source).ok).toBe(true);
+    const translated = translateElementGeometry(source, { x: 100, y: 100 });
+    expect(validateInkElementV1(translated).ok).toBe(true);
+    expect(translated.pivot.y).toBe(332.459);
+    if (translated.kind === "table") expect(translated.pivot.x).toBe(332.459);
+    expect(translated.rotation).toBe(10);
   });
 });
 

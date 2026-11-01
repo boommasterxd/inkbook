@@ -53,7 +53,9 @@ describe("Obsidian Ink import workflow", () => {
     expect(fixture.files.get("changed.md")).toBe("User changed the note");
     expect(fixture.files.get("source.md")).toBe(writingEmbed());
   });
+});
 
+describe("Obsidian Ink import undo", () => {
   it("undoes only its own embeds while retaining independent note and generated-target edits", async () => {
     const original = `${"before ".repeat(30)}\n${writingEmbed()}\n${"after ".repeat(30)}`;
     const fixture = importFixture({ "Ink/example.svg": "source", "note.md": original });
@@ -72,14 +74,68 @@ describe("Obsidian Ink import workflow", () => {
     expect(fixture.files.get("note.md")).not.toContain("!inkbook");
   });
 
-  it("reports an undo conflict without overwriting an edited embed", async () => {
-    const fixture = importFixture();
+  it("reports a durable per-note undo reason without repeating it or overwriting edited content", async () => {
+    const notePath = "Archive: Undo review/note.md";
+    const fixture = importFixture({
+      "Ink/example.svg": "writing source",
+      [notePath]: writingEmbed(),
+      "restored.md": writingEmbed(),
+    });
     const preview = await fixture.service.scan();
     await fixture.service.apply(preview);
-    fixture.files.set("note.md", "User replaced the import with other content");
+    fixture.files.set(notePath, "User replaced the import with other content");
     const result = await fixture.service.undo(preview.id);
     expect(result.journal.status).toBe("conflict");
-    expect(fixture.files.get("note.md")).toBe("User replaced the import with other content");
+    expect(result.conflicts).toBe(1);
+    expect(result.journal.notes.find((note) => note.path === "restored.md")?.status).toBe("undone");
+    expect(result.journal.issues).toEqual([
+      expect.stringContaining(
+        `${notePath}: Undo skipped an imported embed that was changed, removed, or could not be uniquely identified`,
+      ),
+    ]);
+    expect(fixture.files.get(notePath)).toBe("User replaced the import with other content");
+    expect(fixture.files.get("restored.md")).toBe(writingEmbed());
+    const repeated = await fixture.service.undo(preview.id);
+    expect(repeated.conflicts).toBe(1);
+    expect(repeated.journal.issues).toEqual(result.journal.issues);
+    expect((await fixture.service.history())[0]?.issues).toEqual(result.journal.issues);
+    expect(fixture.files.get(result.journal.notes[0]!.backupPath)).toBe(writingEmbed());
+    fixture.files.set(notePath, "!inkbook[[Ink/example.inkbook.svg]]");
+    const resolved = await fixture.service.undo(preview.id);
+    expect(resolved.journal.status).toBe("undone");
+    expect(resolved.conflicts).toBe(0);
+    expect(resolved.journal.issues).toEqual([]);
+    expect(fixture.files.get(notePath)).toBe(writingEmbed());
+    expect((await fixture.service.history())[0]?.issues).toEqual([]);
+  });
+
+  it("identifies the note when undo restores only its unchanged embed", async () => {
+    const gap = `\n${"Unchanged paragraph. ".repeat(20)}\n`;
+    const fixture = importFixture({
+      "first.svg": "first source",
+      "second.svg": "second source",
+      "note.md": `${writingEmbed("first.svg")}${gap}${writingEmbed("second.svg")}`,
+    });
+    const preview = await fixture.service.scan();
+    await fixture.service.apply(preview);
+    fixture.files.set(
+      "note.md",
+      fixture.files.get("note.md")!.replace("!inkbook[[first.inkbook.svg]]", "User replacement"),
+    );
+    const result = await fixture.service.undo(preview.id);
+    expect(result.journal.status).toBe("conflict");
+    expect(result.conflicts).toBe(1);
+    expect(result.journal.notes[0]?.patches.map((patch) => patch.status)).toEqual([
+      "applied",
+      "undone",
+    ]);
+    expect(result.journal.issues).toEqual([
+      expect.stringContaining("note.md: Undo skipped an imported embed"),
+    ]);
+    expect(fixture.files.get("note.md")).toBe(
+      `User replacement${gap}${writingEmbed("second.svg")}`,
+    );
+    expect((await fixture.service.undo(preview.id)).journal.issues).toEqual(result.journal.issues);
   });
 
   it("reverses multiple nearby references from one note without context interference", async () => {
@@ -117,6 +173,12 @@ describe("Obsidian Ink import source cleanup", () => {
     fixture.files.set("Ink/example.svg", "User changed original");
     await fixture.service.cleanup(preview.id);
     expect(fixture.files.get("Ink/example.svg")).toBe("User changed original");
+    const cleanupIssues = (await fixture.service.history())[0]!.issues;
+    expect(cleanupIssues).toHaveLength(2);
+    fixture.files.set("Ink/example.svg", "writing source");
+    const restored = await fixture.service.undo(preview.id);
+    expect(restored.journal.status).toBe("undone");
+    expect(restored.journal.issues).toEqual(cleanupIssues);
   });
 
   it.each(["missing", "edited"])(

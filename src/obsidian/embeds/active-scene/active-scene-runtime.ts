@@ -104,7 +104,7 @@ export function createInitialSceneRuntime(
     options.root.dataset.inkbookMotion = options.deviceSettings.motion;
     const elements = createActiveSceneChromeElements(options.root);
     const handoff = createScenePreviewHandoff(
-      elements.container,
+      elements,
       options,
       stability,
       releaseInitialStability,
@@ -118,7 +118,7 @@ export function createInitialSceneRuntime(
 }
 
 function createScenePreviewHandoff(
-  container: HTMLElement,
+  elements: ReturnType<typeof createActiveSceneChromeElements>,
   options: ActiveInkbookSceneOptions,
   stability: TransitionScrollStability,
   initialScrollStabilityRelease: () => void,
@@ -131,7 +131,8 @@ function createScenePreviewHandoff(
       : { ensurePreviewReady: options.ensurePreviewReady }),
     onDispose: () => options.setPreviewBackgroundWait?.(undefined),
     beginScrollStability: () => stability.begin(),
-    container,
+    container: elements.container,
+    editorChrome: elements.editorChrome,
     initialScrollStabilityRelease,
     motion: options.deviceSettings.motion,
     preview: options.preview,

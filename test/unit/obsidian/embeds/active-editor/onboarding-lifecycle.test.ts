@@ -10,6 +10,11 @@ import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { createDragElement } from "../../../../../src/editor/tools/public";
 import { createBuiltInSettings } from "../../../../../src/domain/settings";
+import {
+  FakeEditorToolbarMenu,
+  menuAction,
+  menuTitles,
+} from "../../../../adapters/obsidian/editor-toolbar-menu";
 
 const editors: ReturnType<typeof createHarness>[] = [];
 beforeEach(() => installObsidianDomHelpers());
@@ -68,6 +73,49 @@ describe("empty-paper invitation eligibility", () => {
     first.controller.setEnabled(false);
     first.controller.setEnabled(true);
     expect(first.controller.chromeProps().onboarding).toBeUndefined();
+    expect(current.saveLocalStorage).toHaveBeenCalledOnce();
+  });
+
+  it("omits the manual tour from populated drawings", async () => {
+    const current = await session();
+    const populated = current.editor(undefined, new ElementStore([existingElement()]));
+    populated.controller.setEnabled(true);
+    const menu = recordOverflow(populated);
+    populated.controller.handleToolbarAction("overflow", overflowTrigger());
+    expect(menuTitles(menu)).toContain("Settings");
+    expect(menuTitles(menu)).not.toContain("Quick tour");
+    expect(current.saveLocalStorage).not.toHaveBeenCalled();
+  });
+
+  it("guards stale start actions and closes a running tour when content is added", async () => {
+    const current = await session();
+    const store = new ElementStore([]);
+    const editor = current.editor(undefined, store);
+    editor.controller.setEnabled(true);
+    const invitation = editor.controller.chromeProps().onboarding!;
+    invitation.container.dataset.inkbookMotion = "reduced";
+    const menu = recordOverflow(editor);
+    editor.controller.handleToolbarAction("overflow", overflowTrigger());
+    const start = menuAction(menu, "Quick tour").click!;
+    editor.menu.close();
+
+    store.create(existingElement());
+    invitation.onStart();
+    start();
+    await Promise.resolve();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    store.remove([existingElement().id]);
+    menu.entries.length = 0;
+    editor.controller.handleToolbarAction("overflow", overflowTrigger());
+    menuAction(menu, "Quick tour").click?.();
+    await Promise.resolve();
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    editor.input.focus();
+    store.create(existingElement());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(editor.input);
+    expect(editor.controller.chromeProps().toolbarState.onboardingContextPreview).toBe(false);
     expect(current.saveLocalStorage).toHaveBeenCalledOnce();
   });
 });
@@ -158,4 +206,14 @@ function existingElement() {
     start: { x: 10, y: 10 },
     tool: "rectangle",
   });
+}
+
+function recordOverflow(editor: ReturnType<typeof createHarness>): FakeEditorToolbarMenu {
+  const menu = new FakeEditorToolbarMenu();
+  vi.spyOn(editor.menu, "addItem").mockImplementation((configure) => menu.addItem(configure));
+  return menu;
+}
+
+function overflowTrigger(): HTMLButtonElement {
+  return document.body.createEl("button");
 }

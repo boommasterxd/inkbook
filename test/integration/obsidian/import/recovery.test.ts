@@ -160,6 +160,11 @@ describe("Obsidian Ink import source restoration", () => {
     expect(fixture.files.get("A/example.svg")).toBe("original writing source");
     expect(fixture.ports.resolveLink("example.svg", "C/note.md")).toBe("C/example.svg");
     expect(fixture.files.get("C/note.md")).toBe(imported);
+    expect(result.journal.issues).toContainEqual(
+      expect.stringContaining(
+        "C/note.md: Undo skipped embeds because an original link now points to a different file",
+      ),
+    );
     expect(fixture.files.get("C/example.svg")).toBe("new local writing source");
     expect(fixture.files.get("B/example.svg")).toBe("other writing source");
     expect(fixture.files.get("A/example.inkbook.svg")).toBe(converted);
@@ -217,11 +222,21 @@ describe("Obsidian Ink import journal boundaries", () => {
     const preview = await fixture.service.scan();
     await fixture.service.apply(preview);
     fixture.files.set("first.svg", "Changed first");
-    expect((await fixture.service.undo(preview.id)).journal.status).toBe("conflict");
+    const partial = await fixture.service.undo(preview.id);
+    expect(partial.journal.status).toBe("conflict");
+    expect(partial.journal.issues).toContainEqual(
+      expect.stringContaining(
+        "note.md: Undo skipped embeds because an original file could not be safely restored",
+      ),
+    );
+    expect((await fixture.service.undo(preview.id)).journal.issues).toEqual(partial.journal.issues);
     expect(fixture.files.get("note.md")).toContain("!inkbook[[first.inkbook.svg]]");
     expect(fixture.files.get("note.md")).toContain(writingEmbed("second.svg"));
     fixture.files.set("first.svg", "first");
-    expect((await fixture.service.undo(preview.id)).journal.status).toBe("undone");
+    const restored = await fixture.service.undo(preview.id);
+    expect(restored.journal.status).toBe("undone");
+    expect(restored.conflicts).toBe(0);
+    expect(restored.journal.issues).toEqual([]);
     expect(fixture.files.get("note.md")).toBe(original);
   });
 });

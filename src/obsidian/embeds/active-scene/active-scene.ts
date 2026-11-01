@@ -393,6 +393,7 @@ export class ActiveInkbookScene {
 
   #cancelLockTransition(): void {
     if (this.#lockStartedAt === undefined) return;
+    this.#previewHandoff.restoreActiveSpacing();
     const transition = this.#lockLayoutTransition;
     transition?.cancel();
     this.#lockGeneration += 1;

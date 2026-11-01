@@ -52,7 +52,9 @@ export function createActiveEditorChrome(
     },
     onOpenSettings: openings.onOpenSettings,
     onOpenShortcuts: openings.onOpenShortcuts,
-    onOpenTour: onboarding.open,
+    get onOpenTour() {
+      return onboarding.available ? onboarding.open : undefined;
+    },
     onShapeChange: (shape) => configureTool(chromeState.selectShape(shape)),
     onStyleChange: (id, value) => styles.apply(activeTool(), id, value),
   };

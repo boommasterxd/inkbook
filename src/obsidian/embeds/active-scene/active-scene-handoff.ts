@@ -3,6 +3,7 @@ import type { InkbookDeviceSettingsV2 } from "../../../domain/settings/types";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { TRANSITION_DURATIONS } from "../../../rendering/motion/transitions";
 import { ActiveHeightTransition } from "../active-editor/layout/height-transition";
+import { ToolbarSpacing } from "./toolbar-spacing";
 
 type MotionPreference = InkbookDeviceSettingsV2["motion"];
 
@@ -13,6 +14,7 @@ interface PreviewHandoffOptions {
   readonly workScheduler: WorkScheduler;
   readonly beginScrollStability?: () => () => void;
   readonly container: HTMLElement;
+  readonly editorChrome?: HTMLElement;
   readonly initialScrollStabilityRelease?: () => void;
   readonly motion: MotionPreference;
   readonly initialEntrance?: InitialPresentationEntrance;
@@ -40,6 +42,7 @@ export class ActiveScenePreviewHandoff {
   readonly #previewParent: Node | null;
   readonly #root: HTMLElement;
   readonly #unlockHeight: ActiveHeightTransition;
+  readonly #toolbarSpacing: ToolbarSpacing | undefined;
   readonly #setPreviewAspectRatio: ((aspectRatio: number) => void) | undefined;
   readonly #ensurePreviewReady: (() => Promise<void>) | undefined;
   readonly #onDispose: (() => void) | undefined;
@@ -55,6 +58,7 @@ export class ActiveScenePreviewHandoff {
   #lockEditor: HTMLElement | undefined;
   #releaseScrollStability: (() => void) | undefined;
   #started = false;
+  #locking = false;
   #initialRevealPending = false;
   #frame: number | undefined;
 
@@ -76,6 +80,10 @@ export class ActiveScenePreviewHandoff {
     this.#previewParent = options.preview?.parentNode ?? null;
     this.#root = options.root;
     this.#unlockHeight = new ActiveHeightTransition(options.container, options.workScheduler);
+    this.#toolbarSpacing =
+      options.editorChrome === undefined
+        ? undefined
+        : new ToolbarSpacing(options.root, options.editorChrome, options.workScheduler);
     this.#releaseScrollStability = options.initialScrollStabilityRelease;
     this.#mediaQuery = ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
     this.#mediaQuery?.addEventListener("change", this.#handleMotionChange);
@@ -102,6 +110,7 @@ export class ActiveScenePreviewHandoff {
     this.#initialRevealPending = false;
     this.#onReady = undefined;
     this.#unlockHeight.cancel();
+    this.#toolbarSpacing?.dispose();
     this.#releaseTransitionStability();
     if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
@@ -173,7 +182,12 @@ export class ActiveScenePreviewHandoff {
   }
 
   #startUnlockTransition(activeBlockSize: string): void {
-    if (this.#initialEntrance?.revealActive(Number.parseFloat(activeBlockSize))) {
+    this.restoreActiveSpacing();
+    if (
+      this.#initialEntrance?.revealActive(
+        Number.parseFloat(activeBlockSize) + (this.#toolbarSpacing?.expanded ?? 0),
+      )
+    ) {
       this.#initialRevealPending = true;
       void this.#initialEntrance.ready.then(this.#finishInitialReveal, this.#finishInitialReveal);
       this.#container.style.blockSize = activeBlockSize;
@@ -286,6 +300,8 @@ export class ActiveScenePreviewHandoff {
   }
 
   public stopUnlockHeight(): string | undefined {
+    this.#locking = true;
+    this.#toolbarSpacing?.setOpen(false, this.#reducedMotion());
     if (!this.#unlockHeight.active) return undefined;
     const activeBlockSize = this.#container.style.getPropertyValue(
       ACTIVE_SCENE_BLOCK_SIZE_PROPERTY,
@@ -301,6 +317,11 @@ export class ActiveScenePreviewHandoff {
     this.#motion = motion;
     this.onReducedMotionChange?.(this.#reducedMotion());
     if (this.#reducedMotion()) this.#finishReducedMotion();
+  }
+
+  public restoreActiveSpacing(): void {
+    this.#locking = false;
+    this.#toolbarSpacing?.setOpen(true, this.#reducedMotion());
   }
 
   public setPreviewSource(source: string): Promise<void> {
@@ -334,6 +355,7 @@ export class ActiveScenePreviewHandoff {
   ): void {
     if (this.#disposed) return;
     finalizeLayout();
+    this.#toolbarSpacing?.finish();
     this.restorePreview();
     this.#initialEntrance?.resumePreview();
     const preview = this.#preview;
@@ -377,6 +399,7 @@ export class ActiveScenePreviewHandoff {
 
   #finishReducedMotion(): void {
     if (this.#disposed) return;
+    this.#toolbarSpacing?.finish();
     if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#unlockHeight.finishImmediately();
@@ -398,6 +421,7 @@ export class ActiveScenePreviewHandoff {
         this.#scheduleUnlockTransition(this.#container.style.blockSize);
         return;
       }
+      if (!this.#locking) this.restoreActiveSpacing();
       this.#complete();
     }
   }

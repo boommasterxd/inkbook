@@ -221,6 +221,8 @@ Import history is loaded only when its Settings disclosure is expanded. It shows
 
 After import, the result separates the durable outcome, the next step, and recovery guidance. A finite decorative check animation confirms only a complete operation without conflicts or recorded issues; stopped or incomplete outcomes use an attention symbol and explicit review guidance. A successful restore additionally requires the durable `undone` journal status. The import result offers a lazy, 25-item paged list of applied notes to review; conflict notes remain in the issue flow. It explains that the user should close settings, open an affected note and check its converted handwriting before removing originals. Restore results explain that original SVGs retain their own appearance. Cleanup reports remaining originals explicitly. Counts, headings, actions and focus never wait for the animation. Undo and original-file cleanup are available through **Settings > Inkbook > Import > Import history**.
 
+Undo issues name the affected note and explain whether an imported embed or its context changed, an original file could not be safely restored, the original link resolves differently, or reading/writing failed. The result and saved import details reuse the paged Issues list for these reasons, including when only part of a note could be restored. Retrying the same conflict does not add duplicate issues; each conflicted note is counted once alongside other independent issues. A successful retry clears that note's resolved undo issues. Recovery backups remain available for review.
+
 ## Finger and Pen Input
 
 The following behavior applies by default:

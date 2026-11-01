@@ -152,6 +152,7 @@ vi.mock("../../../../../src/obsidian/embeds/active-scene/active-scene-runtime", 
             dispose: ports.disposeHandoff,
             updateMotion: vi.fn(),
             stopUnlockHeight: vi.fn(),
+            restoreActiveSpacing: vi.fn(),
             releaseHiddenPreview: vi.fn(),
             ensurePreviewReady: () => ports.previewReady,
             handoffToPreview: (_chrome: HTMLElement, resolve: () => void, before: () => void) => {

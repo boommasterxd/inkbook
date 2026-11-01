@@ -3,6 +3,29 @@ import { applyImportPatches, reverseImportPatches, withImportedContexts } from "
 import { resolveInkReferences } from "./references";
 import type { InkImportNoteRecord, InkImportPorts } from "./types";
 
+function recordIssue(store: ImportJournalStore, issue: string): void {
+  if (!store.journal.issues.includes(issue)) store.journal.issues.push(issue);
+}
+
+function retainIssues(store: ImportJournalStore, keep: (issue: string) => boolean): void {
+  const issues = store.journal.issues;
+  let retained = 0;
+  for (const issue of issues) {
+    if (keep(issue)) issues[retained++] = issue;
+  }
+  issues.length = retained;
+}
+
+function clearRestoredNoteIssues(store: ImportJournalStore): void {
+  const restoredPaths = new Set(
+    store.journal.notes.filter((note) => note.status === "undone").map((note) => note.path),
+  );
+  retainIssues(store, (issue) => {
+    const separator = issue.lastIndexOf(": Undo ");
+    return separator === -1 || !restoredPaths.has(issue.slice(0, separator));
+  });
+}
+
 async function restoreCleanedSources(
   ports: InkImportPorts,
   store: ImportJournalStore,
@@ -28,7 +51,13 @@ async function restoreCleanedSources(
       blocked.add(source.path);
     }
   }
-  for (const path of blocked) store.journal.issues.push(`Original restoration conflict: ${path}`);
+  for (const path of blocked) recordIssue(store, `Original restoration conflict: ${path}`);
+  const resolvedIssues = new Set(
+    store.journal.sources
+      .filter((source) => !blocked.has(source.path))
+      .map((source) => `Original restoration conflict: ${source.path}`),
+  );
+  retainIssues(store, (issue) => !resolvedIssues.has(issue));
   return blocked;
 }
 
@@ -63,13 +92,27 @@ async function undoNote(options: {
     (patch) =>
       !blocked.has(patch.sourcePath) && originalSources.get(patch.start) === patch.sourcePath,
   );
+  if (remaining.some((patch) => blocked.has(patch.sourcePath))) {
+    recordIssue(
+      store,
+      `${note.path}: Undo skipped embeds because an original file could not be safely restored. Check the original files and recovery backups.`,
+    );
+  }
   if (remaining.some((patch) => originalSources.get(patch.start) !== patch.sourcePath)) {
-    const issue = `Original reference resolution changed: ${note.path}`;
-    if (!store.journal.issues.includes(issue)) store.journal.issues.push(issue);
+    recordIssue(
+      store,
+      `${note.path}: Undo skipped embeds because an original link now points to a different file. Check the original links before retrying.`,
+    );
   }
   const planned = eligible.map((patch) => ({ ...patch }));
   const next = await reverseImportPatches(current, planned, ports.workScheduler);
   const changed = planned.filter((patch) => patch.status === "undone");
+  if (planned.some((patch) => patch.status === "conflict")) {
+    recordIssue(
+      store,
+      `${note.path}: Undo skipped an imported embed that was changed, removed, or could not be uniquely identified with its surrounding text. Later edits were kept; review this note and its recovery backup.`,
+    );
+  }
   const patchIndexes = changed.map((patch) =>
     note.patches.findIndex(
       (candidate) => candidate.start === patch.start && candidate.sourcePath === patch.sourcePath,
@@ -91,7 +134,10 @@ async function undoNote(options: {
     (await ports.read(note.path)) !== next
   ) {
     note.status = "conflict";
-    store.journal.issues.push(`Undo conflict: ${note.path}`);
+    recordIssue(
+      store,
+      `${note.path}: Undo could not save because the note changed during restoration. Later edits were kept; review this note before retrying.`,
+    );
     await store.save();
     return;
   }
@@ -120,10 +166,14 @@ export async function undoInkImport(
       await undoNote({ ports, store, note, blocked });
     } catch {
       note.status = "conflict";
-      store.journal.issues.push(`Undo read or write failure: ${note.path}`);
+      recordIssue(
+        store,
+        `${note.path}: Undo could not read or write this note or its recovery backup. Check that both are available before retrying.`,
+      );
       await store.save();
     }
   }
+  clearRestoredNoteIssues(store);
   store.journal.status = stopped()
     ? "cancelled"
     : store.journal.notes.every((note) => note.status === "undone")
