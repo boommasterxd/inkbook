@@ -16,7 +16,10 @@ import type { SceneToolCursorFrame } from "../../../src/rendering/scene/tool-cur
 import { workSchedulerFromFrames } from "./work-scheduler";
 export function createHarness(
   options: Partial<
-    Pick<ActiveEditorControllerOptions, "deviceSettings" | "onboardingPreference" | "onFeedback">
+    Pick<
+      ActiveEditorControllerOptions,
+      "deviceSettings" | "model" | "onboardingPreference" | "onFeedback"
+    >
   > = {},
 ) {
   const input = createDiv();
@@ -33,11 +36,11 @@ export function createHarness(
   const container = createDiv();
   const owner = document.body as unknown as BrowserScrollElement;
   defineGeometry(container, owner);
-  const store = new ElementStore([selectableElement()]);
+  const store = options.model?.store ?? new ElementStore([selectableElement()]);
   const sceneStore = new ElementSceneStore(store);
   const menu = new RecordedMenu();
   const renderer = rendererPort(input);
-  const model = createActiveEditorModel(store);
+  const model = options.model ?? createActiveEditorModel(store);
   const controller = new ActiveEditorController({
     applyZoomLayout: vi.fn(),
     backgroundSpacing: () => ({ dots: 25, lines: 25, squares: 25 }),

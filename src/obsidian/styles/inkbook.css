@@ -15,6 +15,11 @@
 @import url("./shortcut-settings.css");
 @import url("./focus-navigation.css");
 @import url("./onboarding.css");
+@import url("./ink-import.css");
+@import url("./ink-import-review.css");
+@import url("./ink-import-examples.css");
+@import url("./ink-import-status.css");
+@import url("./ink-import-result.css");
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;

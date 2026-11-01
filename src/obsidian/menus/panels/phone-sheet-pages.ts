@@ -1,5 +1,5 @@
 import type { AdaptivePanelLayout } from "./adaptive-panel-layout";
-import { menuDomWindow } from "../menu-dom";
+import { menuDomWindow, setMenuSurfaceLabel } from "../menu-dom";
 import { playMenuMotion } from "../feedback/menu-motion";
 import type {
   AdaptivePanelContentLifecycle,
@@ -41,7 +41,10 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     this.#options = options;
     this.#root = menuDomWindow(options.surface.ownerDocument, "phone sheet pages").createFragment();
     this.#rootKind = options.surface.dataset.kind ?? "menu";
-    this.#rootLabel = options.surface.getAttribute("aria-label") ?? "";
+    this.#rootLabel =
+      options.surface.getAttribute("aria-label") ??
+      options.surface.querySelector(":scope > .inkbook-menu-surface-label")?.textContent ??
+      "";
   }
 
   public get ownerDocument(): Document {
@@ -155,7 +158,8 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     const { surface, layer } = this.#options;
     surface.dataset.kind = kind;
     layer.dataset.kind = kind;
-    surface.setAttribute("aria-label", label);
+    if (surface.hasAttribute("aria-labelledby")) setMenuSurfaceLabel(surface, label);
+    else surface.setAttribute("aria-label", label);
   }
 
   #animatePage(direction: "forward" | "back"): void {

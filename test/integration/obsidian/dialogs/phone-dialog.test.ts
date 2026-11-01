@@ -6,6 +6,7 @@ import { Modal, type App, type Plugin } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { confirmInkbookAction } from "../../../../src/obsidian/dialogs/action-dialog";
+import { InkbookMotionModal } from "../../../../src/obsidian/dialogs/inkbook-motion-modal";
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
 import { InkbookSettingsModalController } from "../../../../src/obsidian/settings/settings-modal";
 import { dialogButton, installPhoneDialogTestLifecycle } from "../../../fixtures/obsidian/dialog";
@@ -43,6 +44,72 @@ function confirmation(signal?: AbortSignal): Promise<boolean> {
     ...(signal === undefined ? {} : { signal }),
   });
 }
+
+class ContentScrollDialog extends InkbookMotionModal {
+  public body: HTMLElement | undefined;
+
+  public constructor() {
+    super(
+      app(),
+      () => "reduced",
+      () => workSchedulerFromFrames(window),
+    );
+  }
+
+  protected override get phoneContentScroll(): HTMLElement | undefined {
+    return this.body;
+  }
+
+  public override onOpen(): void {
+    super.onOpen();
+    this.setTitle("Import drawings");
+    this.body = this.contentEl.createDiv();
+    this.body.createEl("button", { text: "Drawing details" });
+  }
+}
+
+it("uses an owned content scrollport for phone swipe arbitration and releases its listener", () => {
+  const dialog = new ContentScrollDialog();
+  dialog.open();
+  vi.advanceTimersToNextFrame();
+  const surface = sheet();
+  const body = dialog.body!;
+  const target = dialogButton("Drawing details");
+  const gesture = (endY: number): void => {
+    for (const [type, clientY] of [
+      ["pointerdown", 100],
+      ["pointermove", endY],
+      ["pointerup", endY],
+    ] as const) {
+      target.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerType: "touch",
+          pointerId: 1,
+          clientY,
+        }),
+      );
+    }
+  };
+  body.scrollTop = 100;
+  body.dispatchEvent(new Event("scroll"));
+  expect(surface.dataset.scrollPosition).toBe("away");
+  gesture(500);
+  expect(surface.isConnected).toBe(true);
+  body.scrollTop = 0;
+  body.dispatchEvent(new Event("scroll"));
+  expect(surface.dataset.scrollPosition).toBe("top");
+  gesture(0);
+  expect(surface.isConnected).toBe(true);
+  gesture(500);
+  expect(surface.isConnected).toBe(false);
+  expect(nativeModalStack(document)).toHaveLength(0);
+  body.scrollTop = 100;
+  body.dispatchEvent(new Event("scroll"));
+  expect(surface.dataset.scrollPosition).toBeUndefined();
+  expect(vi.getTimerCount()).toBe(0);
+});
 
 describe("phone dialog focus restoration", () => {
   it.each(["lost", "replacement"])(

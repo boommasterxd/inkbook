@@ -70,6 +70,10 @@ export class InkbookMotionModal {
     return this.#closing;
   }
 
+  protected get phoneContentScroll(): HTMLElement | undefined {
+    return undefined;
+  }
+
   public setTitle(title: string): void {
     if (this.#native !== undefined) this.#native.setTitle(title);
     else this.titleEl.textContent = title;
@@ -157,6 +161,7 @@ export class InkbookMotionModal {
         : ownerDocument.body;
     this.onOpen();
     if (this.#closing) return;
+    const contentScroll = this.phoneContentScroll;
     const content = menuDomWindow(ownerDocument, "phone dialog").createFragment();
     content.append(...this.modalEl.childNodes);
     const initialFocus =
@@ -170,6 +175,7 @@ export class InkbookMotionModal {
       anchor,
       canvasInputSurface: anchor,
       createContent: () => content,
+      ...(contentScroll === undefined ? {} : { contentScroll }),
       motionAnchor: this.modalEl,
       initialFocus,
       keymap: this.app.keymap,

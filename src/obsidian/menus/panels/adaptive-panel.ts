@@ -5,7 +5,7 @@ import { installMenuEscapeScope } from "../menu-escape-scope";
 import { effectiveTransitionDuration } from "../../runtime/effective-motion";
 import { registerFocusNavigation } from "../../runtime/focus-navigation";
 import { revealPhoneSheetEditable } from "./phone-sheet-editable";
-import { menuDomWindow } from "../menu-dom";
+import { configureMenuTooltips, menuDomWindow, setMenuSurfaceLabel } from "../menu-dom";
 import type { FocusTargetPort } from "../menu-ports";
 import type { PhoneSheetHostPort } from "./phone-sheet-host";
 import { PhoneSheetSwipeController } from "./phone-sheet-swipe";
@@ -34,6 +34,7 @@ export interface AdaptivePanelOptions {
   readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly canvasInputSurface: FocusTargetPort;
   readonly createContent: (lifecycle: AdaptivePanelContentLifecycle) => DocumentFragment;
+  readonly contentScroll?: HTMLElement;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly durationMs?: number;
   readonly entryDurationMs?: number;
@@ -74,6 +75,7 @@ export class AdaptivePanelSession extends Component {
   #returnedFocus = false;
   #restoreFocus = true;
   readonly #scroll: HTMLElement;
+  readonly #interactionScroll: HTMLElement;
   readonly #surface: HTMLElement;
 
   public constructor(options: AdaptivePanelOptions) {
@@ -139,6 +141,8 @@ export class AdaptivePanelSession extends Component {
         mutateLayout: (update) => this.mutateLayout(update),
       }),
     );
+    this.#configureTooltips();
+    this.#interactionScroll = options.contentScroll ?? this.#scroll;
     this.#pages = this.#createPages(options);
     this.#layer.append(this.#backdrop, this.#surface);
     this.#phoneSwipe = Platform.isPhone
@@ -153,7 +157,7 @@ export class AdaptivePanelSession extends Component {
           durationMs: () => this.#panelDuration(),
           ownerWindow: options.ownerWindow,
           workScheduler: options.workScheduler,
-          scroll: this.#scroll,
+          scroll: this.#interactionScroll,
           surface: this.#surface,
         })
       : undefined;
@@ -164,6 +168,13 @@ export class AdaptivePanelSession extends Component {
 
   public get navigation(): PhoneSheetNavigation | undefined {
     return this.#pages;
+  }
+
+  #configureTooltips(): void {
+    if (this.#options.kind === "style" || this.#options.kind === "menu") {
+      setMenuSurfaceLabel(this.#surface, this.#options.label);
+      configureMenuTooltips(this.#surface);
+    }
   }
 
   #createPages(options: AdaptivePanelOptions): PhoneSheetPages | undefined {
@@ -263,7 +274,7 @@ export class AdaptivePanelSession extends Component {
       owner: this,
       ownerDocument: this.#options.ownerDocument,
       surface: this.#surface,
-      scroll: this.#scroll,
+      scroll: this.#interactionScroll,
       anchor: this.#options.anchor,
       ...(this.#options.initialFocus === undefined
         ? {}
@@ -373,7 +384,7 @@ export class AdaptivePanelSession extends Component {
       if (!Platform.isPhone || this.#positionRequested) this.#position();
       this.#positionRequested = false;
       if (this.#revealEditable && Platform.isPhone && this.#isTopmostLayer()) {
-        revealPhoneSheetEditable(this.#scroll, this.#placement.viewport());
+        revealPhoneSheetEditable(this.#interactionScroll, this.#placement.viewport());
       }
       this.#revealEditable = false;
     });

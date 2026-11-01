@@ -8,7 +8,7 @@ import {
   PRESSURE_SENSITIVITY_ICON_ID,
   selectionAreaIconId,
 } from "../../rendering/ui/icon-ids";
-import { menuDomWindow } from "./menu-dom";
+import { configureMenuTooltips, menuDomWindow } from "./menu-dom";
 
 export interface StyleMenuContentOptions {
   readonly controlDescriptions?: Readonly<Record<string, string>>;
@@ -64,6 +64,7 @@ export function createStyleMenuContent(options: StyleMenuContentOptions): Docume
     for (const control of options.controls) root.append(createControl(options, control));
   }
   fragment.append(root);
+  configureMenuTooltips(fragment);
   return fragment;
 }
 

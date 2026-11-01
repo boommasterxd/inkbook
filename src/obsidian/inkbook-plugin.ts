@@ -4,15 +4,7 @@ import {
   registerDocumentStatusBar,
   resolveDocumentStatusPane,
 } from "./runtime/document-status-bar-binding";
-import {
-  MarkdownView,
-  normalizePath,
-  Plugin,
-  TFile,
-  TFolder,
-  type Editor,
-  type MarkdownFileInfo,
-} from "obsidian";
+import { MarkdownView, Plugin, TFile, type Editor, type MarkdownFileInfo } from "obsidian";
 
 import { confirmInkbookAction } from "./dialogs/action-dialog";
 import { showHeadlessRecoveryNotice } from "./embeds/workspace/recovery-notice";
@@ -41,14 +33,10 @@ import {
 } from "./embeds";
 import { registerInkbookIcons } from "./icons/inkbook-icons";
 import { InkbookFeedbackManager, type InkbookFeedbackCode } from "./feedback";
-import {
-  InkbookSettingsModalController,
-  InkbookSettingsStore,
-  InkbookSettingTab,
-} from "./settings";
+import { InkbookSettingsModalController, InkbookSettingsStore } from "./settings";
 import { ColorSchemeBroadcaster } from "./theme/color-scheme";
 import type { MotionPreference } from "../rendering/motion/transitions";
-import { ObsidianVaultFolderAdapter } from "./vault";
+import { addPluginSettingsTab } from "./settings/plugin-settings";
 
 export async function activateInkbookPlugin(
   plugin: Plugin,
@@ -61,7 +49,12 @@ export async function activateInkbookPlugin(
   const lifetime = new AbortController();
   let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
   const workScheduler = schedulerFromRuntime(() => runtimeForSettings);
-  const settingTab = addSettingsTab(plugin, settings, () => runtimeForSettings, lifetime.signal);
+  const settingTab = addPluginSettingsTab(
+    plugin,
+    settings,
+    () => runtimeForSettings,
+    lifetime.signal,
+  );
   const settingsModal = new InkbookSettingsModalController(plugin.app, settingTab, settings);
   const scheme = new ColorSchemeBroadcaster({
     getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
@@ -163,34 +156,6 @@ function documentOutputScheduling(
     subscribeSchedulingProfile: (listener: () => void) =>
       runtime.refreshRateProfiles.subscribe(listener),
   };
-}
-
-function addSettingsTab(
-  plugin: Plugin,
-  settings: InkbookSettingsStore,
-  getRuntime: () => ObsidianWorkspaceRuntime | undefined,
-  signal: AbortSignal,
-): InkbookSettingTab {
-  const settingTab = new InkbookSettingTab(
-    plugin.app,
-    plugin,
-    settings,
-    new ObsidianVaultFolderAdapter(plugin.app.vault, TFolder, normalizePath),
-    () =>
-      getRuntime()?.refreshRateProfiles.status(
-        plugin.app.workspace.containerEl.ownerDocument.defaultView,
-      ),
-    {
-      lifetime: signal,
-      workScheduler: (ownerWindow) => {
-        const runtime = getRuntime();
-        if (runtime === undefined) throw new Error("Settings require an active workspace runtime.");
-        return runtime.refreshRateProfiles.workScheduler(ownerWindow);
-      },
-    },
-  );
-  plugin.addSettingTab(settingTab);
-  return settingTab;
 }
 
 function createRuntime(

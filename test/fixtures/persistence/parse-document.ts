@@ -1,10 +1,22 @@
 import { ChunkedInkbookInputParser } from "../../../src/persistence/serialization/input/chunked-input-codec";
+import type { InkSnapshotV1 } from "../../../src/domain/schema/types";
+import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import type {
   DocumentCodecResult,
   ParsedInkbookDocument,
 } from "../../../src/persistence/serialization/types";
 
 const encoder = new TextEncoder();
+
+export async function roundTripInkbookSnapshotForTest(
+  snapshot: InkSnapshotV1,
+): Promise<InkSnapshotV1> {
+  const saved = serializeInkbookDocument(snapshot);
+  if (!saved.ok) throw new Error(saved.error.message);
+  const loaded = await parseInkbookDocumentForTest(saved.value.svg);
+  if (!loaded.ok) throw new Error(loaded.error.message);
+  return loaded.value.snapshot;
+}
 
 export async function parseInkbookDocumentForTest(
   input: string | Uint8Array,

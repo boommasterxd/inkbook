@@ -28,6 +28,7 @@ import type {
   DocumentRuntimeRequest,
   DocumentRuntimeResult,
   EncodeClipboardRuntimeSuccess,
+  ImportInkRuntimeSuccess,
   PlanClipboardPasteRuntimeSuccess,
   UnlockRuntimeBatch,
 } from "../types";
@@ -45,6 +46,14 @@ import {
 import { adoptOwnedSvgOutput, adoptOwnedSvgOutputSync } from "../../../scheduling/owned-svg-output";
 import { isDocumentIntegrityManifest } from "../../../serialization/metadata/document-integrity-manifest";
 import { isNativeArrayBuffer, isNativeUint8Array } from "../../../serialization/transfer-array";
+import {
+  encodeImportInkSuccess,
+  decodeImportInkSuccess,
+  decodeImportInkSuccessChunked,
+  validImportInkDetails,
+  type ImportInkWireSuccess,
+  assertImportInkRequest,
+} from "./ink-import-wire";
 
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import type {
@@ -82,12 +91,14 @@ export type DocumentRuntimeWireResult =
       | EncodeClipboardRuntimeSuccess
       | ExportFailure
       | ExportSuccess
+      | ImportInkRuntimeSuccess
       | PlanClipboardPasteRuntimeSuccess
     >
   | DecodeClipboardWireResult
   | EncodeClipboardWireResult
   | ExportFailure
   | ExportSuccessWireResult
+  | ImportInkWireSuccess
   | PlanClipboardPasteWireResult;
 
 export interface StructuredTransfer<T> {
@@ -105,6 +116,7 @@ export interface DocumentRuntimeWireUnlockBatch {
 export function encodeRuntimeRequest(
   request: DocumentRuntimeRequest,
 ): StructuredTransfer<DocumentRuntimeWireRequest> {
+  if (request.type === "import-ink") assertImportInkRequest(request);
   if (request.type === "model-sync-full" || request.type === "model-sync-incremental") {
     return encodeModelSyncRequest(request);
   }
@@ -173,6 +185,7 @@ function encodeIncrementalExportRequest(
 export function encodeRuntimeResult(
   result: DocumentRuntimeResult,
 ): StructuredTransfer<DocumentRuntimeWireResult> {
+  if (result.type === "import-ink-success") return encodeImportInkSuccess(result);
   if (result.type === "clipboard-encode-success") return encodeClipboardResult(result);
   if (result.type === "clipboard-decode-success") return decodeClipboardResult(result);
   if (result.type === "clipboard-plan-paste-success") return encodePastePlanResult(result);
@@ -199,6 +212,7 @@ export function decodeRuntimeResult(result: unknown): DocumentRuntimeResult {
   if (!isDocumentRuntimeWireResult(result)) {
     throw new TypeError("Worker result does not match the runtime wire protocol.");
   }
+  if (result.type === "import-ink-success-wire") return decodeImportInkSuccess(result);
   if (result.type === "export-success-wire") {
     const trusted = adoptOwnedSvgOutputSync(result.output, result.outputHash);
     return adoptExportSuccess(result, trusted);
@@ -235,6 +249,8 @@ export async function decodeRuntimeResultChunked(
   if (!isDocumentRuntimeWireResult(result)) {
     throw new TypeError("Worker result does not match the runtime wire protocol.");
   }
+  if (result.type === "import-ink-success-wire")
+    return decodeImportInkSuccessChunked(result, options);
   if (result.type === "export-success-wire") {
     const trusted = await adoptOwnedSvgOutput(result.output, result.outputHash, options);
     return adoptExportSuccess(result, trusted);
@@ -394,6 +410,8 @@ export function decodeUnlockBatch(batch: unknown): UnlockRuntimeBatch {
 export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRuntimeWireResult {
   if (!isRecord(value) || typeof value.type !== "string") return false;
   if (!isRuntimeWireResultType(value.type)) return false;
+  if (value.type === "import-ink-success-wire")
+    return validImportInkDetails(value) && isDocumentRuntimeWireResult(value.exported);
   if (value.type === "unlock-success") {
     return (
       typeof value.lockedHeight === "number" &&

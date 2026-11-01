@@ -174,6 +174,38 @@ describe("InkbookSettingTab definitions", () => {
   });
 });
 
+describe("InkbookSettingTab import action", () => {
+  it("places import history below the optional start action", () => {
+    const openInkImport = vi
+      .fn<(ownerWindow: Window | null) => Promise<void>>()
+      .mockResolvedValue();
+    const tab = createTab(
+      new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()),
+      undefined,
+      {
+        open: openInkImport,
+        history: vi.fn().mockResolvedValue([]),
+        subscribe: () => () => undefined,
+      },
+    );
+    const importGroup = groups(tab).find((group) => group.heading === "Import");
+
+    expect(importGroup?.items?.map((item) => item.name)).toEqual([
+      "Start import",
+      "Import history",
+    ]);
+    const action = importGroup?.items?.find(isRenderDefinition);
+    expect(action?.desc).toContain("Obsidian Ink");
+    if (action === undefined) throw new Error("Missing Obsidian Ink import action.");
+
+    const rendered = renderDefinition(action);
+    rendered.container.click();
+
+    expect(openInkImport).toHaveBeenCalledWith(window, undefined, expect.any(AbortSignal));
+    rendered.cleanup();
+  });
+});
+
 describe("InkbookSettingTab input definitions", () => {
   it("presents pen-tap insertion as the same toggle control as finger drawing", () => {
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));

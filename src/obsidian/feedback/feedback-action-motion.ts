@@ -15,7 +15,9 @@ export function mountFeedbackActionMotion(
   ownerWindow: Window,
 ): { dispose: () => void; refresh: () => void } {
   const normalColor =
-    button.dataset.inkbookFeedbackTone === "danger" ? "var(--text-error)" : "var(--text-muted)";
+    button.dataset.inkbookFeedbackTone === "danger"
+      ? "var(--inkbook-tone-danger)"
+      : "var(--text-muted)";
   let hovering = false;
   let pressing = false;
   let focused = false;

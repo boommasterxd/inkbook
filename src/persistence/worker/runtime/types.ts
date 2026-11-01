@@ -17,6 +17,7 @@ import type {
   ExportIdentity,
   ExportRequest,
   ExportResult,
+  ExportSuccess,
   PurposeOperationIdentity,
   VerifiedPersistedOutput,
 } from "../protocol";
@@ -113,10 +114,27 @@ interface VerifyRuntimeRequest {
   readonly versionPolicy?: "current" | "editable";
 }
 
+export interface ImportInkRuntimeRequest {
+  readonly identity: PurposeOperationIdentity;
+  readonly input: string;
+  readonly legacyWriting: boolean;
+  readonly timestamp: number;
+  readonly type: "import-ink";
+}
+
+export interface ImportInkRuntimeSuccess {
+  readonly identity: PurposeOperationIdentity;
+  readonly exported: ExportSuccess;
+  readonly warnings: readonly string[];
+  readonly transcript?: string;
+  readonly type: "import-ink-success";
+}
+
 export type DocumentRuntimeRequest =
   | DecodeClipboardRuntimeRequest
   | DocumentExportRequest
   | EncodeClipboardRuntimeRequest
+  | ImportInkRuntimeRequest
   | ModelSyncRuntimeRequest
   | PlanClipboardPasteRuntimeRequest
   | PrepareScenePathsRuntimeRequest
@@ -189,6 +207,7 @@ export type DocumentRuntimeResult =
   | DecodeClipboardRuntimeSuccess
   | EncodeClipboardRuntimeSuccess
   | ExportResult
+  | ImportInkRuntimeSuccess
   | ModelSyncRuntimeSuccess
   | PlanClipboardPasteRuntimeSuccess
   | PreparedScenePathsRuntimeSuccess

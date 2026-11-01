@@ -412,6 +412,15 @@ export function setIcon(element: HTMLElement, icon: string): void {
   element.setAttribute("data-icon", icon);
 }
 
+export function setTooltip(
+  element: HTMLElement,
+  label: string,
+  options?: { readonly delay?: number },
+): void {
+  element.setAttribute("aria-label", label);
+  if (options?.delay) element.setAttribute("data-tooltip-delay", String(options.delay));
+}
+
 class TestNoticeElement {
   readonly attributes = new Map<string, string>();
   readonly children: TestNoticeElement[] = [];

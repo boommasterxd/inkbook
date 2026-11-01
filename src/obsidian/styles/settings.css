@@ -93,6 +93,7 @@
 }
 
 .inkbook-settings-motion-content {
+  interpolate-size: allow-keywords;
   overflow: hidden;
 }
 

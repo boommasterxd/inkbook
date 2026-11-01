@@ -2,8 +2,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InkbookSettingsStore } from "../../../../../src/obsidian/settings/storage";
 import { OnboardingPreference } from "../../../../../src/obsidian/settings/onboarding-preference";
-import { createHarness } from "../../../../fixtures/obsidian/active-controller";
+import {
+  createActiveEditorModel,
+  createHarness,
+} from "../../../../fixtures/obsidian/active-controller";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
+import { ElementStore } from "../../../../../src/domain/store/public";
+import { createDragElement } from "../../../../../src/editor/tools/public";
+import { createBuiltInSettings } from "../../../../../src/domain/settings";
 
 const editors: ReturnType<typeof createHarness>[] = [];
 beforeEach(() => installObsidianDomHelpers());
@@ -20,12 +26,13 @@ async function session() {
   );
   await settings.load();
   const preference = new OnboardingPreference(settings);
-  const editor = (onboardingPreference = preference) => {
+  const editor = (onboardingPreference = preference, store = new ElementStore([])) => {
     const onFeedback = vi.fn();
     const current = createHarness({
       deviceSettings: settings.getDeviceSettings(),
       onboardingPreference,
       onFeedback,
+      model: createActiveEditorModel(store),
     });
     editors.push(current);
     current.controller.setEnabled(false);
@@ -33,6 +40,37 @@ async function session() {
   };
   return { settings, saveLocalStorage, editor };
 }
+
+describe("empty-paper invitation eligibility", () => {
+  it("skips populated documents without consuming the invitation for the next empty embed", async () => {
+    const current = await session();
+    const populated = current.editor(undefined, new ElementStore([existingElement()]));
+    populated.controller.setEnabled(true);
+    expect(populated.controller.chromeProps().onboarding).toBeUndefined();
+    expect(current.saveLocalStorage).not.toHaveBeenCalled();
+    expect(current.settings.getDeviceSettings().onboardingDismissed).toBe(false);
+
+    const empty = current.editor();
+    empty.controller.setEnabled(true);
+    expect(empty.controller.chromeProps().onboarding).toBeDefined();
+    expect(current.saveLocalStorage).toHaveBeenCalledOnce();
+  });
+
+  it("removes an invitation when content is added and never restores it after content is removed", async () => {
+    const current = await session();
+    const store = new ElementStore([]);
+    const first = current.editor(undefined, store);
+    first.controller.setEnabled(true);
+    expect(first.controller.chromeProps().onboarding).toBeDefined();
+    store.create(existingElement());
+    expect(first.controller.chromeProps().onboarding).toBeUndefined();
+    store.remove([existingElement().id]);
+    first.controller.setEnabled(false);
+    first.controller.setEnabled(true);
+    expect(first.controller.chromeProps().onboarding).toBeUndefined();
+    expect(current.saveLocalStorage).toHaveBeenCalledOnce();
+  });
+});
 
 describe("one-time active embed invitation", () => {
   it("keeps drawing available when remembering the invitation fails and retries on dismissal", async () => {
@@ -111,3 +149,13 @@ describe("one-time active embed invitation", () => {
     expect(current.saveLocalStorage).toHaveBeenCalledTimes(3);
   });
 });
+
+function existingElement() {
+  return createDragElement({
+    defaults: createBuiltInSettings().toolDefaults,
+    end: { x: 100, y: 100 },
+    identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000001" },
+    start: { x: 10, y: 10 },
+    tool: "rectangle",
+  });
+}

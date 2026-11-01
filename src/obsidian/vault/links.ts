@@ -74,10 +74,13 @@ export class ObsidianLinkAdapter {
     this.#resolution = options.resolution;
   }
 
-  generateEmbed(filePath: string, sourcePath: string): string {
+  generateEmbed(filePath: string, sourcePath: string, description?: string): string {
     const file = this.#files.resolveFile(filePath);
     const source = normalizeSourcePath(sourcePath, this.#normalizePath);
-    const link = this.#fileManager.generateMarkdownLink(file, source);
+    const link =
+      description === undefined
+        ? this.#fileManager.generateMarkdownLink(file, source)
+        : this.#fileManager.generateMarkdownLink(file, source, undefined, description);
     if (!isCompleteMarkdownLink(link)) {
       throw new Error("Obsidian generated an incomplete Markdown link.");
     }

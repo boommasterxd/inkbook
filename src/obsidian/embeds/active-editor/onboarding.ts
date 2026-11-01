@@ -9,6 +9,7 @@ type OnboardingOptions = Pick<
   | "container"
   | "deviceSettings"
   | "keymap"
+  | "model"
   | "onboardingPreference"
   | "onFeedback"
   | "onStateChanged"
@@ -17,7 +18,7 @@ type OnboardingOptions = Pick<
   | "workScheduler"
 >;
 
-/** Keeps the one-time invitation independent of document data and pointer updates. */
+/** Offers the one-time invitation only on empty paper without visiting document elements. */
 export class ActiveEditorOnboarding {
   readonly #options: OnboardingOptions;
   readonly #root: HTMLElement;
@@ -26,6 +27,7 @@ export class ActiveEditorOnboarding {
   #enabled = false;
   #offered = false;
   #visible = false;
+  #unsubscribeContent: (() => void) | undefined;
   readonly #invitation: NonNullable<InkbookEditorChromeProps["onboarding"]>;
 
   public constructor(options: OnboardingOptions, scrollOwner: () => BrowserScrollElement) {
@@ -63,15 +65,22 @@ export class ActiveEditorOnboarding {
   public setEnabled(enabled: boolean): void {
     this.#enabled = enabled;
     if (!enabled) {
-      this.#visible = false;
-      this.#tour.showInvitation(false);
+      this.#hideInvitation();
       this.#tour.close();
       return;
     }
-    if (this.#offered || !this.#options.onboardingPreference?.claimInvitation()) return;
+    if (
+      this.#options.model.store.size > 0 ||
+      this.#offered ||
+      !this.#options.onboardingPreference?.claimInvitation()
+    )
+      return;
     this.#offered = true;
     this.#visible = true;
     this.#tour.showInvitation(true);
+    this.#unsubscribeContent = this.#options.model.store.subscribe(() => {
+      if (this.#options.model.store.size > 0) this.#dismiss();
+    });
     this.#rememberInvitation();
   }
 
@@ -90,14 +99,22 @@ export class ActiveEditorOnboarding {
   public dispose(): void {
     this.#enabled = false;
     this.#visible = false;
+    this.#unsubscribeContent?.();
+    this.#unsubscribeContent = undefined;
     this.#tour.dispose();
   }
 
   #dismiss(): void {
     this.#rememberInvitation();
-    this.#visible = false;
-    this.#tour.showInvitation(false);
+    this.#hideInvitation();
     this.#options.onStateChanged();
+  }
+
+  #hideInvitation(): void {
+    this.#visible = false;
+    this.#unsubscribeContent?.();
+    this.#unsubscribeContent = undefined;
+    this.#tour.showInvitation(false);
   }
 
   #rememberInvitation(): void {

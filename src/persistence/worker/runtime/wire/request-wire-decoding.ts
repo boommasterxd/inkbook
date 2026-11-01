@@ -7,6 +7,7 @@ import { decodeUnlockRequest, type UnlockWireRequest } from "./unlock-request-wi
 import type { ModelSyncWireRequest } from "./model-sync-wire";
 import type { DocumentRuntimeRequest, RuntimeSliceContext } from "../types";
 import { consumeSerializationSteps } from "../../../serialization/output/serialization-model-preparation";
+import { assertImportInkRequest } from "./ink-import-wire";
 
 export interface FullExportWireRequest extends Omit<
   Extract<DocumentRuntimeRequest, { type: "export-full" }>,
@@ -56,6 +57,7 @@ function* decodeRuntimeRequestSteps(
   if (!isDocumentRuntimeWireRequest(request))
     throw new TypeError("Worker request does not match the runtime wire protocol.");
   if (request.type === "unlock") return decodeUnlockRequest(request);
+  if (request.type === "import-ink") assertImportInkRequest(request);
   if (request.type === "prepare-scene-paths") {
     assertScenePathRequest(request);
     if (!Number.isSafeInteger(request.basisRevision) || request.basisRevision < 0)
