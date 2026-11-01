@@ -6,7 +6,10 @@ import {
   type PointerSample,
 } from "../../../../editor/input/index";
 import type { PointerMoveAction } from "../../../../editor/input/input-types";
-import { hasPenContact } from "../../../../editor/input/pointer-validation";
+import {
+  hasPenContact,
+  usesPenContactLifecycle,
+} from "../../../../editor/input/pointer-validation";
 import type { WorkPriority } from "../../../../domain/scheduling/work-scheduler";
 
 // A frame batch is bounded independently of the lifetime capacity of one stroke.
@@ -327,9 +330,9 @@ export function filtersPenRelease(
   interaction: InputState["interaction"],
 ): boolean {
   return (
-    event.pointerType === "pen" &&
     interaction !== undefined &&
     interaction.phase !== "pinch" &&
+    usesPenContactLifecycle(event, "normal", interaction) &&
     interaction.pointerId === event.pointerId &&
     (interaction.phase === "select-pending" ||
       interaction.phase === "element-move" ||

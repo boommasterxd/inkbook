@@ -138,7 +138,11 @@ function handlePointerDown(state: InputState, action: PointerDownAction): InputR
   if (state.interaction !== undefined || isReservedContextPointer(action)) {
     return unchangedEffects(state);
   }
-  if (action.pointerType === "mouse" && (action.button !== 0 || action.buttons !== 1)) {
+  if (
+    action.pointerType === "mouse" &&
+    penRole(action) === "normal" &&
+    (action.button !== 0 || action.buttons !== 1)
+  ) {
     return unchangedEffects(state);
   }
   if (

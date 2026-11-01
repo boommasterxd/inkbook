@@ -17,6 +17,8 @@ const RELEASE_GRACE_MS = 300;
 export class PenButtonSession {
   #activeRole: PenRole = "normal";
   #activePointerId: number | undefined;
+  #activePointerType: string | undefined;
+  #mouseContactFallback = false;
   #releaseAt: number | undefined;
   #rawButtonHeld = false;
 
@@ -33,15 +35,26 @@ export class PenButtonSession {
   }
 
   public update(event: PenButtonEvent, phase: "down" | "move" | "up"): PenRole {
-    if (event.pointerType !== "pen") return "normal";
+    if (event.pointerType !== "pen" && event.pointerType !== "mouse") return "normal";
+    const rawRole = this.#eventRole(event, phase);
+    if (event.pointerType === "mouse" && rawRole !== "eraser") {
+      if (this.#activePointerType === "mouse" && event.pointerId === this.#activePointerId) {
+        this.reset();
+      }
+      return "normal";
+    }
     this.expire(event.timeStamp);
-    if (event.pointerId !== this.#activePointerId) this.reset();
+    if (
+      event.pointerId !== this.#activePointerId ||
+      event.pointerType !== this.#activePointerType
+    ) {
+      this.reset();
+    }
     this.#activePointerId = event.pointerId;
-    const rawRole = classifyPenRole({
-      pointerType: "pen",
-      button: phase === "up" ? -1 : event.button,
-      buttons: event.buttons,
-    });
+    this.#activePointerType = event.pointerType;
+    if (phase === "down" || (event.buttons & 32) !== 0) {
+      this.#mouseContactFallback = event.pointerType === "mouse" && (event.buttons & 32) === 0;
+    }
     const wasRawHeld = this.#rawButtonHeld;
     this.#rawButtonHeld = rawRole !== "normal";
     if (rawRole !== "normal") {
@@ -60,9 +73,28 @@ export class PenButtonSession {
     if (this.#releaseAt !== undefined && now >= this.#releaseAt) this.reset();
   }
 
+  #eventRole(event: PenButtonEvent, phase: "down" | "move" | "up"): PenRole {
+    const rawRole = classifyPenRole({
+      pointerType: event.pointerType === "pen" ? "pen" : "mouse",
+      button:
+        phase === "down" || (event.pointerType === "pen" && phase === "move") ? event.button : -1,
+      buttons: event.buttons,
+    });
+    if (event.pointerType !== "mouse" || phase !== "move") return rawRole;
+    const retainedContact =
+      this.#activePointerType === "mouse" &&
+      event.pointerId === this.#activePointerId &&
+      this.#mouseContactFallback &&
+      event.button !== 5 &&
+      hasPenContact(event);
+    return retainedContact ? "eraser" : rawRole;
+  }
+
   public reset(): void {
     this.#activeRole = "normal";
     this.#activePointerId = undefined;
+    this.#activePointerType = undefined;
+    this.#mouseContactFallback = false;
     this.#releaseAt = undefined;
     this.#rawButtonHeld = false;
   }

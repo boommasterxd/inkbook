@@ -8,7 +8,10 @@ import {
   type PointerSample,
 } from "../../../../editor/input/index";
 import type { SvgSceneRenderer } from "../../../../rendering/scene/index";
-import { hasPenContact } from "../../../../editor/input/pointer-validation";
+import {
+  hasPenContact,
+  usesPenContactLifecycle,
+} from "../../../../editor/input/pointer-validation";
 
 import type { ActiveToolCursorController } from "./tool-cursor-controller";
 import {
@@ -159,7 +162,11 @@ export class ActiveEditorPointerController {
         this.#options.dispatch({
           type: "pointer-down",
           ...pointer,
-          button: event.pointerType === "pen" && event.button === -1 ? 0 : event.button,
+          button:
+            event.button === -1 &&
+            (event.pointerType === "pen" || classification.penRole === "eraser")
+              ? 0
+              : event.button,
           buttons: event.buttons,
           controlOrMeta: event.ctrlKey || event.metaKey,
           isPlatformContextClick: classification.isPlatformContextClick,
@@ -337,14 +344,14 @@ export class ActiveEditorPointerController {
   }
 
   #routePenContact(event: PointerEvent): boolean {
+    const input = this.#options.getInput();
+    const interaction = input.interaction;
     if (
-      event.pointerType !== "pen" ||
+      !usesPenContactLifecycle(event, this.#options.cursor.penRole(event.pointerId), interaction) ||
       !this.#options.isEnabled() ||
       this.#options.handles.activePointerId !== undefined
     )
       return false;
-    const input = this.#options.getInput();
-    const interaction = input.interaction;
     const consumed = input.consumedPointerIds.includes(event.pointerId);
     if (!hasPenContact(event)) {
       if (consumed || interactionOwnsPointer(interaction, event.pointerId)) {

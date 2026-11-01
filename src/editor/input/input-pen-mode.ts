@@ -55,8 +55,10 @@ function ownsPenGesture(
 ): interaction is PenGesture {
   return (
     (interaction?.phase === "tool-gesture" || interaction?.phase === "eraser-gesture") &&
-    interaction.pointerType === "pen" &&
-    action.pointerType === "pen" &&
+    interaction.pointerType === action.pointerType &&
+    (interaction.pointerType === "pen" ||
+      (interaction.pointerType === "mouse" &&
+        (interaction.penRole === "eraser" || action.penRole === "eraser"))) &&
     interaction.pointerId === action.pointerId &&
     isValidPointerSample(action)
   );

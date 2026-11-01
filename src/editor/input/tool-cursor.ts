@@ -93,6 +93,7 @@ function usesHoverEraser({ state, pointer }: ToolCursorOptions): boolean {
   if (state.activeTool === "select" || pointer === undefined) return false;
   return (
     pointer.controlOrMeta === true ||
+    (pointer.pointerType === "mouse" && pointer.penRole === "eraser") ||
     (pointer.pointerType === "pen" && pointer.penRole !== undefined && pointer.penRole !== "normal")
   );
 }

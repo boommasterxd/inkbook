@@ -78,6 +78,60 @@ describe("pen button session", () => {
 });
 
 describe("pen button session ownership", () => {
+  it("uses the reliable eraser mask after an ordinal-only contact starts reporting it", () => {
+    const session = new PenButtonSession();
+    const mouse = { ...penEvent(1), pointerType: "mouse", button: 5 };
+    expect(session.update(mouse, "down")).toBe("eraser");
+    expect(session.update({ ...mouse, button: -1, buttons: 33, timeStamp: 10 }, "move")).toBe(
+      "eraser",
+    );
+    expect(session.update({ ...mouse, button: -1, timeStamp: 20 }, "move")).toBe("normal");
+    expect(session.pointerId).toBeUndefined();
+    expect(session.pendingReleaseAt).toBeUndefined();
+  });
+
+  it("releases a mouse eraser on a chorded button edge while primary contact remains", () => {
+    const session = new PenButtonSession();
+    const mouse = { ...penEvent(1), pointerType: "mouse", button: 5 };
+    expect(session.update(mouse, "down")).toBe("eraser");
+    expect(session.update({ ...mouse, button: -1, timeStamp: 10 }, "move")).toBe("eraser");
+    expect(session.update({ ...mouse, timeStamp: 20 }, "move")).toBe("normal");
+    expect(session.pendingReleaseAt).toBeUndefined();
+  });
+
+  it.each(["move", "up"] as const)(
+    "releases a mouse eraser immediately on a contact-free %s without leaking into mouse clicks",
+    (phase) => {
+      const session = new PenButtonSession();
+      const mouse = { ...penEvent(32), pointerType: "mouse", button: 5 };
+      expect(session.update(mouse, "down")).toBe("eraser");
+      expect(session.update({ ...mouse, buttons: 33, button: -1, timeStamp: 10 }, "move")).toBe(
+        "eraser",
+      );
+      expect(session.update({ ...mouse, buttons: 0, timeStamp: 20 }, phase)).toBe("normal");
+      expect(session.role).toBe("normal");
+      expect(session.pointerId).toBeUndefined();
+      expect(session.pendingReleaseAt).toBeUndefined();
+      expect(session.update({ ...mouse, button: 0, buttons: 1, timeStamp: 30 }, "down")).toBe(
+        "normal",
+      );
+      expect(session.update({ ...mouse, button: 2, buttons: 2, timeStamp: 40 }, "down")).toBe(
+        "normal",
+      );
+    },
+  );
+
+  it("does not inherit a mouse eraser role when a real pen reuses its numeric identity", () => {
+    const session = new PenButtonSession();
+    expect(session.update({ ...penEvent(32), pointerType: "mouse", button: 5 }, "down")).toBe(
+      "eraser",
+    );
+    expect(session.update(penEvent(1, 10), "down")).toBe("normal");
+    expect(session.role).toBe("normal");
+    expect(session.pointerId).toBe(1);
+    expect(session.pendingReleaseAt).toBeUndefined();
+  });
+
   it("does not inherit a held button from another pen identity", () => {
     const session = new PenButtonSession();
     session.update(penEvent(4), "down");
