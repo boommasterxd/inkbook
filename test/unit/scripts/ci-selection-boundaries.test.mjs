@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { selectionOutputs } from "../../../scripts/ci-execution-plan.mjs";
+import {
+  qualityCommands,
+  selectedPerformancePlan,
+  selectionOutputs,
+} from "../../../scripts/ci-execution-plan.mjs";
 import { createSelection } from "../../../scripts/ci-selection.mjs";
 import { PERFORMANCE_TEST_MANIFEST } from "../../../scripts/performance-test-manifest.mjs";
 import { cleanupRepositories, commit, createRepository, write } from "./ci-selection-fixtures.mjs";
@@ -57,34 +61,75 @@ describe("syntax-aware affected dependencies", () => {
       "src/domain/value.ts",
     ]);
   });
+});
 
-  it("runs the complete gate when an entry reaches all runtime sources but omits product tests", async () => {
-    const source = "src/obsidian/plugin-runtime-source.ts";
-    const entry = "src/obsidian/plugin-runtime-entry.ts";
-    const entryTest = "test/integration/obsidian/entry.test.ts";
-    const invariant = PERFORMANCE_TEST_MANIFEST.invariant[0];
-    const cadence = PERFORMANCE_TEST_MANIFEST.cadenceSensitive[0];
-    const context = await fixture({
-      "src/domain/unrelated.ts": "export const unrelated = 1;",
-      [source]: "export const encoded = 'placeholder';",
-      [entry]:
-        'export { value } from "../domain/value"; export { unrelated } from "../domain/unrelated";',
-      [entryTest]: `import { encoded } from "../../../${source}"; void encoded;`,
-      [unrelatedTest]: 'import { unrelated } from "../../../src/domain/unrelated"; void unrelated;',
-      [invariant]: "export {};",
-      [cadence]: "export {};",
-    });
-    await commit(context.root, { "src/domain/value.ts": "export const value = 2;" });
-    const plan = await createSelection(context);
+describe("whole-runtime coverage expansion", () => {
+  it.each([false, true])(
+    "expands whole-runtime coverage without unrelated performance work (affected contracts=%s)",
+    async (affected) => {
+      const source = "src/obsidian/plugin-runtime-source.ts";
+      const entry = "src/obsidian/plugin-runtime-entry.ts";
+      const entryTest = "test/integration/obsidian/entry.test.ts";
+      const invariant = PERFORMANCE_TEST_MANIFEST.invariant[0];
+      const cadence = PERFORMANCE_TEST_MANIFEST.cadenceSensitive[0];
+      const performanceImport = (file) =>
+        affected
+          ? `import { value } from "${path.posix.relative(path.posix.dirname(file), "src/domain/value")}"; void value;`
+          : "export {};";
+      const tooling = "test/unit/scripts/tooling.test.mjs";
+      const context = await fixture({
+        "src/domain/unrelated.ts": "export const unrelated = 1;",
+        [source]: "export const encoded = 'placeholder';",
+        [entry]:
+          'export { value } from "../domain/value"; export { unrelated } from "../domain/unrelated";',
+        [entryTest]: `import { encoded } from "../../../${source}"; void encoded;`,
+        [unrelatedTest]:
+          'import { unrelated } from "../../../src/domain/unrelated"; void unrelated;',
+        [invariant]: performanceImport(invariant),
+        [cadence]: performanceImport(cadence),
+        [tooling]: "export {};",
+      });
+      await commit(context.root, { "src/domain/value.ts": "export const value = 2;" });
+      const plan = await createSelection(context);
 
-    expect(plan.mode).toBe("full");
-    expect(plan.tests).toEqual([selectedTest, unrelatedTest, entryTest, invariant, cadence].sort());
-    expect(plan.coverage).toEqual(
-      ["src/domain/value.ts", "src/domain/unrelated.ts", source, entry].sort(),
-    );
-    expect(selectionOutputs(plan)).toMatchObject({ mode: "full", shared: "true", cadence: "true" });
-  });
+      const productTests = [selectedTest, unrelatedTest, entryTest, tooling].sort();
+      expect(plan.mode).toBe("affected");
+      expect(plan.reason).toContain("performance remains affected");
+      expect(plan.tests).toEqual(
+        [...productTests, ...(affected ? [invariant, cadence] : [])].sort(),
+      );
+      expect(plan.coverage).toEqual(
+        ["src/domain/value.ts", "src/domain/unrelated.ts", source, entry].sort(),
+      );
+      expect(selectionOutputs(plan)).toEqual({
+        mode: "affected",
+        shared: String(affected),
+        cadence: String(affected),
+        build: "true",
+      });
+      const commands = await qualityCommands(plan, context.root, "npm");
+      const coverageCommand = commands.find(({ label }) => label.startsWith("test:coverage"));
+      expect(coverageCommand.args.slice(1, productTests.length + 1)).toEqual(productTests);
+      expect(coverageCommand.args.filter((arg) => arg.startsWith("--coverage.include="))).toEqual(
+        plan.coverage.map((file) => `--coverage.include=${file}`),
+      );
+      const performance = selectedPerformancePlan(
+        plan,
+        {
+          invariant: [path.join(context.root, invariant)],
+          cadenceSensitive: [path.join(context.root, cadence)],
+        },
+        context.root,
+      );
+      expect(performance).toEqual({
+        invariant: affected ? [path.join(context.root, invariant)] : [],
+        cadenceSensitive: affected ? [path.join(context.root, cadence)] : [],
+      });
+    },
+  );
+});
 
+describe("syntax-aware dependency boundaries", () => {
   it("does not treat import text in comments or strings as a dependency", async () => {
     const context = await fixture({
       [unrelatedTest]:
