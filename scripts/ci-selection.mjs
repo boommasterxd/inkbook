@@ -237,9 +237,16 @@ export async function createSelection({
       throw new Error("Affected production sources have no Unit or Integration coverage");
     }
     if (needsCompleteRuntimeTests(graphs[0], selected, coverage, plan)) {
+      const affectedTests = new Set(selected);
       return validateSelection({
         ...plan,
-        reason: "Complete runtime coverage requires all product tests",
+        mode: "affected",
+        reason:
+          "Complete runtime coverage requires all Unit/Integration tests; performance remains affected",
+        tests: tests.filter(
+          (file) => !file.startsWith("test/performance/") || affectedTests.has(file),
+        ),
+        coverage,
       });
     }
     return validateSelection({

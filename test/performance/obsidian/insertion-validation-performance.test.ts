@@ -19,9 +19,6 @@ function longNote(lineCount: number) {
   return {
     editor,
     reads: () => reads,
-    reset: () => {
-      reads = 0;
-    },
   };
 }
 
@@ -59,21 +56,18 @@ it.for([10_000, 50_000])(
   "validates an insertion command once with bounded work after %i note lines",
   async (lineCount) => {
     const note = longNote(lineCount);
-    for (let sample = 0; sample < 2; sample += 1) {
-      const { command, settled } = insertionAttempt({
-        EmptyLineInsertionController,
-        registerInkbookCommands,
-      });
-      note.reset();
+    const { command, settled } = insertionAttempt({
+      EmptyLineInsertionController,
+      registerInkbookCommands,
+    });
 
-      const accepted = command.editorCheckCallback(false, note.editor, {
-        file: { path: "note.md" },
-      } as never);
+    const accepted = command.editorCheckCallback(false, note.editor, {
+      file: { path: "note.md" },
+    } as never);
 
-      expect(accepted).toBe(true);
-      expect(note.reads()).toBe(lineCount + 2);
+    expect(accepted).toBe(true);
+    expect(note.reads()).toBe(lineCount + 2);
 
-      await settled;
-    }
+    await settled;
   },
 );

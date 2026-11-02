@@ -1,57 +1,20 @@
 import { expect, it, vi } from "vitest";
-import { UniformSpatialIndex } from "../../../../src/domain/spatial";
 import { SpatialMap } from "../../../../src/domain/spatial/spatial-map";
 import type { CellColumns } from "../../../../src/domain/spatial/index-state";
 import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility/visibility-state";
 import { NavigationPathPreparation } from "../../../../src/rendering/scene/content/navigation-path-preparation";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
-import type { SceneElementRecord, SceneStorePort } from "../../../../src/rendering/scene/types";
-import {
-  FakeSceneStore,
-  FakeScheduler,
-  FakeNode,
-  fakeRectangleRecord,
-} from "../../../unit/rendering/scene/fakes";
+import { FakeScheduler, FakeNode, fakeRectangleRecord } from "../../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { createSceneRecord, createSceneFixture } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
 import { observeSpatialComparisons } from "../../domain/domain-scenarios";
 
-const BOUNDS = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
-const BUDGET = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs;
+import { BOUNDS, directionalFixture, indexedStore } from "./navigation-index-fixture";
 
-function indexedStore(records: readonly SceneElementRecord[]) {
-  const fake = new FakeSceneStore();
-  const index = new UniformSpatialIndex<string>();
-  for (const record of records) fake.records.set(record.id, record);
-  index.insertMany(records.map(({ id, bounds }) => ({ id, bounds })));
-  const work = { units: 0, clock: 0, cancellations: 0 };
-  const store: SceneStorePort = {
-    get: (id) => fake.get(id),
-    query: () => {
-      throw new Error("Navigation must use the indexed cursor.");
-    },
-    beginQuery: (bounds) => {
-      const cursor = index.beginQuery(bounds);
-      return {
-        advance: (limit) => {
-          const step = cursor.advance(limit);
-          work.units += step.workUnits;
-          work.clock += step.workUnits;
-          return step;
-        },
-        cancel: () => {
-          work.cancellations += 1;
-          cursor.cancel();
-        },
-        memoryUsage: () => cursor.memoryUsage(),
-      };
-    },
-  };
-  return { fake, index, work, store };
-}
+const BUDGET = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs;
 
 it("interrupts dense real indexed queries, rejects stale generations and retargets without partial membership", () => {
   const records = Array.from({ length: 10_000 }, (_, rank) =>
@@ -147,45 +110,6 @@ it("defers atomic marker/order adoption when the last exact record consumes the 
     sorted.mockRestore();
     state.release();
   }
-});
-
-function directionalFixture(count = 10_000, firstY = 120) {
-  const records = Array.from({ length: count }, (_, rank) => {
-    const y = rank < 300 ? firstY : 10_000;
-    const element = {
-      ...indexedStroke(rank),
-      pivot: { x: 20, y },
-      points: [20, y, 0.5, 21, y, 0.5],
-    };
-    return createSceneRecord(element, rank);
-  });
-  const indexed = indexedStore(records);
-  const cache = new ScenePathCache();
-  const preparation = new NavigationPathPreparation(indexed.store, cache);
-  const priority = { viewport: BOUNDS, direction: { x: 0, y: 1 } };
-  return { ...indexed, cache, preparation, priority, records };
-}
-
-it("bounds directional candidates and contour ownership, reuses prepared geometry and cancels reversals", () => {
-  const { work, store, cache, preparation, priority, records } = directionalFixture();
-  const get = vi.spyOn(store, "get");
-  const builds = vi.spyOn(cache, "startPreparation");
-  preparation.setTarget(priority, BOUNDS);
-  expect(preparation.prepare(Infinity, () => 0)).toBe(false);
-  expect(builds).toHaveBeenCalledTimes(300);
-  expect(get.mock.calls.length).toBeLessThanOrEqual(600);
-  expect(work.units).toBeLessThanOrEqual(314);
-  expect(cache.statistics().entries).toBe(300);
-  expect(preparation.memoryUsage()).toBe(0);
-  preparation.cancel();
-  preparation.setTarget(priority, BOUNDS);
-  expect(preparation.prepare(Infinity, () => 0)).toBe(false);
-  expect(builds).toHaveBeenCalledTimes(300);
-  preparation.setTarget({ ...priority, direction: { x: 0, y: -1 } }, BOUNDS);
-  preparation.prepare(Infinity, () => 0);
-  expect(cache.has(records[0]!.id, 1)).toBe(true);
-  preparation.cancel();
-  expect(preparation.memoryUsage()).toBe(0);
 });
 
 it("drains directional work through one background callback without repeating spent scene frames", () => {
