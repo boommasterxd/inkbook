@@ -20,7 +20,7 @@ If selected tests reach the complete runtime coverage scope while omitting Unit 
 
 Test and test-support changes run the directly changed tests plus affected dependents. Production and build-input changes add production build and package verification. Test, tooling, workflow, and documentation changes alone do not trigger a production build when classification is complete. A full test fallback can still omit build and package checks when the change is reliably known to be non-production. Missing history, unknown or production inputs, manual dispatches, and releases require the complete build and package checks. Existing npm download caching remains enabled; CI does not cache `node_modules`.
 
-For non-documentation runs, selection installs dependencies and runs the existing dependency audit before the quality and performance jobs can start. Audit failure fails selection and prevents that fan-out. The hosted quality runner omits its duplicate audit only when `EXPECTED_AUDIT=success` accompanies all four matching expected selection outputs. Any other supplied audit status or incomplete proof fails. Local quality runs without that proof retain the audit, and complete local `npm run ci` remains unchanged. Documentation-only selection skips installation and audit; the final gate requires the corresponding `skipped` audit outcome.
+For non-documentation runs, selection installs dependencies and runs `npm audit --omit=dev --audit-level=high` before the quality and performance jobs can start. High/critical production findings and audit execution errors fail selection and prevent that fan-out. Development dependencies remain installed for builds and tests. The hosted quality runner omits its duplicate audit only when `EXPECTED_AUDIT=success` accompanies all four matching expected selection outputs. Any other supplied audit status or incomplete proof fails. Local quality runs without that proof retain the same production-only audit, and complete local `npm run ci` remains unfiltered. Documentation-only selection skips installation and audit; the final gate requires the corresponding `skipped` audit outcome.
 
 The project has no E2E or Playwright suite. Pull request selection adds no browser, container, or external-service test infrastructure. Existing accessibility checks remain within the selected Unit and Integration coverage.
 
@@ -43,6 +43,10 @@ The planner publishes optional `GITHUB_OUTPUT` and `GITHUB_STEP_SUMMARY` data on
 Workflow regressions execute repository-owned shell from exclusive temporary script files with bounded child processes and owned cleanup. They do not pass workflow contents as shell command strings. Condition tests interpret only the required string/boolean comparisons, logical operators and own context-property access through a bounded TypeScript AST fixture. Unsupported syntax fails instead of executing JavaScript. These fixtures verify the actual workflow policies; they are not a sandbox for hostile repository code or a complete GitHub expression implementation.
 
 ## Local reproduction
+
+Before merging, run `npm audit --include=dev` locally for the complete dependency
+review. Dev-only findings do not automatically block merging. This separate local
+review is not another CI audit/report step.
 
 To reproduce a pull request plan locally, check out the simulated merge result containing the pull request base and head commits, export their SHAs, and set the event to `pull_request`. `CI_MERGE=<merge-sha>` is optional locally and requires that exact checkout when supplied. First print the plan and its `shared` and `cadence` outputs:
 

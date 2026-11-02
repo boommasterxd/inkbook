@@ -171,7 +171,7 @@ Use `npm`, TypeScript, esbuild, Vitest, ESLint with the official type-aware `esl
 | `npm run typecheck:worker` | Type-check the actual worker graph without DOM, React, or Obsidian types       |
 | `npm run duplication`      | Run `jscpd` duplication detection                                              |
 | `npm run dead-code`        | Run `knip` dead-code detection                                                 |
-| `npm run audit`            | Fail on high-severity dependency vulnerabilities                               |
+| `npm run audit`            | Fail on high/critical production dependency vulnerabilities                    |
 | `npm run build`            | Produce the production plugin artifacts                                        |
 | `npm run package:verify`   | Verify the distributable package contract                                      |
 

@@ -15,7 +15,7 @@ const tasks = {
     ".dependency-cruiser.mjs",
     "src",
   ),
-  audit: { npm: true, args: ["audit", "--audit-level=high"] },
+  audit: { npm: true, args: ["audit", "--omit=dev", "--audit-level=high"] },
   build: nodeTask("scripts/build.mjs"),
   "dead-code": nodeTask("scripts/run-dead-code-checks.mjs"),
   "docs:check": nodeTask("scripts/ci-documentation.mjs"),
