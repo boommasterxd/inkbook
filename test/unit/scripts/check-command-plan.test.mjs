@@ -55,6 +55,7 @@ describe("check command plan", () => {
     expect(plan.find(({ label }) => label === "audit").args).toEqual([
       "/npm-cli.js",
       "audit",
+      "--omit=dev",
       "--audit-level=high",
     ]);
   });

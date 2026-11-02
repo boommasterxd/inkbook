@@ -451,7 +451,7 @@ CI MUST run:
 - affected Unit and Integration tests with selected-source coverage thresholds, or the complete suites with project-wide coverage thresholds after full fallback
 - `jscpd` with `minTokens: 50`
 - `knip`, including a fatal production-only pass for unused files, exports, and types so source code reachable exclusively from tests cannot survive the gate; `ignoreExportsUsedInFile` keeps internally consumed module exports valid while still rejecting exports with no production caller
-- dependency security audit
+- production dependency security audit with `npm audit --omit=dev --audit-level=high`; high/critical findings and audit execution errors fail
 - production build and release-artifact verification when production/build inputs changed, history or classification is unknown, or the workflow is a manual dispatch or release; reliably known non-production full-test fallbacks omit these checks
 - deterministic schema fixture and performance benchmark suites
 
