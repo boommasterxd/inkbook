@@ -171,7 +171,7 @@ describe("affected CI selection", () => {
     for (const id of ["select", "quality", "Performance"]) {
       const section = jobSection(workflow, id);
       expect(section).toContain("ref: ${{ github.sha }}\n          fetch-depth: 0");
-      expect(section).toContain('node-version: "24.x"\n          check-latest: true');
+      expect(section).toContain('node-version: "26.x"\n          check-latest: true');
       expect(section).toContain("cache: npm");
       expect(section).toContain("run: npm ci");
       expect(section.includes("run: node scripts/ci-plan.mjs")).toBe(id === "select");

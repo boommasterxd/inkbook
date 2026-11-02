@@ -48,7 +48,7 @@ Both screenshots show the production plugin running in the real Obsidian desktop
 
 > **Pre-release:** The first GitHub release has not been published. Installation currently requires a source build. Use a test vault while evaluating Inkbook and read the [current limitations](#current-limitations).
 
-You need **Obsidian 1.13.4 or newer**. To build the plugin, also install Git, the latest **Node.js 24.x**, and npm. Node.js is only needed for building, not for running the plugin in Obsidian.
+You need **Obsidian 1.13.4 or newer**. To build the plugin, also install Git, the latest **Node.js 26.x**, and npm. Node.js is only needed for building, not for running the plugin in Obsidian.
 
 1. Clone the repository and build the production package:
 
