@@ -38,7 +38,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24.x"
+          node-version: "26.x"
           check-latest: true
           cache: npm
       - name: Detect documentation-only changes
@@ -77,7 +77,7 @@ jobs:
         if: needs.select.outputs.mode != 'docs'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24.x"
+          node-version: "26.x"
           check-latest: true
           cache: npm
       - name: Install dependencies
@@ -125,7 +125,7 @@ jobs:
         if: needs.select.outputs[matrix.suite] == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24.x"
+          node-version: "26.x"
           check-latest: true
           cache: npm
       - name: Install dependencies
