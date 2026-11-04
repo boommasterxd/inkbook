@@ -86,6 +86,10 @@ export class VaultDocumentSessionFactory implements SessionFactory {
     return sessions[0]!.notifyExternalChange(operation);
   }
 
+  hasUnsavedChanges(): boolean {
+    return [...this.#sessions.values()].some((session) => session.getSnapshot().dirty);
+  }
+
   async prepareForUnload(): Promise<void> {
     await Promise.all([...this.#sessions.values()].map((session) => session.prepareForUnload()));
   }
