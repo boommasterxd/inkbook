@@ -22,9 +22,10 @@ export interface KeyboardHandleOptions {
   readonly settled: (committed: boolean) => void;
 }
 
-/** Discrete keyboard edits use the same handle planner and commit path as pointer edits. */
+/** Discrete keyboard and panel edits share the pointer handle planner and commit path. */
 export class KeyboardHandleInteraction {
   readonly #options: KeyboardHandleOptions;
+  readonly #settled = new Set<(committed: boolean) => void>();
   #session: SelectionHandleSession | undefined;
   #finish: ((committed: boolean) => void) | undefined;
 
@@ -34,6 +35,11 @@ export class KeyboardHandleInteraction {
 
   public get pending(): boolean {
     return this.#session !== undefined;
+  }
+
+  public subscribeSettled(listener: (committed: boolean) => void): () => void {
+    this.#settled.add(listener);
+    return () => this.#settled.delete(listener);
   }
 
   public choices(): readonly SelectionHandle[] {
@@ -101,6 +107,7 @@ export class KeyboardHandleInteraction {
       controller.selectionMoveLayout.finish(committed);
       handles.renderSelection();
       this.#options.settled(committed);
+      for (const listener of this.#settled) listener(committed);
     };
     this.#finish = finish;
     controller.selectionMoveLayout.begin();

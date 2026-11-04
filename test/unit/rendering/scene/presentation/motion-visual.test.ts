@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ArrowElementV1, BoxShapeElementV1 } from "../../../../../src/domain/schema/public";
 
 import * as elementPath from "../../../../../src/domain/geometry/element-path";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
@@ -11,6 +12,8 @@ import {
 } from "../../../../../src/rendering/scene/presentation/motion-visual";
 import { SVG_NAMESPACE } from "../../../../../src/rendering/scene/constants";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
+import { observePointReads } from "../../../../fixtures/rendering/point-reads";
+import { fakeRectangleRecord } from "../fakes";
 import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
 import { asDocument, FakeDocument, fakeNode } from "../fakes";
 
@@ -130,11 +133,8 @@ describe("pressure motion visuals", () => {
     const stroke = pressureStroke();
     const build = vi.spyOn(elementPath, "buildElementPathParts");
     let pointReads = 0;
-    stroke.points = new Proxy(stroke.points, {
-      get(points, key, receiver) {
-        if (typeof key === "string" && /^\d+$/.test(key)) pointReads += 1;
-        return Reflect.get(points, key, receiver) as unknown;
-      },
+    stroke.points = observePointReads(stroke.points, () => {
+      pointReads += 1;
     });
     const { document, parent } = motionParent();
     for (const [paths, bytes] of [
@@ -163,4 +163,36 @@ describe("pressure motion visuals", () => {
     expect(fakeNode(parent).nodes).toHaveLength(0);
     build.mockRestore();
   });
+});
+
+it("rejects an incomplete non-pressure visual before publishing any of its paths", () => {
+  const { id, createdAt, pivot, rotation, style } = fakeRectangleRecord("shape", 0, 0)
+    .element as BoxShapeElementV1;
+  const element: ArrowElementV1 = {
+    id,
+    createdAt,
+    pivot,
+    rotation,
+    style,
+    kind: "arrow",
+    start: { x: 0, y: 0 },
+    end: { x: 30, y: 20 },
+    bend: null,
+    startConnection: null,
+    endConnection: null,
+    startNode: "triangle",
+    endNode: "diamond",
+  };
+  const parts = buildElementPathParts(element);
+  expect(parts.length).toBeGreaterThan(1);
+  const bytes = parts.reduce((total, part) => total + part.d.length * 2, 0);
+  const { document, parent } = motionParent();
+  for (const [paths, capacity] of [
+    [parts.length - 1, bytes],
+    [parts.length, bytes - 1],
+  ]) {
+    const visual = createMotionVisual(document, parent, [element], paths!, capacity!);
+    expect(visual).toMatchObject({ nodes: [], targets: [], bytes: 0 });
+    expect(fakeNode(parent).nodes).toHaveLength(0);
+  }
 });

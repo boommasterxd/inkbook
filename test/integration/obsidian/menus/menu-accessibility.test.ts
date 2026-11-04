@@ -10,6 +10,7 @@ import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { installNativeMenuMeasurementStyles } from "../../../adapters/obsidian/editor-toolbar-menu";
 import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
 import { createOwnedToolbarMenuFixture } from "../../../fixtures/obsidian/owned-toolbar-menu";
+import { createGeometryMenuContent } from "../../../../src/obsidian/menus/geometry-menu-content";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -35,6 +36,33 @@ describe.each([false, true])("owned menu semantic accessibility, phone=%s", (pho
   beforeEach(() => {
     Platform.isMobile = phone;
     Platform.isPhone = phone;
+  });
+
+  it("labels geometry operations, step sizes and discrete direction controls", async () => {
+    const onStep = vi.fn();
+    const content = createGeometryMenuContent({
+      ownerDocument: document,
+      operations: [
+        { value: -1, label: "Move" },
+        { value: 1, label: "Rotate" },
+      ],
+      onOperation: vi.fn(),
+      onStep,
+      renderIcon: vi.fn(),
+    });
+    const surface = document.body.createDiv();
+    surface.append(content.fragment);
+    await assertAccessibleSemantics(surface, [
+      "button-name",
+      "select-name",
+      "aria-valid-attr-value",
+    ]);
+    surface
+      .querySelector<HTMLButtonElement>('[aria-label="10 document units or degrees"]')!
+      .click();
+    content.operation.value = "1";
+    surface.querySelector<HTMLButtonElement>('[aria-label="Left"]')!.click();
+    expect(onStep).toHaveBeenCalledWith(1, { x: -10, y: 0 });
   });
 
   it.each(["overflow", "shape", "style"] as const)("scans the open %s surface", async (menu) => {

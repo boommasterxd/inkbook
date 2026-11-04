@@ -39,6 +39,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("offers insertion and geometry editing through the existing menu handoff", async () => {
+  const configured = options();
+  const insert = vi.fn();
+  const edit = vi.fn();
+  const handlers = { ...configured.handlers, onInsertShape: insert, onEditGeometry: edit };
+  const shape = new FakeMenu();
+  populateToolbarActionMenu(shape, "shape", { ...configured, handlers }, vi.fn());
+  action(shape, "Insert selected shape").click?.();
+  expect(insert).not.toHaveBeenCalled();
+  await Promise.resolve();
+  expect(insert).toHaveBeenCalledOnce();
+  const overflow = new FakeMenu();
+  populateToolbarActionMenu(overflow, "overflow", { ...configured, handlers }, vi.fn());
+  action(overflow, "Edit geometry").click?.();
+  await Promise.resolve();
+  expect(edit).toHaveBeenCalledOnce();
+});
+
 describe("editor toolbar action menus", () => {
   it("populates Overflow actions and Background navigation", async () => {
     const menu = new FakeMenu();

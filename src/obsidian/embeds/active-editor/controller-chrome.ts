@@ -56,6 +56,11 @@ export function createActiveEditorChrome(
       return onboarding.available ? onboarding.open : undefined;
     },
     onShapeChange: (shape) => configureTool(chromeState.selectShape(shape)),
+    onInsertShape: () => {
+      configureTool("select");
+      menus.geometry?.insert(chromeState.selectedShape, styles.defaults);
+    },
+    onEditGeometry: (navigation) => menus.geometry?.open(navigation),
     onStyleChange: (id, value) => styles.apply(activeTool(), id, value),
   };
   configureActiveEditorToolbarMenus(

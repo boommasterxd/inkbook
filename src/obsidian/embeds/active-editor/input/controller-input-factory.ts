@@ -6,6 +6,7 @@ import type { ActiveEditorControllerOptions } from "../controller-types";
 import type { ActiveEditorHandleInteraction } from "../previews/handle-interaction";
 import type { PreparedElementHistory } from "../prepared-element-history";
 import { CanvasKeyboardSelection } from "./canvas-keyboard-selection";
+import { ActiveEditorGeometrySession } from "../geometry-session";
 
 import type { ActiveEditorActions } from "../controller-actions";
 import type { ActiveEditorAvailability } from "../controller-availability";
@@ -64,19 +65,8 @@ export function createActiveEditorInputControllers(
         ...options.model.store.materializeBandOrder("content"),
       ]),
     );
-  const [handles, frames, preparedHistory] = options.geometry;
   const ownerDocument = options.controller.renderer.inputSurface.ownerDocument;
-  const canvasSelection = new CanvasKeyboardSelection({
-    controller: options.controller,
-    handles,
-    frames,
-    preparedHistory,
-    navigation: options.navigation,
-    selection: options.selection,
-    setSelection: options.setSelection,
-    enabled: () => options.availability.acceptsInput && !options.hasStableGeometryGesture(),
-    zoom: () => options.navigation.zoom,
-  });
+  const canvasSelection = createCanvasSelection(options);
   const keyboard = createActiveEditorKeyboardController(
     [
       options.actions,
@@ -132,4 +122,25 @@ export function createActiveEditorInputControllers(
     [options.onStateChanged, options.onStateChanged],
   );
   return [keyboard, gestures];
+}
+
+function createCanvasSelection(options: ActiveEditorInputFactoryOptions): CanvasKeyboardSelection {
+  const [handles, frames, preparedHistory] = options.geometry;
+  const geometryOptions = {
+    controller: options.controller,
+    handles,
+    frames,
+    preparedHistory,
+    navigation: options.navigation,
+    selection: options.selection,
+    setSelection: options.setSelection,
+    enabled: () => options.availability.acceptsInput && !options.hasStableGeometryGesture(),
+    zoom: () => options.navigation.zoom,
+  };
+  const geometry = new ActiveEditorGeometrySession(geometryOptions);
+  options.menus.configureGeometry(geometry);
+  return new CanvasKeyboardSelection({
+    ...geometryOptions,
+    geometryInteraction: geometry.interaction,
+  });
 }

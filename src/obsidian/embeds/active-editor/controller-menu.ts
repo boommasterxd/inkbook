@@ -15,6 +15,7 @@ import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { Keymap } from "obsidian";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import type { ActiveEditorGeometrySession } from "./geometry-session";
 
 interface ActiveEditorMenuOptions {
   readonly event?: MouseEvent;
@@ -37,6 +38,7 @@ interface ActiveEditorMenuOptions {
   readonly onClosed: () => void;
   readonly onArrange: (action: ArrangeAction) => void;
   readonly onPaste: () => void;
+  readonly onEditGeometry?: () => void;
 }
 
 function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSession {
@@ -86,6 +88,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       paste: options.onPaste,
       sendBackward: () => options.onArrange("send-backward"),
       sendToBack: () => options.onArrange("send-to-back"),
+      ...(options.onEditGeometry === undefined ? {} : { editGeometry: options.onEditGeometry }),
     },
   );
 }
@@ -119,17 +122,31 @@ export class ActiveEditorMenuController {
   #toolbarSession: EditorToolbarMenuSession | undefined;
   #toolbarMenuId: Exclude<EditorToolbarMenuId, "background"> | undefined;
   #toolbarOptions: ToolbarMenuConfiguration | undefined;
+  #geometry: ActiveEditorGeometrySession | undefined;
 
   public constructor(options: ActiveEditorMenuControllerOptions) {
     this.#options = options;
   }
 
   public get isOpen(): boolean {
-    return this.#session !== undefined || this.#toolbarSession !== undefined;
+    return (
+      this.#session !== undefined ||
+      this.#toolbarSession !== undefined ||
+      this.#geometry?.isOpen === true
+    );
+  }
+
+  public configureGeometry(geometry: ActiveEditorGeometrySession): void {
+    this.#geometry = geometry;
+  }
+
+  public get geometry(): ActiveEditorGeometrySession | undefined {
+    return this.#geometry;
   }
 
   public dispose(): void {
     this.#openGeneration += 1;
+    this.#geometry?.close();
     this.#session?.close("immediate");
     this.#session = undefined;
     this.#toolbarSession?.close("immediate");
@@ -267,6 +284,9 @@ export class ActiveEditorMenuController {
       },
       onEraseAll: () => actions.execute("erase-all"),
       onPaste: () => actions.execute("paste", pasteInvocation),
+      ...(this.#geometry === undefined
+        ? {}
+        : { onEditGeometry: () => this.#geometry?.open(undefined, this.#options.inputSurface) }),
       ownerDocument: this.#options.ownerDocument,
       position: this.#options.toScreenPoint(position),
       restoreFocus,

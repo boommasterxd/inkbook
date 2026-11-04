@@ -139,6 +139,35 @@ function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> 
   );
 }
 
+it("hands off selection geometry editing before opening the accessible panel", () => {
+  const menu = new FakeMenu();
+  const canvas = createHtmlElement("button");
+  document.body.append(canvas);
+  const edit = vi.fn(() => {
+    expect(menu.closed).toBe(true);
+    expect(document.activeElement).toBe(canvas);
+  });
+  openContextMenu(
+    { create: () => menu, forEvent: () => menu },
+    {
+      type: "position",
+      ownerDocument: document,
+      position: { x: 0, y: 0 },
+      canvasInputSurface: canvas,
+    },
+    state(),
+    { ...createContextMenuHandlers(), editGeometry: edit },
+  );
+  const entry = menu.entries.find(
+    (item) => item !== "separator" && item.calls.includes("title:Edit geometry"),
+  ) as RecordedItem;
+  entry.click?.();
+  expect(menu.closed).toBe(true);
+  expect(edit).toHaveBeenCalledOnce();
+  expect(document.activeElement).toBe(canvas);
+  canvas.remove();
+});
+
 describe("context menu population", () => {
   it("populates the selection and canvas sections in the contract order", () => {
     const menu = new FakeMenu();

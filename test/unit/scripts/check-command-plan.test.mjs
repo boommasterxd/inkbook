@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createCheckCommandPlan } from "../../../scripts/check-command-plan.mjs";
@@ -98,3 +101,45 @@ describe("check command plan", () => {
     expect(() => createCheckCommandPlan("audit", [], null)).toThrow("through npm run");
   });
 });
+
+it("accepts unique TSX and rejects duplicated TSX through the installed duplication gate", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inkbook-tsx-duplication-"));
+  try {
+    await copyFile(
+      new URL("../../../.jscpd.json", import.meta.url),
+      join(directory, ".jscpd.json"),
+    );
+    for (const name of ["src", "test", "scripts"]) await mkdir(join(directory, name));
+    const source = `export function ToolbarFixture({ label, disabled }: { label: string; disabled: boolean }) {
+  return (
+    <section aria-label="Fixture toolbar">
+      <button type="button" disabled={disabled} aria-label={label}>
+        <span>{label}</span>
+        <span aria-hidden="true">Inkbook</span>
+      </button>
+    </section>
+  );
+}
+`;
+    await writeFile(join(directory, "src/first.tsx"), source);
+    const [task] = createCheckCommandPlan("duplication", ["--workers", "1"]);
+    const scan = () =>
+      spawnSync(task.command, task.args, {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+    const unique = scan();
+    expect(unique.error).toBeUndefined();
+    expect(unique.status, `${unique.stdout}${unique.stderr}`).toBe(0);
+    expect(unique.stdout).toContain("tsx");
+
+    await writeFile(join(directory, "src/second.tsx"), source);
+    const duplicate = scan();
+    expect(duplicate.error).toBeUndefined();
+    expect(duplicate.status, `${duplicate.stdout}${duplicate.stderr}`).toBe(1);
+    expect(duplicate.stdout).toContain("Clone found (tsx)");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 25_000);

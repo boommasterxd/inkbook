@@ -41,8 +41,9 @@ interface GeometryMotion extends MotionBase {
   readonly to: readonly InkElementV1[];
 }
 
-interface CrossfadeMotion extends MotionBase {
+export interface CrossfadeMotion extends MotionBase {
   readonly kind: "crossfade";
+  progress: number;
   readonly visual: MotionVisual;
 }
 
