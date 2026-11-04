@@ -348,6 +348,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       pane,
     );
   }
+  readonly hasUnsavedChanges = (): boolean => this.#sessions.hasUnsavedChanges();
   readonly prepareForQuit = (): Promise<void> => this.#sessions.prepareForUnload();
   dispose(): void {
     if (this.#disposed) return;
@@ -476,7 +477,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       code,
     });
   }
-
   #showHeadlessRecovery(documentId: string): void {
     if (this.#disposed || this.#host.openRecovery === undefined) return;
     this.#headlessRecovery?.close();

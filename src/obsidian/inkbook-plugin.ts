@@ -412,7 +412,7 @@ function registerWorkspaceLifecycle(
   );
   plugin.registerEvent(
     plugin.app.workspace.on("quit", (tasks) => {
-      tasks.add(() => runtime.prepareForQuit());
+      if (runtime.hasUnsavedChanges()) tasks.add(() => runtime.prepareForQuit());
     }),
   );
   plugin.registerEvent(

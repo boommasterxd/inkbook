@@ -50,14 +50,14 @@ export interface EventRef {
 }
 
 export class Tasks {
-  readonly #tasks: Array<() => Promise<unknown>> = [];
+  readonly #tasks: Array<Promise<unknown>> = [];
 
   add(callback: () => Promise<unknown>): void {
-    this.#tasks.push(callback);
+    this.#tasks.push(callback());
   }
 
   addPromise(promise: Promise<unknown>): void {
-    this.add(async () => promise);
+    this.#tasks.push(promise);
   }
 
   isEmpty(): boolean {
@@ -65,7 +65,7 @@ export class Tasks {
   }
 
   async promise(): Promise<unknown> {
-    return Promise.all(this.#tasks.map(async (task) => task()));
+    return Promise.all(this.#tasks);
   }
 }
 

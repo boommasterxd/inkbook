@@ -239,8 +239,7 @@ describe("plugin host registration", () => {
 
     const tasks = new Tasks();
     workspaceEvents.get("quit")?.(tasks as never);
-    expect(tasks.isEmpty()).toBe(false);
-    await expect(tasks.promise()).resolves.toEqual([undefined]);
+    expect(tasks.isEmpty()).toBe(true);
 
     deactivate?.();
     expect(statusItems[0]?.children).toHaveLength(0);

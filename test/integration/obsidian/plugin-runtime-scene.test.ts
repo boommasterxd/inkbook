@@ -30,12 +30,10 @@ class InkbookPlugin extends Plugin {
   override async onload(): Promise<void> {
     this.#deactivate = await activateInkbookPlugin(this);
   }
-
   override onunload(): void {
     this.#deactivate?.();
   }
 }
-
 interface CapturedSceneOptions {
   readonly deviceSettings: InkbookDeviceSettingsV2;
   readonly model: EditableDocumentModel;
@@ -322,10 +320,12 @@ describe("plugin workspace realm integration", () => {
 
   it("loads a Vault document through the plugin and owns its scene lifecycle", async () => {
     const { harness, presentation } = await createReadyReadingEmbed();
-
     expect(presentation.root.classNames).toContain("inkbook-scrollbar-stable");
     await activatePresentation(presentation);
-
+    const tasks = new Tasks();
+    harness.quit(tasks);
+    expect(tasks.isEmpty()).toBe(true);
+    expect(harness.app.vault.process).not.toHaveBeenCalled();
     const scene = scenes.records[0];
     expect(scene?.options.model.revision).toBe(11);
     expect(scene?.options.model.store.size).toBe(0);
@@ -443,6 +443,7 @@ describe("plugin workspace activation serialization", () => {
     const { harness, releaseProcess } = await createDirtyPresentationWithBlockedSave();
     const tasks = new Tasks();
     harness.quit(tasks);
+    expect(tasks.isEmpty()).toBe(false);
     let settled = false;
     const draining = tasks.promise().then(() => {
       settled = true;
