@@ -8,6 +8,40 @@ import { INTERACTION_REFRESH_PROFILE } from "../../../interaction-refresh-profil
 
 const BUDGET = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs;
 
+it("retains a frozen style composite until the replacement's own 120 ms deadline", () => {
+  const { motion, dom } = createMotionHarness(0, 0);
+  let element = fakeRectangleRecord("paint", 0, 0).element as BoxShapeElementV1;
+  const paint = () => {
+    const before = element;
+    element = {
+      ...before,
+      style: { ...before.style, outlineOpacity: before.style.outlineOpacity === 1 ? 0.8 : 1 },
+    };
+    motion.applyDelta([{ id: element.id, before, after: element, domains: ["paint"] }]);
+  };
+  const interval = INTERACTION_REFRESH_PROFILE.frameDurationMs;
+  paint();
+  motion.write(0, Infinity, () => 0);
+  const retargetTime = 3 * interval;
+  motion.write(retargetTime, Infinity, () => 0);
+  const original = dom.motionGroup.nodes[0]!;
+  const opacity = original.style.opacity;
+  paint();
+  motion.write(retargetTime, Infinity, () => 0);
+  expect(dom.motionGroup.nodes).toHaveLength(2);
+  expect(original.style.opacity).toBe(opacity);
+  const finalFrame = Math.ceil(120 / interval);
+  for (let frame = 1; frame < finalFrame; frame += 1) {
+    expect(motion.write(retargetTime + frame * interval, Infinity, () => 0)).toBe(true);
+    expect(dom.motionGroup.nodes).toHaveLength(2);
+  }
+  expect(motion.write(retargetTime + finalFrame * interval, Infinity, () => 0)).toBe(false);
+  expect(original.parentNode).toBeNull();
+  expect(dom.motionGroup.nodes).toHaveLength(0);
+  expect(motion.cacheMemoryUsage()).toBe(0);
+  motion.release();
+});
+
 it(`preserves 120 ms for geometry, entrance, exit, paint and selection at ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz`, () => {
   const { motion, content, dom } = createMotionHarness(1, 0);
   const before = fakeRectangleRecord("0", 0, 0).element as BoxShapeElementV1;

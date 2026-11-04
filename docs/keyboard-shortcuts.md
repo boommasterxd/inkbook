@@ -61,6 +61,8 @@ Object navigation spans the complete logical document, including culled objects,
 
 Each geometry step reuses the existing handle sessions, validation, prepared-history path, and atomic command commit. Keyboard steps disable snapping for exact increments without changing the saved snapping preferences. Larger preparations remain centrally scheduled and cancellable. Leaving editing preserves already committed steps; Escape does not undo them. Undo and Redo use the existing history. Freehand creation remains pointer-driven.
 
+The [Edit geometry panel](editor-tools.md#select) shares that same discrete edit session with canvas keyboard input. Its operation selector, 1/10 step-size choices, and four direction buttons provide a non-drag alternative to the available handles. The Shape menu's [Insert selected shape](editor-tools.md#shapes) action creates and selects a geometric element before opening the panel. Neither entry adds a parallel history or changes the fixed canvas bindings.
+
 ## Pointer and Gesture Modifiers
 
 The following transient modifiers are interaction contracts rather than configurable keyboard shortcuts:

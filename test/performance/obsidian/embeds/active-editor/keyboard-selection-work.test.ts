@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { SelectionFrameSession } from "../../../../../src/editor/selection/public";
 import { CanvasKeyboardSelection } from "../../../../../src/obsidian/embeds/active-editor/input/canvas-keyboard-selection";
+import { ActiveEditorGeometrySession } from "../../../../../src/obsidian/embeds/active-editor/geometry-session";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import * as geometry from "../../../../../src/domain/geometry/public";
@@ -150,6 +151,49 @@ it("bounds admission work and commits and undoes a connected 10,000-stroke keybo
   }
 });
 
+it("bounds a tapped large-selection edit and releases suspended preparation with its panel", async () => {
+  const test = connectedKeyboardFixture();
+  const { store, geometry, paused, history, released } = test;
+  const subscribe = store.subscribe.bind(store);
+  let subscriptions = 0;
+  vi.spyOn(store, "subscribe").mockImplementation((listener) => {
+    subscriptions += 1;
+    const release = subscribe(listener);
+    return () => {
+      subscriptions -= 1;
+      release();
+    };
+  });
+  const checkpoint = vi.spyOn(paused.scheduler, "checkpoint");
+  try {
+    geometry.open();
+    store.resetInstrumentation();
+    const action = document.querySelector<HTMLButtonElement>(
+      '.inkbook-menu-geometry [aria-label="Right"]',
+    )!;
+    action.click();
+    await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledOnce());
+    expect(geometry.interaction.pending).toBe(true);
+    expect(store.instrumentation).toMatchObject({
+      recordReplacements: 0,
+      fullStoreScans: 0,
+      publishedDeltas: 0,
+    });
+    geometry.close();
+    expect(subscriptions).toBe(0);
+    expect(geometry.interaction.pending).toBe(false);
+    paused.resume();
+    await vi.waitFor(() => expect(released).toHaveBeenCalledOnce());
+    expect(history.commandCount).toBe(0);
+    expect(document.querySelector(".inkbook-menu-geometry")).toBeNull();
+    expect(store.instrumentation.recordReplacements).toBe(0);
+  } finally {
+    paused.resume();
+    test.dispose();
+    vi.restoreAllMocks();
+  }
+});
+
 function keyboardSender(keyboard: CanvasKeyboardSelection, input: HTMLDivElement) {
   return (key: string) => {
     const event = new KeyboardEvent("keydown", { key });
@@ -166,11 +210,13 @@ function connectedKeyboardFixture() {
     yieldControl: () => paused.scheduler.checkpoint() ?? Promise.resolve(),
   };
   let revision = 0;
+  const released = vi.fn();
   const changed = () => {
     revision += 1;
   };
   const model = {
     ...createActiveEditorModel(store),
+    beginInteractiveOperation: () => released,
     ...elementReplacementPorts(store, changed, work),
     ...elementMutationPorts(store, changed, work),
     get revision() {
@@ -181,15 +227,7 @@ function connectedKeyboardFixture() {
   const prepared = activeEditorPreparedHistory(model, history, paused.scheduler);
   const sceneStore = new ElementSceneStore(store);
   const input = document.body.createDiv();
-  const renderer = {
-    ...createSelectionPreviewRenderer(),
-    inputSurface: input,
-    clearElementPreviews: vi.fn(),
-    setElementPreviews: vi.fn(),
-    setSelectionOverlayPath: vi.fn(),
-    setSnapMarkerPath: vi.fn(),
-    flushPointerFeedbackFrame: vi.fn(),
-  };
+  const renderer = geometryRenderer(input);
   const frames = new SelectionFrameSession();
   const handles = new ActiveEditorHandleInteraction({
     model,
@@ -205,13 +243,17 @@ function connectedKeyboardFixture() {
     zoom: () => 1,
   });
   const controller = {
+    container: input,
+    workScheduler: paused.scheduler,
+    renderIcon: vi.fn(),
     model,
     history,
     renderer,
     sceneStore,
     selectionMoveLayout: { begin: vi.fn(), finish: vi.fn(), updateBottom: vi.fn() },
   } as unknown as ActiveEditorControllerOptions;
-  const keyboard = new CanvasKeyboardSelection({
+  input.dataset.inkbookMotion = "reduced";
+  const geometryOptions = {
     controller,
     handles,
     frames,
@@ -221,6 +263,11 @@ function connectedKeyboardFixture() {
     setSelection: vi.fn(),
     enabled: () => true,
     zoom: () => 1,
+  };
+  const geometry = new ActiveEditorGeometrySession(geometryOptions);
+  const keyboard = new CanvasKeyboardSelection({
+    ...geometryOptions,
+    geometryInteraction: geometry.interaction,
   });
   return {
     store,
@@ -230,8 +277,11 @@ function connectedKeyboardFixture() {
     history,
     input,
     keyboard,
+    geometry,
+    released,
     handles,
     dispose: () => {
+      geometry.close();
       keyboard.dispose();
       prepared.dispose();
       handles.dispose();
@@ -239,5 +289,17 @@ function connectedKeyboardFixture() {
       sceneStore.release();
       input.remove();
     },
+  };
+}
+
+function geometryRenderer(inputSurface: HTMLDivElement) {
+  return {
+    ...createSelectionPreviewRenderer(),
+    inputSurface,
+    clearElementPreviews: vi.fn(),
+    setElementPreviews: vi.fn(),
+    setSelectionOverlayPath: vi.fn(),
+    setSnapMarkerPath: vi.fn(),
+    flushPointerFeedbackFrame: vi.fn(),
   };
 }

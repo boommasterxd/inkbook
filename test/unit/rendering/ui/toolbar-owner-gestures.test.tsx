@@ -3,22 +3,12 @@
 import { Window as HappyWindow } from "happy-dom";
 import { act, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { useToolbarOwnerGestures } from "../../../../src/rendering/ui/toolbar-owner-gestures";
+import { registerReactTestLifecycle } from "../../../fixtures/rendering/react-test-lifecycle";
 
-const cleanups: Array<() => void> = [];
-const reactEnvironment = window as Window & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-
-beforeEach(() => {
-  reactEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
-});
-
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
-  delete reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
-  vi.restoreAllMocks();
-});
+const registerCleanup = registerReactTestLifecycle();
 
 function GestureButton({ disabled = false }: { disabled?: boolean }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -40,7 +30,7 @@ function mountPopout(popup = new HappyWindow() as unknown as Window) {
   act(() => root.render(<GestureButton />));
   const button = container.querySelector("button")!;
   const state = () => container.querySelector("output")?.textContent;
-  cleanups.push(() => {
+  registerCleanup(() => {
     act(() => root.unmount());
     container.remove();
   });

@@ -9,7 +9,122 @@ import {
 } from "../../../../fixtures/rendering/scene";
 import { createMotionHarness } from "../../../../fixtures/rendering/scene-motion";
 import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
-import { FakeNode, fakeNode } from "../../../../unit/rendering/scene/fakes";
+import { FakeNode, fakeNode, fakeRectangleRecord } from "../../../../unit/rendering/scene/fakes";
+import * as elementPath from "../../../../../src/domain/geometry/element-path";
+import type { SceneContentRenderer } from "../../../../../src/rendering/scene/content-renderer";
+import { MAX_STROKE_POINTS, type BoxShapeElementV1 } from "../../../../../src/domain/schema/public";
+import { indexedStroke } from "../../../../fixtures/editor/stroke";
+import { observePointReads } from "../../../../fixtures/rendering/point-reads";
+
+function crossfadeCapacity(limit: "paths" | "bytes") {
+  if (limit === "paths")
+    return {
+      element: fakeRectangleRecord("paint", 0, 0).element as BoxShapeElementV1,
+      paths: undefined,
+      capacity: 256,
+      pointReads: () => 0,
+    };
+  const stroke = indexedStroke(1);
+  stroke.style = { ...stroke.style, pressureEnabled: false, smoothing: 0.5 };
+  stroke.points = Array.from({ length: MAX_STROKE_POINTS }, (_, index) => [
+    index * 10.123,
+    index % 4 < 2 ? 100.456 : 200.789,
+    0.5,
+  ]).flat();
+  const paths = elementPath.buildElementPathParts(stroke);
+  expect(paths).toHaveLength(1);
+  const capacity = Math.floor((4 * 1024 * 1024) / (paths[0]!.d.length * 2));
+  expect(capacity).toBeGreaterThan(1);
+  expect(capacity).toBeLessThan(256);
+  let pointReads = 0;
+  stroke.points = observePointReads(stroke.points, () => {
+    pointReads += 1;
+  });
+  return { element: stroke, paths, capacity, pointReads: () => pointReads };
+}
+
+it.each(["paths", "bytes"] as const)(
+  "bounds retained style composites, preparation and cleanup at the %s limit",
+  (limit) => {
+    const { motion, content, dom } = createMotionHarness(0, 0);
+    const fixture = crossfadeCapacity(limit);
+    let element = fixture.element;
+    const capacity = fixture.capacity;
+    const canonical = vi.spyOn(
+      content as Pick<SceneContentRenderer, "readCanonicalStrokePath">,
+      "readCanonicalStrokePath",
+    );
+    if (fixture.paths !== undefined) canonical.mockReturnValue(fixture.paths);
+    const builds = vi.spyOn(elementPath, "buildElementPathParts");
+    const allocations = vi.spyOn(dom.ownerDocument, "createElementNS");
+    const style = dom.motionGroup.style;
+    const writes = vi.spyOn(Object.getPrototypeOf(style) as typeof style, "setProperty");
+    const paint = () => {
+      const before = element;
+      element =
+        before.kind === "stroke"
+          ? { ...before, style: { ...before.style, opacity: before.style.opacity === 1 ? 0.8 : 1 } }
+          : {
+              ...before,
+              style: {
+                ...before.style,
+                outlineOpacity: before.style.outlineOpacity === 1 ? 0.8 : 1,
+              },
+            };
+      motion.applyDelta([{ id: element.id, before, after: element, domains: ["paint"] }]);
+    };
+    try {
+      paint();
+      motion.write(0, Infinity, () => 0);
+      const initialBuilds = builds.mock.calls.length;
+      const initialAllocations = allocations.mock.calls.length;
+      for (let pending = 0; pending < 20; pending += 1) paint();
+      expect(builds.mock.calls).toHaveLength(initialBuilds);
+      expect(allocations.mock.calls).toHaveLength(initialAllocations);
+      motion.write(0, Infinity, () => 0);
+      for (let layer = 1; layer < capacity; layer += 1) {
+        motion.write(layer * 20, Infinity, () => 0);
+        const buildStart = builds.mock.calls.length;
+        const nodeStart = allocations.mock.calls.length;
+        const writeStart = writes.mock.calls.length;
+        paint();
+        expect(builds.mock.calls.length - buildStart).toBe(limit === "paths" ? 1 : 0);
+        expect(allocations.mock.calls.length - nodeStart).toBe(1);
+        expect(writes.mock.calls.length - writeStart).toBe(2);
+        const frameWrites = writes.mock.calls.length;
+        motion.write(layer * 20, Infinity, () => 0);
+        expect(writes.mock.calls.length - frameWrites).toBeLessThanOrEqual(512);
+        expect(dom.motionGroup.nodes).toHaveLength(layer + 1);
+        expect(motion.cacheMemoryUsage()).toBeLessThanOrEqual(4 * 1024 * 1024);
+      }
+      motion.write(capacity * 20, Infinity, () => 0);
+      const retained = [...dom.motionGroup.nodes];
+      const beforeBuilds = builds.mock.calls.length;
+      const beforeNodes = allocations.mock.calls.length;
+      const beforeWrites = writes.mock.calls.length;
+      paint();
+      expect(builds.mock.calls).toHaveLength(beforeBuilds);
+      expect(allocations.mock.calls).toHaveLength(beforeNodes);
+      expect(writes.mock.calls.length - beforeWrites).toBeLessThanOrEqual(2);
+      expect(dom.motionGroup.nodes).toHaveLength(0);
+      expect(retained.every((node) => node.parentNode === null)).toBe(true);
+      expect(motion.cacheMemoryUsage()).toBe(0);
+      expect(motion.pending).toBe(false);
+      expect(fixture.pointReads()).toBe(0);
+      paint();
+      expect(dom.motionGroup.nodes).toHaveLength(1);
+      motion.release();
+      expect(dom.motionGroup.nodes).toHaveLength(0);
+      expect(motion.cacheMemoryUsage()).toBe(0);
+    } finally {
+      builds.mockRestore();
+      allocations.mockRestore();
+      writes.mockRestore();
+      canonical.mockRestore();
+      motion.release();
+    }
+  },
+);
 
 it("bounds real fade publication and replay interruption across 10,000 mounted memberships", () => {
   const records = createViewportRectangleStore(10_000, () => 10);

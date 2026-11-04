@@ -234,6 +234,21 @@ function populateOverflow(
   );
   if (state.overflow.hasSelection) {
     menu.addSeparator();
+    if (handlers.onEditGeometry !== undefined) {
+      addAction(
+        menu,
+        options.ownerDocument,
+        "Edit geometry",
+        "move",
+        () => {
+          const navigation = menu.getPhoneNavigation?.();
+          if (navigation === undefined)
+            afterMenuHandoff(options.ownerWindow, () => handlers.onEditGeometry?.());
+          else handlers.onEditGeometry?.(navigation);
+        },
+        { keepOpen: Platform.isPhone && menu.getPhoneNavigation !== undefined },
+      );
+    }
     addAction(
       menu,
       options.ownerDocument,
@@ -346,6 +361,13 @@ function populateShapes(
       activeShapeIconId(shape, state.shapeIcon),
       () => options.handlers.onShapeChange(shape),
       { checked: state.selectedShape === shape },
+    );
+  }
+  const insert = options.handlers.onInsertShape;
+  if (insert !== undefined) {
+    menu.addSeparator();
+    addAction(menu, options.ownerDocument, "Insert selected shape", "plus", () =>
+      afterMenuHandoff(options.ownerWindow, insert),
     );
   }
 }

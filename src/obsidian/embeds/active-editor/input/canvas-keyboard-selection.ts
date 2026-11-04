@@ -9,6 +9,7 @@ import {
 import { CanvasKeyboardStatus } from "./canvas-keyboard-status";
 
 export interface CanvasKeyboardSelectionOptions extends Omit<KeyboardHandleOptions, "settled"> {
+  readonly geometryInteraction?: KeyboardHandleInteraction;
   readonly navigation: ActiveEditorNavigation;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
   readonly enabled: () => boolean;
@@ -20,6 +21,7 @@ export class CanvasKeyboardSelection {
   readonly #surface: HTMLElement;
   readonly #status: CanvasKeyboardStatus;
   readonly #geometry: KeyboardHandleInteraction;
+  readonly #releaseSettled: () => void;
   readonly #store: ElementStore;
   #editing = false;
   #handle = -1;
@@ -31,12 +33,15 @@ export class CanvasKeyboardSelection {
     this.#store = options.controller.model.store;
     this.#surface = options.controller.renderer.inputSurface;
     this.#status = new CanvasKeyboardStatus(this.#surface);
-    this.#geometry = new KeyboardHandleInteraction({
-      ...options,
-      settled: (committed) => {
-        if (!this.#disposed)
-          this.#announce(committed ? "Updated." : "The edit could not be applied.");
-      },
+    this.#geometry =
+      options.geometryInteraction ??
+      new KeyboardHandleInteraction({
+        ...options,
+        settled: () => undefined,
+      });
+    this.#releaseSettled = this.#geometry.subscribeSettled((committed) => {
+      if (!this.#disposed && this.#editing)
+        this.#announce(committed ? "Updated." : "The edit could not be applied.");
     });
     this.#surface.addEventListener("pointerdown", this.#pointer, true);
     this.#surface.addEventListener("blur", this.#blur);
@@ -108,6 +113,7 @@ export class CanvasKeyboardSelection {
     if (this.#disposed) return;
     this.#disposed = true;
     this.cancel();
+    this.#releaseSettled();
     this.#surface.removeEventListener("pointerdown", this.#pointer, true);
     this.#surface.removeEventListener("blur", this.#blur);
     this.#surface.ownerDocument.removeEventListener("keydown", this.#pendingExit, true);

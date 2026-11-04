@@ -72,6 +72,44 @@ afterEach(() => {
 });
 
 describe("toolbar semantic accessibility gate", () => {
+  it("announces successful clipboard actions repeatedly without replacing the status owner or focus", () => {
+    const surface = document.body.createDiv({ cls: "inkbook-root" });
+    surface.dataset.inkbookMotion = "reduced";
+    const root = createRoot(surface);
+    const props = createEditorChromeProps(document);
+    const render = (action: "copy" | "cut" | "paste", sequence: number) =>
+      act(() => {
+        root.render(
+          <InkbookEditorChrome
+            {...props}
+            toolbarState={{ ...props.toolbarState, actionConfirmation: { action, sequence } }}
+          />,
+        );
+      });
+    try {
+      act(() => root.render(<InkbookEditorChrome {...props} />));
+      const status = surface.querySelector('[role="status"]')!;
+      expect(status.textContent).toBe("");
+      const button = surface.querySelector<HTMLButtonElement>('[data-inkbook-action="draw"]')!;
+      button.focus();
+      render("copy", 1);
+      const firstAnnouncement = status.firstElementChild;
+      expect(status.textContent).toBe("Selection copied.");
+      render("copy", 2);
+      expect(status.firstElementChild).not.toBe(firstAnnouncement);
+      expect(status.textContent).toBe("Selection copied.");
+      render("cut", 3);
+      expect(status.textContent).toBe("Selection cut.");
+      render("paste", 4);
+      expect(status.textContent).toBe("Elements pasted.");
+      expect(surface.querySelector('[role="status"]')).toBe(status);
+      expect(document.activeElement).toBe(button);
+      expect(status.closest('[aria-hidden="true"], [inert]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   it("scans tool and selection actions and rejects missing names or invalid state", async () => {
     const surface = document.body.createDiv({ cls: "inkbook-root" });
     surface.dataset.inkbookMotion = "reduced";

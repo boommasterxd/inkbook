@@ -3,6 +3,7 @@ import { FILE_SCHEMA_LIMITS, type InkElementV1 } from "../../../domain/schema/pu
 import { TRANSITION_DURATIONS } from "../../motion/transitions";
 import type { SceneContentRenderer } from "../content-renderer";
 import { interpolateElement, standardMotionProgress } from "./motion-interpolation";
+import { createCrossfadeMotion, crossfadeRetarget } from "./crossfade-visual";
 import {
   createMotionVisual,
   removeMotionVisual,
@@ -12,6 +13,7 @@ import {
 } from "./motion-visual";
 import type {
   GeometryMotionEntry,
+  CrossfadeMotion,
   MotionEntry,
   OverlayMotion,
   PendingSuppression,
@@ -270,27 +272,19 @@ export class SceneMotionController {
     });
     this.#instrumentation.motionGeometryTransitions += visibleTo.length;
   }
-  private startCrossfade(elements: readonly InkElementV1[], ids: readonly string[]): void {
-    const visible: InkElementV1[] = [];
-    const visibleIds: string[] = [];
-    for (let index = 0; index < elements.length; index += 1) {
-      const element = elements[index];
-      const id = ids[index];
-      if (element === undefined || id === undefined || !this.#content.hasMounted(id)) continue;
-      visible.push(element);
-      visibleIds.push(id);
+  private startCrossfade(elements: readonly InkElementV1[], previous?: CrossfadeMotion): void {
+    const next = createCrossfadeMotion(
+      { id: ++this.#nextId, elements, content: this.#content },
+      (entries, retaining) => this.createVisual(entries, retaining),
+      previous,
+    );
+    if (next === undefined) {
+      if (previous !== undefined) this.finishEntry(previous, false);
+      return;
     }
-    const visual = this.createVisual(visible);
-    if (visual.nodes.length === 0) return;
-    this.#content.setElementMotion(visibleIds, 0);
-    this.add({
-      id: ++this.#nextId,
-      ids: visibleIds,
-      kind: "crossfade",
-      startTime: undefined,
-      visual,
-    });
-    this.#instrumentation.motionCrossfades += visual.nodes.length;
+    this.add(next, previous);
+    this.#instrumentation.motionCrossfades +=
+      next.visual.nodes.length - (previous?.visual.nodes.length ?? 0);
   }
   private writeEntry(entry: MotionEntry, frameTime: number): void {
     entry.startTime ??= frameTime;
@@ -302,6 +296,7 @@ export class SceneMotionController {
       writeMotionVisual(entry.visual, mix(1, 0, progress), mix(1, 0.96, progress));
     } else if (entry.kind === "geometry") this.writeGeometry(entry, progress);
     else {
+      entry.progress = progress;
       this.#content.setElementMotion(entry.ids, progress);
       writeMotionVisual(entry.visual, mix(1, 0, progress), 1);
     }
@@ -349,8 +344,8 @@ export class SceneMotionController {
     return rendered;
   }
 
-  private createVisual(elements: readonly InkElementV1[]): MotionVisual {
-    if (this.#cacheEntries >= MAX_MOTION_PATHS) this.evictOldestVisual();
+  private createVisual(elements: readonly InkElementV1[], retaining = false): MotionVisual {
+    if (!retaining && this.#cacheEntries >= MAX_MOTION_PATHS) this.evictOldestVisual();
     return createMotionVisual(
       this.#dom.ownerDocument,
       this.#dom.motionGroup,
@@ -441,21 +436,27 @@ export class SceneMotionController {
     );
   }
 
-  private add(entry: MotionEntry): void {
+  private add(entry: MotionEntry, replacing?: CrossfadeMotion): void {
+    if (replacing !== undefined) this.#entries.delete(replacing.id);
     this.#entries.set(entry.id, entry);
     if (entry.kind === "exit" || entry.kind === "crossfade") {
-      this.#cacheEntries += entry.visual.nodes.length;
-      this.#cacheBytes += entry.visual.bytes;
+      this.#cacheEntries += entry.visual.nodes.length - (replacing?.visual.nodes.length ?? 0);
+      this.#cacheBytes += entry.visual.bytes - (replacing?.visual.bytes ?? 0);
       this.refreshCacheSize();
     }
     for (const id of entry.ids) this.#entryByElementId.set(id, entry.id);
   }
-
   private applyChange(change: SceneStoreDelta["affected"][number], suppressBatch: boolean): void {
     const before = change.before;
     const after = change.after;
+    const current = this.#entries.get(this.#entryByElementId.get(change.id) ?? -1);
+    const retarget = crossfadeRetarget(change, current, !this.motionDisabled(suppressBatch));
+    if (retarget !== undefined) {
+      this.startCrossfade([retarget.element], retarget.entry);
+      return;
+    }
     const rendered = this.cancelId(change.id);
-    if (before !== null && before !== undefined && after === null) {
+    if (before != null && after === null) {
       this.#pendingEntrances.delete(change.id);
       this.#instrumentation.motionRemovalInvalidations += 1;
     }
@@ -464,18 +465,17 @@ export class SceneMotionController {
       this.#pendingEntrances.add(after.id);
       return;
     }
-    if (before !== null && before !== undefined && after === null) {
+    if (before != null && after === null) {
       this.startExit([before]);
       return;
     }
-    if (before === null || before === undefined || after === null || after === undefined) return;
+    if (before == null || after == null) return;
     if (change.domains.includes("geometry")) {
       this.startGeometry([rendered ?? before], [after]);
     } else if (change.domains.includes("paint") || change.domains.includes("order")) {
-      this.startCrossfade([before], [after.id]);
+      this.startCrossfade([before]);
     }
   }
-
   private motionDisabled(suppressBatch: boolean): boolean {
     return this.#reducedMotion || this.#resourceConstrained || suppressBatch;
   }

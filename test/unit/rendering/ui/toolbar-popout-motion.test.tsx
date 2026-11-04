@@ -3,22 +3,13 @@
 import { Window as HappyWindow } from "happy-dom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { InkbookEditorChrome } from "../../../../src/rendering/ui/editor-chrome";
 import { createEditorChromeProps } from "../../../fixtures/editor-chrome";
+import { registerReactTestLifecycle } from "../../../fixtures/rendering/react-test-lifecycle";
 
-const reactEnvironment = window as Window & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-const cleanups: Array<() => void> = [];
-
-beforeEach(() => {
-  reactEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
-});
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
-  delete reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
-  vi.restoreAllMocks();
-});
+const registerCleanup = registerReactTestLifecycle();
 
 function pointer(target: EventTarget, type: string, pointerType: string): void {
   act(() => {
@@ -46,7 +37,7 @@ describe("Motion toolbar in a pop-out window", () => {
     presentation.append(container);
     popup.document.body.append(presentation);
     const root = createRoot(container);
-    cleanups.push(() => {
+    registerCleanup(() => {
       act(() => root.unmount());
       presentation.remove();
     });

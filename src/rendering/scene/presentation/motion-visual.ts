@@ -8,8 +8,15 @@ import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
 
 export interface MotionVisual {
   readonly bytes: number;
-  readonly targets: readonly { node: SVGElement; opacity: number; position?: string }[];
+  readonly targets: readonly MotionVisualTarget[];
   readonly nodes: readonly SVGPathElement[];
+}
+
+interface MotionVisualTarget {
+  readonly node: SVGElement;
+  opacity: number;
+  renderedOpacity: number;
+  readonly position?: string;
 }
 
 export function createMotionVisual(
@@ -21,7 +28,7 @@ export function createMotionVisual(
   readCanonicalPath?: (element: InkElementV1) => readonly SvgPathPart[] | undefined,
 ): MotionVisual {
   const nodes: SVGPathElement[] = [];
-  const targets: { node: SVGElement; opacity: number; position?: string }[] = [];
+  const targets: MotionVisualTarget[] = [];
   let bytes = 0;
   for (const element of elements) {
     if (motionBudgetExhausted(nodes.length, bytes, remainingPaths, remainingBytes)) {
@@ -31,10 +38,7 @@ export function createMotionVisual(
     const parts = canonical ?? buildElementPathParts(element);
     const grouped = element.kind === "stroke" && element.style.pressureEnabled;
     const groupBytes = parts.reduce((total, part) => total + part.d.length * 2, 0);
-    if (
-      grouped &&
-      (nodes.length + parts.length > remainingPaths || bytes + groupBytes > remainingBytes)
-    ) {
+    if (nodes.length + parts.length > remainingPaths || bytes + groupBytes > remainingBytes) {
       return { bytes, nodes, targets };
     }
     const group = grouped ? ownerDocument.createElementNS(SVG_NAMESPACE, "g") : null;
@@ -42,13 +46,10 @@ export function createMotionVisual(
       const opacity = normalizeStrokePaint(element.style).opacity;
       group.setAttribute("opacity", String(opacity));
       parent.append(group);
-      targets.push({ node: group, opacity });
+      targets.push({ node: group, opacity, renderedOpacity: opacity });
     }
     for (const part of parts) {
       const pathBytes = part.d.length * 2;
-      if (nodes.length >= remainingPaths || bytes + pathBytes > remainingBytes) {
-        return { bytes, nodes, targets };
-      }
       const node = appendMotionPath(
         ownerDocument,
         group ?? parent,
@@ -60,6 +61,7 @@ export function createMotionVisual(
         targets.push({
           node,
           opacity: 1,
+          renderedOpacity: 1,
           position: canonical === undefined ? "" : strokeCssPosition(element),
         });
       nodes.push(node);
@@ -110,8 +112,10 @@ export function removeMotionVisual(visual: MotionVisual): void {
 }
 
 export function writeMotionVisual(visual: MotionVisual, opacity: number, scale: number): void {
-  for (const target of visual.targets)
-    writeMotionStyle(target.node, opacity * target.opacity, scale, target.position);
+  for (const target of visual.targets) {
+    target.renderedOpacity = Number(format(opacity * target.opacity));
+    writeMotionStyle(target.node, target.renderedOpacity, scale, target.position);
+  }
 }
 
 export function writeMotionStyle(

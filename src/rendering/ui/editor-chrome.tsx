@@ -34,6 +34,13 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
               styleIcon={props.styleIcon}
             />
           </div>
+          <span className="inkbook-menu-visually-hidden" role="status" aria-atomic="true">
+            {props.toolbarState.actionConfirmation == null ? null : (
+              <span key={props.toolbarState.actionConfirmation.sequence}>
+                {clipboardAnnouncement(props.toolbarState.actionConfirmation.action)}
+              </span>
+            )}
+          </span>
           <AnimatePresence>
             {props.onboarding === undefined ? null : (
               <PortalInvitation
@@ -47,6 +54,11 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
       </MotionConfig>
     </toolbarMotionContext.Provider>
   );
+}
+
+function clipboardAnnouncement(action: "copy" | "cut" | "paste"): string {
+  if (action === "copy") return "Selection copied.";
+  return action === "cut" ? "Selection cut." : "Elements pasted.";
 }
 
 function PortalInvitation({

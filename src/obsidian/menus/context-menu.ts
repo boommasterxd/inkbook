@@ -40,6 +40,7 @@ export interface ContextMenuState {
 }
 
 export interface ContextMenuHandlers {
+  readonly editGeometry?: () => void;
   readonly copy: () => void;
   readonly cut: () => void;
   readonly delete: () => void;
@@ -110,6 +111,9 @@ function configureSelectionItems(
     configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
   }
   menu.addSeparator();
+  if (handlers.editGeometry !== undefined) {
+    configureItem(menu, ownerDocument, "Edit geometry", "move", handlers.editGeometry);
+  }
   configureItem(menu, ownerDocument, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, {
     warning: true,
   });
@@ -223,14 +227,24 @@ export function openContextMenu(
     invocation.type === "event" ? factory.forEvent(invocation.event) : factory.create("context");
   let closed = false;
   let closing = false;
+  let editGeometryAfterClose = false;
   menu.onHide(() => {
     if (closed) return;
     closed = true;
     focusAfterClose(invocation);
     invocation.onClosed?.();
+    if (editGeometryAfterClose) handlers.editGeometry?.();
   });
   populateContextMenu(menu, invocation.ownerDocument, state, {
     ...handlers,
+    ...(handlers.editGeometry === undefined
+      ? {}
+      : {
+          editGeometry: () => {
+            editGeometryAfterClose = true;
+            menu.close("handoff");
+          },
+        }),
     eraseAll: () => {
       // Restore focus before the confirmation dialog captures its return target.
       menu.close("handoff");
