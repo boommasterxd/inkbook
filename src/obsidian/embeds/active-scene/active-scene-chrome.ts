@@ -1,3 +1,5 @@
+import { Platform } from "obsidian";
+
 import type { PendingEditorChrome } from "./editor-chrome-loader";
 import type { InkbookEditorChromeProps } from "../../../rendering/ui/editor-chrome";
 import { editorChromeLayoutKey } from "../../../rendering/ui/editor-chrome-snapshot";
@@ -19,6 +21,7 @@ export interface ActiveSceneChromeElements {
 export function createActiveSceneChromeElements(root: HTMLElement): ActiveSceneChromeElements {
   const editorChrome = root.createDiv({ cls: "inkbook-editor-chrome" });
   const chromeHost = editorChrome.createDiv({ cls: "inkbook-editor-chrome-host" });
+  chromeHost.dataset.phone = String(Platform.isPhone);
   const container = editorChrome.createDiv({ cls: "inkbook-background-container" });
   return { chromeHost, container, editorChrome };
 }
