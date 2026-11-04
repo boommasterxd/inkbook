@@ -33,6 +33,7 @@
   --inkbook-surface-shadow: 0 4px 14px rgb(0 0 0 / 14%), 0 1px 2px rgb(0 0 0 / 18%);
   --inkbook-toolbar-overlay-block-size: 68px;
   --inkbook-toolbar-scrollport-padding: 0px;
+  --inkbook-toolbar-viewport-inset: 0px;
   --inkbook-scene-foreground-visibility: visible;
 
   box-sizing: border-box;
@@ -305,13 +306,21 @@
 .inkbook-root .inkbook-editor-chrome-host {
   block-size: 0;
   inset-block-start: calc(
-    var(--inkbook-toolbar-overlay-block-size) - var(--inkbook-toolbar-scrollport-padding)
+    var(--inkbook-toolbar-overlay-block-size) - var(--inkbook-toolbar-scrollport-padding) +
+      var(--inkbook-toolbar-viewport-inset)
   );
   inline-size: 100%;
   overflow: visible;
   pointer-events: none;
   position: sticky;
   z-index: var(--layer-popover);
+}
+
+.inkbook-root .inkbook-editor-chrome-host[data-phone="true"] {
+  --inkbook-toolbar-viewport-inset: calc(
+    var(--view-header-height, 0px) +
+      max(var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px))
+  );
 }
 
 .inkbook-root .inkbook-canvas-input {

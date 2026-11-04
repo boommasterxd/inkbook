@@ -1,8 +1,30 @@
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
 
-import { updateActiveSceneChrome } from "../../../../../src/obsidian/embeds/active-scene/active-scene-chrome";
+import { Platform } from "obsidian";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  createActiveSceneChromeElements,
+  updateActiveSceneChrome,
+} from "../../../../../src/obsidian/embeds/active-scene/active-scene-chrome";
+import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
+
+beforeEach(() => installObsidianDomHelpers());
+afterEach(() => {
+  Platform.isPhone = false;
+  document.body.replaceChildren();
+});
 
 describe("active scene chrome updates", () => {
+  it.each([true, false])("selects phone sticky clearance only for isPhone=%s", (isPhone) => {
+    Platform.isPhone = isPhone;
+    const root = document.body.createDiv();
+
+    const elements = createActiveSceneChromeElements(root);
+
+    expect(elements.chromeHost.dataset.phone).toBe(String(isPhone));
+  });
+
   it("passes the semantic layout key after updating React chrome state", () => {
     const props = {
       layout: "wide",
