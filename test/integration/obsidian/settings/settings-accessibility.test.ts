@@ -8,7 +8,7 @@ import { confirmInkbookAction } from "../../../../src/obsidian/dialogs/action-di
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
 import { InkbookSettingsModalController } from "../../../../src/obsidian/settings/settings-modal";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
-import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
+import { assertAccessibleSemantics, labelledByElements } from "../../../fixtures/accessibility";
 import { dialogButton } from "../../../fixtures/obsidian/dialog";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
@@ -58,9 +58,9 @@ describe("settings and confirmation semantic accessibility gate", () => {
         );
         expect(choices.length).toBeGreaterThan(0);
         for (const choice of choices) {
-          expect(
-            document.getElementById(choice.getAttribute("aria-labelledby")!)?.textContent,
-          ).toBeTruthy();
+          const labels = labelledByElements(choice);
+          expect(labels.length).toBeGreaterThan(0);
+          for (const label of labels) expect(label.textContent).toBeTruthy();
         }
       }
       await assertAccessibleSemantics(

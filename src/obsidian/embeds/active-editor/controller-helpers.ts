@@ -50,6 +50,7 @@ function toolbarTool(tool: EditorTool): ToolId {
     tool === "ellipse" ||
     tool === "triangle" ||
     tool === "octagon" ||
+    tool === "star" ||
     tool === "parallelogram" ||
     tool === "diamond" ||
     tool === "coordinate-system" ||

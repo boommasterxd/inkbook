@@ -47,6 +47,19 @@ beforeEach(async () => {
 });
 
 describe("SettingsControlValues", () => {
+  it("persists hold settings in the vault and preserves values while disabled", async () => {
+    await values.set("holdToShape.holdDurationMs", "950");
+    await values.set("holdToShape.jitterTolerancePx", "7");
+    await values.set("holdToShape.enabled", false);
+    expect(vault.saved.holdToShape).toEqual({
+      enabled: false,
+      holdDurationMs: 950,
+      jitterTolerancePx: 7,
+    });
+    await expect(values.set("holdToShape.holdDurationMs", 199)).rejects.toThrow();
+    expect(values.get("holdToShape.holdDurationMs")).toBe(950);
+    expect(device.saved).toEqual(createBuiltInDeviceSettings());
+  });
   it("reads and writes nested vault values without flattened state", async () => {
     await values.set("toolDefaults.pen.width", "14");
     await values.set("toolDefaults.pen.color", "#6B7280FF");

@@ -24,6 +24,7 @@ export const SHAPE_ICON_IDS: Readonly<Record<ShapeId, string>> = {
   rectangle: "inkbook-shape-rectangle",
   ellipse: "inkbook-shape-ellipse",
   triangle: "inkbook-shape-triangle",
+  star: "inkbook-shape-star",
   octagon: "inkbook-shape-octagon",
   parallelogram: "inkbook-shape-parallelogram",
   diamond: "inkbook-shape-diamond",
@@ -39,6 +40,10 @@ export interface ActiveShapeIconState {
 
 export function arrowShapeIconId(start: ArrowNodeV1, end: ArrowNodeV1): string {
   return `inkbook-shape-arrow-${start}-${end}`;
+}
+
+export function arrowNodeIconId(node: ArrowNodeV1, side: "start" | "end"): string {
+  return `inkbook-arrow-node-${side}-${node}`;
 }
 
 export function coordinateSystemIconId(dimension: "2d" | "3d"): string {

@@ -12,9 +12,11 @@ const DEFAULT_SNAPPING: Readonly<SnappingSettingsV1> = Object.freeze({
 export function activeSnapFeatures(
   settings?: SnappingSettingsV1,
   inverted = false,
+  toolEnabled = true,
 ): SelectionSnapFeatures {
   const current = settings ?? DEFAULT_SNAPPING;
-  const enabled = inverted ? !current.enabled : current.enabled;
+  const configured = current.enabled && toolEnabled;
+  const enabled = inverted ? !configured : configured;
   return {
     angles: enabled && current.angles,
     bends: enabled && current.bends,

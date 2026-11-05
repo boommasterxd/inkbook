@@ -103,7 +103,9 @@ function loadPen(
   fallback: PenDefaultsV1,
   diagnostics: SettingsDiagnostic[],
 ): PenDefaultsV1 {
-  if (!hasExactKeys(input, ["color", "width", "opacity", "pressureEnabled"])) {
+  if (
+    !hasExactKeys(input, ["color", "width", "opacity", "pressureEnabled", "holdToShapeEnabled"])
+  ) {
     invalid(diagnostics, "toolDefaults.pen");
     return structuredClone(fallback);
   }
@@ -135,6 +137,13 @@ function loadPen(
       (value): value is boolean => typeof value === "boolean",
       diagnostics,
       "toolDefaults.pen.pressureEnabled",
+    ),
+    holdToShapeEnabled: validOrDefault(
+      input.holdToShapeEnabled,
+      fallback.holdToShapeEnabled,
+      (value): value is boolean => typeof value === "boolean",
+      diagnostics,
+      "toolDefaults.pen.holdToShapeEnabled",
     ),
   };
 }
@@ -262,12 +271,17 @@ function loadShapes(
   diagnostics: SettingsDiagnostic[],
 ): ToolDefaultsV1["shapes"] {
   const tools = [...CLOSED_SHAPE_TOOLS, ...OUTLINE_ONLY_TOOLS];
-  if (!hasExactKeys(input, tools)) {
+  const legacyTools = tools.filter((tool) => tool !== "star");
+  if (!hasExactKeys(input, tools) && !hasExactKeys(input, legacyTools)) {
     invalid(diagnostics, "toolDefaults.shapes");
     return structuredClone(fallback);
   }
   const result = {} as ToolDefaultsV1["shapes"];
   for (const tool of CLOSED_SHAPE_TOOLS) {
+    if (tool === "star" && !(tool in input)) {
+      result[tool] = structuredClone(fallback[tool]);
+      continue;
+    }
     result[tool] = loadShape(
       input[tool],
       fallback[tool],
@@ -298,6 +312,7 @@ export function loadToolDefaults(
     "straightHighlighter",
     "eraser",
     "shapes",
+    "line",
     "arrow",
     "coordinateSystem",
     "table",
@@ -339,11 +354,20 @@ export function loadToolDefaults(
       "toolDefaults.eraser",
     ),
     shapes: loadShapes(input.shapes, fallback.shapes, diagnostics),
+    line: validOrDefault(
+      input.line,
+      fallback.line,
+      (value): value is ToolDefaultsV1["line"] =>
+        hasExactKeys(value, ["snappingEnabled"]) && typeof value.snappingEnabled === "boolean",
+      diagnostics,
+      "toolDefaults.line",
+    ),
     arrow: validOrDefault(
       input.arrow,
       fallback.arrow,
       (value): value is ToolDefaultsV1["arrow"] =>
-        hasExactKeys(value, ["startNode", "endNode"]) &&
+        hasExactKeys(value, ["startNode", "endNode", "snappingEnabled"]) &&
+        typeof value.snappingEnabled === "boolean" &&
         isOneOf(value.startNode, ARROW_NODES) &&
         isOneOf(value.endNode, ARROW_NODES),
       diagnostics,

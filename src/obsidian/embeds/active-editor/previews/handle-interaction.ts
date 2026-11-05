@@ -32,6 +32,7 @@ import { SelectionScalePreviewPlan } from "./selection-scale-preview";
 import { SelectionHandlePresentation, type HandleInteractionRenderer } from "./handle-presentation";
 import { ConnectionPreviewPreparation } from "./connection-preview-preparation";
 import type { SelectionPreviewFrameScheduler } from "./selection-preview-contracts";
+import { subscribeSelectionHandleRefresh } from "./selection-handle-refresh";
 export interface ActiveEditorHandleInteractionOptions {
   readonly frameScheduler: HandleFrameScheduler;
   readonly workScheduler?: WorkScheduler;
@@ -114,10 +115,15 @@ export class ActiveEditorHandleInteraction {
     this.#snapping = options.snapping ?? (() => undefined);
     this.#zoom = options.zoom;
     this.#workScheduler = options.workScheduler;
-    this.#unsubscribeStore = options.model.store.subscribe(() => {
-      this.#geometrySelection = undefined;
-      this.#renderedRevision = -1;
-    });
+    this.#unsubscribeStore = subscribeSelectionHandleRefresh(
+      options,
+      () => {
+        this.#geometrySelection = undefined;
+        this.#renderedRevision = -1;
+        return this.#active === undefined;
+      },
+      () => this.renderCameraSelection(),
+    );
   }
   public get activePointerId(): number | undefined {
     return this.#active?.pointerId;

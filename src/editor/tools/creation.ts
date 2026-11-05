@@ -212,6 +212,7 @@ function isClosedShape(tool: DragCreationTool): tool is BoxShapeElementV1["kind"
     tool === "ellipse" ||
     tool === "triangle" ||
     tool === "octagon" ||
+    tool === "star" ||
     tool === "parallelogram" ||
     tool === "diamond"
   );

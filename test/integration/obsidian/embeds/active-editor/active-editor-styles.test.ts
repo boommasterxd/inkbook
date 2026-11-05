@@ -37,7 +37,13 @@ function controlIds(tool: Parameters<typeof createActiveEditorStyleControls>[0][
 
 describe("active editor Style controls", () => {
   it("exposes every property supported by each active tool family", () => {
-    expect(controlIds("draw")).toEqual(["color", "stroke-width", "opacity", "pressure-enabled"]);
+    expect(controlIds("draw")).toEqual([
+      "color",
+      "stroke-width",
+      "opacity",
+      "pressure-enabled",
+      "hold-to-shape-enabled",
+    ]);
     expect(controlIds("highlighter")).toEqual(["color", "stroke-width", "opacity"]);
     expect(controlIds("rectangle")).toEqual([
       "outline-color",
@@ -54,7 +60,9 @@ describe("active editor Style controls", () => {
       "outline-opacity",
       "arrow-start-node",
       "arrow-end-node",
+      "snapping-enabled",
     ]);
+    expect(controlIds("line")).toContain("snapping-enabled");
     expect(controlIds("coordinate-system")).toContain("coordinate-dimension");
     expect(controlIds("table")).toContain("table-columns");
     expect(controlIds("eraser")).toEqual(["eraser-radius"]);
@@ -145,6 +153,45 @@ describe("active editor Style icon and selection controls", () => {
 });
 
 describe("active editor Style changes", () => {
+  it("parses tool behavior toggles without applying them to selected elements", () => {
+    const original = createBuiltInSettings().toolDefaults;
+    const pen = updateSessionToolDefaults(original, "draw", "hold-to-shape-enabled", false);
+    const line = updateSessionToolDefaults(pen, "line", "snapping-enabled", false);
+    const arrow = updateSessionToolDefaults(line, "arrow", "snapping-enabled", false);
+    expect(arrow.pen.holdToShapeEnabled).toBe(false);
+    expect(arrow.line.snappingEnabled).toBe(false);
+    expect(arrow.arrow.snappingEnabled).toBe(false);
+    expect(original.pen.holdToShapeEnabled).toBe(true);
+    expect(original.line.snappingEnabled).toBe(true);
+    expect(original.arrow.snappingEnabled).toBe(true);
+    expect(updateSessionToolDefaults(arrow, "arrow", "snapping-enabled", false)).toBe(arrow);
+    expect(() =>
+      updateSessionToolDefaults(arrow, "draw", "hold-to-shape-enabled", "false"),
+    ).toThrow(TypeError);
+    expect(() => updateSessionToolDefaults(arrow, "line", "snapping-enabled", 0)).toThrow(
+      TypeError,
+    );
+    const selected = createDragElement({
+      tool: "line",
+      defaults: original,
+      identity: identity("123e4567-e89b-42d3-a456-426614174008"),
+      start: { x: 100, y: 100 },
+      end: { x: 200, y: 200 },
+    });
+    for (const property of ["hold-to-shape-enabled", "snapping-enabled"]) {
+      expect(() => createSelectionStyleReplacement([selected], property, false)).toThrow(
+        RangeError,
+      );
+    }
+    expect(
+      createActiveEditorStyleControls({
+        defaults: arrow,
+        selection: [selected],
+        tool: "draw",
+      }).some(({ id }) => id === "hold-to-shape-enabled" || id === "snapping-enabled"),
+    ).toBe(false);
+  });
+
   it("creates an atomic replacement pair without changing selected elements", () => {
     const first = rectangle("123e4567-e89b-42d3-a456-426614174003");
     const second = rectangle("123e4567-e89b-42d3-a456-426614174004");

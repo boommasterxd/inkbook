@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { ARROW_NODE_STYLE_OPTIONS } from "../../../../src/obsidian/menus/tool-style-controls";
+import { arrowNodeIconId } from "../../../../src/rendering/ui/icon-ids";
 import {
   control,
   createTab,
@@ -120,6 +122,53 @@ describe("InkbookSettingTab tool disclosure motion preferences", () => {
 });
 
 describe("InkbookSettingTab recognizable tool controls", () => {
+  it.each([
+    [
+      "Drawing tools",
+      "Pen",
+      "hold-to-shape-enabled",
+      "Hold to shape",
+      "toolDefaults.pen.holdToShapeEnabled",
+    ],
+    [
+      "Shapes and structures",
+      "Line",
+      "snapping-enabled",
+      "Snapping",
+      "toolDefaults.line.snappingEnabled",
+    ],
+    [
+      "Shapes and structures",
+      "Arrow",
+      "snapping-enabled",
+      "Snapping",
+      "toolDefaults.arrow.snappingEnabled",
+    ],
+  ])(
+    "persists %s/%s behavior defaults through the shared toggle",
+    async (group, tool, id, label, key) => {
+      const vault = new VaultAdapter();
+      const device = new DeviceAdapter();
+      const store = new InkbookSettingsStore(vault, device);
+      const tab = createTab(store);
+      const rendered = renderExpandedTool(tab, group, tool);
+      document.body.append(rendered.container);
+      onTestFinished(() => {
+        rendered.cleanup();
+        rendered.container.remove();
+      });
+      const row = control(rendered.container, id);
+      const input = requiredElement<HTMLInputElement>(row, 'input[type="checkbox"]');
+      expect(input.getAttribute("aria-label")).toBe(label);
+      expect(input.checked).toBe(true);
+      expect(row.querySelector(".inkbook-menu-switch-track")).not.toBeNull();
+      input.click();
+      await vi.waitFor(() => expect(tab.getControlValue(key)).toBe(false));
+      expect(vault.saves).toBe(1);
+      expect(device.saves).toBe(0);
+    },
+  );
+
   it("renders and persists accessible Select choices", async () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     const rendered = renderExpandedTool(createTab(store), "Drawing tools", "Select");
@@ -202,6 +251,19 @@ describe("InkbookSettingTab recognizable shape controls", () => {
 
     expect(control(arrow.container, "arrow-start-node").querySelectorAll("button")).toHaveLength(5);
     expect(control(arrow.container, "arrow-end-node").querySelectorAll("button")).toHaveLength(5);
+    for (const side of ["start", "end"] as const) {
+      const nodeControl = control(arrow.container, `arrow-${side}-node`);
+      for (const { value, label } of ARROW_NODE_STYLE_OPTIONS) {
+        const button = requiredElement<HTMLButtonElement>(
+          nodeControl,
+          `button[data-value="${value}"]`,
+        );
+        expect(button.getAttribute("aria-label")).toBe(label);
+        expect(button.querySelector("[data-icon]")?.getAttribute("data-icon")).toBe(
+          arrowNodeIconId(value as Parameters<typeof arrowNodeIconId>[0], side),
+        );
+      }
+    }
     expect(
       control(coordinate.container, "coordinate-dimension").querySelectorAll("button"),
     ).toHaveLength(2);

@@ -284,6 +284,8 @@ function styleChange(controlId: string, value: boolean | number | string): Style
     case "eraser-radius":
       return { property: controlId, value: requireNumber(value, controlId) };
     case "pressure-enabled":
+    case "hold-to-shape-enabled":
+    case "snapping-enabled":
       return { property: controlId, value: requireBoolean(value, controlId) };
     case "outline-style":
       return { property: controlId, value: parseOutlineStyle(value) };

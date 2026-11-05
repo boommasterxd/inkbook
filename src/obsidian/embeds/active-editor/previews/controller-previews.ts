@@ -1,5 +1,9 @@
 import type { InkbookFeedbackCode } from "../../../feedback/feedback-catalog";
-import type { SnappingSettingsV1, ToolDefaultsV1 } from "../../../../domain/settings/types";
+import type {
+  HoldToShapeSettingsV1,
+  SnappingSettingsV1,
+  ToolDefaultsV1,
+} from "../../../../domain/settings/types";
 import {
   screenPixelsToPageUnits,
   type GesturePreviewStart,
@@ -22,6 +26,8 @@ import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler
 
 export interface ActiveEditorPreviewOptions {
   readonly defaults: ToolDefaultsV1;
+  readonly holdToShape?: HoldToShapeSettingsV1;
+  readonly screenStart?: PointV1;
   readonly isCurrent?: () => boolean;
   readonly history: ActiveEditorHistory;
   readonly model: EditableDocumentModel;
@@ -61,8 +67,8 @@ export function createActiveEditorPreview(
       start,
     });
   }
-  const snapFeatures = () =>
-    activeSnapFeatures(options.snapping, options.snappingInverted?.() ?? false);
+  const snapFeatures = (toolEnabled = true) =>
+    activeSnapFeatures(options.snapping, options.snappingInverted?.() ?? false, toolEnabled);
   const selectionOptions = {
     ...(options.selectionSignal === undefined ? {} : { selectionSignal: options.selectionSignal }),
     connectionSnapping: () => snapFeatures().connections,
@@ -96,7 +102,16 @@ export function createActiveEditorPreview(
     return new MovePreview(selectionOptions);
   }
   const zoom = previewZoom(options);
+  const toolSnapping =
+    start.tool === "line"
+      ? options.defaults.line.snappingEnabled
+      : start.tool === "arrow"
+        ? options.defaults.arrow.snappingEnabled
+        : true;
   return new CreationPreview({
+    ...(options.holdToShape === undefined ? {} : { holdToShape: options.holdToShape }),
+    ownerWindow: options.ownerWindow,
+    ...(options.screenStart === undefined ? {} : { screenStart: options.screenStart }),
     now: () => options.ownerWindow.performance.now(),
     onStrokeCapacityReached: () => options.onFeedback?.("stroke-point-limit-reached"),
     defaults: options.defaults,
@@ -109,8 +124,8 @@ export function createActiveEditorPreview(
     identity: { createdAt: Date.now(), id: options.ownerWindow.crypto.randomUUID() },
     renderer: options.renderer,
     snap: {
-      angles: () => snapFeatures().angles,
-      connections: () => snapFeatures().connections,
+      angles: () => snapFeatures(toolSnapping).angles,
+      connections: () => snapFeatures(toolSnapping).connections,
       pageToScreen: options.pageToScreen,
       spatial: options.sceneStore,
       targets: {

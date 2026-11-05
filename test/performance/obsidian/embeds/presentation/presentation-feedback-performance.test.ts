@@ -236,6 +236,57 @@ function createPresentation() {
   return { body, root };
 }
 
+it("coalesces canvas positioning without traversing a 10,000-node retained scene", () => {
+  const { root, ownerWindow, frames } = createFramedPresentation();
+  const chrome = root.createDiv({ cls: "inkbook-editor-chrome" });
+  chrome.createDiv({ cls: "inkbook-editor-chrome-host" });
+  const canvas = chrome.createDiv({ cls: "inkbook-background-container" });
+  const ink = canvas.createDiv();
+  for (let index = 0; index < 10_000; index++)
+    ink.append(new FakePresentationElement(root.ownerDocument));
+  const children = ink.children;
+  let descendantReads = 0;
+  Object.defineProperty(ink, "children", {
+    get: () => {
+      descendantReads++;
+      return children;
+    },
+  });
+  const bounds = vi.spyOn(canvas, "getBoundingClientRect");
+  const rootBounds = vi.spyOn(root, "getBoundingClientRect");
+  const feedback = new PresentationOperationFeedback(
+    root as unknown as HTMLElement,
+    undefined,
+    workSchedulerFromFrames(ownerWindow),
+  );
+  try {
+    feedback.begin("loading", 0);
+    expect(canvas.children[1]?.classNames.has("inkbook-operation-backdrop")).toBe(true);
+    expect(bounds).toHaveBeenCalledOnce();
+    expect(rootBounds).toHaveBeenCalledOnce();
+    bounds.mockClear();
+    rootBounds.mockClear();
+    for (let event = 0; event < 1000; event++)
+      root.ownerDocument.dispatchEvent(new Event("scroll"));
+    expect(frames.size).toBe(1);
+    expect(bounds).not.toHaveBeenCalled();
+    for (const [handle, callback] of frames) {
+      frames.delete(handle);
+      callback(16);
+    }
+    expect(bounds).toHaveBeenCalledOnce();
+    expect(rootBounds).toHaveBeenCalledOnce();
+    expect(descendantReads).toBe(0);
+    root.ownerDocument.dispatchEvent(new Event("scroll"));
+    feedback.dispose();
+    expect(frames.size).toBe(0);
+    expect(canvas.children).toEqual([ink]);
+  } finally {
+    feedback.dispose();
+    vi.restoreAllMocks();
+  }
+});
+
 function createFramedPresentation() {
   const presentation = createPresentation();
   const ownerWindow = presentation.root.ownerDocument.defaultView;

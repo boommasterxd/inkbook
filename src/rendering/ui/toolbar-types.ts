@@ -7,6 +7,7 @@ export type ShapeId =
   | "rectangle"
   | "ellipse"
   | "triangle"
+  | "star"
   | "octagon"
   | "parallelogram"
   | "diamond"

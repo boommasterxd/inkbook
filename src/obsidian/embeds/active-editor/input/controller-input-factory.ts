@@ -6,7 +6,7 @@ import type { ActiveEditorControllerOptions } from "../controller-types";
 import type { ActiveEditorHandleInteraction } from "../previews/handle-interaction";
 import type { PreparedElementHistory } from "../prepared-element-history";
 import { CanvasKeyboardSelection } from "./canvas-keyboard-selection";
-import { ActiveEditorGeometrySession } from "../geometry-session";
+import { KeyboardHandleInteraction } from "../previews/keyboard-handle-interaction";
 
 import type { ActiveEditorActions } from "../controller-actions";
 import type { ActiveEditorAvailability } from "../controller-availability";
@@ -137,10 +137,12 @@ function createCanvasSelection(options: ActiveEditorInputFactoryOptions): Canvas
     enabled: () => options.availability.acceptsInput && !options.hasStableGeometryGesture(),
     zoom: () => options.navigation.zoom,
   };
-  const geometry = new ActiveEditorGeometrySession(geometryOptions);
-  options.menus.configureGeometry(geometry);
+  const geometry = new KeyboardHandleInteraction({
+    ...geometryOptions,
+    settled: () => undefined,
+  });
   return new CanvasKeyboardSelection({
     ...geometryOptions,
-    geometryInteraction: geometry.interaction,
+    geometryInteraction: geometry,
   });
 }

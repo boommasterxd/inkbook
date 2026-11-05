@@ -164,6 +164,7 @@ function isBox(element: InkElementV1): element is BoxShapeElementV1 {
     element.kind === "ellipse" ||
     element.kind === "triangle" ||
     element.kind === "octagon" ||
+    element.kind === "star" ||
     element.kind === "parallelogram" ||
     element.kind === "diamond"
   );

@@ -17,7 +17,9 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { confirmInkbookAction } from "../dialogs/action-dialog";
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
+import { SettingsViewState } from "./settings-view-state";
 import { nativeSettingDefinitions } from "./setting-control-renderer";
+import { refreshSettingsView } from "./settings-view-refresh";
 import {
   dropdown,
   resetAction,
@@ -30,6 +32,7 @@ import { pageDefaultsGroup } from "./definitions/page-defaults";
 import { performanceGroup } from "./definitions/performance-definitions";
 import { createObsidianHotkeyAccess } from "./shortcuts/obsidian-hotkey-conflicts";
 import { snappingGroup } from "./definitions/snapping-definitions";
+import { holdToShapeGroup } from "./definitions/hold-to-shape-definitions";
 import { shortcutGroup } from "./shortcuts/shortcut-definitions";
 import { InkbookSettingsStore } from "./storage";
 import { drawingToolsGroup, shapesAndStructuresGroup } from "./definitions/tool-definitions";
@@ -54,6 +57,7 @@ function cloneDefaults<K extends keyof InkbookSettingsV4["toolDefaults"]>(
 
 export class InkbookSettingTab extends PluginSettingTab {
   private readonly controls: SettingsControlValues;
+  private readonly nativeViewState = new SettingsViewState();
   private readonly updateListeners = new Set<() => void>();
   readonly settingsFeedback = {
     readMotion: () => this.store.getDeviceSettings().motion,
@@ -77,7 +81,7 @@ export class InkbookSettingTab extends PluginSettingTab {
   }
 
   public override update(): void {
-    super.update();
+    refreshSettingsView(this.containerEl, () => super.update());
     for (const listener of [...this.updateListeners]) listener();
   }
 
@@ -90,6 +94,7 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   public override async setControlValue(key: string, value: unknown): Promise<void> {
     await this.controls.set(key as SettingsControlKey, value);
+    if (key === "holdToShape.enabled") this.update();
     this.refreshDomState();
   }
 
@@ -97,7 +102,9 @@ export class InkbookSettingTab extends PluginSettingTab {
     return nativeSettingDefinitions(this.getControlDefinitions(), this, this.scheduling?.lifetime);
   }
 
-  public getControlDefinitions(): SettingDefinitionItem<SettingsControlKey>[] {
+  public getControlDefinitions(
+    viewState = this.nativeViewState,
+  ): SettingDefinitionItem<SettingsControlKey>[] {
     const pageValues = {
       get: (key: SettingsControlKey) => this.controls.get(key),
       readMotion: () => this.store.getDeviceSettings().motion,
@@ -106,6 +113,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
     };
     const toolValues = {
+      viewState,
       getDefaults: () => this.store.getVaultSettings().toolDefaults,
       getMotion: () => this.store.getDeviceSettings().motion,
       observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
@@ -155,11 +163,16 @@ export class InkbookSettingTab extends PluginSettingTab {
         set: (key, value) => this.controls.set(key, value),
       }),
       ...this.deviceGroups(),
+      holdToShapeGroup(
+        pageValues,
+        withSettingsActionFeedback(() => this.resetHoldToShape(), this.settingsFeedback),
+      ),
       shortcutGroup(
         this.store,
         this.app.keymap,
         createObsidianHotkeyAccess(this.app),
         (ownerWindow) => this.scheduler(ownerWindow),
+        viewState,
       ),
       ...(this.scheduling?.inkImport === undefined
         ? []
@@ -268,6 +281,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     return this.store
       .updateVaultSettings((settings) => {
         settings.toolDefaults.shapes = cloneDefaults("shapes");
+        settings.toolDefaults.line = cloneDefaults("line");
         settings.toolDefaults.arrow = cloneDefaults("arrow");
         settings.toolDefaults.coordinateSystem = cloneDefaults("coordinateSystem");
         settings.toolDefaults.table = cloneDefaults("table");
@@ -282,6 +296,15 @@ export class InkbookSettingTab extends PluginSettingTab {
       .updateVaultSettings((settings) => ({
         ...settings,
         snapping: structuredClone(defaults.snapping),
+      }))
+      .then(() => this.update());
+  }
+
+  private resetHoldToShape(): Promise<void> {
+    return this.store
+      .updateVaultSettings((settings) => ({
+        ...settings,
+        holdToShape: createBuiltInSettings().holdToShape,
       }))
       .then(() => this.update());
   }

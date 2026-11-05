@@ -86,6 +86,7 @@ export function createWorkspaceActiveScene(
     workScheduler: options.workScheduler,
     selectionHighlightsEnabled: options.vaultSettings.selectionHighlightsEnabled,
     snapping: options.vaultSettings.snapping,
+    holdToShape: options.vaultSettings.holdToShape,
     startupTool: options.vaultSettings.startupTool,
     ...presentationPreviewOptions(attachment),
   });

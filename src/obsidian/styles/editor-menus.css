@@ -40,6 +40,13 @@
   padding-inline: 0;
 }
 
+.inkbook-menu-control-value-label {
+  color: var(--text-normal);
+  font-weight: var(--font-normal);
+  margin-inline-start: auto;
+  text-align: end;
+}
+
 .inkbook-menu-control-description {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
@@ -299,6 +306,10 @@
   min-inline-size: 0;
 }
 
+.inkbook-menu-toggle-label {
+  text-box: trim-both cap alphabetic;
+}
+
 .inkbook-menu-switch input {
   block-size: 1px;
   clip-path: inset(50%);
@@ -372,23 +383,6 @@
   color: var(--text-muted);
   margin: 0;
   padding: 8px 10px;
-}
-
-.inkbook-menu-geometry {
-  inline-size: min(280px, calc(100vw - 32px));
-  max-inline-size: 100%;
-}
-
-.inkbook-menu-geometry .dropdown {
-  inline-size: 100%;
-  min-inline-size: 0;
-}
-
-.inkbook-adaptive-panel-layer[data-mobile="true"]
-  .inkbook-menu-geometry
-  :is(.dropdown, .inkbook-menu-choice) {
-  min-block-size: 44px;
-  min-inline-size: 44px;
 }
 
 .inkbook-menu-visually-hidden {

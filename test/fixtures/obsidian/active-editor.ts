@@ -5,7 +5,11 @@ import type {
   GestureControllerPorts,
   GesturePreviewStart,
 } from "../../../src/editor/gestures/public";
-import type { CreationPreviewRenderer } from "../../../src/obsidian/embeds/active-editor/previews/creation-preview";
+import type {
+  CreationPreviewRenderer,
+  CreationSnapPorts,
+} from "../../../src/obsidian/embeds/active-editor/previews/creation-preview";
+import type { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/document-model-port";
@@ -19,6 +23,20 @@ export function activeEditorStoreHistory(store: ElementStore): ActiveEditorHisto
     removeElements: (ids) => void store.remove(ids),
     replaceElements: (elements, capture) => void store.replaceMany(elements, capture),
   });
+}
+
+export function sceneCreationSnapPorts(
+  scene: ElementSceneStore,
+  connections: () => boolean,
+): CreationSnapPorts {
+  return {
+    angles: false,
+    connections,
+    pageToScreen: (point) => point,
+    spatial: scene,
+    targets: { get: (id, bounds) => scene.getSnapTarget(id, bounds) },
+    zoom: 1,
+  };
 }
 
 export function invalidatePendingHistory(

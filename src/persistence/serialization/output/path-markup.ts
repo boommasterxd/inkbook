@@ -198,7 +198,7 @@ function isPolygon(
   element: InkElementV1,
 ): element is Extract<
   InkElementV1,
-  { kind: "diamond" | "octagon" | "parallelogram" | "triangle" }
+  { kind: "diamond" | "octagon" | "parallelogram" | "triangle" | "star" }
 > {
-  return ["diamond", "octagon", "parallelogram", "triangle"].includes(element.kind);
+  return ["diamond", "octagon", "parallelogram", "triangle", "star"].includes(element.kind);
 }

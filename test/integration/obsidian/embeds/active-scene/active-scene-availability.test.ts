@@ -4,7 +4,10 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { SceneRendererOptions } from "../../../../../src/rendering/scene/types";
 import type { ActiveInkbookSceneOptions } from "../../../../../src/obsidian/embeds/active-scene/active-scene-types";
 import { ActiveInkbookScene } from "../../../../../src/obsidian/embeds/active-scene/active-scene";
-import { createBuiltInDeviceSettings } from "../../../../../src/domain/settings/defaults";
+import {
+  createBuiltInDeviceSettings,
+  createBuiltInSettings,
+} from "../../../../../src/domain/settings/defaults";
 import { ActiveScenePreviewHandoff } from "../../../../../src/obsidian/embeds/active-scene/active-scene-handoff";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { domRect } from "../../../../fixtures/obsidian/active-editor";
@@ -35,6 +38,9 @@ const ports = vi.hoisted(() => ({
   revealSurface: vi.fn(),
   setScrollPreloadMarginPx: vi.fn(),
   setReducedMotion: vi.fn(),
+  setSelectionHighlightsEnabled: vi.fn(),
+  updateSnappingSettings: vi.fn(),
+  updateHoldToShapeSettings: vi.fn(),
   prewarmEnabled: vi.fn(),
   prewarmDispose: vi.fn(),
 }));
@@ -49,7 +55,7 @@ vi.mock("../../../../../src/rendering/scene", () => ({
     public readonly setReducedMotion = ports.setReducedMotion;
     public readonly setScrollPreloadMarginPx = ports.setScrollPreloadMarginPx;
     public readonly revealSurface = ports.revealSurface;
-    public readonly setSelectionHighlightsEnabled = vi.fn();
+    public readonly setSelectionHighlightsEnabled = ports.setSelectionHighlightsEnabled;
     public readonly invalidateLayout = vi.fn();
     public readonly releaseInitialOverscan = vi.fn();
     public readonly destroy = vi.fn();
@@ -65,6 +71,8 @@ vi.mock("../../../../../src/obsidian/embeds/active-editor/controller", () => ({
     public readonly isActionAvailable = vi.fn(() => true);
     public readonly dispose = vi.fn();
     public readonly updateDeviceSettings = vi.fn();
+    public readonly updateSnappingSettings = ports.updateSnappingSettings;
+    public readonly updateHoldToShapeSettings = ports.updateHoldToShapeSettings;
     public readonly getViewState = vi.fn(() => ({ cameraX: 0, zoom: 1 }));
     public readonly readResizeAnchor = vi.fn();
     public readonly applyResize = vi.fn(() => true);
@@ -247,6 +255,23 @@ it("configures the scene margin and applies live device updates only until dispo
   h.scene.dispose();
   h.scene.updateDeviceSettings({ ...createBuiltInDeviceSettings(), scrollPreloadMarginPx: 300 });
   expect(ports.setScrollPreloadMarginPx).toHaveBeenCalledOnce();
+});
+
+it("forwards drawing preferences only while the active scene is alive", () => {
+  const h = fixture();
+  const settings = createBuiltInSettings();
+  settings.snapping.enabled = false;
+  settings.holdToShape.holdDurationMs = 1000;
+  settings.selectionHighlightsEnabled = false;
+  h.scene.updateDrawingPreferences(settings);
+  expect(ports.updateSnappingSettings).toHaveBeenCalledExactlyOnceWith(settings.snapping);
+  expect(ports.updateHoldToShapeSettings).toHaveBeenCalledExactlyOnceWith(settings.holdToShape);
+  expect(ports.setSelectionHighlightsEnabled).toHaveBeenLastCalledWith(false);
+  h.scene.dispose();
+  h.scene.updateDrawingPreferences(createBuiltInSettings());
+  expect(ports.updateSnappingSettings).toHaveBeenCalledOnce();
+  expect(ports.updateHoldToShapeSettings).toHaveBeenCalledOnce();
+  expect(ports.setSelectionHighlightsEnabled).toHaveBeenCalledTimes(2);
 });
 
 it("initializes the renderer preference and forwards live reductions and restorations", () => {

@@ -24,13 +24,14 @@
 
 Work through an equation, connect the steps of a process, or highlight the part you want to remember. Inkbook keeps the drawing beside the text that gives it meaning. Lock it to return to your note; activate the preview to keep drawing.
 
-| You want to…            | Inkbook gives you…                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------- |
-| **Write and highlight** | A pressure-sensitive pen, freehand and straight highlighters, and a whole-element eraser.         |
-| **Sketch and connect**  | Shapes, lines, arrows, coordinate systems, and tables, with connectors that follow shape anchors. |
-| **Refine a drawing**    | Selection and lasso, move, resize, rotate, style, and arrange controls.                           |
-| **Find your rhythm**    | Zoom, undo and redo, copy and paste, and a page that grows as you write.                          |
-| **Choose your paper**   | Plain, lined, dotted, or square backgrounds, with adjustable spacing.                             |
+| You want to…            | Inkbook gives you…                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Write and highlight** | A pressure-sensitive pen, freehand and straight highlighters, and a whole-element eraser.                                               |
+| **Sketch and connect**  | Shapes including stars, straight or curved lines and arrows, coordinate systems, and tables, with connectors that follow shape anchors. |
+| **Hold to shape**       | Hold a pen stroke still to preview a native shape; release to accept or continue drawing to cancel.                                     |
+| **Refine a drawing**    | Selection and lasso, move, resize, rotate, style, and arrange controls.                                                                 |
+| **Find your rhythm**    | Zoom, undo and redo, copy and paste, and a page that grows as you write.                                                                |
+| **Choose your paper**   | Plain, lined, dotted, or square backgrounds, with adjustable spacing.                                                                   |
 
 Inkbook embeds work in **Live Preview and Reading view**, including split panes and pop-out windows. One drawing is active per workspace. Touch can navigate the page; drawing with a finger is optional and off by default.
 

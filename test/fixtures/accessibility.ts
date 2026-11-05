@@ -2,6 +2,18 @@ import axe, { type Result } from "axe-core";
 
 const wcagTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
+/** Resolve every label reference, including groups labelled by a name and its current value. */
+export function labelledByElements(element: Element): HTMLElement[] {
+  const ids = element.getAttribute("aria-labelledby")?.trim().split(/\s+/) ?? [];
+  return ids.filter(Boolean).map((id) => {
+    const label =
+      element.ownerDocument.getElementById(id) ??
+      [...element.querySelectorAll<HTMLElement>("[id]")].find((candidate) => candidate.id === id);
+    if (label === undefined) throw new Error(`Missing aria-labelledby target: ${id}`);
+    return label;
+  });
+}
+
 // happy-dom has no layout engine. These rules require native Obsidian verification.
 const nativeRules = new Set([
   "avoid-inline-spacing",

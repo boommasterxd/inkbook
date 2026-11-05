@@ -19,7 +19,7 @@ export const SNAP_TARGET_FAMILIES = [
 ] as const;
 
 export function snappingTarget(
-  family: (typeof SNAP_TARGET_FAMILIES)[number],
+  family: (typeof SNAP_TARGET_FAMILIES)[number] | "star",
   rotation = 0,
   offset = 0,
 ) {

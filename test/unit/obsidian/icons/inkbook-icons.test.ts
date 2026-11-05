@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { registerInkbookIcons } from "../../../../src/obsidian/icons/inkbook-icons";
 import { ARROW_NODES } from "../../../../src/domain/settings/types";
 import {
+  arrowNodeIconId,
   arrowShapeIconId,
   BACKGROUND_SQUARES_ICON_ID,
   CAUTION_ERASER_ICON_ID,
@@ -31,6 +32,9 @@ describe("Inkbook icon registration", () => {
       expect(testIconRegistry.get(iconId)).toBeTruthy();
     }
     for (const start of ARROW_NODES) {
+      for (const side of ["start", "end"] as const) {
+        expect(testIconRegistry.get(arrowNodeIconId(start, side))).toBeTruthy();
+      }
       for (const end of ARROW_NODES) {
         expect(testIconRegistry.get(arrowShapeIconId(start, end))).toBeTruthy();
       }

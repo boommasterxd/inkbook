@@ -1,6 +1,6 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
-import type { InkbookDeviceSettingsV2 } from "../../../domain/settings/types";
+import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../../domain/settings/types";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import type { StoreDelta } from "../../../domain/store/public";
 import { SvgSceneRenderer } from "../../../rendering/scene/index";
@@ -285,13 +285,13 @@ export class ActiveInkbookScene {
     }
   };
 
-  public updateSelectionHighlights(enabled: boolean): void {
-    if (!this.#disposed) this.#renderer.setSelectionHighlightsEnabled(enabled);
-  }
-
-  public updateSnappingSettings(settings: ActiveInkbookSceneOptions["snapping"]): void {
+  public updateDrawingPreferences(
+    settings: Pick<InkbookSettingsV4, "snapping" | "holdToShape" | "selectionHighlightsEnabled">,
+  ): void {
     if (this.#disposed) return;
-    this.#controller.updateSnappingSettings(settings);
+    this.#controller.updateSnappingSettings(settings.snapping);
+    this.#controller.updateHoldToShapeSettings(settings.holdToShape);
+    this.#renderer.setSelectionHighlightsEnabled(settings.selectionHighlightsEnabled);
   }
 
   #applyDelta(delta: StoreDelta, historyReplay: boolean): void {

@@ -62,23 +62,28 @@ describe("canonical anchor query parity", () => {
 });
 
 describe("prepared local anchor geometry", () => {
-  it.each(["rectangle", "table", "triangle", "diamond", "parallelogram", "octagon"] as const)(
-    "reads %s geometry once when building all positive semantic anchors",
-    (family) => {
-      const target = snappingTarget(family, 37);
-      const expected = semanticAnchors(target);
-      let reads = 0;
-      const observed = new Proxy(target, {
-        get: (value, key, receiver) => {
-          if (key === "x") reads += 1;
-          return Reflect.get(value, key, receiver) as unknown;
-        },
-      });
-      expect(semanticAnchors(observed)).toEqual(expected);
-      // The box map reads its left edge once; each canonical polygon vertex reads it once.
-      expect(reads).toBe(family === "rectangle" || family === "table" ? 1 : expected.length / 2);
-    },
-  );
+  it.each([
+    "rectangle",
+    "table",
+    "triangle",
+    "diamond",
+    "parallelogram",
+    "octagon",
+    "star",
+  ] as const)("reads %s geometry once when building all positive semantic anchors", (family) => {
+    const target = snappingTarget(family, 37);
+    const expected = semanticAnchors(target);
+    let reads = 0;
+    const observed = new Proxy(target, {
+      get: (value, key, receiver) => {
+        if (key === "x") reads += 1;
+        return Reflect.get(value, key, receiver) as unknown;
+      },
+    });
+    expect(semanticAnchors(observed)).toEqual(expected);
+    // The box map reads its left edge once; each canonical polygon vertex reads it once.
+    expect(reads).toBe(family === "rectangle" || family === "table" ? 1 : expected.length / 2);
+  });
 });
 
 describe("pointwise anchor work", () => {

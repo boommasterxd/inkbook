@@ -212,6 +212,7 @@ Every user-visible state change animates unless listed as immediate or reduced m
 | Conditional toolbar control enter or exit                           |                  220 ms | fixed scale, left-to-right entry, right-to-left exit                                                                                                                                           |
 | Arrange result                                                      |                  120 ms | old/new path opacity crossfade where overlap changes visibly                                                                                                                                   |
 | Snap candidate feedback update                                      |                    0 ms | immediate path replacement or removal                                                                                                                                                          |
+| Hold-to-shape candidate and raw-to-native commit                    |                    0 ms | immediate live-input preview and exact handoff; original ink remains above the translucent candidate                                                                                           |
 
 Implementation rules:
 
@@ -280,7 +281,7 @@ The editor targets WCAG 2.2 AA within the capabilities of the Obsidian host. Blo
 - Tab enters and leaves each visible toolbar group. Arrow keys move within the primary track or context-action strip. Home and End move to the first and last visible controls in that group. If the last context action disappears while focused, focus moves to the primary overflow trigger.
 - Escape follows the layered dismissal and cancellation order in [Keyboard Shortcuts](keyboard-shortcuts.md#fixed-system-bindings), including unfinished canvas geometry preparation.
 - Focus returns without scrolling to the trigger when an adaptive menu closes and moves to the nearest surviving control when a conditional button disappears.
-- Keyboard commands exist for every toolbar action that is not inherently pointer-geometric. Geometric shapes also have the [non-drag insertion and shared Edit geometry panel](editor-tools.md#shapes); available handle operations use the same discrete edit planner and Undo history as keyboard geometry edits.
+- Keyboard commands exist for every toolbar action that is not inherently pointer-geometric. Canvas keyboard geometry edits use the existing handle planner and Undo history.
 - Arrange actions have configurable canvas-local keyboard bindings and are not duplicated through Obsidian command registration.
 - `Shift+F10` opens the owned canvas menu, whose close operation returns focus to the canvas surface or invoking control.
 - Focus indicators, icons, text, active states, selection outlines, and gradients meet applicable contrast requirements in light and dark themes.
@@ -302,6 +303,7 @@ Unit tests cover pure or isolated behavior:
 - geometry, curve extrema, rotated bounds, page extent, and spatial-index queries
 - path building, pressure simulation, smoothing, and SVG output
 - input arbitration reducer and every pointer cancellation path
+- hold-to-shape geometry, line-versus-curve preference, endpoint decorations and natural boundary-attachment orders, star contours, ambiguity rejection, settings compatibility, quiet deadlines, raw-batch excursions, snapshot bounds, stale work, and disposal
 - commands, history transaction boundaries, undo, redo, and memory limits
 - fixed render-band derivation and all four stable arrange algorithms, including multiple original selected runs, mixed selections, and boundary no-ops
 - anchor generation for every eligible target, including ellipse cardinal points 90, 180, 270, and 360 degrees plus canonical serialization of 360 as 0, and line or arrow start and end anchors
@@ -350,6 +352,7 @@ Integration tests cover only important boundaries:
 - zoom and resize adapters proving all layout reads occur before the first DOM write and unchanged observations schedule nothing
 - renderer order plus order-only worker updates across both fixed render bands
 - connection reverse map plus renderer, bounds, path cache, and spatial-index updates after target transforms, including line-to-line and arrow-to-arrow endpoints, cycle rejection, and transitive dependent propagation
+- hold-to-shape integration with native connection snapping, semantic endpoints instead of raw arrow-wing positions, preview-to-commit geometry, target movement, disabled snapping, deferred single-entry refinement and cancellation by movement, Undo, stale ownership or a new gesture
 - selection overlay and handle integration for straight highlighters, line and arrow angular guides, transient endpoint straightening with commit-only bend removal, coordinate-axis and coordinate-origin angular guides, accent edit lines for coordinate axes and table separators, constant-screen rotation-handle spacing, and stable box-resize previews while content and overlays remain synchronized
 - selected coordinate-system and table structural Style edits proving one coarse UI update, geometry deltas only for changed targets and resolved dependents, no full-store scan or clone, exact compound-path replacement, and complete active-versus-standalone SVG parity
 - editor state plus direct live-path and transform previews

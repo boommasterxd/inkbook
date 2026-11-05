@@ -6,18 +6,18 @@
 - Every value available in a tool's Style menu MUST have a configurable default for that tool.
 - Changing a default affects newly created elements only. It never rewrites existing elements.
 - Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it.
-- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select and snapping defaults while preserving every existing value. A valid earlier version 4 value without snapping settings or `selectionHighlightsEnabled` loads with the corresponding built-in defaults. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 2 schema and migrate valid version 1 values. Supported device settings without `scrollPreloadMarginPx` receive its built-in default without an invalid-field diagnostic.
+- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select, snapping, and hold-to-shape defaults while preserving every existing value. A valid earlier version 4 value without snapping settings, `selectionHighlightsEnabled`, or `holdToShape` loads with the corresponding built-in defaults. Missing older `shapes.star` defaults are completed independently. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 2 schema and migrate valid version 1 values. Supported device settings without `scrollPreloadMarginPx` receive its built-in default without an invalid-field diagnostic.
 
 ## Scope and Precedence
 
 Settings have four scopes:
 
-| Scope            | Storage                | Examples                                                                                       |
-| ---------------- | ---------------------- | ---------------------------------------------------------------------------------------------- |
-| Vault            | Obsidian plugin data   | Tool defaults, selection highlights, snapping, page defaults, placement, refresh-rate mode     |
-| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts, scroll preload margin |
-| File             | Editable SVG snapshot  | Current background type and spacing, element styles                                            |
-| Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position                        |
+| Scope            | Storage                | Examples                                                                                                  |
+| ---------------- | ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| Vault            | Obsidian plugin data   | Tool defaults, selection highlights, snapping, hold to shape, page defaults, placement, refresh-rate mode |
+| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts, scroll preload margin            |
+| File             | Editable SVG snapshot  | Current background type and spacing, element styles                                                       |
+| Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position                                   |
 
 Vault settings use `Plugin.loadData()` and `Plugin.saveData()`. Device settings use `App.loadLocalStorage("inkbook:device-settings:v2")` and `App.saveLocalStorage(...)`. They are local to the current device and vault and contain preferences only, never vault paths, note content, clipboard data, or ink data.
 
@@ -47,6 +47,7 @@ interface InkbookSettingsV4 {
   selectionHighlightsEnabled: boolean;
   toolDefaults: ToolDefaultsV1;
   snapping: SnappingSettingsV1;
+  holdToShape: { enabled: boolean; holdDurationMs: number; jitterTolerancePx: number };
   pageDefaults: PageDefaultsV3;
   filePlacement: FilePlacementV1;
   refreshRatePreference: "auto" | 60 | 90 | 120 | 144 | 240;
@@ -87,9 +88,9 @@ interface InkbookDeviceSettingsV2 {
 }
 ```
 
-`StartupToolV1` is `"select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "line" | "arrow" | "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "coordinate-system" | "table"`.
+`StartupToolV1` is `"select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "line" | "arrow" | "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star" | "coordinate-system" | "table"`.
 
-`ClosedShapeToolV1` is `"rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond"`.
+`ClosedShapeToolV1` is `"rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star"`.
 
 `OutlineOnlyToolV1` is `"line" | "arrow" | "coordinate-system" | "table"`.
 
@@ -112,6 +113,14 @@ Rectangle uses the drag start and current pointer as opposite corners. Lasso rec
 
 Changing the preference updates all active presentations, including pop-outs, immediately. Disabling it releases optional indicator nodes; enabling it recreates indicators only for mounted selected elements through the scene scheduler. Missing values in supported older settings load as `true`; invalid values fall back to `true` with an invalid-field diagnostic. Performance and full settings resets restore `true`.
 
+## Hold to Shape
+
+`holdToShape` is a vault preference exposed in the **Hold to shape** settings group. It contains `enabled` (built-in `true`), `holdDurationMs` (built-in `600`, integer range `200..2000`, UI step `50`), and `jitterTolerancePx` (built-in `12`, integer range `1..32`, UI step `1`). Tolerance is measured in screen CSS pixels independently of zoom and does not alter the geometric acceptance thresholds. Disabling recognition preserves both numeric preferences and disables their controls. The group reset restores all three defaults. Existing explicitly saved tolerances remain unchanged when the built-in default changes.
+
+Both numeric preferences use the shared settings slider with its synchronized number field on the right, matching page buffer and scroll preload controls. Slider input previews the number locally and commits on change; typed input uses the same validation and write-recovery path. Disabling recognition disables both the slider and number field without discarding their saved values.
+
+Changes propagate to mounted presentations and are adopted by the next drawing gesture, preserving an in-progress gesture's snapshot. Supported older vault settings without `holdToShape` receive the built-in object without a schema-version change or invalid-field diagnostic. Invalid present fields use the usual diagnostic and per-field fallback. The [Editor Tools contract](editor-tools.md#hold-to-shape) owns the interaction and preview behavior. Supported older tool defaults without `shapes.star` receive only that shape's built-in style while preserving the existing custom styles.
+
 ## Snapping
 
 Snapping is a vault preference with one global switch and four independent behavior switches. All five built-in values are enabled:
@@ -121,7 +130,7 @@ Snapping is a vault preference with one global switch and four independent behav
 - Connection snapping covers line and arrow endpoints attaching to semantic shape anchors or other linear endpoints.
 - Structure snapping covers table separators returning to the default header or equal-column position.
 
-Disabling the global switch suppresses every snap without overwriting the four individual choices. Re-enabling it restores the previously configured combination. The individual controls are hidden while the global switch is off because they are temporarily inactive, but their values remain persisted. Holding Alt during a pointer gesture temporarily inverts only the global state for each subsequent pointer frame. Alt therefore suppresses all snapping while the global switch is enabled, or temporarily activates the persisted per-kind combination while the global switch is disabled. Releasing Alt restores the configured state, and the modifier never persists a settings change. These settings affect interaction behavior only and never rewrite existing elements or Inkbook files.
+Disabling the global switch suppresses snapping without overwriting the four individual choices. Re-enabling it restores the previously configured combination. The individual controls are hidden while the global switch is off because they are temporarily inactive, but their values remain persisted. Direct Line and Arrow creation additionally respect their captured per-tool `snappingEnabled` preference. Holding Alt temporarily inverts the combined enable state (`global.enabled && tool.snappingEnabled` for those creation tools, otherwise `global.enabled`) for each subsequent pointer frame, preserving the per-kind choices. Releasing Alt restores the configured state, and the modifier never persists a settings change. These settings affect interaction behavior only and never rewrite existing elements or Inkbook files.
 
 The four dependent controls enter and leave through the same declarative zero-to-auto block-size motion contract as settings disclosures. They become inert while closing and settle on the native hidden state. Full and system motion animate the change unless the operating system requests reduced motion; Inkbook's reduced-motion preference applies the final state immediately.
 
@@ -162,6 +171,7 @@ interface PenDefaultsV1 {
   width: 2 | 4 | 8 | 14 | 22;
   opacity: number;
   pressureEnabled: boolean;
+  holdToShapeEnabled: boolean;
 }
 ```
 
@@ -171,8 +181,11 @@ Built-in values:
 - width: S, 4
 - opacity: 1
 - pressure enabled: true
+- hold to shape enabled: true
 
 Pressure sensitivity is shown in the pen Style menu and in Settings. Smoothing remains an implementation constant in version 1 to avoid exposing a low-level performance control.
+
+The adjacent `Hold to shape` switch changes only the active Pen session. Its Settings counterpart changes `toolDefaults.pen.holdToShapeEnabled` for subsequently activated editors. Recognition requires both this captured tool preference and the global [Hold to shape](#hold-to-shape) enable switch. An off tool switch starts no hold timers or recognition work. Changes do not modify existing strokes or a gesture already in progress.
 
 ## Highlighter Defaults
 
@@ -219,15 +232,22 @@ Built-in outline values for every shape:
 - outline style: solid
 - outline opacity: 1
 
-Built-in fill values for every closed shape are `fillColor: null` and `fillOpacity: 0.5`. Fill controls and fields exist only for rectangle, ellipse, triangle, octagon, parallelogram, and diamond. A null fill always renders with zero effective fill opacity. Line, arrow, coordinate-system, and table defaults cannot store fill fields.
+Built-in fill values for every closed shape are `fillColor: null` and `fillOpacity: 0.5`. Fill controls and fields exist only for rectangle, ellipse, triangle, octagon, parallelogram, diamond, and star. A null fill always renders with zero effective fill opacity. Line, arrow, coordinate-system, and table defaults cannot store fill fields.
+
+### Line Defaults
+
+`toolDefaults.line.snappingEnabled` is a boolean with built-in `true`. The `Snapping` switch appears in the Line Style menu and its Settings default section. Style changes affect the current session; Settings defaults apply after the next editor activation. The switch controls direct creation, including angle and endpoint connection snapping. It does not disconnect existing elements or override selection/handle behavior. Draw recognition continues to use its own Pen preference and global snapping settings.
 
 ### Arrow Defaults
 
 - start node: none
 - end node: arrow
 - allowed nodes: none, arrow, triangle, diamond, circle
+- snapping enabled: true (`toolDefaults.arrow.snappingEnabled`)
 
 Line defaults use none for both nodes. Node settings are not shown for other shape types.
+
+Arrow exposes the same session/default `Snapping` control and creation-only semantics as [Line](#line-defaults), independently of the Line preference. Both flags are boolean-only and default to enabled when loading older valid settings. Missing Pen recognition and Line/Arrow snapping preferences are completed without replacing saved paint or node choices; explicit invalid values still produce validation diagnostics. Group reset restores the corresponding tool preferences, and full reset restores all three.
 
 ### Coordinate-System Defaults
 
@@ -303,7 +323,7 @@ All numeric ranges are inclusive.
 | Active buffer lines           | integer from 1 through 8             |        1 |
 | Selection area                | rectangle or lasso                   | Discrete |
 | Selection inclusion           | fully-enclosed or touched            | Discrete |
-| Snapping switches             | boolean                              | Discrete |
+| Hold and snapping switches    | boolean                              | Discrete |
 | Enumerations and colors       | exactly one documented value         | Discrete |
 
 Unknown object properties, missing required properties, invalid enum values, non-finite numbers, and values outside these ranges make the containing persisted settings field invalid. The loader replaces only that field with its built-in default, records a non-content diagnostic code, and continues loading the other valid fields.
@@ -380,14 +400,15 @@ The settings tab uses these logical groups and this order:
 2. **Performance**: display refresh-rate preference, scroll preload margin, and selection highlights. Descriptions explain each control's performance trade-off. Its group reset restores only these preferences; General reset preserves them, and Performance reset preserves startup, file placement, and unrelated device preferences.
 3. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
 4. **Drawing tools**: Select, Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
-5. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Coordinate system, and Table. Each tool is one independently collapsible section.
+5. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Star, Coordinate system, and Table. Each tool is one independently collapsible section.
 6. **Snapping**: global enable switch followed by Angle, Bend, Connection, and Structure switches.
-7. **Input**: finger drawing and pen-tap insertion.
-8. **Interface**: handedness and motion.
-9. **Shortcuts**: configurable device-local canvas bindings plus fixed system, gesture-modifier, and Obsidian-command references.
-10. **Import**: the optional **Start import** action and **Import history** disclosure, when the import workflow is available.
+7. **Hold to shape**: enable switch, hold delay, movement tolerance, and a group reset.
+8. **Input**: finger drawing and pen-tap insertion.
+9. **Interface**: handedness and motion.
+10. **Shortcuts**: configurable device-local canvas bindings plus fixed system, gesture-modifier, and Obsidian-command references.
+11. **Import**: the optional **Start import** action and **Import history** disclosure, when the import workflow is available.
 
-The headings for Performance, Page defaults, Drawing tools, Shapes and structures, Snapping, Input, Interface, Shortcuts, and Import use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
+The headings for Performance, Page defaults, Drawing tools, Shapes and structures, Snapping, Hold to shape, Input, Interface, Shortcuts, and Import use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
 
 The Import group contains a **Start import** action whose description identifies Obsidian Ink, followed immediately by a default-collapsed **Import history** disclosure. Starting an import opens the local scan and review workflow described in [Importing from Obsidian Ink](features.md#importing-from-obsidian-ink); it does not show a history list. History loads only when the disclosure is expanded. Its runs show localized dates and statuses, with at most 25 entries per page. Selecting a run opens its details and available recovery actions directly. While loading, the disclosure shows a loading state; an empty history says that no imports are saved, and a failed load can be retried. When an import, undo, or cleanup dialog closes, an expanded history refreshes. Import remains an explicit action and adds no Inkbook setting or startup scan.
 
@@ -428,7 +449,7 @@ All controls have a visible sentence-case label, one concise description, an acc
 - Invalid values show an inline error and are not persisted. The persisted-data loader repeats the same validation and falls back to the documented built-in default for an invalid field without silently clamping it.
 - Rejected settings writes restore editable controls from the current confirmed settings and expose a concise inline persistence error associated with the affected control. Reset actions await their persistence result and use the same error presentation. Errors announce politely without moving focus or replacing the control; editing again or repeating the action retries normally and clears the previous message. Only the latest operation for that control may update its feedback. Superseded validation or write completions and disposed views cannot overwrite newer feedback or recreate detached controls; this UI lifetime guard does not cancel an already admitted storage write.
 - Under full motion, validation messages enter, exit, and replace one another with Motion while the actual error text, hidden state, and `aria-describedby` relationship update immediately. Messages use the shared danger text tone. The decorative transition copy is hidden from assistive technology and inert. Its opacity and presence use the shared native Full Motion bridge in the element's owning window, so feedback does not wait for a React projection frame from another window. The affected setting row and following native rows retain their single layout-motion owner. Background pattern changes use this same native-row projection owner over 180 milliseconds. Identical validation text causes no additional projection work; changed text still remeasures wrapping and neighboring rows. Focus stays on the edited control, and reduced motion settles the same content and layout immediately.
-- Each logical group provides a caution-toned `Reset group to defaults` action at its actual group end. The Shortcuts group presents four initially collapsed disclosures using the same native setting surface, typography, inline inset, bounded dividers, outer radius, and measured disclosure motion as tool sections, followed by its group reset. Expanded shortcut and reference entries use native setting-item name, description, and control structure. The expanded Canvas shortcuts disclosure provides per-action Reset and Clear controls. A final danger-toned `Reset all Inkbook settings` action requires confirmation. Resetting settings never modifies existing files or elements.
+- Each logical group provides a caution-toned `Reset group to defaults` action at its actual group end. The Shortcuts group presents four initially collapsed disclosures using the same native setting surface, typography, inline inset, bounded dividers, outer radius, and measured disclosure motion as tool sections, followed by its group reset. Expanded shortcut and reference entries use native setting-item name, description, and control structure. The expanded Canvas shortcuts disclosure provides per-action Reset and Clear controls. A final danger-toned `Reset all Inkbook settings` action requires confirmation. Resetting settings never modifies existing files or elements. Group and full resets preserve each open settings surface's expanded disclosures, visible row position, and keyboard focus. The native tab and canvas dialog retain their own presentation state, including the outer scroll owner of phone subpages. Rebuilt disclosures start in their retained state without replaying an expansion transition. If conditional content changes, the surviving visible row remains at the same viewport offset within the available scroll range. Presentation state is not persisted as a setting.
 - Tool-default changes update vault defaults immediately. An already active editor keeps every current per-tool session value, so its next elements remain predictable; locking and reopening the editor initializes new session values from the changed defaults. Page-default changes affect only files created afterward. Device-setting changes apply immediately when safe, while an active pointer gesture retains the input mode with which it began.
 - One typed declaration tree from `getControlDefinitions()` supplies the Inkbook modal and native tab. `PluginSettingTab.getSettingDefinitions()` adapts its simple controls to public render definitions that reuse the modal's asynchronous write/recovery renderer: native declarative persistence does not provide the required rollback and inline feedback after rejected writes. Names, descriptions, search aliases, dropdown option labels, conditional `visible` rules, and disabled state remain available. Typed `getControlValue()` and `setControlValue()` adapters expose nested settings without duplicate flattened state. Row teardown, owning-window `pagehide`, and plugin disposal release the native render adapter's feedback idempotently; reset actions retain their bounded render callback.
 - `getSettingDefinitions()` performs no file access or expensive work. Declarative UI validation is repeated during persisted settings loading.

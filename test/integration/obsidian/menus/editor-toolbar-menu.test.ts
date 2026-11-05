@@ -12,11 +12,14 @@ import {
 } from "../../../../src/obsidian/menus";
 import {
   activeShapeIconId,
+  arrowNodeIconId,
   BACKGROUND_SQUARES_ICON_ID,
   OPACITY_ICON_ID,
   PRESSURE_SENSITIVITY_ICON_ID,
 } from "../../../../src/rendering/ui/icon-ids";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { ARROW_NODE_STYLE_OPTIONS } from "../../../../src/obsidian/menus/tool-style-controls";
+import { labelledByElements } from "../../../fixtures/accessibility";
 import {
   createEditorToolbarMenuOptions as options,
   FakeEditorToolbarMenu as FakeMenu,
@@ -39,22 +42,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("offers insertion and geometry editing through the existing menu handoff", async () => {
+it("defers Settings and Quick tour opening until the menu handoff", async () => {
   const configured = options();
-  const insert = vi.fn();
-  const edit = vi.fn();
-  const handlers = { ...configured.handlers, onInsertShape: insert, onEditGeometry: edit };
-  const shape = new FakeMenu();
-  populateToolbarActionMenu(shape, "shape", { ...configured, handlers }, vi.fn());
-  action(shape, "Insert selected shape").click?.();
-  expect(insert).not.toHaveBeenCalled();
-  await Promise.resolve();
-  expect(insert).toHaveBeenCalledOnce();
+  const settings = vi.fn();
+  const tour = vi.fn();
+  const handlers = { ...configured.handlers, onOpenSettings: settings, onOpenTour: tour };
   const overflow = new FakeMenu();
   populateToolbarActionMenu(overflow, "overflow", { ...configured, handlers }, vi.fn());
-  action(overflow, "Edit geometry").click?.();
+  action(overflow, "Settings").click?.();
+  expect(settings).not.toHaveBeenCalled();
   await Promise.resolve();
-  expect(edit).toHaveBeenCalledOnce();
+  expect(settings).toHaveBeenCalledOnce();
+  action(overflow, "Quick tour").click?.();
+  expect(tour).not.toHaveBeenCalled();
+  await Promise.resolve();
+  expect(tour).toHaveBeenCalledOnce();
 });
 
 describe("editor toolbar action menus", () => {
@@ -122,6 +124,8 @@ describe("editor toolbar action menus", () => {
     expect(
       menu.entries.every((entry) => entry === "separator" || entry.fragment === undefined),
     ).toBe(true);
+    action(menu, "Arrow").click?.();
+    expect(configured.handlers.onShapeChange).toHaveBeenCalledExactlyOnceWith("arrow");
   });
 
   it("centers overflow over its anchor and preserves shape and phone placement", () => {
@@ -164,6 +168,79 @@ describe("empty-canvas toolbar actions", () => {
     expect(erase.click).toBeUndefined();
     expect(action(menu, "Delete embed").click).toBeDefined();
   });
+});
+
+describe("Style arrow endpoint choices", () => {
+  it.each([false, true])(
+    "updates arrow-node values from mixed=%s without replacing controls",
+    (mixed) => {
+      const configured = connectedOptions({
+        styleControls: [
+          {
+            id: "arrow-start-node",
+            kind: "choice",
+            label: "Start node",
+            value: mixed ? null : "circle",
+            mixed,
+            options: ARROW_NODE_STYLE_OPTIONS,
+          },
+          {
+            id: "arrow-end-node",
+            kind: "choice",
+            label: "End node",
+            value: mixed ? null : "diamond",
+            mixed,
+            options: ARROW_NODE_STYLE_OPTIONS,
+          },
+        ],
+      });
+      const session = new EditorToolbarMenuSession({ ...configured, initialMenu: "style" });
+      try {
+        for (const [id, initial, selected, label] of [
+          ["arrow-start-node", "Circle", "none", "None"],
+          ["arrow-end-node", "Diamond", "arrow", "Arrow"],
+        ]) {
+          const field = document.querySelector<HTMLElement>(`[data-control="${id}"]`)!;
+          for (const node of ARROW_NODE_STYLE_OPTIONS) {
+            expect(
+              field
+                .querySelector(`button[data-value="${node.value}"] [data-icon]`)
+                ?.getAttribute("data-icon"),
+            ).toBe(
+              arrowNodeIconId(
+                node.value as Parameters<typeof arrowNodeIconId>[0],
+                id === "arrow-start-node" ? "start" : "end",
+              ),
+            );
+          }
+          const valueLabel = field.querySelector<HTMLElement>(".inkbook-menu-control-value-label")!;
+          expect(valueLabel.textContent).toBe(mixed ? "Mixed" : initial);
+          const header = field.querySelector<HTMLElement>(".inkbook-menu-control-header")!;
+          expect(header.textContent?.match(/Mixed/g)?.length ?? 0).toBe(mixed ? 1 : 0);
+          const button = field.querySelector<HTMLButtonElement>(
+            `button[data-value="${selected}"]`,
+          )!;
+          button.focus();
+          button.click();
+          expect(valueLabel.textContent).toBe(label);
+          expect(button.getAttribute("aria-pressed")).toBe("true");
+          expect(field.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1);
+          expect(configured.handlers.onStyleChange).toHaveBeenCalledWith(id, selected);
+          expect(document.activeElement).toBe(button);
+          expect(button.getAttribute("aria-label")).toBe(label);
+          expect(button.getAttribute("data-tooltip-delay")).toBe("700");
+          expect(field.getAttribute("role")).toBe("group");
+          expect(
+            labelledByElements(field)
+              .map((label) => label.textContent)
+              .join(" "),
+          ).toBe(`${id === "arrow-start-node" ? "Start node" : "End node"} ${label}`);
+        }
+      } finally {
+        session.close("immediate");
+      }
+    },
+  );
 });
 
 describe("Style AdaptivePanel", () => {

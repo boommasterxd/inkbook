@@ -94,6 +94,7 @@ describe("resumable element bounds", () => {
       line(),
       rectangle(),
       { ...rectangle(), kind: "triangle" as const },
+      { ...rectangle(), kind: "star" as const },
       straightHighlighter(),
       table(),
     ]) {

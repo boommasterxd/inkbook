@@ -67,6 +67,7 @@ export class ShortcutRecordingView {
       description: "Restore the built-in bindings without changing existing files or elements.",
       name: "Reset group to defaults",
     });
+    reset.dataset.inkbookSettingIdentity = JSON.stringify(["shortcut", "reset"]);
     const status = info.createDiv({ cls: "inkbook-shortcut-status" });
     status.setAttribute("aria-live", "polite");
     this.#hoverCleanup.push(bindSettingsAction(reset, () => this.#resetGroup(status), "caution"));
@@ -85,6 +86,7 @@ export class ShortcutRecordingView {
       description: reference.description,
       name: reference.label,
     });
+    row.dataset.inkbookSettingIdentity = JSON.stringify(["shortcut", action]);
     controls.classList.add("inkbook-shortcut-controls");
     const status = info.createDiv({ cls: "inkbook-shortcut-status" });
     status.setAttribute("aria-live", "polite");
@@ -247,7 +249,9 @@ export class ShortcutRecordingView {
       ...settings,
       keyboardShortcuts: defaults,
     }));
-    this.#container.querySelector<HTMLElement>(".inkbook-shortcuts-group-reset")?.focus();
+    this.#container.querySelector<HTMLElement>(".inkbook-shortcuts-group-reset")?.focus({
+      preventScroll: true,
+    });
   }
 
   #conflict(

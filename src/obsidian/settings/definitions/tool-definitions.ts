@@ -18,6 +18,8 @@ const STROKE_DESCRIPTIONS = {
   "stroke-width": "Choose the width used by newly created strokes.",
   opacity: "Set the opacity used by newly created strokes.",
   "pressure-enabled": "Use pen pressure to vary the width of newly created strokes.",
+  "hold-to-shape-enabled":
+    "Set the pen default for new editor sessions. Style-menu changes affect only that session. Requires global hold to shape.",
 } as const;
 
 const OUTLINE_DESCRIPTIONS = {
@@ -31,6 +33,8 @@ const OUTLINE_DESCRIPTIONS = {
   "arrow-end-node": "Choose the end node used by newly created arrows.",
   "coordinate-dimension": "Choose two or three dimensions for new coordinate systems.",
   "table-columns": "Set the number of columns used by newly created tables.",
+  "snapping-enabled":
+    "Set the tool default for new editor sessions. Style-menu changes affect only that session. Requires global snapping.",
 } as const;
 
 export function drawingToolsGroup(
@@ -127,6 +131,9 @@ function strokeSpec(options: StrokeSpecOptions): ToolSectionSpec {
     opacity: `toolDefaults.${options.root}.opacity`,
   };
   if (options.pressure) controlKeys["pressure-enabled"] = "toolDefaults.pen.pressureEnabled";
+  if (options.tool === "draw") {
+    controlKeys["hold-to-shape-enabled"] = "toolDefaults.pen.holdToShapeEnabled";
+  }
   return {
     controlDescriptions: STROKE_DESCRIPTIONS,
     controlKeys,
@@ -180,5 +187,8 @@ function shapeControlKeys(
     keys["coordinate-dimension"] = "toolDefaults.coordinateSystem.dimension";
   }
   if (tool === "table") keys["table-columns"] = "toolDefaults.table.columns";
+  if (tool === "line" || tool === "arrow") {
+    keys["snapping-enabled"] = `toolDefaults.${tool}.snappingEnabled`;
+  }
   return keys;
 }

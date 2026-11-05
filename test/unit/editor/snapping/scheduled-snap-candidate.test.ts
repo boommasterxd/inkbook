@@ -50,6 +50,7 @@ describe("scheduled snap candidate correctness", () => {
     "rectangle",
     "ellipse",
     "triangle",
+    "star",
     "octagon",
     "parallelogram",
     "diamond",

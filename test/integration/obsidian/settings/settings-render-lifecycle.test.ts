@@ -8,6 +8,7 @@ import { ShortcutSettingsView } from "../../../../src/obsidian/settings/shortcut
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
 import { keymapCaptureFixture } from "../../../fixtures/obsidian/keymap-capture";
+import { SettingsViewState } from "../../../../src/obsidian/settings/settings-view-state";
 
 const captureKeymap = keymapCaptureFixture();
 
@@ -42,6 +43,64 @@ it("does not initialize an unopened tool after disposal", () => {
   trigger.click();
   expect(container.querySelector("input")).toBeNull();
   expect(readDefaults).not.toHaveBeenCalled();
+});
+
+it("retains an open tool after reset and rebuild without sharing another surface's state", async () => {
+  const state = new SettingsViewState();
+  const first = createTool(state);
+  await first.store.updateVaultSettings((settings) => {
+    settings.toolDefaults.eraser.radius = 32;
+    return settings;
+  });
+  first.trigger.click();
+  first.cleanup();
+  first.container.remove();
+  await first.store.resetAll();
+  const rebuilt = createTool(state, first.store);
+  const independent = createTool(new SettingsViewState(), first.store);
+  expect(rebuilt.trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(rebuilt.panel.hidden).toBe(false);
+  expect(rebuilt.panel.inert).toBe(false);
+  expect(rebuilt.container.querySelector<HTMLInputElement>('input[type="number"]')?.value).toBe(
+    "20",
+  );
+  expect(rebuilt.readDefaults).toHaveBeenCalledOnce();
+  expect(independent.trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(independent.container.querySelector("input")).toBeNull();
+  rebuilt.trigger.click();
+  expect(state.expandedSections.has("tool:eraser")).toBe(false);
+  rebuilt.cleanup();
+  independent.cleanup();
+});
+
+it("retains shortcut disclosures across reset and remount independently of other surfaces", async () => {
+  const state = new SettingsViewState();
+  const first = createShortcuts(state);
+  first.container.querySelector<HTMLButtonElement>(".inkbook-shortcut-section-trigger")!.click();
+  first.store.updateDeviceSettings((settings) => ({
+    ...settings,
+    keyboardShortcuts: { ...settings.keyboardShortcuts, copy: null },
+  }));
+  expect(first.container.querySelector("[aria-expanded=true]")).not.toBeNull();
+  first.view.dispose();
+  first.container.remove();
+  await first.store.resetAll();
+  const rebuilt = createShortcuts(state, first.store);
+  const independent = createShortcuts(new SettingsViewState(), first.store);
+  const trigger = rebuilt.container.querySelector<HTMLButtonElement>(
+    ".inkbook-shortcut-section-trigger",
+  )!;
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  const panel = rebuilt.container.querySelector<HTMLElement>(
+    `[id="${trigger.getAttribute("aria-controls")}"]`,
+  )!;
+  expect(panel.hidden).toBe(false);
+  expect(panel.inert).toBe(false);
+  expect(independent.container.querySelector("[aria-expanded=true]")).toBeNull();
+  trigger.click();
+  expect(state.expandedSections.has("shortcut:canvas")).toBe(false);
+  rebuilt.view.dispose();
+  independent.view.dispose();
 });
 
 it("keeps shortcut DOM, focus and active recording on unrelated device changes", () => {
@@ -87,22 +146,25 @@ it("refreshes changed bindings, ignores equivalent clones and releases its subsc
   expect(replace).not.toHaveBeenCalled();
 });
 
-function createShortcuts() {
+function createShortcuts(viewState?: SettingsViewState, store = createTestSettingsStore()) {
   const container = document.body.createDiv();
-  const store = createTestSettingsStore();
   const keymap = captureKeymap(window);
   return {
     container,
     store,
-    view: new ShortcutSettingsView(container, store, keymap, undefined, () =>
-      workSchedulerFromFrames(window),
+    view: new ShortcutSettingsView(
+      container,
+      store,
+      keymap,
+      undefined,
+      () => workSchedulerFromFrames(window),
+      viewState,
     ),
   };
 }
 
-function createTool() {
+function createTool(viewState?: SettingsViewState, store = createTestSettingsStore()) {
   const container = document.body.createDiv();
-  const store = createTestSettingsStore();
   const readDefaults = vi.fn(() => store.getVaultSettings().toolDefaults);
   const definition = toolSectionDefinition(
     {
@@ -113,6 +175,7 @@ function createTool() {
       controlKeys: { "eraser-radius": "toolDefaults.eraser.radius" },
     },
     {
+      ...(viewState === undefined ? {} : { viewState }),
       getDefaults: readDefaults,
       getMotion: () => store.getDeviceSettings().motion,
       workScheduler: () => workSchedulerFromFrames(window),

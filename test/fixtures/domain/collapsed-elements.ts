@@ -49,6 +49,7 @@ export function collapsedElements(size: number): InkElementV1[] {
     "ellipse",
     "triangle",
     "octagon",
+    "star",
     "parallelogram",
     "diamond",
   ] as const) {

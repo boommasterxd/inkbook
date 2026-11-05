@@ -1,19 +1,15 @@
-import { buildElementPathParts } from "../../../../domain/geometry/public";
 import type {
   EndpointConnectionV1,
   InkElementV1,
   PointV1,
-  StrokeElementV1,
   StrokeStyleV1,
 } from "../../../../domain/schema/public";
 import type { ToolDefaultsV1 } from "../../../../domain/settings/types";
 import type { GesturePreview, GesturePreviewStart } from "../../../../editor/gestures/public";
 import { resolvePointAngleSnap } from "../../../../editor/selection/public";
 import { type SnapCandidate } from "../../../../editor/snapping/snap-candidate";
-import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler";
 import { LiveStrokeBuilder, type LiveStrokeCommit } from "../../../../editor/tools/live-stroke";
 import { createDragElement, createFreehandElement } from "../../../../editor/tools/public";
-import { pathPresentation } from "../../../../rendering/scene/content/element-presentation";
 import type { LivePathState } from "../../../../rendering/scene/index";
 
 import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "../input/coalesced-input";
@@ -22,40 +18,20 @@ import type { EditableDocumentModel } from "../../document-session/document-mode
 import type { ElementRecord } from "../../../../domain/store/types";
 import { selectionSnapGuidePath, snapMarkerPath } from "./snap-marker-path";
 import { CreationSnapping, type CreationSnapPorts } from "./creation-snapping";
+import {
+  type CreationHoldRecognition,
+  connectRecognizedElement,
+  createCreationHold,
+  creationHoldSnapEndpoints,
+} from "./creation-hold-recognition";
+import { creationLivePath } from "./creation-path";
+import { inputPressure, strokeStyle } from "./creation-stroke-input";
+import type { CreationPreviewOptions, CreationPreviewRenderer } from "./creation-preview-types";
+export type { CreationPreviewOptions, CreationPreviewRenderer } from "./creation-preview-types";
 export type { CreationSnapPorts } from "./creation-snapping";
 
-export interface CreationPreviewRenderer {
-  clearLiveStroke(): void;
-  commitLiveStroke(id: string, prepared?: LiveStrokeCommit): void;
-  commitLivePath(id: string): void;
-  setLivePath(path: LivePathState | null): void;
-  setSnapMarkerPath(d: string | null): void;
-  suppressMotionForNextDelta(ids: readonly string[]): void;
-  updateLiveStroke(
-    preview: ReturnType<LiveStrokeBuilder["preview"]>,
-    style: StrokeStyleV1,
-    tool: StrokeElementV1["tool"],
-  ): void;
-}
-
-export interface CreationPreviewOptions {
-  readonly defaults: ToolDefaultsV1;
-  readonly now?: () => number;
-  readonly onStrokeCapacityReached?: () => void;
-  readonly history: ActiveEditorHistory;
-  readonly model?: EditableDocumentModel;
-  readonly isCurrent?: () => boolean;
-  readonly readRevision?: () => number;
-  readonly refinementSignal?: AbortSignal;
-  readonly identity: { readonly createdAt: number; readonly id: string };
-  readonly renderer: CreationPreviewRenderer;
-  readonly snap?: CreationSnapPorts;
-  readonly strokeInput?: { readonly pressureSource: "pen" | "simulated"; readonly zoom: number };
-  readonly workScheduler?: WorkScheduler;
-  readonly start: GesturePreviewStart;
-}
-
 export class CreationPreview implements GesturePreview {
+  readonly #hold: CreationHoldRecognition | undefined;
   readonly #defaults: ToolDefaultsV1;
   readonly #now: (() => number) | undefined;
   readonly #onStrokeCapacityReached: (() => void) | undefined;
@@ -81,6 +57,9 @@ export class CreationPreview implements GesturePreview {
   #finished = false;
   #sampleTime = 0;
   #startSnap: SnapCandidate | null = null;
+  #recognized: InkElementV1 | null = null;
+  #holdStartPreview = true;
+  #connectionsEnabled: boolean | undefined;
 
   public get frameSampleMode(): CoalescedFrameSampleMode {
     return this.#stroke === null ? "latest" : "preserve";
@@ -142,7 +121,18 @@ export class CreationPreview implements GesturePreview {
             style: this.#strokeStyle,
           });
     this.#appendSample(options.start.pointer, this.#sampleTime);
-    this.#updateSnapCandidates();
+    this.#hold = createCreationHold(
+      options,
+      () => this.#stroke!.samples,
+      () => !this.#finished && this.#isCurrent(),
+      (element) => {
+        if (this.#finished) return;
+        this.#recognized = element;
+        if (element === null) this.#holdStartPreview = false;
+        this.#updateSnapCandidates(false, true);
+      },
+    );
+    this.#updateSnapCandidates(true);
     this.#render();
   }
 
@@ -152,9 +142,9 @@ export class CreationPreview implements GesturePreview {
       this.revert();
       return false;
     }
-    if (this.#stroke === null) {
-      this.#updateSnapCandidates(true);
-    }
+    if (this.#stroke === null || this.#recognized !== null) {
+      this.#updateSnapCandidates(this.#stroke === null);
+    } else this.#snapping?.cancel();
     if (this.#snapping?.pending) {
       return this.#commitPendingSnap();
     }
@@ -169,15 +159,18 @@ export class CreationPreview implements GesturePreview {
 
   #commitNow(): boolean {
     if (this.#cancelled || !this.#isCurrent()) return false;
+    const recognized = this.#recognized;
     const element = this.#commitElement();
     this.#finished = true;
+    this.#hold?.dispose();
     this.#renderer.setSnapMarkerPath(null);
     this.#renderer.suppressMotionForNextDelta([element.id]);
-    const retainPath = this.#start.tool === "straight-highlighter";
+    const retainPath = this.#start.tool === "straight-highlighter" || recognized !== null;
+    if (recognized !== null) this.#renderer.setLivePath(this.#elementPath(element));
     if (this.#stroke === null && !retainPath) this.#renderer.setLivePath(null);
     try {
       const committed = this.#history.create([element]);
-      if (this.#stroke !== null && committed)
+      if (this.#stroke !== null && committed && recognized === null)
         this.#renderer.commitLiveStroke(element.id, this.#strokeCommit);
       else if (this.#stroke !== null) this.#renderer.clearLiveStroke();
       if (retainPath) {
@@ -194,16 +187,22 @@ export class CreationPreview implements GesturePreview {
 
   public revert(): void {
     this.#snapping?.cancel();
+    this.#hold?.dispose();
     this.#cancelled = true;
     if (this.#finished) return;
     this.#finished = true;
     this.#renderer.setSnapMarkerPath(null);
-    if (this.#stroke === null) this.#renderer.setLivePath(null);
-    else this.#renderer.clearLiveStroke();
+    this.#renderer.setLivePath(null);
+    if (this.#stroke !== null) this.#renderer.clearLiveStroke();
   }
 
   public update(pointer: GesturePreviewStart["pointer"]): void {
     this.updateSamples([{ ...pointer, time: this.#nextSampleTime() }]);
+  }
+
+  /** Observes validated screen samples before frame coalescing can hide an excursion. */
+  public observeInputSamples(samples: readonly PointV1[]): void {
+    this.#hold?.observe(samples);
   }
 
   public updateSamples(samples: readonly CoalescedCreationSample[]): void {
@@ -245,6 +244,8 @@ export class CreationPreview implements GesturePreview {
   }
 
   #commitElement(): InkElementV1 {
+    if (this.#recognized !== null)
+      return connectRecognizedElement(this.#recognized, [this.#startSnap, this.#endSnap]);
     if (isFreehand(this.#start.tool)) {
       if (this.#stroke === null) throw new Error("Freehand creation requires a live stroke.");
       const commit = this.#stroke.finish();
@@ -273,14 +274,14 @@ export class CreationPreview implements GesturePreview {
   }
 
   #elementPath(element: InkElementV1): LivePathState {
-    const parts = buildElementPathParts(element);
-    return {
-      band: this.#start.tool === "straight-highlighter" ? "highlight" : "content",
-      parts: parts.map((part) => ({
-        d: part.d,
-        presentation: pathPresentation(element, part),
-      })),
-    };
+    return creationLivePath(element);
+  }
+
+  #renderHold(): void {
+    this.#renderer.setLivePath(
+      this.#recognized === null ? null : creationLivePath(this.#commitElement(), 0.3),
+    );
+    this.#renderSnapMarkers();
   }
 
   #commitElementWithoutFinishing(): InkElementV1 {
@@ -323,7 +324,10 @@ export class CreationPreview implements GesturePreview {
   }
 
   #renderSnapMarkers(): void {
-    if (this.#snap === undefined || !supportsAngleSnapping(this.#start.tool)) {
+    if (
+      this.#snap === undefined ||
+      (!supportsAngleSnapping(this.#start.tool) && this.#hold === undefined)
+    ) {
       this.#renderer.setSnapMarkerPath(null);
       return;
     }
@@ -347,26 +351,52 @@ export class CreationPreview implements GesturePreview {
     this.#renderer.setSnapMarkerPath(path.length === 0 ? null : path);
   }
 
-  #updateSnapCandidates(revalidate = false): void {
+  #updateSnapCandidates(revalidate = false, candidateChanged = false): void {
+    const enabled = this.#snapFeatureEnabled("connections");
+    if (
+      this.#hold !== undefined &&
+      !revalidate &&
+      !candidateChanged &&
+      enabled === this.#connectionsEnabled &&
+      !this.#snapping?.needsRevalidation
+    )
+      return;
+    this.#connectionsEnabled = enabled;
+    const hold =
+      this.#hold === undefined
+        ? undefined
+        : creationHoldSnapEndpoints(
+            this.#recognized,
+            this.#start.pointer,
+            this.#current,
+            this.#holdStartPreview,
+          );
     this.#snapping?.update(
-      this.#current,
-      this.#snapFeatureEnabled("connections") && supportsConnections(this.#start.tool),
+      hold?.end ?? this.#current,
+      enabled && (supportsConnections(this.#start.tool) || hold?.enabled === true),
       revalidate,
+      hold,
     );
+    this.#readSnapCandidates();
+    if (this.#hold !== undefined && !this.#finished) this.#renderHold();
+  }
+
+  #readSnapCandidates(): void {
     this.#startSnap = this.#snapping?.start ?? null;
     this.#endSnap = this.#snapping?.end ?? null;
   }
 
   #snapReady(): void {
     if (this.#finished) return;
-    this.#startSnap = this.#snapping?.start ?? null;
-    this.#endSnap = this.#snapping?.end ?? null;
-    this.#render();
+    this.#readSnapCandidates();
+    if (this.#stroke === null) this.#render();
+    else this.#renderHold();
   }
 
   #commitPendingSnap(): boolean {
     const element = this.#commitElement();
     this.#finished = true;
+    this.#hold?.dispose();
     this.#renderer.setSnapMarkerPath(null);
     this.#renderer.setLivePath(this.#elementPath(element));
     this.#renderer.suppressMotionForNextDelta([element.id]);
@@ -379,14 +409,17 @@ export class CreationPreview implements GesturePreview {
     } catch (error) {
       this.#snapping?.cancel();
       this.#renderer.setLivePath(null);
+      if (this.#stroke !== null) this.#renderer.clearLiveStroke();
       throw error;
     }
     if (retained === null) {
       this.#snapping?.cancel();
       this.#renderer.setLivePath(null);
+      if (this.#stroke !== null) this.#renderer.clearLiveStroke();
       return false;
     }
     this.#renderer.commitLivePath(element.id);
+    if (this.#stroke !== null) this.#renderer.clearLiveStroke();
     const original = this.#model?.store.get(element.id);
     if (original === undefined) {
       retained.finish();
@@ -461,22 +494,4 @@ function supportsAngleSnapping(tool: GesturePreviewStart["tool"]): boolean {
 
 function isFreehand(tool: GesturePreviewStart["tool"]): tool is "draw" | "highlighter" {
   return tool === "draw" || tool === "highlighter";
-}
-
-function inputPressure(pressure: number | undefined, source: "pen" | "simulated"): number {
-  if (source === "simulated") return 0.5;
-  if (pressure === undefined) return 0.5;
-  if (!Number.isFinite(pressure)) throw new RangeError("Pen pressure must be finite.");
-  return Math.min(1, Math.max(0, pressure));
-}
-
-function strokeStyle(defaults: ToolDefaultsV1, tool: "draw" | "highlighter"): StrokeStyleV1 {
-  const source = tool === "draw" ? defaults.pen : defaults.highlighter;
-  return {
-    color: structuredClone(source.color),
-    opacity: source.opacity,
-    pressureEnabled: tool === "draw" ? defaults.pen.pressureEnabled : false,
-    smoothing: 0.5,
-    width: source.width,
-  };
 }

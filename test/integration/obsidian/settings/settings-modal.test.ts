@@ -12,10 +12,13 @@ import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-sto
 import * as actionDialog from "../../../../src/obsidian/dialogs/action-dialog";
 import { createBuiltInSettings, type InkbookSettingsV4 } from "../../../../src/domain/settings";
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
+import { mockSettingsScrollOwner } from "../../../fixtures/obsidian/settings-scroll";
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   installObsidianDomHelpers();
   document.body.replaceChildren();
+  mockSettingsScrollOwner(".inkbook-settings-modal-body");
 });
 
 describe("Inkbook settings modal", () => {
@@ -107,7 +110,7 @@ describe("Inkbook settings modal", () => {
 describe("Inkbook settings modal scroll preservation", () => {
   it("keeps the settings scroll position when ordinary controls change", async () => {
     const { controller, store } = openSettingsModalWithFullMotion();
-    const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
+    const modalContent = required<HTMLElement>(".inkbook-settings-modal-body");
     const body = required<HTMLElement>(".inkbook-settings-modal-body");
     const row = required<HTMLElement>('[data-setting-name="Left-handed toolbar"]');
     const toggle = requiredWithin<HTMLInputElement>(row, 'input[type="checkbox"]');
@@ -125,7 +128,7 @@ describe("Inkbook settings modal scroll preservation", () => {
 
   it("preserves scroll while rerendering structurally conditional settings", async () => {
     const { controller, store } = openSettingsModalWithFullMotion();
-    const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
+    const modalContent = required<HTMLElement>(".inkbook-settings-modal-body");
     const row = required<HTMLElement>('[data-setting-name="File placement"]');
     const dropdown = requiredWithin<HTMLSelectElement>(row, "select");
     expect(dropdown.getAttribute("aria-label")).toBe("File placement");
@@ -145,12 +148,43 @@ describe("Inkbook settings modal scroll preservation", () => {
   });
 });
 
+it("keeps hold sliders and number fields synchronized across disabling and reenabling", async () => {
+  const { controller, store } = openSettingsModalWithFullMotion();
+  const prefix = '.inkbook-hold-to-shape-group [data-control="jitter-tolerance-px"]';
+  const number = required<HTMLInputElement>(`${prefix} input[type="number"]`);
+  number.value = "24";
+  number.dispatchEvent(new Event("input"));
+  number.dispatchEvent(new Event("change"));
+  await vi.waitFor(() => expect(store.getVaultSettings().holdToShape.jitterTolerancePx).toBe(24));
+  expect(required<HTMLInputElement>(`${prefix} input[type="range"]`).value).toBe("24");
+  const toggleSelector = '[aria-label="Enable hold to shape"]';
+  const toggle = required<HTMLInputElement>(toggleSelector);
+  toggle.checked = false;
+  toggle.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() => {
+    const inputs = document.querySelectorAll<HTMLInputElement>(
+      ".inkbook-hold-to-shape-group input:not([type=checkbox])",
+    );
+    expect(inputs).toHaveLength(4);
+    expect([...inputs].every((input) => input.disabled)).toBe(true);
+  });
+  const enable = required<HTMLInputElement>(toggleSelector);
+  enable.checked = true;
+  enable.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() =>
+    expect(required<HTMLInputElement>(`${prefix} input[type="number"]`).disabled).toBe(false),
+  );
+  expect(required<HTMLInputElement>(`${prefix} input[type="number"]`).value).toBe("24");
+  expect(required<HTMLInputElement>(`${prefix} input[type="range"]`).value).toBe("24");
+  controller.dispose();
+});
+
 describe("Inkbook settings modal reset refresh", () => {
   it.each(["group", "all"])(
     "refreshes the open preload controls after a %s reset",
     async (scope) => {
       const { controller, store } = openSettingsModalWithFullMotion();
-      const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
+      const modalContent = required<HTMLElement>(".inkbook-settings-modal-body");
       const pixelSelector = '[data-control="scroll-preload-margin"]';
       const slider = required<HTMLInputElement>(`${pixelSelector} input[type="range"]`);
       const refreshSelector = '[data-setting-name="Display refresh rate"] select';
@@ -169,6 +203,11 @@ describe("Inkbook settings modal reset refresh", () => {
         expect(store.getVaultSettings().refreshRatePreference).toBe(60);
         expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(false);
       });
+      const toolSelector =
+        '.inkbook-settings-tool-trigger[aria-controls="inkbook-settings-tool-eraser"]';
+      const shortcutSelector = ".inkbook-shortcut-section-trigger";
+      required<HTMLButtonElement>(toolSelector).click();
+      required<HTMLButtonElement>(shortcutSelector).click();
       modalContent.scrollTop = 240;
       vi.spyOn(actionDialog, "confirmInkbookAction").mockResolvedValue(true);
       const reset =
@@ -197,6 +236,10 @@ describe("Inkbook settings modal reset refresh", () => {
         );
       });
       expect(modalContent.scrollTop).toBe(240);
+      expect(required<HTMLElement>(".inkbook-settings-modal-body")).toBe(modalContent);
+      expect(required(toolSelector).getAttribute("aria-expanded")).toBe("true");
+      expect(required(shortcutSelector).getAttribute("aria-expanded")).toBe("true");
+      expect(required<HTMLElement>("#inkbook-settings-tool-eraser").hidden).toBe(false);
       expect(document.activeElement).toBe(
         scope === "all"
           ? required('[data-setting-name="Reset all Inkbook settings"]')
@@ -211,7 +254,7 @@ describe("Inkbook settings modal reset refresh", () => {
 
   it("releases the tab update listener when the settings modal closes", () => {
     const { controller, tab } = openSettingsModalWithFullMotion();
-    const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
+    const modalContent = required<HTMLElement>(".inkbook-settings-modal-body");
     controller.dispose();
     const replace = vi.spyOn(modalContent, "replaceChildren");
     tab.update();
@@ -242,7 +285,7 @@ describe("Inkbook settings disclosure motion", () => {
         '.inkbook-settings-tool-trigger[aria-expanded="false"]',
       ),
     ];
-    expect(triggers).toHaveLength(19);
+    expect(triggers).toHaveLength(20);
 
     const panels = triggers.map((trigger) => {
       const panel = required<HTMLElement>(`#${trigger.getAttribute("aria-controls") ?? "missing"}`);

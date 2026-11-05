@@ -73,6 +73,7 @@ export function createActiveSceneController(
     },
     scrollOwner,
     snapping: options.snapping,
+    ...(options.holdToShape === undefined ? {} : { holdToShape: options.holdToShape }),
     startupTool: options.startupTool,
   });
 }

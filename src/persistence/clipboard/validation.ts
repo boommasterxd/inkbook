@@ -100,6 +100,7 @@ function* remapClipboardBodySteps(
 
 const polygonVertices = (kind: string): number => {
   if (kind === "triangle") return 3;
+  if (kind === "star") return 10;
   if (kind === "diamond" || kind === "parallelogram") return 4;
   if (kind === "octagon") return 8;
   return 0;

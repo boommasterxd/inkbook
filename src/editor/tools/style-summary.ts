@@ -56,10 +56,12 @@ export type ActiveToolStyleSummary =
       readonly width: StrokeStyleV1["width"];
       readonly opacity: number;
       readonly pressureEnabled: boolean | null;
+      readonly holdToShapeEnabled: boolean | null;
     }
   | {
       readonly kind: "outline";
       readonly style: OutlineStyleV1;
+      readonly snappingEnabled: boolean | null;
       readonly fill: Pick<ShapeStyleV1, "fillColor" | "fillOpacity"> | null;
       readonly arrowNodes: { readonly start: ArrowNodeV1; readonly end: ArrowNodeV1 } | null;
       readonly structural:
@@ -118,7 +120,12 @@ export function summarizeActiveToolStyle(
   }
   if (tool === "highlighter" || tool === "straight-highlighter") {
     const values = tool === "highlighter" ? toolValues.highlighter : toolValues.straightHighlighter;
-    return { kind: "stroke", ...structuredClone(values), pressureEnabled: null };
+    return {
+      kind: "stroke",
+      ...structuredClone(values),
+      pressureEnabled: null,
+      holdToShapeEnabled: null,
+    };
   }
 
   const style = structuredClone(toolValues.shapes[tool]);
@@ -133,7 +140,16 @@ export function summarizeActiveToolStyle(
       : tool === "table"
         ? { kind: tool, columns: toolValues.table.columns }
         : null;
-  return { kind: "outline", style: outlinePart(style), fill, arrowNodes, structural };
+  const snappingEnabled =
+    tool === "line" || tool === "arrow" ? toolValues[tool].snappingEnabled : null;
+  return {
+    kind: "outline",
+    style: outlinePart(style),
+    snappingEnabled,
+    fill,
+    arrowNodes,
+    structural,
+  };
 }
 
 function summarizeCommonSelection(elements: readonly InkElementV1[]): SelectionStyleSummary {
@@ -213,6 +229,7 @@ function isClosedShape(
     element.kind === "ellipse" ||
     element.kind === "triangle" ||
     element.kind === "octagon" ||
+    element.kind === "star" ||
     element.kind === "parallelogram" ||
     element.kind === "diamond"
   );

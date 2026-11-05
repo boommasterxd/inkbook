@@ -16,6 +16,7 @@ import type {
 import type { SettingsControlKey } from "../control-values";
 import { resetAction } from "./definition-helpers";
 import { renderSettingsControlContent } from "../settings-control-content";
+import { createSettingsHeading, createSettingsVisualControlRow } from "../settings-row";
 import { createSettingsLayoutMotion } from "../settings-layout-motion";
 import { createSettingsValidationMotion } from "../settings-validation-motion";
 import { SettingsWriteFeedback } from "../settings-write-feedback";
@@ -81,7 +82,7 @@ function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): 
     "inkbook-settings-background-row",
     "inkbook-settings-validation-surface",
   );
-  const description = createSettingHeading(
+  const description = createSettingsHeading(
     setting.settingEl,
     "Background",
     "Choose the pattern and spacing copied into newly created files.",
@@ -182,10 +183,7 @@ function bufferDefinition(values: PageDefaultsValues): SettingDefinitionRender {
     name: "Page buffer",
     desc: BUFFER_DESCRIPTION,
     render: (setting) => {
-      setting.settingEl.replaceChildren();
-      setting.settingEl.classList.add("inkbook-settings-visual-row");
-      createSettingHeading(setting.settingEl, "Page buffer", BUFFER_DESCRIPTION);
-      const content = setting.settingEl.createDiv({ cls: "inkbook-settings-inline-controls" });
+      const content = createSettingsVisualControlRow(setting, "Page buffer", BUFFER_DESCRIPTION);
       return renderSettingsControlContent(content, {
         controls: () => [bufferControl(values)],
         descriptions: { "active-buffer-lines": BUFFER_DESCRIPTION },
@@ -224,16 +222,4 @@ function stateForType(values: PageDefaultsValues, type: BackgroundType): Backgro
 
 function spacingValue(spacing: BackgroundSpacing): (typeof LINE_SPACINGS)[number] {
   return LINE_SPACINGS[SPACINGS.indexOf(spacing)] ?? LINE_SPACINGS[0];
-}
-
-function createSettingHeading(
-  container: HTMLElement,
-  name: string,
-  description: string,
-): HTMLElement {
-  const info = container.createDiv({ cls: "inkbook-settings-visual-info" });
-  info.createDiv({ cls: "setting-item-name", text: name });
-  const descriptionElement = info.createDiv({ cls: "setting-item-description", text: description });
-  descriptionElement.id = `inkbook-setting-${name.toLowerCase().replaceAll(" ", "-")}-description`;
-  return descriptionElement;
 }

@@ -15,6 +15,7 @@ import {
 import { nativeSettingDefinitions } from "../../../../src/obsidian/settings/setting-control-renderer";
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
+import { SettingDefinitionRenderer } from "../../../../src/obsidian/settings/setting-definition-renderer";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 
 beforeEach(() => {
@@ -38,11 +39,40 @@ function findRender(
   throw new Error(`Missing native setting: ${name}`);
 }
 
-function mount(definition: SettingDefinitionRender): () => void {
-  const group = new SettingGroup(document.body);
-  const setting = new Setting(document.body).setName(definition.name);
+function mount(definition: SettingDefinitionRender, container = document.body): () => void {
+  const group = new SettingGroup(container);
+  const setting = new Setting(container).setName(definition.name);
   return definition.render(setting, group) ?? (() => undefined);
 }
+
+it("keeps native row identities stable and distinguishes identically named group resets", () => {
+  const host = { getControlValue: () => false, setControlValue: () => undefined };
+  const definitions = ["Input", "Interface"].map((heading) => ({
+    type: "group" as const,
+    cls: "shared-settings-group",
+    heading,
+    items: [{ name: "Reset group to defaults", render: vi.fn() }],
+  }));
+  const identities: string[] = [];
+  for (const group of nativeSettingDefinitions(definitions, host)) {
+    if (!("items" in group)) continue;
+    for (const item of group.items ?? []) {
+      if (!("render" in item) || item.render === undefined) continue;
+      const row = document.body.createDiv();
+      const release = mount(item, row);
+      identities.push(row.dataset.inkbookSettingIdentity ?? "");
+      release();
+    }
+  }
+  expect(identities).toEqual(
+    definitions.map((definition) =>
+      JSON.stringify([
+        JSON.stringify([definition.cls, definition.heading]),
+        "Reset group to defaults",
+      ]),
+    ),
+  );
+});
 
 it.each([
   ["Selection highlights", "selectionHighlightsEnabled", false, "vault"],
@@ -141,6 +171,89 @@ it("preserves searchable metadata, option labels, visibility and disabled native
   const dispose = mount(rendered);
   expect(document.querySelector<HTMLSelectElement>("select")?.disabled).toBe(true);
   dispose();
+});
+
+it("validates native hold fields, preserves disabled values and resets only their group", async () => {
+  const save = vi.fn(async () => undefined);
+  const store = new InkbookSettingsStore(
+    { loadData: async () => createBuiltInSettings(), saveData: save },
+    { loadLocalStorage: () => createBuiltInDeviceSettings(), saveLocalStorage: vi.fn() },
+  );
+  const tab = new InkbookSettingTab(
+    {} as ConstructorParameters<typeof InkbookSettingTab>[0],
+    {} as ConstructorParameters<typeof InkbookSettingTab>[1],
+    store,
+  );
+  await tab.setControlValue("startupTool", "arrow");
+  await tab.setControlValue("holdToShape.holdDurationMs", 950);
+  await tab.setControlValue("holdToShape.enabled", false);
+  let release = mount(findRender(tab.getSettingDefinitions(), "Hold delay"));
+  let field = document.querySelector<HTMLInputElement>(
+    'input[type="number"][aria-label="Hold delay"]',
+  )!;
+  let slider = document.querySelector<HTMLInputElement>(
+    'input[type="range"][aria-label="Hold delay"]',
+  )!;
+  expect(field.disabled).toBe(true);
+  expect(slider.disabled).toBe(true);
+  expect(field.value).toBe("950");
+  release();
+  document.body.replaceChildren();
+  await tab.setControlValue("holdToShape.enabled", true);
+  release = mount(findRender(tab.getSettingDefinitions(), "Hold delay"));
+  field = document.querySelector<HTMLInputElement>(
+    'input[type="number"][aria-label="Hold delay"]',
+  )!;
+  slider = document.querySelector<HTMLInputElement>(
+    'input[type="range"][aria-label="Hold delay"]',
+  )!;
+  expect(slider.disabled).toBe(false);
+  expect([field.min, field.max, field.step]).toEqual(["200", "2000", "50"]);
+  field.focus();
+  field.value = "199";
+  field.dispatchEvent(new Event("change"));
+  await vi.waitFor(() => expect(field.value).toBe("950"));
+  expect(tab.getControlValue("holdToShape.holdDurationMs")).toBe(950);
+  expect(document.activeElement).toBe(field);
+  const associatedText = (field.getAttribute("aria-describedby") ?? "")
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent ?? "")
+    .join(" ");
+  expect(associatedText).toContain("Enter a valid setting value.");
+  slider.value = "1200";
+  slider.dispatchEvent(new Event("input"));
+  expect(field.value).toBe("1200");
+  expect(tab.getControlValue("holdToShape.holdDurationMs")).toBe(950);
+  slider.dispatchEvent(new Event("change"));
+  await vi.waitFor(() => expect(tab.getControlValue("holdToShape.holdDurationMs")).toBe(1200));
+  release();
+  document.body.replaceChildren();
+  release = mount(findRender(tab.getSettingDefinitions(), "Movement tolerance"));
+  field = document.querySelector<HTMLInputElement>(
+    'input[type="number"][aria-label="Movement tolerance"]',
+  )!;
+  slider = document.querySelector<HTMLInputElement>(
+    'input[type="range"][aria-label="Movement tolerance"]',
+  )!;
+  expect([field.value, field.min, field.max, field.step]).toEqual(["12", "1", "32", "1"]);
+  field.focus();
+  field.value = "32";
+  field.dispatchEvent(new Event("input"));
+  expect(slider.value).toBe("32");
+  field.dispatchEvent(new Event("change"));
+  await vi.waitFor(() => expect(tab.getControlValue("holdToShape.jitterTolerancePx")).toBe(32));
+  release();
+  const group = tab
+    .getControlDefinitions()
+    .find((item) => "heading" in item && item.heading === "Hold to shape");
+  const renderer = new SettingDefinitionRenderer(tab, vi.fn());
+  renderer.render(document.body, group === undefined ? [] : [group]);
+  document.querySelector<HTMLElement>('[role="button"]')!.click();
+  await vi.waitFor(() =>
+    expect(store.getVaultSettings().holdToShape).toEqual(createBuiltInSettings().holdToShape),
+  );
+  expect(store.getVaultSettings().startupTool).toBe("arrow");
+  renderer.dispose();
 });
 
 it.each(["host", "pagehide", "abort"] as const)(

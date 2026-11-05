@@ -39,6 +39,7 @@ const SHAPE_KINDS = [
   "rectangle",
   "ellipse",
   "triangle",
+  "star",
   "octagon",
   "parallelogram",
   "diamond",
@@ -156,6 +157,7 @@ export function* assertInkElementSteps(
     case "rectangle":
     case "ellipse":
     case "triangle":
+    case "star":
     case "octagon":
     case "parallelogram":
     case "diamond":

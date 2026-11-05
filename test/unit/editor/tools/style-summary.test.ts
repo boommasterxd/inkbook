@@ -87,17 +87,21 @@ describe("Style summaries", () => {
     expect(summarizeActiveToolStyle(values, "draw")).toMatchObject({
       kind: "stroke",
       pressureEnabled: true,
+      holdToShapeEnabled: true,
     });
     expect(summarizeActiveToolStyle(values, "highlighter")).toMatchObject({
       kind: "stroke",
       pressureEnabled: null,
+      holdToShapeEnabled: null,
     });
     expect(summarizeActiveToolStyle(values, "arrow")).toMatchObject({
       kind: "outline",
       fill: null,
+      snappingEnabled: true,
       arrowNodes: { start: "none", end: "arrow" },
     });
     expect(summarizeActiveToolStyle(values, "table")).toMatchObject({
+      snappingEnabled: null,
       structural: { kind: "table", columns: 2 },
     });
   });

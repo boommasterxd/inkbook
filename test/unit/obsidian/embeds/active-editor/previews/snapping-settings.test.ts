@@ -3,6 +3,40 @@ import { describe, expect, it } from "vitest";
 import { activeSnapFeatures } from "../../../../../../src/obsidian/embeds/active-editor/previews/snapping-settings";
 
 describe("active snapping settings", () => {
+  it("inverts the combined master and tool gate while retaining feature choices", () => {
+    const settings = {
+      enabled: true,
+      angles: false,
+      bends: true,
+      connections: true,
+      structures: false,
+    };
+    expect(activeSnapFeatures(settings, false, false)).toEqual({
+      angles: false,
+      bends: false,
+      connections: false,
+      structures: false,
+    });
+    expect(activeSnapFeatures(settings, true, false)).toEqual({
+      angles: false,
+      bends: true,
+      connections: true,
+      structures: false,
+    });
+    expect(activeSnapFeatures(settings, true, true)).toEqual({
+      angles: false,
+      bends: false,
+      connections: false,
+      structures: false,
+    });
+    expect(activeSnapFeatures({ ...settings, enabled: false }, true, true)).toEqual({
+      angles: false,
+      bends: true,
+      connections: true,
+      structures: false,
+    });
+  });
+
   it("disables every effective feature through the global switch", () => {
     expect(
       activeSnapFeatures({

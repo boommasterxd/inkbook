@@ -21,6 +21,55 @@ afterEach(() => {
 });
 
 describe("manual opening feedback", () => {
+  it("keeps the backdrop inside the owned canvas across locked, opening and exit phases", async () => {
+    Object.defineProperty(document.documentElement, "clientHeight", {
+      configurable: true,
+      value: 800,
+    });
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 1000,
+    });
+    const preview = harness.root.createDiv({ cls: "inkbook-locked-preview" });
+    const rootBounds = vi.spyOn(harness.root, "getBoundingClientRect");
+    rootBounds.mockReturnValue(new DOMRect(100, 20, 600, 500));
+    vi.spyOn(preview, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 20, 600, 500));
+    const operation = harness.feedback.begin("opening");
+    harness.runTimer();
+    harness.runFrame();
+    const backdrop = harness.backdrop()!;
+    expect(backdrop.parentElement).toBe(preview);
+
+    const chrome = harness.root.createDiv({ cls: "inkbook-editor-chrome" });
+    const toolbar = chrome.createDiv({ cls: "inkbook-editor-chrome-host" });
+    const canvas = chrome.createDiv({ cls: "inkbook-background-container" });
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 200, 600, 48));
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 100, 600, 420));
+    harness.root.classList.add("inkbook-presentation-activating");
+    rootBounds.mockReturnValue(new DOMRect(100, 20, 600, 300));
+    preview.hidden = true;
+    harness.timer.mockRestore();
+    await vi.waitFor(() => expect(backdrop.parentElement).toBe(canvas));
+    expect(canvas.contains(toolbar)).toBe(false);
+    harness.runFrame();
+    expect(harness.status()?.style.insetBlockStart).toBe("210px");
+    rootBounds.mockReturnValue(new DOMRect(100, 20, 600, 500));
+    document.dispatchEvent(new Event("scroll"));
+    harness.runFrame();
+    expect(harness.status()?.style.insetBlockStart).toBe("310px");
+    expect(harness.status()?.style.insetInlineStart).toBe("400px");
+    operation.finish();
+    expect(backdrop.parentElement).toBe(canvas);
+    harness.feedback.finish();
+    expect(backdrop.parentElement).toBe(canvas);
+    backdrop.getAnimations()[0]!.finish();
+    await Promise.resolve();
+    expect(backdrop.isConnected).toBe(false);
+    expect(harness.frames.size).toBe(0);
+    Reflect.deleteProperty(document.documentElement, "clientHeight");
+    Reflect.deleteProperty(document.documentElement, "clientWidth");
+  });
+
   it("leaves fast openings free of loading feedback", () => {
     const operation = harness.feedback.begin("opening");
     expect(harness.root.children).toHaveLength(0);

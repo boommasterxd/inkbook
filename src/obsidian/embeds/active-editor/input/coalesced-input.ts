@@ -23,6 +23,14 @@ interface CoalescedGesturePreview extends GesturePreview {
   updateSamples(samples: readonly CoalescedCreationSample[]): void;
 }
 
+interface RawSamplePreview extends GesturePreview {
+  observeInputSamples(samples: readonly CoalescedCreationSample[]): void;
+}
+
+function observesRawSamples(preview: GesturePreview): preview is RawSamplePreview {
+  return "observeInputSamples" in preview && typeof preview.observeInputSamples === "function";
+}
+
 export type CoalescedFrameSampleMode = "latest" | "preserve";
 
 export interface CoalescedFramePreview extends CoalescedGesturePreview {
@@ -145,6 +153,9 @@ export class CoalescedPointerInput {
       update: (pointer) => {
         const samples = this.#pending;
         const incoming = samples ?? [{ ...pointer, time: this.#now() }];
+        if (observesRawSamples(preview)) {
+          preview.observeInputSamples(incoming);
+        }
         if (frame === null) updateGesturePreview(preview, incoming.map(project));
         else frame.update(incoming);
       },

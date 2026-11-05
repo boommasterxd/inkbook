@@ -8,7 +8,7 @@ import * as Scrolling from "../../scrolling/index";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./input/coalesced-input";
-import { createActiveEditorChromeProps, createActiveEditorChrome } from "./controller-chrome";
+import * as Chrome from "./controller-chrome";
 import { applyInputAction, cancelHandle, configureInputTool } from "./input/controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import * as Interactions from "./controller-interactions";
@@ -37,7 +37,7 @@ import { resolveSnappingPointerOverride } from "./previews/snapping-settings";
 import * as ToolCursor from "./input/tool-cursor-controller";
 import { PendingSelection } from "./previews/pending-selection";
 export class ActiveEditorController {
-  readonly #onboarding: ReturnType<typeof createActiveEditorChrome>;
+  readonly #onboarding: ReturnType<typeof Chrome.createActiveEditorChrome>;
   readonly #pendingSelection = new PendingSelection();
   readonly #cursor: ToolCursor.ActiveToolCursorController;
   readonly #actions: ActiveEditorActions;
@@ -67,6 +67,7 @@ export class ActiveEditorController {
   readonly #workScheduler: ActiveEditorControllerOptions["workScheduler"];
   readonly #sceneStore: ActiveEditorControllerOptions["sceneStore"];
   #snapping: ActiveEditorControllerOptions["snapping"];
+  #holdToShape: ActiveEditorControllerOptions["holdToShape"];
   #snappingInversion: { readonly inverted: boolean; readonly pointerId: number } | undefined;
   #scrollOwner: Scrolling.BrowserScrollElement;
   readonly #styles: ActiveEditorStyleSession;
@@ -104,6 +105,7 @@ export class ActiveEditorController {
     this.#captures = new ActivePointerCaptureOwner(options.renderer.inputSurface);
     this.#scrollOwner = options.scrollOwner;
     this.#snapping = structuredClone(options.snapping);
+    this.#holdToShape = structuredClone(options.holdToShape);
     this.#availability = new ActiveEditorAvailability({
       inputSurface: this.#renderer.inputSurface,
       onDisabled: this.#resetForDisable,
@@ -177,7 +179,7 @@ export class ActiveEditorController {
       () => this.#scrollOwner.getBoundingClientRect(),
     );
     this.#pointer = this.#createPointerController(ownerWindow);
-    this.#onboarding = createActiveEditorChrome(
+    this.#onboarding = Chrome.createActiveEditorChrome(
       [this.#actions, this.#background, this.#chromeState, this.#styles, options],
       [() => this.#input.activeTool, (tool) => this.#configureTool(tool)],
       [this.#menus, this.#model, () => this.#selection.size, this.#renderIcon],
@@ -185,7 +187,7 @@ export class ActiveEditorController {
     );
   }
   public readonly chromeProps = () =>
-    createActiveEditorChromeProps({
+    Chrome.createActiveEditorChromeProps({
       state: [this.#chromeState, this.#styles],
       activeTool: this.#input.activeTool,
       leftHanded: this.#leftHanded,
@@ -335,19 +337,15 @@ export class ActiveEditorController {
   public updateSnappingSettings(settings: ActiveEditorControllerOptions["snapping"]): void {
     this.#snapping = structuredClone(settings);
   }
+  public updateHoldToShapeSettings(settings: ActiveEditorControllerOptions["holdToShape"]): void {
+    this.#holdToShape = structuredClone(settings);
+  }
   public toolbarState(): ToolbarState {
-    return Helpers.createToolbarState({
-      actionConfirmation: this.#actions.actionConfirmation,
-      activeTool: this.#input.activeTool,
-      canRedo: this.#availability.acceptsInput && this.#history.canRedo,
-      canUndo: this.#availability.acceptsInput && this.#history.canUndo,
-      canPaste: this.#availability.acceptsInput && this.#actions.canPaste,
-      fingerDrawingEnabled: this.#touchMode.enabled,
-      fingerDrawingAvailable: this.#touchMode.available,
-      hasSelection: this.#selection.size > 0,
-      openFlyout: this.#chromeState.openFlyout,
-      pasteVisible: this.#actions.pasteVisible,
-    });
+    return Chrome.createActiveEditorToolbarState(
+      [this.#actions, this.#availability, this.#history],
+      [this.#touchMode, this.#chromeState],
+      [this.#input.activeTool, this.#selection.size > 0],
+    );
   }
   #beginPreview(start: GesturePreviewStart, options: ActiveEditorControllerOptions) {
     this.#pendingSelection.cancel();
@@ -358,6 +356,8 @@ export class ActiveEditorController {
         selectionSignal: this.#pendingSelection.signal,
         selectionGeometry: () => this.#handles.selectionGeometry(),
         defaults: this.#styles.defaults,
+        ...(this.#holdToShape === undefined ? {} : { holdToShape: this.#holdToShape }),
+        screenStart: start.pointer,
         isCurrent: () => this.#availability.attached,
         history: this.#history,
         model: this.#model,

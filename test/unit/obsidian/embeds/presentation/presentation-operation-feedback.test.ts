@@ -9,7 +9,10 @@ import {
 } from "../../../../../src/obsidian/embeds/presentation/presentation-operation-feedback";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
-import { createOperationFeedbackPresentation } from "../../../../fixtures/obsidian/operation-feedback-presentation";
+import {
+  createOperationFeedbackPresentation,
+  createOperationFeedbackObservers,
+} from "../../../../fixtures/obsidian/operation-feedback-presentation";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
 describe("PresentationOperationFeedback backdrop lifetime", () => {
@@ -96,7 +99,7 @@ describe("PresentationOperationFeedback live motion preferences", () => {
         expect(icon.isConnected).toBe(false);
         expect(disconnect).not.toHaveBeenCalled();
         root.dataset.inkbookMotion = "reduced";
-        await vi.waitFor(() => expect(disconnect).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(disconnect).toHaveBeenCalledTimes(2));
         expect(root.getElementsByClassName("inkbook-operation-backdrop")).toHaveLength(0);
         root.dataset.inkbookMotion = "full";
         feedback.begin("loading", performance.now() - 1000);
@@ -113,7 +116,7 @@ describe("PresentationOperationFeedback live motion preferences", () => {
         await Promise.resolve();
         expect(icon.getAnimations()).toHaveLength(0);
         expect(replacement.getAnimations()).toHaveLength(0);
-        expect(disconnect).toHaveBeenCalledTimes(2);
+        expect(disconnect).toHaveBeenCalledTimes(4);
       } finally {
         feedback.dispose();
         root.remove();
@@ -176,6 +179,7 @@ describe("PresentationOperationFeedback layout", () => {
     expect(backdrop?.parentElement).toBeNull();
     expect(harness.body.children).toEqual([harness.root]);
     expect(harness.disconnectStyle).toHaveBeenCalledOnce();
+    expect(harness.disconnectCanvas).toHaveBeenCalledOnce();
     harness.feedback.dispose();
   });
 
@@ -213,6 +217,7 @@ describe("PresentationOperationFeedback layout", () => {
     expect(host?.parentElement).toBeNull();
     expect(harness.root.children).toHaveLength(0);
     expect(harness.disconnectStyle).toHaveBeenCalledOnce();
+    expect(harness.disconnectCanvas).toHaveBeenCalledOnce();
     expect(harness.disconnectResize).toHaveBeenCalledOnce();
     expect(harness.pendingFrames()).toBe(0);
     harness.root.ownerDocument.dispatchEvent(new Event("scroll"));
@@ -405,7 +410,7 @@ function createHarness(onLoadingShown?: () => void) {
   body.append(root);
   const ownerWindow = root.ownerDocument.defaultView;
   if (ownerWindow === null) throw new Error("Missing owner window.");
-  const observers = createObserverHarness(ownerWindow);
+  const observers = createOperationFeedbackObservers(ownerWindow);
   const mutableWindow = ownerWindow as unknown as {
     performance: { now: () => number };
     cancelAnimationFrame: (handle: number) => void;
@@ -461,25 +466,4 @@ function createHarness(onLoadingShown?: () => void) {
       next[1].callback();
     },
   };
-}
-
-function createObserverHarness(ownerWindow: Window) {
-  const observeStyle = vi.fn();
-  const disconnectStyle = vi.fn();
-  const disconnectResize = vi.fn();
-  let syncStyle = () => undefined;
-  Object.assign(ownerWindow, {
-    MutationObserver: class {
-      public constructor(callback: () => undefined) {
-        syncStyle = callback;
-      }
-      public observe = observeStyle;
-      public disconnect = disconnectStyle;
-    },
-    ResizeObserver: class {
-      public observe = vi.fn();
-      public disconnect = disconnectResize;
-    },
-  });
-  return { observeStyle, disconnectStyle, disconnectResize, syncStyle: () => syncStyle() };
 }

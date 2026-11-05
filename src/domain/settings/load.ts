@@ -1,6 +1,12 @@
 import { createBuiltInDeviceSettings, createBuiltInSettings } from "./defaults";
+import { loadHoldToShapeSettings } from "./hold-to-shape";
 import { canonicalShortcutBinding, shortcutBindingSignature } from "./keyboard-shortcuts";
 import { validateCustomVaultFolderPath } from "./path";
+import {
+  addLegacySettingsDefaults,
+  LEGACY_VAULT_SETTINGS_KEYS,
+  VAULT_SETTINGS_KEYS,
+} from "./vault-settings-compatibility";
 import {
   BACKGROUND_TYPES,
   CONFIGURABLE_SHORTCUT_ACTIONS,
@@ -263,36 +269,6 @@ function prepareSettingsRoot<T>(
   return { valid: true, value: input, diagnostics };
 }
 
-const VAULT_SETTINGS_KEYS = [
-  "version",
-  "startupTool",
-  "selectionHighlightsEnabled",
-  "toolDefaults",
-  "snapping",
-  "pageDefaults",
-  "filePlacement",
-  "refreshRatePreference",
-] as const;
-
-const LEGACY_VAULT_SETTINGS_KEYS = VAULT_SETTINGS_KEYS.filter(
-  (key) => key !== "snapping" && key !== "selectionHighlightsEnabled",
-);
-
-function addLegacySettingsDefaults(input: unknown, fallback: InkbookSettingsV4): unknown {
-  if (!isRecord(input) || input.version !== 4) return input;
-  const keys = [
-    ...LEGACY_VAULT_SETTINGS_KEYS,
-    ...("snapping" in input ? ["snapping"] : []),
-    ...("selectionHighlightsEnabled" in input ? ["selectionHighlightsEnabled"] : []),
-  ];
-  if (!hasExactKeys(input, keys)) return input;
-  return {
-    snapping: structuredClone(fallback.snapping),
-    selectionHighlightsEnabled: fallback.selectionHighlightsEnabled,
-    ...input,
-  };
-}
-
 function migrateV3Settings(
   input: unknown,
   fallback: InkbookSettingsV4,
@@ -329,6 +305,7 @@ function migrateV3Settings(
       version: 4,
       selectionHighlightsEnabled: fallback.selectionHighlightsEnabled,
       snapping: structuredClone(fallback.snapping),
+      holdToShape: structuredClone(fallback.holdToShape),
       toolDefaults: isRecord(legacyDefaults)
         ? { ...legacyDefaults, select: structuredClone(fallback.toolDefaults.select) }
         : legacyDefaults,
@@ -338,9 +315,14 @@ function migrateV3Settings(
 
 export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV4> {
   const fallback = createBuiltInSettings();
-  const migrated = migrateV3Settings(addLegacySettingsDefaults(input, fallback), fallback);
+  const migrated = migrateV3Settings(input, fallback);
   if (migrated.kind === "failure") return migrated.result;
-  const prepared = prepareSettingsRoot(migrated.value, fallback, VAULT_SETTINGS_KEYS, 4);
+  const prepared = prepareSettingsRoot(
+    addLegacySettingsDefaults(migrated.value, fallback),
+    fallback,
+    VAULT_SETTINGS_KEYS,
+    4,
+  );
   if (!prepared.valid) return prepared.result;
   const { value, diagnostics } = prepared;
 
@@ -364,6 +346,7 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
       ),
       toolDefaults: loadToolDefaults(value.toolDefaults, fallback.toolDefaults, diagnostics),
       snapping: loadSnapping(value.snapping, fallback.snapping, diagnostics),
+      holdToShape: loadHoldToShapeSettings(value.holdToShape, fallback.holdToShape, diagnostics),
       pageDefaults: loadPageDefaults(value.pageDefaults, fallback.pageDefaults, diagnostics),
       filePlacement: placement,
       refreshRatePreference: validOrDefault(

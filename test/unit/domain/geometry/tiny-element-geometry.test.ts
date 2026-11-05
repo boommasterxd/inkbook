@@ -42,6 +42,7 @@ describe("tiny element geometry", () => {
       "ellipse",
       "triangle",
       "diamond",
+      "star",
       "octagon",
       "parallelogram",
     ];

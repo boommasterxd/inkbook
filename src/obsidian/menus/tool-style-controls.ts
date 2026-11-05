@@ -121,6 +121,14 @@ function strokeControls(
       label: "Pressure sensitivity",
     });
   }
+  if (summary.holdToShapeEnabled !== null) {
+    controls.push({
+      checked: summary.holdToShapeEnabled,
+      id: "hold-to-shape-enabled",
+      kind: "toggle",
+      label: "Hold to shape",
+    });
+  }
   return controls;
 }
 
@@ -147,6 +155,14 @@ function outlineControls(
   }
   if (summary.structural?.kind === "table") {
     controls.push(...createStructuralStyleControls({ tableColumns: summary.structural.columns }));
+  }
+  if (summary.snappingEnabled !== null) {
+    controls.push({
+      checked: summary.snappingEnabled,
+      id: "snapping-enabled",
+      kind: "toggle",
+      label: "Snapping",
+    });
   }
   return controls;
 }

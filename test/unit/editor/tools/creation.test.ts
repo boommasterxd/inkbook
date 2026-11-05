@@ -84,23 +84,28 @@ describe("freehand and linear tool element creation", () => {
 });
 
 describe("shape tool element creation", () => {
-  it.each(["rectangle", "ellipse", "triangle", "octagon", "parallelogram", "diamond"] as const)(
-    "creates normalized %s geometry with fill style",
-    (tool) => {
-      const defaults = createBuiltInSettings().toolDefaults;
-      const shape = createDragElement({
-        identity,
-        tool,
-        start: { x: 100, y: 80 },
-        end: { x: 40, y: 20 },
-        defaults,
-      });
+  it.each([
+    "rectangle",
+    "ellipse",
+    "triangle",
+    "star",
+    "octagon",
+    "parallelogram",
+    "diamond",
+  ] as const)("creates normalized %s geometry with fill style", (tool) => {
+    const defaults = createBuiltInSettings().toolDefaults;
+    const shape = createDragElement({
+      identity,
+      tool,
+      start: { x: 100, y: 80 },
+      end: { x: 40, y: 20 },
+      defaults,
+    });
 
-      expect(shape).toMatchObject({ kind: tool, x: 40, y: 20, width: 60, height: 60 });
-      expect(shape.style).toHaveProperty("fillColor", null);
-      expect(validateInkElementV1(shape).ok).toBe(true);
-    },
-  );
+    expect(shape).toMatchObject({ kind: tool, x: 40, y: 20, width: 60, height: 60 });
+    expect(shape.style).toHaveProperty("fillColor", null);
+    expect(validateInkElementV1(shape).ok).toBe(true);
+  });
 
   it("creates two- and three-dimensional coordinate systems", () => {
     const defaults = createBuiltInSettings().toolDefaults;
