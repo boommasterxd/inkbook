@@ -106,7 +106,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
     });
     root.remove();
     const button = root.createEl("button", {
-      attr: { "aria-label": "Edit handwriting", type: "button" },
+      attr: { type: "button" },
       cls: "inkbook-locked-preview",
     });
     const preview = createInkbookLockedPreview(

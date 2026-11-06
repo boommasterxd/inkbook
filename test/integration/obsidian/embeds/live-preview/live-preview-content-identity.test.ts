@@ -21,21 +21,27 @@ describe("Live Preview widget content identity", () => {
     const initial = new InkbookLivePreviewWidget({ ...embed(), description: "A triangle" }, ports);
     const root = initial.toDOM({ plugin: () => null, dom: new FakePresentationElement() } as never);
     const button = (root as unknown as FakePresentationElement).children[0]!;
+    const label = (root as unknown as FakePresentationElement).children.find(
+      (child) => (child as unknown as HTMLElement).id === button.attributes.get("aria-labelledby"),
+    );
     try {
-      expect(button.attributes.get("aria-label")).toBe("Edit handwriting: A triangle");
+      expect(button.attributes.has("aria-label")).toBe(false);
+      expect(button.attributes.has("title")).toBe(false);
+      expect(label?.hidden).toBe(true);
+      expect(label?.textContent).toBe("Edit handwriting: A triangle");
       const changed = new InkbookLivePreviewWidget(
         { ...embed(), description: "<img src=x>" },
         ports,
       );
       expect(initial.eq(changed)).toBe(false);
       expect(changed.updateDOM(root)).toBe(true);
-      expect(button.attributes.get("aria-label")).toBe("Edit handwriting: <img src=x>");
+      expect(label?.textContent).toBe("Edit handwriting: <img src=x>");
       expect((root as unknown as FakePresentationElement).getElementsByTagName("img").length).toBe(
         0,
       );
       expect(ports.calls).toEqual([]);
       expect(new InkbookLivePreviewWidget(embed(), ports).updateDOM(root)).toBe(true);
-      expect(button.attributes.get("aria-label")).toBe("Edit handwriting");
+      expect(label?.textContent).toBe("Edit handwriting");
     } finally {
       initial.destroy(root);
     }

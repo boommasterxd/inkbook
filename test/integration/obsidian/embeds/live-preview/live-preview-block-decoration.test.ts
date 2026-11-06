@@ -14,6 +14,11 @@ import { nativeFrameWorkScheduler } from "../../../../fixtures/obsidian/immediat
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
 
+function previewLabel(parent: HTMLElement): string | null | undefined {
+  const id = parent.querySelector(".inkbook-locked-preview")?.getAttribute("aria-labelledby");
+  return id === undefined || id === null ? undefined : parent.querySelector(`#${id}`)?.textContent;
+}
+
 interface RecognitionControl {
   resourceUrl?: string;
   notify: ((documentId: string) => void) | undefined;
@@ -96,9 +101,7 @@ describe("Live Preview block-decoration source", () => {
     const detach = vi.spyOn(ports.sessions, "detach");
     const { parent, view } = mountView(ports, "!inkbook[Author one](drawings/page.svg)");
     const attachment = mount.mock.calls[0]![0];
-    expect(parent.querySelector(".inkbook-locked-preview")?.getAttribute("aria-label")).toBe(
-      "Edit handwriting: Author one",
-    );
+    expect(previewLabel(parent)).toBe("Edit handwriting: Author one");
     attachment.root.dataset.inkbookState = "active";
     for (const revision of [2, 3]) {
       control.resourceUrl = `app://vault/drawings/page.svg?${revision}`;
@@ -126,9 +129,7 @@ describe("Live Preview block-decoration source", () => {
     view.dispatch({ changes: { from, to: from + 3, insert: "two" } });
     expect(parent.querySelector(".inkbook-root")).toBe(attachment.root);
     expect(attachment.root.dataset.inkbookState).toBe("active");
-    expect(parent.querySelector(".inkbook-locked-preview")?.getAttribute("aria-label")).toBe(
-      "Edit handwriting: Author two",
-    );
+    expect(previewLabel(parent)).toBe("Edit handwriting: Author two");
     expect(mount).toHaveBeenCalledTimes(1);
     expect(detach).not.toHaveBeenCalled();
     view.destroy();
@@ -245,10 +246,7 @@ describe("Live Preview pending recognition", () => {
       control.notify?.("drawings/page.svg");
       await Promise.resolve();
       expect(parent.querySelector(".inkbook-loading-placeholder")).toBeNull();
-      if (valid)
-        expect(parent.querySelector(".inkbook-locked-preview")?.getAttribute("aria-label")).toBe(
-          "Edit handwriting: Pending drawing",
-        );
+      if (valid) expect(previewLabel(parent)).toBe("Edit handwriting: Pending drawing");
       else expect(parent.textContent).toContain(doc);
       view.destroy();
       expect(control.notify).toBeUndefined();

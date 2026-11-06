@@ -124,7 +124,7 @@
   margin: 0;
 }
 
-.inkbook-import-content .inkbook-import-disclosure > .inkbook-import-disclosure-trigger {
+.inkbook-import-content :where(.inkbook-import-disclosure) > .inkbook-import-disclosure-trigger {
   block-size: auto;
   border-radius: var(--radius-s);
   display: grid;

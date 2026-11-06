@@ -1,6 +1,6 @@
 interface EmbedDescription {
   readonly controls: Set<HTMLElement>;
-  readonly preview: HTMLElement;
+  readonly label: HTMLElement;
   span?: HTMLElement;
 }
 
@@ -15,13 +15,10 @@ export function updateEmbedDescription(
 ): void {
   const record: EmbedDescription | undefined =
     descriptions.get(root) ??
-    (preview === undefined ? undefined : { controls: new Set<HTMLElement>(), preview });
+    (preview === undefined ? undefined : createEmbedDescription(root, preview));
   if (record === undefined) return;
   descriptions.set(root, record);
-  record.preview.setAttribute(
-    "aria-label",
-    description ? `Edit handwriting: ${description}` : "Edit handwriting",
-  );
+  record.label.textContent = description ? `Edit handwriting: ${description}` : "Edit handwriting";
   if (description !== undefined && record.span === undefined) {
     record.span = root.createSpan();
     record.span.id = `inkbook-embed-description-${++nextDescription}`;
@@ -29,6 +26,14 @@ export function updateEmbedDescription(
   }
   if (record.span !== undefined) record.span.textContent = description ?? "";
   for (const control of record.controls) connectDescription(control, record.span);
+}
+
+function createEmbedDescription(root: HTMLElement, preview: HTMLElement): EmbedDescription {
+  const label = root.createSpan();
+  label.id = `inkbook-embed-label-${++nextDescription}`;
+  label.hidden = true;
+  preview.setAttribute("aria-labelledby", label.id);
+  return { controls: new Set<HTMLElement>(), label };
 }
 
 export function bindEmbedDescription(root: HTMLElement, control: HTMLElement): () => void {
