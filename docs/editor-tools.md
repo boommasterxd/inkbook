@@ -18,8 +18,6 @@ The Select tool is used to select and edit existing elements.
 
 The focused canvas also supports logical object navigation and explicit geometry editing through the fixed [canvas keyboard controls](keyboard-shortcuts.md#canvas-object-navigation-and-geometry-editing). Keyboard edits reuse the same Move, resize, rotation, endpoint, bend, coordinate-system, and table-separator handles that the current selection exposes, together with the existing validation, history, and cancellation boundaries. The keyboard contract defines exact step sizes, disabled snapping, announcements, reveal behavior, and normal focus exit.
 
-With a selection, **Edit geometry** in the canvas context menu or More options opens the shared adaptive geometry panel. **Operation** offers Move and the handles available for that selection. **Step size** chooses 1 or 10 document units, or degrees for rotation; Left and Up decrease rotation, while Right and Down increase it. The four direction buttons use the same discrete edit session, handle planner, disabled snapping, validation, prepared commit, and history as keyboard geometry edits. Each accepted adjustment is one undo step. The panel announces pending preparation and the edit outcome without requiring a drag.
-
 Available interactions:
 
 - With mouse or pen input, click an element to select it while Select is active. Selection resolves at release from the initial press position, and a plain click replaces the current selection. Movement up to and including 6 CSS pixels remains a click. The threshold uses the greatest excursion in each validated coalesced batch, so moving outward and returning before the batch ends still starts an area. That complete batch reaches the area preview once. Pending presses, including their cancellation, do not change selection; noncontact pen release coordinates do not turn a tap into a drag.
@@ -48,7 +46,7 @@ The active-canvas input boundary validates browser-coalesced pen samples and adm
 
 Every selection handle uses a larger invisible interaction target than its visible circle. At zoom 1 the radius is 13 CSS pixels for mouse, 16 for pen, and 24 for touch. The radius scales inversely with the square root of zoom and is clamped between 11 and 28 CSS pixels, so low and medium zoom remain forgiving while high zoom allows finer endpoint, bend, resize, and rotation control. Visible handle geometry remains screen-sized and unchanged. The rotation handle remains exactly 28 CSS pixels beyond the transformed top edge throughout resize and zoom, and selection frames and handles become fully visible immediately when selection results are adopted, independently of pending highlight work. Deselecting removes ink highlights on the next scene frame and may animate frame and handle opacity for 120 ms without scaling the overlay. This essential feedback runs before pending geometry work. A handle gesture captures the canonical visible geometry and the pointer-to-handle grab offset once. Every later preview and commit uses that immutable gesture snapshot, so touching an expanded target cannot cause an initial size jump and concurrent Store presentation updates cannot move the overlay away from its elements. Uniform resize projects pointer movement onto the original handle direction; perpendicular pointer noise has no scale component, and crossing the fixed anchor clamps the scale at zero without mirroring.
 
-The vault-level Snapping settings apply to newly started gestures in every active presentation. The global switch disables all snap behavior without changing the saved per-kind choices. Angle snapping controls selection rotation, linear directions, and coordinate-system editing. Bend snapping controls straight and symmetric bend magnets. Connection snapping controls creation, endpoint editing, and single-element movement attachment to semantic anchors. Structure snapping controls table separator magnets. A gesture snapshots these configured choices when it begins, so changing Settings cannot alter an interaction already in progress. Holding Alt temporarily inverts the snap master state for the current pointer frame: configured snapping becomes inactive, while a disabled master temporarily enables the still-configured per-kind choices. Pressing or releasing Alt during a gesture takes effect on the next pointer frame and never changes persisted settings.
+The vault-level Snapping settings apply to newly started gestures in every active presentation. The global switch disables snap behavior without changing the saved per-kind choices. Direct Line and Arrow creation also respect the independent `Snapping` switch in their active Style menu. Angle snapping controls selection rotation, linear directions, and coordinate-system editing. Bend snapping controls straight and symmetric bend magnets. Connection snapping controls creation, endpoint editing, and single-element movement attachment to semantic anchors. Structure snapping controls table separator magnets. A gesture snapshots these configured choices when it begins, so changing Settings cannot alter an interaction already in progress. Holding Alt temporarily inverts the effective snap enable state defined in [Settings](settings.md#snapping), preserving the per-kind choices. Pressing or releasing Alt during a gesture takes effect on the next pointer frame and never changes persisted settings.
 
 An eligible primary mouse or pen action outside the selected geometry and its handles clears the selection before a creation tool continues. Select defers this change until an empty click releases or a nonadditive area begins; clicking an unselected element replaces or adds it at release. Claimed finger drawing clears at gesture start, before its creation preview begins. With finger drawing disabled, only a confirmed short empty-canvas tap clears the selection; contact that becomes note scroll, page pan, pinch, or long press preserves it. Context clicks also preserve the current selection.
 
@@ -96,6 +94,22 @@ Pressure rendering uses the canonical continuous pressure outline construction d
 
 In the default mode, the editor automatically detects whether input is more likely to come from a pen or a mouse. A smoother, simulated pressure curve is used for mouse and finger input.
 
+## Hold to Shape
+
+With both the global and Pen-session Hold to shape switches enabled, Draw can convert the current pen, mouse, or claimed finger stroke into a native shape. The Pen Style menu exposes the session switch beside Pressure sensitivity; [Pen defaults](settings.md#pen-defaults) define its default and precedence. Only the current uninterrupted stroke participates; earlier ink is never searched or replaced. Highlighter, selection, navigation, and context-menu long presses retain their own behavior.
+
+The gesture snapshots its vault preferences when it starts. Screen-space movement beyond a fixed quiet anchor resets the hold, including an excursion that returns within one coalesced input batch. Movement within the configured tolerance and pressure-only changes do not reset it. After a quiet grace of `min(100 ms, holdDurationMs / 4)`, recognition may calculate through the central scheduler while the hold continues. The configured duration controls the earliest preview publication, not a delay before calculation. If preparation finishes later, the original ink remains visible until a valid candidate is ready.
+
+A successful candidate appears behind the unchanged live stroke at 30 percent of its normal fill and outline opacity. It is non-interactive, absent from document bounds, history, hit testing, and export. This is immediate live-input feedback under the Animation Contract. Significant movement removes it immediately and starts a new hold attempt over the extended stroke. Capture loss, cancellation, detach, and disposal cancel timers and pending work. Stale work cannot publish.
+
+Release commits the visible candidate as one normal Create history entry. If no candidate has been published, release commits the original stroke without waiting or replacing it later. Undo removes the resulting element; Redo restores it. Recognized elements use the same creation, validation, renderer, and persistence pipeline as their corresponding shape tools. Initial outline color, constant width, and opacity come from the captured pen defaults; closed shapes start unfilled, and the native tool's outline pattern is retained. They subsequently support the same normal shape styles, including fill. Recognition does not apply an additional direction snap.
+
+With connection snapping enabled, a Draw gesture can show a provisional start-anchor marker without modifying its raw ink. Once a line or arrow is recognized, the existing native connection lookup checks both recognized geometric endpoints. The snapped candidate and completed anchor markers appear in the hold preview. This reuses the same spatial index, target validation, settings and temporary snapping override as normal line and arrow creation. Connections are stored as semantic anchor references and follow later target movement. Pending release lookup follows the existing [connection refinement contract](#line-and-arrow-connections), preserving the same Create history entry, curve, decorations and paint. Continued drawing cancels the candidate, its markers and its pending lookup; an unchanged held candidate reuses valid lookup results.
+
+Supported targets are straight or quadratic curved lines and arrows, rectangle, ellipse/circle, triangle, diamond, parallelogram, octagon, and five-point star. A line can have any angle. Gentle bows favor a straight line; clear intentional curves retain their bend, while unsupported bends, ambiguous contours, and scribbles remain freehand. Rectangles tolerate an imperfect seam along one side and a short initial or final corner overshoot. An unresolved near-closed contour remains freehand rather than becoming an arrow on its closing seam. Stars accept both the outer contour and the usual crossing five-edge pentagram gesture. The native isosceles-triangle and fixed-parallelogram geometry still constrain fitting. Arrow recognition separates shaft geometry from both endpoint decorations. Circle, triangle and diamond contours may attach at their near boundary without drawing through their interior, in either stroke order; the resulting native endpoint is the decoration's outward tip. Disconnected arrowheads, tables, and coordinate systems are outside this single-stroke operation.
+
+Preference ranges and defaults are canonical in [Settings](settings.md#hold-to-shape). Algorithm ownership, bounded work, and verification limits are recorded in [Hold-to-shape recognition](decisions/hold-to-shape-recognition.md).
+
 ## Highlighter
 
 The highlighter uses the same input and rendering path as the pen, but differs visually:
@@ -134,12 +148,11 @@ The toolbar has adjacent Active Shape and Shape Picker controls. The Active Shap
 - Octagon
 - Parallelogram
 - Diamond
+- Star
 - Coordinate System
 - Table
 
 The Active Shape control remembers the most recently selected shape. Repeated activation keeps that tool active; only the adjacent Shape Picker opens or closes the selection.
-
-The Shape menu also offers **Insert selected shape**. It creates the chosen shape near the visible canvas center with the current session defaults through the existing shape-creation and history path, activates Select, selects the new element, reveals its bounds, and opens Edit geometry. Insertion is one undo step; later panel adjustments have their own undo steps. This provides a non-drag alternative for geometric shapes; freehand ink remains pointer-driven.
 
 Lines, arrows, closed shapes, coordinate systems, and tables are created by dragging from a start point to an end point. The live preview uses normalized geometry, and pointer release commits one element. There is no positive minimum geometry during preview, commit, endpoint editing, or selection scaling. Pointer-down begins at zero extent; dragging expands from that point, subject only to canonical 0.001-page-unit precision and enabled snapping. A collapsed outline renders as a point at its configured stroke width. A single collapsed closed shape or table can be expanded again with its resize handles, including after commit. The gesture recovers only zero dimensions without changing the initial visible geometry; a recovered table uses equal columns and the default header position for dimensions that were zero. Arrow decorations shrink to the available endpoint distance and disappear at zero length. When coordinate-axis handles overlap the origin, axis handles win equal-distance hits so collapsed axes can be pulled out individually.
 
@@ -164,7 +177,7 @@ The start and end of a line or arrow independently snap to nearby semantic ancho
 - Rectangle and table: four corners and four outer-edge midpoints.
 - Ellipse or circle: the four cardinal points at 90 degrees on the bottom, 180 degrees on the left, 270 degrees on the top, and 360 degrees on the right. The file format canonicalizes 360 degrees to 0 degrees.
 - Triangle: three vertices and the midpoint of each of its three edges.
-- Diamond, parallelogram, and octagon: every vertex and every edge midpoint.
+- Diamond, parallelogram, octagon, and star: every vertex and every edge midpoint; a star has ten of each.
 - Coordinate system: the origin and every current axis endpoint.
 - Line and arrow: the start and end endpoints.
 
@@ -276,7 +289,7 @@ Arrows only:
 
 - start and end nodes: None, Arrow, Triangle, Diamond, or Circle
 
-The active Arrow tool icon renders the configured start and end node independently. Every combination of the five node types is representable without changing the shared line body.
+The active Arrow tool icon renders the configured start and end node independently. Every combination of the five node types is representable without changing the shared line body. Toolbar, shape-picker, style choices, and cursor icons share the native endpoint geometry: Arrow stays open; Triangle, Diamond, and Circle are filled with the icon color and sit inside their respective endpoint. Their icon contours retain round caps and joins.
 
 Coordinate systems only:
 

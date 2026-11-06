@@ -13,6 +13,11 @@ import {
   fakeNode,
 } from "../../../../unit/rendering/scene/fakes";
 
+function expectForegroundOpacity(groups: readonly FakeNode[], opacity: string): void {
+  expect(groups).toHaveLength(7);
+  for (const group of groups) expect(group.style.getPropertyValue("opacity")).toBe(opacity);
+}
+
 function fixture(mode: "full" | "reduced" | "system" | "initial", activeHeight = 640) {
   const scheduler = new FakeScheduler();
   const document = new FakeDocument();
@@ -38,7 +43,7 @@ function fixture(mode: "full" | "reduced" | "system" | "initial", activeHeight =
     clearTimeout: vi.fn(),
   } as unknown as Window;
   Object.defineProperty(document, "defaultView", { value: ownerWindow });
-  let drawing: FakeDocument | undefined;
+  let foreground: readonly FakeNode[] = [];
   let hidden = false;
   const preview = {
     classList: new FakeClassList(),
@@ -48,11 +53,7 @@ function fixture(mode: "full" | "reduced" | "system" | "initial", activeHeight =
       return hidden;
     },
     set hidden(value: boolean) {
-      if (value) {
-        expect(drawing?.body.style.getPropertyValue("--inkbook-scene-foreground-visibility")).toBe(
-          "visible",
-        );
-      }
+      if (value) expectForegroundOpacity(foreground, "");
       hidden = value;
     },
     remove: vi.fn(),
@@ -93,11 +94,15 @@ function fixture(mode: "full" | "reduced" | "system" | "initial", activeHeight =
     store: new FakeSceneStore(),
     workScheduler: scheduler.workScheduler,
   });
-  drawing = fakeNode(renderer.svg).ownerDocument;
+  foreground = fakeNode(renderer.svg)
+    .nodes.flatMap((node) => [node, ...node.nodes])
+    .filter((node) =>
+      node.attributes.get("class")?.split(" ").includes("inkbook-scene-foreground"),
+    );
   handoff.onSceneReveal = renderer.revealSurface;
   scheduler.runAll();
   container.style.blockSize = `${String(activeHeight)}px`;
-  return { renderer, handoff, entrance, scheduler, drawing, read, preview, classes, stabilize };
+  return { renderer, handoff, entrance, scheduler, foreground, read, preview, classes, stabilize };
 }
 
 it.each(["full", "reduced", "system", "initial"] as const)(
@@ -105,9 +110,7 @@ it.each(["full", "reduced", "system", "initial"] as const)(
   (mode) => {
     const h = fixture(mode);
     try {
-      expect(h.drawing.body.style.getPropertyValue("--inkbook-scene-foreground-visibility")).toBe(
-        "hidden",
-      );
+      expectForegroundOpacity(h.foreground, "0");
       h.read.mockClear();
       const reveal = vi.spyOn(h.renderer, "revealSurface");
       h.handoff.onSceneReveal = reveal;

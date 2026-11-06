@@ -2,7 +2,7 @@ import { outlineDashPattern } from "../../domain/geometry/element-path";
 
 import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import {
-  arrowShapeIconId,
+  arrowNodeIconId,
   coordinateSystemIconId,
   OPACITY_ICON_ID,
   PRESSURE_SENSITIVITY_ICON_ID,
@@ -27,6 +27,8 @@ const CONTROL_ICONS: Readonly<Record<string, string>> = {
   "stroke-width": "minus",
   opacity: OPACITY_ICON_ID,
   "pressure-enabled": PRESSURE_SENSITIVITY_ICON_ID,
+  "hold-to-shape-enabled": "shapes",
+  "snapping-enabled": "magnet",
   "eraser-radius": "eraser",
   "outline-color": "palette",
   "outline-width": "minus",
@@ -95,6 +97,19 @@ function createField(
   field.setAttribute("aria-labelledby", label.id);
   label.textContent =
     "mixed" in control && control.mixed === true ? `${control.label} · Mixed` : control.label;
+  if (
+    control.kind === "choice" &&
+    (control.id === "arrow-start-node" || control.id === "arrow-end-node")
+  ) {
+    label.textContent = control.label;
+    const valueLabel = header.createSpan({ cls: "inkbook-menu-control-value-label" });
+    valueLabel.id = `${label.id}-value`;
+    valueLabel.textContent =
+      control.mixed === true
+        ? "Mixed"
+        : (control.options.find((option) => option.value === control.value)?.label ?? "Mixed");
+    field.setAttribute("aria-labelledby", `${label.id} ${valueLabel.id}`);
+  }
   const description = options.controlDescriptions?.[control.id];
   if (description !== undefined) {
     field.createEl("p", { cls: "inkbook-menu-control-description", text: description });
@@ -115,8 +130,9 @@ function createChoices(
   if (control.id === "selection-inclusion") {
     body.classList.add("inkbook-menu-selection-inclusion-grid");
   }
+  const valueLabel = field.querySelector<HTMLElement>(".inkbook-menu-control-value-label");
   for (const option of control.options) {
-    body.append(createChoiceButton(options, control, option));
+    body.append(createChoiceButton(options, control, option, valueLabel));
   }
   return field;
 }
@@ -125,6 +141,7 @@ function createChoiceButton(
   options: StyleMenuContentOptions,
   control: Extract<StyleControl, { readonly kind: "choice" }>,
   option: StyleChoiceOption,
+  valueLabel: HTMLElement | null,
 ): HTMLButtonElement {
   const button = menuDomWindow(options.ownerDocument, "style menu").createEl("button", {
     cls: "inkbook-menu-choice",
@@ -146,6 +163,7 @@ function createChoiceButton(
     for (const sibling of button.parentElement?.querySelectorAll("button") ?? []) {
       sibling.setAttribute("aria-pressed", String(sibling === button));
     }
+    if (valueLabel !== null) valueLabel.textContent = option.label;
     options.onChange(control.id, option.value);
   });
   return button;
@@ -372,16 +390,21 @@ function createToggle(
   const heading = copy.createSpan({ cls: "inkbook-menu-toggle-heading" });
   const icon = heading.createSpan({ cls: "inkbook-menu-control-icon" });
   options.renderIcon(icon, CONTROL_ICONS[control.id] ?? "settings-2");
-  heading.createSpan({ text: control.label });
+  heading.createSpan({ cls: "inkbook-menu-toggle-label", text: control.label });
   const description = options.controlDescriptions?.[control.id];
-  if (description !== undefined) {
-    copy.createSpan({ cls: "inkbook-menu-control-description", text: description });
-  }
+  const descriptionElement =
+    description === undefined
+      ? undefined
+      : copy.createSpan({ cls: "inkbook-menu-control-description", text: description });
   const switchControl = label.createSpan({ cls: "inkbook-menu-switch" });
   const input = switchControl.createEl("input");
   input.type = "checkbox";
   input.checked = control.checked;
   input.setAttribute("aria-label", control.label);
+  if (descriptionElement !== undefined) {
+    descriptionElement.id = `inkbook-style-description-${++nextControlLabel}`;
+    input.setAttribute("aria-describedby", descriptionElement.id);
+  }
   input.addEventListener("change", () => options.onChange(control.id, input.checked));
   switchControl.createSpan({ cls: "inkbook-menu-switch-track" }).createSpan({
     cls: "inkbook-menu-switch-thumb",
@@ -391,9 +414,9 @@ function createToggle(
 
 function choiceIconId(controlId: string, value: string): string | null {
   if (controlId === "arrow-start-node")
-    return arrowShapeIconId(value as Parameters<typeof arrowShapeIconId>[0], "none");
+    return arrowNodeIconId(value as Parameters<typeof arrowNodeIconId>[0], "start");
   if (controlId === "arrow-end-node")
-    return arrowShapeIconId("none", value as Parameters<typeof arrowShapeIconId>[1]);
+    return arrowNodeIconId(value as Parameters<typeof arrowNodeIconId>[0], "end");
   if (controlId === "coordinate-dimension" && (value === "2d" || value === "3d"))
     return coordinateSystemIconId(value);
   if (controlId === "selection-area" && (value === "rectangle" || value === "lasso"))

@@ -29,7 +29,7 @@ type LinearAnchorTarget = AnchorTransform &
 
 type PolygonAnchorTarget = Extract<
   BoxShapeElementV1,
-  { kind: "diamond" | "octagon" | "parallelogram" | "triangle" }
+  { kind: "diamond" | "octagon" | "parallelogram" | "triangle" | "star" }
 >;
 
 export type AnchorTargetView =
@@ -49,6 +49,7 @@ export function isAnchorTarget<Element extends Pick<InkElementV1, "kind">>(
     element.kind === "ellipse" ||
     element.kind === "triangle" ||
     element.kind === "octagon" ||
+    element.kind === "star" ||
     element.kind === "parallelogram" ||
     element.kind === "diamond" ||
     element.kind === "coordinate-system" ||
@@ -171,6 +172,7 @@ function isPolygonAnchorTarget(target: AnchorTargetView): target is PolygonAncho
   return (
     target.kind === "triangle" ||
     target.kind === "octagon" ||
+    target.kind === "star" ||
     target.kind === "parallelogram" ||
     target.kind === "diamond"
   );

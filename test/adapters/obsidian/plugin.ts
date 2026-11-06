@@ -1,4 +1,5 @@
 import { StateField } from "@codemirror/state";
+import { createHtmlElement } from "./dom";
 
 export { Keymap, Scope } from "./keymap";
 export { Modal, Setting, SettingGroup } from "./settings";
@@ -292,6 +293,7 @@ export class Plugin extends Component {
 }
 
 export class PluginSettingTab extends Component {
+  readonly containerEl = createHtmlElement("div");
   readonly app: App;
   readonly plugin: Plugin;
 

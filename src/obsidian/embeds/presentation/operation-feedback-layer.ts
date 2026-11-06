@@ -11,12 +11,13 @@ export class OperationFeedbackLayer {
 
   public constructor(private readonly root: HTMLElement) {}
 
-  public show(): void {
-    if (this.#element !== undefined && !this.#exiting) return;
+  public show(): HTMLElement {
+    if (this.#element !== undefined && !this.#exiting) return this.#element;
     this.dispose();
     this.#element = this.root.createDiv({ cls: "inkbook-operation-backdrop" });
     this.#element.setAttribute("aria-hidden", "true");
     this.#animate(0, 1);
+    return this.#element;
   }
 
   public hide(onHidden?: () => void): void {

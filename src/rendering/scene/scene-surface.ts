@@ -1,10 +1,6 @@
 import { configureSceneDocument, createSceneFrame } from "./scene-surface-document";
 
-const themeProperties = [
-  "--interactive-accent",
-  "--text-normal",
-  "--inkbook-scene-foreground-visibility",
-] as const;
+const themeProperties = ["--interactive-accent", "--text-normal"] as const;
 
 interface SceneSurfaceOptions {
   readonly themeRoot?: HTMLElement;
@@ -34,6 +30,10 @@ export class SceneSurface {
   readonly #tokens = new Map<string, string>();
   readonly #writtenTokens = new Map<string, string>();
   #svg: SVGSVGElement | undefined;
+  #foreground: readonly SVGElement[] = [];
+  #foregroundRevealed = false;
+  #foregroundHidden = false;
+  #writtenForegroundHidden = false;
   #ownZoomStyle: OwnZoomStyle | undefined;
   #themeDirty = true;
   #released = false;
@@ -100,12 +100,14 @@ export class SceneSurface {
     this.write();
   }
 
-  public attach(svg: SVGSVGElement): void {
+  public attach(svg: SVGSVGElement, foreground: readonly SVGElement[] = []): void {
     if (this.#released) return;
     if (svg.ownerDocument !== this.drawingDocument) {
       throw new Error("Scene nodes must be created in the drawing document.");
     }
     this.#svg = svg;
+    this.#foreground = foreground;
+    this.writeForeground();
     this.drawingDocument.body.append(svg);
   }
 
@@ -152,6 +154,7 @@ export class SceneSurface {
       body.style.setProperty(property, value);
       this.#writtenTokens.set(property, value);
     }
+    this.writeForeground();
   }
 
   public invalidateTheme(): void {
@@ -162,8 +165,22 @@ export class SceneSurface {
 
   public reveal(): void {
     if (this.#released) return;
-    this.#tokens.set("--inkbook-scene-foreground-visibility", "visible");
+    this.#foregroundRevealed = true;
+    this.#foregroundHidden = false;
     this.write();
+  }
+
+  /** Preparation is an immediate boundary switch, never inherited by retained paths. */
+  private writeForeground(): void {
+    if (this.#foregroundHidden === this.#writtenForegroundHidden || this.#foreground.length === 0)
+      return;
+    const opacity = this.#foregroundHidden ? "0" : null;
+    for (const group of this.#foreground) {
+      // Removing the boundary override preserves live ink's own opacity attribute.
+      if (opacity === null) group.style.removeProperty("opacity");
+      else group.style.setProperty("opacity", opacity);
+    }
+    this.#writtenForegroundHidden = this.#foregroundHidden;
   }
 
   public release(): void {
@@ -172,6 +189,7 @@ export class SceneSurface {
     this.#resizeObserver?.disconnect();
     this.#themeObserver?.disconnect();
     this.#ownZoomStyle = undefined;
+    this.#foreground = [];
     this.#frame.removeEventListener("load", this.#load);
     this.#svg?.remove();
     this.#documentStyle.remove();
@@ -227,6 +245,10 @@ export class SceneSurface {
     for (const property of themeProperties) {
       this.#tokens.set(property, style?.getPropertyValue(property).trim() ?? "");
     }
+    this.#foregroundHidden =
+      !this.#foregroundRevealed &&
+      (this.#foregroundHidden ||
+        style?.getPropertyValue("--inkbook-scene-foreground-visibility").trim() === "hidden");
   }
 
   private handleLoad(): void {

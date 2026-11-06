@@ -85,6 +85,7 @@ describe("InkbookSettingsStore", () => {
     const legacy = structuredClone(current) as unknown as Record<string, unknown>;
     legacy.version = 3;
     delete legacy.snapping;
+    delete legacy.holdToShape;
     delete legacy.selectionHighlightsEnabled;
     delete (legacy.toolDefaults as Record<string, unknown>).select;
     const store = new InkbookSettingsStore(

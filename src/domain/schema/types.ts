@@ -125,7 +125,7 @@ export interface StraightHighlighterElementV1 extends LinearBaseV1 {
 export type LinearElementV1 = LineElementV1 | ArrowElementV1 | StraightHighlighterElementV1;
 
 type BoxShapeKindV1 =
-  "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond";
+  "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star";
 
 interface BoxShapeBaseV1 extends ElementBaseV1 {
   x: number;

@@ -1,8 +1,11 @@
 import { addIcon, removeIcon } from "obsidian";
 
+import { arrowNodeGeometry } from "../../domain/geometry/element-path";
+import { lineTo, moveTo, svgNumber } from "../../domain/geometry/svg-format";
 import { ARROW_NODES } from "../../domain/settings/types";
 import type { ArrowNodeV1 } from "../../domain/schema/public";
 import {
+  arrowNodeIconId,
   arrowShapeIconId,
   BACKGROUND_SQUARES_ICON_ID,
   CAUTION_ERASER_ICON_ID,
@@ -31,14 +34,23 @@ const MENU_ICONS: readonly (readonly [string, string])[] = [
   [OPACITY_ICON_ID, OPACITY_SVG],
   [PRESSURE_SENSITIVITY_ICON_ID, PRESSURE_SENSITIVITY_SVG],
   [BACKGROUND_SQUARES_ICON_ID, BACKGROUND_SQUARES_SVG],
+  ...ARROW_NODES.flatMap((node) =>
+    (["start", "end"] as const).map(
+      (side) => [arrowNodeIconId(node, side), arrowNodeIconSvg(node, side)] as const,
+    ),
+  ),
 ];
 
 const SHAPE_ICONS: readonly (readonly [string, string])[] = [
   [SHAPE_ICON_IDS.line, '<path d="M4 12h16"/>'],
-  [SHAPE_ICON_IDS.arrow, '<path d="M4 12h16m-4-4 4 4-4 4"/>'],
+  [SHAPE_ICON_IDS.arrow, arrowIconContent("none", "arrow")],
   [SHAPE_ICON_IDS.rectangle, '<rect x="4" y="5" width="16" height="14" rx="1"/>'],
   [SHAPE_ICON_IDS.ellipse, '<ellipse cx="12" cy="12" rx="8" ry="6"/>'],
   [SHAPE_ICON_IDS.triangle, '<path d="m12 4 8 15H4Z"/>'],
+  [
+    SHAPE_ICON_IDS.star,
+    '<path d="m12 3 2.78 5.64L21 9.55l-4.5 4.39 1.06 6.2L12 17.21l-5.56 2.93 1.06-6.2L3 9.55l6.22-.91Z"/>',
+  ],
   [SHAPE_ICON_IDS.octagon, '<path d="m8 3 8 0 5 5v8l-5 5H8l-5-5V8Z"/>'],
   [SHAPE_ICON_IDS.parallelogram, '<path d="M8 5h13l-5 14H3Z"/>'],
   [SHAPE_ICON_IDS.diamond, '<path d="m12 3 9 9-9 9-9-9Z"/>'],
@@ -65,17 +77,36 @@ function arrowIconContent(start: ArrowNodeV1, end: ArrowNodeV1): string {
 }
 
 function arrowNodeContent(node: ArrowNodeV1, side: "start" | "end"): string {
-  if (node === "none") return "";
-  const start = side === "start";
-  if (node === "arrow") return start ? '<path d="m8 8-4 4 4 4"/>' : '<path d="m16 8 4 4-4 4"/>';
-  if (node === "triangle") return start ? '<path d="m4 12 6-4v8Z"/>' : '<path d="m20 12-6-4v8Z"/>';
-  if (node === "diamond")
-    return start ? '<path d="m4 12 4-4 4 4-4 4Z"/>' : '<path d="m20 12-4-4-4 4 4 4Z"/>';
-  return start ? '<circle cx="5" cy="12" r="3"/>' : '<circle cx="19" cy="12" r="3"/>';
+  const geometry = arrowNodeGeometry(
+    { x: side === "start" ? 4 : 20, y: 12 },
+    { x: side === "start" ? -1 : 1, y: 0 },
+    node,
+    6,
+  );
+  if (geometry.kind === "none") return "";
+  if (geometry.kind === "circle") {
+    return `<circle cx="${svgNumber(geometry.center.x)}" cy="${svgNumber(geometry.center.y)}" r="${svgNumber(geometry.radius)}" fill="currentColor"/>`;
+  }
+  if (geometry.kind === "polygon") {
+    const path = moveTo(geometry.points[0]!) + geometry.points.slice(1).map(lineTo).join("");
+    return `<path d="${path}Z" fill="currentColor"/>`;
+  }
+  const path = geometry.tips.map((tip) => moveTo(geometry.endpoint) + lineTo(tip)).join("");
+  return `<path d="${path}"/>`;
 }
 
-function shapeIconSvg(content: string): string {
-  return `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">${content}</svg>`;
+/** Crop the native end motif together with a shorter shaft, preserving the visible stroke weight. */
+function arrowNodeIconSvg(node: ArrowNodeV1, side: "start" | "end"): string {
+  const shaft = side === "start" ? "M4 12h10" : "M10 12h10";
+  return shapeIconSvg(
+    `<path d="${shaft}"/>${arrowNodeContent(node, side)}`,
+    side === "start" ? "2 5 14 14" : "8 5 14 14",
+    (2 * 14) / 24,
+  );
+}
+
+function shapeIconSvg(content: string, viewBox = "0 0 24 24", strokeWidth = 2): string {
+  return `<svg viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="${String(strokeWidth)}">${content}</svg>`;
 }
 
 export function registerInkbookIcons(): () => void {

@@ -3,6 +3,7 @@ import type { InitialPresentationEntrance } from "../presentation/presentation-e
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import type {
   InkbookDeviceSettingsV2,
+  HoldToShapeSettingsV1,
   InkbookSettingsV4,
   SnappingSettingsV1,
   StartupToolV1,
@@ -44,5 +45,6 @@ export interface ActiveInkbookSceneOptions extends EditorChromeOpenings, LockedP
   readonly scrollOwner?: () => BrowserScrollElement | null;
   readonly selectionHighlightsEnabled?: boolean;
   readonly snapping: SnappingSettingsV1;
+  readonly holdToShape?: HoldToShapeSettingsV1;
   readonly startupTool: StartupToolV1;
 }

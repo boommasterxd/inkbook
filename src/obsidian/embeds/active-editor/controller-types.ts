@@ -1,6 +1,7 @@
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import type {
   InkbookDeviceSettingsV2,
+  HoldToShapeSettingsV1,
   SnappingSettingsV1,
   StartupToolV1,
   ToolDefaultsV1,
@@ -53,5 +54,6 @@ export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   };
   readonly scrollOwner: BrowserScrollElement;
   readonly snapping: SnappingSettingsV1;
+  readonly holdToShape?: HoldToShapeSettingsV1;
   readonly startupTool: StartupToolV1;
 }

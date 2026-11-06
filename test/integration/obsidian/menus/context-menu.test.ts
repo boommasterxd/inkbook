@@ -139,11 +139,11 @@ function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> 
   );
 }
 
-it("hands off selection geometry editing before opening the accessible panel", () => {
+it("restores focus before handing off to erase-all confirmation", () => {
   const menu = new FakeMenu();
   const canvas = createHtmlElement("button");
   document.body.append(canvas);
-  const edit = vi.fn(() => {
+  const eraseAll = vi.fn(() => {
     expect(menu.closed).toBe(true);
     expect(document.activeElement).toBe(canvas);
   });
@@ -156,14 +156,14 @@ it("hands off selection geometry editing before opening the accessible panel", (
       canvasInputSurface: canvas,
     },
     state(),
-    { ...createContextMenuHandlers(), editGeometry: edit },
+    { ...createContextMenuHandlers(), eraseAll },
   );
   const entry = menu.entries.find(
-    (item) => item !== "separator" && item.calls.includes("title:Edit geometry"),
+    (item) => item !== "separator" && item.calls.includes("title:Erase all"),
   ) as RecordedItem;
   entry.click?.();
   expect(menu.closed).toBe(true);
-  expect(edit).toHaveBeenCalledOnce();
+  expect(eraseAll).toHaveBeenCalledOnce();
   expect(document.activeElement).toBe(canvas);
   canvas.remove();
 });

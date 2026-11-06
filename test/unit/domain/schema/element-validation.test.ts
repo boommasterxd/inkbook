@@ -32,6 +32,7 @@ describe("InkElementV1 validation", () => {
     { ...rectangle(15), style: { ...rectangle().style, outlineWidth: 1 as const } },
     { ...rectangle(9), kind: "ellipse" as const },
     { ...rectangle(10), kind: "triangle" as const },
+    { ...rectangle(16), kind: "star" as const },
     { ...rectangle(11), kind: "octagon" as const },
     { ...rectangle(12), kind: "parallelogram" as const },
     { ...rectangle(13), kind: "diamond" as const },

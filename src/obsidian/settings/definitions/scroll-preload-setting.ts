@@ -6,6 +6,7 @@ import {
 } from "../../../domain/settings";
 import type { SettingsControlKey } from "../control-values";
 import { renderSettingsControlContent } from "../settings-control-content";
+import { createSettingsVisualControlRow } from "../settings-row";
 import type { NativeControlFeedbackOptions } from "../../menus/feedback/native-control-feedback";
 
 const DESCRIPTION =
@@ -24,12 +25,7 @@ export function scrollPreloadDefinition(values: ScrollPreloadValues): SettingDef
     name: "Scroll preload margin",
     desc: DESCRIPTION,
     render: (setting) => {
-      setting.settingEl.replaceChildren();
-      setting.settingEl.classList.add("inkbook-settings-visual-row");
-      const info = setting.settingEl.createDiv({ cls: "inkbook-settings-visual-info" });
-      info.createDiv({ cls: "setting-item-name", text: "Scroll preload margin" });
-      info.createDiv({ cls: "setting-item-description", text: DESCRIPTION });
-      const content = setting.settingEl.createDiv({ cls: "inkbook-settings-inline-controls" });
+      const content = createSettingsVisualControlRow(setting, "Scroll preload margin", DESCRIPTION);
       return renderSettingsControlContent(content, {
         controls: () => [
           {

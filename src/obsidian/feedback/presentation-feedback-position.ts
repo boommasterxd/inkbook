@@ -1,5 +1,9 @@
 import { resolveVisibleOwnerBoundary, type VisibleOwnerBoundary } from "./visible-owner-boundary";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import {
+  bindFeedbackCanvas,
+  clipCanvasFeedbackBoundary,
+} from "./presentation-feedback-position-canvas";
 
 interface FeedbackRect {
   readonly bottom: number;
@@ -17,6 +21,7 @@ export interface PresentationFeedbackPosition {
 
 export interface PresentationFeedbackPositionLifecycle {
   dispose(): void;
+  retireSurface?(): void;
 }
 
 export type PresentationFeedbackVerticalAnchor = "bottom" | "center";
@@ -45,6 +50,7 @@ export function createPresentationFeedbackPositionLifecycle(
   verticalAnchor: PresentationFeedbackVerticalAnchor = "bottom",
   workScheduler?: WorkScheduler,
   viewportHost?: HTMLElement,
+  backdrop?: HTMLElement,
 ): PresentationFeedbackPositionLifecycle {
   if (viewportHost !== undefined && verticalAnchor !== "center")
     throw new Error("Viewport feedback requires a center anchor.");
@@ -56,6 +62,8 @@ export function createPresentationFeedbackPositionLifecycle(
   let active = true;
   let measured = false;
   let frame: number | undefined;
+  let surfaceActive = true;
+  let canvas: ReturnType<typeof bindFeedbackCanvas> | undefined;
   const reposition = (): void => {
     if (!active) return;
     if (!measured && verticalAnchor === "center" && !presentation.isConnected) {
@@ -64,8 +72,14 @@ export function createPresentationFeedbackPositionLifecycle(
       return;
     }
     measured = true;
-    const presentationBounds = presentation.getBoundingClientRect();
-    const boundary = resolveVisibleOwnerBoundary(presentation, ownerDocument);
+    const frameElement = canvas?.current() ?? presentation;
+    if (!surfaceActive) return;
+    const presentationBounds = frameElement.getBoundingClientRect();
+    const boundary = clipCanvasFeedbackBoundary(
+      presentation,
+      frameElement,
+      resolveVisibleOwnerBoundary(presentation, ownerDocument),
+    );
     const position = resolvePresentationFeedbackPosition(presentationBounds, boundary);
     placeViewportHost(viewportHost, presentation, true);
     surface.classList.remove("inkbook-feedback-unmeasured");
@@ -86,16 +100,23 @@ export function createPresentationFeedbackPositionLifecycle(
     }, "input");
   };
   const observer = createResizeObserver(ownerWindow, schedule, surface, presentation);
+  if (backdrop !== undefined)
+    canvas = bindFeedbackCanvas(presentation, backdrop, observer, schedule);
   ownerDocument.addEventListener("scroll", schedule, true);
   ownerWindow.addEventListener("resize", schedule, { passive: true });
   reposition();
   if (!presentation.isConnected) schedule();
   return {
+    retireSurface: () => {
+      surfaceActive = false;
+      observer?.unobserve(surface);
+    },
     dispose: () => {
       if (!active) return;
       active = false;
       if (frame !== undefined) workScheduler.cancelFrame(frame);
       observer?.disconnect();
+      canvas?.dispose();
       ownerDocument.removeEventListener("scroll", schedule, true);
       ownerWindow.removeEventListener("resize", schedule);
     },

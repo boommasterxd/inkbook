@@ -10,6 +10,7 @@ import { ElementSceneStore } from "../../../../../../src/obsidian/embeds/active-
 import {
   activeEditorStoreHistory,
   creationPreviewRenderer,
+  sceneCreationSnapPorts,
 } from "../../../../../fixtures/obsidian/active-editor";
 import { elementReplacementPorts } from "../../../../../fixtures/obsidian/element-mutation-ports";
 import { pausedWorkScheduler } from "../../../../../fixtures/obsidian/immediate-work-scheduler";
@@ -46,14 +47,7 @@ function fixture(start = { x: 50, y: 50 }, refinementSignal?: AbortSignal) {
     readRevision: () => revision,
     ...(refinementSignal === undefined ? {} : { refinementSignal }),
     renderer,
-    snap: {
-      angles: false,
-      connections: () => enabled,
-      pageToScreen: (point) => point,
-      spatial: scene,
-      targets: { get: (id, bounds) => scene.getSnapTarget(id, bounds) },
-      zoom: 1,
-    },
+    snap: sceneCreationSnapPorts(scene, () => enabled),
     start: {
       additive: false,
       kind: "tool-gesture",

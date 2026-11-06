@@ -12,6 +12,7 @@ import type { SettingsControlKey } from "../control-values";
 import { renderSettingsControlContent } from "../settings-control-content";
 import { createSettingsDisclosure } from "../settings-disclosure";
 import { SettingsPanelMotion } from "../settings-panel-motion";
+import { SettingsViewState } from "../settings-view-state";
 import type { NativeControlFeedbackOptions } from "../../menus/feedback/native-control-feedback";
 
 export interface ToolSectionSpec {
@@ -23,6 +24,7 @@ export interface ToolSectionSpec {
 }
 
 export interface ToolSectionValues {
+  readonly viewState?: SettingsViewState;
   readonly observeMotion?: NativeControlFeedbackOptions["observeMotion"];
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly getDefaults: () => ToolDefaultsV1;
@@ -49,6 +51,9 @@ function renderToolSection(
   setting.settingEl.replaceChildren();
   setting.settingEl.classList.add("inkbook-settings-tool-row");
   const panelId = `inkbook-settings-tool-${spec.tool}`;
+  const viewState = values.viewState ?? new SettingsViewState();
+  const stateKey = `tool:${spec.tool}`;
+  const initiallyExpanded = viewState.expandedSections.has(stateKey);
   const {
     content: panelContent,
     panel,
@@ -57,20 +62,18 @@ function renderToolSection(
     dispose,
   } = createSettingsDisclosure(setting.settingEl, {
     description: spec.description,
-    expanded: false,
+    expanded: initiallyExpanded,
     panelId,
     readMotion: values.getMotion,
     ...(values.observeMotion === undefined ? {} : { observeMotion: values.observeMotion }),
     title: spec.name,
   });
-  const controls = panelContent.createDiv({ cls: "inkbook-settings-tool-controls" });
   let initialized = false;
   let releaseControls: (() => void) | undefined;
 
-  const panelMotion = new SettingsPanelMotion(panel, values.getMotion, values.observeMotion);
-  const toggle = (): void => {
-    const expanded = trigger.getAttribute("aria-expanded") !== "true";
-    if (expanded && !initialized) {
+  const initializeControls = (): void => {
+    if (!initialized) {
+      const controls = panelContent.createDiv({ cls: "inkbook-settings-tool-controls" });
       releaseControls = renderSettingsControlContent(controls, {
         controls: () => createToolStyleControls(values.getDefaults(), spec.tool),
         descriptions: spec.controlDescriptions,
@@ -82,6 +85,15 @@ function renderToolSection(
       });
       initialized = true;
     }
+  };
+  if (initiallyExpanded) initializeControls();
+  const panelMotion = new SettingsPanelMotion(panel, values.getMotion, values.observeMotion);
+  const toggle = (): void => {
+    const expanded = trigger.getAttribute("aria-expanded") !== "true";
+    if (expanded) {
+      initializeControls();
+      viewState.expandedSections.add(stateKey);
+    } else viewState.expandedSections.delete(stateKey);
     trigger.setAttribute("aria-expanded", String(expanded));
     setExpanded(
       expanded,

@@ -22,7 +22,7 @@ export interface KeyboardHandleOptions {
   readonly settled: (committed: boolean) => void;
 }
 
-/** Discrete keyboard and panel edits share the pointer handle planner and commit path. */
+/** Discrete keyboard edits share the pointer handle planner and commit path. */
 export class KeyboardHandleInteraction {
   readonly #options: KeyboardHandleOptions;
   readonly #settled = new Set<(committed: boolean) => void>();

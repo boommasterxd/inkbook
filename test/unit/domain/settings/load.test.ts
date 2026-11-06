@@ -9,6 +9,20 @@ import {
 } from "../../../../src/domain/settings";
 
 describe("vault settings loading", () => {
+  it("adds star defaults to old shape settings without resetting existing custom styles", () => {
+    const current = createBuiltInSettings();
+    current.toolDefaults.shapes.rectangle.outlineWidth = 14;
+    current.toolDefaults.shapes.triangle.fillColor = { type: "theme-text" };
+    const { star: _star, ...legacyShapes } = current.toolDefaults.shapes;
+    const input = { ...current, toolDefaults: { ...current.toolDefaults, shapes: legacyShapes } };
+
+    const result = loadSettings(input);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value).toEqual(current);
+    expect(result.value.toolDefaults.shapes.star).not.toBe(current.toolDefaults.shapes.star);
+  });
+
   it("loads and clones valid boundary values", () => {
     const input = createBuiltInSettings();
     input.toolDefaults.pen.opacity = 0;
@@ -55,6 +69,7 @@ describe("vault settings V3 migration", () => {
     const {
       snapping: _snapping,
       selectionHighlightsEnabled: _highlights,
+      holdToShape: _holdToShape,
       ...legacyCurrent
     } = current;
     const legacy = { ...legacyCurrent, version: 3, toolDefaults: legacyToolDefaults };
@@ -79,6 +94,7 @@ describe("vault settings V3 migration", () => {
     const {
       snapping: _snapping,
       selectionHighlightsEnabled: _highlights,
+      holdToShape: _holdToShape,
       ...legacyCurrent
     } = current;
     const legacy = {
@@ -104,6 +120,7 @@ describe("vault settings V3 migration", () => {
     const {
       snapping: _snapping,
       selectionHighlightsEnabled: _highlights,
+      holdToShape: _holdToShape,
       ...legacySettings
     } = current;
     const legacy = legacySettings as unknown as Record<string, unknown>;

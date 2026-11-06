@@ -4,11 +4,12 @@ import type {
   SettingDefinitionItem,
   SettingDefinitionRender,
   SettingGroupItem,
+  SettingNumberControl,
   SettingTab,
 } from "obsidian";
 
 import type { NativeControlFeedbackOptions } from "../menus/feedback/native-control-feedback";
-import { nameSettingToggle } from "./settings-row";
+import { nameSettingToggle, settingsGroupIdentity } from "./settings-row";
 import { createSettingsWriteError, SettingsWriteFeedback } from "./settings-write-feedback";
 
 export interface SettingsControlHost extends Pick<
@@ -28,11 +29,13 @@ export function nativeSettingDefinitions<K extends string>(
     if ("type" in definition && definition.type !== "page" && definition.items !== undefined) {
       return {
         ...definition,
-        items: definition.items.map((item) => nativeGroupItem(item, host, lifetime)),
+        items: definition.items.map((item) =>
+          nativeGroupItem(item, host, lifetime, settingsGroupIdentity(definition)),
+        ),
       };
     }
     if ("type" in definition && definition.type !== "page") return definition;
-    return nativeGroupItem(definition, host, lifetime);
+    return nativeGroupItem(definition, host, lifetime, "root");
   });
 }
 
@@ -40,15 +43,29 @@ function nativeGroupItem<K extends string>(
   definition: SettingGroupItem<K>,
   host: SettingsControlHost,
   lifetime: AbortSignal | undefined,
+  groupIdentity: string,
 ): SettingGroupItem<K> {
   if ("type" in definition) {
     return definition.items === undefined
       ? definition
       : { ...definition, items: nativeSettingDefinitions(definition.items, host, lifetime) };
   }
-  return definition.control === undefined
-    ? definition
-    : nativeControlDefinition(definition, host, lifetime);
+  const rendered =
+    definition.control === undefined
+      ? definition
+      : nativeControlDefinition(definition, host, lifetime);
+  const render = rendered.render;
+  if (render === undefined) return rendered;
+  return {
+    ...rendered,
+    render: (setting, group) => {
+      setting.settingEl.dataset.inkbookSettingIdentity = JSON.stringify([
+        groupIdentity,
+        definition.control?.key ?? definition.name,
+      ]);
+      return render(setting, group);
+    },
+  };
 }
 
 function nativeControlDefinition(
@@ -93,6 +110,7 @@ export function renderSettingControl(
   const writes = new SettingsWriteFeedback();
   const error = createSettingsWriteError(setting.settingEl, options);
   let restore = (): void => undefined;
+  let releaseInput = (): void => undefined;
   const commit = (value: unknown): void => {
     void writes.run(control.key, () => host.setControlValue(control.key, value), {
       error: error.set,
@@ -125,16 +143,20 @@ export function renderSettingControl(
       restore();
       dropdown.onChange(commit);
     });
-  } else if (control.type === "folder" || control.type === "text") {
+  } else if (control.type === "folder" || control.type === "text" || control.type === "number") {
     setting.addText((text) => {
       text.inputEl.setAttribute("aria-label", definition.name);
+      if (control.type === "number") {
+        releaseInput = bindNumberControl(text.inputEl, control, commit);
+      }
       error.associate(text.inputEl);
       restore = () => {
         const value = host.getControlValue(control.key);
-        text.setValue(typeof value === "string" ? value : "");
+        text.setValue(typeof value === "string" || typeof value === "number" ? String(value) : "");
       };
       restore();
       if (control.placeholder !== undefined) text.setPlaceholder(control.placeholder);
+      if (control.type === "number") return;
       text.onChange((value) => {
         let committed = false;
         void writes.run(
@@ -161,7 +183,22 @@ export function renderSettingControl(
     });
   }
   return () => {
+    releaseInput();
     writes.dispose();
     error.dispose();
   };
+}
+
+function bindNumberControl(
+  input: HTMLInputElement,
+  control: SettingNumberControl,
+  commit: (value: unknown) => void,
+): () => void {
+  input.type = "number";
+  if (control.min !== undefined) input.min = String(control.min);
+  if (control.max !== undefined) input.max = String(control.max);
+  if (control.step !== undefined) input.step = String(control.step);
+  const change = (): void => commit(input.value.trim() === "" ? Number.NaN : Number(input.value));
+  input.addEventListener("change", change);
+  return () => input.removeEventListener("change", change);
 }

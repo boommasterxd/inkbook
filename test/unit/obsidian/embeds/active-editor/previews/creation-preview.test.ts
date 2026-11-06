@@ -72,7 +72,7 @@ describe("drag creation preview presentation", () => {
   it("keeps the arrow body stroked while rendering filled nodes as a separate part", () => {
     const defaults = styledDefaults();
     defaults.shapes.arrow = { ...OUTLINE };
-    defaults.arrow = { endNode: "diamond", startNode: "triangle" };
+    defaults.arrow = { ...defaults.arrow, endNode: "diamond", startNode: "triangle" };
 
     const state = renderPreview("arrow", defaults);
 
@@ -119,6 +119,7 @@ describe("drag creation without minimum geometry", () => {
     "rectangle",
     "ellipse",
     "triangle",
+    "star",
     "octagon",
     "parallelogram",
     "diamond",

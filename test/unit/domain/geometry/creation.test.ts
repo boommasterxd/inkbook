@@ -131,6 +131,18 @@ describe("table geometry creation", () => {
 });
 
 describe("shape geometry creation", () => {
+  it("fits a five-point star with alternating outer tips and inner corners to its box", () => {
+    const vertices = shapeVertices(rectangle({ kind: "star", width: 200, height: 100 }));
+
+    expect(vertices).toHaveLength(10);
+    expect(vertices[0]).toEqual({ x: 100, y: 0 });
+    expect(vertices[2]).toEqual({ x: 200, y: 38.197 });
+    expect(vertices[4]).toEqual({ x: 161.803, y: 100 });
+    expect(vertices[6]).toEqual({ x: 38.197, y: 100 });
+    expect(vertices[8]).toEqual({ x: 0, y: 38.197 });
+    expect(vertices[5]).toEqual({ x: 100, y: 76.393 });
+  });
+
   it("uses the specified normalized polygon vertices", () => {
     expect(shapeVertices(rectangle({ kind: "triangle" }))).toEqual([
       { x: 50, y: 0 },

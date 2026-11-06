@@ -44,8 +44,6 @@ interface StyleNumberControl {
 export type StyleControl = StyleChoiceControl | StyleNumberControl | StyleToggleControl;
 
 export interface EditorMenuCallbacks {
-  readonly onInsertShape?: () => void;
-  readonly onEditGeometry?: (navigation?: PhoneSheetNavigation) => void;
   readonly onOpenTour?: (() => void) | undefined;
   readonly onBackgroundSpacingChange: (spacing: BackgroundSpacing) => void;
   readonly onBackgroundSpacingPreview: (spacing: BackgroundSpacing) => void;

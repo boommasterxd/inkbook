@@ -38,6 +38,7 @@ describe("settings defaults", () => {
       width: 4,
       opacity: 1,
       pressureEnabled: true,
+      holdToShapeEnabled: true,
     });
     expect(settings.toolDefaults.highlighter).toEqual({
       color: { type: "rgba", value: "#EAB308FF" },
@@ -46,7 +47,12 @@ describe("settings defaults", () => {
     });
     expect(settings.toolDefaults.straightHighlighter).toEqual(settings.toolDefaults.highlighter);
     expect(settings.toolDefaults.eraser.radius).toBe(20);
-    expect(settings.toolDefaults.arrow).toEqual({ startNode: "none", endNode: "arrow" });
+    expect(settings.toolDefaults.line).toEqual({ snappingEnabled: true });
+    expect(settings.toolDefaults.arrow).toEqual({
+      startNode: "none",
+      endNode: "arrow",
+      snappingEnabled: true,
+    });
     expect(settings.toolDefaults.coordinateSystem.dimension).toBe("2d");
     expect(settings.toolDefaults.table.columns).toBe(2);
   });

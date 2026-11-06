@@ -5,6 +5,20 @@ import { semanticAnchors } from "../../../../src/domain/geometry/anchors";
 import { arrow, line } from "../schema/fixtures";
 import { coordinateSystem, rectangle, table } from "./fixtures";
 
+describe("star semantic anchors", () => {
+  it("resolves all ten star vertices and edge midpoints through rotation", () => {
+    const star = rectangle({ kind: "star", rotation: 90 });
+    const anchors = semanticAnchors(star);
+    expect(anchors).toHaveLength(20);
+    expect(anchors[0]?.point).toEqual({ x: 75, y: 25 });
+    expect(anchors[9]?.anchor).toEqual({ kind: "polygon-vertex", index: 9 });
+    expect(anchors[19]?.anchor).toEqual({ kind: "polygon-edge-midpoint", index: 9 });
+    for (const { anchor, point } of anchors)
+      expect(resolveShapeAnchor(star, anchor)).toEqual(point);
+    expect(resolveShapeAnchor(star, { kind: "polygon-vertex", index: 10 })).toBeNull();
+  });
+});
+
 describe("semantic anchor enumeration", () => {
   it("emits rectangle anchors in their canonical order", () => {
     const anchors = semanticAnchors(rectangle());
@@ -124,6 +138,7 @@ describe("semantic anchor compatibility", () => {
       "rectangle",
       "ellipse",
       "triangle",
+      "star",
       "octagon",
       "parallelogram",
       "diamond",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canonicalPoint, resolveShapeAnchor } from "../../../../src/domain/geometry/public";
 import type { ArrowElementV1, LineElementV1 } from "../../../../src/domain/schema/public";
 import {
   decodeCustomClipboardText,
@@ -16,6 +17,31 @@ import {
   selectedElements,
   spatialRectangle,
 } from "./fixtures";
+
+describe("clipboard star connection validation", () => {
+  it("preserves star connections at the last vertex and rejects out-of-range indices", () => {
+    const target = { ...rectangle(), kind: "star" as const };
+    const dependent = arrow();
+    dependent.startConnection = {
+      targetId: target.id,
+      anchor: { kind: "polygon-vertex", index: 9 },
+    };
+    dependent.start = resolveShapeAnchor(target, dependent.startConnection.anchor)!;
+    dependent.pivot = canonicalPoint({
+      x: (dependent.start.x + dependent.end.x) / 2,
+      y: (dependent.start.y + dependent.end.y) / 2,
+    });
+    const encoded = encodeRuntimeSelection([target, dependent], new Set([target.id, dependent.id]));
+
+    expect(encoded.ok).toBe(true);
+    if (!encoded.ok) return;
+    expect(decodeCustomClipboardText(encoded.value.customText)).toMatchObject({ ok: true });
+    const body = encoded.value.payload.elements[1]?.element;
+    if (body?.kind !== "arrow" || body.startConnection === null) throw new Error("Missing arrow");
+    body.startConnection.anchor = { kind: "polygon-edge-midpoint", index: 10 };
+    expect(validateClipboardPayload(encoded.value.payload)).toMatchObject({ ok: false });
+  });
+});
 
 describe("clipboard codec", () => {
   it("encodes identities as compact clip IDs and preserves internal connections", () => {

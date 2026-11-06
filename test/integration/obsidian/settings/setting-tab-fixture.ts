@@ -7,6 +7,7 @@ import {
 } from "obsidian";
 import { vi } from "vitest";
 import { Keymap } from "../../../adapters/obsidian/keymap";
+import { createHtmlElement } from "../../../adapters/obsidian/dom";
 
 import {
   createBuiltInDeviceSettings,
@@ -34,6 +35,7 @@ vi.mock("obsidian", async (importOriginal) => ({
   ...(await importOriginal<typeof import("obsidian")>()),
   Platform: platform,
   PluginSettingTab: class {
+    public readonly containerEl = createHtmlElement("div");
     public updates = 0;
     public refreshes = 0;
     public constructor(

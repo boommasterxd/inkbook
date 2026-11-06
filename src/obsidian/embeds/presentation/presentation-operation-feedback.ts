@@ -169,14 +169,15 @@ export class PresentationOperationFeedback {
     this.#indicator = indicator;
     const host = this.#ensureHost();
     host.appendChild(indicator);
+    const backdrop = this.#backdrop.show();
     this.#positioning = createPresentationFeedbackPositionLifecycle(
       indicator,
       this.#root,
       "center",
       this.#workScheduler,
       host,
+      backdrop,
     );
-    this.#backdrop.show();
     if (kind === "opening") {
       this.#shownAt = this.#now();
       this.#revealIndicator(indicator);
@@ -274,10 +275,18 @@ export class PresentationOperationFeedback {
     this.#settlingOpening = false;
     const unbindStyle = this.#unbindStyle;
     this.#unbindStyle = undefined;
-    if (animateBackdrop) this.#backdrop.hide(unbindStyle);
-    else {
-      this.#backdrop.dispose();
+    const positioning = this.#positioning;
+    this.#positioning = undefined;
+    const release = () => {
+      positioning?.dispose();
       unbindStyle?.();
+    };
+    if (animateBackdrop) {
+      positioning?.retireSurface?.();
+      this.#backdrop.hide(release);
+    } else {
+      this.#backdrop.dispose();
+      release();
     }
     this.#spin?.cancel();
     this.#spin = undefined;
@@ -287,8 +296,6 @@ export class PresentationOperationFeedback {
     this.#timer = undefined;
     if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
-    this.#positioning?.dispose();
-    this.#positioning = undefined;
     this.#host?.remove();
     this.#host = undefined;
     this.#indicator?.remove();

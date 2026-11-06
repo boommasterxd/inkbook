@@ -14,10 +14,12 @@ type VaultControlKey =
   | "filePlacement.mode"
   | "filePlacement.folder"
   | `snapping.${keyof InkbookSettingsV4["snapping"]}`
+  | `holdToShape.${keyof InkbookSettingsV4["holdToShape"]}`
   | `pageDefaults.${"backgroundType" | "activeBufferLines" | "lockedBufferLines"}`
   | `pageDefaults.backgroundSpacing.${"lines" | "dots" | "squares"}`
   | `toolDefaults.select.${"area" | "inclusion"}`
-  | `toolDefaults.pen.${"color" | "width" | "opacity" | "pressureEnabled"}`
+  | `toolDefaults.pen.${"color" | "width" | "opacity" | "pressureEnabled" | "holdToShapeEnabled"}`
+  | `toolDefaults.${"line" | "arrow"}.snappingEnabled`
   | `toolDefaults.${"highlighter" | "straightHighlighter"}.${"color" | "width" | "opacity"}`
   | "toolDefaults.eraser.radius"
   | `toolDefaults.shapes.${keyof InkbookSettingsV4["toolDefaults"]["shapes"]}.${
@@ -56,6 +58,8 @@ const COLOR_VALUES = new Map<string, ColorV1 | null>([
 ]);
 
 const NUMERIC_KEY_SUFFIXES = [
+  ".holdDurationMs",
+  ".jitterTolerancePx",
   ".scrollPreloadMarginPx",
   ".width",
   ".outlineWidth",

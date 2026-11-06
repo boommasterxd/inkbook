@@ -314,8 +314,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     if (this.#disposed) return;
     this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
     for (const mounted of this.#mounted.values()) {
-      mounted.scene?.updateSnappingSettings(settings.snapping);
-      mounted.scene?.updateSelectionHighlights(settings.selectionHighlightsEnabled);
+      mounted.scene?.updateDrawingPreferences(settings);
     }
   }
   queueAutoActivation(

@@ -42,6 +42,7 @@ All elements are taken into account for the calculation:
 - octagons
 - parallelograms
 - diamonds
+- five-point stars
 - coordinate systems
 - tables
 - moved selections
@@ -165,13 +166,12 @@ When a selection exists, the menu begins with:
 2. Cut
 3. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
 4. a separator
-5. Edit geometry, opening the [shared discrete-edit panel](editor-tools.md#select)
-6. Delete
-7. a separator
-8. Bring forward
-9. Send backward
-10. Bring to front
-11. Send to back
+5. Delete
+6. a separator
+7. Bring forward
+8. Send backward
+9. Bring to front
+10. Send to back
 
 The canvas section follows after a separator:
 

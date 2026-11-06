@@ -38,6 +38,20 @@ function rectangle(fillOpacity: number, id = "rectangle"): BoxShapeElementV1 {
   };
 }
 
+it.each([0, 90])(
+  "hit-tests a star's concave outline and optional fill at %s degrees",
+  (rotation) => {
+    const filled = { ...rectangle(1), kind: "star" as const, rotation };
+    const hollow = { ...filled, style: { ...filled.style, fillColor: null, fillOpacity: 0 } };
+    const world = (x: number, y: number) => rotatePointClockwise({ x, y }, filled.pivot, rotation);
+
+    expect(elementContainsPoint(filled, world(50, 55), 0)).toBe(true);
+    expect(elementContainsPoint(hollow, world(50, 55), 0)).toBe(false);
+    expect(elementContainsPoint(filled, world(10, 10), 0)).toBe(false);
+    expect(elementContainsPoint(filled, world(50, 0), 0)).toBe(true);
+  },
+);
+
 function stroke(points: number[], id = "stroke"): StrokeElementV1 {
   return {
     createdAt: 1,

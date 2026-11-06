@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PointV1 } from "../../../../src/domain/schema/public";
 import { boundsFromPoints } from "../../../../src/domain/geometry/primitives";
 
@@ -15,7 +15,9 @@ import {
   segmentDistanceSquared,
   segmentsIntersect,
 } from "../../../../src/domain/geometry/public";
-import { quadraticBounds } from "../../../../src/domain/geometry/primitives";
+import { quadraticBounds, rotatePointsClockwise } from "../../../../src/domain/geometry/primitives";
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("canonical geometry primitives", () => {
   it("rounds geometry and removes negative zero", () => {
@@ -98,5 +100,29 @@ describe("canonical geometry primitives", () => {
     points[0] = { x: 2, y: 3 };
     points[2] = { x: 8, y: 9 };
     expect(boundsFromPoints(points)).toEqual({ minX: 2, minY: 3, maxX: 8, maxY: 9 });
+  });
+});
+
+describe("point collection rotation", () => {
+  it("shares a rotation basis while preserving scalar results and input", () => {
+    const points = [
+      { x: 0, y: -0 },
+      { x: 23.125, y: -7.5 },
+      { x: -100, y: 200 },
+    ];
+    const original = structuredClone(points);
+    const pivot = { x: 13.5, y: -21.25 };
+    const angles = [0, -0, 19, -90, 180, 360];
+    const expected = angles.map((angle) =>
+      points.map((point) => rotatePointClockwise(point, pivot, angle)),
+    );
+    const sine = vi.spyOn(Math, "sin");
+    const cosine = vi.spyOn(Math, "cos");
+    for (const [index, angle] of angles.entries()) {
+      expect(rotatePointsClockwise(points, pivot, angle)).toEqual(expected[index]);
+    }
+    expect(sine).toHaveBeenCalledTimes(angles.length);
+    expect(cosine).toHaveBeenCalledTimes(angles.length);
+    expect(points).toEqual(original);
   });
 });

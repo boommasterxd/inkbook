@@ -97,6 +97,11 @@ export class LiveStrokeBuilder {
     return this.exhausted;
   }
 
+  /** Borrowed canonical samples; asynchronous consumers must snapshot before yielding. */
+  get samples(): readonly number[] {
+    return this.canonicalPoints;
+  }
+
   append(sample: RawStrokeSample): LiveStrokePreview {
     return this.appendBatch([sample]);
   }
@@ -110,15 +115,15 @@ export class LiveStrokeBuilder {
       this.appendedInputSamples += 1;
       if (this.exhausted) continue;
       if (this.shouldReplaceTip(sample)) {
-        this.replaceTip(sample);
+        changed = this.replaceTip(sample) || changed;
         this.replacedTipSamples += 1;
       } else if (this.retainedSamples === MAX_SAMPLES) {
         this.exhausted = true;
         continue;
       } else {
         this.pushSample(sample);
+        changed = true;
       }
-      changed = true;
       this.finalizeStablePrefix();
     }
     if (changed) this.rebuildTail();
@@ -177,9 +182,18 @@ export class LiveStrokeBuilder {
     return this.mutableTipTravel < 0.5;
   }
 
-  private replaceTip(sample: RawStrokeSample): void {
+  private replaceTip(sample: RawStrokeSample): boolean {
     const index = this.retainedSamples - 1;
+    const offset = index * 3;
+    const x = this.canonicalPoints[offset];
+    const y = this.canonicalPoints[offset + 1];
+    const pressure = this.canonicalPoints[offset + 2];
     this.writeSample(index, sample, index - 1);
+    return (
+      x !== this.canonicalPoints[offset] ||
+      y !== this.canonicalPoints[offset + 1] ||
+      pressure !== this.canonicalPoints[offset + 2]
+    );
   }
 
   private pushSample(sample: RawStrokeSample): void {

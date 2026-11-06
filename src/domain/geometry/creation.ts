@@ -16,6 +16,17 @@ import {
 
 type ClosedShapeKind = BoxShapeElementV1["kind"];
 
+const STAR_VERTICES: readonly PointV1[] = Array.from({ length: 10 }, (_, index) => {
+  const angle = (index * Math.PI) / 5 - Math.PI / 2;
+  const radius = index % 2 === 0 ? 1 : (3 - Math.sqrt(5)) / 2;
+  const halfWidth = Math.cos(Math.PI / 10);
+  const bottom = Math.cos(Math.PI / 5);
+  return {
+    x: (Math.cos(angle) * radius + halfWidth) / (2 * halfWidth),
+    y: (Math.sin(angle) * radius + 1) / (1 + bottom),
+  };
+});
+
 export interface ClosedShapeGeometry {
   x: number;
   y: number;
@@ -216,7 +227,12 @@ function assertColumnCount(columns: number): void {
   }
 }
 
-function normalizedVertices(kind: ClosedShapeKind, width: number, height: number): PointV1[] {
+function normalizedVertices(
+  kind: ClosedShapeKind,
+  width: number,
+  height: number,
+): readonly PointV1[] {
+  if (kind === "star") return STAR_VERTICES;
   if (kind === "triangle")
     return [
       { x: 0.5, y: 0 },

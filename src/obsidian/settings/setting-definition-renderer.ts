@@ -6,7 +6,7 @@ import {
   type SettingDefinitionItem,
 } from "obsidian";
 
-import { bindSettingsAction } from "./settings-row";
+import { bindSettingsAction, settingsGroupIdentity } from "./settings-row";
 import { renderSettingControl, type SettingsControlHost } from "./setting-control-renderer";
 import { createSettingsWriteError, SettingsWriteFeedback } from "./settings-write-feedback";
 
@@ -47,7 +47,7 @@ export class SettingDefinitionRenderer {
     if (definition.cls !== undefined) group.addClass(definition.cls);
     definition.items?.forEach((item, index) => {
       if (!isPage(item) && visible(item)) {
-        this.#renderDefinition(group, item, index, definition.cls ?? definition.heading ?? "group");
+        this.#renderDefinition(group, item, index, settingsGroupIdentity(definition));
       }
     });
   }
@@ -65,10 +65,6 @@ export class SettingDefinitionRenderer {
         definition.control?.key ?? definition.name,
       ]);
       if (definition.desc !== undefined) setting.setDesc(definition.desc);
-      if (definition.control !== undefined && disabled(definition.control)) {
-        setting.setDisabled(true);
-      }
-      if (definition.action !== undefined && disabled(definition)) setting.setDisabled(true);
       if (definition.render !== undefined) {
         const cleanup = definition.render(setting, group);
         if (typeof cleanup === "function") this.#cleanups.push(cleanup);
@@ -77,6 +73,10 @@ export class SettingDefinitionRenderer {
       } else if (definition.control !== undefined) {
         this.#cleanups.push(renderSettingControl(setting, definition, this.#host, this.#onChanged));
       }
+      if (definition.control !== undefined && disabled(definition.control)) {
+        setting.setDisabled(true);
+      }
+      if (definition.action !== undefined && disabled(definition)) setting.setDisabled(true);
     });
   }
 

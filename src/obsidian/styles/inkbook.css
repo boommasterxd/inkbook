@@ -392,6 +392,10 @@
   z-index: var(--layer-menu);
 }
 
+.inkbook-root:has(> .inkbook-editor-chrome) > .inkbook-operation-backdrop {
+  visibility: hidden;
+}
+
 .inkbook-root .inkbook-feedback-unmeasured {
   inset-block-start: 50%;
   inset-inline-start: 50%;

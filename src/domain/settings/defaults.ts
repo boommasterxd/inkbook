@@ -64,6 +64,7 @@ function toolDefaults(): ToolDefaultsV1 {
       width: PEN_WIDTHS[1],
       opacity: 1,
       pressureEnabled: true,
+      holdToShapeEnabled: true,
     },
     highlighter: {
       color: { type: "rgba", value: "#EAB308FF" },
@@ -77,7 +78,8 @@ function toolDefaults(): ToolDefaultsV1 {
     },
     eraser: { radius: 20 },
     shapes,
-    arrow: { startNode: "none", endNode: "arrow" },
+    line: { snappingEnabled: true },
+    arrow: { startNode: "none", endNode: "arrow", snappingEnabled: true },
     coordinateSystem: { dimension: "2d" },
     table: { columns: 2 },
   };
@@ -96,6 +98,7 @@ export function createBuiltInSettings(): InkbookSettingsV4 {
       connections: true,
       structures: true,
     },
+    holdToShape: { enabled: true, holdDurationMs: 600, jitterTolerancePx: 12 },
     pageDefaults: {
       backgroundType: "squares",
       backgroundSpacing: {

@@ -1,39 +1,16 @@
 import { changeCoordinateSystemDimension, changeTableColumns } from "../../domain/geometry/public";
 import type {
-  ArrowNodeV1,
   ColorV1,
   InkElementV1,
   OutlineStyleV1,
   ShapeStyleV1,
   StrokeStyleV1,
 } from "../../domain/schema/public";
-import { canonicalizeUnitIntervalNumber, isRgbaColor } from "../../domain/schema/public";
 import { validateInternalStyleReplacement } from "../../domain/elements/runtime-replacement-validation";
-import type {
-  SelectionAreaV1,
-  SelectionInclusionV1,
-  StartupToolV1,
-  ToolDefaultsV1,
-} from "../../domain/settings/types";
+import type { StartupToolV1, ToolDefaultsV1 } from "../../domain/settings/types";
 
-export type StyleChange =
-  | { readonly property: "selection-area"; readonly value: SelectionAreaV1 }
-  | { readonly property: "selection-inclusion"; readonly value: SelectionInclusionV1 }
-  | { readonly property: "color"; readonly value: ColorV1 }
-  | { readonly property: "stroke-width"; readonly value: StrokeStyleV1["width"] }
-  | { readonly property: "opacity"; readonly value: number }
-  | { readonly property: "pressure-enabled"; readonly value: boolean }
-  | { readonly property: "outline-color"; readonly value: ColorV1 }
-  | { readonly property: "outline-width"; readonly value: OutlineStyleV1["outlineWidth"] }
-  | { readonly property: "outline-style"; readonly value: OutlineStyleV1["outlineStyle"] }
-  | { readonly property: "outline-opacity"; readonly value: number }
-  | { readonly property: "fill-color"; readonly value: ShapeStyleV1["fillColor"] }
-  | { readonly property: "fill-opacity"; readonly value: number }
-  | { readonly property: "arrow-start-node"; readonly value: ArrowNodeV1 }
-  | { readonly property: "arrow-end-node"; readonly value: ArrowNodeV1 }
-  | { readonly property: "coordinate-dimension"; readonly value: "2d" | "3d" }
-  | { readonly property: "table-columns"; readonly value: number }
-  | { readonly property: "eraser-radius"; readonly value: number };
+import { canonicalStyleChange, validateChange, type StyleChange } from "./style-change-validation";
+export type { StyleChange } from "./style-change-validation";
 
 export interface SelectionStyleChangeResult {
   readonly elements: readonly InkElementV1[];
@@ -89,6 +66,8 @@ function elementStyleChange(element: InkElementV1, change: StyleChange): StyleCh
 
 function changeElement(element: InkElementV1, change: StyleChange): InkElementV1 {
   validateChange(change);
+  if (isToolOnlyChange(change))
+    throw new RangeError(`${change.property} does not apply to an existing selection.`);
   if (elementValueMatches(element, change)) return element;
   let result: InkElementV1;
   switch (change.property) {
@@ -131,11 +110,6 @@ function changeElement(element: InkElementV1, change: StyleChange): InkElementV1
     case "table-columns":
       result = changeTableColumns(element as never, change.value);
       break;
-    case "pressure-enabled":
-    case "eraser-radius":
-    case "selection-area":
-    case "selection-inclusion":
-      throw new RangeError(`${change.property} does not apply to an existing selection.`);
   }
   const validation = validateInternalStyleReplacement(element, result);
   if (!validation.ok) throw new RangeError(`${validation.error.path}: ${validation.error.message}`);
@@ -147,6 +121,8 @@ function assertSelectionCompatibility(
   change: StyleChange,
 ): void {
   if (elements.length === 0) throw new RangeError("A style change requires a non-empty selection.");
+  if (isToolOnlyChange(change))
+    throw new RangeError(`Style property ${change.property} is not shared by the selection.`);
   const compatible = elements.every((element) => {
     switch (change.property) {
       case "color":
@@ -168,11 +144,6 @@ function assertSelectionCompatibility(
         return element.kind === "coordinate-system";
       case "table-columns":
         return element.kind === "table";
-      case "pressure-enabled":
-      case "eraser-radius":
-      case "selection-area":
-      case "selection-inclusion":
-        return false;
     }
   });
   if (!compatible)
@@ -180,14 +151,22 @@ function assertSelectionCompatibility(
 }
 
 function assertToolCompatibility(tool: StartupToolV1, change: StyleChange): void {
+  if (change.property === "pressure-enabled" || change.property === "hold-to-shape-enabled") {
+    if (tool !== "draw")
+      throw new RangeError(`Style property ${change.property} does not apply to ${tool}.`);
+    return;
+  }
+  if (change.property === "snapping-enabled") {
+    if (tool !== "line" && tool !== "arrow")
+      throw new RangeError(`Style property ${change.property} does not apply to ${tool}.`);
+    return;
+  }
   const compatible = (() => {
     switch (change.property) {
       case "color":
       case "stroke-width":
       case "opacity":
         return tool === "draw" || tool === "highlighter" || tool === "straight-highlighter";
-      case "pressure-enabled":
-        return tool === "draw";
       case "outline-color":
       case "outline-width":
       case "outline-style":
@@ -215,6 +194,14 @@ function assertToolCompatibility(tool: StartupToolV1, change: StyleChange): void
 }
 
 function changeToolValues(values: ToolDefaultsV1, tool: StartupToolV1, change: StyleChange): void {
+  if (change.property === "hold-to-shape-enabled") {
+    values.pen.holdToShapeEnabled = change.value;
+    return;
+  }
+  if (change.property === "snapping-enabled") {
+    values[tool as "line" | "arrow"].snappingEnabled = change.value;
+    return;
+  }
   if (change.property === "selection-area") {
     values.select.area = change.value;
     return;
@@ -273,65 +260,6 @@ function toolStylePatch(change: StyleChange): object {
   }
 }
 
-function validateChange(change: StyleChange): void {
-  validateColorChange(change);
-  validateOpacityChange(change);
-  if (
-    change.property === "table-columns" &&
-    (!Number.isInteger(change.value) || change.value < 1 || change.value > 12)
-  ) {
-    throw new RangeError("Table columns must be an integer from 1 through 12.");
-  }
-  if (
-    change.property === "eraser-radius" &&
-    (!Number.isInteger(change.value) || change.value < 8 || change.value > 64)
-  ) {
-    throw new RangeError("Eraser radius must be an integer from 8 through 64 screen pixels.");
-  }
-}
-
-function canonicalStyleChange(change: StyleChange): StyleChange {
-  validateChange(change);
-  if (
-    change.property !== "opacity" &&
-    change.property !== "outline-opacity" &&
-    change.property !== "fill-opacity"
-  ) {
-    return change;
-  }
-  return { ...change, value: canonicalizeUnitIntervalNumber(change.value) };
-}
-
-function validateColorChange(change: StyleChange): void {
-  if (
-    change.property !== "color" &&
-    change.property !== "outline-color" &&
-    change.property !== "fill-color"
-  ) {
-    return;
-  }
-  if (
-    change.value !== null &&
-    change.value.type !== "theme-text" &&
-    !isRgbaColor(change.value.value)
-  ) {
-    throw new RangeError("Style colors must be theme-text or canonical RGBA values.");
-  }
-}
-
-function validateOpacityChange(change: StyleChange): void {
-  if (
-    change.property !== "opacity" &&
-    change.property !== "outline-opacity" &&
-    change.property !== "fill-opacity"
-  ) {
-    return;
-  }
-  if (!Number.isFinite(change.value) || change.value < 0 || change.value > 1) {
-    throw new RangeError("Style opacity must be from 0 through 1.");
-  }
-}
-
 function withStyle(element: InkElementV1, patch: object): InkElementV1 {
   return { ...element, style: { ...element.style, ...patch } } as InkElementV1;
 }
@@ -373,11 +301,18 @@ function isToolOnlyChange(change: StyleChange): change is Extract<
   StyleChange,
   {
     readonly property:
-      "pressure-enabled" | "eraser-radius" | "selection-area" | "selection-inclusion";
+      | "pressure-enabled"
+      | "hold-to-shape-enabled"
+      | "snapping-enabled"
+      | "eraser-radius"
+      | "selection-area"
+      | "selection-inclusion";
   }
 > {
   return (
     change.property === "pressure-enabled" ||
+    change.property === "hold-to-shape-enabled" ||
+    change.property === "snapping-enabled" ||
     change.property === "eraser-radius" ||
     change.property === "selection-area" ||
     change.property === "selection-inclusion"
@@ -389,6 +324,10 @@ function toolValueMatches(
   tool: StartupToolV1,
   change: StyleChange,
 ): boolean {
+  if (change.property === "hold-to-shape-enabled")
+    return values.pen.holdToShapeEnabled === change.value;
+  if (change.property === "snapping-enabled")
+    return values[tool as "line" | "arrow"].snappingEnabled === change.value;
   if (change.property === "selection-area") return values.select.area === change.value;
   if (change.property === "selection-inclusion") return values.select.inclusion === change.value;
   if (change.property === "eraser-radius") return values.eraser.radius === change.value;
@@ -467,6 +406,7 @@ function isClosedShapeTool(tool: StartupToolV1): boolean {
     tool === "ellipse" ||
     tool === "triangle" ||
     tool === "octagon" ||
+    tool === "star" ||
     tool === "parallelogram" ||
     tool === "diamond"
   );

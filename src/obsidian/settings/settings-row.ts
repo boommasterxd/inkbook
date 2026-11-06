@@ -1,3 +1,5 @@
+import type { Setting, SettingDefinitionGroup } from "obsidian";
+
 export type InkbookSettingActionTone = "caution" | "danger";
 
 export interface SettingsRow {
@@ -10,6 +12,12 @@ export interface SettingsRowOptions {
   readonly className?: string;
   readonly description?: string;
   readonly name: string;
+}
+
+export function settingsGroupIdentity(
+  definition: Pick<SettingDefinitionGroup, "cls" | "heading">,
+): string {
+  return JSON.stringify([definition.cls ?? null, definition.heading ?? null]);
 }
 
 export function nameSettingToggle(toggleElement: HTMLElement, name: string): void {
@@ -31,6 +39,29 @@ export function createSettingsRow(
   }
   const control = row.createDiv({ cls: "setting-item-control" });
   return { control, info, row };
+}
+
+export function createSettingsHeading(
+  container: HTMLElement,
+  name: string,
+  description: string,
+): HTMLElement {
+  const info = container.createDiv({ cls: "inkbook-settings-visual-info" });
+  info.createDiv({ cls: "setting-item-name", text: name });
+  const descriptionElement = info.createDiv({ cls: "setting-item-description", text: description });
+  descriptionElement.id = `inkbook-setting-${name.toLowerCase().replaceAll(" ", "-")}-description`;
+  return descriptionElement;
+}
+
+export function createSettingsVisualControlRow(
+  setting: Setting,
+  name: string,
+  description: string,
+): HTMLElement {
+  setting.settingEl.replaceChildren();
+  setting.settingEl.classList.add("inkbook-settings-visual-row");
+  createSettingsHeading(setting.settingEl, name, description);
+  return setting.settingEl.createDiv({ cls: "inkbook-settings-inline-controls" });
 }
 
 export function bindSettingsAction(

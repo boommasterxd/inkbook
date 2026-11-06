@@ -13,9 +13,12 @@ import type { ActiveEditorStyleSession } from "./style-session";
 import type { EditableDocumentModel } from "../document-session/vault-document-session";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import type { ActiveEditorControllerOptions } from "./controller-types";
-import { backgroundState } from "./controller-helpers";
+import { backgroundState, createToolbarState } from "./controller-helpers";
 import { ActiveEditorOnboarding } from "./onboarding";
 import type { BrowserScrollElement } from "../../scrolling/index";
+import type { ActiveEditorAvailability } from "./controller-availability";
+import type { ActiveEditorHistory } from "./history";
+import type { ActiveEditorTouchMode } from "./input/controller-touch-mode";
 
 type ActiveEditorChromeDependencies = readonly [
   actions: ActiveEditorActions,
@@ -29,6 +32,29 @@ type ActiveEditorChromeHandlers = readonly [
   activeTool: () => EditorTool,
   configureTool: (tool: EditorTool) => void,
 ];
+
+export function createActiveEditorToolbarState(
+  [actions, availability, history]: readonly [
+    ActiveEditorActions,
+    ActiveEditorAvailability,
+    ActiveEditorHistory,
+  ],
+  [touchMode, chromeState]: readonly [ActiveEditorTouchMode, ActiveEditorChromeState],
+  [activeTool, hasSelection]: readonly [EditorTool, boolean],
+): ToolbarState {
+  return createToolbarState({
+    actionConfirmation: actions.actionConfirmation,
+    activeTool,
+    canRedo: availability.acceptsInput && history.canRedo,
+    canUndo: availability.acceptsInput && history.canUndo,
+    canPaste: availability.acceptsInput && actions.canPaste,
+    fingerDrawingEnabled: touchMode.enabled,
+    fingerDrawingAvailable: touchMode.available,
+    hasSelection,
+    openFlyout: chromeState.openFlyout,
+    pasteVisible: actions.pasteVisible,
+  });
+}
 
 export function createActiveEditorChrome(
   [actions, background, chromeState, styles, openings]: ActiveEditorChromeDependencies,
@@ -56,11 +82,6 @@ export function createActiveEditorChrome(
       return onboarding.available ? onboarding.open : undefined;
     },
     onShapeChange: (shape) => configureTool(chromeState.selectShape(shape)),
-    onInsertShape: () => {
-      configureTool("select");
-      menus.geometry?.insert(chromeState.selectedShape, styles.defaults);
-    },
-    onEditGeometry: (navigation) => menus.geometry?.open(navigation),
     onStyleChange: (id, value) => styles.apply(activeTool(), id, value),
   };
   configureActiveEditorToolbarMenus(

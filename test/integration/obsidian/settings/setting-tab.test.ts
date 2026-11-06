@@ -11,6 +11,7 @@ import {
 import type { SettingsControlKey } from "../../../../src/obsidian/settings/control-values";
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { labelledByElements } from "../../../fixtures/accessibility";
 import {
   confirmAction,
   createTab,
@@ -55,7 +56,12 @@ function renderedLabels(definition: SettingDefinitionRender): string[] {
     ...rendered.container.querySelectorAll(
       ".inkbook-settings-tool-title, .inkbook-menu-control-header, .inkbook-menu-toggle-heading",
     ),
-  ].flatMap((element) => (element.textContent === null ? [] : [element.textContent]));
+  ].flatMap((element) => {
+    const title = element.matches(".inkbook-menu-control-header")
+      ? labelledByElements(element.parentElement!)[0]!
+      : element;
+    return title.textContent === null ? [] : [title.textContent];
+  });
   rendered.cleanup();
   return labels;
 }
@@ -95,6 +101,7 @@ describe("InkbookSettingTab definitions", () => {
       "Snapping",
       "Input",
       "Interface",
+      "Hold to shape",
       "Shortcuts",
     ]);
     expect(definitions[definitions.length - 1]).toMatchObject({
@@ -359,6 +366,9 @@ describe("InkbookSettingTab remaining group reset integration", () => {
     const { store, tab, defaults, deviceDefaults } = createResetFixture();
     await tab.setControlValue("pageDefaults.activeBufferLines", 6);
     await tab.setControlValue("toolDefaults.pen.width", 14);
+    await tab.setControlValue("toolDefaults.pen.holdToShapeEnabled", false);
+    await tab.setControlValue("toolDefaults.line.snappingEnabled", false);
+    await tab.setControlValue("toolDefaults.arrow.snappingEnabled", false);
     await tab.setControlValue("toolDefaults.select.area", "rectangle");
     await tab.setControlValue("toolDefaults.shapes.rectangle.outlineWidth", 8);
     await tab.setControlValue("toolDefaults.shapes.rectangle.fillOpacity", 0.1);
@@ -384,6 +394,8 @@ describe("InkbookSettingTab remaining group reset integration", () => {
       straightHighlighter: defaults.toolDefaults.straightHighlighter,
     });
     expect(tab.getControlValue("toolDefaults.select.area")).toBe("lasso");
+    expect(tab.getControlValue("toolDefaults.line.snappingEnabled")).toBe(false);
+    expect(tab.getControlValue("toolDefaults.arrow.snappingEnabled")).toBe(false);
     resetGroup(tab, "Snapping");
     await vi.waitFor(() =>
       expect(tab.getControlValue("snapping.angles")).toBe(defaults.snapping.angles),
@@ -397,6 +409,7 @@ describe("InkbookSettingTab remaining group reset integration", () => {
     );
     expect(store.getVaultSettings().toolDefaults).toMatchObject({
       arrow: defaults.toolDefaults.arrow,
+      line: defaults.toolDefaults.line,
       coordinateSystem: defaults.toolDefaults.coordinateSystem,
       shapes: defaults.toolDefaults.shapes,
       table: defaults.toolDefaults.table,

@@ -26,7 +26,7 @@ const boundary = vi.hoisted(() => {
     createScene: vi.fn(),
     getEditorContext: vi.fn(() => ({ model: { getSaveStatus: () => "saved" as const } })),
     activationRequests: vi.fn(),
-    updateHighlights: vi.fn(),
+    updateDrawingPreferences: vi.fn(),
     prepareForUnload: vi.fn(async (): Promise<void> => undefined),
   };
 });
@@ -93,13 +93,12 @@ vi.mock("../../../../../src/obsidian/embeds/workspace/workspace-active-scene", (
 function createHarness(initialEntrance?: PresentationAttachment["initialEntrance"]) {
   boundary.snapshot = { disposed: false };
   boundary.prepareForUnload.mockReset().mockResolvedValue(undefined);
-  boundary.updateHighlights.mockClear();
+  boundary.updateDrawingPreferences.mockClear();
   boundary.createScene.mockReset().mockImplementation(() => ({
     dispose: vi.fn(),
     ready: Promise.resolve(true),
     setScheme: vi.fn(),
-    updateSnappingSettings: vi.fn(),
-    updateSelectionHighlights: boundary.updateHighlights,
+    updateDrawingPreferences: boundary.updateDrawingPreferences,
   }));
   boundary.getEditorContext.mockClear();
   boundary.activationRequests.mockClear();
@@ -404,7 +403,22 @@ it("propagates vault highlight changes to the mounted active presentation", asyn
   await vi.waitFor(() => expect(attachment.root.dataset.inkbookState).toBe("active"));
   runtime.updateVaultSettings({ ...settings.vault, selectionHighlightsEnabled: false });
   runtime.updateVaultSettings({ ...settings.vault, selectionHighlightsEnabled: true });
-  expect(boundary.updateHighlights.mock.calls).toEqual([[false], [true]]);
+  expect(boundary.updateDrawingPreferences.mock.calls).toEqual([
+    [{ ...settings.vault, selectionHighlightsEnabled: false }],
+    [{ ...settings.vault, selectionHighlightsEnabled: true }],
+  ]);
+});
+
+it("propagates hold-to-shape settings to the mounted active presentation", async () => {
+  const { finishEntrance, runtime, settings, attachment } = startActivation();
+  finishEntrance(true);
+  await vi.waitFor(() => expect(attachment.root.dataset.inkbookState).toBe("active"));
+  const holdToShape = { enabled: false, holdDurationMs: 1000, jitterTolerancePx: 8 };
+  runtime.updateVaultSettings({ ...settings.vault, holdToShape });
+  expect(boundary.updateDrawingPreferences).toHaveBeenLastCalledWith({
+    ...settings.vault,
+    holdToShape,
+  });
 });
 
 it("retains window scheduling until detached persistence has drained", async () => {

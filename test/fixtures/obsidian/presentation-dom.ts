@@ -175,6 +175,7 @@ export class FakePresentationElement {
       ResizeObserver: class {
         public disconnect(): void {}
         public observe(): void {}
+        public unobserve(): void {}
       },
       cancelAnimationFrame: vi.fn(),
       clearTimeout: vi.fn(),

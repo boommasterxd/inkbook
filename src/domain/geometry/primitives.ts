@@ -144,8 +144,10 @@ export function normalizedVector(vector: PointV1): UnitVector | null {
 
 export function rotateVectorClockwise(vector: PointV1, degrees: number): PointV1 {
   const radians = (degrees * Math.PI) / 180;
-  const cosine = Math.cos(radians);
-  const sine = Math.sin(radians);
+  return rotateVectorWithBasis(vector, Math.cos(radians), Math.sin(radians));
+}
+
+function rotateVectorWithBasis(vector: PointV1, cosine: number, sine: number): PointV1 {
   return {
     x: vector.x * cosine - vector.y * sine,
     y: vector.x * sine + vector.y * cosine,
@@ -155,6 +157,20 @@ export function rotateVectorClockwise(vector: PointV1, degrees: number): PointV1
 export function rotatePointClockwise(point: PointV1, pivot: PointV1, degrees: number): PointV1 {
   const rotated = rotateVectorClockwise(subtractPoints(point, pivot), degrees);
   return addPoints(pivot, rotated);
+}
+
+/** A point collection shares its rotation basis without changing scalar arithmetic. */
+export function rotatePointsClockwise(
+  points: readonly PointV1[],
+  pivot: PointV1,
+  degrees: number,
+): PointV1[] {
+  const radians = (degrees * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return points.map((point) =>
+    addPoints(pivot, rotateVectorWithBasis(subtractPoints(point, pivot), cosine, sine)),
+  );
 }
 
 export function boundsContainPoint(bounds: Bounds, point: PointV1): boolean {
@@ -172,20 +188,22 @@ export function boundsFromPoints(points: readonly PointV1[]): Bounds {
     throw new RangeError("Bounds require at least one point.");
   }
 
-  let minX = first.x;
-  let minY = first.y;
-  let maxX = first.x;
-  let maxY = first.y;
+  const bounds = { minX: first.x, minY: first.y, maxX: first.x, maxY: first.y };
   for (let index = 1; index < points.length; index += 1) {
     const point = points[index];
     if (point === undefined) continue;
-    minX = Math.min(minX, point.x);
-    minY = Math.min(minY, point.y);
-    maxX = Math.max(maxX, point.x);
-    maxY = Math.max(maxY, point.y);
+    includeBoundsPoint(bounds, point);
   }
 
-  return { minX, minY, maxX, maxY };
+  return bounds;
+}
+
+/** Extends an owned accumulator without allocating or rescanning its existing points. */
+export function includeBoundsPoint(bounds: Bounds, point: PointV1): void {
+  bounds.minX = Math.min(bounds.minX, point.x);
+  bounds.minY = Math.min(bounds.minY, point.y);
+  bounds.maxX = Math.max(bounds.maxX, point.x);
+  bounds.maxY = Math.max(bounds.maxY, point.y);
 }
 
 export function expandBounds(bounds: Bounds, amount: number): Bounds {

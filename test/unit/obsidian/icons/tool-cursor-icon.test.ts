@@ -78,7 +78,7 @@ describe("toolbar cursor icon adapter", () => {
     const nodes = new Set<SVGSVGElement | undefined>();
     for (const start of ARROW_NODES) {
       for (const end of ARROW_NODES) {
-        h.defaults.arrow = { startNode: start, endNode: end };
+        h.defaults.arrow = { ...h.defaults.arrow, startNode: start, endNode: end };
         nodes.add(h.resolve("arrow", h.defaults));
         expect(h.getIcon).toHaveBeenLastCalledWith(
           activeShapeIconId("arrow", {

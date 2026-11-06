@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { SelectionFrameSession } from "../../../../../src/editor/selection/public";
 import { CanvasKeyboardSelection } from "../../../../../src/obsidian/embeds/active-editor/input/canvas-keyboard-selection";
-import { ActiveEditorGeometrySession } from "../../../../../src/obsidian/embeds/active-editor/geometry-session";
+import { KeyboardHandleInteraction } from "../../../../../src/obsidian/embeds/active-editor/previews/keyboard-handle-interaction";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import * as geometry from "../../../../../src/domain/geometry/public";
@@ -151,41 +151,27 @@ it("bounds admission work and commits and undoes a connected 10,000-stroke keybo
   }
 });
 
-it("bounds a tapped large-selection edit and releases suspended preparation with its panel", async () => {
+it("bounds a cancelled large-selection keyboard edit and releases suspended preparation", async () => {
   const test = connectedKeyboardFixture();
-  const { store, geometry, paused, history, released } = test;
-  const subscribe = store.subscribe.bind(store);
-  let subscriptions = 0;
-  vi.spyOn(store, "subscribe").mockImplementation((listener) => {
-    subscriptions += 1;
-    const release = subscribe(listener);
-    return () => {
-      subscriptions -= 1;
-      release();
-    };
-  });
+  const { store, keyboard, input, geometry, paused, history, released } = test;
+  const send = keyboardSender(keyboard, input);
   const checkpoint = vi.spyOn(paused.scheduler, "checkpoint");
   try {
-    geometry.open();
+    send("Enter");
     store.resetInstrumentation();
-    const action = document.querySelector<HTMLButtonElement>(
-      '.inkbook-menu-geometry [aria-label="Right"]',
-    )!;
-    action.click();
+    expect(send("ArrowRight")).toBe(true);
     await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledOnce());
-    expect(geometry.interaction.pending).toBe(true);
+    expect(geometry.pending).toBe(true);
     expect(store.instrumentation).toMatchObject({
       recordReplacements: 0,
       fullStoreScans: 0,
       publishedDeltas: 0,
     });
-    geometry.close();
-    expect(subscriptions).toBe(0);
-    expect(geometry.interaction.pending).toBe(false);
+    expect(send("Escape")).toBe(true);
+    expect(geometry.pending).toBe(false);
     paused.resume();
     await vi.waitFor(() => expect(released).toHaveBeenCalledOnce());
     expect(history.commandCount).toBe(0);
-    expect(document.querySelector(".inkbook-menu-geometry")).toBeNull();
     expect(store.instrumentation.recordReplacements).toBe(0);
   } finally {
     paused.resume();
@@ -264,10 +250,10 @@ function connectedKeyboardFixture() {
     enabled: () => true,
     zoom: () => 1,
   };
-  const geometry = new ActiveEditorGeometrySession(geometryOptions);
+  const geometry = new KeyboardHandleInteraction({ ...geometryOptions, settled: () => undefined });
   const keyboard = new CanvasKeyboardSelection({
     ...geometryOptions,
-    geometryInteraction: geometry.interaction,
+    geometryInteraction: geometry,
   });
   return {
     store,
@@ -281,7 +267,6 @@ function connectedKeyboardFixture() {
     released,
     handles,
     dispose: () => {
-      geometry.close();
       keyboard.dispose();
       prepared.dispose();
       handles.dispose();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { denseWaveSamples } from "../../../fixtures/editor/stroke";
 import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
+import { prepareExpectedStrokeSamples } from "../../../fixtures/editor/stroke-sample-reference";
 
 function builder(pressureEnabled: boolean, source: "pen" | "simulated" = "pen", zoom = 1) {
   return new LiveStrokeBuilder({
@@ -16,6 +17,42 @@ function builder(pressureEnabled: boolean, source: "pen" | "simulated" = "pen", 
 }
 
 const denseWave = denseWaveSamples();
+
+describe("stationary live stroke geometry", () => {
+  it.each(["pen", "simulated"] as const)(
+    "reuses canonical stationary geometry while preserving subsequent %s input state",
+    (source) => {
+      const stroke = builder(true, source);
+      const samples = [
+        { x: 0, y: 0, pressure: 0.5, time: 0 },
+        { x: 1, y: 0, pressure: 0.5, time: 10 },
+      ];
+      for (const sample of samples) stroke.append(sample);
+      const tail = stroke.preview().tail;
+      for (let time = 11; time <= 110; time++) {
+        const sample = { x: 1, y: 0, pressure: 0.5, time };
+        samples.push(sample);
+        stroke.append(sample);
+      }
+      expect(stroke.preview().tail).toBe(tail);
+      expect(stroke.instrumentation().tailBuilds).toBe(2);
+      const pressure = { x: 1, y: 0, pressure: 1, time: 111 };
+      samples.push(pressure);
+      stroke.append(pressure);
+      expect(stroke.instrumentation().tailBuilds).toBe(source === "pen" ? 3 : 2);
+      const position = { x: 1.1, y: 0, pressure: 1, time: 112 };
+      samples.push(position);
+      stroke.append(position);
+      expect(stroke.preview().tail).not.toBe(tail);
+      const commit = stroke.finish();
+      expect(commit.instrumentation.tailBuilds).toBe(source === "pen" ? 4 : 3);
+      expect(commit.instrumentation.appendedInputSamples).toBe(samples.length);
+      expect(commit.points).toEqual(
+        prepareExpectedStrokeSamples(samples, { pressureSource: source, zoom: 1 }),
+      );
+    },
+  );
+});
 
 describe("live stroke sample retention", () => {
   it.each([

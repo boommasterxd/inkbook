@@ -7,6 +7,8 @@ import { ShortcutRecordingView } from "./shortcut-recording-view";
 import { ShortcutReferenceView } from "./shortcut-reference-view";
 import { createSettingsDisclosure } from "../settings-disclosure";
 import { SettingsPanelMotion } from "../settings-panel-motion";
+import { SettingsViewState } from "../settings-view-state";
+import { refreshSettingsView } from "../settings-view-refresh";
 
 type ShortcutSectionId = "canvas" | "commands" | "fixed" | "gestures";
 
@@ -14,7 +16,7 @@ let shortcutViewSequence = 0;
 
 export class ShortcutSettingsView {
   readonly #container: HTMLElement;
-  readonly #expandedSections = new Set<ShortcutSectionId>();
+  readonly #viewState: SettingsViewState;
   readonly #idPrefix = `inkbook-shortcuts-${String(++shortcutViewSequence)}`;
   readonly #recordingView: ShortcutRecordingView;
   readonly #referenceView: ShortcutReferenceView;
@@ -30,9 +32,11 @@ export class ShortcutSettingsView {
     keymap: Pick<Keymap, "pushScope" | "popScope">,
     hostHotkeys: ObsidianHotkeyAccess = EMPTY_OBSIDIAN_HOTKEY_ACCESS,
     workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
+    viewState = new SettingsViewState(),
   ) {
     this.#container = container;
     this.#store = store;
+    this.#viewState = viewState;
     if (workScheduler === undefined) throw new Error("Shortcut settings require a work scheduler.");
     this.#recordingView = new ShortcutRecordingView(container, store, hostHotkeys, keymap);
     this.#referenceView = new ShortcutReferenceView(hostHotkeys);
@@ -57,6 +61,10 @@ export class ShortcutSettingsView {
 
   public render(): void {
     if (this.#disposed) return;
+    refreshSettingsView(this.#container, () => this.#renderContent());
+  }
+
+  #renderContent(): void {
     this.#recordingView.prepareRender();
     this.#disposePanelMotions();
     this.#container.replaceChildren();
@@ -76,7 +84,8 @@ export class ShortcutSettingsView {
 
   #renderSection(id: ShortcutSectionId, name: string, description: string): HTMLElement {
     const panelId = `${this.#idPrefix}-${id}`;
-    const expanded = this.#expandedSections.has(id);
+    const stateKey = `shortcut:${id}`;
+    const expanded = this.#viewState.expandedSections.has(stateKey);
     const { content, panel, trigger, setExpanded, dispose } = createSettingsDisclosure(
       this.#container,
       {
@@ -96,6 +105,7 @@ export class ShortcutSettingsView {
       () => this.#store.getDeviceSettings().motion,
       (listener) => this.#store.subscribeDeviceSettings(listener),
     );
+    trigger.dataset.inkbookSettingIdentity = JSON.stringify(["shortcut-section", id]);
     this.#panelMotions.push(motion);
     this.#disposeDisclosures.push(dispose);
     trigger.addEventListener("click", () => {
@@ -108,8 +118,8 @@ export class ShortcutSettingsView {
           panel.ownerDocument.defaultView?.matchMedia("(prefers-reduced-motion: reduce)").matches,
         ),
       );
-      if (nextExpanded) this.#expandedSections.add(id);
-      else this.#expandedSections.delete(id);
+      if (nextExpanded) this.#viewState.expandedSections.add(stateKey);
+      else this.#viewState.expandedSections.delete(stateKey);
       motion.setExpanded(nextExpanded);
     });
     return content;

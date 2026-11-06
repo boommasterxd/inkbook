@@ -9,6 +9,7 @@ export const STARTUP_TOOLS = [
   "rectangle",
   "ellipse",
   "triangle",
+  "star",
   "octagon",
   "parallelogram",
   "diamond",
@@ -20,6 +21,7 @@ export const CLOSED_SHAPE_TOOLS = [
   "rectangle",
   "ellipse",
   "triangle",
+  "star",
   "octagon",
   "parallelogram",
   "diamond",
@@ -84,6 +86,7 @@ export interface PenDefaultsV1 {
   width: PenWidthV1;
   opacity: number;
   pressureEnabled: boolean;
+  holdToShapeEnabled: boolean;
 }
 
 export interface HighlighterDefaultsV1 {
@@ -115,7 +118,8 @@ export interface ToolDefaultsV1 {
   straightHighlighter: HighlighterDefaultsV1;
   eraser: EraserDefaultsV1;
   shapes: Record<ClosedShapeToolV1, ShapeDefaultsV1> & Record<OutlineOnlyToolV1, OutlineDefaultsV1>;
-  arrow: { startNode: ArrowNodeV1; endNode: ArrowNodeV1 };
+  line: { snappingEnabled: boolean };
+  arrow: { startNode: ArrowNodeV1; endNode: ArrowNodeV1; snappingEnabled: boolean };
   coordinateSystem: { dimension: "2d" | "3d" };
   table: { columns: number };
 }
@@ -126,6 +130,12 @@ export interface SnappingSettingsV1 {
   bends: boolean;
   connections: boolean;
   structures: boolean;
+}
+
+export interface HoldToShapeSettingsV1 {
+  enabled: boolean;
+  holdDurationMs: number;
+  jitterTolerancePx: number;
 }
 
 interface PageDefaultsV3 {
@@ -152,6 +162,7 @@ export interface InkbookSettingsV4 {
   selectionHighlightsEnabled: boolean;
   toolDefaults: ToolDefaultsV1;
   snapping: SnappingSettingsV1;
+  holdToShape: HoldToShapeSettingsV1;
   pageDefaults: PageDefaultsV3;
   filePlacement: FilePlacementV1;
   refreshRatePreference: RefreshRatePreferenceV2;

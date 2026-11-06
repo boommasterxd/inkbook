@@ -160,24 +160,36 @@ describe("scene presentation documents and foreground", () => {
 
   it("hides only foreground and input while preparing and restores both when ready", () => {
     const { container, host, scene } = fixture();
+    scene.liveStrokeGroup.setAttribute("opacity", "0.6");
+    const ink = scene.ownerDocument.createElementNS(SVG_NAMESPACE, "path");
+    ink.setAttribute("opacity", "0.4");
+    scene.liveStrokeGroup.append(ink);
     for (const preparing of [true, false]) {
       container.classList.toggle("inkbook-active-preparing", preparing);
       synchronize(scene);
+      if (!preparing) {
+        expect(scene.contentGroup.style.opacity).toBe("0");
+        scene.revealSurface();
+      }
       const expected = preparing ? "hidden" : "visible";
       expect(
         scene.svg.ownerDocument.body.style.getPropertyValue(
           "--inkbook-scene-foreground-visibility",
         ),
-      ).toBe(expected);
-      expect(drawingStyle(scene.contentGroup).visibility).toBe(expected);
+      ).toBe("");
+      expect(drawingStyle(scene.contentGroup).opacity || "1").toBe(preparing ? "0" : "1");
+      expect(scene.liveStrokeGroup.style.opacity).toBe(preparing ? "0" : "");
+      expect(scene.liveStrokeGroup.getAttribute("opacity")).toBe("0.6");
+      expect(ink.getAttribute("opacity")).toBe("0.4");
       expect(getComputedStyle(scene.inputSurface).visibility || "visible").toBe(expected);
       expect(drawingStyle(scene.pageSurface).visibility).not.toBe("hidden");
+      expect(scene.pageSurface.style.opacity).toBe("");
       expect(getComputedStyle(host).blockSize).toBe("100%");
     }
     container.classList.add("inkbook-active-transitioning");
     container.setCssProps({ "--inkbook-active-scene-block-size": "902px" });
     synchronize(scene);
-    expect(drawingStyle(scene.contentGroup).visibility).toBe("visible");
+    expect(scene.contentGroup.style.opacity).toBe("");
   });
 });
 
@@ -371,30 +383,37 @@ describe("scene document lifecycle failures", () => {
 });
 
 describe("owned root publication and input failure", () => {
-  it("keeps nested foreground hidden initially and reveals it in the handoff without a host style read", async () => {
+  it("reveals nested foreground and pending theme writes without another host style read", async () => {
     const { root, container, host, scene } = fixture(document, { nested: true, preparing: true });
     expect(container.parentElement?.className).toBe("inkbook-editor-chrome");
     expect(container.parentElement?.parentElement).toBe(root);
     expect(host.parentElement).toBe(container);
     const body = scene.svg.ownerDocument.body;
     const foreground = "--inkbook-scene-foreground-visibility";
-    expect(body.style.getPropertyValue(foreground)).toBe("hidden");
-    expect(drawingStyle(scene.contentGroup).visibility).toBe("hidden");
+    expect(body.style.getPropertyValue(foreground)).toBe("");
+    expect(drawingStyle(scene.contentGroup).opacity).toBe("0");
     const reads = vi.spyOn(window, "getComputedStyle");
+    root.classList.remove("inkbook-active-preparing");
+    root.setCssProps({ "--interactive-accent": "#123456" });
+    scene.invalidateSurfaceTheme();
+    scene.readSurface();
+    expect(body.style.getPropertyValue("--interactive-accent")).not.toBe("#123456");
+    expect(scene.contentGroup.style.opacity).toBe("0");
     reads.mockClear();
     const invalidated = new Promise<void>((resolve) => {
       scene.onSurfaceInvalidated = () => resolve();
     });
-    root.classList.remove("inkbook-active-preparing");
+    scene.revealSurface();
     scene.revealSurface();
     expect(reads).not.toHaveBeenCalled();
-    expect(body.style.getPropertyValue(foreground)).toBe("visible");
-    expect(drawingStyle(scene.contentGroup).visibility).toBe("visible");
+    expect(body.style.getPropertyValue("--interactive-accent")).toBe("#123456");
+    expect(body.style.getPropertyValue(foreground)).toBe("");
+    expect(scene.contentGroup.style.opacity).toBe("");
     await invalidated;
     scene.readSurface();
     scene.writeSurface();
     expect(reads).toHaveBeenCalledTimes(1);
-    expect(body.style.getPropertyValue(foreground)).toBe("visible");
+    expect(body.style.getPropertyValue(foreground)).toBe("");
   });
 
   it("removes input listeners and disables the parent input before reporting document replacement", () => {

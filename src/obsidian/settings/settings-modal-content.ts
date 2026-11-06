@@ -8,6 +8,8 @@ import type { InkbookSettingTab } from "./setting-tab";
 import { mountShortcutSettingsView } from "./shortcuts/shortcut-definitions";
 import type { ShortcutSettingsView } from "./shortcuts/shortcut-view";
 import type { InkbookSettingsStore } from "./storage";
+import { SettingsViewState } from "./settings-view-state";
+import { refreshSettingsView } from "./settings-view-refresh";
 
 export type InkbookSettingsView = "settings" | "shortcuts";
 
@@ -23,16 +25,19 @@ interface SettingsModalContentOptions {
 
 /** Owns settings controls independently of the modal or sheet that presents them. */
 export class SettingsModalContent {
-  readonly #container: HTMLElement;
+  readonly #body: HTMLElement;
   readonly #options: SettingsModalContentOptions;
+  readonly #viewState = new SettingsViewState();
   #definitionRenderer: SettingDefinitionRenderer | undefined;
   #shortcutView: ShortcutSettingsView | undefined;
   readonly #unsubscribeUpdates: (() => void) | undefined;
   #disposed = false;
 
   public constructor(container: HTMLElement, options: SettingsModalContentOptions) {
-    this.#container = container;
     this.#options = options;
+    container.replaceChildren();
+    this.#body = container.createDiv({ cls: "inkbook-settings-modal-body" });
+    this.#body.dataset.view = options.view;
     this.#render();
     this.#unsubscribeUpdates =
       options.view === "settings"
@@ -50,10 +55,9 @@ export class SettingsModalContent {
 
   #render(): void {
     this.#disposeControls();
-    this.#container.replaceChildren();
+    this.#body.replaceChildren();
     const { app, settingTab, store, view } = this.#options;
-    const body = this.#container.createDiv({ cls: "inkbook-settings-modal-body" });
-    body.dataset.view = view;
+    const body = this.#body;
     if (view === "shortcuts") {
       new SettingGroup(body).addSetting((setting) => {
         this.#shortcutView = mountShortcutSettingsView(
@@ -62,6 +66,7 @@ export class SettingsModalContent {
           app.keymap,
           createObsidianHotkeyAccess(app),
           (ownerWindow) => settingTab.scheduler(ownerWindow),
+          this.#viewState,
         );
       });
       return;
@@ -71,41 +76,13 @@ export class SettingsModalContent {
         this.#renderPreservingScroll();
       }
     });
-    this.#definitionRenderer.render(body, settingTab.getControlDefinitions());
+    this.#definitionRenderer.render(body, settingTab.getControlDefinitions(this.#viewState));
   }
 
   #renderPreservingScroll(): void {
-    const update = (): void => this.#replacePreservingScroll();
+    const update = (): void => refreshSettingsView(this.#body, () => this.#render());
     if (this.#options.lifecycle === undefined) update();
     else this.#options.lifecycle.mutateLayout(update);
-  }
-
-  #replacePreservingScroll(): void {
-    const scrollTop = this.#container.scrollTop;
-    const focused = this.#container.ownerDocument.activeElement;
-    const row = this.#container.contains(focused)
-      ? focused?.closest<HTMLElement>("[data-inkbook-setting-identity]")
-      : undefined;
-    const identity = row?.dataset.inkbookSettingIdentity;
-    const restoreRow = focused === row;
-    this.#render();
-    if (identity !== undefined) {
-      const replacement = [
-        ...this.#container.querySelectorAll<HTMLElement>("[data-inkbook-setting-identity]"),
-      ].find((element) => element.dataset.inkbookSettingIdentity === identity);
-      const target = restoreRow
-        ? replacement
-        : [
-            ...(replacement?.querySelectorAll<HTMLElement>("button, input, select, [tabindex]") ??
-              []),
-          ].find(
-            (element) =>
-              element.tagName === focused?.tagName &&
-              element.getAttribute("aria-label") === focused.getAttribute("aria-label"),
-          );
-      target?.focus({ preventScroll: true });
-    }
-    this.#container.scrollTop = scrollTop;
   }
 
   #disposeControls(): void {

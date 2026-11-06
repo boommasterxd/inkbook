@@ -5,12 +5,14 @@ import type { SettingsControlKey } from "../control-values";
 import type { ObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
 import { ShortcutSettingsView } from "./shortcut-view";
 import type { InkbookSettingsStore } from "../storage";
+import type { SettingsViewState } from "../settings-view-state";
 
 export function shortcutGroup(
   store: InkbookSettingsStore,
   keymap: Pick<Keymap, "pushScope" | "popScope">,
   hostHotkeys?: ObsidianHotkeyAccess,
   workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
+  viewState?: SettingsViewState,
 ): SettingDefinitionGroup<SettingsControlKey> {
   return {
     type: "group",
@@ -27,6 +29,7 @@ export function shortcutGroup(
             keymap,
             hostHotkeys,
             workScheduler,
+            viewState,
           );
           return () => view.dispose();
         },
@@ -41,6 +44,7 @@ export function mountShortcutSettingsView(
   keymap: Pick<Keymap, "pushScope" | "popScope">,
   hostHotkeys?: ObsidianHotkeyAccess,
   workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
+  viewState?: SettingsViewState,
 ): ShortcutSettingsView {
   setting.settingEl.classList.add("inkbook-shortcuts-setting-row");
   setting.settingEl.replaceChildren();
@@ -50,5 +54,6 @@ export function mountShortcutSettingsView(
     keymap,
     hostHotkeys,
     workScheduler,
+    viewState,
   );
 }

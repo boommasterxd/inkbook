@@ -12,9 +12,6 @@ export const SCENE_SURFACE_STYLES = `
 .inkbook-theme-fill { fill: var(--inkbook-text); }
 .inkbook-theme-stroke-fill { stroke: var(--inkbook-text); fill: var(--inkbook-text); }
 [data-inkbook-motion] { transform-box: fill-box; transform-origin: center; }
-.inkbook-scene-foreground {
-  visibility: var(--inkbook-scene-foreground-visibility, visible);
-}
 .inkbook-selection-center-trace {
   fill: none; stroke: var(--interactive-accent); stroke-linecap: round;
   stroke-linejoin: round; stroke-width: 1.5;

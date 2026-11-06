@@ -60,7 +60,7 @@ describe("painted resize handle tracking", () => {
 });
 
 const shapeCases = (
-  ["rectangle", "ellipse", "triangle", "octagon", "parallelogram", "diamond"] as const
+  ["rectangle", "ellipse", "triangle", "star", "octagon", "parallelogram", "diamond"] as const
 ).flatMap((kind) =>
   [0, 15, 37, 90].flatMap((rotation) =>
     (["middle-right", "bottom-right"] as const).map((position) => ({ kind, rotation, position })),

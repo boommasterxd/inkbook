@@ -231,7 +231,7 @@ An endpoint connection targets a closed shape, coordinate system, table, line, o
 
 - rectangle and table use every `box` position
 - ellipse uses `ellipse-cardinal` at 0, 90, 180, or 270 degrees
-- triangle, diamond, parallelogram, and octagon use each valid `polygon-vertex` and `polygon-edge-midpoint` index
+- triangle, diamond, parallelogram, octagon, and star use each valid `polygon-vertex` and `polygon-edge-midpoint` index; star indices are `0..9`
 - coordinate systems use `coordinate-origin` and each current `coordinate-axis-end` index
 - lines and arrows use `linear-endpoint` with `endpoint` set to `start` or `end`
 
@@ -253,7 +253,7 @@ For a multi-selection containing both a target and its dependent line or arrow, 
 
 ```ts
 interface BoxShapeElementV1 extends ElementBaseV1 {
-  kind: "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond";
+  kind: "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star";
   x: number;
   y: number;
   width: number;
@@ -268,6 +268,7 @@ interface BoxShapeElementV1 extends ElementBaseV1 {
 - Normalized vertices are triangle `[(0.5,0),(1,1),(0,1)]`, diamond `[(0.5,0),(1,0.5),(0.5,1),(0,0.5)]`, and parallelogram `[(0.2,0),(1,0),(0.8,1),(0,1)]`. For an octagon, let `i = min(width,height) * 0.293`, `rx = width === 0 ? 0 : i / width`, and `ry = height === 0 ? 0 : i / height`; its vertices are `[(rx,0),(1-rx,0),(1,ry),(1,1-ry),(1-rx,1),(rx,1),(0,1-ry),(0,ry)]`.
 - The parallelogram horizontal inset is 20 percent of width.
 - The octagon corner inset is `min(width, height) * 0.293`.
+- A star has ten clockwise vertices indexed `i = 0..9`, with `a = i * pi / 5 - pi / 2`, `r = i % 2 === 0 ? 1 : (3 - sqrt(5)) / 2`, `h = cos(pi / 10)`, and `b = cos(pi / 5)`. Normalized vertices are `[(cos(a) * r + h) / (2 * h), (sin(a) * r + 1) / (1 + b)]`, beginning at the top outer tip. Scale them to the stored box through `shapeVertices`; fill, outline, transforms, and anchors use the closed-polygon contract.
 - Scaling changes bounds and vertex positions, never outline width.
 
 ### Coordinate Systems
