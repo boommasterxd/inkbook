@@ -1,5 +1,7 @@
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import type { Keymap } from "obsidian";
+import type { EditorChromeOpenings } from "../active-scene/editor-chrome-openings";
+import type { DeviceLocalStoragePort } from "../../storage/trusted-document-head-ledger";
 import type { HeadlessRecoveryActions, HeadlessRecoveryNotice } from "./recovery-notice";
 
 import { InkbookFeedbackManager, type InkbookFeedbackCode } from "../../feedback";
@@ -11,6 +13,12 @@ export interface WorkspaceFeedbackHost {
   readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly manager: InkbookFeedbackManager;
+}
+
+export interface WorkspaceRuntimeHost
+  extends WorkspaceFeedbackHost, Omit<EditorChromeOpenings, "confirmEraseAll"> {
+  readonly deviceStorage?: DeviceLocalStoragePort;
+  readonly resolveDocumentStatusPane?: (root: HTMLElement) => HTMLElement | undefined;
 }
 
 export class WorkspaceFeedbackRouter {

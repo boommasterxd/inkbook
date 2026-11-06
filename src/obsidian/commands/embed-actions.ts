@@ -1,5 +1,5 @@
 import type { ObserveMotion } from "../runtime/effective-motion";
-import type { App } from "obsidian";
+import { MarkdownView, type App } from "obsidian";
 
 import type { MotionPreference } from "../../rendering/motion/transitions";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
@@ -37,6 +37,11 @@ export type CopyEmbedOutcome =
   | EmbedActionUnavailable
   | { readonly error: unknown; readonly kind: "failed" }
   | { readonly kind: "copied"; readonly markdown: string };
+
+export type OpenSvgOutcome =
+  | EmbedActionUnavailable
+  | { readonly error: unknown; readonly kind: "failed" }
+  | { readonly kind: "opened"; readonly path: string };
 
 export type DeleteEmbedOutcome =
   | EmbedActionUnavailable
@@ -122,6 +127,34 @@ export class ObsidianEmbedActions {
       return { error, kind: "failed" };
     }
     return { kind: "copied", markdown };
+  }
+
+  async openSvg(target: PresentationEmbedReference): Promise<OpenSvgOutcome> {
+    try {
+      if (this.#lifetime.signal.aborted) return unavailable("editor-changed");
+      const reference = await this.#resolveReference(target);
+      if ("kind" in reference) return reference;
+      const view = this.#app.workspace.getActiveViewOfType(MarkdownView);
+      if (
+        this.#lifetime.signal.aborted ||
+        view?.file?.path !== reference.filePath ||
+        view.containerEl.ownerDocument.defaultView !== reference.ownerWindow ||
+        (reference.editor !== undefined &&
+          (view.editor !== reference.editor || reference.editor.getValue() !== reference.content))
+      ) {
+        return unavailable("editor-changed");
+      }
+      let file;
+      try {
+        file = this.#files.resolveFile(reference.targetPath);
+      } catch {
+        return unavailable("document-not-found");
+      }
+      await this.#app.workspace.getLeaf("tab").openFile(file, { active: true });
+      return { kind: "opened", path: reference.targetPath };
+    } catch (error: unknown) {
+      return { error, kind: "failed" };
+    }
   }
 
   public dispose(): void {

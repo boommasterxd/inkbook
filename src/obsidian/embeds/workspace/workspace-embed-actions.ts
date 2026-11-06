@@ -1,4 +1,4 @@
-import type { CopyEmbedOutcome, DeleteEmbedOutcome } from "../../commands";
+import type { CopyEmbedOutcome, DeleteEmbedOutcome, OpenSvgOutcome } from "../../commands";
 import type { InkbookFeedbackCode } from "../../feedback";
 import type {
   PresentationEmbedReference,
@@ -75,18 +75,31 @@ export async function deleteWorkspaceEmbed(options: {
   readonly isCurrent: () => boolean;
   readonly reference: PresentationEmbedReference;
   readonly removal?: PresentationRemoval;
-  readonly scene: MarkdownHistoryPort;
+  readonly scene?: MarkdownHistoryPort;
   readonly feedback: WorkspaceEmbedActionFeedbackPort;
 }): Promise<void> {
   const feedback = options.feedback;
   try {
     const outcome = await options.actions.deleteEmbed(options.reference, options.removal);
     if (outcome.kind === "deleted" && options.isCurrent()) {
-      options.scene.recordMarkdownHistory();
+      options.scene?.recordMarkdownHistory();
     } else if (outcome.kind !== "cancelled" && outcome.kind !== "deleted") {
       reportDeleteFailure(outcome, feedback);
     }
   } catch {
     showFeedback(feedback, "embed-delete-failed");
+  }
+}
+
+export async function openWorkspaceEmbedSvg(
+  actions: { openSvg(reference: PresentationEmbedReference): Promise<OpenSvgOutcome> },
+  reference: PresentationEmbedReference,
+  feedback: WorkspaceEmbedActionFeedbackPort,
+): Promise<void> {
+  try {
+    const outcome = await actions.openSvg(reference);
+    if (outcome.kind !== "opened") showFeedback(feedback, "embed-open-failed");
+  } catch {
+    showFeedback(feedback, "embed-open-failed");
   }
 }

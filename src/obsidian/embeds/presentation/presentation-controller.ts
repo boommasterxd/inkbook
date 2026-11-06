@@ -80,6 +80,7 @@ export class PresentationController {
   #disposeFocusNavigation: (() => void) | undefined;
   #frame: number | undefined;
   #activationPending = false;
+  #lockedMenu: { close(): void; dispose(): void } | undefined;
   #appliedScheme: InkbookColorScheme | undefined;
   #measured = false;
   #measurementFrame: number | undefined;
@@ -247,6 +248,7 @@ export class PresentationController {
       passive: true,
     });
     this.#sessions.mount(this.#attachment);
+    this.#lockedMenu = this.#sessions.mountLockedMenu?.(this.#attachment, () => this.activate());
     const owningWindow = this.#attachment.root.ownerDocument.defaultView;
     if (owningWindow === null) return;
     this.#frame = this.#workScheduler.requestFrame(() => {
@@ -264,6 +266,7 @@ export class PresentationController {
 
   activate(): void {
     if (!this.#mounted) return;
+    this.#lockedMenu?.close();
     if (!this.#measured || this.#entrance?.pending === true) {
       this.#activationPending = true;
       return;
@@ -355,6 +358,8 @@ export class PresentationController {
   }
 
   dispose(): void {
+    this.#lockedMenu?.dispose();
+    this.#lockedMenu = undefined;
     this.#previewLifecycle?.dispose?.();
     this.#disposeFocusNavigation?.();
     this.#disposeFocusNavigation = undefined;

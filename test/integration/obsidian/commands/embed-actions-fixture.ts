@@ -107,13 +107,9 @@ export function createHarness(options: HarnessOptions = {}) {
     source.stat.size = new TextEncoder().encode(vaultText).byteLength;
     return vaultText;
   });
+  const getFileByPath = linkTargetResolver(source, target, recovered);
   const vault = {
-    getFileByPath: (path: string) => {
-      if (path === source.path) return source;
-      if (path === target.path) return target;
-      if (path === recovered.path) return recovered;
-      return null;
-    },
+    getFileByPath,
     process,
     read,
   } as unknown as Vault;
@@ -131,8 +127,10 @@ export function createHarness(options: HarnessOptions = {}) {
     files,
     (path) => path,
   );
+  const openFile = vi.fn(async () => undefined);
+  const getLeaf = vi.fn(() => ({ openFile }));
   const app = {
-    workspace: { getActiveViewOfType: vi.fn(() => view) },
+    workspace: { getActiveViewOfType: vi.fn(() => view), getLeaf },
   } as unknown as App;
   const actions = new ObsidianEmbedActions({ app, files, links, managedFiles });
   return {
@@ -140,8 +138,12 @@ export function createHarness(options: HarnessOptions = {}) {
     confirm,
     editor,
     generateMarkdownLink,
+    getFileByPath,
+    getLeaf,
     metadataCache,
     process,
+    openFile,
+    ownerWindow,
     read,
     setBeforeProcess: (callback: () => void) => {
       beforeProcess = callback;
@@ -154,6 +156,8 @@ export function createHarness(options: HarnessOptions = {}) {
       source.stat.size = new TextEncoder().encode(vaultText).byteLength;
     },
     trashFile,
+    target,
+    view,
     vaultText: () => vaultText,
     writeText,
   };

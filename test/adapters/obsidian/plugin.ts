@@ -121,16 +121,14 @@ export class Component {
   }
 
   registerDomEvent(
-    element: {
-      addEventListener(type: string, callback: EventListenerOrEventListenerObject): void;
-      removeEventListener(type: string, callback: EventListenerOrEventListenerObject): void;
-    },
+    element: Pick<EventTarget, "addEventListener" | "removeEventListener">,
     type: string,
     callback: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions,
   ): void {
-    element.addEventListener(type, callback);
+    element.addEventListener(type, callback, options);
     this.register(() => {
-      element.removeEventListener(type, callback);
+      element.removeEventListener(type, callback, options);
     });
   }
 }
