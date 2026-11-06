@@ -2,7 +2,10 @@ import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-sche
 import { describe, expect, it, vi } from "vitest";
 
 import { PresentationController } from "../../../../../src/obsidian/embeds/presentation/presentation-controller";
-import type { PresentationAttachmentInput } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
+import type {
+  PresentationAttachmentInput,
+  PresentationSessionPort,
+} from "../../../../../src/obsidian/embeds/presentation/presentation-port";
 import { ColorSchemeBroadcaster } from "../../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
 import { createPresentationMotionWindow } from "../../../../fixtures/obsidian/presentation-motion-window";
@@ -60,6 +63,32 @@ describe("locked-preview scheme replacement", () => {
     dark = false;
     scheme.refresh();
     expect(setColorScheme.mock.calls).toEqual([["light"], ["dark"]]);
+  });
+});
+
+describe("locked-preview menu lifecycle", () => {
+  it("uses normal activation for the locked menu and releases its lifecycle owner", () => {
+    const root = new FakePresentationElement();
+    const menu = { close: vi.fn(), dispose: vi.fn() };
+    const activate = vi.fn();
+    let edit: (() => void) | undefined;
+    const mountMenu = vi.fn<NonNullable<PresentationSessionPort["mountLockedMenu"]>>(
+      (_attachment, onEdit) => {
+        edit = onEdit;
+        return menu;
+      },
+    );
+    const controller = mountShellMeasurement(root, "locked-menu", activate, mountMenu);
+    controller.mount();
+    expect(mountMenu).toHaveBeenCalledOnce();
+    expect(activate).not.toHaveBeenCalled();
+    edit?.();
+    expect(menu.close).toHaveBeenCalledOnce();
+    expect(activate).toHaveBeenCalledOnce();
+    controller.dispose();
+    expect(menu.dispose).toHaveBeenCalledOnce();
+    edit?.();
+    expect(activate).toHaveBeenCalledOnce();
   });
 });
 
@@ -251,10 +280,16 @@ function mountShellMeasurement(
   root: FakePresentationElement,
   attachmentId: string,
   activate = vi.fn(),
+  mountLockedMenu?: PresentationSessionPort["mountLockedMenu"],
 ): PresentationController {
   const controller = new PresentationController(
     createPresentationAttachment(root, attachmentId),
-    { activate, detach: vi.fn(), mount: vi.fn() },
+    {
+      activate,
+      detach: vi.fn(),
+      mount: vi.fn(),
+      ...(mountLockedMenu === undefined ? {} : { mountLockedMenu }),
+    },
     new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
     undefined,
     workSchedulerFromFrames(root.ownerDocument.defaultView as Window),

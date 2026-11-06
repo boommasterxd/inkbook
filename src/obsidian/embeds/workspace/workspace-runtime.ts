@@ -1,4 +1,3 @@
-import type { EditorChromeOpenings } from "../active-scene/editor-chrome-openings";
 import type { FileManager, Vault } from "obsidian";
 import type { WorkspaceRuntimeSettings } from "./workspace-active-scene";
 import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../../domain/settings/types";
@@ -54,11 +53,12 @@ import {
   updateWorkspaceMountedSettings,
 } from "./workspace-mounted-presentation";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
-import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
+import { WorkspaceFeedbackRouter, type WorkspaceRuntimeHost } from "./workspace-feedback-router";
 import * as trustedHeadStorage from "../../storage/trusted-document-head-ledger";
 import type { SafeStaticProof } from "../../../persistence/serialization/input/safe-static-proof";
+import { bindWorkspaceLockedMenu } from "./workspace-locked-menu";
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
-  readonly #host: WorkspaceFeedbackHost & Omit<EditorChromeOpenings, "confirmEraseAll">;
+  readonly #host: WorkspaceRuntimeHost;
   readonly #coordinator: WorkspaceEditorCoordinator;
   #disposed = false;
   readonly #embedActions: ObsidianEmbedActions;
@@ -75,17 +75,14 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   #safeStaticProof: ((documentId: string) => SafeStaticProof | undefined) | undefined;
   readonly #settings: () => WorkspaceRuntimeSettings;
   readonly documentStatus: WorkspaceDocumentStatus;
+  readonly mountLockedMenu: NonNullable<PresentationSessionPort["mountLockedMenu"]>;
   constructor(
     vault: Vault,
     fileManager: FileManager,
     scheme: ColorSchemeBroadcaster,
     settings: () => WorkspaceRuntimeSettings,
     embedActions: ObsidianEmbedActions,
-    host: WorkspaceFeedbackHost &
-      Omit<EditorChromeOpenings, "confirmEraseAll"> & {
-        readonly deviceStorage?: trustedHeadStorage.DeviceLocalStoragePort;
-        readonly resolveDocumentStatusPane?: (root: HTMLElement) => HTMLElement | undefined;
-      },
+    host: WorkspaceRuntimeHost,
   ) {
     const trustedHeads =
       host.deviceStorage === undefined
@@ -101,6 +98,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#scheme = scheme;
     this.#settings = settings;
     this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
+    this.mountLockedMenu = bindWorkspaceLockedMenu(this.refreshRateProfiles, embedActions, host);
     this.#ownerWindows = new OwnerWindowRegistry((ownerWindow) =>
       this.refreshRateProfiles.isWindowAvailable(ownerWindow),
     );

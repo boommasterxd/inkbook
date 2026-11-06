@@ -146,6 +146,10 @@ export function presentationPreviewOptions(
 
 export interface PresentationSessionPort {
   getMotionPreference?(): MotionPreference;
+  mountLockedMenu?(
+    attachment: PresentationAttachment,
+    activate: () => void,
+  ): { close(): void; dispose(): void } | undefined;
   activate(attachment: PresentationAttachment): void;
   detach(attachment: PresentationAttachment): void;
   mount(attachment: PresentationAttachment): void;

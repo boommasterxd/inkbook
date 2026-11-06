@@ -34,6 +34,12 @@ In the locked state, no interactive drawing area is mounted. The embed displays 
 
 Clicking the preview unlocks the embed.
 
+Recognized locked previews in Live Preview and Reading view also own a context menu with `Edit embed`, `Open SVG file`, a separator, and the destructive `Delete embed` action. `Edit embed` follows the normal preview activation path, including pending presentation measurements. `Open SVG file` revalidates the invoking embed and current file, then opens the SVG in a new native Obsidian tab through the public workspace API. It does not activate an Inkbook editor or promise file-explorer highlighting, which has no documented public API. Missing or stale targets fail with local feedback and leave the note and file unchanged.
+
+Right-click opens this menu at the pointer. `ContextMenu` or `Shift+F10` on the focused preview opens it at the preview center. A single-finger hold uses the existing 500-millisecond delay and 10-screen-pixel empty-surface movement threshold. Movement beyond that threshold, scrolling, another contact, pointer cancellation, window blur, activation, and disposal cancel the pending hold. Native note scrolling remains available. A handled hold consumes its trailing preview click and touch compatibility menu so it cannot unlock the editor accidentally. The menu reuses the existing adaptive popup or phone sheet, keyboard navigation, motion, reduced-motion behavior, and owning-window lifecycle; opening it creates no editor session or document worker. Dismissal returns keyboard and mouse focus to the connected preview; touch dismissal does not force focus onto it. Actions close the menu before activation, navigation, or confirmation.
+
+`Delete embed` uses the existing exact-reference deletion workflow, confirmations, reference rechecks, presentation removal, and optional recoverable file trash. Cancelling the first confirmation keeps both embed and file. When the last known reference is removed, declining the optional trash action removes the embed and keeps the SVG. Shared SVG files remain. Ordinary SVG/image embeds and unrelated Markdown menus remain host-owned. These listeners and the owned menu are removed with the presentation; active canvas context menus retain their existing behavior.
+
 The following rules apply:
 
 - Only one ink embed can be active at a time.

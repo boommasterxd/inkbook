@@ -177,6 +177,10 @@ export class FakePresentationElement {
         public observe(): void {}
         public unobserve(): void {}
       },
+      MutationObserver: class {
+        public disconnect(): void {}
+        public observe(): void {}
+      },
       cancelAnimationFrame: vi.fn(),
       clearTimeout: vi.fn(),
       dispatchEvent: (event: Event) => {

@@ -18,6 +18,7 @@ export type InkbookFeedbackCode =
   | "embed-delete-file-kept"
   | "embed-delete-note-changed"
   | "embed-delete-references-unavailable"
+  | "embed-open-failed"
   | "embed-paste-cleanup-failed"
   | "embed-paste-failed"
   | "embed-paste-note-changed"
@@ -149,6 +150,11 @@ const FEEDBACK: Readonly<Record<InkbookFeedbackCode, InkbookFeedbackContent>> = 
     detail: "Nothing was deleted because other references couldn't be checked safely.",
     severity: "warning",
     title: "The embed couldn't be deleted safely.",
+  },
+  "embed-open-failed": {
+    detail: "The embed and drawing file are unchanged. Check that the file is still available.",
+    severity: "error",
+    title: "The SVG file couldn't be opened.",
   },
   "embed-paste-cleanup-failed": {
     detail: "A duplicate drawing file may need to be removed manually.",
