@@ -86,7 +86,14 @@ function requireOwnedPreview(
   activationButton: FakeElement | undefined,
 ): FakeElement {
   expect(activationButton?.tagName).toBe("BUTTON");
-  expect(activationButton?.attributes.get("aria-label")).toMatch(/^Edit handwriting(?:$|: )/);
+  expect(activationButton?.attributes.has("aria-label")).toBe(false);
+  expect(activationButton?.attributes.has("title")).toBe(false);
+  const label = root.children.find(
+    (child) =>
+      (child as unknown as HTMLElement).id === activationButton?.attributes.get("aria-labelledby"),
+  );
+  expect(label?.hidden).toBe(true);
+  expect(label?.textContent).toMatch(/^Edit handwriting(?:$|: )/);
   expect(activationButton?.attributes.get("type")).toBe("button");
   expect(activationButton?.children[0]?.classNames).toContain("inkbook-locked-preview-media");
   expect(root.getElementsByTagName("img").length).toBe(0);

@@ -122,7 +122,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     const root = candidate.host.createDiv({ cls: "inkbook-root inkbook-embed-root" });
     candidate.host.replaceChildren(root);
     const button = root.createEl("button", {
-      attr: { "aria-label": "Edit handwriting", type: "button" },
+      attr: { type: "button" },
       cls: "inkbook-locked-preview",
     });
     const preview = createInkbookLockedPreview(

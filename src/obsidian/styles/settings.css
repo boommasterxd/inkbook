@@ -72,6 +72,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+.inkbook-settings-tool-section > .inkbook-settings-tool-trigger[aria-expanded="true"] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 .inkbook-settings-tool-section > .inkbook-settings-tool-trigger:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
