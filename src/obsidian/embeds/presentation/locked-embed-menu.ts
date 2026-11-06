@@ -18,6 +18,7 @@ export class LockedEmbedMenu extends Component {
   readonly #options: LockedEmbedMenuOptions;
   readonly #touch: LockedEmbedTouch;
   #menu: MenuPort | undefined;
+  #dismissal: Component | undefined;
   #restoreFocus = false;
   #keyboardInvocation = false;
   #disposed = false;
@@ -48,6 +49,7 @@ export class LockedEmbedMenu extends Component {
     this.#restoreFocus = false;
     this.#keyboardInvocation = false;
     this.#touch.cancel();
+    this.#releaseDismissal();
     this.#menu?.close("immediate");
     this.#menu = undefined;
   }
@@ -105,12 +107,35 @@ export class LockedEmbedMenu extends Component {
     menu.onHide(() => {
       if (this.#menu !== menu) return;
       this.#menu = undefined;
+      this.#releaseDismissal();
       this.#keyboardInvocation = false;
       if (this.#restoreFocus && this.#available())
         this.#options.preview.focus({ preventScroll: true });
       this.#restoreFocus = false;
     });
+    this.#watchDismissal(menu);
     menu.showAtPosition(position, this.#options.preview.ownerDocument);
+  }
+
+  #watchDismissal(menu: MenuPort): void {
+    const owner = new Component();
+    const preview = this.#options.preview;
+    owner.registerDomEvent(
+      preview.ownerDocument,
+      "pointerdown",
+      (event) => {
+        // A disappearing phone backdrop can retarget the click onto the preview.
+        if (this.#menu === menu && event.pointerType === "touch") this.#touch.consumeClick();
+      },
+      true,
+    );
+    this.#dismissal = owner;
+    owner.load();
+  }
+
+  #releaseDismissal(): void {
+    this.#dismissal?.unload();
+    this.#dismissal = undefined;
   }
 
   #addAction(menu: MenuPort, title: string, icon: string, callback: () => void, warning = false) {

@@ -80,6 +80,22 @@ function pointer(target: EventTarget, type: string, options: Partial<PointerEven
   return event;
 }
 
+function releaseTouch(target: HTMLElement): void {
+  pointer(target, "pointerup");
+  target.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true }));
+}
+
+function tap(target: HTMLElement): void {
+  pointer(target, "pointerdown");
+  releaseTouch(target);
+}
+
+function expectConsumedTouchRelease(test: ReturnType<typeof harness>): void {
+  releaseTouch(test.preview);
+  expect(test.onEdit).not.toHaveBeenCalled();
+  expect(test.root.dataset.inkbookState).toBe("locked");
+}
+
 describe("locked embed context actions", () => {
   it.each(["desktop", "tablet", "phone"])("opens without activation on %s", (mode) => {
     Platform.isMobile = mode !== "desktop";
@@ -200,13 +216,10 @@ describe("locked embed touch invocation", () => {
     expect(menuItems()).toHaveLength(0);
     vi.advanceTimersByTime(1);
     expect(menuItems()).toHaveLength(3);
-    pointer(test.preview, "pointerup");
-    test.preview.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true }));
+    releaseTouch(test.preview);
     expect(test.onEdit).not.toHaveBeenCalled();
     test.controller.close();
-    pointer(test.preview, "pointerdown");
-    pointer(test.preview, "pointerup");
-    test.preview.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true }));
+    tap(test.preview);
     expect(test.onEdit).toHaveBeenCalledOnce();
   });
 
@@ -262,5 +275,76 @@ describe("locked embed touch invocation", () => {
     test.preview.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
     expect(document.querySelector('[role="menu"]')).toBe(menu);
+  });
+});
+
+describe("locked embed touch dismissal", () => {
+  it("consumes a phone backdrop touch released onto the preview after the sheet closes", () => {
+    Platform.isMobile = true;
+    Platform.isPhone = true;
+    const test = harness();
+    test.root.dataset.inkbookMotion = "full";
+    test.preview.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }));
+    const backdrop = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-backdrop");
+    expect(backdrop).not.toBeNull();
+    pointer(backdrop!, "pointerdown");
+    vi.advanceTimersByTime(1_000);
+    expect(menuItems()).toHaveLength(0);
+    expect(backdrop!.isConnected).toBe(false);
+
+    expectConsumedTouchRelease(test);
+    tap(test.preview);
+    expect(test.onEdit).toHaveBeenCalledOnce();
+  });
+
+  it.each(["keyboard", "long-press"])(
+    "consumes a preview tap that dismisses the %s menu even after its exit finishes",
+    (invocation) => {
+      Platform.isMobile = true;
+      const test = harness();
+      test.root.dataset.inkbookMotion = "full";
+      if (invocation === "keyboard") {
+        test.preview.focus();
+        test.preview.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }),
+        );
+      } else {
+        pointer(test.preview, "pointerdown");
+        vi.advanceTimersByTime(500);
+        releaseTouch(test.preview);
+      }
+      expect(menuItems()).toHaveLength(3);
+      expect(test.onEdit).not.toHaveBeenCalled();
+
+      pointer(test.preview, "pointerdown");
+      vi.advanceTimersByTime(1_000);
+      expect(menuItems()).toHaveLength(0);
+      expectConsumedTouchRelease(test);
+      tap(test.preview);
+      expect(test.onEdit).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("releases document dismissal listeners after closing and disposing an open menu", () => {
+    const add = vi.spyOn(document, "addEventListener");
+    const remove = vi.spyOn(document, "removeEventListener");
+    const test = harness();
+    const pointerDownCalls = (calls: typeof add.mock.calls) =>
+      calls.filter(([type]) => type === "pointerdown");
+    expect(pointerDownCalls(add.mock.calls)).toHaveLength(0);
+    contextMenu(test.preview);
+    test.controller.close();
+    const closedCalls = pointerDownCalls(add.mock.calls);
+    expect(closedCalls.length).toBeGreaterThan(0);
+    expect(pointerDownCalls(remove.mock.calls)).toHaveLength(closedCalls.length);
+    expect(pointerDownCalls(remove.mock.calls)).toEqual(expect.arrayContaining(closedCalls));
+
+    contextMenu(test.preview);
+    test.controller.dispose();
+
+    const added = pointerDownCalls(add.mock.calls);
+    expect(pointerDownCalls(remove.mock.calls)).toHaveLength(added.length);
+    expect(pointerDownCalls(remove.mock.calls)).toEqual(expect.arrayContaining(added));
+    expect(menuItems()).toHaveLength(0);
   });
 });

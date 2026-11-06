@@ -44,6 +44,11 @@ export class LockedEmbedTouch extends Component {
     this.#suppressClick = true;
   }
 
+  public consumeClick(): void {
+    this.cancel();
+    this.#suppressClick = true;
+  }
+
   #down(event: PointerEvent): void {
     if (this.#origin !== undefined && event.pointerId !== this.#origin.pointerId) {
       this.cancel();
