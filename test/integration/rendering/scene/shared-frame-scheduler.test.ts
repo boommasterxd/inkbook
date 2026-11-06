@@ -84,6 +84,7 @@ function createThemeScene() {
 it("coalesces host mutations and same-scheme theme refreshes through the central scene frame", () => {
   const h = createThemeScene();
   const drawing = fakeNode(h.renderer.svg).ownerDocument;
+  const foreground = fakeNode(h.renderer.svg).nodes[1]!.nodes[4]!;
   try {
     h.scheduler.runAll();
     expect(drawing.body.style.getPropertyValue("--interactive-accent")).toBe("#123456");
@@ -110,9 +111,23 @@ it("coalesces host mutations and same-scheme theme refreshes through the central
       expect(h.read).not.toHaveBeenCalled();
       h.scheduler.runAll();
       expect(h.read).toHaveBeenCalledOnce();
-      expect(writes).toHaveBeenCalledExactlyOnceWith(property, value);
+      if (property === "--inkbook-scene-foreground-visibility") {
+        expect(writes).not.toHaveBeenCalled();
+        expect(foreground.style.getPropertyValue("opacity")).toBe("0");
+      } else expect(writes).toHaveBeenCalledExactlyOnceWith(property, value);
       expect(h.renderer.instrumentation()).toMatchObject({ scheduledFrames: 1, themeWrites: 0 });
     }
+    // The ready handoff stays authoritative even when a later theme read still sees preparation.
+    h.renderer.revealSurface();
+    h.renderer.revealSurface();
+    expect(foreground.style.getPropertyValue("opacity")).toBe("");
+    writes.mockClear();
+    h.read.mockClear();
+    h.mutate();
+    h.scheduler.runAll();
+    expect(h.read).toHaveBeenCalledOnce();
+    expect(writes).not.toHaveBeenCalled();
+    expect(foreground.style.getPropertyValue("opacity")).toBe("");
     writes.mockRestore();
   } finally {
     h.renderer.destroy();

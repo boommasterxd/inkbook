@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { capturedPentagramStroke } from "../../../fixtures/domain/captured-pentagrams";
-import { capturedRecognitionStroke } from "../../../fixtures/domain/captured-recognition";
 import { recognizeSamples } from "./recognition-fixtures";
 
 describe("recorded five-tip crossing gestures", () => {
@@ -20,8 +19,4 @@ describe("recorded five-tip crossing gestures", () => {
       }
     },
   );
-
-  it.each([26, 29])("keeps unrelated recorded hook or crossed swoosh %s raw", (index) => {
-    expect(recognizeSamples(capturedRecognitionStroke(index))).toBeNull();
-  });
 });

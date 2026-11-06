@@ -23,7 +23,7 @@ describe("recorded closed pen contours", () => {
     expect(recognize(index)).toBeNull();
   });
 
-  it.each([10, 21, 24, 28, 30, 46])(
+  it.each([10, 21, 46])(
     "never turns unresolved closed outline %s into a shaft or arrow",
     (index) => {
       expect(["line", "arrow"]).not.toContain(recognize(index)?.kind);

@@ -63,7 +63,8 @@ interface ToolDefaultsV1 {
   straightHighlighter: HighlighterDefaultsV1;
   eraser: EraserDefaultsV1;
   shapes: Record<ClosedShapeToolV1, ShapeDefaultsV1> & Record<OutlineOnlyToolV1, OutlineDefaultsV1>;
-  arrow: { startNode: ArrowNodeV1; endNode: ArrowNodeV1 };
+  line: { snappingEnabled: boolean };
+  arrow: { startNode: ArrowNodeV1; endNode: ArrowNodeV1; snappingEnabled: boolean };
   coordinateSystem: { dimension: "2d" | "3d" };
   table: { columns: number };
 }

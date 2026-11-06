@@ -150,13 +150,25 @@ export class SceneDom {
     this.svg.setAttribute("pointer-events", "none");
 
     this.attachHandlers(handlers);
-    this.#surface.attach(this.svg);
+    this.attachSurface(overlayGroup);
     container.append(this.inputSurface);
     this.setPageHeight(1);
   }
 
   public readSurface(): void {
     this.#surface.read();
+  }
+
+  private attachSurface(overlayGroup: SVGGElement): void {
+    this.#surface.attach(this.svg, [
+      this.highlightGroup,
+      this.contentGroup,
+      this.motionGroup,
+      this.liveGroup,
+      this.liveStrokeGroup,
+      this.selectionTraceGroup,
+      overlayGroup,
+    ]);
   }
 
   public setZoomBlockSize(blockSize: number): void {

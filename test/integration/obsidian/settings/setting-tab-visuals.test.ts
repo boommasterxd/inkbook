@@ -161,7 +161,6 @@ describe("InkbookSettingTab recognizable tool controls", () => {
       const input = requiredElement<HTMLInputElement>(row, 'input[type="checkbox"]');
       expect(input.getAttribute("aria-label")).toBe(label);
       expect(input.checked).toBe(true);
-      expect(row.querySelector(".inkbook-menu-switch-track")).not.toBeNull();
       input.click();
       await vi.waitFor(() => expect(tab.getControlValue(key)).toBe(false));
       expect(vault.saves).toBe(1);

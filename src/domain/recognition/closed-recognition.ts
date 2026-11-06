@@ -55,12 +55,12 @@ export function* recognizeClosedShapeSteps(
   for (const fit of initial) {
     if (fit === null) continue;
     const best = yield* refineCandidateSteps(search, fit);
-    if (best.score <= 0.026 && best.maxError <= 0.065) candidates.push(best);
+    if (isAcceptedFit(best)) candidates.push(best);
   }
   candidates.sort((a, b) => a.score - b.score);
   const resolved = resolveGeometricTie(candidates, contour, evidence);
   const first = candidates[0];
-  if (first === undefined || first.score > 0.026 || first.maxError > 0.065) return null;
+  if (first === undefined || !isAcceptedFit(first)) return null;
   const second = candidates[1];
   if (
     second !== undefined &&
@@ -161,13 +161,20 @@ function* coarseClosedFits(
 }
 
 function betterFit(previous: ClosedFit | null, next: ClosedFit): ClosedFit {
-  if (previous === null || next.score < previous.score - 0.0001) return next;
+  if (previous === null) return next;
+  const accepted = isAcceptedFit(previous);
+  if (accepted !== isAcceptedFit(next)) return accepted ? previous : next;
+  if (next.score < previous.score - 0.0001) return next;
   if (
     Math.abs(previous.score - next.score) < 0.0001 &&
     axisDistance(next.shape.rotation) < axisDistance(previous.shape.rotation)
   )
     return next;
   return previous;
+}
+
+function isAcceptedFit(fit: ClosedFit): boolean {
+  return fit.score <= 0.026 && fit.maxError <= 0.065;
 }
 
 function axisDistance(rotation: number): number {
@@ -202,6 +209,7 @@ function resolveGeometricTie(
   preferred = curvedPolygonPreference([first, second], points, evidence, close) ?? preferred;
   if (!close && preferred === undefined) return false;
   if (preferred === undefined && first.maxError * 1.5 < second.maxError) return true;
+  if (preferred === undefined && second.maxError * 1.5 < first.maxError) preferred = second;
   const rectangle = [first, second].find((fit) => fit.shape.kind === "rectangle");
   if (
     rectangle !== undefined &&

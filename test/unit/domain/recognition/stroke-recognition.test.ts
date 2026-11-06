@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { recognizeStrokeSteps } from "../../../../src/domain/recognition/stroke-recognition";
 import { normalizeRecognitionStrokeSteps } from "../../../../src/domain/recognition/stroke-normalization";
+import { shapeVertices } from "../../../../src/domain/geometry/creation";
+import { pointDistance, rotatePointClockwise } from "../../../../src/domain/geometry/primitives";
 import { ARROW_ENDPOINT_PAIRS, arrowPath, endpointMotif } from "./arrow-fixtures";
 import { observeSchemaArray } from "../../../fixtures/domain/schema-array-work";
 import {
@@ -19,6 +21,60 @@ function recognize(samples: readonly number[], zoom = 1) {
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
+}
+
+function expectPolygonGeometry(
+  result: ReturnType<typeof recognize>,
+  vertices: readonly (readonly number[])[],
+  angle: number,
+): void {
+  if (result === null || !("width" in result)) throw new Error("Expected native closed geometry.");
+  const expected = transformSamples(
+    vertices.flatMap(([x, y]) => [x!, y!, 0.5]),
+    angle,
+  );
+  const actual = shapeVertices(result).map((point) =>
+    rotatePointClockwise(point, result.pivot, result.rotation),
+  );
+  expect(actual).toHaveLength(vertices.length);
+  // Two page units cover corner resampling and the half-degree angular refinement grid.
+  for (let index = 0; index < expected.length; index += 3) {
+    const vertex = { x: expected[index]!, y: expected[index + 1]! };
+    expect(Math.min(...actual.map((point) => pointDistance(point, vertex)))).toBeLessThan(2);
+  }
+  expect(result.pivot.x).toBeCloseTo(result.x + result.width / 2, 2);
+  expect(result.pivot.y).toBeCloseTo(result.y + result.height / 2, 2);
+}
+
+function expectEllipseGeometry(
+  result: ReturnType<typeof recognize>,
+  rx: number,
+  ry: number,
+  angle: number,
+): void {
+  if (result?.kind !== "ellipse") throw new Error("Expected native ellipse geometry.");
+  expect(result.pivot.x).toBeCloseTo(320, 0);
+  expect(result.pivot.y).toBeCloseTo(250, 0);
+  expect(result.pivot.x).toBeCloseTo(result.x + result.width / 2, 2);
+  expect(result.pivot.y).toBeCloseTo(result.y + result.height / 2, 2);
+  const vertices = Array.from({ length: 8 }, (_, index) => {
+    const phase = (index * Math.PI) / 4;
+    return [rx * Math.cos(phase), ry * Math.sin(phase), 0.5];
+  }).flat();
+  const expected = transformSamples(vertices, angle);
+  for (let index = 0; index < expected.length; index += 3) {
+    const point = rotatePointClockwise(
+      { x: expected[index]!, y: expected[index + 1]! },
+      result.pivot,
+      -result.rotation,
+    );
+    const radius = Math.hypot(
+      (point.x - result.x - result.width / 2) / (result.width / 2),
+      (point.y - result.y - result.height / 2) / (result.height / 2),
+    );
+    // The independent analytic contour allows one page unit for path resampling and fitting.
+    expect(Math.abs(radius - 1) * Math.min(rx, ry)).toBeLessThan(1);
+  }
 }
 
 describe("single-stroke line and curve recognition", () => {
@@ -65,14 +121,22 @@ describe("single-stroke closed-shape recognition", () => {
           const shifted = [...vertices.slice(start), ...vertices.slice(0, start)];
           const result = recognize(transformSamples(sampledPath(shifted), angle, start === 1));
           expect(result?.kind, `${kind} angle=${angle} start=${start}`).toBe(kind);
+          expectPolygonGeometry(result, vertices, angle);
         }
       }
     },
   );
 
   it("fits a five-point star without convexifying its inner corners", () => {
+    const samples = starSamples();
+    // sampledPath retains each source vertex before its twenty samples along the next side.
+    const vertices = Array.from({ length: 10 }, (_, index) =>
+      samples.slice(index * 60, index * 60 + 2),
+    );
     for (const angle of [0, 27, 143]) {
-      expect(recognize(transformSamples(starSamples(), angle))?.kind).toBe("star");
+      const result = recognize(transformSamples(samples, angle));
+      expect(result?.kind).toBe("star");
+      expectPolygonGeometry(result, vertices, angle);
     }
   });
 
@@ -99,6 +163,7 @@ describe("single-stroke closed-shape recognition", () => {
     for (const angle of [17, 101]) {
       const result = recognize(transformSamples(ellipseSamples(rx, ry, 0.4), angle, true));
       expect(result?.kind).toBe("ellipse");
+      expectEllipseGeometry(result, rx, ry, angle);
     }
   });
 });

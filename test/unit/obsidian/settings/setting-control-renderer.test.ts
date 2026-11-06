@@ -16,6 +16,7 @@ import { nativeSettingDefinitions } from "../../../../src/obsidian/settings/sett
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { SettingDefinitionRenderer } from "../../../../src/obsidian/settings/setting-definition-renderer";
+import { refreshSettingsView } from "../../../../src/obsidian/settings/settings-view-refresh";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 
 beforeEach(() => {
@@ -45,33 +46,53 @@ function mount(definition: SettingDefinitionRender, container = document.body): 
   return definition.render(setting, group) ?? (() => undefined);
 }
 
-it("keeps native row identities stable and distinguishes identically named group resets", () => {
+it("restores the correct native reset focus and action after groups rebuild in a new order", () => {
   const host = { getControlValue: () => false, setControlValue: () => undefined };
-  const definitions = ["Input", "Interface"].map((heading) => ({
+  const resets = { Input: vi.fn(), Interface: vi.fn() };
+  const definitions = Object.entries(resets).map(([heading, reset]) => ({
     type: "group" as const,
     cls: "shared-settings-group",
     heading,
-    items: [{ name: "Reset group to defaults", render: vi.fn() }],
+    items: [
+      {
+        name: "Reset group to defaults",
+        render: (setting: Setting) => {
+          setting.addButton((button) =>
+            button.setButtonText("Reset group to defaults").onClick(reset),
+          );
+        },
+      },
+    ],
   }));
-  const identities: string[] = [];
-  for (const group of nativeSettingDefinitions(definitions, host)) {
-    if (!("items" in group)) continue;
-    for (const item of group.items ?? []) {
-      if (!("render" in item) || item.render === undefined) continue;
-      const row = document.body.createDiv();
-      const release = mount(item, row);
-      identities.push(row.dataset.inkbookSettingIdentity ?? "");
-      release();
+  const container = document.body.createDiv();
+  const render = (order: typeof definitions): void => {
+    container.replaceChildren();
+    for (const group of nativeSettingDefinitions(order, host)) {
+      if (!("items" in group) || !("heading" in group) || typeof group.heading !== "string")
+        throw new Error("Expected a settings group.");
+      const section = container.createEl("section");
+      section.setAttribute("aria-label", group.heading);
+      const item = group.items?.[0];
+      if (item === undefined || !("render" in item) || item.render === undefined)
+        throw new Error("Expected a native reset action.");
+      mount(item, section.createDiv());
     }
-  }
-  expect(identities).toEqual(
-    definitions.map((definition) =>
-      JSON.stringify([
-        JSON.stringify([definition.cls, definition.heading]),
-        "Reset group to defaults",
-      ]),
-    ),
-  );
+  };
+  const resetButton = (group: string): HTMLButtonElement =>
+    container.querySelector<HTMLButtonElement>(`section[aria-label="${group}"] button`)!;
+  render(definitions);
+  const original = resetButton("Input");
+  original.focus();
+  refreshSettingsView(container, () => render([...definitions].reverse()));
+  expect(original.isConnected).toBe(false);
+  const replacement = resetButton("Input");
+  expect(document.activeElement).toBe(replacement);
+  replacement.click();
+  expect(resets.Input).toHaveBeenCalledOnce();
+  expect(resets.Interface).not.toHaveBeenCalled();
+  resetButton("Interface").click();
+  expect(resets.Interface).toHaveBeenCalledOnce();
+  container.remove();
 });
 
 it.each([

@@ -12,6 +12,6 @@ The normative lifecycle, sandbox, token relay, resize, scheduling, and cleanup c
 
 ## Consequences
 
-The host relays only `--interactive-accent`, `--text-normal`, and `--inkbook-scene-foreground-visibility`. Fractional observed dimensions and theme changes flow through the existing central scene frame; surface release disconnects owned listeners and observers and removes the retained SVG, frame, and host. Construction requires an attached frame with an available child document and body; otherwise it cleans up and fails closed before child-document factories are captured.
+The host relays only `--interactive-accent` and `--text-normal`. Foreground preparation and reveal use the bounded group-level switch defined in [Imperative Scene Ownership](../rendering-and-performance.md#imperative-scene-ownership). Fractional observed dimensions and theme changes flow through the existing central scene frame; surface release disconnects owned listeners and observers and removes the retained SVG, frame, and host. Construction requires an attached frame with an available child document and body; otherwise it cleans up and fails closed before child-document factories are captured.
 
 The design adds a browsing context and may change paint cost. Verify the behavior in Obsidian desktop, tablet, and phone modes; this decision makes no speed claim.
