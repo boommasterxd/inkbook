@@ -31,7 +31,7 @@ export interface GestureControllerPorts {
   selectElement(elementId: string, mode: "add" | "preserve-or-replace" | "replace"): void;
   clearSelection(): void;
   scrollNote(screenDeltaX: number, screenDeltaY: number): void;
-  panPage(screenDeltaX: number): void;
+  panPage(screenDeltaX: number, screenDeltaY?: number): void;
   revertNavigation(kind: "note-scroll" | "page-pan"): void;
   beginPinch(anchor: InputPoint, pointers: readonly [number, number]): void;
   updatePinch(anchor: InputPoint, factor: number): void;
@@ -105,7 +105,8 @@ export class GestureController {
         this.#ports.scrollNote(effect.screenDeltaX, effect.screenDeltaY);
         return;
       case "pan-page":
-        this.#ports.panPage(effect.screenDeltaX);
+        if (effect.screenDeltaY === undefined) this.#ports.panPage(effect.screenDeltaX);
+        else this.#ports.panPage(effect.screenDeltaX, effect.screenDeltaY);
         return;
       case "revert-navigation":
         this.#ports.revertNavigation(effect.kind);

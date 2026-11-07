@@ -41,6 +41,8 @@ export interface PointerDownAction extends PointerSample {
 export interface PointerMoveAction extends PointerSample {
   readonly type: "pointer-move";
   readonly maximumMovement?: number;
+  /** First validated coalesced sample beyond the secondary drag threshold. */
+  readonly secondaryAxisPoint?: InputPoint;
 }
 
 export interface PenModeChangeAction extends PointerSample {
@@ -116,12 +118,18 @@ interface SelectPendingInteraction extends SinglePointerInteraction {
   readonly target?: PointerTarget;
 }
 
+interface SecondaryPendingInteraction extends SinglePointerInteraction {
+  readonly phase: "secondary-pending";
+  readonly target?: PointerTarget;
+}
+
 interface NoteScrollInteraction extends SinglePointerInteraction {
   readonly phase: "note-scroll";
 }
 
 interface PagePanInteraction extends SinglePointerInteraction {
   readonly phase: "page-pan";
+  readonly axis?: "horizontal" | "vertical";
 }
 
 interface ElementMoveInteraction extends SinglePointerInteraction {
@@ -150,6 +158,7 @@ export interface PinchInteraction {
 export type InputInteraction =
   | TouchPendingInteraction
   | SelectPendingInteraction
+  | SecondaryPendingInteraction
   | NoteScrollInteraction
   | PagePanInteraction
   | ElementMoveInteraction
@@ -207,7 +216,7 @@ export type InputEffect =
       readonly screenDeltaX: number;
       readonly screenDeltaY: number;
     }
-  | { readonly type: "pan-page"; readonly screenDeltaX: number }
+  | { readonly type: "pan-page"; readonly screenDeltaX: number; readonly screenDeltaY?: number }
   | {
       readonly type: "revert-navigation";
       readonly kind: "note-scroll" | "page-pan";

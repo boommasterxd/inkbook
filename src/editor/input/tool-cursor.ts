@@ -77,6 +77,7 @@ function interactionCursor(
       return MOVE_CURSOR;
     case "page-pan":
     case "note-scroll":
+    case "secondary-pending":
       return PAN_CURSOR;
     case "eraser-gesture":
       return eraserCursor(defaults, pointer.pointerType === "touch" ? "default" : "crosshair");

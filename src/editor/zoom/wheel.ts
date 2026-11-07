@@ -10,6 +10,8 @@ export const DEFAULT_WHEEL_LINE_HEIGHT = 16;
 export const DEFAULT_WHEEL_PAGE_HEIGHT = 800;
 // Calibration is independent of event magnitude and browser event partitioning.
 export const TRACKPAD_ZOOM_PIXELS_PER_STEP = 100 * Math.log(ZOOM_STEP_FACTOR);
+export const MODIFIER_SCROLL_ZOOM_PIXELS_PER_STEP =
+  (100 * Math.log(ZOOM_STEP_FACTOR)) / Math.log(1.12);
 const MAX_LOG_ZOOM_FACTOR = Math.log(Number.MAX_VALUE);
 
 export type WheelDeltaMode = 0 | 1 | 2;

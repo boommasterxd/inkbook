@@ -36,6 +36,23 @@ export function interactionBase(
   } as const;
 }
 
+export function isSecondaryNavigationPointer(action: PointerDownAction): boolean {
+  return (
+    action.pointerType === "mouse" &&
+    action.button === 2 &&
+    action.buttons === 2 &&
+    penRole(action) === "normal"
+  );
+}
+
+export function isUnsupportedToolPointer(action: PointerDownAction): boolean {
+  return (
+    action.pointerType !== "touch" &&
+    penRole(action) === "normal" &&
+    (action.button !== 0 || action.buttons !== 1)
+  );
+}
+
 export function cleanupEffects(
   interaction: Exclude<InputInteraction, PinchInteraction>,
 ): InputEffect[] {
@@ -85,6 +102,7 @@ export function previewKind(
     case "page-pan":
     case "touch-pending":
     case "select-pending":
+    case "secondary-pending":
       return undefined;
   }
 }

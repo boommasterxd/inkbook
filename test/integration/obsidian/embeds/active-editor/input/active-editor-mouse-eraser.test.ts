@@ -92,9 +92,15 @@ describe("hardware eraser reported as mouse input", () => {
   ])("keeps ordinary mouse button $button out of erasing", (fields) => {
     const h = harness();
     h.pointer.handlePointerDown(mouse(fields));
-    expect(h.controls.input.interaction).toBeUndefined();
-    expect(h.effects).toEqual([]);
-    expect(h.capture).not.toHaveBeenCalled();
+    if (fields.button === 2) {
+      expect(h.controls.input.interaction?.phase).toBe("secondary-pending");
+      expect(h.effects).toEqual([{ type: "capture-pointer", pointerId: 1 }]);
+      expect(h.capture).toHaveBeenCalledExactlyOnceWith(1);
+    } else {
+      expect(h.controls.input.interaction).toBeUndefined();
+      expect(h.effects).toEqual([]);
+      expect(h.capture).not.toHaveBeenCalled();
+    }
     h.controller.dispose();
   });
 });

@@ -150,6 +150,8 @@ The toolbar and context-menu Paste actions are available when the platform expos
 
 ## Canvas Context Menus
 
+A secondary mouse-button press waits for release before opening a menu. Jitter up to 6 CSS pixels remains a click; exceeding that threshold enters axis-bound navigation through the existing [navigation pipeline](zoom.md#anchored-zoom). Neither a pending press nor a drag displays a menu. Native secondary-button `contextmenu` events are consumed before and after release, so a drag never opens an Inkbook or host menu. A stationary release invokes the existing menu once at its original target. A new secondary mouse press on the same canvas dismisses an open or closing context menu without consuming that press, so immediate dragging starts through the existing input pipeline. Keyboard invocation, macOS Control-click, and touch or pen long press retain their existing behavior.
+
 The canvas uses a lifecycle-owned Inkbook menu with host-matching appearance through the owning presentation document. It is invoked through:
 
 - mouse or trackpad `contextmenu`

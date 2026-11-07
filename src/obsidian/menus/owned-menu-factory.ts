@@ -250,18 +250,9 @@ class OwnedMenu extends Component implements MenuPort {
     content.tabIndex = -1;
     content.focus({ preventScroll: true });
     this.register(installMenuEscapeScope(this.#options.keymap, () => this.close()));
-    registerMenuPointerDismissal(this, ownerDocument, (event) => {
-      if (
-        event.target !== null &&
-        "nodeType" in event.target &&
-        !surface.contains(event.target as Node) &&
-        !(this.#kind === "menu" && this.#anchor.contains(event.target as Node))
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        this.close();
-      }
-    });
+    registerMenuPointerDismissal(this, ownerDocument, (event) =>
+      this.#dismissFromPointer(event, surface),
+    );
     this.registerDomEvent(
       ownerDocument,
       "keydown",
@@ -289,6 +280,24 @@ class OwnedMenu extends Component implements MenuPort {
       },
       true,
     );
+  }
+
+  #dismissFromPointer(event: PointerEvent, surface: HTMLElement): void {
+    const target = event.target;
+    if (target === null || !("nodeType" in target) || surface.contains(target as Node)) return;
+    const onAnchor = this.#anchor.contains(target as Node);
+    if (this.#kind === "menu" && onAnchor) return;
+    const startsCanvasDrag =
+      this.#kind === "context" &&
+      onAnchor &&
+      event.pointerType === "mouse" &&
+      event.button === 2 &&
+      event.buttons === 2;
+    if (!startsCanvasDrag) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    this.close();
   }
 
   #finish(): void {

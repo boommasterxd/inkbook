@@ -55,6 +55,7 @@ export class SceneFrameWriter {
     | undefined;
   #pendingSystemCursor: string | undefined;
   #pendingSnapPath: string | null | undefined;
+  #snapPath = "";
   #scheme: DocumentScheme = "light";
   #themeDirty = true;
 
@@ -168,6 +169,8 @@ export class SceneFrameWriter {
   }
 
   public setSnapPath(path: string | null): void {
+    if ((path ?? "") === this.#snapPath) return;
+    this.#snapPath = path ?? "";
     this.#pendingSnapPath = path;
   }
 

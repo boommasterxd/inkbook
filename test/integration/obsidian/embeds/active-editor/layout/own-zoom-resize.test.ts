@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { ownZoomResizeFixture } from "../../../../../fixtures/obsidian/own-zoom-resize";
 import { readNavigationLayout } from "../../../../../../src/obsidian/embeds/active-editor/navigation/navigation-layout";
 import type { BrowserScrollElement } from "../../../../../../src/obsidian/scrolling";
@@ -18,11 +18,19 @@ it("consumes only a validated own projected resize and keeps later external heig
   h.layout.dispose();
 });
 
-it.each(["position", "clamp", "width", "height", "owner", "viewport", "window"])(
+it.each(["position", "clamp", "width", "height", "owner", "viewport", "window", "insets"])(
   "preserves invalidation for an external %s change during an own zoom",
   (change) => {
     const { h, zoom, notify, reset, read, owner, bounds } = ownZoomResizeFixture();
     zoom(200);
+    const style = h.container.ownerDocument.defaultView!;
+    const computedStyle = vi.spyOn(style, "getComputedStyle");
+    if (change === "insets") {
+      computedStyle.mockReturnValue({
+        borderLeftWidth: "10px",
+        borderRightWidth: "10px",
+      } as CSSStyleDeclaration);
+    }
     if (change === "position") bounds.top += 10;
     if (change === "clamp") owner.scrollTop = 5;
     if (change === "width") h.rect.width = 900;
@@ -44,6 +52,7 @@ it.each(["position", "clamp", "width", "height", "owner", "viewport", "window"])
     expect(h.invalidateLayout).toHaveBeenCalledTimes(2);
     expect(read).toHaveBeenCalledOnce();
     h.layout.dispose();
+    computedStyle.mockRestore();
   },
 );
 
