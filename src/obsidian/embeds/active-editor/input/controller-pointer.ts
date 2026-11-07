@@ -26,7 +26,13 @@ import type { ActiveEditorMenuController } from "../controller-menu";
 import type { ActiveEditorNavigation } from "../navigation/navigation";
 import type { ElementSceneStore } from "../scene-store";
 import type { SelectionFrameSession } from "../../../../editor/selection/public";
-import { isTouchCompatibilityEvent, touchInteractionBlocksNativeScroll } from "./controller-touch";
+import { isTouchCompatibilityEvent } from "./controller-touch";
+import {
+  claimsPointerGesture,
+  interactionOwnsPointer,
+  ownsTouchPan,
+  ownsSecondaryNavigation,
+} from "./pointer-ownership";
 
 export interface ActiveEditorPointerOptions {
   readonly coalesced: CoalescedPointerInput;
@@ -53,12 +59,35 @@ export interface ActiveEditorPointerOptions {
 
 export class ActiveEditorPointerController {
   readonly #options: ActiveEditorPointerOptions;
+  #secondaryContextOwned = false;
 
   public constructor(options: ActiveEditorPointerOptions) {
     this.#options = options;
+    options.ownerWindow.addEventListener("blur", this.#cancelSecondary);
+    options.ownerWindow.document.addEventListener("visibilitychange", this.#cancelSecondary);
   }
 
+  public dispose(): void {
+    const { ownerWindow } = this.#options;
+    ownerWindow.removeEventListener("blur", this.#cancelSecondary);
+    ownerWindow.document.removeEventListener("visibilitychange", this.#cancelSecondary);
+    this.#cancelSecondary();
+  }
+
+  readonly #cancelSecondary = (event?: Event): void => {
+    if (event?.type === "visibilitychange" && !this.#options.ownerWindow.document.hidden) return;
+    const interaction = this.#options.getInput().interaction;
+    if (ownsSecondaryNavigation(interaction)) {
+      this.cancelPointer(interaction.pointerId);
+    }
+  };
+
   public handleContextMenu(event: MouseEvent): void {
+    if (event.button === 2 && this.#secondaryContextOwned) {
+      if (event.cancelable) event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (
       ("pointerType" in event && (event.pointerType === "pen" || event.pointerType === "touch")) ||
       isTouchCompatibilityEvent(event)
@@ -155,7 +184,7 @@ export class ActiveEditorPointerController {
       if (event.cancelable) event.preventDefault();
       return;
     }
-    const target = this.#pointerDownTarget(pagePointer);
+    const target = this.#pointerDownTarget(pagePointer, event.button);
     this.#options.menus.dispatchFromEvent(
       classification.isPlatformContextClick ? event : undefined,
       () =>
@@ -176,6 +205,7 @@ export class ActiveEditorPointerController {
           ...(target === undefined ? {} : { target }),
         }),
     );
+    this.#secondaryContextOwned ||= ownsSecondaryNavigation(this.#options.getInput().interaction);
     if (
       event.pointerType === "touch" &&
       ownsTouchPan(this.#options.getInput().interaction, event.pointerId)
@@ -224,7 +254,11 @@ export class ActiveEditorPointerController {
     );
   }
 
-  #pointerDownTarget(pointer: PointerSample) {
+  #pointerDownTarget(pointer: PointerSample, button: number) {
+    if (pointer.pointerType === "mouse") {
+      this.#secondaryContextOwned = false;
+      if (button === 2) return this.#selectionTarget(pointer, "mouse");
+    }
     return this.#options.getInput().activeTool === "select" && pointer.pointerType !== "touch"
       ? this.#selectedTarget(pointer)
       : this.#selectionTarget(pointer, pointer.pointerType);
@@ -258,6 +292,9 @@ export class ActiveEditorPointerController {
 
   public handlePointerMove(event: PointerEvent): void {
     if (this.#isForeignHandlePointer(event.pointerId)) return;
+    if (event.pointerType === "mouse" && event.buttons !== 2 && this.#secondaryContextOwned) {
+      this.#cancelSecondary();
+    }
     this.#options.cursor.record(event, "move");
     if (this.#routePenContact(event)) return;
     if (
@@ -459,38 +496,4 @@ export class ActiveEditorPointerController {
   #setSnappingInverted(pointerId: number, inverted: boolean | null): void {
     this.#options.setSnappingInverted?.(pointerId, inverted);
   }
-}
-
-function ownsTouchPan(
-  interaction: InputState["interaction"],
-  pointerId: number,
-): interaction is Extract<
-  NonNullable<InputState["interaction"]>,
-  { readonly phase: "page-pan" | "touch-pending" }
-> {
-  return (
-    (interaction?.phase === "page-pan" || interaction?.phase === "touch-pending") &&
-    interaction.pointerType === "touch" &&
-    interaction.pointerId === pointerId
-  );
-}
-
-function interactionOwnsPointer(
-  interaction: InputState["interaction"],
-  pointerId: number,
-): boolean {
-  if (interaction === undefined) return false;
-  return interaction.phase === "pinch"
-    ? interaction.pointers.some((pointer) => pointer.pointerId === pointerId)
-    : interaction.pointerId === pointerId;
-}
-
-function claimsPointerGesture(
-  event: PointerEvent,
-  interaction: InputState["interaction"],
-): boolean {
-  return (
-    interaction !== undefined &&
-    (event.pointerType !== "touch" || touchInteractionBlocksNativeScroll(interaction))
-  );
 }

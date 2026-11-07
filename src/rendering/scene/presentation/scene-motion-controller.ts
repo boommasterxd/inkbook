@@ -145,12 +145,10 @@ export class SceneMotionController {
     handlePath: string | null,
     fill: "accent" | "none",
   ): void {
-    this.#dom.selectionOverlayPath.setAttribute("data-selection-fill", fill);
-    this.#selectionMotion = this.setOverlay(
-      this.#dom.selectionOverlayPath,
-      path,
-      this.#selectionMotion,
-    );
+    const node = this.#dom.selectionOverlayPath;
+    if (node.getAttribute("data-selection-fill") !== fill)
+      node.setAttribute("data-selection-fill", fill);
+    this.#selectionMotion = this.setOverlay(node, path, this.#selectionMotion);
     this.#selectionHandleMotion = this.setOverlay(
       this.#dom.selectionHandlePath,
       handlePath,

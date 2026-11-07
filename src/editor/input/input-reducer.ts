@@ -31,6 +31,8 @@ import {
   interactionBase,
   isFinitePoint,
   isReservedContextPointer,
+  isSecondaryNavigationPointer,
+  isUnsupportedToolPointer,
   isSingleTouch,
   isTouchInteraction,
   longPressEffect,
@@ -135,21 +137,21 @@ function handlePointerDown(state: InputState, action: PointerDownAction): InputR
   if (action.pointerType === "touch" && isSingleTouch(state.interaction)) {
     return beginPinch(state, state.interaction, action);
   }
+  if (state.interaction === undefined && isSecondaryNavigationPointer(action)) {
+    return withInteraction(
+      state,
+      {
+        ...interactionBase(action, state.activeTool, state.activeTool, false),
+        phase: "secondary-pending",
+        ...(action.target === undefined ? {} : { target: action.target }),
+      },
+      [{ type: "capture-pointer", pointerId: action.pointerId }],
+    );
+  }
   if (state.interaction !== undefined || isReservedContextPointer(action)) {
     return unchangedEffects(state);
   }
-  if (
-    action.pointerType === "mouse" &&
-    penRole(action) === "normal" &&
-    (action.button !== 0 || action.buttons !== 1)
-  ) {
-    return unchangedEffects(state);
-  }
-  if (
-    action.pointerType === "pen" &&
-    penRole(action) === "normal" &&
-    (action.button !== 0 || action.buttons !== 1)
-  ) {
+  if (isUnsupportedToolPointer(action)) {
     return unchangedEffects(state);
   }
   return startSinglePointer(state, action);
@@ -283,6 +285,9 @@ function handlePointerMove(state: InputState, action: PointerMoveAction): InputR
   if (interaction.phase === "touch-pending") {
     return movePendingTouch(state, interaction, action);
   }
+  if (interaction.phase === "secondary-pending") {
+    return movePendingSecondary(state, interaction, action);
+  }
   if (interaction.phase === "select-pending") {
     const movement = Math.max(
       distance(delta(interaction.start, action)),
@@ -344,8 +349,26 @@ function moveNavigation(
   interaction: Exclude<InputInteraction, PinchInteraction>,
   action: PointerMoveAction,
 ): InputReduction {
-  const effect = movementEffect(interaction.phase, delta(interaction.current, action));
+  const movement = delta(interaction.current, action);
+  const effect: InputEffect =
+    interaction.phase === "page-pan" && interaction.axis === "vertical"
+      ? { type: "pan-page", screenDeltaX: 0, screenDeltaY: movement.y }
+      : movementEffect(interaction.phase, movement);
   return updateCurrent(state, interaction, action, [effect]);
+}
+
+function movePendingSecondary(
+  state: InputState,
+  interaction: Extract<InputInteraction, { phase: "secondary-pending" }>,
+  action: PointerMoveAction,
+): InputReduction {
+  const total = delta(interaction.start, action);
+  if (Math.max(distance(total), action.maximumMovement ?? 0) <= ELEMENT_DRAG_THRESHOLD_PX) {
+    return updateCurrent(state, interaction, action, []);
+  }
+  const direction = delta(interaction.start, action.secondaryAxisPoint ?? action);
+  const axis = Math.abs(direction.x) > Math.abs(direction.y) ? "horizontal" : "vertical";
+  return moveNavigation(state, { ...interaction, phase: "page-pan", axis }, action);
 }
 
 function movePreview(

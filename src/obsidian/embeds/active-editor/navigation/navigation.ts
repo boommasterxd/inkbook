@@ -35,6 +35,7 @@ import {
   isZoomWheel,
   positiveOr,
   validViewState,
+  wheelZoomNormalization,
 } from "./navigation-helpers";
 import { applyNavigationFrameLayout, resolveNavigationFrame } from "./navigation-frame";
 import { NavigationActivity } from "./navigation-activity";
@@ -341,7 +342,7 @@ export class ActiveEditorNavigation {
     this.#activity.pulse();
   }
 
-  public updateWheel(event: ActiveEditorWheelInput): boolean {
+  public updateWheel(event: ActiveEditorWheelInput, physicallyHeldModifier = false): boolean {
     if (!Number.isFinite(event.deltaY) || !Number.isFinite(event.deltaX ?? 0)) return false;
     if (event.deltaY !== 0 || (event.deltaX ?? 0) !== 0) this.#activity.pulse();
     if (isZoomWheel(event)) {
@@ -351,7 +352,10 @@ export class ActiveEditorNavigation {
       this.#pending.anchorSource = (layout) => wheelAnchor(layout, point);
       if (isContinuousZoomWheel(event)) {
         this.#pending.continuous = accumulateZoomInput(this.#pending.continuous, {
-          factor: continuousWheelZoomFactor(event.deltaY),
+          factor: continuousWheelZoomFactor(
+            event.deltaY,
+            wheelZoomNormalization(physicallyHeldModifier),
+          ),
         });
       } else {
         this.#pending.wheel = accumulateWheelSteps(this.#pending.wheel, -Math.sign(event.deltaY));

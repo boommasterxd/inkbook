@@ -1,4 +1,8 @@
-import { normalizeWheelVector, type WheelDeltaMode } from "../../../../editor/zoom/index";
+import {
+  MODIFIER_SCROLL_ZOOM_PIXELS_PER_STEP,
+  normalizeWheelVector,
+  type WheelDeltaMode,
+} from "../../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../../scrolling/index";
 
 import type { ActiveEditorViewState, ActiveEditorWheelInput } from "./navigation-types";
@@ -52,6 +56,11 @@ export function isContinuousZoomWheel(event: ActiveEditorWheelInput): boolean {
   return (
     (event.ctrlKey === true || event.metaKey === true) && wheelDeltaMode(event.deltaMode) === 0
   );
+}
+
+/** Unknown modifier state retains the browser's synthetic pinch calibration. */
+export function wheelZoomNormalization(physicallyHeldModifier: boolean) {
+  return physicallyHeldModifier ? { pixelsPerStep: MODIFIER_SCROLL_ZOOM_PIXELS_PER_STEP } : {};
 }
 
 export function projectedScrollBounds(

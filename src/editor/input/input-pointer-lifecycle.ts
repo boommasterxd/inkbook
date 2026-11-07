@@ -60,7 +60,16 @@ function commitSingleInteraction(
   const effects = cleanupEffects(interaction);
   let nextState = { ...state, interaction: undefined };
   const kind = previewKind(interaction);
-  if (interaction.previewStarted && kind !== undefined) {
+  if (interaction.phase === "secondary-pending") {
+    if (interaction.target !== undefined && !interaction.target.isSelected) {
+      effects.push({
+        type: "select-element",
+        elementId: interaction.target.elementId,
+        mode: "replace",
+      });
+    }
+    effects.push({ type: "open-context-menu", source: "pointer", position: interaction.start });
+  } else if (interaction.previewStarted && kind !== undefined) {
     effects.unshift({ type: "commit-preview", kind });
     if (state.hasSelection && shouldClearSelectionForTouchPreview(interaction)) {
       effects.unshift({ type: "clear-selection" });

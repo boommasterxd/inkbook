@@ -198,14 +198,13 @@ export class ActiveEditorController {
       onboarding: this.#onboarding.invitation,
     });
   public dispose(): void {
+    this.#pointer.dispose();
     this.#onboarding.dispose();
     this.#pendingSelection.cancel();
     this.#cursor.dispose();
     this.#styles.dispose();
     this.#availability.setEnabled(false);
-    this.#captures.releaseAll();
     this.#actions.dispose();
-    this.#gestures.cancelActivePreview();
     this.#longPress.dispose();
     this.#menus.dispose();
     this.#keyboard.dispose();
@@ -284,7 +283,8 @@ export class ActiveEditorController {
       if (event.cancelable) event.preventDefault();
       return;
     }
-    if (this.#navigation.updateWheel(event)) event.preventDefault();
+    if (this.#navigation.updateWheel(event, this.#keyboard.hasWheelModifier(event)))
+      event.preventDefault();
   }
   public readonly handlePaste = (data: ClipboardData | null, surfaceOwned = false): boolean =>
     this.#keyboard.handlePaste(data, surfaceOwned);

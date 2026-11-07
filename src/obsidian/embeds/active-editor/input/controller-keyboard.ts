@@ -12,6 +12,7 @@ import { PaneDocumentHistoryAdapter, type UnifiedHistoryDirection } from "../doc
 import type { ActiveEditorHistory } from "../history";
 import type { ActiveEditorNavigation } from "../navigation/navigation";
 import type { InkbookFeedbackCode } from "../../../feedback";
+import { WheelZoomModifiers } from "./wheel-zoom-modifiers";
 
 export interface ActiveEditorKeyboardOptions {
   readonly activeElement: () => Element | null;
@@ -42,10 +43,13 @@ export class ActiveEditorKeyboardController {
   readonly #paneHistory: PaneDocumentHistoryAdapter;
   #shortcuts: KeyboardShortcutSettingsV1;
   readonly #unsubscribeHistory: () => void;
+  readonly #wheelModifiers: WheelZoomModifiers | undefined;
   #pointerOver = false;
 
   public constructor(options: ActiveEditorKeyboardOptions) {
     this.#options = options;
+    const ownerWindow = options.ownerDocument.defaultView;
+    if (ownerWindow) this.#wheelModifiers = new WheelZoomModifiers(ownerWindow);
     this.#shortcuts = structuredClone(
       options.keyboardShortcuts ?? createBuiltInKeyboardShortcuts(),
     );
@@ -59,12 +63,17 @@ export class ActiveEditorKeyboardController {
   }
 
   public dispose(): void {
+    this.#wheelModifiers?.dispose();
     this.#options.canvasSelection?.dispose();
     this.#unsubscribeHistory();
     this.#paneHistory.clear();
   }
   public cancelSelection(): void {
     this.#options.canvasSelection?.cancel();
+  }
+
+  public hasWheelModifier(event: WheelEvent): boolean {
+    return this.#wheelModifiers?.matches(event) ?? false;
   }
 
   public handleKeyDown(event: KeyboardEvent): boolean {

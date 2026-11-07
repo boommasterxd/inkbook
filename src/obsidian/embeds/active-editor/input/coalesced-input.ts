@@ -5,7 +5,10 @@ import {
   type InputState,
   type PointerSample,
 } from "../../../../editor/input/index";
-import type { PointerMoveAction } from "../../../../editor/input/input-types";
+import {
+  ELEMENT_DRAG_THRESHOLD_PX,
+  type PointerMoveAction,
+} from "../../../../editor/input/input-types";
 import {
   hasPenContact,
   usesPenContactLifecycle,
@@ -115,19 +118,31 @@ export class CoalescedPointerInput {
     const action: PointerMoveAction = { type: "pointer-move", ...pointer };
     const interaction = state.interaction;
     if (
-      (interaction?.phase !== "select-pending" && interaction?.phase !== "element-move") ||
+      (interaction?.phase !== "select-pending" &&
+        interaction?.phase !== "element-move" &&
+        interaction?.phase !== "secondary-pending") ||
       interaction.previewStarted ||
       interaction.pointerId !== pointer.pointerId
     )
       return action;
     let maximum = 0;
+    let secondaryAxisPoint: PointerMoveAction["secondaryAxisPoint"];
     for (const sample of this.#pending ?? []) {
-      maximum = Math.max(
-        maximum,
-        Math.hypot(sample.x - interaction.start.x, sample.y - interaction.start.y),
-      );
+      const movement = Math.hypot(sample.x - interaction.start.x, sample.y - interaction.start.y);
+      maximum = Math.max(maximum, movement);
+      if (
+        interaction.phase === "secondary-pending" &&
+        secondaryAxisPoint === undefined &&
+        movement > ELEMENT_DRAG_THRESHOLD_PX
+      ) {
+        secondaryAxisPoint = { x: sample.x, y: sample.y };
+      }
     }
-    return { ...action, maximumMovement: maximum };
+    return {
+      ...action,
+      maximumMovement: maximum,
+      ...(secondaryAxisPoint === undefined ? {} : { secondaryAxisPoint }),
+    };
   }
 
   public wrap(preview: GesturePreview): GesturePreview {

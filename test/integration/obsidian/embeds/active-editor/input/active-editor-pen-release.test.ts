@@ -174,10 +174,11 @@ function setup(pointerType: PointerSample["pointerType"] = "pen", tool: EditorTo
     selection: () => new Set(),
     setLastPointer: vi.fn(),
     menus: {} as ActiveEditorPointerOptions["menus"],
-    ownerWindow: {} as Window,
+    ownerWindow: cursor.window as unknown as Window,
     renderer: {} as ActiveEditorPointerOptions["renderer"],
     sceneStore: {} as ActiveEditorPointerOptions["sceneStore"],
   });
+  onTestFinished(() => controller.dispose());
   return { builder, cancelled, committed: () => committed, controller, scheduler };
 }
 

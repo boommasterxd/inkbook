@@ -241,6 +241,49 @@ describe("owned menu unavailable document and reentrant cleanup", () => {
   });
 });
 
+describe("context menu pointer handoff", () => {
+  it.each([false, true])("allows an immediate canvas right drag while closing=%s", (closing) => {
+    const test = fixture("context");
+    const element = show(test);
+    const start = vi.fn();
+    test.anchor.addEventListener("pointerdown", start);
+    if (closing) test.menu.close();
+    const event = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      pointerType: "mouse",
+      button: 2,
+      buttons: 2,
+    });
+    test.anchor.dispatchEvent(event);
+    expect(start).toHaveBeenCalledExactlyOnceWith(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(element.inert).toBe(true);
+    expect(test.action).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(120);
+    expectReleased(test, element);
+  });
+
+  it.each(["mouse", "pen", "touch"])("still consumes %s dismissal on the canvas", (pointerType) => {
+    const test = fixture("context");
+    const element = show(test);
+    const start = vi.fn();
+    test.anchor.addEventListener("pointerdown", start);
+    const event = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      pointerType,
+      button: pointerType === "mouse" ? 0 : 2,
+      buttons: pointerType === "mouse" ? 1 : 2,
+    });
+    test.anchor.dispatchEvent(event);
+    expect(start).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+    vi.advanceTimersByTime(120);
+    expectReleased(test, element);
+  });
+});
+
 describe("owned phone menus", () => {
   it.each(["context", "menu"] as const)("keeps native Back and 220ms exit for %s", (kind) => {
     Platform.isPhone = true;

@@ -99,7 +99,10 @@ export function createActiveEditorInputControllers(
     [
       (anchor) => options.navigation.beginPinchScreen(anchor),
       () => options.navigation.finish(),
-      (delta) => options.navigation.pan(delta),
+      (deltaX, deltaY) => {
+        if (deltaX !== 0) options.navigation.pan(deltaX);
+        if (deltaY !== undefined && deltaY !== 0) options.navigation.scroll(deltaY);
+      },
       (kind) => (kind === "page-pan" ? options.navigation.revert() : options.navigation.finish()),
       () => options.navigation.revert(),
       (anchor, factor) => options.navigation.updatePinchScreen(anchor, factor),

@@ -13,6 +13,61 @@ import {
 
 const PREVIEW_FRAMES = 12;
 
+it("skips unchanged selection and snap DOM writes during retained-scene navigation", () => {
+  const { renderer, scheduler } = createInteractionRenderer(createInteractionFixture().store);
+  scheduler.runAll();
+  const nodes = [fakeNode(renderer.svg)];
+  for (let index = 0; index < nodes.length; index++) nodes.push(...nodes[index]!.nodes);
+  const snap = nodes.find((node) => node.getAttribute("class") === "inkbook-snap-guide")!;
+  const selection = nodes.find(
+    (node) => node.getAttribute("class") === "inkbook-selection-overlay",
+  )!;
+  const snapWrites = vi.spyOn(snap, "setAttribute");
+  const styleWrites = vi.spyOn(snap.style, "setProperty");
+  const selectionWrites = vi.spyOn(selection, "setAttribute");
+  const path = "M 0 0 L 10 10";
+  try {
+    renderer.setSnapMarkerPath(path);
+    scheduler.runAll();
+    snapWrites.mockClear();
+    styleWrites.mockClear();
+    for (let frame = 0; frame < PREVIEW_FRAMES; frame++) {
+      renderer.setCamera({ x: -frame, zoom: 1 });
+      renderer.setSelectionOverlayPath(null);
+      renderer.setSnapMarkerPath(path);
+      scheduler.runAll();
+    }
+    expect(snapWrites).not.toHaveBeenCalled();
+    expect(styleWrites).not.toHaveBeenCalled();
+    expect(selectionWrites).not.toHaveBeenCalled();
+    renderer.setSnapMarkerPath(null);
+    renderer.setSelectionOverlayPath(null, "none");
+    scheduler.runAll();
+    expect(snapWrites.mock.calls.filter(([name]) => name === "d")).toEqual([["d", ""]]);
+    expect(styleWrites).toHaveBeenCalledTimes(2);
+    expect(selectionWrites).toHaveBeenCalledExactlyOnceWith("data-selection-fill", "none");
+    snapWrites.mockClear();
+    styleWrites.mockClear();
+    selectionWrites.mockClear();
+    renderer.setSnapMarkerPath("");
+    renderer.setSelectionOverlayPath(null, "none");
+    scheduler.runAll();
+    expect(snapWrites).not.toHaveBeenCalled();
+    expect(styleWrites).not.toHaveBeenCalled();
+    expect(selectionWrites).not.toHaveBeenCalled();
+    renderer.setSnapMarkerPath(path);
+    scheduler.runAll();
+    expect(snap.getAttribute("d")).toBe(path);
+    expect(snapWrites.mock.calls.filter(([name]) => name === "d")).toEqual([["d", path]]);
+  } finally {
+    snapWrites.mockRestore();
+    styleWrites.mockRestore();
+    selectionWrites.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
 describe("scene interaction work", () => {
   it("extends and restores background coverage without touching 10,000 retained strokes", () => {
     const fixture = createInteractionFixture();

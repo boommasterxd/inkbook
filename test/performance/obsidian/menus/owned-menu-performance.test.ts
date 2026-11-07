@@ -13,6 +13,7 @@ import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
 /** Complete twelve-action menu operation. */
 function renderAndDisposeActionMenu(
   factory: ReturnType<typeof createOwnedMenuFactory>,
+  anchor: HTMLElement,
   onHide: () => void,
 ): void {
   const menu = factory.create("context");
@@ -28,6 +29,15 @@ function renderAndDisposeActionMenu(
   }
   menu.onHide(onHide);
   menu.showAtPosition({ x: 50, y: 50 }, document);
+  anchor.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      pointerType: "mouse",
+      button: 2,
+      buttons: 2,
+    }),
+  );
   menu.close("immediate");
 }
 
@@ -52,7 +62,7 @@ it("renders and disposes a complete action menu with bounded work", async () => 
     },
   });
   const renderAndDispose = (): void => {
-    renderAndDisposeActionMenu(factory, () => {
+    renderAndDisposeActionMenu(factory, anchor, () => {
       disposed += 1;
     });
   };

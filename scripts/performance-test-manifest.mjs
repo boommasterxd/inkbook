@@ -10,6 +10,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/editor/page-height-animation.test.ts",
     "test/performance/obsidian/embeds/active-editor/active-editor-layout-refresh-profile.test.ts",
     "test/performance/obsidian/embeds/active-editor/active-editor-navigation-refresh-profile.test.ts",
+    "test/performance/obsidian/embeds/active-editor/secondary-navigation-work.test.ts",
     "test/performance/obsidian/embeds/live-preview/live-preview-zoom-measure-throttle.test.ts",
     "test/performance/obsidian/embeds/presentation/presentation-entrance-performance.test.ts",
     "test/performance/obsidian/embeds/active-editor/selection-commit-scheduler.test.ts",

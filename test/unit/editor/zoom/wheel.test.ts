@@ -11,6 +11,7 @@ import {
 import {
   DEFAULT_WHEEL_LINE_HEIGHT,
   DEFAULT_WHEEL_PAGE_HEIGHT,
+  MODIFIER_SCROLL_ZOOM_PIXELS_PER_STEP,
   TRACKPAD_ZOOM_PIXELS_PER_STEP,
   normalizeWheelDelta,
 } from "../../../../src/editor/zoom/wheel";
@@ -35,6 +36,12 @@ describe("wheel normalization", () => {
     expect(continuousWheelZoomFactor(4)).toBeCloseTo(Math.exp(-0.04));
     expect(continuousWheelZoomFactor(-TRACKPAD_ZOOM_PIXELS_PER_STEP)).toBeCloseTo(1.08);
     expect(continuousWheelZoomFactor(-50, { pixelsPerStep: 50 })).toBeCloseTo(1.08);
+    expect(
+      continuousWheelZoomFactor(-100, { pixelsPerStep: MODIFIER_SCROLL_ZOOM_PIXELS_PER_STEP }),
+    ).toBeCloseTo(1.12);
+    expect(
+      continuousWheelZoomFactor(100, { pixelsPerStep: MODIFIER_SCROLL_ZOOM_PIXELS_PER_STEP }),
+    ).toBeCloseTo(1 / 1.12);
   });
 });
 

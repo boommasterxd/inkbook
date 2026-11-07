@@ -11,6 +11,7 @@ export {
 } from "./zoom";
 export type { ScrollBounds, ZoomAnchor } from "./zoom";
 export {
+  MODIFIER_SCROLL_ZOOM_PIXELS_PER_STEP,
   accumulateWheelSteps,
   accumulateZoomInput,
   continuousWheelZoomFactor,

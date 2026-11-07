@@ -37,7 +37,7 @@ describe("active editor pointer controller", () => {
       isEnabled: () => true,
       menus: menuPort(),
       navigation: navigation.value,
-      ownerWindow: { navigator: { platform: "Linux" } } as unknown as Window,
+      ownerWindow: pointerWindow(),
       renderer: rendererPort(),
       releasePointer: vi.fn(),
       sceneStore: { hit } as unknown as ElementSceneStore,
@@ -82,7 +82,7 @@ describe("active editor pointer controller", () => {
       isEnabled: () => true,
       menus: menuPort(),
       navigation: navigationPort().value,
-      ownerWindow: { navigator: { platform: "Linux" } } as unknown as Window,
+      ownerWindow: pointerWindow(),
       renderer: {
         inputSurface: surface,
         interruptMotionForPointerDown: vi.fn(),
@@ -342,7 +342,7 @@ function horizontalPanController(overrides?: {
     isEnabled: () => true,
     menus: menuPort(),
     navigation: overrides?.navigation ?? navigationPort().value,
-    ownerWindow: { navigator: { platform: "Linux" } } as unknown as Window,
+    ownerWindow: pointerWindow(),
     renderer: rendererPort(),
     releasePointer: overrides?.releasePointer ?? vi.fn(),
     sceneStore: { hit: vi.fn(() => null) } as unknown as ElementSceneStore,
@@ -369,6 +369,13 @@ function pagePanInteraction() {
     temporaryEraser: false,
     tool: "draw" as const,
   };
+}
+
+function pointerWindow(): Window {
+  return Object.assign(new EventTarget(), {
+    document: Object.assign(new EventTarget(), { hidden: false }),
+    navigator: { platform: "Linux" },
+  }) as unknown as Window;
 }
 
 function handlesPort(active: boolean): ActiveEditorHandleInteraction {
