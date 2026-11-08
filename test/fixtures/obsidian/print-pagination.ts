@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { sys } from "typescript";
 import {
   prepareExportCutsSteps,
   type ExportInterval,
@@ -47,29 +48,34 @@ function mockNativePrintRoot(root: HTMLElement, scale: number) {
   return { rootBounds, viewport };
 }
 
+interface PrintPaginationFixtureOptions {
+  readonly height?: number;
+  readonly width?: number;
+  readonly top?: number;
+  readonly occurrences?: number;
+  readonly paths?: number;
+  readonly nativeScale?: number;
+  readonly withoutCuts?: boolean;
+  readonly deferStart?: boolean;
+  readonly hostMargin?: number;
+  readonly preparedDrawing?: {
+    readonly svg: SVGSVGElement;
+    readonly drawing: ExportDrawing;
+    readonly intervals: readonly ExportInterval[];
+  };
+}
+
 /** Native MQL events with controlled print rectangles, not simulated CPU time. */
-export async function printPaginationFixture(
-  options: {
-    readonly height?: number;
-    readonly width?: number;
-    readonly top?: number;
-    readonly occurrences?: number;
-    readonly paths?: number;
-    readonly nativeScale?: number;
-    readonly withoutCuts?: boolean;
-    readonly deferStart?: boolean;
-    readonly preparedDrawing?: {
-      readonly svg: SVGSVGElement;
-      readonly drawing: ExportDrawing;
-      readonly intervals: readonly ExportInterval[];
-    };
-  } = {},
-) {
+export async function printPaginationFixture(options: PrintPaginationFixtureOptions = {}) {
   const height = options.height ?? 1800;
   const root = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
   document.body.append(root);
   const stylesheet = document.createElementNS("http://www.w3.org/1999/xhtml", "style");
-  stylesheet.textContent = ".inkbook-static-export { border-top-left-radius: 10px; }";
+  stylesheet.textContent = [
+    ".inkbook-static-export { border-top-left-radius: 10px; }",
+    `.inkbook-print-fixture-host { margin-block-start: ${String(options.hostMargin ?? 0)}px; }`,
+    sys.readFile(sys.resolvePath("src/obsidian/styles/export.css")) ?? "",
+  ].join("\n");
   root.append(stylesheet);
   const { svg, drawing } =
     options.preparedDrawing ?? (await preparePrintDrawing(height, options.paths ?? 1));
@@ -91,11 +97,24 @@ export async function printPaginationFixture(
     (options.top ?? 500) + height * (options.occurrences ?? 1) + 200,
     options.width ?? 1000,
   );
+  const hosts: HTMLElement[] = [];
   const containers = Array.from({ length: options.occurrences ?? 1 }, (_, index) => {
     const container = createExportPage(document, drawing, { description: "Diagram" });
     if (index === 0) container.prepend(svg);
-    root.append(container);
+    const host =
+      options.hostMargin === undefined
+        ? undefined
+        : document.createElementNS("http://www.w3.org/1999/xhtml", "p");
+    if (host === undefined) root.append(container);
+    else {
+      host.className = "inkbook-print-fixture-host";
+      host.setAttribute("data-inkbook-export", "");
+      host.append(container);
+      root.append(host);
+      hosts.push(host);
+    }
     controller.register({
+      ...(host === undefined ? {} : { host }),
       container,
       drawing,
       cuts: options.withoutCuts ? undefined : cuts,
@@ -119,6 +138,7 @@ export async function printPaginationFixture(
     root,
     controller,
     containers,
+    hosts,
     drawing,
     svg,
     ...layout,

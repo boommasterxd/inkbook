@@ -11,8 +11,73 @@ import {
   resolveExportPagePaths,
 } from "../../../../fixtures/obsidian/export-fragment-tree";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { PORTABLE_PALETTE_V1 } from "../../../../../src/domain/schema/public";
 
 afterEach(() => vi.restoreAllMocks());
+
+it("paints each occurrence's text once behind an opaque page, including legacy fallback graphics", async () => {
+  const fixture = exportFragmentFixture([
+    [{ markup: '<path d="M10 20L30 40"/>', minY: 20, maxY: 40, background: false }],
+  ]);
+  fixture.svg.setAttribute("viewBox", "0 0 1000 300");
+  const drawing = await prepareExportDrawing(fixture.svg, undefined, {
+    scheduler: immediateWorkScheduler(),
+    signal: new AbortController().signal,
+  });
+  const cases = [
+    { colorScheme: "light", description: "  Diagram <A> & B  " },
+    { colorScheme: "dark", description: "Other" },
+    { colorScheme: "light" },
+  ] as const;
+  for (const options of cases) {
+    const container = createExportPage(document, drawing, options);
+    const page = container.querySelector("svg")!;
+    const [text, cover, reference] = [...page.children];
+    expect(text?.localName).toBe("text");
+    expect(text?.textContent).toBe(
+      "description" in options ? options.description.trim() : "Handwriting",
+    );
+    expect(text?.children).toHaveLength(0);
+    expect(cover?.localName).toBe("rect");
+    expect(cover?.getAttribute("fill")).toBe(PORTABLE_PALETTE_V1[options.colorScheme].page);
+    expect(cover?.getAttribute("opacity")).toBe("1");
+    expect(["x", "y", "width", "height"].map((name) => cover?.getAttribute(name))).toEqual([
+      "50",
+      "37.5",
+      "900",
+      "225",
+    ]);
+    expect(reference?.localName).toBe("use");
+    activateExportPage(container, drawing);
+    expect(page.children).toHaveLength(3);
+    expect(resolveExportPagePaths(fixture.svg, container)).toEqual(fixture.paths);
+  }
+});
+
+it("defers text painting until activation and omits it from continuation pages", async () => {
+  const fixture = exportFragmentFixture([
+    [{ markup: '<path d="M10 20L30 140"/>', minY: 20, maxY: 140, background: false }],
+  ]);
+  const drawing = await prepareExportDrawing(fixture.svg, fixture.fragments, {
+    scheduler: immediateWorkScheduler(),
+    signal: new AbortController().signal,
+  });
+  for (const start of [0, 100]) {
+    const container = createExportPage(document, drawing, {
+      start,
+      end: start + 100,
+      description: "Diagram",
+      deferGraphic: true,
+    });
+    const page = container.querySelector("svg")!;
+    expect(page.children).toHaveLength(0);
+    activateExportPage(container, drawing);
+    expect(page.querySelectorAll("text")).toHaveLength(start === 0 ? 1 : 0);
+    expect(page.querySelectorAll("rect")).toHaveLength(start === 0 ? 1 : 0);
+    expect(page.querySelectorAll("use")).toHaveLength(1);
+    expect(resolveExportPagePaths(fixture.svg, container)).toEqual(fixture.paths);
+  }
+});
 
 it("selects ordered painted fragments for each page while preserving backgrounds and pressure groups", async () => {
   const fixture = exportFragmentFixture([

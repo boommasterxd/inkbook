@@ -74,7 +74,10 @@ it("indexes ten thousand retained paths once and instantiates only intersecting 
   // The single boundary-crossing path appears on both affected pages; all others appear once.
   expect(instantiated).toBe(count + 1);
   const references = pages.reduce((total, page) => total + page.querySelectorAll("use").length, 0);
-  expect(create.mock.calls.length).toBe(3 * 4 + references);
+  // Only the first viewport adds one painted label and its opaque cover.
+  expect(create.mock.calls.filter(([, name]) => name === "text")).toHaveLength(1);
+  expect(create.mock.calls.filter(([, name]) => name === "rect")).toHaveLength(1);
+  expect(create.mock.calls.length).toBe(3 * 4 + references + 2);
   expect(clone).not.toHaveBeenCalled();
   expect(imported).not.toHaveBeenCalled();
   expect(fixture.svg.querySelectorAll("path")).toHaveLength(count);

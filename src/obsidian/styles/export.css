@@ -47,6 +47,15 @@
   break-before: page;
 }
 
+.inkbook-export-page-start[data-inkbook-export] {
+  break-before: page;
+  margin-block-start: 0;
+}
+
+.inkbook-export-page-start > .inkbook-export-keep {
+  break-before: auto;
+}
+
 .inkbook-export-continued {
   break-before: page;
   margin-block-start: 12px;

@@ -1,4 +1,5 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { PORTABLE_PALETTE_V1 } from "../../../domain/schema/public";
 import { applyColorScheme, type InkbookColorScheme } from "../../theme/color-scheme";
 import type { StaticExportFragment } from "../../../persistence/export/static-export-fragments";
 import {
@@ -128,9 +129,11 @@ export function activateExportPage(
   referencePadding = 0,
 ): void {
   const page = container.querySelector<SVGSVGElement>(".inkbook-export-page");
-  if (page === null) return;
+  if (page === null || page.firstChild !== null) return;
   const start = Number(container.dataset.inkbookRangeStart);
   const end = Number(container.dataset.inkbookRangeEnd);
+  if (start === 0)
+    appendExportText(page, drawing.width, end - start, container.dataset.inkbookScheme === "dark");
   const references =
     drawing.fragments === undefined || (start === 0 && end === drawing.height)
       ? [drawing.id]
@@ -145,4 +148,29 @@ export function activateExportPage(
     reference.setAttribute("href", `#${id}`);
     page.append(reference);
   }
+}
+
+function appendExportText(page: SVGSVGElement, width: number, height: number, dark: boolean): void {
+  const palette = PORTABLE_PALETTE_V1[dark ? "dark" : "light"];
+  const text = page.ownerDocument.createElementNS(SVG_NAMESPACE, "text");
+  text.textContent = page.getAttribute("aria-label") ?? "Handwriting";
+  text.setAttribute("x", String(width / 2));
+  text.setAttribute("y", String(height / 2));
+  text.setAttribute("text-anchor", "middle");
+  text.setAttribute("font-size", String(Math.min(12, height / 4)));
+  text.setAttribute("font-family", "sans-serif");
+  text.setAttribute("textLength", String(width * 0.8));
+  text.setAttribute("lengthAdjust", "spacingAndGlyphs");
+  text.setAttribute("fill", palette.text);
+  // Native PDF preserves painted text. The opaque canonical page keeps it visually unchanged,
+  // including legacy graphics without their own page background. Limit the cover to the text's
+  // central area so it does not intersect the locked frame's rounded clipping boundary.
+  const cover = page.ownerDocument.createElementNS(SVG_NAMESPACE, "rect");
+  cover.setAttribute("x", String(width * 0.05));
+  cover.setAttribute("y", String(height * 0.125));
+  cover.setAttribute("width", String(width * 0.9));
+  cover.setAttribute("height", String(height * 0.75));
+  cover.setAttribute("fill", palette.page);
+  cover.setAttribute("opacity", "1");
+  page.append(text, cover);
 }

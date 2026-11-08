@@ -64,12 +64,14 @@ it("builds every saved path once with bounded DOM work between central admission
   })(fixture.root, fixture.context);
   observe();
   expect(fixture.root.querySelectorAll("path")).toHaveLength(10_000);
-  // Retained SVG/group/defs/group, then three wrappers plus one SVG/use per occurrence.
-  expect(create.mock.calls.length).toBeLessThanOrEqual(10_000 + 4 + 5 * 2);
+  // Each occurrence adds a text/opaque cover pair to its three wrappers and SVG/use.
+  expect(create.mock.calls.length).toBeLessThanOrEqual(10_000 + 4 + 7 * 2);
   expect(create.mock.calls.filter(([, name]) => name === "path")).toHaveLength(10_000);
-  // Four writes per path; retained drawing, source ranges and responsive shells fit 58 more.
-  expect(attributes.mock.calls.length).toBeLessThanOrEqual(10_000 * 4 + 58);
-  expect(append.mock.calls.length).toBeLessThanOrEqual(10_000 + 4 + 4 * 2);
+  // Text/cover painting adds exactly fourteen attributes and one append per occurrence.
+  expect(attributes.mock.calls.length).toBeLessThanOrEqual(10_000 * 4 + 58 + 14 * 2);
+  expect(append.mock.calls.length).toBeLessThanOrEqual(10_000 + 4 + 5 * 2);
+  expect(create.mock.calls.filter(([, name]) => name === "text")).toHaveLength(2);
+  expect(create.mock.calls.filter(([, name]) => name === "rect")).toHaveLength(2);
   expect(fixture.root.querySelectorAll("defs")).toHaveLength(1);
   expect(fixture.root.querySelectorAll("use")).toHaveLength(2);
   // Include the separate static-fragment preparation admission, even for whole-graphic fallback.
@@ -136,14 +138,18 @@ it("bounds print publication and host reads while reusing the complete ten-thous
   // Every native layout/style read sees empty viewports across all three occurrences.
   // Earlier pieces may affect later page boxes, but their drawing references activate last.
   expect(fixture.layoutReads.length).toBeGreaterThan(0);
-  expect(fixture.layoutReads.length).toBeLessThanOrEqual(3 * 4 + 1);
+  // Native admission adds one root fragment-count read before references activate.
+  expect(fixture.layoutReads.length).toBeLessThanOrEqual(3 * 4 + 2);
   expect(fixture.layoutReads.every((read) => read.references === 0)).toBe(true);
   expect(fixture.layoutReads.some((read) => read.pieces > 0)).toBe(true);
   expect(fixture.root.querySelectorAll("svg[role='img'] use")).toHaveLength(pieces.length + 1);
   expect(create.mock.calls.filter(([, name]) => name === "path")).toHaveLength(0);
-  expect(create.mock.calls.length).toBeLessThanOrEqual(256 * 5);
-  expect(attributes.mock.calls.length).toBeLessThanOrEqual(256 * 22 + 3 * 4);
-  expect(fixture.pages).toHaveBeenCalledTimes(3);
+  // At most one text/cover pair per occurrence, independent of path and piece counts.
+  expect(create.mock.calls.filter(([, name]) => name === "text")).toHaveLength(2);
+  expect(create.mock.calls.filter(([, name]) => name === "rect")).toHaveLength(2);
+  expect(create.mock.calls.length).toBeLessThanOrEqual(256 * 5 + 3 * 2);
+  expect(attributes.mock.calls.length).toBeLessThanOrEqual(256 * 22 + 3 * 4 + 3 * 14);
+  expect(fixture.pages).toHaveBeenCalledTimes(4);
   expect(fixture.styles).toHaveBeenCalledTimes(5);
   // One shared root correction, independent of the three occurrences and 10,000 paths.
   expect(create.mock.calls.filter(([, name]) => name === "span")).toHaveLength(0);

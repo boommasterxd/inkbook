@@ -48,8 +48,8 @@ it("uses current page room, avoids the prepared ink interval and restores exact 
   expect([...container.childNodes]).toEqual(original);
 });
 
-it("moves a whole drawing when it fits the next page and little current space remains", async () => {
-  const fixture = await printPaginationFixture({ height: 500, top: 900 });
+it("moves a nearly full-page drawing whole when little current space remains", async () => {
+  const fixture = await printPaginationFixture({ height: 995, top: 900 });
   const container = fixture.containers[0]!;
   const original = [...container.childNodes];
   fixture.print(true);
@@ -57,9 +57,123 @@ it("moves a whole drawing when it fits the next page and little current space re
   expect(container.classList.contains("inkbook-export-keep")).toBe(true);
   expect([...container.childNodes]).toEqual(original);
   fixture.print(false);
+  expect([...container.childNodes]).toEqual(original);
   expect(container.classList.contains("inkbook-export-keep")).toBe(false);
   expect(container.dataset.inkbookPagination).toBeUndefined();
   fixture.controller.dispose();
+});
+
+it.each([
+  { height: 995, expectedMargin: 0, expectedChildBreak: "auto" },
+  { height: 500, expectedMargin: 15, expectedChildBreak: "page" },
+])(
+  "preserves native page capacity with a $height px graphic and a host margin",
+  async ({ height, expectedMargin, expectedChildBreak }) => {
+    const fixture = await printPaginationFixture({ height, top: 900, hostMargin: 15 });
+    const host = fixture.hosts[0]!;
+    const container = fixture.containers[0]!;
+    const original = [...container.childNodes];
+    const inlineStyle = host.getAttribute("style");
+    try {
+      expect(window.getComputedStyle(host).marginBlockStart).toBe("15px");
+      fixture.print(true);
+      expect(container.dataset.inkbookPagination).toBe("keep");
+      expect(Number.parseFloat(window.getComputedStyle(host).marginBlockStart)).toBe(
+        expectedMargin,
+      );
+      expect(window.getComputedStyle(container).breakBefore).toBe(expectedChildBreak);
+      expect([...container.childNodes]).toEqual(original);
+      window.dispatchEvent(new Event("afterprint"));
+      expect(window.getComputedStyle(host).marginBlockStart).toBe("15px");
+      expect(host.getAttribute("style")).toBe(inlineStyle);
+      fixture.print(true);
+      expect(Number.parseFloat(window.getComputedStyle(host).marginBlockStart)).toBe(
+        expectedMargin,
+      );
+    } finally {
+      fixture.controller.dispose();
+    }
+    expect(window.getComputedStyle(host).marginBlockStart).toBe("15px");
+    expect(host.getAttribute("style")).toBe(inlineStyle);
+  },
+);
+
+it.each([
+  {
+    name: "retains whole-page placement with padding-only overflow",
+    height: 995,
+    top: 900,
+    bottom: 1995,
+    keep: true,
+  },
+  {
+    name: "restores whole graphics when trailing content overflows",
+    height: 995,
+    top: 900,
+    bottom: 2010,
+    keep: false,
+  },
+  {
+    name: "restores split graphics when trailing content overflows",
+    height: 1800,
+    top: 100,
+    bottom: 2010,
+    keep: false,
+  },
+  {
+    name: "restores graphics when the content end is unproven",
+    height: 995,
+    top: 900,
+    bottom: NaN,
+    keep: false,
+  },
+])("$name after native layout gains a page", async ({ height, top, bottom, keep }) => {
+  const fixture = await printPaginationFixture({ height, top, nativeScale: 0.75, hostMargin: 15 });
+  const container = fixture.containers[0]!;
+  const original = [...container.childNodes];
+  const references = [...container.querySelectorAll("use")];
+  const tail = document.createElementNS("http://www.w3.org/1999/xhtml", "p");
+  tail.textContent = "Trailing content must remain in the native PDF.";
+  fixture.root.append(tail);
+  const tailBounds = vi
+    .spyOn(tail, "getBoundingClientRect")
+    .mockReturnValue(DOMRect.fromRect({ y: bottom - 10, width: 1000, height: 10 }));
+  const initial = [
+    DOMRect.fromRect({ width: 1000, height: 1000 }),
+    DOMRect.fromRect({ y: 1000, width: 1000, height: 995.7 }),
+  ];
+  const grown = [
+    initial[0]!,
+    DOMRect.fromRect({ y: 1000, width: 1000, height: 1000 }),
+    DOMRect.fromRect({ y: 2000, width: 1000, height: 20 }),
+  ];
+  fixture.pages
+    .mockReturnValueOnce(
+      Object.assign(initial, { item: (index: number) => initial[index] ?? null }),
+    )
+    .mockReturnValue(Object.assign(grown, { item: (index: number) => grown[index] ?? null }));
+  try {
+    fixture.layoutReads.length = 0;
+    fixture.print(true);
+    expect(fixture.layoutReads.every((read) => read.references === 0)).toBe(true);
+    expect(fixture.pages).toHaveBeenCalledTimes(2);
+    expect(tailBounds).toHaveBeenCalledOnce();
+    expect(container.dataset.inkbookPagination).toBe(keep ? "keep" : undefined);
+    expect(Number.parseFloat(window.getComputedStyle(fixture.hosts[0]!).marginBlockStart)).toBe(
+      keep ? 0 : 15,
+    );
+    expect([...container.childNodes]).toEqual(original);
+    expect([...container.querySelectorAll("use")]).toEqual(references);
+    expect(fixture.root.lastElementChild).toBe(tail);
+    expect(fixture.root.classList.contains("inkbook-native-pdf-export")).toBe(true);
+    fixture.print(false);
+    expect([...container.childNodes]).toEqual(original);
+    expect([...container.querySelectorAll("use")]).toEqual(references);
+    expect(container.dataset.inkbookPagination).toBeUndefined();
+    expect(window.getComputedStyle(fixture.hosts[0]!).marginBlockStart).toBe("15px");
+  } finally {
+    fixture.controller.dispose();
+  }
 });
 
 it("starts a tall drawing on the next page when remaining room cannot hold a usable piece", async () => {

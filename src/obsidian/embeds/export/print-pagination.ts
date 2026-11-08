@@ -22,6 +22,7 @@ const MINIMUM_PIECE = 64;
 const REFERENCE_OVERSCAN = 2;
 
 export interface PaginatedExport {
+  readonly host?: HTMLElement;
   readonly container: HTMLElement;
   readonly drawing: ExportDrawing;
   readonly cuts: PreparedExportCuts | undefined;
@@ -124,6 +125,7 @@ export class StaticExportPagination {
 
   #restoreOutput(output: OwnedExport, graphics = true): void {
     const container = output.container;
+    output.host?.classList.remove("inkbook-export-page-start");
     if (container.classList.contains("inkbook-export-fragmented"))
       container.replaceChildren(...output.children);
     container.classList.remove("inkbook-export-fragmented", "inkbook-export-keep");
@@ -147,24 +149,62 @@ export class StaticExportPagination {
       return;
     }
     let pages: readonly PrintPage[] | undefined;
+    let initialPages: readonly PrintPage[] | undefined;
+    let layoutChanged = false;
     for (const output of this.#exports) {
       if (this.#budgetExhausted || this.#publishedPieces >= MAX_PRINT_PIECES) break;
       if (!this.#root.contains(output.container)) continue;
       if (output.cuts === undefined) continue;
       try {
         pages ??= readPrintPages(this.#root);
+        initialPages ??= pages;
         this.#paginateOutput(output, pages);
-        if (output.container.dataset.inkbookPagination !== undefined) pages = undefined;
+        const state = output.container.dataset.inkbookPagination;
+        if (state !== undefined) pages = undefined;
+        layoutChanged ||= state === "keep" || state === "split";
       } catch {
         this.#restoreOutput(output, false);
         output.container.dataset.inkbookPagination = "fallback";
       }
+    }
+    if (layoutChanged && !this.#nativeOverflowSafe(initialPages)) {
+      this.#restoreOutputs();
+      return;
     }
     for (const output of this.#exports) {
       if (output.container.dataset.inkbookPagination === "split") {
         for (const piece of output.container.querySelectorAll<HTMLElement>(".inkbook-export-piece"))
           activateExportPage(piece, output.drawing, output.referencePadding);
       } else this.#restoreGraphics(output);
+    }
+  }
+
+  #nativeOverflowSafe(initialPages: readonly PrintPage[] | undefined): boolean {
+    if (this.nativeOptions === undefined) return true;
+    try {
+      if (initialPages === undefined || initialPages.length < 2) return false;
+      const currentPageCount = this.#root.getClientRects().length;
+      if (currentPageCount < 2) return false;
+      if (currentPageCount <= initialPages.length) return true;
+      const fullHeight = initialPages[0]!.height;
+      for (let index = 0; index < initialPages.length - 1; index += 1) {
+        if (initialPages[index]!.height !== fullHeight) return false;
+      }
+      const tail = initialPages[initialPages.length - 1]!;
+      if (tail.height > fullHeight) return false;
+      // Chromium may retain the original page count after a print-media layout change.
+      // Extra root fragments are safe only when the last content still fits that capacity.
+      const end = this.#root.lastElementChild?.getBoundingClientRect();
+      return (
+        end !== undefined &&
+        [end.top, end.bottom, end.height, end.width].every(Number.isFinite) &&
+        end.height > 0 &&
+        end.width > 0 &&
+        end.top >= initialPages[0]!.top &&
+        end.bottom <= tail.top + fullHeight
+      );
+    } catch {
+      return false;
     }
   }
 
@@ -175,7 +215,16 @@ export class StaticExportPagination {
     if (firstPage === undefined || rect.bottom <= firstPage.bottom - 1) return;
     const remaining = firstPage.bottom - rect.top;
     const pageHeight = firstPage.height;
-    if (rect.height <= pageHeight - PIECE_GAP && remaining <= pageHeight * MAX_UNUSED_SHARE) {
+    if (rect.height <= pageHeight && remaining <= pageHeight * MAX_UNUSED_SHARE) {
+      const host = output.host;
+      const hostMargin =
+        host === undefined
+          ? 0
+          : Number.parseFloat(
+              host.ownerDocument.defaultView?.getComputedStyle(host).marginBlockStart ?? "0",
+            );
+      if (hostMargin > 0 && rect.height + hostMargin > pageHeight)
+        host?.classList.add("inkbook-export-page-start");
       output.container.classList.add("inkbook-export-keep");
       output.container.dataset.inkbookPagination = "keep";
       return;

@@ -243,6 +243,9 @@ it("correlates formatted labels and entities while normalizing each repeated lab
       graphic.getAttribute("aria-label"),
     ),
   ).toEqual(["Diagram", "Diagram", "A & B", "A & B"]);
+  expect(
+    [...fixture.root.querySelectorAll("svg[role='img'] > text")].map((text) => text.textContent),
+  ).toEqual(["Diagram", "Diagram", "A & B", "A & B"]);
   expect(renderExportLabel.mock.calls.map(([label]) => label)).toEqual([
     "**Diagram**",
     "A &amp; B",

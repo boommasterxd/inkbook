@@ -189,6 +189,7 @@ function mountStaticExport(
   if (!resource.published) output.pages.prepend(resource.definitions);
   owner.mount(output.host, output.pages);
   owner.pagination.register({
+    host: output.host,
     container: output.pages,
     drawing: resource.drawing,
     cuts: resource.cuts,
