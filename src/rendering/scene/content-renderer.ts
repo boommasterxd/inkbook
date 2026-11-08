@@ -7,7 +7,7 @@ import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { setMountedElementMotion, type MountedSceneElement } from "./content/mounted-element";
 import type { ScenePathCache } from "./content/path-cache";
-import type { ScenePublicationBudget } from "./reconciliation/mount-slice";
+import { MountSlice, type ScenePublicationBudget } from "./reconciliation/mount-slice";
 import { SceneElementFades, type FadeSlice } from "./presentation/scene-element-fades";
 import { setHistoryFadeGate, type ElementFadeDirection } from "./presentation/element-fade-style";
 import { SceneSelectionTraces } from "./presentation/selection-traces";
@@ -82,6 +82,15 @@ export class SceneContentRenderer {
       syncTrace: (entry) => this.#selectionTraces.transform(entry.id, entry),
     });
     this.#publication = new SceneGeometryPublication({
+      prepareGeometry: (record, deadline, now, preemptLocal) =>
+        this.#reconciler.preparation.prepare(
+          record,
+          new MountSlice(deadline, now),
+          true,
+          preemptLocal,
+        ),
+      waitingForPaths: () => this.#reconciler.preparation.waiting,
+      releaseGeometry: (id, version) => this.#reconciler.preparation.finish(id, version),
       dom,
       mounted: this.#mounted,
       store,
@@ -94,6 +103,8 @@ export class SceneContentRenderer {
     this.#visibility = visibility;
     this.#reconciler = new SceneVisibilityReconciler({
       ...options,
+      upcomingGeometryIds: () => this.#publication.upcomingGeometryIds(),
+      retainGeometryPath: (id) => this.#publication.retainsGeometryPath(id),
       dom,
       instrumentation,
       isExitReady: (id, now) => this.#fades.isExitReady(id, now),
@@ -104,6 +115,8 @@ export class SceneContentRenderer {
         this.#selectionRuns.mounted(entry);
       },
       onUnmount: (id) => {
+        this.#publication.unmounted(id);
+        this.#reconciler.preparation.release(id, true);
         this.#fades.releaseMounted(id);
         this.#selectionRuns.unmounted(id);
       },
@@ -212,7 +225,13 @@ export class SceneContentRenderer {
     return this.hasMountedWork || this.#reconciler.hasPendingViewportWork;
   }
   public get waitingForPaths(): boolean {
-    return this.#reconciler.waitingForPaths && !this.hasMountedWork;
+    return (
+      (this.deferVisibilityForRunCommit ||
+        this.#reconciler.waitingForPaths ||
+        !this.hasVisibilityWork) &&
+      (this.#publication.waitingForPaths || !this.hasMountedWork) &&
+      this.hasPendingWork
+    );
   }
   public setVisibilityPriority(priority: SceneVisibilityPriority): void {
     this.#reconciler.setPriority(priority);
@@ -241,36 +260,40 @@ export class SceneContentRenderer {
     previewElements: ReadonlyMap<string, InkElementV1>,
     publication: ScenePublicationBudget,
   ): boolean {
-    const wasCleaning = this.#reconciler.hasPendingCleanup;
-    const result = this.#reconciler.reconcile(
-      deadline,
-      now,
-      previewTransforms,
-      previewElements,
-      publication,
-    );
-    if (wasCleaning && !this.#reconciler.hasPendingCleanup) {
-      this.#selectionTraces.prune(this.#mounted);
-    }
-    if (result.committedVisibility !== undefined) {
-      commitVisibleBands(
-        this.#committedIds,
-        this.#committedCounts,
-        result.committedVisibility,
-        result.orderProofEpoch === undefined
-          ? undefined
-          : {
-              mounted: this.#mounted,
-              store: this.#store,
-              epoch: result.orderProofEpoch,
-            },
-        result.pending ? undefined : this.#visibility.removalReuse,
+    try {
+      const wasCleaning = this.#reconciler.hasPendingCleanup;
+      const result = this.#reconciler.reconcile(
+        deadline,
+        now,
+        previewTransforms,
+        previewElements,
+        publication,
       );
-      this.#selectionTraces.prune(this.#mounted);
+      if (wasCleaning && !this.#reconciler.hasPendingCleanup) {
+        this.#selectionTraces.prune(this.#mounted);
+      }
+      if (result.committedVisibility !== undefined) {
+        commitVisibleBands(
+          this.#committedIds,
+          this.#committedCounts,
+          result.committedVisibility,
+          result.orderProofEpoch === undefined
+            ? undefined
+            : {
+                mounted: this.#mounted,
+                store: this.#store,
+                epoch: result.orderProofEpoch,
+              },
+          result.pending ? undefined : this.#visibility.removalReuse,
+        );
+        this.#selectionTraces.prune(this.#mounted);
+      }
+      this.#newlyMountedIds = result.newlyMountedIds;
+      this.#publication.markSelectionDirty(result.newlyMountedIds);
+      return result.pending || this.#publication.hasSelectionWork;
+    } finally {
+      this.#reconciler.preparation.flushRetargets();
     }
-    this.#newlyMountedIds = result.newlyMountedIds;
-    this.#publication.markSelectionDirty(result.newlyMountedIds);
-    return result.pending || this.#publication.hasSelectionWork;
   }
   public promoteVisible(id: string): boolean {
     return this.#reconciler.promote(id);

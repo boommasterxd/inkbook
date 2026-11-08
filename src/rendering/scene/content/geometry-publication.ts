@@ -28,6 +28,14 @@ import { sameStrokeShape } from "./stroke-position";
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
 interface GeometryPublicationPorts {
+  readonly prepareGeometry: (
+    record: SceneElementRecord,
+    deadline: number,
+    now: () => number,
+    preemptLocal: boolean,
+  ) => readonly SvgPathPart[] | undefined;
+  readonly waitingForPaths: () => boolean;
+  readonly releaseGeometry: (id: string, version?: number) => void;
   readonly dom: SceneDom;
   readonly mounted: ReadonlyMap<string, MountedSceneElement>;
   readonly store: SceneStorePort;
@@ -47,6 +55,7 @@ export class SceneGeometryPublication {
   readonly #deferredPreviews = new Set<string>();
   #committedPreviewIds: string[] = [];
   #preferGroupGeometry = false;
+  #waitingForPaths = false;
   readonly #ports: GeometryPublicationPorts;
 
   public constructor(ports: GeometryPublicationPorts) {
@@ -60,6 +69,34 @@ export class SceneGeometryPublication {
   }
   public markSelectionDirty(ids?: readonly string[]): void {
     this.#ports.selectionTraces.markMountedDirty(this.#ports.mounted, this.#selectionDirty, ids);
+  }
+  public get waitingForPaths(): boolean {
+    return (
+      this.#waitingForPaths &&
+      this.#paintDirty.size === 0 &&
+      this.#selectionDirty.size === 0 &&
+      (!this.#ports.selectionRuns.pending || this.#ports.selectionRuns.committing)
+    );
+  }
+  public *upcomingGeometryIds(): Iterable<string> {
+    for (const id of this.#geometryDirty) if (this.retainsGeometryPath(id)) yield id;
+  }
+  public retainsGeometryPath(id: string): boolean {
+    if (!this.#geometryDirty.has(id) || !this.#ports.mounted.has(id)) return false;
+    const live = this.#ports.store.get(id);
+    return (
+      live?.element.kind === "stroke" &&
+      (this.#ports.selectionRuns.canonicalTarget(id)?.geometryVersion ?? live.geometryVersion) ===
+        live.geometryVersion
+    );
+  }
+  public unmounted(id: string): void {
+    this.#geometryDirty.delete(id);
+    this.#ordinaryGeometryDirty.delete(id);
+    this.#paintDirty.delete(id);
+    this.#selectionDirty.delete(id);
+    this.#committedGeometry.finish(id);
+    this.#deferredPreviews.delete(id);
   }
   public get hasSelectionWork(): boolean {
     return this.#selectionDirty.size > 0;
@@ -116,6 +153,7 @@ export class SceneGeometryPublication {
     publication: ScenePublicationBudget,
     admittedFirstStep = false,
   ): boolean {
+    this.#waitingForPaths = false;
     const groupFirst = this.#ports.selectionRuns.committing && this.#preferGroupGeometry;
     if (this.#ports.selectionRuns.committing) this.#preferGroupGeometry = !groupFirst;
     if (
@@ -141,6 +179,8 @@ export class SceneGeometryPublication {
     ) {
       if (now() < deadline && this.#ordinaryGeometryDirty.size > 0)
         this.writeOrdinaryGeometry(deadline, now, publication);
+      if (this.#waitingForPaths && now() < deadline)
+        this.writeAuxiliaryChanges(deadline, now, publication);
       return true;
     }
     if (this.#ports.selectionRuns.committing) return true;
@@ -191,15 +231,22 @@ export class SceneGeometryPublication {
     admittedFirstStep: boolean,
   ): boolean {
     if (now() >= deadline && !admittedFirstStep) return this.hasMountedWork;
+    let geometryPending = false;
     if (this.#geometryDirty.size > 0) {
-      if (
-        writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
-          this.writeGeometry(id, deadline, now, publication),
-        )
-      )
-        return true;
+      geometryPending = writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
+        this.writeGeometry(id, deadline, now, publication),
+      );
+      if (geometryPending && !this.#waitingForPaths) return true;
       if (now() >= deadline) return this.hasMountedWork;
     }
+    const auxiliaryPending = this.writeAuxiliaryChanges(deadline, now, publication);
+    return geometryPending || auxiliaryPending;
+  }
+  private writeAuxiliaryChanges(
+    deadline: number,
+    now: () => number,
+    publication: ScenePublicationBudget,
+  ): boolean {
     if (this.#paintDirty.size > 0) {
       if (writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id, publication)))
         return true;
@@ -313,11 +360,10 @@ export class SceneGeometryPublication {
     return true;
   }
   public clearElementPreview(id: string): void {
-    if (this.#ports.selectionRuns.committing && this.#ports.selectionRuns.grouped(id)) {
-      this.#geometryDirty.add(id);
-      return;
-    }
-    if (this.#committedGeometry.has(id)) {
+    if (
+      (this.#ports.selectionRuns.committing && this.#ports.selectionRuns.grouped(id)) ||
+      this.#committedGeometry.has(id)
+    ) {
       this.#geometryDirty.add(id);
       return;
     }
@@ -348,44 +394,55 @@ export class SceneGeometryPublication {
     now: () => number,
     publication: ScenePublicationBudget,
   ): boolean {
+    this.#waitingForPaths = false;
     const entry = this.#ports.mounted.get(id);
     const liveRecord = this.#ports.store.get(id);
     const record = this.#ports.selectionRuns.canonicalTarget(id) ?? liveRecord;
     if (entry === undefined || record === undefined) {
-      this.#committedGeometry.finish(id);
-      this.#deferredPreviews.delete(id);
-      this.#ordinaryGeometryDirty.delete(id);
+      this.#ports.releaseGeometry(id);
+      this.unmounted(id);
       return true;
     }
     const liveDesired = this.#ports.selectionRuns.pendingPreview(id);
     if (entry.geometryVersion === record.geometryVersion) {
       this.#ports.selectionRuns.update(entry, record);
       this.#ports.selectionTraces.transform(id, entry);
-      this.finishGeometryPublication(id, liveDesired);
+      this.finishGeometryPublication(record, liveDesired);
       return true;
     }
-    const pressure =
-      liveRecord?.geometryVersion === record.geometryVersion
-        ? this.#ports.store.pressureGeometry?.(record.id, record.geometryVersion)
-        : undefined;
+    const currentVersion = liveRecord?.geometryVersion === record.geometryVersion;
+    const pressure = currentVersion
+      ? this.#ports.store.pressureGeometry?.(record.id, record.geometryVersion)
+      : undefined;
     const pending =
       this.#committedGeometry.has(id) ||
       (this.#ports.selectionRuns.committing && this.#ports.selectionRuns.grouped(id)) ||
       (record.element.kind === "stroke" && record.element.style.pressureEnabled);
+    const canonicalStroke = record.element.kind === "stroke" && currentVersion;
     const parts =
       (sameStrokeShape(entry.displayedElement, record.element)
         ? entry.displayedPathParts
         : undefined) ??
       this.#ports.pathCache.read(record.element, pressure, record.geometryVersion) ??
       (pending
-        ? this.#committedGeometry.prepare(record, deadline, now, pressure)
+        ? canonicalStroke
+          ? this.#ports.prepareGeometry(record, deadline, now, this.#ports.selectionRuns.committing)
+          : this.#committedGeometry.prepare(record, deadline, now, pressure)
         : this.#ports.pathCache.build(record.element, pressure));
-    if (parts === undefined) return false;
+    if (parts === undefined) {
+      this.#waitingForPaths = canonicalStroke && this.#ports.waitingForPaths();
+      return false;
+    }
     this.updateGeometry(entry, record, parts, publication);
-    this.finishGeometryPublication(id, liveDesired);
+    this.finishGeometryPublication(record, liveDesired);
     return true;
   }
-  private finishGeometryPublication(id: string, liveDesired: PreviewTransform | undefined): void {
+  private finishGeometryPublication(
+    record: SceneElementRecord,
+    liveDesired: PreviewTransform | undefined,
+  ): void {
+    const { id, geometryVersion } = record;
+    this.#ports.releaseGeometry(id, geometryVersion);
     this.#ordinaryGeometryDirty.delete(id);
     const retainedDesired = this.#committedGeometry.finish(id);
     const desired = liveDesired ?? retainedDesired;

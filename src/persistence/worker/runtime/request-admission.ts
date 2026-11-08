@@ -35,6 +35,7 @@ export function blocksSpeculativeWork(request: DocumentRuntimeRequest): boolean 
     request.type === "clipboard-plan-paste" ||
     request.type === "verify-output" ||
     request.type === "import-ink" ||
+    request.type === "prepare-export-geometry" ||
     request.type === "export-full" ||
     request.type === "export-incremental" ||
     ((request.type === "model-sync-full" || request.type === "model-sync-incremental") &&

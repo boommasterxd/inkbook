@@ -54,6 +54,11 @@ import {
   type ImportInkWireSuccess,
   assertImportInkRequest,
 } from "./ink-import-wire";
+import {
+  encodeExportGeometryRequest,
+  encodeExportGeometryRequestChunked,
+  validateExportIntervalsSteps,
+} from "./export-geometry-wire";
 
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import type {
@@ -130,6 +135,7 @@ export function encodeRuntimeRequest(
     return encodeIncrementalExportRequest(identity, changedElements, packed);
   }
   if (request.type === "unlock") return encodeUnlockRequest(request);
+  if (request.type === "prepare-export-geometry") return encodeExportGeometryRequest(request);
   return { transfer: [], value: request };
 }
 
@@ -138,6 +144,8 @@ export async function encodeRuntimeRequestChunked(
   options: RuntimeWireSliceOptions,
 ): Promise<StructuredTransfer<DocumentRuntimeWireRequest>> {
   options.signal.throwIfAborted();
+  if (request.type === "prepare-export-geometry")
+    return encodeExportGeometryRequestChunked(request, options);
   if (request.type === "model-sync-full" || request.type === "model-sync-incremental") {
     return encodeModelSyncRequestChunked(request, options);
   }
@@ -213,6 +221,10 @@ export function decodeRuntimeResult(result: unknown): DocumentRuntimeResult {
     throw new TypeError("Worker result does not match the runtime wire protocol.");
   }
   if (result.type === "import-ink-success-wire") return decodeImportInkSuccess(result);
+  if (result.type === "prepare-export-geometry-success") {
+    completeSerializationSteps(validateExportIntervalsSteps(result.intervals));
+    return result;
+  }
   if (result.type === "export-success-wire") {
     const trusted = adoptOwnedSvgOutputSync(result.output, result.outputHash);
     return adoptExportSuccess(result, trusted);
@@ -251,6 +263,10 @@ export async function decodeRuntimeResultChunked(
   }
   if (result.type === "import-ink-success-wire")
     return decodeImportInkSuccessChunked(result, options);
+  if (result.type === "prepare-export-geometry-success") {
+    await consumeSerializationSteps(validateExportIntervalsSteps(result.intervals), options);
+    return result;
+  }
   if (result.type === "export-success-wire") {
     const trusted = await adoptOwnedSvgOutput(result.output, result.outputHash, options);
     return adoptExportSuccess(result, trusted);

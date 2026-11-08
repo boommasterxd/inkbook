@@ -76,6 +76,9 @@ export class StreamingSvgMetadataParser {
     const inputBytes = this.#encoder.encode(input).byteLength;
     if (this.#rawBytes + inputBytes > this.#maximumBytes) return false;
     this.#rawBytes += inputBytes;
+    if (this.#entityCarry.length === 0 && !input.includes("&")) {
+      return !input.includes("<") && this.#appendDecoded(input, inputBytes);
+    }
 
     const combined = this.#entityCarry + input;
     this.#entityCarry = "";
@@ -101,9 +104,9 @@ export class StreamingSvgMetadataParser {
     return this.#appendDecoded(combined.slice(literalStart));
   }
 
-  #appendDecoded(value: string): boolean {
+  #appendDecoded(value: string, knownBytes?: number): boolean {
     if (value.length === 0) return true;
-    const valueBytes = this.#encoder.encode(value).byteLength;
+    const valueBytes = knownBytes ?? this.#encoder.encode(value).byteLength;
     if (this.#decodedBytes + valueBytes > this.#maximumBytes) return false;
     this.#decodedBytes += valueBytes;
     this.#decodedParts.push(value);

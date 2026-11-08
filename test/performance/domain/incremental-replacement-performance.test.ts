@@ -10,6 +10,7 @@ import type { ElementReplacementHistoryData } from "../../../src/domain/store/pu
 import type { ImmutableInkElement } from "../../../src/domain/store/types";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
 import * as recordFactory from "../../../src/domain/store/records/record-factory";
+import * as elementComparison from "../../../src/domain/store/records/element-comparison";
 import * as bounds from "../../../src/domain/geometry/bounds";
 import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
 import * as connections from "../../../src/domain/store/records/connections";
@@ -51,9 +52,13 @@ it("bounds heap comparisons during 1,024 spatial replacement preparations", asyn
   const sift = vi.spyOn(bottomHeap, "heapifyBottomAt");
   const comparisonsPerSlice: number[] = [];
   let observed = 0;
+  let admissions = 0;
   try {
     const plan = await index.prepareReplacementsTimeSliced(replacements, {
-      shouldYield: () => sift.mock.calls.length >= (comparisonsPerSlice.length + 1) * 256,
+      shouldYield: () => {
+        admissions += 1;
+        return sift.mock.calls.length >= (comparisonsPerSlice.length + 1) * 256;
+      },
       yieldControl: async () => {
         const results = sift.mock.results.slice(observed);
         comparisonsPerSlice.push(
@@ -66,6 +71,10 @@ it("bounds heap comparisons during 1,024 spatial replacement preparations", asyn
     expect(plan).not.toBe("cancelled");
     if (plan === "cancelled") return;
     expect(sift).toHaveBeenCalledTimes(512);
+    // Staging and membership preparation stay recordwise; only numeric heap phases group 32.
+    expect(admissions).toBeLessThanOrEqual(
+      2 * 1_024 + Math.ceil(1_024 / 32) + Math.ceil(512 / 32) + 1,
+    );
     expect(comparisonsPerSlice).toHaveLength(2);
     expect(comparisonsPerSlice.every((count) => count > 0 && count <= 5_120)).toBe(true);
     index.commitPreparedReplacements(plan);
@@ -313,12 +322,15 @@ it("validates resize samples once at the authoritative prepared transaction", as
   });
   session.update({ x: 110, y: 110 });
   const validate = vi.spyOn(sampleValidation, "assertStrokeSampleRange");
+  const compare = vi.spyOn(elementComparison, "elementsEqualSteps");
   try {
     const materialized = await session.prepareCommitTimeSliced(scheduler);
     expect(validate).not.toHaveBeenCalled();
     if (materialized.status !== "ready") throw new Error("Expected resize materialization.");
     const prepared = await store.prepareElementReplacement(materialized.replacements, scheduler);
     if (prepared.token === null) throw new Error("Expected resize transaction.");
+    // A changed geometry domain already excludes equality after complete staging/validation.
+    expect(compare).not.toHaveBeenCalled();
     expect(
       validate.mock.calls.reduce((sum, [, , , , range]) => sum + range.end - range.start, 0),
     ).toBe(sampleValues);
@@ -334,5 +346,6 @@ it("validates resize samples once at the authoritative prepared transaction", as
     expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("cancelled");
   } finally {
     validate.mockRestore();
+    compare.mockRestore();
   }
 }, 30_000);

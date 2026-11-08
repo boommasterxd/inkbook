@@ -15,6 +15,7 @@ import type {
   ResolvedInkbookDocument,
 } from "./presentation/presentation-port";
 import { samePreviewContentIdentity } from "./preview/safe-preview-svg";
+import { renderStaticMarkdownEmbeds } from "./export/markdown-export";
 
 let nextReadingAttachmentId = 0;
 
@@ -299,7 +300,11 @@ export function createReadingViewPostProcessor(
 ): MarkdownPostProcessor {
   return (element, context): Promise<void> | void => {
     const initial = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
-    if (initial === undefined) return;
+    if (initial === undefined) {
+      if (context.getSectionInfo(element) === null)
+        return renderStaticMarkdownEmbeds(element, context, ports);
+      return;
+    }
     const cached = ports.documents.cached(initial.resolved.documentId);
     if (cached !== undefined && cached !== false) {
       context.addChild(new InkbookReadingRenderChild(initial, cached, ports));

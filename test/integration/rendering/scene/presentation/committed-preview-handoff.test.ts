@@ -178,6 +178,7 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   }
   expect(fullBuild).not.toHaveBeenCalled();
   expect(root.attributes.get("d")).toBe(scaledPath);
+  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toEqual([root]);
   expect(root.attributes.get("transform")).toBe("translate(5 0)");
   const union = vi.spyOn(pressureUnion, "iteratePressureUnion");
   expect(elementPath.buildElementPathParts(moved, pressureGeometry(element.id, 2))[0]!.d).toBe(

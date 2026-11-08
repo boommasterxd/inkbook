@@ -90,7 +90,7 @@ export interface AutosaveCoordinatorOptions {
   readonly workerEpoch?: number;
 }
 
-export type FlushReason = "detach" | "lock" | "retry";
+export type FlushReason = "detach" | "export" | "lock" | "retry";
 export type FlushOutcome =
   "clean" | "conflict" | "executor-failed" | "retryable-error" | "verification-required";
 export type ExternalChangeOutcome = "conflict" | "reload-required" | "unchanged";

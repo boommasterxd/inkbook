@@ -6,7 +6,10 @@ import type {
   PreparedScenePathEntry,
   ScenePathPreparationObserver,
 } from "../../../../src/domain/geometry/prepared-scene-paths";
-import { MAX_PREPARED_SCENE_PATH_BYTES } from "../../../../src/domain/geometry/prepared-scene-paths";
+import {
+  MAX_PREPARED_SCENE_PATH_BYTES,
+  MAX_PREPARED_SCENE_PATH_IDS,
+} from "../../../../src/domain/geometry/prepared-scene-paths";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import {
   createGatedTestWorkScheduler,
@@ -100,6 +103,74 @@ it("retargets in-flight membership before handing off accepted terminal contours
   fixture.release();
 });
 
+it.each([false, true])(
+  "revokes membership immediately and aborts an emptied batch, deferred=%s",
+  async (deferred) => {
+    const fixture = await handoffFixture();
+    const retarget = vi.fn();
+    fixture.progress().setRetarget(retarget);
+    retarget.mockClear();
+    fixture.remote.invalidate("second", deferred);
+    fixture.progress().onProgress(paths("second"));
+    expect(fixture.cache.read(fixture.records[1]!.element)).toBeUndefined();
+    expect(retarget).toHaveBeenCalledTimes(deferred ? 0 : 1);
+    expect(fixture.signal().aborted).toBe(false);
+    fixture.remote.flushRetargets();
+    fixture.remote.flushRetargets();
+    expect(retarget).toHaveBeenCalledExactlyOnceWith(["third"]);
+    fixture.remote.invalidate("third", true);
+    expect(fixture.signal().aborted).toBe(true);
+    fixture.remote.flushRetargets();
+    expect(retarget).toHaveBeenCalledOnce();
+    fixture.release();
+    expect(fixture.remote.memoryUsage()).toBe(0);
+  },
+);
+
+it.each(["invalidate", "cancel", "terminal", "failure"] as const)(
+  "settles deferred retarget state when followed by %s outside the exit slice",
+  async (operation) => {
+    const fixture = await handoffFixture();
+    const retarget = vi.fn();
+    fixture.progress().setRetarget(retarget);
+    retarget.mockClear();
+    fixture.remote.invalidate("second", true);
+    if (operation === "invalidate") fixture.remote.invalidate("third");
+    if (operation === "cancel") fixture.remote.cancel((id) => id === "third");
+    if (operation === "terminal") {
+      fixture.finish(paths("third"));
+      await Promise.resolve();
+    }
+    if (operation === "failure") {
+      fixture.fail(new Error("Worker unavailable"));
+      await Promise.resolve();
+    }
+    expect(retarget.mock.calls).toEqual(operation === "cancel" ? [[["third"]]] : []);
+    fixture.remote.flushRetargets();
+    expect(retarget.mock.calls).toEqual(operation === "cancel" ? [[["third"]]] : []);
+    fixture.release();
+    expect(fixture.remote.memoryUsage()).toBe(0);
+  },
+);
+
+it("keeps existing lookahead moving after a partial batch unmount", async () => {
+  const fixture = await handoffFixture(undefined, MAX_PREPARED_SCENE_PATH_IDS + 2);
+  const active = fixture.requestIds();
+  expect(active).toHaveLength(MAX_PREPARED_SCENE_PATH_IDS);
+  const departed = fixture.upcomingIds.shift()!;
+  fixture.remote.invalidate(departed);
+  fixture.finish(paths(...active));
+  await Promise.resolve();
+  expect(fixture.requestIds()).toEqual(
+    fixture.records.slice(MAX_PREPARED_SCENE_PATH_IDS + 1).map(({ id }) => id),
+  );
+  expect(fixture.remote.waiting).toBe(true);
+  expect(fixture.cache.read(fixture.records[1]!.element)).toBeUndefined();
+  fixture.release();
+  expect(fixture.signal().aborted).toBe(true);
+  expect(fixture.remote.memoryUsage()).toBe(0);
+});
+
 it("rejects cumulative progress overflow even when the first contour entered the local cache", async () => {
   const fixture = await handoffFixture();
   const parts = [{ d: "M0 0Z".repeat(220_000), paint: "fill" as const }];
@@ -140,20 +211,29 @@ it.each([false, true])(
   },
 );
 
-async function handoffFixture(scheduler?: TestWorkScheduler) {
-  const records = ["first", "second", "third"].map(record);
+async function handoffFixture(scheduler?: TestWorkScheduler, count = 3) {
+  const records = Array.from({ length: count }, (_, index) =>
+    record(["first", "second", "third"][index] ?? `entry-${index}`),
+  );
+  const upcomingIds = records.slice(1).map(({ id }) => id);
   const indexed = new Map(records.map((entry) => [entry.id, entry]));
-  const cache = new ScenePathCache(3);
+  const cache = new ScenePathCache(count);
   let finish!: (result: readonly PreparedScenePathEntry[]) => void;
+  let fail!: (error: Error) => void;
   let progress!: ScenePathPreparationObserver;
+  let signal!: AbortSignal;
+  let requestIds: readonly string[] = [];
   const remote = new RemoteScenePaths(
     {
       get: (id) => indexed.get(id),
       query: () => undefined,
-      prepareScenePaths: (_ids, _signal, observer) => {
+      prepareScenePaths: (ids, preparationSignal, observer) => {
+        requestIds = ids;
+        signal = preparationSignal;
         progress = observer!;
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           finish = resolve;
+          fail = reject;
         });
       },
     },
@@ -164,7 +244,7 @@ async function handoffFixture(scheduler?: TestWorkScheduler) {
       ownsPrepared: (entry, parts) => cache.ownsPrepared(entry.element, parts),
     },
   );
-  remote.read(records[0]!, () => ["second", "third"]);
+  remote.read(records[0]!, () => upcomingIds);
   finish(paths("first"));
   await Promise.resolve();
   return {
@@ -172,8 +252,12 @@ async function handoffFixture(scheduler?: TestWorkScheduler) {
     records,
     indexed,
     cache,
+    upcomingIds,
+    requestIds: () => requestIds,
     progress: () => progress,
+    signal: () => signal,
     finish: (result: readonly PreparedScenePathEntry[]) => finish(result),
+    fail: (error: Error) => fail(error),
     release: () => {
       remote.cancel();
       cache.release();

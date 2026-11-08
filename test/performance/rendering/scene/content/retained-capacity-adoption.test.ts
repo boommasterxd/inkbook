@@ -1,4 +1,15 @@
-import { expect, it, vi } from "vitest";
+import { expect, it, vi, type Mock } from "vitest";
+import type { ScenePathPreparation } from "../../../../../src/domain/geometry/prepared-scene-paths";
+import { dirtyGeometryScene } from "../../../../fixtures/rendering/dirty-geometry-scene";
+import { contentPaths } from "../../../../fixtures/rendering/selection-runs";
+import { createWorkerSnapshot } from "../../../../fixtures/persistence/worker-snapshot";
+import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/runtime/public";
+import { ProgressivePreviewPath } from "../../../../../src/rendering/scene/content/progressive-preview-path";
+import { CommittedPreviewGeometry } from "../../../../../src/rendering/scene/presentation/committed-preview-geometry";
+import {
+  MAX_PREPARED_SCENE_PATH_IDS,
+  MAX_PREPARED_SCENE_PATH_BYTES,
+} from "../../../../../src/domain/geometry/prepared-scene-paths";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { UniformSpatialIndex } from "../../../../../src/domain/spatial";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
@@ -31,6 +42,145 @@ import {
   prepareVisibilityCleanup,
   removeOrderedVisibilityExits,
 } from "../../../../../src/rendering/scene/reconciliation/visibility-reconciliation-commit";
+
+it("publishes ten thousand current dirty mounted pressure contours from the existing bounded worker path pool", async () => {
+  const scene = dirtyGeometryScene(10_000);
+  const identity = {
+    sessionId: "mounted-canonical",
+    workerEpoch: 1,
+    operationId: 1,
+    purpose: "background" as const,
+  };
+  const worker = new DocumentWorkerRuntime(identity);
+  const local = vi.spyOn(ProgressivePreviewPath.prototype, "step");
+  const legacy = vi.spyOn(CommittedPreviewGeometry.prototype, "prepare");
+  let operation = 1;
+  let settle: Promise<unknown> | undefined;
+  const sizes: number[] = [];
+  const probes = new Set([
+    scene.original[0]!.id,
+    scene.original[5000]!.id,
+    scene.original[9999]!.id,
+  ]);
+  const published = new Map<string, string>();
+  let concurrent = 0;
+  let maximumConcurrent = 0;
+  const builds = scene.renderer.instrumentation().geometryBuilds;
+  try {
+    const replacements = scene.replace();
+    await worker.execute({
+      type: "model-sync-full",
+      snapshot: createWorkerSnapshot(replacements, 1),
+      modelRevision: 1,
+      baseModelRevision: null,
+      identity,
+    });
+    scene.port.prepareScenePaths = (ids, _signal, observer) => {
+      sizes.push(ids.length);
+      expect(ids.length).toBeLessThanOrEqual(MAX_PREPARED_SCENE_PATH_IDS);
+      expect(observer!.maxBytes).toBeLessThanOrEqual(MAX_PREPARED_SCENE_PATH_BYTES);
+      maximumConcurrent = Math.max(maximumConcurrent, ++concurrent);
+      const pending = worker
+        .execute({
+          type: "prepare-scene-paths",
+          basisRevision: 1,
+          ids,
+          identity: { ...identity, operationId: ++operation },
+        })
+        .then((result) => {
+          concurrent -= 1;
+          if (result.type !== "prepare-scene-paths-success")
+            throw new Error("Worker contour preparation failed.");
+          for (const { id, parts } of result.paths)
+            if (probes.has(id)) published.set(id, parts[0]!.d);
+          return result.paths;
+        });
+      settle = pending;
+      return pending;
+    };
+    for (let round = 0; round < 200; round += 1) {
+      scene.scheduler.runAll();
+      const pending = settle;
+      settle = undefined;
+      if (pending === undefined) break;
+      await pending;
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    expect(sizes.reduce((total, size) => total + size, 0)).toBe(10_000);
+    expect(sizes.length).toBeLessThanOrEqual(
+      2 + Math.ceil((10_000 - MAX_PREPARED_SCENE_PATH_IDS) / (MAX_PREPARED_SCENE_PATH_IDS / 2)),
+    );
+    expect(maximumConcurrent).toBe(1);
+    expect(worker.instrumentation.shapeBuilds).toBe(10_000);
+    expect(scene.renderer.instrumentation().geometryBuilds).toBe(builds);
+    expect(local).not.toHaveBeenCalled();
+    expect(legacy).not.toHaveBeenCalled();
+    expect(scene.renderer.mountedIds("content")).toHaveLength(10_000);
+    const paths = contentPaths(fakeNode(scene.renderer.svg));
+    expect(published.size).toBe(3);
+    for (const id of probes)
+      expect(paths[scene.port.get(id)!.rank]!.getAttribute("d")).toBe(published.get(id));
+    expect(scene.scheduler.pendingCount).toBe(0);
+    scene.dispose();
+    expect(scene.renderer.memoryUsage().pathCacheBytes).toBe(0);
+  } finally {
+    local.mockRestore();
+    legacy.mockRestore();
+    worker.terminate();
+    scene.dispose();
+  }
+});
+
+it("coalesces worker retarget work across one real sixty-four-root exit slice", async () => {
+  const scene = dirtyGeometryScene(MAX_PREPARED_SCENE_PATH_IDS);
+  const invoke = scene.prepare.getMockImplementation()!;
+  const retargets: Mock<(ids: readonly string[]) => void>[] = [];
+  const cancelled = vi.fn();
+  scene.prepare.mockImplementation((...args: Parameters<ScenePathPreparation>) => {
+    const retarget = vi.fn<(ids: readonly string[]) => void>();
+    retargets.push(retarget);
+    args[2]?.setRetarget(retarget);
+    args[1].addEventListener("abort", cancelled, { once: true });
+    return invoke(...args);
+  });
+  try {
+    scene.replace();
+    scene.scheduler.runAll();
+    scene.deliver(scene.requests[0]!);
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.scheduler.runAll();
+    expect(scene.requests).toHaveLength(2);
+    expect(scene.requests[1]!.ids).toHaveLength(MAX_PREPARED_SCENE_PATH_IDS - 1);
+    const retarget = retargets[1]!;
+    retarget.mockClear();
+    const get = vi.spyOn(scene.port, "get");
+    const before = scene.renderer.instrumentation().domExits;
+    scene.renderer.setViewport({ left: 500, top: 500, width: 100, height: 100 });
+    scene.scheduler.runFrame();
+    expect(scene.renderer.instrumentation().domExits - before).toBe(64);
+    const work = {
+      retargets: retarget.mock.calls.length,
+      transferredIds: retarget.mock.calls.reduce((total, [ids]) => total + ids.length, 0),
+      reads: get.mock.calls.length,
+    };
+    expect(work.retargets, JSON.stringify(work)).toBe(1);
+    expect(work.transferredIds).toBe(MAX_PREPARED_SCENE_PATH_IDS - 64);
+    expect(work.reads).toBeLessThanOrEqual(MAX_PREPARED_SCENE_PATH_IDS * 4);
+    expect(scene.requests[1]!.signal.aborted).toBe(false);
+    expect(cancelled).not.toHaveBeenCalled();
+    get.mockRestore();
+    retarget.mockClear();
+    scene.scheduler.runAll();
+    expect(scene.requests[1]!.signal.aborted).toBe(true);
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(scene.renderer.mountedCount).toBe(0);
+    expect(retarget.mock.calls.length).toBeLessThanOrEqual(2);
+  } finally {
+    scene.dispose();
+  }
+});
 
 function capacityScene() {
   const dom = new SceneDom(asElement(new FakeNode(new FakeDocument(), "div")), "Canvas", {});

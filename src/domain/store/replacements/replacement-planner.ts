@@ -348,10 +348,11 @@ function* classifyCandidateSteps(
   lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
   retainedRecord: ElementRecord | undefined,
 ): Generator<void | boolean, ReplacementCandidate | null> {
-  const equal = yield* elementsEqualSteps(current.element, element);
-  if (equal) return null;
-  yield;
   const domains = yield* classifyReplacementSteps(current.element, element);
+  if (domains.length === 0) {
+    if (yield* elementsEqualSteps(current.element, element)) return null;
+  }
+  yield;
   return classifiedCandidate(current, element, domains, lookup, retainedRecord);
 }
 
@@ -369,8 +370,8 @@ function classifyCandidate(
       ? null
       : { current, domains: CANONICAL_TRANSLATION_DOMAINS, element, retainedRecord };
   }
-  if (elementsEqual(current.element, element)) return null;
   const domains = classifyReplacement(current.element, element);
+  if (domains.length === 0 && elementsEqual(current.element, element)) return null;
   return classifiedCandidate(current, element, domains, lookup, retainedRecord);
 }
 

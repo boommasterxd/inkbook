@@ -59,6 +59,56 @@ function blockedScheduler(onAbort: () => void): WorkScheduler {
   return scheduler;
 }
 
+it("refreshes deferred external content for export while normal recognition retains its preview", async () => {
+  const { file } = createConfirmedOutputFixture();
+  const cachedRead = vi
+    .fn()
+    .mockResolvedValueOnce('<svg data-inkbook-format="inkbook" viewBox="0 0 2048.6 100"></svg>')
+    .mockResolvedValueOnce('<svg data-inkbook-format="inkbook" viewBox="0 0 2048.6 200"></svg>');
+  const recognition = new ObsidianInkbookDocumentRecognition(
+    { getFileByPath: () => file, cachedRead } as unknown as Vault,
+    { workScheduler: immediateWorkScheduler() },
+  );
+  const previous = previewWithSize(1);
+  const latest = {
+    ...previewWithSize(2),
+    contentIdentity: { revision: 1, outputHash: "new-hash" },
+  };
+  vi.mocked(inspectPreviewSvg).mockResolvedValueOnce(previous).mockResolvedValueOnce(latest);
+  const initial = await recognition.recognize(file.path);
+  file.stat.mtime += 1;
+  recognition.deferRefresh(file.path);
+
+  expect(await recognition.recognize(file.path)).toBe(initial);
+  const current = await recognition.recognizeCurrent(file.path);
+
+  expect(current && current.contentIdentity).toEqual(latest.contentIdentity);
+  expect(current && current.safeSvg).toBe(latest.safeSvg);
+  expect(cachedRead).toHaveBeenCalledTimes(2);
+  recognition.dispose();
+});
+
+it("reuses a confirmed current own output for export without a Vault read", async () => {
+  const { file, serialized, signature } = createConfirmedOutputFixture();
+  const cachedRead = vi.fn();
+  const recognition = new ObsidianInkbookDocumentRecognition(
+    { getFileByPath: () => file, cachedRead } as unknown as Vault,
+    { workScheduler: immediateWorkScheduler() },
+  );
+  recognition.acceptConfirmedOutput(
+    file.path,
+    serialized.value.svg,
+    serialized.value.hash,
+    signature,
+  );
+  const confirmed = recognition.cached(file.path);
+
+  expect(await recognition.recognizeCurrent(file.path)).toBe(confirmed);
+  expect(confirmed && confirmed.contentIdentity.outputHash).toBe(serialized.value.hash);
+  expect(cachedRead).not.toHaveBeenCalled();
+  recognition.dispose();
+});
+
 it("grants canonical proof only to a current own write confirmation", async () => {
   const { file, serialized, signature } = createConfirmedOutputFixture();
   const File = TFile as unknown as new (path: string, size: number) => TFile;

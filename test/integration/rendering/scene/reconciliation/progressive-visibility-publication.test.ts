@@ -3,6 +3,12 @@ import { buildElementPathParts } from "../../../../../src/domain/geometry/elemen
 import { SceneFrameWork } from "../../../../../src/rendering/scene/scene-frame-work";
 import { SceneContentScheduler } from "../../../../../src/rendering/scene/scene-content-scheduler";
 import { removeOrderedVisibilityExits } from "../../../../../src/rendering/scene/reconciliation/visibility-reconciliation-commit";
+import { SceneVisibilityReconciler } from "../../../../../src/rendering/scene/reconciliation/scene-visibility-reconciler";
+import { SceneVisibilityState } from "../../../../../src/rendering/scene/visibility/visibility-state";
+import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
+import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
+import type { PreparedScenePathEntry } from "../../../../../src/domain/geometry/prepared-scene-paths";
+import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
 import {
   createSceneRecord,
   createViewportRectangleStore,
@@ -25,6 +31,85 @@ import { arrow } from "../../../../unit/domain/schema/fixtures";
 
 const INITIAL = { height: 100, left: 0, top: 0, width: 1_000 };
 const TARGET = { ...INITIAL, top: 1_000 };
+
+it("rescans old mounted exits when a full target changes after its earlier exit scan was consumed during a worker wait", async () => {
+  const fixture = createDirectPublicationScene("path");
+  const { before, entry, after, dom, content, instrumentation } = fixture;
+  fixture.store.records.delete(entry.id);
+  let finish!: (paths: readonly PreparedScenePathEntry[] | undefined) => void;
+  const prepare = vi.fn<NonNullable<SceneStorePort["prepareScenePaths"]>>(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const store = Object.assign(fixture.store, { prepareScenePaths: prepare });
+  const mounted = new Map([
+    [before.id, before],
+    [after.id, after],
+  ]);
+  const visibility = new SceneVisibilityState(store, instrumentation);
+  const cache = new ScenePathCache();
+  const reconciler = new SceneVisibilityReconciler({
+    dom,
+    mounted,
+    store,
+    pathCache: cache,
+    visibility,
+    instrumentation,
+    orderDirty: { content: new Set(), highlight: new Set() },
+  });
+  const reconcile = () =>
+    reconciler.reconcile(Infinity, () => 0, new Map(), new Map(), {
+      remainingRoots: 256,
+      remainingRemovals: 64,
+    });
+  try {
+    const initial = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+    reconciler.replace(visibility.query(initial, initial, false).visibility, true);
+    reconcile();
+    const cold = createSceneRecord(
+      {
+        ...createTestStroke(),
+        id: entry.id,
+        pivot: { x: 505, y: 20 },
+        points: [500, 20, 0.5, 510, 20, 1],
+      },
+      1,
+    );
+    store.records.set(cold.id, cold);
+    visibility.invalidateForChanges();
+    const targetA = { ...initial, maxX: 600 };
+    const exits = vi.spyOn(mounted, "entries");
+    reconciler.replace(visibility.query(targetA, targetA, false).visibility, true);
+    reconcile();
+    reconcile();
+    expect(prepare).toHaveBeenCalledOnce();
+    const consumed = exits.mock.results[0]!.value as ReturnType<typeof mounted.entries>;
+    expect(consumed.next().done).toBe(true);
+    expect(mounted.size).toBe(2);
+    expect(content.nodes).toHaveLength(2);
+    const targetB = { ...initial, minX: 450, maxX: 600 };
+    reconciler.replace(visibility.query(targetB, targetB, false).visibility, true);
+    finish([{ id: cold.id, parts: buildElementPathParts(cold.element) }]);
+    await Promise.resolve();
+    await Promise.resolve();
+    for (let round = 0; reconciler.hasPendingWork; round += 1) {
+      expect(round).toBeLessThan(10);
+      reconcile();
+    }
+    expect([...mounted.keys()]).toEqual([cold.id]);
+    expect(content.nodes).toHaveLength(1);
+    expect(before.paths[0]!.node.parentNode).toBeNull();
+    expect(after.paths[0]!.node.parentNode).toBeNull();
+    exits.mockRestore();
+  } finally {
+    reconciler.release();
+    visibility.release();
+    cache.release();
+    dom.release();
+  }
+});
 
 it.each(["budget", "deadline"])("defers a protected partial repair at the shared %s", (reason) => {
   const fixture = createDirectPublicationScene("multipart");

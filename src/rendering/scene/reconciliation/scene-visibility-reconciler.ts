@@ -64,21 +64,22 @@ export class SceneVisibilityReconciler {
   #promotedId: string | undefined;
   readonly #runs: PendingMutationRun[] = [];
   readonly #publishedEntrantIds: string[] = [];
-  readonly #preparation: SceneMountPreparation;
+  readonly preparation: SceneMountPreparation;
   #priority: SceneVisibilityPriority | undefined;
   #waitingForPaths = false;
   public constructor(private readonly options: SceneVisibilityReconcilerOptions) {
-    this.#preparation = new SceneMountPreparation({
+    const { mounted, upcomingGeometryIds } = options;
+    this.preparation = new SceneMountPreparation({
       ...options,
       ownerDocument: options.dom.ownerDocument,
-      upcomingIds: () => upcomingScenePathIds(this.#pending, this.options.mounted),
+      upcomingIds: () => upcomingScenePathIds(this.#pending, mounted, upcomingGeometryIds?.()),
       isViewport: (record) =>
         this.#priority === undefined || intersects(this.#priority.viewport, record.bounds),
     });
   }
   public memoryUsage(): number {
     return reconciliationMemoryUsage(this.#pending, {
-      preparationBytes: this.#preparation.memoryUsage(),
+      preparationBytes: this.preparation.memoryUsage(),
       publishedEntrants: this.#publishedEntrantIds.length,
       deferredExits: this.#deferredExits.size,
     });
@@ -121,7 +122,7 @@ export class SceneVisibilityReconciler {
       this.#deferredExits.hasUnprotected(previewTransforms, previewElements())
     );
   }
-  // Retargeting preserves the scan; exit eligibility is checked against the final target.
+  // Delta retargeting preserves its scan; full targets rescan all mounted exits.
   public replace(visibility: VisibilityResult, progressive = false, delta?: VisibilityDelta): void {
     const previousDelta = this.#pending?.delta;
     let useDelta = canRetargetVisibilityDelta(
@@ -131,15 +132,14 @@ export class SceneVisibilityReconciler {
       this.options,
       delta,
     );
-    const exits =
-      this.#pending?.published === false ? this.#pending.exits : this.options.mounted.entries();
+    const exits = this.#pending?.published === false ? this.#pending.exits : undefined;
     for (const id of this.#publishedEntrantIds) this.#exitIds.push(id);
     this.#publishedEntrantIds.length = 0;
     this.cancel(true);
     useDelta &&=
       this.options.orderDirty.content.size === 0 && this.options.orderDirty.highlight.size === 0;
     this.#deferredExits.drainInto(this.#exitIds);
-    this.#promotedId ??= this.#preparation.pendingId;
+    this.#promotedId ??= this.preparation.pendingId;
     this.#cancelled = false;
     this.#waitingForPaths = false;
     if (useDelta && delta !== undefined) for (const id of delta.exited) this.#exitIds.push(id);
@@ -168,7 +168,7 @@ export class SceneVisibilityReconciler {
       progressive,
       targetPublished: false,
       retainedOrderPreserved: true,
-      exits,
+      exits: useDelta && exits !== undefined ? exits : this.options.mounted.entries(),
       scanExits: !useDelta,
       exitScanComplete: useDelta,
       exitOrderPrepared: false,
@@ -183,8 +183,10 @@ export class SceneVisibilityReconciler {
     this.#waitingForPaths = false;
     const pending = this.#pending;
     const preserveEntrants = preservePending && pending?.published === false;
-    this.#preparation.cancel(
-      preserveEntrants ? (id) => this.options.visibility.contains(id) : undefined,
+    this.preparation.cancel(
+      (id) =>
+        this.options.retainGeometryPath?.(id) === true ||
+        (preserveEntrants && this.options.visibility.contains(id)),
     );
     this.#cancelled ||= pending !== undefined;
     markPartialReconciliationExit(pending, this.options);
@@ -194,7 +196,7 @@ export class SceneVisibilityReconciler {
         if (
           preserveEntrants &&
           this.options.visibility.contains(entry.id) &&
-          this.#preparation.isCurrent(entry)
+          this.preparation.isCurrent(entry)
         )
           continue;
         this.options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
@@ -227,7 +229,6 @@ export class SceneVisibilityReconciler {
     this.#promotedId = id;
     return true;
   }
-
   public reconcile(
     deadline: number,
     now: () => number,
@@ -304,7 +305,7 @@ export class SceneVisibilityReconciler {
         },
         remove: removeExits,
         canWork: () => now() < deadline,
-        waitingForPreparation: this.#preparation.waitingForPreparation,
+        waitingForPreparation: this.preparation.waitingForPreparation,
       });
     }
     // Initial and unproved order changes retain their atomic publication contract.
@@ -337,8 +338,8 @@ export class SceneVisibilityReconciler {
   ): MountYieldReason | undefined {
     return stageVisibilitySlice(pending, slice, previewTransforms, {
       ...this.options,
-      pendingId: () => this.#preparation.pendingId,
-      waiting: () => this.#preparation.waiting,
+      pendingId: () => this.preparation.pendingId,
+      waiting: () => this.preparation.waiting,
       promoted: () => {
         const reason = this.stagePromoted(pending, slice, previewTransforms);
         publish?.(false);
@@ -376,7 +377,7 @@ export class SceneVisibilityReconciler {
   ): MountYieldReason | undefined {
     const result = stagePromotedVisibility(this.#promotedId, pending, slice, {
       ...this.options,
-      waiting: () => this.#preparation.waiting,
+      waiting: () => this.preparation.waiting,
       stage: (record) => this.stageEntry(pending, record, slice, previews),
       run: (entry, successor) => this.prepareRun({ band: entry.band, successor }),
     });
@@ -466,7 +467,7 @@ export class SceneVisibilityReconciler {
     previews: ReadonlyMap<string, PreviewTransform>,
     allowLocal = true,
   ): MountedSceneElement | undefined {
-    const entry = this.#preparation.stage(record, slice, previews.get(record.id), allowLocal);
+    const entry = this.preparation.stage(record, slice, previews.get(record.id), allowLocal);
     if (entry === undefined) return undefined;
     pending.entrants.set(record.id, entry);
     this.#entrantCapacity = recordReconciliationGrowth(
@@ -476,7 +477,6 @@ export class SceneVisibilityReconciler {
     );
     return entry;
   }
-
   private addMutation(
     cursor: ReconciliationCursor,
     entry: MountedSceneElement,

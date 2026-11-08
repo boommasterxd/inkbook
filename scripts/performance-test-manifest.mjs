@@ -25,6 +25,13 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/domain/export-pagination-work.test.ts",
+    "test/performance/persistence/export/export-geometry-work.test.ts",
+    "test/performance/persistence/export/static-export-fragments-work.test.ts",
+    "test/performance/obsidian/embeds/export/export-geometry-cache-work.test.ts",
+    "test/performance/obsidian/embeds/export/export-fragment-tree-work.test.ts",
+    "test/performance/obsidian/embeds/export/static-export-svg-work.test.ts",
+    "test/performance/obsidian/embeds/export/markdown-export-work.test.ts",
     "test/performance/rendering/scene/scene-surface-work.test.ts",
     "test/performance/domain/recognition/closed-refinement-work.test.ts",
     "test/performance/domain/recognition/closed-fit-work.test.ts",

@@ -25,6 +25,11 @@ import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
 import { PresentationLifecycleRegistry } from "../../../src/obsidian/embeds/presentation/presentation-lifecycle-registry";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
+import * as embedBindings from "../../../src/obsidian/embeds";
+import { WorkspaceRefreshProfiles } from "../../../src/obsidian/embeds/workspace/workspace-refresh-profiles";
+import { createMarkdownExportFixture } from "../../fixtures/obsidian/markdown-export";
+import { ManualHost } from "../../fixtures/scheduling/manual-frame-host";
+import { FRAME_WORK_SHARE } from "../../../src/domain/scheduling/work-scheduler";
 
 const TestTFile = TFile as unknown as new (path: string) => TFile;
 
@@ -262,4 +267,98 @@ describe("plugin host registration", () => {
     expect(registrations.editorExtensions).toHaveLength(1);
     expect(vaultEvents.size).toBe(0);
   });
+});
+
+describe("sectionless export refresh ownership", () => {
+  it.each([
+    { rate: 60, abort: false },
+    { rate: 120, abort: false },
+    { rate: 240, abort: false },
+    { rate: 120, abort: true },
+  ])("owns the target-window Auto profile at $rate Hz; abort=$abort", async ({ rate, abort }) => {
+    const { app } = createApp();
+    const plugin = new TestPlugin(app as never, {} as never);
+    const binding = vi.spyOn(embedBindings, "createReadingViewPostProcessor");
+    const acquire = vi.spyOn(WorkspaceRefreshProfiles.prototype, "acquire");
+    const release = vi.spyOn(WorkspaceRefreshProfiles.prototype, "release");
+    const deactivate = await activateInkbookPlugin(plugin);
+    const ports = binding.mock.calls[0]![0];
+    const fixture = createMarkdownExportFixture(
+      "!inkbook[[drawing.svg]]",
+      '<p>!inkbook<a href="drawing.svg">drawing.svg</a></p>',
+    );
+    const host = new ManualHost();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(host.requestFrame);
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(host.cancelFrame);
+    vi.spyOn(window.performance, "now").mockReturnValue(0);
+    const removedListeners = vi.spyOn(document, "removeEventListener");
+    let finish!: () => void;
+    const preparation = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    fixture.prepareStaticExport.mockImplementation(() => preparation);
+    const pending = Promise.resolve(
+      embedBindings.createReadingViewPostProcessor({
+        ...fixture.ports,
+        acquireSchedulingProfile: ports.acquireSchedulingProfile!,
+        workScheduler: ports.workScheduler,
+      })(fixture.root, fixture.context),
+    );
+    try {
+      await vi.waitFor(() => expect(fixture.prepareStaticExport).toHaveBeenCalledOnce());
+      expect(acquire).toHaveBeenCalledOnce();
+      expect(acquire.mock.calls[0]?.slice(1)).toEqual([window, document]);
+      const profiles = acquire.mock.contexts[0]!;
+      if (!(profiles instanceof WorkspaceRefreshProfiles))
+        throw new Error("Missing export profile owner.");
+      const scheduler = ports.workScheduler(window);
+      expect(profiles.status(window)).toEqual({ kind: "detecting", refreshRate: 120 });
+      expect(scheduler.budgetMs()).toBeCloseTo((1_000 / 120) * FRAME_WORK_SHARE);
+      expect(host.pendingFrames).toBe(1);
+      release.mockClear();
+      if (abort) {
+        fixture.unload();
+        expect(host.pendingFrames).toBe(0);
+      } else {
+        for (let frame = 0; frame < 19; frame += 1) host.frame(frame * (1_000 / rate));
+        expect(profiles.status(window)).toEqual({ kind: "detected", refreshRate: rate });
+        expect(scheduler.budgetMs()).toBeCloseTo((1_000 / rate) * FRAME_WORK_SHARE);
+      }
+      finish();
+      await pending;
+      expect(release).toHaveBeenCalledExactlyOnceWith(acquire.mock.calls[0]![0]);
+      expect(removedListeners.mock.calls.some(([type]) => type === "visibilitychange")).toBe(true);
+      expect(host.pendingFrames).toBe(0);
+      expect(fixture.root.querySelectorAll("svg[role='img']")).toHaveLength(abort ? 0 : 1);
+      fixture.unload();
+      expect(release).toHaveBeenCalledOnce();
+    } finally {
+      finish();
+      fixture.unload();
+      await pending;
+      deactivate?.();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it.each([
+    { source: "ordinary text", html: "<p>ordinary text</p>" },
+    { source: "!inkbook[[image.png]]", html: '<p>!inkbook<a href="image.png">image.png</a></p>' },
+  ])(
+    "does not acquire a profile without a supported candidate: $source",
+    async ({ source, html }) => {
+      const fixture = createMarkdownExportFixture(source, html);
+      const acquireSchedulingProfile = vi.fn(() => () => undefined);
+      try {
+        await embedBindings.createReadingViewPostProcessor({
+          ...fixture.ports,
+          acquireSchedulingProfile,
+        })(fixture.root, fixture.context);
+        expect(acquireSchedulingProfile).not.toHaveBeenCalled();
+        expect(fixture.prepareStaticExport).not.toHaveBeenCalled();
+      } finally {
+        fixture.unload();
+      }
+    },
+  );
 });

@@ -12,6 +12,7 @@ import type {
   InkElementV1,
   LinearElementV1,
   PointV1,
+  StrokeElementV1,
 } from "../../../domain/schema/public";
 import { MAX_ABSOLUTE_COORDINATE } from "../../../domain/schema/public";
 import { rotateLinearElement } from "./linear-transforms";
@@ -219,14 +220,7 @@ export function scaleElement(
       y: anchor.y + (point.y - anchor.y) * factors.y + translation.y,
     });
   if (element.kind === "stroke") {
-    const points = element.points.map((value, index) => {
-      if (index % 3 === 2) return value;
-      const origin = index % 3 === 0 ? anchor.x : anchor.y;
-      const factor = index % 3 === 0 ? factors.x : factors.y;
-      const shift = index % 3 === 0 ? translation.x : translation.y;
-      const offset = index % 3 === 0 ? (element.offset?.x ?? 0) : (element.offset?.y ?? 0);
-      return roundCanonical(origin + (value + offset - origin) * factor + shift);
-    });
+    const points = scaleStrokeSamples(element, anchor, factors, translation);
     const { offset: _offset, ...shape } = element;
     return { ...shape, points, pivot: scale(element.pivot) };
   }
@@ -290,6 +284,31 @@ export function scaleElement(
     height,
     pivot: canonicalPoint({ x: topLeft.x + width / 2, y: topLeft.y + height / 2 }),
   };
+}
+
+function scaleStrokeSamples(
+  stroke: StrokeElementV1,
+  anchor: PointV1,
+  factors: ScaleFactors,
+  translation: PointV1,
+): StrokeElementV1["points"] {
+  const source = stroke.points;
+  const points =
+    source instanceof Float64Array
+      ? new Float64Array(source.length)
+      : new Array<number>(source.length);
+  const { x, y } = anchor;
+  const offsetX = stroke.offset?.x ?? 0;
+  const offsetY = stroke.offset?.y ?? 0;
+  for (let index = 0; index < source.length; index += 3) {
+    points[index] = roundCanonical(x + (source[index]! + offsetX - x) * factors.x + translation.x);
+    points[index + 1] = roundCanonical(
+      y + (source[index + 1]! + offsetY - y) * factors.y + translation.y,
+    );
+    points[index + 2] = source[index + 2]!;
+  }
+  // The JSON schema exposes arrays; owned runtime samples also use Float64Array buffers.
+  return points as StrokeElementV1["points"];
 }
 
 function shouldTransformEndpoint(element: LinearElementV1, endpoint: "start" | "end"): boolean {

@@ -8,6 +8,10 @@ import type { ModelSyncWireRequest } from "./model-sync-wire";
 import type { DocumentRuntimeRequest, RuntimeSliceContext } from "../types";
 import { consumeSerializationSteps } from "../../../serialization/output/serialization-model-preparation";
 import { assertImportInkRequest } from "./ink-import-wire";
+import {
+  decodeExportGeometryRequest,
+  type ExportGeometryWireRequest,
+} from "./export-geometry-wire";
 
 export interface FullExportWireRequest extends Omit<
   Extract<DocumentRuntimeRequest, { type: "export-full" }>,
@@ -34,10 +38,12 @@ export type DocumentRuntimeWireRequest =
           | "export-incremental"
           | "model-sync-full"
           | "model-sync-incremental"
+          | "prepare-export-geometry"
           | "unlock";
       }
     >
   | FullExportWireRequest
+  | ExportGeometryWireRequest
   | IncrementalExportWireRequest
   | ModelSyncWireRequest
   | UnlockWireRequest;
@@ -57,6 +63,7 @@ function* decodeRuntimeRequestSteps(
   if (!isDocumentRuntimeWireRequest(request))
     throw new TypeError("Worker request does not match the runtime wire protocol.");
   if (request.type === "unlock") return decodeUnlockRequest(request);
+  if (request.type === "prepare-export-geometry") return decodeExportGeometryRequest(request);
   if (request.type === "import-ink") assertImportInkRequest(request);
   if (request.type === "prepare-scene-paths") {
     assertScenePathRequest(request);
@@ -119,6 +126,8 @@ export function runtimeRequestAdmissionHeader(
           : "model-sync-incremental",
     } as DocumentRuntimeRequest;
   if (request.type === "unlock") return { identity: request.identity, input: "", type: "unlock" };
+  if (request.type === "prepare-export-geometry")
+    return { identity: request.identity, input: "", type: "prepare-export-geometry" };
   return request;
 }
 

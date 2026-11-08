@@ -127,9 +127,11 @@ it("prepares a 10,000-line ancestry once and materializes only requested visible
   expect(session.update({ kind: "translate", delta: { x: 30, y: 40 } }).elements).toEqual([]);
   let checkpointVisits = store.instrumentation.reverseDependencyVisits;
   let yields = 0;
+  let checkpoints = 0;
   const scheduler = {
     ...immediateWorkScheduler(),
     checkpoint: () => {
+      checkpoints += 1;
       const visits = store.instrumentation.reverseDependencyVisits;
       expect(visits - checkpointVisits).toBeLessThanOrEqual(32);
       if (visits - checkpointVisits < 32) return undefined;
@@ -141,6 +143,10 @@ it("prepares a 10,000-line ancestry once and materializes only requested visible
   await expect(session.prepare(scheduler, new AbortController().signal)).resolves.toBe(true);
   expect(yields).toBeGreaterThan(300);
   expect(store.instrumentation.reverseDependencyVisits).toBe(9_999);
+  // Discovery stays recordwise; indegrees, ready entries and binding node/edge work group 32.
+  expect(checkpoints).toBeLessThanOrEqual(
+    2 * elements.length + 4 * Math.ceil(elements.length / 32) + 8,
+  );
   const get = vi.spyOn(store, "get");
   const rounding = vi.spyOn(Math, "round");
   try {

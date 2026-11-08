@@ -1,6 +1,10 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import { hasExactAttributes, parseOpeningTag, skipWhitespace } from "./svg-tag";
-import { validateDashArray, validatePathDataSteps } from "./path-data-validator";
+import {
+  validateDashArray,
+  validatePathDataSteps,
+  type PathValidationStepOptions,
+} from "./path-data-validator";
 import {
   CANONICAL_THEME_STYLESHEET,
   DOCUMENT_PALETTE,
@@ -104,6 +108,7 @@ function validateOptionalDecimals(attributes: ReadonlyMap<string, string>): bool
 export function* validatePathAttributesSteps(
   attributes: ReadonlyMap<string, string>,
   deadlineExceeded?: () => boolean,
+  observeCommand?: PathValidationStepOptions["observeCommand"],
 ): Generator<void, number | null> {
   if (
     attributes.size === 0 ||
@@ -117,10 +122,10 @@ export function* validatePathAttributesSteps(
   const pathResult =
     pathData === undefined
       ? null
-      : yield* validatePathDataSteps(
-          pathData,
-          deadlineExceeded === undefined ? {} : { deadlineExceeded },
-        );
+      : yield* validatePathDataSteps(pathData, {
+          ...(deadlineExceeded === undefined ? {} : { deadlineExceeded }),
+          ...(observeCommand === undefined ? {} : { observeCommand }),
+        });
   if (pathResult === null) {
     return null;
   }
@@ -328,9 +333,10 @@ export function validateEditableSafeSvgPrelude(prefix: string): SafeSvgPrelude |
 function* validateSafeSvgMetadataSteps(input: string): Generator<void, SafeSvgMetadata | null> {
   const rawMetadataBytes = yield* measureUtf8BytesSteps(input);
   if (rawMetadataBytes > MAXIMUM_METADATA_BYTES) return null;
-  const metadataText = yield* decodeMetadataTextSteps(input);
-  if (metadataText === null) return null;
-  const metadataBytes = yield* measureUtf8BytesSteps(metadataText);
+  const decoded = yield* decodeMetadataTextSteps(input);
+  if (decoded === null) return null;
+  const metadataText = decoded.text;
+  const metadataBytes = rawMetadataBytes - decoded.entityByteSavings;
   return metadataBytes > MAXIMUM_METADATA_BYTES ? null : { metadataBytes, metadataText };
 }
 

@@ -1,14 +1,15 @@
 import { parseOpeningTag } from "../../../persistence/documents/svg-tag";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { configurePreviewSvg } from "./safe-preview-svg";
+import { findStaticSvgTokenSteps } from "../../../persistence/export/static-svg-scanner";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
-const SCAN_UNITS = 16 * 1024;
 
 interface PreviewBuildOptions {
   readonly checkpoint: (initial?: boolean) => Promise<void> | undefined;
   readonly isCancelled: () => boolean;
   readonly workScheduler: WorkScheduler;
+  readonly configureElement?: (element: Element) => void;
 }
 
 /** Only accepts a completely validated safe-envelope SVG, without importing unvalidated markup. */
@@ -18,7 +19,7 @@ export async function createPreviewSvgAsync(
   options: PreviewBuildOptions,
 ): Promise<SVGSVGElement | undefined> {
   const exhausted = (): boolean => options.workScheduler.shouldYield();
-  const steps = buildPreviewSteps(ownerDocument, safeSvg, exhausted);
+  const steps = buildPreviewSteps(ownerDocument, safeSvg, exhausted, options.configureElement);
   let initial = true;
   while (true) {
     const pending = options.checkpoint(initial);
@@ -36,20 +37,31 @@ function* findToken(
   start: number,
   exhausted: () => boolean,
 ): Generator<void, number> {
-  for (let cursor = start; cursor < input.length; cursor += SCAN_UNITS) {
-    const chunk = input.slice(cursor, cursor + SCAN_UNITS + token.length - 1);
-    const offset = chunk.indexOf(token);
-    if (exhausted()) yield;
-    if (offset >= 0) return cursor + offset;
-  }
-  throw new Error("The validated Inkbook preview has incomplete markup.");
+  const offset = yield* findStaticSvgTokenSteps(input, token, start, exhausted);
+  if (offset < 0) throw new Error("The validated Inkbook preview has incomplete markup.");
+  return offset;
 }
 
-function appendElement(ownerDocument: Document, markup: string, parents: Element[]): Element {
+function appendElement(
+  ownerDocument: Document,
+  markup: string,
+  parents: Element[],
+  configureElement?: (element: Element) => void,
+): Element {
   const tag = parseOpeningTag(markup, 0);
   if (tag === null || !["svg", "g", "path"].includes(tag.name)) {
     throw new Error("The validated Inkbook preview has unexpected markup.");
   }
+  return appendParsedPreviewElement(ownerDocument, tag, parents, configureElement);
+}
+
+/** Creates one prevalidated SVG tag, sharing preview and export DOM ownership rules. */
+export function appendParsedPreviewElement(
+  ownerDocument: Document,
+  tag: NonNullable<ReturnType<typeof parseOpeningTag>>,
+  parents: Element[],
+  configureElement?: (element: Element) => void,
+): Element {
   const parent = parents[parents.length - 1];
   if (
     parent !== undefined &&
@@ -65,6 +77,7 @@ function appendElement(ownerDocument: Document, markup: string, parents: Element
   for (const [name, value] of tag.attributes) {
     element.setAttribute(name, value);
   }
+  configureElement?.(element);
   parent?.append(element);
   if (!tag.selfClosing) parents.push(element);
   return element;
@@ -74,6 +87,7 @@ function* buildPreviewSteps(
   ownerDocument: Document,
   safeSvg: string,
   exhausted: () => boolean,
+  configureElement?: (element: Element) => void,
 ): Generator<void, SVGSVGElement> {
   const parents: Element[] = [];
   let root: SVGSVGElement | undefined;
@@ -93,7 +107,7 @@ function* buildPreviewSteps(
       if (parents.length === 0) break;
       continue;
     }
-    const element = appendElement(ownerDocument, markup, parents);
+    const element = appendElement(ownerDocument, markup, parents, configureElement);
     root ??= element as SVGSVGElement;
     if (exhausted()) yield;
   }

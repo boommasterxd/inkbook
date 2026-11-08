@@ -15,6 +15,7 @@ export interface ChunkedInkbookInputOptions {
   readonly signal?: AbortSignal;
   readonly safeStaticProof?: SafeStaticProof;
   readonly sampleEncodingCache?: StrokeSampleEncodingCache;
+  readonly nativeExportHash?: boolean;
 }
 
 export class ChunkedInputCancelledError extends Error {

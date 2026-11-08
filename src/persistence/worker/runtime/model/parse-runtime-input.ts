@@ -5,6 +5,7 @@ import type { StrokeSampleEncodingCache } from "../../../serialization/metadata/
 import { SafeStaticProof } from "../../../serialization/input/safe-static-proof";
 import { hashRuntimeInput } from "./runtime-input-hash";
 import { isNativeUint8Array } from "../../../serialization/transfer-array";
+import { writeRuntimeInput } from "./runtime-input-writing";
 
 export async function parseRuntimeInput(
   input: string | Uint8Array,
@@ -28,8 +29,7 @@ export async function parseRuntimeInput(
     ...(sampleEncodingCache === undefined ? {} : { sampleEncodingCache }),
     ...(matchingProof === undefined ? {} : { safeStaticProof: matchingProof }),
   });
-  if (typeof input === "string") await writeStringInput(parser, input, inputWriteChunk);
-  else await writeByteInput(parser, input, inputWriteChunk);
+  await writeRuntimeInput(parser, input, inputWriteChunk);
   return parser.finish();
 }
 
@@ -47,31 +47,4 @@ async function matchRuntimePreviewProof(
   const hash = await hashRuntimeInput(input, context, proof.totalBytes);
   context?.signal.throwIfAborted();
   return hash === proof.outputHash ? proof : undefined;
-}
-
-async function writeByteInput(
-  parser: ChunkedInkbookInputParser,
-  input: Uint8Array,
-  chunkBytes: number,
-): Promise<void> {
-  for (let offset = 0; offset < input.byteLength; offset += chunkBytes) {
-    const written = await parser.write(input.subarray(offset, offset + chunkBytes));
-    if (!written.ok) return;
-  }
-}
-
-async function writeStringInput(
-  parser: ChunkedInkbookInputParser,
-  input: string,
-  chunkCodeUnits: number,
-): Promise<void> {
-  const encoder = new TextEncoder();
-  for (let offset = 0; offset < input.length;) {
-    let end = Math.min(input.length, offset + chunkCodeUnits);
-    const trailing = input.charCodeAt(end - 1);
-    if (end < input.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
-    const written = await parser.write(encoder.encode(input.slice(offset, end)));
-    if (!written.ok) return;
-    offset = end;
-  }
 }

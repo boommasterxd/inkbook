@@ -24,7 +24,7 @@ const COMMAND_ARITY = {
   Z: 0,
 } as const;
 
-type PathCommand = keyof typeof COMMAND_ARITY;
+export type PathCommand = keyof typeof COMMAND_ARITY;
 
 export interface PathValidationResult {
   readonly commands: number;
@@ -35,6 +35,14 @@ export interface PathValidationStepOptions {
   readonly bytesPerStep?: number;
   readonly commandsPerStep?: number;
   readonly deadlineExceeded?: () => boolean;
+  /** Values are borrowed until this callback returns; coordinates are in SVG units. */
+  readonly observeCommand?: (
+    command: PathCommand,
+    values: readonly number[],
+    startY: number,
+    endY: number,
+    startX: number,
+  ) => void;
 }
 
 function isSeparator(character: string): boolean {
@@ -67,12 +75,12 @@ function readNumber(
     const fractionStart = cursor;
     while (isDigit(path[cursor]) && cursor - fractionStart < 3) cursor += 1;
     if (cursor === fractionStart || isDigit(path[cursor])) return null;
+    if (path[cursor - 1] === "0") return null;
   }
   const token = path.slice(offset, cursor);
   const value = Number(token);
-  return Number.isFinite(value) &&
-    Math.abs(value) <= MAXIMUM_COORDINATE &&
-    serializeCanonicalDecimal(value) === normalizeFractionToken(token)
+  // Bounded fixed-point grammar is canonical unless its fraction ends in zero or it is -0.
+  return Number.isFinite(value) && Math.abs(value) <= MAXIMUM_COORDINATE && !Object.is(value, -0)
     ? { next: cursor, value }
     : null;
 }
@@ -126,6 +134,7 @@ class PathValidationMachine {
   readonly #commandsPerStep: number;
   readonly #deadline: (() => boolean) | undefined;
   readonly #path: string;
+  readonly #observeCommand: PathValidationStepOptions["observeCommand"];
   readonly #values: number[] = [];
   #activeCommand: PathCommand | undefined;
   #previousCommand: PathCommand | undefined;
@@ -153,6 +162,7 @@ class PathValidationMachine {
     this.#bytesPerStep = bytesPerStep;
     this.#commandsPerStep = commandsPerStep;
     this.#deadline = options.deadlineExceeded;
+    this.#observeCommand = options.observeCommand;
   }
 
   public runSlice(): PathValidationResult | null | undefined {
@@ -253,7 +263,16 @@ class PathValidationMachine {
     if (command === "M") this.#subpathOpen = true;
     else if (!this.#subpathOpen) return "invalid";
     if (command === "Z") this.#subpathOpen = false;
+    const startY = this.#currentY;
+    const startX = this.#currentX;
     if (!this.#updatePosition(command)) return "invalid";
+    this.#observeCommand?.(
+      command,
+      this.#values,
+      startY / 1000,
+      this.#currentY / 1000,
+      startX / 1000,
+    );
     this.#previousCommand = command;
     this.#activeCommand = undefined;
     this.#values.length = 0;
@@ -340,16 +359,7 @@ export function validateDashArray(value: string): boolean {
   return values.every((entry) => entry !== null) && values.some((entry) => entry !== 0);
 }
 
-function serializeCanonicalDecimal(value: number): string {
-  return Object.is(value, -0) ? "0" : value.toString();
-}
-
 /** Integer thousandths keep chained relative coordinates exact at the boundary. */
 function coordinateUnits(value: number): number {
   return Math.round(value * 1000);
-}
-
-function normalizeFractionToken(token: string): string {
-  if (token.startsWith(".")) return `0${token}`;
-  return token.startsWith("-.") ? `-0${token.slice(1)}` : token;
 }

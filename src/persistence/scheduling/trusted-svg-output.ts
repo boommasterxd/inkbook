@@ -2,7 +2,10 @@ import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 import { validateSafeSvgSteps, type SafeSvgValidation } from "../documents/safe-svg-validator";
 import type { SafeSvgVersionPolicy } from "../documents/svg-envelope-root";
 import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
-import { hashExactUtf8Output } from "../serialization/output/chunked-output-assembler";
+import {
+  hashExactUtf8Output,
+  MAX_NATIVE_HASH_BYTES,
+} from "../serialization/output/chunked-output-assembler";
 import { SafeStaticProof } from "../serialization/input/safe-static-proof";
 import { isNativeArrayBuffer } from "../serialization/transfer-array";
 
@@ -11,7 +14,6 @@ import { createMainThreadCheckpoint } from "./main-thread-checkpoint";
 
 const HASH = /^[0-9a-f]{64}$/u;
 const DEFAULT_CHUNK_BYTES = 64 * 1024;
-const MAX_NATIVE_HASH_BYTES = 20 * 1024 * 1024;
 
 export interface TrustedSvgOutput {
   readonly content: string;

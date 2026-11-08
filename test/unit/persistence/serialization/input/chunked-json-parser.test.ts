@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   ChunkedJsonCancelledError,
@@ -79,6 +79,21 @@ describe("chunked JSON semantics", () => {
     });
 
     expect(result).toBe("\n".repeat(decodedCharacters));
+  });
+
+  it("copies literal and escaped Unicode without iterating typed scratch buffers", async () => {
+    const scratch = vi.spyOn(Uint16Array.prototype, Symbol.iterator);
+    try {
+      expect(await parse('{"plain":"ä😀"}')).toEqual({ plain: "ä😀" });
+      expect(scratch).not.toHaveBeenCalled();
+      const input = JSON.stringify({ boundary: "x".repeat(80) + "\n" + "ä😀\ud800" });
+      expect(
+        await parseChunkedJson(input, { batchCharacters: 16, limits: GENEROUS_LIMITS }),
+      ).toEqual(JSON.parse(input) as unknown);
+      expect(scratch).not.toHaveBeenCalled();
+    } finally {
+      scratch.mockRestore();
+    }
   });
 });
 
@@ -209,15 +224,15 @@ describe("chunked JSON cancellation", () => {
     );
   });
 
-  it("cancels after a checkpoint without returning a partial result", async () => {
+  it("cancels at a string decoding checkpoint without returning a partial result", async () => {
     const controller = new AbortController();
     let checkpoints = 0;
 
-    const operation = parseChunkedJson('["first","second","third"]', {
-      batchCharacters: 4,
+    const operation = parseChunkedJson('"abcdef"', {
+      batchCharacters: 8,
       checkpoint: () => {
         checkpoints += 1;
-        controller.abort("must not escape");
+        if (checkpoints === 2) controller.abort("must not escape");
         return Promise.resolve();
       },
       limits: GENEROUS_LIMITS,
@@ -225,7 +240,7 @@ describe("chunked JSON cancellation", () => {
     });
 
     await expect(operation).rejects.toBeInstanceOf(ChunkedJsonCancelledError);
-    expect(checkpoints).toBe(1);
+    expect(checkpoints).toBe(2);
   });
 
   it("does not misclassify checkpoint failures", async () => {
