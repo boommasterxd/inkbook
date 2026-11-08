@@ -2,18 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   chooseExportCut,
   prepareExportCutsSteps,
+  type ExportInterval,
 } from "../../../src/domain/export/export-pagination";
 import { consumeSerializationSteps } from "../../../src/persistence/serialization/output/serialization-model-preparation";
 import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 
-it("queries one earlier clear export cut logarithmically without rereading 10,000 intervals", async () => {
+function observedIntervals(fixed: readonly ExportInterval[]) {
   let reads = 0;
-  const fixed = [
-    { minY: 298, maxY: 502 },
-    { minY: 900, maxY: 2_000 },
-    { minY: 1_060, maxY: 1_110 },
-    { minY: 1_080, maxY: 1_130 },
-  ];
   const intervals = Array.from({ length: 10_000 }, (_, index) => ({
     get minY() {
       reads += 1;
@@ -24,8 +19,23 @@ it("queries one earlier clear export cut logarithmically without rereading 10,00
       return fixed[index]?.maxY ?? 5_005 + index * 10;
     },
   }));
-  const prepared = await consumeSerializationSteps(prepareExportCutsSteps(intervals), {});
-  expect(reads).toBe(20_000);
+  return {
+    intervals,
+    get reads() {
+      return reads;
+    },
+  };
+}
+
+it("queries one earlier clear export cut logarithmically without rereading 10,000 intervals", async () => {
+  const observed = observedIntervals([
+    { minY: 298, maxY: 502 },
+    { minY: 900, maxY: 2_000 },
+    { minY: 1_060, maxY: 1_110 },
+    { minY: 1_080, maxY: 1_130 },
+  ]);
+  const prepared = await consumeSerializationSteps(prepareExportCutsSteps(observed.intervals), {});
+  expect(observed.reads).toBe(20_000);
   expect(prepared.instrumentation.eventCount).toBe(20_000);
   // Each of the regular and fallback queries uses two binary searches and one range minimum.
   const maximumVisits = 8 * Math.ceil(Math.log2(20_001)) + 8;
@@ -42,29 +52,18 @@ it("queries one earlier clear export cut logarithmically without rereading 10,00
     const before = prepared.instrumentation.queryVisits;
     expect(chooseExportCut(prepared, options)).toBe(expected);
     expect(prepared.instrumentation.queryVisits - before).toBeLessThanOrEqual(maximumVisits);
-    expect(reads).toBe(20_000);
+    expect(observed.reads).toBe(20_000);
   }
 });
 
 it("compares clearance-adjusted candidates logarithmically at 10,000 intervals", async () => {
-  let reads = 0;
-  const fixed = [
+  const observed = observedIntervals([
     ...Array.from({ length: 4 }, () => ({ minY: 100, maxY: 120 })),
     { minY: 100, maxY: 200 },
     { minY: 140, maxY: 200 },
-  ];
-  const intervals = Array.from({ length: 10_000 }, (_, index) => ({
-    get minY() {
-      reads += 1;
-      return fixed[index]?.minY ?? 5_000 + index * 10;
-    },
-    get maxY() {
-      reads += 1;
-      return fixed[index]?.maxY ?? 5_005 + index * 10;
-    },
-  }));
-  const prepared = await consumeSerializationSteps(prepareExportCutsSteps(intervals), {});
-  expect(reads).toBe(20_000);
+  ]);
+  const prepared = await consumeSerializationSteps(prepareExportCutsSteps(observed.intervals), {});
+  expect(observed.reads).toBe(20_000);
   const maximumVisits = 4 * Math.ceil(Math.log2(prepared.instrumentation.eventCount + 1)) + 4;
   for (const { limit, expected } of [
     { limit: 130, expected: 130 },
@@ -81,7 +80,7 @@ it("compares clearance-adjusted candidates logarithmically at 10,000 intervals",
       }),
     ).toBe(expected);
     expect(prepared.instrumentation.queryVisits - before).toBeLessThanOrEqual(maximumVisits);
-    expect(reads).toBe(20_000);
+    expect(observed.reads).toBe(20_000);
   }
 });
 
