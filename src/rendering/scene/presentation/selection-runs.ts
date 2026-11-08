@@ -211,32 +211,39 @@ export class SceneSelectionRuns {
     this.#plan = undefined;
     this.#version = undefined;
   }
+  /** Retires the old cohort only; true means complete, false preserves pending ownership. */
+  /** False only while eligible inactive cleanup still needs the shared slice. */
+  public cleanupInactive(deadline: number, now: () => number): boolean {
+    if (this.#feedback.committing || this.#feedback.active) return true;
+    if (this.#retire && !this.#cleaning) this.invalidate();
+    if (!this.#cleaning) return true;
+    if (
+      !this.groups.cleanup(deadline, now, (entry) => {
+        this.#width.release(entry);
+        this.#traces.releaseMember(entry);
+      })
+    )
+      return false;
+    this.#traces.cleanup();
+    this.#plan = undefined;
+    this.#planning?.cancel();
+    this.#planning = undefined;
+    this.#cleaning = false;
+    this.#exceptions.clear();
+    this.#targets.discard();
+    this.#feedback.cohortReleased();
+    this.#retire = false;
+    this.#rebase.clear();
+    this.restart();
+    return true;
+  }
   public prepare(
     deadline: number,
     now: () => number,
     publication: ScenePublicationBudget,
   ): boolean {
     if (this.#feedback.committing || this.#feedback.active) return this.pending;
-    if (this.#cleaning) {
-      if (
-        !this.groups.cleanup(deadline, now, (entry) => {
-          this.#width.release(entry);
-          this.#traces.releaseMember(entry);
-        })
-      )
-        return true;
-      this.#traces.cleanup();
-      this.#plan = undefined;
-      this.#planning?.cancel();
-      this.#planning = undefined;
-      this.#cleaning = false;
-      this.#exceptions.clear();
-      this.#targets.discard();
-      this.#feedback.cohortReleased();
-      this.#retire = false;
-      this.#rebase.clear();
-      this.restart();
-    }
+    if (!this.cleanupInactive(deadline, now)) return true;
     while (this.#planning !== undefined && !this.#planning.done && now() < deadline)
       this.#planning.step();
     if (this.#plan === undefined && this.#planning?.done) {

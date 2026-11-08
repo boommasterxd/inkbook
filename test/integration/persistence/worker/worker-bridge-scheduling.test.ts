@@ -10,6 +10,7 @@ import {
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { TestWorkerEndpoint } from "../../../fixtures/persistence/worker-endpoint";
 import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
+import * as wireCodec from "../../../../src/persistence/worker/runtime/wire/wire-codec";
 
 function fullExportRequest() {
   return {
@@ -31,9 +32,47 @@ function isExportRequest(message: unknown): boolean {
     typeof message.request === "object" &&
     message.request !== null &&
     "type" in message.request &&
-    message.request.type === "export-full"
+    message.request.type === "export-full-wire"
   );
 }
+
+it.each(["drawing", "navigation"] as const)(
+  "rechecks %s admission after encoding and before publishing the worker transfer",
+  async (activity) => {
+    const endpoint = new TestWorkerEndpoint();
+    const client = createWorkerBridgeClient(endpoint);
+    const setActive = (active: boolean) =>
+      activity === "drawing"
+        ? client.setLiveInputActive(active)
+        : client.setNavigationActive(active);
+    const original = wireCodec.encodeRuntimeRequestChunked;
+    const encode = vi
+      .spyOn(wireCodec, "encodeRuntimeRequestChunked")
+      .mockImplementation(async (...args) => {
+        const encoded = await original(...args);
+        setActive(true);
+        return encoded;
+      });
+    const pending = client.execute(fullExportRequest());
+    try {
+      await encode.mock.results[0]!.value;
+      await Promise.resolve();
+      expect(endpoint.sentMessages).not.toContainEqual(
+        expect.objectContaining({ type: "inkbook-worker-request" }),
+      );
+      setActive(false);
+      await vi.waitFor(() =>
+        expect(endpoint.sentMessages).toContainEqual(
+          expect.objectContaining({ type: "inkbook-worker-request" }),
+        ),
+      );
+    } finally {
+      encode.mockRestore();
+      client.terminate();
+      await expect(pending).rejects.toThrow("Document worker failed");
+    }
+  },
+);
 
 describe("document worker export admission", () => {
   it("uses frame admission for incremental export and background admission for verification", async () => {

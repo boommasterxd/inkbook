@@ -91,6 +91,7 @@ export class SvgSceneRenderer {
         onPathsReady: () => this.#frames.schedule(),
         scheduler: this.#scheduler,
         zoom: () => this.#camera.zoom,
+        canPrepareGeometry: () => this.#visibilityCoordinator.allowsMountedGeometryPreparation,
         takePreparedPath: (record) => this.#visibilityCoordinator.takePreparedPath(record),
       },
     );

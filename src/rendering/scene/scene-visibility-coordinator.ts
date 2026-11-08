@@ -80,6 +80,10 @@ export class SceneVisibilityCoordinator {
     return this.#queryPending;
   }
 
+  public get allowsMountedGeometryPreparation(): boolean {
+    return !this.waitForQuiet();
+  }
+
   public constructor(
     content: SceneContentRenderer,
     visibility: SceneVisibilityState,
@@ -403,6 +407,7 @@ export class SceneVisibilityCoordinator {
       () => {
         if (this.#released || this.#backgroundWait !== wait) return;
         this.#backgroundWait = undefined;
+        if (this.#content.hasPendingWork) this.navigationOptions?.onPrepared();
         this.scheduleNavigationFrame();
       },
       () => {

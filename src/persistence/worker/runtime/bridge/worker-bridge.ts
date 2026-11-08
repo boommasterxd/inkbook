@@ -258,6 +258,8 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
         signal: pending.abortController.signal,
         reusePoints: this.#pointReferences.encoder(request),
       });
+      const publicationAdmission = checkpoint();
+      if (publicationAdmission !== undefined) await publicationAdmission;
       pending.abortController.signal.throwIfAborted();
       this.#publishSchedulingProfile();
       pending.watchdog = this.#createWatchdog(() => this.#timeoutRequest(requestId, pending));
@@ -283,7 +285,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
 
   async #adoptResult(message: BridgeSuccess, pending: PendingBridgeRequest): Promise<void> {
     try {
-      const decodeCheckpoint = this.#createMainThreadCheckpoint(pending, true);
+      const decodeCheckpoint = this.#createMainThreadCheckpoint(pending);
       const admission = decodeCheckpoint();
       if (admission !== undefined) await admission;
       const result = await decodeRuntimeResultChunked(message.result, {
@@ -353,7 +355,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   }
 
   #adoptScenePaths(message: BridgeScenePaths, pending: PendingBridgeRequest): void {
-    const checkpoint = this.#createMainThreadCheckpoint(pending, true);
+    const checkpoint = this.#createMainThreadCheckpoint(pending);
     void pending.sceneReceiver
       .adopt(message, pending.request, pending.observer, pending.abortController.signal, checkpoint)
       .then(
@@ -450,10 +452,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     this.#navigationGate.notifyInactive();
   }
 
-  #createMainThreadCheckpoint(
-    requestState: PendingBridgeRequest,
-    adoption = false,
-  ): () => Promise<void> | undefined {
+  #createMainThreadCheckpoint(requestState: PendingBridgeRequest): () => Promise<void> | undefined {
     const signal = requestState.abortController.signal;
     return createMainThreadRequestCheckpoint(
       {
@@ -464,7 +463,6 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
       },
       signal,
       requestState.request,
-      adoption,
     );
   }
   #updateRequestGate(pending: PendingBridgeRequest): void {

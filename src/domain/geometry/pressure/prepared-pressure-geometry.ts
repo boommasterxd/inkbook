@@ -35,3 +35,9 @@ export interface PreparedPressureGeometryPort {
   /** May return the measured numeric payload of this exact window. */
   publishWindow(windowIndex: number, window: PressureWindow): PressureWindowMeasurement | void;
 }
+
+/** Contour preparation may reuse full geometry, but publishes only its complete path. */
+export type PreparedPressurePathCache = Pick<
+  PreparedPressureGeometryPort,
+  "readCenters" | "readPath" | "readWindow" | "readWindowMeasurement" | "publishPath"
+>;

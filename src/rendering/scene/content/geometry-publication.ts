@@ -24,9 +24,7 @@ import {
 } from "./mounted-element";
 import type { ScenePathCache } from "./path-cache";
 import { sameStrokeShape } from "./stroke-position";
-
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
-
 interface GeometryPublicationPorts {
   readonly prepareGeometry: (
     record: SceneElementRecord,
@@ -44,7 +42,6 @@ interface GeometryPublicationPorts {
   readonly selectionRuns: SceneSelectionRuns;
   readonly selectionTraces: SceneSelectionTraces;
 }
-
 /** Owns mounted dirty queues and canonical geometry publication under one shared deadline. */
 export class SceneGeometryPublication {
   readonly #selectionDirty = new Set<string>();
@@ -101,6 +98,9 @@ export class SceneGeometryPublication {
   public get hasSelectionWork(): boolean {
     return this.#selectionDirty.size > 0;
   }
+  public get hasGeometryWork(): boolean {
+    return this.#geometryDirty.size > 0;
+  }
   public memoryUsage(): number {
     return (
       this.#committedGeometry.memoryUsage() +
@@ -154,7 +154,7 @@ export class SceneGeometryPublication {
     admittedFirstStep = false,
   ): boolean {
     this.#waitingForPaths = false;
-    const groupFirst = this.#ports.selectionRuns.committing && this.#preferGroupGeometry;
+    const groupFirst = this.#preferGroupGeometry;
     if (this.#ports.selectionRuns.committing) this.#preferGroupGeometry = !groupFirst;
     if (
       this.#ports.selectionRuns.committing &&
@@ -233,6 +233,7 @@ export class SceneGeometryPublication {
     if (now() >= deadline && !admittedFirstStep) return this.hasMountedWork;
     let geometryPending = false;
     if (this.#geometryDirty.size > 0) {
+      if (!this.#ports.selectionRuns.cleanupInactive(deadline, now)) return true;
       geometryPending = writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
         this.writeGeometry(id, deadline, now, publication),
       );
@@ -484,7 +485,7 @@ export class SceneGeometryPublication {
     if (entry === undefined || record === undefined || entry.paintVersion === record.paintVersion)
       return;
     updateMountedPaint(entry, record, entry.pathParts, this.#ports.instrumentation);
-    entry.displayedElement = record.element;
+    if (entry.geometryVersion === record.geometryVersion) entry.displayedElement = record.element;
     this.#ports.selectionRuns.update(entry);
     if (
       !this.#ports.selectionTraces.update(

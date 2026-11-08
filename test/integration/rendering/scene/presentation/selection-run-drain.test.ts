@@ -16,6 +16,17 @@ import {
 
 afterEach(() => vi.restoreAllMocks());
 
+function cullAndReenter(f: ReturnType<typeof fixture>): void {
+  f.renderer.setViewport({ left: 0, top: 100_000, width: 2048, height: 1000 });
+  f.scheduler.runAll(1000);
+  expect(f.renderer.mountedCount).toBe(0);
+  expect(f.scheduler.pendingCount).toBe(0);
+  f.renderer.setViewport({ left: 0, top: 0, width: 2048, height: 1000 });
+  f.scheduler.runAll(1000);
+  expect(f.renderer.mountedCount).toBe(f.elements.length);
+  expectCanonical(f);
+}
+
 it("finishes a draining resize after deletion and reordered paint without resurrecting retired members", () => {
   const f = draining();
   try {
@@ -40,18 +51,7 @@ it("finishes a draining resize after deletion and reordered paint without resurr
 it("culls and reenters a draining cohort with canonical geometry and committed paint order", () => {
   const f = draining();
   try {
-    f.renderer.setViewport({
-      left: 0,
-      top: 100_000,
-      width: 2048,
-      height: 1000,
-    });
-    f.scheduler.runAll(1000);
-    expect(f.renderer.mountedCount).toBe(0);
-    f.renderer.setViewport({ left: 0, top: 0, width: 2048, height: 1000 });
-    f.scheduler.runAll(1000);
-    expect(f.renderer.mountedCount).toBe(f.elements.length);
-    expectCanonical(f);
+    cullAndReenter(f);
   } finally {
     f.geometry.mockRestore();
     f.renderer.destroy();
@@ -138,6 +138,22 @@ it("cancels a live resize back to canonical geometry and releases draining owner
     expect(f.renderer.mountedCount).toBe(0);
     expect(f.renderer.memoryUsage().motionCacheBytes).toBe(0);
     expect(f.renderer.memoryUsage().pathCacheBytes).toBeLessThan(stableMemory);
+  } finally {
+    f.renderer.destroy();
+    f.port.release();
+  }
+});
+
+it("retires structure-invalidated feedback after cancelling the same selection before culling", () => {
+  const f = fixture();
+  try {
+    startSelectionResize(f);
+    const rearranged = f.selected[f.selected.length - 1]!;
+    f.renderer.applyDelta({
+      affected: sceneDeltaEntries(f.store.arrange(new Set([rearranged.id]), "send-to-back")!),
+    });
+    f.renderer.clearProgressiveElementPreviews();
+    cullAndReenter(f);
   } finally {
     f.renderer.destroy();
     f.port.release();

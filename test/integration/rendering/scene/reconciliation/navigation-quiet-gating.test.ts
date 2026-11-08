@@ -3,7 +3,9 @@ import { ElementStore } from "../../../../../src/domain/store/public";
 import { InteractiveWorkPriority } from "../../../../../src/editor/session/interactive-work-priority";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
-import { createSceneFixture } from "../../../../fixtures/rendering/scene";
+import { createSceneFixture, sceneDeltaEntries } from "../../../../fixtures/rendering/scene";
+import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
+import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
 
@@ -32,6 +34,13 @@ function setup() {
   return { ...scene, domain, elements, store, priority, releaseLease, wait };
 }
 
+function disposeFixture(fixture: ReturnType<typeof setup>, builds: { mockRestore(): void }): void {
+  builds.mockRestore();
+  fixture.renderer.destroy();
+  fixture.priority.dispose();
+  fixture.store.release();
+}
+
 async function flushLeaseRelease(fixture: ReturnType<typeof setup>): Promise<void> {
   fixture.releaseLease();
   await fixture.wait.mock.results[0]!.value;
@@ -58,10 +67,7 @@ it("publishes required geometry during a history lease and starts reserve geomet
     expect(fixture.domain.instrumentation.snapshotMaterializations).toBe(0);
     expect(fixture.domain.instrumentation.bandScans).toBe(0);
   } finally {
-    builds.mockRestore();
-    fixture.renderer.destroy();
-    fixture.priority.dispose();
-    fixture.store.release();
+    disposeFixture(fixture, builds);
   }
   expect(fixture.scheduler.pendingCount).toBe(0);
   expect(fixture.renderer.memoryUsage().pathCacheBytes).toBe(0);
@@ -85,11 +91,47 @@ it.each(["dispose", "pressure"] as const)(
       expect(builds).toHaveBeenCalledOnce();
       expect(fixture.scheduler.pendingCount).toBe(0);
     } finally {
-      builds.mockRestore();
-      fixture.renderer.destroy();
-      fixture.priority.dispose();
-      fixture.store.release();
+      disposeFixture(fixture, builds);
     }
     expect(fixture.renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
   },
 );
+
+it("resumes parked canonical geometry after overlapping leases without requiring reserve work", async () => {
+  const fixture = setup();
+  const builds = vi.spyOn(ScenePathCache.prototype, "startPreparation");
+  let releaseNext: (() => void) | undefined;
+  try {
+    fixture.renderer.setViewport({ height: 100, left: 0, top: 400, width: 100 });
+    fixture.scheduler.runAll();
+    fixture.renderer.setDocumentPrewarmEnabled(false);
+    fixture.renderer.setActiveDocumentMemoryPressure(true);
+    const source = fixture.elements[0]!;
+    const replacement = { ...source, points: [20, 450, 0.25, 21, 450, 1] };
+    const delta = fixture.domain.replace(source.id, replacement)!;
+    builds.mockClear();
+    fixture.renderer.applyDelta({ affected: sceneDeltaEntries(delta) });
+    fixture.scheduler.runAll();
+    expect(builds).not.toHaveBeenCalled();
+    expect(fixture.scheduler.pendingCount).toBe(0);
+    releaseNext = fixture.priority.begin();
+    fixture.releaseLease();
+    await Promise.resolve();
+    fixture.scheduler.runAll();
+    expect(builds).not.toHaveBeenCalled();
+    expect(fixture.scheduler.pendingCount).toBe(0);
+    releaseNext();
+    await fixture.wait.mock.results[0]!.value;
+    expect(fixture.scheduler.pendingCount).toBe(1);
+    fixture.scheduler.runAll();
+    expect(builds).toHaveBeenCalledOnce();
+    expect(fixture.renderer.mountedIds("content")).toEqual([source.id]);
+    const content = fakeNode(fixture.renderer.svg).nodes[1]!.nodes[4]!;
+    expect(content.nodes[0]!.attributes.get("d")).toBe(buildElementPathParts(replacement)[0]!.d);
+    expect(fixture.scheduler.pendingCount).toBe(0);
+  } finally {
+    releaseNext?.();
+    disposeFixture(fixture, builds);
+  }
+  expect(fixture.renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+});

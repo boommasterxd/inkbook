@@ -277,10 +277,10 @@ export class RemoteScenePaths {
       this.prune();
       // Collection may have parked required mounting at a shared checkpoint.
       if (deferred) this.options.onReady?.();
-    } else this.dispatch(batch);
+    } else if (!this.dispatch(batch) && deferred) this.options.onReady?.();
   }
 
-  private dispatch(batch: Batch): void {
+  private dispatch(batch: Batch): boolean {
     batch.started = true;
     const visible = [...batch.versions.keys()].filter((id) => batch.viewportIds.has(id));
     const overscan = [...batch.versions.keys()].filter((id) => !batch.viewportIds.has(id));
@@ -288,7 +288,7 @@ export class RemoteScenePaths {
     const versions = new Map(batch.versions);
     batch.versions.clear();
     for (const id of ids) batch.versions.set(id, versions.get(id)!);
-    void this.store.prepareScenePaths!(ids, batch.controller.signal, {
+    const pending = this.store.prepareScenePaths!(ids, batch.controller.signal, {
       visibleCount: visible.length,
       maxBytes: batch.maxBytes,
       onProgress: (paths) => this.enqueue(batch, paths),
@@ -296,10 +296,17 @@ export class RemoteScenePaths {
         batch.retarget = handler;
         if (handler !== undefined) this.retarget(batch);
       },
-    }).then(
+    });
+    if (pending === undefined) {
+      batch.pending = false;
+      batch.terminal = true;
+      return false;
+    }
+    void pending.then(
       (paths) => this.enqueue(batch, paths ?? [], true),
       () => this.fail(batch),
     );
+    return true;
   }
 
   private enqueue(batch: Batch, paths: readonly PreparedScenePathEntry[], terminal = false): void {

@@ -22,6 +22,7 @@ import { mountedPreviewIds } from "./presentation/preview-transform-selection";
 import type { PreviewMembershipContext } from "./types";
 import type { ScenePreparationOptions } from "./reconciliation/reconciliation-state";
 type ContentOptions = ScenePreparationOptions & {
+  readonly canPrepareGeometry?: () => boolean;
   readonly zoom?: () => number;
 };
 import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priority";
@@ -81,15 +82,26 @@ export class SceneContentRenderer {
       visible: (id) => this.#visibility.contains(id),
       syncTrace: (entry) => this.#selectionTraces.transform(entry.id, entry),
     });
+    let waitingForGeometryAdmission = false;
     this.#publication = new SceneGeometryPublication({
-      prepareGeometry: (record, deadline, now, preemptLocal) =>
-        this.#reconciler.preparation.prepare(
+      prepareGeometry: (record, deadline, now, preemptLocal) => {
+        if (
+          !preemptLocal &&
+          (!this.#visibility.contains(record.id) || options.canPrepareGeometry?.() === false)
+        ) {
+          waitingForGeometryAdmission = true;
+          this.#reconciler.preparation.pauseLocal(record.id);
+          return undefined;
+        }
+        waitingForGeometryAdmission = false;
+        return this.#reconciler.preparation.prepare(
           record,
           new MountSlice(deadline, now),
           true,
           preemptLocal,
-        ),
-      waitingForPaths: () => this.#reconciler.preparation.waiting,
+        );
+      },
+      waitingForPaths: () => waitingForGeometryAdmission || this.#reconciler.preparation.waiting,
       releaseGeometry: (id, version) => this.#reconciler.preparation.finish(id, version),
       dom,
       mounted: this.#mounted,
@@ -217,6 +229,9 @@ export class SceneContentRenderer {
   }
   public get hasMountedWork(): boolean {
     return this.#publication.hasMountedWork;
+  }
+  public get hasGeometryWork(): boolean {
+    return this.#publication.hasGeometryWork;
   }
   public get hasVisibilityWork(): boolean {
     return this.#reconciler.hasPendingWork;

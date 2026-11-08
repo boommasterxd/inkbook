@@ -5,7 +5,10 @@ import { MountSlice } from "../../../../../src/rendering/scene/reconciliation/mo
 import { createInstrumentation } from "../../../../../src/rendering/scene/instrumentation";
 import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
 import { createSceneRecord } from "../../../../fixtures/rendering/scene";
-import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
+import {
+  createMultiWindowPressureStroke,
+  createTestStroke,
+} from "../../../../fixtures/persistence/worker-snapshot";
 import { asDocument, FakeDocument } from "../fakes";
 
 afterEach(() => vi.restoreAllMocks());
@@ -18,6 +21,27 @@ function mountPreparation(pathCache: ScenePathCache, store: SceneStorePort) {
     store,
   });
 }
+
+it("pauses only the matching local scratch and preserves an unrelated cold entrant", () => {
+  const record = createSceneRecord(createMultiWindowPressureStroke());
+  const cache = new ScenePathCache();
+  const preparation = mountPreparation(cache, { get: () => record, query: vi.fn() });
+  expect(preparation.stage(record, new MountSlice(0, () => 0), undefined)).toBeUndefined();
+  expect(preparation.pendingId).toBe(record.id);
+  expect(preparation.memoryUsage()).toBeGreaterThan(0);
+  preparation.pauseLocal("another-mounted-id");
+  expect(preparation.pendingId).toBe(record.id);
+  expect(preparation.stage(record, new MountSlice(Infinity, () => 0), undefined)).toBeDefined();
+  expect(preparation.pendingId).toBeUndefined();
+  cache.release();
+  expect(preparation.stage(record, new MountSlice(0, () => 0), undefined)).toBeUndefined();
+  preparation.pauseLocal(record.id);
+  expect(preparation.pendingId).toBeUndefined();
+  expect(preparation.memoryUsage()).toBe(0);
+  preparation.cancel();
+  cache.release();
+  expect(cache.cacheMemoryUsage()).toBe(0);
+});
 
 it("keeps a newer worker reservation when an older canonical target finishes", async () => {
   const stroke = createTestStroke();

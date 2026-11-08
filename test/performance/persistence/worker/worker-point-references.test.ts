@@ -232,7 +232,7 @@ describe("worker translation sample work", () => {
       ...options,
       reusePoints: cache.encoder(full),
     });
-    expect(initial.transfer).toHaveLength(10_000);
+    expect(initial.transfer).toHaveLength(2);
     expect(work.indexedReads).toBeGreaterThan(0);
     cache.accept(full, { identity: unlockIdentity, modelRevision: 0, type: "model-sync-success" });
     work.indexedReads = 0;

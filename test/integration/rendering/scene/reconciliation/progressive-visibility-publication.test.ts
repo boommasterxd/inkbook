@@ -6,6 +6,10 @@ import { removeOrderedVisibilityExits } from "../../../../../src/rendering/scene
 import { SceneVisibilityReconciler } from "../../../../../src/rendering/scene/reconciliation/scene-visibility-reconciler";
 import { SceneVisibilityState } from "../../../../../src/rendering/scene/visibility/visibility-state";
 import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
+import { MountSlice } from "../../../../../src/rendering/scene/reconciliation/mount-slice";
+import { ProgressivePreviewPath } from "../../../../../src/rendering/scene/content/progressive-preview-path";
+import { CanonicalElementPathPreparation } from "../../../../../src/domain/geometry/canonical-element-path-preparation";
+import { updateMountedGeometry } from "../../../../../src/rendering/scene/content/mounted-element";
 import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
 import type { PreparedScenePathEntry } from "../../../../../src/domain/geometry/prepared-scene-paths";
 import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
@@ -31,6 +35,92 @@ import { arrow } from "../../../../unit/domain/schema/fixtures";
 
 const INITIAL = { height: 100, left: 0, top: 0, width: 1_000 };
 const TARGET = { ...INITIAL, top: 1_000 };
+
+it("keeps mounted dirty scratch out of deferred entrant publication", () => {
+  const fixture = createDirectPublicationScene("pressure");
+  const { dom, entry, before, after, store, content, instrumentation } = fixture;
+  content.insertBefore(entry.paths[0]!.node as unknown as FakeNode, content.nodes[1]!);
+  const mounted = new Map([before, entry, after].map((node) => [node.id, node]));
+  const visibility = new SceneVisibilityState(store, instrumentation);
+  const cache = new ScenePathCache();
+  const reconciler = new SceneVisibilityReconciler({
+    dom,
+    mounted,
+    store,
+    visibility,
+    pathCache: cache,
+    instrumentation,
+    retainGeometryPath: (id) => mounted.has(id),
+    orderDirty: { content: new Set(), highlight: new Set() },
+  });
+  const bounds = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+  const reconcile = () =>
+    reconciler.reconcile(Infinity, () => 0, new Map(), new Map(), { remainingRoots: 256 });
+  try {
+    reconciler.replace(visibility.query(bounds, bounds, false).visibility, true);
+    reconcile();
+    const dirty = {
+      ...createSceneRecord(
+        {
+          ...createTestStroke(),
+          id: entry.id,
+          points: Array.from({ length: 192 }, (_, index) => [10 + index / 100, 10, 0.5]).flat(),
+        },
+        1,
+      ),
+      geometryVersion: entry.geometryVersion + 1,
+    };
+    store.records.set(dirty.id, dirty);
+    let time = 0;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Forwarded with the real preparation receiver.
+    const step = CanonicalElementPathPreparation.prototype.step;
+    const pause = vi.spyOn(ProgressivePreviewPath.prototype, "step").mockImplementation(function (
+      this: ProgressivePreviewPath,
+      ...args
+    ) {
+      const done = step.apply(this, args);
+      time += 20;
+      return done;
+    });
+    expect(reconciler.preparation.prepare(dirty, new MountSlice(1, () => time))).toBeUndefined();
+    pause.mockRestore();
+    expect(reconciler.preparation.pendingId).toBe(dirty.id);
+    const entrant = createSceneRecord({ ...createTestStroke(), id: "entrant" }, 3);
+    store.records.set(entrant.id, entrant);
+    visibility.invalidateForChanges();
+    const target = visibility.query(bounds, bounds, false);
+    reconciler.replace(target.visibility, true, target.delta);
+    expect(() => reconcile()).not.toThrow();
+    expect(mounted.get(dirty.id)).toBe(entry);
+    expect(reconciler.preparation.pendingId).toBe(dirty.id);
+    expect(content.nodes).toHaveLength(3);
+    const parts = reconciler.preparation.prepare(dirty, new MountSlice(Infinity, () => 0));
+    expect(parts).toBeDefined();
+    updateMountedGeometry(
+      entry,
+      dirty,
+      parts!,
+      dom.ownerDocument,
+      dom.contentGroup,
+      instrumentation,
+    );
+    for (let round = 0; reconciler.hasPendingWork; round += 1) {
+      expect(round).toBeLessThan(10);
+      reconcile();
+    }
+    expect(mounted.get(dirty.id)).toBe(entry);
+    expect(mounted.size).toBe(4);
+    expect(content.nodes).toHaveLength(4);
+    expect(new Set(content.nodes).size).toBe(4);
+    expect(mounted.get(entrant.id)!.pathParts).toEqual(buildElementPathParts(entrant.element));
+  } finally {
+    reconciler.release();
+    visibility.release();
+    cache.release();
+    dom.release();
+  }
+  expect(reconciler.preparation.memoryUsage()).toBe(0);
+});
 
 it("rescans old mounted exits when a full target changes after its earlier exit scan was consumed during a worker wait", async () => {
   const fixture = createDirectPublicationScene("path");

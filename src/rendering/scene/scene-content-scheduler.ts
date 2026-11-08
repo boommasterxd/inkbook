@@ -5,7 +5,7 @@ import type { SceneContentRenderer } from "./content-renderer";
 import type { ScenePublicationBudget } from "./reconciliation/mount-slice";
 import type { PreviewTransform } from "./reconciliation/scene-visibility-reconciler";
 
-/** Gives each active queue the first remaining frame slice on alternating frames. */
+/** Retires obsolete DOM first; otherwise alternates the first remaining frame slice. */
 export class SceneContentScheduler {
   #preferVisibility = false;
 
@@ -44,7 +44,11 @@ export class SceneContentScheduler {
       const mountedPending = writeMounted();
       return mountedPending || this.content.hasVisibilityWork;
     }
-    if (this.#preferVisibility || !this.content.hasMountedWork) {
+    if (
+      this.#preferVisibility ||
+      !this.content.hasMountedWork ||
+      (this.content.hasPendingExitCleanup && this.content.hasGeometryWork)
+    ) {
       const visibilityPending = this.content.hasVisibilityWork ? reconcile() : false;
       const mountedPending = now() < deadline ? writeMounted() : this.content.hasMountedWork;
       this.#preferVisibility = false;

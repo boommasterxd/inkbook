@@ -7,6 +7,6 @@ import { localPressureGeometry } from "./stroke-position";
 export class ProgressivePreviewPath extends CanonicalElementPathPreparation {
   public constructor(element: InkElementV1, geometry?: PreparedPressureGeometryPort) {
     const local = localPressureGeometry(element, geometry);
-    super(element, local, local === undefined ? "path-only" : "full");
+    super(element, undefined, "path-only", local);
   }
 }

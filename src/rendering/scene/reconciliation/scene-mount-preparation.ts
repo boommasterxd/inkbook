@@ -108,6 +108,10 @@ export class SceneMountPreparation {
     this.#pending = undefined;
   }
 
+  public pauseLocal(id: string): void {
+    if (this.#pending?.id === id) this.cancelLocal();
+  }
+
   public release(id: string, deferRetarget = false): void {
     this.#remote.invalidate(id, deferRetarget);
     if (this.#pending?.id === id) this.cancelLocal();

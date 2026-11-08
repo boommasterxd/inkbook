@@ -9,6 +9,7 @@ import type {
   ScenePathPreparationObserver,
 } from "../../../src/domain/geometry/prepared-scene-paths";
 import type { SceneElementRecord } from "../../../src/rendering/scene/types";
+import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { createSceneFixture, sceneDeltaEntries } from "./scene";
 import { createTestStroke, createWorkerSnapshot } from "../persistence/worker-snapshot";
 import { armSelectionCommit } from "./selection-runs";
@@ -23,22 +24,34 @@ export interface PendingDirtyPaths {
 }
 
 /** Starts with canonical mounted ink, then controls the existing asynchronous worker boundary. */
-export function dirtyGeometryScene(count = 1, pressureCount = count) {
+export function dirtyGeometryScene(
+  count = 1,
+  pressureCount = count,
+  waitForBackground?: () => Promise<void> | undefined,
+  initial?: {
+    readonly transformStroke?: (stroke: StrokeElementV1) => StrokeElementV1;
+    readonly additionalElements?: readonly InkElementV1[];
+  },
+) {
   const original = Array.from({ length: count }, (_, index) => {
     const stroke = createTestStroke();
-    return {
+    const element = {
       ...stroke,
       style: { ...stroke.style, pressureEnabled: index >= count - pressureCount },
       id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
     };
+    return initial?.transformStroke?.(element) ?? element;
   });
-  const store = new ElementStore(original);
+  const store = new ElementStore([...original, ...(initial?.additionalElements ?? [])]);
   const port = new ElementSceneStore(store);
   const scene = createSceneFixture(
     createWorkerSnapshot([]).page,
     port,
     { height: 100, width: 100, left: 0, top: 0 },
-    { scrollPreloadMarginPx: 100 },
+    {
+      scrollPreloadMarginPx: 100,
+      ...(waitForBackground === undefined ? {} : { waitForBackground }),
+    },
   );
   scene.scheduler.runAll();
   const requests: PendingDirtyPaths[] = [];

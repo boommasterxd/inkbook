@@ -20,6 +20,10 @@ export class AutosaveWorkerModelState {
     return this.#pending?.requiresFullSnapshot === true;
   }
 
+  public isCurrent(revision: number): boolean {
+    return this.#modelRevision === revision && !this.requiresFullSynchronization;
+  }
+
   public record(delta: AutosaveDelta, inFlightRevision?: number): void {
     this.#target(inFlightRevision).record(delta);
   }

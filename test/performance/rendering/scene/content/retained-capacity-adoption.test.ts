@@ -2,7 +2,10 @@ import { expect, it, vi, type Mock } from "vitest";
 import type { ScenePathPreparation } from "../../../../../src/domain/geometry/prepared-scene-paths";
 import { dirtyGeometryScene } from "../../../../fixtures/rendering/dirty-geometry-scene";
 import { contentPaths } from "../../../../fixtures/rendering/selection-runs";
-import { createWorkerSnapshot } from "../../../../fixtures/persistence/worker-snapshot";
+import {
+  createTestStroke,
+  createWorkerSnapshot,
+} from "../../../../fixtures/persistence/worker-snapshot";
 import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/runtime/public";
 import { ProgressivePreviewPath } from "../../../../../src/rendering/scene/content/progressive-preview-path";
 import { CommittedPreviewGeometry } from "../../../../../src/rendering/scene/presentation/committed-preview-geometry";
@@ -16,6 +19,7 @@ import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import {
   createSceneRecord,
   observeIndexedSceneQueries,
+  sceneDeltaEntries,
 } from "../../../../fixtures/rendering/scene";
 import {
   asElement,
@@ -42,6 +46,81 @@ import {
   prepareVisibilityCleanup,
   removeOrderedVisibilityExits,
 } from "../../../../../src/rendering/scene/reconciliation/visibility-reconciliation-commit";
+
+it("parks dirty capacity contours during input while entrants, paint and culling remain responsive", async () => {
+  let quiet: Promise<void> | undefined;
+  let resume!: () => void;
+  const scene = dirtyGeometryScene(10_000, 10_000, () => quiet);
+  const paths = contentPaths(fakeNode(scene.renderer.svg));
+  const content = new Set(paths);
+  const write = vi.spyOn(FakeNode.prototype, "setAttribute");
+  const build = vi.spyOn(ScenePathCache.prototype, "startPreparation");
+  const contentWrites = () =>
+    write.mock.calls.filter(([name], index) => {
+      const node = write.mock.contexts[index];
+      return name === "d" && node instanceof FakeNode && content.has(node);
+    });
+  scene.prepare.mockReturnValue(undefined);
+  try {
+    quiet = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const replacements = scene.replace();
+    write.mockClear();
+    scene.scheduler.runAll();
+    expect(contentWrites()).toHaveLength(0);
+    expect(build).not.toHaveBeenCalled();
+    expect(scene.prepare).not.toHaveBeenCalled();
+    expect(scene.scheduler.pendingCount).toBe(0);
+    const first = replacements[0]!;
+    if (first.kind !== "stroke") throw new Error("Expected a pressure stroke");
+    const painted = { ...first, style: { ...first.style, opacity: 0.5 } };
+    scene.renderer.applyDelta({
+      affected: sceneDeltaEntries(scene.store.replace(painted.id, painted)!),
+    });
+    scene.scheduler.runAll();
+    expect(paths[0]!.getAttribute("opacity")).toBe("0.5");
+    const added = {
+      ...createTestStroke(),
+      id: "00000000-0000-4000-8000-000000900001",
+      pivot: { x: 600, y: 10 },
+      offset: { x: 590, y: 0 },
+    };
+    scene.renderer.applyDelta({ affected: sceneDeltaEntries(scene.store.create([added])!) });
+    scene.renderer.setViewport({ left: 0, top: 0, width: 800, height: 100 });
+    scene.scheduler.runAll();
+    expect(scene.renderer.mountedCount).toBe(10_001);
+    expect(build).toHaveBeenCalledOnce();
+    expect(contentWrites()).toHaveLength(0);
+    scene.renderer.setViewport({ left: 0, top: 0, width: 100, height: 100 });
+    scene.scheduler.runAll();
+    expect(scene.renderer.mountedCount).toBe(10_000);
+    build.mockClear();
+    scene.prepare.mockClear();
+    write.mockClear();
+    quiet = undefined;
+    resume();
+    await Promise.resolve();
+    scene.scheduler.runFrame();
+    // Observe actual canonical writes in the admitted frame, not a simulated latency.
+    expect(contentWrites().length).toBeGreaterThan(1);
+    scene.scheduler.runAll();
+    expect(contentWrites()).toHaveLength(10_000);
+    expect(build).toHaveBeenCalledTimes(10_000);
+    expect(scene.prepare).toHaveBeenCalledTimes(10_000);
+    expect(scene.requests).toHaveLength(0);
+    expect(scene.scheduler.pendingCount).toBe(0);
+    for (const rank of [0, 5000, 9999]) {
+      const element = replacements[rank]!;
+      expect(paths[rank]!.getAttribute("d")).toBe(buildElementPathParts(element)[0]!.d);
+    }
+  } finally {
+    write.mockRestore();
+    build.mockRestore();
+    scene.dispose();
+  }
+  expect(scene.renderer.memoryUsage().pathCacheBytes).toBe(0);
+});
 
 it("publishes ten thousand current dirty mounted pressure contours from the existing bounded worker path pool", async () => {
   const scene = dirtyGeometryScene(10_000);

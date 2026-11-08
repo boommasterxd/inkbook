@@ -238,12 +238,78 @@ it("correlates formatted labels and entities while normalizing each repeated lab
   );
   const renderExportLabel = await renderFormattedExport(fixture);
   expect(fixture.root.querySelectorAll("p[data-inkbook-export]")).toHaveLength(4);
+  expect(
+    [...fixture.root.querySelectorAll("svg[role='img']")].map((graphic) =>
+      graphic.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Diagram", "Diagram", "A & B", "A & B"]);
   expect(renderExportLabel.mock.calls.map(([label]) => label)).toEqual([
     "**Diagram**",
     "A &amp; B",
   ]);
   expect(fixture.recognize.mock.calls.map(([id]) => id)).toEqual(["ink.svg", "other.svg"]);
   fixture.unload();
+});
+
+it("plans repeated drawings with the page room left by intervening export fragments", async () => {
+  const descriptor = await validatedPreview();
+  const fixture = createMarkdownExportFixture(
+    "!inkbook[[a.svg|A]]\n\n!inkbook[[b.svg|B]]\n\n!inkbook[[a.svg|A]]",
+    '<p>!inkbook<a href="a.svg">A</a></p>' +
+      '<p>!inkbook<a href="b.svg">B</a></p>' +
+      '<p>!inkbook<a href="a.svg">A</a></p>',
+    descriptor,
+  );
+  document.body.append(fixture.root);
+  const media = window.matchMedia("print");
+  vi.spyOn(window, "matchMedia").mockReturnValue(media);
+  await createReadingViewPostProcessor(fixture.ports)(fixture.root, fixture.context);
+  const containers = [...fixture.root.querySelectorAll<HTMLElement>("p > .inkbook-static-export")];
+  expect(containers).toHaveLength(3);
+  const [first, intervening, repeated] = containers;
+  const height = Number(first!.querySelector("svg[role='img']")!.getAttribute("height"));
+  const rectangles = Array.from({ length: 20 }, (_, index) =>
+    DOMRect.fromRect({ y: index * 1000, width: 2048.6, height: 1000 }),
+  );
+  vi.spyOn(fixture.root, "getClientRects").mockReturnValue(
+    Object.assign(rectangles, { item: (index: number) => rectangles[index] ?? null }),
+  );
+  // Native layout moves the later occurrence when the intervening drawing gains print chrome.
+  for (const [index, container] of containers.entries()) {
+    vi.spyOn(container, "getBoundingClientRect").mockImplementation(() => {
+      const top =
+        index === 2
+          ? intervening!.dataset.inkbookPagination === "split"
+            ? 11_500
+            : 10_800
+          : index * 800;
+      return DOMRect.fromRect({ y: top, width: 2048.6, height });
+    });
+    vi.spyOn(
+      container.querySelector<HTMLElement>(".inkbook-export-pages")!,
+      "getBoundingClientRect",
+    ).mockReturnValue(DOMRect.fromRect({ width: 2048.6, height }));
+  }
+  vi.spyOn(window, "getComputedStyle").mockReturnValue({
+    borderTopLeftRadius: "10px",
+  } as CSSStyleDeclaration);
+  try {
+    media.dispatchEvent(new MediaQueryListEvent("change", { matches: true, media: "print" }));
+    expect(intervening!.dataset.inkbookPagination).toBe("split");
+    const pieces = repeated!.querySelectorAll<HTMLElement>(".inkbook-export-piece");
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(Number(pieces[0]!.dataset.inkbookRangeEnd)).toBeGreaterThan(200);
+    expect(Number(pieces[0]!.dataset.inkbookRangeEnd)).toBeLessThanOrEqual(477);
+    let end = 0;
+    for (const piece of pieces) {
+      expect(Number(piece.dataset.inkbookRangeStart)).toBe(end);
+      end = Number(piece.dataset.inkbookRangeEnd);
+    }
+    expect(end).toBe(height);
+    expect(fixture.recognize.mock.calls.map(([id]) => id)).toEqual(["a.svg", "b.svg"]);
+  } finally {
+    fixture.unload();
+  }
 });
 
 it("preserves ambiguous escaped formatted labels after normalization", async () => {

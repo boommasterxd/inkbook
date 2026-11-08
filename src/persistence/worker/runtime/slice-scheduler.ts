@@ -48,24 +48,28 @@ export function createMainThreadRequestCheckpoint(
   options: RequestCheckpointOptions,
   signal: AbortSignal,
   request: DocumentRuntimeRequest,
-  adoption = false,
 ): () => Promise<void> | undefined {
   const required = isNavigationSceneRequest(request);
   const exportRequest = request.type === "export-full" || request.type === "export-incremental";
-  const priority = required || (!adoption && exportRequest) ? "frame" : "background";
-  const checkpoint = (): Promise<void> | undefined => {
+  const priority = required || exportRequest ? "frame" : "background";
+  const waitForGates = (): Promise<void> | undefined => {
     const ready = options.inputGate.waitUntilInactive(signal);
     if (ready !== undefined) return ready.then(checkpoint);
     const navigation = required ? undefined : options.navigationGate.waitUntilInactive(signal);
     if (navigation !== undefined) return navigation.then(checkpoint);
     signal.throwIfAborted();
+    return undefined;
+  };
+  const checkpoint = (): Promise<void> | undefined => {
+    const gates = waitForGates();
+    if (gates !== undefined) return gates;
     const pending =
       priority === "background"
         ? options.scheduler.checkpoint(signal)
         : options.scheduler.shouldYield()
           ? options.scheduler.nextFrame(signal, "frame")
           : undefined;
-    return pending?.then(() => signal.throwIfAborted());
+    return pending?.then(waitForGates);
   };
   return () => {
     const pending = checkpoint();

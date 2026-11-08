@@ -7,6 +7,47 @@ import type {
   DocumentRuntimeResult,
 } from "../../../../../src/persistence/worker/runtime/public";
 
+it("declines unavailable preparation synchronously without retaining a permanent failure", async () => {
+  let available = false;
+  let disposed = false;
+  const execute = vi.fn<DocumentRuntimePort["execute"]>(async (request) => sceneResult(request));
+  let executor: DocumentRuntimePort | undefined = { execute, terminate: vi.fn() };
+  const synchronize = vi.fn(async () => true);
+  const session = new SessionScenePaths({
+    canSynchronize: () => available,
+    disposed: () => disposed,
+    executor: () => executor,
+    revision: () => 7,
+    sessionId: "session-a",
+    synchronize,
+    workerEpoch: () => 1,
+  });
+  const signal = new AbortController().signal;
+  const observer = { onProgress: vi.fn(), setRetarget: vi.fn() };
+  for (const id of ["first", "second"])
+    expect(session.prepare([id], signal, observer)).toBeUndefined();
+  expect(synchronize).not.toHaveBeenCalled();
+  expect(execute).not.toHaveBeenCalled();
+  expect(observer.setRetarget).not.toHaveBeenCalled();
+  available = true;
+  const pending = session.prepare(["first"], signal, observer);
+  expect(pending).toBeInstanceOf(Promise);
+  expect(await pending).toEqual([]);
+  expect(synchronize).toHaveBeenCalledOnce();
+  expect(execute).toHaveBeenCalledOnce();
+  expect(observer.setRetarget).toHaveBeenLastCalledWith(undefined);
+  const controller = new AbortController();
+  controller.abort();
+  expect(session.prepare(["first"], controller.signal)).toBeUndefined();
+  executor = undefined;
+  expect(session.prepare(["first"], signal)).toBeUndefined();
+  executor = { execute, terminate: vi.fn() };
+  disposed = true;
+  expect(session.prepare(["first"], signal)).toBeUndefined();
+  expect(synchronize).toHaveBeenCalledOnce();
+  expect(execute).toHaveBeenCalledOnce();
+});
+
 it.each([undefined, 2])(
   "preserves the admitted ID order and exact visible prefix across pre-start retargets, visibleCount=%s",
   async (visibleCount) => {

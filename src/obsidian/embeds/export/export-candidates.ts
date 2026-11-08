@@ -135,17 +135,24 @@ export async function correlateExportCandidates(
     }
     const key = signature(resolved.documentId, label);
     const entries = references.get(key) ?? [];
-    entries.push(embed);
+    entries.push(embed.description === undefined ? {} : { description: label });
     references.set(key, entries);
   }
-  const candidates: StaticExportCandidate[] = [];
+  const candidates = new Map<HTMLElement, StaticExportCandidate>();
   for (const [id, entries] of rendered) {
     const expected = references.get(id);
     if (expected === undefined || entries.length !== expected.length) continue;
     entries.forEach((entry, index) => {
       const description = expected[index]?.description;
-      candidates.push({ ...entry, ...(description === undefined ? {} : { description }) });
+      candidates.set(entry.host, {
+        ...entry,
+        ...(description === undefined ? {} : { description }),
+      });
     });
   }
-  return candidates;
+  // Earlier print fragments can move later blocks; planning must follow the rendered order.
+  return blocks.flatMap((host) => {
+    const candidate = candidates.get(host);
+    return candidate === undefined ? [] : [candidate];
+  });
 }

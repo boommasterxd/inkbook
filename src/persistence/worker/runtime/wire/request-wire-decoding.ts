@@ -5,6 +5,7 @@ import { assertScenePathRequest } from "../model/scene-path-limits";
 import { isRuntimeWireRequestType } from "./wire-message-types";
 import { decodeUnlockRequest, type UnlockWireRequest } from "./unlock-request-wire";
 import type { ModelSyncWireRequest } from "./model-sync-wire";
+import { expandModelSyncPointArenaSteps } from "./model-sync-point-arena";
 import type { DocumentRuntimeRequest, RuntimeSliceContext } from "../types";
 import { consumeSerializationSteps } from "../../../serialization/output/serialization-model-preparation";
 import { assertImportInkRequest } from "./ink-import-wire";
@@ -77,8 +78,12 @@ function* decodeRuntimeRequestSteps(
       ...snapshot,
       page: { ...snapshot.page, background: { ...snapshot.page.background } },
     };
-    yield* documentElementWireLimitSteps(snapshot.elements);
-    const elements = yield* unpackElementsSteps(snapshot.elements);
+    const packed =
+      request.type === "model-sync-full-wire"
+        ? yield* expandModelSyncPointArenaSteps(header.elements)
+        : (header.elements as PackedElements);
+    yield* documentElementWireLimitSteps(packed);
+    const elements = yield* unpackElementsSteps(packed);
     return {
       ...identity,
       snapshot: { ...header, elements },
@@ -94,8 +99,12 @@ function* decodeRuntimeRequestSteps(
       request.type === "export-incremental-wire" ? "export-incremental" : "model-sync-incremental";
     let elements;
     if (changedElements !== undefined) {
-      yield* documentElementWireLimitSteps(changedElements);
-      elements = yield* unpackElementsSteps(changedElements, resolvePoints);
+      const packed =
+        request.type === "model-sync-incremental-wire"
+          ? yield* expandModelSyncPointArenaSteps(changedElements)
+          : (changedElements as PackedElements);
+      yield* documentElementWireLimitSteps(packed);
+      elements = yield* unpackElementsSteps(packed, resolvePoints);
     }
     return {
       ...identity,

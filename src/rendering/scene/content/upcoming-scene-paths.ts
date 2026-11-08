@@ -1,12 +1,26 @@
 import type { PendingReconciliation } from "../reconciliation/reconciliation-state";
 
-/** Matches both full-band and delta entrant mount order without materializing visible IDs. */
+/** Shares lookahead between missing entrants and mounted catch-up without materializing IDs. */
 export function* upcomingScenePathIds(
   pending: PendingReconciliation | undefined,
   mounted: { has(id: string): boolean },
   geometry?: Iterable<string>,
 ): Iterable<string> {
-  if (geometry !== undefined) yield* geometry;
+  const dirty = geometry?.[Symbol.iterator]();
+  for (const id of upcomingVisibilityIds(pending, mounted)) {
+    yield id;
+    const next = dirty?.next();
+    if (next !== undefined && !next.done) yield next.value;
+  }
+  if (dirty !== undefined) {
+    for (let next = dirty.next(); !next.done; next = dirty.next()) yield next.value;
+  }
+}
+
+function* upcomingVisibilityIds(
+  pending: PendingReconciliation | undefined,
+  mounted: { has(id: string): boolean },
+): Iterable<string> {
   if (pending === undefined) return;
   if (pending.delta !== undefined) {
     yield* upcomingDeltaIds(pending, mounted);
