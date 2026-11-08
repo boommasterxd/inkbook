@@ -9,6 +9,8 @@ import type { PresentationLifecycleRegistry } from "./presentation-lifecycle-reg
 import type { PreviewContentIdentity } from "../preview/safe-preview-svg";
 import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
 import type { HostZoomScroll } from "../live-preview/live-preview-zoom-scroll";
+import type { MarkdownRenderChild } from "obsidian";
+import type { ExportGeometryCache } from "../export/export-geometry-cache";
 
 export interface ResolvedInkbookDocument {
   readonly documentId: string;
@@ -156,6 +158,16 @@ export interface PresentationSessionPort {
 }
 
 export interface EmbedIntegrationPorts {
+  readonly exportGeometryCache?: ExportGeometryCache;
+  readonly acquireSchedulingProfile?: (owner: MarkdownRenderChild) => () => void;
+  readonly subscribeSchedulingProfile?: (listener: () => void) => () => void;
+  readonly renderExportLabel?: (
+    label: string,
+    target: HTMLElement,
+    owner: MarkdownRenderChild,
+  ) => Promise<void>;
+  readonly readMarkdownSource?: (sourcePath: string) => Promise<string | undefined>;
+  readonly prepareStaticExport?: (documentId: string) => Promise<void>;
   readonly subscribeMotionPreference?: (listener: (motion: MotionPreference) => void) => () => void;
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly documents: InkbookDocumentRecognitionPort;

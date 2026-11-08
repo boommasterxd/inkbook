@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import {
@@ -7,6 +7,8 @@ import {
 } from "../../../../src/persistence/documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../../../../src/persistence/documents/svg-envelope";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "../../../../src/persistence/documents/svg-output-limits";
+import * as metadataDecoder from "../../../../src/persistence/documents/safe-svg-metadata";
+import { consumeSerializationSteps } from "../../../../src/persistence/serialization/output/serialization-model-preparation";
 import {
   CANONICAL_THEME_STYLESHEET,
   LEGACY_THEME_STYLESHEET_V1,
@@ -230,6 +232,61 @@ describe("safe SVG metadata and bounded validation", () => {
     expectRejectedContentPaths(paths);
   }, 15_000);
 });
+
+describe("safe metadata byte accounting", () => {
+  it("preserves entities and Unicode across decoder and UTF-8 surrogate boundaries", () => {
+    const prefix = `${"a".repeat(16 * 1024 - 1)}&amp;`.padEnd(256 * 1024 - 1, "a");
+    const raw = `${prefix}😀${"ä😀".repeat(40_000)}&lt;&gt;&amp;`;
+    const expected = `${prefix.replace("&amp;", "&")}😀${"ä😀".repeat(40_000)}<>&`;
+    const svg = replaceMetadataText(validSvg, raw);
+    const { result } = exhaustValidation(validateSafeSvgSteps(svg));
+    expect(result?.metadataText).toBe(expected);
+    expect(result?.metadataBytes).toBe(new TextEncoder().encode(expected).byteLength);
+  });
+
+  it.each(["&quot;", "&#38;", "&am", "&unknown;", "<"])(
+    "rejects unsupported metadata syntax across a decoder boundary: %s",
+    (entity) => {
+      const raw = `${"a".repeat(16 * 1024 - 1)}${entity}`;
+      expect(validateSafeSvg(replaceMetadataText(validSvg, raw))).toBeNull();
+    },
+  );
+
+  it("keeps the raw byte ceiling even when entities would decode below the ceiling", () => {
+    const raw = "&amp;".repeat(Math.floor((60 * 1024 * 1024) / 5) + 1);
+    const svg = replaceMetadataText(validSvg, raw);
+    const { result } = exhaustValidation(
+      validateSafeSvgSteps(svg, { totalInputBytes: svg.length }),
+    );
+    expect(result).toBeNull();
+  });
+
+  it("cancels at a metadata decoder checkpoint without returning a partial validation", async () => {
+    const svg = replaceMetadataText(validSvg, "a".repeat(64 * 1024));
+    const controller = new AbortController();
+    const decode = vi.spyOn(metadataDecoder, "decodeMetadataTextSteps");
+    try {
+      await expect(
+        consumeSerializationSteps(validateSafeSvgSteps(svg), {
+          signal: controller.signal,
+          checkpoint: () => {
+            if (decode.mock.calls.length > 0) controller.abort();
+            return undefined;
+          },
+        }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      expect(decode).toHaveBeenCalledTimes(1);
+    } finally {
+      decode.mockRestore();
+    }
+  });
+});
+
+function replaceMetadataText(svg: string, metadata: string): string {
+  const start = svg.indexOf(">", svg.indexOf("<metadata")) + 1;
+  const end = svg.indexOf("</metadata>", start);
+  return svg.slice(0, start) + metadata + svg.slice(end);
+}
 
 it.each(["translate(1 2)", "translate(-12.5 0)", "translate(1000000 -1000000)"])(
   "accepts bounded canonical stroke placement %s",

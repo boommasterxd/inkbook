@@ -25,7 +25,7 @@ export function stagePromotedVisibility(
   slice: MountSlice,
   options: PromotionOptions,
 ): { readonly id?: string; readonly reason?: MountYieldReason } {
-  if (id === undefined) return {};
+  if (id === undefined || options.mounted.has(id)) return {};
   const record = options.store.get(id);
   if (record === undefined || !options.visibility.contains(id)) return {};
   if (pending.progressive && !slice.canPublish) return { id, reason: "budget" };

@@ -1,6 +1,9 @@
 import type { EndpointConnectionV1, InkElementV1 } from "../../domain/schema/public";
 import type { ElementStore } from "../../domain/store/public";
 
+// Only fixed-size topology bookkeeping is grouped; discovery and preview work keep their gates.
+const TOPOLOGY_RECORDS_PER_STEP = 32;
+
 export type ConnectedLinear = Extract<InkElementV1, { kind: "arrow" | "line" }>;
 export interface ConnectedPreviewBinding {
   readonly element: ConnectedLinear;
@@ -10,6 +13,12 @@ export interface ConnectedPreviewBinding {
 export interface ConnectedPreviewPlan {
   readonly bindings: ReadonlyMap<string, ConnectedPreviewBinding>;
   readonly ids: readonly string[];
+}
+
+interface ConnectedPreviewOrder {
+  readonly indegrees: Map<string, number>;
+  readonly downstream: Map<string, string[]>;
+  readonly ready: string[];
 }
 
 /** Compiles endpoint ancestry once; every intermediate endpoint is canonical world geometry. */
@@ -51,8 +60,18 @@ export function* connectedPreviewPlanSteps(
       yield Math.max(selectedCount, elements.size, references);
     }
   }
-  const { indegrees, downstream, ready } = yield* dependentOrderSteps(elements);
+  const order = yield* dependentOrderSteps(elements);
+  return yield* bindConnectedPreviewSteps(elements, selectedIds, ids, order);
+}
+
+function* bindConnectedPreviewSteps(
+  elements: ReadonlyMap<string, ConnectedLinear>,
+  selectedIds: ReadonlySet<string>,
+  ids: string[],
+  { indegrees, downstream, ready }: ConnectedPreviewOrder,
+): Generator<number, ConnectedPreviewPlan> {
   const bindings = new Map<string, ConnectedPreviewBinding>();
+  let prepared = 0;
   for (let index = 0; index < ready.length; index += 1) {
     const id = ready[index]!;
     const element = elements.get(id)!;
@@ -60,23 +79,33 @@ export function* connectedPreviewPlanSteps(
     const end = rootConnection(element.endConnection, selectedIds, bindings);
     bindings.set(id, { element, start, end });
     if (start !== null || end !== null) ids.push(id);
+    if (++prepared === TOPOLOGY_RECORDS_PER_STEP) {
+      prepared = 0;
+      yield elements.size;
+    }
     for (const dependent of downstream.get(id) ?? []) {
       const remaining = indegrees.get(dependent)! - 1;
       indegrees.set(dependent, remaining);
       if (remaining === 0) ready.push(dependent);
-      yield elements.size;
+      if (++prepared === TOPOLOGY_RECORDS_PER_STEP) {
+        prepared = 0;
+        yield elements.size;
+      }
     }
-    yield elements.size;
   }
+  if (prepared > 0) yield elements.size;
   if (bindings.size !== elements.size) {
     throw new RangeError("Connected preview dependencies must remain acyclic.");
   }
   return { bindings, ids };
 }
 
-function* dependentOrderSteps(elements: ReadonlyMap<string, ConnectedLinear>) {
+function* dependentOrderSteps(
+  elements: ReadonlyMap<string, ConnectedLinear>,
+): Generator<number, ConnectedPreviewOrder> {
   const indegrees = new Map<string, number>();
   const downstream = new Map<string, string[]>();
+  let visited = 0;
   for (const element of elements.values()) {
     let degree = 0;
     for (const connection of [element.startConnection, element.endConnection]) {
@@ -87,13 +116,16 @@ function* dependentOrderSteps(elements: ReadonlyMap<string, ConnectedLinear>) {
       downstream.set(connection.targetId, ids);
     }
     indegrees.set(element.id, degree);
-    yield elements.size;
+    if (++visited % TOPOLOGY_RECORDS_PER_STEP === 0) yield elements.size;
   }
+  if (visited % TOPOLOGY_RECORDS_PER_STEP !== 0) yield elements.size;
   const ready: string[] = [];
+  visited = 0;
   for (const [id, degree] of indegrees) {
     if (degree === 0) ready.push(id);
-    yield elements.size;
+    if (++visited % TOPOLOGY_RECORDS_PER_STEP === 0) yield elements.size;
   }
+  if (visited % TOPOLOGY_RECORDS_PER_STEP !== 0) yield elements.size;
   return { indegrees, downstream, ready };
 }
 

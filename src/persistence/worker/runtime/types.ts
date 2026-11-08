@@ -22,6 +22,7 @@ import type {
   VerifiedPersistedOutput,
 } from "../protocol";
 import type { SafeStaticProof } from "../../serialization/input/safe-static-proof";
+import type { ExportInterval } from "../../../domain/export/export-pagination";
 
 export type DocumentExportRequest = ExportRequest<InkElementV1, PageV1, InkSnapshotV1>;
 
@@ -130,6 +131,19 @@ export interface ImportInkRuntimeSuccess {
   readonly type: "import-ink-success";
 }
 
+export interface PrepareExportGeometryRequest {
+  readonly identity: PurposeOperationIdentity;
+  readonly input: string | Uint8Array;
+  readonly safeStaticProof?: SafeStaticProof;
+  readonly type: "prepare-export-geometry";
+}
+
+export interface PrepareExportGeometrySuccess {
+  readonly identity: PurposeOperationIdentity;
+  readonly intervals: readonly ExportInterval[] | undefined;
+  readonly type: "prepare-export-geometry-success";
+}
+
 export type DocumentRuntimeRequest =
   | DecodeClipboardRuntimeRequest
   | DocumentExportRequest
@@ -137,6 +151,7 @@ export type DocumentRuntimeRequest =
   | ImportInkRuntimeRequest
   | ModelSyncRuntimeRequest
   | PlanClipboardPasteRuntimeRequest
+  | PrepareExportGeometryRequest
   | PrepareScenePathsRuntimeRequest
   | UnlockRuntimeRequest
   | VerifyRuntimeRequest;
@@ -210,6 +225,7 @@ export type DocumentRuntimeResult =
   | ImportInkRuntimeSuccess
   | ModelSyncRuntimeSuccess
   | PlanClipboardPasteRuntimeSuccess
+  | PrepareExportGeometrySuccess
   | PreparedScenePathsRuntimeSuccess
   | RuntimeFailure
   | UnlockRuntimeSuccess

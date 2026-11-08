@@ -108,6 +108,21 @@ export class SceneMountPreparation {
     this.#pending = undefined;
   }
 
+  public release(id: string, deferRetarget = false): void {
+    this.#remote.invalidate(id, deferRetarget);
+    if (this.#pending?.id === id) this.cancelLocal();
+  }
+
+  public flushRetargets(): void {
+    this.#remote.flushRetargets();
+  }
+
+  public finish(id: string, version?: number): void {
+    this.#remote.release(id, this.options.upcomingIds, version);
+    if (this.#pending?.id === id && (version === undefined || this.#pending.version === version))
+      this.cancelLocal();
+  }
+
   public stage(
     record: SceneElementRecord,
     slice: MountSlice,
@@ -137,20 +152,21 @@ export class SceneMountPreparation {
     return entry;
   }
 
-  private prepare(
+  public prepare(
     record: SceneElementRecord,
     slice: MountSlice,
-    allowLocal: boolean,
+    allowLocal = true,
+    preemptLocal = false,
   ): readonly SvgPathPart[] | undefined {
     const { pathCache, store } = this.options;
     const pressure = store.pressureGeometry?.(record.id, record.geometryVersion);
     const cached = this.cachedPath(record, pressure);
     if (cached !== undefined) {
-      this.#remote.release(record.id, this.options.upcomingIds);
-      if (this.#pending?.id === record.id) this.cancelLocal();
+      this.finish(record.id, record.geometryVersion);
       return cached;
     }
     if (record.element.kind !== "stroke") return pathCache.build(record.element, pressure);
+    if (preemptLocal && this.#pending?.id !== record.id) this.cancelLocal();
     if (this.#pending?.id !== record.id || this.#pending.version !== record.geometryVersion) {
       if (this.#pending !== undefined) return undefined;
       const remote = this.#remote.read(record, this.options.upcomingIds ?? (() => []));

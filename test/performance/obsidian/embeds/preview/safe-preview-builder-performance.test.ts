@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createPreviewSvgAsync } from "../../../../../src/obsidian/embeds/preview/safe-preview-builder";
 import { PreviewIdleScheduler } from "../../../../../src/obsidian/embeds/preview/preview-idle-scheduler";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { createSvgDomWorkObserver } from "../../../../fixtures/obsidian/svg-dom-work";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -18,18 +19,10 @@ it("builds ten thousand opaque pressure paths without neutral group allocations 
   const parse = vi.spyOn(window.DOMParser.prototype, "parseFromString");
   const imported = vi.spyOn(document, "importNode");
   let checkpoints = 0;
-  let previous = [0, 0, 0];
-  const observe = () => {
-    const calls = [
-      create.mock.calls.length,
-      attributes.mock.calls.length,
-      append.mock.calls.length,
-    ];
-    expect(calls[0]! - previous[0]!).toBeLessThanOrEqual(256);
-    expect(calls[1]! - previous[1]!).toBeLessThanOrEqual(256 * 2 + 5);
-    expect(calls[2]! - previous[2]!).toBeLessThanOrEqual(256);
-    previous = calls;
-  };
+  const { observe, shouldYield } = createSvgDomWorkObserver(
+    { create, attributes, append },
+    { create: 256, attributes: 256 * 2 + 5, append: 256 },
+  );
   const svg = await createPreviewSvgAsync(document, source, {
     checkpoint: async () => {
       checkpoints += 1;
@@ -37,7 +30,7 @@ it("builds ten thousand opaque pressure paths without neutral group allocations 
     },
     workScheduler: {
       ...immediateWorkScheduler(),
-      shouldYield: () => create.mock.calls.length - previous[0]! >= 256,
+      shouldYield,
     },
     isCancelled: () => false,
   });

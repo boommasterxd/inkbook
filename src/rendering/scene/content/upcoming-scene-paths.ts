@@ -4,7 +4,9 @@ import type { PendingReconciliation } from "../reconciliation/reconciliation-sta
 export function* upcomingScenePathIds(
   pending: PendingReconciliation | undefined,
   mounted: { has(id: string): boolean },
+  geometry?: Iterable<string>,
 ): Iterable<string> {
+  if (geometry !== undefined) yield* geometry;
   if (pending === undefined) return;
   if (pending.delta !== undefined) {
     yield* upcomingDeltaIds(pending, mounted);

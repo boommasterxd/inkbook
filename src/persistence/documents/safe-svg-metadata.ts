@@ -16,37 +16,52 @@ export function* measureUtf8BytesSteps(input: string): Generator<void, number> {
   return bytes;
 }
 
-export function* decodeMetadataTextSteps(input: string): Generator<void, string | null> {
+interface DecodedMetadataText {
+  readonly text: string;
+  readonly entityByteSavings: number;
+}
+
+export function* decodeMetadataTextSteps(
+  input: string,
+): Generator<void, DecodedMetadataText | null> {
   const decodedChunks: string[] = [];
-  let currentParts: string[] = [];
   let cursor = 0;
-  let literalStart = 0;
-  let sliceStart = 0;
+  let entityByteSavings = 0;
   while (cursor < input.length) {
-    const character = input[cursor];
-    if (character === "<") return null;
-    if (character === "&") {
-      currentParts.push(input.slice(literalStart, cursor));
-      const entity = decodeAllowedEntity(input, cursor);
-      if (entity === null) return null;
-      currentParts.push(entity.value);
-      cursor = entity.next;
-      literalStart = cursor;
-    } else {
-      cursor += 1;
-    }
-    if (cursor - sliceStart >= METADATA_DECODE_CODE_UNITS_PER_STEP) {
-      currentParts.push(input.slice(literalStart, cursor));
-      decodedChunks.push(currentParts.join(""));
-      currentParts = [];
-      literalStart = cursor;
-      sliceStart = cursor;
-      yield;
-    }
+    const end = Math.min(cursor + METADATA_DECODE_CODE_UNITS_PER_STEP, input.length);
+    const decoded = decodeMetadataSlice(input, cursor, end);
+    if (decoded === null) return null;
+    decodedChunks.push(decoded.text);
+    entityByteSavings += decoded.entityByteSavings;
+    cursor = decoded.next;
+    if (cursor < input.length) yield;
   }
-  currentParts.push(input.slice(literalStart));
-  decodedChunks.push(currentParts.join(""));
-  return decodedChunks.join("");
+  return { text: decodedChunks.join(""), entityByteSavings };
+}
+
+function decodeMetadataSlice(
+  input: string,
+  start: number,
+  end: number,
+): (DecodedMetadataText & { readonly next: number }) | null {
+  const slice = input.slice(start, end);
+  if (slice.includes("<")) return null;
+  const parts: string[] = [];
+  let literalStart = start;
+  let entityByteSavings = 0;
+  let offset = slice.indexOf("&");
+  while (offset >= 0) {
+    const entityStart = start + offset;
+    const entity = decodeAllowedEntity(input, entityStart);
+    if (entity === null) return null;
+    parts.push(input.slice(literalStart, entityStart), entity.value);
+    // Allowlisted entities and their replacements are ASCII, so UTF-8 byte savings are exact.
+    entityByteSavings += entity.next - entityStart - entity.value.length;
+    literalStart = entity.next;
+    offset = slice.indexOf("&", literalStart - start);
+  }
+  parts.push(input.slice(literalStart, end));
+  return { text: parts.join(""), entityByteSavings, next: Math.max(end, literalStart) };
 }
 
 function decodeAllowedEntity(

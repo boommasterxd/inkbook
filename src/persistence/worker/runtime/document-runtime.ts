@@ -20,6 +20,7 @@ import { ScenePathOperation } from "./model/scene-path-operation";
 import { runtimeSliceContext } from "./slice-scheduler";
 import { NavigationJobSuspension } from "./navigation-job-suspension";
 import { runImportInkRequest } from "./model/runtime-ink-import";
+import { runPrepareExportGeometry } from "./model/runtime-export-geometry";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeObserver,
@@ -343,6 +344,8 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       return runUnlockRequest(this.#model, request, sliceContext, observer);
     if (request.type === "import-ink")
       return runImportInkRequest(this.#model, request, sliceContext!, signal);
+    if (request.type === "prepare-export-geometry")
+      return runPrepareExportGeometry(request, sliceContext);
     if (
       request.type === "clipboard-encode" ||
       request.type === "clipboard-decode" ||

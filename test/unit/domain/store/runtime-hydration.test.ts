@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import * as strokePosition from "../../../../src/domain/geometry/stroke-position";
+import * as recordFactory from "../../../../src/domain/store/records/record-factory";
+import * as sampleRanges from "../../../../src/domain/schema/stroke-sample-range-validation";
+import { UniformSpatialIndex } from "../../../../src/domain/spatial/index";
 
 import {
   validateInkElementV1,
+  MAX_STROKE_POINTS,
   type InkElementV1,
   type StrokeElementV1,
 } from "../../../../src/domain/schema/public";
@@ -20,7 +24,10 @@ import {
   runtimeStrokeHydrationFixture,
 } from "../../../fixtures/domain/runtime-stroke-store";
 import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
-import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
+import {
+  createTestStroke,
+  createWorkerSnapshot,
+} from "../../../fixtures/persistence/worker-snapshot";
 import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../fixtures/editor/selection-transform-reference";
 import { highlighter, mixedElement, rectangle } from "./fixtures";
 
@@ -137,7 +144,7 @@ describe("runtime element ownership", () => {
 });
 
 describe("validated runtime hydration", () => {
-  it("batch-adopts validated records with per-element scheduler checkpoints", async () => {
+  it("batch-adopts validated records with bounded central budget probes", async () => {
     const target = rectangle();
     const { points, runtime, source, validation } = validatedStrokeFixture([target]);
     let yields = 0;
@@ -154,8 +161,9 @@ describe("validated runtime hydration", () => {
     const store = await builder.finalize();
     expectHydratedStroke(store, source, points);
     expect(store?.get(target.id)?.element).toEqual(target);
-    expect(store?.instrumentation.hydrationYields).toBe(4);
-    expect(yields).toBe(4);
+    expect(store?.get(runtime.id)?.element).toBe(runtime);
+    expect(store?.instrumentation.hydrationYields).toBe(3);
+    expect(yields).toBe(3);
   });
 
   it("rejects duplicate IDs within a validated runtime batch", async () => {
@@ -208,6 +216,111 @@ describe("validated runtime hydration", () => {
     expect(store.instrumentation.publishedDeltas).toBe(2);
   });
 });
+
+describe("validated hydration cancellation boundaries", () => {
+  it.each([7, 64])("cancels after %i records before publishing a partial commit", async (limit) => {
+    const { elements, derivations } = validatedRectangles(70);
+    const records = vi.spyOn(recordFactory, "createOwnedValidatedInitialRecord");
+    const inserts = vi.spyOn(UniformSpatialIndex.prototype, "insertMany");
+    const builder = ElementStore.createBuilder({
+      isCancelled: () => records.mock.calls.length >= limit,
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    try {
+      expect(await builder.appendOwnedValidatedRuntime(elements, derivations)).toBe("cancelled");
+      expect(records).toHaveBeenCalledTimes(limit);
+      expect(inserts).not.toHaveBeenCalled();
+      expect(await builder.finalize()).toBeNull();
+    } finally {
+      records.mockRestore();
+      inserts.mockRestore();
+    }
+  });
+
+  it("rechecks cancellation immediately after a shared-budget yield", async () => {
+    const { elements, derivations } = validatedRectangles(9);
+    const records = vi.spyOn(recordFactory, "createOwnedValidatedInitialRecord");
+    let cancelled = false;
+    const builder = ElementStore.createBuilder({
+      isCancelled: () => cancelled,
+      shouldYield: () => true,
+      yieldControl: async () => {
+        cancelled = true;
+      },
+    });
+    try {
+      expect(await builder.appendOwnedValidatedRuntime(elements, derivations)).toBe("cancelled");
+      expect(records).toHaveBeenCalledTimes(8);
+      expect(await builder.finalize()).toBeNull();
+    } finally {
+      records.mockRestore();
+    }
+  });
+});
+
+it("checks the shared budget before and after a full stroke fallback without sample extrema", async () => {
+  const { elements: boxes } = validatedRectangles(8);
+  const source = {
+    ...createTestStroke(),
+    points: new Float64Array(
+      Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
+        index % 3 === 2 ? 0.5 : 100 + (Math.floor(index / 3) % 100),
+      ),
+    ),
+  } as unknown as StrokeElementV1;
+  const initial = [...boxes.slice(0, 7), source, boxes[7]!];
+  const validation = validateRuntimeInkSnapshotV1(createWorkerSnapshot(initial));
+  if (!validation.ok) throw new Error("The large stroke fixture is invalid.");
+  const runtime = {
+    ...source,
+    points: new Float64Array(source.points),
+  } as unknown as StrokeElementV1;
+  const elements = [...boxes.slice(0, 7), runtime, boxes[7]!];
+  const derivations = validation.derivations.elements.map((derivation) => ({ ...derivation }));
+  delete derivations[7]!.strokeSampleExtrema;
+  const reads = vi.spyOn(sampleRanges, "assertStrokeSampleRange");
+  const records = vi.spyOn(recordFactory, "createOwnedValidatedInitialRecord");
+  const probes: number[][] = [];
+  const builder = ElementStore.createBuilder({
+    shouldYield: () => {
+      probes.push([
+        records.mock.calls.length,
+        reads.mock.calls.reduce((total, [, , , , range]) => total + range.end - range.start, 0),
+      ]);
+      return false;
+    },
+    yieldControl: async () => {
+      throw new Error("Available budget must not force a handoff.");
+    },
+  });
+  try {
+    expect(await builder.appendOwnedValidatedRuntime(elements, derivations)).toBe("accepted");
+    expect(probes).toEqual([
+      [7, 0],
+      [8, MAX_STROKE_POINTS * 3],
+      [9, MAX_STROKE_POINTS * 3],
+    ]);
+    const store = await builder.finalize();
+    expect(store?.size).toBe(9);
+    const stored = store?.get(runtime.id)?.element;
+    expect(stored).toBe(runtime);
+    if (stored?.kind !== "stroke") throw new Error("Expected the owned runtime stroke.");
+    expect(stored.points).toBe(runtime.points);
+  } finally {
+    reads.mockRestore();
+    records.mockRestore();
+  }
+});
+
+function validatedRectangles(count: number) {
+  const elements = Array.from({ length: count }, (_, index) =>
+    rectangle(`00000000-0000-4000-8000-${String(index + 1000).padStart(12, "0")}`),
+  );
+  const validation = validateRuntimeInkSnapshotV1(createWorkerSnapshot(elements));
+  if (!validation.ok) throw new Error("The rectangle fixture is invalid.");
+  return { elements, derivations: validation.derivations.elements };
+}
 
 function validatedStrokeFixture(additional: readonly InkElementV1[] = []) {
   const source = highlighter();

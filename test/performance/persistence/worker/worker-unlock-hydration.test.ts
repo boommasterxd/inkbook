@@ -64,8 +64,12 @@ describe("document worker export performance", () => {
     const scans = vi.spyOn(strokeSamples, "assertStrokeSamplesV1");
     const copies = vi.spyOn(strokeSamples, "copyStrokeSamplesToRuntime");
     const copyWork = observeSampleCopyBytes();
+    let budgetProbes = 0;
     const builder = ElementStore.createBuilder({
-      shouldYield: () => false,
+      shouldYield: () => {
+        budgetProbes += 1;
+        return false;
+      },
       yieldControl: async () => undefined,
     });
     let batches = 0;
@@ -90,7 +94,9 @@ describe("document worker export performance", () => {
             expect(bytes).toBeLessThanOrEqual(4 * 1024 * 1024);
             transferredBytes += bytes;
             elements += batch.elements.length;
+            const beforeHydration = budgetProbes;
             await builder.appendOwnedValidatedRuntime(batch.elements, batch.derivations);
+            expect(budgetProbes - beforeHydration).toBe(Math.ceil(batch.elements.length / 8));
           },
         },
       );

@@ -172,14 +172,19 @@ describe("UniformSpatialIndex resource bounds and prepared batches", () => {
   });
 });
 
-it("heapifies a large batch within the shared budget before atomic publication", async () => {
+function spatialReplacementFixture(count: number) {
   const index = new UniformSpatialIndex<number>();
   const original = { maxX: 20, maxY: 20, minX: 10, minY: 10 };
-  const replacements = Array.from({ length: 1_024 }, (_, id) => ({
+  const replacements = Array.from({ length: count }, (_, id) => ({
     bounds: { maxX: 40, maxY: id + 40, minX: 30, minY: id + 30 },
     id,
   }));
   index.insertMany(replacements.map(({ id }) => ({ bounds: original, id })));
+  return { index, original, replacements };
+}
+
+it("heapifies a large batch within the shared budget before atomic publication", async () => {
+  const { index, replacements } = spatialReplacementFixture(1_024);
   const sift = vi.spyOn(bottomHeap, "heapifyBottomAt");
   const visitsAtYield: number[] = [];
   try {
@@ -197,6 +202,25 @@ it("heapifies a large batch within the shared budget before atomic publication",
     expect(index.getMaximumBottom()).toBe(20);
     index.commitPreparedReplacements(plan);
     expect(index.getMaximumBottom()).toBe(1_063);
+  } finally {
+    sift.mockRestore();
+  }
+});
+
+it("cancels numeric heap preparation within a small block without changing the index", async () => {
+  const { index, original, replacements } = spatialReplacementFixture(128);
+  const sift = vi.spyOn(bottomHeap, "heapifyBottomAt");
+  try {
+    const plan = await index.prepareReplacementsTimeSliced(replacements, {
+      isCancelled: () => sift.mock.calls.length > 0,
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    expect(plan).toBe("cancelled");
+    expect(sift.mock.calls.length).toBeGreaterThan(0);
+    expect(sift.mock.calls.length).toBeLessThanOrEqual(32);
+    expect(index.getMaximumBottom()).toBe(20);
+    expect(index.query(original, new SpatialQueryScratch<number>())).toBe(128);
   } finally {
     sift.mockRestore();
   }

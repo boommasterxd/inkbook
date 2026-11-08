@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { validateRuntimeInkSnapshotV1 } from "../../../src/domain/schema/snapshot-validation";
 import { ElementStore } from "../../../src/domain/store/public";
+import { UniformSpatialIndex } from "../../../src/domain/spatial/index";
 import { MAX_UNLOCK_BATCH_ELEMENTS } from "../../../src/persistence/worker/runtime/wire/unlock-batch-limits";
 
 import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
@@ -39,7 +40,9 @@ describe("runtime store hydration performance", () => {
     expect(scheduler.checkpointCounts.length).toBeGreaterThan(1);
     expect(scheduler.checkpointCounts.every((count) => count <= 40)).toBe(true);
   });
+});
 
+describe("validated hydration clock probes", () => {
   it.each([65, 11_000])(
     "uses remaining shared budget for %i records without forced hydration yields",
     async (count) => {
@@ -49,40 +52,58 @@ describe("runtime store hydration performance", () => {
       const visited: number[] = [];
       const sliceVisits: number[] = [];
       let pendingVisits = 0;
+      let visitsSinceClock = 0;
+      const clockVisits: number[] = [];
       const counted = new Proxy(elements, {
         get(target, key, receiver): unknown {
           if (typeof key === "string" && /^(0|[1-9]\d*)$/u.test(key)) {
             pendingVisits += 1;
+            visitsSinceClock += 1;
             visited.push(Number(key));
           }
           return Reflect.get(target, key, receiver);
         },
       });
       const builder = ElementStore.createBuilder({
-        shouldYield: () => false,
+        shouldYield: () => {
+          clockVisits.push(visitsSinceClock);
+          visitsSinceClock = 0;
+          return false;
+        },
         yieldControl: async () => {
           sliceVisits.push(pendingVisits);
           pendingVisits = 0;
         },
       });
+      const commits = vi.spyOn(UniformSpatialIndex.prototype, "insertMany");
+      try {
+        const appendResult = await builder.appendOwnedValidatedRuntime(
+          counted,
+          validation.derivations.elements,
+        );
+        expect(appendResult).toBe("accepted");
+        expect(visited).toEqual(Array.from({ length: count }, (_, index) => index));
+        expect(sliceVisits).toHaveLength(0);
+        expect(pendingVisits).toBe(count);
+        expect(sliceVisits.reduce((total, visits) => total + visits, pendingVisits)).toBe(count);
+        expect(clockVisits).toHaveLength(Math.ceil(count / 8));
+        expect(clockVisits.every((visits) => visits > 0 && visits <= 8)).toBe(true);
+        expect(commits.mock.calls.map(([entries]) => entries.length)).toEqual(
+          Array.from({ length: Math.ceil(count / 64) }, (_, index) =>
+            Math.min(64, count - index * 64),
+          ),
+        );
 
-      const appendResult = await builder.appendOwnedValidatedRuntime(
-        counted,
-        validation.derivations.elements,
-      );
-      expect(appendResult).toBe("accepted");
-      expect(visited).toEqual(Array.from({ length: count }, (_, index) => index));
-      expect(sliceVisits).toHaveLength(0);
-      expect(pendingVisits).toBe(count);
-      expect(sliceVisits.reduce((total, visits) => total + visits, pendingVisits)).toBe(count);
-
-      const hydrated = await builder.finalize();
-      expect(hydrated?.size).toBe(count);
-      expect(hydrated?.instrumentation).toMatchObject({
-        hydrationElementVisits: count * 2,
-        publishedDeltas: 0,
-      });
-      for (const element of elements) expect(hydrated?.get(element.id)).toBeDefined();
+        const hydrated = await builder.finalize();
+        expect(hydrated?.size).toBe(count);
+        expect(hydrated?.instrumentation).toMatchObject({
+          hydrationElementVisits: count * 2,
+          publishedDeltas: 0,
+        });
+        for (const element of elements) expect(hydrated?.get(element.id)?.element).toBe(element);
+      } finally {
+        commits.mockRestore();
+      }
     },
   );
 });
