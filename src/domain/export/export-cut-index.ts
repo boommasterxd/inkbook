@@ -50,6 +50,11 @@ export class ExportCutIndex {
   public choose(lower: number, limit: number, start: number, clearance = 0): CutChoice {
     let first = this.#lowerBound(lower);
     if (this.events[first]?.y === start) first += 1;
+    // Only the lower boundary can lose its cheaper left side when clearance moves the cut.
+    const lowerChoice =
+      clearance > 0 && this.events[first]?.y === lower
+        ? this.#interiorCut(first++, lower, limit, clearance)
+        : undefined;
     const beyond = this.#lowerBound(limit);
     const exact = beyond < this.events.length && this.events[beyond]!.y === limit;
     const limitCrossings = exact
@@ -60,9 +65,11 @@ export class ExportCutIndex {
     const best = this.#rangeMinimum(first, beyond);
     const boundary =
       best >= 0 && this.events[best]!.at < limitCrossings ? best : exact ? beyond : -1;
-    return boundary < 0
-      ? { y: limit, crossings: limitCrossings }
-      : this.#interiorCut(boundary, lower, limit, clearance);
+    const choice =
+      boundary < 0
+        ? { y: limit, crossings: limitCrossings }
+        : this.#interiorCut(boundary, lower, limit, clearance);
+    return lowerChoice && lowerChoice.crossings < choice.crossings ? lowerChoice : choice;
   }
 
   #interiorCut(index: number, lower: number, limit: number, clearance: number): CutChoice {

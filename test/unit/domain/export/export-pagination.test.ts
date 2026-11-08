@@ -14,6 +14,19 @@ function prepare(intervals: readonly ExportInterval[]) {
 
 const defaults = { start: 0, limit: 100, minimum: 20, lookback: 40 };
 
+it("compares actual crossings when clearance moves the minimum boundary into ink", () => {
+  const intervals = [
+    ...Array.from({ length: 4 }, () => ({ minY: 100, maxY: 120 })),
+    { minY: 100, maxY: 200 },
+  ];
+  const options = { start: 0, minimum: 100, limit: 150, lookback: 50 };
+  const cuts = prepare(intervals);
+  expect(chooseExportCut(cuts, options)).toBe(100);
+  expect(chooseExportCut(cuts, { ...options, clearance: 1 })).toBe(150);
+  const withLaterCandidate = prepare([...intervals, { minY: 140, maxY: 200 }]);
+  expect(chooseExportCut(withLaterCandidate, { ...options, clearance: 1 })).toBe(139);
+});
+
 describe("export pagination bounds heuristic", () => {
   it("keeps a nearly fitting embed on the current page and chooses the latest clear boundary", () => {
     const cuts = prepare([
