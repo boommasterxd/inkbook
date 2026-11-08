@@ -14,6 +14,7 @@ import {
 } from "../../../persistence/worker/runtime/model/scene-path-limits";
 
 interface SessionScenePathOptions {
+  readonly canSynchronize?: () => boolean;
   readonly disposed: () => boolean;
   readonly executor: () => DocumentRuntimePort | undefined;
   readonly revision: () => number;
@@ -28,8 +29,18 @@ export class SessionScenePaths {
   #operationId = 0;
   public constructor(private readonly options: SessionScenePathOptions) {}
 
-  public readonly prepare: ScenePathPreparation = async (ids, signal, observer) => {
-    if (signal.aborted || this.options.disposed()) return undefined;
+  public readonly prepare: ScenePathPreparation = (ids, signal, observer) => {
+    if (
+      signal.aborted ||
+      this.options.disposed() ||
+      this.options.executor() === undefined ||
+      this.options.canSynchronize?.() === false
+    )
+      return undefined;
+    return this.prepareAdmitted(ids, signal, observer);
+  };
+
+  private readonly prepareAdmitted: ScenePathPreparation = async (ids, signal, observer) => {
     const identity: PurposeOperationIdentity = {
       operationId: ++this.#operationId,
       purpose: "background",

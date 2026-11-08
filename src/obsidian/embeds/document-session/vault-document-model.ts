@@ -143,6 +143,7 @@ export function createVaultSessionScenePaths(
 ): SessionScenePaths {
   return new SessionScenePaths({
     ...options,
+    canSynchronize: () => options.autosave()?.canSynchronizeWorkerBaseline() ?? false,
     recoverExecutorFailure: () => options.autosave()?.recoverWorkerExecutor() ?? false,
     synchronize: (identity) =>
       options.autosave()?.synchronizeWorkerBaseline(identity) ?? Promise.resolve(false),

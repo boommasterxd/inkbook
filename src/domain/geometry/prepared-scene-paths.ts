@@ -26,8 +26,9 @@ export interface ScenePathPreparationObserver {
   setRetarget(handler: ((ids: readonly string[]) => void) | undefined): void;
 }
 
+/** A synchronous undefined declines admission; no asynchronous work owns the contour. */
 export type ScenePathPreparation = (
   ids: readonly string[],
   signal: AbortSignal,
   observer?: ScenePathPreparationObserver,
-) => Promise<readonly PreparedScenePathEntry[] | undefined>;
+) => Promise<readonly PreparedScenePathEntry[] | undefined> | undefined;

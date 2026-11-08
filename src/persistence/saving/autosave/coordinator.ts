@@ -104,15 +104,17 @@ export class AutosaveCoordinator {
     this.#setStatus("debouncing");
     this.#timer.schedule(AUTOSAVE_DELAY_MS);
   }
+  public canSynchronizeWorkerBaseline(): boolean {
+    return (
+      !this.#recovery.blocksSynchronization(this.#disposed, this.#status) &&
+      (this.#workerModel.isCurrent(this.#document.currentRevision()) ||
+        (this.#exportInFlight === null && this.#modelSyncInFlight === null))
+    );
+  }
   public async synchronizeWorkerBaseline(identity: PurposeOperationIdentity): Promise<boolean> {
     const revision = this.#document.currentRevision();
-    if (this.#recovery.blocksSynchronization(this.#disposed, this.#status)) return false;
-    if (
-      this.#workerModel.modelRevision === revision &&
-      !this.#workerModel.requiresFullSynchronization
-    )
-      return true;
-    if (this.#exportInFlight !== null || this.#modelSyncInFlight !== null) return false;
+    if (!this.canSynchronizeWorkerBaseline()) return false;
+    if (this.#workerModel.isCurrent(revision)) return true;
     const plan = this.#workerModel.takePlan(this.#document);
     if (plan === null || plan.modelRevision !== revision) return false;
     let request = exports.createModelSyncRequest(plan, identity);
@@ -136,9 +138,8 @@ export class AutosaveCoordinator {
         this.#disposed ||
         this.#modelSyncInFlight !== request ||
         !exports.matchesModelSyncResult(request, result, this.#recovery.epoch)
-      ) {
+      )
         return false;
-      }
       this.#workerModel.acknowledgeSynchronization(result.modelRevision);
       synchronized = true;
       return result.modelRevision === this.#document.currentRevision();

@@ -7,7 +7,7 @@ import { indexedStroke } from "../../../../fixtures/editor/stroke";
 
 afterEach(() => vi.restoreAllMocks());
 
-it("advances expired deadlines, discards stale versions, publishes windows, and releases ownership", () => {
+it("advances expired deadlines, discards stale versions, publishes the canonical path, and releases ownership", () => {
   const geometry = new CommittedPreviewGeometry();
   const element = {
     ...indexedStroke(1),
@@ -15,7 +15,8 @@ it("advances expired deadlines, discards stale versions, publishes windows, and 
   };
   const record = createSceneRecord(element);
   const publishWindow = vi.fn();
-  const port = { readWindow: () => undefined, publishWindow };
+  const publishPath = vi.fn();
+  const port = { readWindow: () => undefined, publishWindow, publishPath };
   const step = vi.spyOn(ProgressivePreviewPath.prototype, "step");
   geometry.retain(element.id, "translate(10 0)", 2);
   expect(geometry.prepare(record, 0, () => 100, port)).toBeUndefined();
@@ -28,7 +29,8 @@ it("advances expired deadlines, discards stale versions, publishes windows, and 
   const parts = geometry.prepare(latest, Infinity, () => 0, port);
   expect(step.mock.calls.length).toBeGreaterThan(4);
   expect(parts).toEqual(buildElementPathParts(latest.element));
-  expect(publishWindow).toHaveBeenCalled();
+  expect(publishWindow).not.toHaveBeenCalled();
+  expect(publishPath).toHaveBeenCalledExactlyOnceWith(parts);
   expect(geometry.finish(element.id)).toMatchObject({ transform: null });
   expect(geometry.memoryUsage()).toBe(0);
   geometry.retain(element.id, "translate(5 0)", null);

@@ -91,15 +91,18 @@ describe("autosave external worker restart", () => {
       fixture.commit(1);
       const recovery = fixture.coordinator.recoverWorkerExecutor(false);
       await fixture.restarting;
+      expect(fixture.coordinator.canSynchronizeWorkerBaseline()).toBe(false);
       fixture.clock.advance(1_000);
       fixture.release();
       expect(await recovery).toBe(true);
+      expect(fixture.coordinator.canSynchronizeWorkerBaseline()).toBe(true);
       expect(fixture.replacementRequests).toEqual([]);
       expect(fixture.vault.processCount).toBe(0);
       expect(fixture.coordinator.dirty).toBe(true);
     } finally {
       fixture.coordinator.dispose();
     }
+    expect(fixture.coordinator.canSynchronizeWorkerBaseline()).toBe(false);
   });
 
   it.each(["timer", "flush"] as const)(

@@ -1,0 +1,62 @@
+.inkbook-export-definitions {
+  block-size: 0;
+  inline-size: 0;
+  overflow: hidden;
+  position: absolute;
+}
+
+@media print {
+  .inkbook-native-pdf-export {
+    --inkbook-native-pdf-print-maximum: var(--inkbook-native-pdf-maximum);
+  }
+}
+
+.inkbook-export-pages {
+  display: block;
+}
+
+.inkbook-export-pages > .inkbook-export-page {
+  block-size: 100%;
+  display: block;
+  inline-size: 100%;
+  inset: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  position: absolute;
+  print-color-adjust: exact;
+}
+
+.inkbook-static-export {
+  container-type: inline-size;
+  print-color-adjust: exact;
+}
+
+.inkbook-export-fragmented::before {
+  display: none;
+}
+
+.inkbook-export-piece {
+  break-inside: avoid-page;
+}
+
+.inkbook-root.inkbook-embed-root.inkbook-export-piece > .inkbook-locked-preview {
+  padding-block: var(--inkbook-shell-radius);
+}
+
+.inkbook-export-keep {
+  break-before: page;
+}
+
+.inkbook-export-page-start[data-inkbook-export] {
+  break-before: page;
+  margin-block-start: 0;
+}
+
+.inkbook-export-page-start > .inkbook-export-keep {
+  break-before: auto;
+}
+
+.inkbook-export-continued {
+  break-before: page;
+  margin-block-start: 12px;
+}

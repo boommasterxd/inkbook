@@ -16,6 +16,8 @@ import { StoreAppendBuilder } from "./store-append-builder";
 import type { ElementRecord, EndpointReference, StoreSliceScheduler } from "./types";
 
 const MAX_HYDRATION_RECORDS_PER_SLICE = 64;
+// This interval reduces clock reads; only the shared scheduler requests a handoff.
+const HYDRATION_CLOCK_CHECK_INTERVAL = 8;
 
 interface InitialRankEntry {
   readonly band: RenderBand;
@@ -128,21 +130,33 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
   ): Promise<"accepted" | "cancelled"> {
     const records: ElementRecord[] = [];
     const batchIds = new Set<string>();
+    let cheapRecordsSinceCheck = 0;
     for (let index = 0; index < elements.length; index += 1) {
       const element = elements[index]!;
       if (this.#isCancelled()) return this.#cancel();
+      const derivation = derivations[index]!;
+      const cheap = isCheapValidatedRecord(element, derivation);
+      const preparation = cheap ? 0 : yieldWhenRequested(this.#scheduler);
+      if (preparation !== 0) this.#yields += await preparation;
+      if (!cheap && this.#isCancelled()) return this.#cancel();
       if (this.#records.has(element.id) || batchIds.has(element.id)) {
         throw new RangeError(`Duplicate element ID: ${element.id}`);
       }
       batchIds.add(element.id);
-      records.push(createOwnedValidatedInitialRecord(element, derivations[index]!));
-      if (records.length >= MAX_HYDRATION_RECORDS_PER_SLICE || index === elements.length - 1) {
+      records.push(createOwnedValidatedInitialRecord(element, derivation));
+      const commit =
+        records.length >= MAX_HYDRATION_RECORDS_PER_SLICE || index === elements.length - 1;
+      if (commit) {
         if (this.#isCancelled()) return this.#cancel();
         this.#commitValidatedRecords(records);
         records.length = 0;
       }
+      cheapRecordsSinceCheck += 1;
+      if (cheap && !commit && cheapRecordsSinceCheck < HYDRATION_CLOCK_CHECK_INTERVAL) continue;
+      cheapRecordsSinceCheck = 0;
       const continuation = yieldWhenRequested(this.#scheduler);
       if (continuation !== 0) this.#yields += await continuation;
+      if (this.#isCancelled()) return this.#cancel();
     }
     if (this.#isCancelled()) return this.#cancel();
     return "accepted";
@@ -222,4 +236,14 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
 function yieldWhenRequested(scheduler: StoreSliceScheduler): 0 | Promise<1> {
   if (!scheduler.shouldYield()) return 0;
   return scheduler.yieldControl().then(() => 1);
+}
+
+function isCheapValidatedRecord(
+  element: InkElementV1,
+  derivation: ElementValidationDerivation,
+): boolean {
+  return (
+    element.kind !== "stroke" ||
+    (derivation.strokeSampleExtrema !== undefined && element.points instanceof Float64Array)
+  );
 }

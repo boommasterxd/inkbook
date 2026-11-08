@@ -127,6 +127,7 @@ const SUCCESS_TYPE_BY_REQUEST = {
   "model-sync-full": "model-sync-success",
   "model-sync-incremental": "model-sync-success",
   "prepare-scene-paths": "prepare-scene-paths-success",
+  "prepare-export-geometry": "prepare-export-geometry-success",
   unlock: "unlock-success",
   "verify-output": "verify-output-success",
 } as const;

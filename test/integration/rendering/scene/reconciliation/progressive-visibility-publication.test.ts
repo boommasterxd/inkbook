@@ -3,6 +3,16 @@ import { buildElementPathParts } from "../../../../../src/domain/geometry/elemen
 import { SceneFrameWork } from "../../../../../src/rendering/scene/scene-frame-work";
 import { SceneContentScheduler } from "../../../../../src/rendering/scene/scene-content-scheduler";
 import { removeOrderedVisibilityExits } from "../../../../../src/rendering/scene/reconciliation/visibility-reconciliation-commit";
+import { SceneVisibilityReconciler } from "../../../../../src/rendering/scene/reconciliation/scene-visibility-reconciler";
+import { SceneVisibilityState } from "../../../../../src/rendering/scene/visibility/visibility-state";
+import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
+import { MountSlice } from "../../../../../src/rendering/scene/reconciliation/mount-slice";
+import { ProgressivePreviewPath } from "../../../../../src/rendering/scene/content/progressive-preview-path";
+import { CanonicalElementPathPreparation } from "../../../../../src/domain/geometry/canonical-element-path-preparation";
+import { updateMountedGeometry } from "../../../../../src/rendering/scene/content/mounted-element";
+import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
+import type { PreparedScenePathEntry } from "../../../../../src/domain/geometry/prepared-scene-paths";
+import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
 import {
   createSceneRecord,
   createViewportRectangleStore,
@@ -25,6 +35,171 @@ import { arrow } from "../../../../unit/domain/schema/fixtures";
 
 const INITIAL = { height: 100, left: 0, top: 0, width: 1_000 };
 const TARGET = { ...INITIAL, top: 1_000 };
+
+it("keeps mounted dirty scratch out of deferred entrant publication", () => {
+  const fixture = createDirectPublicationScene("pressure");
+  const { dom, entry, before, after, store, content, instrumentation } = fixture;
+  content.insertBefore(entry.paths[0]!.node as unknown as FakeNode, content.nodes[1]!);
+  const mounted = new Map([before, entry, after].map((node) => [node.id, node]));
+  const visibility = new SceneVisibilityState(store, instrumentation);
+  const cache = new ScenePathCache();
+  const reconciler = new SceneVisibilityReconciler({
+    dom,
+    mounted,
+    store,
+    visibility,
+    pathCache: cache,
+    instrumentation,
+    retainGeometryPath: (id) => mounted.has(id),
+    orderDirty: { content: new Set(), highlight: new Set() },
+  });
+  const bounds = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+  const reconcile = () =>
+    reconciler.reconcile(Infinity, () => 0, new Map(), new Map(), { remainingRoots: 256 });
+  try {
+    reconciler.replace(visibility.query(bounds, bounds, false).visibility, true);
+    reconcile();
+    const dirty = {
+      ...createSceneRecord(
+        {
+          ...createTestStroke(),
+          id: entry.id,
+          points: Array.from({ length: 192 }, (_, index) => [10 + index / 100, 10, 0.5]).flat(),
+        },
+        1,
+      ),
+      geometryVersion: entry.geometryVersion + 1,
+    };
+    store.records.set(dirty.id, dirty);
+    let time = 0;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Forwarded with the real preparation receiver.
+    const step = CanonicalElementPathPreparation.prototype.step;
+    const pause = vi.spyOn(ProgressivePreviewPath.prototype, "step").mockImplementation(function (
+      this: ProgressivePreviewPath,
+      ...args
+    ) {
+      const done = step.apply(this, args);
+      time += 20;
+      return done;
+    });
+    expect(reconciler.preparation.prepare(dirty, new MountSlice(1, () => time))).toBeUndefined();
+    pause.mockRestore();
+    expect(reconciler.preparation.pendingId).toBe(dirty.id);
+    const entrant = createSceneRecord({ ...createTestStroke(), id: "entrant" }, 3);
+    store.records.set(entrant.id, entrant);
+    visibility.invalidateForChanges();
+    const target = visibility.query(bounds, bounds, false);
+    reconciler.replace(target.visibility, true, target.delta);
+    expect(() => reconcile()).not.toThrow();
+    expect(mounted.get(dirty.id)).toBe(entry);
+    expect(reconciler.preparation.pendingId).toBe(dirty.id);
+    expect(content.nodes).toHaveLength(3);
+    const parts = reconciler.preparation.prepare(dirty, new MountSlice(Infinity, () => 0));
+    expect(parts).toBeDefined();
+    updateMountedGeometry(
+      entry,
+      dirty,
+      parts!,
+      dom.ownerDocument,
+      dom.contentGroup,
+      instrumentation,
+    );
+    for (let round = 0; reconciler.hasPendingWork; round += 1) {
+      expect(round).toBeLessThan(10);
+      reconcile();
+    }
+    expect(mounted.get(dirty.id)).toBe(entry);
+    expect(mounted.size).toBe(4);
+    expect(content.nodes).toHaveLength(4);
+    expect(new Set(content.nodes).size).toBe(4);
+    expect(mounted.get(entrant.id)!.pathParts).toEqual(buildElementPathParts(entrant.element));
+  } finally {
+    reconciler.release();
+    visibility.release();
+    cache.release();
+    dom.release();
+  }
+  expect(reconciler.preparation.memoryUsage()).toBe(0);
+});
+
+it("rescans old mounted exits when a full target changes after its earlier exit scan was consumed during a worker wait", async () => {
+  const fixture = createDirectPublicationScene("path");
+  const { before, entry, after, dom, content, instrumentation } = fixture;
+  fixture.store.records.delete(entry.id);
+  let finish!: (paths: readonly PreparedScenePathEntry[] | undefined) => void;
+  const prepare = vi.fn<NonNullable<SceneStorePort["prepareScenePaths"]>>(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const store = Object.assign(fixture.store, { prepareScenePaths: prepare });
+  const mounted = new Map([
+    [before.id, before],
+    [after.id, after],
+  ]);
+  const visibility = new SceneVisibilityState(store, instrumentation);
+  const cache = new ScenePathCache();
+  const reconciler = new SceneVisibilityReconciler({
+    dom,
+    mounted,
+    store,
+    pathCache: cache,
+    visibility,
+    instrumentation,
+    orderDirty: { content: new Set(), highlight: new Set() },
+  });
+  const reconcile = () =>
+    reconciler.reconcile(Infinity, () => 0, new Map(), new Map(), {
+      remainingRoots: 256,
+      remainingRemovals: 64,
+    });
+  try {
+    const initial = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+    reconciler.replace(visibility.query(initial, initial, false).visibility, true);
+    reconcile();
+    const cold = createSceneRecord(
+      {
+        ...createTestStroke(),
+        id: entry.id,
+        pivot: { x: 505, y: 20 },
+        points: [500, 20, 0.5, 510, 20, 1],
+      },
+      1,
+    );
+    store.records.set(cold.id, cold);
+    visibility.invalidateForChanges();
+    const targetA = { ...initial, maxX: 600 };
+    const exits = vi.spyOn(mounted, "entries");
+    reconciler.replace(visibility.query(targetA, targetA, false).visibility, true);
+    reconcile();
+    reconcile();
+    expect(prepare).toHaveBeenCalledOnce();
+    const consumed = exits.mock.results[0]!.value as ReturnType<typeof mounted.entries>;
+    expect(consumed.next().done).toBe(true);
+    expect(mounted.size).toBe(2);
+    expect(content.nodes).toHaveLength(2);
+    const targetB = { ...initial, minX: 450, maxX: 600 };
+    reconciler.replace(visibility.query(targetB, targetB, false).visibility, true);
+    finish([{ id: cold.id, parts: buildElementPathParts(cold.element) }]);
+    await Promise.resolve();
+    await Promise.resolve();
+    for (let round = 0; reconciler.hasPendingWork; round += 1) {
+      expect(round).toBeLessThan(10);
+      reconcile();
+    }
+    expect([...mounted.keys()]).toEqual([cold.id]);
+    expect(content.nodes).toHaveLength(1);
+    expect(before.paths[0]!.node.parentNode).toBeNull();
+    expect(after.paths[0]!.node.parentNode).toBeNull();
+    exits.mockRestore();
+  } finally {
+    reconciler.release();
+    visibility.release();
+    cache.release();
+    dom.release();
+  }
+});
 
 it.each(["budget", "deadline"])("defers a protected partial repair at the shared %s", (reason) => {
   const fixture = createDirectPublicationScene("multipart");

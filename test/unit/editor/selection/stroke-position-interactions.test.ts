@@ -42,16 +42,22 @@ describe("positioned stroke interactions", () => {
     ).toBe(false);
   });
 
-  it("flattens a positioned shape only when resizing its samples", () => {
-    const source = positionedStroke();
-    const scaled = scaleElement(source, { x: 0, y: 0 }, { x: 2, y: 3 });
-    expect(scaled).toMatchObject({
-      points: [400, 450, 0.5, 440, 510, 1],
-      pivot: { x: 420, y: 480 },
-    });
-    expect(scaled).not.toHaveProperty("offset");
-    expect(source.points).toEqual(stroke().points);
-  });
+  it.each([false, true])(
+    "flattens positioned samples while preserving buffer kind (typed=%s)",
+    (typed) => {
+      const source = positionedStroke();
+      if (typed)
+        source.points = new Float64Array(source.points) as unknown as StrokeElementV1["points"];
+      const scaled = scaleElement(source, { x: 0, y: 0 }, { x: 2, y: 3 }) as StrokeElementV1;
+      expect(scaled).toMatchObject({
+        pivot: { x: 420, y: 480 },
+      });
+      expect(Array.from(scaled.points)).toEqual([400, 450, 0.5, 440, 510, 1]);
+      expect(scaled.points instanceof Float64Array).toBe(typed);
+      expect(scaled).not.toHaveProperty("offset");
+      expect(Array.from(source.points)).toEqual(stroke().points);
+    },
+  );
 
   it("moves and rotates around selection centers while keeping sample identity", () => {
     const source = positionedStroke();

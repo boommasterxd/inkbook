@@ -12,6 +12,9 @@ import {
 } from "./index-state";
 import { heapifyBottom, heapifyBottomAt, type BottomHeapEntry } from "./max-bottom-heap";
 
+// Small numeric heap steps amortize clock checks; the shared scheduler still owns admission.
+const HEAP_ENTRIES_PER_STEP = 32;
+
 export interface SpatialReplacementPreparationPorts<Id, Owner extends object> {
   readonly createReplacement: (
     current: IndexedEntry<Id>,
@@ -187,14 +190,19 @@ async function finishPreparationTimeSliced<Id, Owner extends object>(
   scheduler: SpatialReplacementPreparationScheduler,
 ): Promise<PreparedSpatialReplacements<Id> | "cancelled"> {
   const extentHeap: BottomHeapEntry<Id>[] = [];
-  for (const { replacement } of prepared) {
-    if (!replacement.overflow) extentHeap.push(ports.extentEntry(replacement));
+  for (let start = 0; start < prepared.length; start += HEAP_ENTRIES_PER_STEP) {
+    const end = Math.min(prepared.length, start + HEAP_ENTRIES_PER_STEP);
+    for (let index = start; index < end; index += 1) {
+      const replacement = prepared[index]!.replacement;
+      if (!replacement.overflow) extentHeap.push(ports.extentEntry(replacement));
+    }
     const continuation = checkpoint(scheduler);
     if (continuation === false || (continuation !== true && !(await continuation)))
       return "cancelled";
   }
-  for (let index = Math.floor(extentHeap.length / 2) - 1; index >= 0; index -= 1) {
-    heapifyBottomAt(extentHeap, index);
+  for (let end = Math.floor(extentHeap.length / 2) - 1; end >= 0; end -= HEAP_ENTRIES_PER_STEP) {
+    const start = Math.max(0, end - HEAP_ENTRIES_PER_STEP + 1);
+    for (let index = end; index >= start; index -= 1) heapifyBottomAt(extentHeap, index);
     const continuation = checkpoint(scheduler);
     if (continuation === false || (continuation !== true && !(await continuation)))
       return "cancelled";

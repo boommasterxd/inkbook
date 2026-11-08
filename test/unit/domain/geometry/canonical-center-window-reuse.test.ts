@@ -61,6 +61,7 @@ describe("canonical local center window reuse", () => {
       for (const mixed of [false, true]) {
         const port: PreparedPressureGeometryPort = {
           ...centers,
+          readPath: () => undefined,
           readCenters: (index) =>
             mixed && index % 2 === 0 ? undefined : centers.readCenters!(index),
         };

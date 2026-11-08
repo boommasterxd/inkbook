@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   validateDashArray,
@@ -136,6 +136,84 @@ describe("path separator checkpoints", () => {
     expect(result !== null).toBe(valid);
   });
 });
+
+describe("canonical path coordinate equivalence", () => {
+  it("preserves the previous canonical-number contract for every fractional tail and boundary", () => {
+    const prefixes = ["0", "7", "999999", "1000000"].flatMap((integer) => [integer, `-${integer}`]);
+    for (let fraction = 1; fraction <= 999; fraction += 1) {
+      const tail = String(fraction);
+      for (const digits of new Set([tail, tail.padStart(2, "0"), tail.padStart(3, "0")])) {
+        for (const prefix of prefixes) verifyCanonicalCoordinate(`${prefix}.${digits}`, false);
+        verifyCanonicalCoordinate(`.${digits}`, true);
+        verifyCanonicalCoordinate(`-.${digits}`, true);
+      }
+    }
+    for (const token of [
+      "0",
+      "-0",
+      "0.0",
+      "-0.0",
+      "0.00",
+      "-0.00",
+      "0.000",
+      "-0.000",
+      "1000000",
+      "-1000000",
+      "1000000.001",
+      "-1000000.001",
+      "1000001",
+      "10000000",
+      "01",
+      "00.1",
+      "1.",
+      "1.0001",
+      "1e2",
+      "1E2",
+      "1e-2",
+      "+1",
+    ])
+      verifyCanonicalCoordinate(token, false);
+    for (const token of [".0", "-.0", ".00", "-.000", ".0001", ".1e2"]) {
+      verifyCanonicalCoordinate(token, true);
+    }
+  });
+
+  it("validates 10,000 canonical segments without formatting numeric tokens", () => {
+    const path =
+      "M0 0" + Array.from({ length: 10_000 }, (_, index) => ` L${index} ${index}.125`).join("");
+    const formatting = vi.spyOn(Number.prototype, "toString");
+    let result;
+    let calls;
+    try {
+      result = validatePathData(path);
+      calls = formatting.mock.calls.length;
+    } finally {
+      formatting.mockRestore();
+    }
+    expect(result).toEqual({ commands: 10_001, numericTokens: 20_002 });
+    expect(calls).toBe(0);
+  });
+});
+
+function verifyCanonicalCoordinate(token: string, compact: boolean): void {
+  const number = Number(token);
+  const normalized = compact ? token.replace(/^(-?)\./u, "$10.") : token;
+  const canonical =
+    /^-?(?:0|[1-9]\d{0,6})(?:\.\d{1,3})?$/u.test(normalized) &&
+    Number.isFinite(number) &&
+    Math.abs(number) <= 1_000_000 &&
+    number.toString() === normalized;
+  let observed: number | undefined;
+  const result = complete(
+    validatePathDataSteps(compact ? `M0 0l${token} 0` : `M${token} 0`, {
+      observeCommand: (command, values) => {
+        if (command === (compact ? "l" : "M")) observed = values[0];
+      },
+    }),
+  );
+  expect(result !== null, token).toBe(canonical);
+  if (canonical) expect(observed, token).toBe(number);
+}
 
 function complete<T>(steps: Generator<void, T>): T {
   let step = steps.next();

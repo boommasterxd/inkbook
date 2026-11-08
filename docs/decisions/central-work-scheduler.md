@@ -54,7 +54,7 @@ behind a scene that can consume the complete allowance on every frame. Pointer
 and camera `input` still precede both. Document prewarming waits for interactive
 leases to finish; required visible publication
 continues through the shared frame budget. Other asynchronous preparation keeps
-its default `background` priority. The main-thread encoding and dispatch of a pending
+its default `background` priority. The main-thread encoding, dispatch, and result adoption of a pending
 worker export also use `frame` admission, preserving overlap between export and
 scene work instead of holding the worker idle until rendering finishes. The
 autosave debounce remains unchanged. Required viewport contour preparation,
@@ -62,8 +62,10 @@ its background-purpose model synchronization, and requests marked
 `navigationReserve: true` use frame admission during navigation. Drawing still
 gates required work and cancels navigation reserves; navigation alone does not
 cancel reserves. Reserves yield to required scene and model work. Other requests
-and result adoption retain background admission and defer during navigation. An already running worker
-export may finish within the central budget, with main-thread adoption deferred.
+and their result adoption retain background admission and defer during navigation. An already running worker
+export may finish within the central budget; its main-thread adoption waits for input
+release and then shares frame admission with the scene. Outbound publication rechecks
+the same input gates and central budget after encoding, without an unconditional frame wait.
 This changes admission order,
 not the shared budget or the requirement to yield only when necessary.
 

@@ -1,6 +1,7 @@
 import { ChunkedSha256 } from "../chunked-output-sha256";
 
 const DEFAULT_SLICE_BYTE_LIMIT = 64 * 1024;
+export const MAX_NATIVE_HASH_BYTES = 20 * 1024 * 1024;
 
 export interface ChunkedUtf8OutputAssembly {
   readonly hash: string;

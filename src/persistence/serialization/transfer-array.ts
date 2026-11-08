@@ -22,6 +22,10 @@ export function isNativeUint8Array(value: unknown): value is Uint8Array {
   return ArrayBuffer.isView(value) && typedArrayName.get!.call(value) === "Uint8Array";
 }
 
+export function isNativeUint32Array(value: unknown): value is Uint32Array {
+  return ArrayBuffer.isView(value) && typedArrayName.get!.call(value) === "Uint32Array";
+}
+
 /** Rehomes the view for domain consumers without copying its transferred samples. */
 export function adoptLocalStrokeArray(points: Float64Array): Float64Array {
   const { buffer, byteOffset, length } = points;

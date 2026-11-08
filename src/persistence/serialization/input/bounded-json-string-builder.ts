@@ -37,7 +37,13 @@ export class BoundedJsonStringBuilder {
 
   #flush(): void {
     if (this.#length === 0) return;
-    this.#fragments.push(String.fromCharCode(...this.#scratch.subarray(0, this.#length)));
+    this.#fragments.push(
+      Reflect.apply(
+        String.fromCharCode,
+        undefined,
+        this.#scratch.subarray(0, this.#length),
+      ) as string,
+    );
     this.#length = 0;
   }
 }

@@ -10,6 +10,7 @@ import type { SceneElementRecord, SceneStorePort } from "../types";
 
 interface Batch {
   retarget: ((ids: readonly string[]) => void) | undefined;
+  retargetDirty: boolean;
   readonly controller: AbortController;
   readonly versions: Map<string, number>;
   readonly paths: Map<string, readonly SvgPathPart[]>;
@@ -60,6 +61,18 @@ export class RemoteScenePaths {
     if (this.store.prepareScenePaths === undefined) return undefined;
     this.#upcoming = upcoming;
     let batch = this.#batches.find((candidate) => candidate.versions.has(record.id));
+    if (batch !== undefined && batch.versions.get(record.id) !== record.geometryVersion) {
+      if (!batch.pending) {
+        this.release(record.id, upcoming, batch.versions.get(record.id));
+        return undefined;
+      }
+      if (this.store.get(record.id)?.geometryVersion !== record.geometryVersion) {
+        return undefined;
+      }
+      this.invalidate(record.id);
+      this.#upcoming = upcoming;
+      batch = undefined;
+    }
     if (batch === undefined) {
       if (this.waiting) return "pending";
       batch = this.start(record);
@@ -70,16 +83,23 @@ export class RemoteScenePaths {
       batch.versions.get(record.id) === record.geometryVersion
         ? batch.paths.get(record.id)
         : undefined;
-    this.release(record.id);
+    this.release(record.id, undefined, record.geometryVersion);
     return parts;
   }
 
   /** Cache adoption can bypass read; free the reservation before DOM publication. */
-  public release(id: string, upcoming?: () => Iterable<string>): void {
-    if (!this.#batches.some((batch) => batch.versions.has(id))) return;
+  public release(id: string, upcoming?: () => Iterable<string>, version?: number): void {
+    if (
+      !this.#batches.some(
+        (batch) =>
+          batch.versions.has(id) && (version === undefined || batch.versions.get(id) === version),
+      )
+    )
+      return;
     this.#lastReleased = id;
     if (upcoming !== undefined) this.#upcoming = upcoming;
-    for (const batch of this.#batches) this.releaseEntry(batch, id);
+    for (const batch of this.#batches)
+      if (version === undefined || batch.versions.get(id) === version) this.releaseEntry(batch, id);
     this.prune();
     this.refill();
   }
@@ -102,7 +122,7 @@ export class RemoteScenePaths {
       }
       changed ||= shrunk;
       if (batch.versions.size === 0) this.abort(batch);
-      else if (shrunk) batch.retarget?.([...batch.versions.keys()]);
+      else if (shrunk || batch.retargetDirty) this.retarget(batch);
     }
     this.prune();
     if (changed || this.#batches.length === 0)
@@ -110,6 +130,34 @@ export class RemoteScenePaths {
     if (retainVisible === undefined) {
       this.#lastReleased = undefined;
     }
+  }
+
+  public invalidate(id: string, deferRetarget = false): void {
+    for (const batch of this.#batches) {
+      if (!batch.versions.has(id)) continue;
+      this.releaseEntry(batch, id);
+      if (batch.versions.size === 0) this.abort(batch);
+      else {
+        batch.retargetDirty = true;
+        if (!deferRetarget) this.retarget(batch);
+      }
+    }
+    this.prune();
+  }
+
+  /** Exit membership changes immediately; one existing slice sends its final set. */
+  public flushRetargets(): void {
+    for (const batch of this.#batches) {
+      if (!batch.retargetDirty) continue;
+      if (batch.pending && !batch.terminal && !batch.controller.signal.aborted)
+        this.retarget(batch);
+      else batch.retargetDirty = false;
+    }
+  }
+
+  private retarget(batch: Batch): void {
+    batch.retargetDirty = false;
+    batch.retarget?.([...batch.versions.keys()]);
   }
 
   public memoryUsage(): number {
@@ -121,6 +169,7 @@ export class RemoteScenePaths {
   }
 
   private abort(batch: Batch): void {
+    batch.retargetDirty = false;
     batch.controller.abort();
     this.discardReadyPaths(batch);
     batch.versions.clear();
@@ -176,6 +225,7 @@ export class RemoteScenePaths {
     if (this.#batches.length >= 2 || this.capacity() === 0 || maxBytes <= 0) return undefined;
     const batch: Batch = {
       retarget: undefined,
+      retargetDirty: false,
       controller: new AbortController(),
       versions: new Map(),
       paths: new Map(),
@@ -227,10 +277,10 @@ export class RemoteScenePaths {
       this.prune();
       // Collection may have parked required mounting at a shared checkpoint.
       if (deferred) this.options.onReady?.();
-    } else this.dispatch(batch);
+    } else if (!this.dispatch(batch) && deferred) this.options.onReady?.();
   }
 
-  private dispatch(batch: Batch): void {
+  private dispatch(batch: Batch): boolean {
     batch.started = true;
     const visible = [...batch.versions.keys()].filter((id) => batch.viewportIds.has(id));
     const overscan = [...batch.versions.keys()].filter((id) => !batch.viewportIds.has(id));
@@ -238,18 +288,25 @@ export class RemoteScenePaths {
     const versions = new Map(batch.versions);
     batch.versions.clear();
     for (const id of ids) batch.versions.set(id, versions.get(id)!);
-    void this.store.prepareScenePaths!(ids, batch.controller.signal, {
+    const pending = this.store.prepareScenePaths!(ids, batch.controller.signal, {
       visibleCount: visible.length,
       maxBytes: batch.maxBytes,
       onProgress: (paths) => this.enqueue(batch, paths),
       setRetarget: (handler) => {
         batch.retarget = handler;
-        if (handler !== undefined) handler([...batch.versions.keys()]);
+        if (handler !== undefined) this.retarget(batch);
       },
-    }).then(
+    });
+    if (pending === undefined) {
+      batch.pending = false;
+      batch.terminal = true;
+      return false;
+    }
+    void pending.then(
       (paths) => this.enqueue(batch, paths ?? [], true),
       () => this.fail(batch),
     );
+    return true;
   }
 
   private enqueue(batch: Batch, paths: readonly PreparedScenePathEntry[], terminal = false): void {
@@ -342,6 +399,7 @@ export class RemoteScenePaths {
   private fail(batch: Batch): void {
     if (batch.controller.signal.aborted || !this.#batches.includes(batch)) return;
     batch.controller.abort();
+    batch.retargetDirty = false;
     this.discardReadyPaths(batch);
     batch.pending = false;
     batch.processing = false;

@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { validatePathDataSteps } from "../../../../src/persistence/documents/path-data-validator";
 import { inspectTrustedSvgOutput } from "../../../../src/persistence/scheduling/trusted-svg-output";
+import { validateSafeSvgSteps } from "../../../../src/persistence/documents/safe-svg-validator";
+import { serializeSvgEnvelope } from "../../../../src/persistence/documents/svg-envelope";
+import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
+import { createCapacityExportSvg } from "../../../fixtures/persistence/export-geometry";
 import {
   createMaximumComplexityPath,
   createMaximumComplexitySvg,
+  exhaustValidation,
 } from "../../../fixtures/persistence/safe-svg";
 describe("safe SVG validation performance", () => {
   it("validates a maximum-size, maximum-command path with cooperative checkpoints", async () => {
@@ -37,6 +42,55 @@ describe("safe SVG validation performance", () => {
     expect(step.value).toEqual({ commands: 400_000, numericTokens: 800_000 });
   }, 120_000);
 });
+
+describe("safe SVG metadata work", () => {
+  it("encodes the raw metadata of 10,000 strokes once while retaining complete validation", () => {
+    const svg = createCapacityExportSvg();
+    const start = svg.indexOf(">", svg.indexOf("<metadata")) + 1;
+    const raw = svg.slice(start, svg.indexOf("</metadata>"));
+    const expectedBytes = new TextEncoder().encode(raw).byteLength;
+    const observed = observeMetadataEncoding(svg, svg.length);
+    expect(observed.result).toMatchObject({ paths: 10_001, metadataBytes: expectedBytes });
+    expect(observed.result!.metadataText).toBe(raw);
+    expect(observed.encodedCodeUnits).toBe(raw.length);
+    expect(observed.boundedEncoderWrites).toBe(true);
+  });
+
+  it("counts escaped Unicode once and derives exact decoded bytes across both chunk boundaries", () => {
+    const prefix = `${"a".repeat(16 * 1024 - 1)}&amp;`.padEnd(256 * 1024 - 1, "a");
+    const raw = `${prefix}😀${"ä😀".repeat(40_000)}&lt;&gt;&amp;`;
+    const decoded = `${prefix.replace("&amp;", "&")}😀${"ä😀".repeat(40_000)}<>&`;
+    const base = serializeSvgEnvelope(createWorkerSnapshot([]), 100, {
+      background: [],
+      highlights: [],
+      content: [],
+    });
+    const start = base.indexOf(">", base.indexOf("<metadata")) + 1;
+    const svg = base.slice(0, start) + raw + base.slice(base.indexOf("</metadata>"));
+    const totalInputBytes = new TextEncoder().encode(svg).byteLength;
+    const expectedBytes = new TextEncoder().encode(decoded).byteLength;
+    const observed = observeMetadataEncoding(svg, totalInputBytes);
+    expect(observed.result?.metadataText).toBe(decoded);
+    expect(observed.result?.metadataBytes).toBe(expectedBytes);
+    expect(observed.encodedCodeUnits).toBe(raw.length);
+    expect(observed.boundedEncoderWrites).toBe(true);
+    expect(observed.yields).toBeGreaterThan(20);
+  });
+});
+
+function observeMetadataEncoding(svg: string, totalInputBytes: number) {
+  const encode = vi.spyOn(TextEncoder.prototype, "encode");
+  try {
+    const validation = exhaustValidation(validateSafeSvgSteps(svg, { totalInputBytes }));
+    return {
+      ...validation,
+      encodedCodeUnits: encode.mock.calls.reduce((sum, [input]) => sum + (input?.length ?? 0), 0),
+      boundedEncoderWrites: encode.mock.calls.every(([input]) => input!.length <= 256 * 1024),
+    };
+  } finally {
+    encode.mockRestore();
+  }
+}
 
 /** Observes the real parser's indexed reads and token slices without emulating parsing. */
 function observePathReads(path: string) {

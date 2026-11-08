@@ -59,7 +59,12 @@ function baselineScene(store: FakeSceneStore) {
 function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
   const store = new FakeSceneStore();
   const windows = new Map<string, PressureWindow>();
+  const paths = new Map<string, readonly elementPath.SvgPathPart[]>();
   const pressureGeometry = (id: string, version: number) => ({
+    readPath: () => paths.get(`${id}:${version}`),
+    publishPath: (parts: readonly elementPath.SvgPathPart[]) => {
+      paths.set(`${id}:${version}`, parts);
+    },
     readWindow: (index: number) => windows.get(`${id}:${version}:${index}`),
     publishWindow: (index: number, window: PressureWindow) => {
       windows.set(`${id}:${version}:${index}`, window);
@@ -178,12 +183,15 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   }
   expect(fullBuild).not.toHaveBeenCalled();
   expect(root.attributes.get("d")).toBe(scaledPath);
+  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toEqual([root]);
   expect(root.attributes.get("transform")).toBe("translate(5 0)");
   const union = vi.spyOn(pressureUnion, "iteratePressureUnion");
-  expect(elementPath.buildElementPathParts(moved, pressureGeometry(element.id, 2))[0]!.d).toBe(
+  const prepared = new ScenePathCache();
+  expect(prepared.read(moved, pressureGeometry(element.id, 2), 2)![0]!.d).toBe(
     root.attributes.get("d"),
   );
   expect(union).not.toHaveBeenCalled();
+  prepared.release();
   renderer.clearPreviewTransforms();
   scheduler.runAll();
   expect(root.attributes.has("transform")).toBe(false);

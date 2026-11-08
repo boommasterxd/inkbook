@@ -8,6 +8,7 @@ const REQUEST_TYPES = new Set([
   "model-sync-full-wire",
   "model-sync-incremental-wire",
   "prepare-scene-paths",
+  "prepare-export-geometry",
   "unlock",
   "verify-output",
 ]);
@@ -21,6 +22,7 @@ const RESULT_TYPES = new Set([
   "import-ink-success-wire",
   "model-sync-success",
   "prepare-scene-paths-success",
+  "prepare-export-geometry-success",
   "runtime-failure",
   "unlock-success",
   "verify-output-success",

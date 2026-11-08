@@ -293,6 +293,74 @@ describe("path-only pressure preparation work", () => {
   });
 });
 
+it("publishes only paths across cold, warm and mixed full-window cache reads without remeasurement", () => {
+  const source = createMultiWindowPressureStroke();
+  source.points = source.points.concat(
+    source.points.map((value, index) => (index % 3 === 0 ? value + 192 : value)),
+  );
+  const cache = new PreparedPressureWindowCache();
+  const port = {
+    readWindow: (index: number) => cache.read(source.id, 1, index),
+    readWindowMeasurement: (index: number) => cache.readMeasurement(source.id, 1, index),
+    publishWindow: (index: number, window: windowPreparation.PressureWindow) =>
+      cache.publish(source.id, 1, index, window),
+  };
+  const reference = new CanonicalElementPathPreparation(source, port);
+  while (!reference.stepOperation()) {
+    /* Establish the immutable full-window cache without a complete-path shortcut. */
+  }
+  expect(cache.statistics().entries).toBeGreaterThan(3);
+  const usage = vi.spyOn(windowPreparation, "pressureWindowMemoryUsage");
+  const windows = vi.spyOn(windowPreparation, "preparePressureWindowSteps");
+  const measure = vi.spyOn(windowPreparation, "measurePressureWindow");
+  try {
+    for (const reuse of ["cold", "warm", "mixed"]) {
+      usage.mockClear();
+      windows.mockClear();
+      measure.mockClear();
+      const output = {
+        ...port,
+        readWindowMeasurement: (index: number) =>
+          reuse === "cold" || (reuse === "mixed" && index % 2 === 1)
+            ? undefined
+            : port.readWindowMeasurement(index),
+        publishWindow: vi.fn(),
+        publishPath: vi.fn(),
+      };
+      const job = new CanonicalElementPathPreparation(source, undefined, "path-only", output);
+      while (!job.stepOperation()) {
+        const bytes = job.memoryUsage();
+        const measured = usage.mock.calls.length;
+        expect(job.memoryUsage()).toBe(bytes);
+        expect(usage).toHaveBeenCalledTimes(measured);
+      }
+      expect(job.parts).toEqual(reference.parts);
+      expect(output.publishPath).toHaveBeenCalledExactlyOnceWith(job.parts);
+      expect(output.publishWindow).not.toHaveBeenCalled();
+      expect(measure).not.toHaveBeenCalled();
+      const measured = usage.mock.calls.map(([window]) => window);
+      expect(measured.every((window) => window.kind === "path-window")).toBe(true);
+      expect(new Set(measured).size).toBe(measured.length);
+      if (reuse === "warm") {
+        expect(windows).not.toHaveBeenCalled();
+        expect(measured).toHaveLength(0);
+      } else {
+        expect(windows.mock.calls.length).toBeGreaterThan(0);
+        expect(windows.mock.calls.every(([, mode]) => mode === "path-only")).toBe(true);
+        expect(measured.length).toBeGreaterThan(0);
+      }
+      job.cancel();
+      expect(job.memoryUsage()).toBe(0);
+    }
+  } finally {
+    usage.mockRestore();
+    windows.mockRestore();
+    measure.mockRestore();
+    cache.release();
+  }
+  expect(cache.statistics().bytes).toBe(0);
+});
+
 describe("scene path-only preparation resources", () => {
   it.each([createMultiWindowPressureStroke, () => maximumStroke(0)])(
     "omits selection-window measurement and triangle-only arc work without a publication port",

@@ -1,4 +1,5 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import * as pressureWindows from "../../../../../src/domain/geometry/pressure/pressure-window";
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import {
   moveSelection,
@@ -176,14 +177,12 @@ it("replaces real arrow topology on the pressure legacy path and refreshes table
 });
 
 it("retains one translucent pressure paint root across multiple canonical preparation windows and commit", () => {
+  const prepare = vi.spyOn(pressureWindows, "preparePressureWindowSteps");
   const f = fixture(600, [], true);
   try {
     const id = f.ids[0]!,
-      entry = f.entries.get(id)!,
-      record = f.store.get(id)!;
-    const geometry = f.store.pressureGeometry(id, record.geometryVersion);
-    expect(geometry.readWindow(0)).toBeDefined();
-    expect(geometry.readWindow(1)).toBeDefined();
+      entry = f.entries.get(id)!;
+    expect(prepare.mock.calls.filter(([pieces]) => pieces.length === 64).length).toBeGreaterThan(1);
     expect(entry.paths).toHaveLength(1);
     expect(fakeNode(mounted.firstPath(entry)).getAttribute("opacity")).toBe("0.4");
     expect(f.svg.getAttribute("data-inkbook-run-fallback")).toBe("true");
@@ -200,5 +199,6 @@ it("retains one translucent pressure paint root across multiple canonical prepar
     expect(fakeNode(mounted.firstPath(entry)).getAttribute("opacity")).toBe("0.4");
   } finally {
     f.dispose();
+    prepare.mockRestore();
   }
 });

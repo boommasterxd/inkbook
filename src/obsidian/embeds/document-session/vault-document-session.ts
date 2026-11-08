@@ -33,15 +33,13 @@ import { lockedDocumentAspectRatio } from "./vault-document-session-identity";
 import { loadTrustedDocumentForUnlock } from "./vault-document-trusted-unlock";
 import { InteractiveWorkPriority } from "../../../editor/session/interactive-work-priority";
 import { ActiveEditorHistory } from "../active-editor/history";
+import type { ActiveDocumentEditorContext } from "../active-editor/history";
 import { DocumentSaveStatusSource } from "./document-save-status";
 import { createVaultExecutorReplacement } from "./vault-executor-replacement";
 import type { VaultRecoveryExecutorAccess } from "./vault-recovery-executor";
 import { reloadVaultSessionDocument } from "./vault-session-recovery";
 export type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
-export interface ActiveDocumentEditorContext {
-  readonly history: ActiveEditorHistory;
-  readonly model: EditableDocumentModel;
-}
+export type { ActiveDocumentEditorContext } from "../active-editor/history";
 export class VaultDocumentSession implements Session.DocumentSessionPort {
   readonly #cancelled = new Set<number>();
   readonly #identity: Session.SessionIdentity;
@@ -151,12 +149,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   async notifyExternalChange(
     operation?: Session.SessionOperationIdentity,
   ): Promise<recovery.SessionExternalChangeOutcome | Session.ExternalChangeResult> {
-    if (
-      this.#lifecycle.disposed ||
-      this.#lifecycle.preparingForUnload ||
-      this.#autosave === undefined
-    )
-      return "conflict";
+    if (this.documentModel === undefined || this.#autosave === undefined) return "conflict";
     const outcome = await recovery.reloadCleanExternalChange({
       accepts: (candidate) =>
         recovery.acceptsSessionOperation(this.#identity, this.#workerEpoch, candidate),
@@ -195,6 +188,14 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     }
     this.#confirmedRevision = this.#revision;
     return { ...operation, revision: this.#revision, status: "confirmed" };
+  }
+  async flushForExport(): Promise<void> {
+    const autosave = this.#autosave;
+    if (autosave === undefined) return;
+    await autosave.currentSaveSettlement;
+    if (autosave.status === "verification-required") await autosave.retryVerification();
+    if ((await autosave.flush("export")) !== "clean" || this.#lifecycle.disposed)
+      throw new Error("Could not persist the latest Inkbook document for export.");
   }
   async resolveRecovery(
     action: "reload-external" | "save-local-copy",

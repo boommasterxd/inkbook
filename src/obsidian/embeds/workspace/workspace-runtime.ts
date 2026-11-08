@@ -346,6 +346,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     );
   }
   readonly hasUnsavedChanges = (): boolean => this.#sessions.hasUnsavedChanges();
+  readonly prepareStaticExport = (documentId: string): Promise<void> =>
+    this.#sessions.prepareStaticExport(documentId);
   readonly prepareForQuit = (): Promise<void> => this.#sessions.prepareForUnload();
   dispose(): void {
     if (this.#disposed) return;

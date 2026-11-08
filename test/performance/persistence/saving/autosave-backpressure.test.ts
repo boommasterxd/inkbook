@@ -117,6 +117,7 @@ describe("autosave successor scheduling", () => {
         purpose: "clipboard" as const,
       };
       const pending = coordinator.synchronizeWorkerBaseline(identity);
+      expect(coordinator.canSynchronizeWorkerBaseline()).toBe(false);
       expect(execute).toHaveBeenCalledTimes(1);
       expect(execute.mock.calls[0]?.[0]).toMatchObject({
         type: "model-sync-incremental",

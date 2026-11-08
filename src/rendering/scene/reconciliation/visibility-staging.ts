@@ -162,7 +162,9 @@ export function stageVisibilitySlice(
           ...options,
           prepareDeferred: () => {
             const id = options.pendingId();
-            const record = id === undefined ? undefined : options.store.get(id);
+            if (id === undefined || options.mounted.has(id) || !options.visibility.contains(id))
+              return undefined;
+            const record = options.store.get(id);
             return record !== undefined && options.stage(record, true) !== undefined
               ? record.id
               : undefined;

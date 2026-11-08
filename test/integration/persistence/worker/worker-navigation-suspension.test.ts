@@ -142,9 +142,11 @@ it.each([false, true])(
     try {
       await fixture.synchronize();
       session.commitPage(1);
+      expect(session.coordinator.canSynchronizeWorkerBaseline()).toBe(true);
       expect(await session.paths.prepare([], new AbortController().signal)).toEqual([]);
       const saved = session.coordinator.flush("lock");
       await fixture.parked;
+      expect(session.coordinator.canSynchronizeWorkerBaseline()).toBe(true);
       fixture.port.setNavigationActive?.(true);
       session.document.gestureActive = true;
       const visible = session.paths.prepare(
@@ -156,8 +158,9 @@ it.each([false, true])(
       expect(fixture.runtime.instrumentation.fragmentBuilds).toBe(1);
       expect(fixture.runtime.instrumentation.shapeBuilds).toBe(2);
       session.commitPage(2);
+      expect(session.coordinator.canSynchronizeWorkerBaseline()).toBe(false);
       expect(
-        await session.paths.prepare([document.elements[2]!.id], new AbortController().signal),
+        session.paths.prepare([document.elements[2]!.id], new AbortController().signal),
       ).toBeUndefined();
       expect(fixture.runtime.instrumentation.fragmentBuilds).toBe(1);
       expect(fixture.runtime.instrumentation.shapeBuilds).toBe(2);
@@ -168,6 +171,7 @@ it.each([false, true])(
       expect(await saved).toBe("clean");
       expect(session.vault.processCount).toBe(1);
       expect(session.vault.content).toContain('data-inkbook-revision="2"');
+      expect(session.coordinator.canSynchronizeWorkerBaseline()).toBe(true);
       expect(
         await session.paths.prepare([document.elements[2]!.id], new AbortController().signal),
       ).toHaveLength(1);
@@ -199,6 +203,7 @@ function createAutosaveSceneFixture(fixture: ReturnType<typeof createSuspendedEx
     workerEpoch: executor.workerEpoch,
   });
   const paths = new SessionScenePaths({
+    canSynchronize: () => coordinator.canSynchronizeWorkerBaseline(),
     disposed: () => false,
     executor: () => fixture.port,
     revision: () => value.currentRevision(),

@@ -61,6 +61,11 @@ export class VaultDocumentSessionFactory implements SessionFactory {
   noteVaultModification(documentId: string): void {
     this.#files.noteModification(documentId);
   }
+  async prepareStaticExport(documentId: string): Promise<void> {
+    for (const session of this.#sessions.values()) {
+      if (session.getSnapshot().documentId === documentId) await session.flushForExport();
+    }
+  }
   currentSaveSettlement(documentId: string): Promise<void> | undefined {
     for (const session of this.#sessions.values()) {
       if (session.getSnapshot().documentId !== documentId) continue;

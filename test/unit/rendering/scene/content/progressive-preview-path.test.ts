@@ -7,6 +7,7 @@ import * as pressureWindows from "../../../../../src/domain/geometry/pressure/pr
 import * as pressureOutline from "../../../../../src/domain/geometry/pressure/pressure-outline";
 import * as simplification from "../../../../../src/domain/geometry/stroke-simplification";
 import type { StrokeElementV1 } from "../../../../../src/domain/schema/public";
+import { ElementStore } from "../../../../../src/domain/store/public";
 import { ProgressivePreviewPath } from "../../../../../src/rendering/scene/content/progressive-preview-path";
 import { createAllElementSnapshot } from "../../../persistence/serialization/fixtures";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
@@ -223,7 +224,9 @@ it("keeps progressing past the former step quota while shared time remains", () 
 });
 
 it("reuses canonical pressure paths and windows without repeating their union", () => {
-  const element = pressureWindowStroke();
+  const source = pressureWindowStroke();
+  const store = new ElementStore([source]);
+  const element = store.get(source.id)!.element as StrokeElementV1;
   const windows = new Map<number, pressureWindows.PressureWindow>();
   const parts = buildElementPathParts(element, {
     readWindow: () => undefined,
@@ -248,23 +251,34 @@ it("reuses canonical pressure paths and windows without repeating their union", 
   expect(fromPath.parts).toBe(parts);
   expect(fromPath.step()).toBe(true);
   expect(prepare).not.toHaveBeenCalled();
+  store.releasePreparedPressureGeometry();
 });
 
-it("uses the store's exact window measurement during progressive preparation", () => {
+it("reuses the store's exact window measurement without measuring cached windows again", () => {
   const element = pressureWindowStroke();
   const measurement = vi.spyOn(pressureWindows, "pressureWindowMemoryUsage");
-  const windows: pressureWindows.PressureWindow[] = [];
-  const job = new ProgressivePreviewPath(element, {
+  const windows: { window: pressureWindows.PressureWindow; numericBytes: number }[] = [];
+  const expected = buildElementPathParts(element, {
     readWindow: () => undefined,
     publishWindow: (_index, window) => {
-      windows.push(window);
-      return { window, numericBytes: pressureWindows.pressureWindowMemoryUsage(window) };
+      const entry = { window, numericBytes: pressureWindows.pressureWindowMemoryUsage(window) };
+      windows.push(entry);
+      return entry;
     },
   });
-  completePreview(() => job.step());
   expect(windows.length).toBeGreaterThan(0);
-  expect(measurement).toHaveBeenCalledTimes(windows.length);
-  expect(job.parts).toEqual(buildElementPathParts(element));
+  measurement.mockClear();
+  const publishWindow = vi.fn();
+  const job = new ProgressivePreviewPath(element, {
+    readWindow: () => undefined,
+    readWindowMeasurement: (index) => windows[index],
+    publishWindow,
+  });
+  completePreview(() => job.step());
+  expect(job.parts).toEqual(expected);
+  expect(job.memoryUsage()).toBe(job.parts![0]!.d.length * 2);
+  expect(measurement).not.toHaveBeenCalled();
+  expect(publishWindow).not.toHaveBeenCalled();
 });
 
 it.each([false, true])(
@@ -272,10 +286,15 @@ it.each([false, true])(
   (hasLocalPort) => {
     const element = { ...pressureWindowStroke(), rotation: 37, offset: { x: 12, y: 25 } };
     const publish = vi.fn();
-    const local = { readWindow: () => undefined, publishWindow: publish };
+    const local = {
+      readWindow: vi.fn(() => undefined),
+      publishWindow: vi.fn(),
+      publishPath: publish,
+    };
     const world = {
       readWindow: vi.fn(() => undefined),
       publishWindow: vi.fn(),
+      publishPath: vi.fn(),
       ...(hasLocalPort ? { local: () => local } : {}),
     };
     const job = new ProgressivePreviewPath(element, world);
@@ -283,24 +302,12 @@ it.each([false, true])(
     expect(job.parts).toEqual(buildElementPathParts(strokeLocalGeometry(element)));
     expect(world.readWindow).not.toHaveBeenCalled();
     expect(world.publishWindow).not.toHaveBeenCalled();
+    expect(world.publishPath).not.toHaveBeenCalled();
+    expect(local.readWindow.mock.calls.length > 0).toBe(hasLocalPort);
+    expect(local.publishWindow).not.toHaveBeenCalled();
     expect(publish.mock.calls.length > 0).toBe(hasLocalPort);
   },
 );
-
-it("recounts a pressure window when a port reports another window's measurement", () => {
-  const usage = vi.spyOn(pressureWindows, "pressureWindowMemoryUsage");
-  let published = 0;
-  const job = new ProgressivePreviewPath(pressureWindowStroke(), {
-    readWindow: () => undefined,
-    publishWindow: () => {
-      published += 1;
-      return { window: { kind: "window", additions: [], loops: [] }, numericBytes: 0 };
-    },
-  });
-  completePreview(() => job.step());
-  expect(published).toBeGreaterThan(0);
-  expect(usage).toHaveBeenCalledTimes(published);
-});
 
 it("cancels a suspended pressure union and releases every derived buffer", () => {
   const element = pressureWindowStroke();

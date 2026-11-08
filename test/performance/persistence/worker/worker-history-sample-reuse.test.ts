@@ -38,13 +38,13 @@ it("restores 10,000 confirmed deleted strokes with no sample copy, wire scan, tr
     ...options,
     reusePoints: sender.encoder(full),
   });
-  expect(packed.transfer).toHaveLength(10_000);
+  expect(packed.transfer).toHaveLength(2);
   expect(
     packed.transfer.reduce<number>(
       (bytes, buffer) => bytes + (buffer as ArrayBuffer).byteLength,
       0,
     ),
-  ).toBe(12_000_000);
+  ).toBe(12_000_000 + 10_000 * Uint32Array.BYTES_PER_ELEMENT);
   const decoded = await decodeRuntimeRequestChunked(packed.value, options);
   const success = (revision: number) => ({
     identity: unlockIdentity,

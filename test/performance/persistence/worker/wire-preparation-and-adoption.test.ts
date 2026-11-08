@@ -10,43 +10,73 @@ import { INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../../src/persistence/clipb
 import { adoptUtf8Output } from "../../../../src/persistence/scheduling/utf8-adoption";
 import {
   encodeRuntimeRequestChunked,
+  decodeRuntimeRequestChunked,
   encodeRuntimeResult,
   decodeRuntimeResultChunked,
 } from "../../../../src/persistence/worker/runtime/wire/wire-codec";
-import { createStandardPersistenceFixture, STANDARD_STROKES, STANDARD_POINTS } from "../fixtures";
+import {
+  createMaximumStrokeSamples,
+  createStandardPersistenceFixture,
+  STANDARD_STROKES,
+  STANDARD_POINTS,
+} from "../fixtures";
+import {
+  createTestStroke,
+  createWorkerSnapshot,
+} from "../../../fixtures/persistence/worker-snapshot";
 
 const FULL_OUTPUT_BYTES = 48 * 1024 * 1024;
 const CLIPBOARD_OUTPUT_BYTES = 5 * 1024 * 1024 + 1;
 
 describe("worker transfer preparation and result adoption", () => {
-  it("packs the complete 10,000-stroke request with bounded transfer storage", async () => {
-    const snapshot = createStandardPersistenceFixture();
-    const checkpoint = vi.fn(async () => undefined);
-    const encoded = await encodeRuntimeRequestChunked(
-      {
-        baseModelRevision: null,
-        exportGeneration: 1,
-        modelRevision: snapshot.revision,
-        sessionId: "wire-performance",
-        snapshot,
-        type: "export-full",
-        workerEpoch: 1,
-      },
-      { checkpoint, signal: new AbortController().signal },
-    );
-    expect(encoded.value.type).toBe("export-full-wire");
-    expect(encoded.transfer).toHaveLength(STANDARD_STROKES);
-    expect(new Set(encoded.transfer).size).toBe(STANDARD_STROKES);
-    expect(
-      encoded.transfer.reduce<number>(
-        (bytes, transfer) => bytes + (transfer instanceof ArrayBuffer ? transfer.byteLength : 0),
-        0,
-      ),
-    ).toBe(STANDARD_POINTS * 3 * Float64Array.BYTES_PER_ELEMENT);
-    expect(checkpoint.mock.calls.length).toBeGreaterThanOrEqual(
-      Math.floor(snapshot.elements.length / 64),
-    );
-  });
+  it.each(["export", "model-sync"] as const)(
+    "packs the complete 10,000-stroke %s with bounded transfer storage",
+    async (kind) => {
+      const snapshot = createStandardPersistenceFixture();
+      const checkpoint = vi.fn(async () => undefined);
+      const common = { baseModelRevision: null, modelRevision: snapshot.revision, snapshot };
+      const encoded = await encodeRuntimeRequestChunked(
+        kind === "export"
+          ? {
+              ...common,
+              exportGeneration: 1,
+              sessionId: "wire-performance",
+              type: "export-full",
+              workerEpoch: 1,
+            }
+          : {
+              ...common,
+              identity: {
+                operationId: 1,
+                purpose: "background",
+                sessionId: "wire-performance",
+                workerEpoch: 1,
+              },
+              type: "model-sync-full",
+            },
+        { checkpoint, signal: new AbortController().signal },
+      );
+      expect(encoded.value.type).toBe(
+        kind === "export" ? "export-full-wire" : "model-sync-full-wire",
+      );
+      const transfers = kind === "export" ? STANDARD_STROKES : 2;
+      expect(encoded.transfer).toHaveLength(transfers);
+      expect(new Set(encoded.transfer).size).toBe(transfers);
+      expect(
+        encoded.transfer.reduce<number>(
+          (bytes, transfer) => bytes + (transfer instanceof ArrayBuffer ? transfer.byteLength : 0),
+          0,
+        ),
+      ).toBe(
+        STANDARD_POINTS * 3 * Float64Array.BYTES_PER_ELEMENT +
+          (kind === "model-sync" ? STANDARD_STROKES * Uint32Array.BYTES_PER_ELEMENT : 0),
+      );
+      expect(checkpoint.mock.calls.length).toBeGreaterThanOrEqual(
+        Math.floor(snapshot.elements.length / 64),
+      );
+      if (kind === "model-sync") await assertPrivateModelSamples(encoded, snapshot);
+    },
+  );
 
   it("transfers only one canonical clipboard representation and adopts it in chunks", async () => {
     const customText = "a".repeat(CLIPBOARD_OUTPUT_BYTES);
@@ -92,7 +122,174 @@ describe("worker transfer preparation and result adoption", () => {
   });
 });
 
+async function assertPrivateModelSamples(
+  encoded: Awaited<ReturnType<typeof encodeRuntimeRequestChunked>>,
+  source: ReturnType<typeof createStandardPersistenceFixture>,
+) {
+  const received = structuredClone(encoded.value, { transfer: [...encoded.transfer] });
+  for (const transfer of encoded.transfer) {
+    if (!(transfer instanceof ArrayBuffer)) throw new Error("Expected an ArrayBuffer transfer.");
+    expect(transfer.byteLength).toBe(0);
+  }
+  const decoded = await decodeRuntimeRequestChunked(received, {
+    checkpoint: () => undefined,
+    signal: new AbortController().signal,
+  });
+  if (decoded.type !== "model-sync-full") throw new Error("Expected a full model synchronization.");
+  expect(decoded.snapshot.elements.map(({ id }) => id)).toEqual(
+    source.elements.map(({ id }) => id),
+  );
+  const strokes = decoded.snapshot.elements.filter((element) => element.kind === "stroke");
+  const originals = source.elements.filter((element) => element.kind === "stroke");
+  expect(strokes).toHaveLength(STANDARD_STROKES);
+  const buffers = new Set<ArrayBufferLike>();
+  for (const stroke of strokes) {
+    if (!(stroke.points instanceof Float64Array))
+      throw new Error("Expected private native samples.");
+    expect(stroke.points.byteOffset).toBe(0);
+    expect(stroke.points.buffer.byteLength).toBe(stroke.points.byteLength);
+    buffers.add(stroke.points.buffer);
+  }
+  expect(buffers.size).toBe(STANDARD_STROKES);
+  for (const rank of [0, 5000, 9999])
+    expect(Array.from(strokes[rank]!.points)).toEqual(Array.from(originals[rank]!.points));
+}
+
 const WORK_CHUNK_BYTES = 256 * 1024;
+
+function longArenaRequest() {
+  const maximum = Array.from(createMaximumStrokeSamples());
+  const elements = Array.from({ length: 129 }, (_, index) => ({
+    ...createTestStroke(),
+    id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    points: index === 0 ? maximum : [10, 10, 0.5, 20, 20, 1],
+  }));
+  return {
+    type: "model-sync-full" as const,
+    baseModelRevision: null,
+    modelRevision: 0,
+    identity: {
+      sessionId: "long-arena",
+      workerEpoch: 1,
+      operationId: 1,
+      purpose: "background" as const,
+    },
+    snapshot: createWorkerSnapshot(elements),
+  };
+}
+
+function observeArenaCopies() {
+  const nativeSet = Object.getOwnPropertyDescriptor(
+    Reflect.getPrototypeOf(Float64Array.prototype)!,
+    "set",
+  )!.value as Float64Array["set"];
+  let totalBytes = 0;
+  let pendingBytes = 0;
+  const copy = vi.spyOn(Float64Array.prototype, "set").mockImplementation(function (
+    this: Float64Array,
+    source,
+    offset,
+  ) {
+    const bytes = source.length * Float64Array.BYTES_PER_ELEMENT;
+    // One indivisible typed-array copy stays within 64 KiB.
+    expect(bytes).toBeLessThanOrEqual(64 * 1024);
+    totalBytes += bytes;
+    pendingBytes += bytes;
+    nativeSet.call(this, source, offset);
+  });
+  return {
+    totalBytes: () => totalBytes,
+    checkpoint: () => {
+      // Include the long stroke's final copy and following short peers in one admission.
+      expect(pendingBytes).toBeLessThanOrEqual(72 * 1024);
+      pendingBytes = 0;
+      return undefined;
+    },
+    restore: () => copy.mockRestore(),
+  };
+}
+
+it.each(["encode", "decode"] as const)(
+  "bounds actual long-stroke arena %s bytes through the complete wire pipeline",
+  async (phase) => {
+    const request = longArenaRequest();
+    const context = { checkpoint: () => undefined, signal: new AbortController().signal };
+    const prepared =
+      phase === "decode" ? await encodeRuntimeRequestChunked(request, context) : undefined;
+    const observed = observeArenaCopies();
+    let encoded = prepared;
+    let decoded;
+    try {
+      const options = { ...context, checkpoint: observed.checkpoint };
+      if (phase === "encode") encoded = await encodeRuntimeRequestChunked(request, options);
+      else decoded = await decodeRuntimeRequestChunked(prepared!.value, options);
+      observed.checkpoint();
+      const values = request.snapshot.elements.reduce(
+        (total, element) => total + (element.kind === "stroke" ? element.points.length : 0),
+        0,
+      );
+      // Each phase copies every point value once, including the final non-checkpointed tail.
+      expect(observed.totalBytes()).toBe(values * Float64Array.BYTES_PER_ELEMENT);
+    } finally {
+      observed.restore();
+    }
+    expect(encoded!.transfer).toHaveLength(2);
+    decoded ??= await decodeRuntimeRequestChunked(
+      structuredClone(encoded!.value, { transfer: [...encoded!.transfer] }),
+      context,
+    );
+    if (decoded.type !== "model-sync-full") throw new Error("Expected a decoded model.");
+    const buffers = new Set<ArrayBufferLike>();
+    for (const [index, element] of decoded.snapshot.elements.entries()) {
+      const expected = request.snapshot.elements[index];
+      if (expected?.kind !== "stroke") throw new Error("Expected a source stroke.");
+      if (element.kind !== "stroke" || !(element.points instanceof Float64Array))
+        throw new Error("Expected private native stroke points.");
+      expect(Array.from(element.points)).toEqual(expected.points);
+      expect(element.points.byteOffset).toBe(0);
+      expect(element.points.byteLength).toBe(element.points.buffer.byteLength);
+      buffers.add(element.points.buffer);
+    }
+    expect(buffers.size).toBe(129);
+  },
+);
+
+it.each(["encode", "decode"] as const)(
+  "aborts arena %s inside a maximum stroke without publishing or copying its remainder",
+  async (phase) => {
+    const request = longArenaRequest();
+    const controller = new AbortController();
+    const context = { checkpoint: () => undefined, signal: controller.signal };
+    const prepared =
+      phase === "decode" ? await encodeRuntimeRequestChunked(request, context) : undefined;
+    const observed = observeArenaCopies();
+    let bytesAtAbort = 0;
+    try {
+      const options = {
+        signal: controller.signal,
+        checkpoint: () => {
+          observed.checkpoint();
+          if (observed.totalBytes() > 0 && !controller.signal.aborted) {
+            bytesAtAbort = observed.totalBytes();
+            controller.abort(new Error("Cancelled long arena copy."));
+          }
+          return undefined;
+        },
+      };
+      await expect(
+        phase === "encode"
+          ? encodeRuntimeRequestChunked(request, options)
+          : decodeRuntimeRequestChunked(prepared!.value, options),
+      ).rejects.toThrow("Cancelled long arena copy.");
+      observed.checkpoint();
+      expect(bytesAtAbort).toBeGreaterThan(0);
+      expect(bytesAtAbort).toBeLessThan(MAX_STROKE_POINTS * 3 * Float64Array.BYTES_PER_ELEMENT);
+      expect(observed.totalBytes()).toBe(bytesAtAbort);
+    } finally {
+      observed.restore();
+    }
+  },
+);
 
 describe("wire preparation deterministic work bounds", () => {
   it("bounds actual decoder input between checkpoints and flushes exactly once", async () => {

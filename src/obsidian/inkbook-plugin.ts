@@ -1,10 +1,21 @@
 import { createPhoneSheetHost } from "./menus/panels/phone-sheet-host";
 import { OnboardingPreference } from "./settings/onboarding-preference";
+import { readMarkdownExportSource } from "./embeds/export/markdown-export-source";
+import { ExportGeometryCache } from "./embeds/export/export-geometry-cache";
+import { NativePdfOptionsGateway } from "./embeds/export/native-pdf-options";
 import {
   registerDocumentStatusBar,
   resolveDocumentStatusPane,
 } from "./runtime/document-status-bar-binding";
-import { MarkdownView, Plugin, TFile, type Editor, type MarkdownFileInfo } from "obsidian";
+import {
+  MarkdownRenderer,
+  MarkdownView,
+  Plugin,
+  TFile,
+  type Editor,
+  type MarkdownFileInfo,
+  type MarkdownRenderChild,
+} from "obsidian";
 
 import { confirmInkbookAction } from "./dialogs/action-dialog";
 import { showHeadlessRecoveryNotice } from "./embeds/workspace/recovery-notice";
@@ -130,7 +141,7 @@ export async function activateInkbookPlugin(
     lifetime.abort();
     embedActions.dispose();
     lifecycle.disposeAll();
-    documentRecognition.dispose();
+    integration.dispose();
     runtime.dispose();
     feedback.dispose();
     settingsModal.dispose();
@@ -226,6 +237,8 @@ function createEmbedIntegration(
   runtime: ObsidianWorkspaceRuntime,
   settings: InkbookSettingsStore,
 ) {
+  const exportGeometryCache = new ExportGeometryCache();
+  const nativePdfOptions = new NativePdfOptionsGateway(plugin.app);
   const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault, {
     deferUntilLayoutReady: true,
     workScheduler: (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
@@ -243,11 +256,38 @@ function createEmbedIntegration(
       );
   });
   return {
+    dispose: () => {
+      exportGeometryCache.dispose();
+      nativePdfOptions.dispose();
+      documentRecognition.dispose();
+    },
     documentRecognition,
     ports: {
+      bindNativePdfOptions: (root: HTMLElement, sourcePath: string) =>
+        nativePdfOptions.bind(root, sourcePath),
+      exportGeometryCache,
+      acquireSchedulingProfile: (owner: MarkdownRenderChild) => {
+        const document = owner.containerEl.ownerDocument;
+        const key = `inkbook-export-${crypto.randomUUID()}`;
+        runtime.refreshRateProfiles.acquire(key, document.defaultView, document);
+        let released = false;
+        const release = () => {
+          if (released) return;
+          released = true;
+          runtime.refreshRateProfiles.release(key);
+        };
+        owner.register(release);
+        return release;
+      },
+      renderExportLabel: (label: string, target: HTMLElement, owner: MarkdownRenderChild) =>
+        MarkdownRenderer.render(plugin.app, label, target, "", owner),
+      readMarkdownSource: (sourcePath: string) => readMarkdownExportSource(plugin.app, sourcePath),
+      prepareStaticExport: (documentId: string) => runtime.prepareStaticExport(documentId),
       documents: documentRecognition,
       workScheduler: (ownerWindow: Window | null) =>
         runtime.refreshRateProfiles.workScheduler(ownerWindow),
+      subscribeSchedulingProfile: (listener: () => void) =>
+        runtime.refreshRateProfiles.subscribe(listener),
       lifecycle,
       resolveDocument: createObsidianDocumentResolver(plugin.app),
       scheme,

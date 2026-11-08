@@ -20,6 +20,7 @@ import type {
 import type { InkbookLockedPreviewDescriptor } from "../preview/locked-preview";
 import type { PreviewContentIdentity } from "../preview/safe-preview-svg";
 import { PresentationExit } from "./presentation-exit";
+import { updateLockedEmbedShellRadius } from "./locked-embed-shell";
 import { PresentationEntrance, type PresentationEntranceState } from "./presentation-entrance";
 import {
   LAYOUT_TRANSITION_CLASS,
@@ -292,12 +293,7 @@ export class PresentationController {
       "--inkbook-container-width",
       `${String(measurement.contentWidth)}px`,
     );
-    if (measurement.contentWidth > 0) {
-      this.#attachment.root.style.setProperty(
-        "--inkbook-shell-radius",
-        `${String(shellRadius(measurement.contentWidth))}px`,
-      );
-    }
+    updateLockedEmbedShellRadius(this.#attachment.root, measurement.contentWidth);
     if (measurement.requiresSettledRead) {
       this.#measured = false;
       this.#scheduleSettledMeasurement();
@@ -390,10 +386,6 @@ export class PresentationController {
     }
     this.#transitionObserver?.disconnect();
   }
-}
-
-function shellRadius(contentWidth: number): number {
-  return Math.min(20, Math.max(10, contentWidth * 0.02));
 }
 
 function readPresentationMeasurement(

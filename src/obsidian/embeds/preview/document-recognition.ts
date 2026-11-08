@@ -41,6 +41,7 @@ export type InkbookDocumentRecognition = false | LoadedPreviewSvg;
 export interface InkbookDocumentRecognitionPort {
   cached(documentId: string): InkbookDocumentRecognition | undefined;
   recognize(documentId: string, ownerWindow?: Window | null): Promise<InkbookDocumentRecognition>;
+  recognizeCurrent?: InkbookDocumentRecognitionPort["recognize"];
   subscribe(listener: (documentId: string) => void): () => void;
   loadPreviewSource?: (
     documentId: string,
@@ -191,6 +192,13 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     );
   }
 
+  public recognizeCurrent(
+    documentId: string,
+    ownerWindow?: Window | null,
+  ): Promise<InkbookDocumentRecognition> {
+    if (this.#entries.get(documentId)?.pendingRefresh) this.#deleteEntry(documentId);
+    return this.recognize(documentId, ownerWindow);
+  }
   public recognize(
     documentId: string,
     ownerWindow?: Window | null,
@@ -232,7 +240,6 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     this.#drain();
     return promise;
   }
-
   #drain(): void {
     if (this.#disposed || !this.#layoutReady) return;
     while (this.#activeReads < MAXIMUM_ACTIVE_READS) {
@@ -247,7 +254,6 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       );
     }
   }
-
   #complete(
     documentId: string,
     request: PendingRecognition,
@@ -270,7 +276,6 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     }
     this.#drain();
   }
-
   #cancelPending(documentId: string): boolean {
     const request = this.#pending.get(documentId);
     if (request === undefined) return false;
