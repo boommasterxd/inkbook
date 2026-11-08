@@ -5,6 +5,12 @@
   position: absolute;
 }
 
+@media print {
+  .inkbook-native-pdf-export {
+    --inkbook-native-pdf-print-maximum: var(--inkbook-native-pdf-maximum);
+  }
+}
+
 .inkbook-export-pages {
   display: block;
 }

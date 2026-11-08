@@ -18,6 +18,7 @@ import { ExportGeometrySession } from "./export-geometry-session";
 import type { StaticExportFragment } from "../../../persistence/export/static-export-fragments";
 import type { LoadedPreviewSvg } from "../preview/safe-preview-svg";
 import { hasCanonicalInkbookRootMarker } from "../preview/document-recognition";
+import type { NativePdfOptions } from "./native-pdf-options";
 
 interface ExportResource {
   readonly drawing: ExportDrawing;
@@ -48,10 +49,11 @@ class StaticMarkdownExport extends MarkdownRenderChild {
     scheme: InkbookColorScheme,
     scheduler: WorkScheduler,
     subscribeSchedulingProfile?: (listener: () => void) => () => void,
+    nativePdfOptions?: NativePdfOptions,
   ) {
     super(root);
     this.colorScheme = scheme;
-    this.pagination = new StaticExportPagination(root);
+    this.pagination = new StaticExportPagination(root, nativePdfOptions);
     this.geometry = new ExportGeometrySession(
       root.ownerDocument.defaultView,
       scheduler,
@@ -186,13 +188,12 @@ function mountStaticExport(
 ): void {
   if (!resource.published) output.pages.prepend(resource.definitions);
   owner.mount(output.host, output.pages);
-  if (resource.cuts !== undefined)
-    owner.pagination.register({
-      container: output.pages,
-      drawing: resource.drawing,
-      cuts: resource.cuts,
-      options: output.options,
-    });
+  owner.pagination.register({
+    container: output.pages,
+    drawing: resource.drawing,
+    cuts: resource.cuts,
+    options: output.options,
+  });
   resource.published = true;
 }
 
@@ -209,6 +210,7 @@ export async function renderStaticMarkdownEmbeds(
     readExportColorScheme(root),
     scheduler,
     ports.subscribeSchedulingProfile,
+    ports.bindNativePdfOptions?.(root, context.sourcePath),
   );
   context.addChild(owner);
   const signal = owner.abort.signal;

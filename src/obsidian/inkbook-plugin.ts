@@ -2,6 +2,7 @@ import { createPhoneSheetHost } from "./menus/panels/phone-sheet-host";
 import { OnboardingPreference } from "./settings/onboarding-preference";
 import { readMarkdownExportSource } from "./embeds/export/markdown-export-source";
 import { ExportGeometryCache } from "./embeds/export/export-geometry-cache";
+import { NativePdfOptionsGateway } from "./embeds/export/native-pdf-options";
 import {
   registerDocumentStatusBar,
   resolveDocumentStatusPane,
@@ -237,6 +238,7 @@ function createEmbedIntegration(
   settings: InkbookSettingsStore,
 ) {
   const exportGeometryCache = new ExportGeometryCache();
+  const nativePdfOptions = new NativePdfOptionsGateway(plugin.app);
   const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault, {
     deferUntilLayoutReady: true,
     workScheduler: (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
@@ -256,10 +258,13 @@ function createEmbedIntegration(
   return {
     dispose: () => {
       exportGeometryCache.dispose();
+      nativePdfOptions.dispose();
       documentRecognition.dispose();
     },
     documentRecognition,
     ports: {
+      bindNativePdfOptions: (root: HTMLElement, sourcePath: string) =>
+        nativePdfOptions.bind(root, sourcePath),
       exportGeometryCache,
       acquireSchedulingProfile: (owner: MarkdownRenderChild) => {
         const document = owner.containerEl.ownerDocument;

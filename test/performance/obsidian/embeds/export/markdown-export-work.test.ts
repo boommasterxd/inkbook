@@ -13,6 +13,7 @@ import * as previewBuilder from "../../../../../src/obsidian/embeds/preview/safe
 import * as exportCuts from "../../../../../src/domain/export/export-pagination";
 import * as exportGeometry from "../../../../../src/persistence/export/export-geometry";
 import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/runtime/public";
+import * as staticFragments from "../../../../../src/persistence/export/static-export-fragments";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -94,14 +95,32 @@ it("builds every saved path once with bounded DOM work between central admission
 });
 
 it("bounds print publication and host reads while reusing the complete ten-thousand-path drawing", async () => {
-  const fixture = await printPaginationFixture({ paths: 10_000, height: 120_000, occurrences: 3 });
+  const fixture = await printPaginationFixture({
+    paths: 10_000,
+    height: 180_000,
+    width: 657,
+    occurrences: 3,
+    nativeScale: 0.75,
+    deferStart: true,
+  });
+  const { rootBounds } = fixture.nativeRoot!;
+  const originalStyle = fixture.root.getAttribute("style");
   const originals = fixture.containers.map((container) => [...container.childNodes]);
   const create = vi.spyOn(document, "createElementNS");
   const attributes = vi.spyOn(window.Element.prototype, "setAttribute");
   const build = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
   const prepare = vi.spyOn(exportCuts, "prepareExportCutsSteps");
   const parse = vi.spyOn(window.DOMParser.prototype, "parseFromString");
+  const fragments = vi.spyOn(staticFragments, "prepareStaticExportFragments");
+  const rootStyle = vi.spyOn(fixture.root.style, "setProperty");
   fixture.styles.mockClear();
+  fixture.controller.start();
+  expect(rootStyle.mock.calls.map(([name]) => name)).toEqual([
+    "max-inline-size",
+    "--inkbook-native-pdf-maximum",
+  ]);
+  expect(fixture.layoutReads).toHaveLength(1);
+  fixture.layoutReads.length = 0;
   fixture.print(true);
   const pieces = fixture.root.querySelectorAll(".inkbook-export-piece");
   expect(pieces.length).toBeGreaterThan(0);
@@ -110,14 +129,14 @@ it("bounds print publication and host reads while reusing the complete ten-thous
   for (const container of fixture.containers.slice(0, 2)) {
     const fragments = container.querySelectorAll<HTMLElement>(".inkbook-export-piece");
     expect(fragments[0]?.dataset.inkbookRangeStart).toBe("0");
-    expect(fragments[fragments.length - 1]?.dataset.inkbookRangeEnd).toBe("120000");
+    expect(fragments[fragments.length - 1]?.dataset.inkbookRangeEnd).toBe("180000");
   }
   expect(fixture.root.querySelectorAll("path")).toHaveLength(10_000);
   expect(fixture.root.querySelectorAll("defs")).toHaveLength(1);
   // Every native layout/style read sees empty viewports across all three occurrences.
   // Earlier pieces may affect later page boxes, but their drawing references activate last.
   expect(fixture.layoutReads.length).toBeGreaterThan(0);
-  expect(fixture.layoutReads.length).toBeLessThanOrEqual(3 * 4);
+  expect(fixture.layoutReads.length).toBeLessThanOrEqual(3 * 4 + 1);
   expect(fixture.layoutReads.every((read) => read.references === 0)).toBe(true);
   expect(fixture.layoutReads.some((read) => read.pieces > 0)).toBe(true);
   expect(fixture.root.querySelectorAll("svg[role='img'] use")).toHaveLength(pieces.length + 1);
@@ -125,12 +144,21 @@ it("bounds print publication and host reads while reusing the complete ten-thous
   expect(create.mock.calls.length).toBeLessThanOrEqual(256 * 5);
   expect(attributes.mock.calls.length).toBeLessThanOrEqual(256 * 22 + 3 * 4);
   expect(fixture.pages).toHaveBeenCalledTimes(3);
-  expect(fixture.styles).toHaveBeenCalledTimes(3);
+  expect(fixture.styles).toHaveBeenCalledTimes(5);
+  // One shared root correction, independent of the three occurrences and 10,000 paths.
+  expect(create.mock.calls.filter(([, name]) => name === "span")).toHaveLength(0);
+  expect(rootBounds).not.toHaveBeenCalled();
+  expect(rootStyle).toHaveBeenCalledTimes(2);
+  expect(fixture.styles.mock.calls.filter(([element]) => element === fixture.root)).toHaveLength(2);
   for (const boundary of fixture.measuredBounds) expect(boundary.mock.calls).toHaveLength(1);
   expect(build).not.toHaveBeenCalled();
   expect(prepare).not.toHaveBeenCalled();
   expect(parse).not.toHaveBeenCalled();
+  expect(fragments).not.toHaveBeenCalled();
   fixture.controller.dispose();
+  expect(fixture.root.getAttribute("style")).toBe(originalStyle);
+  expect(rootStyle).toHaveBeenCalledTimes(3);
+  expect(fixture.root.classList.contains("inkbook-native-pdf-export")).toBe(false);
   for (const [index, container] of fixture.containers.entries())
     expect([...container.childNodes]).toEqual(originals[index]);
   create.mockClear();

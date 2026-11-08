@@ -88,6 +88,111 @@ it("retains continuous output when the renderer exposes no fragmented print-page
   fixture.controller.dispose();
 });
 
+it.each([1, 0.75, 0.5])(
+  "keeps the native root at its unscaled width while planning actual slices at scale %s",
+  async (scale) => {
+    const fixture = await nativePrintFixture(scale);
+    const original = [...fixture.containers[0]!.childNodes];
+    try {
+      expect(fixture.root.getBoundingClientRect().width).toBe(1024);
+      expect(fixture.root.classList.contains("inkbook-native-pdf-export")).toBe(scale < 1);
+      fixture.print(true, () => {
+        // Native page allocation sees the capped width before Inkbook's MQL callback runs.
+        expect(fixture.root.getBoundingClientRect().width).toBe(721);
+        expect(fixture.root.querySelector(".inkbook-export-piece")).toBeNull();
+      });
+      const pieces = fixture.containers[0]!.querySelectorAll<HTMLElement>(".inkbook-export-piece");
+      expect(Number(pieces[0]!.dataset.inkbookRangeEnd)).toBeCloseTo(
+        (1000 / scale - 500 - 23) / 0.657,
+      );
+      assertCompleteRanges(fixture.containers[0]!, 3600, fixture.drawing.id);
+      expect(fixture.root.querySelector(".inkbook-export-viewport-probe")).toBeNull();
+      window.dispatchEvent(new Event("afterprint"));
+      expect([...fixture.containers[0]!.childNodes]).toEqual(original);
+      expect(fixture.root.style.getPropertyValue("max-inline-size")).toBe("2000px");
+      expect(fixture.root.style.getPropertyPriority("max-inline-size")).toBe("important");
+      expect(fixture.root.classList.contains("inkbook-native-pdf-export")).toBe(false);
+      fixture.print(false);
+      window.dispatchEvent(new Event("beforeprint"));
+      fixture.print(true, () => expect(fixture.root.getBoundingClientRect().width).toBe(721));
+      assertCompleteRanges(fixture.containers[0]!, 3600, fixture.drawing.id);
+    } finally {
+      fixture.controller.dispose();
+    }
+  },
+);
+
+it("restores the complete graphic and original root style when native print validation fails", async () => {
+  const fixture = await nativePrintFixture(0.75);
+  const original = [...fixture.containers[0]!.childNodes];
+  const references = [...fixture.containers[0]!.querySelectorAll("use")];
+  fixture.styles.mockImplementationOnce(() => {
+    throw new Error("Native layout validation failed after arming print-only sizing.");
+  });
+  try {
+    fixture.print(true);
+    expect([...fixture.containers[0]!.childNodes]).toEqual(original);
+    expect([...fixture.containers[0]!.querySelectorAll("use")]).toEqual(references);
+    expect(fixture.containers[0]!.querySelector(".inkbook-export-piece")).toBeNull();
+    expect(fixture.root.classList.contains("inkbook-native-pdf-export")).toBe(true);
+    window.dispatchEvent(new Event("afterprint"));
+    expect(fixture.root.style.getPropertyValue("max-inline-size")).toBe("2000px");
+    expect(fixture.root.style.getPropertyPriority("max-inline-size")).toBe("important");
+    expect(fixture.root.querySelector(".inkbook-export-viewport-probe")).toBeNull();
+  } finally {
+    fixture.controller.dispose();
+  }
+});
+
+it("scales complete fallback graphics without cut metadata and restores the root on disposal", async () => {
+  const fixture = await nativePrintFixture(0.5, true);
+  const references = [...fixture.containers[0]!.querySelectorAll("use")];
+  fixture.print(true);
+  expect(fixture.root.getBoundingClientRect().width).toBe(721);
+  expect([...fixture.containers[0]!.querySelectorAll("use")]).toEqual(references);
+  expect(fixture.containers[0]!.querySelector(".inkbook-export-piece")).toBeNull();
+  expect(fixture.pages).not.toHaveBeenCalled();
+  fixture.controller.dispose();
+  expect(fixture.root.style.getPropertyValue("max-inline-size")).toBe("2000px");
+  expect(fixture.root.style.getPropertyPriority("max-inline-size")).toBe("important");
+});
+
+it("retains complete output when a transformed native root has an unproven box model", async () => {
+  const fixture = await nativePrintFixture(0.75);
+  const original = [...fixture.containers[0]!.childNodes];
+  Object.assign(fixture.root.style, { transform: "scale(2)" });
+  try {
+    fixture.print(true);
+    expect([...fixture.containers[0]!.childNodes]).toEqual(original);
+    expect(fixture.containers[0]!.querySelector("use")).not.toBeNull();
+    expect(fixture.containers[0]!.querySelector(".inkbook-export-piece")).toBeNull();
+    window.dispatchEvent(new Event("afterprint"));
+    expect(fixture.root.style.getPropertyValue("max-inline-size")).toBe("2000px");
+  } finally {
+    fixture.controller.dispose();
+  }
+});
+
+it("leaves a native root unchanged when its complete print maximum is unsupported", async () => {
+  const fixture = await printPaginationFixture({ nativeScale: 0.75, deferStart: true });
+  const keyword = "max-content";
+  fixture.root.style.setProperty("max-inline-size", keyword);
+  vi.spyOn(window.CSS, "supports").mockImplementation(
+    (_property: string, value?: string) => !value?.startsWith(`min(${keyword},`),
+  );
+  const original = [...fixture.containers[0]!.childNodes];
+  try {
+    fixture.controller.start();
+    fixture.print(true);
+    expect([...fixture.containers[0]!.childNodes]).toEqual(original);
+    expect(fixture.root.style.getPropertyValue("max-inline-size")).toBe(keyword);
+    expect(fixture.root.classList.contains("inkbook-native-pdf-export")).toBe(false);
+    expect(fixture.root.querySelector(".inkbook-export-piece")).toBeNull();
+  } finally {
+    fixture.controller.dispose();
+  }
+});
+
 it("restores a complete occurrence after a layout failure and still paginates later occurrences", async () => {
   const fixture = await printPaginationFixture({ occurrences: 3 });
   const failed = fixture.containers[1]!;
@@ -161,4 +266,21 @@ function assertCompleteRanges(container: HTMLElement, height: number, drawingId:
     end = next;
   }
   expect(end).toBe(height);
+}
+
+async function nativePrintFixture(scale: number, withoutCuts = false) {
+  const fixture = await printPaginationFixture({
+    height: 3600,
+    width: 657,
+    nativeScale: scale,
+    withoutCuts,
+  });
+  const { viewport } = fixture.nativeRoot!;
+  const rectangles = Array.from({ length: 10 }, (_, index) =>
+    DOMRect.fromRect({ y: (index * 1000) / scale, width: viewport + 1, height: 1000 / scale }),
+  );
+  fixture.pages.mockReturnValue(
+    Object.assign(rectangles, { item: (index: number) => rectangles[index] ?? null }),
+  );
+  return fixture;
 }

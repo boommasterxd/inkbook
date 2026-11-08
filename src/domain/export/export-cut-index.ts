@@ -4,6 +4,11 @@ export interface CutEvent {
   readonly after: number;
 }
 
+interface CutChoice {
+  readonly y: number;
+  readonly crossings: number;
+}
+
 // Bounds one numeric preparation step; only the injected scheduler decides to hand off.
 export const EXPORT_CUT_PREPARATION_CHUNK_SIZE = 256;
 
@@ -42,7 +47,7 @@ export class ExportCutIndex {
     return new ExportCutIndex(events, tree, base);
   }
 
-  public choose(lower: number, limit: number, start: number, clearance = 0): number {
+  public choose(lower: number, limit: number, start: number, clearance = 0): CutChoice {
     let first = this.#lowerBound(lower);
     if (this.events[first]?.y === start) first += 1;
     const beyond = this.#lowerBound(limit);
@@ -55,19 +60,25 @@ export class ExportCutIndex {
     const best = this.#rangeMinimum(first, beyond);
     const boundary =
       best >= 0 && this.events[best]!.at < limitCrossings ? best : exact ? beyond : -1;
-    return boundary < 0 ? limit : this.#interiorCut(boundary, lower, limit, clearance);
+    return boundary < 0
+      ? { y: limit, crossings: limitCrossings }
+      : this.#interiorCut(boundary, lower, limit, clearance);
   }
 
-  #interiorCut(index: number, lower: number, limit: number, clearance: number): number {
+  #interiorCut(index: number, lower: number, limit: number, clearance: number): CutChoice {
     const event = this.events[index]!;
-    if (clearance <= 0) return event.y;
+    if (clearance <= 0) return { y: event.y, crossings: event.at };
     const previous = this.events[index - 1];
     if ((previous?.after ?? 0) <= event.after && event.y > lower) {
       const available = event.y - Math.max(lower, previous?.y ?? lower);
-      return event.y - Math.min(clearance, available / 2);
+      return {
+        y: event.y - Math.min(clearance, available / 2),
+        crossings: previous?.after ?? 0,
+      };
     }
     const right = Math.min(limit, this.events[index + 1]?.y ?? limit);
-    return event.y + Math.min(clearance, Math.max(0, right - event.y) / 2);
+    const y = event.y + Math.min(clearance, Math.max(0, right - event.y) / 2);
+    return { y, crossings: y === event.y ? event.at : event.after };
   }
 
   #lowerBound(y: number): number {

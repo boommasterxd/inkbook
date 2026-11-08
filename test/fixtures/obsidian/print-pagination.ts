@@ -19,6 +19,34 @@ interface PrintLayoutRead {
   readonly pieces: number;
 }
 
+/** Models native print-only CSS sizing before the first fragmented layout is read. */
+function mockNativePrintRoot(root: HTMLElement, scale: number) {
+  Object.assign(root.style, {
+    boxSizing: "border-box",
+    transform: "none",
+    zoom: "1",
+    writingMode: "horizontal-tb",
+  });
+  const originalLimit = 2000;
+  root.style.setProperty("max-inline-size", `${String(originalLimit)}px`, "important");
+  const viewport = 720 / scale;
+  const css = window.CSS;
+  vi.spyOn(css, "supports").mockReturnValue(true);
+  // Happy DOM returns a new CSS namespace object on each getter access.
+  vi.spyOn(window, "CSS", "get").mockReturnValue(css);
+  const rootBounds = vi.spyOn(root, "getBoundingClientRect").mockImplementation(() => {
+    const printing = window.matchMedia("print").matches;
+    const cap =
+      printing && root.classList.contains("inkbook-native-pdf-export")
+        ? Math.ceil((viewport + 1) * scale)
+        : originalLimit;
+    return DOMRect.fromRect({
+      width: Math.min(printing ? viewport + 1 : 1024, originalLimit, cap),
+    });
+  });
+  return { rootBounds, viewport };
+}
+
 /** Native MQL events with controlled print rectangles, not simulated CPU time. */
 export async function printPaginationFixture(
   options: {
@@ -27,6 +55,9 @@ export async function printPaginationFixture(
     readonly top?: number;
     readonly occurrences?: number;
     readonly paths?: number;
+    readonly nativeScale?: number;
+    readonly withoutCuts?: boolean;
+    readonly deferStart?: boolean;
     readonly preparedDrawing?: {
       readonly svg: SVGSVGElement;
       readonly drawing: ExportDrawing;
@@ -49,7 +80,12 @@ export async function printPaginationFixture(
   let step = preparation.next();
   while (!step.done) step = preparation.next();
   const cuts = step.value;
-  const controller = new StaticExportPagination(root);
+  const controller = new StaticExportPagination(
+    root,
+    options.nativeScale === undefined
+      ? undefined
+      : { scale: options.nativeScale, pageSize: "A4", landscape: false, margin: "0" },
+  );
   const { measure, ...layout } = observePrintLayout(
     root,
     (options.top ?? 500) + height * (options.occurrences ?? 1) + 200,
@@ -59,7 +95,12 @@ export async function printPaginationFixture(
     const container = createExportPage(document, drawing, { description: "Diagram" });
     if (index === 0) container.prepend(svg);
     root.append(container);
-    controller.register({ container, drawing, cuts, options: { description: "Diagram" } });
+    controller.register({
+      container,
+      drawing,
+      cuts: options.withoutCuts ? undefined : cuts,
+      options: { description: "Diagram" },
+    });
     measure(container, (options.top ?? 500) + height * index, height);
     return container;
   });
@@ -71,7 +112,9 @@ export async function printPaginationFixture(
   );
   const remove = vi.spyOn(media, "removeEventListener");
   const removeWindow = vi.spyOn(window, "removeEventListener");
-  controller.start();
+  const nativeRoot =
+    options.nativeScale === undefined ? undefined : mockNativePrintRoot(root, options.nativeScale);
+  if (!options.deferStart) controller.start();
   return {
     root,
     controller,
@@ -81,8 +124,10 @@ export async function printPaginationFixture(
     ...layout,
     remove,
     removeWindow,
-    print: (value: boolean) => {
+    nativeRoot,
+    print: (value: boolean, beforeMediaChange?: () => void) => {
       matches.mockReturnValue(value);
+      beforeMediaChange?.();
       media.dispatchEvent(new MediaQueryListEvent("change", { matches: value, media: "print" }));
     },
   };

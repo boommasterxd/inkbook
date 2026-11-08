@@ -11,6 +11,7 @@ import type { PresentationScrollRangeReserve } from "./transition-scroll-stabili
 import type { HostZoomScroll } from "../live-preview/live-preview-zoom-scroll";
 import type { MarkdownRenderChild } from "obsidian";
 import type { ExportGeometryCache } from "../export/export-geometry-cache";
+import type { NativePdfOptions } from "../export/native-pdf-options";
 
 export interface ResolvedInkbookDocument {
   readonly documentId: string;
@@ -158,6 +159,10 @@ export interface PresentationSessionPort {
 }
 
 export interface EmbedIntegrationPorts {
+  readonly bindNativePdfOptions?: (
+    root: HTMLElement,
+    sourcePath: string,
+  ) => NativePdfOptions | undefined;
   readonly exportGeometryCache?: ExportGeometryCache;
   readonly acquireSchedulingProfile?: (owner: MarkdownRenderChild) => () => void;
   readonly subscribeSchedulingProfile?: (listener: () => void) => () => void;

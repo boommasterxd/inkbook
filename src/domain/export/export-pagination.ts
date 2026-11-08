@@ -15,7 +15,7 @@ export interface ExportCutOptions {
   readonly limit: number;
   /** Minimum fragment height, measured from start. */
   readonly minimum: number;
-  /** Maximum distance to search backwards from limit. */
+  /** Preferred backward search distance; an earlier clear cut may exceed it. */
   readonly lookback: number;
   /** Keep painted antialiasing away from otherwise clear object boundaries. */
   readonly clearance?: number;
@@ -40,8 +40,13 @@ export function chooseExportCut(prepared: PreparedExportCuts, options: ExportCut
   ) {
     throw new RangeError("Export cut limits must be finite and make positive progress.");
   }
-  const lower = Math.max(start + minimum, limit - lookback);
-  return lower >= limit ? limit : prepared.choose(lower, limit, start, clearance);
+  const minimumY = start + minimum;
+  if (minimumY >= limit) return limit;
+  const lower = Math.max(minimumY, limit - lookback);
+  const regular = prepared.choose(lower, limit, start, clearance);
+  if (regular.crossings === 0 || lower === minimumY) return regular.y;
+  const earlier = prepared.choose(minimumY, lower, start, clearance);
+  return earlier.crossings === 0 ? earlier.y : regular.y;
 }
 
 /** Owns only numeric event data after preparation; callers drive central scheduler admission. */

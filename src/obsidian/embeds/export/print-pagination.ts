@@ -6,7 +6,14 @@ import {
   type ExportDrawing,
   type ExportPageOptions,
 } from "./export-pages";
-import { pageContaining, readPrintPages, type PrintPage } from "./print-layout";
+import {
+  prepareNativePdfRoot,
+  supportedNativePdfRoot,
+  pageContaining,
+  readPrintPages,
+  type PrintPage,
+} from "./print-layout";
+import type { NativePdfOptions } from "./native-pdf-options";
 
 const MAX_PRINT_PIECES = 256;
 const PIECE_GAP = 12;
@@ -17,7 +24,7 @@ const REFERENCE_OVERSCAN = 2;
 export interface PaginatedExport {
   readonly container: HTMLElement;
   readonly drawing: ExportDrawing;
-  readonly cuts: PreparedExportCuts;
+  readonly cuts: PreparedExportCuts | undefined;
   readonly options: ExportPageOptions;
 }
 
@@ -40,8 +47,12 @@ export class StaticExportPagination {
   #media: MediaQueryList | undefined;
   #publishedPieces = 0;
   #budgetExhausted = false;
+  #restoreRoot: (() => void) | undefined;
 
-  constructor(root: HTMLElement) {
+  constructor(
+    root: HTMLElement,
+    private readonly nativeOptions?: NativePdfOptions,
+  ) {
     this.#root = root;
   }
 
@@ -63,12 +74,15 @@ export class StaticExportPagination {
     this.#media = ownerWindow.matchMedia("print");
     this.#media.addEventListener("change", this.#onPrintChange);
     ownerWindow.addEventListener("afterprint", this.#restore);
+    ownerWindow.addEventListener("beforeprint", this.#armNativeRoot);
+    this.#armNativeRoot();
     if (this.#media.matches) this.#paginate();
   }
 
   dispose(): void {
     this.#media?.removeEventListener("change", this.#onPrintChange);
     this.#root.ownerDocument.defaultView?.removeEventListener("afterprint", this.#restore);
+    this.#root.ownerDocument.defaultView?.removeEventListener("beforeprint", this.#armNativeRoot);
     this.#restore();
     this.#exports.length = 0;
   }
@@ -79,10 +93,34 @@ export class StaticExportPagination {
   };
 
   readonly #restore = (): void => {
+    this.#restoreOutputs();
+    this.#restoreRoot?.();
+    this.#restoreRoot = undefined;
+  };
+
+  readonly #armNativeRoot = (): void => {
+    if (this.#restoreRoot !== undefined || this.nativeOptions === undefined) return;
+    try {
+      this.#restoreRoot = prepareNativePdfRoot(this.#root, this.nativeOptions.scale);
+    } catch {
+      this.#restoreRoot = undefined;
+    }
+  };
+
+  #nativeRootReady(): boolean {
+    if (this.nativeOptions === undefined || this.nativeOptions.scale >= 1) return true;
+    try {
+      return this.#restoreRoot !== undefined && supportedNativePdfRoot(this.#root);
+    } catch {
+      return false;
+    }
+  }
+
+  #restoreOutputs(): void {
     for (const output of this.#exports) this.#restoreOutput(output);
     this.#publishedPieces = 0;
     this.#budgetExhausted = false;
-  };
+  }
 
   #restoreOutput(output: OwnedExport, graphics = true): void {
     const container = output.container;
@@ -100,14 +138,19 @@ export class StaticExportPagination {
   }
 
   #paginate(): void {
-    this.#restore();
+    this.#restoreOutputs();
     // Keep the final box model while removing expensive SVG instances from layout reads.
     for (const output of this.#exports)
       for (const { svg } of output.graphics) svg.replaceChildren();
+    if (!this.#nativeRootReady()) {
+      this.#restoreOutputs();
+      return;
+    }
     let pages: readonly PrintPage[] | undefined;
     for (const output of this.#exports) {
       if (this.#budgetExhausted || this.#publishedPieces >= MAX_PRINT_PIECES) break;
       if (!this.#root.contains(output.container)) continue;
+      if (output.cuts === undefined) continue;
       try {
         pages ??= readPrintPages(this.#root);
         this.#paginateOutput(output, pages);
@@ -126,6 +169,7 @@ export class StaticExportPagination {
   }
 
   #paginateOutput(output: OwnedExport, pages: readonly PrintPage[]): void {
+    if (output.cuts === undefined) return;
     const rect = output.container.getBoundingClientRect();
     const firstPage = pageContaining(pages, rect.top);
     if (firstPage === undefined || rect.bottom <= firstPage.bottom - 1) return;
@@ -144,13 +188,16 @@ export class StaticExportPagination {
         .borderTopLeftRadius,
     );
     if (!(scale > 0) || !Number.isFinite(radius)) return;
-    const slices = planSlices(output, {
-      remaining,
-      pageHeight,
-      scale,
-      radius,
-      maximumPieces: MAX_PRINT_PIECES - this.#publishedPieces,
-    });
+    const slices = planSlices(
+      { ...output, cuts: output.cuts },
+      {
+        remaining,
+        pageHeight,
+        scale,
+        radius,
+        maximumPieces: MAX_PRINT_PIECES - this.#publishedPieces,
+      },
+    );
     if (slices === undefined) {
       this.#budgetExhausted = true;
       return;
@@ -187,7 +234,7 @@ export class StaticExportPagination {
 }
 
 function planSlices(
-  output: PaginatedExport,
+  output: PaginatedExport & { readonly cuts: PreparedExportCuts },
   layout: {
     readonly remaining: number;
     readonly pageHeight: number;

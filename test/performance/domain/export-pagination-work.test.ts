@@ -6,6 +6,46 @@ import {
 import { consumeSerializationSteps } from "../../../src/persistence/serialization/output/serialization-model-preparation";
 import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 
+it("queries one earlier clear export cut logarithmically without rereading 10,000 intervals", async () => {
+  let reads = 0;
+  const fixed = [
+    { minY: 298, maxY: 502 },
+    { minY: 900, maxY: 2_000 },
+    { minY: 1_060, maxY: 1_110 },
+    { minY: 1_080, maxY: 1_130 },
+  ];
+  const intervals = Array.from({ length: 10_000 }, (_, index) => ({
+    get minY() {
+      reads += 1;
+      return fixed[index]?.minY ?? 5_000 + index * 10;
+    },
+    get maxY() {
+      reads += 1;
+      return fixed[index]?.maxY ?? 5_005 + index * 10;
+    },
+  }));
+  const prepared = await consumeSerializationSteps(prepareExportCutsSteps(intervals), {});
+  expect(reads).toBe(20_000);
+  expect(prepared.instrumentation.eventCount).toBe(20_000);
+  // Each of the regular and fallback queries uses two binary searches and one range minimum.
+  const maximumVisits = 8 * Math.ceil(Math.log2(20_001)) + 8;
+  for (const { options, expected } of [
+    {
+      options: { start: 0, limit: 474.872, minimum: 100, lookback: 142, clearance: 3 },
+      expected: 295,
+    },
+    {
+      options: { start: 1_000, limit: 1_100, minimum: 20, lookback: 30 },
+      expected: 1_080,
+    },
+  ]) {
+    const before = prepared.instrumentation.queryVisits;
+    expect(chooseExportCut(prepared, options)).toBe(expected);
+    expect(prepared.instrumentation.queryVisits - before).toBeLessThanOrEqual(maximumVisits);
+    expect(reads).toBe(20_000);
+  }
+});
+
 describe("export pagination work", () => {
   it("reads 10,000 element intervals once and reuses a logarithmic numeric query index", async () => {
     let reads = 0;
