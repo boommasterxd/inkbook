@@ -5,7 +5,7 @@ import { removeLivePreviewMarkdown } from "../../../../../src/obsidian/embeds/li
 const snapshotEffect = StateEffect.define<{ anchor: number; offset: number }>({
   map: (value, changes) => ({ ...value, anchor: changes.mapPos(value.anchor) }),
 });
-const source = "Before\n\n!inkbook[[page.svg]]\n\nAfter\nLast";
+const source = "Before\n\n![[page.svg]]\n\nAfter\nLast";
 const range = { from: source.indexOf("\n\n") + 1, to: source.indexOf("After") };
 
 function harness(anchor: number, offset: number) {

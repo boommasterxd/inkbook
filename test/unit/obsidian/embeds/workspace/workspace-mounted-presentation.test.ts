@@ -3,11 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createBuiltInDeviceSettings } from "../../../../../src/domain/settings";
 import type { PresentationAttachment } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
 import {
-  cancelInitialWorkspaceLoading,
+  resumeInitialWorkspacePreview,
   createWorkspaceMountedPresentation,
   createWorkspacePresentationStateSetter,
-  finishInitialWorkspaceLoading,
-  startInitialWorkspaceLoading,
   updateWorkspaceMountedSettings,
   releaseWorkspaceScene,
   disposeWorkspaceMountedPresentations,
@@ -25,146 +23,92 @@ function createHarness() {
   const attachment = {
     root: new FakePresentationElement() as unknown as HTMLElement,
     whenPresented,
-    loadingStartedAt: 100,
   } as PresentationAttachment;
   const mounted = createWorkspaceMountedPresentation(
     attachment,
     workSchedulerFromFrames(attachment.root.ownerDocument.defaultView as Window),
   );
-  const initial = { finish: vi.fn() };
-  const subsequent = { finish: vi.fn() };
-  const begin = vi.spyOn(mounted.feedback, "begin").mockReturnValue(subsequent);
-  begin.mockReturnValueOnce(initial);
-  const lifecycle = { hasPendingAutoActivation: vi.fn(() => false) };
-  return { begin, initial, lifecycle, mounted, present, subsequent };
+  const operation = { finish: vi.fn() };
+  const begin = vi.spyOn(mounted.feedback, "begin").mockReturnValue(operation);
+  return { begin, operation, mounted, present };
 }
 
-describe("mounted presentation initial entrance", () => {
-  it("releases an abandoned initial reveal before ending loading feedback", async () => {
-    const harness = createHarness();
-    const resumePreview = vi.fn();
-    Object.assign(harness.mounted.attachment, { initialEntrance: { resumePreview } });
-    startInitialWorkspaceLoading(harness.mounted, harness.lifecycle);
-    cancelInitialWorkspaceLoading(harness.mounted);
-    expect(resumePreview).toHaveBeenCalledOnce();
-    harness.present(true);
-    await Promise.resolve();
-    expect(harness.initial.finish).toHaveBeenCalledOnce();
-    cancelInitialWorkspaceLoading(undefined);
-  });
-
-  it("makes a held insertion visible when its loading feedback becomes overdue", () => {
-    const showLoading = vi.fn();
-    const attachment = {
-      root: new FakePresentationElement() as unknown as HTMLElement,
-      initialEntrance: { showLoading },
-    } as unknown as PresentationAttachment;
-    const mounted = createWorkspaceMountedPresentation(
-      attachment,
-      workSchedulerFromFrames(attachment.root.ownerDocument.defaultView as Window),
-    );
-    expect(showLoading).not.toHaveBeenCalled();
-    mounted.feedback.begin("loading", -100_000);
-    expect(showLoading).toHaveBeenCalledOnce();
-    mounted.feedback.dispose();
-  });
+it("resumes an abandoned initial reveal", () => {
+  const harness = createHarness();
+  const resumePreview = vi.fn();
+  Object.assign(harness.mounted.attachment, { initialEntrance: { resumePreview } });
+  resumeInitialWorkspacePreview(harness.mounted);
+  expect(resumePreview).toHaveBeenCalledOnce();
+  expect(harness.begin).not.toHaveBeenCalled();
+  resumeInitialWorkspacePreview(undefined);
 });
 
 it("cancels failed activation feedback immediately while readiness can finish its visual lifetime", () => {
   const harness = createHarness();
   const setState = createWorkspacePresentationStateSetter(new Map());
-  setState(harness.mounted.attachment, "load-error", harness.initial);
-  expect(harness.initial.finish).toHaveBeenCalledExactlyOnceWith("immediate");
-  setState(harness.mounted.attachment, "active", harness.subsequent);
-  expect(harness.subsequent.finish).toHaveBeenCalledExactlyOnceWith();
+  setState(harness.mounted.attachment, "load-error", harness.operation);
+  expect(harness.operation.finish).toHaveBeenCalledExactlyOnceWith("immediate");
+  harness.operation.finish.mockClear();
+  setState(harness.mounted.attachment, "active", harness.operation);
+  expect(harness.operation.finish).toHaveBeenCalledExactlyOnceWith();
 });
 
-describe("mounted presentation loading continuity", () => {
-  it("ends initial loading when the locked preview becomes ready", async () => {
+describe("mounted presentation activation feedback", () => {
+  it.each([
+    [undefined, "opening"],
+    [1, "loading"],
+  ] as const)("begins %s activation with %s feedback", (attempt, kind) => {
     const harness = createHarness();
-    startInitialWorkspaceLoading(harness.mounted, harness.lifecycle);
-    expect(harness.begin).toHaveBeenCalledWith("loading", 100);
-    expect(harness.initial.finish).not.toHaveBeenCalled();
+    const activation = beginWorkspaceActivation(harness.mounted, attempt);
+    expect(harness.begin).toHaveBeenCalledExactlyOnceWith(kind);
+    expect(activation?.feedback).toBe(harness.operation);
+    expect(harness.operation.finish).not.toHaveBeenCalled();
+  });
+
+  it("reveals a held insertion only after automatic activation reaches its feedback paint", () => {
+    const root = new FakePresentationElement();
+    const ownerWindow = root.ownerDocument.defaultView as Window;
+    const showLoading = vi.fn();
+    let timer: (() => void) | undefined;
+    let frame: FrameRequestCallback | undefined;
+    const schedule = vi.fn((callback: () => void) => {
+      timer = callback;
+      return 1;
+    });
+    Object.assign(ownerWindow, { setTimeout: schedule });
+    const mounted = createWorkspaceMountedPresentation(
+      {
+        root: root as unknown as HTMLElement,
+        initialEntrance: { showLoading },
+      } as unknown as PresentationAttachment,
+      workSchedulerFromFrames({
+        requestAnimationFrame: (callback) => {
+          frame = callback;
+          return 1;
+        },
+        cancelAnimationFrame: () => {
+          frame = undefined;
+        },
+      }),
+    );
+    beginWorkspaceActivation(mounted, 1);
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 500);
+    expect(showLoading).not.toHaveBeenCalled();
+    timer?.();
+    expect(showLoading).not.toHaveBeenCalled();
+    frame?.(0);
+    expect(showLoading).toHaveBeenCalledOnce();
+    mounted.feedback.dispose();
+  });
+
+  it("does not complete activation feedback when the preview becomes ready", async () => {
+    const harness = createHarness();
+    const activation = beginWorkspaceActivation(harness.mounted, 1);
     harness.present(true);
     await Promise.resolve();
-    expect(harness.initial.finish).toHaveBeenCalledOnce();
-    expect(harness.mounted.initialLoading).toBeUndefined();
-  });
-
-  it("does not retain the original deadline for a later manual activation", async () => {
-    const harness = createHarness();
-    startInitialWorkspaceLoading(harness.mounted, harness.lifecycle);
-    harness.present(true);
-    await Promise.resolve();
-    const activation = beginWorkspaceActivation(harness.mounted, undefined);
-    expect(harness.begin).toHaveBeenLastCalledWith("opening");
-    expect(activation?.feedback).toBe(harness.subsequent);
-  });
-
-  it("acknowledges a manual click while an initial reveal is still pending", async () => {
-    const harness = await startPendingActivation("before-presentation");
-    const activation = beginWorkspaceActivation(harness.mounted, undefined);
-    expect(harness.begin).toHaveBeenLastCalledWith("opening");
-    expect(activation?.feedback).toBe(harness.subsequent);
-    harness.present(true);
-    await Promise.resolve();
-    expect(harness.subsequent.finish).not.toHaveBeenCalled();
-  });
-
-  it.each(["before-presentation", "after-presentation"])(
-    "transfers one loading handle to automatic activation %s",
-    async (order) => {
-      const harness = await startPendingActivation(order);
-      const activation = beginWorkspaceActivation(harness.mounted, 1);
-      harness.present(true);
-      await Promise.resolve();
-      expect(harness.begin).toHaveBeenCalledOnce();
-      expect(activation?.feedback).toBe(harness.initial);
-      expect(harness.initial.finish).not.toHaveBeenCalled();
-      expect(harness.mounted.initialLoading).toBeUndefined();
-      activation?.feedback?.finish();
-      expect(harness.initial.finish).toHaveBeenCalledOnce();
-    },
-  );
-
-  it.each(["before-presentation", "after-presentation"])(
-    "ends cancelled pending activation feedback %s",
-    async (order) => {
-      const harness = await startPendingActivation(order);
-      harness.lifecycle.hasPendingAutoActivation.mockReturnValue(false);
-      finishInitialWorkspaceLoading(harness.mounted);
-      harness.present(true);
-      await Promise.resolve();
-      expect(harness.initial.finish).toHaveBeenCalledOnce();
-      expect(harness.mounted.initialLoading).toBeUndefined();
-      finishInitialWorkspaceLoading(harness.mounted);
-      expect(harness.initial.finish).toHaveBeenCalledOnce();
-    },
-  );
-
-  it("ends an abandoned presentation even while automatic activation was pending", async () => {
-    const harness = createHarness();
-    harness.lifecycle.hasPendingAutoActivation.mockReturnValue(true);
-    startInitialWorkspaceLoading(harness.mounted, harness.lifecycle);
-    harness.present(false);
-    await Promise.resolve();
-    expect(harness.initial.finish).toHaveBeenCalledOnce();
-  });
-
-  it("skips initial feedback without a recognition deadline", () => {
-    const harness = createHarness();
-    delete (harness.mounted.attachment as { loadingStartedAt?: number }).loadingStartedAt;
-    startInitialWorkspaceLoading(harness.mounted, harness.lifecycle);
-    expect(harness.begin).not.toHaveBeenCalled();
-    finishInitialWorkspaceLoading(undefined);
-  });
-
-  it("ends loading for a presentation without an entrance barrier", async () => {
-    const harness = createHarness();
-    delete (harness.mounted.attachment as { whenPresented?: Promise<boolean> }).whenPresented;
-    startInitialWorkspaceLoading(harness.mounted, harness.lifecycle);
-    await Promise.resolve();
-    expect(harness.initial.finish).toHaveBeenCalledOnce();
+    expect(harness.operation.finish).not.toHaveBeenCalled();
+    activation?.feedback?.finish();
+    expect(harness.operation.finish).toHaveBeenCalledOnce();
   });
 
   it("updates motion feedback for a locked presentation without an active scene", () => {
@@ -176,17 +120,6 @@ describe("mounted presentation loading continuity", () => {
     expect(harness.mounted.attachment.root.dataset.inkbookMotion).toBe("reduced");
   });
 });
-
-async function startPendingActivation(order: string) {
-  const harness = createHarness();
-  harness.lifecycle.hasPendingAutoActivation.mockReturnValue(true);
-  startInitialWorkspaceLoading(harness.mounted, harness.lifecycle);
-  if (order === "after-presentation") {
-    harness.present(true);
-    await Promise.resolve();
-  }
-  return harness;
-}
 
 function releaseHarness() {
   const { mounted } = createHarness();

@@ -77,7 +77,7 @@ describe("host-generated relative Inkbook links", () => {
     "rejects a decoded external or absolute Markdown target: %s",
     (target) => {
       const h = createResolutionFixture();
-      const [embed] = findMarkdownInkbookEmbeds(`!inkbook[Drawing](${target})`);
+      const [embed] = findMarkdownInkbookEmbeds(`![Drawing](${target})`);
       expect(embed).toBeDefined();
       expect(h.links.resolveLinkTarget(embed!.linkpath, "notes/note.md")).toBeNull();
       expect(h.resolveDocument(embed!.linkpath, "notes/note.md")).toBeUndefined();

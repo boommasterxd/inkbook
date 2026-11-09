@@ -206,8 +206,6 @@ export class PresentationController {
   }
 
   #initialPresentationOptions(preview: PresentationPreviewLifecycle | undefined) {
-    const loadingStartedAt = preview?.entranceState?.loadingStartedAt;
-    if (preview?.entranceState !== undefined) delete preview.entranceState.loadingStartedAt;
     return {
       ...(preview?.releaseHiddenSurface === undefined
         ? {}
@@ -217,7 +215,6 @@ export class PresentationController {
         ? {}
         : { setPreviewBackgroundWait: preview.setBackgroundWait }),
       ...(preview?.refresh === undefined ? {} : { refreshPreview: preview.refresh }),
-      ...(loadingStartedAt === undefined ? {} : { loadingStartedAt }),
       ...(this.#entrance === undefined
         ? {}
         : { whenPresented: this.#entrance.ready, initialEntrance: this.#entrance }),

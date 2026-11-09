@@ -45,6 +45,8 @@ describe("copied Inkbook embed paste", () => {
     expect(isCopiedEmbedPaste(`${CLIPBOARD}${CLIPBOARD}`, false)).toBe(false);
     expect(isCopiedEmbedPaste("![[drawing.png]]", false)).toBe(false);
     expect(isCopiedEmbedPaste(CLIPBOARD, true)).toBe(false);
+    expect(isCopiedEmbedPaste("!inkbook[[drawing.svg]]", false)).toBe(false);
+    expect(isCopiedEmbedPaste("!inkbook[Drawing](drawing.svg)", false)).toBe(false);
   });
 
   it("validates the resolved source before inserting another reference", async () => {
@@ -55,7 +57,7 @@ describe("copied Inkbook embed paste", () => {
       kind: "inserted",
       mode: "reference",
     });
-    expect(editor.content).toBe(CLIPBOARD);
+    expect(editor.content).toBe("![[drawings/source.svg]]");
     expect(test.events).toEqual(["read:drawings/source.svg", `validate:${SOURCE}`, "choose"]);
     expect(test.create).not.toHaveBeenCalled();
     expect(test.read).toHaveBeenCalledOnce();
@@ -125,11 +127,15 @@ describe("duplicate insertion and editor ownership", () => {
       originalReplace(replacement, from, to);
     };
 
-    await expect(test.controller.paste(pasteRequest(editor))).resolves.toEqual({
+    await expect(
+      test.controller.paste(
+        pasteRequest(editor, { clipboardText: "![[drawings/source.svg|My drawing]]" }),
+      ),
+    ).resolves.toEqual({
       kind: "inserted",
       mode: "duplicate",
     });
-    expect(editor.content).toBe("!inkbook[[drawings/duplicate.svg]]");
+    expect(editor.content).toBe("![[drawings/duplicate.svg|My drawing]]");
     expect(test.events).toEqual([
       "read:drawings/source.svg",
       `validate:${SOURCE}`,
@@ -138,7 +144,7 @@ describe("duplicate insertion and editor ownership", () => {
       `create:drawings/duplicate.svg:${SOURCE}`,
       "read:drawings/duplicate.svg",
       "link:drawings/duplicate.svg",
-      "replace:!inkbook[[drawings/duplicate.svg]]",
+      "replace:![[drawings/duplicate.svg|My drawing]]",
     ]);
   });
 

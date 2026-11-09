@@ -110,7 +110,7 @@ describe("Obsidian Ink import persistence recovery", () => {
     fixture.files.set("inkbook-imports/run-1/source-0.txt", "changed backup");
     const result = await fixture.service.undo(preview.id);
     expect(result.journal.status).toBe("conflict");
-    expect(fixture.files.get("note.md")).toContain("!inkbook");
+    expect(fixture.files.get("note.md")).toContain("!");
     expect(fixture.files.has("Ink/example.svg")).toBe(false);
   });
 
@@ -150,7 +150,7 @@ describe("Obsidian Ink import source restoration", () => {
     await fixture.service.apply(preview);
     const imported = fixture.files.get("C/note.md");
     const converted = fixture.files.get("A/example.inkbook.svg");
-    expect(imported).toBe("!inkbook[[A/example.inkbook.svg]]");
+    expect(imported).toBe("![[A/example.inkbook.svg]]");
     await fixture.service.cleanup(preview.id);
     expect(fixture.files.has("A/example.svg")).toBe(false);
     fixture.files.set("C/example.svg", "new local writing source");
@@ -230,7 +230,7 @@ describe("Obsidian Ink import journal boundaries", () => {
       ),
     );
     expect((await fixture.service.undo(preview.id)).journal.issues).toEqual(partial.journal.issues);
-    expect(fixture.files.get("note.md")).toContain("!inkbook[[first.inkbook.svg]]");
+    expect(fixture.files.get("note.md")).toContain("![[first.inkbook.svg]]");
     expect(fixture.files.get("note.md")).toContain(writingEmbed("second.svg"));
     fixture.files.set("first.svg", "first");
     const restored = await fixture.service.undo(preview.id);

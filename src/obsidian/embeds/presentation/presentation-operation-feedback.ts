@@ -76,19 +76,12 @@ export class PresentationOperationFeedback {
     this.#motionQuery?.addEventListener("change", this.#motionChanged);
   }
 
-  public begin(
-    kind: PresentationOperationKind,
-    startedAt?: number,
-  ): PresentationOperationFeedbackHandle {
+  public begin(kind: PresentationOperationKind): PresentationOperationFeedbackHandle {
     if (this.#disposed) return FINISHED_FEEDBACK;
     this.#clearCurrent();
     const token = ++this.#activeToken;
     this.#kind = kind;
-    const delay = this.#remainingDelay(kind, startedAt);
-    if (delay === 0) {
-      this.#show(kind);
-      return { finish: (mode) => this.#finish(token, mode) };
-    }
+    const delay = feedbackDelay(kind);
     this.#scheduleTimer(() => {
       if (kind === "saving") {
         this.#show(kind);
@@ -136,15 +129,6 @@ export class PresentationOperationFeedback {
     this.#activeToken += 1;
     this.#clearCurrent();
     this.#motionQuery?.removeEventListener("change", this.#motionChanged);
-  }
-
-  #remainingDelay(kind: PresentationOperationKind, startedAt?: number): number {
-    const delay = feedbackDelay(kind);
-    if (kind !== "loading" || startedAt === undefined || !Number.isFinite(startedAt)) {
-      return delay;
-    }
-    const now = this.#ownerWindow.performance?.now() ?? performance.now();
-    return Math.max(0, delay - Math.max(0, now - startedAt));
   }
 
   #finish(token: number, mode?: "immediate"): void {

@@ -17,7 +17,6 @@ export interface InitialPresentationEntrance {
 
 export interface PresentationEntranceState {
   initialHeight?: number;
-  loadingStartedAt?: number;
   presented: boolean;
 }
 

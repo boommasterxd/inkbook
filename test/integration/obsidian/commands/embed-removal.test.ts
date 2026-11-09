@@ -17,7 +17,7 @@ describe("confirmed embed removal transition", () => {
     const result = h.actions.deleteEmbed("drawings/page.svg", removal);
     await vi.waitFor(() => expect(removal.begin).toHaveBeenCalledOnce());
     expect(h.confirm).toHaveBeenCalledTimes(2);
-    expect(h.editor.value()).toContain("!inkbook");
+    expect(h.editor.value()).toContain("!");
     expect(h.trashFile).not.toHaveBeenCalled();
     finish(true);
     await expect(result).resolves.toEqual({ kind: "deleted", fileDeleted: true });
@@ -42,7 +42,7 @@ describe("confirmed embed removal transition", () => {
       const result = h.actions.deleteEmbed("drawings/page.svg", removal);
       if (reason === "error") await expect(result).rejects.toThrow("transition failed");
       else expect((await result).kind).not.toBe("deleted");
-      expect(h.editor.value()).toContain("!inkbook");
+      expect(h.editor.value()).toContain("!");
       expect(h.trashFile).not.toHaveBeenCalled();
       expect(removal.reset).toHaveBeenCalled();
     },
@@ -60,7 +60,7 @@ it("uses the invoking presentation mutation hook and fails closed if it rejects 
     h.editor.value(),
     expect.any(Function),
   );
-  expect(h.editor.value()).toContain("!inkbook");
+  expect(h.editor.value()).toContain("!");
   expect(removal.reset).toHaveBeenCalledOnce();
 });
 

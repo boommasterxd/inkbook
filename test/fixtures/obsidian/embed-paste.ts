@@ -37,7 +37,7 @@ export class FakeEditor {
   }
 }
 
-export const CLIPBOARD = "!inkbook[[drawings/source.svg]]";
+export const CLIPBOARD = "![[drawings/source.svg]]";
 export const SOURCE = '<svg data-inkbook-version="1"></svg>';
 
 export function pasteRequest(editor: FakeEditor, overrides: Record<string, unknown> = {}) {
@@ -97,9 +97,9 @@ export function pasteHarness(
       readWithMetadataGuard: read,
     },
     links: {
-      generateEmbed: (path) => {
+      generateEmbed: (path, _sourcePath, description) => {
         events.push(`link:${path}`);
-        return `!inkbook[[${path}]]`;
+        return `![[${path}${description === undefined ? "" : `|${description}`}]]`;
       },
       resolveLinkTarget: (linkpath) =>
         linkpath === "drawings/source.svg" ? { path: "drawings/source.svg" } : null,

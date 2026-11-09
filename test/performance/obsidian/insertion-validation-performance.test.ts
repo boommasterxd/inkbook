@@ -40,7 +40,7 @@ function insertionAttempt(implementation: {
       createOwnedAndReadBack: async (path, content, _maximumBytes, onCreated) =>
         ownedFileRead(path, guardedRead(path, content), onCreated),
     },
-    links: { generateEmbed: () => "!inkbook[[new.svg]]" },
+    links: { generateEmbed: () => "![[new.svg]]" },
     notifications: { failed: finish, inserted: finish },
     trash: { trash: async () => undefined, trashCreated: async () => undefined },
   });

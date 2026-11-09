@@ -20,7 +20,6 @@ export interface WorkspaceActivation {
 
 export interface WorkspaceMountedPresentation {
   activation?: WorkspaceActivation;
-  initialLoading?: { readonly feedback: PresentationOperationFeedbackHandle; presented: boolean };
   readonly attachment: PresentationAttachment;
   disposeScheme: (() => void) | undefined;
   readonly feedback: import("../presentation/presentation-operation-feedback").PresentationOperationFeedback;

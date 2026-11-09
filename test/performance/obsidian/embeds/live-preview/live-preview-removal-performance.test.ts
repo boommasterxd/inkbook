@@ -6,7 +6,7 @@ const scrollAnchor = StateEffect.define<number>({ map: (value, changes) => chang
 
 function removalHarness(lineCount: number) {
   const prefix = "Before\n";
-  const embed = "\n!inkbook[[drawing.svg]]\n\n";
+  const embed = "\n![[drawing.svg]]\n\n";
   const source = prefix + embed + "Ordinary Markdown prose.\n".repeat(lineCount);
   const range = { from: prefix.length, to: prefix.length + embed.length };
   const initial = EditorState.create({

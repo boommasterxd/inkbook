@@ -11,10 +11,7 @@ import { editorInfoField, editorLivePreviewField } from "obsidian";
 
 import type { EmbedIntegrationPorts } from "../presentation/presentation-port";
 import { LivePreviewBlocks } from "./live-preview-blocks";
-import {
-  documentRecognitionChanged,
-  documentRecognitionUnavailable,
-} from "./live-preview-recognition-effects";
+import { documentRecognitionChanged } from "./live-preview-recognition-effects";
 import { LivePreviewEntrances } from "./live-preview-entrances";
 import { LIVE_PREVIEW_ZOOM_SCROLL_EXTENSION } from "./live-preview-zoom-scroll";
 
@@ -82,7 +79,8 @@ function recognizeVisibleEmbeds(
   ports: EmbedIntegrationPorts,
 ): void {
   const pending = new Set<string>();
-  blocks.visitVisible(view.visibleRanges, (embed) => {
+  const nativeRanges = nativeReplacementRanges(view);
+  blocks.visitVisible([...view.visibleRanges, ...nativeRanges], (embed) => {
     const documentId = embed.resolved.documentId;
     if (
       !pending.has(documentId) &&
@@ -92,6 +90,16 @@ function recognizeVisibleEmbeds(
       pending.add(documentId);
       void ports.documents.recognize(documentId, view.dom.ownerDocument.defaultView);
     }
+  });
+}
+
+/** Native image replacements hide source from visibleRanges; folded sections stay excluded. */
+function nativeReplacementRanges(
+  view: EditorView,
+): readonly { readonly from: number; readonly to: number }[] {
+  return view.viewportLineBlocks.filter((block) => {
+    const first = view.state.doc.lineAt(block.from);
+    return Math.max(block.from, block.to - 1) <= first.to;
   });
 }
 
@@ -190,19 +198,14 @@ function refreshRecognizedBlocks(
   entrances: StateField<LivePreviewEntrances>,
 ): LivePreviewBlocks {
   let changed: Set<string> | undefined;
-  let unavailable: Set<string> | undefined;
   for (const effect of transaction.effects) {
     if (effect.is(documentRecognitionChanged)) {
       for (const id of effect.value) {
         changed ??= new Set();
         changed.add(id);
       }
-    } else if (effect.is(documentRecognitionUnavailable)) {
-      unavailable ??= new Set();
-      unavailable.add(effect.value);
     }
   }
-  if (unavailable !== undefined) blocks = blocks.suppressUnavailable(unavailable);
   return changed === undefined
     ? blocks
     : blocks.refresh(changed, ports, transaction.state.field(entrances));

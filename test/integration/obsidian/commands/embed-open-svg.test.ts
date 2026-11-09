@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LivePreviewEmbedReference } from "../../../../src/obsidian/embeds/presentation/presentation-port";
 import { createHarness } from "./embed-actions-fixture";
 
-const markdown = "!inkbook[[drawings/page.svg]]";
+const markdown = "![[drawings/page.svg]]";
 
 function liveReference(): LivePreviewEmbedReference {
   return {
@@ -48,7 +48,7 @@ describe("opening the invoking Inkbook SVG", () => {
   );
 
   it("rejects a stale invoking range instead of opening another available SVG", async () => {
-    const harness = createHarness({ documentText: "!inkbook[[drawings/recovered.svg]]" });
+    const harness = createHarness({ documentText: "![[drawings/recovered.svg]]" });
 
     await expect(harness.actions.openSvg(liveReference())).resolves.toEqual({
       kind: "unavailable",

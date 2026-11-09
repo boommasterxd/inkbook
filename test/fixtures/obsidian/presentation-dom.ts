@@ -209,6 +209,14 @@ export class FakePresentationElement {
     this.ownerDocument = documentPort as unknown as Document;
   }
 
+  public get firstElementChild(): FakePresentationElement | null {
+    return this.children[0] ?? null;
+  }
+
+  public getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+
   public get childNodes(): readonly FakePresentationElement[] {
     return this.children;
   }

@@ -5,7 +5,11 @@ import type {
   PresentationEmbedReference,
   ReadingViewEmbedReference,
 } from "../embeds/presentation/presentation-port";
-import { findMarkdownInkbookEmbeds, MARKDOWN_EMBED_LIMITS } from "../embeds/markdown-embed";
+import {
+  findMarkdownInkbookEmbeds,
+  markdownInkbookEmbedDisplayText,
+  MARKDOWN_EMBED_LIMITS,
+} from "../embeds/markdown-embed";
 import type { ObsidianLinkAdapter } from "../vault/links";
 import type { ObsidianVaultFileAdapter } from "../vault/file-adapter";
 import { resolvePresentationEmbedRange } from "./embed-reference-resolution";
@@ -24,13 +28,20 @@ function prepareReplacement(
   reference: PresentationEmbedReference,
   savedPath: string,
   ports: EmbedTargetReplacementPorts,
+  originalMarkdown: string,
 ): ResolvedReplacement | undefined {
   let normalizedSavedPath: string;
   let markdown: string;
   try {
     normalizedSavedPath = ports.files.resolveFile(savedPath).path;
     if (normalizedSavedPath === reference.documentId) return undefined;
-    markdown = ports.links.generateEmbed(normalizedSavedPath, reference.sourcePath);
+    const embed = findMarkdownInkbookEmbeds(originalMarkdown)[0];
+    if (embed === undefined) return undefined;
+    markdown = ports.links.generateEmbed(
+      normalizedSavedPath,
+      reference.sourcePath,
+      markdownInkbookEmbedDisplayText(embed),
+    );
   } catch {
     return undefined;
   }
@@ -54,7 +65,7 @@ function activeEditor(app: App, reference: LivePreviewEmbedReference): Editor | 
 
 function replaceLivePreviewTarget(
   reference: LivePreviewEmbedReference,
-  replacement: ResolvedReplacement,
+  savedPath: string,
   ports: EmbedTargetReplacementPorts,
   isCurrent: () => boolean,
 ): boolean {
@@ -63,6 +74,8 @@ function replaceLivePreviewTarget(
   const text = editor.getValue();
   const range = resolvePresentationEmbedRange(text, reference, ports.links);
   if (range === undefined) return false;
+  const replacement = prepareReplacement(reference, savedPath, ports, range.markdown);
+  if (replacement === undefined) return false;
   try {
     const from = editor.offsetToPos(range.from);
     const to = editor.offsetToPos(range.to);
@@ -76,7 +89,7 @@ function replaceLivePreviewTarget(
 
 async function replaceReadingViewTarget(
   reference: ReadingViewEmbedReference,
-  replacement: ResolvedReplacement,
+  savedPath: string,
   ports: EmbedTargetReplacementPorts,
   isCurrent: () => boolean,
 ): Promise<boolean> {
@@ -91,12 +104,11 @@ async function replaceReadingViewTarget(
   } catch {
     return false;
   }
-  if (
-    !isCurrent() ||
-    resolvePresentationEmbedRange(expectedContent, reference, ports.links) === undefined
-  ) {
-    return false;
-  }
+  if (!isCurrent()) return false;
+  const originalRange = resolvePresentationEmbedRange(expectedContent, reference, ports.links);
+  if (originalRange === undefined) return false;
+  const replacement = prepareReplacement(reference, savedPath, ports, originalRange.markdown);
+  if (replacement === undefined) return false;
 
   let replaced = false;
   let expectedOutput: string | undefined;
@@ -124,9 +136,7 @@ export async function replacePresentationEmbedTarget(
   isCurrent: () => boolean = () => true,
 ): Promise<boolean> {
   if (!isCurrent()) return false;
-  const replacement = prepareReplacement(reference, savedPath, ports);
-  if (replacement === undefined) return false;
   return reference.kind === "live-preview"
-    ? replaceLivePreviewTarget(reference, replacement, ports, isCurrent)
-    : replaceReadingViewTarget(reference, replacement, ports, isCurrent);
+    ? replaceLivePreviewTarget(reference, savedPath, ports, isCurrent)
+    : replaceReadingViewTarget(reference, savedPath, ports, isCurrent);
 }

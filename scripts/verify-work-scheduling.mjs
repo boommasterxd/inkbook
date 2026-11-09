@@ -100,7 +100,6 @@ const RAW_FRAME_SITES = new Map([["src/obsidian/performance/window-refresh-rate.
 const HOST_MICROTASK_SITES = new Map([
   ["src/obsidian/embeds/active-editor/document-history.ts##armMarkdownMarkerSuppression", 1],
   ["src/obsidian/embeds/preview/document-recognition.ts#markLayoutReady", 1],
-  ["src/obsidian/embeds/live-preview/live-preview-loading-widget.ts#toDOM", 1],
   ["src/obsidian/embeds/live-preview/live-preview.ts#subscribeRecognitions", 1],
   ["src/obsidian/menus/editor-toolbar-menu.ts##navigate", 1],
   ["src/obsidian/menus/editor-toolbar-menu.ts#afterMenuHandoff", 1],

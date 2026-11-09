@@ -18,14 +18,10 @@ import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-sche
 describe("PresentationOperationFeedback backdrop lifetime", () => {
   it("releases completed and interrupted backdrop exits without retaining or closing a successor", async () => {
     const root = createOperationFeedbackPresentation();
-    const feedback = new PresentationOperationFeedback(
-      root,
-      undefined,
-      workSchedulerFromFrames({ requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }),
-    );
+    const { feedback, beginVisible } = createVisibleFeedbackHarness(root);
     const backdrop = () => root.querySelector<HTMLElement>(".inkbook-operation-backdrop");
     try {
-      feedback.begin("loading", performance.now() - 1000).finish();
+      beginVisible("loading").finish();
       expect(document.querySelector('[role="status"]')).toBeNull();
       const completed = backdrop()!;
       completed.getAnimations()[0]!.finish();
@@ -34,9 +30,9 @@ describe("PresentationOperationFeedback backdrop lifetime", () => {
       expect(completed.getAnimations()).toHaveLength(0);
       expect(backdrop()).toBeNull();
 
-      feedback.begin("loading", performance.now() - 1000).finish();
+      beginVisible("loading").finish();
       const interrupted = backdrop()!;
-      feedback.begin("loading", performance.now() - 1000);
+      beginVisible("loading");
       await Promise.resolve();
       expect(interrupted.isConnected).toBe(false);
       expect(interrupted.getAnimations()).toHaveLength(0);
@@ -65,20 +61,9 @@ describe("PresentationOperationFeedback live motion preferences", () => {
       const removeListener = vi.spyOn(query, "removeEventListener");
       vi.spyOn(window, "matchMedia").mockReturnValue(query as unknown as MediaQueryList);
       const disconnect = vi.spyOn(window.MutationObserver.prototype, "disconnect");
-      let showSaving: (() => void) | undefined;
-      const scheduleSaving = vi.spyOn(window, "setTimeout").mockImplementation((callback) => {
-        if (typeof callback === "function") showSaving = callback;
-        return 1 as unknown as ReturnType<typeof window.setTimeout>;
-      });
-      const feedback = new PresentationOperationFeedback(
-        root,
-        undefined,
-        workSchedulerFromFrames({ requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }),
-      );
+      const { feedback, beginVisible } = createVisibleFeedbackHarness(root);
       try {
-        const operation = feedback.begin(kind, performance.now() - 1000);
-        showSaving?.();
-        scheduleSaving.mockRestore();
+        const operation = beginVisible(kind);
         const icon = document.querySelector<HTMLElement>(".inkbook-operation-feedback-icon")!;
         expect(icon.getAnimations()).toHaveLength(1);
         root.dataset.inkbookMotion = "reduced";
@@ -102,7 +87,7 @@ describe("PresentationOperationFeedback live motion preferences", () => {
         await vi.waitFor(() => expect(disconnect).toHaveBeenCalledTimes(2));
         expect(root.getElementsByClassName("inkbook-operation-backdrop")).toHaveLength(0);
         root.dataset.inkbookMotion = "full";
-        feedback.begin("loading", performance.now() - 1000);
+        beginVisible("loading");
         const replacement = document.querySelector<HTMLElement>(
           ".inkbook-operation-feedback-icon",
         )!;
@@ -156,7 +141,9 @@ describe("PresentationOperationFeedback layout", () => {
     const harness = createHarness();
     harness.root.dataset.inkbookScheme = "dark";
     harness.root.dataset.inkbookMotion = "reduced";
-    const operation = harness.feedback.begin("loading", 0);
+    const operation = harness.feedback.begin("loading");
+    harness.runTimer();
+    harness.runFrame();
     const host = harness.indicator()?.parentElement;
     expect(host?.parentElement).toBe(harness.body);
     expect(host?.classNames.has("inkbook-root")).toBe(true);
@@ -186,7 +173,9 @@ describe("PresentationOperationFeedback layout", () => {
   it("moves the same detached feedback host to its owning body after the first measurement", () => {
     const harness = createHarness();
     harness.root.remove();
-    harness.feedback.begin("loading", 0);
+    harness.feedback.begin("loading");
+    harness.runTimer();
+    harness.runFrame();
     const indicator = harness.indicator();
     const host = indicator?.parentElement;
     expect(host?.parentElement).toBe(harness.root);
@@ -208,7 +197,9 @@ describe("PresentationOperationFeedback layout", () => {
 
   it.each(["replacement", "disposal"])("releases visible feedback resources on %s", (action) => {
     const harness = createHarness();
-    harness.feedback.begin("loading", 0);
+    harness.feedback.begin("loading");
+    harness.runTimer();
+    harness.runFrame();
     const host = harness.indicator()?.parentElement;
     harness.root.ownerDocument.dispatchEvent(new Event("scroll"));
     expect(harness.pendingFrames()).toBe(1);
@@ -342,62 +333,39 @@ describe("PresentationOperationFeedback", () => {
   });
 });
 
-describe("PresentationOperationFeedback loading handoff", () => {
-  it("continues the original loading deadline before the next paint", () => {
-    const harness = createHarness();
-    const operation = harness.feedback.begin("loading", 700);
-    expect(harness.delay()).toBe(200);
-    harness.runTimer();
-    expect(harness.indicator()).toBeNull();
-    const frame = harness.pendingFrameHandles()[0];
-    operation.finish();
-    harness.runCapturedFrame(frame);
-    expect(harness.indicator()).toBeNull();
-  });
-
-  it.each([500, 400])("shows an elapsed loading deadline synchronously (%s)", (startedAt) => {
-    const harness = createHarness();
-    const stale = harness.feedback.begin("loading", startedAt);
-    expect(harness.delay()).toBeUndefined();
-    expect(harness.pendingFrames()).toBe(0);
-    expect(harness.indicator()?.dataset.inkbookOperation).toBe("loading");
-    const current = harness.feedback.begin("loading", startedAt);
-    stale.finish();
-    expect(harness.indicator()?.dataset.inkbookOperation).toBe("loading");
-    current.finish();
-    expect(harness.indicator()).toBeNull();
-  });
-
-  it("disposes immediately resumed feedback and rejects later starts", () => {
-    const harness = createHarness();
-    const operation = harness.feedback.begin("loading", 100);
-    harness.feedback.dispose();
-    operation.finish();
-    harness.feedback.begin("loading", 100).finish();
-    expect(harness.indicator()).toBeNull();
-    expect(harness.delay()).toBeUndefined();
-    expect(harness.pendingFrames()).toBe(0);
-  });
-
-  it.each([Number.NaN, Number.POSITIVE_INFINITY, 1100])(
-    "uses a fresh deadline for invalid or future timestamps (%s)",
-    (startedAt) => {
-      const harness = createHarness();
-      harness.feedback.begin("loading", startedAt);
-      expect(harness.delay()).toBe(500);
-      expect(harness.indicator()).toBeNull();
-    },
+function createVisibleFeedbackHarness(root: HTMLElement) {
+  let timer: (() => void) | undefined;
+  let frame: FrameRequestCallback | undefined;
+  const feedback = new PresentationOperationFeedback(
+    root,
+    undefined,
+    workSchedulerFromFrames({
+      requestAnimationFrame: (callback) => {
+        frame = callback;
+        return 1;
+      },
+      cancelAnimationFrame: () => {
+        frame = undefined;
+      },
+    }),
   );
-
-  it("preserves the saving delay even with a previous start timestamp", () => {
-    const harness = createHarness();
-    harness.feedback.begin("saving", 100);
-    expect(harness.delay()).toBe(150);
-    expect(harness.indicator()).toBeNull();
-    harness.runTimer();
-    expect(harness.indicator()?.dataset.inkbookOperation).toBe("saving");
-  });
-});
+  return {
+    feedback,
+    beginVisible: (kind: "loading" | "saving") => {
+      const schedule = vi.spyOn(window, "setTimeout").mockImplementation((callback) => {
+        if (typeof callback === "function") timer = callback;
+        return 1 as unknown as ReturnType<typeof window.setTimeout>;
+      });
+      const operation = feedback.begin(kind);
+      schedule.mockRestore();
+      timer?.();
+      const paint = frame;
+      frame = undefined;
+      paint?.(0);
+      return operation;
+    },
+  };
+}
 
 function createHarness(onLoadingShown?: () => void) {
   const frameCallbacks = new Map<number, FrameRequestCallback>();

@@ -119,10 +119,6 @@ it("permits only exact semantic host turn and microtask sites", () => {
         "src/obsidian/embeds/active-scene/canvas-touch-boundary.ts",
       ),
       source(
-        "class InkbookLoadingPreviewWidget { toDOM() { queueMicrotask(notify); } }",
-        "src/obsidian/embeds/live-preview/live-preview-loading-widget.ts",
-      ),
-      source(
         "class WindowRefreshRateProfiles { #start() { requestAnimationFrame(sample); } }",
         "src/obsidian/performance/window-refresh-rate.ts",
       ),

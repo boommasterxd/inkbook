@@ -4,7 +4,7 @@ import { editorInfoField, editorLivePreviewField } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { createLivePreviewExtension } from "../../../../../src/obsidian/embeds/live-preview/live-preview";
-import { InkbookLoadingPreviewWidget } from "../../../../../src/obsidian/embeds/live-preview/live-preview-loading-widget";
+import { InkbookLivePreviewWidget } from "../../../../../src/obsidian/embeds/live-preview/live-preview-widget";
 import type { EmbedIntegrationPorts } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
 import { configureTestEditorState } from "../../../../adapters/obsidian/plugin";
 
@@ -15,12 +15,19 @@ function createHarness(file: { path: string } | null, livePreview = true) {
     resourceUrl: "app://drawing.svg",
   }));
   const ports = {
-    documents: { cached: () => undefined, recognize },
+    documents: {
+      cached: () => ({
+        aspectRatio: 4,
+        safeSvg: "<svg/>",
+        contentIdentity: { revision: 1, outputHash: "a".repeat(64) },
+      }),
+      recognize,
+    },
     resolveDocument,
   } as unknown as EmbedIntegrationPorts;
   configureTestEditorState({ file, livePreview });
   const state = EditorState.create({
-    doc: "!inkbook[[drawing.svg]]",
+    doc: "![[drawing.svg]]",
     extensions: [editorInfoField, editorLivePreviewField, createLivePreviewExtension(ports)],
   });
   const info = state.field(editorInfoField) as { file: { path: string } | null };
@@ -31,13 +38,13 @@ function decorations(state: EditorState): DecorationSet {
   return state.facet(EditorView.decorations)[0] as DecorationSet;
 }
 
-function pendingWidget(state: EditorState): InkbookLoadingPreviewWidget {
+function readyWidget(state: EditorState): InkbookLivePreviewWidget {
   let widget: unknown;
   decorations(state).between(0, state.doc.length, (_from, _to, decoration) => {
     widget = (decoration.spec as { widget: unknown }).widget;
   });
-  expect(widget).toBeInstanceOf(InkbookLoadingPreviewWidget);
-  return widget as InkbookLoadingPreviewWidget;
+  expect(widget).toBeInstanceOf(InkbookLivePreviewWidget);
+  return widget as InkbookLivePreviewWidget;
 }
 
 describe("Live Preview mutable host context", () => {
@@ -48,29 +55,25 @@ describe("Live Preview mutable host context", () => {
 
     const ready = state.update({}).state;
 
-    expect(pendingWidget(ready).entranceState.presented).toBe(false);
+    expect(readyWidget(ready)).toBeInstanceOf(InkbookLivePreviewWidget);
     expect(resolveDocument).toHaveBeenCalledWith("drawing.svg", "note.md");
     expect(recognize).not.toHaveBeenCalled();
     expect(decorations(state).size).toBe(0);
     expect(decorations(ready.update({}).state)).toBe(decorations(ready));
   });
 
-  it("resolves a mutated file path again and resets the other note's entrance", () => {
+  it("resolves a mutated file path again and replaces the other note's widget", () => {
     const file = { path: "first.md" };
     const { recognize, resolveDocument, state } = createHarness(file);
-    const original = pendingWidget(state).entranceState;
-    original.presented = true;
-    original.initialHeight = 72;
+    const original = readyWidget(state);
     file.path = "second.md";
 
     const changed = state.update({}).state;
 
     expect(resolveDocument).toHaveBeenLastCalledWith("drawing.svg", "second.md");
-    const fresh = pendingWidget(changed).entranceState;
+    const fresh = readyWidget(changed);
     expect(fresh).not.toBe(original);
-    expect(fresh.presented).toBe(false);
-    expect(fresh.initialHeight).toBeUndefined();
-    expect(pendingWidget(state).entranceState).toBe(original);
+    expect(readyWidget(state)).toBe(original);
     expect(recognize).not.toHaveBeenCalled();
   });
 

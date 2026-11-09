@@ -1,9 +1,12 @@
+import { linkpathFromMarkdownTarget, linkpathFromWikiTarget } from "./markdown-link-target";
+
 export interface MarkdownInkbookEmbed {
   readonly description?: string;
   readonly from: number;
   readonly linkpath: string;
   readonly markdown: string;
   readonly to: number;
+  readonly width?: number;
 }
 
 interface MarkdownSuppressedRange {
@@ -11,30 +14,15 @@ interface MarkdownSuppressedRange {
   readonly to: number;
 }
 
-const WIKI_EMBED_PATTERN = /!inkbook\[\[([^\]\n]+)\]\]/gu;
-const MARKDOWN_EMBED_PATTERN = /!inkbook\[(?<description>[^\]\n]*)\]\(([^)\n]+)\)/gu;
+const WIKI_EMBED_PATTERN = /!\[\[([^\]\n]+)\]\]/gu;
+const MARKDOWN_EMBED_PATTERN = /!\[(?<description>[^\]\n]*)\]\(([^)\n]+)\)/gu;
+const AMBIGUOUS_MARKDOWN_DIMENSIONS =
+  /(?:\\\||&#0*124;|&#x0*7c;|&(?:vert|verbar|VerticalLine);)\s*\d+(?:\s*x\s*\d+)?\s*$/iu;
 
 export const MARKDOWN_EMBED_LIMITS = Object.freeze({
   inputBytes: 8 * 1024 * 1024,
   matches: 4096,
 });
-
-function linkpathFromWikiTarget(target: string): string {
-  return target.split(/[|#]/u, 1)[0]?.trim() ?? "";
-}
-
-function linkpathFromMarkdownTarget(target: string): string {
-  const trimmed = target.trim();
-  const path =
-    trimmed.startsWith("<") && trimmed.endsWith(">")
-      ? trimmed.slice(1, -1).trim()
-      : (trimmed.split(/\s+["']/u, 1)[0] ?? "");
-  try {
-    return decodeURIComponent(path.split("#", 1)[0] ?? "");
-  } catch {
-    return "";
-  }
-}
 
 function isSvgLinkpath(linkpath: string): boolean {
   return linkpath.toLowerCase().endsWith(".svg");
@@ -44,9 +32,7 @@ function isStandaloneLine(text: string, from: number, to: number): boolean {
   const lineFrom = text.lastIndexOf("\n", from - 1) + 1;
   const followingNewline = text.indexOf("\n", to);
   const lineTo = followingNewline < 0 ? text.length : followingNewline;
-  return (
-    text.slice(lineFrom, from).trim().length === 0 && text.slice(to, lineTo).trim().length === 0
-  );
+  return /^ {0,3}$/u.test(text.slice(lineFrom, from)) && text.slice(to, lineTo).trim().length === 0;
 }
 
 function isWithinUtf8Limit(text: string, maximumBytes: number): boolean {
@@ -81,20 +67,6 @@ function isEscaped(text: string, position: number): boolean {
   return backslashes % 2 === 1;
 }
 
-function collectHtmlCommentRanges(text: string): MarkdownSuppressedRange[] {
-  const ranges: MarkdownSuppressedRange[] = [];
-  let searchFrom = 0;
-  while (searchFrom < text.length) {
-    const from = text.indexOf("<!--", searchFrom);
-    if (from < 0) break;
-    const closing = text.indexOf("-->", from + 4);
-    const to = closing < 0 ? text.length : closing + 3;
-    ranges.push({ from, to });
-    searchFrom = to;
-  }
-  return ranges;
-}
-
 function fenceMarker(
   line: string,
 ): { readonly character: "`" | "~"; readonly length: number } | null {
@@ -108,47 +80,29 @@ function isClosingFence(
   line: string,
   marker: { readonly character: "`" | "~"; readonly length: number },
 ): boolean {
-  const trimmed = line.startsWith("   ") ? line.slice(3) : line.trimStart();
+  const trimmed = line.replace(/^ {0,3}/u, "");
   let length = 0;
   while (trimmed[length] === marker.character) length += 1;
   return length >= marker.length && trimmed.slice(length).trim().length === 0;
 }
 
-function collectFencedCodeRanges(text: string): MarkdownSuppressedRange[] {
-  const ranges: MarkdownSuppressedRange[] = [];
-  let active: { readonly from: number; readonly marker: ReturnType<typeof fenceMarker> } | null =
-    null;
-  let lineFrom = 0;
+function fencedCodeEnd(
+  text: string,
+  opening: number,
+  marker: NonNullable<ReturnType<typeof fenceMarker>>,
+): number {
+  const openingNewline = text.indexOf("\n", opening);
+  if (openingNewline < 0) return text.length;
+  let lineFrom = openingNewline + 1;
   while (lineFrom <= text.length) {
     const newline = text.indexOf("\n", lineFrom);
     const lineTo = newline < 0 ? text.length : newline;
     const line = text.slice(lineFrom, lineTo);
-    if (active === null) {
-      const marker = fenceMarker(line);
-      if (marker !== null) active = { from: lineFrom, marker };
-    } else if (active.marker !== null && isClosingFence(line, active.marker)) {
-      ranges.push({ from: active.from, to: newline < 0 ? text.length : newline + 1 });
-      active = null;
-    }
+    if (isClosingFence(line, marker)) return newline < 0 ? text.length : newline + 1;
     if (newline < 0) break;
     lineFrom = newline + 1;
   }
-  if (active !== null) ranges.push({ from: active.from, to: text.length });
-  return ranges;
-}
-
-function mergeRanges(ranges: MarkdownSuppressedRange[]): MarkdownSuppressedRange[] {
-  const ordered = [...ranges].sort((left, right) => left.from - right.from || left.to - right.to);
-  const merged: MarkdownSuppressedRange[] = [];
-  for (const range of ordered) {
-    const previous = merged[merged.length - 1];
-    if (previous === undefined || range.from > previous.to) {
-      merged.push(range);
-    } else if (range.to > previous.to) {
-      merged[merged.length - 1] = { from: previous.from, to: range.to };
-    }
-  }
-  return merged;
+  return text.length;
 }
 
 function rangeContains(ranges: readonly MarkdownSuppressedRange[], position: number): boolean {
@@ -165,37 +119,69 @@ function rangeContains(ranges: readonly MarkdownSuppressedRange[], position: num
   return false;
 }
 
-function collectInlineCodeRanges(
-  text: string,
-  blockRanges: readonly MarkdownSuppressedRange[],
-): MarkdownSuppressedRange[] {
-  const ranges: MarkdownSuppressedRange[] = [];
-  let index = 0;
-  while (index < text.length) {
-    if (text[index] !== "`" || isEscaped(text, index) || rangeContains(blockRanges, index)) {
-      index += 1;
-      continue;
+function frontmatterRanges(text: string): MarkdownSuppressedRange[] {
+  const opening = /^\uFEFF?---\r?\n/u.exec(text);
+  if (opening === null) return [];
+  const closing = /^(?:---|\.\.\.)[ \t]*\r?$/gmu;
+  closing.lastIndex = opening[0].length;
+  const end = closing.exec(text);
+  return [{ from: 0, to: end === null ? text.length : end.index + end[0].length }];
+}
+
+function suppressedMarkdownRanges(text: string): readonly MarkdownSuppressedRange[] {
+  const ranges = frontmatterRanges(text);
+  const tokens = /^(?<fence> {0,3}(?:`{3,}|~{3,}))|<!--|`+/gmu;
+  tokens.lastIndex = ranges[0]?.to ?? 0;
+  for (let token = tokens.exec(text); token !== null; token = tokens.exec(text)) {
+    const from = token.index;
+    const marker = token.groups?.["fence"] === undefined ? null : fenceMarker(token[0]);
+    let to: number;
+    if (marker !== null) {
+      to = fencedCodeEnd(text, from, marker);
+    } else if (token[0] === "<!--") {
+      const closing = text.indexOf("-->", tokens.lastIndex);
+      to = closing < 0 ? text.length : closing + 3;
+    } else {
+      if (isEscaped(text, from)) continue;
+      const closing = text.indexOf(token[0], tokens.lastIndex);
+      if (closing < 0) continue;
+      to = closing + token[0].length;
     }
-    let markerLength = 1;
-    while (text[index + markerLength] === "`") markerLength += 1;
-    const marker = "`".repeat(markerLength);
-    const closing = text.indexOf(marker, index + markerLength);
-    if (closing < 0) {
-      index += markerLength;
-      continue;
-    }
-    ranges.push({ from: index, to: closing + markerLength });
-    index = closing + markerLength;
+    ranges.push({ from, to });
+    tokens.lastIndex = to;
   }
   return ranges;
 }
 
-function suppressedMarkdownRanges(text: string): readonly MarkdownSuppressedRange[] {
-  const blockRanges = mergeRanges([
-    ...collectHtmlCommentRanges(text),
-    ...collectFencedCodeRanges(text),
-  ]);
-  return mergeRanges([...blockRanges, ...collectInlineCodeRanges(text, blockRanges)]);
+function nativeCandidateAllowed(text: string, from: number, target: string) {
+  const lineFrom = text.lastIndexOf("\n", from - 1) + 1;
+  if (!/^ {0,3}$/u.test(text.slice(lineFrom, from))) return false;
+  return !target.includes("#");
+}
+
+function nativeImagePresentation(
+  description: string,
+): { readonly description?: string; readonly width?: number } | undefined {
+  const size = /(?:^|\|)\s*(\d+)(\s*x\s*\d+)?\s*$/iu.exec(description);
+  if (size === null) return description ? { description } : {};
+  const width = Number(size[1]);
+  if (size[2] !== undefined || !Number.isSafeInteger(width) || width <= 0) return undefined;
+  const label = description.slice(0, size.index).trim();
+  return { width, ...(label ? { description: label } : {}) };
+}
+
+function nativeMarkdownTargetAllowed(target: string): boolean {
+  const trimmed = target.trim();
+  return /^<[^<>\r\n]+>$/u.test(trimmed) || /^[^\s<>"']+$/u.test(trimmed);
+}
+
+function allowedCandidate(text: string, match: RegExpMatchArray, target: string): boolean {
+  if (!nativeCandidateAllowed(text, match.index ?? 0, target)) return false;
+  return (
+    match.groups === undefined ||
+    (nativeMarkdownTargetAllowed(target) &&
+      !AMBIGUOUS_MARKDOWN_DIMENSIONS.test(match.groups["description"] ?? ""))
+  );
 }
 
 function collectMatches(
@@ -223,9 +209,23 @@ function collectMatches(
       continue;
     }
     const description = (match.groups?.description ?? target.split("|").slice(1).join("|")).trim();
-    matches.push({ from, linkpath, markdown, to, ...(description ? { description } : {}) });
+    if (!allowedCandidate(text, match, target)) continue;
+    const presentation = nativeImagePresentation(description);
+    if (presentation === undefined) continue;
+    matches.push({ from, linkpath, markdown, to, ...presentation });
   }
   return matches;
+}
+
+/** Retains native dimension spelling when an existing embed receives a new target. */
+export function markdownInkbookEmbedDisplayText(embed: MarkdownInkbookEmbed): string | undefined {
+  const opening = embed.markdown.indexOf("[");
+  if (embed.markdown[opening + 1] === "[") {
+    const separator = embed.markdown.indexOf("|", opening + 2);
+    return separator < 0 ? undefined : embed.markdown.slice(separator + 1, -2);
+  }
+  const description = embed.markdown.slice(opening + 1, embed.markdown.indexOf("]("));
+  return description || undefined;
 }
 
 export function findMarkdownInkbookEmbeds(text: string): readonly MarkdownInkbookEmbed[] {

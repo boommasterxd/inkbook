@@ -6,7 +6,7 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import { confirmInkbookAction } from "../dialogs/action-dialog";
 
-import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/markdown-embed";
+import { countMarkdownFileReferences } from "../embeds/markdown-file-references";
 import type {
   PresentationEmbedReference,
   PresentationRemoval,
@@ -65,18 +65,6 @@ function unavailable(reason: EmbedActionUnavailableReason): EmbedActionUnavailab
   return { kind: "unavailable", reason };
 }
 
-function findMatchingReferences(
-  content: string,
-  sourcePath: string,
-  targetPath: string,
-  links: ObsidianLinkAdapter,
-): readonly MarkdownInkbookEmbed[] {
-  return findMarkdownInkbookEmbeds(content).filter((embed) => {
-    const target = links.resolveLinkTarget(embed.linkpath, sourcePath);
-    return target?.path === targetPath;
-  });
-}
-
 function sameReference(
   current: ResolvedEmbedActionReference,
   original: ResolvedEmbedActionReference,
@@ -117,16 +105,18 @@ export class ObsidianEmbedActions {
     const reference = await this.#resolveReference(target);
     if ("kind" in reference) return reference;
 
-    const markdown = reference.match.markdown;
-
     const clipboard = reference.ownerWindow.navigator.clipboard;
     if (clipboard === undefined) return unavailable("clipboard-unavailable");
     try {
+      const markdown = this.#links.generatePortableEmbed(
+        reference.targetPath,
+        reference.match.markdown,
+      );
       await clipboard.writeText(markdown);
+      return { kind: "copied", markdown };
     } catch (error: unknown) {
       return { error, kind: "failed" };
     }
-    return { kind: "copied", markdown };
   }
 
   async openSvg(target: PresentationEmbedReference): Promise<OpenSvgOutcome> {
@@ -298,14 +288,15 @@ export class ObsidianEmbedActions {
   }
 
   #referenceKnowledge(reference: ResolvedEmbedActionReference) {
-    const references = findMatchingReferences(
-      reference.content,
-      reference.filePath,
-      reference.targetPath,
-      this.#links,
-    ).length;
+    const count = countMarkdownFileReferences(reference.content, {
+      sourcePath: reference.filePath,
+      targetPath: reference.targetPath,
+      resolveLinkTarget: (linkpath, sourcePath) =>
+        this.#links.resolveLinkTarget(linkpath, sourcePath),
+    });
     return this.#links.referenceKnowledge(reference.targetPath, {
-      references,
+      // An incomplete scan must never authorize optional file deletion.
+      references: count.complete ? count.references : Math.max(2, count.references),
       sourcePath: reference.filePath,
     });
   }

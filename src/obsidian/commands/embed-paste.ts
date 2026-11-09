@@ -1,6 +1,10 @@
 import type { Editor, EditorPosition } from "obsidian";
 
-import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/markdown-embed";
+import {
+  findMarkdownInkbookEmbeds,
+  markdownInkbookEmbedDisplayText,
+  type MarkdownInkbookEmbed,
+} from "../embeds/markdown-embed";
 import type { MetadataGuardedFileRead } from "../../persistence/saving/save-ports";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import type {
@@ -26,7 +30,7 @@ interface EmbedPasteDocumentPort {
 }
 
 interface EmbedPasteLinkPort {
-  generateEmbed(filePath: string, sourcePath: string): string;
+  generateEmbed(filePath: string, sourcePath: string, description?: string): string;
   resolveLinkTarget(linkpath: string, sourcePath: string): { readonly path: string } | null;
 }
 
@@ -193,13 +197,19 @@ export class EmbedPasteController {
         ? { kind: "inserted", mode: "reference" }
         : { cleanup: "not-needed", kind: "stale" };
     }
-    return this.#duplicate(request, target, sourceRead.content);
+    return this.#duplicate(
+      request,
+      target,
+      sourceRead.content,
+      markdownInkbookEmbedDisplayText(embed),
+    );
   }
 
   async #duplicate(
     request: EmbedPasteRequest,
     target: CapturedEditorTarget,
     sourceContent: string,
+    description: string | undefined,
   ): Promise<EmbedPasteOutcome> {
     let created: TrackedCreatedVaultFile | undefined;
     try {
@@ -220,7 +230,11 @@ export class EmbedPasteController {
         throw new Error("The created duplicate did not pass read-back validation.");
       }
       if (this.#isAborted()) return await this.#discardStale(created);
-      const markdown = this.#dependencies.links.generateEmbed(duplicatePath, request.sourcePath);
+      const markdown = this.#dependencies.links.generateEmbed(
+        duplicatePath,
+        request.sourcePath,
+        description,
+      );
       if (replaceIfCurrent(request.editor, target, markdown)) {
         return { kind: "inserted", mode: "duplicate" };
       }

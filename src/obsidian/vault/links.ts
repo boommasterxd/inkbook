@@ -1,5 +1,10 @@
 import type { FileManager, MetadataCache, TFile } from "obsidian";
 
+import {
+  findMarkdownInkbookEmbeds,
+  markdownInkbookEmbedDisplayText,
+} from "../embeds/markdown-embed";
+
 import { normalizeSourcePath, normalizeVaultPath, type PathNormalizer } from "./boundary";
 import type { ObsidianFileClasses, ObsidianVaultFileAdapter } from "./file-adapter";
 
@@ -50,6 +55,32 @@ function isCompleteMarkdownLink(value: string): boolean {
   );
 }
 
+function portableEmbed(filePath: string, markdown: string): string {
+  const [original, extra] = findMarkdownInkbookEmbeds(markdown);
+  if (original?.markdown !== markdown || extra !== undefined)
+    throw new Error("The copied embed is not one complete reference.");
+  const display = markdownInkbookEmbedDisplayText(original);
+  // A clipboard target has no source note; host-preferred relative or shortest links can retarget it.
+  const wiki = markdown.startsWith("![[") && !/[#|\]\r\n]/u.test(filePath);
+  const encodedPath = encodeURI(filePath).replace(
+    /[?#()[\]&']/gu,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  const copied = wiki
+    ? `![[${filePath}${display === undefined ? "" : `|${display}`}]]`
+    : `![${display ?? ""}](${encodedPath})`;
+  const [parsed, duplicate] = findMarkdownInkbookEmbeds(copied);
+  if (
+    parsed?.markdown !== copied ||
+    duplicate !== undefined ||
+    parsed.linkpath !== filePath ||
+    parsed.description !== original.description ||
+    parsed.width !== original.width
+  )
+    throw new Error("The copied embed cannot preserve its target and presentation.");
+  return copied;
+}
+
 export class ObsidianLinkAdapter {
   readonly #classes: ObsidianFileClasses;
   readonly #fileManager: FileManager;
@@ -84,7 +115,11 @@ export class ObsidianLinkAdapter {
     if (!isCompleteMarkdownLink(link)) {
       throw new Error("Obsidian generated an incomplete Markdown link.");
     }
-    return `!inkbook${link}`;
+    const markdown = `!${link}`;
+    const [embed, extra] = findMarkdownInkbookEmbeds(markdown);
+    if (embed?.markdown !== markdown || extra !== undefined)
+      throw new Error("Obsidian generated an unsupported native image link.");
+    return markdown;
   }
 
   resolveLinkTarget(linkpath: string, sourcePath: string): TFile | null {
@@ -94,6 +129,10 @@ export class ObsidianLinkAdapter {
       normalizePath: this.#normalizePath,
       resolveFile: (path) => this.#files.resolveFile(path),
     });
+  }
+
+  generatePortableEmbed(filePath: string, markdown: string): string {
+    return portableEmbed(this.#files.resolveFile(filePath).path, markdown);
   }
 
   referenceKnowledge(

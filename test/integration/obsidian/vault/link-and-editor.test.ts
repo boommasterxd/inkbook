@@ -8,10 +8,11 @@ import { fakeObsidianFileClasses, FakeObsidianFile } from "../../../fixtures/obs
 
 function createLinkAdapter(options: {
   readonly generatedLink?: string;
+  readonly targetPath?: string;
   readonly resolved: boolean;
   readonly resolvedLinks: Record<string, Record<string, number>>;
 }) {
-  const target = new FakeObsidianFile("drawings/page.svg");
+  const target = new FakeObsidianFile(options.targetPath ?? "drawings/page.svg");
   const vault = {
     getFileByPath: (path: string) => (path === target.path ? target : null),
   } as unknown as Vault;
@@ -41,9 +42,7 @@ describe("Obsidian link boundary", () => {
       resolvedLinks: {},
     });
 
-    expect(adapter.generateEmbed(target.path, "notes/note.md")).toBe(
-      "!inkbook[[../drawings/page.svg]]",
-    );
+    expect(adapter.generateEmbed(target.path, "notes/note.md")).toBe("![[../drawings/page.svg]]");
     expect(generateMarkdownLink).toHaveBeenCalledWith(target, "notes/note.md");
   });
 
@@ -58,7 +57,49 @@ describe("Obsidian link boundary", () => {
       "Obsidian generated an incomplete Markdown link.",
     );
   });
+});
 
+describe("Native width link generation", () => {
+  it("preserves native width semantics when regenerating an existing target", () => {
+    const { adapter, generateMarkdownLink, target } = createLinkAdapter({
+      generatedLink: "[[../drawings/page.svg|Drawing|00400]]",
+      resolved: true,
+      resolvedLinks: {},
+    });
+    expect(adapter.generateEmbed(target.path, "notes/note.md", "Drawing|00400")).toBe(
+      "![[../drawings/page.svg|Drawing|00400]]",
+    );
+    expect(generateMarkdownLink).toHaveBeenCalledWith(
+      target,
+      "notes/note.md",
+      undefined,
+      "Drawing|00400",
+    );
+  });
+});
+
+describe("portable clipboard links", () => {
+  it.each([
+    [
+      "drawings/My (page)&100%.svg",
+      "![Drawing|00400](../page.svg)",
+      "![Drawing|00400](drawings/My%20%28page%29%26100%25.svg)",
+    ],
+    ["drawings/100%.svg", "![[page.svg|Drawing]]", "![[drawings/100%.svg|Drawing]]"],
+    ["drawings/page.svg", "![](../page.svg)", "![](drawings/page.svg)"],
+  ])("encodes a canonical target without changing its display: %s", (path, original, expected) => {
+    const { adapter, generateMarkdownLink } = createLinkAdapter({
+      resolved: true,
+      resolvedLinks: {},
+      targetPath: path,
+    });
+
+    expect(adapter.generatePortableEmbed(path, original)).toBe(expected);
+    expect(generateMarkdownLink).not.toHaveBeenCalled();
+  });
+});
+
+describe("Obsidian reference resolution", () => {
   it("resolves linkpaths only to concrete files", () => {
     const { adapter, getFirstLinkpathDest, target } = createLinkAdapter({
       resolved: true,
@@ -126,20 +167,20 @@ describe("Obsidian editor mutation boundary", () => {
   it("uses replaceRange only after an exact current-text check", () => {
     const replaceRange = vi.fn();
     const editor = {
-      getRange: vi.fn(() => "!inkbook[[old.svg]]"),
+      getRange: vi.fn(() => "![[old.svg]]"),
       replaceRange,
     } as unknown as Editor;
     const mutations = new ObsidianEditorMutationAdapter(editor);
 
     expect(
       mutations.replaceIfUnchanged({
-        expected: "!inkbook[[old.svg]]",
+        expected: "![[old.svg]]",
         range: { from: { ch: 0, line: 3 }, to: { ch: 12, line: 3 } },
-        replacement: "!inkbook[[new.svg]]",
+        replacement: "![[new.svg]]",
       }),
     ).toBe(true);
     expect(replaceRange).toHaveBeenCalledWith(
-      "!inkbook[[new.svg]]",
+      "![[new.svg]]",
       { ch: 0, line: 3 },
       { ch: 12, line: 3 },
     );
@@ -166,9 +207,9 @@ describe("Obsidian editor mutation boundary", () => {
     const replaceRange = vi.fn();
     const mutations = new ObsidianEditorMutationAdapter({ replaceRange } as unknown as Editor);
 
-    mutations.insert("!inkbook[[new.svg]]\n", { ch: 0, line: 4 });
+    mutations.insert("![[new.svg]]\n", { ch: 0, line: 4 });
 
-    expect(replaceRange).toHaveBeenCalledWith("!inkbook[[new.svg]]\n", { ch: 0, line: 4 });
+    expect(replaceRange).toHaveBeenCalledWith("![[new.svg]]\n", { ch: 0, line: 4 });
   });
 
   it("inserts an embed only on a still-empty Markdown line", () => {
@@ -180,11 +221,11 @@ describe("Obsidian editor mutation boundary", () => {
       replaceRange,
     } as unknown as Editor);
 
-    expect(mutations.insertEmbedOnEmptyLine("!inkbook[[new.svg]]", 2)?.line).toBe(4);
-    expect(mutations.insertEmbedOnEmptyLine("!inkbook[[new.svg]]", 3)).toBeUndefined();
+    expect(mutations.insertEmbedOnEmptyLine("![[new.svg]]", 2)?.line).toBe(4);
+    expect(mutations.insertEmbedOnEmptyLine("![[new.svg]]", 3)).toBeUndefined();
     expect(replaceRange).toHaveBeenCalledTimes(1);
     expect(replaceRange).toHaveBeenCalledWith(
-      "\n\n!inkbook[[new.svg]]\n",
+      "\n\n![[new.svg]]\n",
       { ch: 0, line: 2 },
       { ch: 0, line: 2 },
     );

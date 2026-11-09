@@ -14,6 +14,7 @@ import type { ResolvedInkbookDocument } from "../presentation/presentation-port"
 
 export interface VisibleEmbed {
   readonly description?: string;
+  readonly width?: number;
   readonly from: number;
   readonly resolved: ResolvedInkbookDocument;
   readonly sourcePath: string;
@@ -61,6 +62,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
     return (
       this.#sameAttachment(other) &&
       this.#embed.description === other.#embed.description &&
+      this.#embed.width === other.#embed.width &&
       samePreviewContentIdentity(
         this.#embed.preview.contentIdentity,
         other.#embed.preview.contentIdentity,
@@ -83,6 +85,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
     const mounted = mountedControllers.get(dom);
     if (mounted === undefined || !this.#sameAttachment(mounted.widget)) return false;
     updateEmbedDescription(dom, undefined, this.#embed.description);
+    this.#applyWidth(dom);
     mounted.controller.updatePreview(this.#embed.preview);
     mountedControllers.set(dom, { controller: mounted.controller, widget: this });
     return true;
@@ -105,6 +108,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       cls: "inkbook-root inkbook-embed-root",
     });
     root.remove();
+    this.#applyWidth(root);
     const button = root.createEl("button", {
       attr: { type: "button" },
       cls: "inkbook-locked-preview",
@@ -198,5 +202,10 @@ export class InkbookLivePreviewWidget extends WidgetType {
 
   override destroy(dom: HTMLElement): void {
     this.#ports.lifecycle.dispose(dom);
+  }
+
+  #applyWidth(root: HTMLElement): void {
+    if (this.#embed.width === undefined) root.style.removeProperty("--inkbook-embed-inline-size");
+    else root.style.setProperty("--inkbook-embed-inline-size", `${String(this.#embed.width)}px`);
   }
 }

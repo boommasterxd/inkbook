@@ -20,6 +20,7 @@ export interface ExportDrawing {
 
 export interface ExportPageOptions {
   readonly description?: string;
+  readonly width?: number;
   readonly colorScheme?: InkbookColorScheme;
   readonly start?: number;
   readonly end?: number;
@@ -77,6 +78,7 @@ export async function createExportPages(
     readonly scheduler: WorkScheduler;
     readonly signal: AbortSignal;
     readonly description?: string;
+    readonly width?: number;
     readonly colorScheme?: InkbookColorScheme;
   },
 ): Promise<HTMLElement> {
@@ -100,6 +102,8 @@ export function createExportPage(
   container.dataset.inkbookState = "locked";
   container.dataset.inkbookRangeStart = String(start);
   container.dataset.inkbookRangeEnd = String(end);
+  if (options.width !== undefined)
+    container.style.setProperty("--inkbook-embed-inline-size", `${String(options.width)}px`);
   applyColorScheme(container, options.colorScheme ?? "light");
   const shell = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
   shell.className = "inkbook-locked-preview";

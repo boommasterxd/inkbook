@@ -185,7 +185,7 @@ Without a selection, the selection section is omitted and Paste precedes the can
 
 ## Copying the Entire Embed
 
-"Copy embed" in the overflow or context menu does not copy the individual strokes. It copies the embed's complete Markdown code.
+"Copy embed" in the overflow or context menu does not copy the individual strokes. It copies a complete Markdown reference whose target is the resolved SVG's canonical Vault path. The description and supported width spelling are preserved. Qualifying the target prevents relative or currently unique basename links from resolving to a different drawing when pasted into another note folder; source notes and drawing data are not rewritten.
 
 When a copied embed is pasted, the plugin presents a choice:
 
@@ -270,7 +270,7 @@ Pen-tap detection runs in the capture phase on the public CodeMirror editor cont
 On success:
 
 1. The plugin creates a new handwriting SVG file.
-2. The registered **Insert handwriting embed** command inserts the custom `!inkbook` embed Markdown. It replaces the contiguous run of empty lines containing the target with exactly two empty lines above the embed and one below, adding missing lines and removing excess empty lines. This also applies at the start or end of a note. Non-empty neighboring lines remain unchanged. The syntax references the SVG through a normal link but never creates a native Obsidian image embed.
+2. The registered **Insert handwriting embed** command inserts a native image reference following the host's preferred Wiki-link or Markdown-link format. It replaces the contiguous run of empty lines containing the target with exactly two empty lines above the embed and one below, adding missing lines and removing excess empty lines. This also applies at the start or end of a note. Non-empty neighboring lines remain unchanged. Recognition follows [Obsidian Integration](obsidian-integration.md#native-embeds).
 3. The next mounted embed editor is activated automatically.
 4. After the widget is mounted and measured on two consecutive animation frames, the new embed opens in editing mode. If this does not happen within two seconds, insertion remains intact and retryable shared feedback is shown over the active view or owning window.
 5. Shared success feedback with an icon-only Undo action remains visible for five seconds.

@@ -72,7 +72,6 @@ export interface PresentationAttachment extends LockedPreviewPresentation {
   readonly embedReference: PresentationEmbedReference;
   readonly previewContentIdentity?: PreviewContentIdentity;
   readonly root: HTMLElement;
-  readonly loadingStartedAt?: number;
   readonly whenPresented?: Promise<boolean>;
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;
   readonly preview?: HTMLElement;
@@ -173,7 +172,6 @@ export interface EmbedIntegrationPorts {
   ) => Promise<void>;
   readonly readMarkdownSource?: (sourcePath: string) => Promise<string | undefined>;
   readonly prepareStaticExport?: (documentId: string) => Promise<void>;
-  readonly subscribeMotionPreference?: (listener: (motion: MotionPreference) => void) => () => void;
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly documents: InkbookDocumentRecognitionPort;
   readonly lifecycle: PresentationLifecycleRegistry;

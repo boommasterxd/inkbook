@@ -14,7 +14,7 @@ function harness() {
     replaceRange,
   } as unknown as Editor;
   const request = {
-    clipboardText: "!inkbook[[source.svg]]",
+    clipboardText: "![[source.svg]]",
     editor,
     insideInkWidget: false,
     sourcePath: "note.md",
@@ -40,7 +40,7 @@ function harness() {
       readWithMetadataGuard: readSource,
     },
     links: {
-      generateEmbed: () => "!inkbook[[duplicate.svg]]",
+      generateEmbed: () => "![[duplicate.svg]]",
       resolveLinkTarget: () => ({ path: "source.svg" }),
     },
     placement: { preparePath },

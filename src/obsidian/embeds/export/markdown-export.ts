@@ -217,11 +217,13 @@ export async function renderStaticMarkdownEmbeds(
   const signal = owner.abort.signal;
   let releaseSchedulingProfile: (() => void) | undefined;
   try {
-    const blocks = await collectExportBlocks(root, scheduler, signal);
-    if (blocks.length === 0) return;
+    // The host publishes native images after invoking its postprocessors. Read source
+    // first so the returned async processor resumes after that synchronous publication.
     const source = await ports.readMarkdownSource(context.sourcePath);
     signal.throwIfAborted();
     if (source === undefined) return;
+    const blocks = await collectExportBlocks(root, scheduler, signal);
+    if (blocks.length === 0) return;
     const candidates = await correlateExportCandidates(
       blocks,
       source,
@@ -244,6 +246,7 @@ export async function renderStaticMarkdownEmbeds(
       const options = {
         colorScheme: owner.colorScheme,
         ...(candidate.description === undefined ? {} : { description: candidate.description }),
+        ...(candidate.width === undefined ? {} : { width: candidate.width }),
       };
       const pages = await createExportPages(root.ownerDocument, resource.drawing, {
         scheduler,

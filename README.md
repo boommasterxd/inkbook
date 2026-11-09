@@ -85,15 +85,17 @@ The first empty embed you open offers an optional toolbar tour. Choose **Start t
 Inkbook creates the SVG attachment and inserts its reference for you. A reference occupies its own Markdown block:
 
 ```markdown
-!inkbook[[drawings/my-sketch.svg]]
+![[drawings/my-sketch.svg]]
 ```
 
-Markdown-style references are supported too. Ordinary `![[drawing.svg]]` and `![label](drawing.svg)` embeds remain native Obsidian images. Source mode shows the underlying Markdown. See [Obsidian integration](docs/obsidian-integration.md) for reference syntax and supported surfaces.
+Markdown-style references such as `![Description](drawing.svg)` are supported too. Add a native width such as `![[drawing.svg|400]]` or `![Description|400](drawing.svg)` to constrain both the preview and editor; narrower screens cap the width automatically. The saved reference displays a native SVG image even with Inkbook disabled or uninstalled. Inkbook enhances eligible standalone references only after recognizing a safe Inkbook document; ordinary images remain native. Source mode shows the underlying Markdown. Recognized references use current-document PDF preparation and Inkbook pagination.
+
+Inkbook uses native image references exclusively. The plugin does not convert notes on activation. See [Obsidian integration](docs/obsidian-integration.md#native-embeds) for recognition, supported sizes, and host-owned fallback behavior.
 
 ## Current limitations
 
 - **Hardware acceptance is ongoing.** Desktop, tablet, and phone layouts have been exercised in Obsidian, but physical mobile devices, pen latency, and palm rejection still require release acceptance. The [verification contract](docs/quality-and-testing.md#manual-release-checks) defines those checks.
-- **View-switch issue on Obsidian 1.13.4.** A relative Markdown-style Inkbook embed can become invisible when switching from Reading view to Live Preview. Opening the note in a fresh tab restores the preview. The normal wiki-style reference above worked in the checked flow.
+- **Minimum-version acceptance is pending for native embeds.** Reading-view and Live Preview switching with native references has been exercised in Obsidian 1.15.0. The same flow still requires verification on the minimum supported Obsidian 1.13.4.
 
 ## Development
 

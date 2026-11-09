@@ -33,7 +33,7 @@ vi.mock("../../../../../src/obsidian/embeds/presentation/presentation-controller
   },
 }));
 
-const EMBED = "!inkbook[[drawing.svg]]";
+const EMBED = "![[drawing.svg]]";
 
 function createHarness(sourcePath = "note.md") {
   let revision = 1;

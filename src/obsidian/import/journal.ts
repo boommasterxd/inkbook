@@ -79,7 +79,6 @@ function validPatch(value: unknown): boolean {
       (key) => typeof value[key] === "string" && value[key].length <= 8192,
     ) &&
     String(value["before"]).length > 0 &&
-    String(value["after"]).startsWith("!inkbook") &&
     ["pending", "applied", "undone", "conflict"].includes(String(value["status"]))
   );
 }

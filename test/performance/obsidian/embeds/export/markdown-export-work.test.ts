@@ -22,8 +22,8 @@ afterEach(() => {
 
 function capacityFixture() {
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[capacity.svg|One]]\n\n!inkbook[[capacity.svg|Two]]",
-    '<div><p>!inkbook<a href="capacity.svg">One</a></p></div><div><p>!inkbook<a href="capacity.svg">Two</a></p></div>',
+    "![[capacity.svg|One]]\n\n![[capacity.svg|Two]]",
+    '<div><p><span><img alt="One" src="app://vault/capacity.svg"></span></p></div><div><p><span><img alt="Two" src="app://vault/capacity.svg"></span></p></div>',
     exportDescriptor(
       '<path class="inkbook-theme-stroke" d="M10 5000L30 5020" stroke="#000000FF"/>'.repeat(10_000),
     ),
@@ -74,8 +74,8 @@ it("builds every saved path once with bounded DOM work between central admission
   expect(create.mock.calls.filter(([, name]) => name === "rect")).toHaveLength(2);
   expect(fixture.root.querySelectorAll("defs")).toHaveLength(1);
   expect(fixture.root.querySelectorAll("use")).toHaveLength(2);
-  // Include the separate static-fragment preparation admission, even for whole-graphic fallback.
-  expect(checkpoint.mock.calls.length).toBeLessThanOrEqual(68);
+  // Include static-fragment preparation and both native images' neutral spans.
+  expect(checkpoint.mock.calls.length).toBeLessThanOrEqual(70);
   expect(prepareGeometry).toHaveBeenCalledOnce();
   expect(execute.mock.calls.map(([request]) => request.type)).toEqual(["prepare-export-geometry"]);
   expect(nextFrame).not.toHaveBeenCalled();
@@ -201,7 +201,7 @@ it("drops detached capacity work without further DOM writes after lifecycle canc
   expect(create).toHaveBeenCalledTimes(256);
   expect(attributes).toHaveBeenCalledTimes(writes);
   expect(fixture.root.querySelector("svg")).toBeNull();
-  expect(fixture.root.querySelector("a")?.getAttribute("href")).toBe("capacity.svg");
+  expect(fixture.root.querySelector("img")?.getAttribute("src")).toBe("app://vault/capacity.svg");
   for (const result of create.mock.results)
     expect((result.value as Element).isConnected).toBe(false);
 });

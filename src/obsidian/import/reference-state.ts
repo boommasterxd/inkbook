@@ -1,4 +1,5 @@
 import type { InkImportPorts } from "./types";
+import { countMarkdownFileReferences } from "../embeds/markdown-file-references";
 
 const MAX_REFERENCE_BYTES = 64 * 1024 * 1024;
 const MAX_REFERENCE_FILE_BYTES = 8 * 1024 * 1024;
@@ -21,25 +22,6 @@ function decodedReferenceText(text: string): string {
     )
     .replace(/\\([ !"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/gu, "$1")
     .toLowerCase();
-}
-
-function resolvedReference(
-  ports: Pick<InkImportPorts, "resolveLink">,
-  notePath: string,
-  text: string,
-  target: string,
-): boolean {
-  for (const match of text.matchAll(/\[\[([^\]\n|#]+)(?:[^\]\n]*)\]\]/gu)) {
-    if (ports.resolveLink(match[1]!.trim(), notePath) === target) return true;
-  }
-  for (const match of text.matchAll(
-    /!?\[[^\]\n]*\]\((?:<([^>\n]+)>|([^\s()\n]+))(?:\s+[^\n)]*)?\)/gu,
-  )) {
-    const raw = (match[1] ?? match[2] ?? "").split("#", 1)[0]!;
-    const link = decodeURIComponent(raw).replace(/\\([ !"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/gu, "$1");
-    if (ports.resolveLink(link, notePath) === target) return true;
-  }
-  return false;
 }
 
 /** Conservative fresh scan: even a plain-text mention protects an original. */
@@ -66,7 +48,16 @@ export async function inkImportReferenceState(
     if (text.length > MAX_REFERENCE_FILE_BYTES || bytes > MAX_REFERENCE_BYTES) return "unknown";
     if (decodedReferenceText(text).includes(basename)) return "referenced";
     try {
-      if (resolvedReference(ports, file.path, text, path)) return "referenced";
+      const count = countMarkdownFileReferences(text, {
+        sourcePath: file.path,
+        targetPath: path,
+        resolveLinkTarget: (link, sourcePath) => {
+          const resolved = ports.resolveLink(link, sourcePath);
+          return resolved === undefined ? null : { path: resolved };
+        },
+      });
+      if (count.references > 0) return "referenced";
+      if (!count.complete) return "unknown";
     } catch {
       return "unknown";
     }
