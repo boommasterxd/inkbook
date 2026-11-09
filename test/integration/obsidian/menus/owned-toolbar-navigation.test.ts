@@ -213,7 +213,7 @@ describe.each(["desktop", "tablet", "phone"])("retained menu locale on %s", (mod
       "Keiner",
       "Linien",
       "Punkte",
-      "Karos",
+      "Kästchen",
     ]);
     choices[1]!.focus();
     localization.setLanguage("en");
