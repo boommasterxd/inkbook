@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
@@ -22,6 +23,7 @@ it("releases nested finding subscriptions on every page turn and all remaining o
       notes: Array.from({ length: 4 }, (_, note) => `notes/${index}-${note}.md`),
     })),
     {
+      localization: new Localization(),
       mutate: (update) => update(),
       readMotion: () => "reduced",
       observeMotion: (listener) => {
@@ -55,7 +57,7 @@ it("releases nested finding subscriptions on every page turn and all remaining o
     repeatedOpen();
     for (const direction of ["Next", "Previous", "Next", "Previous"]) {
       const previous = new Set(subscriptions);
-      button(`${direction} page: warnings`).click();
+      button(`${direction} page: Warnings`).click();
       expect(subscriptions.size).toBe(pageSubscriptions);
       expect([...subscriptions].filter((listener) => previous.has(listener))).toEqual([
         ...rootSubscriptions,

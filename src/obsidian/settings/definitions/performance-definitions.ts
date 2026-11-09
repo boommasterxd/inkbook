@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Translator } from "../../../domain/localization";
 import type { SettingDefinitionGroup } from "obsidian";
 
 import { REFRESH_RATE_PREFERENCES } from "../../../domain/settings";
@@ -8,6 +9,7 @@ import { scrollPreloadDefinition } from "./scroll-preload-setting";
 import type { NativeControlFeedbackOptions } from "../../menus/feedback/native-control-feedback";
 
 interface PerformanceGroupCallbacks extends NativeControlFeedbackOptions {
+  readonly t?: Translator;
   readonly get: (key: SettingsControlKey) => unknown;
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
   readonly refreshRateStatus: () => RefreshRateProfileStatus;
@@ -17,49 +19,54 @@ interface PerformanceGroupCallbacks extends NativeControlFeedbackOptions {
 export function performanceGroup(
   callbacks: PerformanceGroupCallbacks,
 ): SettingDefinitionGroup<SettingsControlKey> {
+  const t = callbacks.t ?? createEnglishLocalization().t;
   const status = callbacks.refreshRateStatus();
   return {
     type: "group",
-    heading: "Performance",
+    heading: t("settings.controls.performance"),
     cls: "inkbook-settings-performance-group",
     items: [
       dropdown(
         "refreshRatePreference",
-        "Display refresh rate",
-        refreshRateDescription(status),
+        t("settings.controls.refreshRate"),
+        refreshRateDescription(status, t),
         Object.fromEntries(
           REFRESH_RATE_PREFERENCES.map((value) => [
             String(value),
-            value === "auto" ? autoRefreshRateLabel(status) : `${value} Hz`,
+            value === "auto"
+              ? autoRefreshRateLabel(status, t)
+              : t("settings.controls.hertz", { value }),
           ]),
         ),
       ),
       scrollPreloadDefinition(callbacks),
       toggle(
         "selectionHighlightsEnabled",
-        "Selection highlights",
-        "Show inner selection edge highlights. These can increase rendering work and affect performance, especially for large selections. " +
-          "Disabling them reduces optional highlight work. Lines and arrows always keep their center selection trace.",
+        t("settings.controls.selectionHighlights"),
+        t("settings.controls.selectionHighlightsHelp"),
       ),
-      resetAction("Reset group to defaults", callbacks.reset),
+      resetAction(t("settings.controls.resetGroup"), callbacks.reset, t),
     ],
   };
 }
 
-function autoRefreshRateLabel(status: RefreshRateProfileStatus): string {
-  if (status.kind === "detected") return `Auto (detected: ${status.refreshRate} Hz)`;
-  if (status.kind === "detecting") return "Auto (detecting…)";
-  return "Auto";
+function autoRefreshRateLabel(status: RefreshRateProfileStatus, t: Translator): string {
+  if (status.kind === "detected")
+    return t("settings.controls.autoDetected", { rate: status.refreshRate });
+  if (status.kind === "detecting") return t("settings.controls.autoDetecting");
+  return t("settings.controls.auto");
 }
 
-function refreshRateDescription(status: RefreshRateProfileStatus): string {
-  const profileDescription =
-    "Match the profile to your display. Higher profiles leave more frame time for smooth interaction, but loading can take longer.";
+function refreshRateDescription(status: RefreshRateProfileStatus, t: Translator): string {
+  const profileDescription = t("settings.controls.profileHelp");
   if (status.kind === "detected") {
-    return `Detected ${status.refreshRate} Hz for this Obsidian window. Other windows are measured independently. ${profileDescription}`;
+    return t("settings.controls.refreshDetectedHelp", {
+      rate: status.refreshRate,
+      profileDescription,
+    });
   }
   if (status.kind === "detecting") {
-    return `Detecting this Obsidian window. Inkbook uses the 120 Hz profile until detection completes. ${profileDescription}`;
+    return t("settings.controls.refreshDetectingHelp", { profileDescription });
   }
-  return `Use quick per-window detection or select a fixed frame-rate profile. ${profileDescription}`;
+  return t("settings.controls.refreshFallbackHelp", { profileDescription });
 }

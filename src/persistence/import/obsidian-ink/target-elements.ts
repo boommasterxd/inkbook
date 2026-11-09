@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "./warnings";
 import { createClosedShapeGeometry } from "../../../domain/geometry/creation";
 import {
   canonicalizeGeometryNumber,
@@ -11,7 +12,7 @@ import { array, invalid, record, text, type SourceRecord } from "./source-values
 /** The native writer owns field selection; conversion adds only the required precision rounding. */
 export function* canonicalTargetSteps(
   element: InkElementV1,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
 ): Generator<void, InkElementV1> {
   if (element.kind !== "stroke") {
     const target = roundHeader(element, warnings) as InkElementV1;
@@ -39,7 +40,7 @@ export function* canonicalTargetSteps(
   };
 }
 
-function roundHeader(value: unknown, warnings: Set<string>, key = ""): unknown {
+function roundHeader(value: unknown, warnings: Set<ObsidianInkWarningCode>, key = ""): unknown {
   if (typeof value === "number") {
     if (key === "createdAt") return value;
     if (key === "rotation") return canonicalizeRotation(value);
@@ -52,10 +53,9 @@ function roundHeader(value: unknown, warnings: Set<string>, key = ""): unknown {
   );
 }
 
-function rounded(value: number, unit: boolean, warnings: Set<string>): number {
+function rounded(value: number, unit: boolean, warnings: Set<ObsidianInkWarningCode>): number {
   const result = unit ? canonicalizeUnitIntervalNumber(value) : canonicalizeGeometryNumber(value);
-  if (result !== value)
-    warnings.add("Geometry, pressure and opacity were rounded to Inkbook's native precision.");
+  if (result !== value) warnings.add("nativePrecision");
   return result;
 }
 

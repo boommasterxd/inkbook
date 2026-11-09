@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
@@ -55,6 +56,7 @@ function view(
     container,
     value,
     {
+      localization: new Localization(),
       mutate: (update) => update(),
       readMotion: () => motion,
       observeMotion: (listener) => {
@@ -106,7 +108,7 @@ it("offers a bounded list of applied notes to review after conversion", () => {
   const notes = () => container.querySelectorAll('ul[aria-label="Notes to review"] > li');
   expect(notes()).toHaveLength(25);
   expect(notes()[0]?.textContent).toContain("notes/0.md");
-  container.querySelector<HTMLButtonElement>('[aria-label="Next page: notes to review"]')!.click();
+  container.querySelector<HTMLButtonElement>('[aria-label="Next page: Notes to review"]')!.click();
   expect(notes()).toHaveLength(2);
   expect(notes()[1]?.textContent).toContain("notes/26.md");
   expect(container.textContent).not.toContain("notes/99.md");
@@ -131,6 +133,7 @@ it("shows the affected note and persisted undo reason in both result and history
   const disposers: Array<() => void> = [];
   renderImportJournal(historyContainer, (await fixture.service.history())[0]!, {
     mutate: (update) => update(),
+    localization: new Localization(),
     readMotion: () => "reduced",
     own: (dispose) => disposers.push(dispose),
   });

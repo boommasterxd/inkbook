@@ -15,7 +15,7 @@ Settings have four scopes:
 | Scope            | Storage                | Examples                                                                                                  |
 | ---------------- | ---------------------- | --------------------------------------------------------------------------------------------------------- |
 | Vault            | Obsidian plugin data   | Tool defaults, selection highlights, snapping, hold to shape, page defaults, placement, refresh-rate mode |
-| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts, scroll preload margin            |
+| Device and vault | Obsidian local storage | Language, finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts, scroll preload margin  |
 | File             | Editable SVG snapshot  | Current background type and spacing, element styles                                                       |
 | Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position                                   |
 
@@ -79,6 +79,7 @@ interface SnappingSettingsV1 {
 
 interface InkbookDeviceSettingsV2 {
   version: 2;
+  language: "auto" | "de" | "en";
   onboardingDismissed: boolean;
   fingerDrawingEnabled: boolean;
   penTapInsertion: "off" | "handwriting";
@@ -352,6 +353,10 @@ Custom folders:
 
 Finger drawing and pen-tap insertion use matching toggle controls. The pen-tap toggle maps the enabled state to the persisted `"handwriting"` mode and the disabled state to `"off"`; no select menu is shown for this binary preference.
 
+### Language
+
+The Interface group offers **Auto**, **Deutsch**, and **English**. The device-and-vault-local `language` preference defaults to `auto`. Auto follows Obsidian's language: German language variants resolve to German and other host languages resolve to English. An explicit selection overrides the host language. Supported older device settings without `language` receive `auto`; an invalid present value falls back to `auto` with a field diagnostic. The Interface group and full reset restore the default. See [Localization](localization.md) for translation scope and implementation.
+
 ### Scroll Preload Margin
 
 `scrollPreloadMarginPx` is exposed as **Scroll preload margin** in Performance settings. It defaults to 300 and accepts integers from 100 through 800, measured in screen pixels above and below the visible area. A slider and directly editable **Screen pixels** field expose the same integer domain. The value is stored per device and vault and is not written to Inkbook files or synchronized through vault plugin data.
@@ -405,7 +410,7 @@ The settings tab uses these logical groups and this order:
 6. **Snapping**: global enable switch followed by Angle, Bend, Connection, and Structure switches.
 7. **Hold to shape**: enable switch, hold delay, movement tolerance, and a group reset.
 8. **Input**: finger drawing and pen-tap insertion.
-9. **Interface**: handedness and motion.
+9. **Interface**: language, handedness, and motion.
 10. **Shortcuts**: configurable device-local canvas bindings plus fixed system, gesture-modifier, and Obsidian-command references.
 11. **Import**: the optional **Start import** action and **Import history** disclosure, when the import workflow is available.
 

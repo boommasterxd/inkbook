@@ -1,7 +1,12 @@
+import {
+  menuTranslator,
+  updateMenuText,
+  type MenuLocalizationOptions,
+} from "./localized-menu-text";
 import type { BackgroundSpacing } from "./editor-menu-types";
 import { menuDomWindow } from "./menu-dom";
 
-export interface BackgroundSpacingContentOptions {
+export interface BackgroundSpacingContentOptions extends MenuLocalizationOptions {
   readonly describedBy?: string;
   readonly ownerDocument: Document;
   readonly spacing: BackgroundSpacing;
@@ -12,7 +17,6 @@ export interface BackgroundSpacingContentOptions {
 }
 
 const SPACINGS = ["s", "m", "l", "xl"] as const satisfies readonly BackgroundSpacing[];
-const SPACING_LABELS = ["Compact", "Medium", "Wide", "Extra wide"] as const;
 const SPACING_SHORT_LABELS = ["S", "M", "L", "XL"] as const;
 
 export function createBackgroundSpacingContent(
@@ -25,7 +29,10 @@ export function createBackgroundSpacingContent(
   const header = win.createDiv({ cls: "inkbook-menu-spacing-header" });
   const icon = win.createSpan({ cls: "inkbook-menu-control-icon" });
   options.renderIcon(icon, "move-horizontal");
-  const title = win.createSpan({ text: "Spacing" });
+  const title = win.createSpan();
+  updateMenuText(options, () => {
+    title.textContent = menuTranslator(options)("editor.background.spacing");
+  });
   const output = win.createEl("output", { cls: "inkbook-menu-spacing-output" });
   header.append(icon, title, output);
 
@@ -35,7 +42,9 @@ export function createBackgroundSpacingContent(
   range.max = "3";
   range.step = "1";
   range.value = String(SPACINGS.indexOf(options.spacing));
-  range.setAttribute("aria-label", "Background spacing");
+  updateMenuText(options, () =>
+    range.setAttribute("aria-label", menuTranslator(options)("editor.background.spacing-label")),
+  );
   if (options.describedBy !== undefined)
     range.setAttribute("aria-describedby", options.describedBy);
 
@@ -48,7 +57,10 @@ export function createBackgroundSpacingContent(
   const updateLocalValue = () => {
     const index = spacingIndex(range.valueAsNumber);
     output.textContent = SPACING_SHORT_LABELS[index];
-    range.setAttribute("aria-valuetext", SPACING_LABELS[index]);
+    range.setAttribute(
+      "aria-valuetext",
+      menuTranslator(options)(`editor.background.${SPACINGS[index]}`),
+    );
   };
   range.addEventListener("input", () => {
     const index = spacingIndex(range.valueAsNumber);
@@ -60,7 +72,7 @@ export function createBackgroundSpacingContent(
     updateLocalValue();
     options.onChange(SPACINGS[index]);
   });
-  updateLocalValue();
+  updateMenuText(options, updateLocalValue);
   options.registerUpdate?.((spacing) => {
     range.value = String(SPACINGS.indexOf(spacing));
     updateLocalValue();

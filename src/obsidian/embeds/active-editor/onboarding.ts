@@ -6,6 +6,7 @@ import type { BrowserScrollElement } from "../../scrolling/index";
 
 type OnboardingOptions = Pick<
   ActiveEditorControllerOptions,
+  | "localization"
   | "container"
   | "deviceSettings"
   | "keymap"
@@ -40,6 +41,7 @@ export class ActiveEditorOnboarding {
     this.#dismissed = options.deviceSettings.onboardingDismissed;
     this.#root = options.container.closest<HTMLElement>(".inkbook-root") ?? options.container;
     this.#tour = new OnboardingTour({
+      localization: options.localization,
       root: this.#root,
       canvasInputSurface: options.renderer.inputSurface,
       workScheduler: options.workScheduler,

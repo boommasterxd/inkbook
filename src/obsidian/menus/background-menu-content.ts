@@ -1,16 +1,21 @@
+import {
+  menuTranslator,
+  updateMenuText,
+  type MenuLocalizationOptions,
+} from "./localized-menu-text";
 import type { BackgroundMenuState, BackgroundSpacing, BackgroundType } from "./editor-menu-types";
 import { BACKGROUND_SQUARES_ICON_ID } from "../../rendering/ui/icon-ids";
 import { createBackgroundSpacingContent } from "./background-spacing-content";
 import { menuDomWindow } from "./menu-dom";
 
-const BACKGROUND_CHOICES: readonly (readonly [BackgroundType, string, string])[] = [
-  ["none", "None", "ban"],
-  ["lines", "Lines", "align-justify"],
-  ["dots", "Dots", "grip"],
-  ["squares", "Squares", BACKGROUND_SQUARES_ICON_ID],
+const BACKGROUND_CHOICES: readonly (readonly [BackgroundType, string])[] = [
+  ["none", "ban"],
+  ["lines", "align-justify"],
+  ["dots", "grip"],
+  ["squares", BACKGROUND_SQUARES_ICON_ID],
 ];
 
-export interface BackgroundMenuContentOptions {
+export interface BackgroundMenuContentOptions extends MenuLocalizationOptions {
   readonly controlDescriptionId?: string;
   readonly getState: () => BackgroundMenuState;
   readonly initialState: BackgroundMenuState;
@@ -24,7 +29,7 @@ export interface BackgroundMenuContentOptions {
 }
 
 export function backgroundIconId(type: BackgroundType): string {
-  return BACKGROUND_CHOICES.find(([candidate]) => candidate === type)?.[2] ?? "ban";
+  return BACKGROUND_CHOICES.find(([candidate]) => candidate === type)?.[1] ?? "ban";
 }
 
 export function createBackgroundMenuContent(
@@ -35,19 +40,25 @@ export function createBackgroundMenuContent(
   const root = win.createDiv({ cls: "inkbook-menu-background-options" });
   const choices = win.createDiv({ cls: "inkbook-menu-background-choices" });
   const spacing = win.createDiv({ cls: "inkbook-menu-background-spacing" });
+  const retainedSpacing = win.createFragment();
   let updateSpacing: ((value: BackgroundSpacing) => void) | undefined;
 
-  for (const [type, label, iconId] of BACKGROUND_CHOICES) {
+  for (const [type, iconId] of BACKGROUND_CHOICES) {
     const button = win.createEl("button", { cls: "inkbook-menu-background-choice" });
     button.type = "button";
     button.dataset.backgroundType = type;
-    button.setAttribute("aria-label", label);
+
     if (options.controlDescriptionId !== undefined) {
       button.setAttribute("aria-describedby", options.controlDescriptionId);
     }
     const icon = win.createSpan({ cls: "inkbook-menu-background-choice-icon" });
     options.renderIcon(icon, iconId);
-    const title = win.createSpan({ cls: "inkbook-menu-background-choice-title", text: label });
+    const title = win.createSpan({ cls: "inkbook-menu-background-choice-title", text: "" });
+    updateMenuText(options, () => {
+      const label = menuTranslator(options)(`editor.background.${type}`);
+      title.textContent = label;
+      button.setAttribute("aria-label", label);
+    });
     const check = win.createSpan({ cls: "inkbook-menu-background-choice-check" });
     check.setAttribute("aria-hidden", "true");
     options.renderIcon(check, "check");
@@ -73,11 +84,11 @@ export function createBackgroundMenuContent(
         if (check !== null && check.dataset.inkbookMotionCheck !== "true") check.hidden = !selected;
       }
       if (state.type === "none") {
-        spacing.replaceChildren();
-        updateSpacing = undefined;
+        retainedSpacing.append(...spacing.childNodes);
         return;
       }
       if (updateSpacing !== undefined) {
+        spacing.append(retainedSpacing);
         updateSpacing(state.spacing ?? "m");
         return;
       }
@@ -86,6 +97,9 @@ export function createBackgroundMenuContent(
       spacing.append(
         separator,
         createBackgroundSpacingContent({
+          t: options.t,
+          localization: options.localization,
+          registerLocaleUpdate: options.registerLocaleUpdate,
           onChange: options.onSpacingChange,
           onPreview: options.onSpacingPreview,
           ownerDocument: options.ownerDocument,

@@ -16,12 +16,12 @@ export function shortcutGroup(
 ): SettingDefinitionGroup<SettingsControlKey> {
   return {
     type: "group",
-    heading: "Shortcuts",
+    heading: store.localization.t("settings.shortcuts.heading"),
     cls: "inkbook-shortcuts-group",
     items: [
       {
-        name: "Keyboard shortcuts",
-        desc: "Configure device-local Inkbook shortcuts and review fixed system controls.",
+        name: store.localization.t("settings.shortcuts.keyboard"),
+        desc: store.localization.t("settings.shortcuts.keyboardHelp"),
         render: (setting) => {
           const view = mountShortcutSettingsView(
             setting,

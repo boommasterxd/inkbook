@@ -17,6 +17,7 @@ import { activateInkbookPlugin } from "../../../src/obsidian/inkbook-plugin";
 import { STRAIGHT_HIGHLIGHTER_ICON_ID } from "../../../src/rendering/ui/icon-ids";
 import {
   configureTestEditorState,
+  configureTestHostLanguage,
   testIconRegistry,
   type Plugin as RegisteredPlugin,
 } from "../../adapters/obsidian/plugin";
@@ -29,6 +30,10 @@ import { WorkspaceRefreshProfiles } from "../../../src/obsidian/embeds/workspace
 import { createMarkdownExportFixture } from "../../fixtures/obsidian/markdown-export";
 import { ManualHost } from "../../fixtures/scheduling/manual-frame-host";
 import { FRAME_WORK_SHARE } from "../../../src/domain/scheduling/work-scheduler";
+import {
+  createBuiltInDeviceSettings,
+  DEVICE_SETTINGS_STORAGE_KEY,
+} from "../../../src/domain/settings";
 
 const TestTFile = TFile as unknown as new (path: string) => TFile;
 
@@ -163,6 +168,39 @@ describe("plugin startup recognition", () => {
       });
     expect(cachedRead).toHaveBeenCalledTimes(unload ? 0 : 1);
     if (!unload) deactivate?.();
+  });
+});
+
+describe("plugin startup language", () => {
+  it.each([
+    { host: "de-DE", preference: "auto", name: "Aktive Handschrift sperren" },
+    { host: "de_CH", preference: "auto", name: "Aktive Handschrift sperren" },
+    { host: "fr", preference: "auto", name: "Lock active handwriting embed" },
+    { host: "de", preference: "en", name: "Lock active handwriting embed" },
+    { host: "en", preference: "de", name: "Aktive Handschrift sperren" },
+  ] as const)("loads $preference language with host $host", async ({ host, preference, name }) => {
+    configureTestHostLanguage(host);
+    const { app } = createApp();
+    const saved = { ...createBuiltInDeviceSettings(), language: preference };
+    const plugin = new TestPlugin(
+      {
+        ...app,
+        loadLocalStorage: (key: string) =>
+          key === DEVICE_SETTINGS_STORAGE_KEY ? saved : undefined,
+      } as never,
+      {} as never,
+    );
+    try {
+      const deactivate = await activateInkbookPlugin(plugin);
+      const registrations = plugin as unknown as RegisteredPlugin;
+      expect(
+        registrations.commands.find((command) => command.id === "lock-active-embed")?.name,
+      ).toBe(name);
+      expect(app.saveLocalStorage).not.toHaveBeenCalled();
+      deactivate?.();
+    } finally {
+      configureTestHostLanguage();
+    }
   });
 });
 

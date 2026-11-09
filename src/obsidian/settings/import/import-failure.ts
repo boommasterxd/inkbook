@@ -1,3 +1,4 @@
+import type { Localization } from "../../../domain/localization";
 import { InkImportNoteBackupError } from "../../import/note-backup-error";
 import type { PendingImportOperation } from "./import-status";
 
@@ -7,6 +8,7 @@ export function renderImportFailure(
   cancelled: boolean,
   operation: PendingImportOperation,
   error: unknown,
+  localization: Localization,
 ): string {
   if (
     !cancelled &&
@@ -14,32 +16,38 @@ export function renderImportFailure(
     error instanceof InkImportNoteBackupError
   ) {
     const heading =
-      error.reason === "unavailable" ? "Recovery backup unavailable" : "Recovery backup changed";
+      error.reason === "unavailable"
+        ? localization.t("import.backupUnavailable")
+        : localization.t("import.backupChanged");
     container.createEl("h3", { text: heading });
     container.createEl("p", {
       text:
         error.reason === "unavailable"
-          ? "The original note backup is missing or could not be read. Recovery stopped before undo or cleanup."
-          : "The original note backup does not match this import's recorded content. Recovery stopped before undo or cleanup.",
+          ? localization.t("import.backupUnavailableDescription")
+          : localization.t("import.backupChangedDescription"),
     });
-    container.createEl("p", { text: `Note: ${error.notePath}` });
-    container.createEl("p", { text: `Recovery backup: ${error.backupPath}` });
+    container.createEl("p", { text: localization.t("import.notePath", { path: error.notePath }) });
     container.createEl("p", {
-      text: "Keep the import history and recovery files. Restore the exact original backup at this path from a trusted vault backup or sync history, then retry from import history. Do not replace it with the current note or edit the import record to bypass this check.",
+      text: localization.t("import.backupPath", { path: error.backupPath }),
+    });
+    container.createEl("p", {
+      text: localization.t("import.backupGuidance"),
     });
     return heading;
   }
   container.createEl("h3", {
-    text: cancelled ? "Operation stopped" : "The operation could not finish",
+    text: cancelled
+      ? localization.t("import.operationStopped")
+      : localization.t("import.operationFailure"),
   });
   container.createEl("p", {
     text:
       operation === "scan"
-        ? "Your files are unchanged. Go back to scan again, or close this window and try later."
-        : "Some changes may already be complete. Go to Settings → Inkbook → Import → Import history to review or undo this run before retrying.",
+        ? localization.t("import.scanFailureGuidance")
+        : localization.t("import.operationFailureGuidance"),
   });
-  if (!cancelled) return "The operation could not finish.";
+  if (!cancelled) return localization.t("import.operationFailureStatus");
   return operation === "scan"
-    ? "Stopped. Your files are unchanged."
-    : "Stopped. Check import history for completed changes.";
+    ? localization.t("import.scanStoppedStatus")
+    : localization.t("import.operationStoppedStatus");
 }

@@ -1,3 +1,4 @@
+import type { Localization } from "../../domain/localization";
 import type { ToolbarLayoutStage } from "./toolbar-layout";
 import type { ShapeId, ToolbarAction, ToolbarState } from "./toolbar-types";
 import type { ToolbarStyleIconState } from "./style-icon";
@@ -5,6 +6,7 @@ import type { ActiveShapeIconState } from "./icon-ids";
 import type { SelectionAreaV1 } from "../../domain/settings/types";
 
 export interface InkbookEditorChromeProps {
+  readonly localization?: Localization | undefined;
   readonly onboarding?: {
     readonly container: HTMLElement;
     readonly onStart: () => void;

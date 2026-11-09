@@ -1,3 +1,4 @@
+import { Localization } from "../../domain/localization";
 import type { App } from "obsidian";
 
 import type { InkbookSettingsStore } from "../settings";
@@ -21,8 +22,9 @@ export function createObsidianEmbedPasteController(
   placementFeedback: PlacementFallbackFeedbackPort,
   signal?: AbortSignal,
   recognition?: ObsidianInkbookDocumentRecognition,
-  scheduling?: DocumentOutputScheduling,
+  scheduling?: DocumentOutputScheduling & { readonly localization?: Localization },
 ): EmbedPasteController {
+  const localization = scheduling?.localization ?? new Localization();
   const { files, links, managedFiles, placement } = createObsidianCommandVaultPorts(
     app,
     () => true,
@@ -34,21 +36,22 @@ export function createObsidianEmbedPasteController(
       choose: () =>
         chooseInkbookAction(app, {
           workScheduler: scheduling?.workScheduler,
+          localization,
           ...(signal === undefined ? {} : { signal }),
           readMotion: () => settings.getDeviceSettings().motion,
           observeMotion: (listener) => settings.subscribeDeviceSettings(listener),
-          title: "Paste Inkbook embed",
-          description: "Choose how this drawing should be inserted.",
+          title: () => localization.t("host.dialog.pasteTitle"),
+          description: () => localization.t("host.dialog.pasteDescription"),
           actions: [
             {
               value: "reference",
-              label: "Insert reference",
-              description: "Edits appear in every embed that uses this file.",
+              label: () => localization.t("host.dialog.reference"),
+              description: () => localization.t("host.dialog.referenceDescription"),
             },
             {
               value: "duplicate",
-              label: "Create copy",
-              description: "Create an independent SVG copy.",
+              label: () => localization.t("host.dialog.copy"),
+              description: () => localization.t("host.dialog.copyDescription"),
             },
           ],
         }),

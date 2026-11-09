@@ -1,4 +1,5 @@
 import type { InkbookDeviceSettingsV2 } from "../../../domain/settings/types";
+import type { Localization } from "../../../domain/localization";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { AttachmentIdentity } from "../../../editor/session/session-state";
 
@@ -30,6 +31,7 @@ export function createWorkspacePresentationStateSetter(
 export function createWorkspaceMountedPresentation(
   attachment: PresentationAttachment,
   workScheduler: WorkScheduler,
+  localization?: Localization,
 ): WorkspaceMountedPresentation {
   return {
     attachment,
@@ -38,6 +40,7 @@ export function createWorkspaceMountedPresentation(
       attachment.root,
       () => attachment.initialEntrance?.showLoading(),
       workScheduler,
+      localization,
     ),
     loadError: undefined,
     recovery: undefined,

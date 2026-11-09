@@ -1,3 +1,5 @@
+import { useEditorLocalization } from "./localization";
+import type { Translator } from "../../domain/localization";
 import { motion } from "motion/react";
 import { useCallback, useContext, useRef } from "react";
 
@@ -33,6 +35,7 @@ export interface ToolbarIconButtonProps {
 }
 
 export function ToolbarIconButton(props: ToolbarIconButtonProps) {
+  const { t } = useEditorLocalization();
   const lifecycle = useContext(toolbarMotionContext);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const visualDisabled = props.disabled && !props.preview;
@@ -74,7 +77,7 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
       aria-expanded={props.expanded}
       aria-haspopup={props.popupRole}
       aria-label={props.definition.label}
-      aria-description={previewDescription(action, props.preview)}
+      aria-description={previewDescription(action, props.preview, t)}
       aria-pressed={props.pressed}
       aria-hidden={!isPresent || lifecycle.locking ? "true" : undefined}
       className={
@@ -124,9 +127,10 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
 function previewDescription(
   action: ToolbarAction,
   preview: boolean | undefined,
+  t: Translator,
 ): string | undefined {
   if (!preview) return undefined;
-  return action === "paste" ? "Available with copied ink" : "Available after selecting ink";
+  return t(action === "paste" ? "editor.ui.preview-paste" : "editor.ui.preview-selection");
 }
 
 function ToolbarButtonSurface({

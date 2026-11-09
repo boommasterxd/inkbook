@@ -1,3 +1,4 @@
+import type { Translator } from "../../../domain/localization";
 import type { Setting, SettingDefinitionRender } from "obsidian";
 
 import type {
@@ -24,6 +25,7 @@ export interface ToolSectionSpec {
 }
 
 export interface ToolSectionValues {
+  readonly t?: Translator;
   readonly viewState?: SettingsViewState;
   readonly observeMotion?: NativeControlFeedbackOptions["observeMotion"];
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
@@ -75,7 +77,8 @@ function renderToolSection(
     if (!initialized) {
       const controls = panelContent.createDiv({ cls: "inkbook-settings-tool-controls" });
       releaseControls = renderSettingsControlContent(controls, {
-        controls: () => createToolStyleControls(values.getDefaults(), spec.tool),
+        ...(values.t === undefined ? {} : { t: values.t }),
+        controls: () => createToolStyleControls(values.getDefaults(), spec.tool, values.t),
         descriptions: spec.controlDescriptions,
         idPrefix: panelId,
         onChange: (controlId, value) => setToolControl(spec, values, controlId, value),

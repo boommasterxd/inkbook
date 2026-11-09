@@ -1,3 +1,4 @@
+import { Localization } from "../../../../../src/domain/localization";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
@@ -17,7 +18,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function cacheFixture(cache = true) {
+function cacheFixture(cache = true, localization = new Localization()) {
   const first = indexedStroke(0);
   const second = { ...indexedStroke(1), style: { ...first.style, opacity: 0.5 } };
   const store = new ElementStore([first, second]);
@@ -35,6 +36,7 @@ function cacheFixture(cache = true) {
   });
   const changed = vi.fn();
   const styles = new ActiveEditorStyleSession({
+    localization,
     defaults: createBuiltInSettings().toolDefaults,
     history,
     store,
@@ -94,6 +96,27 @@ describe("style presentation demand", () => {
     expect(fixture.summary).toHaveBeenCalledTimes(2);
     expect(fixture.reads).toHaveBeenCalledTimes(2);
   });
+});
+
+it("rebuilds labels and options after language changes while preserving style values", () => {
+  const localization = new Localization("de");
+  const fixture = cacheFixture(true, localization);
+  const german = fixture.styles.presentation("select").controls;
+  expect(german.find(({ id }) => id === "opacity")?.label).toBe("Deckkraft");
+  const color = german.find(({ id }) => id === "color");
+  expect(color?.kind === "choice" ? color.options : []).toContainEqual({
+    label: "Rot",
+    value: "#EF4444FF",
+  });
+  localization.setLanguage("en");
+  const english = fixture.styles.presentation("select").controls;
+  expect(english).not.toBe(german);
+  expect(english.find(({ id }) => id === "opacity")).toMatchObject({
+    label: "Opacity",
+    mixed: true,
+    value: null,
+  });
+  expect(fixture.summary).toHaveBeenCalledTimes(2);
 });
 
 describe("selected style presentation cache", () => {

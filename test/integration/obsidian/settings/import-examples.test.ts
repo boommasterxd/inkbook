@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it } from "vitest";
 
@@ -18,6 +19,7 @@ function gallery(motion: "full" | "reduced" = "reduced") {
   container.dataset.inkbookMotion = motion;
   const subscriptions = new Set<() => void>();
   renderImportExamples(container, {
+    localization: new Localization(),
     mutate: (update) => update(),
     readMotion: () => (container.dataset.inkbookMotion === "full" ? "full" : "reduced"),
     observeMotion: (listener) => {

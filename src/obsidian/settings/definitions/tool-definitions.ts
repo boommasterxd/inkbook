@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Translator } from "../../../domain/localization";
 import type { SettingDefinitionGroup } from "obsidian";
 
 import {
@@ -6,49 +7,62 @@ import {
   type OutlineOnlyToolV1,
 } from "../../../domain/settings";
 import type { SettingsControlKey } from "../control-values";
-import { resetAction, sentenceCaseLabel } from "./definition-helpers";
+import { resetAction } from "./definition-helpers";
+import { createLabels } from "./general-definitions";
 import {
   toolSectionDefinition,
   type ToolSectionSpec,
   type ToolSectionValues,
 } from "./tool-section";
 
-const STROKE_DESCRIPTIONS = {
-  color: "Choose the color used by newly created strokes.",
-  "stroke-width": "Choose the width used by newly created strokes.",
-  opacity: "Set the opacity used by newly created strokes.",
-  "pressure-enabled": "Use pen pressure to vary the width of newly created strokes.",
-  "hold-to-shape-enabled":
-    "Set the pen default for new editor sessions. Style-menu changes affect only that session. Requires global hold to shape.",
-} as const;
+const strokeDescriptions = (t: Translator) =>
+  ({
+    color: t("settings.controls.strokeColorHelp"),
+    "stroke-width": t("settings.controls.strokeWidthHelp"),
+    opacity: t("settings.controls.strokeOpacityHelp"),
+    "pressure-enabled": t("settings.controls.pressureHelp"),
+    "hold-to-shape-enabled": t("settings.controls.toolHoldHelp"),
+  }) as const;
 
-const OUTLINE_DESCRIPTIONS = {
-  "outline-color": "Choose the outline color used by newly created elements.",
-  "outline-width": "Choose the outline width used by newly created elements.",
-  "outline-style": "Choose the outline pattern used by newly created elements.",
-  "outline-opacity": "Set the outline opacity used by newly created elements.",
-  "fill-color": "Choose the fill color used by newly created shapes.",
-  "fill-opacity": "Set the fill opacity used by newly created shapes.",
-  "arrow-start-node": "Choose the start node used by newly created arrows.",
-  "arrow-end-node": "Choose the end node used by newly created arrows.",
-  "coordinate-dimension": "Choose two or three dimensions for new coordinate systems.",
-  "table-columns": "Set the number of columns used by newly created tables.",
-  "snapping-enabled":
-    "Set the tool default for new editor sessions. Style-menu changes affect only that session. Requires global snapping.",
-} as const;
+const outlineDescriptions = (t: Translator) =>
+  ({
+    "outline-color": t("settings.controls.outlineColorHelp"),
+    "outline-width": t("settings.controls.outlineWidthHelp"),
+    "outline-style": t("settings.controls.outlineStyleHelp"),
+    "outline-opacity": t("settings.controls.outlineOpacityHelp"),
+    "fill-color": t("settings.controls.fillColorHelp"),
+    "fill-opacity": t("settings.controls.fillOpacityHelp"),
+    "arrow-start-node": t("settings.controls.arrowStartHelp"),
+    "arrow-end-node": t("settings.controls.arrowEndHelp"),
+    "coordinate-dimension": t("settings.controls.dimensionHelp"),
+    "table-columns": t("settings.controls.tableColumnsHelp"),
+    "snapping-enabled": t("settings.controls.toolSnappingHelp"),
+  }) as const;
 
 export function drawingToolsGroup(
   values: ToolSectionValues,
   reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
-  return toolDefinitionsGroup("Drawing tools", drawingToolSpecs(), values, reset);
+  const t = values.t ?? createEnglishLocalization().t;
+  return toolDefinitionsGroup(
+    t("settings.controls.drawingTools"),
+    drawingToolSpecs(t),
+    values,
+    reset,
+  );
 }
 
 export function shapesAndStructuresGroup(
   values: ToolSectionValues,
   reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
-  return toolDefinitionsGroup("Shapes and structures", shapeToolSpecs(), values, reset);
+  const t = values.t ?? createEnglishLocalization().t;
+  return toolDefinitionsGroup(
+    t("settings.controls.shapesStructures"),
+    shapeToolSpecs(t),
+    values,
+    reset,
+  );
 }
 
 function toolDefinitionsGroup(
@@ -57,59 +71,69 @@ function toolDefinitionsGroup(
   values: ToolSectionValues,
   reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
+  const t = values.t ?? createEnglishLocalization().t;
   return {
     type: "group",
     heading,
     cls: "inkbook-settings-tool-group",
     items: [
       ...specs.map((spec) => toolSectionDefinition(spec, values)),
-      resetAction("Reset group to defaults", reset),
+      resetAction(t("settings.controls.resetGroup"), reset, t),
     ],
   };
 }
 
-function drawingToolSpecs(): readonly ToolSectionSpec[] {
+function drawingToolSpecs(t: Translator): readonly ToolSectionSpec[] {
   return [
     {
-      name: "Select",
-      description: "Configure how selection areas include existing elements.",
+      name: t("settings.controls.select"),
+      description: t("settings.controls.selectHelp"),
       tool: "select",
       controlDescriptions: {
-        "selection-area": "Choose a rectangular or freeform selection area.",
-        "selection-inclusion": "Choose whether selected elements must be enclosed or only touched.",
+        "selection-area": t("settings.controls.selectionAreaHelp"),
+        "selection-inclusion": t("settings.controls.selectionInclusionHelp"),
       },
       controlKeys: {
         "selection-area": "toolDefaults.select.area",
         "selection-inclusion": "toolDefaults.select.inclusion",
       },
     },
-    strokeSpec({
-      description: "Configure defaults for newly created pen strokes.",
-      name: "Pen",
-      pressure: true,
-      root: "pen",
-      tool: "draw",
-    }),
-    strokeSpec({
-      description: "Configure defaults for newly created freehand highlights.",
-      name: "Highlighter",
-      pressure: false,
-      root: "highlighter",
-      tool: "highlighter",
-    }),
-    strokeSpec({
-      description: "Configure defaults for newly created straight highlights.",
-      name: "Straight highlighter",
-      pressure: false,
-      root: "straightHighlighter",
-      tool: "straight-highlighter",
-    }),
+    strokeSpec(
+      {
+        description: t("settings.controls.penHelp"),
+        name: t("settings.controls.pen"),
+        pressure: true,
+        root: "pen",
+        tool: "draw",
+      },
+      t,
+    ),
+    strokeSpec(
+      {
+        description: t("settings.controls.highlighterHelp"),
+        name: t("settings.controls.highlighter"),
+        pressure: false,
+        root: "highlighter",
+        tool: "highlighter",
+      },
+      t,
+    ),
+    strokeSpec(
+      {
+        description: t("settings.controls.straightHighlighterHelp"),
+        name: t("settings.controls.straightHighlighter"),
+        pressure: false,
+        root: "straightHighlighter",
+        tool: "straight-highlighter",
+      },
+      t,
+    ),
     {
-      name: "Eraser",
-      description: "Configure the screen-relative radius used by the eraser.",
+      name: t("settings.controls.eraser"),
+      description: t("settings.controls.eraserHelp"),
       tool: "eraser",
       controlDescriptions: {
-        "eraser-radius": "Set the screen-relative radius used by the eraser.",
+        "eraser-radius": t("settings.controls.eraserRadiusHelp"),
       },
       controlKeys: { "eraser-radius": "toolDefaults.eraser.radius" },
     },
@@ -124,7 +148,7 @@ interface StrokeSpecOptions {
   readonly tool: "draw" | "highlighter" | "straight-highlighter";
 }
 
-function strokeSpec(options: StrokeSpecOptions): ToolSectionSpec {
+function strokeSpec(options: StrokeSpecOptions, t: Translator): ToolSectionSpec {
   const controlKeys: Record<string, SettingsControlKey> = {
     color: `toolDefaults.${options.root}.color`,
     "stroke-width": `toolDefaults.${options.root}.width`,
@@ -135,7 +159,7 @@ function strokeSpec(options: StrokeSpecOptions): ToolSectionSpec {
     controlKeys["hold-to-shape-enabled"] = "toolDefaults.pen.holdToShapeEnabled";
   }
   return {
-    controlDescriptions: STROKE_DESCRIPTIONS,
+    controlDescriptions: strokeDescriptions(t),
     controlKeys,
     description: options.description,
     name: options.name,
@@ -143,24 +167,24 @@ function strokeSpec(options: StrokeSpecOptions): ToolSectionSpec {
   };
 }
 
-function shapeToolSpecs(): readonly ToolSectionSpec[] {
-  const closedShapes = CLOSED_SHAPE_TOOLS.map((tool) => shapeSpec(tool));
+function shapeToolSpecs(t: Translator): readonly ToolSectionSpec[] {
+  const closedShapes = CLOSED_SHAPE_TOOLS.map((tool) => shapeSpec(tool, t));
   return [
-    shapeSpec("line"),
-    shapeSpec("arrow"),
+    shapeSpec("line", t),
+    shapeSpec("arrow", t),
     ...closedShapes,
-    shapeSpec("coordinate-system"),
-    shapeSpec("table"),
+    shapeSpec("coordinate-system", t),
+    shapeSpec("table", t),
   ];
 }
 
-function shapeSpec(tool: ClosedShapeToolV1 | OutlineOnlyToolV1): ToolSectionSpec {
-  const name = sentenceCaseLabel(tool);
+function shapeSpec(tool: ClosedShapeToolV1 | OutlineOnlyToolV1, t: Translator): ToolSectionSpec {
+  const name = createLabels([tool], t)[tool] ?? tool;
   return {
     name,
-    description: `Configure defaults for newly created ${name.toLowerCase()} elements.`,
+    description: t("settings.controls.shapeHelp", { shape: name }),
     tool,
-    controlDescriptions: OUTLINE_DESCRIPTIONS,
+    controlDescriptions: outlineDescriptions(t),
     controlKeys: shapeControlKeys(tool),
   };
 }

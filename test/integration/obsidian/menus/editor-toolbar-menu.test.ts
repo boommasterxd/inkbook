@@ -18,7 +18,8 @@ import {
   PRESSURE_SENSITIVITY_ICON_ID,
 } from "../../../../src/rendering/ui/icon-ids";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
-import { ARROW_NODE_STYLE_OPTIONS } from "../../../../src/obsidian/menus/tool-style-controls";
+import { arrowNodeStyleOptions } from "../../../../src/obsidian/menus/tool-style-controls";
+import { Localization } from "../../../../src/domain/localization";
 import { labelledByElements } from "../../../fixtures/accessibility";
 import {
   createEditorToolbarMenuOptions as options,
@@ -27,6 +28,8 @@ import {
   menuAction as action,
   menuTitles as titles,
 } from "../../../adapters/obsidian/editor-toolbar-menu";
+
+const ARROW_NODE_STYLE_OPTIONS = arrowNodeStyleOptions(new Localization().t);
 
 beforeEach(() => {
   installObsidianDomHelpers();

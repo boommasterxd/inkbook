@@ -1,9 +1,16 @@
+import { createEnglishLocalization, Localization } from "../../../../src/domain/localization";
 import { describe, expect, it } from "vitest";
-import { ONBOARDING_STEPS } from "../../../../src/obsidian/embeds/active-editor/onboarding-steps";
+import { createOnboardingSteps } from "../../../../src/obsidian/embeds/active-editor/onboarding-steps";
 import { handwritingDrawing } from "../../../../src/rendering/ui/handwriting-path";
 
 const onboardingCopy = [
-  ...ONBOARDING_STEPS.flatMap((step) => [step.title, ...step.lines]),
+  ...createOnboardingSteps(new Localization("de").t).flatMap((step) => [step.title, ...step.lines]),
+  new Localization("de").t("editor.tour.invite-first"),
+  new Localization("de").t("editor.tour.invite-second"),
+  ...createOnboardingSteps(createEnglishLocalization().t).flatMap((step) => [
+    step.title,
+    ...step.lines,
+  ]),
   "do you want to",
   "start a tour?",
 ];

@@ -41,6 +41,7 @@ function createWorkspaceLockedMenu(options: {
   const isCurrent = () =>
     attachment.root.isConnected && attachment.root.dataset.inkbookState === "locked";
   return new LockedEmbedMenu({
+    localization: host.localization,
     root: attachment.root,
     preview,
     factory: createOwnedMenuFactory({

@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 import { describe, expect, it, vi } from "vitest";
 
 import { InkbookFeedbackManager } from "../../../../src/obsidian/feedback";
@@ -186,5 +187,30 @@ describe("Inkbook feedback routing and cleanup", () => {
     await vi.waitFor(() => expect(root.getElementsByClassName("inkbook-feedback").length).toBe(1));
     manager.dispose();
     expect(root.getElementsByClassName("inkbook-feedback").length).toBe(0);
+  });
+});
+
+describe("feedback localization lifetime", () => {
+  it("updates mounted text and actions in place and releases the language listener", () => {
+    const root = new FakePresentationElement();
+    const localization = new Localization();
+    const manager = new InkbookFeedbackManager(undefined, localization);
+    const handle = manager.showInPresentation(root as unknown as HTMLElement, {
+      actions: [{ id: "retry-save", run: () => false }],
+      code: "changes-save-failed",
+    });
+    const title = root.getElementsByClassName("inkbook-feedback-title").item(0);
+    const surface = root.getElementsByClassName("inkbook-feedback").item(0);
+    const button = root.getElementsByTagName("button").item(0);
+    localization.setLanguage("de");
+    expect(title?.textContent).toBe("Änderungen konnten nicht gespeichert werden.");
+    expect(surface?.attributes.get("lang")).toBe("de");
+    expect(button?.attributes.get("aria-label")).toBe("Erneut speichern");
+    expect(root.getElementsByTagName("button").item(0)).toBe(button);
+    handle.close("immediate");
+    localization.setLanguage("en");
+    expect(title?.textContent).toBe("Änderungen konnten nicht gespeichert werden.");
+    expect(surface?.attributes.has("lang")).toBe(false);
+    manager.dispose();
   });
 });

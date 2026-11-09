@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Localization } from "../../../domain/localization";
 import type { AdaptivePanelLayout } from "./adaptive-panel-layout";
 import { menuDomWindow, setMenuSurfaceLabel } from "../menu-dom";
 import { playMenuMotion } from "../feedback/menu-motion";
@@ -8,6 +9,7 @@ import type {
 } from "./panel-page";
 
 interface PhoneSheetPagesOptions {
+  readonly localization?: Localization | undefined;
   readonly scroll: HTMLElement;
   readonly surface: HTMLElement;
   readonly layer: HTMLElement;
@@ -30,6 +32,8 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
   readonly #rootKind: string;
   readonly #rootLabel: string;
   #page: PhoneSheetPage | undefined;
+  readonly #localeUpdates: (() => void)[] = [];
+  #unsubscribeLabel: (() => void) | undefined;
   #pending: PhoneSheetPage | undefined;
   #rootFocus: HTMLElement | undefined;
   #rootScroll = 0;
@@ -39,6 +43,9 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
 
   public constructor(options: PhoneSheetPagesOptions) {
     this.#options = options;
+    options.lifecycle.registerLocaleUpdate?.(() =>
+      this.#localeUpdates.forEach((update) => update()),
+    );
     this.#root = menuDomWindow(options.surface.ownerDocument, "phone sheet pages").createFragment();
     this.#rootKind = options.surface.dataset.kind ?? "menu";
     this.#rootLabel =
@@ -58,10 +65,19 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
       return;
     }
     const { scroll } = this.#options;
-    const content = page.createContent(this.#options.lifecycle);
+    this.#localeUpdates.length = 0;
+    const content = page.createContent({
+      ...this.#options.lifecycle,
+      registerLocaleUpdate: (update) => this.#localeUpdates.push(update),
+    });
     this.#resetPageMotion();
     // Nested roots must unmount before the outer layout commit can detach their portals.
+    this.#unsubscribeLabel?.();
+    this.#unsubscribeLabel = undefined;
     this.#page?.dispose?.();
+    this.#unsubscribeLabel = page.subscribeLabel?.(() =>
+      this.#show(page.kind, page.readLabel?.() ?? page.label),
+    );
     this.#options.layout.mutate(() => {
       if (this.#page === undefined) {
         const active = this.ownerDocument.activeElement;
@@ -75,7 +91,7 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
       const body = scroll.createDiv({ cls: "inkbook-phone-sheet-page" });
       this.#createBack(body);
       body.append(content);
-      this.#show(page.kind, page.label);
+      this.#show(page.kind, page.readLabel?.() ?? page.label);
     }, this.#options.durationMs());
     const body = scroll.querySelector<HTMLElement>(".inkbook-phone-sheet-page");
     if (body === null) return;
@@ -106,11 +122,25 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     if (this.#closed || this.#page === undefined) return false;
     const { scroll } = this.#options;
     this.#resetPageMotion();
+    this.#unsubscribeLabel?.();
+    this.#unsubscribeLabel = undefined;
     this.#page.dispose?.();
+    this.#localeUpdates.length = 0;
     this.#options.layout.mutate(() => {
       this.#page = undefined;
       scroll.replaceChildren(this.#root);
-      this.#show(this.#rootKind, this.#rootLabel);
+      const t = this.#options.localization?.t;
+      const label =
+        t === undefined || this.#rootKind === "dialog"
+          ? this.#rootLabel
+          : t(
+              this.#rootKind === "style"
+                ? "editor.action.style"
+                : this.#rootKind === "background"
+                  ? "editor.action.background"
+                  : "editor.ui.menu",
+            );
+      this.#show(this.#rootKind, label);
     }, this.#options.durationMs());
     this.#options.observeContent(this.#options.rootContent);
     this.#options.refreshFeedback();
@@ -132,9 +162,12 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     this.#resetPageMotion();
     this.#pending?.dispose?.();
     this.#pending = undefined;
+    this.#unsubscribeLabel?.();
+    this.#unsubscribeLabel = undefined;
     this.#page?.dispose?.();
     this.#page = undefined;
     this.#root.replaceChildren();
+    this.#localeUpdates.length = 0;
   }
 
   #focus(target: HTMLElement | null | undefined): void {
@@ -145,12 +178,22 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     const header = body.createDiv({ cls: "inkbook-adaptive-panel-header" });
     const button = header.createEl("button", { cls: "inkbook-adaptive-panel-back" });
     button.type = "button";
-    button.setAttribute("aria-label", "Back to more options");
+    button.setAttribute(
+      "aria-label",
+      (this.#options.localization ?? createEnglishLocalization()).t("editor.ui.back-options"),
+    );
     this.#options.renderIcon(
       button.createSpan({ cls: "inkbook-adaptive-panel-back-icon" }),
       "arrow-left",
     );
-    button.createSpan({ text: "Back" });
+    const label = button.createSpan();
+    const update = () => {
+      const t = (this.#options.localization ?? createEnglishLocalization()).t;
+      label.textContent = t("editor.ui.back");
+      button.setAttribute("aria-label", t("editor.ui.back-options"));
+    };
+    update();
+    this.#localeUpdates.push(update);
     button.addEventListener("click", () => this.back());
   }
 

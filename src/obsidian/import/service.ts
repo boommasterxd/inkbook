@@ -99,6 +99,7 @@ export class ObsidianInkImportService {
               "This import history is unreadable or inconsistent. Its vault files were preserved.",
             ],
             unreadable: true,
+            issueDetails: [{ code: "historyUnreadable" }],
           });
         }
       }

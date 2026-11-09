@@ -1,111 +1,23 @@
+import {
+  setupImportDialogTests,
+  fixture,
+  preview,
+  journal,
+  result,
+  settle,
+  disclosure,
+} from "./ink-import-dialog-fixture";
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
-import { Keymap, type App } from "obsidian";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
-import type {
-  InkImportJournal,
-  InkImportPreview,
-  InkImportResult,
-} from "../../../../src/obsidian/import/types";
-import {
-  InkImportDialog,
-  type InkImportDialogOptions,
-} from "../../../../src/obsidian/settings/import/ink-import-dialog";
-import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import type { InkImportPreview } from "../../../../src/obsidian/import/types";
 import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
 import { dialogButton } from "../../../fixtures/obsidian/dialog";
-import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import { appliedImportFixture } from "../import/import-fixture";
 
-beforeEach(() => {
-  installObsidianDomHelpers();
-  document.body.replaceChildren();
-});
-afterEach(() => {
-  window.dispatchEvent(new Event("pagehide"));
-  document.body.replaceChildren();
-  vi.restoreAllMocks();
-});
-
-function preview(count = 1): InkImportPreview {
-  return {
-    id: "scan-1",
-    sources: Array.from({ length: count }, (_, index) => ({
-      path: `drawing-${index}.svg`,
-      hash: "hash",
-      targetPath: `drawing-${index}.inkbook.svg`,
-      legacyWriting: false,
-      references: [
-        {
-          notePath: "Note.md",
-          sourcePath: `drawing-${index}.svg`,
-          start: 0,
-          original: "Original writing block",
-        },
-      ],
-      warnings: [],
-    })),
-    notes: { "Note.md": "hash" },
-    warnings: ["Unsupported Ink block in Other.md was skipped."],
-    truncated: false,
-  };
-}
-
-function journal(): InkImportJournal {
-  return {
-    version: 1,
-    id: "run-1",
-    createdAt: "2026-10-29",
-    status: "complete",
-    sources: [],
-    notes: [],
-    issues: [],
-  };
-}
-
-function result(): InkImportResult {
-  return { journal: journal(), imported: 1, conflicts: 0, cancelled: false };
-}
-
-function fixture(signal?: AbortSignal, initialJournal?: InkImportJournal) {
-  const anchor = document.body.createEl("button", { text: "Open import" });
-  anchor.focus();
-  const service = {
-    scan: vi.fn<InkImportDialogOptions["service"]["scan"]>().mockResolvedValue(preview()),
-    apply: vi.fn<InkImportDialogOptions["service"]["apply"]>().mockResolvedValue(result()),
-    history: vi.fn<InkImportDialogOptions["service"]["history"]>().mockResolvedValue([journal()]),
-    undo: vi
-      .fn<InkImportDialogOptions["service"]["undo"]>()
-      .mockResolvedValue({ ...result(), journal: { ...journal(), status: "undone" } }),
-    cleanup: vi.fn<InkImportDialogOptions["service"]["cleanup"]>().mockResolvedValue(result()),
-  };
-  const app = { keymap: new Keymap(), workspace: { containerEl: document.body } } as App;
-  const dialog = new InkImportDialog(app, {
-    service,
-    signal,
-    initialJournal,
-    readMotion: () => "reduced",
-    workScheduler: () => workSchedulerFromFrames(window),
-  });
-  dialog.open();
-  return { dialog, service, anchor };
-}
-
-async function settle(status: string): Promise<void> {
-  await vi.waitFor(() =>
-    expect(document.querySelector('[role="status"]')?.textContent).toContain(status),
-  );
-}
-
-function disclosure(label: string): HTMLButtonElement {
-  const button = [...document.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")].find(
-    (element) => element.textContent?.startsWith(label),
-  );
-  if (button === undefined) throw new Error(`Missing disclosure: ${label}`);
-  return button;
-}
+setupImportDialogTests();
 
 it("requires a reviewed preview before writes and announces an accessible result", async () => {
   const { dialog, service, anchor } = fixture();
@@ -215,7 +127,7 @@ it("lazily reveals findings, omits unnecessary pagination and bounds large pages
   expect(panel.inert).toBe(false);
   expect(findings()).toHaveLength(25);
   expect(
-    dialog.contentEl.querySelector('button[aria-label="Next page: handwriting files"]'),
+    dialog.contentEl.querySelector('button[aria-label="Next page: Handwriting files"]'),
   ).toBeNull();
   smallFiles.click();
   expect(panel.hidden).toBe(true);
@@ -228,16 +140,16 @@ it("lazily reveals findings, omits unnecessary pagination and bounds large pages
   disclosure("Handwriting files (67)").click();
   expect(findings()).toHaveLength(25);
   expect(findings()[0]?.textContent).toContain("drawing-0.svg");
-  expect(dialogButton("Previous page: handwriting files").disabled).toBe(true);
-  dialogButton("Next page: handwriting files").click();
+  expect(dialogButton("Previous page: Handwriting files").disabled).toBe(true);
+  dialogButton("Next page: Handwriting files").click();
   expect(findings()).toHaveLength(25);
   expect(findings()[0]?.textContent).toContain("drawing-25.svg");
-  dialogButton("Next page: handwriting files").click();
+  dialogButton("Next page: Handwriting files").click();
   expect(findings()).toHaveLength(17);
   expect(findings()[16]?.textContent).toContain("drawing-66.svg");
-  expect(dialogButton("Next page: handwriting files").disabled).toBe(true);
-  expect(document.activeElement).toBe(dialogButton("Previous page: handwriting files"));
-  dialogButton("Previous page: handwriting files").click();
+  expect(dialogButton("Next page: Handwriting files").disabled).toBe(true);
+  expect(document.activeElement).toBe(dialogButton("Previous page: Handwriting files"));
+  dialogButton("Previous page: Handwriting files").click();
   expect(findings()[0]?.textContent).toContain("drawing-25.svg");
 });
 

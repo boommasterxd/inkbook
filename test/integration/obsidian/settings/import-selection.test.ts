@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
@@ -47,6 +48,7 @@ it("retains the full selection across bounded pages and updates shared note coun
   const changed = vi.fn();
   const disposers: Array<() => void> = [];
   const context = {
+    localization: new Localization(),
     mutate: (update: () => void) => update(),
     readMotion: () => "reduced" as const,
     own: (dispose: () => void) => disposers.push(dispose),
@@ -79,7 +81,7 @@ it("retains the full selection across bounded pages and updates shared note coun
   try {
     expect(selection.noteCount).toBe(1);
     expect(renderEntry).not.toHaveBeenCalled();
-    button("Files (1000)").click();
+    button("Files (1,000)").click();
     const all = container.querySelector<HTMLInputElement>(".inkbook-import-select-all input")!;
     expect(inputs()).toHaveLength(25);
     expect(renderEntry).toHaveBeenCalledTimes(25);
@@ -95,10 +97,10 @@ it("retains the full selection across bounded pages and updates shared note coun
     expect(create).not.toHaveBeenCalled();
     expect(createNamespaced).not.toHaveBeenCalled();
     expect(referencesRead).not.toHaveBeenCalled();
-    button("Next page: files").click();
+    button("Next page: Files").click();
     expect(inputs()).toHaveLength(25);
     expect(inputs().every((input) => input.checked)).toBe(true);
-    button("Previous page: files").click();
+    button("Previous page: Files").click();
     expect(inputs()[0]!.checked).toBe(false);
     all.click();
     expect(changed).toHaveBeenLastCalledWith(1000, 1);

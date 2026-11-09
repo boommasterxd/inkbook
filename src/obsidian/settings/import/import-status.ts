@@ -15,19 +15,19 @@ export function renderImportStatus(
 ): { stop: () => void } {
   const root = container.createDiv({ cls: "inkbook-import-progress" });
   if (operation === "scan" || operation === "import")
-    renderImportStep(root, operation === "scan" ? 1 : 3);
+    renderImportStep(root, operation === "scan" ? 1 : 3, context.localization);
   const graphic = scanIllustration(root);
   const heading = root.createEl("h3", { text: title });
   root.createEl("p", {
     cls: "inkbook-import-progress-description",
-    text: descriptions[operation],
+    text: context.localization.t(descriptions[operation]),
   });
   const safety = root.createEl("p", {
     cls: "inkbook-import-progress-safety",
     text:
       operation === "scan"
-        ? "Your files stay unchanged. Next, you choose what to import."
-        : "You can stop safely. Completed changes are recorded in import history.",
+        ? context.localization.t("import.scanSafety")
+        : context.localization.t("import.operationSafety"),
   });
   const ownerDocument = root.ownerDocument;
   let reduced = false;
@@ -78,21 +78,21 @@ export function renderImportStatus(
     stop: () => {
       stopped = true;
       finish();
-      heading.textContent = "Stopping safely…";
+      heading.textContent = context.localization.t("import.stopping");
       safety.textContent =
         operation === "scan"
-          ? "Stopping the scan. Your files are unchanged."
-          : "Finishing the current safe step. Your recovery files are kept.";
+          ? context.localization.t("import.scanStopping")
+          : context.localization.t("import.operationStopping");
     },
   };
 }
 
-const descriptions: Record<PendingImportOperation, string> = {
-  scan: "Checking supported Obsidian Ink handwriting linked from your notes.",
-  import: "Creating editable Inkbook copies and updating embeds.",
-  undo: "Restoring your Obsidian Ink embeds.",
-  cleanup: "Checking backups, originals and remaining references.",
-};
+const descriptions = {
+  scan: "import.scanDescription",
+  import: "import.importDescription",
+  undo: "import.undoProgressDescription",
+  cleanup: "import.cleanupProgressDescription",
+} as const;
 
 function scanIllustration(container: HTMLElement) {
   const namespace = "http://www.w3.org/2000/svg";

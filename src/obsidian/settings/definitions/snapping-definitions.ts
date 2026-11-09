@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Translator } from "../../../domain/localization";
 import type { ObserveMotion } from "../../runtime/effective-motion";
 import type { Setting, SettingDefinitionGroup, SettingDefinitionRender } from "obsidian";
 
@@ -10,6 +11,7 @@ import { nameSettingToggle } from "../settings-row";
 import { createSettingsWriteError, SettingsWriteFeedback } from "../settings-write-feedback";
 
 export interface SnappingGroupCallbacks {
+  readonly t?: Translator;
   readonly observeMotion?: ObserveMotion;
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly get: (key: SettingsControlKey) => unknown;
@@ -21,10 +23,11 @@ export interface SnappingGroupCallbacks {
 export function snappingGroup(
   callbacks: SnappingGroupCallbacks,
 ): SettingDefinitionGroup<SettingsControlKey> {
+  const t = callbacks.t ?? createEnglishLocalization().t;
   const dependentMotions = new Set<SettingsPanelMotion>();
   return {
     type: "group",
-    heading: "Snapping",
+    heading: t("settings.controls.snapping"),
     cls: "inkbook-snapping-group",
     items: [
       enabledDefinition(callbacks, dependentMotions),
@@ -32,31 +35,31 @@ export function snappingGroup(
         callbacks,
         dependentMotions,
         "snapping.angles",
-        "Angle snapping",
-        "Snap rotations, line, arrow, and straight-highlighter directions, and coordinate-system axes to their fixed angles.",
+        t("settings.controls.angleSnapping"),
+        t("settings.controls.angleSnappingHelp"),
       ),
       dependentDefinition(
         callbacks,
         dependentMotions,
         "snapping.bends",
-        "Bend snapping",
-        "Snap line and arrow curves to straight or symmetric bends.",
+        t("settings.controls.bendSnapping"),
+        t("settings.controls.bendSnappingHelp"),
       ),
       dependentDefinition(
         callbacks,
         dependentMotions,
         "snapping.connections",
-        "Connection snapping",
-        "Snap line and arrow endpoints to semantic anchors and other endpoints.",
+        t("settings.controls.connectionSnapping"),
+        t("settings.controls.connectionSnappingHelp"),
       ),
       dependentDefinition(
         callbacks,
         dependentMotions,
         "snapping.structures",
-        "Structure snapping",
-        "Snap table separators to their default and equally distributed positions.",
+        t("settings.controls.structureSnapping"),
+        t("settings.controls.structureSnappingHelp"),
       ),
-      resetAction("Reset group to defaults", callbacks.reset),
+      resetAction(t("settings.controls.resetGroup"), callbacks.reset, t),
     ],
   };
 }
@@ -65,14 +68,21 @@ function enabledDefinition(
   callbacks: SnappingGroupCallbacks,
   dependentMotions: ReadonlySet<SettingsPanelMotion>,
 ): SettingDefinitionRender {
+  const t = callbacks.t ?? createEnglishLocalization().t;
   return {
-    name: "Enable snapping",
-    desc: "Enable all configured snapping behavior.",
+    name: t("settings.controls.snappingEnabled"),
+    desc: t("settings.controls.snappingEnabledHelp"),
     render: (setting) => {
-      return renderSnappingToggle(setting, callbacks, "snapping.enabled", "Enable snapping", () => {
-        const enabled = callbacks.get("snapping.enabled") === true;
-        for (const motion of dependentMotions) motion.setExpanded(enabled);
-      });
+      return renderSnappingToggle(
+        setting,
+        callbacks,
+        "snapping.enabled",
+        t("settings.controls.snappingEnabled"),
+        () => {
+          const enabled = callbacks.get("snapping.enabled") === true;
+          for (const motion of dependentMotions) motion.setExpanded(enabled);
+        },
+      );
     },
   };
 }
@@ -120,7 +130,7 @@ function renderSnappingToggle(
   name: string,
   saved?: () => void,
 ): () => void {
-  const writes = new SettingsWriteFeedback();
+  const writes = new SettingsWriteFeedback(callbacks.t);
   const error = createSettingsWriteError(setting.settingEl, callbacks);
   setting.addToggle((toggle) => {
     nameSettingToggle(toggle.toggleEl, name);

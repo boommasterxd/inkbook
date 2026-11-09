@@ -17,6 +17,9 @@ export interface SettingsRowOptions {
 export function settingsGroupIdentity(
   definition: Pick<SettingDefinitionGroup, "cls" | "heading">,
 ): string {
+  if ("settingsIdentity" in definition && typeof definition.settingsIdentity === "string") {
+    return definition.settingsIdentity;
+  }
   return JSON.stringify([definition.cls ?? null, definition.heading ?? null]);
 }
 

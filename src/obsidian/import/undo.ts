@@ -1,20 +1,15 @@
+import { recordImportIssue, filterImportIssues, type ImportDiagnostic } from "./diagnostics";
 import { createVerified, type ImportJournalStore } from "./journal";
 import { refreshCleanupIssues } from "./cleanup-issues";
 import { applyImportPatches, reverseImportPatches, withImportedContexts } from "./patches";
 import { resolveInkReferences } from "./references";
 import type { InkImportNoteRecord, InkImportPorts } from "./types";
 
-function recordIssue(store: ImportJournalStore, issue: string): void {
-  if (!store.journal.issues.includes(issue)) store.journal.issues.push(issue);
+function recordIssue(store: ImportJournalStore, issue: string, diagnostic: ImportDiagnostic): void {
+  recordImportIssue(store.journal, issue, diagnostic);
 }
-
 function retainIssues(store: ImportJournalStore, keep: (issue: string) => boolean): void {
-  const issues = store.journal.issues;
-  let retained = 0;
-  for (const issue of issues) {
-    if (keep(issue)) issues[retained++] = issue;
-  }
-  issues.length = retained;
+  filterImportIssues(store.journal, keep);
 }
 
 function clearRestoredNoteIssues(store: ImportJournalStore): void {
@@ -52,7 +47,8 @@ async function restoreCleanedSources(
       blocked.add(source.path);
     }
   }
-  for (const path of blocked) recordIssue(store, `Original restoration conflict: ${path}`);
+  for (const path of blocked)
+    recordIssue(store, `Original restoration conflict: ${path}`, { code: "restoreConflict", path });
   const resolvedIssues = new Set(
     store.journal.sources
       .filter((source) => !blocked.has(source.path))
@@ -97,12 +93,14 @@ async function undoNote(options: {
     recordIssue(
       store,
       `${note.path}: Undo skipped embeds because an original file could not be safely restored. Check the original files and recovery backups.`,
+      { code: "undoBlockedOriginal", path: note.path },
     );
   }
   if (remaining.some((patch) => originalSources.get(patch.start) !== patch.sourcePath)) {
     recordIssue(
       store,
       `${note.path}: Undo skipped embeds because an original link now points to a different file. Check the original links before retrying.`,
+      { code: "undoChangedLink", path: note.path },
     );
   }
   const planned = eligible.map((patch) => ({ ...patch }));
@@ -112,6 +110,7 @@ async function undoNote(options: {
     recordIssue(
       store,
       `${note.path}: Undo skipped an imported embed that was changed, removed, or could not be uniquely identified with its surrounding text. Later edits were kept; review this note and its recovery backup.`,
+      { code: "undoChangedEmbed", path: note.path },
     );
   }
   const patchIndexes = changed.map((patch) =>
@@ -138,6 +137,7 @@ async function undoNote(options: {
     recordIssue(
       store,
       `${note.path}: Undo could not save because the note changed during restoration. Later edits were kept; review this note before retrying.`,
+      { code: "undoSaveConflict", path: note.path },
     );
     await store.save();
     return;
@@ -170,6 +170,7 @@ export async function undoInkImport(
       recordIssue(
         store,
         `${note.path}: Undo could not read or write this note or its recovery backup. Check that both are available before retrying.`,
+        { code: "undoReadFailure", path: note.path },
       );
       await store.save();
     }

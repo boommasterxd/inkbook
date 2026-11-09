@@ -163,6 +163,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     const mounted = createWorkspaceMountedPresentation(
       attachment,
       this.refreshRateProfiles.workScheduler(attachment.root.ownerDocument.defaultView),
+      this.#host.localization,
     );
     this.#mounted.set(key, mounted);
     this.#ownerWindows.observe(attachment.documentId, attachment.root.ownerDocument.defaultView);
@@ -220,6 +221,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         }
         const settings = this.#settings();
         await mountWorkspaceActiveScene({
+          localization: this.#host.localization,
           confirmEraseAll: this.#host.confirmEraseAll,
           attachment,
           backgroundSpacing: () => this.#settings().vault.pageDefaults.backgroundSpacing,
@@ -452,6 +454,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       () => {
         if (mounted.recovery === recovery) mounted.recovery = undefined;
       },
+      this.#host.localization,
     );
     mounted.recovery = recovery;
   }
@@ -461,6 +464,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   ): void {
     this.#feedback.closePresentation(mounted.attachment.root);
     showWorkspaceLoadRecovery({
+      localization: this.#host.localization,
       activate: () => this.activate(mounted.attachment),
       discard: () => {
         if (!this.#coordinator.dismissLoadError()) this.#coordinator.requestLockCurrent();

@@ -1,4 +1,5 @@
 import type { ActiveInkbookScene } from "../active-scene/active-scene";
+import type { Localization } from "../../../domain/localization";
 import type { PresentationAttachment } from "../presentation/presentation-port";
 import type { PresentationOperationFeedbackHandle } from "../presentation/presentation-operation-feedback";
 import { showLoadRecoveryPanel } from "./recovery-notice";
@@ -51,6 +52,7 @@ export function handleWorkspaceActivationFailure(
 }
 
 export function showWorkspaceLoadRecovery(options: {
+  readonly localization?: Localization | undefined;
   readonly activate: () => void;
   readonly discard: () => void;
   readonly isCurrent: () => boolean;
@@ -74,6 +76,7 @@ export function showWorkspaceLoadRecovery(options: {
       if (mounted.loadError === panel) mounted.loadError = undefined;
     },
     options.code,
+    options.localization,
   );
   mounted.loadError = panel;
 }

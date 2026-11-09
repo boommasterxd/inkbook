@@ -1,3 +1,6 @@
+import type { MessageKey } from "../../domain/localization";
+import { LocalizedActionMenu } from "./localized-action-menu";
+import { menuTranslator, type MenuLocalizationOptions } from "./localized-menu-text";
 import type { PhoneSheetHostPort } from "./panels/phone-sheet-host";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { Platform, type Keymap } from "obsidian";
@@ -16,7 +19,6 @@ import {
 } from "../../rendering/ui/icon-ids";
 import { AdaptivePanelSession, type AdaptivePanelContentLifecycle } from "./panels/adaptive-panel";
 import { backgroundIconId, createBackgroundMenuContent } from "./background-menu-content";
-import { setMenuItemTitle } from "./menu-dom";
 import { createStyleMenuContent } from "./style-menu-content";
 import type { FocusTargetPort, MenuFactoryPort, MenuPort } from "./menu-ports";
 
@@ -32,7 +34,7 @@ export interface EditorToolbarMenuState {
 
 export type EditorToolbarMenuHandlers = EditorMenuCallbacks;
 
-export interface EditorToolbarMenuOptions {
+export interface EditorToolbarMenuOptions extends MenuLocalizationOptions {
   readonly workScheduler: WorkScheduler;
   readonly anchor: HTMLElement;
   readonly canvasInputSurface: FocusTargetPort;
@@ -48,18 +50,18 @@ export interface EditorToolbarMenuOptions {
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
 }
 
-const SHAPES: readonly (readonly [ShapeId, string, "lines" | "shapes" | "structures"])[] = [
-  ["line", "Line", "lines"],
-  ["arrow", "Arrow", "lines"],
-  ["rectangle", "Rectangle", "shapes"],
-  ["ellipse", "Ellipse", "shapes"],
-  ["triangle", "Triangle", "shapes"],
-  ["star", "Star", "shapes"],
-  ["octagon", "Octagon", "shapes"],
-  ["parallelogram", "Parallelogram", "shapes"],
-  ["diamond", "Diamond", "shapes"],
-  ["coordinate-system", "Coordinate system", "structures"],
-  ["table", "Table", "structures"],
+const SHAPES: readonly (readonly [ShapeId, "lines" | "shapes" | "structures"])[] = [
+  ["line", "lines"],
+  ["arrow", "lines"],
+  ["rectangle", "shapes"],
+  ["ellipse", "shapes"],
+  ["triangle", "shapes"],
+  ["star", "shapes"],
+  ["octagon", "shapes"],
+  ["parallelogram", "shapes"],
+  ["diamond", "shapes"],
+  ["coordinate-system", "structures"],
+  ["table", "structures"],
 ];
 export class EditorToolbarMenuSession {
   #closed = false;
@@ -104,7 +106,14 @@ export class EditorToolbarMenuSession {
     if (id === "background" && navigation !== undefined) {
       navigation.push({
         kind: "background",
-        label: "Background",
+        label: menuTranslator(this.#options)("editor.action.background"),
+        readLabel: () => menuTranslator(this.#options)("editor.action.background"),
+        ...(this.#options.localization === undefined
+          ? {}
+          : {
+              subscribeLabel: (listener: () => void) =>
+                this.#options.localization!.subscribe(listener),
+            }),
         createContent: (lifecycle) => this.#createPanelContent("background", lifecycle),
       });
       return;
@@ -157,7 +166,10 @@ export class EditorToolbarMenuSession {
         ? {}
         : { createPhoneSheetHost: this.#options.createPhoneSheetHost }),
       kind: id,
-      label: id === "style" ? "Style" : "Background",
+      label: menuTranslator(this.#options)(
+        id === "style" ? "editor.action.style" : "editor.action.background",
+      ),
+      localization: this.#options.localization,
       ...(id === "background" ? { onBack: () => this.#navigate("overflow") } : {}),
       onClosed: () => {
         if (this.#panel !== panel) return;
@@ -180,6 +192,8 @@ export class EditorToolbarMenuSession {
     if (id === "style") {
       return createStyleMenuContent({
         controls: state.styleControls,
+        localization: this.#options.localization,
+        registerLocaleUpdate: lifecycle.registerLocaleUpdate,
         onChange: this.#options.handlers.onStyleChange,
         ownerDocument: this.#options.ownerDocument,
         renderIcon: this.#options.renderIcon,
@@ -187,6 +201,8 @@ export class EditorToolbarMenuSession {
     }
     return createBackgroundMenuContent({
       getState: () => this.#options.getState().background,
+      localization: this.#options.localization,
+      registerLocaleUpdate: lifecycle.registerLocaleUpdate,
       initialState: state.background,
       mutateLayout: (update) => lifecycle.mutateLayout(update),
       onSpacingChange: this.#options.handlers.onBackgroundSpacingChange,
@@ -213,13 +229,14 @@ export function populateToolbarActionMenu(
   options: EditorToolbarMenuOptions,
   navigate: (id: EditorToolbarMenuId) => void,
 ): void {
+  const actions = new LocalizedActionMenu(menu, options.ownerDocument, options.localization);
   const state = options.getState();
-  if (id === "overflow") populateOverflow(menu, state, options, navigate);
-  else populateShapes(menu, state, options);
+  if (id === "overflow") populateOverflow(actions, state, options, navigate);
+  else populateShapes(actions, state, options);
 }
 
 function populateOverflow(
-  menu: MenuPort,
+  menu: LocalizedActionMenu,
   state: EditorToolbarMenuState,
   options: EditorToolbarMenuOptions,
   navigate: (id: EditorToolbarMenuId) => void,
@@ -227,8 +244,7 @@ function populateOverflow(
   const handlers = options.handlers;
   addAction(
     menu,
-    options.ownerDocument,
-    "Background",
+    "editor.action.background",
     backgroundIconId(state.background.type),
     () => navigate("background"),
     { keepOpen: Platform.isPhone && menu.getPhoneNavigation !== undefined },
@@ -237,16 +253,14 @@ function populateOverflow(
     menu.addSeparator();
     addAction(
       menu,
-      options.ownerDocument,
-      "Bring forward",
+      "editor.action.bring-forward",
       "arrow-up",
       () => handlers.onOverflowAction("bring-forward"),
       { disabled: !state.overflow.arrange["bring-forward"] },
     );
     addAction(
       menu,
-      options.ownerDocument,
-      "Send backward",
+      "editor.action.send-backward",
       "arrow-down",
       () => handlers.onOverflowAction("send-backward"),
       {
@@ -255,8 +269,7 @@ function populateOverflow(
     );
     addAction(
       menu,
-      options.ownerDocument,
-      "Bring to front",
+      "editor.action.bring-to-front",
       "chevrons-up",
       () => handlers.onOverflowAction("bring-to-front"),
       {
@@ -265,8 +278,7 @@ function populateOverflow(
     );
     addAction(
       menu,
-      options.ownerDocument,
-      "Send to back",
+      "editor.action.send-to-back",
       "chevrons-down",
       () => handlers.onOverflowAction("send-to-back"),
       {
@@ -275,7 +287,7 @@ function populateOverflow(
     );
   }
   menu.addSeparator();
-  addAction(menu, options.ownerDocument, "Copy embed", "copy", () =>
+  addAction(menu, "editor.action.copy-embed", "copy", () =>
     handlers.onOverflowAction("copy-embed"),
   );
   menu.addSeparator();
@@ -283,8 +295,7 @@ function populateOverflow(
   menu.addSeparator();
   addAction(
     menu,
-    options.ownerDocument,
-    "Erase all",
+    "editor.action.erase-all",
     state.overflow.canEraseAll ? CAUTION_ERASER_ICON_ID : "eraser",
     () => afterMenuHandoff(options.ownerWindow, () => handlers.onOverflowAction("erase-all")),
     {
@@ -294,19 +305,21 @@ function populateOverflow(
   );
   addAction(
     menu,
-    options.ownerDocument,
-    "Delete embed",
+    "editor.action.delete-embed",
     "trash-2",
     () => afterMenuHandoff(options.ownerWindow, () => handlers.onOverflowAction("delete-embed")),
     { warning: true },
   );
 }
 
-function addSettingsActions(menu: MenuPort, options: EditorToolbarMenuOptions): void {
-  const add = (label: string, icon: string, open: EditorMenuCallbacks["onOpenSettings"]): void => {
+function addSettingsActions(menu: LocalizedActionMenu, options: EditorToolbarMenuOptions): void {
+  const add = (
+    label: MessageKey,
+    icon: string,
+    open: EditorMenuCallbacks["onOpenSettings"],
+  ): void => {
     addAction(
       menu,
-      options.ownerDocument,
       label,
       icon,
       () => {
@@ -317,11 +330,11 @@ function addSettingsActions(menu: MenuPort, options: EditorToolbarMenuOptions): 
       { keepOpen: Platform.isPhone && menu.getPhoneNavigation !== undefined },
     );
   };
-  add("Settings", "settings", options.handlers.onOpenSettings);
-  add("Keyboard shortcuts", "keyboard", options.handlers.onOpenShortcuts);
+  add("editor.action.settings", "settings", options.handlers.onOpenSettings);
+  add("editor.action.shortcuts", "keyboard", options.handlers.onOpenShortcuts);
   const openTour = options.handlers.onOpenTour;
   if (openTour !== undefined)
-    addAction(menu, options.ownerDocument, "Quick tour", "circle-help", () =>
+    addAction(menu, "editor.action.tour", "circle-help", () =>
       afterMenuHandoff(options.ownerWindow, openTour),
     );
 }
@@ -332,18 +345,17 @@ function afterMenuHandoff(ownerWindow: Window, open: () => void): void {
 }
 
 function populateShapes(
-  menu: MenuPort,
+  menu: LocalizedActionMenu,
   state: EditorToolbarMenuState,
   options: EditorToolbarMenuOptions,
 ): void {
-  let group: (typeof SHAPES)[number][2] | undefined;
-  for (const [shape, title, nextGroup] of SHAPES) {
+  let group: (typeof SHAPES)[number][1] | undefined;
+  for (const [shape, nextGroup] of SHAPES) {
     if (group !== undefined && nextGroup !== group) menu.addSeparator();
     group = nextGroup;
     addAction(
       menu,
-      options.ownerDocument,
-      title,
+      `editor.shape.${shape}`,
       activeShapeIconId(shape, state.shapeIcon),
       () => options.handlers.onShapeChange(shape),
       { checked: state.selectedShape === shape },
@@ -352,9 +364,8 @@ function populateShapes(
 }
 
 function addAction(
-  menu: MenuPort,
-  ownerDocument: Document,
-  title: string,
+  menu: LocalizedActionMenu,
+  title: MessageKey,
   icon: string,
   onClick: () => void,
   state: {
@@ -365,13 +376,16 @@ function addAction(
     readonly keepOpen?: boolean;
   } = {},
 ): void {
-  menu.addItem((item) => {
-    setMenuItemTitle(item, ownerDocument, title, state.caution === true && state.disabled !== true);
-    item.setIcon(icon);
-    if (state.checked !== undefined) item.setChecked?.(state.checked);
-    if (state.disabled === true) item.setDisabled(true);
-    if (state.warning === true) item.setWarning(true);
-    if (state.keepOpen === true) item.setKeepOpen?.(true);
-    if (state.disabled !== true) item.onClick(onClick);
-  });
+  menu.addItem(
+    title,
+    (item) => {
+      item.setIcon(icon);
+      if (state.checked !== undefined) item.setChecked?.(state.checked);
+      if (state.disabled === true) item.setDisabled(true);
+      if (state.warning === true) item.setWarning(true);
+      if (state.keepOpen === true) item.setKeepOpen?.(true);
+      if (state.disabled !== true) item.onClick(onClick);
+    },
+    state.caution === true && state.disabled !== true,
+  );
 }

@@ -40,12 +40,15 @@ describe("Obsidian copied-embed dialog", () => {
         { show: vi.fn() },
         signal,
         undefined,
-        validationScheduling,
+        { ...validationScheduling, localization: test.settings.localization },
       ).paste(pasteRequest(test.editor));
 
-      const readMotion = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].readMotion;
-      const workScheduler = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].workScheduler;
-      const observeMotion = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].observeMotion;
+      expect(chooseInkbookAction).toHaveBeenCalledOnce();
+      const [app, options] = vi.mocked(chooseInkbookAction).mock.calls[0]!;
+      const { readMotion, workScheduler, observeMotion } = options;
+      expect(app).toBe(test.app);
+      expect(options.signal).toBe(signal);
+      expect(options.localization).toBe(test.settings.localization);
       expect(readMotion).toBeTypeOf("function");
       expect(observeMotion).toBeTypeOf("function");
       const onMotion = vi.fn();
@@ -58,26 +61,36 @@ describe("Obsidian copied-embed dialog", () => {
       expect(readMotion?.()).toBe("full");
       expect(onMotion).toHaveBeenCalledOnce();
       expect(workScheduler).toBeTypeOf("function");
-      expect(chooseInkbookAction).toHaveBeenCalledWith(test.app, {
-        signal,
-        readMotion,
-        observeMotion,
-        workScheduler,
-        title: "Paste Inkbook embed",
-        description: "Choose how this drawing should be inserted.",
-        actions: [
-          {
-            value: "reference",
-            label: "Insert reference",
-            description: "Edits appear in every embed that uses this file.",
-          },
-          {
-            value: "duplicate",
-            label: "Create copy",
-            description: "Create an independent SVG copy.",
-          },
-        ],
-      });
+      expect(resolveDialogText(options.title)).toBe("Paste Inkbook embed");
+      expect(resolveDialogText(options.description)).toBe(
+        "Choose how this drawing should be inserted.",
+      );
+      expect(
+        options.actions.map((action) => ({
+          value: action.value,
+          label: resolveDialogText(action.label),
+          description: resolveDialogText(action.description),
+        })),
+      ).toEqual([
+        {
+          value: "reference",
+          label: "Insert reference",
+          description: "Edits appear in every embed that uses this file.",
+        },
+        {
+          value: "duplicate",
+          label: "Create copy",
+          description: "Create an independent SVG copy.",
+        },
+      ]);
+      if (choice === "duplicate") {
+        test.settings.localization.setLanguage("de");
+        expect(resolveDialogText(options.title)).toBe("Inkbook-Einbettung einfügen");
+        expect(options.actions.map((action) => resolveDialogText(action.label))).toEqual([
+          "Verweis einfügen",
+          "Kopie erstellen",
+        ]);
+      }
       expect(result).toEqual(
         choice === null ? { kind: "cancelled" } : { kind: "inserted", mode: choice },
       );
@@ -88,6 +101,10 @@ describe("Obsidian copied-embed dialog", () => {
     },
   );
 });
+
+function resolveDialogText(value: string | (() => string) | undefined): string | undefined {
+  return typeof value === "function" ? value() : value;
+}
 
 describe("Obsidian copied-embed composition", () => {
   it("validates through the bounded fallback and reads back a new Vault file before insertion", async () => {

@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "./warnings";
 import { pressureRadius } from "../../../domain/geometry/pressure/pressure-radius";
 import type { StrokeStyleV1 } from "../../../domain/schema/types";
 import { PEN_WIDTHS } from "../../../domain/settings/types";
@@ -27,7 +28,7 @@ interface RemappedSourcePressure<T extends PressurePoint> {
 export function* remapSourcePressurePointsSteps<T extends PressurePoint>(
   points: readonly T[],
   style: SourceRecord,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
 ): Generator<void, RemappedSourcePressure<T>> {
   const thinning = optionalNumber(style.thinning, 0.5, "Thinning");
   if (style.brush === "highlighter" || thinning === 0) return { points };
@@ -35,7 +36,7 @@ export function* remapSourcePressurePointsSteps<T extends PressurePoint>(
   const range = yield* diameterRangeSteps(points, profile);
   const width = nativeWidth(range);
   if (clippingError(range, width) > Number.EPSILON * Math.max(1, range.maximum) * 16) {
-    warnings.add("Source pressure widths exceeded Inkbook's native pen range and were clipped.");
+    warnings.add("pressureClipped");
   }
   const remapped: T[] = [];
   for (const point of points) {

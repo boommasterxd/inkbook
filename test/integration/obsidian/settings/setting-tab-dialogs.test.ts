@@ -55,14 +55,12 @@ it.each([false, true])(
     vi.mocked(confirmInkbookAction).mockResolvedValue(confirmed);
     harness.activate();
     await vi.waitFor(() => expect(confirmInkbookAction).toHaveBeenCalledOnce());
-    expect(confirmInkbookAction).toHaveBeenCalledWith(
-      {},
-      expect.objectContaining({
-        title: "Create custom folder?",
-        description: "Create the vault folder “Drawings”?",
-        confirmLabel: "Create folder",
-      }),
-    );
+    const options = vi.mocked(confirmInkbookAction).mock.calls[0]?.[1];
+    const text = (value: string | (() => string) | undefined) =>
+      typeof value === "function" ? value() : value;
+    expect(text(options?.title)).toBe("Create custom folder?");
+    expect(text(options?.description)).toBe("Create the vault folder “Drawings”?");
+    expect(text(options?.confirmLabel)).toBe("Create folder");
     expect(harness.createFolder).toHaveBeenCalledTimes(confirmed ? 1 : 0);
     if (confirmed) expect(harness.createFolder).toHaveBeenCalledWith("Drawings");
   },

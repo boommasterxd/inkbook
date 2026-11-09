@@ -1,3 +1,5 @@
+import type { ImportHistoryState } from "../../../../src/obsidian/settings/import/import-history";
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
@@ -37,7 +39,7 @@ function pendingHistory() {
   return { promise, finish };
 }
 
-function fixture(signal?: AbortSignal) {
+function fixture(signal?: AbortSignal, state?: ImportHistoryState, language: "en" | "de" = "en") {
   const listeners = new Set<() => void>();
   const access = {
     history: vi.fn<InkImportSettingsAccess["history"]>().mockResolvedValue([]),
@@ -47,10 +49,21 @@ function fixture(signal?: AbortSignal) {
       return () => listeners.delete(listener);
     },
   };
-  const group = importSettingsGroup({ access, signal, readMotion: () => "reduced" });
-  const rendered = renderDefinition(requiredRender(renders(group), "Import history"));
+  const group = importSettingsGroup({
+    localization: new Localization(language),
+    ...(state === undefined ? {} : { state }),
+    access,
+    signal,
+    readMotion: () => "reduced",
+  });
+  const rendered = renderDefinition(
+    requiredRender(renders(group), language === "de" ? "Importverlauf" : "Import history"),
+  );
   document.body.append(rendered.container);
-  const trigger = button(rendered.container, "Import history");
+  const trigger = button(
+    rendered.container,
+    language === "de" ? "Importverlauf" : "Import history",
+  );
   const panel = document.getElementById(trigger.getAttribute("aria-controls")!);
   if (panel === null) throw new Error("Missing history disclosure panel");
   return {
@@ -120,19 +133,19 @@ it("bounds 1000 imports and retains the selected page and focus after returning 
   const history = Array.from({ length: 1000 }, (_, index) => journal(index));
   access.history.mockResolvedValue(history);
   trigger.click();
-  await settled(container, "1000 saved imports.");
+  await settled(container, "1,000 saved imports.");
   expect(rows(container)).toHaveLength(25);
   expect(rows(container)[0]?.textContent).toContain("Import complete · 0 files");
   expect(rows(container)[0]?.textContent).toContain("2026");
   expect(rows(container)[0]?.textContent).not.toContain("run-0");
-  const next = button(container, "Next page: saved imports");
-  const previous = button(container, "Previous page: saved imports");
+  const next = button(container, "Next page: Saved imports");
+  const previous = button(container, "Previous page: Saved imports");
   expect(previous.disabled).toBe(true);
   for (let page = 1; page < 40; page += 1) {
     next.click();
     expect(rows(container)).toHaveLength(25);
   }
-  expect(container.textContent).toContain("976–1000 of 1000");
+  expect(container.textContent).toContain("976–1,000 of 1,000");
   expect(next.disabled).toBe(true);
   expect(document.activeElement).toBe(previous);
   const last = rows(container)[24]!;
@@ -152,12 +165,12 @@ it("bounds 1000 imports and retains the selected page and focus after returning 
   updated[999]!.status = "conflict";
   refresh.finish(updated);
   await settled(container, "Needs review");
-  expect(container.textContent).toContain("976–1000 of 1000");
+  expect(container.textContent).toContain("976–1,000 of 1,000");
   expect(rows(container)).toHaveLength(25);
   expect(rows(container)[24]?.textContent).toContain("Needs review · 0 files");
   expect(document.activeElement).toBe(rows(container)[24]);
-  button(container, "Previous page: saved imports").click();
-  expect(container.textContent).toContain("951–975 of 1000");
+  button(container, "Previous page: Saved imports").click();
+  expect(container.textContent).toContain("951–975 of 1,000");
   expect(access.history).toHaveBeenCalledTimes(2);
 });
 
@@ -252,4 +265,26 @@ it("releases pending requests and subscriptions on disposal, owner abort and pag
     cleanup();
     container.remove();
   }
+});
+
+it("restores the expanded history and page after locale redisplay without rereading journals", async () => {
+  const state: ImportHistoryState = {};
+  const first = fixture(undefined, state);
+  first.access.history.mockResolvedValueOnce(
+    Array.from({ length: 60 }, (_, index) => journal(index)),
+  );
+  first.trigger.click();
+  await settled(first.container, "60 saved imports.");
+  button(first.container, "Next page: Saved imports").click();
+  expect(first.container.textContent).toContain("26–50 of 60");
+  first.cleanup();
+  first.container.remove();
+  const second = fixture(undefined, state, "de");
+  await settled(second.container, "60 gespeicherte Importe.");
+  expect(second.trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(second.container.textContent).toContain("26–50 von 60");
+  expect(second.access.history).not.toHaveBeenCalled();
+  second.changed();
+  await settled(second.container, "Keine gespeicherten Importe.");
+  expect(second.access.history).toHaveBeenCalledTimes(1);
 });

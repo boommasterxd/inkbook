@@ -1,3 +1,4 @@
+import type { Localization } from "../../../domain/localization";
 import { setIcon } from "obsidian";
 import { isReducedMotion, type MotionPreference } from "../../../rendering/motion/transitions";
 import type { ObserveMotion } from "../../runtime/effective-motion";
@@ -5,7 +6,16 @@ import { createSettingsDisclosure } from "../settings-disclosure";
 import { SettingsPanelMotion } from "../settings-panel-motion";
 import { renderPagedItems } from "./paged-findings";
 
+export interface ImportViewState {
+  selection?: Set<string>;
+  example?: number;
+  readonly findings: Map<string, { expanded: boolean; page?: number }>;
+}
+
 export interface ImportViewContext {
+  readonly state?: ImportViewState;
+  readonly path?: string;
+  readonly localization: Localization;
   readonly mutate: (update: () => void) => void;
   readonly readMotion: () => MotionPreference;
   readonly observeMotion?: ObserveMotion;
@@ -22,7 +32,11 @@ export function renderImportIcon(container: HTMLElement, icon: string, cls: stri
 export function renderImportFile(
   row: HTMLElement,
   source: { readonly path: string; readonly targetPath: string },
-  selection: { readonly selected: boolean; readonly change: (selected: boolean) => void },
+  selection: {
+    readonly selected: boolean;
+    readonly change: (selected: boolean) => void;
+    readonly localization: Localization;
+  },
 ): void {
   row.classList.add("inkbook-import-file-row");
   const label = row.createEl("label", { cls: "inkbook-import-file-choice" });
@@ -30,7 +44,10 @@ export function renderImportFile(
   input.type = "checkbox";
   input.checked = selection.selected;
   input.dataset.inkbookImportSource = source.path;
-  input.setAttribute("aria-label", `Import ${source.path}`);
+  input.setAttribute(
+    "aria-label",
+    selection.localization.t("import.fileAria", { path: source.path }),
+  );
   input.addEventListener("change", () => selection.change(input.checked));
   const copy = label.createDiv({ cls: "inkbook-import-file-copy" });
   copy.createEl("strong", {
@@ -39,7 +56,10 @@ export function renderImportFile(
   });
   copy.createSpan({ text: source.path, cls: "inkbook-import-file-path" });
   const target = copy.createDiv({ cls: "inkbook-import-file-target" });
-  target.createSpan({ text: "Inkbook copy", cls: "inkbook-import-file-target-label" });
+  target.createSpan({
+    text: selection.localization.t("import.copy"),
+    cls: "inkbook-import-file-target-label",
+  });
   target.createSpan({ text: source.targetPath, cls: "inkbook-import-file-path" });
 }
 
@@ -71,6 +91,7 @@ export function renderImportFindings(
   container: HTMLElement,
   options: {
     readonly label: string;
+    readonly id?: string;
     readonly count: number;
     readonly icon: string;
     readonly entry: (row: HTMLElement, index: number, pageContext: ImportViewContext) => void;
@@ -79,11 +100,17 @@ export function renderImportFindings(
   context: ImportViewContext,
 ): void {
   const { label, count, icon, entry } = options;
+  const stateKey = `${context.path ?? ""}/${options.id ?? icon}`;
+  const state = context.state?.findings.get(stateKey) ?? { expanded: false };
+  context.state?.findings.set(stateKey, state);
   if (count === 0) return;
   const disclosure = createSettingsDisclosure(container, {
-    title: `${label} (${count})`,
-    description: `Review ${label.toLowerCase()}.`,
-    expanded: false,
+    title: context.localization.t("import.findingsCount", {
+      label,
+      count: context.localization.number(count),
+    }),
+    description: context.localization.t("import.findingsReview", { label }),
+    expanded: state.expanded,
     panelId: `inkbook-import-${container.ownerDocument.defaultView!.crypto.randomUUID()}`,
     sectionClass: "inkbook-import-disclosure",
     contentClass: "inkbook-import-disclosure-content",
@@ -104,6 +131,7 @@ export function renderImportFindings(
   const pageDisposers: Array<() => void> = [];
   const pageContext: ImportViewContext = {
     ...context,
+    path: stateKey,
     own: (dispose) => pageDisposers.push(dispose),
   };
   const releasePage = (): void => {
@@ -116,6 +144,8 @@ export function renderImportFindings(
         options.before?.(disclosure.content);
         renderPagedItems(disclosure.content, {
           label,
+          localization: context.localization,
+          state,
           count,
           entry: (row, index) => entry(row, index, pageContext),
           releasePage,
@@ -123,6 +153,7 @@ export function renderImportFindings(
         });
         populated = true;
       }
+      state.expanded = expanded;
       disclosure.trigger.setAttribute("aria-expanded", String(expanded));
       panelMotion.setExpanded(expanded);
       disclosure.setExpanded(
@@ -136,6 +167,10 @@ export function renderImportFindings(
     });
   };
   disclosure.trigger.addEventListener("click", toggle);
+  if (state.expanded) {
+    disclosure.trigger.setAttribute("aria-expanded", "false");
+    toggle();
+  }
   context.own(() => {
     releasePage();
     disclosure.trigger.removeEventListener("click", toggle);

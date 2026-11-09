@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Translator } from "../../../domain/localization";
 import type { SettingDefinitionRender } from "obsidian";
 
 import {
@@ -9,36 +10,37 @@ import { renderSettingsControlContent } from "../settings-control-content";
 import { createSettingsVisualControlRow } from "../settings-row";
 import type { NativeControlFeedbackOptions } from "../../menus/feedback/native-control-feedback";
 
-const DESCRIPTION =
-  "Prepare existing strokes within this many screen pixels above and below the visible area. " +
-  "Higher values can reduce visible loading while scrolling, but use more memory and preparation work. " +
-  "Lower values preload less. Large jumps can still require loading. " +
-  "Saved only for this device and vault.";
-
 interface ScrollPreloadValues extends NativeControlFeedbackOptions {
+  readonly t?: Translator;
   readonly get: (key: SettingsControlKey) => unknown;
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
 }
 
 export function scrollPreloadDefinition(values: ScrollPreloadValues): SettingDefinitionRender {
+  const t = values.t ?? createEnglishLocalization().t;
   return {
-    name: "Scroll preload margin",
-    desc: DESCRIPTION,
+    name: t("settings.controls.scrollPreload"),
+    desc: t("settings.controls.scrollPreloadHelp"),
     render: (setting) => {
-      const content = createSettingsVisualControlRow(setting, "Scroll preload margin", DESCRIPTION);
+      const content = createSettingsVisualControlRow(
+        setting,
+        t("settings.controls.scrollPreload"),
+        t("settings.controls.scrollPreloadHelp"),
+      );
       return renderSettingsControlContent(content, {
+        ...(values.t === undefined ? {} : { t: values.t }),
         controls: () => [
           {
             id: "scroll-preload-margin",
             kind: "number",
-            label: "Screen pixels",
+            label: t("settings.controls.screenPixels"),
             min: MIN_SCROLL_PRELOAD_MARGIN_PX,
             max: MAX_SCROLL_PRELOAD_MARGIN_PX,
             step: 1,
             value: Number(values.get("device.scrollPreloadMarginPx")),
           },
         ],
-        descriptions: { "scroll-preload-margin": "Choose a whole number from 100 to 800 pixels." },
+        descriptions: { "scroll-preload-margin": t("settings.controls.scrollPixelsHelp") },
         idPrefix: "inkbook-setting-scroll-preload",
         onChange: (_controlId, value) => values.set("device.scrollPreloadMarginPx", value),
         ownerDocument: setting.settingEl.ownerDocument,

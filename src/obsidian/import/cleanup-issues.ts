@@ -1,3 +1,4 @@
+import { filterImportIssues, recordImportIssue, type ImportDiagnostic } from "./diagnostics";
 import type { InkImportJournal } from "./types";
 
 const CLEANUP_ISSUE_PREFIXES = [
@@ -10,11 +11,11 @@ const CLEANUP_ISSUE_PREFIXES = [
 export function refreshCleanupIssues(
   journal: InkImportJournal,
   checked: ReadonlyMap<string, string | undefined> = new Map(),
+  details: ReadonlyMap<string, ImportDiagnostic> = new Map(),
 ): void {
   const sources = new Map(journal.sources.map((source) => [source.path, source.status]));
   const retained = new Set<string>();
-  let count = 0;
-  for (const issue of journal.issues) {
+  filterImportIssues(journal, (issue) => {
     const prefix = CLEANUP_ISSUE_PREFIXES.find((candidate) => issue.startsWith(candidate));
     const path = prefix === undefined ? undefined : issue.slice(prefix.length);
     if (path !== undefined && sources.has(path)) {
@@ -24,13 +25,15 @@ export function refreshCleanupIssues(
         checked.has(path) ||
         retained.has(issue)
       )
-        continue;
+        return false;
       retained.add(issue);
     }
-    journal.issues[count++] = issue;
-  }
-  journal.issues.length = count;
-  for (const issue of checked.values()) {
-    if (issue !== undefined) journal.issues.push(issue);
+    return true;
+  });
+  for (const [path, issue] of checked) {
+    if (issue === undefined) continue;
+    const diagnostic = details.get(path);
+    if (diagnostic === undefined) journal.issues.push(issue);
+    else recordImportIssue(journal, issue, diagnostic);
   }
 }

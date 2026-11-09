@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "./warnings";
 import type {
   BackgroundV1,
   ColorV1,
@@ -29,24 +30,24 @@ const PALETTE: Readonly<Record<string, string>> = {
 export function nearest<T extends number>(
   value: number,
   presets: readonly T[],
-  warnings: Set<string>,
-  label: string,
+  warnings: Set<ObsidianInkWarningCode>,
+  label: "strokeWidth" | "outlineWidth" | "backgroundSpacing",
 ): T {
   if (value <= 0) invalid(`${label} must be positive.`);
   let result = presets[0]!;
   for (const preset of presets) {
     if (Math.abs(preset - value) < Math.abs(result - value)) result = preset;
   }
-  if (result !== value) warnings.add(`${label} was mapped to the nearest Inkbook preset.`);
+  if (result !== value) warnings.add(`${label}Preset`);
   return result;
 }
 
-export function sourceColor(value: unknown, warnings: Set<string>): ColorV1 {
+export function sourceColor(value: unknown, warnings: Set<ObsidianInkWarningCode>): ColorV1 {
   const color = text(value, "Color");
   if (color === "currentColor" || color === "var(--text-normal)") return { type: "theme-text" };
   const variable = /^var\(--color-([a-z]+)\)$/u.exec(color);
   if (variable !== null && PALETTE[variable[1]!] !== undefined) {
-    warnings.add("Theme palette colors were frozen to Obsidian's default palette.");
+    warnings.add("paletteFrozen");
     return sourceColor(PALETTE[variable[1]!]!, warnings);
   }
   const hex = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/iu;
@@ -57,7 +58,7 @@ export function sourceColor(value: unknown, warnings: Set<string>): ColorV1 {
   return { type: "rgba", value: `#${digits}` };
 }
 
-function cssColor(color: string, warnings: Set<string>): ColorV1 {
+function cssColor(color: string, warnings: Set<ObsidianInkWarningCode>): ColorV1 {
   const names: Readonly<Record<string, string>> = {
     black: "#000000",
     white: "#FFFFFF",
@@ -80,23 +81,26 @@ function cssColor(color: string, warnings: Set<string>): ColorV1 {
 
 export function strokeStyle(
   style: SourceRecord,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
   targetWidth?: StrokeStyleV1["width"],
 ): StrokeStyleV1 {
   const thinning = optionalNumber(style.thinning, 0.5, "Thinning");
-  warnings.add("Stroke outlines, smoothing and pressure response use Inkbook's native brush.");
+  warnings.add("nativeBrush");
   return {
     color: sourceColor(style.color, warnings),
     width:
       targetWidth ??
-      nearest(finite(style.size, "Stroke width"), PEN_WIDTHS, warnings, "Stroke width"),
+      nearest(finite(style.size, "Stroke width"), PEN_WIDTHS, warnings, "strokeWidth"),
     opacity: unit(style.opacity, 1),
     pressureEnabled: style.brush !== "highlighter" && thinning !== 0,
     smoothing: 0.5,
   };
 }
 
-export function outlineStyle(style: SourceRecord, warnings: Set<string>): OutlineStyleV1 {
+export function outlineStyle(
+  style: SourceRecord,
+  warnings: Set<ObsidianInkWarningCode>,
+): OutlineStyleV1 {
   const dash = style.dash ?? "solid";
   if (dash !== "solid" && dash !== "dashed" && dash !== "dotted")
     unsupported("Unsupported shape dash.");
@@ -106,28 +110,30 @@ export function outlineStyle(style: SourceRecord, warnings: Set<string>): Outlin
       finite(style.strokeWidth, "Outline width"),
       [1, 2, 4, 8, 12, 14, 22] as const,
       warnings,
-      "Outline width",
+      "outlineWidth",
     ),
     outlineOpacity: unit(style.opacity, 1),
     outlineStyle: dash,
   };
 }
 
-export function background(source: SourceRecord, warnings: Set<string>): BackgroundV1 {
+export function background(
+  source: SourceRecord,
+  warnings: Set<ObsidianInkWarningCode>,
+): BackgroundV1 {
   const ruled = source.writingBackgroundStyle ?? "lines";
   if (ruled !== "lines" && ruled !== "none") unsupported("Unsupported writing background.");
   if (source.gridEnabled === true) {
     const type = source.gridStyle ?? "dots";
     if (type !== "dots" && type !== "squares") unsupported("Unsupported writing grid.");
-    if (ruled === "lines")
-      warnings.add("Combined ruled and grid backgrounds were reduced to the grid.");
+    if (ruled === "lines") warnings.add("combinedBackground");
     return {
       type,
       spacing: nearest(
         optionalNumber(source.gridSize, 20, "Grid size"),
         LINE_SPACINGS,
         warnings,
-        "Background spacing",
+        "backgroundSpacing",
       ),
     };
   }
@@ -138,7 +144,7 @@ export function background(source: SourceRecord, warnings: Set<string>): Backgro
       optionalNumber(source.writingLineHeight, 150, "Line height"),
       LINE_SPACINGS,
       warnings,
-      "Background spacing",
+      "backgroundSpacing",
     ),
   };
 }

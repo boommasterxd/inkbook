@@ -13,6 +13,7 @@ import {
   MarkdownRenderer,
   MarkdownView,
   Plugin,
+  getLanguage,
   type Editor,
   type MarkdownFileInfo,
   type MarkdownRenderChild,
@@ -22,17 +23,13 @@ import { confirmInkbookAction } from "./dialogs/action-dialog";
 import { showHeadlessRecoveryNotice } from "./embeds/workspace/recovery-notice";
 
 import {
-  createInsertionContextMenuExtension,
   InsertionContextMenuController,
   createObsidianInsertionController,
   createObsidianEmbedActions,
   createObsidianEmbedPasteController,
-  createEmbedPasteExtension,
-  createPenTapInsertionExtension,
   PenTapInsertionController,
   registerInkbookCommands,
   type CompletedEmptyLineInsertion,
-  type EmbedPasteOutcome,
   type InkbookInsertionCommand,
 } from "./commands";
 import {
@@ -44,10 +41,10 @@ import {
   PresentationLifecycleRegistry,
 } from "./embeds";
 import { registerInkbookIcons } from "./icons/inkbook-icons";
-import { InkbookFeedbackManager, type InkbookFeedbackCode } from "./feedback";
-import { InkbookSettingsModalController, InkbookSettingsStore } from "./settings";
-import { ColorSchemeBroadcaster } from "./theme/color-scheme";
-import { addPluginSettingsTab } from "./settings/plugin-settings";
+import type { InkbookFeedbackManager, InkbookFeedbackCode } from "./feedback";
+import { InkbookSettingsStore, type InkbookSettingsModalController } from "./settings";
+import type { ColorSchemeBroadcaster } from "./theme/color-scheme";
+import { createPluginInterface, registerInsertionExtensions } from "./plugin-interface";
 
 export async function activateInkbookPlugin(
   plugin: Plugin,
@@ -56,26 +53,21 @@ export async function activateInkbookPlugin(
   const settings = await loadSettings(plugin);
   if (!isActive()) return undefined;
   const unregisterIcons = registerInkbookIcons();
-  const feedback = createFeedbackManager(settings);
   const lifetime = new AbortController();
   let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
   const workScheduler = schedulerFromRuntime(() => runtimeForSettings);
-  const settingTab = addPluginSettingsTab(
+  const { settingTab, settingsModal, scheme, feedback } = createPluginInterface(
     plugin,
     settings,
     () => runtimeForSettings,
     lifetime.signal,
   );
-  const settingsModal = new InkbookSettingsModalController(plugin.app, settingTab, settings);
-  const scheme = new ColorSchemeBroadcaster({
-    getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
-  });
   let layoutReady = false;
   const embedActions = createPluginEmbedActions(plugin, settings, workScheduler);
   plugin.register(() => embedActions.dispose());
   const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, settingsModal);
   runtimeForSettings = runtime;
-  const disposeStatus = registerDocumentStatusBar(plugin, runtime, settings);
+  const disposeStatus = registerDocumentStatusBar(plugin, runtime, settings, settings.localization);
   const validationScheduling = documentOutputScheduling(runtime, workScheduler);
   plugin.register(runtime.refreshRateProfiles.subscribe(() => settingTab.update()));
   registerSettingsSubscriptions(plugin, settings, runtime);
@@ -89,10 +81,13 @@ export async function activateInkbookPlugin(
     createPlacementFeedback(plugin, feedback),
     validationScheduling,
   );
-  const insertionCommand = registerInkbookCommands(plugin, runtime, {
-    canInsert: (editor, sourcePath) => layoutReady && insertion.canInsert(editor, sourcePath),
-    request: (editor, sourcePath) => layoutReady && insertion.request(editor, sourcePath),
-  });
+  const insertionCommand = registerInsertionCommands(
+    plugin,
+    runtime,
+    insertion,
+    () => layoutReady,
+    settings.localization,
+  );
   const insertionMenu = registerInsertionMenu(
     plugin,
     insertionCommand,
@@ -105,7 +100,13 @@ export async function activateInkbookPlugin(
     insertionCommand,
   );
   const lifecycle = new PresentationLifecycleRegistry();
-  const integration = createEmbedIntegration(plugin, lifecycle, scheme, runtime);
+  const integration = createEmbedIntegration(
+    plugin,
+    lifecycle,
+    scheme,
+    runtime,
+    settings.localization,
+  );
   const { documentRecognition, ports } = integration;
   const embedPaste = createObsidianEmbedPasteController(
     plugin.app,
@@ -113,7 +114,7 @@ export async function activateInkbookPlugin(
     createPlacementFeedback(plugin, feedback),
     lifetime.signal,
     documentRecognition,
-    validationScheduling,
+    { ...validationScheduling, localization: settings.localization },
   );
   const readingMarkdownIndex = new ReadingMarkdownIndex();
   plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports, readingMarkdownIndex));
@@ -124,14 +125,9 @@ export async function activateInkbookPlugin(
     registerVaultLifecycle(plugin, runtime, documentRecognition);
     registerMarkdownHistory(plugin, runtime);
     documentRecognition.markLayoutReady();
-    plugin.registerEditorExtension([
-      createPenTapInsertionExtension(penTap),
-      createInsertionContextMenuExtension(insertionMenu),
-      createEmbedPasteExtension(embedPaste, (outcome) => {
-        const code = feedbackForEmbedPaste(outcome);
-        if (code !== undefined) showGlobalFeedback(plugin, feedback, code);
-      }),
-    ]);
+    registerInsertionExtensions(plugin, { penTap, insertionMenu, embedPaste }, (code) =>
+      showGlobalFeedback(plugin, feedback, code),
+    );
   });
   registerWorkspaceLifecycle(plugin, runtime, scheme, lifecycle);
 
@@ -148,6 +144,24 @@ export async function activateInkbookPlugin(
     scheme.clear();
     unregisterIcons();
   };
+}
+
+function registerInsertionCommands(
+  plugin: Plugin,
+  runtime: ObsidianWorkspaceRuntime,
+  insertion: ReturnType<typeof createObsidianInsertionController>,
+  ready: () => boolean,
+  localization: InkbookSettingsStore["localization"],
+): InkbookInsertionCommand {
+  return registerInkbookCommands(
+    plugin,
+    runtime,
+    {
+      canInsert: (editor, sourcePath) => ready() && insertion.canInsert(editor, sourcePath),
+      request: (editor, sourcePath) => ready() && insertion.request(editor, sourcePath),
+    },
+    localization,
+  );
 }
 
 function schedulerFromRuntime(getRuntime: () => ObsidianWorkspaceRuntime | undefined) {
@@ -187,12 +201,14 @@ function createRuntime(
     }),
     embedActions,
     {
+      localization: settings.localization,
       resolveDocumentStatusPane: (root) => resolveDocumentStatusPane(plugin.app.workspace, root),
       confirmEraseAll: (signal) =>
         confirmInkbookAction(plugin.app, {
-          title: "Erase all elements?",
-          description: "Remove every element from this drawing. You can undo this action.",
-          confirmLabel: "Erase all",
+          localization: settings.localization,
+          title: () => settings.localization.t("presentation.erase.title"),
+          description: () => settings.localization.t("presentation.erase.description"),
+          confirmLabel: () => settings.localization.t("presentation.erase.confirm"),
           readMotion: () => settings.getDeviceSettings().motion,
           observeMotion: (listener) => settings.subscribeDeviceSettings(listener),
           workScheduler: (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
@@ -212,7 +228,13 @@ function createRuntime(
       createPhoneSheetHost: () => createPhoneSheetHost(plugin.app),
       manager: feedback,
       openRecovery: (actions) =>
-        showHeadlessRecoveryNotice(plugin.app, actions, () => settings.getDeviceSettings().motion),
+        showHeadlessRecoveryNotice(
+          plugin.app,
+          actions,
+          () => settings.getDeviceSettings().motion,
+          settings.localization,
+          (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
+        ),
       onOpenSettings: (navigation) => settingsModal.open("settings", navigation),
       onOpenShortcuts: (navigation) => settingsModal.open("shortcuts", navigation),
       onboardingPreference: new OnboardingPreference(settings),
@@ -235,6 +257,7 @@ function createEmbedIntegration(
   lifecycle: PresentationLifecycleRegistry,
   scheme: ColorSchemeBroadcaster,
   runtime: ObsidianWorkspaceRuntime,
+  localization: InkbookSettingsStore["localization"],
 ) {
   const exportGeometryCache = new ExportGeometryCache();
   const nativePdfOptions = new NativePdfOptionsGateway(plugin.app);
@@ -262,6 +285,7 @@ function createEmbedIntegration(
     },
     documentRecognition,
     ports: {
+      localization,
       bindNativePdfOptions: (root: HTMLElement, sourcePath: string) =>
         nativePdfOptions.bind(root, sourcePath),
       exportGeometryCache,
@@ -310,6 +334,7 @@ async function loadSettings(plugin: Plugin): Promise<InkbookSettingsStore> {
     },
   );
   await settings.load();
+  settings.localization.setLanguage(settings.getDeviceSettings().language, getLanguage());
   return settings;
 }
 
@@ -384,12 +409,6 @@ function createPlacementFeedback(plugin: Plugin, feedback: InkbookFeedbackManage
   return { show: () => showGlobalFeedback(plugin, feedback, "placement-folder-fallback") };
 }
 
-function feedbackForEmbedPaste(outcome: EmbedPasteOutcome): InkbookFeedbackCode | undefined {
-  if (outcome.kind === "failed") return "embed-paste-failed";
-  if (outcome.kind !== "stale") return undefined;
-  return outcome.cleanup === "failed" ? "embed-paste-cleanup-failed" : "embed-paste-note-changed";
-}
-
 function resolveEditorPane(
   editor: Editor,
   info: MarkdownView | MarkdownFileInfo,
@@ -451,13 +470,6 @@ function observeMetadataReadiness(plugin: Plugin): () => boolean {
   return () => resolved;
 }
 
-function createFeedbackManager(settings: InkbookSettingsStore): InkbookFeedbackManager {
-  return new InkbookFeedbackManager({
-    readMotion: () => settings.getDeviceSettings().motion,
-    observeMotion: (listener) => settings.subscribeDeviceSettings(listener),
-  });
-}
-
 function createPluginEmbedActions(
   plugin: Plugin,
   settings: InkbookSettingsStore,
@@ -469,5 +481,6 @@ function createPluginEmbedActions(
     () => settings.getDeviceSettings().motion,
     workScheduler,
     (listener) => settings.subscribeDeviceSettings(listener),
+    settings.localization,
   );
 }

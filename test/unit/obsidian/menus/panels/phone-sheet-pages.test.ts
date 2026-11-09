@@ -1,3 +1,4 @@
+import { Localization } from "../../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../../fixtures/obsidian/menu-motion";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
@@ -408,5 +409,33 @@ it("does not schedule frames or read heights for phone dialog content changes", 
   f.session.mutateLayout(() => undefined);
   expect(requestFrame).not.toHaveBeenCalled();
   expect(readHeight).not.toHaveBeenCalled();
+  f.session.close("immediate");
+});
+
+it("refreshes a retained nested page label and releases the subscription on back", () => {
+  const f = fixture(true);
+  const localization = new Localization("en");
+  const subscribe = vi.spyOn(localization, "subscribe");
+  const nested = {
+    ...f.page,
+    readLabel: () => localization.t("editor.action.settings"),
+    subscribeLabel: (listener: () => void) => localization.subscribe(listener),
+  };
+  f.session.navigation!.push(nested);
+  const input = f.scroll.querySelector<HTMLInputElement>("input")!;
+  input.value = "pending edit";
+  input.focus();
+  f.scroll.scrollTop = 44;
+  localization.setLanguage("de");
+  expect(f.modalEl.querySelector(".inkbook-menu-surface-label")?.textContent).toBe("Einstellungen");
+  expect(f.scroll.querySelector("input")).toBe(input);
+  expect(input.value).toBe("pending edit");
+  expect(document.activeElement).toBe(input);
+  expect(f.scroll.scrollTop).toBe(44);
+  expect(subscribe).toHaveBeenCalledOnce();
+  f.session.navigation!.back();
+  localization.setLanguage("en");
+  expect(f.modalEl.textContent).toContain("Settings");
+  expect(f.modalEl.getAttribute("aria-label")).not.toBe("Settings");
   f.session.close("immediate");
 });

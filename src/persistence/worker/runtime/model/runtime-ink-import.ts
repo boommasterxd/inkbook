@@ -49,6 +49,7 @@ export async function runImportInkRequest(
         type: "export-success",
       },
       warnings: converted.warnings,
+      warningCodes: converted.warningCodes,
       ...(converted.transcript === undefined ? {} : { transcript: converted.transcript }),
       type: "import-ink-success",
     };

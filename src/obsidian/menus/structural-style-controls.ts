@@ -1,3 +1,4 @@
+import { Localization, type Translator } from "../../domain/localization";
 import type { StyleControl } from "./editor-menu-types";
 
 export interface StructuralStyleState {
@@ -7,13 +8,14 @@ export interface StructuralStyleState {
 
 export function createStructuralStyleControls(
   state: StructuralStyleState,
+  t: Translator = new Localization().t,
 ): readonly StyleControl[] {
   const controls: StyleControl[] = [];
   if (state.coordinateDimension !== undefined) {
     controls.push({
       id: "coordinate-dimension",
       kind: "choice",
-      label: "Dimensions",
+      label: t("editor.control.coordinate-dimension"),
       mixed: state.coordinateDimension === null,
       options: [
         { label: "2D", value: "2d" },
@@ -26,7 +28,7 @@ export function createStructuralStyleControls(
     controls.push({
       id: "table-columns",
       kind: "number",
-      label: "Columns",
+      label: t("editor.control.table-columns"),
       max: 12,
       min: 1,
       mixed: state.tableColumns === null,

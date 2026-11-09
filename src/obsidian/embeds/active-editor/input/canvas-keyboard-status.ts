@@ -1,7 +1,6 @@
+import { Localization } from "../../../../domain/localization";
 import { bindEmbedDescription } from "../../presentation/embed-description";
 
-const INSTRUCTIONS =
-  "Page Up and Page Down select objects. Home and End select the first and last object. Enter starts geometry editing. In geometry editing, Page Up and Page Down choose a handle, arrow keys adjust it by 1 document unit or 1 degree, and Shift adjusts by 10. Enter or Escape leaves geometry editing. Tab leaves the canvas.";
 let nextStatus = 0;
 
 /** One lifecycle-owned explanation and live status, independent of the culled SVG. */
@@ -10,12 +9,25 @@ export class CanvasKeyboardStatus {
   readonly #instructions: HTMLElement;
   readonly #status: HTMLElement;
   readonly #releaseDescription: () => void;
+  readonly #releaseLocalization: () => void;
 
-  public constructor(surface: HTMLElement) {
+  public constructor(surface: HTMLElement, localization: Localization = new Localization()) {
     this.#surface = surface;
+    const labelId = surface.getAttribute("aria-labelledby");
+    const label = labelId === null ? null : surface.ownerDocument.getElementById(labelId);
+    const updateName = () => {
+      if (label !== null && surface.contains(label))
+        label.textContent = localization.t("canvas.name");
+    };
+    updateName();
     this.#instructions = surface.createSpan({
       cls: "inkbook-menu-visually-hidden",
-      text: INSTRUCTIONS,
+      text: localization.t("canvas.keyboard_instructions"),
+    });
+    this.#releaseLocalization = localization.subscribe(() => {
+      updateName();
+      this.#instructions.textContent = localization.t("canvas.keyboard_instructions");
+      this.#status.textContent = "";
     });
     this.#instructions.id = `inkbook-canvas-instructions-${++nextStatus}`;
     this.#status = surface.createSpan({ cls: "inkbook-menu-visually-hidden" });
@@ -36,6 +48,7 @@ export class CanvasKeyboardStatus {
   }
 
   public dispose(): void {
+    this.#releaseLocalization();
     this.#releaseDescription();
     const ids = (this.#surface.getAttribute("aria-describedby") ?? "")
       .split(/\s+/)

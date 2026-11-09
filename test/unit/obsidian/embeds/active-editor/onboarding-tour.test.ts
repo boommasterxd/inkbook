@@ -1,8 +1,9 @@
+import { createEnglishLocalization } from "../../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../../fixtures/obsidian/menu-motion";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ONBOARDING_STEPS } from "../../../../../src/obsidian/embeds/active-editor/onboarding-steps";
+import { createOnboardingSteps } from "../../../../../src/obsidian/embeds/active-editor/onboarding-steps";
 import { OnboardingTour } from "../../../../../src/obsidian/embeds/active-editor/onboarding-tour";
 import * as elementMotion from "../../../../../src/obsidian/runtime/element-motion";
 import { AdaptivePanelSession } from "../../../../../src/obsidian/menus/panels/adaptive-panel";
@@ -48,7 +49,7 @@ function fixture(
     return target;
   };
   const targets = new Set<string>();
-  for (const step of ONBOARDING_STEPS) {
+  for (const step of createOnboardingSteps(createEnglishLocalization().t)) {
     if (!step.previewContext && (!step.optional || fingerDrawing) && !targets.has(step.action)) {
       addTarget(step.action);
       targets.add(step.action);
@@ -57,7 +58,7 @@ function fixture(
   const syncPreview = (visible: boolean) => {
     toolbar.querySelectorAll('[data-inkbook-tour-preview="true"]').forEach((item) => item.remove());
     if (visible)
-      for (const step of ONBOARDING_STEPS) {
+      for (const step of createOnboardingSteps(createEnglishLocalization().t)) {
         if (step.previewContext) addTarget(step.action, true);
       }
   };
@@ -142,7 +143,9 @@ const NORMAL_ACTIONS = [
 ];
 
 function expectStep(action: string, index: number, total: number): void {
-  const steps = ONBOARDING_STEPS.filter((step) => !step.optional || total > NORMAL_ACTIONS.length);
+  const steps = createOnboardingSteps(createEnglishLocalization().t).filter(
+    (step) => !step.optional || total > NORMAL_ACTIONS.length,
+  );
   expect(steps[index]?.action).toBe(action);
   expect(description()).toBe(steps[index]?.description);
   expect(

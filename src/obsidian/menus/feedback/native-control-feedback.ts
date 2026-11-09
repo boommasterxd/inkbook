@@ -1,7 +1,9 @@
+import type { Translator } from "../../../domain/localization";
 import type { MotionPreference } from "../../../rendering/motion/transitions";
 import { registerMenuFeedback, type MenuFeedbackRegistration } from "./menu-feedback";
 
 export interface NativeControlFeedbackOptions {
+  readonly t?: Translator;
   readonly readMotion: () => MotionPreference;
   readonly observeMotion?: (listener: () => void) => () => void;
 }

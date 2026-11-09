@@ -2,7 +2,10 @@ import { type EditorView, WidgetType } from "@codemirror/view";
 
 import type { InkbookDocumentRecognition } from "../preview/document-recognition";
 import { createInkbookLockedPreview } from "../preview/locked-preview";
-import { updateEmbedDescription } from "../presentation/embed-description";
+import {
+  observeEmbedDescriptionLanguage,
+  updateEmbedDescription,
+} from "../presentation/embed-description";
 import { removeLivePreviewMarkdown } from "./live-preview-removal";
 import { LivePreviewWidgetHeight } from "./live-preview-widget-height";
 import { LivePreviewZoomScrollBinding } from "./live-preview-zoom-scroll";
@@ -84,7 +87,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
   override updateDOM(dom: HTMLElement): boolean {
     const mounted = mountedControllers.get(dom);
     if (mounted === undefined || !this.#sameAttachment(mounted.widget)) return false;
-    updateEmbedDescription(dom, undefined, this.#embed.description);
+    updateEmbedDescription(dom, undefined, this.#embed.description, this.#ports.localization?.t);
     this.#applyWidth(dom);
     mounted.controller.updatePreview(this.#embed.preview);
     mountedControllers.set(dom, { controller: mounted.controller, widget: this });
@@ -119,7 +122,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       this.#ports.workScheduler(button.ownerDocument.defaultView),
       { documentId: this.#embed.resolved.documentId, documents: this.#ports.documents },
     );
-    updateEmbedDescription(root, button, this.#embed.description);
+    updateEmbedDescription(root, button, this.#embed.description, this.#ports.localization?.t);
 
     const attachmentId = `live-preview-${++nextLivePreviewAttachmentId}`;
     const hostZoomScroll = new LivePreviewZoomScrollBinding(
@@ -179,24 +182,21 @@ export class InkbookLivePreviewWidget extends WidgetType {
       controller.activate();
     };
     button.addEventListener("click", activate);
-    const releaseLifecycle = this.#ports.lifecycle.register(
+    const releaseLanguage = observeEmbedDescriptionLanguage(
       root,
-      () => {
-        releaseHeight();
-        hostZoomScroll.dispose();
-        button.removeEventListener("click", activate);
-        mountedControllers.delete(root);
-        controller.dispose();
-      },
-      preview.refresh,
+      () => (mountedControllers.get(root)?.widget ?? this).#embed.description,
+      this.#ports.localization,
     );
-    if (releaseLifecycle === undefined) {
+    const dispose = (): void => {
+      releaseLanguage?.();
       releaseHeight();
       hostZoomScroll.dispose();
       button.removeEventListener("click", activate);
       mountedControllers.delete(root);
       controller.dispose();
-    }
+    };
+    const releaseLifecycle = this.#ports.lifecycle.register(root, dispose, preview.refresh);
+    if (releaseLifecycle === undefined) dispose();
     return root;
   }
 

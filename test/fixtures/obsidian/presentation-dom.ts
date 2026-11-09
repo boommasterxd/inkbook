@@ -419,6 +419,10 @@ export class FakePresentationElement {
     return this.attributes.has(name);
   }
 
+  public removeAttribute(name: string): void {
+    this.attributes.delete(name);
+  }
+
   public setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
   }

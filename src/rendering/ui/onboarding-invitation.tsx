@@ -1,3 +1,4 @@
+import { useEditorLocalization } from "./localization";
 import { useContext, useEffect, useRef } from "react";
 import { motion, useIsPresent } from "motion/react";
 import { toolbarMotionContext, toolbarLayoutTransition } from "./toolbar-motion";
@@ -12,11 +13,12 @@ export function OnboardingInvitation({
   readonly onDismiss: () => void;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
 }) {
+  const { t } = useEditorLocalization();
   const { reduced } = useContext(toolbarMotionContext);
   const present = useIsPresent();
   return (
     <motion.aside
-      aria-label="Inkbook quick tour"
+      aria-label={t("editor.tour.label")}
       className="inkbook-onboarding-invitation"
       initial={reduced ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -25,17 +27,15 @@ export function OnboardingInvitation({
       aria-hidden={!present ? true : undefined}
       transition={toolbarLayoutTransition(reduced)}
     >
-      <p className="inkbook-menu-visually-hidden">
-        Do you want to start a tour? Explore the toolbar at your own pace.
-      </p>
+      <p className="inkbook-menu-visually-hidden">{t("editor.tour.invitation")}</p>
       <Handwriting
-        text="do you want to"
+        text={t("editor.tour.invite-first")}
         duration={700}
         reduced={reduced}
         className="inkbook-handwriting-title"
       />
       <Handwriting
-        text="start a tour?"
+        text={t("editor.tour.invite-second")}
         delay={700}
         duration={700}
         reduced={reduced}
@@ -45,7 +45,7 @@ export function OnboardingInvitation({
         <motion.button
           type="button"
           className="inkbook-onboarding-action inkbook-onboarding-icon-action"
-          aria-label="Start tour"
+          aria-label={t("editor.tour.start")}
           onClick={onStart}
           whileHover={{ opacity: 0.85 }}
           whileTap={{ scale: 0.96 }}
@@ -56,7 +56,7 @@ export function OnboardingInvitation({
         <motion.button
           type="button"
           className="inkbook-onboarding-action inkbook-onboarding-icon-action"
-          aria-label="Skip tour"
+          aria-label={t("editor.tour.skip")}
           onClick={onDismiss}
           whileHover={{ opacity: 0.85 }}
           whileTap={{ scale: 0.96 }}

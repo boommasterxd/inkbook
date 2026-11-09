@@ -1,3 +1,4 @@
+import { createEnglishLocalization } from "../../domain/localization";
 import { setIcon } from "obsidian";
 
 import type { StyleControl } from "../menus/editor-menu-types";
@@ -8,8 +9,6 @@ import {
 } from "../menus/feedback/native-control-feedback";
 import { createSettingsValidationMotion } from "./settings-validation-motion";
 import { SettingsWriteFeedback } from "./settings-write-feedback";
-
-const INVALID_VALUE_MESSAGE = "Enter a valid setting value.";
 
 export interface SettingsControlContentOptions extends NativeControlFeedbackOptions {
   readonly controls: () => readonly StyleControl[];
@@ -23,7 +22,7 @@ export function renderSettingsControlContent(
   container: HTMLElement,
   options: SettingsControlContentOptions,
 ): () => void {
-  const writes = new SettingsWriteFeedback();
+  const writes = new SettingsWriteFeedback(options.t);
   const validation = createSettingsValidationMotion(container, options);
   let currentErrors = new Map<string, HTMLElement>();
   let releaseFeedback: ReturnType<typeof registerNativeControlFeedback> | undefined;
@@ -31,6 +30,7 @@ export function renderSettingsControlContent(
   const render = (): Map<string, HTMLElement> => {
     const controls = options.controls();
     const fragment = createStyleMenuContent({
+      ...(options.t === undefined ? {} : { t: options.t }),
       controlDescriptions: options.descriptions,
       controls,
       numberInputMode: "reject",
@@ -50,7 +50,11 @@ export function renderSettingsControlContent(
       onInvalidValue: (controlId) => {
         writes.invalidate(controlId);
         const error = currentErrors.get(controlId);
-        if (error !== undefined) validation.set(error, INVALID_VALUE_MESSAGE);
+        if (error !== undefined)
+          validation.set(
+            error,
+            (options.t ?? createEnglishLocalization().t)("settings.invalidValue"),
+          );
       },
       renderIcon: (element, icon) => setIcon(element, icon),
     });

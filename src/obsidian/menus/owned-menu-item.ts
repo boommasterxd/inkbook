@@ -4,6 +4,14 @@ import type { MenuItemPort } from "./menu-ports";
 
 export class OwnedMenuItem implements MenuItemPort {
   public title: string | DocumentFragment = "";
+  #titleElement: HTMLElement | undefined;
+
+  public renderTitle(element: HTMLElement): void {
+    this.#titleElement = element;
+    element.replaceChildren();
+    if (typeof this.title === "string") element.textContent = this.title;
+    else element.append(this.title.cloneNode(true));
+  }
   public icon = "";
   public checked: boolean | null = null;
   public disabled = false;
@@ -14,10 +22,12 @@ export class OwnedMenuItem implements MenuItemPort {
 
   public setTitle(title: string): this {
     this.title = title;
+    if (this.#titleElement !== undefined) this.renderTitle(this.#titleElement);
     return this;
   }
   public setTitleFragment(title: DocumentFragment): this {
     this.title = title;
+    if (this.#titleElement !== undefined) this.renderTitle(this.#titleElement);
     return this;
   }
   public setIcon(icon: string): this {
@@ -76,8 +86,7 @@ export function renderOwnedMenuItems(
     if (item.disabled) row.setAttribute("aria-disabled", "true");
     if (item.icon !== "") setIcon(row.createDiv({ cls: "inkbook-owned-menu-icon" }), item.icon);
     const title = row.createDiv({ cls: "inkbook-owned-menu-title" });
-    if (typeof item.title === "string") title.textContent = item.title;
-    else title.append(item.title.cloneNode(true));
+    item.renderTitle(title);
     if (item.checked === true) setIcon(row.createDiv({ cls: "inkbook-owned-menu-check" }), "check");
     if (item.disabled || item.label) continue;
     row.tabIndex = -1;

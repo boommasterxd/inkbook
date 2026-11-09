@@ -1,4 +1,5 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { presentation } from "../../../domain/localization/locales/en/presentation";
 import { PORTABLE_PALETTE_V1 } from "../../../domain/schema/public";
 import { applyColorScheme, type InkbookColorScheme } from "../../theme/color-scheme";
 import type { StaticExportFragment } from "../../../persistence/export/static-export-fragments";
@@ -118,7 +119,10 @@ export function createExportPage(
   page.setAttribute("height", String(end - start));
   page.setAttribute("class", "inkbook-export-page");
   page.setAttribute("role", "img");
-  page.setAttribute("aria-label", options.description?.trim() || "Handwriting");
+  page.setAttribute(
+    "aria-label",
+    options.description?.trim() || presentation["presentation.export.description"],
+  );
   page.setAttribute("focusable", "false");
   page.setAttribute("preserveAspectRatio", "xMidYMin meet");
   media.append(page);
@@ -157,7 +161,8 @@ export function activateExportPage(
 function appendExportText(page: SVGSVGElement, width: number, height: number, dark: boolean): void {
   const palette = PORTABLE_PALETTE_V1[dark ? "dark" : "light"];
   const text = page.ownerDocument.createElementNS(SVG_NAMESPACE, "text");
-  text.textContent = page.getAttribute("aria-label") ?? "Handwriting";
+  text.textContent =
+    page.getAttribute("aria-label") ?? presentation["presentation.export.description"];
   text.setAttribute("x", String(width / 2));
   text.setAttribute("y", String(height / 2));
   text.setAttribute("text-anchor", "middle");

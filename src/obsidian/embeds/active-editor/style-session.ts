@@ -1,3 +1,4 @@
+import { Localization } from "../../../domain/localization";
 import type { ToolDefaultsV1 } from "../../../domain/settings/types";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import type { ElementStore } from "../../../domain/store/public";
@@ -25,6 +26,7 @@ import type { TransformSliceScheduler } from "../../../editor/selection/transfor
 
 export interface ActiveEditorStyleSessionOptions {
   readonly defaults: ToolDefaultsV1;
+  readonly localization?: Localization | undefined;
   readonly history: ActiveEditorHistory;
   readonly onSelectionGeometryChanged: () => void;
   readonly onStateChanged: () => void;
@@ -40,6 +42,8 @@ export interface ActiveEditorStyleSessionOptions {
 
 export class ActiveEditorStyleSession {
   #defaults: ToolDefaultsV1;
+  public readonly localization: Localization;
+  readonly #releaseLocalization: () => void;
   readonly #history: ActiveEditorHistory;
   readonly #onSelectionGeometryChanged: () => void;
   readonly #onStateChanged: () => void;
@@ -57,6 +61,8 @@ export class ActiveEditorStyleSession {
 
   public constructor(options: ActiveEditorStyleSessionOptions) {
     this.#defaults = structuredClone(options.defaults);
+    this.localization = options.localization ?? new Localization();
+    this.#releaseLocalization = this.localization.subscribe(() => this.invalidateSelection());
     this.#history = options.history;
     this.#onSelectionGeometryChanged = options.onSelectionGeometryChanged;
     this.#onStateChanged = options.onStateChanged;
@@ -77,6 +83,7 @@ export class ActiveEditorStyleSession {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#unsubscribeStore?.();
+    this.#releaseLocalization();
     this.invalidateSelection();
   }
 
@@ -117,11 +124,14 @@ export class ActiveEditorStyleSession {
       return this.#selectedControls.controls;
     this.invalidateSelection();
     const elements = selectedElements(this.#sceneStore, selection);
-    const controls = createActiveEditorStyleControls({
-      defaults: this.#defaults,
-      selection: elements,
-      tool,
-    });
+    const controls = createActiveEditorStyleControls(
+      {
+        defaults: this.#defaults,
+        selection: elements,
+        tool,
+      },
+      this.localization.t,
+    );
     if (identity !== undefined && elements.length > 0)
       this.#selectedControls = { identity, controls };
     return controls;

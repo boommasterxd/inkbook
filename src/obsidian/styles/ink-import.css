@@ -88,15 +88,6 @@
   white-space: normal;
 }
 
-.inkbook-import-content .inkbook-import-actions > .mod-cta {
-  background: var(--text-normal);
-  color: var(--background-primary);
-}
-
-.inkbook-import-content .inkbook-import-actions > .mod-cta[data-inkbook-menu-gesture] {
-  background: color-mix(in srgb, var(--text-normal) 90%, var(--background-primary));
-}
-
 .inkbook-import-content .inkbook-import-actions > .inkbook-import-danger {
   background: var(--inkbook-dialog-danger-background);
   color: var(--inkbook-dialog-danger-foreground);

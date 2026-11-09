@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { Localization } from "../../../../src/domain/localization";
 import * as obsidian from "obsidian";
 import { MotionGlobalConfig, processFrame } from "motion";
 import { act } from "react";
@@ -60,6 +61,7 @@ afterEach(() => {
 function fixture(
   initial: WorkspaceDocumentSaveStatus = null,
   readPreference?: () => MotionPreference,
+  localization = new Localization(),
 ) {
   installObsidianDomHelpers();
   let value = initial;
@@ -74,7 +76,7 @@ function fixture(
   };
   const container = createHtmlElement("div");
   document.body.append(container);
-  const { dispose } = mountDocumentStatusBar(container, source, readPreference);
+  const { dispose } = mountDocumentStatusBar(container, source, readPreference, localization);
   cleanups.push(dispose);
   const root = container.firstElementChild as HTMLElement;
   const content = (): HTMLElement => {
@@ -238,3 +240,15 @@ async function advanceMotion(start = 0): Promise<void> {
     });
   }
 }
+
+it("marks the independent status root with the selected language until disposal", () => {
+  const localization = new Localization("de");
+  const test = fixture(null, undefined, localization);
+  expect(test.container.lang).toBe("de");
+  localization.setLanguage("en");
+  expect(test.container.lang).toBe("en");
+  test.dispose();
+  expect(test.container.hasAttribute("lang")).toBe(false);
+  localization.setLanguage("de");
+  expect(test.container.hasAttribute("lang")).toBe(false);
+});

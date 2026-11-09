@@ -1,7 +1,9 @@
+import { Localization } from "../../domain/localization";
 import { mountFeedbackActionMotion } from "./feedback-action-motion";
 import { feedbackContent, type InkbookFeedbackCode } from "./feedback-catalog";
 import {
   createFeedbackIconButton,
+  bindFeedbackLocalization,
   createFeedbackSurface,
   setFeedbackPending,
   type InkbookFeedbackAction,
@@ -42,7 +44,10 @@ export class InkbookFeedbackManager {
   readonly #windows = new WeakMap<Document, ActiveFeedback>();
   #disposed = false;
 
-  public constructor(private readonly motionPreferences?: FeedbackMotionPreferences) {}
+  public constructor(
+    private readonly motionPreferences?: FeedbackMotionPreferences,
+    private readonly localization = new Localization(),
+  ) {}
 
   public closePresentation(root: HTMLElement): void {
     this.#presentations.get(root)?.close();
@@ -86,16 +91,19 @@ export class InkbookFeedbackManager {
     if (this.#disposed) return undefined;
     const ownerWindow = container.ownerDocument.defaultView;
     if (ownerWindow === null) return undefined;
-    const surface = createFeedbackSurface(container, feedbackContent(request.code));
+    const surface = createFeedbackSurface(
+      container,
+      feedbackContent(request.code, this.localization.t),
+    );
     surface.element.classList.add(`inkbook-feedback-${placement}`);
     let presence: "open" | "exiting" | "closed" = "open";
     let timeout: number | undefined;
     let releasePreference: (() => void) | undefined;
     let presenceMotion: ReturnType<typeof animateOwnedElement> | undefined;
     const { handle, setClose } = createFeedbackHandle();
-    const removeActions: Array<() => void> = [];
-    const refreshActions: Array<() => void> = [];
+    const actionLifecycle = createActionLifecycle();
     const unmount = mountWindowFeedback(surface.element, container);
+    const releaseLanguage = bindFeedbackLocalization(surface, this.localization, request.code);
     const finish = (): void => {
       if (presence === "closed") return;
       presence = "closed";
@@ -104,8 +112,9 @@ export class InkbookFeedbackManager {
       presenceMotion?.cancel();
       presenceMotion = undefined;
       releasePreference?.();
-      for (const remove of removeActions) remove();
-      removeActions.length = 0;
+      releaseLanguage();
+      for (const remove of actionLifecycle.removeActions) remove();
+      actionLifecycle.removeActions.length = 0;
       unmount();
       surface.element.remove();
       this.#active.delete(active);
@@ -120,39 +129,12 @@ export class InkbookFeedbackManager {
       }
       presence = "exiting";
       if (timeout !== undefined) ownerWindow.clearTimeout(timeout);
-      surface.element.dataset.inkbookFeedbackPresence = "exiting";
-      surface.element.setAttribute("aria-hidden", "true");
-      surface.element.inert = true;
-      const durationMs = effectiveTransitionDuration(
-        surface.element,
-        ownerWindow,
-        "conditionalToolbarControl",
-      );
-      const canAnimate = durationMs > 0 && typeof surface.element.animate === "function";
-      const renderedScale =
-        canAnimate && presenceMotion !== undefined
-          ? currentFeedbackScale(surface.element, ownerWindow)
-          : 1;
-      presenceMotion?.cancel();
-      if (!canAnimate) {
-        finish();
-        return;
-      }
-      presenceMotion = animateOwnedElement(
-        surface.element,
-        { scale: [renderedScale, 0] },
-        {
-          duration: durationMs / 1000,
-          ease: "easeIn",
-          onComplete: finish,
-        },
-      );
-      ignoreCanceledMotion(surface.element, presenceMotion);
+      presenceMotion = startFeedbackExit(surface.element, ownerWindow, presenceMotion, finish);
     };
     setClose(close);
     if (placement === "global" && this.motionPreferences !== undefined)
       surface.element.dataset.inkbookMotion = this.motionPreferences.readMotion();
-    const active = createActiveFeedback(surface.element, handle, refreshActions);
+    const active = createActiveFeedback(surface.element, handle, actionLifecycle.refreshActions);
     this.#active.add(active);
     presenceMotion = startFeedbackEntrance(surface.element, ownerWindow);
     releasePreference = observeFeedbackMotion(
@@ -168,10 +150,13 @@ export class InkbookFeedbackManager {
       },
       this.motionPreferences?.observeMotion,
     );
-    this.#mountActions(surface.actionGroup, request.actions ?? [], active, ownerWindow, {
-      removeActions,
-      refreshActions,
-    });
+    this.#mountActions(
+      surface.actionGroup,
+      request.actions ?? [],
+      active,
+      ownerWindow,
+      actionLifecycle,
+    );
     if ((request.actions?.length ?? 0) === 0 || request.timeoutMs !== undefined) {
       timeout = ownerWindow.setTimeout(close, request.timeoutMs ?? 5_000);
     }
@@ -186,7 +171,7 @@ export class InkbookFeedbackManager {
     lifecycle: { removeActions: Array<() => void>; refreshActions: Array<() => void> },
   ): void {
     for (const action of actions) {
-      const button = createFeedbackIconButton(group, action.id);
+      const button = createFeedbackIconButton(group, action.id, this.localization.t);
       const onClick = (): void => void this.#runAction(active, action);
       button.addEventListener("click", onClick);
       const motion = mountFeedbackActionMotion(button, ownerWindow);
@@ -287,4 +272,42 @@ function createActiveFeedback(
     handle,
     refreshActions: () => refreshActions.forEach((refresh) => refresh()),
   };
+}
+
+function createActionLifecycle(): {
+  removeActions: Array<() => void>;
+  refreshActions: Array<() => void>;
+} {
+  return { removeActions: [], refreshActions: [] };
+}
+
+function startFeedbackExit(
+  element: HTMLElement,
+  ownerWindow: Window,
+  currentMotion: ReturnType<typeof animateOwnedElement> | undefined,
+  finish: () => void,
+): ReturnType<typeof animateOwnedElement> | undefined {
+  element.dataset.inkbookFeedbackPresence = "exiting";
+  element.setAttribute("aria-hidden", "true");
+  element.inert = true;
+  const durationMs = effectiveTransitionDuration(element, ownerWindow, "conditionalToolbarControl");
+  const canAnimate = durationMs > 0 && typeof element.animate === "function";
+  const renderedScale =
+    canAnimate && currentMotion !== undefined ? currentFeedbackScale(element, ownerWindow) : 1;
+  currentMotion?.cancel();
+  if (!canAnimate) {
+    finish();
+    return undefined;
+  }
+  const motion = animateOwnedElement(
+    element,
+    { scale: [renderedScale, 0] },
+    {
+      duration: durationMs / 1000,
+      ease: "easeIn",
+      onComplete: finish,
+    },
+  );
+  ignoreCanceledMotion(element, motion);
+  return motion;
 }

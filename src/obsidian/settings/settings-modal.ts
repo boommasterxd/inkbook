@@ -1,3 +1,4 @@
+import { bindElementLanguage } from "../../rendering/localization/element-language";
 import type { App } from "obsidian";
 
 import { InkbookMotionModal } from "../dialogs/inkbook-motion-modal";
@@ -51,7 +52,9 @@ export class InkbookSettingsModalController {
     let content: SettingsModalContent | undefined;
     const page: PhoneSheetPage = {
       kind: "dialog",
-      label: viewTitle(view),
+      label: viewTitle(view, this.#store),
+      readLabel: () => viewTitle(view, this.#store),
+      subscribeLabel: (listener) => this.#store.localization.subscribe(listener),
       createContent: (lifecycle) => {
         const fragment = menuDomWindow(navigation.ownerDocument, "settings page").createFragment();
         const wrapper = fragment.createDiv({ cls: "inkbook-settings-modal inkbook-phone-dialog" });
@@ -82,6 +85,7 @@ export class InkbookSettingsModalController {
 
 class InkbookSettingsModal extends InkbookMotionModal {
   #content: SettingsModalContent | undefined;
+  #unsubscribeLanguage: (() => void) | undefined;
   readonly #onClosed: () => void;
   readonly #settingTab: InkbookSettingTab;
   readonly #store: InkbookSettingsStore;
@@ -109,7 +113,15 @@ class InkbookSettingsModal extends InkbookMotionModal {
   public override onOpen(): void {
     super.onOpen();
     this.modalEl.classList.add("inkbook-settings-modal");
-    this.setTitle(viewTitle(this.#view));
+    this.setTitle(viewTitle(this.#view, this.#store));
+    const releaseLanguage = bindElementLanguage(this.modalEl, this.#store.localization);
+    const unsubscribe = this.#store.localization.subscribe(() =>
+      this.setTitle(viewTitle(this.#view, this.#store)),
+    );
+    this.#unsubscribeLanguage = () => {
+      unsubscribe();
+      releaseLanguage();
+    };
     this.#content = new SettingsModalContent(this.contentEl, {
       app: this.app,
       settingTab: this.#settingTab,
@@ -120,6 +132,7 @@ class InkbookSettingsModal extends InkbookMotionModal {
 
   public override onClose(): void {
     super.onClose();
+    this.#unsubscribeLanguage?.();
     this.#content?.dispose();
     this.#content = undefined;
     this.contentEl.replaceChildren();
@@ -127,6 +140,6 @@ class InkbookSettingsModal extends InkbookMotionModal {
   }
 }
 
-function viewTitle(view: InkbookSettingsView): string {
-  return view === "settings" ? "Inkbook settings" : "Keyboard shortcuts";
+function viewTitle(view: InkbookSettingsView, store: InkbookSettingsStore): string {
+  return store.localization.t(view === "settings" ? "settings.title" : "settings.shortcutsTitle");
 }

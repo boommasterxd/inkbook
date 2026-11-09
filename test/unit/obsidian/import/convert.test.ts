@@ -32,6 +32,7 @@ describe("Ink import conversion ownership", () => {
     const result = await converter()(INPUT, { legacyWriting: false });
     expect(result.svg).toContain('data-inkbook-version="1"');
     expect(result.svg).toContain('data-inkbook-revision="0"');
+    expect(result.warningCodes).toEqual([]);
     await expect(converter()("invalid input", { legacyWriting: false })).rejects.toThrow(
       "import-invalid-source",
     );
@@ -73,6 +74,7 @@ describe("Ink import conversion ownership", () => {
     expect(result.warnings).toContain(
       "The source transcript remains in the original file and import backup.",
     );
+    expect(result.warningCodes).toContain("transcriptKept");
     expect(terminate).toHaveBeenCalledOnce();
   });
 

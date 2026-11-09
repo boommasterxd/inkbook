@@ -1,4 +1,5 @@
 import type { LockedPreviewPresentation } from "../preview/locked-preview";
+import type { Localization } from "../../../domain/localization";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { InitialPresentationEntrance } from "./presentation-entrance";
 import type { MotionPreference } from "../../../rendering/motion/transitions";
@@ -158,6 +159,7 @@ export interface PresentationSessionPort {
 }
 
 export interface EmbedIntegrationPorts {
+  readonly localization?: Localization | undefined;
   readonly bindNativePdfOptions?: (
     root: HTMLElement,
     sourcePath: string,

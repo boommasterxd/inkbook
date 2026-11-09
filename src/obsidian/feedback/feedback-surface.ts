@@ -1,6 +1,13 @@
+import { bindElementLanguage } from "../../rendering/localization/element-language";
+import { Localization, type Translator } from "../../domain/localization";
 import { setIcon } from "obsidian";
 
-import type { InkbookFeedbackContent, InkbookFeedbackSeverity } from "./feedback-catalog";
+import {
+  feedbackContent,
+  type InkbookFeedbackCode,
+  type InkbookFeedbackContent,
+  type InkbookFeedbackSeverity,
+} from "./feedback-catalog";
 
 const STATUS_ICONS: Readonly<Record<InkbookFeedbackSeverity, string>> = {
   error: "circle-alert",
@@ -24,22 +31,22 @@ export type InkbookFeedbackActionId =
 
 interface InkbookFeedbackActionPresentation {
   readonly icon: string;
-  readonly label: string;
+  readonly label: Parameters<Translator>[0];
   readonly tone?: "danger" | "normal";
 }
 
 const ACTIONS: Readonly<Record<InkbookFeedbackActionId, InkbookFeedbackActionPresentation>> = {
-  "close-recovery": { icon: "x", label: "Close recovery dialog" },
-  "continue-editing": { icon: "pencil", label: "Continue editing" },
-  delete: { icon: "trash-2", label: "Delete", tone: "danger" },
-  dismiss: { icon: "x", label: "Dismiss" },
-  "keep-preview": { icon: "x", label: "Keep saved preview" },
-  "open-settings": { icon: "settings", label: "Open settings" },
-  "reload-external": { icon: "refresh-cw", label: "Reload external version" },
-  "retry-open": { icon: "rotate-ccw", label: "Retry opening drawing" },
-  "retry-save": { icon: "rotate-ccw", label: "Retry save" },
-  "save-copy": { icon: "copy-plus", label: "Save copy" },
-  "undo-insertion": { icon: "undo-2", label: "Undo insertion" },
+  "close-recovery": { icon: "x", label: "host.action.close-recovery" },
+  "continue-editing": { icon: "pencil", label: "host.action.continue-editing" },
+  delete: { icon: "trash-2", label: "host.action.delete", tone: "danger" },
+  dismiss: { icon: "x", label: "host.action.dismiss" },
+  "keep-preview": { icon: "x", label: "host.action.keep-preview" },
+  "open-settings": { icon: "settings", label: "host.action.open-settings" },
+  "reload-external": { icon: "refresh-cw", label: "host.action.reload-external" },
+  "retry-open": { icon: "rotate-ccw", label: "host.action.retry-open" },
+  "retry-save": { icon: "rotate-ccw", label: "host.action.retry-save" },
+  "save-copy": { icon: "copy-plus", label: "host.action.save-copy" },
+  "undo-insertion": { icon: "undo-2", label: "host.action.undo-insertion" },
 };
 
 export interface InkbookFeedbackAction {
@@ -51,6 +58,7 @@ export interface InkbookFeedbackSurface {
   readonly actionGroup: HTMLElement;
   readonly element: HTMLElement;
   readonly title: HTMLElement;
+  readonly refresh: (content: InkbookFeedbackContent) => void;
 }
 
 export function createFeedbackSurface(
@@ -67,25 +75,33 @@ export function createFeedbackSurface(
   const copy = element.createDiv({ cls: "inkbook-feedback-copy" });
   const title = copy.createDiv({ cls: "inkbook-feedback-title" });
   title.textContent = content.title;
-  if (content.detail !== undefined) {
-    const detail = copy.createDiv({ cls: "inkbook-feedback-detail" });
-    detail.textContent = content.detail;
-  }
+  const detail =
+    content.detail === undefined ? undefined : copy.createDiv({ cls: "inkbook-feedback-detail" });
+  if (detail !== undefined) detail.textContent = content.detail ?? "";
   const actionGroup = element.createDiv({ cls: "inkbook-feedback-actions" });
-  return { actionGroup, element, title };
+  return {
+    actionGroup,
+    element,
+    title,
+    refresh: (next) => {
+      title.textContent = next.title;
+      if (detail !== undefined) detail.textContent = next.detail ?? "";
+    },
+  };
 }
 
 export function createFeedbackIconButton(
   container: HTMLElement,
   actionId: InkbookFeedbackActionId,
+  t: Translator = new Localization().t,
 ): HTMLButtonElement {
   const action = ACTIONS[actionId];
   const button = container.createEl("button", {
     cls: "inkbook-feedback-icon-button",
   });
   button.type = "button";
-  button.setAttribute("aria-label", action.label);
-  button.setAttribute("title", action.label);
+  button.dataset.inkbookFeedbackAction = actionId;
+  refreshFeedbackIconButton(button, actionId, t);
   if (action.tone !== undefined) button.dataset.inkbookFeedbackTone = action.tone;
   const icon = button.createSpan({ cls: "inkbook-feedback-action-icon" });
   icon.setAttribute("aria-hidden", "true");
@@ -99,4 +115,36 @@ export function setFeedbackPending(element: HTMLElement, pending: boolean): void
     const button = buttons.item(index);
     if (button !== null) button.disabled = pending;
   }
+}
+
+export function refreshFeedbackIconButton(
+  button: HTMLButtonElement,
+  actionId: InkbookFeedbackActionId,
+  t: Translator,
+): void {
+  const label = t(ACTIONS[actionId].label);
+  button.setAttribute("aria-label", label);
+  button.title = label;
+}
+
+export function bindFeedbackLocalization(
+  surface: InkbookFeedbackSurface,
+  localization: Localization,
+  code: InkbookFeedbackCode,
+): () => void {
+  const releaseLanguage = bindElementLanguage(surface.element, localization);
+  const unsubscribe = localization.subscribe(() => {
+    surface.refresh(feedbackContent(code, localization.t));
+    const buttons = surface.actionGroup.getElementsByTagName("button");
+    for (let index = 0; index < buttons.length; index += 1) {
+      const button = buttons.item(index);
+      if (button === null) continue;
+      const action = button.dataset.inkbookFeedbackAction as InkbookFeedbackActionId;
+      refreshFeedbackIconButton(button, action, localization.t);
+    }
+  });
+  return () => {
+    unsubscribe();
+    releaseLanguage();
+  };
 }

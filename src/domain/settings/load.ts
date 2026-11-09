@@ -11,6 +11,7 @@ import {
   BACKGROUND_TYPES,
   CONFIGURABLE_SHORTCUT_ACTIONS,
   LINE_SPACINGS,
+  LANGUAGE_PREFERENCES,
   MOTION_PREFERENCES,
   PEN_TAP_INSERTIONS,
   REFRESH_RATE_PREFERENCES,
@@ -378,6 +379,7 @@ const DEVICE_SETTINGS_V2_KEYS = [
   ...LEGACY_DEVICE_SETTINGS_V2_KEYS,
   "scrollPreloadMarginPx",
   "onboardingDismissed",
+  "language",
 ] as const;
 
 function migrateDeviceSettingsV1(input: unknown, fallback: InkbookDeviceSettingsV2): unknown {
@@ -401,11 +403,13 @@ function addLegacyDeviceSettingsDefaults(
     ...LEGACY_DEVICE_SETTINGS_V2_KEYS,
     ...("scrollPreloadMarginPx" in input ? ["scrollPreloadMarginPx"] : []),
     ...("onboardingDismissed" in input ? ["onboardingDismissed"] : []),
+    ...("language" in input ? ["language"] : []),
   ];
   return hasExactKeys(input, keys)
     ? {
         scrollPreloadMarginPx: fallback.scrollPreloadMarginPx,
         onboardingDismissed: fallback.onboardingDismissed,
+        language: fallback.language,
         ...input,
       }
     : input;
@@ -426,6 +430,14 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
   return {
     value: {
       version: 2,
+      language: validOrDefault(
+        value.language,
+        fallback.language,
+        (value): value is InkbookDeviceSettingsV2["language"] =>
+          isOneOf(value, LANGUAGE_PREFERENCES),
+        diagnostics,
+        "language",
+      ),
       onboardingDismissed: validOrDefault(
         value.onboardingDismissed,
         fallback.onboardingDismissed,

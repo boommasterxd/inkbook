@@ -1,3 +1,5 @@
+import { bindElementLanguage } from "../../rendering/localization/element-language";
+import { createEnglishLocalization, type Localization } from "../../domain/localization";
 import { registerMenuPointerDismissal } from "./menu-pointer-dismissal";
 import type { PhoneSheetNavigation } from "./panels/panel-page";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
@@ -16,6 +18,7 @@ import { readMenuViewport } from "./panels/menu-viewport";
 import { navigateOwnedMenu, OwnedMenuItem, renderOwnedMenuItems } from "./owned-menu-item";
 
 export interface OwnedMenuFactoryOptions {
+  readonly localization?: Localization | undefined;
   readonly anchor: HTMLElement;
   readonly workScheduler: WorkScheduler;
   readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
@@ -130,8 +133,24 @@ class OwnedMenu extends Component implements MenuPort {
   #createContent(ownerDocument: Document): HTMLElement {
     const content = menuDomWindow(ownerDocument, "owned menu").createDiv();
     content.className = "inkbook-owned-menu-content";
+    this.register(bindElementLanguage(content, this.#options.localization));
     content.setAttribute("role", "menu");
-    setMenuSurfaceLabel(content, this.#kind === "context" ? "Context menu" : "Menu");
+    this.register(
+      this.#options.localization?.subscribe(() =>
+        setMenuSurfaceLabel(
+          content,
+          this.#options.localization!.t(
+            this.#kind === "context" ? "editor.ui.context-menu" : "editor.ui.menu",
+          ),
+        ),
+      ) ?? (() => undefined),
+    );
+    setMenuSurfaceLabel(
+      content,
+      (this.#options.localization ?? createEnglishLocalization()).t(
+        this.#kind === "context" ? "editor.ui.context-menu" : "editor.ui.menu",
+      ),
+    );
     this.#buttons = renderOwnedMenuItems(content, this.#items, (item, event) => {
       if (this.#closing || this.#closed || !content.isConnected) return;
       this.#closing = !item.keepOpen;
@@ -167,6 +186,11 @@ class OwnedMenu extends Component implements MenuPort {
     const fragment = menuDomWindow(ownerDocument, "owned menu").createFragment();
     fragment.append(content);
     this.#panel = new AdaptivePanelSession({
+      localization: this.#options.localization,
+      readLabel: () =>
+        (this.#options.localization ?? createEnglishLocalization()).t(
+          this.#kind === "context" ? "editor.ui.context-menu" : "editor.ui.menu",
+        ),
       workScheduler: this.#options.workScheduler,
       anchor: this.#anchor,
       dismissOnAnchorPointer: this.#kind === "context",
@@ -178,7 +202,9 @@ class OwnedMenu extends Component implements MenuPort {
       ...(this.#options.keymap === undefined ? {} : { keymap: this.#options.keymap }),
       kind: "menu",
       restoreFocus: this.#kind !== "context",
-      label: this.#kind === "context" ? "Context menu" : "Menu",
+      label: (this.#options.localization ?? createEnglishLocalization()).t(
+        this.#kind === "context" ? "editor.ui.context-menu" : "editor.ui.menu",
+      ),
       onClosing: () => {
         this.#closing = true;
       },

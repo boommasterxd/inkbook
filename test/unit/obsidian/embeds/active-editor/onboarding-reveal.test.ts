@@ -1,8 +1,9 @@
+import { createEnglishLocalization } from "../../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../../fixtures/obsidian/menu-motion";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { OnboardingCoach } from "../../../../../src/obsidian/embeds/active-editor/onboarding-coach";
-import { ONBOARDING_STEPS } from "../../../../../src/obsidian/embeds/active-editor/onboarding-steps";
+import { createOnboardingSteps } from "../../../../../src/obsidian/embeds/active-editor/onboarding-steps";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
@@ -66,7 +67,7 @@ function fixture(scrollHeight = 1200) {
     onNavigate: vi.fn(),
   });
   coach.show(
-    ONBOARDING_STEPS.find((step) => step.action === "draw")!,
+    createOnboardingSteps(createEnglishLocalization().t).find((step) => step.action === "draw")!,
     0,
     1,
   );

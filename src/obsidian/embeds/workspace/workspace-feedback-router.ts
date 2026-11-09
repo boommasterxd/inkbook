@@ -1,4 +1,5 @@
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
+import type { Localization } from "../../../domain/localization";
 import type { Keymap } from "obsidian";
 import type { EditorChromeOpenings } from "../active-scene/editor-chrome-openings";
 import type { DeviceLocalStoragePort } from "../../storage/trusted-document-head-ledger";
@@ -7,6 +8,7 @@ import type { HeadlessRecoveryActions, HeadlessRecoveryNotice } from "./recovery
 import { InkbookFeedbackManager, type InkbookFeedbackCode } from "../../feedback";
 
 export interface WorkspaceFeedbackHost {
+  readonly localization?: Localization | undefined;
   readonly confirmEraseAll?: (signal: AbortSignal) => Promise<boolean>;
   readonly openRecovery?: (actions: HeadlessRecoveryActions) => HeadlessRecoveryNotice;
   readonly fallbackOwnerWindow: () => Window | undefined;

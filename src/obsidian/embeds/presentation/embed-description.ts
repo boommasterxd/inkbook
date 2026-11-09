@@ -1,3 +1,4 @@
+import { Localization, type Translator } from "../../../domain/localization";
 interface EmbedDescription {
   readonly controls: Set<HTMLElement>;
   readonly label: HTMLElement;
@@ -12,13 +13,16 @@ export function updateEmbedDescription(
   root: HTMLElement,
   preview: HTMLElement | undefined,
   description: string | undefined,
+  t: Translator = new Localization().t,
 ): void {
   const record: EmbedDescription | undefined =
     descriptions.get(root) ??
     (preview === undefined ? undefined : createEmbedDescription(root, preview));
   if (record === undefined) return;
   descriptions.set(root, record);
-  record.label.textContent = description ? `Edit handwriting: ${description}` : "Edit handwriting";
+  record.label.textContent = description
+    ? t("host.embed.editDescription", { description })
+    : t("host.embed.edit");
   if (description !== undefined && record.span === undefined) {
     record.span = root.createSpan();
     record.span.id = `inkbook-embed-description-${++nextDescription}`;
@@ -34,6 +38,17 @@ function createEmbedDescription(root: HTMLElement, preview: HTMLElement): EmbedD
   label.hidden = true;
   preview.setAttribute("aria-labelledby", label.id);
   return { controls: new Set<HTMLElement>(), label };
+}
+
+/** Keeps the existing author description and accessible name across language changes. */
+export function observeEmbedDescriptionLanguage(
+  root: HTMLElement,
+  description: () => string | undefined,
+  localization?: Localization,
+): (() => void) | undefined {
+  return localization?.subscribe(() =>
+    updateEmbedDescription(root, undefined, description(), localization.t),
+  );
 }
 
 export function bindEmbedDescription(root: HTMLElement, control: HTMLElement): () => void {

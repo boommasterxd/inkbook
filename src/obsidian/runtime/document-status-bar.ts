@@ -1,19 +1,14 @@
+import { bindElementLanguage } from "../../rendering/localization/element-language";
+import { Localization } from "../../domain/localization";
+import type { DocumentSaveStatus } from "../../editor/session/session-port";
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { setIcon } from "obsidian";
 
-import type { DocumentSaveStatus } from "../../editor/session/session-port";
 import { isReducedMotion, type MotionPreference } from "../../rendering/motion/transitions";
 import { DocumentStatusBarContent } from "../../rendering/ui/document-status-bar-content";
 import type { WorkspaceDocumentSaveStatusSource } from "../embeds/workspace/workspace-document-status";
-
-const LABELS: Readonly<Record<DocumentSaveStatus, string>> = {
-  saved: "Saved",
-  pending: "Unsaved changes",
-  saving: "Saving…",
-  failed: "Save failed",
-};
 
 // Tight glyph bounds include the native two-unit stroke and rounded caps.
 const ICONS: Readonly<Record<DocumentSaveStatus, { name: string; viewBox: string }>> = {
@@ -36,10 +31,12 @@ export function mountDocumentStatusBar(
   container: HTMLElement,
   source: WorkspaceDocumentSaveStatusSource,
   readPreference: () => MotionPreference = () => "system",
+  localization = new Localization(),
 ): { dispose: () => void; refreshColors: () => void; refreshMotion: () => void } {
   const ownerWindow = container.ownerDocument.defaultView;
   const query = ownerWindow?.matchMedia?.("(prefers-reduced-motion: reduce)");
   const view = createRoot(container);
+  const releaseLanguage = bindElementLanguage(container, localization);
   let disposed = false;
   let root: HTMLElement | null = null;
   let renderedStatus = "";
@@ -53,8 +50,11 @@ export function mountDocumentStatusBar(
     if (disposed) return;
     const current = source.current();
     const status = current?.status ?? "inactive";
-    const label = current === null ? "No Inkbook embed open" : LABELS[current.status];
-    const title = current === null ? label : `Inkbook: ${label}\n${current.path}`;
+    const label = localization.t(
+      current === null ? "host.status.inactive" : `host.status.${current.status}`,
+    );
+    const title =
+      current === null ? label : localization.t("host.status.title", { label, path: current.path });
     const motionPreference = readPreference();
     const reduced = isReducedMotion(motionPreference, query?.matches ?? false);
     if (
@@ -70,6 +70,7 @@ export function mountDocumentStatusBar(
       flushSync(() =>
         view.render(
           createElement(DocumentStatusBarContent, {
+            localization,
             icon: current === null ? null : ICONS[current.status],
             label,
             motionPreference,
@@ -92,12 +93,15 @@ export function mountDocumentStatusBar(
   };
   query?.addEventListener("change", update);
   const unsubscribe = source.subscribe(update);
+  const unsubscribeLanguage = localization.subscribe(update);
   update();
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
     query?.removeEventListener("change", update);
     unsubscribe();
+    unsubscribeLanguage();
+    releaseLanguage();
     view.unmount();
   };
   return {

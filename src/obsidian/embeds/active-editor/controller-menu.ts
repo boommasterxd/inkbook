@@ -1,3 +1,4 @@
+import type { Localization } from "../../../domain/localization";
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import {
   EditorToolbarMenuSession,
@@ -17,6 +18,7 @@ import type { Keymap } from "obsidian";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 interface ActiveEditorMenuOptions {
+  readonly localization?: Localization | undefined;
   readonly event?: MouseEvent;
   readonly factory: MenuFactoryPort;
   readonly inputSurface: SvgSceneRenderer["inputSurface"];
@@ -43,6 +45,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
   const invocation =
     options.event === undefined
       ? {
+          localization: options.localization,
           type: "position" as const,
           canvasInputSurface: options.inputSurface,
           ownerDocument: options.ownerDocument,
@@ -52,6 +55,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
           ...(options.returnFocus === undefined ? {} : { returnFocus: options.returnFocus }),
         }
       : {
+          localization: options.localization,
           type: "event" as const,
           canvasInputSurface: options.inputSurface,
           event: options.event,
@@ -91,6 +95,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
 }
 
 export interface ActiveEditorMenuControllerOptions {
+  readonly localization?: Localization | undefined;
   readonly workScheduler: WorkScheduler;
   readonly actions: ActiveEditorActions;
   readonly factory: MenuFactoryPort;
@@ -178,6 +183,7 @@ export class ActiveEditorMenuController {
     if (ownerWindow === null) return;
     let session: EditorToolbarMenuSession;
     session = new EditorToolbarMenuSession({
+      localization: this.#options.localization,
       anchor: options.anchor,
       canvasInputSurface: this.#options.inputSurface,
       factory: this.#options.factory,
@@ -249,6 +255,7 @@ export class ActiveEditorMenuController {
     };
     let session: ContextMenuSession;
     session = openActiveEditorMenu({
+      localization: this.#options.localization,
       arrangeAvailability: actions.arrangeAvailability(),
       canEraseAll: this.#options.storeSize() > 0,
       canPaste: actions.canRequestPaste,

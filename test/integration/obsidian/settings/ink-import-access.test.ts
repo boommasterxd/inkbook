@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
@@ -53,6 +54,7 @@ function fixture() {
   const createService = vi.fn(() => service);
   const app = { keymap: new Keymap(), workspace: { containerEl: document.body } } as App;
   const access = new InkImportAccess({
+    localization: new Localization(),
     app,
     signal: owner.signal,
     createService,

@@ -31,6 +31,34 @@
   --inkbook-dialog-danger-hover: color-mix(in srgb, var(--inkbook-tone-danger-base) 68%, black);
   --inkbook-dialog-danger-pressed: color-mix(in srgb, var(--inkbook-tone-danger-base) 58%, black);
   --inkbook-dialog-danger-foreground: var(--text-on-accent);
+  --inkbook-dialog-primary-background: var(--text-normal);
+  --inkbook-dialog-primary-foreground: var(--background-primary);
+  --inkbook-dialog-primary-hover: color-mix(
+    in srgb,
+    var(--text-normal) 90%,
+    var(--background-primary)
+  );
+  --inkbook-dialog-primary-pressed: color-mix(
+    in srgb,
+    var(--text-normal) 80%,
+    var(--background-primary)
+  );
+}
+
+:is(.inkbook-dialog-actions, .inkbook-import-actions) > .mod-cta {
+  --inkbook-menu-hover-background: var(--inkbook-dialog-primary-hover);
+  --inkbook-menu-press-background: var(--inkbook-dialog-primary-pressed);
+
+  background: var(--inkbook-dialog-primary-background);
+  color: var(--inkbook-dialog-primary-foreground);
+}
+
+:is(.inkbook-dialog-actions, .inkbook-import-actions) > .mod-cta:hover {
+  background-color: var(--inkbook-dialog-primary-hover);
+}
+
+:is(.inkbook-dialog-actions, .inkbook-import-actions) > .mod-cta:active {
+  background-color: var(--inkbook-dialog-primary-pressed);
 }
 
 .inkbook-dialog-actions[data-inkbook-feedback-owner] > .mod-warning {

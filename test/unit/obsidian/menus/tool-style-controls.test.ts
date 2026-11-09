@@ -1,10 +1,11 @@
+import { Localization } from "../../../../src/domain/localization";
 import { expect, it } from "vitest";
 
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import {
-  ARROW_NODE_STYLE_OPTIONS,
+  arrowNodeStyleOptions,
   createToolStyleControls,
-  OUTLINE_STYLE_OPTIONS,
+  outlineStyleOptions,
   OUTLINE_WIDTH_STYLE_OPTIONS,
   PEN_WIDTH_STYLE_OPTIONS,
 } from "../../../../src/obsidian/menus/tool-style-controls";
@@ -113,8 +114,12 @@ it("exports the canonical choice labels and values for reuse", () => {
     { label: "XL", value: "22" },
   ]);
   expect(OUTLINE_WIDTH_STYLE_OPTIONS).toEqual(PEN_WIDTH_STYLE_OPTIONS);
-  expect(OUTLINE_STYLE_OPTIONS.map(({ value }) => value)).toEqual(["solid", "dashed", "dotted"]);
-  expect(ARROW_NODE_STYLE_OPTIONS.map(({ value }) => value)).toEqual([
+  expect(outlineStyleOptions(new Localization().t).map(({ value }) => value)).toEqual([
+    "solid",
+    "dashed",
+    "dotted",
+  ]);
+  expect(arrowNodeStyleOptions(new Localization().t).map(({ value }) => value)).toEqual([
     "none",
     "arrow",
     "triangle",

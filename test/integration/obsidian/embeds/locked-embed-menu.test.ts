@@ -5,6 +5,7 @@ import { type App, Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LockedEmbedMenu } from "../../../../src/obsidian/embeds/presentation/locked-embed-menu";
+import { Localization } from "../../../../src/domain/localization";
 import { createOwnedMenuFactory } from "../../../../src/obsidian/menus/owned-menu-factory";
 import { createPhoneSheetHost } from "../../../../src/obsidian/menus/panels/phone-sheet-host";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
@@ -27,13 +28,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function harness() {
+function harness(localization?: Localization) {
   const { root, preview } = createLockedEmbedPreview(document);
   const onEdit = vi.fn();
   const onOpenSvg = vi.fn();
   const onDeleteEmbed = vi.fn();
   const app = { workspace: { containerEl: document.body } } as App;
   const controller = new LockedEmbedMenu({
+    localization,
     root,
     preview,
     factory: createOwnedMenuFactory({
@@ -95,6 +97,27 @@ function expectConsumedTouchRelease(test: ReturnType<typeof harness>): void {
   expect(test.onEdit).not.toHaveBeenCalled();
   expect(test.root.dataset.inkbookState).toBe("locked");
 }
+
+it("updates an open menu in place and releases its language listener on disposal", () => {
+  const localization = new Localization();
+  const test = harness(localization);
+  contextMenu(test.preview);
+  const items = menuItems();
+  items[1]!.focus();
+  localization.setLanguage("de");
+  expect(menuItems()).toEqual(items);
+  expect(items.map((item) => item.textContent)).toEqual([
+    "Einbettung bearbeiten",
+    "SVG-Datei öffnen",
+    "Einbettung löschen",
+  ]);
+  expect(document.activeElement).toBe(items[1]);
+  items[1]!.click();
+  expect(test.onOpenSvg).toHaveBeenCalledOnce();
+  test.controller.dispose();
+  localization.setLanguage("en");
+  expect(items[1]!.textContent).toBe("SVG-Datei öffnen");
+});
 
 describe("locked embed context actions", () => {
   it.each(["desktop", "tablet", "phone"])("opens without activation on %s", (mode) => {

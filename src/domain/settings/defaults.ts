@@ -123,6 +123,7 @@ export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV2 {
     penTapInsertion: "off",
     leftHandedToolbar: false,
     motion: "system",
+    language: "auto",
     keyboardShortcuts: createBuiltInKeyboardShortcuts(),
   };
 }
