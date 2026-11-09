@@ -128,6 +128,16 @@ function frontmatterRanges(text: string): MarkdownSuppressedRange[] {
   return [{ from: 0, to: end === null ? text.length : end.index + end[0].length }];
 }
 
+function inlineCodeEnd(text: string, from: number, delimiter: string): number | undefined {
+  const tokens = /(?<boundary>\n[ \t]*\r?\n|^ {0,3}(?:`{3,}|~{3,}|<!--))|`+/gmu;
+  tokens.lastIndex = from;
+  for (let token = tokens.exec(text); token !== null; token = tokens.exec(text)) {
+    if (token.groups?.["boundary"] !== undefined) return undefined;
+    if (token[0].length === delimiter.length) return tokens.lastIndex;
+  }
+  return undefined;
+}
+
 function suppressedMarkdownRanges(text: string): readonly MarkdownSuppressedRange[] {
   const ranges = frontmatterRanges(text);
   const tokens = /^(?<fence> {0,3}(?:`{3,}|~{3,}))|<!--|`+/gmu;
@@ -143,9 +153,9 @@ function suppressedMarkdownRanges(text: string): readonly MarkdownSuppressedRang
       to = closing < 0 ? text.length : closing + 3;
     } else {
       if (isEscaped(text, from)) continue;
-      const closing = text.indexOf(token[0], tokens.lastIndex);
-      if (closing < 0) continue;
-      to = closing + token[0].length;
+      const closing = inlineCodeEnd(text, tokens.lastIndex, token[0]);
+      if (closing === undefined) continue;
+      to = closing;
     }
     ranges.push({ from, to });
     tokens.lastIndex = to;

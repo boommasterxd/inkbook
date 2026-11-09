@@ -103,6 +103,48 @@ describe("Native image width", () => {
 });
 
 describe("Markdown suppression", () => {
+  it("does not consume a fence opener after an unmatched inline backtick", () => {
+    const text = [
+      "Unclosed `",
+      "",
+      "```md",
+      "``",
+      "![[hidden.svg]]",
+      "![Hidden](hidden.svg)",
+      "```",
+      "![[accepted.svg]]",
+    ].join("\n");
+    expect(findMarkdownInkbookEmbeds(text).map((embed) => embed.linkpath)).toEqual([
+      "accepted.svg",
+    ]);
+  });
+
+  it.each([
+    ["fenced code", "```md\n``\n![[hidden.svg]]\n```"],
+    ["an HTML comment", "<!-- `\n![[hidden.svg]]\n-->"],
+  ])("preserves %s boundaries without a preceding blank line", (_context, block) => {
+    const text = `Unclosed \`\n${block}\n![[accepted.svg]]`;
+    expect(findMarkdownInkbookEmbeds(text).map((embed) => embed.linkpath)).toEqual([
+      "accepted.svg",
+    ]);
+  });
+
+  it("keeps multiline inline code within its paragraph and matches complete backtick runs", () => {
+    const text = [
+      "Text `code with `` literal backticks",
+      "![[inline.svg]]",
+      "continued`",
+      "",
+      "Unclosed `",
+      "",
+      "![[accepted.svg]]",
+      "Text `",
+    ].join("\n");
+    expect(findMarkdownInkbookEmbeds(text).map((embed) => embed.linkpath)).toEqual([
+      "accepted.svg",
+    ]);
+  });
+
   it("ignores native embeds in frontmatter, code, comments, and escaped text", () => {
     const text = [
       "---",
