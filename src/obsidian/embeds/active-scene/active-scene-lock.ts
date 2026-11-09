@@ -143,7 +143,7 @@ class LockLayoutTransition implements LockedFitTransition {
     this.#startTime = options.workScheduler.now();
     this.#target = target;
     options.container.style.blockSize = `${String(target.oldBlockSize)}px`;
-    options.container.setCssProps({ transition: "none" });
+    options.container.classList.add("inkbook-lock-layout");
   }
 
   public get target(): LockTarget {
@@ -223,6 +223,7 @@ class LockLayoutTransition implements LockedFitTransition {
   #settle(): void {
     this.#settled = true;
     if (activeTransitions.get(this.#options.container) === this) {
+      this.#options.container.classList.remove("inkbook-lock-layout");
       activeTransitions.delete(this.#options.container);
     }
   }

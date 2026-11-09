@@ -63,7 +63,7 @@ export function renderImportPreview(
   const storage = container.createEl("p", { cls: "inkbook-import-storage-note" });
   renderImportIcon(storage, "hard-drive", "inkbook-import-storage-icon");
   storage.createSpan({
-    text: "Local conversion · Copies and recovery backups use extra vault and sync storage.",
+    text: "Local conversion · copies and recovery backups use extra vault and sync storage.",
   });
   renderImportFindings(
     container,

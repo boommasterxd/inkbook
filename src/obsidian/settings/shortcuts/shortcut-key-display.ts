@@ -35,7 +35,7 @@ function renderShortcutKeyGroups(
   groups: readonly (readonly string[])[],
 ): void {
   groups.forEach((group, groupIndex) => {
-    if (groupIndex > 0) container.createSpan({ cls: "inkbook-shortcut-alternative", text: "or" });
+    if (groupIndex > 0) container.createSpan({ cls: "inkbook-shortcut-alternative", text: "Or" });
     for (const part of group) container.createEl("kbd", { text: fixedKeyLabel(part) });
   });
 }

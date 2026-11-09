@@ -44,6 +44,10 @@ function plan(overrides = {}) {
 it("omits the repeated audit only when the caller supplies verified selection evidence", async () => {
   const commands = await qualityCommands(plan(), root, npmEntry, false, true);
   expect(commands.some(({ label }) => label === "audit")).toBe(false);
+  expect(commands.find(({ label }) => label === "dependencies:check").args.slice(1)).toEqual([
+    "ls",
+    "--all",
+  ]);
   expect(commands.some(({ label }) => label.startsWith("test:coverage"))).toBe(true);
 });
 
@@ -54,6 +58,7 @@ describe("selected CI execution", () => {
     expect(commands.map(({ label }) => label)).toEqual([
       "docs:check",
       "format:check",
+      "dependencies:check",
       "lint",
       "lint:styles",
       "lint:layout",
@@ -75,34 +80,6 @@ describe("selected CI execution", () => {
     expect(test.args.slice(1, 4)).toEqual([integrationTest, unitTest, "--"]);
     expect(test.args).not.toContain("test/unit");
     expect(test.args.some((arg) => arg.startsWith("--coverage.thresholds"))).toBe(false);
-  });
-
-  it.each([
-    "test/unit/domain/value.test.ts",
-    "test/fixtures/document.svg",
-    "docs/core-model.md",
-    ".github/workflows/ci.yml",
-    ".gitignore",
-    "scripts/run-ci.mjs",
-    "vitest.config.ts",
-  ])("avoids build and package work for known nonproduction input %s", async (file) => {
-    const selected = plan({ changes: [file] });
-    expect(selectionOutputs(selected).build).toBe("false");
-    const labels = (await qualityCommands(selected, root, npmEntry)).map(({ label }) => label);
-    expect(labels).not.toContain("build");
-    expect(labels).not.toContain("package:verify");
-    expect(labels).toContain("audit");
-  });
-
-  it.each([
-    "package.json",
-    "package-lock.json",
-    "scripts/build.mjs",
-    "manifest.json",
-    "unknown",
-    "src/menu.css",
-  ])("retains builds for production, dependency and unknown input %s", (file) => {
-    expect(selectionOutputs(plan({ changes: [file] })).build).toBe("true");
   });
 
   it("retains full coverage for global test configuration without an irrelevant build", async () => {
@@ -145,6 +122,36 @@ describe("selected CI execution", () => {
     await expect(
       qualityCommands(plan({ mode: "docs", tests: [] }), root, npmEntry),
     ).rejects.toThrow("Documentation plans");
+  });
+});
+
+describe("selected production build requirements", () => {
+  it.each([
+    "test/unit/domain/value.test.ts",
+    "test/fixtures/document.svg",
+    "docs/core-model.md",
+    ".github/workflows/ci.yml",
+    ".gitignore",
+    "scripts/run-ci.mjs",
+    "vitest.config.ts",
+  ])("avoids build and package work for known nonproduction input %s", async (file) => {
+    const selected = plan({ changes: [file] });
+    expect(selectionOutputs(selected).build).toBe("false");
+    const labels = (await qualityCommands(selected, root, npmEntry)).map(({ label }) => label);
+    expect(labels).not.toContain("build");
+    expect(labels).not.toContain("package:verify");
+    expect(labels).toContain("audit");
+  });
+
+  it.each([
+    "package.json",
+    "package-lock.json",
+    "scripts/build.mjs",
+    "manifest.json",
+    "unknown",
+    "src/menu.css",
+  ])("retains builds for production, dependency and unknown input %s", (file) => {
+    expect(selectionOutputs(plan({ changes: [file] })).build).toBe("true");
   });
 });
 

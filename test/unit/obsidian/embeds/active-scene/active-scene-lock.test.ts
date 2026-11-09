@@ -9,6 +9,7 @@ import {
   type SceneLayoutUpdate,
 } from "../../../../../src/obsidian/embeds/active-scene/active-scene-lock";
 import { domRect } from "../../../../fixtures/obsidian/active-editor";
+import { FakeClassList } from "../../../../fixtures/obsidian/class-list";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
 const page: PageV1 = {
@@ -228,6 +229,7 @@ function createFixture(scheduleStabilityFrame = false, atBottom = false) {
   let visibleHeight = 480;
   const connected = { value: true };
   const container = {
+    classList: new FakeClassList(),
     getBoundingClientRect: () => domRect({ height: visibleHeight, left: 0, top: 0, width: 1_024 }),
     get isConnected() {
       return connected.value;

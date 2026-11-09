@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-import { sys } from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createPresentationFeedbackPositionLifecycle } from "../../../../src/obsidian/feedback";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
+import { installPluginStyles } from "../../../fixtures/obsidian/plugin-styles";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -13,13 +13,7 @@ afterEach(() => {
 
 describe("positioned feedback pointer behavior", () => {
   it("keeps the centered operation indicator non-interactive", () => {
-    const stylesheet = new CSSStyleSheet();
-    stylesheet.replaceSync(
-      ["inkbook", "feedback"]
-        .map((name) => sys.readFile(sys.resolvePath(`src/obsidian/styles/${name}.css`)) ?? "")
-        .join("\n"),
-    );
-    document.adoptedStyleSheets = [stylesheet];
+    installPluginStyles("inkbook", "feedback");
     const root = document.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
     root.className = "inkbook-root";
     const surface = document.createElementNS(

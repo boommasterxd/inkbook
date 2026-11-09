@@ -45,7 +45,7 @@ export class OperationFeedbackLayer {
     this.#motion?.cancel();
     this.#motion = undefined;
     if (this.#exiting) this.dispose();
-    else element.setCssProps({ opacity: "1" });
+    else element.style.removeProperty("opacity");
   }
 
   public dispose(): void {

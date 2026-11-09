@@ -2,19 +2,23 @@ import obsidian from "eslint-plugin-obsidianmd";
 import sonarjs from "eslint-plugin-sonarjs";
 import globals from "globals";
 
-const warningRulesAsErrors = Object.fromEntries(
-  obsidian.configs.recommended.flatMap((config) =>
-    Object.entries(config.rules ?? {})
-      .filter(([, value]) => {
-        const severity = Array.isArray(value) ? value[0] : value;
-        return severity === "warn" || severity === 1;
-      })
-      .map(([name, value]) => [
-        name,
-        Array.isArray(value) ? ["error", ...value.slice(1)] : "error",
-      ]),
-  ),
-);
+// Promote within each block so upstream test and worker scopes remain intact.
+const recommendedWithErrors = obsidian.configs.recommended.map((config) => ({
+  ...config,
+  ...(config.rules === undefined
+    ? {}
+    : {
+        rules: Object.fromEntries(
+          Object.entries(config.rules).map(([name, value]) => [name, blockingRule(value)]),
+        ),
+      }),
+}));
+
+function blockingRule(value) {
+  const severity = Array.isArray(value) ? value[0] : value;
+  if (severity !== "warn" && severity !== 1) return value;
+  return Array.isArray(value) ? ["error", ...value.slice(1)] : "error";
+}
 
 const mobileRuntimePaths = [
   {
@@ -69,7 +73,7 @@ export default [
   {
     ignores: ["coverage/**", "dist/**", "main.js", "node_modules/**"],
   },
-  ...obsidian.configs.recommended,
+  ...recommendedWithErrors,
   {
     files: ["package.json"],
     rules: {
@@ -99,7 +103,10 @@ export default [
       sonarjs,
     },
     rules: {
-      ...warningRulesAsErrors,
+      // Keep the project's globals and mobile-import boundaries in fixtures too;
+      // only the named Node-only harnesses below may access Node APIs.
+      "no-undef": "error",
+      "obsidianmd/no-nodejs-modules": "error",
       complexity: ["error", 20],
       "max-depth": ["error", 4],
       "max-lines": ["error", { max: 500 }],

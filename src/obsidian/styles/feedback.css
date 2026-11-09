@@ -10,6 +10,7 @@
   gap: 10px;
   max-inline-size: min(36rem, calc(100% - 24px));
   padding: 9px 10px;
+  scale: 1;
   width: max-content;
   z-index: var(--layer-menu);
 }

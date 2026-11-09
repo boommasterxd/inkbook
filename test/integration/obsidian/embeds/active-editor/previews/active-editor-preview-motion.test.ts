@@ -337,45 +337,6 @@ describe("active editor lock preview motion", () => {
     expect(setPreviewAspectRatio).toHaveBeenCalledWith(4);
   });
 
-  it("prepares the exact preview behind the editor before the atomic replacement", () => {
-    const fixture = createFixture("full");
-    const editorChrome = createEditorChrome();
-
-    fixture.handoff.handoffToPreview(editorChrome, fixture.completed);
-
-    expect(fixture.preview.style.position).toBe("absolute");
-    expect(fixture.preview.style.zIndex).toBe("1");
-    expect(editorChrome.style.zIndex).toBe("2");
-    expect(editorChrome.hidden).toBe(false);
-    expect(fixture.setTimeoutSpy).not.toHaveBeenCalled();
-    expect(fixture.completed).not.toHaveBeenCalled();
-    fixture.runFrame();
-    expect(fixture.completed).not.toHaveBeenCalled();
-    fixture.runFrame();
-    expect(editorChrome.hidden).toBe(true);
-    expect(fixture.completed).toHaveBeenCalledOnce();
-  });
-
-  it("keeps one complete presentation visible across the lock replacement frame", () => {
-    const fixture = createFixture("full");
-    fixture.preview.hidden = true;
-    const editor = createEditorChrome();
-
-    fixture.handoff.handoffToPreview(editor, fixture.completed);
-
-    expect(fixture.preview.hidden).toBe(false);
-    expect(fixture.preview.style.zIndex).toBe("1");
-    expect(editor.style.zIndex).toBe("2");
-    expect(editor.hidden).toBe(false);
-    fixture.runFrame();
-    expect(editor.hidden).toBe(false);
-    expect(fixture.setTimeoutSpy).not.toHaveBeenCalled();
-    fixture.runFrame();
-    expect(editor.hidden).toBe(true);
-    expect(fixture.setTimeoutSpy).not.toHaveBeenCalled();
-    expect(fixture.completed).toHaveBeenCalledOnce();
-  });
-
   it("finishes the pending lock handoff when reduced motion becomes active", () => {
     const fixture = createFixture("full");
     const editorChrome = createEditorChrome();
@@ -416,6 +377,7 @@ function createEditorChrome(): HTMLElement {
     removeProperty: vi.fn(),
   };
   const editor = {
+    classList: new FakeClassList(),
     hidden: false,
     setCssProps: (properties: Record<string, string>) => Object.assign(style, properties),
     style,

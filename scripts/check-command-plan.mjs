@@ -18,6 +18,7 @@ const tasks = {
   audit: { npm: true, args: ["audit", "--omit=dev", "--audit-level=high"] },
   build: nodeTask("scripts/build.mjs"),
   "dead-code": nodeTask("scripts/run-dead-code-checks.mjs"),
+  "dependencies:check": { npm: true, args: ["ls", "--all"] },
   "docs:check": nodeTask("scripts/ci-documentation.mjs"),
   duplication: nodeTask(fileURLToPath(import.meta.resolve("jscpd/run-jscpd.js"))),
   format: nodeTask(fileURLToPath(import.meta.resolve("prettier/bin/prettier.cjs")), "--write", "."),
@@ -70,6 +71,7 @@ const groups = {
   "ci:quality": [
     "docs:check",
     "format:check",
+    "dependencies:check",
     "lint",
     "lint:styles",
     "lint:layout",
@@ -102,7 +104,7 @@ export function createCheckCommandPlan(
   const task = Object.hasOwn(tasks, name) ? tasks[name] : undefined;
   if (task === undefined) throw new Error(`Unknown check: ${name}`);
   if (task.npm && (npmEntry === undefined || npmEntry === null))
-    throw new Error("Run the audit through npm run.");
+    throw new Error("Run npm checks through npm run.");
   return [
     {
       label: name,

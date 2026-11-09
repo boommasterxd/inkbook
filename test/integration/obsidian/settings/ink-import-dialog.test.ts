@@ -138,7 +138,7 @@ it("requires a reviewed preview before writes and announces an accessible result
   expect(document.activeElement?.textContent).toBe("1 handwriting file found");
   expect(document.activeElement?.tagName).toBe("H3");
   expect(dialog.contentEl.textContent).toContain(
-    "Local conversion · Copies and recovery backups use extra vault and sync storage.",
+    "Local conversion · copies and recovery backups use extra vault and sync storage.",
   );
   disclosure("Handwriting files (1)").click();
   const file = dialog.contentEl.querySelector('ul[aria-label="Handwriting files"] li');

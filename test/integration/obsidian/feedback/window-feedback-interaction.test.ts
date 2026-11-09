@@ -1,17 +1,15 @@
 // @vitest-environment happy-dom
-import { sys } from "typescript";
 import type { Window as HappyDomWindow } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InkbookFeedbackManager } from "../../../../src/obsidian/feedback";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { installPluginStyles } from "../../../fixtures/obsidian/plugin-styles";
 
 beforeEach(() => {
   installObsidianDomHelpers();
   vi.useFakeTimers();
-  const stylesheet = new CSSStyleSheet();
-  stylesheet.replaceSync(sys.readFile(sys.resolvePath("src/obsidian/styles/feedback.css")) ?? "");
-  document.adoptedStyleSheets = [stylesheet];
+  installPluginStyles("feedback");
 });
 afterEach(() => {
   document.body.replaceChildren();

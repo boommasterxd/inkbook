@@ -27,6 +27,7 @@ describe("check command plan", () => {
     expect(plan.map(({ label }) => label)).toEqual([
       "docs:check",
       "format:check",
+      "dependencies:check",
       "lint",
       "lint:styles",
       "lint:layout",
@@ -43,6 +44,11 @@ describe("check command plan", () => {
       "test:performance",
     ]);
     expect(plan.every(({ command }) => command === process.execPath)).toBe(true);
+    expect(plan.find(({ label }) => label === "dependencies:check").args).toEqual([
+      "/npm-cli.js",
+      "ls",
+      "--all",
+    ]);
     expect(plan.find(({ label }) => label === "test:coverage").args[0]).toMatch(
       /scripts\/run-validated-tests\.mjs$/,
     );
