@@ -83,7 +83,7 @@ describe("Obsidian copied-embed dialog", () => {
       );
       expect(test.files.size).toBe(choice === "duplicate" ? 2 : 1);
       if (choice !== "duplicate") {
-        expect(test.editor.content).toBe(choice === null ? "" : CLIPBOARD);
+        expect(test.editor.content).toBe(choice === null ? "" : "![[drawings/source.svg]]");
       }
     },
   );
@@ -102,12 +102,12 @@ describe("Obsidian copied-embed composition", () => {
       undefined,
       undefined,
       validationScheduling,
-    ).paste(pasteRequest(editor));
+    ).paste(pasteRequest(editor, { clipboardText: "![Drawing|00400](drawings/source.svg)" }));
 
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
     expect(placementFeedback).not.toHaveBeenCalled();
     expect(test.duplicatePath).toMatch(/^drawings\/inkbook-\d{8}-\d{6}-010101\.svg$/u);
-    expect(editor.content).toBe(`!inkbook[[${test.duplicatePath}]]`);
+    expect(editor.content).toBe(`![[${test.duplicatePath}|Drawing|00400]]`);
     expect(files.get(test.duplicatePath)?.text).toBe(serialized.value.svg);
     expect(
       getFileByPath.mock.calls.filter(([path]) => path === "drawings/source.svg").length,
@@ -137,7 +137,7 @@ describe("Obsidian copied-embed composition", () => {
       expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
       expect(placementFeedback).toHaveBeenCalledWith(message);
       expect(test.getRandomValues).toHaveBeenCalled();
-      expect(test.editor.content).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
+      expect(test.editor.content).toMatch(/^!\[\[notes\/inkbook-.*\.svg\]\]$/u);
     },
   );
 
@@ -152,7 +152,7 @@ describe("Obsidian copied-embed composition", () => {
     });
 
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
-    expect(test.editor.content).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
+    expect(test.editor.content).toMatch(/^!\[\[notes\/inkbook-.*\.svg\]\]$/u);
   });
 
   it("does not report regular note-folder placement", async () => {
@@ -241,7 +241,8 @@ function createCompositionHarness(
   } as unknown as Window;
   const app = {
     fileManager: {
-      generateMarkdownLink: (file: TFile) => `[[${file.path}]]`,
+      generateMarkdownLink: (file: TFile, _sourcePath: string, _subpath?: string, alias?: string) =>
+        `[[${file.path}${alias === undefined ? "" : `|${alias}`}]]`,
       getAvailablePathForAttachment: async (filename: string) => {
         if (options.attachmentUnavailable === true) {
           throw new Error("attachment folder unavailable");

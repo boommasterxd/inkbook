@@ -62,6 +62,11 @@ describe("recognition resource limits", () => {
       256,
     );
     expect(h.recognition.cached(h.files[0]!.path)).toBeUndefined();
+    const changes: string[] = [];
+    h.recognition.subscribe((path) => changes.push(path));
+    h.recognition.invalidate(h.files[0]!.path);
+    expect(changes).toEqual([h.files[0]!.path]);
+    expect(h.reads).toHaveLength(0);
     h.recognition.dispose();
   });
 

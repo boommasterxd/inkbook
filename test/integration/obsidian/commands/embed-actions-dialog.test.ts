@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as dialogs from "../../../../src/obsidian/dialogs/action-dialog";
 import { createHarness } from "./embed-actions-fixture";
 
-const markdown = "!inkbook[[drawings/page.svg]]";
+const markdown = "![[drawings/page.svg]]";
 const target = "drawings/page.svg";
 
 afterEach(() => vi.restoreAllMocks());

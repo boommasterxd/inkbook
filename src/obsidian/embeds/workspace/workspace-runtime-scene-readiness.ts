@@ -104,7 +104,6 @@ export function beginWorkspaceActivation(
       if (mounted.activation === activation) delete mounted.activation;
     },
   };
-  delete mounted.initialLoading;
   mounted.activation = activation;
   return activation;
 }
@@ -115,7 +114,7 @@ function activationFeedback(
 ): WorkspaceActivation["feedback"] {
   if (mounted.savingFeedback !== undefined) return undefined;
   if (autoActivationAttempt === undefined) return mounted.feedback.begin("opening");
-  return mounted.initialLoading?.feedback ?? mounted.feedback.begin("loading");
+  return mounted.feedback.begin("loading");
 }
 
 /** Initial insertion waits for width measurement; ordinary unlocking waits for the preview. */

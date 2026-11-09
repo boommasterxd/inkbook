@@ -6,7 +6,6 @@ import { editorInfoField, editorLivePreviewField } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createLivePreviewExtension } from "../../../../../src/obsidian/embeds/live-preview/live-preview";
-import { InkbookLoadingPreviewWidget } from "../../../../../src/obsidian/embeds/live-preview/live-preview-loading-widget";
 import type { EmbedIntegrationPorts } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
 import { configureTestEditorState } from "../../../../adapters/obsidian/plugin";
 import { nativeFrameWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
@@ -99,7 +98,7 @@ describe("Live Preview block-decoration source", () => {
     const ports = integrationPorts(control);
     const mount = vi.spyOn(ports.sessions, "mount");
     const detach = vi.spyOn(ports.sessions, "detach");
-    const { parent, view } = mountView(ports, "!inkbook[Author one](drawings/page.svg)");
+    const { parent, view } = mountView(ports, "![Author one](drawings/page.svg)");
     const attachment = mount.mock.calls[0]![0];
     expect(previewLabel(parent)).toBe("Edit handwriting: Author one");
     attachment.root.dataset.inkbookState = "active";
@@ -143,7 +142,7 @@ describe("Live Preview block-decoration source", () => {
       livePreview: true,
     });
     const state = EditorState.create({
-      doc: "!inkbook[[drawings/page.svg]]",
+      doc: "![[drawings/page.svg]]",
       extensions: [
         editorInfoField,
         editorLivePreviewField,
@@ -220,22 +219,17 @@ describe("Live Preview pending recognition", () => {
   afterEach(() => removeObsidianDomHelpers());
 
   it.each([true, false])(
-    "replaces pending Markdown immediately and resolves valid=%s",
+    "preserves pending native Markdown until a validation notification (valid=%s)",
     async (valid) => {
       const control: RecognitionControl = { notify: undefined, value: undefined };
       const ports = integrationPorts(control);
       const recognize = vi.spyOn(ports.documents, "recognize");
-      const doc = "!inkbook[Pending drawing](drawings/page.svg)";
+      const doc = "![Pending drawing](drawings/page.svg)";
       const { parent, view } = mountView(ports, doc);
-      expect(parent.querySelector(".inkbook-loading-placeholder")).not.toBeNull();
+      expect(parent.querySelector(".inkbook-root")).toBeNull();
       expect(parent.querySelector("svg")).toBeNull();
-      expect(parent.textContent).not.toContain("!inkbook");
+      expect(parent.textContent).toContain(doc);
       expect(recognize).not.toHaveBeenCalled();
-      await Promise.resolve();
-      expect(recognize).toHaveBeenCalledWith(
-        "drawings/page.svg",
-        view.dom.ownerDocument.defaultView,
-      );
       control.value = valid
         ? {
             aspectRatio: 4,
@@ -245,7 +239,6 @@ describe("Live Preview pending recognition", () => {
         : false;
       control.notify?.("drawings/page.svg");
       await Promise.resolve();
-      expect(parent.querySelector(".inkbook-loading-placeholder")).toBeNull();
       if (valid) expect(previewLabel(parent)).toBe("Edit handwriting: Pending drawing");
       else expect(parent.textContent).toContain(doc);
       view.destroy();
@@ -260,32 +253,6 @@ describe("Live Preview pending lifecycle", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     removeObsidianDomHelpers();
-  });
-
-  it("retains the animated pending height across remount and cancels owned frame work", async () => {
-    const ports = integrationPorts({ notify: undefined, value: undefined });
-    const recognize = vi.spyOn(ports.documents, "recognize");
-    const token = { presented: false, initialHeight: 0 };
-    const widget = new InkbookLoadingPreviewWidget("drawing.svg", ports, token);
-    const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(12);
-    const cancel = vi.spyOn(window, "cancelAnimationFrame");
-    const view = { dom: document.body } as EditorView;
-    const first = widget.toDOM(view);
-    expect(token.initialHeight).toBe(0);
-    frame.mock.calls[0]?.[0](0);
-    frame.mock.calls[1]?.[0](90);
-    expect(token.initialHeight).toBe(24);
-    widget.destroy(first);
-    expect(cancel).toHaveBeenCalledWith(12);
-    expect(token.presented).toBe(false);
-    const second = widget.toDOM(view);
-    expect(token.initialHeight).toBe(24);
-    widget.destroy(second);
-    await Promise.resolve();
-    expect(recognize).not.toHaveBeenCalled();
-    expect(token.presented).toBe(false);
-    expect(widget.eq(new InkbookLoadingPreviewWidget("drawing.svg", ports, token))).toBe(true);
-    expect(widget.eq(new InkbookLoadingPreviewWidget("other.svg", ports, token))).toBe(false);
   });
 
   it("retains the mounted block while a saved SVG is being reclassified", async () => {
@@ -388,7 +355,7 @@ describe("Live Preview recognition during note edits", () => {
   });
 });
 
-function mountView(ports: EmbedIntegrationPorts, doc = "!inkbook[[drawings/page.svg]]") {
+function mountView(ports: EmbedIntegrationPorts, doc = "![[drawings/page.svg]]") {
   configureTestEditorState({ file: { path: "notes/note.md" }, livePreview: true });
   const parent = document.body.createDiv();
   const view = new EditorView({

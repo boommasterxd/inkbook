@@ -164,10 +164,6 @@ export class WorkspaceRuntimeLifecycle {
     });
   }
 
-  public hasPendingAutoActivation(attachment: PresentationAttachment): boolean {
-    return this.#pendingAutoActivation?.attachmentKey === presentationAttachmentKey(attachment);
-  }
-
   public completeAutoActivation(attachment: PresentationAttachment, attempt?: number): void {
     const pending = this.#pendingAutoActivation;
     if (!this.#matchesAttempt(pending, attachment, attempt)) return;

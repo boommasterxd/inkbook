@@ -15,6 +15,26 @@ import { createHiddenPreviewHandoff } from "../../../../fixtures/obsidian/active
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
 
+describe("Live Preview native width", () => {
+  it("updates and clears native width without detaching the document attachment", () => {
+    const ports = createPorts();
+    const initial = new InkbookLivePreviewWidget({ ...embed(), width: 400 }, ports);
+    const root = initial.toDOM({ plugin: () => null, dom: new FakePresentationElement() } as never);
+    try {
+      expect(Reflect.get(root.style, "--inkbook-embed-inline-size")).toBe("400px");
+      const changed = new InkbookLivePreviewWidget({ ...embed(), width: 600 }, ports);
+      expect(initial.eq(changed)).toBe(false);
+      expect(changed.updateDOM(root)).toBe(true);
+      expect(Reflect.get(root.style, "--inkbook-embed-inline-size")).toBe("600px");
+      expect(new InkbookLivePreviewWidget(embed(), ports).updateDOM(root)).toBe(true);
+      expect(Reflect.get(root.style, "--inkbook-embed-inline-size")).toBeUndefined();
+      expect(ports.calls).toEqual([]);
+    } finally {
+      initial.destroy(root);
+    }
+  });
+});
+
 describe("Live Preview widget content identity", () => {
   it("updates author descriptions without detaching an unchanged drawing", () => {
     const ports = createPorts();

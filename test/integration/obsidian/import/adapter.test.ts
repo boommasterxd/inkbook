@@ -104,7 +104,7 @@ describe("Ink import vault boundaries", () => {
     expect(await fixture.ports.read("inkbook-imports/test-run/source-0.svg")).toBe("original");
     expect(
       fixture.ports.generateEmbed("inkbook-imports/test-run/source-0.svg", "note.md", "Caption"),
-    ).toBe("!inkbook[[inkbook-imports/test-run/source-0.svg|Caption]]");
+    ).toBe("![[inkbook-imports/test-run/source-0.svg|Caption]]");
     fixture.put("note.md", "independent edit");
     expect(await fixture.ports.compareAndWrite("note.md", "old", "imported")).toBe(false);
     expect(await fixture.ports.compareAndWrite("note.md", "independent edit", "imported")).toBe(

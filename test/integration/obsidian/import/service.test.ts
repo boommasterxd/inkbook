@@ -20,10 +20,8 @@ describe("Obsidian Ink import workflow", () => {
     expect(result.imported).toBe(1);
     expect(fixture.files.get("Ink/example.svg")).toBe("writing source");
     expect(fixture.files.get("Ink/example.inkbook.svg")).toBe("existing");
-    expect(fixture.files.get("first.md")).toBe("!inkbook[[Ink/example.inkbook-1.svg]]");
-    expect(fixture.files.get("second.md")).toBe(
-      "!inkbook[[Ink/example.inkbook-1.svg|My transcript]]",
-    );
+    expect(fixture.files.get("first.md")).toBe("![[Ink/example.inkbook-1.svg]]");
+    expect(fixture.files.get("second.md")).toBe("![[Ink/example.inkbook-1.svg|My transcript]]");
     const count = fixture.writes.length;
     await fixture.service.apply(preview);
     expect(fixture.writes).toHaveLength(count);
@@ -55,6 +53,20 @@ describe("Obsidian Ink import workflow", () => {
   });
 });
 
+describe("Native Obsidian Ink replacement journals", () => {
+  it("reads and undoes journals containing native replacement syntax", async () => {
+    const original = writingEmbed();
+    const fixture = importFixture({ "Ink/example.svg": "source", "note.md": original });
+    fixture.ports.generateEmbed = (path) => `![[${path}]]`;
+    const preview = await fixture.service.scan();
+    await fixture.service.apply(preview);
+    expect(fixture.files.get("note.md")).toBe("![[Ink/example.inkbook.svg]]");
+    expect((await fixture.service.history())[0]?.status).toBe("complete");
+    await new ObsidianInkImportService(fixture.ports).undo(preview.id);
+    expect(fixture.files.get("note.md")).toBe(original);
+  });
+});
+
 describe("Obsidian Ink import undo", () => {
   it("undoes only its own embeds while retaining independent note and generated-target edits", async () => {
     const original = `${"before ".repeat(30)}\n${writingEmbed()}\n${"after ".repeat(30)}`;
@@ -71,7 +83,7 @@ describe("Obsidian Ink import undo", () => {
     expect(fixture.files.get("note.md")).toBe(`New paragraph\n${original}\nNew footer`);
     expect(fixture.files.get("Ink/example.inkbook.svg")).toBe("User edited target");
     await fixture.service.undo(preview.id);
-    expect(fixture.files.get("note.md")).not.toContain("!inkbook");
+    expect(fixture.files.get("note.md")).not.toContain("![[Ink/example.inkbook.svg]]");
   });
 
   it("reports a durable per-note undo reason without repeating it or overwriting edited content", async () => {
@@ -100,7 +112,7 @@ describe("Obsidian Ink import undo", () => {
     expect(repeated.journal.issues).toEqual(result.journal.issues);
     expect((await fixture.service.history())[0]?.issues).toEqual(result.journal.issues);
     expect(fixture.files.get(result.journal.notes[0]!.backupPath)).toBe(writingEmbed());
-    fixture.files.set(notePath, "!inkbook[[Ink/example.inkbook.svg]]");
+    fixture.files.set(notePath, "![[Ink/example.inkbook.svg]]");
     const resolved = await fixture.service.undo(preview.id);
     expect(resolved.journal.status).toBe("undone");
     expect(resolved.conflicts).toBe(0);
@@ -120,7 +132,7 @@ describe("Obsidian Ink import undo", () => {
     await fixture.service.apply(preview);
     fixture.files.set(
       "note.md",
-      fixture.files.get("note.md")!.replace("!inkbook[[first.inkbook.svg]]", "User replacement"),
+      fixture.files.get("note.md")!.replace("![[first.inkbook.svg]]", "User replacement"),
     );
     const result = await fixture.service.undo(preview.id);
     expect(result.journal.status).toBe("conflict");
@@ -159,7 +171,7 @@ describe("Obsidian Ink import source cleanup", () => {
     await fixture.service.undo(preview.id);
     expect(fixture.files.get("Ink/example.svg")).toBe("writing source");
     expect(fixture.files.get("note.md")).toContain(writingEmbed());
-    expect(fixture.files.get("note.md")).not.toContain("!inkbook");
+    expect(fixture.files.get("note.md")).not.toContain("![[Ink/example.inkbook.svg]]");
   });
 
   it("retains changed or still referenced originals during cleanup", async () => {
@@ -198,7 +210,7 @@ describe("Obsidian Ink import source cleanup", () => {
     const { preview, ...fixture } = await cleanedImportFixture();
     fixture.files.set("Ink/example.svg", "Different file");
     expect((await fixture.service.undo(preview.id)).journal.status).toBe("conflict");
-    expect(fixture.files.get("note.md")).toContain("!inkbook");
+    expect(fixture.files.get("note.md")).toContain("!");
     expect(fixture.files.get("Ink/example.svg")).toBe("Different file");
   });
 });

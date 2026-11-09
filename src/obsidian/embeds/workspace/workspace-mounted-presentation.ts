@@ -11,7 +11,6 @@ import {
   type PresentationOperationFeedbackHandle,
 } from "../presentation/presentation-operation-feedback";
 import type { WorkspaceMountedPresentation } from "./workspace-load-recovery";
-import type { WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
 
 export function createWorkspacePresentationStateSetter(
   presentations: ReadonlyMap<string, WorkspaceMountedPresentation>,
@@ -47,39 +46,10 @@ export function createWorkspaceMountedPresentation(
   };
 }
 
-/** Carries recognition feedback through presentation and any queued initial activation. */
-export function startInitialWorkspaceLoading(
-  mounted: WorkspaceMountedPresentation,
-  lifecycle: Pick<WorkspaceRuntimeLifecycle, "hasPendingAutoActivation">,
-): void {
-  const attachment = mounted.attachment;
-  if (attachment.loadingStartedAt === undefined) return;
-  const initial = {
-    feedback: mounted.feedback.begin("loading", attachment.loadingStartedAt),
-    presented: false,
-  };
-  mounted.initialLoading = initial;
-  void Promise.resolve(attachment.whenPresented ?? true).then((presented) => {
-    if (mounted.initialLoading !== initial) return;
-    initial.presented = true;
-    if (!presented || !lifecycle.hasPendingAutoActivation(attachment))
-      finishInitialWorkspaceLoading(mounted);
-  });
-}
-
-export function finishInitialWorkspaceLoading(
-  mounted: WorkspaceMountedPresentation | undefined,
-): void {
-  if (mounted?.initialLoading?.presented !== true) return;
-  mounted.initialLoading.feedback.finish();
-  delete mounted.initialLoading;
-}
-
-export function cancelInitialWorkspaceLoading(
+export function resumeInitialWorkspacePreview(
   mounted: WorkspaceMountedPresentation | undefined,
 ): void {
   mounted?.attachment.initialEntrance?.resumePreview();
-  finishInitialWorkspaceLoading(mounted);
 }
 
 export function updateWorkspaceMountedSettings(

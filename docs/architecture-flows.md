@@ -17,7 +17,7 @@ flowchart LR
   reading --> readingSource
   reading --> readingChild["MarkdownRenderChild"]
   live --> liveWidget["CodeMirror WidgetType"]
-  source --> rawMarkdown["Raw !inkbook Markdown"]
+  source --> rawMarkdown["Native SVG image Markdown"]
 
   readingSource -. "Exact standalone correlation only" .-> readingChild
   readingChild --> ownedPreview["Plugin-owned full-width block host and background preview"]

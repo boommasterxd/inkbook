@@ -52,15 +52,15 @@ describe("Obsidian embed actions", () => {
 
     expect(result).toEqual({
       kind: "copied",
-      markdown: "!inkbook[[drawings/page.svg]]",
+      markdown: "![[drawings/page.svg]]",
     } satisfies CopyEmbedOutcome);
     expect(harness.generateMarkdownLink).not.toHaveBeenCalled();
-    expect(harness.writeText).toHaveBeenCalledWith("!inkbook[[drawings/page.svg]]");
+    expect(harness.writeText).toHaveBeenCalledWith("![[drawings/page.svg]]");
   });
 
   it("rejects an ambiguous active reference without mutating the editor", async () => {
     const harness = createHarness({
-      documentText: "!inkbook[[drawings/page.svg]]\n!inkbook[[drawings/page.svg]]",
+      documentText: "![[drawings/page.svg]]\n![[drawings/page.svg]]",
       references: 2,
     });
 
@@ -71,7 +71,7 @@ describe("Obsidian embed actions", () => {
       reason: "ambiguous-embed",
     } satisfies DeleteEmbedOutcome);
     expect(harness.confirm).not.toHaveBeenCalled();
-    expect(harness.editor.value()).toContain("!inkbook[[drawings/page.svg]]");
+    expect(harness.editor.value()).toContain("![[drawings/page.svg]]");
     expect(harness.trashFile).not.toHaveBeenCalled();
   });
 
@@ -85,7 +85,7 @@ describe("Obsidian embed actions", () => {
       reason: "metadata-unresolved",
     } satisfies DeleteEmbedOutcome);
     expect(harness.confirm).not.toHaveBeenCalled();
-    expect(harness.editor.value()).toBe("!inkbook[[drawings/page.svg]]");
+    expect(harness.editor.value()).toBe("![[drawings/page.svg]]");
     expect(harness.trashFile).not.toHaveBeenCalled();
   });
 
@@ -97,6 +97,21 @@ describe("Obsidian embed actions", () => {
 
     expectRemovedWithoutTrash(harness, result);
     expect(harness.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["![[drawings/page.svg]]", "[drawing](drawings/page.svg)"],
+    ["![[drawings/page.svg]]", "Inline ![[drawings/page.svg|100]]"],
+    ["![[drawings/page.svg]]", "[drawing]: drawings/page.svg"],
+  ])("keeps the file when another reference or uncertain syntax remains", async (embed, other) => {
+    const harness = createHarness({ documentText: `${embed}\n${other}`, references: 1 });
+    harness.confirm.mockReturnValue(true);
+
+    const result = await harness.actions.deleteEmbed(livePreviewReference({ to: embed.length }));
+
+    expect(result).toEqual({ fileDeleted: false, kind: "deleted" } satisfies DeleteEmbedOutcome);
+    expect(harness.editor.value()).toBe(other);
+    expect(harness.trashFile).not.toHaveBeenCalled();
   });
 
   it("offers recoverable trash only when this is the sole resolved reference", async () => {
@@ -115,8 +130,8 @@ describe("Obsidian embed actions", () => {
 
 describe("Obsidian invoking embed identity", () => {
   it("copies the invoking embed Markdown when the file is referenced more than once", async () => {
-    const first = "!inkbook[[drawings/page.svg|First]]";
-    const second = "!inkbook[[drawings/page.svg|Second]]";
+    const first = "![[drawings/page.svg|First]]";
+    const second = "![[drawings/page.svg|Second]]";
     const harness = createHarness({ documentText: `${first}\n${second}`, references: 2 });
     const from = first.length + 1;
 
@@ -128,13 +143,13 @@ describe("Obsidian invoking embed identity", () => {
       to: from + second.length,
     });
 
-    expect(result).toEqual({ kind: "copied", markdown: second });
-    expect(harness.writeText).toHaveBeenCalledWith(second);
+    expect(result).toEqual({ kind: "copied", markdown: "![[drawings/page.svg|Second]]" });
+    expect(harness.writeText).toHaveBeenCalledWith("![[drawings/page.svg|Second]]");
   });
 
   it("deletes only the invoking embed when the active note contains duplicate references", async () => {
-    const first = "!inkbook[[drawings/page.svg|First]]";
-    const second = "!inkbook[[drawings/page.svg|Second]]";
+    const first = "![[drawings/page.svg|First]]";
+    const second = "![[drawings/page.svg|Second]]";
     const harness = createHarness({ documentText: `${first}\n${second}`, references: 2 });
     harness.confirm.mockReturnValueOnce(true);
 
@@ -177,7 +192,7 @@ describe("Obsidian embed deletion race handling", () => {
     const result = await harness.actions.deleteEmbed("drawings/page.svg");
 
     expect(result).toEqual({ kind: "unavailable", reason: "metadata-unresolved" });
-    expect(harness.editor.value()).toBe("!inkbook[[drawings/page.svg]]");
+    expect(harness.editor.value()).toBe("![[drawings/page.svg]]");
     expect(harness.trashFile).not.toHaveBeenCalled();
   });
 
@@ -188,7 +203,7 @@ describe("Obsidian embed deletion race handling", () => {
     const result = await harness.actions.deleteEmbed("drawings/page.svg");
 
     expect(result).toEqual({ kind: "cancelled", stage: "embed" } satisfies DeleteEmbedOutcome);
-    expect(harness.editor.value()).toBe("!inkbook[[drawings/page.svg]]");
+    expect(harness.editor.value()).toBe("![[drawings/page.svg]]");
     expect(harness.trashFile).not.toHaveBeenCalled();
   });
 
@@ -203,15 +218,15 @@ describe("Obsidian embed deletion race handling", () => {
 });
 
 function readingActionHarness() {
-  const first = "First\n!inkbook[[drawings/page.svg|First]]";
-  const second = "Second\n!inkbook[[drawings/page.svg|Second]]";
+  const first = "First\n![[drawings/page.svg|First]]";
+  const second = "Second\n![[drawings/page.svg|Second]]";
   const harness = createHarness({ documentText: `${first}\n\n${second}` });
   const reference: ReadingViewEmbedReference = {
     documentId: "drawings/page.svg",
     kind: "reading-view",
-    markdown: "!inkbook[[drawings/page.svg|Second]]",
+    markdown: "![[drawings/page.svg|Second]]",
     section: { lineEnd: 8, lineStart: 7, text: second },
-    sectionFrom: second.indexOf("!inkbook[["),
+    sectionFrom: second.indexOf("![["),
     sectionTo: second.length,
     sourcePath: "notes/note.md",
   };
@@ -224,9 +239,9 @@ describe("Obsidian Reading-view embed actions", () => {
 
     await expect(harness.actions.copyEmbed(reference)).resolves.toEqual({
       kind: "copied",
-      markdown: reference.markdown,
+      markdown: "![[drawings/page.svg|Second]]",
     });
-    expect(harness.writeText).toHaveBeenCalledWith(reference.markdown);
+    expect(harness.writeText).toHaveBeenCalledWith("![[drawings/page.svg|Second]]");
     expect(harness.read).toHaveBeenCalledOnce();
   });
 
@@ -244,7 +259,7 @@ describe("Obsidian Reading-view embed actions", () => {
   });
 
   it("fails closed when identical Reading-view sections make the caller ambiguous", async () => {
-    const section = "!inkbook[[drawings/page.svg|Same]]";
+    const section = "![[drawings/page.svg|Same]]";
     const harness = createHarness({ documentText: `${section}\n${section}` });
     const reference: ReadingViewEmbedReference = {
       documentId: "drawings/page.svg",
@@ -286,8 +301,8 @@ describe("Obsidian Reading-view embed actions", () => {
 
 describe("Obsidian Live Preview recovery target replacement", () => {
   it("replaces only the exact invoking Live Preview range through the active Editor", async () => {
-    const first = "!inkbook[[drawings/page.svg|First]]";
-    const second = "!inkbook[[drawings/page.svg|Second]]";
+    const first = "![[drawings/page.svg|First]]";
+    const second = "![[drawings/page.svg|Second|00400]]";
     const harness = createHarness({ documentText: `${first}\n${second}` });
     const from = first.length + 1;
     const reference: LivePreviewEmbedReference = {
@@ -301,7 +316,7 @@ describe("Obsidian Live Preview recovery target replacement", () => {
     await expect(
       harness.actions.replaceEmbedTarget(reference, "drawings/recovered.svg"),
     ).resolves.toBe(true);
-    expect(harness.editor.value()).toBe(`${first}\n!inkbook[[drawings/recovered.svg]]`);
+    expect(harness.editor.value()).toBe(`${first}\n![[drawings/recovered.svg|Second|00400]]`);
     expect(harness.process).not.toHaveBeenCalled();
   });
 
@@ -318,7 +333,7 @@ describe("Obsidian Live Preview recovery target replacement", () => {
         "drawings/recovered.svg",
       ),
     ).resolves.toBe(false);
-    expect(harness.editor.value()).toBe("!inkbook[[drawings/page.svg]]");
+    expect(harness.editor.value()).toBe("![[drawings/page.svg]]");
   });
 
   it("fails closed when the Live Preview host exposes no active Editor", async () => {
@@ -350,20 +365,20 @@ describe("Obsidian Live Preview recovery target replacement", () => {
     await expect(
       harness.actions.replaceEmbedTarget(reference, "drawings/missing.svg"),
     ).resolves.toBe(false);
-    expect(harness.editor.value()).toBe("!inkbook[[drawings/page.svg]]");
+    expect(harness.editor.value()).toBe("![[drawings/page.svg]]");
   });
 });
 
 describe("Obsidian Reading-view recovery target replacement", () => {
   it("re-resolves one moved section and mutates it through Vault.process", async () => {
-    const section = "Paragraph\n!inkbook[[drawings/page.svg|Drawing]]";
-    const documentText = `New heading\n\n${section}\n\n!inkbook[[drawings/page.svg|Other]]`;
+    const section = "Paragraph\n![[drawings/page.svg|Drawing|00400]]";
+    const documentText = `New heading\n\n${section}\n\n![[drawings/page.svg|Other]]`;
     const harness = createHarness({ documentText });
-    const sectionFrom = section.indexOf("!inkbook[[");
+    const sectionFrom = section.indexOf("![[");
     const reference: ReadingViewEmbedReference = {
       documentId: "drawings/page.svg",
       kind: "reading-view",
-      markdown: "!inkbook[[drawings/page.svg|Drawing]]",
+      markdown: "![[drawings/page.svg|Drawing|00400]]",
       section: { lineEnd: 13, lineStart: 12, text: section },
       sectionFrom,
       sectionTo: section.length,
@@ -374,7 +389,7 @@ describe("Obsidian Reading-view recovery target replacement", () => {
       harness.actions.replaceEmbedTarget(reference, "drawings/recovered.svg"),
     ).resolves.toBe(true);
     expect(harness.vaultText()).toBe(
-      `New heading\n\nParagraph\n!inkbook[[drawings/recovered.svg]]\n\n!inkbook[[drawings/page.svg|Other]]`,
+      `New heading\n\nParagraph\n![[drawings/recovered.svg|Drawing|00400]]\n\n![[drawings/page.svg|Other]]`,
     );
     expect(harness.read).toHaveBeenCalledTimes(1);
     expect(harness.process).toHaveBeenCalledTimes(1);
@@ -382,7 +397,7 @@ describe("Obsidian Reading-view recovery target replacement", () => {
   });
 
   it("rejects ambiguous and mismatched Reading-view section identities", async () => {
-    const section = "!inkbook[[drawings/page.svg]]";
+    const section = "![[drawings/page.svg]]";
     const harness = createHarness({ documentText: `${section}\n${section}` });
     const reference: ReadingViewEmbedReference = {
       documentId: "drawings/page.svg",
@@ -408,7 +423,7 @@ describe("Obsidian Reading-view recovery target replacement", () => {
   });
 
   it("rejects a Reading-view race without changing the newer Markdown", async () => {
-    const section = "!inkbook[[drawings/page.svg]]";
+    const section = "![[drawings/page.svg]]";
     const harness = createHarness({ documentText: section });
     const reference = readingViewReference(section);
     harness.setBeforeProcess(() => harness.setVaultText(`# Concurrent edit\n${section}`));
@@ -420,7 +435,7 @@ describe("Obsidian Reading-view recovery target replacement", () => {
   });
 
   it("rechecks recovery currentness inside the Vault.process Markdown callback", async () => {
-    const section = "!inkbook[[drawings/page.svg]]";
+    const section = "![[drawings/page.svg]]";
     const harness = createHarness({ documentText: section });
     const reference = readingViewReference(section);
     let current = true;

@@ -97,51 +97,9 @@ it("defers all feedback allocation and positioning until the manual-opening thre
   expect(body.children).toEqual([root]);
 });
 
-it("hands off overdue loading feedback synchronously with bounded work", () => {
-  const { body, root } = createPresentation();
-  const ownerWindow = root.ownerDocument.defaultView;
-  if (ownerWindow === null) throw new Error("Missing owner window.");
-  let scheduledWork = 0;
-  Object.assign(ownerWindow, {
-    performance: { now: () => 1000 },
-    requestAnimationFrame: () => ++scheduledWork,
-    setTimeout: () => ++scheduledWork,
-  });
-  const feedback = new PresentationOperationFeedback(
-    root as unknown as HTMLElement,
-    undefined,
-    workSchedulerFromFrames(ownerWindow),
-  );
-
-  let invalidIndicators = 0;
-  let retainedIndicators = 0;
-  for (let sample = 0; sample < 2; sample += 1) {
-    const operation = feedback.begin("loading", 0);
-    const indicators = body.getElementsByClassName("inkbook-operation-feedback");
-    const indicator = indicators.item(0);
-    if (
-      indicators.length !== 1 ||
-      indicator?.style.insetBlockStart !== "50px" ||
-      indicator.style.insetInlineStart !== "300px"
-    ) {
-      invalidIndicators += 1;
-    }
-    operation.finish();
-
-    retainedIndicators += root.children.length + body.children.length - 1;
-  }
-  feedback.dispose();
-  expect(invalidIndicators).toBe(0);
-  expect(retainedIndicators).toBe(0);
-  expect(scheduledWork).toBe(0);
-});
-
 it("positions detached loading feedback after attachment with bounded work", () => {
-  const { body, root, ownerWindow, frames } = createFramedPresentation();
-  let timers = 0;
-  Object.assign(ownerWindow, {
-    setTimeout: () => ++timers,
-  });
+  const { body, root, ownerWindow, frames, timers, runTimer, runFrame } =
+    createFramedPresentation();
 
   let invalidPositions = 0;
   let retainedResources = 0;
@@ -157,7 +115,9 @@ it("positions detached loading feedback after attachment with bounded work", () 
       workSchedulerFromFrames(ownerWindow),
     );
 
-    feedback.begin("loading", 0);
+    feedback.begin("loading");
+    runTimer();
+    runFrame();
     const indicators = root.getElementsByClassName("inkbook-operation-feedback");
     const indicator = indicators.item(0);
     expect(read).not.toHaveBeenCalled();
@@ -189,11 +149,11 @@ it("positions detached loading feedback after attachment with bounded work", () 
   }
   expect(invalidPositions).toBe(0);
   expect(retainedResources).toBe(0);
-  expect(timers).toBe(0);
+  expect(timers.size).toBe(0);
 });
 
 it("bounds actual loading layout reads and live insertion across a scroll burst", () => {
-  const { body, root, ownerWindow, frames } = createFramedPresentation();
+  const { body, root, ownerWindow, frames, runTimer, runFrame } = createFramedPresentation();
   const read = vi.spyOn(root, "getBoundingClientRect");
   const insertion = vi.spyOn(body, "appendChild");
   const scheduler = workSchedulerFromFrames(ownerWindow);
@@ -203,11 +163,14 @@ it("bounds actual loading layout reads and live insertion across a scroll burst"
     undefined,
     scheduler,
   );
-  feedback.begin("loading", 0);
+  feedback.begin("loading");
+  runTimer();
+  runFrame();
   expect(read).toHaveBeenCalledOnce();
   expect(insertion).toHaveBeenCalledOnce();
   expect(read.mock.invocationCallOrder[0]).toBeLessThan(insertion.mock.invocationCallOrder[0]!);
   read.mockClear();
+  request.mockClear();
   for (let event = 0; event < 1_000; event += 1) {
     root.ownerDocument.dispatchEvent(new Event("scroll"));
   }
@@ -237,7 +200,7 @@ function createPresentation() {
 }
 
 it("coalesces canvas positioning without traversing a 10,000-node retained scene", () => {
-  const { root, ownerWindow, frames } = createFramedPresentation();
+  const { root, ownerWindow, frames, runTimer, runFrame } = createFramedPresentation();
   const chrome = root.createDiv({ cls: "inkbook-editor-chrome" });
   chrome.createDiv({ cls: "inkbook-editor-chrome-host" });
   const canvas = chrome.createDiv({ cls: "inkbook-background-container" });
@@ -260,7 +223,9 @@ it("coalesces canvas positioning without traversing a 10,000-node retained scene
     workSchedulerFromFrames(ownerWindow),
   );
   try {
-    feedback.begin("loading", 0);
+    feedback.begin("loading");
+    runTimer();
+    runFrame();
     expect(canvas.children[1]?.classNames.has("inkbook-operation-backdrop")).toBe(true);
     expect(bounds).toHaveBeenCalledOnce();
     expect(rootBounds).toHaveBeenCalledOnce();
@@ -292,14 +257,37 @@ function createFramedPresentation() {
   const ownerWindow = presentation.root.ownerDocument.defaultView;
   if (ownerWindow === null) throw new Error("Missing owner window.");
   const frames = new Map<number, FrameRequestCallback>();
+  const timers = new Map<number, () => void>();
   let handle = 0;
   Object.assign(ownerWindow, {
     performance: { now: () => 1000 },
+    setTimeout: (callback: () => void) => {
+      timers.set(++handle, callback);
+      return handle;
+    },
+    clearTimeout: (handle: number) => timers.delete(handle),
     requestAnimationFrame: (callback: FrameRequestCallback) => {
       frames.set(++handle, callback);
       return handle;
     },
     cancelAnimationFrame: (handle: number) => frames.delete(handle),
   });
-  return { ...presentation, ownerWindow, frames };
+  return {
+    ...presentation,
+    ownerWindow,
+    frames,
+    timers,
+    runTimer: () => {
+      const next = timers.entries().next().value;
+      if (next === undefined) throw new Error("Expected pending feedback timer.");
+      timers.delete(next[0]);
+      next[1]();
+    },
+    runFrame: () => {
+      const next = frames.entries().next().value;
+      if (next === undefined) throw new Error("Expected pending feedback frame.");
+      frames.delete(next[0]);
+      next[1](0);
+    },
+  };
 }

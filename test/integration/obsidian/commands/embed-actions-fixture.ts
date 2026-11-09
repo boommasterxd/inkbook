@@ -60,14 +60,28 @@ interface HarnessOptions {
 
 function linkTargetResolver(...files: readonly FakeObsidianFile[]) {
   const targets = new Map(files.map((file) => [file.path, file]));
-  return vi.fn((linkpath: string) => targets.get(linkpath) ?? null);
+  return vi.fn((linkpath: string, sourcePath?: string) => {
+    const exact = targets.get(linkpath);
+    if (exact !== undefined || sourcePath === undefined) return exact ?? null;
+    const relative = new URL(linkpath, `https://vault/${sourcePath}`).pathname.slice(1);
+    return targets.get(decodeURIComponent(relative)) ?? null;
+  });
+}
+
+function generatedMarkdownLink(
+  file: { readonly path: string },
+  _source: string,
+  _subpath?: string,
+  description?: string,
+) {
+  return `[[${file.path}${description === undefined ? "" : `|${description}`}]]`;
 }
 
 export function createHarness(options: HarnessOptions = {}) {
   const source = new FakeObsidianFile("notes/note.md");
   const target = new FakeObsidianFile("drawings/page.svg");
   const recovered = new FakeObsidianFile("drawings/recovered.svg");
-  let vaultText = options.documentText ?? "!inkbook[[drawings/page.svg]]";
+  let vaultText = options.documentText ?? "![[drawings/page.svg]]";
   source.stat.size = new TextEncoder().encode(vaultText).byteLength;
   const editor = new FakeEditor(vaultText);
   const writeText = vi.fn(async (_text: string) => undefined);
@@ -95,7 +109,7 @@ export function createHarness(options: HarnessOptions = {}) {
     },
   };
   let metadataResolved = options.metadataResolved ?? true;
-  const generateMarkdownLink = vi.fn((file: { readonly path: string }) => `[[${file.path}]]`);
+  const generateMarkdownLink = vi.fn(generatedMarkdownLink);
   const trashFile = vi.fn(async () => undefined);
   let beforeProcess: (() => void) | undefined;
   const read = vi.fn(async () => vaultText);
@@ -140,6 +154,7 @@ export function createHarness(options: HarnessOptions = {}) {
     generateMarkdownLink,
     getFileByPath,
     getLeaf,
+    links,
     metadataCache,
     process,
     openFile,

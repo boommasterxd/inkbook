@@ -10,6 +10,7 @@ import { serializeInkbookDocument } from "../../../src/persistence/serialization
 import { createAllElementSnapshot } from "../../unit/persistence/serialization/fixtures";
 import { ColorSchemeBroadcaster } from "../../../src/obsidian/theme/color-scheme";
 import { immediateWorkScheduler } from "./immediate-work-scheduler";
+import { createReadingViewPostProcessor } from "../../../src/obsidian/embeds/reading-view";
 
 /** A real target CSS context, independent of the source editor's theme. */
 export function mountExportTargetScheme(
@@ -113,4 +114,19 @@ export function createMarkdownExportFixture(
       for (const child of children) child.unload();
     },
   };
+}
+
+/** Exercises the current-file export boundary independently of stale preview recognition. */
+export function startCurrentMarkdownExport(
+  fixture: ReturnType<typeof createMarkdownExportFixture>,
+  descriptor: LoadedPreviewSvg,
+) {
+  const recognizeCurrent = vi.fn<
+    NonNullable<EmbedIntegrationPorts["documents"]["recognizeCurrent"]>
+  >(async () => descriptor);
+  const pending = createReadingViewPostProcessor({
+    ...fixture.ports,
+    documents: { ...fixture.ports.documents, recognizeCurrent },
+  })(fixture.root, fixture.context);
+  return { recognizeCurrent, pending };
 }

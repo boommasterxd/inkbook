@@ -1,19 +1,37 @@
-import { RangeSetBuilder, type EditorState, type Range, type Transaction } from "@codemirror/state";
+import {
+  RangeSetBuilder,
+  RangeValue,
+  type ChangeDesc,
+  type EditorState,
+  type Range,
+  type RangeSet,
+  type Transaction,
+} from "@codemirror/state";
 import { Decoration, type DecorationSet } from "@codemirror/view";
 
 import { findMarkdownInkbookEmbeds, MARKDOWN_EMBED_LIMITS } from "../markdown-embed";
 import type { EmbedIntegrationPorts } from "../presentation/presentation-port";
 import { InkbookLivePreviewWidget, type VisibleEmbed } from "./live-preview-widget";
-import { InkbookLoadingPreviewWidget } from "./live-preview-loading-widget";
 import type { InkbookDocumentRecognition } from "../preview/document-recognition";
 import type { LivePreviewEntrances } from "./live-preview-entrances";
+
+class EmbedCandidate extends RangeValue {
+  override startSide = 1;
+  override endSide = -1;
+
+  constructor(readonly embed: VisibleEmbed) {
+    super();
+  }
+}
 
 /** Keeps recognition-only updates independent of note parsing and link resolution. */
 export class LivePreviewBlocks {
   private constructor(
     readonly decorations: DecorationSet,
     private readonly candidates: ReadonlyMap<string, readonly VisibleEmbed[]>,
-    private readonly unavailable: ReadonlySet<string> = new Set(),
+    private readonly candidateRanges: RangeSet<EmbedCandidate>,
+    // Lookup occurrences keep their parse-time coordinates; only targeted refreshes translate them.
+    private readonly candidateChanges?: ChangeDesc,
   ) {}
 
   static create(
@@ -24,12 +42,14 @@ export class LivePreviewBlocks {
   ): LivePreviewBlocks {
     const candidates = new Map<string, VisibleEmbed[]>();
     const builder = new RangeSetBuilder<Decoration>();
+    const candidateRanges = new RangeSetBuilder<EmbedCandidate>();
     if (context.enabled && context.sourcePath !== undefined) {
       for (const embed of findMarkdownInkbookEmbeds(state.doc.toString())) {
         const resolved = ports.resolveDocument(embed.linkpath, context.sourcePath);
         if (resolved === undefined) continue;
         const candidate = {
           ...(embed.description === undefined ? {} : { description: embed.description }),
+          ...(embed.width === undefined ? {} : { width: embed.width }),
           from: embed.from,
           to: embed.to,
           resolved,
@@ -38,57 +58,43 @@ export class LivePreviewBlocks {
         const occurrences = candidates.get(resolved.documentId) ?? [];
         occurrences.push(candidate);
         candidates.set(resolved.documentId, occurrences);
+        candidateRanges.add(embed.from, embed.to, new EmbedCandidate(candidate));
         const decoration = decorate(candidate, ports, entrances);
         if (decoration !== undefined) builder.add(embed.from, embed.to, decoration);
       }
     }
-    return new LivePreviewBlocks(builder.finish(), candidates);
+    return new LivePreviewBlocks(builder.finish(), candidates, candidateRanges.finish());
   }
 
   mapPlainTextEdit(transaction: Transaction): LivePreviewBlocks | undefined {
-    if (this.unavailable.size > 0 || !isPlainTextEdit(transaction)) return undefined;
-    const candidates = new Map<string, VisibleEmbed[]>();
-    for (const [documentId, occurrences] of this.candidates) {
-      const mapped = occurrences.map((embed) => ({
-        ...embed,
-        from: transaction.changes.mapPos(embed.from, 1),
-        to: transaction.changes.mapPos(embed.to, -1),
-      }));
-      candidates.set(documentId, mapped);
-    }
-    return new LivePreviewBlocks(mapDecorations(this.decorations, transaction), candidates);
+    if (!isPlainTextEdit(transaction)) return undefined;
+    return new LivePreviewBlocks(
+      mapDecorations(this.decorations, transaction),
+      this.candidates,
+      this.candidateRanges.map(transaction.changes),
+      this.candidateChanges?.composeDesc(transaction.changes) ?? transaction.changes.desc,
+    );
   }
 
   visitVisible(
     ranges: readonly { readonly from: number; readonly to: number }[],
     visit: (embed: VisibleEmbed) => void,
   ): void {
-    for (const [documentId, occurrences] of this.candidates) {
-      if (this.unavailable.has(documentId)) continue;
-      for (const embed of occurrences) {
-        if (ranges.some((range) => embed.from >= range.from && embed.to <= range.to)) visit(embed);
-      }
+    const visited = new Set<number>();
+    let coveredTo = -1;
+    for (const range of [...ranges].sort((a, b) => a.from - b.from || b.to - a.to)) {
+      if (range.to <= coveredTo) continue;
+      coveredTo = range.to;
+      this.candidateRanges.between(range.from, range.to, (from, to, candidate) => {
+        if (from < range.from || to > range.to || visited.has(from)) return;
+        visited.add(from);
+        visit({ ...candidate.embed, from, to });
+      });
     }
   }
 
   has(documentId: string): boolean {
     return this.candidates.has(documentId);
-  }
-
-  suppressUnavailable(ids: ReadonlySet<string>): LivePreviewBlocks {
-    if (ids.size === 0) return this;
-    const unavailable = new Set(this.unavailable);
-    for (const id of ids) if (this.candidates.has(id)) unavailable.add(id);
-    if (unavailable.size === this.unavailable.size) return this;
-    const decorations = this.decorations.update({
-      filter: (_from, _to, decoration) => {
-        const widget = (decoration.spec as { readonly widget: unknown }).widget;
-        return !(
-          widget instanceof InkbookLoadingPreviewWidget && unavailable.has(widget.documentId)
-        );
-      },
-    });
-    return new LivePreviewBlocks(decorations, this.candidates, unavailable);
   }
 
   refresh(
@@ -98,21 +104,18 @@ export class LivePreviewBlocks {
   ): LivePreviewBlocks {
     if (changed.size === 0) return this;
     const replacements = new Map<number, InkbookLivePreviewWidget | undefined>();
-    const unavailable = new Set(this.unavailable);
     const add = [];
     for (const documentId of changed) {
       // A save invalidation keeps the mounted safe preview until validation completes.
       const preview = ports.documents.cached(documentId);
       if (preview === undefined) continue;
-      unavailable.delete(documentId);
       for (const candidate of this.candidates.get(documentId) ?? []) {
-        const decoration = decorate(candidate, ports, entrances, preview);
+        const from = this.candidateChanges?.mapPos(candidate.from, 1) ?? candidate.from;
+        const to = this.candidateChanges?.mapPos(candidate.to, -1) ?? candidate.to;
+        const decoration = decorate({ ...candidate, from, to }, ports, entrances, preview);
         const widget = (decoration?.spec as { readonly widget?: unknown } | undefined)?.widget;
-        replacements.set(
-          candidate.from,
-          widget instanceof InkbookLivePreviewWidget ? widget : undefined,
-        );
-        if (decoration !== undefined) add.push(decoration.range(candidate.from, candidate.to));
+        replacements.set(from, widget instanceof InkbookLivePreviewWidget ? widget : undefined);
+        if (decoration !== undefined) add.push(decoration.range(from, to));
       }
     }
     if (replacements.size === 0) return this;
@@ -131,7 +134,8 @@ export class LivePreviewBlocks {
         sort: true,
       }),
       this.candidates,
-      unavailable,
+      this.candidateRanges,
+      this.candidateChanges,
     );
   }
 }
@@ -144,25 +148,11 @@ function decorate(
     embed.resolved.documentId,
   ),
 ): Decoration | undefined {
-  if (preview === false) return undefined;
+  if (preview === false || preview === undefined) return undefined;
   const entrance = entrances.stateFor(embed.from, embed.to, embed.resolved.documentId);
   return Decoration.replace({
     block: true,
-    widget:
-      preview === undefined
-        ? new InkbookLoadingPreviewWidget(embed.resolved.documentId, ports, entrance)
-        : new InkbookLivePreviewWidget(
-            {
-              ...(embed.description === undefined ? {} : { description: embed.description }),
-              from: embed.from,
-              to: embed.to,
-              resolved: embed.resolved,
-              sourcePath: embed.sourcePath,
-              preview,
-            },
-            ports,
-            entrance,
-          ),
+    widget: new InkbookLivePreviewWidget({ ...embed, preview }, ports, entrance),
   });
 }
 

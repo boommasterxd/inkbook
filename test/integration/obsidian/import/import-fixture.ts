@@ -72,7 +72,7 @@ export function importFixture(
     },
     resolveLink: (path) => (files.has(path) ? path : undefined),
     generateEmbed: (path, _note, description) =>
-      `!inkbook[[${path}${description === undefined || description === "InkWriting" ? "" : `|${description}`}]]`,
+      `![[${path}${description === undefined || description === "InkWriting" ? "" : `|${description}`}]]`,
     referenceState: (path) =>
       Promise.resolve(
         [...files].some(

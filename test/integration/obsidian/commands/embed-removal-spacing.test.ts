@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PresentationEmbedReference } from "../../../../src/obsidian/embeds/presentation/presentation-port";
 import { createHarness } from "./embed-actions-fixture";
 
-const EMBED = "!inkbook[[drawings/page.svg]]";
+const EMBED = "![[drawings/page.svg]]";
 
 const cases = [
   {

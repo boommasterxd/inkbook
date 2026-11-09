@@ -101,14 +101,16 @@ function requireOwnedPreview(
   return activationButton;
 }
 describe("Markdown embed recognition", () => {
-  it("decodes Markdown paths once while preserving literal Wiki names and separating fragments", () => {
+  it("decodes Markdown paths once, preserves literal Wiki names, and rejects fragments", () => {
     expect(
       findMarkdownInkbookEmbeds(
         [
-          "!inkbook[[../drawings/My%20page.svg#section|My drawing]]",
-          "!inkbook[My drawing](../drawings/My%20page.svg#section)",
-          "!inkbook[Hash](../drawings/100%25%23.svg)",
-          "!inkbook[Invalid](../drawings/bad%ZZ.svg)",
+          "![[../drawings/My%20page.svg|My drawing]]",
+          "![My drawing](../drawings/My%20page.svg)",
+          "![Hash](../drawings/100%25%23.svg)",
+          "![Invalid](../drawings/bad%ZZ.svg)",
+          "![[drawing.svg#section]]",
+          "![Fragment](drawing.svg#section)",
         ].join("\n"),
       ).map((embed) => embed.linkpath),
     ).toEqual(["../drawings/My%20page.svg", "../drawings/My page.svg", "../drawings/100%#.svg"]);
@@ -116,46 +118,46 @@ describe("Markdown embed recognition", () => {
 
   it("retains author descriptions independently of the resolved SVG path", () => {
     expect(
-      findMarkdownInkbookEmbeds(
-        "!inkbook[Supply and demand](drawing.svg)\n!inkbook[[other.svg|A triangle]]",
-      ),
+      findMarkdownInkbookEmbeds("![Supply and demand](drawing.svg)\n![[other.svg|A triangle]]"),
     ).toMatchObject([
       { linkpath: "drawing.svg", description: "Supply and demand" },
       { linkpath: "other.svg", description: "A triangle" },
     ]);
   });
-  it("parses standalone Inkbook embeds without treating native SVG embeds as ink", () => {
+  it("parses standalone native SVG candidates without accepting other files", () => {
     expect(
       findMarkdownInkbookEmbeds(
         [
-          "!inkbook[[drawings/ink.svg|600]]",
-          "!inkbook[preview](other.svg)",
+          "![[drawings/ink.svg|600]]",
+          "![preview](other.svg)",
           "![[drawings/native.svg]]",
           "![preview](native.svg)",
           "![[note.md]]",
         ].join("\n"),
       ),
     ).toMatchObject([
-      { linkpath: "drawings/ink.svg", markdown: "!inkbook[[drawings/ink.svg|600]]" },
-      { linkpath: "other.svg", markdown: "!inkbook[preview](other.svg)" },
+      { linkpath: "drawings/ink.svg", markdown: "![[drawings/ink.svg|600]]" },
+      { linkpath: "other.svg", markdown: "![preview](other.svg)" },
+      { linkpath: "drawings/native.svg", markdown: "![[drawings/native.svg]]" },
+      { linkpath: "native.svg", markdown: "![preview](native.svg)" },
     ]);
   });
 
   it("ignores embed-like text in code, comments, and escaped Markdown", () => {
     const markdown = [
-      "`!inkbook[[drawings/ink.svg]]`",
+      "`![[drawings/ink.svg]]`",
       "```md",
-      "!inkbook[[drawings/ink.svg]]",
+      "![[drawings/ink.svg]]",
       "```",
-      "<!-- !inkbook[preview](drawings/ink.svg) -->",
-      String.raw`\!inkbook[[drawings/ink.svg]]`,
-      "!inkbook[[drawings/ink.svg]]",
-      "!inkbook[preview](drawings/ink.svg)",
+      "<!-- ![preview](drawings/ink.svg) -->",
+      String.raw`\![[drawings/ink.svg]]`,
+      "![[drawings/ink.svg]]",
+      "![preview](drawings/ink.svg)",
     ].join("\n");
 
     expect(findMarkdownInkbookEmbeds(markdown).map((embed) => embed.markdown)).toEqual([
-      "!inkbook[[drawings/ink.svg]]",
-      "!inkbook[preview](drawings/ink.svg)",
+      "![[drawings/ink.svg]]",
+      "![preview](drawings/ink.svg)",
     ]);
   });
 
@@ -167,7 +169,7 @@ describe("Markdown embed recognition", () => {
   it("fails closed before accumulating too many Markdown matches", () => {
     const tooManyEmbeds = Array.from(
       { length: MARKDOWN_EMBED_LIMITS.matches + 1 },
-      () => "!inkbook[[drawings/ink.svg]]",
+      () => "![[drawings/ink.svg]]",
     ).join("\n");
 
     expect(findMarkdownInkbookEmbeds(tooManyEmbeds)).toEqual([]);
@@ -198,7 +200,7 @@ describe("Reading-view embed lifecycle", () => {
         getSectionInfo: () => ({
           lineEnd: 0,
           lineStart: 0,
-          text: "!inkbook[[drawings/ink.svg]] !inkbook[[drawings/ink.svg]]",
+          text: "![[drawings/ink.svg]] ![[drawings/ink.svg]]",
         }),
         addChild,
       } as never,
@@ -206,15 +208,14 @@ describe("Reading-view embed lifecycle", () => {
     expect(addChild).not.toHaveBeenCalled();
     expect(ports.calls).toEqual([]);
   });
-  it("replaces the complete custom Reading-view block", () => {
+  it("replaces a complete native image block and restores it on unload", async () => {
     const ports = createPorts();
     const section = new FakeElement();
-    const root = new FakeElement(section.ownerDocument);
+    const root = new FakeElement(section.ownerDocument, "p");
     section.append(root);
-    const markerText = new FakeElement(root.ownerDocument, "span");
-    const fileLink = new FakeElement(root.ownerDocument, "a");
-    root.append(markerText);
-    root.append(fileLink);
+    const nativeImage = root.createEl("img", {
+      attr: { src: "app://vault/ink.svg", alt: "drawings/ink.svg" },
+    });
     const processor = createReadingViewPostProcessor(ports);
     let child: { load(): void; unload(): void } | undefined;
 
@@ -225,7 +226,7 @@ describe("Reading-view embed lifecycle", () => {
         getSectionInfo: () => ({
           lineEnd: 3,
           lineStart: 3,
-          text: "Before\n\n\n!inkbook[[drawings/ink.svg]]\n\nAfter",
+          text: "Before\n\n\n![[drawings/ink.svg]]\n\nAfter",
         }),
         addChild: (nextChild: { load(): void; unload(): void }) => {
           child = nextChild;
@@ -234,7 +235,7 @@ describe("Reading-view embed lifecycle", () => {
       } as never,
     );
 
-    expect(ports.calls).toEqual(["mount:drawings/ink.svg"]);
+    await vi.waitFor(() => expect(ports.calls).toEqual(["mount:drawings/ink.svg"]));
     const ownedRoot = root.children[0];
     expect(ownedRoot?.tagName).toBe("DIV");
     expect(ownedRoot?.classNames).toContain("inkbook-root");
@@ -246,14 +247,14 @@ describe("Reading-view embed lifecycle", () => {
     expect(ports.attachments[0]?.embedReference).toEqual({
       documentId: "drawings/ink.svg",
       kind: "reading-view",
-      markdown: "!inkbook[[drawings/ink.svg]]",
+      markdown: "![[drawings/ink.svg]]",
       section: {
         lineEnd: 3,
         lineStart: 3,
-        text: "Before\n\n\n!inkbook[[drawings/ink.svg]]\n\nAfter",
+        text: "Before\n\n\n![[drawings/ink.svg]]\n\nAfter",
       },
       sectionFrom: 9,
-      sectionTo: 37,
+      sectionTo: 30,
       sourcePath: "notes/note.md",
     });
     const bubbledActivation = vi.fn();
@@ -266,8 +267,8 @@ describe("Reading-view embed lifecycle", () => {
     expect(section.classNames).not.toContain("inkbook-scrollbar-stable");
     expect(section.children).toEqual([root]);
     expect(root.isConnected).toBe(true);
-    expect(root.children).toEqual([markerText, fileLink]);
-    fileLink.dispatch("click");
+    expect(root.children).toEqual([nativeImage]);
+    nativeImage.dispatch("click");
     expect(ports.calls.filter((call) => call.startsWith("activate"))).toHaveLength(1);
   });
 });
@@ -291,13 +292,13 @@ function expectReadingSectionUnchanged(root: FakeElement, text: string): void {
 
 describe("Reading-view target correlation", () => {
   it.each([
-    { lineStart: -1, lineEnd: 0, text: "!inkbook[[drawings/ink.svg]]" },
-    { lineStart: 0, lineEnd: -1, text: "!inkbook[[drawings/ink.svg]]" },
-    { lineStart: 1, lineEnd: 1, text: "!inkbook[[drawings/ink.svg]]" },
-    { lineStart: 0, lineEnd: 1, text: "!inkbook[[drawings/ink.svg]]" },
-    { lineStart: 1, lineEnd: 1, text: "```md\n!inkbook[[drawings/ink.svg]]\n```" },
-    { lineStart: 1, lineEnd: 1, text: "<!--\n!inkbook[[drawings/ink.svg]]\n-->" },
-    { lineStart: 0, lineEnd: 1, text: "Before\n!inkbook[[drawings/ink.svg]]" },
+    { lineStart: -1, lineEnd: 0, text: "![[drawings/ink.svg]]" },
+    { lineStart: 0, lineEnd: -1, text: "![[drawings/ink.svg]]" },
+    { lineStart: 1, lineEnd: 1, text: "![[drawings/ink.svg]]" },
+    { lineStart: 0, lineEnd: 1, text: "![[drawings/ink.svg]]" },
+    { lineStart: 1, lineEnd: 1, text: "```md\n![[drawings/ink.svg]]\n```" },
+    { lineStart: 1, lineEnd: 1, text: "<!--\n![[drawings/ink.svg]]\n-->" },
+    { lineStart: 0, lineEnd: 1, text: "Before\n![[drawings/ink.svg]]" },
   ])("rejects invalid section bounds or suppressed surrounding syntax: $text", (section) => {
     const ports = createPorts();
     const addChild = vi.fn();
@@ -322,7 +323,7 @@ describe("Reading-view target correlation", () => {
     image.currentSrc = "app://vault/drawings/../ink.svg";
     root.append(unrelated);
     root.append(image);
-    expectReadingSectionUnchanged(root, "![other](unrelated.png) !inkbook[[drawings/ink.svg]]");
+    expectReadingSectionUnchanged(root, "![other](unrelated.png) ![[drawings/ink.svg]]");
   });
 
   it("requires a standalone recognized raw embed", () => {
@@ -330,7 +331,7 @@ describe("Reading-view target correlation", () => {
     const image = new FakeElement(root.ownerDocument, "img");
     image.src = "app://vault/ink.svg";
     root.append(image);
-    expectReadingSectionUnchanged(root, "Before !inkbook[[drawings/ink.svg]] after");
+    expectReadingSectionUnchanged(root, "Before ![[drawings/ink.svg]] after");
   });
 
   it("fails closed inside code", () => {
@@ -345,7 +346,7 @@ describe("Reading-view target correlation", () => {
       code as unknown as HTMLElement,
       {
         sourcePath: "notes/note.md",
-        getSectionInfo: () => ({ lineEnd: 0, lineStart: 0, text: "!inkbook[[drawings/ink.svg]]" }),
+        getSectionInfo: () => ({ lineEnd: 0, lineStart: 0, text: "![[drawings/ink.svg]]" }),
         addChild,
       } as never,
     );

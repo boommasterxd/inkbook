@@ -51,17 +51,8 @@
   /* Obsidian applies paint containment with !important to every block decoration. */
   contain: none !important;
   display: block;
+  inline-size: var(--inkbook-embed-inline-size, 100%);
   overflow: visible;
-}
-
-.inkbook-root.inkbook-loading-placeholder {
-  box-sizing: border-box;
-  display: block;
-  block-size: var(--inkbook-loading-block-size, 0);
-  overflow: clip;
-  margin: 0;
-  background: var(--inkbook-page-surface);
-  border-radius: var(--radius-m);
 }
 
 .inkbook-root.inkbook-embed-root.inkbook-presentation-entering,

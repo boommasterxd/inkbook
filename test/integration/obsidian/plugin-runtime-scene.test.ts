@@ -207,15 +207,15 @@ function createPluginHarness() {
 async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
   readonly button: FakePresentationElement;
   readonly child: MarkdownRenderChild;
-  readonly image: FakePresentationElement;
   readonly preview: FakePresentationElement;
   readonly root: FakePresentationElement;
 }> {
   const root = new FakePresentationElement();
   useAsyncWindowFrames(root.ownerDocument.defaultView!);
-  const nativeHost = new FakePresentationElement(root.ownerDocument);
+  const nativeHost = new FakePresentationElement(root.ownerDocument, "p");
   const image = new FakePresentationElement(root.ownerDocument, "img");
-  image.src = "app://vault/drawings/ink.svg";
+  image.setAttribute("src", "app://vault/drawings/ink.svg");
+  image.setAttribute("alt", "drawings/ink.svg");
   nativeHost.append(image);
   root.append(nativeHost);
   let child: MarkdownRenderChild | undefined;
@@ -226,15 +226,15 @@ async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
       child = candidate;
       candidate.load();
     },
-    getSectionInfo: () => ({ lineStart: 0, lineEnd: 0, text: "!inkbook[[drawings/ink.svg]]" }),
+    getSectionInfo: () => ({ lineStart: 0, lineEnd: 0, text: "![[drawings/ink.svg]]" }),
     sourcePath: "notes/page.md",
   });
   if (child === undefined) throw new Error("Reading-view child was not mounted.");
-  const presentationRoot = inkbookRoot(root);
+  const presentationRoot = await vi.waitFor(() => inkbookRoot(root));
   const button = presentationRoot.children[0];
   const preview = button?.children[0];
   if (button === undefined || preview === undefined) throw new Error("Missing locked preview.");
-  return { button, child, image, preview, root };
+  return { button, child, preview, root };
 }
 
 async function createReadyReadingEmbed() {

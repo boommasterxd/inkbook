@@ -5,12 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LivePreviewBlocks } from "../../../../../src/obsidian/embeds/live-preview/live-preview-blocks";
 import { createLivePreviewExtension } from "../../../../../src/obsidian/embeds/live-preview/live-preview";
-import {
-  documentRecognitionChanged,
-  documentRecognitionUnavailable,
-} from "../../../../../src/obsidian/embeds/live-preview/live-preview-recognition-effects";
+import { documentRecognitionChanged } from "../../../../../src/obsidian/embeds/live-preview/live-preview-recognition-effects";
 import type { InkbookDocumentRecognition } from "../../../../../src/obsidian/embeds/preview/document-recognition";
-import type { InkbookLoadingPreviewWidget } from "../../../../../src/obsidian/embeds/live-preview/live-preview-loading-widget";
+import type { InkbookLivePreviewWidget } from "../../../../../src/obsidian/embeds/live-preview/live-preview-widget";
 import type { EmbedIntegrationPorts } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
 import { configureTestEditorState } from "../../../../adapters/obsidian/plugin";
 
@@ -22,10 +19,11 @@ function recognizedPreview(): InkbookDocumentRecognition {
   };
 }
 
-function harness(
-  doc = "Ordinary prose\n\n!inkbook[[a.svg]]\n\n!inkbook[[b.svg]]\n\n!inkbook[[a.svg]]",
-) {
-  const cached = new Map<string, InkbookDocumentRecognition>();
+function harness(doc = "Ordinary prose\n\n![[a.svg]]\n\n![[b.svg]]\n\n![[a.svg]]") {
+  const cached = new Map<string, InkbookDocumentRecognition>([
+    ["a.svg", recognizedPreview()],
+    ["b.svg", recognizedPreview()],
+  ]);
   const resolveDocument = vi.fn((documentId: string) => ({
     documentId,
     resourceUrl: `app://${documentId}`,
@@ -46,7 +44,7 @@ function harness(
 }
 
 function replacements(state: EditorState) {
-  const entries: Array<{ from: number; to: number; widget: InkbookLoadingPreviewWidget }> = [];
+  const entries: Array<{ from: number; to: number; widget: InkbookLivePreviewWidget }> = [];
   (state.facet(EditorView.decorations)[0] as DecorationSet).between(
     0,
     state.doc.length,
@@ -54,7 +52,7 @@ function replacements(state: EditorState) {
       entries.push({
         from,
         to,
-        widget: (decoration.spec as { widget: InkbookLoadingPreviewWidget }).widget,
+        widget: (decoration.spec as { widget: InkbookLivePreviewWidget }).widget,
       });
     },
   );
@@ -89,7 +87,7 @@ describe("Live Preview targeted state updates", () => {
     expect(resolveDocument).not.toHaveBeenCalled();
   });
 
-  it("maps ordinary prose edits and retains entrance ownership without resolving links again", () => {
+  it("maps ordinary prose edits and retains widget identity contracts without resolving links again", () => {
     const { state, resolveDocument } = harness();
     const original = replacements(state);
     const changed = state.update({ changes: { from: 2, to: 4, insert: "a longer edit" } }).state;
@@ -97,9 +95,31 @@ describe("Live Preview targeted state updates", () => {
     expect(resolveDocument).not.toHaveBeenCalled();
     for (const [index, entry] of mapped.entries()) {
       expect(entry.from).toBe((original[index]?.from ?? 0) + 11);
-      expect(entry.widget.entranceState).toBe(original[index]?.widget.entranceState);
-      expect(changed.doc.sliceString(entry.from, entry.to)).toMatch(/^!inkbook/u);
+      expect(entry.widget.eq(original[index]!.widget.withRange(entry.from, entry.to))).toBe(true);
+      expect(changed.doc.sliceString(entry.from, entry.to)).toMatch(/^!/u);
     }
+  });
+
+  it("refreshes pending and rejected candidates at their current positions after successive prose edits", () => {
+    const { state, cached, cachedRead, resolveDocument } = harness();
+    cached.set("a.svg", false);
+    let current = notify(state, "a.svg");
+    cached.delete("a.svg");
+    current = current.update({ changes: { from: 2, insert: "longer" } }).state;
+    current = current.update({ changes: { from: 1, to: 3, insert: "x" } }).state;
+    const unrelated = replacements(current)[0]!;
+    cached.set("a.svg", recognizedPreview());
+    cachedRead.mockClear();
+    const recovered = replacements(notify(current, "a.svg"));
+    expect(recovered).toHaveLength(3);
+    expect(recovered[1]?.widget).toBe(unrelated.widget);
+    expect(recovered.map(({ from, to }) => current.doc.sliceString(from, to))).toEqual([
+      "![[a.svg]]",
+      "![[b.svg]]",
+      "![[a.svg]]",
+    ]);
+    expect(cachedRead).toHaveBeenCalledExactlyOnceWith("a.svg");
+    expect(resolveDocument).not.toHaveBeenCalled();
   });
 
   it.each(["<!--", "```\n", "\n", "!"])("reparses a structural insertion %j", (insert) => {
@@ -115,7 +135,7 @@ describe("Live Preview targeted state updates", () => {
     expect(first).toBeDefined();
     const changed = state.update({ changes: { from: 0, to: (first?.from ?? 0) + 1 } }).state;
     expect(replacements(changed)).toHaveLength(2);
-    const fenced = harness("```\n!inkbook[[a.svg]]\n```");
+    const fenced = harness("```\n![[a.svg]]\n```");
     expect(replacements(fenced.state.update({ changes: { from: 0, to: 3 } }).state)).toHaveLength(
       1,
     );
@@ -126,7 +146,7 @@ describe("Live Preview fallback and mapping", () => {
   it.each(["---", "    code", "Title\n---"])(
     "reparses structural or indented lines %j",
     (prefix) => {
-      const { state, resolveDocument } = harness(`${prefix}\n\n!inkbook[[a.svg]]`);
+      const { state, resolveDocument } = harness(`${prefix}\n\n![[a.svg]]`);
       const from = prefix.includes("\n") ? prefix.indexOf("\n") + 1 : 0;
       const changed = state.update({ changes: { from, to: from + 1 } }).state;
       expect(replacements(changed)).toHaveLength(1);
@@ -134,21 +154,12 @@ describe("Live Preview fallback and mapping", () => {
     },
   );
 
-  it("restores unavailable pending Markdown and retries after the next document edit", () => {
-    const { state, resolveDocument } = harness();
-    const failed = state.update({ effects: documentRecognitionUnavailable.of("a.svg") }).state;
-    expect(replacements(failed)).toHaveLength(1);
-    const retried = failed.update({ changes: { from: 2, insert: "x" } }).state;
-    expect(replacements(retried)).toHaveLength(3);
-    expect(resolveDocument).toHaveBeenCalledTimes(3);
-  });
-
   it("keeps a safe preview after transient recognition rejection and refreshes on recovery", () => {
     const { state, cached } = harness();
     cached.set("a.svg", recognizedPreview());
     const ready = notify(state, "a.svg");
     cached.delete("a.svg");
-    const failed = ready.update({ effects: documentRecognitionUnavailable.of("a.svg") }).state;
+    const failed = notify(ready, "a.svg");
     expect(replacements(failed)).toEqual(replacements(ready));
     cached.set("a.svg", false);
     expect(replacements(notify(failed, "a.svg"))).toHaveLength(1);
@@ -161,7 +172,7 @@ describe("Live Preview fallback and mapping", () => {
     const before = replacements(ready);
     const shifted = replacements(ready.update({ changes: { from: 2, insert: "x" } }).state);
     expect(shifted[0]?.widget).not.toBe(before[0]?.widget);
-    expect(shifted[1]?.widget).toBe(before[1]?.widget);
+    expect(shifted[1]?.widget).not.toBe(before[1]?.widget);
     expect(shifted[0]?.from).toBe((before[0]?.from ?? 0) + 1);
     const unchanged = replacements(
       ready.update({ changes: { from: 2, to: 3, insert: "x" } }).state,
@@ -173,64 +184,39 @@ describe("Live Preview fallback and mapping", () => {
 describe("Live Preview recognition effect work", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it.each(["none", "foreign", "empty"])(
-    "skips block refresh and suppression for %s recognition work",
-    (kind) => {
-      const { state, cachedRead, resolveDocument } = harness();
-      const refresh = vi.spyOn(LivePreviewBlocks.prototype, "refresh");
-      const suppress = vi.spyOn(LivePreviewBlocks.prototype, "suppressUnavailable");
-      const effects =
-        kind === "none"
-          ? []
-          : kind === "foreign"
-            ? [StateEffect.define<number>().of(1)]
-            : [documentRecognitionChanged.of([])];
-      const updated = state.update({ effects }).state;
-      expect(updated.facet(EditorView.decorations)[0]).toBe(state.facet(EditorView.decorations)[0]);
-      expect(refresh).not.toHaveBeenCalled();
-      expect(suppress).not.toHaveBeenCalled();
-      expect(cachedRead).not.toHaveBeenCalled();
-      expect(resolveDocument).not.toHaveBeenCalled();
-    },
-  );
-
-  it("suppresses duplicate unavailable IDs once without reading recognition or refreshing", () => {
-    const { state, cachedRead } = harness();
+  it.each(["none", "foreign", "empty"])("skips block refresh for %s recognition work", (kind) => {
+    const { state, cachedRead, resolveDocument } = harness();
     const refresh = vi.spyOn(LivePreviewBlocks.prototype, "refresh");
-    const suppress = vi.spyOn(LivePreviewBlocks.prototype, "suppressUnavailable");
-    const updated = state.update({
-      effects: [
-        documentRecognitionUnavailable.of("a.svg"),
-        documentRecognitionUnavailable.of("a.svg"),
-      ],
-    }).state;
-    expect(replacements(updated)).toEqual([replacements(state)[1]]);
-    expect(suppress).toHaveBeenCalledExactlyOnceWith(new Set(["a.svg"]));
+    const effects =
+      kind === "none"
+        ? []
+        : kind === "foreign"
+          ? [StateEffect.define<number>().of(1)]
+          : [documentRecognitionChanged.of([])];
+    const updated = state.update({ effects }).state;
+    expect(updated.facet(EditorView.decorations)[0]).toBe(state.facet(EditorView.decorations)[0]);
     expect(refresh).not.toHaveBeenCalled();
     expect(cachedRead).not.toHaveBeenCalled();
+    expect(resolveDocument).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "deduplicates mixed effects and restores recognized occurrences after suppression (reverse=%s)",
-    (reverse) => {
-      const { state, cached, cachedRead, resolveDocument } = harness();
-      cached.set("a.svg", recognizedPreview());
-      const effects = [
-        documentRecognitionChanged.of(["a.svg", "a.svg"]),
-        documentRecognitionUnavailable.of("a.svg"),
-        StateEffect.define<number>().of(1),
-        documentRecognitionChanged.of(["a.svg", "b.svg"]),
-        documentRecognitionUnavailable.of("b.svg"),
-      ];
-      const updated = state.update({ effects: reverse ? effects.reverse() : effects }).state;
-      const entries = replacements(updated);
-      expect(entries.map((entry) => entry.from)).toEqual([
-        replacements(state)[0]?.from,
-        replacements(state)[2]?.from,
-      ]);
-      expect(cachedRead.mock.calls).toEqual([["a.svg"], ["b.svg"]]);
-      expect(resolveDocument).not.toHaveBeenCalled();
-      expect(entries.every((entry) => entry.widget !== replacements(state)[0]?.widget)).toBe(true);
-    },
-  );
+  it("deduplicates recognition changes and refreshes affected occurrences", () => {
+    const { state, cached, cachedRead, resolveDocument } = harness();
+    cached.set("a.svg", recognizedPreview());
+    cached.set("b.svg", false);
+    const effects = [
+      documentRecognitionChanged.of(["a.svg", "a.svg"]),
+      StateEffect.define<number>().of(1),
+      documentRecognitionChanged.of(["a.svg", "b.svg"]),
+    ];
+    const updated = state.update({ effects }).state;
+    const entries = replacements(updated);
+    expect(entries.map((entry) => entry.from)).toEqual([
+      replacements(state)[0]?.from,
+      replacements(state)[2]?.from,
+    ]);
+    expect(cachedRead.mock.calls).toEqual([["a.svg"], ["b.svg"]]);
+    expect(resolveDocument).not.toHaveBeenCalled();
+    expect(entries.every((entry) => entry.widget !== replacements(state)[0]?.widget)).toBe(true);
+  });
 });

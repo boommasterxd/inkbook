@@ -37,7 +37,7 @@ describe("Obsidian Ink import selection", () => {
       '<svg data-native="selected source"/>',
     );
     expect(fixture.files.get("mixed.md")).toBe(
-      mixed.replace(selectedEmbed, "!inkbook[[Ink/selected.inkbook.svg]]"),
+      mixed.replace(selectedEmbed, "![[Ink/selected.inkbook.svg]]"),
     );
     expect(result.journal.sources.map((source) => source.path)).toEqual([selectedPath]);
     expect(result.journal.notes.map((note) => note.path)).toEqual(["mixed.md"]);

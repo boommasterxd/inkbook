@@ -1,3 +1,5 @@
+import { registerVaultLifecycle } from "./runtime/vault-lifecycle";
+import { ReadingMarkdownIndex } from "./embeds/reading-markdown-index";
 import { createPhoneSheetHost } from "./menus/panels/phone-sheet-host";
 import { OnboardingPreference } from "./settings/onboarding-preference";
 import { readMarkdownExportSource } from "./embeds/export/markdown-export-source";
@@ -11,7 +13,6 @@ import {
   MarkdownRenderer,
   MarkdownView,
   Plugin,
-  TFile,
   type Editor,
   type MarkdownFileInfo,
   type MarkdownRenderChild,
@@ -46,7 +47,6 @@ import { registerInkbookIcons } from "./icons/inkbook-icons";
 import { InkbookFeedbackManager, type InkbookFeedbackCode } from "./feedback";
 import { InkbookSettingsModalController, InkbookSettingsStore } from "./settings";
 import { ColorSchemeBroadcaster } from "./theme/color-scheme";
-import type { MotionPreference } from "../rendering/motion/transitions";
 import { addPluginSettingsTab } from "./settings/plugin-settings";
 
 export async function activateInkbookPlugin(
@@ -83,9 +83,7 @@ export async function activateInkbookPlugin(
     plugin.app,
     settings,
     {
-      failed: (code) => {
-        showGlobalFeedback(plugin, feedback, code);
-      },
+      failed: (code) => showGlobalFeedback(plugin, feedback, code),
       inserted: (completed) => showInsertionFeedback(plugin, feedback, runtime, completed),
     },
     createPlacementFeedback(plugin, feedback),
@@ -107,7 +105,7 @@ export async function activateInkbookPlugin(
     insertionCommand,
   );
   const lifecycle = new PresentationLifecycleRegistry();
-  const integration = createEmbedIntegration(plugin, lifecycle, scheme, runtime, settings);
+  const integration = createEmbedIntegration(plugin, lifecycle, scheme, runtime);
   const { documentRecognition, ports } = integration;
   const embedPaste = createObsidianEmbedPasteController(
     plugin.app,
@@ -117,7 +115,8 @@ export async function activateInkbookPlugin(
     documentRecognition,
     validationScheduling,
   );
-  plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports));
+  const readingMarkdownIndex = new ReadingMarkdownIndex();
+  plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports, readingMarkdownIndex));
   plugin.registerEditorExtension(createLivePreviewExtension(ports));
   plugin.app.workspace.onLayoutReady(() => {
     if (lifetime.signal.aborted || !isActive()) return;
@@ -141,6 +140,7 @@ export async function activateInkbookPlugin(
     lifetime.abort();
     embedActions.dispose();
     lifecycle.disposeAll();
+    readingMarkdownIndex.clear();
     integration.dispose();
     runtime.dispose();
     feedback.dispose();
@@ -235,7 +235,6 @@ function createEmbedIntegration(
   lifecycle: PresentationLifecycleRegistry,
   scheme: ColorSchemeBroadcaster,
   runtime: ObsidianWorkspaceRuntime,
-  settings: InkbookSettingsStore,
 ) {
   const exportGeometryCache = new ExportGeometryCache();
   const nativePdfOptions = new NativePdfOptionsGateway(plugin.app);
@@ -292,33 +291,8 @@ function createEmbedIntegration(
       resolveDocument: createObsidianDocumentResolver(plugin.app),
       scheme,
       sessions: runtime,
-      subscribeMotionPreference: (listener: (motion: MotionPreference) => void) =>
-        settings.subscribeDeviceSettings((value) => listener(value.motion)),
     },
   };
-}
-
-function registerVaultLifecycle(
-  plugin: Plugin,
-  runtime: ObsidianWorkspaceRuntime,
-  recognition: ObsidianInkbookDocumentRecognition,
-): void {
-  const handleFileChange = (file: unknown): void => {
-    if (!(file instanceof TFile) || file.extension.toLowerCase() !== "svg") return;
-    recognition.deferRefresh(file.path);
-    runtime.handleVaultModification(file.path, (output) => {
-      if (output === undefined) recognition.invalidate(file.path);
-      else
-        recognition.acceptConfirmedOutput(
-          file.path,
-          output.content,
-          output.outputHash,
-          output.signature,
-        );
-    });
-  };
-  plugin.registerEvent(plugin.app.vault.on("create", handleFileChange));
-  plugin.registerEvent(plugin.app.vault.on("modify", handleFileChange));
 }
 
 async function loadSettings(plugin: Plugin): Promise<InkbookSettingsStore> {

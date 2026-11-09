@@ -5,13 +5,40 @@ import { expect, it, vi } from "vitest";
 
 import { createLivePreviewExtension } from "../../../../../src/obsidian/embeds/live-preview/live-preview";
 import { documentRecognitionChanged } from "../../../../../src/obsidian/embeds/live-preview/live-preview-recognition-effects";
-import { MARKDOWN_EMBED_LIMITS } from "../../../../../src/obsidian/embeds/markdown-embed";
+import {
+  findMarkdownInkbookEmbeds,
+  MARKDOWN_EMBED_LIMITS,
+} from "../../../../../src/obsidian/embeds/markdown-embed";
 import { EditorState } from "@codemirror/state";
 import { editorInfoField, editorLivePreviewField } from "obsidian";
 import type { InkbookDocumentRecognition } from "../../../../../src/obsidian/embeds/preview/document-recognition";
 import type { EmbedIntegrationPorts } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
 import { configureTestEditorState } from "../../../../adapters/obsidian/plugin";
 import { createLivePreviewZoomScrollFixture } from "../../../../fixtures/obsidian/live-preview-zoom-scroll";
+
+it("bounds source searches while recognizing capacity embeds after literal comment markers", () => {
+  const capacity = MARKDOWN_EMBED_LIMITS.matches;
+  const source = "Text `<!--`\n```html\n<!--\n```\n![[drawing.svg]]\n".repeat(capacity);
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- The observer forwards the original string receiver with call().
+  const original = String.prototype.indexOf;
+  let searchedCharacters = 0;
+  const searches = vi.spyOn(String.prototype, "indexOf").mockImplementation(function (
+    this: string,
+    needle: string,
+    position = 0,
+  ) {
+    const result = original.call(this, needle, position);
+    if (this === source)
+      searchedCharacters += (result < 0 ? source.length : result + needle.length) - position;
+    return result;
+  });
+  try {
+    expect(findMarkdownInkbookEmbeds(source)).toHaveLength(capacity);
+    expect(searchedCharacters).toBeLessThanOrEqual(source.length);
+  } finally {
+    searches.mockRestore();
+  }
+});
 
 function livePreviewUpdatesFixture(
   extension: typeof createLivePreviewExtension,
@@ -23,7 +50,14 @@ function livePreviewUpdatesFixture(
   );
   let resolutions = 0;
   let cacheReads = 0;
-  let preview: InkbookDocumentRecognition | undefined;
+  let preview: InkbookDocumentRecognition | undefined =
+    operation === "recognition burst"
+      ? undefined
+      : {
+          aspectRatio: 1,
+          safeSvg: "<svg/>",
+          contentIdentity: { revision: 1, outputHash: "a".repeat(64) },
+        };
   const ports = {
     documents: {
       cached: () => {
@@ -39,8 +73,8 @@ function livePreviewUpdatesFixture(
   configureTestEditorState({ file: { path: "note.md" }, livePreview: true });
   const doc =
     operation === "unchanged"
-      ? ids.map((id) => `!inkbook[[${id}]]`).join("\n\n")
-      : `Ordinary prose\n\n${ids.map((id) => `!inkbook[[${id}]]\n\n${"Ordinary prose ".repeat(16)}`).join("\n\n")}`;
+      ? ids.map((id) => `![[${id}]]`).join("\n\n")
+      : `Ordinary prose\n\n${ids.map((id) => `![[${id}]]\n\n${"Ordinary prose ".repeat(16)}`).join("\n\n")}`;
   const initial = EditorState.create({
     doc,
     extensions: [editorInfoField, editorLivePreviewField, extension(ports)],
@@ -79,6 +113,7 @@ for (const operation of ["text edit", "recognition burst"] as const) {
         ? { changes: { from: 1, insert: "x" } }
         : { effects: documentRecognitionChanged.of(ids) };
     const initialWidgets = decorationWidgets(initial);
+    expect(initialWidgets).toHaveLength(operation === "recognition burst" ? 0 : capacity);
     const flatten = vi.spyOn(initial.doc, "toString");
     const lineReads = vi.spyOn(initial.doc, "lineAt");
     let state = initial;
@@ -92,7 +127,7 @@ for (const operation of ["text edit", "recognition burst"] as const) {
       expect(updatedWidgets).toHaveLength(capacity);
       if (operation === "text edit") {
         for (let index = 0; index < capacity; index += 1)
-          expect(updatedWidgets[index]).toBe(initialWidgets[index]);
+          expect(updatedWidgets[index]).not.toBe(initialWidgets[index]);
       }
       expect(resolutions()).toBe(capacity);
       expect(cacheReads()).toBe(capacity * (operation === "recognition burst" ? 3 : 1));

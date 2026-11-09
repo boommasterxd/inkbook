@@ -20,7 +20,6 @@ import {
   testIconRegistry,
   type Plugin as RegisteredPlugin,
 } from "../../adapters/obsidian/plugin";
-import { InkbookLoadingPreviewWidget } from "../../../src/obsidian/embeds/live-preview/live-preview-loading-widget";
 import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
 import { PresentationLifecycleRegistry } from "../../../src/obsidian/embeds/presentation/presentation-lifecycle-registry";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
@@ -115,63 +114,56 @@ function createApp() {
   };
 }
 
-describe("plugin startup placeholders", () => {
-  it.each([false, true])(
-    "shows a startup placeholder without early reads; unload=%s",
-    async (unload) => {
-      const { app, layoutReady } = createApp();
-      const serialized = serializeInkbookDocument(createSnapshot());
-      if (!serialized.ok) throw new Error("Expected a canonical Inkbook fixture.");
-      const file = new TestTFile(unload ? "drawing.svg" : "external.SVG");
-      file.stat.size = new TextEncoder().encode(serialized.value.svg).byteLength;
-      const cachedRead = vi.fn(async () => serialized.value.svg);
-      const plugin = new TestPlugin(
-        {
-          ...app,
-          metadataCache: { ...app.metadataCache, getFirstLinkpathDest: () => file },
-          vault: {
-            ...app.vault,
-            cachedRead,
-            getFileByPath: () => file,
-            getResourcePath: () => `app://${file.path}`,
-          },
-        } as never,
-        {} as never,
-      );
-      const deactivate = await activateInkbookPlugin(plugin);
-      configureTestEditorState({ file: { path: "note.md" }, livePreview: true });
-      const registrations = plugin as unknown as { editorExtensions: [] };
-      const state = EditorState.create({
-        doc: `!inkbook[[${file.path}]]`,
-        extensions: [editorInfoField, editorLivePreviewField, ...registrations.editorExtensions],
-      });
-      let widget: InkbookLoadingPreviewWidget | undefined;
-      (state.facet(EditorView.decorations)[0] as DecorationSet).between(
-        0,
-        state.doc.length,
-        (_from, _to, decoration) => {
-          widget = (decoration.spec as { widget: InkbookLoadingPreviewWidget }).widget;
+describe("plugin startup recognition", () => {
+  it.each([false, true])("keeps native images without early reads; unload=%s", async (unload) => {
+    const { app, layoutReady } = createApp();
+    const serialized = serializeInkbookDocument(createSnapshot());
+    if (!serialized.ok) throw new Error("Expected a canonical Inkbook fixture.");
+    const file = new TestTFile(unload ? "drawing.svg" : "external.SVG");
+    file.stat.size = new TextEncoder().encode(serialized.value.svg).byteLength;
+    const cachedRead = vi.fn(async () => serialized.value.svg);
+    const plugin = new TestPlugin(
+      {
+        ...app,
+        metadataCache: { ...app.metadataCache, getFirstLinkpathDest: () => file },
+        vault: {
+          ...app.vault,
+          cachedRead,
+          getFileByPath: () => file,
+          getResourcePath: () => `app://${file.path}`,
         },
-      );
-      expect(widget).toBeInstanceOf(InkbookLoadingPreviewWidget);
-      const recognition = widget!.ports.documents.recognize(file.path);
-      await Promise.resolve();
-      expect(cachedRead).not.toHaveBeenCalled();
-      if (unload) deactivate?.();
-      layoutReady();
-      if (unload) await expect(recognition).resolves.toBe(false);
-      else
-        await expect(recognition).resolves.toMatchObject({
-          safeSvg: serialized.value.svg,
-          contentIdentity: {
-            outputHash: serialized.value.hash,
-            revision: serialized.value.snapshot.revision,
-          },
-        });
-      expect(cachedRead).toHaveBeenCalledTimes(unload ? 0 : 1);
-      if (!unload) deactivate?.();
-    },
-  );
+      } as never,
+      {} as never,
+    );
+    const binding = vi.spyOn(embedBindings, "createLivePreviewExtension");
+    const deactivate = await activateInkbookPlugin(plugin);
+    configureTestEditorState({ file: { path: "note.md" }, livePreview: true });
+    const registrations = plugin as unknown as { editorExtensions: [] };
+    const state = EditorState.create({
+      doc: `![[${file.path}]]`,
+      extensions: [editorInfoField, editorLivePreviewField, ...registrations.editorExtensions],
+    });
+    expect((state.facet(EditorView.decorations)[0] as DecorationSet).size).toBe(0);
+    const recognition = binding.mock.calls[binding.mock.calls.length - 1]![0].documents.recognize(
+      file.path,
+    );
+    binding.mockRestore();
+    await Promise.resolve();
+    expect(cachedRead).not.toHaveBeenCalled();
+    if (unload) deactivate?.();
+    layoutReady();
+    if (unload) await expect(recognition).resolves.toBe(false);
+    else
+      await expect(recognition).resolves.toMatchObject({
+        safeSvg: serialized.value.svg,
+        contentIdentity: {
+          outputHash: serialized.value.hash,
+          revision: serialized.value.snapshot.revision,
+        },
+      });
+    expect(cachedRead).toHaveBeenCalledTimes(unload ? 0 : 1);
+    if (!unload) deactivate?.();
+  });
 });
 
 describe("plugin host registration", () => {
@@ -238,7 +230,7 @@ describe("plugin host registration", () => {
     expect(registrations.postProcessors).toHaveLength(1);
     expect(registrations.editorExtensions).toHaveLength(2);
     expect(registrations.editorExtensions[1]).toHaveLength(3);
-    expect([...vaultEvents.keys()]).toEqual(["create", "modify"]);
+    expect([...vaultEvents.keys()]).toEqual(["create", "modify", "delete", "rename"]);
     expect(workspaceEvents.has("editor-change")).toBe(true);
     expect(insertion?.(true, editor, context)).toBe(true);
 
@@ -284,8 +276,8 @@ describe("sectionless export refresh ownership", () => {
     const deactivate = await activateInkbookPlugin(plugin);
     const ports = binding.mock.calls[0]![0];
     const fixture = createMarkdownExportFixture(
-      "!inkbook[[drawing.svg]]",
-      '<p>!inkbook<a href="drawing.svg">drawing.svg</a></p>',
+      "![[drawing.svg]]",
+      '<p><span><img alt="drawing.svg" src="app://vault/drawing.svg"></span></p>',
     );
     const host = new ManualHost();
     vi.spyOn(window, "requestAnimationFrame").mockImplementation(host.requestFrame);
@@ -343,7 +335,7 @@ describe("sectionless export refresh ownership", () => {
 
   it.each([
     { source: "ordinary text", html: "<p>ordinary text</p>" },
-    { source: "!inkbook[[image.png]]", html: '<p>!inkbook<a href="image.png">image.png</a></p>' },
+    { source: "![[image.png]]", html: '<p>!<a href="image.png">image.png</a></p>' },
   ])(
     "does not acquire a profile without a supported candidate: $source",
     async ({ source, html }) => {

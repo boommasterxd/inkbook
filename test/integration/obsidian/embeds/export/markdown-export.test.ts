@@ -7,8 +7,8 @@ import {
   exportDescriptor,
   validatedPreview,
   mountExportTargetScheme,
+  startCurrentMarkdownExport,
 } from "../../../../fixtures/obsidian/markdown-export";
-import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
 import type { EmbedIntegrationPorts } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
 import { PORTABLE_PALETTE_V1 } from "../../../../../src/domain/schema/public";
 import { ColorSchemeBroadcaster } from "../../../../../src/obsidian/theme/color-scheme";
@@ -21,9 +21,9 @@ afterEach(() => {
 it("awaits every complete saved graphic without mounting an interactive presentation", async () => {
   const descriptor = await validatedPreview();
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[../drawings/first.svg|First]]\n\n!inkbook[Second](./second.svg)",
-    '<div><p>!inkbook<a href="../drawings/first.svg">First</a></p></div>' +
-      '<div><p>!inkbook<a href="./second.svg">Second</a></p></div>',
+    "![[../drawings/first.svg|First]]\n\n![Second](./second.svg)",
+    '<div><p><span><img alt="First" src="app://vault/drawings/first.svg"></span></p></div>' +
+      '<div><p><span><img alt="Second" src="app://vault/notes/second.svg"></span></p></div>',
     descriptor,
   );
   await createReadingViewPostProcessor(fixture.ports)(fixture.root, fixture.context);
@@ -52,28 +52,26 @@ it("awaits every complete saved graphic without mounting an interactive presenta
   expect(fixture.cached).not.toHaveBeenCalled();
   expect(fixture.subscribe).not.toHaveBeenCalled();
   fixture.unload();
-  expect(fixture.root.querySelectorAll("p > a")).toHaveLength(2);
+  expect(fixture.root.querySelectorAll("p img")).toHaveLength(2);
   expect(fixture.root.querySelector("svg")).toBeNull();
 });
 
-it("preserves code, escaped examples, inline text and ordinary native embeds", async () => {
+it("preserves code, escaped examples and inline text", async () => {
   const fixture = createMarkdownExportFixture(
     [
-      "\\!inkbook[[escaped.svg]]",
-      "`!inkbook[[inline-code.svg]]`",
+      "\\![[escaped.svg]]",
+      "`![[inline-code.svg]]`",
       "```md",
-      "!inkbook[[fenced.svg]]",
+      "![[fenced.svg]]",
       "```",
-      "Before !inkbook[[inline.svg]] after",
-      "![[native.svg]]",
-      "!inkbook[[valid.svg]]",
+      "Before ![[inline.svg]] after",
+      "![[valid.svg]]",
     ].join("\n\n"),
-    '<p>!inkbook<a href="escaped.svg">escaped.svg</a></p>' +
-      "<p><code>!inkbook[[inline-code.svg]]</code></p>" +
-      "<pre><code>!inkbook[[fenced.svg]]</code></pre>" +
-      '<p>Before !inkbook<a href="inline.svg">inline.svg</a> after</p>' +
-      '<p><img src="native.svg"></p>' +
-      '<p>!inkbook<a href="valid.svg">valid.svg</a></p>',
+    '<p>!<a href="escaped.svg">escaped.svg</a></p>' +
+      "<p><code>![[inline-code.svg]]</code></p>" +
+      "<pre><code>![[fenced.svg]]</code></pre>" +
+      '<p>Before <span><img alt="inline.svg" src="app://vault/inline.svg"></span> after</p>' +
+      '<p><span><img alt="valid.svg" src="app://vault/valid.svg"></span></p>',
   );
   const originals = [...fixture.root.children].slice(0, -1).map((node) => node.outerHTML);
   await createReadingViewPostProcessor(fixture.ports)(fixture.root, fixture.context);
@@ -84,25 +82,10 @@ it("preserves code, escaped examples, inline text and ordinary native embeds", a
   fixture.unload();
 });
 
-it("fails closed for indistinguishable escaped and real blocks but preserves distinct aliases", async () => {
-  const fixture = createMarkdownExportFixture(
-    "\\!inkbook[[same.svg|Ambiguous]]\n\n!inkbook[[same.svg|Ambiguous]]\n\n!inkbook[[same.svg|Actual]]",
-    '<p>!inkbook<a href="same.svg">Ambiguous</a></p>'.repeat(2) +
-      '<p>!inkbook<a href="same.svg">Actual</a></p>',
-  );
-  await createReadingViewPostProcessor(fixture.ports)(fixture.root, fixture.context);
-  expect(fixture.root.querySelectorAll("p[data-inkbook-export]")).toHaveLength(1);
-  expect(
-    fixture.root.lastElementChild?.querySelector("svg[role='img']")?.getAttribute("aria-label"),
-  ).toBe("Actual");
-  expect(fixture.root.querySelectorAll("a")).toHaveLength(2);
-  fixture.unload();
-});
-
 it("waits for pending saves and reuses readiness and recognition for repeated files", async () => {
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[same.svg|One]]\n\n!inkbook[[same.svg|Two]]",
-    '<p>!inkbook<a href="same.svg">One</a></p><p>!inkbook<a href="same.svg">Two</a></p>',
+    "![[same.svg|One]]\n\n![[same.svg|Two]]",
+    '<p><span><img alt="One" src="app://vault/same.svg"></span></p><p><span><img alt="Two" src="app://vault/same.svg"></span></p>',
   );
   let ready!: () => void;
   fixture.prepareStaticExport.mockImplementation(
@@ -134,8 +117,8 @@ it("waits for pending saves and reuses readiness and recognition for repeated fi
 
 it("prevents publication after the renderer lifecycle unloads during readiness", async () => {
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[ink.svg]]",
-    '<p>!inkbook<a href="ink.svg">ink.svg</a></p>',
+    "![[ink.svg]]",
+    '<p><span><img alt="ink.svg" src="app://vault/ink.svg"></span></p>',
   );
   let ready!: () => void;
   fixture.prepareStaticExport.mockImplementation(
@@ -150,14 +133,14 @@ it("prevents publication after the renderer lifecycle unloads during readiness",
   ready();
   await pending;
   expect(fixture.root.querySelector("svg")).toBeNull();
-  expect(fixture.root.querySelector("a")?.getAttribute("href")).toBe("ink.svg");
+  expect(fixture.root.querySelector("img")?.getAttribute("src")).toBe("app://vault/ink.svg");
   expect(fixture.recognize).not.toHaveBeenCalled();
 });
 
 it("rejects an export when saving fails instead of silently using stale recognition", async () => {
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[ink.svg]]",
-    '<p>!inkbook<a href="ink.svg">ink.svg</a></p>',
+    "![[ink.svg]]",
+    '<p><span><img alt="ink.svg" src="app://vault/ink.svg"></span></p>',
   );
   fixture.prepareStaticExport.mockRejectedValue(new Error("Save failed."));
   await expect(
@@ -168,23 +151,11 @@ it("rejects an export when saving fails instead of silently using stale recognit
   fixture.unload();
 });
 
-it("keeps unrecognized SVG files in the native renderer", async () => {
-  const fixture = createMarkdownExportFixture(
-    "!inkbook[[ordinary.svg]]",
-    '<p>!inkbook<a href="ordinary.svg">ordinary.svg</a></p>',
-  );
-  fixture.recognize.mockResolvedValue(false);
-  const original = fixture.root.innerHTML;
-  await createReadingViewPostProcessor(fixture.ports)(fixture.root, fixture.context);
-  expect(fixture.root.innerHTML).toBe(original);
-  fixture.unload();
-});
-
 it("publishes retained definitions in the surviving repeated embed after its first host disappears", async () => {
   const descriptor = exportDescriptor();
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[same.svg|One]]\n\n!inkbook[[same.svg|Two]]",
-    '<p>!inkbook<a href="same.svg">One</a></p><p>!inkbook<a href="same.svg">Two</a></p>',
+    "![[same.svg|One]]\n\n![[same.svg|Two]]",
+    '<p><span><img alt="One" src="app://vault/same.svg"></span></p><p><span><img alt="Two" src="app://vault/same.svg"></span></p>',
     descriptor,
   );
   fixture.recognize.mockImplementation(async () => {
@@ -198,43 +169,18 @@ it("publishes retained definitions in the surviving repeated embed after its fir
   fixture.unload();
 });
 
-it("keeps normal Reading-view presentation mounting independent of static export", async () => {
-  const fixture = createMarkdownExportFixture("!inkbook[[ink.svg]]", "");
-  const root = new FakePresentationElement();
-  const descriptor = {
-    aspectRatio: 4,
-    contentIdentity: { outputHash: "b".repeat(64), revision: 1 },
-    safeSvg: '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>',
-  };
-  const context = {
-    ...fixture.context,
-    getSectionInfo: () => ({ lineStart: 0, lineEnd: 0, text: "!inkbook[[ink.svg]]" }),
-  };
-  await createReadingViewPostProcessor({
-    ...fixture.ports,
-    documents: { ...fixture.ports.documents, cached: () => descriptor },
-  })(root as unknown as HTMLElement, context);
-  expect(fixture.sessions.mount).toHaveBeenCalledOnce();
-  expect(root.children[0]?.classNames).toContain("inkbook-root");
-  expect(fixture.readMarkdownSource).not.toHaveBeenCalled();
-  expect(fixture.prepareStaticExport).not.toHaveBeenCalled();
-  expect(fixture.recognize).not.toHaveBeenCalled();
-  fixture.unload();
-  expect(root.children).toEqual([]);
-});
-
 it("correlates formatted labels and entities while normalizing each repeated label once", async () => {
   const fixture = createMarkdownExportFixture(
     [
-      "!inkbook[**Diagram**](ink.svg)",
-      "!inkbook[**Diagram**](other.svg)",
-      "!inkbook[A &amp; B](ink.svg)",
-      "!inkbook[A &amp; B](other.svg)",
+      "![**Diagram**](ink.svg)",
+      "![**Diagram**](other.svg)",
+      "![A &amp; B](ink.svg)",
+      "![A &amp; B](other.svg)",
     ].join("\n\n"),
-    '<p>!inkbook<a href="ink.svg"><strong>Diagram</strong></a></p>' +
-      '<p>!inkbook<a href="other.svg"><strong>Diagram</strong></a></p>' +
-      '<p>!inkbook<a href="ink.svg">A &amp; B</a></p>' +
-      '<p>!inkbook<a href="other.svg">A &amp; B</a></p>',
+    '<p><span><img alt="**Diagram**" src="app://vault/ink.svg"></span></p>' +
+      '<p><span><img alt="**Diagram**" src="app://vault/other.svg"></span></p>' +
+      '<p><span><img alt="A &amp; B" src="app://vault/ink.svg"></span></p>' +
+      '<p><span><img alt="A &amp; B" src="app://vault/other.svg"></span></p>',
   );
   const renderExportLabel = await renderFormattedExport(fixture);
   expect(fixture.root.querySelectorAll("p[data-inkbook-export]")).toHaveLength(4);
@@ -257,10 +203,10 @@ it("correlates formatted labels and entities while normalizing each repeated lab
 it("plans repeated drawings with the page room left by intervening export fragments", async () => {
   const descriptor = await validatedPreview();
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[a.svg|A]]\n\n!inkbook[[b.svg|B]]\n\n!inkbook[[a.svg|A]]",
-    '<p>!inkbook<a href="a.svg">A</a></p>' +
-      '<p>!inkbook<a href="b.svg">B</a></p>' +
-      '<p>!inkbook<a href="a.svg">A</a></p>',
+    "![[a.svg|A|2049]]\n\n![[b.svg|B]]\n\n![[a.svg|A|2049]]",
+    '<p><span><img alt="A" width="2049" src="app://vault/a.svg"></span></p>' +
+      '<p><span><img alt="B" src="app://vault/b.svg"></span></p>' +
+      '<p><span><img alt="A" width="2049" src="app://vault/a.svg"></span></p>',
     descriptor,
   );
   document.body.append(fixture.root);
@@ -301,10 +247,12 @@ it("plans repeated drawings with the page room left by intervening export fragme
     expect(intervening!.dataset.inkbookPagination).toBe("split");
     const pieces = repeated!.querySelectorAll<HTMLElement>(".inkbook-export-piece");
     expect(pieces.length).toBeGreaterThan(1);
+    expect(repeated!.style.getPropertyValue("--inkbook-embed-inline-size")).toBe("2049px");
     expect(Number(pieces[0]!.dataset.inkbookRangeEnd)).toBeGreaterThan(200);
     expect(Number(pieces[0]!.dataset.inkbookRangeEnd)).toBeLessThanOrEqual(477);
     let end = 0;
     for (const piece of pieces) {
+      expect(piece.style.getPropertyValue("--inkbook-embed-inline-size")).toBe("100%");
       expect(Number(piece.dataset.inkbookRangeStart)).toBe(end);
       end = Number(piece.dataset.inkbookRangeEnd);
     }
@@ -315,49 +263,14 @@ it("plans repeated drawings with the page room left by intervening export fragme
   }
 });
 
-it("preserves ambiguous escaped formatted labels after normalization", async () => {
-  const fixture = createMarkdownExportFixture(
-    "\\!inkbook[**Diagram**](ink.svg)\n\n!inkbook[**Diagram**](ink.svg)",
-    '<p>!inkbook<a href="ink.svg"><strong>Diagram</strong></a></p>'.repeat(2),
-  );
-  const original = fixture.root.innerHTML;
-  const renderExportLabel = await renderFormattedExport(fixture);
-  expect(fixture.root.innerHTML).toBe(original);
-  expect(fixture.recognize).not.toHaveBeenCalled();
-  expect(renderExportLabel).toHaveBeenCalledOnce();
-  fixture.unload();
-});
-
-it("does not confuse genuine formatted ink with an escaped literal label signature", async () => {
-  const fixture = createMarkdownExportFixture(
-    "!inkbook[**Diagram**](drawing.svg)\n\n\\!inkbook[\\*\\*Diagram\\*\\*](drawing.svg)",
-    '<p>!inkbook<a href="drawing.svg"><strong>Diagram</strong></a></p>' +
-      '<p>!inkbook<a href="drawing.svg">**Diagram**</a></p>',
-  );
-  const genuine = fixture.root.firstElementChild;
-  const escaped = fixture.root.lastElementChild;
-  const literal = escaped?.outerHTML;
-  const renderExportLabel = await renderFormattedExport(fixture);
-  expect(genuine?.querySelector("svg[role='img']")).not.toBeNull();
-  expect(escaped?.outerHTML).toBe(literal);
-  expect(fixture.root.querySelectorAll("p[data-inkbook-export]")).toHaveLength(1);
-  expect(renderExportLabel.mock.calls.map(([label]) => label)).toEqual(["**Diagram**"]);
-  fixture.unload();
-});
-
 it("exports the current descriptor without consulting stale recognition or its cache", async () => {
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[ink.svg]]",
-    '<p>!inkbook<a href="ink.svg">ink.svg</a></p>',
+    "![[ink.svg]]",
+    '<p><span><img alt="ink.svg" src="app://vault/ink.svg"></span></p>',
   );
   const current = exportDescriptor('<path d="M40 5100L80 5120" stroke="#102030FF"/>');
-  const recognizeCurrent = vi.fn<
-    NonNullable<EmbedIntegrationPorts["documents"]["recognizeCurrent"]>
-  >(async () => current);
-  await createReadingViewPostProcessor({
-    ...fixture.ports,
-    documents: { ...fixture.ports.documents, recognizeCurrent },
-  })(fixture.root, fixture.context);
+  const { recognizeCurrent, pending } = startCurrentMarkdownExport(fixture, current);
+  await pending;
   expect(recognizeCurrent).toHaveBeenCalledExactlyOnceWith("ink.svg", window);
   expect(fixture.recognize).not.toHaveBeenCalled();
   expect(fixture.cached).not.toHaveBeenCalled();
@@ -368,8 +281,8 @@ it("exports the current descriptor without consulting stale recognition or its c
 
 it("rejects a current-recognition failure without falling back to stale graphics", async () => {
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[ink.svg]]",
-    '<p>!inkbook<a href="ink.svg">ink.svg</a></p>',
+    "![[ink.svg]]",
+    '<p><span><img alt="ink.svg" src="app://vault/ink.svg"></span></p>',
   );
   const original = fixture.root.innerHTML;
   const recognizeCurrent = vi
@@ -389,9 +302,9 @@ it("rejects a current-recognition failure without falling back to stale graphics
 
 it("preserves literal Wiki percent paths while resolving encoded Markdown paths", async () => {
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[My%20page.svg|Wiki]]\n\n!inkbook[Markdown](Other%20page.svg)",
-    '<p>!inkbook<a href="My%20page.svg">Wiki</a></p>' +
-      '<p>!inkbook<a href="Other%20page.svg">Markdown</a></p>',
+    "![[My%20page.svg|Wiki]]\n\n![Markdown](Other%20page.svg)",
+    '<p><span><img alt="Wiki" src="app://vault/My%20page.svg"></span></p>' +
+      '<p><span><img alt="Markdown" src="app://vault/Other page.svg"></span></p>',
   );
   await createReadingViewPostProcessor(fixture.ports)(fixture.root, fixture.context);
   expect(fixture.recognize.mock.calls.map(([id]) => id)).toEqual([
@@ -426,8 +339,8 @@ it.each(["light", "dark"] as const)(
   "uses the %s export target rather than the opposite source theme",
   async (scheme) => {
     const fixture = createMarkdownExportFixture(
-      "!inkbook[[drawing.svg]]",
-      '<p>!inkbook<a href="drawing.svg">drawing.svg</a></p>',
+      "![[drawing.svg]]",
+      '<p><span><img alt="drawing.svg" src="app://vault/drawing.svg"></span></p>',
       await validatedPreview(),
     );
     mountExportTargetScheme(fixture.root, scheme);

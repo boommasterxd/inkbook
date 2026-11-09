@@ -9,6 +9,7 @@ import { samePreviewContentIdentity } from "./safe-preview-svg";
 import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
 import { SafeStaticProof } from "../../../persistence/serialization/input/safe-static-proof";
 import { matchesPreviewResource, previewSourceIdentity } from "./preview-resource-identity";
+import { DocumentRecognitionSubscriptions } from "./document-recognition-subscriptions";
 
 const MAXIMUM_RECOGNITION_CACHE_ENTRIES = 256;
 const MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS = 32 * 1024 * 1024;
@@ -42,7 +43,7 @@ export interface InkbookDocumentRecognitionPort {
   cached(documentId: string): InkbookDocumentRecognition | undefined;
   recognize(documentId: string, ownerWindow?: Window | null): Promise<InkbookDocumentRecognition>;
   recognizeCurrent?: InkbookDocumentRecognitionPort["recognize"];
-  subscribe(listener: (documentId: string) => void): () => void;
+  subscribe(listener: (documentId: string) => void, documentId?: string): () => void;
   loadPreviewSource?: (
     documentId: string,
     source: string,
@@ -80,7 +81,7 @@ function recognizeCanonicalInkbookRoot(content: string): false | { readonly aspe
 
 export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecognitionPort {
   readonly #entries = new Map<string, RecognitionEntry>();
-  readonly #listeners = new Set<(documentId: string) => void>();
+  readonly #subscriptions = new DocumentRecognitionSubscriptions();
   readonly #vault: Vault;
   readonly #pending = new Map<string, PendingRecognition>();
   readonly #queue = new Map<string, PendingRecognition>();
@@ -288,11 +289,8 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     return true;
   }
 
-  public subscribe(listener: (documentId: string) => void): () => void {
-    this.#listeners.add(listener);
-    return () => {
-      this.#listeners.delete(listener);
-    };
+  public subscribe(listener: (documentId: string) => void, documentId?: string): () => void {
+    return this.#subscriptions.subscribe(listener, documentId);
   }
 
   /** Retain the last safe presentation while the host distinguishes its own write. */
@@ -340,8 +338,8 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   }
 
   public invalidate(documentId: string): void {
-    const pending = this.#cancelPending(documentId);
-    if (!this.#deleteEntry(documentId) && !pending) return;
+    this.#cancelPending(documentId);
+    this.#deleteEntry(documentId);
     this.#notify(documentId);
   }
 
@@ -350,7 +348,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     for (const documentId of this.#pending.keys()) this.#cancelPending(documentId);
     this.#markupCodeUnits = 0;
     this.#entries.clear();
-    this.#listeners.clear();
+    this.#subscriptions.clear();
   }
 
   #addOwner(request: PendingRecognition, ownerWindow: Window | null | undefined): void {
@@ -483,13 +481,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   }
 
   #notify(documentId: string): void {
-    for (const listener of this.#listeners) {
-      try {
-        listener(documentId);
-      } catch {
-        // A failed presentation must not block other subscribers or queued recognition.
-      }
-    }
+    this.#subscriptions.notify(documentId);
   }
 }
 

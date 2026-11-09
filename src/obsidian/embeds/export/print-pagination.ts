@@ -271,6 +271,8 @@ export class StaticExportPagination {
         end: slice.end,
         deferGraphic: true,
       });
+      if (output.options.width !== undefined)
+        piece.style.setProperty("--inkbook-embed-inline-size", "100%");
       piece.classList.add("inkbook-export-piece");
       if (slice.newPage) piece.classList.add("inkbook-export-continued");
       applyResponsiveLockedEmbedShell(piece);

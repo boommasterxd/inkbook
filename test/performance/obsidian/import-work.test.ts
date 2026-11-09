@@ -38,7 +38,7 @@ describe("Obsidian Ink import work ownership", () => {
       fixture.writes.filter((write) => write.path === "inkbook-imports/run-1/source-0.txt"),
     ).toHaveLength(1);
     expect(fixture.writes.filter((write) => write.path === "note.md")).toHaveLength(1);
-    expect(fixture.files.get("note.md")?.match(/!inkbook/gu)).toHaveLength(1000);
+    expect(fixture.files.get("note.md")?.match(/!/gu)).toHaveLength(1000);
     const journal = fixture.files.get("inkbook-imports/run-1/journal.json") ?? "";
     expect(journal).not.toContain("private source body");
     expect(fixture.files.get("Ink/example.svg")).toBe("private source body");

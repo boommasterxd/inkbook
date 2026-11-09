@@ -48,8 +48,7 @@ import {
   createWorkspacePresentationStateSetter,
   disposeWorkspaceMountedPresentations,
   releaseWorkspaceScene,
-  cancelInitialWorkspaceLoading,
-  startInitialWorkspaceLoading,
+  resumeInitialWorkspacePreview,
   updateWorkspaceMountedSettings,
 } from "./workspace-mounted-presentation";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
@@ -105,7 +104,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.refreshRateProfiles.observeDefault(this.#fallbackOwnerWindow());
     this.#lifecycle = new WorkspaceRuntimeLifecycle({
       activate: (attachment, attempt) => this.#activate(attachment, attempt),
-      autoActivationCancelled: (key) => cancelInitialWorkspaceLoading(this.#mounted.get(key)),
+      autoActivationCancelled: (key) => resumeInitialWorkspacePreview(this.#mounted.get(key)),
       fallbackWindow: () => this.#fallbackWindow(),
       isDisposed: () => this.#disposed,
       currentSaveSettlement: (documentId) => this.#sessions.currentSaveSettlement(documentId),
@@ -166,7 +165,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       this.refreshRateProfiles.workScheduler(attachment.root.ownerDocument.defaultView),
     );
     this.#mounted.set(key, mounted);
-    startInitialWorkspaceLoading(mounted, this.#lifecycle);
     this.#ownerWindows.observe(attachment.documentId, attachment.root.ownerDocument.defaultView);
     this.refreshRateProfiles.acquire(
       key,
@@ -383,7 +381,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     mounted.disposeScheme?.();
     mounted.disposeScheme = undefined;
     mounted.feedback.finish();
-    delete mounted.initialLoading;
     mounted.savingFeedback = undefined;
     mounted.recovery?.close();
     mounted.recovery = undefined;

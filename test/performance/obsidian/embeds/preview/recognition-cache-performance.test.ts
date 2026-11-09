@@ -86,3 +86,36 @@ it("shares one full Vault read, hash, and safe inspection across visible preview
   recognition.dispose();
   vi.restoreAllMocks();
 });
+
+it("routes capacity file completions without dispatching unrelated presentation listeners", async () => {
+  const capacity = 4096;
+  const { files, recognition, reads } = recognitionCacheFixture(
+    ObsidianInkbookDocumentRecognition,
+    capacity,
+  );
+  let targetedDispatches = 0;
+  let sharedViewDispatches = 0;
+  let mismatchedDispatches = 0;
+  recognition.subscribe(() => {
+    sharedViewDispatches += 1;
+  });
+  const releases = files.map((file) =>
+    recognition.subscribe((documentId) => {
+      targetedDispatches += 1;
+      if (documentId !== file.path) mismatchedDispatches += 1;
+    }, file.path),
+  );
+
+  await Promise.all(files.map((file) => recognition.recognize(file.path)));
+  expect(reads()).toBe(capacity);
+  expect(targetedDispatches).toBe(capacity);
+  expect(sharedViewDispatches).toBe(capacity);
+  expect(mismatchedDispatches).toBe(0);
+  for (const release of releases) release();
+  recognition.invalidate(files[0]!.path);
+  expect(targetedDispatches).toBe(capacity);
+  expect(sharedViewDispatches).toBe(capacity + 1);
+  recognition.dispose();
+  recognition.invalidate(files[1]!.path);
+  expect(sharedViewDispatches).toBe(capacity + 1);
+});

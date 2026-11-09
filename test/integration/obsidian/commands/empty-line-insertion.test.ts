@@ -45,7 +45,7 @@ function createHarness(editor: FakeEditor) {
         return ownedFileRead(path, guardedRead(path, read.content), onCreated);
       },
     },
-    links: { generateEmbed: () => "!inkbook[[../drawings/new.svg]]" },
+    links: { generateEmbed: () => "![[../drawings/new.svg]]" },
     notifications,
     trash: { trash, trashCreated: (created) => trash(created.file.path) },
   });
@@ -81,7 +81,7 @@ function createFailedInsertionHarness(options: FailedInsertionHarnessOptions) {
       createOwnedAndReadBack: async (path, content, _maximumBytes, onCreated) =>
         ownedFileRead(path, guardedRead(path, content), onCreated),
     },
-    links: { generateEmbed: () => "!inkbook[[new.svg]]" },
+    links: { generateEmbed: () => "![[new.svg]]" },
     notifications: { failed, inserted },
     trash: { trash, trashCreated: (created) => trash(created.file.path) },
   });
@@ -186,7 +186,7 @@ describe("empty-line insertion", () => {
     await vi.waitFor(() => expect(harness.insertions).toHaveLength(1));
 
     expect(harness.create).toHaveBeenCalledWith("drawings/new.svg", "<svg />", expect.any(Number));
-    expect(fake.lines).toEqual(["before", "", "", "!inkbook[[../drawings/new.svg]]", "", "after"]);
+    expect(fake.lines).toEqual(["before", "", "", "![[../drawings/new.svg]]", "", "after"]);
     expect(harness.insertions[0]?.line).toBe(3);
     expect(harness.trash).not.toHaveBeenCalled();
   });
@@ -343,7 +343,7 @@ describe("Obsidian empty-line insertion composition", () => {
     expect(failed).not.toHaveBeenCalled();
     expect(placementFeedback).not.toHaveBeenCalled();
     expect(path).toMatch(/^drawings\/inkbook-\d{8}-\d{6}-090909\.svg$/u);
-    expect(editor.lines[2]).toBe(`!inkbook[[${path}]]`);
+    expect(editor.lines[2]).toBe(`![[${path}]]`);
     expect(files.get(path)?.text).toContain('data-inkbook-version="1"');
   });
 
@@ -366,7 +366,7 @@ describe("Obsidian empty-line insertion composition", () => {
     expect(test.failed).not.toHaveBeenCalled();
     expect(test.placementFeedback).toHaveBeenCalledWith(message);
     expect(test.getRandomValues).toHaveBeenCalled();
-    expect(test.editor.getLine(2)).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
+    expect(test.editor.getLine(2)).toMatch(/^!\[\[notes\/inkbook-.*\.svg\]\]$/u);
   });
 
   it("continues insertion when the placement feedback port throws", async () => {
@@ -380,7 +380,7 @@ describe("Obsidian empty-line insertion composition", () => {
     await requestAndAwaitInsertion(test);
 
     expect(test.failed).not.toHaveBeenCalled();
-    expect(test.editor.getLine(2)).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
+    expect(test.editor.getLine(2)).toMatch(/^!\[\[notes\/inkbook-.*\.svg\]\]$/u);
   });
 
   it("does not report regular note-folder placement", async () => {

@@ -31,7 +31,7 @@ describe("Live Preview syntax correlation", () => {
     languageMocks.syntaxTreeAvailable.mockReturnValue(true);
   });
 
-  it("accepts custom Inkbook syntax outside suppressed Markdown", () => {
+  it("accepts native image syntax outside suppressed Markdown", () => {
     expect(
       isExecutableEmbedSyntax(viewWithSyntax([{ from: 4, name: "Text", to: 36 }]), 4, 36),
     ).toBe(true);

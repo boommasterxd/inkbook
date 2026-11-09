@@ -92,7 +92,7 @@ function createCommandHarness(flow: "insertion" | "duplicate", failure: Failure)
   const hostEditor = editor as unknown as Editor;
   const failed = vi.fn();
   const inserted = vi.fn();
-  const links = { generateEmbed: () => `!inkbook[[${PATH}]]` };
+  const links = { generateEmbed: () => `![[${PATH}]]` };
   const insertion = new EmptyLineInsertionController({
     documents: {
       prepare: async () => ({ content: CONTENT, path: PATH }),
@@ -120,7 +120,7 @@ function createCommandHarness(flow: "insertion" | "duplicate", failure: Failure)
       return { kind: failure === "none" ? "inserted" : "failed" };
     }
     const outcome = await duplicate.paste({
-      clipboardText: "!inkbook[[source.svg]]",
+      clipboardText: "![[source.svg]]",
       editor: hostEditor,
       insideInkWidget: false,
       sourcePath: "note.md",
@@ -140,7 +140,7 @@ describe.each(["insertion", "duplicate"] as const)("%s creation rollback", (flow
     expect(await test.run()).toMatchObject({ kind: "inserted" });
 
     expect(test.entries.get(PATH)?.content).toBe(CONTENT);
-    expect(test.noteContent()).toContain(`!inkbook[[${PATH}]]`);
+    expect(test.noteContent()).toContain(`![[${PATH}]]`);
     expect(test.trashFile).not.toHaveBeenCalled();
   });
   it("trashes its own unchanged SVG when creation succeeds but read-back rejects", async () => {

@@ -1,14 +1,9 @@
 // @vitest-environment happy-dom
-import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 import { describe, expect, it } from "vitest";
-import { createLoadingPlaceholder } from "../../../../../src/obsidian/embeds/preview/loading-placeholder";
-import { ColorSchemeBroadcaster } from "../../../../../src/obsidian/theme/color-scheme";
-import { FakePresentationElement } from "../../../../fixtures/obsidian/presentation-dom";
 import { TRANSITION_DURATIONS } from "../../../../../src/rendering/motion/transitions";
 import { exitHarness } from "../../../../unit/obsidian/embeds/presentation-exit-fixture";
 import { entranceHarness } from "../../../../unit/obsidian/embeds/presentation-entrance-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../../../interaction-refresh-profile";
-import type { MotionPreference } from "../../../../../src/rendering/motion/transitions";
 
 describe("presentation entrance performance", () => {
   it.for(["preview", "editor"] as const)(
@@ -36,84 +31,6 @@ describe("presentation entrance performance", () => {
     },
   );
 });
-
-it.for([false, true])(
-  `animates loading placeholders and preserves handoff height at ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz (early=%s)`,
-  (early) => {
-    let invalidFrames = 0;
-    let invalidHeights = 0;
-    let retainedWork = 0;
-    const h = loadingMotionHarness();
-    expect(h.motionListeners.size).toBe(1);
-    if (!Object.is(h.loading.renderedHeight, 0)) invalidHeights += 1;
-    invalidFrames += runFrames(h, early);
-    const height = h.loading.renderedHeight;
-    if (early) {
-      if (!(height > 0)) invalidHeights += 1;
-      if (!(height < 48)) invalidHeights += 1;
-    } else if (height !== 48) invalidHeights += 1;
-
-    h.loading.dispose();
-    h.loading.dispose();
-    expect(h.motionListeners.size).toBe(0);
-
-    if (!Object.is(h.loading.renderedHeight, height)) invalidHeights += 1;
-    if (h.frames.size !== 0) retainedWork += 1;
-    if (h.timers.size !== 0) retainedWork += 1;
-    const preview = entranceHarness({ presented: false, initialHeight: height });
-    preview.entrance.prepare();
-    if (!Object.is(preview.renderedHeight, height)) invalidHeights += 1;
-    preview.entrance.dispose();
-    expect(invalidFrames).toBe(0);
-    expect(invalidHeights).toBe(0);
-    expect(retainedWork).toBe(0);
-  },
-);
-
-function loadingMotionHarness() {
-  const host = new FakePresentationElement();
-  const ownerWindow = host.ownerDocument.defaultView;
-  if (ownerWindow === null) throw new Error("Missing owner window.");
-  const frames = new Map<number, FrameRequestCallback>();
-  const timers = new Set<number>();
-  let nextId = 0;
-  Object.assign(ownerWindow, {
-    requestAnimationFrame: (callback: FrameRequestCallback) => {
-      frames.set(++nextId, callback);
-      return nextId;
-    },
-    cancelAnimationFrame: (id: number) => frames.delete(id),
-    setTimeout: () => {
-      timers.add(++nextId);
-      return nextId;
-    },
-    clearTimeout: (id: number) => timers.delete(id),
-  });
-  const scheme = new ColorSchemeBroadcaster({ getColorScheme: () => "light" });
-  const motionListeners = new Set<(motion: MotionPreference) => void>();
-  const loading = createLoadingPlaceholder(host as unknown as HTMLElement, {
-    motion: "system",
-    scheme,
-    subscribeMotionPreference: (listener) => {
-      motionListeners.add(listener);
-      return () => {
-        motionListeners.delete(listener);
-      };
-    },
-    workScheduler: workSchedulerFromFrames(ownerWindow),
-  });
-  return {
-    loading,
-    motionListeners,
-    frames,
-    timers,
-    frame: (time: number) => {
-      const pending = [...frames.values()];
-      frames.clear();
-      for (const callback of pending) callback(time);
-    },
-  };
-}
 
 function runFrames(
   harness: {

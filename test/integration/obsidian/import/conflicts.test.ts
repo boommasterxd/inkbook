@@ -73,7 +73,7 @@ describe("Obsidian Ink source alias conflicts", () => {
     const result = await fixture.service.apply(preview);
 
     expect(result.conflicts).toBe(0);
-    expect(fixture.files.get("B/note.md")).toBe("!inkbook[[A/example.inkbook.svg]]");
+    expect(fixture.files.get("B/note.md")).toBe("![[A/example.inkbook.svg]]");
     expect(fixture.files.get("B/example.svg")).toBe("new local writing source");
     expect(fixture.files.get("A/example.svg")).toBe("selected writing source");
   });
@@ -107,7 +107,7 @@ describe("Obsidian Ink skipped alias conflict recovery", () => {
     );
     expect(fixture.files.has("other.svg")).toBe(false);
     expect(fixture.files.has("other.inkbook.svg")).toBe(true);
-    expect(fixture.files.get("first.md")).toBe("!inkbook[[A/example.inkbook.svg]]");
+    expect(fixture.files.get("first.md")).toBe("![[A/example.inkbook.svg]]");
     expectAliasFilesPreserved(fixture);
   });
 
@@ -120,7 +120,7 @@ describe("Obsidian Ink skipped alias conflict recovery", () => {
       "original writing reference",
     );
 
-    expect(fixture.files.get("first.md")).toBe("!inkbook[[A/example.inkbook.svg]]");
+    expect(fixture.files.get("first.md")).toBe("![[A/example.inkbook.svg]]");
     expect(fixture.files.get("B/note.md")).toBe(edited);
     expect(fixture.files.get("B/example.svg")).toBe("new local writing source");
   });

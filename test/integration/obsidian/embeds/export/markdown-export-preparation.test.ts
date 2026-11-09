@@ -79,8 +79,8 @@ it("drops both overlapping preparations after renderer unload without late graph
 it("reuses warm numeric geometry with one fresh target-owned graphic and no fused parse or worker request", async () => {
   const output = await overlappingPreparation();
   const warm = createMarkdownExportFixture(
-    "!inkbook[[drawing.svg]]",
-    '<p>!inkbook<a href="drawing.svg">drawing.svg</a></p>',
+    "![[drawing.svg]]",
+    '<p><span><img alt="drawing.svg" src="app://vault/drawing.svg"></span></p>',
     output.descriptor,
   );
   const target = document.implementation.createHTMLDocument("Warm export");
@@ -127,8 +127,8 @@ it("preserves a damaged canonical host block when fused preparation rejects inst
   expect(safeSvg).not.toBe(descriptor.safeSvg);
   expect(safeSvg).toContain('data-inkbook-format="inkbook"');
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[drawing.svg]]",
-    '<p>!inkbook<a href="drawing.svg">drawing.svg</a></p>',
+    "![[drawing.svg]]",
+    '<p><span><img alt="drawing.svg" src="app://vault/drawing.svg"></span></p>',
     { ...descriptor, safeSvg },
   );
   const original = [...fixture.root.childNodes];
@@ -144,7 +144,7 @@ it("preserves a damaged canonical host block when fused preparation rejects inst
     await expect(fused.mock.results[0]!.value).resolves.toBeUndefined();
     expect(plain).not.toHaveBeenCalled();
     expect([...fixture.root.childNodes]).toEqual(original);
-    expect(fixture.root.querySelector("a")?.getAttribute("href")).toBe("drawing.svg");
+    expect(fixture.root.querySelector("img")?.getAttribute("src")).toBe("app://vault/drawing.svg");
     expect(fixture.root.querySelector("svg, [data-inkbook-export]")).toBeNull();
     expect(cache.instrumentation).toEqual({ entries: 0, numericBytes: 0 });
   } finally {
@@ -156,8 +156,8 @@ it("preserves a damaged canonical host block when fused preparation rejects inst
 async function overlappingPreparation() {
   const descriptor = await validatedPreview();
   const fixture = createMarkdownExportFixture(
-    "!inkbook[[drawing.svg]]",
-    '<p>!inkbook<a href="drawing.svg">drawing.svg</a></p>',
+    "![[drawing.svg]]",
+    '<p><span><img alt="drawing.svg" src="app://vault/drawing.svg"></span></p>',
     descriptor,
   );
   document.body.append(fixture.root);
