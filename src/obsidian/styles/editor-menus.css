@@ -31,6 +31,8 @@
 
 .inkbook-menu-control-header {
   align-items: center;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
   color: var(--text-muted);
   display: flex;
   font-size: var(--font-ui-smaller);

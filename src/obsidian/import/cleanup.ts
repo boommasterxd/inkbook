@@ -1,3 +1,4 @@
+import { recordImportIssue, type ImportDiagnostic, type ImportDiagnosticCode } from "./diagnostics";
 import type { ImportJournalStore } from "./journal";
 import { refreshCleanupIssues } from "./cleanup-issues";
 import type { InkImportPorts, InkImportSourceRecord } from "./types";
@@ -6,6 +7,7 @@ async function cleanupSource(options: {
   readonly ports: InkImportPorts;
   readonly store: ImportJournalStore;
   readonly source: InkImportSourceRecord;
+  readonly diagnose: (code: ImportDiagnosticCode) => void;
 }): Promise<string | undefined> {
   const { ports, store, source } = options;
   const backup = await ports.read(source.backupPath);
@@ -14,9 +16,11 @@ async function cleanupSource(options: {
     (await ports.hash(await ports.read(source.path))) !== source.hash ||
     (await ports.hash(await ports.read(source.targetPath))) !== source.outputHash
   ) {
+    options.diagnose("cleanupChanged");
     return `Cleanup skipped changed source or backup: ${source.path}`;
   }
   if ((await ports.referenceState(source.path)) !== "unreferenced") {
+    options.diagnose("cleanupReferenced");
     return `Cleanup skipped referenced or unverified source: ${source.path}`;
   }
   await ports.convert(backup, { legacyWriting: /\.writing$/iu.test(source.path) });
@@ -29,6 +33,7 @@ async function cleanupSource(options: {
   ) {
     delete source.cleanupIntent;
     await store.save();
+    options.diagnose("cleanupRace");
     return `Cleanup source changed before removal: ${source.path}`;
   }
   if (!(await ports.trash(source.path, backup))) throw new Error("Source changed before removal.");
@@ -53,24 +58,31 @@ export async function cleanupInkImport(
     ),
   );
   const checked = new Map<string, string | undefined>();
-  const recorded = new Set(store.journal.issues);
+  const details = new Map<string, ImportDiagnostic>();
   for (const source of store.journal.sources) {
     if (stopped()) break;
     if (source.status !== "created" || !imported.has(source.path)) continue;
     await ports.workScheduler.checkpoint(undefined, "background");
     if (stopped()) break;
     try {
-      checked.set(source.path, await cleanupSource({ ports, store, source }));
+      checked.set(
+        source.path,
+        await cleanupSource({
+          ports,
+          store,
+          source,
+          diagnose: (code) => details.set(source.path, { code, path: source.path }),
+        }),
+      );
     } catch {
       const issue = `Cleanup read or removal failure: ${source.path}`;
       checked.set(source.path, issue);
-      if (!recorded.has(issue)) {
-        recorded.add(issue);
-        store.journal.issues.push(issue);
-      }
+      const diagnostic: ImportDiagnostic = { code: "cleanupFailure", path: source.path };
+      details.set(source.path, diagnostic);
+      recordImportIssue(store.journal, issue, diagnostic);
       await store.save();
     }
   }
-  refreshCleanupIssues(store.journal, checked);
+  refreshCleanupIssues(store.journal, checked, details);
   await store.save();
 }

@@ -1,3 +1,6 @@
+import { importDiagnosticText } from "./import-diagnostic-text";
+import { quantity } from "./import-quantity";
+import type { Localization } from "../../../domain/localization";
 import { setIcon } from "obsidian";
 import type { InkImportJournal, InkImportPreview } from "../../import/types";
 import {
@@ -19,14 +22,14 @@ export { renderImportResult, type ImportOperation } from "./import-result";
 
 export function renderImportEntry(container: HTMLElement, context: ImportViewContext): void {
   renderSummary(container, {
-    heading: "Import your handwriting",
-    summary: "Keep your existing notes and edit their handwriting in Inkbook.",
+    heading: context.localization.t("import.entryHeading"),
+    summary: context.localization.t("import.entrySummary"),
   });
   renderImportExamples(container, context);
-  renderImportIntroduction(container);
+  renderImportIntroduction(container, context.localization);
   renderNotice(container, {
-    title: "You stay in control",
-    text: "Original files are kept, drawing canvases stay untouched, and you can undo the import later.",
+    title: context.localization.t("import.controlTitle"),
+    text: context.localization.t("import.controlDescription"),
     tone: "neutral",
   });
 }
@@ -37,38 +40,49 @@ export function renderImportPreview(
   context: ImportViewContext,
   selectionChanged: (count: number) => void = () => undefined,
 ): () => InkImportPreview {
-  renderImportStep(container, 2);
+  renderImportStep(container, 2, context.localization);
   const summary = renderSummary(container, {
-    heading: `${quantity(preview.sources.length, "handwriting file")} found`,
+    heading: context.localization.t("import.found", {
+      files: quantity(preview.sources.length, "handwriting", context.localization),
+    }),
     summary: "",
   });
   const updateSummary = (count: number, notes: number): void => {
-    summary.textContent = `${count} of ${preview.sources.length} selected · ${quantity(notes, "affected note")}`;
+    summary.textContent = context.localization.t("import.selected", {
+      count: context.localization.number(count),
+      total: context.localization.number(preview.sources.length),
+      notes: quantity(notes, "affectedNote", context.localization),
+    });
     selectionChanged(count);
   };
   const selection = createImportSelection(preview, context, updateSummary);
-  summary.textContent = `${preview.sources.length} of ${preview.sources.length} selected · ${quantity(selection.noteCount, "affected note")}`;
+  summary.textContent = context.localization.t("import.selected", {
+    count: context.localization.number(selection.selectedCount),
+    total: context.localization.number(preview.sources.length),
+    notes: quantity(selection.noteCount, "affectedNote", context.localization),
+  });
   summary.setAttribute("aria-live", "polite");
   container.createEl("p", {
     cls: "inkbook-import-guidance",
-    text: "Choose what to include in the file list below. Review any differences or warnings before importing.",
+    text: context.localization.t("import.previewGuidance"),
   });
   if (preview.truncated) {
     renderNotice(container, {
-      title: "Scan limit reached",
-      text: "Scan limit reached. Only the listed files will be imported; scan again afterward.",
+      title: context.localization.t("import.scanLimit"),
+      text: context.localization.t("import.scanLimitDescription"),
       tone: "caution",
     });
   }
   const storage = container.createEl("p", { cls: "inkbook-import-storage-note" });
   renderImportIcon(storage, "hard-drive", "inkbook-import-storage-icon");
   storage.createSpan({
-    text: "Local conversion · copies and recovery backups use extra vault and sync storage.",
+    text: context.localization.t("import.storage"),
   });
   renderImportFindings(
     container,
     {
-      label: "Handwriting files",
+      id: "import.files",
+      label: context.localization.t("import.files"),
       count: preview.sources.length,
       icon: "file-pen-line",
       before: selection.renderControls,
@@ -86,14 +100,21 @@ export function renderImportHistory(
   select: (journal: InkImportJournal) => void,
   options: {
     readonly mutate: (update: () => void) => void;
+    readonly localization: Localization;
     readonly selectedId?: string | undefined;
+    readonly state?: { page?: number };
   },
 ): void {
+  const context = options;
   if (history.length === 0) {
-    container.createEl("p", { text: "No saved imports.", cls: "inkbook-import-summary" });
+    container.createEl("p", {
+      text: context.localization.t("import.historyEmpty"),
+      cls: "inkbook-import-summary",
+    });
   }
   renderPagedItems(container, {
-    label: "Saved imports",
+    label: context.localization.t("import.historySaved"),
+    localization: context.localization,
     count: history.length,
     entry: (row, index) => {
       row.classList.add("inkbook-import-history-item");
@@ -103,14 +124,17 @@ export function renderImportHistory(
       button.dataset.inkbookImportRun = journal.id;
       const text = button.createSpan({ cls: "inkbook-import-history-text" });
       text.createSpan({
-        text: journal.unreadable === true ? "Record unavailable" : formatImportDate(journal),
+        text:
+          journal.unreadable === true
+            ? context.localization.t("import.recordUnavailable")
+            : formatImportDate(journal, context.localization),
         cls: "inkbook-import-history-date",
       });
       text.createSpan({
         text:
           journal.unreadable === true
             ? journal.id
-            : `${importStatusLabel(journal.status)} · ${quantity(journal.sources.length, "file")}`,
+            : `${importStatusLabel(journal.status, context.localization)} · ${quantity(journal.sources.length, "file", context.localization)}`,
         cls: "inkbook-import-history-meta",
       });
       const icon = button.createSpan({ cls: "inkbook-import-history-chevron" });
@@ -119,6 +143,7 @@ export function renderImportHistory(
       button.addEventListener("click", () => select(journal));
     },
     mutate: options.mutate,
+    ...(options.state === undefined ? {} : { state: options.state }),
     initialItem: history.findIndex((journal) => journal.id === options.selectedId),
   });
 }
@@ -129,44 +154,47 @@ export function renderImportJournal(
   context: ImportViewContext,
 ): void {
   renderSummary(container, {
-    heading: journal.unreadable === true ? "Record unavailable" : formatImportDate(journal),
+    heading:
+      journal.unreadable === true
+        ? context.localization.t("import.recordUnavailable")
+        : formatImportDate(journal, context.localization),
     summary:
       journal.unreadable === true
         ? journal.id
-        : `${importStatusLabel(journal.status)} · ${quantity(journal.sources.length, "handwriting file")} · ${quantity(journal.notes.length, "note")}`,
+        : `${importStatusLabel(journal.status, context.localization)} · ${quantity(journal.sources.length, "handwriting", context.localization)} · ${quantity(journal.notes.length, "note", context.localization)}`,
   });
   renderNotice(container, {
-    title: journal.unreadable === true ? "Keep recovery files" : "Recovery files are kept",
+    title:
+      journal.unreadable === true
+        ? context.localization.t("import.keepRecovery")
+        : context.localization.t("import.recoveryKept"),
     text:
       journal.unreadable === true
-        ? "Record unavailable. Keep recovery files; undo and cleanup are unavailable."
-        : "Recovery backups remain in inkbook-imports.",
+        ? context.localization.t("import.recordUnavailableDescription")
+        : context.localization.t("import.recoveryFolder"),
     tone: journal.unreadable === true ? "caution" : "neutral",
   });
   renderJournalIssues(container, journal, context);
 }
 
-export function formatImportDate(journal: InkImportJournal): string {
+export function formatImportDate(journal: InkImportJournal, localization: Localization): string {
   const date = new Date(journal.createdAt);
-  if (!Number.isFinite(date.getTime())) return "Undated import";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-    date,
-  );
+  if (!Number.isFinite(date.getTime())) return localization.t("import.undated");
+  return localization.date(date, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function importStatusLabel(status: InkImportJournal["status"]): string {
+export function importStatusLabel(
+  status: InkImportJournal["status"],
+  localization: Localization,
+): string {
   const labels: Record<InkImportJournal["status"], string> = {
-    running: "In progress",
-    complete: "Import complete",
-    cancelled: "Stopped",
-    undone: "Undone",
-    conflict: "Needs review",
+    running: localization.t("import.statusRunning"),
+    complete: localization.t("import.statusComplete"),
+    cancelled: localization.t("import.statusCancelled"),
+    undone: localization.t("import.statusUndone"),
+    conflict: localization.t("import.statusConflict"),
   };
   return labels[status];
-}
-
-function quantity(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 function renderJournalIssues(
@@ -181,10 +209,20 @@ function renderJournalIssues(
   renderImportFindings(
     container,
     {
-      label: "Issues",
+      id: "import.issues",
+      label: context.localization.t("import.issues"),
       count: journal.issues.length,
       icon: "triangle-alert",
-      entry: (row, index) => renderImportFinding(row, journal.issues[index]!, paths),
+      entry: (row, index) =>
+        renderImportFinding(
+          row,
+          importDiagnosticText(
+            context.localization,
+            journal.issues[index]!,
+            journal.issueDetails?.[index],
+          ),
+          paths,
+        ),
     },
     context,
   );

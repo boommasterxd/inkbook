@@ -1,3 +1,4 @@
+import { Localization } from "../../../../domain/localization";
 import type { ElementStore } from "../../../../domain/store/public";
 import type { PointV1 } from "../../../../domain/schema/public";
 import type { ActiveEditorNavigation } from "../navigation/navigation";
@@ -23,6 +24,7 @@ export class CanvasKeyboardSelection {
   readonly #geometry: KeyboardHandleInteraction;
   readonly #releaseSettled: () => void;
   readonly #store: ElementStore;
+  readonly #localization: Localization;
   #editing = false;
   #handle = -1;
   #selectedId: string | undefined;
@@ -31,8 +33,9 @@ export class CanvasKeyboardSelection {
   public constructor(options: CanvasKeyboardSelectionOptions) {
     this.#options = options;
     this.#store = options.controller.model.store;
+    this.#localization = options.controller.localization ?? new Localization();
     this.#surface = options.controller.renderer.inputSurface;
-    this.#status = new CanvasKeyboardStatus(this.#surface);
+    this.#status = new CanvasKeyboardStatus(this.#surface, this.#localization);
     this.#geometry =
       options.geometryInteraction ??
       new KeyboardHandleInteraction({
@@ -41,7 +44,11 @@ export class CanvasKeyboardSelection {
       });
     this.#releaseSettled = this.#geometry.subscribeSettled((committed) => {
       if (!this.#disposed && this.#editing)
-        this.#announce(committed ? "Updated." : "The edit could not be applied.");
+        this.#announce(
+          committed
+            ? this.#localization.t("canvas.updated")
+            : this.#localization.t("canvas.edit_failed"),
+        );
     });
     this.#surface.addEventListener("pointerdown", this.#pointer, true);
     this.#surface.addEventListener("blur", this.#blur);
@@ -72,7 +79,11 @@ export class CanvasKeyboardSelection {
       if (event.repeat || this.#options.selection().size === 0) return this.#editing;
       this.#editing = !this.#editing;
       this.#handle = -1;
-      this.#announce(this.#editing ? "Geometry editing." : "Geometry editing closed.");
+      this.#announce(
+        this.#editing
+          ? this.#localization.t("canvas.editing")
+          : this.#localization.t("canvas.editing_closed"),
+      );
       return true;
     }
     if (!this.#editing) return false;
@@ -105,7 +116,8 @@ export class CanvasKeyboardSelection {
     this.#editing = false;
     this.#handle = -1;
     this.#geometry.cancel();
-    if (editing && !this.#disposed) this.#status.announce("Geometry editing closed.");
+    if (editing && !this.#disposed)
+      this.#status.announce(this.#localization.t("canvas.editing_closed"));
     return editing;
   }
 
@@ -171,7 +183,7 @@ export class CanvasKeyboardSelection {
         ? this.#store.idAtRank("highlight", bounded)
         : this.#store.idAtRank("content", bounded - highlights);
     if (id === undefined) {
-      this.#status.announce("The drawing is empty.");
+      this.#status.announce(this.#localization.t("canvas.empty"));
       return;
     }
     this.#selectedId = id;
@@ -181,7 +193,12 @@ export class CanvasKeyboardSelection {
     const record = this.#store.get(id)!;
     this.#options.navigation.revealBounds(record.bounds);
     this.#status.announce(
-      `${record.element.kind}, object ${bounded + 1} of ${this.#store.size}. ${next.size} selected.`,
+      this.#localization.t("canvas.selected_object", {
+        kind: this.#localization.t(`canvas.kind_${record.element.kind}`),
+        position: bounded + 1,
+        total: this.#store.size,
+        count: next.size,
+      }),
     );
   }
 
@@ -194,13 +211,21 @@ export class CanvasKeyboardSelection {
   #announce(prefix = ""): void {
     if (this.#disposed) return;
     this.#geometry.focus(this.#editing ? this.#handle : null);
-    const name = this.#editing ? keyboardHandleName(this.#geometry.choices()[this.#handle]) : "";
+    const name = this.#editing
+      ? keyboardHandleName(this.#geometry.choices()[this.#handle], this.#localization.t)
+      : "";
     const first = this.#options.selection().values().next().value;
     const record = first === undefined ? undefined : this.#store.get(first);
     const coordinates =
       record === undefined
         ? ""
-        : `First selected object: X ${rounded(record.bounds.minX)}, Y ${rounded(record.bounds.minY)}, width ${rounded(record.bounds.maxX - record.bounds.minX)}, height ${rounded(record.bounds.maxY - record.bounds.minY)}, rotation ${rounded(record.element.rotation)} degrees.`;
+        : this.#localization.t("canvas.coordinates", {
+            x: rounded(record.bounds.minX),
+            y: rounded(record.bounds.minY),
+            width: rounded(record.bounds.maxX - record.bounds.minX),
+            height: rounded(record.bounds.maxY - record.bounds.minY),
+            rotation: rounded(record.element.rotation),
+          });
     this.#status.announce([prefix, name, coordinates].filter(Boolean).join(" "));
   }
 }

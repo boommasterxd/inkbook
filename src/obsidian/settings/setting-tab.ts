@@ -1,3 +1,4 @@
+import { bindElementLanguage } from "../../rendering/localization/element-language";
 import {
   PluginSettingTab,
   type App,
@@ -8,7 +9,6 @@ import {
 } from "obsidian";
 
 import {
-  MOTION_PREFERENCES,
   createBuiltInDeviceSettings,
   createBuiltInSettings,
   type InkbookSettingsV4,
@@ -27,7 +27,7 @@ import {
   toggle,
   withSettingsActionFeedback,
 } from "./definitions/definition-helpers";
-import { createLabels, generalGroup } from "./definitions/general-definitions";
+import { generalGroup } from "./definitions/general-definitions";
 import { pageDefaultsGroup } from "./definitions/page-defaults";
 import { performanceGroup } from "./definitions/performance-definitions";
 import { createObsidianHotkeyAccess } from "./shortcuts/obsidian-hotkey-conflicts";
@@ -38,6 +38,7 @@ import { InkbookSettingsStore } from "./storage";
 import { drawingToolsGroup, shapesAndStructuresGroup } from "./definitions/tool-definitions";
 import type { InkImportSettingsAccess } from "./import/import-access";
 import { importSettingsGroup } from "./import/import-settings";
+import type { ImportHistoryState } from "./import/import-history";
 
 export interface CustomFolderPort {
   createFolder(path: string): Promise<void>;
@@ -58,8 +59,13 @@ function cloneDefaults<K extends keyof InkbookSettingsV4["toolDefaults"]>(
 export class InkbookSettingTab extends PluginSettingTab {
   private readonly controls: SettingsControlValues;
   private readonly nativeViewState = new SettingsViewState();
+  private readonly importHistoryState: ImportHistoryState = {};
   private readonly updateListeners = new Set<() => void>();
   readonly settingsFeedback = {
+    t: (
+      key: import("../../domain/localization").MessageKey,
+      parameters?: import("../../domain/localization").TranslationParameters,
+    ) => this.store.localization.t(key, parameters),
     readMotion: () => this.store.getDeviceSettings().motion,
     observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
   };
@@ -74,6 +80,9 @@ export class InkbookSettingTab extends PluginSettingTab {
   ) {
     super(app, plugin);
     this.controls = new SettingsControlValues(store);
+    plugin.register?.(bindElementLanguage(this.containerEl, store.localization));
+    const unsubscribe = store.localization.subscribe(() => this.update());
+    plugin.register?.(unsubscribe);
   }
 
   public override getControlValue(key: string): unknown {
@@ -106,6 +115,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     viewState = this.nativeViewState,
   ): SettingDefinitionItem<SettingsControlKey>[] {
     const pageValues = {
+      t: this.store.localization.t,
       get: (key: SettingsControlKey) => this.controls.get(key),
       readMotion: () => this.store.getDeviceSettings().motion,
       observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
@@ -113,6 +123,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
     };
     const toolValues = {
+      t: this.store.localization.t,
       viewState,
       getDefaults: () => this.store.getVaultSettings().toolDefaults,
       getMotion: () => this.store.getDeviceSettings().motion,
@@ -120,8 +131,9 @@ export class InkbookSettingTab extends PluginSettingTab {
       workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
       set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
     };
-    return [
+    const definitions = [
       generalGroup({
+        t: this.store.localization.t,
         isCustomFolder: () => this.isCustomFolder(),
         canCreateFolder: () => this.folderPort !== undefined && this.isCustomFolder(),
         createFolder: withSettingsActionFeedback(
@@ -131,6 +143,7 @@ export class InkbookSettingTab extends PluginSettingTab {
         reset: withSettingsActionFeedback(() => this.resetGeneral(), this.settingsFeedback),
       }),
       performanceGroup({
+        t: this.store.localization.t,
         readMotion: () => this.store.getDeviceSettings().motion,
         observeMotion: (listener) => this.store.subscribeDeviceSettings(listener),
         get: (key) => this.controls.get(key),
@@ -155,6 +168,7 @@ export class InkbookSettingTab extends PluginSettingTab {
         withSettingsActionFeedback(() => this.resetShapesAndStructures(), this.settingsFeedback),
       ),
       snappingGroup({
+        t: this.store.localization.t,
         observeMotion: (listener) => this.store.subscribeDeviceSettings(listener),
         get: (key) => this.controls.get(key),
         readMotion: () => this.store.getDeviceSettings().motion,
@@ -179,12 +193,17 @@ export class InkbookSettingTab extends PluginSettingTab {
         : [
             importSettingsGroup({
               access: this.scheduling.inkImport,
+              state: this.importHistoryState,
+              localization: this.store.localization,
               signal: this.scheduling.lifetime,
               ...this.settingsFeedback,
             }),
           ]),
       this.resetAllAction(),
     ];
+    return definitions.map((definition, index) =>
+      Object.assign(definition, { settingsIdentity: `settings-group:${String(index)}` }),
+    );
   }
 
   public scheduler(ownerWindow: Window | null): WorkScheduler {
@@ -195,6 +214,7 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   private dialogOptions() {
     return {
+      localization: this.store.localization,
       signal: this.scheduling?.lifetime,
       readMotion: () => this.store.getDeviceSettings().motion,
       observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
@@ -210,9 +230,12 @@ export class InkbookSettingTab extends PluginSettingTab {
     const placement = this.store.getVaultSettings().filePlacement;
     if (placement.mode !== "custom-vault-folder") return;
     const confirmed = await confirmInkbookAction(this.app, {
-      title: "Create custom folder?",
-      description: `Create the vault folder “${placement.folder}”?`,
-      confirmLabel: "Create folder",
+      title: () => this.store.localization.t("settings.folderTitle"),
+      description: () =>
+        this.store.localization.t("settings.folderConfirmation", {
+          folder: placement.folder,
+        }),
+      confirmLabel: () => this.store.localization.t("settings.folderConfirm"),
       ...this.dialogOptions(),
     });
     const current = this.store.getVaultSettings().filePlacement;
@@ -319,21 +342,21 @@ export class InkbookSettingTab extends PluginSettingTab {
   ): SettingDefinitionGroup<SettingsControlKey> {
     return {
       type: "group",
-      heading: "Input",
+      heading: this.store.localization.t("settings.input"),
       cls: "inkbook-settings-input-group",
       items: [
         toggle(
           "device.fingerDrawingEnabled",
-          "Finger drawing",
-          "Show the session-only finger drawing toggle in each embed.",
+          this.store.localization.t("settings.fingerDrawing"),
+          this.store.localization.t("settings.fingerDrawingDescription"),
         ),
         toggle(
           "device.penTapInsertionEnabled",
-          "Pen-tap insertion",
-          "Insert an Inkbook embed when tapping with a pen.",
+          this.store.localization.t("settings.penTap"),
+          this.store.localization.t("settings.penTapDescription"),
         ),
         resetAction(
-          "Reset group to defaults",
+          this.store.localization.t("settings.resetGroup"),
           withSettingsActionFeedback(() => {
             this.store.updateDeviceSettings((settings) => ({
               ...settings,
@@ -342,6 +365,7 @@ export class InkbookSettingTab extends PluginSettingTab {
             }));
             this.update();
           }, this.settingsFeedback),
+          this.store.localization.t,
         ),
       ],
     };
@@ -352,30 +376,46 @@ export class InkbookSettingTab extends PluginSettingTab {
   ): SettingDefinitionGroup<SettingsControlKey> {
     return {
       type: "group",
-      heading: "Interface",
+      heading: this.store.localization.t("settings.interface"),
       cls: "inkbook-settings-interface-group",
       items: [
+        dropdown(
+          "device.language",
+          this.store.localization.t("settings.language"),
+          this.store.localization.t("settings.languageDescription"),
+          {
+            auto: this.store.localization.t("settings.languageAuto"),
+            de: "Deutsch",
+            en: "English",
+          },
+        ),
         toggle(
           "device.leftHandedToolbar",
-          "Left-handed toolbar",
-          "Align the toolbar for left-handed use.",
+          this.store.localization.t("settings.leftHanded"),
+          this.store.localization.t("settings.leftHandedDescription"),
         ),
         dropdown(
           "device.motion",
-          "Motion",
-          "Choose how Inkbook presents non-essential motion.",
-          createLabels(MOTION_PREFERENCES),
+          this.store.localization.t("settings.motion"),
+          this.store.localization.t("settings.motionDescription"),
+          {
+            system: this.store.localization.t("settings.motion.system"),
+            full: this.store.localization.t("settings.motion.full"),
+            reduced: this.store.localization.t("settings.motion.reduced"),
+          },
         ),
         resetAction(
-          "Reset group to defaults",
+          this.store.localization.t("settings.resetGroup"),
           withSettingsActionFeedback(() => {
             this.store.updateDeviceSettings((settings) => ({
               ...settings,
               leftHandedToolbar: defaults.leftHandedToolbar,
               motion: defaults.motion,
+              language: defaults.language,
             }));
             this.update();
           }, this.settingsFeedback),
+          this.store.localization.t,
         ),
       ],
     };
@@ -383,8 +423,8 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   private resetAllAction(): SettingDefinitionRender {
     return settingsAction(
-      "Reset all Inkbook settings",
-      "Restore every built-in value without changing existing files or elements.",
+      this.store.localization.t("settings.resetAll"),
+      this.store.localization.t("settings.resetDescription"),
       "danger",
       withSettingsActionFeedback(
         (element: HTMLElement) => this.confirmResetAll(element),
@@ -395,9 +435,9 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   private async confirmResetAll(element: HTMLElement): Promise<void> {
     const confirmed = await confirmInkbookAction(this.app, {
-      title: "Reset all settings?",
-      description: "Restore every built-in value. Existing files and elements will not change.",
-      confirmLabel: "Reset settings",
+      title: () => this.store.localization.t("settings.resetTitle"),
+      description: () => this.store.localization.t("settings.resetConfirmation"),
+      confirmLabel: () => this.store.localization.t("settings.resetConfirm"),
       ...this.dialogOptions(),
       destructive: true,
     });

@@ -17,11 +17,6 @@
   --inkbook-menu-press-background: var(--interactive-hover);
 }
 
-.inkbook-dialog-actions .mod-cta {
-  --inkbook-menu-hover-background: var(--interactive-accent-hover);
-  --inkbook-menu-press-background: var(--interactive-accent-hover);
-}
-
 .inkbook-dialog-actions .mod-warning {
   --inkbook-menu-hover-background: var(--inkbook-dialog-danger-hover);
   --inkbook-menu-press-background: var(--inkbook-dialog-danger-pressed);

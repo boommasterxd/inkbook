@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
@@ -150,3 +151,81 @@ it.each(["desktop", "tablet", "phone"])(
     finishHandoff({ options, session });
   },
 );
+
+describe.each(["desktop", "tablet", "phone"])("retained menu locale on %s", (mode) => {
+  beforeEach(() => {
+    Platform.isMobile = mode !== "desktop";
+    Platform.isPhone = mode === "phone";
+  });
+
+  it("retains a pending Style value and focus while translating its field and stepper", () => {
+    const localization = new Localization("en");
+    const { options, session } = fixture({
+      localization,
+      initialMenu: "style",
+      motion: "reduced",
+      state: {
+        styleControls: [
+          {
+            id: "table-columns",
+            kind: "number",
+            label: "Columns",
+            value: 3,
+            min: 1,
+            max: 12,
+            step: 1,
+          },
+        ],
+      },
+    });
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Columns"]')!;
+    input.value = "8";
+    input.focus();
+    localization.setLanguage("de");
+    expect(document.querySelector('[aria-label="Spalten"]')).toBe(input);
+    expect(input.value).toBe("8");
+    expect(document.activeElement).toBe(input);
+    expect(document.querySelector('[aria-label="Spalten erhöhen"]')).not.toBeNull();
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(options.handlers.onStyleChange).toHaveBeenCalledWith("table-columns", 8);
+    session.close("immediate");
+  });
+
+  it("translates retained menu actions and Background controls without losing navigation or focus", async () => {
+    const localization = new Localization("en");
+    const { options, session } = fixture({ localization, motion: "reduced" });
+    const background = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === "Background",
+    )!;
+    background.focus();
+    localization.setLanguage("de");
+    expect(background.textContent).toBe("Hintergrund");
+    expect(document.activeElement).toBe(background);
+    expect(background.isConnected).toBe(true);
+    expect(options.onClosed).not.toHaveBeenCalled();
+    background.click();
+    await Promise.resolve();
+    vi.advanceTimersByTime(250);
+    const choices = [
+      ...document.querySelectorAll<HTMLButtonElement>(".inkbook-menu-background-choice"),
+    ];
+    expect(choices.map((choice) => choice.getAttribute("aria-label"))).toEqual([
+      "Keiner",
+      "Linien",
+      "Punkte",
+      "Karos",
+    ]);
+    choices[1]!.focus();
+    localization.setLanguage("en");
+    expect(choices[1]!.getAttribute("aria-label")).toBe("Lines");
+    expect(document.activeElement).toBe(choices[1]);
+    const back = document.querySelector<HTMLElement>('[aria-label="Back to more options"]')!;
+    expect(back).not.toBeNull();
+    back.click();
+    await Promise.resolve();
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Background");
+    expect(options.onClosed).not.toHaveBeenCalled();
+    session.close("immediate");
+    expect(options.onClosed).toHaveBeenCalledOnce();
+  });
+});

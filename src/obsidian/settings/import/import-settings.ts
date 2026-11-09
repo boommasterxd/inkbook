@@ -9,13 +9,13 @@ export function importSettingsGroup(
 ): SettingDefinitionGroup<SettingsControlKey> {
   return {
     type: "group",
-    heading: "Import",
+    heading: options.localization.t("import.group"),
     cls: "inkbook-settings-import-group",
     items: [
       startImportAction(options),
       {
-        name: "Import history",
-        desc: "Review previous imports, restore Obsidian Ink embeds or clean up originals.",
+        name: options.localization.t("import.history"),
+        desc: options.localization.t("import.historyDescription"),
         render: (setting) => new ImportHistory(setting, options).dispose,
       },
     ],
@@ -23,8 +23,8 @@ export function importSettingsGroup(
 }
 
 function startImportAction(options: ImportHistoryOptions): SettingDefinitionRender {
-  const name = "Start import";
-  const desc = "Convert Obsidian Ink handwriting into editable Inkbook files. Originals are kept.";
+  const name = options.localization.t("import.start");
+  const desc = options.localization.t("import.startDescription");
   return {
     name,
     desc,

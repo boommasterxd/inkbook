@@ -40,6 +40,7 @@ export function addPluginSettingsTab(
     return new ObsidianInkImportService(ports);
   };
   const inkImport = new InkImportAccess({
+    localization: settings.localization,
     app: plugin.app,
     createService,
     workScheduler,

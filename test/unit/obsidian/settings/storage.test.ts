@@ -124,6 +124,7 @@ describe("InkbookSettingsStore device migration", () => {
     expect(store.getDeviceSettings()).toEqual({
       ...legacy,
       version: 2,
+      language: "auto",
       onboardingDismissed: false,
       scrollPreloadMarginPx: 300,
       keyboardShortcuts: createBuiltInDeviceSettings().keyboardShortcuts,
@@ -332,4 +333,18 @@ describe("InkbookSettingsStore device write failures", () => {
       expect(listener).not.toHaveBeenCalled();
     },
   );
+});
+
+it("persists the language on this device and restores host language when automatic is selected", async () => {
+  const { Localization } = await import("../../../../src/domain/localization");
+  const vault = new VaultFake(createBuiltInSettings());
+  const device = new DeviceFake({ ...createBuiltInDeviceSettings(), language: "en" });
+  const localization = new Localization("auto", "de");
+  const store = new InkbookSettingsStore(vault, device, localization);
+  await store.load();
+  expect(localization.language).toBe("en");
+  store.updateDeviceSettings((settings) => ({ ...settings, language: "auto" }));
+  expect(localization.language).toBe("de");
+  expect(device.saves[device.saves.length - 1]?.data).toMatchObject({ language: "auto" });
+  expect(vault.saves).toEqual([]);
 });

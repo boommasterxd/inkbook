@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 
 import { MotionGlobalConfig, processFrame } from "motion";
@@ -53,6 +54,7 @@ describe("Motion toolbar primary touch target", () => {
     await flushRootMutation();
     await advanceMotionBy(400);
     expect(draw.disabled).toBe(false);
+    expect(mounted.container.querySelector<HTMLElement>('[role="toolbar"]')?.inert).toBe(false);
     expectTouchTarget();
 
     mounted.presentation.dataset.inkbookMotion = "reduced";
@@ -62,6 +64,10 @@ describe("Motion toolbar primary touch target", () => {
     mounted.presentation.dataset.inkbookState = "locking";
     await flushRootMutation();
     expect(draw.disabled).toBe(true);
+    expect(mounted.container.querySelector<HTMLElement>('[role="toolbar"]')?.inert).toBe(true);
+    expect(mounted.container.querySelector('[role="toolbar"]')?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
     expectTouchTarget();
     mounted.unmount();
   });
@@ -364,3 +370,21 @@ function mountSelectedToolbar(preparing = false) {
     unmount,
   };
 }
+
+it("updates retained toolbar names without losing focus or the selected tool", () => {
+  const localization = new Localization("en");
+  const mounted = mountSelectedToolbar();
+  mounted.setChromeProps({ localization });
+  const select = mounted.button("select");
+  act(() => select.focus());
+  const pressed = select.getAttribute("aria-pressed");
+  act(() => localization.setLanguage("de"));
+  expect(mounted.button("select")).toBe(select);
+  expect(select.getAttribute("aria-label")).toMatch(/^Auswahl:/u);
+  expect(select.getAttribute("aria-pressed")).toBe(pressed);
+  expect(document.activeElement).toBe(select);
+  act(() => localization.setLanguage("en"));
+  expect(select.getAttribute("aria-label")).toMatch(/^Select:/u);
+  expect(document.activeElement).toBe(select);
+  mounted.unmount();
+});

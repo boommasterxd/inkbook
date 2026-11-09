@@ -1,3 +1,5 @@
+import { useEditorLocalization } from "./localization";
+import type { Translator } from "../../domain/localization";
 import { useCallback, useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, Ref, RefObject } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -29,36 +31,40 @@ import { TRANSITION_DURATIONS } from "../motion/transitions";
 type ToolbarButtonMap = Map<ToolbarAction, HTMLButtonElement>;
 
 const LEFT_BUTTONS: readonly ToolbarButtonDefinition[] = [
-  { action: "finger-drawing", icon: "hand", label: "Finger drawing" },
-  { action: "undo", icon: "undo-2", label: "Undo" },
-  { action: "redo", icon: "redo-2", label: "Redo" },
+  { action: "finger-drawing", icon: "hand", label: "editor.action.finger-drawing" },
+  { action: "undo", icon: "undo-2", label: "editor.action.undo" },
+  { action: "redo", icon: "redo-2", label: "editor.action.redo" },
 ];
 
 const TOOL_BUTTONS: readonly ToolbarButtonDefinition[] = [
-  { action: "select", icon: "mouse-pointer-2", label: "Select" },
-  { action: "eraser", icon: "eraser", label: "Eraser" },
-  { action: "draw", icon: DRAWING_TOOL_ICON_IDS.draw, label: "Draw" },
-  { action: "highlighter", icon: DRAWING_TOOL_ICON_IDS.highlighter, label: "Highlighter" },
+  { action: "select", icon: "mouse-pointer-2", label: "editor.action.select" },
+  { action: "eraser", icon: "eraser", label: "editor.action.eraser" },
+  { action: "draw", icon: DRAWING_TOOL_ICON_IDS.draw, label: "editor.action.draw" },
+  {
+    action: "highlighter",
+    icon: DRAWING_TOOL_ICON_IDS.highlighter,
+    label: "editor.action.highlighter",
+  },
   {
     action: "straight-highlighter",
     icon: DRAWING_TOOL_ICON_IDS["straight-highlighter"],
-    label: "Straight highlighter",
+    label: "editor.action.straight-highlighter",
   },
-  { action: "shape", icon: SHAPE_ICON_IDS.line, label: "Active shape" },
-  { action: "shape-picker", icon: "shapes", label: "Choose shape" },
-  { action: "style", icon: "palette", label: "Style" },
+  { action: "shape", icon: SHAPE_ICON_IDS.line, label: "editor.action.shape" },
+  { action: "shape-picker", icon: "shapes", label: "editor.action.shape-picker" },
+  { action: "style", icon: "palette", label: "editor.action.style" },
 ];
 
 const RIGHT_BUTTONS: readonly ToolbarButtonDefinition[] = [
-  { action: "lock", icon: "lock", label: "Lock" },
-  { action: "overflow", icon: "more-vertical", label: "More options" },
+  { action: "lock", icon: "lock", label: "editor.action.lock" },
+  { action: "overflow", icon: "more-vertical", label: "editor.action.overflow" },
 ];
 
 const CONTEXT_BUTTONS: readonly ToolbarButtonDefinition[] = [
-  { action: "paste", icon: "clipboard-paste", label: "Paste" },
-  { action: "copy", icon: "copy", label: "Copy" },
-  { action: "cut", icon: "scissors", label: "Cut" },
-  { action: "delete", icon: "trash-2", label: "Delete" },
+  { action: "paste", icon: "clipboard-paste", label: "editor.action.paste" },
+  { action: "copy", icon: "copy", label: "editor.action.copy" },
+  { action: "cut", icon: "scissors", label: "editor.action.cut" },
+  { action: "delete", icon: "trash-2", label: "editor.action.delete" },
 ];
 
 const TOOLBAR_BUTTONS: readonly ToolbarButtonDefinition[] = [
@@ -299,6 +305,7 @@ export interface InkbookToolbarProps {
 }
 
 export function InkbookToolbar(props: InkbookToolbarProps) {
+  const { t } = useEditorLocalization();
   const lifecycle = useContext(toolbarMotionContext);
   const primaryButtons = useRef(new Map<ToolbarAction, HTMLButtonElement>());
   const focusContextNeighbor = useCallback(() => {
@@ -324,7 +331,9 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
   return (
     <motion.div
       layoutScroll
-      aria-label="Inkbook tools"
+      inert={lifecycle.locking || lifecycle.preparing}
+      aria-hidden={lifecycle.locking || lifecycle.preparing ? "true" : undefined}
+      aria-label={t("editor.ui.tools")}
       className={compositionClassName}
       ref={props.compositionRef}
       role="toolbar"
@@ -351,9 +360,10 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
               props.selectedShape,
               props.shapeIcon,
               props.selectionArea,
+              t,
             )}
             className="inkbook-toolbar-track"
-            label="Tools and actions"
+            label={t("editor.ui.tools-actions")}
             onAction={props.onAction}
             registerButton={(action, element) => {
               if (element === null) primaryButtons.current.delete(action);
@@ -367,10 +377,13 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
         </motion.div>
         <ToolbarGroup
           contextButtons
-          buttons={CONTEXT_BUTTONS}
+          buttons={CONTEXT_BUTTONS.map((button) => ({
+            ...button,
+            label: t(button.label as Parameters<Translator>[0]),
+          }))}
           className="inkbook-toolbar-context-actions"
           fallbackFocus={focusContextNeighbor}
-          label="Editing actions"
+          label={t("editor.ui.editing-actions")}
           onAction={props.onAction}
           registerButton={props.registerButton}
           renderIcon={props.renderIcon}
@@ -394,34 +407,31 @@ function primaryButtonsForState(
   shape: ShapeId,
   iconState: ActiveShapeIconState,
   selectionArea: SelectionAreaV1,
+  t: Translator,
 ): readonly ToolbarButtonDefinition[] {
   return [
-    ...LEFT_BUTTONS,
+    ...LEFT_BUTTONS.map((button) => ({
+      ...button,
+      label: t(button.label as Parameters<Translator>[0]),
+    })),
     ...TOOL_BUTTONS.map((button) =>
       button.action === "select"
         ? {
             ...button,
             icon: selectionAreaIconId(selectionArea),
-            label: `Select: ${selectionAreaLabel(selectionArea)}`,
+            label: t("editor.ui.select", { area: t(`editor.shape.${selectionArea}`) }),
           }
         : button.action === "shape"
           ? {
               ...button,
               icon: activeShapeIconId(shape, iconState),
-              label: `Shape: ${shapeLabel(shape)}`,
+              label: t("editor.ui.shape", { shape: t(`editor.shape.${shape}`) }),
             }
-          : button,
+          : { ...button, label: t(button.label as Parameters<Translator>[0]) },
     ),
-    ...RIGHT_BUTTONS,
+    ...RIGHT_BUTTONS.map((button) => ({
+      ...button,
+      label: t(button.label as Parameters<Translator>[0]),
+    })),
   ];
-}
-
-function selectionAreaLabel(area: SelectionAreaV1): string {
-  return area === "rectangle" ? "Rectangle" : "Lasso";
-}
-
-function shapeLabel(shape: ShapeId): string {
-  return shape === "coordinate-system"
-    ? "Coordinate system"
-    : shape.charAt(0).toUpperCase() + shape.slice(1);
 }

@@ -1,3 +1,4 @@
+import { Localization } from "../../../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../../../src/domain/store/public";
@@ -38,6 +39,7 @@ function fixture(
   elements: readonly InkElementV1[] = [rectangle({ x: 100, y: 100, pivot: { x: 150, y: 125 } })],
   scheduler = immediateWorkScheduler(),
   initialSelection: readonly string[] = [],
+  localization = new Localization(),
 ) {
   const store = new ElementStore(elements);
   const scene = new ElementSceneStore(store);
@@ -58,6 +60,10 @@ function fixture(
   const prepared = activeEditorPreparedHistory(model, history, scheduler);
   const input = document.body.createDiv();
   input.tabIndex = 0;
+  const label = input.createSpan({ text: "Inkbook canvas" });
+  label.id = "test-canvas-label";
+  label.hidden = true;
+  input.setAttribute("aria-labelledby", label.id);
   const renderer = keyboardRenderer(input);
   const frames = new SelectionFrameSession();
   const handles = new ActiveEditorHandleInteraction({
@@ -78,6 +84,7 @@ function fixture(
   const navigation = { revealBounds } as unknown as ActiveEditorNavigation;
   const keyboard = new CanvasKeyboardSelection({
     controller: {
+      localization,
       model,
       history,
       renderer,
@@ -137,6 +144,32 @@ function keyboardRenderer(inputSurface: HTMLDivElement) {
 }
 
 describe("canvas keyboard presentation", () => {
+  it("announces object geometry in the instance language and refreshes keyboard instructions", () => {
+    const localization = new Localization("de");
+    const test = fixture(undefined, undefined, undefined, localization);
+    try {
+      const status = () => test.input.querySelector('[role="status"]')?.textContent;
+      expect(document.getElementById("test-canvas-label")?.textContent).toBe(
+        "Inkbook-Zeichenfläche",
+      );
+      expect(test.input.textContent).toContain("Bild auf und Bild ab");
+      test.send("PageDown");
+      expect(status()).toBe("Rechteck, Objekt 1 von 1. 1 ausgewählt.");
+      test.send("Enter");
+      expect(status()).toContain("Geometriebearbeitung. Verschieben");
+      expect(status()).toContain("Breite 102, Höhe 52");
+      test.send("PageDown");
+      expect(status()).toContain("Größe ändern: oben links");
+      localization.setLanguage("en");
+      expect(document.getElementById("test-canvas-label")?.textContent).toBe("Inkbook canvas");
+      expect(test.input.textContent).toContain("Page Up and Page Down");
+      test.send("Escape");
+      expect(status()).toBe("Geometry editing closed.");
+    } finally {
+      test.dispose();
+    }
+  });
+
   it.each([
     { top: -200, scrollTop: 300, minY: 0, direction: -1 },
     { top: 100, scrollTop: 200, minY: 1000, direction: 1 },

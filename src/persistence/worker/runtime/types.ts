@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "../../import/obsidian-ink/warnings";
 import type {
   ElementValidationDerivation,
   InkElementV1,
@@ -127,6 +128,7 @@ export interface ImportInkRuntimeSuccess {
   readonly identity: PurposeOperationIdentity;
   readonly exported: ExportSuccess;
   readonly warnings: readonly string[];
+  readonly warningCodes?: readonly ObsidianInkWarningCode[];
   readonly transcript?: string;
   readonly type: "import-ink-success";
 }

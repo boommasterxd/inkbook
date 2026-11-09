@@ -1,10 +1,12 @@
 import { Component } from "obsidian";
+import { Localization, type MessageKey } from "../../../domain/localization";
 
-import type { MenuFactoryPort, MenuPort, MenuPosition } from "../../menus/menu-ports";
+import type { MenuFactoryPort, MenuItemPort, MenuPort, MenuPosition } from "../../menus/menu-ports";
 import { isTouchCompatibilityEvent } from "../active-editor/input/controller-touch";
 import { LockedEmbedTouch } from "./locked-embed-touch";
 
 export interface LockedEmbedMenuOptions {
+  readonly localization?: Localization | undefined;
   readonly root: HTMLElement;
   readonly preview: HTMLElement;
   readonly factory: MenuFactoryPort;
@@ -22,10 +24,18 @@ export class LockedEmbedMenu extends Component {
   #restoreFocus = false;
   #keyboardInvocation = false;
   #disposed = false;
+  readonly #localization: Localization;
+  readonly #labels = new Map<MenuItemPort, MessageKey>();
 
   public constructor(options: LockedEmbedMenuOptions) {
     super();
     this.#options = options;
+    this.#localization = options.localization ?? new Localization();
+    this.register(
+      this.#localization.subscribe(() => {
+        for (const [item, key] of this.#labels) item.setTitle(this.#localization.t(key));
+      }),
+    );
     this.#touch = this.addChild(
       new LockedEmbedTouch({
         preview: options.preview,
@@ -100,10 +110,10 @@ export class LockedEmbedMenu extends Component {
     this.#restoreFocus = restoreFocus;
     const menu = this.#options.factory.create("context");
     this.#menu = menu;
-    this.#addAction(menu, "Edit embed", "pencil", this.#options.onEdit);
-    this.#addAction(menu, "Open SVG file", "file-image", this.#options.onOpenSvg);
+    this.#addAction(menu, "presentation.menu.edit", "pencil", this.#options.onEdit);
+    this.#addAction(menu, "presentation.menu.openSvg", "file-image", this.#options.onOpenSvg);
     menu.addSeparator();
-    this.#addAction(menu, "Delete embed", "trash-2", this.#options.onDeleteEmbed, true);
+    this.#addAction(menu, "presentation.menu.delete", "trash-2", this.#options.onDeleteEmbed, true);
     menu.onHide(() => {
       if (this.#menu !== menu) return;
       this.#menu = undefined;
@@ -134,13 +144,21 @@ export class LockedEmbedMenu extends Component {
   }
 
   #releaseDismissal(): void {
+    this.#labels.clear();
     this.#dismissal?.unload();
     this.#dismissal = undefined;
   }
 
-  #addAction(menu: MenuPort, title: string, icon: string, callback: () => void, warning = false) {
+  #addAction(
+    menu: MenuPort,
+    title: MessageKey,
+    icon: string,
+    callback: () => void,
+    warning = false,
+  ) {
     menu.addItem((item) => {
-      item.setTitle(title).setIcon(icon);
+      this.#labels.set(item, title);
+      item.setTitle(this.#localization.t(title)).setIcon(icon);
       if (warning) item.setWarning(true);
       item.onClick(() => {
         if (!this.#available() || this.#menu !== menu) return;

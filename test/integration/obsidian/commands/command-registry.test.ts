@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 import { Menu, type MenuItem, type Command, type Editor } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
@@ -164,4 +165,34 @@ describe("insertion context menu", () => {
     addInsertionContextMenuItem(command, menu, editor, context);
     expect(addItem).toHaveBeenCalledOnce();
   });
+});
+
+it("updates public native command names and releases localization with its owner", () => {
+  const localization = new Localization();
+  const registered: Command[] = [];
+  let cleanup = (): void => undefined;
+  const host: CommandRegistrationPort = {
+    addCommand: (command) => {
+      const native = { ...command, name: `Inkbook: ${command.name}` };
+      registered.push(native);
+      return native;
+    },
+    register: (release) => {
+      cleanup = release;
+    },
+  };
+  const insertion = registerInkbookCommands(
+    host,
+    { execute: vi.fn(), isAvailable: () => false },
+    { canInsert: () => true, request: () => true },
+    localization,
+  );
+  localization.setLanguage("de");
+  expect(registered.find(({ id }) => id === "copy-embed")?.name).toBe(
+    "Inkbook: Aktive Einbettung kopieren",
+  );
+  expect(insertion.name).toBe("Handschrift einfügen");
+  cleanup();
+  localization.setLanguage("en");
+  expect(insertion.name).toBe("Handschrift einfügen");
 });

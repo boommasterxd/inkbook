@@ -6,6 +6,7 @@ export function sameEditorChromeProps(
   right: InkbookEditorChromeProps,
 ): boolean {
   return (
+    left.localization === right.localization &&
     sameOnboarding(left.onboarding, right.onboarding) &&
     left.onToolbarAction === right.onToolbarAction &&
     left.ownerDocument === right.ownerDocument &&

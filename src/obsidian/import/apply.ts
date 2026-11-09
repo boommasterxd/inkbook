@@ -1,3 +1,4 @@
+import { recordImportIssue } from "./diagnostics";
 import { createVerified, ImportJournalStore, runFolder, safeImportPath } from "./journal";
 import { applyImportPatches, createImportPatch, withImportedContexts } from "./patches";
 import { resolveInkReferences } from "./references";
@@ -10,7 +11,10 @@ import type {
 } from "./types";
 
 function issue(store: ImportJournalStore, path: string): void {
-  store.journal.issues.push(`Import conflict or write failure: ${path}`);
+  recordImportIssue(store.journal, `Import conflict or write failure: ${path}`, {
+    code: "writeConflict",
+    path,
+  });
 }
 
 async function referenceTargetsMatch(
@@ -42,7 +46,7 @@ async function importSource(options: {
     issue(store, source.path);
     return;
   }
-  const { svg, warnings } = await ports.convert(original, {
+  const { svg, warnings, warningCodes } = await ports.convert(original, {
     legacyWriting: source.legacyWriting,
     ...(signal === undefined ? {} : { signal }),
   });
@@ -58,6 +62,7 @@ async function importSource(options: {
     targetPath: source.targetPath,
     outputHash: await ports.hash(svg),
     warnings,
+    ...(warningCodes === undefined ? {} : { warningCodes }),
     status: "intent" as const,
   };
   store.journal.sources.push(record);

@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "../../../../../src/persistence/import/obsidian-ink/warnings";
 import { describe, expect, it } from "vitest";
 import { pressureRadius } from "../../../../../src/domain/geometry/pressure/pressure-radius";
 import { smoothStrokeCenters } from "../../../../../src/domain/geometry/stroke-path";
@@ -143,16 +144,14 @@ describe("Source pressure curve and range constraints", () => {
   });
 
   it("reports clipping when the source's zero-to-full pressure range fits no native preset", async () => {
-    const warnings = new Set<string>();
+    const warnings = new Set<ObsidianInkWarningCode>();
     const mapped = await completeSteps(
       remapSourcePressurePointsSteps(linePoints(0, 1), style, warnings),
       options(),
     );
     const width = mapped.width ?? 4;
     const rendered = await fittedCenters(line(mapped.points), width);
-    expect([...warnings]).toContain(
-      "Source pressure widths exceeded Inkbook's native pen range and were clipped.",
-    );
+    expect([...warnings]).toContain("pressureClipped");
     expect(rendered.every((point) => point.pressure >= 0 && point.pressure <= 1)).toBe(true);
     expect(rendered[0]!.pressure === 0 || rendered[rendered.length - 1]!.pressure === 1).toBe(true);
     expect(sourceDiameter(0)).toBeLessThan(width * 0.35);

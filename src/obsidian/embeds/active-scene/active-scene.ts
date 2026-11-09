@@ -332,6 +332,9 @@ export class ActiveInkbookScene {
     scrollOwner: () => BrowserScrollElement,
   ): SvgSceneRenderer {
     return new SvgSceneRenderer({
+      ...(options.localization === undefined
+        ? {}
+        : { accessibleName: options.localization.t("canvas.name") }),
       container: this.#container,
       surfaceThemeRoot: this.#root,
       onSurfaceFailure: () => this.#failSurface(options.onLock),

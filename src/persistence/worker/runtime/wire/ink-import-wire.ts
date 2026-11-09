@@ -1,3 +1,4 @@
+import { isObsidianInkWarningCode } from "../../../import/obsidian-ink/warnings";
 import type { ImportInkRuntimeRequest, ImportInkRuntimeSuccess } from "../types";
 import {
   adoptExportSuccess,
@@ -77,6 +78,10 @@ export function validImportInkDetails(value: Record<string, unknown>): boolean {
     value.warnings.every(
       (warning: unknown) => typeof warning === "string" && warning.length <= 4096,
     ) &&
+    (value.warningCodes === undefined ||
+      (Array.isArray(value.warningCodes) &&
+        value.warningCodes.length <= 100 &&
+        value.warningCodes.every(isObsidianInkWarningCode))) &&
     (value.transcript === undefined ||
       (typeof value.transcript === "string" && value.transcript.length <= 1024 * 1024))
   );

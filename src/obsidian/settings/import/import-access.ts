@@ -56,6 +56,7 @@ export class InkImportAccess implements InkImportSettingsAccess {
       if (this.#options.signal.aborted || signal?.aborted) return;
       const dialog = new InkImportDialog(this.#options.app, {
         service: this.#options.createService(ownerWindow),
+        localization: this.#options.localization,
         signal: this.#options.signal,
         readMotion: this.#options.readMotion,
         workScheduler: this.#options.workScheduler,
@@ -83,9 +84,10 @@ export class InkImportAccess implements InkImportSettingsAccess {
     const operation = this.#historyTail.then(async () => {
       signal.throwIfAborted();
       this.#options.signal.throwIfAborted();
-      if (ownerWindow === null) throw new Error("Open settings in an available window and retry.");
+      if (ownerWindow === null)
+        throw new Error(this.#options.localization.t("import.windowUnavailable"));
       if (this.#dialog !== undefined || this.#opening)
-        throw new Error("Close the import window and try loading import history again.");
+        throw new Error(this.#options.localization.t("import.windowBusy"));
       const controller = new AbortController();
       this.#historyController = controller;
       const lifetime = AbortSignal.any([signal, controller.signal, this.#options.signal]);

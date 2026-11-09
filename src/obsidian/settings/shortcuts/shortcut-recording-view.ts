@@ -12,7 +12,7 @@ import {
 import { captureShortcutBinding } from "../../../editor/input/index";
 import type { ObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
 import { bindSettingsAction, createSettingsRow } from "../settings-row";
-import { CONFIGURABLE_SHORTCUT_REFERENCE } from "./shortcut-catalog";
+import { configurableShortcutReference } from "./shortcut-catalog";
 import { renderShortcutBinding } from "./shortcut-key-display";
 import type { InkbookSettingsStore } from "../storage";
 
@@ -64,8 +64,8 @@ export class ShortcutRecordingView {
   public renderGroupResetAction(container: HTMLElement): void {
     const { info, row: reset } = createSettingsRow(container, {
       className: "inkbook-shortcuts-group-reset",
-      description: "Restore the built-in bindings without changing existing files or elements.",
-      name: "Reset group to defaults",
+      description: this.#store.localization.t("settings.shortcuts.resetHelp"),
+      name: this.#store.localization.t("settings.shortcuts.resetGroup"),
     });
     reset.dataset.inkbookSettingIdentity = JSON.stringify(["shortcut", "reset"]);
     const status = info.createDiv({ cls: "inkbook-shortcut-status" });
@@ -76,7 +76,7 @@ export class ShortcutRecordingView {
 
   #renderAction(container: HTMLElement, action: ConfigurableShortcutActionV1): void {
     const binding = this.#store.getDeviceSettings().keyboardShortcuts[action];
-    const reference = CONFIGURABLE_SHORTCUT_REFERENCE[action];
+    const reference = configurableShortcutReference(this.#store.localization.t)[action];
     const {
       control: controls,
       info,
@@ -94,17 +94,25 @@ export class ShortcutRecordingView {
     recorder.type = "button";
     recorder.dataset.shortcutAction = action;
     recorder.setAttribute("aria-pressed", "false");
-    renderShortcutBinding(recorder, binding);
+    renderShortcutBinding(recorder, binding, this.#store.localization.t);
     this.#labelRecorder(recorder, action, recorder);
     this.#recorders.set(action, { button: recorder, status });
     recorder.addEventListener("click", () => {
       this.#startRecording(action);
     });
     controls.append(
-      iconButton(row.ownerDocument, "rotate-ccw", `Reset ${reference.label}`, () =>
-        this.#reset(action, status),
+      iconButton(
+        row.ownerDocument,
+        "rotate-ccw",
+        this.#store.localization.t("settings.shortcuts.resetAction", { action: reference.label }),
+        () => this.#reset(action, status),
       ),
-      iconButton(row.ownerDocument, "x", `Clear ${reference.label}`, () => this.#clear(action)),
+      iconButton(
+        row.ownerDocument,
+        "x",
+        this.#store.localization.t("settings.shortcuts.clearAction", { action: reference.label }),
+        () => this.#clear(action),
+      ),
     );
     this.#bindFeedback(row);
   }
@@ -130,10 +138,14 @@ export class ShortcutRecordingView {
     entry.button.dataset.recording = "true";
     entry.button.setAttribute("aria-pressed", "true");
     this.#motion.replace(entry.button, (content) => {
-      content.textContent = "Press shortcut…";
+      content.textContent = this.#store.localization.t("settings.shortcuts.press");
       this.#labelRecorder(entry.button, action, content);
     });
-    this.#showStatus(entry.status, "Press a shortcut, or Escape to cancel.", false);
+    this.#showStatus(
+      entry.status,
+      this.#store.localization.t("settings.shortcuts.pressHelp"),
+      false,
+    );
     this.#installRecordingCapture(action, entry.status);
     entry.button.focus({ preventScroll: true });
   }
@@ -148,7 +160,11 @@ export class ShortcutRecordingView {
     entry.button.dataset.recording = "false";
     entry.button.setAttribute("aria-pressed", "false");
     this.#motion.replace(entry.button, (content) => {
-      renderShortcutBinding(content, this.#store.getDeviceSettings().keyboardShortcuts[action]);
+      renderShortcutBinding(
+        content,
+        this.#store.getDeviceSettings().keyboardShortcuts[action],
+        this.#store.localization.t,
+      );
       this.#labelRecorder(entry.button, action, content);
     });
     this.#showStatus(entry.status, "", false);
@@ -161,7 +177,10 @@ export class ShortcutRecordingView {
   ): void {
     button.setAttribute(
       "aria-label",
-      `${content.textContent ?? ""}: Change shortcut for ${CONFIGURABLE_SHORTCUT_REFERENCE[action].label}`,
+      this.#store.localization.t("settings.shortcuts.changeAction", {
+        binding: content.textContent ?? "",
+        action: configurableShortcutReference(this.#store.localization.t)[action].label,
+      }),
     );
   }
 
@@ -183,14 +202,16 @@ export class ShortcutRecordingView {
     const capture = captureShortcutBinding(event);
     if (capture.kind === "ignored") return;
     if (capture.kind === "reserved") {
-      this.#showStatus(status, "That key is reserved for system or accessibility behavior.", true);
+      this.#showStatus(status, this.#store.localization.t("settings.shortcuts.reserved"), true);
       return;
     }
     const conflict = this.#conflict(action, capture.binding);
     if (conflict !== undefined) {
       this.#showStatus(
         status,
-        `Already assigned to ${CONFIGURABLE_SHORTCUT_REFERENCE[conflict].label}.`,
+        this.#store.localization.t("settings.shortcuts.conflict", {
+          action: configurableShortcutReference(this.#store.localization.t)[conflict].label,
+        }),
         true,
       );
       return;
@@ -210,7 +231,9 @@ export class ShortcutRecordingView {
     if (conflict !== undefined) {
       this.#showStatus(
         status,
-        `The default is already assigned to ${CONFIGURABLE_SHORTCUT_REFERENCE[conflict].label}.`,
+        this.#store.localization.t("settings.shortcuts.defaultConflict", {
+          action: configurableShortcutReference(this.#store.localization.t)[conflict].label,
+        }),
         true,
       );
       return;
@@ -239,7 +262,10 @@ export class ShortcutRecordingView {
     if (conflict !== undefined) {
       this.#showStatus(
         status,
-        `Cannot reset ${CONFIGURABLE_SHORTCUT_REFERENCE[conflict.action].label}: already assigned to Obsidian command “${conflict.commandId}”.`,
+        this.#store.localization.t("settings.shortcuts.resetHostConflict", {
+          action: configurableShortcutReference(this.#store.localization.t)[conflict.action].label,
+          command: conflict.commandId,
+        }),
         true,
       );
       return;
@@ -264,7 +290,11 @@ export class ShortcutRecordingView {
   #showHostConflict(binding: KeyboardShortcutBindingV1, status: HTMLElement): boolean {
     const conflict = this.#hostHotkeys.findConflict(binding);
     if (conflict === undefined) return false;
-    this.#showStatus(status, `Already assigned to Obsidian command “${conflict}”.`, true);
+    this.#showStatus(
+      status,
+      this.#store.localization.t("settings.shortcuts.hostConflict", { command: conflict }),
+      true,
+    );
     return true;
   }
 

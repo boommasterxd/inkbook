@@ -156,3 +156,24 @@ export const HANDWRITING_GLYPHS: Readonly<Record<string, HandwritingGlyph>> = {
   ",": { advance: 2.5, paths: ["M1.7,9.3 C1.8,10.5 1.1,11.5 0.4,11.9"] },
   "'": { advance: 2.1, paths: ["M2,1 C1.9,2 1.4,2.8 0.9,3.2"] },
 };
+
+// German onboarding uses the same authored letter paths with explicit umlaut marks.
+for (const [letter, base] of [
+  ["ä", "a"],
+  ["ö", "o"],
+  ["ü", "u"],
+] as const) {
+  const glyph = HANDWRITING_GLYPHS[base]!;
+  (HANDWRITING_GLYPHS as Record<string, HandwritingGlyph>)[letter] = {
+    advance: glyph.advance,
+    paths: [
+      ...glyph.paths,
+      "M2,-0.5 C2,-0.5 2.1,-0.4 2.1,-0.4",
+      "M5,-0.5 C5,-0.5 5.1,-0.4 5.1,-0.4",
+    ],
+  };
+}
+(HANDWRITING_GLYPHS as Record<string, HandwritingGlyph>)["ß"] = {
+  advance: 7.5,
+  paths: ["M1,13 C1,8 0.5,0 4,0 C8,0 7,4 4,5 C10,6 8,11 4,10"],
+};

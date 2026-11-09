@@ -8,7 +8,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
 import { InkbookSettingsModalController } from "../../../../src/obsidian/settings/settings-modal";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
-import { createTestSettingsStore } from "../../../fixtures/obsidian/settings-store";
+import {
+  createTestSettingsStore,
+  openTestSettingsModal,
+} from "../../../fixtures/obsidian/settings-store";
 import * as actionDialog from "../../../../src/obsidian/dialogs/action-dialog";
 import { createBuiltInSettings, type InkbookSettingsV4 } from "../../../../src/domain/settings";
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
@@ -417,18 +420,7 @@ function openSettingsModalWithFullMotion(store = createTestSettingsStore()): {
   store: ReturnType<typeof createTestSettingsStore>;
   tab: InkbookSettingTab;
 } {
-  const workspaceContainer = document.body.createDiv();
-  const app = {
-    keymap: new Keymap(),
-    workspace: { containerEl: workspaceContainer },
-  } as unknown as App;
-  store.updateDeviceSettings((settings) => ({ ...settings, motion: "full" }));
-  const tab = new InkbookSettingTab(app, {} as Plugin, store, undefined, undefined, {
-    workScheduler: () => workSchedulerFromFrames(window),
-  });
-  const controller = new InkbookSettingsModalController(app, tab, store);
-  controller.open("settings");
-  return { controller, store, tab };
+  return openTestSettingsModal(store);
 }
 
 function required<T extends Element = HTMLElement>(selector: string): T {

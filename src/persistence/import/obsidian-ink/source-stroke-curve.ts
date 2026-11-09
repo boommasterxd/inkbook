@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "./warnings";
 import { finite, invalid, optionalNumber, type SourceRecord } from "./source-values";
 import type { StrokeStyleV1 } from "../../../domain/schema/types";
 import { remapSourcePressurePointsSteps } from "./source-pressure";
@@ -69,7 +70,7 @@ export function* sourceStrokeCurveSteps(
   points: readonly number[],
   style: SourceRecord,
   version: number,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
 ): Generator<void, SourceStrokeCurve> {
   const profile = sourceProfile(style);
   const input = yield* readPointsSteps(points);

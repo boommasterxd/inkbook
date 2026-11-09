@@ -182,6 +182,8 @@ The complete settings grouping, disclosure behavior, visual control parity, and 
 
 ## Commands, Menus, Icons, and Styling
 
+Primary dialog and import actions share the contrasting foreground/background pair in `action-tones.css`: host `--text-normal` on `--background-primary` is inverted for the filled button. Hover and press mix the button background with the surface at 90 and 80 percent text color respectively, retaining readable labels in light and dark themes. The shared native-control feedback uses those same targets; destructive actions retain their separate danger variant.
+
 The plugin registers its native save-status item through `Plugin.addStatusBarItem()` and owns only the returned element's content. Public active-leaf events select the relevant Markdown pane; Obsidian retains status-bar placement and platform visibility. Status meanings, icons, motion, and lifecycle behavior are canonical in [Embed UI](embed-ui.md#document-save-status).
 
 Commands are registered through `addCommand()` with the narrowest applicable `callback`, `checkCallback`, `editorCallback`, or `editorCheckCallback`. Command IDs omit both the plugin ID and a redundant `command` suffix. Commands define no default hotkeys. Names use sentence case and do not repeat the plugin name. Canvas-local actions are not duplicated as Obsidian commands; their device-local bindings and the remaining command inventory are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).

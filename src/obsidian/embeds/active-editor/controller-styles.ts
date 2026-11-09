@@ -1,3 +1,4 @@
+import { Localization, type Translator } from "../../../domain/localization";
 import {
   type ArrowNodeV1,
   type ColorV1,
@@ -26,11 +27,11 @@ import type { ActiveShapeIconState } from "../../../rendering/ui/icon-ids";
 import type { StyleChoiceOption, StyleControl } from "../../menus/editor-menu-types";
 import { createStructuralStyleControls } from "../../menus/structural-style-controls";
 import {
-  ARROW_NODE_STYLE_OPTIONS,
-  COLOR_STYLE_OPTIONS,
+  arrowNodeStyleOptions,
+  colorStyleOptions,
   createToolStyleControls,
-  FILL_COLOR_STYLE_OPTIONS,
-  OUTLINE_STYLE_OPTIONS,
+  fillColorStyleOptions,
+  outlineStyleOptions,
   OUTLINE_WIDTH_STYLE_OPTIONS,
   PEN_WIDTH_STYLE_OPTIONS,
   serializeNullableStyleColor,
@@ -50,11 +51,12 @@ export interface SelectionStyleReplacement {
 
 export function createActiveEditorStyleControls(
   context: ActiveEditorStyleContext,
+  t: Translator = new Localization().t,
 ): readonly StyleControl[] {
   if (context.selection.length > 0) {
-    return selectionControls(summarizeSelectionStyle(context.selection));
+    return selectionControls(summarizeSelectionStyle(context.selection), t);
   }
-  return createToolStyleControls(context.defaults, context.tool);
+  return createToolStyleControls(context.defaults, context.tool, t);
 }
 
 export function createActiveEditorStyleIcon(
@@ -134,94 +136,131 @@ export function updateSessionToolDefaults(
   return applyToolStyleChange(defaults, tool, styleChange(controlId, value)).toolValues;
 }
 
-function selectionControls(summary: SelectionStyleSummary): readonly StyleControl[] {
+function selectionControls(summary: SelectionStyleSummary, t: Translator): readonly StyleControl[] {
   if (summary === null) return [];
   return summary.kind === "outline"
-    ? outlineSelectionControls(summary)
-    : strokeSelectionControls(summary);
+    ? outlineSelectionControls(summary, t)
+    : strokeSelectionControls(summary, t);
 }
 
 function strokeSelectionControls(
   summary: Exclude<SelectionStyleSummary, OutlineSelectionStyleSummary | null>,
+  t: Translator,
 ): readonly StyleControl[] {
   return [
-    mixedChoiceControl("color", "Color", summary.color, COLOR_STYLE_OPTIONS, serializeStyleColor),
-    mixedChoiceControl("stroke-width", "Width", summary.width, PEN_WIDTH_STYLE_OPTIONS, String),
-    mixedNumberControl("opacity", "Opacity", summary.opacity, 0, 1, 0.05),
+    mixedChoiceControl(
+      "color",
+      t("editor.control.color"),
+      summary.color,
+      colorStyleOptions(t),
+      serializeStyleColor,
+    ),
+    mixedChoiceControl(
+      "stroke-width",
+      t("editor.control.stroke-width"),
+      summary.width,
+      PEN_WIDTH_STYLE_OPTIONS,
+      String,
+    ),
+    mixedNumberControl("opacity", t("editor.control.opacity"), summary.opacity, 0, 1, 0.05),
   ];
 }
 
-function outlineSelectionControls(summary: OutlineSelectionStyleSummary): readonly StyleControl[] {
+function outlineSelectionControls(
+  summary: OutlineSelectionStyleSummary,
+  t: Translator,
+): readonly StyleControl[] {
   const controls: StyleControl[] = [
     mixedChoiceControl(
       "outline-color",
-      "Outline color",
+      t("editor.control.outline-color"),
       summary.outlineColor,
-      COLOR_STYLE_OPTIONS,
+      colorStyleOptions(t),
       serializeStyleColor,
     ),
     mixedChoiceControl(
       "outline-width",
-      "Outline width",
+      t("editor.control.outline-width"),
       summary.outlineWidth,
       OUTLINE_WIDTH_STYLE_OPTIONS,
       String,
     ),
     mixedChoiceControl(
       "outline-style",
-      "Outline style",
+      t("editor.control.outline-style"),
       summary.outlineStyle,
-      OUTLINE_STYLE_OPTIONS,
+      outlineStyleOptions(t),
       String,
     ),
-    mixedNumberControl("outline-opacity", "Outline opacity", summary.outlineOpacity, 0, 1, 0.05),
+    mixedNumberControl(
+      "outline-opacity",
+      t("editor.control.outline-opacity"),
+      summary.outlineOpacity,
+      0,
+      1,
+      0.05,
+    ),
   ];
   if (summary.fill !== null) {
     controls.push(
       mixedChoiceControl(
         "fill-color",
-        "Fill color",
+        t("editor.control.fill-color"),
         summary.fill.color,
-        FILL_COLOR_STYLE_OPTIONS,
+        fillColorStyleOptions(t),
         serializeNullableStyleColor,
       ),
-      mixedNumberControl("fill-opacity", "Fill opacity", summary.fill.opacity, 0, 1, 0.05),
+      mixedNumberControl(
+        "fill-opacity",
+        t("editor.control.fill-opacity"),
+        summary.fill.opacity,
+        0,
+        1,
+        0.05,
+      ),
     );
   }
   if (summary.arrowNodes !== null) {
     controls.push(
       mixedChoiceControl(
         "arrow-start-node",
-        "Start node",
+        t("editor.control.arrow-start-node"),
         summary.arrowNodes.start,
-        ARROW_NODE_STYLE_OPTIONS,
+        arrowNodeStyleOptions(t),
         String,
       ),
       mixedChoiceControl(
         "arrow-end-node",
-        "End node",
+        t("editor.control.arrow-end-node"),
         summary.arrowNodes.end,
-        ARROW_NODE_STYLE_OPTIONS,
+        arrowNodeStyleOptions(t),
         String,
       ),
     );
   }
-  controls.push(...structuralControls(summary.structural));
+  controls.push(...structuralControls(summary.structural, t));
   return controls;
 }
 
 function structuralControls(
   structural: Exclude<OutlineSelectionStyleSummary["structural"], null> | null,
+  t: Translator,
 ): readonly StyleControl[] {
   if (structural?.kind === "coordinate-system") {
-    return createStructuralStyleControls({
-      coordinateDimension: structural.dimension === "mixed" ? null : structural.dimension,
-    });
+    return createStructuralStyleControls(
+      {
+        coordinateDimension: structural.dimension === "mixed" ? null : structural.dimension,
+      },
+      t,
+    );
   }
   if (structural?.kind === "table") {
-    return createStructuralStyleControls({
-      tableColumns: structural.columns === "mixed" ? null : structural.columns,
-    });
+    return createStructuralStyleControls(
+      {
+        tableColumns: structural.columns === "mixed" ? null : structural.columns,
+      },
+      t,
+    );
   }
   return [];
 }

@@ -1,4 +1,10 @@
-import { outlineDashPattern } from "../../domain/geometry/element-path";
+import { controlLabel, choiceLabel } from "./localized-style-labels";
+import {
+  menuTranslator,
+  updateMenuText,
+  type MenuLocalizationOptions,
+} from "./localized-menu-text";
+import { createOutlineStylePreview } from "./style-outline-preview";
 
 import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import {
@@ -10,7 +16,7 @@ import {
 } from "../../rendering/ui/icon-ids";
 import { configureMenuTooltips, menuDomWindow } from "./menu-dom";
 
-export interface StyleMenuContentOptions {
+export interface StyleMenuContentOptions extends MenuLocalizationOptions {
   readonly controlDescriptions?: Readonly<Record<string, string>>;
   readonly controls: readonly StyleControl[];
   readonly numberInputMode?: "clamp" | "reject";
@@ -59,7 +65,10 @@ export function createStyleMenuContent(options: StyleMenuContentOptions): Docume
   if (options.controls.length === 0) {
     const empty = root.createEl("p", {
       cls: "inkbook-menu-empty",
-      text: "No shared style options",
+      text: menuTranslator(options)("editor.style.empty"),
+    });
+    updateMenuText(options, () => {
+      empty.textContent = menuTranslator(options)("editor.style.empty");
     });
     root.append(empty);
   } else {
@@ -95,21 +104,30 @@ function createField(
   label.id = `inkbook-style-label-${++nextControlLabel}`;
   field.setAttribute("role", "group");
   field.setAttribute("aria-labelledby", label.id);
-  label.textContent =
-    "mixed" in control && control.mixed === true ? `${control.label} · Mixed` : control.label;
-  if (
-    control.kind === "choice" &&
-    (control.id === "arrow-start-node" || control.id === "arrow-end-node")
-  ) {
-    label.textContent = control.label;
-    const valueLabel = header.createSpan({ cls: "inkbook-menu-control-value-label" });
-    valueLabel.id = `${label.id}-value`;
-    valueLabel.textContent =
-      control.mixed === true
-        ? "Mixed"
-        : (control.options.find((option) => option.value === control.value)?.label ?? "Mixed");
-    field.setAttribute("aria-labelledby", `${label.id} ${valueLabel.id}`);
-  }
+  updateMenuText(options, () => {
+    label.textContent =
+      "mixed" in control && control.mixed === true
+        ? menuTranslator(options)("editor.style.mixed-label", {
+            label: controlLabel(options, control),
+          })
+        : controlLabel(options, control);
+    if (
+      control.kind === "choice" &&
+      (control.id === "arrow-start-node" || control.id === "arrow-end-node")
+    ) {
+      label.textContent = controlLabel(options, control);
+      const valueLabel =
+        header.querySelector<HTMLElement>(".inkbook-menu-control-value-label") ??
+        header.createSpan({ cls: "inkbook-menu-control-value-label" });
+      valueLabel.id = `${label.id}-value`;
+      valueLabel.textContent =
+        control.mixed === true
+          ? menuTranslator(options)("editor.style.mixed")
+          : (control.options.find((option) => option.value === control.value)?.label ??
+            menuTranslator(options)("editor.style.mixed"));
+      field.setAttribute("aria-labelledby", `${label.id} ${valueLabel.id}`);
+    }
+  });
   const description = options.controlDescriptions?.[control.id];
   if (description !== undefined) {
     field.createEl("p", { cls: "inkbook-menu-control-description", text: description });
@@ -147,13 +165,19 @@ function createChoiceButton(
     cls: "inkbook-menu-choice",
   });
   button.type = "button";
-  button.setAttribute("aria-label", option.label);
+
   button.setAttribute("aria-pressed", String(control.value === option.value));
   button.dataset.value = option.value;
   if (control.id.endsWith("width")) button.classList.add("inkbook-menu-width-choice");
   const preview = createChoicePreview(options, control.id, option.value);
   const label = button.createSpan({ cls: "inkbook-menu-choice-label" });
-  label.textContent = option.label;
+  updateMenuText(options, () => {
+    const text = choiceLabel(options, control.id, option);
+    button.setAttribute("aria-label", text);
+    label.textContent = text;
+    if (valueLabel !== null && button.getAttribute("aria-pressed") === "true")
+      valueLabel.textContent = text;
+  });
   if (isVisualOnlyChoice(control.id)) label.classList.add("inkbook-menu-visually-hidden");
   if (preview !== null) button.append(preview);
   button.append(label);
@@ -163,7 +187,7 @@ function createChoiceButton(
     for (const sibling of button.parentElement?.querySelectorAll("button") ?? []) {
       sibling.setAttribute("aria-pressed", String(sibling === button));
     }
-    if (valueLabel !== null) valueLabel.textContent = option.label;
+    if (valueLabel !== null) valueLabel.textContent = choiceLabel(options, control.id, option);
     options.onChange(control.id, option.value);
   });
   return button;
@@ -203,29 +227,6 @@ function createChoicePreview(
   return preview;
 }
 
-function createOutlineStylePreview(ownerDocument: Document, value: string): SVGSVGElement {
-  const namespace = "http://www.w3.org/2000/svg";
-  const width = 2;
-  const dash = outlineDashPattern(
-    value === "dashed" || value === "dotted" ? value : "solid",
-    width,
-  );
-  const svg = ownerDocument.createElementNS(namespace, "svg");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-  svg.setAttribute("viewBox", "0 0 28 8");
-  const path = ownerDocument.createElementNS(namespace, "path");
-  path.setAttribute("d", "M 2 4 H 26");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", String(width));
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("stroke-linejoin", "round");
-  if (dash !== null) path.setAttribute("stroke-dasharray", dash.join(" "));
-  svg.append(path);
-  return svg;
-}
-
 function createSlider(
   options: StyleMenuContentOptions,
   control: Extract<StyleControl, { readonly kind: "number" }>,
@@ -235,15 +236,21 @@ function createSlider(
   const percent = control.id.includes("opacity");
   const scale = percent ? 100 : 1;
   const range = body.createEl("input");
-  const { valueField, value } = createNumberValueField(body, control, scale);
+  const { valueField, value } = createNumberValueField(body, control, options, scale);
   range.className = "inkbook-menu-slider";
   range.type = "range";
   range.min = String(control.min * scale);
   range.max = String(control.max * scale);
   range.step = percent ? "1" : String(control.step * scale);
   range.value = String((control.value ?? control.min) * scale);
-  range.setAttribute("aria-label", control.label);
-  if (control.mixed === true) range.setAttribute("aria-valuetext", "Mixed");
+  updateMenuText(options, () => range.setAttribute("aria-label", controlLabel(options, control)));
+  if (control.mixed === true) {
+    range.setAttribute("aria-valuetext", menuTranslator(options)("editor.style.mixed"));
+    updateMenuText(options, () => {
+      if (range.hasAttribute("aria-valuetext"))
+        range.setAttribute("aria-valuetext", menuTranslator(options)("editor.style.mixed"));
+    });
+  }
   range.addEventListener("input", () => {
     value.value = formatNumber(range.valueAsNumber);
     range.removeAttribute("aria-valuetext");
@@ -276,6 +283,7 @@ function createSlider(
 function createNumberValueField(
   body: HTMLElement,
   control: Extract<StyleControl, { readonly kind: "number" }>,
+  options: StyleMenuContentOptions,
   scale = 1,
 ): { readonly valueField: HTMLElement; readonly value: HTMLInputElement } {
   const valueField = body.createEl("label", { cls: "inkbook-menu-value-field" });
@@ -288,7 +296,14 @@ function createNumberValueField(
   value.step = scale === 100 ? "1" : String(control.step);
   value.value = control.value === null ? "" : formatNumber(control.value * scale);
   value.placeholder = control.mixed === true ? "—" : "";
-  value.setAttribute("aria-label", scale === 100 ? `${control.label} percent` : control.label);
+  updateMenuText(options, () =>
+    value.setAttribute(
+      "aria-label",
+      scale === 100
+        ? menuTranslator(options)("editor.style.percent", { label: controlLabel(options, control) })
+        : controlLabel(options, control),
+    ),
+  );
   value.style.setProperty(
     "--inkbook-menu-value-width",
     `${String(valueCharacterWidth(control, scale, value.placeholder))}ch`,
@@ -330,11 +345,29 @@ function createStepper(
 ): HTMLElement {
   const { field, body } = createField(options, control);
   body.classList.add("inkbook-menu-stepper");
-  const { valueField, value } = createNumberValueField(body, control);
+  const { valueField, value } = createNumberValueField(body, control, options);
   value.defaultValue = value.value;
   value.inputMode = "numeric";
-  const decrement = createStepperButton(options, "minus", `Decrease ${control.label}`);
-  const increment = createStepperButton(options, "plus", `Increase ${control.label}`);
+  const decrement = createStepperButton(
+    options,
+    "minus",
+    menuTranslator(options)("editor.style.decrease", { label: controlLabel(options, control) }),
+  );
+  const increment = createStepperButton(
+    options,
+    "plus",
+    menuTranslator(options)("editor.style.increase", { label: controlLabel(options, control) }),
+  );
+  updateMenuText(options, () => {
+    decrement.setAttribute(
+      "aria-label",
+      menuTranslator(options)("editor.style.decrease", { label: controlLabel(options, control) }),
+    );
+    increment.setAttribute(
+      "aria-label",
+      menuTranslator(options)("editor.style.increase", { label: controlLabel(options, control) }),
+    );
+  });
   const commit = (next: number) => {
     const current = clamp(Math.round(next), control.min, control.max);
     value.value = formatNumber(current);
@@ -390,7 +423,10 @@ function createToggle(
   const heading = copy.createSpan({ cls: "inkbook-menu-toggle-heading" });
   const icon = heading.createSpan({ cls: "inkbook-menu-control-icon" });
   options.renderIcon(icon, CONTROL_ICONS[control.id] ?? "settings-2");
-  heading.createSpan({ cls: "inkbook-menu-toggle-label", text: control.label });
+  const title = heading.createSpan({ cls: "inkbook-menu-toggle-label" });
+  updateMenuText(options, () => {
+    title.textContent = controlLabel(options, control);
+  });
   const description = options.controlDescriptions?.[control.id];
   const descriptionElement =
     description === undefined
@@ -400,7 +436,7 @@ function createToggle(
   const input = switchControl.createEl("input");
   input.type = "checkbox";
   input.checked = control.checked;
-  input.setAttribute("aria-label", control.label);
+  updateMenuText(options, () => input.setAttribute("aria-label", controlLabel(options, control)));
   if (descriptionElement !== undefined) {
     descriptionElement.id = `inkbook-style-description-${++nextControlLabel}`;
     input.setAttribute("aria-describedby", descriptionElement.id);

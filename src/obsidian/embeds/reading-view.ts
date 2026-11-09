@@ -101,7 +101,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       ports.workScheduler(button.ownerDocument.defaultView),
       { documentId: candidate.resolved.documentId, documents: ports.documents },
     );
-    updateEmbedDescription(root, button, candidate.description);
+    updateEmbedDescription(root, button, candidate.description, ports.localization?.t);
     super(candidate.host);
     this.#button = button;
     this.#refreshPreview = preview.refresh;
@@ -112,6 +112,11 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     this.#ports = ports;
     this.#previewIdentity = previewDescriptor.contentIdentity;
     this.#root = root;
+    this.register(
+      ports.localization?.subscribe(() => {
+        updateEmbedDescription(root, button, candidate.description, ports.localization?.t);
+      }) ?? (() => undefined),
+    );
     const attachmentId = `reading-${++nextReadingAttachmentId}`;
     this.#controller = new PresentationController(
       {

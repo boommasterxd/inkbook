@@ -1,3 +1,4 @@
+import type { Translator } from "../../../domain/localization";
 import type { ConfigurableShortcutActionV1 } from "../../../domain/settings/index";
 
 export interface ShortcutReferenceEntry {
@@ -13,154 +14,169 @@ export interface ObsidianCommandReferenceEntry extends ShortcutReferenceEntry {
   readonly commandId: string;
 }
 
-export const CONFIGURABLE_SHORTCUT_REFERENCE: Readonly<
-  Record<ConfigurableShortcutActionV1, ShortcutReferenceEntry>
-> = Object.freeze({
-  "select-all": { label: "Select all", description: "Select every element in the canvas." },
-  copy: { label: "Copy selection", description: "Copy the current selection." },
-  cut: { label: "Cut selection", description: "Copy and remove the current selection." },
-  "delete-selection": {
-    label: "Delete selection",
-    description: "Remove the current selection as one undo step.",
-  },
-  "zoom-in": {
-    label: "Zoom in",
-    description: "Zoom the focused canvas, or the hovered canvas around its pointer.",
-  },
-  "zoom-out": {
-    label: "Zoom out",
-    description: "Zoom the focused canvas, or the hovered canvas around its pointer.",
-  },
-  "bring-forward": {
-    label: "Bring forward",
-    description: "Move the selection one position toward the front.",
-  },
-  "send-backward": {
-    label: "Send backward",
-    description: "Move the selection one position toward the back.",
-  },
-  "bring-to-front": {
-    label: "Bring to front",
-    description: "Move the selection to the front of its render band.",
-  },
-  "send-to-back": {
-    label: "Send to back",
-    description: "Move the selection to the back of its render band.",
-  },
-});
+export function configurableShortcutReference(
+  t: Translator,
+): Readonly<Record<ConfigurableShortcutActionV1, ShortcutReferenceEntry>> {
+  return {
+    "select-all": {
+      label: t("settings.shortcuts.reference.select-all.label"),
+      description: t("settings.shortcuts.reference.select-all.description"),
+    },
+    copy: {
+      label: t("settings.shortcuts.reference.copy-selection.label"),
+      description: t("settings.shortcuts.reference.copy-selection.description"),
+    },
+    cut: {
+      label: t("settings.shortcuts.reference.cut-selection.label"),
+      description: t("settings.shortcuts.reference.cut-selection.description"),
+    },
+    "delete-selection": {
+      label: t("settings.shortcuts.reference.delete-selection.label"),
+      description: t("settings.shortcuts.reference.delete-selection.description"),
+    },
+    "zoom-in": {
+      label: t("settings.shortcuts.reference.zoom-in.label"),
+      description: t("settings.shortcuts.reference.zoom-in.description"),
+    },
+    "zoom-out": {
+      label: t("settings.shortcuts.reference.zoom-out.label"),
+      description: t("settings.shortcuts.reference.zoom-out.description"),
+    },
+    "bring-forward": {
+      label: t("settings.shortcuts.reference.bring-forward.label"),
+      description: t("settings.shortcuts.reference.bring-forward.description"),
+    },
+    "send-backward": {
+      label: t("settings.shortcuts.reference.send-backward.label"),
+      description: t("settings.shortcuts.reference.send-backward.description"),
+    },
+    "bring-to-front": {
+      label: t("settings.shortcuts.reference.bring-to-front.label"),
+      description: t("settings.shortcuts.reference.bring-to-front.description"),
+    },
+    "send-to-back": {
+      label: t("settings.shortcuts.reference.send-to-back.label"),
+      description: t("settings.shortcuts.reference.send-to-back.description"),
+    },
+  };
+}
 
-export const FIXED_SHORTCUT_REFERENCE = [
-  {
-    description: "Select the previous or next object; Shift adds it to the selection.",
-    keyGroups: [["PageUp"], ["PageDown"]],
-    label: "Navigate objects",
-  },
-  {
-    description: "Select the first or last object in the drawing.",
-    keyGroups: [["Home"], ["End"]],
-    label: "First or last object",
-  },
-  {
-    description:
-      "Enter geometry editing or leave it. Page Up and Page Down choose Move or a handle.",
-    keyGroups: [["Enter"]],
-    label: "Edit geometry",
-  },
-  {
-    description:
-      "Adjust the active geometry operation by 1 document unit or degree; Shift uses 10.",
-    keyGroups: [["ArrowLeft"], ["ArrowRight"], ["ArrowUp"], ["ArrowDown"]],
-    label: "Adjust geometry",
-  },
-  {
-    description: "Paste a validated clipboard selection at the current canvas target.",
-    keyGroups: [["Mod", "V"]],
-    label: "Paste",
-  },
-  {
-    description: "Undo the latest pane-scoped Markdown or canvas action.",
-    keyGroups: [["Mod", "Z"]],
-    label: "Undo",
-  },
-  {
-    description: "Redo the latest pane-scoped Markdown or canvas action.",
-    keyGroups: [["Mod", "Shift", "Z"]],
-    label: "Redo",
-  },
-  {
-    description: "Close a surface, cancel a gesture, or clear the current selection.",
-    keyGroups: [["Escape"]],
-    label: "Cancel or close",
-  },
-  {
-    description: "Open the canvas context menu with a platform accessibility shortcut.",
-    keyGroups: [["Shift", "F10"]],
-    label: "Context menu",
-  },
-] as const satisfies readonly FixedShortcutReferenceEntry[];
+export function fixedShortcutReference(t: Translator) {
+  return [
+    {
+      description: t("settings.shortcuts.reference.navigate-objects.description"),
+      keyGroups: [["PageUp"], ["PageDown"]],
+      label: t("settings.shortcuts.reference.navigate-objects.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.first-or-last-object.description"),
+      keyGroups: [["Home"], ["End"]],
+      label: t("settings.shortcuts.reference.first-or-last-object.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.edit-geometry.description"),
+      keyGroups: [["Enter"]],
+      label: t("settings.shortcuts.reference.edit-geometry.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.adjust-geometry.description"),
+      keyGroups: [["ArrowLeft"], ["ArrowRight"], ["ArrowUp"], ["ArrowDown"]],
+      label: t("settings.shortcuts.reference.adjust-geometry.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.paste.description"),
+      keyGroups: [["Mod", "V"]],
+      label: t("settings.shortcuts.reference.paste.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.undo.description"),
+      keyGroups: [["Mod", "Z"]],
+      label: t("settings.shortcuts.reference.undo.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.redo.description"),
+      keyGroups: [["Mod", "Shift", "Z"]],
+      label: t("settings.shortcuts.reference.redo.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.cancel-or-close.description"),
+      keyGroups: [["Escape"]],
+      label: t("settings.shortcuts.reference.cancel-or-close.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.context-menu.description"),
+      keyGroups: [["Shift", "F10"]],
+      label: t("settings.shortcuts.reference.context-menu.label"),
+    },
+  ] as const satisfies readonly FixedShortcutReferenceEntry[];
+}
 
-export const GESTURE_MODIFIER_REFERENCE = [
-  {
-    description: "Add the clicked element to the current selection.",
-    keyGroups: [["Mod", "Click"]],
-    label: "Extend selection",
-  },
-  {
-    description: "Preserve the selection's aspect ratio while resizing.",
-    keyGroups: [["Shift"]],
-    label: "Keep aspect ratio",
-  },
-  {
-    description: "Add the area result to the current selection.",
-    keyGroups: [["Shift"]],
-    label: "Add area selection",
-  },
-  {
-    description: "Temporarily use the opposite snapping state.",
-    keyGroups: [["Alt"]],
-    label: "Invert snapping",
-  },
-  {
-    description: "Temporarily erase while a drawing tool is active.",
-    keyGroups: [["Mod"]],
-    label: "Temporary eraser",
-  },
-  {
-    description: "Zoom around the current pointer position.",
-    keyGroups: [["Mod", "Wheel"]],
-    label: "Pointer zoom",
-  },
-  {
-    description: "Navigate horizontally with the wheel.",
-    keyGroups: [["Shift", "Wheel"]],
-    label: "Horizontal navigation",
-  },
-] as const satisfies readonly FixedShortcutReferenceEntry[];
+export function gestureModifierReference(t: Translator) {
+  return [
+    {
+      description: t("settings.shortcuts.reference.extend-selection.description"),
+      keyGroups: [["Mod", "Click"]],
+      label: t("settings.shortcuts.reference.extend-selection.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.keep-aspect-ratio.description"),
+      keyGroups: [["Shift"]],
+      label: t("settings.shortcuts.reference.keep-aspect-ratio.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.add-area-selection.description"),
+      keyGroups: [["Shift"]],
+      label: t("settings.shortcuts.reference.add-area-selection.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.invert-snapping.description"),
+      keyGroups: [["Alt"]],
+      label: t("settings.shortcuts.reference.invert-snapping.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.temporary-eraser.description"),
+      keyGroups: [["Mod"]],
+      label: t("settings.shortcuts.reference.temporary-eraser.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.pointer-zoom.description"),
+      keyGroups: [["Mod", "Wheel"]],
+      label: t("settings.shortcuts.reference.pointer-zoom.label"),
+    },
+    {
+      description: t("settings.shortcuts.reference.horizontal-navigation.description"),
+      keyGroups: [["Shift", "Wheel"]],
+      label: t("settings.shortcuts.reference.horizontal-navigation.label"),
+    },
+  ] as const satisfies readonly FixedShortcutReferenceEntry[];
+}
 
-export const OBSIDIAN_COMMAND_REFERENCE = [
-  {
-    commandId: "inkbook:lock-active-embed",
-    description: "Lock the currently active handwriting embed.",
-    label: "Lock active handwriting embed",
-  },
-  {
-    commandId: "inkbook:copy-embed",
-    description: "Copy the currently active embed reference.",
-    label: "Copy active embed",
-  },
-  {
-    commandId: "inkbook:erase-all",
-    description: "Remove every annotation from the active embed.",
-    label: "Erase all annotations",
-  },
-  {
-    commandId: "inkbook:delete-embed",
-    description: "Delete the currently active embed.",
-    label: "Delete active embed",
-  },
-  {
-    commandId: "inkbook:insert-handwriting",
-    description: "Insert a new handwriting embed in the active note.",
-    label: "Insert handwriting embed",
-  },
-] as const satisfies readonly ObsidianCommandReferenceEntry[];
+export function obsidianCommandReference(t: Translator) {
+  return [
+    {
+      commandId: "inkbook:lock-active-embed",
+      description: t("settings.shortcuts.reference.lock-active-handwriting-embed.description"),
+      label: t("settings.shortcuts.reference.lock-active-handwriting-embed.label"),
+    },
+    {
+      commandId: "inkbook:copy-embed",
+      description: t("settings.shortcuts.reference.copy-active-embed.description"),
+      label: t("settings.shortcuts.reference.copy-active-embed.label"),
+    },
+    {
+      commandId: "inkbook:erase-all",
+      description: t("settings.shortcuts.reference.erase-all-annotations.description"),
+      label: t("settings.shortcuts.reference.erase-all-annotations.label"),
+    },
+    {
+      commandId: "inkbook:delete-embed",
+      description: t("settings.shortcuts.reference.delete-active-embed.description"),
+      label: t("settings.shortcuts.reference.delete-active-embed.label"),
+    },
+    {
+      commandId: "inkbook:insert-handwriting",
+      description: t("settings.shortcuts.reference.insert-handwriting-embed.description"),
+      label: t("settings.shortcuts.reference.insert-handwriting-embed.label"),
+    },
+  ] as const satisfies readonly ObsidianCommandReferenceEntry[];
+}

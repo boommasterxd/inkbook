@@ -1,7 +1,6 @@
+import { createEnglishLocalization, type Translator } from "../../domain/localization";
 import type { NativeControlFeedbackOptions } from "../menus/feedback/native-control-feedback";
 import { createSettingsValidationMotion } from "./settings-validation-motion";
-
-export const SETTINGS_SAVE_FAILURE_MESSAGE = "The setting could not be saved.";
 
 interface SettingsWriteHandlers {
   readonly error: (message: string) => void;
@@ -14,6 +13,8 @@ interface SettingsWriteHandlers {
 export class SettingsWriteFeedback {
   readonly #latest = new Map<string, number>();
   #disposed = false;
+
+  public constructor(private readonly t: Translator = createEnglishLocalization().t) {}
 
   public invalidate(key: string): number {
     const sequence = (this.#latest.get(key) ?? 0) + 1;
@@ -38,7 +39,7 @@ export class SettingsWriteFeedback {
     } catch {
       if (!isCurrent()) return;
       handlers.restore();
-      handlers.error(handlers.failureMessage ?? SETTINGS_SAVE_FAILURE_MESSAGE);
+      handlers.error(handlers.failureMessage ?? this.t("settings.saveFailure"));
     }
   }
 

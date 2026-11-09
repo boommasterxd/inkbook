@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Translator } from "../../../domain/localization";
 import type { SettingDefinitionGroup, SettingDefinitionRender } from "obsidian";
 
 import type { NativeControlFeedbackOptions } from "../../menus/feedback/native-control-feedback";
@@ -7,6 +8,7 @@ import { createSettingsVisualControlRow } from "../settings-row";
 import { resetAction, toggle } from "./definition-helpers";
 
 interface HoldToShapeValues extends NativeControlFeedbackOptions {
+  readonly t?: Translator;
   readonly observeMotion: NonNullable<NativeControlFeedbackOptions["observeMotion"]>;
   readonly get: (key: SettingsControlKey) => unknown;
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
@@ -26,22 +28,22 @@ export function holdToShapeGroup(
   values: HoldToShapeValues,
   reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
+  const t = values.t ?? createEnglishLocalization().t;
   return {
     type: "group",
-    heading: "Hold to shape",
+    heading: t("settings.controls.holdToShape"),
     cls: "inkbook-hold-to-shape-group",
     items: [
       toggle(
         "holdToShape.enabled",
-        "Enable hold to shape",
-        "Hold the end of a pen stroke still to recognize a shape. Changes apply to the next stroke.",
+        t("settings.controls.holdEnabled"),
+        t("settings.controls.holdEnabledHelp"),
       ),
       holdNumberDefinition(values, {
         id: "hold-duration-ms",
         key: "holdToShape.holdDurationMs",
-        name: "Hold delay",
-        description:
-          "Choose how long to hold still before the shape preview appears, from 200 to 2000 milliseconds.",
+        name: t("settings.controls.holdDelay"),
+        description: t("settings.controls.holdDelayHelp"),
         min: 200,
         max: 2000,
         step: 50,
@@ -49,14 +51,13 @@ export function holdToShapeGroup(
       holdNumberDefinition(values, {
         id: "jitter-tolerance-px",
         key: "holdToShape.jitterTolerancePx",
-        name: "Movement tolerance",
-        description:
-          "Allow this much movement while holding, from 1 to 32 screen pixels, independent of zoom.",
+        name: t("settings.controls.holdTolerance"),
+        description: t("settings.controls.holdToleranceHelp"),
         min: 1,
         max: 32,
         step: 1,
       }),
-      resetAction("Reset group to defaults", reset),
+      resetAction(t("settings.controls.resetGroup"), reset, t),
     ],
   };
 }
@@ -75,6 +76,7 @@ function holdNumberDefinition(
         definition.description,
       );
       const release = renderSettingsControlContent(content, {
+        ...(values.t === undefined ? {} : { t: values.t }),
         controls: () => [
           {
             id: definition.id,

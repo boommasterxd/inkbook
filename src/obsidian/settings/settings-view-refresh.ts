@@ -28,6 +28,10 @@ export function refreshSettingsView(container: HTMLElement, render: () => void):
   const focused = document.activeElement;
   const row = container.contains(focused) ? focused?.closest<HTMLElement>(ROW_SELECTOR) : null;
   const identity = row?.dataset.inkbookSettingIdentity;
+  const controlIndex =
+    row === null || row === undefined || focused === null
+      ? -1
+      : [...row.querySelectorAll(CONTROL_SELECTOR)].indexOf(focused);
   const anchor = visibleAnchor(container, owner);
   render();
   const rows = [...container.querySelectorAll<HTMLElement>(ROW_SELECTOR)];
@@ -39,7 +43,8 @@ export function refreshSettingsView(container: HTMLElement, render: () => void):
         : [...(replacement?.querySelectorAll<HTMLElement>(CONTROL_SELECTOR) ?? [])].find(
             (element) =>
               element.tagName === focused?.tagName &&
-              element.getAttribute("aria-label") === focused.getAttribute("aria-label"),
+              (element.getAttribute("aria-label") === focused.getAttribute("aria-label") ||
+                replacement?.querySelectorAll(CONTROL_SELECTOR)[controlIndex] === element),
           );
     target?.focus({ preventScroll: true });
   }

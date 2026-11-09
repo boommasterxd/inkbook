@@ -1,3 +1,5 @@
+import { englishImportWarning } from "./warnings";
+import type { ObsidianInkWarningCode } from "./warnings";
 import { FILE_SCHEMA_LIMITS } from "../../../domain/schema/constants";
 import { validateInkSnapshotV1Steps } from "../../../domain/schema/snapshot-validation";
 import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/types";
@@ -31,6 +33,7 @@ const MAXIMUM_TRANSCRIPT_CHARACTERS = 1024 * 1024;
 export interface ObsidianInkImportResult {
   readonly snapshot: InkSnapshotV1;
   readonly warnings: readonly string[];
+  readonly warningCodes: readonly ObsidianInkWarningCode[];
   readonly transcript?: string;
 }
 
@@ -50,7 +53,7 @@ export async function convertObsidianInk(
       : await completeSteps(readInkSvgMetadataSteps(content), options);
   const json = metadata?.json ?? content;
   const value = record(await parseSourceJson(json, options), "Ink source");
-  const warnings = new Set<string>();
+  const warnings = new Set<ObsidianInkWarningCode>();
   const elements =
     metadata?.engine === "ink-canvas"
       ? await completeSteps(convertCanvasSteps(value, options.timestamp, warnings), options)
@@ -78,7 +81,8 @@ export async function convertObsidianInk(
     capacity("Transcript exceeds the import limit.");
   return {
     snapshot: validated.value,
-    warnings: [...warnings],
+    warnings: [...warnings].map(englishImportWarning),
+    warningCodes: [...warnings],
     ...(transcript === undefined ? {} : { transcript }),
   };
 }
@@ -106,7 +110,7 @@ async function parseSourceJson(input: string, options: ImportOptions): Promise<u
 function* convertCanvasSteps(
   source: SourceRecord,
   timestamp: number,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
 ): Generator<void, InkElementV1[]> {
   const version = finite(source.version, "Canvas version");
   if (version !== 1 && version !== 2 && version !== 3)
@@ -139,7 +143,7 @@ function* convertCanvasSteps(
 function* convertTldrawSteps(
   source: SourceRecord,
   timestamp: number,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
 ): Generator<void, InkElementV1[]> {
   const snapshot =
     source.tldraw === undefined ? source : record(source.tldraw, "Legacy tldraw snapshot");
@@ -168,9 +172,7 @@ function* convertTldrawSteps(
     const element = yield* tldrawElementSteps(sources[index]!, index, context);
     appendBand(yield* canonicalTargetSteps(element, warnings), highlights, content);
   }
-  warnings.add(
-    "Legacy files may omit strokes already missing from Ink's saved stash; those strokes cannot be recovered.",
-  );
+  warnings.add("legacyMissingStrokes");
   return [...highlights, ...content];
 }
 

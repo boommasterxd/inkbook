@@ -1,4 +1,6 @@
+import { bindElementLanguage } from "../../../rendering/localization/element-language";
 import { setIcon } from "obsidian";
+import { Localization } from "../../../domain/localization";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { STANDARD_EASING } from "../../../rendering/motion/transitions";
 import { bindFeedbackPresentationStyle } from "../../feedback/window-feedback-host";
@@ -55,11 +57,14 @@ export class PresentationOperationFeedback {
   readonly #root: HTMLElement;
   readonly #onLoadingShown: (() => void) | undefined;
   #timer: number | undefined;
+  readonly #disposeLocalization: () => void;
+  readonly #disposeLanguage: () => void;
 
   public constructor(
     root: HTMLElement,
     onLoadingShown?: () => void,
     workScheduler?: WorkScheduler,
+    private readonly localization: Localization = new Localization(),
   ) {
     const ownerWindow = root.ownerDocument.defaultView;
     if (ownerWindow === null) {
@@ -70,10 +75,16 @@ export class PresentationOperationFeedback {
       throw new Error("Presentation feedback requires a work scheduler.");
     this.#workScheduler = workScheduler;
     this.#root = root;
+    this.#disposeLanguage = bindElementLanguage(root, localization);
     this.#backdrop = new OperationFeedbackLayer(root);
     this.#onLoadingShown = onLoadingShown;
     this.#motionQuery = ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
     this.#motionQuery?.addEventListener("change", this.#motionChanged);
+    this.#disposeLocalization = localization.subscribe(() => {
+      if (this.#host !== undefined) this.#host.lang = localization.language;
+      if (this.#kind !== undefined)
+        this.#indicator?.setAttribute("aria-label", this.#label(this.#kind));
+    });
   }
 
   public begin(kind: PresentationOperationKind): PresentationOperationFeedbackHandle {
@@ -129,6 +140,8 @@ export class PresentationOperationFeedback {
     this.#activeToken += 1;
     this.#clearCurrent();
     this.#motionQuery?.removeEventListener("change", this.#motionChanged);
+    this.#disposeLocalization();
+    this.#disposeLanguage();
   }
 
   #finish(token: number, mode?: "immediate"): void {
@@ -139,7 +152,7 @@ export class PresentationOperationFeedback {
 
   #show(kind: PresentationOperationKind): void {
     if (kind !== "saving") this.#onLoadingShown?.();
-    const label = kind === "saving" ? "Saving drawing" : "Loading drawing";
+    const label = this.#label(kind);
     const indicator = (this.#ownerWindow as Window & { createDiv: typeof createDiv }).createDiv({
       cls: "inkbook-operation-feedback",
     });
@@ -167,6 +180,12 @@ export class PresentationOperationFeedback {
       this.#revealIndicator(indicator);
     }
     this.#syncSpin();
+  }
+
+  #label(kind: PresentationOperationKind): string {
+    return this.localization.t(
+      kind === "saving" ? "presentation.operation.saving" : "presentation.operation.loading",
+    );
   }
 
   #now(): number {
@@ -210,6 +229,7 @@ export class PresentationOperationFeedback {
       cls: "inkbook-root inkbook-operation-feedback-host",
     });
     this.#host = host;
+    host.lang = this.localization.language;
     this.#unbindStyle = bindFeedbackPresentationStyle(host, this.#root, this.#motionChanged);
     return host;
   }

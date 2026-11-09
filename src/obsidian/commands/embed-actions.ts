@@ -1,3 +1,4 @@
+import { Localization } from "../../domain/localization";
 import type { ObserveMotion } from "../runtime/effective-motion";
 import { MarkdownView, type App } from "obsidian";
 
@@ -50,6 +51,7 @@ export type DeleteEmbedOutcome =
   | { readonly error: unknown; readonly kind: "failed" };
 
 export interface EmbedActionPorts {
+  readonly localization?: Localization | undefined;
   readonly workScheduler?: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
   readonly app: App;
   readonly files: ObsidianVaultFileAdapter;
@@ -88,10 +90,12 @@ export class ObsidianEmbedActions {
   readonly #observeMotion: ObserveMotion | undefined;
   readonly #readMotion: (() => MotionPreference) | undefined;
   readonly #workScheduler: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
+  readonly #localization: Localization;
   #deleting = false;
   #pendingRemoval: PresentationRemoval | undefined;
 
   constructor(ports: EmbedActionPorts) {
+    this.#localization = ports.localization ?? new Localization();
     this.#app = ports.app;
     this.#files = ports.files;
     this.#links = ports.links;
@@ -189,12 +193,13 @@ export class ObsidianEmbedActions {
     const original = reference;
     if (
       !(await confirmInkbookAction(this.#app, {
-        title: "Delete embed?",
-        description:
-          knowledge.references === 1
-            ? "Remove this embed from the note. The SVG file will be kept unless you choose to move it to trash next."
-            : "Remove this embed from the note. The shared SVG file will be kept.",
-        confirmLabel: "Delete embed",
+        localization: this.#localization,
+        title: () => this.#localization.t("host.dialog.deleteTitle"),
+        description: () =>
+          this.#localization.t(
+            knowledge.references === 1 ? "host.dialog.deleteSingle" : "host.dialog.deleteShared",
+          ),
+        confirmLabel: () => this.#localization.t("host.dialog.deleteConfirm"),
         destructive: true,
         signal: this.#lifetime.signal,
         readMotion: this.#readMotion,
@@ -208,10 +213,12 @@ export class ObsidianEmbedActions {
     const requestedFileDeletion =
       knowledge.references === 1 &&
       (await confirmInkbookAction(this.#app, {
-        title: "Move SVG file to trash?",
-        description: `This is the last known reference to “${reference.targetPath}”. You can keep the file or move it to trash.`,
-        confirmLabel: "Move to trash",
-        cancelLabel: "Keep file",
+        localization: this.#localization,
+        title: () => this.#localization.t("host.dialog.trashTitle"),
+        description: () =>
+          this.#localization.t("host.dialog.trashDescription", { path: original.targetPath }),
+        confirmLabel: () => this.#localization.t("host.dialog.trashConfirm"),
+        cancelLabel: () => this.#localization.t("host.dialog.keepFile"),
         destructive: true,
         signal: this.#lifetime.signal,
         readMotion: this.#readMotion,
@@ -319,6 +326,7 @@ export function createObsidianEmbedActions(
   readMotion?: () => MotionPreference,
   workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
   observeMotion?: ObserveMotion,
+  localization = new Localization(),
 ): ObsidianEmbedActions {
   const { files, links, managedFiles } = createObsidianCommandVaultPorts(app, isMetadataResolved);
   return new ObsidianEmbedActions({
@@ -329,5 +337,6 @@ export function createObsidianEmbedActions(
     managedFiles,
     readMotion,
     observeMotion,
+    localization,
   });
 }

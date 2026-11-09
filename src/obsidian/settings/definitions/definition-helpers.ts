@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Translator } from "../../../domain/localization";
 import type { SettingDefinition, SettingDefinitionRender } from "obsidian";
 
 import type { SettingsControlKey } from "../control-values";
@@ -50,7 +51,7 @@ export function settingsAction(
     desc,
     render: (setting) => {
       const element = setting.settingEl;
-      const writes = new SettingsWriteFeedback();
+      const writes = new SettingsWriteFeedback(activate.feedback?.t);
       const error = createSettingsWriteError(
         element,
         activate.feedback ?? {
@@ -81,11 +82,7 @@ export function settingsAction(
 export function resetAction(
   name: string,
   activate: (() => void | Promise<void>) & SettingsActionFeedback,
+  t: Translator = activate.feedback?.t ?? createEnglishLocalization().t,
 ): SettingDefinitionRender {
-  return settingsAction(
-    name,
-    "Restore the built-in values without changing existing files or elements.",
-    "caution",
-    activate,
-  );
+  return settingsAction(name, t("settings.controls.resetHelp"), "caution", activate);
 }

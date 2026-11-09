@@ -1,3 +1,4 @@
+import { Localization, type Translator } from "../../../../domain/localization";
 import { rotatePointClockwise } from "../../../../domain/geometry/public";
 import type { PointV1 } from "../../../../domain/schema/public";
 import {
@@ -135,24 +136,27 @@ export class KeyboardHandleInteraction {
   }
 }
 
-export function keyboardHandleName(handle: SelectionHandle | undefined): string {
-  if (handle === undefined) return "Move";
+export function keyboardHandleName(
+  handle: SelectionHandle | undefined,
+  t: Translator = new Localization().t,
+): string {
+  if (handle === undefined) return t("canvas.move");
   switch (handle.kind) {
     case "scale":
-      return `Resize ${handle.position.replaceAll("-", " ")}`;
+      return t("canvas.resize", { position: t(`canvas.position_${handle.position}`) });
     case "rotate":
-      return "Rotate";
+      return t("canvas.rotate");
     case "linear-endpoint":
-      return `Line ${handle.endpoint}`;
+      return t("canvas.line_endpoint", { endpoint: t(`canvas.endpoint_${handle.endpoint}`) });
     case "linear-bend":
-      return "Line bend";
+      return t("canvas.line_bend");
     case "coordinate-origin":
-      return "Coordinate origin";
+      return t("canvas.coordinate_origin");
     case "coordinate-axis":
-      return `Coordinate axis ${handle.axisIndex + 1}`;
+      return t("canvas.coordinate_axis", { index: handle.axisIndex + 1 });
     case "table-header":
-      return "Table header";
+      return t("canvas.table_header");
     case "table-column":
-      return `Table separator ${handle.separatorIndex + 1}`;
+      return t("canvas.table_separator", { index: handle.separatorIndex + 1 });
   }
 }

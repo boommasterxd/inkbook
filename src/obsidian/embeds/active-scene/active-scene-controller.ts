@@ -24,6 +24,7 @@ export function createActiveSceneController(
 ): ActiveEditorController {
   const { container, layout, renderer, scrollOwner, store } = environment;
   return new ActiveEditorController({
+    localization: options.localization,
     workScheduler: options.workScheduler,
     applyZoomLayout: (update) =>
       applyActiveSceneZoomLayout(layout(), update, options.hostZoomScroll, container),
@@ -42,6 +43,7 @@ export function createActiveSceneController(
     menuFactory:
       options.menuFactory ??
       createOwnedMenuFactory({
+        localization: options.localization,
         workScheduler: options.workScheduler,
         anchor: options.root,
         ...(options.keymap === undefined ? {} : { keymap: options.keymap }),

@@ -35,6 +35,8 @@ Work through an equation, connect the steps of a process, or highlight the part 
 
 Inkbook embeds work in **Live Preview and Reading view**, including split panes and pop-out windows. One drawing is active per workspace. Touch can navigate the page; drawing with a finger is optional and off by default.
 
+Inkbook's interface supports English and German. It follows Obsidian's language by default, and you can choose a language in Inkbook's Interface settings.
+
 ## Your notes stay yours
 
 - **Files in your vault.** Every drawing is a self-contained SVG with an embedded editable snapshot. It remains viewable in an SVG viewer without Inkbook.

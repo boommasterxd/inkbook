@@ -1,5 +1,6 @@
+import { LocalizedActionMenu } from "./localized-action-menu";
+import { type Localization, type MessageKey } from "../../domain/localization";
 import { CAUTION_ERASER_ICON_ID } from "../../rendering/ui/icon-ids";
-import { setMenuItemTitle } from "./menu-dom";
 import type { FocusTargetPort, MenuFactoryPort, MenuPort, MenuPosition } from "./menu-ports";
 
 const CONTEXT_MENU_ICONS = {
@@ -54,6 +55,7 @@ export interface ContextMenuHandlers {
 }
 
 interface ContextMenuInvocationBase {
+  readonly localization?: Localization | undefined;
   readonly ownerDocument: Document;
   readonly onClosed?: () => void;
   readonly returnFocus?: FocusTargetPort;
@@ -78,9 +80,8 @@ export interface ContextMenuSession {
 }
 
 function configureItem(
-  menu: MenuPort,
-  ownerDocument: Document,
-  title: string,
+  menu: LocalizedActionMenu,
+  title: MessageKey,
   icon: string,
   callback: () => void,
   options: {
@@ -89,59 +90,57 @@ function configureItem(
     readonly warning?: boolean;
   } = {},
 ): void {
-  menu.addItem((item) => {
-    setMenuItemTitle(item, ownerDocument, title, options.caution === true);
-    item.setIcon(icon);
-    if (options.disabled === true) item.setDisabled(true);
-    if (options.warning === true) item.setWarning(true);
-    if (options.disabled !== true) item.onClick(callback);
-  });
+  menu.addItem(
+    title,
+    (item) => {
+      item.setIcon(icon);
+      if (options.disabled === true) item.setDisabled(true);
+      if (options.warning === true) item.setWarning(true);
+      if (options.disabled !== true) item.onClick(callback);
+    },
+    options.caution === true,
+  );
 }
 
 function configureSelectionItems(
-  menu: MenuPort,
-  ownerDocument: Document,
+  menu: LocalizedActionMenu,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
-  configureItem(menu, ownerDocument, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
-  configureItem(menu, ownerDocument, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
+  configureItem(menu, "editor.action.copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
+  configureItem(menu, "editor.action.cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
   if (state.canPaste) {
-    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+    configureItem(menu, "editor.action.paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
   }
   menu.addSeparator();
-  configureItem(menu, ownerDocument, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, {
+  configureItem(menu, "editor.action.delete", CONTEXT_MENU_ICONS.delete, handlers.delete, {
     warning: true,
   });
   menu.addSeparator();
   configureItem(
     menu,
-    ownerDocument,
-    "Bring forward",
+    "editor.action.bring-forward",
     CONTEXT_MENU_ICONS.bringForward,
     handlers.bringForward,
     { disabled: !state.canBringForward },
   );
   configureItem(
     menu,
-    ownerDocument,
-    "Send backward",
+    "editor.action.send-backward",
     CONTEXT_MENU_ICONS.sendBackward,
     handlers.sendBackward,
     { disabled: !state.canSendBackward },
   );
   configureItem(
     menu,
-    ownerDocument,
-    "Bring to front",
+    "editor.action.bring-to-front",
     CONTEXT_MENU_ICONS.bringToFront,
     handlers.bringToFront,
     { disabled: !state.canBringToFront },
   );
   configureItem(
     menu,
-    ownerDocument,
-    "Send to back",
+    "editor.action.send-to-back",
     CONTEXT_MENU_ICONS.sendToBack,
     handlers.sendToBack,
     { disabled: !state.canSendToBack },
@@ -149,27 +148,25 @@ function configureSelectionItems(
 }
 
 function configureCanvasItems(
-  menu: MenuPort,
-  ownerDocument: Document,
+  menu: LocalizedActionMenu,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
   if (!state.hasSelection && state.canPaste) {
-    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+    configureItem(menu, "editor.action.paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
     menu.addSeparator();
   }
-  configureItem(menu, ownerDocument, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
+  configureItem(menu, "editor.action.copy-embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
     disabled: state.canCopyEmbed === false,
   });
   menu.addSeparator();
-  configureItem(menu, ownerDocument, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
+  configureItem(menu, "editor.action.erase-all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
     caution: true,
     disabled: state.canEraseAll === false,
   });
   configureItem(
     menu,
-    ownerDocument,
-    "Delete embed",
+    "editor.action.delete-embed",
     CONTEXT_MENU_ICONS.delete,
     handlers.deleteEmbed,
     { disabled: state.canDeleteEmbed === false, warning: true },
@@ -185,12 +182,14 @@ export function populateContextMenu(
   ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
+  localization?: Localization,
 ): void {
+  const actions = new LocalizedActionMenu(menu, ownerDocument, localization);
   if (state.hasSelection) {
-    configureSelectionItems(menu, ownerDocument, state, handlers);
+    configureSelectionItems(actions, state, handlers);
     menu.addSeparator();
   }
-  configureCanvasItems(menu, ownerDocument, state, handlers);
+  configureCanvasItems(actions, state, handlers);
 }
 
 function canFocus(
@@ -229,14 +228,20 @@ export function openContextMenu(
     focusAfterClose(invocation);
     invocation.onClosed?.();
   });
-  populateContextMenu(menu, invocation.ownerDocument, state, {
-    ...handlers,
-    eraseAll: () => {
-      // Restore focus before the confirmation dialog captures its return target.
-      menu.close("handoff");
-      handlers.eraseAll();
+  populateContextMenu(
+    menu,
+    invocation.ownerDocument,
+    state,
+    {
+      ...handlers,
+      eraseAll: () => {
+        // Restore focus before the confirmation dialog captures its return target.
+        menu.close("handoff");
+        handlers.eraseAll();
+      },
     },
-  });
+    invocation.localization,
+  );
   if (invocation.type === "position") {
     menu.showAtPosition(invocation.position, invocation.ownerDocument);
   }

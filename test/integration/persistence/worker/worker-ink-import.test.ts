@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validImportInkDetails } from "../../../../src/persistence/worker/runtime/wire/ink-import-wire";
 import {
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,
@@ -21,7 +22,7 @@ const IDENTITY = {
   purpose: "migration" as const,
 };
 const INPUT =
-  '<svg xmlns="http://www.w3.org/2000/svg"><metadata><ink file-type="inkWriting"/><ink-canvas version="0.5.0">{"version":1,"strokes":[],"gridEnabled":false,"writingLineHeight":100}</ink-canvas></metadata></svg>';
+  '<svg xmlns="http://www.w3.org/2000/svg"><metadata><ink file-type="inkWriting"/><ink-canvas version="0.5.0">{"version":1,"strokes":[],"gridEnabled":false,"writingLineHeight":101}</ink-canvas></metadata></svg>';
 const REQUEST = {
   identity: IDENTITY,
   input: INPUT,
@@ -42,6 +43,10 @@ describe("worker Ink import", () => {
       if (result.type !== "import-ink-success") throw new Error("Expected converted output.");
       expect(result.exported.output).toContain('data-inkbook-version="1"');
       expect(result.exported.modelRevision).toBe(0);
+      expect(result.warningCodes).toEqual(["backgroundSpacingPreset"]);
+      expect(result.warnings).toEqual([
+        "Background spacing was mapped to the nearest Inkbook preset.",
+      ]);
       expect(
         await client.execute({
           identity: { ...IDENTITY, operationId: 2, purpose: "verification" },
@@ -79,6 +84,7 @@ describe("worker Ink import", () => {
     try {
       const result = await runtime.execute(REQUEST);
       expect(result.type).toBe("import-ink-success");
+      expect(result).toMatchObject({ warningCodes: ["backgroundSpacingPreset"] });
       expect(checkpoints).toBeGreaterThan(0);
       expect(await runtime.execute({ ...REQUEST, input: "not an Ink document" })).toMatchObject({
         type: "runtime-failure",
@@ -107,7 +113,9 @@ describe("worker Ink import", () => {
     await expect(runtime.execute(REQUEST)).rejects.toThrow("terminated");
     expect(runtime.instrumentation).toMatchObject({ retainedJobs: 0, queuedJobs: 0 });
   });
+});
 
+describe("worker Ink import wire validation", () => {
   it("rejects oversized or malformed import requests before dispatch or decoding", async () => {
     expect(() =>
       encodeRuntimeRequest({ ...REQUEST, input: "x".repeat(16 * 1024 * 1024 + 1) }),
@@ -121,6 +129,14 @@ describe("worker Ink import", () => {
         },
       ),
     ).rejects.toThrow("Invalid");
+    const details = { exported: { type: "export-success-wire" }, warnings: [] };
+    expect(validImportInkDetails({ ...details, warningCodes: ["backgroundSpacingPreset"] })).toBe(
+      true,
+    );
+    expect(validImportInkDetails({ ...details, warningCodes: ["unknown"] })).toBe(false);
+    expect(
+      validImportInkDetails({ ...details, warningCodes: Array(101).fill("nativeBrush") }),
+    ).toBe(false);
     expect(
       isDocumentRuntimeWireResult({ type: "import-ink-success-wire", warnings: [], exported: {} }),
     ).toBe(false);

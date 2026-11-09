@@ -1,3 +1,4 @@
+import type { Localization } from "../../../domain/localization";
 import type { EditorTool } from "../../../editor/input/index";
 import type {
   InkbookEditorChromeProps,
@@ -92,6 +93,7 @@ export function createActiveEditorChrome(
 }
 
 interface ActiveEditorChromeOptions {
+  readonly localization?: Localization | undefined;
   readonly onboarding?: InkbookEditorChromeProps["onboarding"];
   readonly layout: ToolbarLayoutStage;
   readonly leftHanded: boolean;
@@ -109,6 +111,7 @@ interface ActiveEditorChromeOptions {
 
 function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChromeProps {
   return {
+    localization: options.localization,
     ...(options.onboarding === undefined ? {} : { onboarding: options.onboarding }),
     layout: options.layout,
     leftHanded: options.leftHanded,
@@ -124,6 +127,7 @@ function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChr
 }
 
 interface ChromePresentationOptions {
+  readonly localization?: Localization | undefined;
   readonly state: readonly [ActiveEditorChromeState, ActiveEditorStyleSession];
   readonly activeTool: EditorTool;
   readonly leftHanded: boolean;
@@ -142,6 +146,7 @@ export function createActiveEditorChromeProps({
 }: ChromePresentationOptions): InkbookEditorChromeProps {
   const style = styles.presentation(activeTool);
   return createChromeProps({
+    localization: styles.localization,
     layout: chromeState.layout,
     ...props,
     selectionArea: style.selectionArea,

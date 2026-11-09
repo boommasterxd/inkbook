@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "./warnings";
 import type {
   ArrowNodeV1,
   ColorV1,
@@ -42,11 +43,11 @@ const SEMI_COLORS: Readonly<Record<string, string>> = {
 
 const SIZES: Readonly<Record<string, number>> = { s: 2, m: 3.5, l: 5, xl: 10 };
 
-function color(value: unknown, warnings: Set<string>): ColorV1 {
+function color(value: unknown, warnings: Set<ObsidianInkWarningCode>): ColorV1 {
   const name = text(value, "Tldraw color");
   if (name === "black") return { type: "theme-text" };
   if (COLORS[name] !== undefined) {
-    warnings.add("Legacy palette colors were frozen to tldraw's light palette.");
+    warnings.add("legacyPaletteFrozen");
     return sourceColor(COLORS[name], warnings);
   }
   return sourceColor(name, warnings);
@@ -65,18 +66,18 @@ export function tldrawStrokeStyle(
   props: SourceRecord,
   opacity: unknown,
   highlighter: boolean,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
 ): StrokeStyleV1 {
   if (props.fill !== undefined && props.fill !== "none")
     unsupported("Filled freehand shapes cannot be imported faithfully.");
   if (props.dash !== undefined && props.dash !== "draw" && props.dash !== "solid") {
     unsupported("Dashed freehand strokes cannot be imported faithfully.");
   }
-  warnings.add("Legacy stroke rendering uses Inkbook's native brush.");
+  warnings.add("legacyBrush");
   const width = highlighter ? size(props) * 8 : 1 + size(props) * 1.5;
   return {
     color: color(props.color, warnings),
-    width: nearest(width, PEN_WIDTHS, warnings, "Stroke width"),
+    width: nearest(width, PEN_WIDTHS, warnings, "strokeWidth"),
     opacity: unit(opacity, 1) * (highlighter ? 0.35 : 1),
     pressureEnabled: !highlighter,
     smoothing: 0.5,
@@ -86,21 +87,15 @@ export function tldrawStrokeStyle(
 export function tldrawOutlineStyle(
   props: SourceRecord,
   opacity: unknown,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
 ): OutlineStyleV1 {
   const dash = props.dash ?? "solid";
   if (typeof dash !== "string" || !["solid", "draw", "dashed", "dotted"].includes(dash))
     unsupported("Unsupported tldraw outline style.");
-  if (dash === "draw")
-    warnings.add("Hand-drawn shape outlines were converted to native solid outlines.");
+  if (dash === "draw") warnings.add("handDrawnOutline");
   return {
     outlineColor: color(props.color, warnings),
-    outlineWidth: nearest(
-      size(props),
-      [1, 2, 4, 8, 12, 14, 22] as const,
-      warnings,
-      "Outline width",
-    ),
+    outlineWidth: nearest(size(props), [1, 2, 4, 8, 12, 14, 22] as const, warnings, "outlineWidth"),
     outlineOpacity: unit(opacity, 1),
     outlineStyle: dash === "dashed" || dash === "dotted" ? dash : "solid",
   };
@@ -109,12 +104,12 @@ export function tldrawOutlineStyle(
 export function tldrawShapeStyle(
   props: SourceRecord,
   opacity: unknown,
-  warnings: Set<string>,
+  warnings: Set<ObsidianInkWarningCode>,
 ): ShapeStyleV1 {
   const fill = props.fill ?? "none";
   if (typeof fill !== "string" || !["none", "solid", "semi", "pattern"].includes(fill))
     unsupported("Unsupported tldraw shape fill.");
-  if (fill === "pattern") warnings.add("Pattern fills were converted to native solid fills.");
+  if (fill === "pattern") warnings.add("patternFill");
   return {
     ...tldrawOutlineStyle(props, opacity, warnings),
     fillColor:

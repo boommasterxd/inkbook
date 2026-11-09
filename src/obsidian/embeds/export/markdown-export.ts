@@ -1,4 +1,6 @@
 import { MarkdownRenderChild, type MarkdownPostProcessorContext } from "obsidian";
+import { presentation } from "../../../domain/localization/locales/en/presentation";
+import type { Localization } from "../../../domain/localization";
 import type { EmbedIntegrationPorts } from "../presentation/presentation-port";
 import { collectExportBlocks, correlateExportCandidates } from "./export-candidates";
 import { createPreparedStaticExportSvg, createStaticExportSvg } from "./static-export-svg";
@@ -19,6 +21,14 @@ import type { StaticExportFragment } from "../../../persistence/export/static-ex
 import type { LoadedPreviewSvg } from "../preview/safe-preview-svg";
 import { hasCanonicalInkbookRootMarker } from "../preview/document-recognition";
 import type { NativePdfOptions } from "./native-pdf-options";
+
+function exportDescription(description: string | undefined, localization?: Localization): string {
+  return (
+    description ??
+    localization?.t("presentation.export.description") ??
+    presentation["presentation.export.description"]
+  );
+}
 
 interface ExportResource {
   readonly drawing: ExportDrawing;
@@ -245,7 +255,7 @@ export async function renderStaticMarkdownEmbeds(
       if (resource === undefined || resource === false) continue;
       const options = {
         colorScheme: owner.colorScheme,
-        ...(candidate.description === undefined ? {} : { description: candidate.description }),
+        description: exportDescription(candidate.description, ports.localization),
         ...(candidate.width === undefined ? {} : { width: candidate.width }),
       };
       const pages = await createExportPages(root.ownerDocument, resource.drawing, {

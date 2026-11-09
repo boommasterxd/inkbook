@@ -74,6 +74,7 @@ describe("Imported style preservation and explicit approximations", () => {
     expect(imported.warnings).toContain(
       "Rounded rectangles were converted to Inkbook rectangles with square corners.",
     );
+    expect(imported.warningCodes).toContain("squareCorners");
     const none = await convertObsidianInk(
       inkSvg(canvasSnapshot({ strokes: [], writingBackgroundStyle: "none" })),
       options(),

@@ -1,3 +1,4 @@
+import { Localization } from "../../domain/localization";
 import { MarkdownView, type Plugin, type Workspace } from "obsidian";
 
 import type { ObsidianWorkspaceRuntime } from "../embeds/workspace/workspace-runtime";
@@ -18,6 +19,7 @@ export function registerDocumentStatusBar(
   plugin: Plugin,
   runtime: ObsidianWorkspaceRuntime,
   settings: InkbookSettingsStore,
+  localization = new Localization(),
 ): () => void {
   const item = plugin.addStatusBarItem();
   item.classList.add("inkbook-status-bar-item");
@@ -25,6 +27,7 @@ export function registerDocumentStatusBar(
     item,
     runtime.documentStatus,
     runtime.getMotionPreference,
+    localization,
   );
   let disposed = false;
   const refreshPane = (): void => {

@@ -62,7 +62,7 @@ export class SettingDefinitionRenderer {
       setting.setName(definition.name);
       setting.settingEl.dataset.inkbookSettingIdentity = JSON.stringify([
         groupIdentity,
-        definition.control?.key ?? definition.name,
+        definition.control?.key ?? index,
       ]);
       if (definition.desc !== undefined) setting.setDesc(definition.desc);
       if (definition.render !== undefined) {
@@ -83,7 +83,7 @@ export class SettingDefinitionRenderer {
   #renderAction(setting: Setting, definition: SettingDefinition, index: number): void {
     if (definition.action === undefined) return;
     const element = setting.settingEl;
-    const writes = new SettingsWriteFeedback();
+    const writes = new SettingsWriteFeedback(this.#host.settingsFeedback?.t);
     const error = createSettingsWriteError(
       element,
       this.#host.settingsFeedback ?? {

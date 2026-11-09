@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "./warnings";
 import { FILE_SCHEMA_LIMITS, PAGE_MARGIN } from "../../../domain/schema/constants";
 import type { InkElementV1, PointV1, StrokeElementV1 } from "../../../domain/schema/types";
 import { outlineStyle, sourceColor, strokeStyle } from "./source-style";
@@ -24,7 +25,7 @@ export interface CanvasContext {
   readonly styles: unknown[];
   readonly timeBase: number;
   readonly timestamp: number;
-  readonly warnings: Set<string>;
+  readonly warnings: Set<ObsidianInkWarningCode>;
   readonly pointBudget: { remaining: number };
 }
 
@@ -62,9 +63,7 @@ export function* canvasStrokeSteps(
         context.timeBase
       : optionalNumber(value.startedAt, context.timestamp, "Stroke start");
   if (value.extra !== undefined || value.finishedAt !== undefined || value.end !== undefined) {
-    context.warnings.add(
-      "Stroke timing and source-specific metadata beyond creation time are not retained.",
-    );
+    context.warnings.add("strokeMetadata");
   }
   return {
     kind: "stroke",
@@ -194,9 +193,7 @@ export function canvasShape(
   if (kind !== "rect" && kind !== "ellipse") unsupported(`Unsupported canvas shape type: ${kind}.`);
   const box = shapeBox(value, kind, translation);
   if (optionalNumber(value.cornerRadius, 0, "Corner radius") !== 0) {
-    context.warnings.add(
-      "Rounded rectangles were converted to Inkbook rectangles with square corners.",
-    );
+    context.warnings.add("squareCorners");
   }
   return {
     ...base,

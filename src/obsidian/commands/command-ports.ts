@@ -4,6 +4,7 @@ export type InkbookCommandAction = "copy-embed" | "delete-embed" | "erase-all" |
 
 export interface CommandRegistrationPort {
   addCommand(command: Command): Command;
+  register?(cleanup: () => void): void;
 }
 
 export interface ContextualCommandRuntimePort {

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
+import { Localization } from "../../../../src/domain/localization";
 import type { App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
@@ -215,4 +216,29 @@ describe("animated action ownership", () => {
       }
     },
   );
+});
+
+describe("action dialog localization", () => {
+  it("keeps the focused action and choice while changing the mounted language", async () => {
+    const localization = new Localization();
+    const result = confirmInkbookAction(app(), {
+      localization,
+      title: () => localization.t("host.dialog.deleteTitle"),
+      description: () => localization.t("host.dialog.deleteShared"),
+      confirmLabel: () => localization.t("host.dialog.deleteConfirm"),
+    });
+    const confirm = button("Delete embed");
+    confirm.focus();
+    localization.setLanguage("de");
+    expect(document.activeElement).toBe(confirm);
+    expect(button("Einbettung löschen")).toBe(confirm);
+    expect(button("Abbrechen")).toBeDefined();
+    expect(document.querySelector(".inkbook-action-dialog")?.getAttribute("aria-label")).toBe(
+      "Einbettung löschen?",
+    );
+    confirm.click();
+    await expect(result).resolves.toBe(true);
+    localization.setLanguage("en");
+    expect(confirm.textContent).toBe("Einbettung löschen");
+  });
 });

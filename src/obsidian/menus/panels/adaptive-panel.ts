@@ -1,3 +1,5 @@
+import { bindPanelLocale } from "./panel-localization";
+import type { Localization } from "../../../domain/localization";
 import { Component, Platform, type Keymap } from "obsidian";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { installMenuEscapeScope } from "../menu-escape-scope";
@@ -26,6 +28,7 @@ export type AdaptivePanelCloseMode = "animated" | "handoff" | "immediate";
 type AdaptivePanelKind = "background" | "style" | "dialog" | "menu";
 
 export interface AdaptivePanelOptions {
+  readonly localization?: Localization | undefined;
   readonly workScheduler: WorkScheduler;
   readonly anchor: HTMLElement;
   readonly motionAnchor?: HTMLElement;
@@ -43,6 +46,7 @@ export interface AdaptivePanelOptions {
   readonly onClosing?: () => void;
   readonly kind: AdaptivePanelKind;
   readonly label: string;
+  readonly readLabel?: () => string;
   readonly onBack?: () => void;
   readonly onClosed: () => void;
   readonly ownerDocument: Document;
@@ -52,6 +56,7 @@ export interface AdaptivePanelOptions {
 
 export class AdaptivePanelSession extends Component {
   readonly #backdrop: HTMLElement;
+  readonly #localeUpdates: (() => void)[] = [];
   #closed = false;
   readonly #content: HTMLElement;
   readonly #durationMs: number;
@@ -111,6 +116,7 @@ export class AdaptivePanelSession extends Component {
     this.#surface.dataset.presence = "entering";
     this.#surface.dataset.state = "opening";
     this.#surface.setAttribute("aria-label", options.label);
+    this.register(bindPanelLocale(this.#surface, options, this.#localeUpdates));
     this.#surface.setAttribute("role", "dialog");
     this.#surface.tabIndex = -1;
     if (Platform.isPhone) this.#surface.setAttribute("aria-modal", "true");
@@ -134,11 +140,18 @@ export class AdaptivePanelSession extends Component {
     });
     this.#layout = new AdaptivePanelLayout(this.#surface, grabber, this.#scroll);
     if (options.onBack !== undefined)
-      createAdaptivePanelHeader(this.#scroll, options.onBack, options.renderIcon);
+      createAdaptivePanelHeader(
+        this.#scroll,
+        options.onBack,
+        options.renderIcon,
+        options.localization,
+        (update) => this.#localeUpdates.push(update),
+      );
     this.#content = this.#scroll.createDiv({ cls: "inkbook-adaptive-panel-content" });
     this.#content.append(
       options.createContent({
         mutateLayout: (update) => this.mutateLayout(update),
+        registerLocaleUpdate: (update) => this.#localeUpdates.push(update),
       }),
     );
     this.#configureTooltips();
@@ -180,6 +193,7 @@ export class AdaptivePanelSession extends Component {
   #createPages(options: AdaptivePanelOptions): PhoneSheetPages | undefined {
     if (!Platform.isPhone) return undefined;
     return new PhoneSheetPages({
+      localization: options.localization,
       scroll: this.#scroll,
       rootContent: this.#content,
       observeContent: (content) => {
@@ -189,7 +203,10 @@ export class AdaptivePanelSession extends Component {
       refreshFeedback: () => this.#refreshFeedback(),
       surface: this.#surface,
       layer: this.#layer,
-      lifecycle: { mutateLayout: (update) => this.mutateLayout(update) },
+      lifecycle: {
+        mutateLayout: (update) => this.mutateLayout(update),
+        registerLocaleUpdate: (update) => this.#localeUpdates.push(update),
+      },
       position: () => this.#position(),
       renderIcon: options.renderIcon,
       layout: this.#layout,

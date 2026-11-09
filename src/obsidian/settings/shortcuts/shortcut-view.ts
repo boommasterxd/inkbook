@@ -22,6 +22,7 @@ export class ShortcutSettingsView {
   readonly #referenceView: ShortcutReferenceView;
   readonly #store: InkbookSettingsStore;
   readonly #unsubscribe: () => void;
+  readonly #unsubscribeLocale: () => void;
   #disposed = false;
   #panelMotions: SettingsPanelMotion[] = [];
   #disposeDisclosures: Array<() => void> = [];
@@ -39,7 +40,7 @@ export class ShortcutSettingsView {
     this.#viewState = viewState;
     if (workScheduler === undefined) throw new Error("Shortcut settings require a work scheduler.");
     this.#recordingView = new ShortcutRecordingView(container, store, hostHotkeys, keymap);
-    this.#referenceView = new ShortcutReferenceView(hostHotkeys);
+    this.#referenceView = new ShortcutReferenceView(hostHotkeys, store.localization.t);
     let shortcuts = JSON.stringify(store.getDeviceSettings().keyboardShortcuts);
     this.#unsubscribe = store.subscribeDeviceSettings((settings) => {
       const next = JSON.stringify(settings.keyboardShortcuts);
@@ -47,6 +48,7 @@ export class ShortcutSettingsView {
       shortcuts = next;
       this.render();
     });
+    this.#unsubscribeLocale = store.localization.subscribe(() => this.render());
     this.render();
   }
 
@@ -54,6 +56,7 @@ export class ShortcutSettingsView {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#unsubscribe();
+    this.#unsubscribeLocale();
     this.#recordingView.dispose();
     this.#disposePanelMotions();
     this.#container.replaceChildren();
@@ -71,8 +74,8 @@ export class ShortcutSettingsView {
     this.#container.classList.add("inkbook-shortcuts-view");
     const canvas = this.#renderSection(
       "canvas",
-      "Canvas shortcuts",
-      "Configure device-local bindings used while an Inkbook canvas is active.",
+      this.#store.localization.t("settings.shortcuts.canvas"),
+      this.#store.localization.t("settings.shortcuts.canvasHelp"),
     );
     canvas.classList.add("inkbook-shortcut-section-content-canvas");
     this.#recordingView.renderActions(canvas.createDiv({ cls: "inkbook-shortcuts-list" }));
@@ -128,8 +131,8 @@ export class ShortcutSettingsView {
   #renderFixedSection(): void {
     const content = this.#renderReferenceSection(
       "fixed",
-      "Fixed system shortcuts",
-      "Review protected editing and accessibility bindings that remain consistent.",
+      this.#store.localization.t("settings.shortcuts.fixed"),
+      this.#store.localization.t("settings.shortcuts.fixedHelp"),
     );
     this.#referenceView.renderFixed(content);
   }
@@ -137,8 +140,8 @@ export class ShortcutSettingsView {
   #renderGestureSection(): void {
     const content = this.#renderReferenceSection(
       "gestures",
-      "Pointer and gesture modifiers",
-      "Review modifier keys that temporarily change canvas gestures.",
+      this.#store.localization.t("settings.shortcuts.gestures"),
+      this.#store.localization.t("settings.shortcuts.gesturesHelp"),
     );
     this.#referenceView.renderGestures(content);
   }
@@ -146,8 +149,8 @@ export class ShortcutSettingsView {
   #renderCommandSection(): void {
     const content = this.#renderReferenceSection(
       "commands",
-      "Obsidian commands",
-      "Assign these plugin commands from Obsidian's Hotkeys settings.",
+      this.#store.localization.t("settings.shortcuts.commands"),
+      this.#store.localization.t("settings.shortcuts.commandsHelp"),
     );
     this.#referenceView.renderCommands(content);
   }

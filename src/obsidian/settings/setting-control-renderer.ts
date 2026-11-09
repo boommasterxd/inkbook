@@ -25,17 +25,17 @@ export function nativeSettingDefinitions<K extends string>(
   host: SettingsControlHost,
   lifetime?: AbortSignal,
 ): SettingDefinitionItem<K>[] {
-  return definitions.map((definition) => {
+  return definitions.map((definition, index) => {
     if ("type" in definition && definition.type !== "page" && definition.items !== undefined) {
       return {
         ...definition,
-        items: definition.items.map((item) =>
-          nativeGroupItem(item, host, lifetime, settingsGroupIdentity(definition)),
+        items: definition.items.map((item, itemIndex) =>
+          nativeGroupItem(item, host, lifetime, settingsGroupIdentity(definition), itemIndex),
         ),
       };
     }
     if ("type" in definition && definition.type !== "page") return definition;
-    return nativeGroupItem(definition, host, lifetime, "root");
+    return nativeGroupItem(definition, host, lifetime, "root", index);
   });
 }
 
@@ -44,6 +44,7 @@ function nativeGroupItem<K extends string>(
   host: SettingsControlHost,
   lifetime: AbortSignal | undefined,
   groupIdentity: string,
+  index: number,
 ): SettingGroupItem<K> {
   if ("type" in definition) {
     return definition.items === undefined
@@ -61,7 +62,7 @@ function nativeGroupItem<K extends string>(
     render: (setting, group) => {
       setting.settingEl.dataset.inkbookSettingIdentity = JSON.stringify([
         groupIdentity,
-        definition.control?.key ?? definition.name,
+        definition.control?.key ?? index,
       ]);
       return render(setting, group);
     },
@@ -107,7 +108,7 @@ export function renderSettingControl(
 ): () => void {
   const control = definition.control;
   const options = host.settingsFeedback ?? { readMotion: () => "system" as const };
-  const writes = new SettingsWriteFeedback();
+  const writes = new SettingsWriteFeedback(options.t);
   const error = createSettingsWriteError(setting.settingEl, options);
   let restore = (): void => undefined;
   let releaseInput = (): void => undefined;

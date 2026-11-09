@@ -1,3 +1,4 @@
+import { Localization, type Translator } from "../../domain/localization";
 import type { Command, Menu, Editor, MarkdownFileInfo, MarkdownView } from "obsidian";
 
 import type { InkbookCommandAction } from "./command-ports";
@@ -10,24 +11,30 @@ import type {
 interface ContextualCommandDefinition {
   readonly action: InkbookCommandAction;
   readonly id: string;
-  readonly name: string;
+  readonly name: Parameters<Translator>[0];
   readonly icon: string;
 }
 
 const CONTEXTUAL_COMMANDS: readonly ContextualCommandDefinition[] = [
-  { action: "lock", id: "lock-active-embed", name: "Lock active handwriting embed", icon: "lock" },
-  { action: "copy-embed", id: "copy-embed", name: "Copy active embed", icon: "copy" },
-  { action: "erase-all", id: "erase-all", name: "Erase all annotations", icon: "eraser" },
-  { action: "delete-embed", id: "delete-embed", name: "Delete active embed", icon: "trash-2" },
+  { action: "lock", id: "lock-active-embed", name: "host.command.lock", icon: "lock" },
+  { action: "copy-embed", id: "copy-embed", name: "host.command.copy-embed", icon: "copy" },
+  { action: "erase-all", id: "erase-all", name: "host.command.erase-all", icon: "eraser" },
+  {
+    action: "delete-embed",
+    id: "delete-embed",
+    name: "host.command.delete-embed",
+    icon: "trash-2",
+  },
 ];
 
 function contextualCommand(
   definition: ContextualCommandDefinition,
   runtime: ContextualCommandRuntimePort,
+  t: Translator,
 ): Command {
   return {
     id: definition.id,
-    name: definition.name,
+    name: t(definition.name),
     icon: definition.icon,
     checkCallback: (checking) => {
       if (!runtime.isAvailable(definition.action)) return false;
@@ -45,10 +52,13 @@ export interface InkbookInsertionCommand extends Command {
   ): boolean;
 }
 
-function insertionCommand(insertion: EditorInsertionCommandPort): InkbookInsertionCommand {
+function insertionCommand(
+  insertion: EditorInsertionCommandPort,
+  t: Translator,
+): InkbookInsertionCommand {
   return {
     id: "insert-handwriting",
-    name: "Insert handwriting embed",
+    name: t("host.command.insert"),
     icon: "signature",
     editorCheckCallback: (checking, editor, context) => {
       const sourcePath = context.file?.path;
@@ -64,12 +74,23 @@ export function registerInkbookCommands(
   host: CommandRegistrationPort,
   runtime: ContextualCommandRuntimePort,
   insertion: EditorInsertionCommandPort,
+  localization = new Localization(),
 ): InkbookInsertionCommand {
+  const registrations: Array<() => void> = [];
   for (const definition of CONTEXTUAL_COMMANDS) {
-    host.addCommand(contextualCommand(definition, runtime));
+    const command = contextualCommand(definition, runtime, localization.t);
+    registrations.push(
+      registerLocalizedCommand(host, command, () => localization.t(definition.name)),
+    );
   }
-  const command = insertionCommand(insertion);
-  host.addCommand(command);
+  const command = insertionCommand(insertion, localization.t);
+  registrations.push(
+    registerLocalizedCommand(host, command, () => localization.t("host.command.insert")),
+  );
+  const unsubscribe = localization.subscribe(() => {
+    for (const update of registrations) update();
+  });
+  host.register?.(unsubscribe);
   return command;
 }
 
@@ -93,4 +114,21 @@ export function addInsertionContextMenuItem(
         command.editorCheckCallback(false, editor, context);
       });
   });
+}
+
+function registerLocalizedCommand(
+  host: CommandRegistrationPort,
+  command: Command,
+  readName: () => string,
+): () => void {
+  const originalName = command.name;
+  const registered = host.addCommand(command);
+  const prefix = registered.name.endsWith(originalName)
+    ? registered.name.slice(0, -originalName.length)
+    : "";
+  return () => {
+    const name = readName();
+    command.name = name;
+    registered.name = `${prefix}${name}`;
+  };
 }

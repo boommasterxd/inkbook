@@ -1,3 +1,4 @@
+import type { ObsidianInkWarningCode } from "./warnings";
 import { FILE_SCHEMA_LIMITS, PAGE_MARGIN } from "../../../domain/schema/constants";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/types";
 import type { SourceStrokeCurveSegment } from "./source-stroke-curve";
@@ -25,7 +26,7 @@ import {
 
 export interface TldrawElementContext {
   readonly timestamp: number;
-  readonly warnings: Set<string>;
+  readonly warnings: Set<ObsidianInkWarningCode>;
   readonly byId: ReadonlyMap<string, SourceRecord>;
   readonly pointBudget: { remaining: number };
 }
@@ -55,8 +56,7 @@ export function* tldrawElementSteps(
     const sourcePoints = yield* drawPointsSteps(props);
     const points = yield* legacyStrokePointsSteps(sourcePoints, context.pointBudget.remaining);
     context.pointBudget.remaining -= points.length / 3;
-    if (props.isClosed === true)
-      context.warnings.add("Closed freehand paths use Inkbook's native open stroke caps.");
+    if (props.isClosed === true) context.warnings.add("openStrokeCaps");
     return {
       ...base,
       kind: "stroke",
@@ -189,7 +189,7 @@ function tldrawLinear(
       x: (start.x + end.x) / 2 + ((end.y - start.y) / length) * bendValue,
       y: (start.y + end.y) / 2 - ((end.x - start.x) / length) * bendValue,
     };
-    context.warnings.add("Curved arrows use Inkbook's native bend geometry.");
+    context.warnings.add("arrowBend");
   }
   return {
     ...base,
@@ -221,7 +221,7 @@ function arrowTerminal(
   const width = finite(props.w, "Bound shape width");
   const height =
     finite(props.h, "Bound shape height") + optionalNumber(props.growY, 0, "Bound shape growth");
-  context.warnings.add("Legacy arrow bindings were detached at their saved normalized anchors.");
+  context.warnings.add("arrowBindingsDetached");
   return worldPoint(
     { x: width * anchor.x, y: height * anchor.y },
     shapeTransform(target, context.byId),

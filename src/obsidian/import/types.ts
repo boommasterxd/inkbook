@@ -1,3 +1,5 @@
+import type { ObsidianInkWarningCode } from "../../persistence/import/obsidian-ink/warnings";
+import type { ImportDiagnostic } from "./diagnostics";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 export interface InkImportFile {
@@ -25,7 +27,11 @@ export interface InkImportPorts {
       readonly signal?: AbortSignal;
       readonly legacyWriting: boolean;
     },
-  ): Promise<{ readonly svg: string; readonly warnings: readonly string[] }>;
+  ): Promise<{
+    readonly svg: string;
+    readonly warnings: readonly string[];
+    readonly warningCodes?: readonly ObsidianInkWarningCode[];
+  }>;
   createRunId(): string;
   now(): string;
 }
@@ -45,6 +51,7 @@ export interface InkImportSource {
   readonly legacyWriting: boolean;
   readonly references: readonly InkImportReference[];
   readonly warnings: readonly string[];
+  readonly warningCodes?: readonly ObsidianInkWarningCode[];
 }
 
 export interface InkImportPreview {
@@ -57,6 +64,7 @@ export interface InkImportPreview {
 }
 
 export interface InkImportScanFinding {
+  readonly diagnostic?: ImportDiagnostic;
   readonly original: string;
   readonly message: string;
   readonly sources: readonly string[];
@@ -94,6 +102,7 @@ export interface InkImportSourceRecord {
   readonly targetPath: string;
   readonly outputHash: string;
   readonly warnings: readonly string[];
+  readonly warningCodes?: readonly ObsidianInkWarningCode[];
   status: "intent" | "created" | "conflict" | "cleaned";
   cleanupIntent?: boolean;
 }
@@ -106,6 +115,7 @@ export interface InkImportJournal {
   readonly sources: InkImportSourceRecord[];
   readonly notes: InkImportNoteRecord[];
   readonly issues: string[];
+  issueDetails?: (ImportDiagnostic | null)[];
   readonly unreadable?: true;
 }
 

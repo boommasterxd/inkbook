@@ -1,3 +1,5 @@
+import type { Localization, MessageKey } from "../../../domain/localization";
+import { bindElementLanguage } from "../../../rendering/localization/element-language";
 import { Setting, type App } from "obsidian";
 
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
@@ -21,8 +23,10 @@ import {
 } from "./import-view";
 import { renderImportStatus, type PendingImportOperation } from "./import-status";
 import { renderImportFailure } from "./import-failure";
+import type { ImportViewState } from "./import-findings";
 
 export interface InkImportDialogOptions {
+  readonly localization: Localization;
   readonly service: Pick<
     ObsidianInkImportService,
     "scan" | "apply" | "history" | "undo" | "cleanup"
@@ -49,6 +53,10 @@ export class InkImportDialog extends InkbookModal {
   #releaseMotion: (() => void) | undefined;
   #returnFocus: HTMLElement | undefined;
   #closedNotified = false;
+  #renderView: (() => void) | undefined;
+  #viewState: ImportViewState = { findings: new Map() };
+  #releaseLocalization: (() => void) | undefined;
+  #statusKey: MessageKey | undefined;
 
   public constructor(app: App, options: InkImportDialogOptions) {
     super(app, options.readMotion, options.workScheduler, options.observeMotion);
@@ -75,7 +83,7 @@ export class InkImportDialog extends InkbookModal {
 
   public override onOpen(): void {
     super.onOpen();
-    this.setTitle("Import from Obsidian Ink");
+    this.setTitle(this.#options.localization.t("import.title"));
     this.containerEl.classList.add("inkbook-import-container");
     this.modalEl.classList.remove("inkbook-action-dialog");
     this.modalEl.classList.add("inkbook-settings-modal", "inkbook-import-dialog");
@@ -103,6 +111,12 @@ export class InkImportDialog extends InkbookModal {
     );
     if (this.#options.initialJournal === undefined) this.#entry();
     else this.#journal(this.#options.initialJournal);
+    const releaseLanguage = bindElementLanguage(this.modalEl, this.#options.localization);
+    const unsubscribe = this.#options.localization.subscribe(this.#refreshLanguage);
+    this.#releaseLocalization = () => {
+      unsubscribe();
+      releaseLanguage();
+    };
     this.#options.signal?.addEventListener("abort", this.#ownerClosed, {
       signal: this.#lifetime.signal,
     });
@@ -123,6 +137,9 @@ export class InkImportDialog extends InkbookModal {
     this.#feedback?.();
     this.#finishViewMotion();
     this.#releaseMotion?.();
+    this.#releaseLocalization?.();
+    this.#renderView = undefined;
+    this.#viewState = { findings: new Map() };
     super.onClose();
     if (this.#returnFocus?.isConnected === true) this.#returnFocus.focus();
     this.#notifyClosed();
@@ -138,6 +155,8 @@ export class InkImportDialog extends InkbookModal {
 
   #context(): ImportViewContext {
     return {
+      localization: this.#options.localization,
+      state: this.#viewState,
       mutate: this.#mutatePage,
       readMotion: this.#options.readMotion,
       ...(this.#options.observeMotion === undefined
@@ -166,18 +185,23 @@ export class InkImportDialog extends InkbookModal {
   };
 
   #entry(): void {
+    this.#statusKey = undefined;
     this.#status.textContent = "";
     this.#view(() => {
       renderImportEntry(this.#body, this.#context());
-      this.#button("Close", () => this.close());
-      this.#button("Scan vault", () => this.#scan(), true).autofocus = true;
+      this.#button(this.#options.localization.t("import.close"), () => this.close());
+      this.#button(
+        this.#options.localization.t("import.scan"),
+        () => this.#scan(),
+        true,
+      ).autofocus = true;
     });
     this.#actions.querySelector<HTMLButtonElement>(".mod-cta")?.focus();
   }
 
   #scan(): void {
     void this.#run(
-      "Scanning vault…",
+      "import.scanPending",
       (signal) => this.#options.service.scan(signal),
       (preview) => {
         this.#view(() => {
@@ -189,26 +213,26 @@ export class InkImportDialog extends InkbookModal {
               this.#actions.querySelector<HTMLButtonElement>(".mod-cta")!.disabled = count === 0;
             },
           );
-          this.#button("Back", () => this.#entry());
+          this.#button(this.#options.localization.t("import.back"), () => this.#entry());
           if (preview.sources.length > 0)
             this.#button(
-              "Import handwriting",
+              this.#options.localization.t("import.import"),
               () => {
                 const selected = selectedPreview();
                 if (selected.sources.length > 0) this.#apply(selected);
               },
               true,
-            );
-          else this.#button("Close", () => this.close(), true);
+            ).disabled = (this.#viewState.selection?.size ?? preview.sources.length) === 0;
+          else this.#button(this.#options.localization.t("import.close"), () => this.close(), true);
         });
-        this.#status.textContent = "Scan complete. Review the preview before importing.";
+        this.#announce("import.scanComplete");
       },
     );
   }
 
   #apply(preview: InkImportPreview): void {
     void this.#run(
-      "Importing handwriting…",
+      "import.importPending",
       (signal) => this.#options.service.apply(preview, signal),
       (result) => this.#result(result),
       "import",
@@ -220,19 +244,19 @@ export class InkImportDialog extends InkbookModal {
       renderImportJournal(this.#body, journal, this.#context());
       if (journal.status !== "undone" && journal.unreadable !== true) {
         this.#recoveryAction(
-          "Obsidian Ink embeds",
-          "Undo import",
-          "Restore Obsidian Ink embeds. Keep your Inkbook files and later edits.",
+          this.#options.localization.t("import.embeds"),
+          this.#options.localization.t("import.undo"),
+          this.#options.localization.t("import.undoDescription"),
           () => this.#confirm(journal, "undo"),
         );
         this.#recoveryAction(
-          "Original source files",
-          "Clean up originals",
-          "Move verified, unused original SVGs to trash. Recovery backups stay in the vault.",
+          this.#options.localization.t("import.originals"),
+          this.#options.localization.t("import.cleanup"),
+          this.#options.localization.t("import.cleanupDescription"),
           () => this.#confirm(journal, "cleanup"),
         );
       }
-      this.#button("Close", () => this.close());
+      this.#button(this.#options.localization.t("import.close"), () => this.close());
     });
     this.#focusHeading();
   }
@@ -247,20 +271,25 @@ export class InkImportDialog extends InkbookModal {
   #confirm(journal: InkImportJournal, action: "undo" | "cleanup"): void {
     this.#view(() => {
       this.#body.createEl("h3", {
-        text: action === "undo" ? "Restore Obsidian Ink embeds?" : "Move original SVGs to trash?",
+        text:
+          action === "undo"
+            ? this.#options.localization.t("import.undoConfirm")
+            : this.#options.localization.t("import.cleanupConfirm"),
       });
       this.#body.createEl("p", {
         text:
           action === "undo"
-            ? "Restore the original note references and any originals removed by this importer. Your Inkbook files are kept, including later edits. Changed notes are checked for conflicts."
-            : "Only unchanged original SVGs with no remaining references are moved to Obsidian trash. Your Inkbook files and recovery backups are kept, so backup storage is not freed.",
+            ? this.#options.localization.t("import.undoConfirmDescription")
+            : this.#options.localization.t("import.cleanupConfirmDescription"),
       });
-      this.#button("Cancel", () => this.#journal(journal));
+      this.#button(this.#options.localization.t("import.cancel"), () => this.#journal(journal));
       const confirm = this.#button(
-        action === "undo" ? "Restore embeds" : "Move to trash",
+        action === "undo"
+          ? this.#options.localization.t("import.restore")
+          : this.#options.localization.t("import.trash"),
         () => {
           void this.#run(
-            action === "undo" ? "Restoring Obsidian Ink embeds…" : "Checking original files…",
+            action === "undo" ? "import.undoPending" : "import.cleanupPending",
             (signal) => this.#options.service[action](journal.id, signal),
             (result) => this.#result(result, action),
             action,
@@ -276,19 +305,40 @@ export class InkImportDialog extends InkbookModal {
   #result(result: InkImportResult, operation: ImportOperation = "import"): void {
     this.#view(() => {
       renderImportResult(this.#body, result, this.#context(), operation);
-      this.#button("View import", () => this.#journal(result.journal));
-      this.#button("Done", () => this.close(), true);
+      this.#button(this.#options.localization.t("import.view"), () =>
+        this.#journal(result.journal),
+      );
+      this.#button(this.#options.localization.t("import.done"), () => this.close(), true);
     });
-    this.#status.textContent = result.cancelled
-      ? "Stopped. Completed changes are recorded in import history."
-      : "Operation finished. Review the result and any conflicts.";
+    this.#announce(result.cancelled ? "import.stoppedStatus" : "import.finishedStatus");
   }
+
+  #announce(key: MessageKey): void {
+    this.#statusKey = key;
+    this.#status.textContent = this.#options.localization.t(key);
+  }
+
+  #refreshLanguage = (): void => {
+    if (this.closed || this.closing || this.#renderView === undefined) return;
+    const controls = [...this.contentEl.querySelectorAll<HTMLElement>("button, input, h3")];
+    const focused = controls.indexOf(this.contentEl.ownerDocument.activeElement as HTMLElement);
+    const scroll = this.#body.scrollTop;
+    this.setTitle(this.#options.localization.t("import.title"));
+    this.#view(this.#renderView, true);
+    if (this.#statusKey !== undefined) this.#announce(this.#statusKey);
+    this.#body.scrollTop = scroll;
+    const target = this.contentEl.querySelectorAll<HTMLElement>("button, input, h3")[focused];
+    if (target?.tagName === "H3") target.tabIndex = -1;
+    target?.focus({ preventScroll: true });
+  };
 
   #disposeView(): void {
     for (const dispose of this.#viewDisposers.splice(0)) dispose();
   }
 
-  #view(render: () => void): void {
+  #view(render: () => void, preserve = false): void {
+    this.#renderView = render;
+    if (!preserve) this.#viewState = { findings: new Map() };
     this.#finishViewMotion();
     this.#mutatePage(() => {
       this.#disposeView();
@@ -319,21 +369,34 @@ export class InkImportDialog extends InkbookModal {
     target.scrollIntoView({ block: "nearest", behavior: "instant" });
   }
 
-  #pending(status: string, controller: AbortController, operation: PendingImportOperation): void {
-    this.#status.textContent = status;
+  #pending(
+    status: MessageKey,
+    controller: AbortController,
+    operation: PendingImportOperation,
+  ): void {
+    this.#announce(status);
     this.#view(() => {
-      const pending = renderImportStatus(this.#body, status, operation, this.#context());
-      this.#button("Stop", () => {
+      const pending = renderImportStatus(
+        this.#body,
+        this.#options.localization.t(status),
+        operation,
+        this.#context(),
+      );
+      const button = this.#button(this.#options.localization.t("import.stop"), () => {
         controller.abort();
-        this.#status.textContent = "Stopping after the current safe step…";
+        this.#announce("import.stoppingStatus");
         pending.stop();
         this.#actions.querySelector<HTMLButtonElement>("button")!.disabled = true;
-      }).focus();
+      });
+      if (controller.signal.aborted) {
+        pending.stop();
+        button.disabled = true;
+      } else button.focus();
     });
   }
 
   async #run<T>(
-    status: string,
+    status: MessageKey,
     operation: (signal: AbortSignal) => Promise<T>,
     complete: (value: T) => void,
     kind: PendingImportOperation = "scan",
@@ -360,10 +423,17 @@ export class InkImportDialog extends InkbookModal {
   }
 
   #failure(cancelled: boolean, operation: PendingImportOperation, error: unknown): void {
+    this.#statusKey = undefined;
     this.#view(() => {
-      this.#status.textContent = renderImportFailure(this.#body, cancelled, operation, error);
-      this.#button("Back", () => this.#entry());
-      this.#button("Close", () => this.close(), true);
+      this.#status.textContent = renderImportFailure(
+        this.#body,
+        cancelled,
+        operation,
+        error,
+        this.#options.localization,
+      );
+      this.#button(this.#options.localization.t("import.back"), () => this.#entry());
+      this.#button(this.#options.localization.t("import.close"), () => this.close(), true);
     });
   }
 }

@@ -1,3 +1,4 @@
+import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -23,6 +24,7 @@ function fixture(initial: MotionPreference) {
   let hidden = false;
   vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
   const operation = renderImportStatus(container, "Scanning vault…", "scan", {
+    localization: new Localization(),
     mutate: (update) => update(),
     readMotion: () => preference,
     observeMotion: (listener) => {

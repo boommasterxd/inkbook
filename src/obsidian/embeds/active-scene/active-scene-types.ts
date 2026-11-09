@@ -1,4 +1,5 @@
 import type { LockedPreviewPresentation } from "../preview/locked-preview";
+import type { Localization } from "../../../domain/localization";
 import type { InitialPresentationEntrance } from "../presentation/presentation-entrance";
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import type {
@@ -22,6 +23,7 @@ import type { EditorChromeOpenings } from "./editor-chrome-openings";
 import type { HostZoomScroll } from "../live-preview/live-preview-zoom-scroll";
 
 export interface ActiveInkbookSceneOptions extends EditorChromeOpenings, LockedPreviewPresentation {
+  readonly localization?: Localization | undefined;
   readonly hostZoomScroll?: HostZoomScroll;
   readonly workScheduler: WorkScheduler;
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];

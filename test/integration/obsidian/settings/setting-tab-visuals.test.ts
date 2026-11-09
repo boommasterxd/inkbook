@@ -4,7 +4,8 @@ import { beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
-import { ARROW_NODE_STYLE_OPTIONS } from "../../../../src/obsidian/menus/tool-style-controls";
+import { createEnglishLocalization } from "../../../../src/domain/localization";
+import { arrowNodeStyleOptions } from "../../../../src/obsidian/menus/tool-style-controls";
 import { arrowNodeIconId } from "../../../../src/rendering/ui/icon-ids";
 import {
   control,
@@ -252,7 +253,7 @@ describe("InkbookSettingTab recognizable shape controls", () => {
     expect(control(arrow.container, "arrow-end-node").querySelectorAll("button")).toHaveLength(5);
     for (const side of ["start", "end"] as const) {
       const nodeControl = control(arrow.container, `arrow-${side}-node`);
-      for (const { value, label } of ARROW_NODE_STYLE_OPTIONS) {
+      for (const { value, label } of arrowNodeStyleOptions(createEnglishLocalization().t)) {
         const button = requiredElement<HTMLButtonElement>(
           nodeControl,
           `button[data-value="${value}"]`,

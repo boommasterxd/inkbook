@@ -1,8 +1,12 @@
+import type { ObsidianInkWarningCode } from "../../../persistence/import/obsidian-ink/warnings";
+import type { ImportDiagnostic } from "../../import/diagnostics";
 import type { InkImportPreview } from "../../import/types";
 
 export interface ImportPreviewFinding {
   readonly category: "difference" | "warning" | "skipped";
   readonly message: string;
+  readonly diagnostic?: ImportDiagnostic;
+  readonly warningCode?: ObsidianInkWarningCode;
   readonly sources: readonly string[];
   readonly notes: readonly string[];
 }
@@ -10,9 +14,28 @@ export interface ImportPreviewFinding {
 interface FindingGroup {
   readonly category: ImportPreviewFinding["category"];
   readonly message: string;
+  readonly diagnostic?: ImportDiagnostic;
+  readonly warningCode?: ObsidianInkWarningCode;
   readonly sources: Set<string>;
   readonly notes: Set<string>;
 }
+
+const APPEARANCE_CODES = new Set<ObsidianInkWarningCode>([
+  "nativeBrush",
+  "legacyBrush",
+  "paletteFrozen",
+  "legacyPaletteFrozen",
+  "openStrokeCaps",
+  "arrowBend",
+  "handDrawnOutline",
+  "patternFill",
+  "squareCorners",
+  "combinedBackground",
+  "nativePrecision",
+  "strokeWidthPreset",
+  "outlineWidthPreset",
+  "backgroundSpacingPreset",
+]);
 
 const APPEARANCE_DIFFERENCES = new Set([
   "Stroke outlines, smoothing and pressure response use Inkbook's native brush.",
@@ -42,6 +65,8 @@ function groupFinding(groups: Map<string, FindingGroup>, finding: ImportPreviewF
     group = {
       category: finding.category,
       message: finding.message,
+      ...(finding.diagnostic === undefined ? {} : { diagnostic: finding.diagnostic }),
+      ...(finding.warningCode === undefined ? {} : { warningCode: finding.warningCode }),
       sources: new Set(),
       notes: new Set(),
     };
@@ -91,10 +116,17 @@ export function buildImportPreviewFindings(
   const sourceWarnings = new Set<string>();
   for (const source of preview.sources) {
     const notes = [...new Set(source.references.map((reference) => reference.notePath))];
-    for (const message of new Set(source.warnings)) {
+    for (const [index, message] of source.warnings.entries()) {
+      const warningCode = source.warningCodes?.[index];
       sourceWarnings.add(`${source.path}: ${message}`);
       groupFinding(groups, {
-        category: category(message),
+        category:
+          warningCode === undefined
+            ? category(message)
+            : APPEARANCE_CODES.has(warningCode)
+              ? "difference"
+              : "warning",
+        ...(warningCode === undefined ? {} : { warningCode }),
         message,
         sources: [source.path],
         notes,
@@ -105,8 +137,20 @@ export function buildImportPreviewFindings(
     sourceWarnings.add(finding.original);
     groupFinding(groups, { ...finding, category: "skipped" });
   }
-  for (const message of preview.warnings) {
-    if (!sourceWarnings.has(message)) groupFinding(groups, scanFinding(message));
+  for (const [index, message] of preview.warnings.entries()) {
+    if (!sourceWarnings.has(message))
+      groupFinding(
+        groups,
+        preview.truncated && index === preview.warnings.length - 1
+          ? {
+              category: "warning",
+              message,
+              sources: [],
+              notes: [],
+              diagnostic: { code: "scanTruncated" },
+            }
+          : scanFinding(message),
+      );
   }
   return [...groups.values()].map((group) => ({
     ...group,

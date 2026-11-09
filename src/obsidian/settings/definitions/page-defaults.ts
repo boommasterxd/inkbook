@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Translator } from "../../../domain/localization";
 import {
   setIcon,
   type Setting,
@@ -26,9 +27,9 @@ import {
 } from "../../menus/feedback/native-control-feedback";
 
 const SPACINGS = ["s", "m", "l", "xl"] as const satisfies readonly BackgroundSpacing[];
-const BUFFER_DESCRIPTION = "Set the writable page buffer copied into newly created files.";
 
 export interface PageDefaultsValues extends NativeControlFeedbackOptions {
+  readonly t?: Translator;
   readonly get: (key: SettingsControlKey) => unknown;
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
 }
@@ -54,28 +55,37 @@ export function pageDefaultsGroup(
   values: PageDefaultsValues,
   reset: () => void | Promise<void>,
 ): SettingDefinitionGroup<SettingsControlKey> {
+  const t = values.t ?? createEnglishLocalization().t;
   return {
     type: "group",
-    heading: "Page defaults",
+    heading: t("settings.controls.pageDefaults"),
     cls: "inkbook-settings-page-group",
     items: [
       backgroundDefinition(values),
       bufferDefinition(values),
-      resetAction("Reset group to defaults", reset),
+      resetAction(t("settings.controls.resetGroup"), reset, t),
     ],
   };
 }
 
 function backgroundDefinition(values: PageDefaultsValues): SettingDefinitionRender {
+  const t = values.t ?? createEnglishLocalization().t;
   return {
-    name: "Background",
-    desc: "Configure the background copied into newly created files.",
-    aliases: ["None", "Lines", "Dots", "Squares", "Spacing"],
+    name: t("settings.controls.background"),
+    desc: t("settings.controls.backgroundHelp"),
+    aliases: [
+      t("settings.controls.none"),
+      t("settings.controls.lines"),
+      t("settings.controls.dots"),
+      t("settings.controls.squares"),
+      t("settings.controls.spacing"),
+    ],
     render: (setting) => renderBackgroundSetting(setting, values),
   };
 }
 
 function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): () => void {
+  const t = values.t ?? createEnglishLocalization().t;
   setting.settingEl.replaceChildren();
   setting.settingEl.classList.add(
     "inkbook-settings-visual-row",
@@ -84,8 +94,8 @@ function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): 
   );
   const description = createSettingsHeading(
     setting.settingEl,
-    "Background",
-    "Choose the pattern and spacing copied into newly created files.",
+    t("settings.controls.background"),
+    t("settings.controls.backgroundPatternHelp"),
   );
   const content = setting.settingEl.createDiv({ cls: "inkbook-settings-background-content" });
   const error = setting.settingEl.createDiv({ cls: "inkbook-settings-control-error" });
@@ -97,7 +107,7 @@ function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): 
     descriptionId: description.id,
     error,
     validation: createSettingsValidationMotion(content, values),
-    writes: new SettingsWriteFeedback(),
+    writes: new SettingsWriteFeedback(values.t),
     ownerDocument: setting.settingEl.ownerDocument,
     state: { disposed: false, menu: backgroundState(values) },
     values,
@@ -118,6 +128,7 @@ function renderBackgroundMenu(context: BackgroundRenderContext): void {
   context.state.releaseFeedback?.();
   context.content.replaceChildren(
     createBackgroundMenuContent({
+      ...(context.values.t === undefined ? {} : { t: context.values.t }),
       controlDescriptionId: `${context.descriptionId} ${context.error.id}`,
       getState: () => context.state.menu,
       initialState: context.state.menu,
@@ -166,9 +177,10 @@ function commitBackgroundValue(
   key: SettingsControlKey,
   value: unknown,
 ): void {
+  const t = context.values.t ?? createEnglishLocalization().t;
   void context.writes.run(key, () => context.values.set(key, value), {
     error: (message) => context.validation.set(context.error, message),
-    failureMessage: "The background default could not be saved.",
+    failureMessage: t("settings.controls.backgroundSaveFailed"),
     restore: () => recoverBackground(context),
   });
 }
@@ -179,14 +191,20 @@ function recoverBackground(context: BackgroundRenderContext): void {
 }
 
 function bufferDefinition(values: PageDefaultsValues): SettingDefinitionRender {
+  const t = values.t ?? createEnglishLocalization().t;
   return {
-    name: "Page buffer",
-    desc: BUFFER_DESCRIPTION,
+    name: t("settings.controls.pageBuffer"),
+    desc: t("settings.controls.bufferHelp"),
     render: (setting) => {
-      const content = createSettingsVisualControlRow(setting, "Page buffer", BUFFER_DESCRIPTION);
+      const content = createSettingsVisualControlRow(
+        setting,
+        t("settings.controls.pageBuffer"),
+        t("settings.controls.bufferHelp"),
+      );
       return renderSettingsControlContent(content, {
+        ...(values.t === undefined ? {} : { t: values.t }),
         controls: () => [bufferControl(values)],
-        descriptions: { "active-buffer-lines": BUFFER_DESCRIPTION },
+        descriptions: { "active-buffer-lines": t("settings.controls.bufferHelp") },
         idPrefix: "inkbook-setting-page-buffer",
         onChange: (_controlId, value) => values.set("pageDefaults.activeBufferLines", value),
         ownerDocument: setting.settingEl.ownerDocument,
@@ -198,10 +216,11 @@ function bufferDefinition(values: PageDefaultsValues): SettingDefinitionRender {
 }
 
 function bufferControl(values: PageDefaultsValues): StyleControl {
+  const t = values.t ?? createEnglishLocalization().t;
   return {
     id: "active-buffer-lines",
     kind: "number",
-    label: "Active buffer lines",
+    label: t("settings.controls.bufferLines"),
     min: 1,
     max: 8,
     step: 1,

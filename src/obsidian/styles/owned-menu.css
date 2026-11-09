@@ -52,6 +52,9 @@
 
 .inkbook-owned-menu-title {
   flex: 1;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .inkbook-owned-menu-icon,
@@ -147,9 +150,8 @@
 }
 
 .inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-item[data-label="true"] {

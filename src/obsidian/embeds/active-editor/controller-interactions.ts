@@ -56,6 +56,7 @@ export function createControllerStyleSession(
   >,
 ): ActiveEditorStyleSession {
   return new ActiveEditorStyleSession({
+    localization: controller.localization,
     ...options,
     defaults: controller.defaults,
     history: controller.history,
@@ -144,6 +145,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       zoom: () => options.navigation.zoom,
     }),
     menus: new ActiveEditorMenuController({
+      localization: controller.localization,
       workScheduler: controller.workScheduler,
       actions,
       factory: controller.menuFactory,

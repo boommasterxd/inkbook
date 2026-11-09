@@ -1,3 +1,5 @@
+import { isObsidianInkWarningCode } from "../../persistence/import/obsidian-ink/warnings";
+import { validImportDiagnostics } from "./diagnostics";
 import { INK_IMPORT_FOLDER, type InkImportJournal, type InkImportPorts } from "./types";
 import { findMarkdownInkbookEmbeds } from "../embeds/markdown-embed";
 
@@ -40,7 +42,11 @@ function validSourceRecord(value: Record<string, unknown>): boolean {
     typeof value["outputHash"] === "string" &&
     ["intent", "created", "conflict", "cleaned"].includes(String(value["status"])) &&
     Array.isArray(value["warnings"]) &&
-    value["warnings"].every((item: unknown) => typeof item === "string")
+    value["warnings"].every((item: unknown) => typeof item === "string") &&
+    (value["warningCodes"] === undefined ||
+      (Array.isArray(value["warningCodes"]) &&
+        value["warningCodes"].length === value["warnings"].length &&
+        value["warningCodes"].every(isObsidianInkWarningCode)))
   );
 }
 
@@ -100,7 +106,8 @@ export function parseJournal(content: string, id: string): InkImportJournal {
     value["notes"].length > 10_000 ||
     !value["notes"].every((item: unknown) => validRecord(item, runFolder(id), false)) ||
     !Array.isArray(value["issues"]) ||
-    !value["issues"].every((item: unknown) => typeof item === "string")
+    !value["issues"].every((item: unknown) => typeof item === "string") ||
+    !validImportDiagnostics(value["issueDetails"], value["issues"].length)
   ) {
     throw new Error("Import history is invalid; no vault files were changed.");
   }

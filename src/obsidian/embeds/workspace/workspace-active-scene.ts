@@ -1,4 +1,5 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import type { Localization } from "../../../domain/localization";
 import type { PhoneSheetNavigation } from "../../menus/panels/panel-page";
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import type { Keymap } from "obsidian";
@@ -21,6 +22,7 @@ export interface WorkspaceRuntimeSettings {
 }
 
 export interface WorkspaceActiveSceneOptions {
+  readonly localization?: Localization | undefined;
   readonly onboardingPreference?: OnboardingPreferencePort | undefined;
   readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
   readonly attachment: PresentationAttachment;
@@ -47,6 +49,7 @@ export function createWorkspaceActiveScene(
   const attachment = options.attachment;
   let scene: ActiveInkbookScene | undefined;
   scene = new ActiveInkbookScene({
+    localization: options.localization,
     backgroundSpacing: options.backgroundSpacing,
     confirmEraseAll: options.confirmEraseAll,
     defaults: options.vaultSettings.toolDefaults,

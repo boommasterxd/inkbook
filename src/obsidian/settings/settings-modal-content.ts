@@ -39,12 +39,9 @@ export class SettingsModalContent {
     this.#body = container.createDiv({ cls: "inkbook-settings-modal-body" });
     this.#body.dataset.view = options.view;
     this.#render();
-    this.#unsubscribeUpdates =
-      options.view === "settings"
-        ? options.settingTab.subscribeUpdates(() => {
-            if (!this.#disposed) this.#renderPreservingScroll();
-          })
-        : undefined;
+    this.#unsubscribeUpdates = options.settingTab.subscribeUpdates(() => {
+      if (!this.#disposed) this.#renderPreservingScroll();
+    });
   }
 
   public dispose(): void {

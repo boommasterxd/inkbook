@@ -1,3 +1,4 @@
+import { createEnglishLocalization, type Localization } from "../../../domain/localization";
 import { Component, type Keymap } from "obsidian";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { effectiveTransitionDuration } from "../../runtime/effective-motion";
@@ -29,6 +30,7 @@ export interface CoachStep {
 }
 
 interface CoachOptions {
+  readonly localization?: Localization | undefined;
   readonly root: HTMLElement;
   readonly workScheduler: WorkScheduler;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
@@ -86,22 +88,47 @@ export class OnboardingCoach extends Component {
     this.#progress = this.#navigation.createSpan({ cls: "inkbook-onboarding-progress" });
     const actions = this.#navigation.createDiv({ cls: "inkbook-onboarding-actions" });
     actions.setAttribute("role", "group");
-    actions.setAttribute("aria-label", "Tour navigation");
+    actions.setAttribute("aria-label", this.#t("editor.tour.navigation"));
+    this.register(
+      options.localization?.subscribe(() => {
+        actions.setAttribute("aria-label", this.#t("editor.tour.navigation"));
+        for (const [button, key] of [
+          [this.#back, "editor.tour.back"],
+          [this.#next, this.#last ? "editor.tour.done" : "editor.tour.next"],
+          [actions.lastElementChild, "editor.tour.skip"],
+        ] as const) {
+          if (button !== null) {
+            button.setAttribute("aria-label", this.#t(key));
+            const label = button.querySelector(".inkbook-menu-visually-hidden");
+            if (label !== null) label.textContent = this.#t(key);
+          }
+        }
+      }) ?? (() => undefined),
+    );
     this.#back = this.#button(actions, {
-      text: "Back",
+      text: this.#t("editor.tour.back"),
       icon: "arrow-left",
       action: () => options.onNavigate(-1),
     });
     this.#next = this.#button(actions, {
-      text: "Next",
+      text: this.#t("editor.tour.next"),
       icon: "arrow-right",
       action: () => (this.#last ? options.onClose() : options.onNavigate(1)),
     });
-    this.#button(actions, { text: "Skip tour", icon: "x", action: () => options.onClose() });
+    this.#button(actions, {
+      text: this.#t("editor.tour.skip"),
+      icon: "x",
+      action: () => options.onClose(),
+    });
     this.#layer.append(this.#arrow);
     this.#presence = new OnboardingPresence(this.#layer, root);
     this.load();
   }
+
+  readonly #t = (
+    key: Parameters<Localization["t"]>[0],
+    parameters?: Parameters<Localization["t"]>[1],
+  ): string => (this.#options.localization ?? createEnglishLocalization()).t(key, parameters);
 
   public override onload(): void {
     const { root, keymap, onClose } = this.#options;
@@ -180,7 +207,7 @@ export class OnboardingCoach extends Component {
     this.#feedback = mountToolbarButtonFeedback(this.#navigation, root);
   }
 
-  public show(step: CoachStep, index: number, total: number): void {
+  public show(step: CoachStep, index: number, total: number, localeUpdate = false): void {
     this.#revealAllowed = true;
     const root = this.#options.root;
     this.#action = step.action;
@@ -202,10 +229,13 @@ export class OnboardingCoach extends Component {
       this.#ink.lettering(this.#note, text, false, 1580 + line * 720),
     );
     this.#progress.textContent = `${String(index + 1)}/${String(total)}`;
-    this.#progress.setAttribute("aria-label", `Step ${String(index + 1)} of ${String(total)}`);
+    this.#progress.setAttribute(
+      "aria-label",
+      this.#t("editor.tour.step", { step: index + 1, total }),
+    );
     this.#back.disabled = index === 0;
     this.#last = index === total - 1;
-    const nextLabel = this.#last ? "Done" : "Next";
+    const nextLabel = this.#t(this.#last ? "editor.tour.done" : "editor.tour.next");
     this.#next.setAttribute("aria-label", nextLabel);
     this.#next.querySelector(".inkbook-menu-visually-hidden")!.textContent = nextLabel;
     const nextIcon = this.#next.querySelector<HTMLElement>(".inkbook-onboarding-action-icon")!;
@@ -213,7 +243,7 @@ export class OnboardingCoach extends Component {
     this.#options.renderIcon?.(nextIcon, this.#last ? "check" : "arrow-right");
     this.#feedback?.refresh();
     const ownerWindow = root.ownerDocument.defaultView;
-    this.#initialFocus = this.#next;
+    if (!localeUpdate) this.#initialFocus = this.#next;
     this.#position();
     this.#ink.play(
       ownerWindow === null || effectiveTransitionDuration(root, ownerWindow, "adaptiveMenu") === 0,

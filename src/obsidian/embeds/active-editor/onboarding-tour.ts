@@ -1,14 +1,16 @@
+import { createEnglishLocalization, type Localization } from "../../../domain/localization";
 import type { Keymap } from "obsidian";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { FocusTargetPort } from "../../menus/menu-ports";
 import { OnboardingCoach, type CoachStep } from "./onboarding-coach";
 import { OnboardingPageSpace } from "./onboarding-page-space";
-import { ONBOARDING_STEPS } from "./onboarding-steps";
+import { createOnboardingSteps } from "./onboarding-steps";
 import { revealOnboardingTarget } from "./onboarding-target";
 import type { OnboardingBackgroundPort } from "./onboarding-background";
 import type { BrowserScrollElement } from "../../scrolling/index";
 
 interface OnboardingTourOptions {
+  readonly localization?: Localization | undefined;
   readonly root: HTMLElement;
   readonly canvasInputSurface: FocusTargetPort;
   readonly workScheduler: WorkScheduler;
@@ -31,9 +33,17 @@ export class OnboardingTour {
   #invitation = false;
   #steps: readonly CoachStep[] = [];
   #contextPreview = false;
+  readonly #unsubscribeLocale: (() => void) | undefined;
 
   public constructor(options: OnboardingTourOptions) {
     this.#options = options;
+    this.#unsubscribeLocale = options.localization?.subscribe(() => {
+      const actions = this.#steps.map((step) => step.action);
+      this.#steps = createOnboardingSteps(options.localization!.t).filter((step) =>
+        actions.includes(step.action),
+      );
+      if (this.#session !== undefined) this.#show(true);
+    });
     this.#space = new OnboardingPageSpace(options.root, options.workScheduler, options.background);
   }
 
@@ -54,7 +64,9 @@ export class OnboardingTour {
     this.#exiting = undefined;
     this.#returnFocus = returnFocus;
     this.#index = 0;
-    this.#steps = ONBOARDING_STEPS.filter(
+    this.#steps = createOnboardingSteps(
+      (this.#options.localization ?? createEnglishLocalization()).t,
+    ).filter(
       (step) =>
         !step.optional ||
         this.#options.root.querySelector(`[data-inkbook-action="${step.action}"]`) !== null,
@@ -99,6 +111,7 @@ export class OnboardingTour {
 
   public dispose(): void {
     this.#disposed = true;
+    this.#unsubscribeLocale?.();
     this.#session?.dispose();
     this.#session = undefined;
     this.#exiting?.dispose();
@@ -107,11 +120,11 @@ export class OnboardingTour {
     this.#space.dispose();
   }
 
-  #show(): void {
+  #show(localeUpdate = false): void {
     const step = this.#steps[this.#index];
     if (step === undefined) return;
     this.#setPreview(step.previewContext === true);
-    this.#session?.show(step, this.#index, this.#steps.length);
+    this.#session?.show(step, this.#index, this.#steps.length, localeUpdate);
   }
 
   #setPreview(preview: boolean): void {

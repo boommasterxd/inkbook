@@ -25,6 +25,40 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("localized shortcut settings", () => {
+  it("translates an open shortcut section and releases recording when the language changes", () => {
+    const { container, store, view } = createView();
+    try {
+      expand(container, "Canvas shortcuts");
+      const copy = required<HTMLButtonElement>(container, 'button[data-shortcut-action="copy"]');
+      const binding = store.getDeviceSettings().keyboardShortcuts.copy;
+      copy.click();
+      store.localization.setLanguage("de");
+      const translated = required<HTMLButtonElement>(
+        container,
+        'button[data-shortcut-action="copy"]',
+      );
+      expect(translated.getAttribute("aria-label")).toBe(
+        "StrgC: Tastenkürzel für Auswahl kopieren ändern",
+      );
+      expect(translated.getAttribute("aria-pressed")).toBe("false");
+      expect(document.activeElement).toBe(translated);
+      expect(
+        shortcutSection(container, "Zeichenflächen-Tastenkürzel")
+          .querySelector("button")
+          ?.getAttribute("aria-expanded"),
+      ).toBe("true");
+      expect(container.textContent).toContain("Feste Systemtastenkürzel");
+      expect(container.textContent).toContain("Bild auf");
+      expect(container.textContent).toContain("Nicht zugewiesen");
+      expect(store.getDeviceSettings().keyboardShortcuts.copy).toEqual(binding);
+      expectFollowingKeyReleased(translated);
+    } finally {
+      view.dispose();
+    }
+  });
+});
+
 describe("shortcut settings view", () => {
   it("renders accessible shortcut sections collapsed by default", () => {
     const { container, view } = createView(

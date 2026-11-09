@@ -1,3 +1,5 @@
+import type { InkImportJournal } from "../../import/types";
+import type { Localization } from "../../../domain/localization";
 import type { Setting } from "obsidian";
 
 import { isReducedMotion } from "../../../rendering/motion/transitions";
@@ -8,8 +10,17 @@ import { SettingsPanelMotion } from "../settings-panel-motion";
 import type { InkImportSettingsAccess } from "./import-access";
 import { renderImportHistory } from "./import-view";
 
+export interface ImportHistoryState {
+  expanded?: boolean;
+  selectedId?: string;
+  page?: number;
+  history?: readonly InkImportJournal[];
+}
+
 export interface ImportHistoryOptions extends NativeControlFeedbackOptions {
   readonly access: InkImportSettingsAccess;
+  readonly state?: ImportHistoryState;
+  readonly localization: Localization;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -25,19 +36,21 @@ export class ImportHistory {
   #feedback: ReturnType<typeof registerNativeControlFeedback> | undefined;
   #request: AbortController | undefined;
   #expanded = false;
+  #useCachedHistory = true;
   #disposed = false;
   #selectedId: string | undefined;
 
   public constructor(setting: Setting, options: ImportHistoryOptions) {
     this.#options = options;
+    this.#selectedId = options.state?.selectedId;
     setting.settingEl.replaceChildren();
     setting.settingEl.classList.add(
       "inkbook-settings-import-history",
       "inkbook-settings-validation-surface",
     );
     this.#disclosure = createSettingsDisclosure(setting.settingEl, {
-      title: "Import history",
-      description: "Review previous imports, restore Obsidian Ink embeds or clean up originals.",
+      title: this.#options.localization.t("import.history"),
+      description: this.#options.localization.t("import.historyDescription"),
       expanded: false,
       panelId: `inkbook-import-history-${setting.settingEl.ownerDocument.defaultView?.crypto.randomUUID()}`,
       readMotion: options.readMotion,
@@ -55,15 +68,20 @@ export class ImportHistory {
       options.observeMotion,
     );
     this.#disclosure.trigger.addEventListener("click", this.#toggle);
-    this.#releaseChanges = options.access.subscribe(() => void this.#load());
+    this.#releaseChanges = options.access.subscribe(() => {
+      if (options.state !== undefined) delete options.state.history;
+      void this.#load();
+    });
     setting.settingEl.ownerDocument.defaultView?.addEventListener("pagehide", this.dispose);
     options.signal?.addEventListener("abort", this.dispose, { once: true });
     if (options.signal?.aborted === true) this.dispose();
+    else if (options.state?.expanded === true) this.#toggle();
   }
 
   #toggle = (): void => {
     if (this.#disposed) return;
     this.#expanded = !this.#expanded;
+    if (this.#options.state !== undefined) this.#options.state.expanded = this.#expanded;
     this.#disclosure.trigger.setAttribute("aria-expanded", String(this.#expanded));
     this.#disclosure.setExpanded(
       this.#expanded,
@@ -84,17 +102,22 @@ export class ImportHistory {
     const request = new AbortController();
     this.#request = request;
     this.#results.setAttribute("aria-busy", "true");
-    this.#status.textContent = "Loading import history…";
+    this.#status.textContent = this.#options.localization.t("import.historyLoading");
     this.#status.removeAttribute("data-inkbook-history-error");
     this.#results
       .querySelector(".inkbook-import-history-retry")
       ?.setAttribute("aria-disabled", "true");
     try {
-      const history = await this.#options.access.history(
-        this.#results.ownerDocument.defaultView,
-        request.signal,
-      );
+      const cached = this.#useCachedHistory ? this.#options.state?.history : undefined;
+      this.#useCachedHistory = false;
+      const history =
+        cached ??
+        (await this.#options.access.history(
+          this.#results.ownerDocument.defaultView,
+          request.signal,
+        ));
       if (!this.#current(request)) return;
+      if (this.#options.state !== undefined) this.#options.state.history = history;
       const focusedRun = this.#results.ownerDocument.activeElement?.closest<HTMLElement>(
         "[data-inkbook-import-run]",
       )?.dataset.inkbookImportRun;
@@ -108,11 +131,17 @@ export class ImportHistory {
           history,
           (journal) => {
             this.#selectedId = journal.id;
+            if (this.#options.state !== undefined) this.#options.state.selectedId = journal.id;
             void this.#options.access
               .open(this.#results.ownerDocument.defaultView, journal, this.#lifetime.signal)
               .catch(() => this.#failure());
           },
-          { mutate: this.#mutate, selectedId: focusedRun ?? this.#selectedId },
+          {
+            mutate: this.#mutate,
+            selectedId: focusedRun ?? this.#selectedId,
+            localization: this.#options.localization,
+            ...(this.#options.state === undefined ? {} : { state: this.#options.state }),
+          },
         );
         if (focusedRun !== undefined) {
           [...this.#results.querySelectorAll<HTMLButtonElement>("[data-inkbook-import-run]")]
@@ -124,7 +153,12 @@ export class ImportHistory {
       this.#status.textContent =
         history.length === 0
           ? ""
-          : `${history.length} saved import${history.length === 1 ? "" : "s"}.`;
+          : this.#options.localization.t(
+              this.#options.localization.plural(history.length) === "one"
+                ? "import.historyCountOne"
+                : "import.historyCountOther",
+              { count: this.#options.localization.number(history.length) },
+            );
     } catch {
       if (this.#current(request)) this.#failure();
     } finally {
@@ -146,14 +180,13 @@ export class ImportHistory {
 
   #failure(): void {
     if (this.#disposed) return;
-    this.#status.textContent =
-      "Import history could not be loaded. Close any running import and try again.";
+    this.#status.textContent = this.#options.localization.t("import.historyFailure");
     this.#status.setAttribute("data-inkbook-history-error", "true");
     if (this.#results.querySelector(".inkbook-import-history-retry") !== null) return;
     this.#mutate(() => {
       const retry = this.#results.createEl("button", {
         cls: "inkbook-import-history-retry",
-        text: "Try again",
+        text: this.#options.localization.t("import.retry"),
       });
       retry.type = "button";
       retry.addEventListener("click", () => {

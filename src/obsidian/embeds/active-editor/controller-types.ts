@@ -1,4 +1,5 @@
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
+import type { Localization } from "../../../domain/localization";
 import type {
   InkbookDeviceSettingsV2,
   HoldToShapeSettingsV1,
@@ -22,6 +23,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { NavigationCursorLayout } from "./navigation/navigation-layout";
 
 export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
+  readonly localization?: Localization | undefined;
   readonly container: HTMLElement;
   readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => number | void;
   readonly onNavigationLayout?: (layout: NavigationCursorLayout) => void;

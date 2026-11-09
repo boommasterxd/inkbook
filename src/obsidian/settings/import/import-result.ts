@@ -1,3 +1,5 @@
+import { importDiagnosticText } from "./import-diagnostic-text";
+import { quantity } from "./import-quantity";
 import type { InkImportResult } from "../../import/types";
 import { renderImportCompletion } from "./import-completion-illustration";
 import {
@@ -18,10 +20,10 @@ export function renderImportResult(
   context: ImportViewContext,
   operation: ImportOperation = "import",
 ): void {
-  const presentation = resultPresentation(result, operation);
+  const presentation = resultPresentation(result, operation, context);
   const hero = container.createDiv({ cls: "inkbook-import-result" });
   hero.dataset.result = presentation.state;
-  if (operation === "import") renderImportStep(hero, 3);
+  if (operation === "import") renderImportStep(hero, 3, context.localization);
   if (presentation.state === "success") renderImportCompletion(hero, context);
   else renderImportIcon(hero, "triangle-alert", "inkbook-import-result-attention");
   hero.createEl("h3", { text: presentation.heading, cls: "inkbook-import-heading" });
@@ -41,10 +43,20 @@ export function renderImportResult(
   renderImportFindings(
     container,
     {
-      label: "Issues",
+      id: "import.issues",
+      label: context.localization.t("import.issues"),
       count: result.journal.issues.length,
       icon: "triangle-alert",
-      entry: (row, index) => renderImportFinding(row, result.journal.issues[index]!, paths),
+      entry: (row, index) =>
+        renderImportFinding(
+          row,
+          importDiagnosticText(
+            context.localization,
+            result.journal.issues[index]!,
+            result.journal.issueDetails?.[index],
+          ),
+          paths,
+        ),
     },
     context,
   );
@@ -61,7 +73,8 @@ function renderResultNotes(
   renderImportFindings(
     container,
     {
-      label: "Notes to review",
+      id: "import.notesToReview",
+      label: context.localization.t("import.notesToReview"),
       count: notes.length,
       icon: "files",
       entry: (row, index) => row.createSpan({ text: notes[index]!.path }),
@@ -70,7 +83,11 @@ function renderResultNotes(
   );
 }
 
-function resultPresentation(result: InkImportResult, operation: ImportOperation) {
+function resultPresentation(
+  result: InkImportResult,
+  operation: ImportOperation,
+  context: ImportViewContext,
+) {
   const expectedStatus = operation === "undo" ? "undone" : "complete";
   const state: ResultState = result.cancelled
     ? "stopped"
@@ -79,82 +96,103 @@ function resultPresentation(result: InkImportResult, operation: ImportOperation)
         result.journal.status !== expectedStatus
       ? "review"
       : "success";
-  if (operation === "undo") return undoPresentation(result, state);
-  if (operation === "cleanup") return cleanupPresentation(result, state);
-  return importPresentation(result, state);
+  if (operation === "undo") return undoPresentation(result, state, context);
+  if (operation === "cleanup") return cleanupPresentation(result, state, context);
+  return importPresentation(result, state, context);
 }
 
-function undoPresentation(result: InkImportResult, state: ResultState) {
-  const conflicts = `${quantity(result.conflicts, "conflict")}.`;
+function undoPresentation(result: InkImportResult, state: ResultState, context: ImportViewContext) {
+  const conflicts = quantity(result.conflicts, "conflict", context.localization);
   const restored = result.journal.notes.filter((note) => note.status === "undone").length;
   return {
     state,
     heading:
       state === "stopped"
-        ? "Restore stopped"
+        ? context.localization.t("import.undoStopped")
         : state === "success"
-          ? "Obsidian Ink embeds restored"
-          : "Restore needs review",
-    summary: `${quantity(restored, "note")} restored; ${conflicts}`,
-    description: "Restored notes use their original Obsidian Ink files again.",
-    nextTitle: state === "success" ? "Your original embeds are back" : "Check this restore",
+          ? context.localization.t("import.undoSuccess")
+          : context.localization.t("import.undoReview"),
+    summary: context.localization.t("import.undoSummary", {
+      notes: quantity(restored, "note", context.localization),
+      conflicts,
+    }),
+    description: context.localization.t("import.undoResultDescription"),
+    nextTitle:
+      state === "success"
+        ? context.localization.t("import.undoNextTitle")
+        : context.localization.t("import.undoReviewTitle"),
     next:
       state === "success"
-        ? "Close the settings and open a restored note. Original SVGs keep their own appearance, including their colors in dark mode."
-        : "Review this import record and any issues before retrying. Notes with conflicts need your attention.",
-    recovery: "Your Inkbook copies and later edits are kept. Recovery backups remain in the vault.",
+        ? context.localization.t("import.undoNext")
+        : context.localization.t("import.undoReviewNext"),
+    recovery: context.localization.t("import.undoRecovery"),
   };
 }
 
-function cleanupPresentation(result: InkImportResult, state: ResultState) {
-  const conflicts = `${quantity(result.conflicts, "conflict")}.`;
+function cleanupPresentation(
+  result: InkImportResult,
+  state: ResultState,
+  context: ImportViewContext,
+) {
+  const conflicts = quantity(result.conflicts, "conflict", context.localization);
   const cleaned = result.journal.sources.filter((source) => source.status === "cleaned").length;
   const remaining = result.journal.sources.length - cleaned;
   return {
     state,
     heading:
       state === "stopped"
-        ? "Cleanup stopped"
+        ? context.localization.t("import.cleanupStopped")
         : state === "success"
-          ? "Original files checked"
-          : "Cleanup needs review",
-    summary: `${quantity(cleaned, "original")} cleaned up; ${quantity(remaining, "original")} remaining; ${conflicts}`,
-    description: "Only verified, unchanged originals without references are moved to trash.",
-    nextTitle: remaining > 0 ? "Some originals remain" : "Your Inkbook notes are ready",
+          ? context.localization.t("import.cleanupSuccess")
+          : context.localization.t("import.cleanupReview"),
+    summary: context.localization.t("import.cleanupSummary", {
+      cleaned: quantity(cleaned, "original", context.localization),
+      remaining: quantity(remaining, "original", context.localization),
+      conflicts,
+    }),
+    description: context.localization.t("import.cleanupResultDescription"),
+    nextTitle:
+      remaining > 0
+        ? context.localization.t("import.cleanupRemaining")
+        : context.localization.t("import.cleanupReady"),
     next:
       remaining > 0
-        ? "Files still in use or changed since import stay in place. Review this record before attempting further cleanup."
-        : "Continue using your Inkbook notes. Your converted handwriting stays editable.",
-    recovery:
-      "Inkbook files and recovery backups are kept. Backup storage is not freed by this cleanup.",
+        ? context.localization.t("import.cleanupNextRemaining")
+        : context.localization.t("import.cleanupNext"),
+    recovery: context.localization.t("import.cleanupRecovery"),
   };
 }
 
-function importPresentation(result: InkImportResult, state: ResultState) {
-  const conflicts = `${quantity(result.conflicts, "conflict")}.`;
+function importPresentation(
+  result: InkImportResult,
+  state: ResultState,
+  context: ImportViewContext,
+) {
+  const conflicts = quantity(result.conflicts, "conflict", context.localization);
   return {
     state,
     heading:
       state === "stopped"
-        ? "Import stopped"
+        ? context.localization.t("import.importStopped")
         : state === "success"
-          ? "Import complete"
-          : "Import needs review",
-    summary: `${quantity(result.imported, "handwriting file")}; ${conflicts}`,
+          ? context.localization.t("import.statusComplete")
+          : context.localization.t("import.importReview"),
+    summary: context.localization.t("import.importSummary", {
+      files: quantity(result.imported, "handwriting", context.localization),
+      conflicts,
+    }),
     description:
       state === "success"
-        ? "Your notes now use editable Inkbook copies."
-        : "Completed changes are saved in this import record.",
-    nextTitle: state === "success" ? "Next: check your handwriting" : "Review before continuing",
+        ? context.localization.t("import.importSuccessDescription")
+        : context.localization.t("import.importReviewDescription"),
+    nextTitle:
+      state === "success"
+        ? context.localization.t("import.importNextTitle")
+        : context.localization.t("import.importReviewTitle"),
     next:
       state === "success"
-        ? "Close the settings and open one of the notes listed here. Check its handwriting before removing any originals."
-        : "Open View import and review any issues. Check notes that were updated before retrying or restoring the original embeds.",
-    recovery:
-      "Originals and recovery backups are kept. To go back, use Settings → Inkbook → Import → Import history.",
+        ? context.localization.t("import.importNext")
+        : context.localization.t("import.importReviewNext"),
+    recovery: context.localization.t("import.importRecovery"),
   };
-}
-
-function quantity(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }

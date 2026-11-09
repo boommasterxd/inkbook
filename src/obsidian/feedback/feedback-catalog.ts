@@ -1,3 +1,4 @@
+import { Localization, type Translator } from "../../domain/localization";
 export type InkbookFeedbackCode =
   | "changes-save-failed"
   | "clipboard-copy-fallback"
@@ -44,187 +45,203 @@ export interface InkbookFeedbackContent {
   readonly title: string;
 }
 
-const FEEDBACK: Readonly<Record<InkbookFeedbackCode, InkbookFeedbackContent>> = {
+const FEEDBACK: Readonly<
+  Record<
+    InkbookFeedbackCode,
+    {
+      severity: InkbookFeedbackSeverity;
+      title: Parameters<Translator>[0];
+      detail?: Parameters<Translator>[0];
+    }
+  >
+> = {
   "onboarding-preference-failed": {
-    detail: "You can keep drawing. The invitation may appear again after restarting Obsidian.",
+    detail: "host.feedback.onboarding-preference-failed.detail",
     severity: "warning",
-    title: "The tour preference couldn't be saved.",
+    title: "host.feedback.onboarding-preference-failed.title",
   },
   "stroke-point-limit-reached": {
-    detail: "Lift the pen to start a new stroke.",
+    detail: "host.feedback.stroke-point-limit-reached.detail",
     severity: "warning",
-    title: "Stroke is full.",
+    title: "host.feedback.stroke-point-limit-reached.title",
   },
   "changes-save-failed": {
-    detail: "Your changes are still available in the editor.",
+    detail: "host.feedback.changes-save-failed.detail",
     severity: "error",
-    title: "Changes couldn't be saved.",
+    title: "host.feedback.changes-save-failed.title",
   },
   "clipboard-copy-fallback": {
-    detail: "You can still paste the elements in this Inkbook editor.",
+    detail: "host.feedback.clipboard-copy-fallback.detail",
     severity: "warning",
-    title: "The system clipboard isn't available.",
+    title: "host.feedback.clipboard-copy-fallback.title",
   },
   "clipboard-copy-failed": {
-    detail: "The selection is unchanged.",
+    detail: "host.feedback.clipboard-copy-failed.detail",
     severity: "error",
-    title: "The elements couldn't be copied.",
+    title: "host.feedback.clipboard-copy-failed.title",
   },
   "clipboard-operation-busy": {
-    detail: "Wait a moment and try again.",
+    detail: "host.feedback.clipboard-operation-busy.detail",
     severity: "warning",
-    title: "Another clipboard action is still running.",
+    title: "host.feedback.clipboard-operation-busy.title",
   },
   "clipboard-paste-failed": {
-    detail: "Nothing was changed. Try again.",
+    detail: "host.feedback.clipboard-paste-failed.detail",
     severity: "error",
-    title: "The elements couldn't be pasted.",
+    title: "host.feedback.clipboard-paste-failed.title",
   },
   "clipboard-paste-invalid": {
-    detail: "Copy Inkbook elements and try again.",
+    detail: "host.feedback.clipboard-paste-invalid.detail",
     severity: "info",
-    title: "The clipboard doesn't contain Inkbook elements.",
+    title: "host.feedback.clipboard-paste-invalid.title",
   },
   "clipboard-paste-read-failed": {
-    detail: "Check the clipboard permission and try again.",
+    detail: "host.feedback.clipboard-paste-read-failed.detail",
     severity: "error",
-    title: "The clipboard couldn't be read.",
+    title: "host.feedback.clipboard-paste-read-failed.title",
   },
   "clipboard-paste-stale": {
-    detail: "Nothing was pasted. Try again.",
+    detail: "host.feedback.clipboard-paste-stale.detail",
     severity: "warning",
-    title: "Paste stopped because the drawing changed.",
+    title: "host.feedback.clipboard-paste-stale.title",
   },
   "cut-selection-changed": {
-    detail: "The copied elements are still available.",
+    detail: "host.feedback.cut-selection-changed.detail",
     severity: "warning",
-    title: "Cut stopped because the selection changed.",
+    title: "host.feedback.cut-selection-changed.title",
   },
   "drawing-load-failed": {
-    detail: "The saved preview is still available.",
+    detail: "host.feedback.drawing-load-failed.detail",
     severity: "error",
-    title: "The drawing couldn't be opened.",
+    title: "host.feedback.drawing-load-failed.title",
   },
   "drawing-version-changed": {
-    detail: "The saved preview was refreshed. Review it before trying again.",
+    detail: "host.feedback.drawing-version-changed.detail",
     severity: "warning",
-    title: "The drawing changed before it opened.",
+    title: "host.feedback.drawing-version-changed.title",
   },
   "editor-activation-delayed": {
-    detail: "The drawing was inserted. Try opening the editor again.",
+    detail: "host.feedback.editor-activation-delayed.detail",
     severity: "warning",
-    title: "The editor isn't ready yet.",
+    title: "host.feedback.editor-activation-delayed.title",
   },
   "editor-start-failed": {
-    detail:
-      "The preview is still available. Update Obsidian or check its security settings, then retry.",
+    detail: "host.feedback.editor-start-failed.detail",
     severity: "error",
-    title: "The editor couldn't start.",
+    title: "host.feedback.editor-start-failed.title",
   },
   "embed-copy-clipboard-unavailable": {
-    detail: "Allow clipboard access and try again.",
+    detail: "host.feedback.embed-copy-clipboard-unavailable.detail",
     severity: "error",
-    title: "The embed couldn't be copied.",
+    title: "host.feedback.embed-copy-clipboard-unavailable.title",
   },
   "embed-copy-failed": {
-    detail: "The embed and drawing file are unchanged.",
+    detail: "host.feedback.embed-copy-failed.detail",
     severity: "error",
-    title: "The embed couldn't be copied.",
+    title: "host.feedback.embed-copy-clipboard-unavailable.title",
   },
   "embed-delete-failed": {
-    detail: "The drawing file was preserved.",
+    detail: "host.feedback.embed-delete-failed.detail",
     severity: "error",
-    title: "The embed couldn't be deleted.",
+    title: "host.feedback.embed-delete-failed.title",
   },
   "embed-delete-file-kept": {
-    detail: "You can remove the file manually if it is no longer needed.",
+    detail: "host.feedback.embed-delete-file-kept.detail",
     severity: "warning",
-    title: "The embed was removed, but its drawing file was kept.",
+    title: "host.feedback.embed-delete-file-kept.title",
   },
   "embed-delete-note-changed": {
-    detail: "The drawing file was preserved. Try again after the note stops changing.",
+    detail: "host.feedback.embed-delete-note-changed.detail",
     severity: "warning",
-    title: "Delete stopped because the note changed.",
+    title: "host.feedback.embed-delete-note-changed.title",
   },
   "embed-delete-references-unavailable": {
-    detail: "Nothing was deleted because other references couldn't be checked safely.",
+    detail: "host.feedback.embed-delete-references-unavailable.detail",
     severity: "warning",
-    title: "The embed couldn't be deleted safely.",
+    title: "host.feedback.embed-delete-references-unavailable.title",
   },
   "embed-open-failed": {
-    detail: "The embed and drawing file are unchanged. Check that the file is still available.",
+    detail: "host.feedback.embed-open-failed.detail",
     severity: "error",
-    title: "The SVG file couldn't be opened.",
+    title: "host.feedback.embed-open-failed.title",
   },
   "embed-paste-cleanup-failed": {
-    detail: "A duplicate drawing file may need to be removed manually.",
+    detail: "host.feedback.embed-paste-cleanup-failed.detail",
     severity: "error",
-    title: "Paste stopped because the note changed.",
+    title: "host.feedback.embed-paste-cleanup-failed.title",
   },
   "embed-paste-failed": {
-    detail: "The note was left unchanged. Try again.",
+    detail: "host.feedback.embed-paste-failed.detail",
     severity: "error",
-    title: "The drawing embed couldn't be pasted.",
+    title: "host.feedback.embed-paste-failed.title",
   },
   "embed-paste-note-changed": {
-    detail: "Nothing was pasted. Try again after the note stops changing.",
+    detail: "host.feedback.embed-paste-note-changed.detail",
     severity: "warning",
-    title: "Paste stopped because the note changed.",
+    title: "host.feedback.embed-paste-cleanup-failed.title",
   },
   "handwriting-inserted": {
     severity: "success",
-    title: "Handwriting inserted.",
+    title: "host.feedback.handwriting-inserted.title",
   },
   "history-change-failed": {
-    detail: "The drawing is unchanged. Try again.",
+    detail: "host.feedback.history-change-failed.detail",
     severity: "error",
-    title: "The history change couldn't be applied.",
+    title: "host.feedback.history-change-failed.title",
   },
   "history-lock-required": {
     severity: "info",
-    title: "Lock the drawing to continue undoing note changes.",
+    title: "host.feedback.history-lock-required.title",
   },
   "insertion-cleanup-failed": {
-    detail: "A created drawing file may need to be removed manually.",
+    detail: "host.feedback.insertion-cleanup-failed.detail",
     severity: "error",
-    title: "The handwriting embed couldn't be inserted.",
+    title: "host.feedback.insertion-cleanup-failed.title",
   },
   "insertion-failed": {
-    detail: "The note was left unchanged. Try again.",
+    detail: "host.feedback.embed-paste-failed.detail",
     severity: "error",
-    title: "The handwriting embed couldn't be inserted.",
+    title: "host.feedback.insertion-cleanup-failed.title",
   },
   "insertion-note-changed-cleaned": {
-    detail: "The unused drawing file was moved to trash.",
+    detail: "host.feedback.insertion-note-changed-cleaned.detail",
     severity: "warning",
-    title: "Insertion stopped because the note changed.",
+    title: "host.feedback.insertion-note-changed-cleaned.title",
   },
   "insertion-undo-edit-failed": {
-    detail: "The embed and drawing file were preserved.",
+    detail: "host.feedback.insertion-undo-edit-failed.detail",
     severity: "error",
-    title: "The insertion couldn't be undone.",
+    title: "host.feedback.insertion-undo-edit-failed.title",
   },
   "insertion-undo-file-kept": {
-    detail: "The embed was removed. Its drawing file can be removed manually.",
+    detail: "host.feedback.insertion-undo-file-kept.detail",
     severity: "warning",
-    title: "The drawing file couldn't be moved to trash.",
+    title: "host.feedback.insertion-undo-file-kept.title",
   },
   "insertion-undo-note-changed": {
-    detail: "The embed and drawing file were preserved.",
+    detail: "host.feedback.insertion-undo-edit-failed.detail",
     severity: "warning",
-    title: "Undo stopped because the note changed.",
+    title: "host.feedback.insertion-undo-note-changed.title",
   },
   "placement-folder-fallback": {
-    detail: "The drawing was saved beside this note instead.",
+    detail: "host.feedback.placement-folder-fallback.detail",
     severity: "warning",
-    title: "The selected folder isn't available.",
+    title: "host.feedback.placement-folder-fallback.title",
   },
   "recovery-copy-saved": {
     severity: "success",
-    title: "Recovery copy saved.",
+    title: "host.feedback.recovery-copy-saved.title",
   },
 };
 
-export function feedbackContent(code: InkbookFeedbackCode): InkbookFeedbackContent {
-  return FEEDBACK[code];
+export function feedbackContent(
+  code: InkbookFeedbackCode,
+  t: Translator = new Localization().t,
+): InkbookFeedbackContent {
+  const content = FEEDBACK[code];
+  return {
+    severity: content.severity,
+    title: t(content.title),
+    ...(content.detail === undefined ? {} : { detail: t(content.detail) }),
+  };
 }

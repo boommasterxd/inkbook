@@ -1,3 +1,5 @@
+import { useEditorLocalization } from "./localization";
+import type { Localization } from "../../domain/localization";
 import { useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 
@@ -5,6 +7,7 @@ import { STANDARD_EASING, getTransitionDuration } from "../motion/transitions";
 import { createChromePalette, sameChromeColors, type ChromeColors } from "./chrome-palette";
 
 export interface DocumentStatusBarContentProps {
+  readonly localization?: Localization | undefined;
   readonly icon: { name: string; viewBox: string } | null;
   readonly label: string;
   readonly motionPreference: "full" | "reduced" | "system";
@@ -17,6 +20,7 @@ export interface DocumentStatusBarContentProps {
 
 /** React owns the native item's content so Motion can animate natural layout changes. */
 export function DocumentStatusBarContent(props: DocumentStatusBarContentProps) {
+  const { t } = useEditorLocalization(props.localization);
   const rootRef = useRef<HTMLSpanElement>(null);
   const colors = useStatusColors(rootRef, props.paletteRevision);
   const layoutTransition = {
@@ -27,7 +31,7 @@ export function DocumentStatusBarContent(props: DocumentStatusBarContentProps) {
     <MotionConfig reducedMotion={props.reduced ? "always" : "never"}>
       <motion.span
         aria-atomic="true"
-        aria-label="Inkbook save status"
+        aria-label={t("editor.ui.save-status")}
         aria-live="polite"
         className="inkbook-status-bar"
         animate={

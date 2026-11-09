@@ -1,3 +1,4 @@
+import type { Localization } from "../../../src/domain/localization";
 import type { App } from "obsidian";
 
 import { EditorToolbarMenuSession } from "../../../src/obsidian/menus/editor-toolbar-menu";
@@ -9,10 +10,12 @@ import { createEditorToolbarMenuOptions } from "../../adapters/obsidian/editor-t
 
 export function createOwnedToolbarMenuFixture({
   initialMenu = "overflow",
+  localization,
   motion = "full",
   state = {},
 }: {
   initialMenu?: EditorToolbarMenuOptions["initialMenu"];
+  localization?: Localization;
   motion?: MotionPreference;
   state?: Partial<EditorToolbarMenuState>;
 } = {}) {
@@ -24,12 +27,14 @@ export function createOwnedToolbarMenuFixture({
   const app = { workspace: { containerEl: document.body } } as App;
   const host = () => createPhoneSheetHost(app);
   const factory = createOwnedMenuFactory({
+    localization,
     anchor: options.anchor,
     workScheduler: options.workScheduler,
     createPhoneSheetHost: host,
   });
   const session = new EditorToolbarMenuSession({
     ...options,
+    localization,
     factory,
     createPhoneSheetHost: host,
     initialMenu,

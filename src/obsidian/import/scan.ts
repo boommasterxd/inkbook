@@ -69,6 +69,7 @@ function retainReference(
     recordScanFinding(state, {
       original: `Missing source: ${ref.sourcePath}`,
       message: "Missing source",
+      diagnostic: { code: "missingSource" },
       sources: [ref.sourcePath],
       notes: [ref.notePath],
     });
@@ -108,6 +109,7 @@ async function scanNote(
       recordScanFinding(state, {
         original: `Unresolved writing reference in ${file.path}: ${link}`,
         message: "Unresolved writing reference",
+        diagnostic: { code: "unresolvedReference" },
         sources: [link],
         notes: [file.path],
       }),
@@ -154,6 +156,7 @@ async function previewSources(
         targetPath: siblingTarget(path, state.reserved),
         references: group.references,
         warnings: converted.warnings,
+        ...(converted.warningCodes === undefined ? {} : { warningCodes: converted.warningCodes }),
       });
       state.warnings.push(...converted.warnings.map((warning) => `${path}: ${warning}`));
     } catch {
@@ -161,6 +164,7 @@ async function previewSources(
       recordScanFinding(state, {
         original: `Unsupported or invalid writing source: ${path}`,
         message: "Unsupported or invalid writing source",
+        diagnostic: { code: "invalidSource" },
         sources: [path],
         notes: [...new Set(group.references.map((reference) => reference.notePath))],
       });
@@ -198,6 +202,7 @@ export async function scanInkImports(
       recordScanFinding(state, {
         original: `Could not inspect note: ${file.path}`,
         message: "Could not inspect note",
+        diagnostic: { code: "unreadableNote" },
         sources: [],
         notes: [file.path],
       });

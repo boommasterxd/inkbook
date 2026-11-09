@@ -108,3 +108,22 @@ it("anchors a visible shortcut row instead of its overlapping outer section", ()
       ?.getBoundingClientRect().top,
   ).toBe(50);
 });
+
+it("preserves focused control identity when its translated accessible name changes", () => {
+  const container = document.body.createDiv({ cls: "settings-test-scroll-owner" });
+  const mount = (label: string): HTMLSelectElement => {
+    const row = container.createDiv();
+    row.dataset.inkbookSettingIdentity = "device.language";
+    const select = row.createEl("select");
+    select.setAttribute("aria-label", label);
+    return select;
+  };
+  mount("Language").focus();
+  container.scrollTop = 450;
+  refreshSettingsView(container, () => {
+    container.replaceChildren();
+    mount("Sprache");
+  });
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Sprache");
+  expect(container.scrollTop).toBe(450);
+});

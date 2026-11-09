@@ -1,3 +1,4 @@
+import { Localization } from "../../domain/localization";
 import {
   createBuiltInDeviceSettings,
   createBuiltInSettings,
@@ -33,6 +34,7 @@ function deviceSettingsEqual(
   right: InkbookDeviceSettingsV2,
 ): boolean {
   return (
+    left.language === right.language &&
     left.onboardingDismissed === right.onboardingDismissed &&
     left.scrollPreloadMarginPx === right.scrollPreloadMarginPx &&
     left.fingerDrawingEnabled === right.fingerDrawingEnabled &&
@@ -53,6 +55,7 @@ export class InkbookSettingsStore {
   public constructor(
     private readonly vaultPort: VaultSettingsPort,
     private readonly devicePort: DeviceSettingsPort,
+    public readonly localization: Localization = new Localization(),
   ) {}
 
   public async load(): Promise<LoadedSettingsDiagnostics> {
@@ -148,6 +151,7 @@ export class InkbookSettingsStore {
   private setDeviceSettings(settings: InkbookDeviceSettingsV2): void {
     if (deviceSettingsEqual(this.deviceSettings, settings)) return;
     this.deviceSettings = structuredClone(settings);
+    this.localization.setLanguage(settings.language);
     for (const listener of [...this.deviceSettingsListeners]) {
       listener(structuredClone(this.deviceSettings));
     }

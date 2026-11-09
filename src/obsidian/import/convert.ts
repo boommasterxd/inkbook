@@ -1,3 +1,7 @@
+import {
+  englishImportWarning,
+  type ObsidianInkWarningCode,
+} from "../../persistence/import/obsidian-ink/warnings";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import {
   createDocumentRuntime,
@@ -95,7 +99,14 @@ async function convertAndVerify(
   runtime: DocumentRuntimePort,
   request: ImportInkRuntimeRequest,
   signal: AbortSignal,
-): Promise<{ readonly svg: string; readonly warnings: readonly string[] } | undefined> {
+): Promise<
+  | {
+      readonly svg: string;
+      readonly warnings: readonly string[];
+      readonly warningCodes?: readonly ObsidianInkWarningCode[];
+    }
+  | undefined
+> {
   const result = await runtime.execute(request);
   signal.throwIfAborted();
   if (result.type === "runtime-failure") {
@@ -132,12 +143,13 @@ async function convertAndVerify(
     throw new ImportConversionError("Ink import output verification failed.");
   return {
     svg: output,
+    warningCodes: [
+      ...(result.warningCodes ?? []),
+      ...(result.transcript === undefined ? [] : ["transcriptKept" as const]),
+    ],
     warnings:
       result.transcript === undefined
         ? result.warnings
-        : [
-            ...result.warnings,
-            "The source transcript remains in the original file and import backup.",
-          ],
+        : [...result.warnings, englishImportWarning("transcriptKept")],
   };
 }

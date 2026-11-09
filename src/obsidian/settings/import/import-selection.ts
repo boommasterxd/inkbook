@@ -8,7 +8,9 @@ export function createImportSelection(
   context: ImportViewContext,
   changed: (count: number, notes: number) => void,
 ) {
-  const selected = new Set(preview.sources.map((source) => source.path));
+  const selected =
+    context.state?.selection ?? new Set(preview.sources.map((source) => source.path));
+  if (context.state !== undefined) context.state.selection = selected;
   const sourceNotes = new Map(
     preview.sources.map((source) => [
       source.path,
@@ -40,14 +42,16 @@ export function createImportSelection(
   };
   return {
     noteCount: noteCounts.size,
+    selectedCount: selected.size,
     snapshot: () => selectInkImportSources(preview, selected),
     renderControls: (container: HTMLElement): void => {
       controls = container;
       const label = container.createEl("label", { cls: "inkbook-import-select-all" });
       all = label.createEl("input");
       all.type = "checkbox";
-      all.checked = true;
-      label.createSpan({ text: "Select all handwriting files" });
+      all.checked = selected.size === preview.sources.length;
+      all.indeterminate = selected.size > 0 && selected.size < preview.sources.length;
+      label.createSpan({ text: context.localization.t("import.selectAll") });
       all.addEventListener("change", () => {
         context.mutate(() => {
           selected.clear();
@@ -65,6 +69,7 @@ export function createImportSelection(
       const source = preview.sources[index]!;
       renderImportFile(row, source, {
         selected: selected.has(source.path),
+        localization: context.localization,
         change: (include) => {
           if (selected.has(source.path) === include) return;
           context.mutate(() => {

@@ -373,6 +373,7 @@ describe("device settings loading", () => {
       value: {
         ...input,
         version: 2,
+        language: "auto",
         onboardingDismissed: false,
         scrollPreloadMarginPx: 300,
         keyboardShortcuts: createBuiltInKeyboardShortcuts(),
@@ -392,6 +393,7 @@ describe("device settings loading", () => {
 
     expect(result.value).toEqual({
       version: 2,
+      language: "auto",
       onboardingDismissed: false,
       scrollPreloadMarginPx: 300,
       fingerDrawingEnabled: false,

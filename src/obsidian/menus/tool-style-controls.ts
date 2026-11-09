@@ -1,3 +1,4 @@
+import { Localization, type Translator } from "../../domain/localization";
 import type {
   ArrowNodeV1,
   ColorV1,
@@ -17,30 +18,29 @@ import { summarizeActiveToolStyle, type ActiveToolStyleSummary } from "../../edi
 import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import { createStructuralStyleControls } from "./structural-style-controls";
 
-const COLOR_LABELS = [
-  "Theme text color",
-  "Red",
-  "Orange",
-  "Yellow",
-  "Green",
-  "Cyan",
-  "Blue",
-  "Violet",
-  "Pink",
-  "Gray",
+const COLOR_KEYS = [
+  "theme-text",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "cyan",
+  "blue",
+  "violet",
+  "pink",
+  "gray",
 ] as const;
 
-export const COLOR_STYLE_OPTIONS: readonly StyleChoiceOption[] = BUILT_IN_COLORS.map(
-  (color, index) => ({
-    label: COLOR_LABELS[index] ?? serializeStyleColor(color),
+export function colorStyleOptions(t: Translator): readonly StyleChoiceOption[] {
+  return BUILT_IN_COLORS.map((color, index) => ({
+    label: t(`editor.option.${COLOR_KEYS[index]!}`),
     value: serializeStyleColor(color),
-  }),
-);
+  }));
+}
 
-export const FILL_COLOR_STYLE_OPTIONS: readonly StyleChoiceOption[] = [
-  { label: "None", value: "none" },
-  ...COLOR_STYLE_OPTIONS,
-];
+export function fillColorStyleOptions(t: Translator): readonly StyleChoiceOption[] {
+  return [{ label: t("editor.option.none"), value: "none" }, ...colorStyleOptions(t)];
+}
 
 export const PEN_WIDTH_STYLE_OPTIONS: readonly StyleChoiceOption[] = PEN_WIDTHS.map(
   (width, index) => ({
@@ -56,69 +56,80 @@ export const OUTLINE_WIDTH_STYLE_OPTIONS: readonly StyleChoiceOption[] = OUTLINE
   }),
 );
 
-export const OUTLINE_STYLE_OPTIONS: readonly StyleChoiceOption[] = OUTLINE_STYLES.map((style) => ({
-  label: `${style[0]?.toUpperCase() ?? ""}${style.slice(1)}`,
-  value: style,
-}));
+export function outlineStyleOptions(t: Translator): readonly StyleChoiceOption[] {
+  return OUTLINE_STYLES.map((style) => ({ label: t(`editor.option.${style}`), value: style }));
+}
 
-export const ARROW_NODE_STYLE_OPTIONS: readonly StyleChoiceOption[] = ARROW_NODES.map((node) => ({
-  label: `${node[0]?.toUpperCase() ?? ""}${node.slice(1)}`,
-  value: node,
-}));
-
-const SELECTION_AREA_STYLE_OPTIONS: readonly StyleChoiceOption[] = [
-  { label: "Rectangle", value: "rectangle" },
-  { label: "Lasso", value: "lasso" },
-];
-
-const SELECTION_INCLUSION_STYLE_OPTIONS: readonly StyleChoiceOption[] = [
-  { label: "Fully enclosed", value: "fully-enclosed" },
-  { label: "Touched", value: "touched" },
-];
+export function arrowNodeStyleOptions(t: Translator): readonly StyleChoiceOption[] {
+  return ARROW_NODES.map((node) => ({ label: t(`editor.option.${node}`), value: node }));
+}
 
 export function createToolStyleControls(
   defaults: ToolDefaultsV1,
   tool: StartupToolV1,
+  t: Translator = new Localization().t,
 ): readonly StyleControl[] {
-  return controlsForSummary(summarizeActiveToolStyle(defaults, tool));
+  return controlsForSummary(summarizeActiveToolStyle(defaults, tool), t);
 }
 
-function controlsForSummary(summary: ActiveToolStyleSummary): readonly StyleControl[] {
+function controlsForSummary(
+  summary: ActiveToolStyleSummary,
+  t: Translator,
+): readonly StyleControl[] {
   if (summary === null) return [];
-  if (summary.kind === "select") return selectControls(summary.values);
+  if (summary.kind === "select") return selectControls(summary.values, t);
   if (summary.kind === "eraser") {
-    return [numberControl("eraser-radius", "Eraser radius", summary.radius, 8, 64, 4)];
+    return [
+      numberControl("eraser-radius", t("editor.control.eraser-radius"), summary.radius, 8, 64, 4),
+    ];
   }
-  if (summary.kind === "stroke") return strokeControls(summary);
-  return outlineControls(summary);
+  if (summary.kind === "stroke") return strokeControls(summary, t);
+  return outlineControls(summary, t);
 }
 
-function selectControls(values: ToolDefaultsV1["select"]): readonly StyleControl[] {
+function selectControls(values: ToolDefaultsV1["select"], t: Translator): readonly StyleControl[] {
   return [
-    choiceControl("selection-area", "Selection area", values.area, SELECTION_AREA_STYLE_OPTIONS),
+    choiceControl("selection-area", t("editor.control.selection-area"), values.area, [
+      { label: t("editor.shape.rectangle"), value: "rectangle" },
+      { label: t("editor.shape.lasso"), value: "lasso" },
+    ]),
     choiceControl(
       "selection-inclusion",
-      "Include elements",
+      t("editor.control.selection-inclusion"),
       values.inclusion,
-      SELECTION_INCLUSION_STYLE_OPTIONS,
+      [
+        { label: t("editor.option.fully-enclosed"), value: "fully-enclosed" },
+        { label: t("editor.option.touched"), value: "touched" },
+      ],
     ),
   ];
 }
 
 function strokeControls(
   summary: Extract<ActiveToolStyleSummary, { readonly kind: "stroke" }>,
+  t: Translator,
 ): readonly StyleControl[] {
   const controls: StyleControl[] = [
-    choiceControl("color", "Color", serializeStyleColor(summary.color), COLOR_STYLE_OPTIONS),
-    choiceControl("stroke-width", "Width", String(summary.width), PEN_WIDTH_STYLE_OPTIONS),
-    numberControl("opacity", "Opacity", summary.opacity, 0, 1, 0.05),
+    choiceControl(
+      "color",
+      t("editor.control.color"),
+      serializeStyleColor(summary.color),
+      colorStyleOptions(t),
+    ),
+    choiceControl(
+      "stroke-width",
+      t("editor.control.stroke-width"),
+      String(summary.width),
+      PEN_WIDTH_STYLE_OPTIONS,
+    ),
+    numberControl("opacity", t("editor.control.opacity"), summary.opacity, 0, 1, 0.05),
   ];
   if (summary.pressureEnabled !== null) {
     controls.push({
       checked: summary.pressureEnabled,
       id: "pressure-enabled",
       kind: "toggle",
-      label: "Pressure sensitivity",
+      label: t("editor.control.pressure-enabled"),
     });
   }
   if (summary.holdToShapeEnabled !== null) {
@@ -126,7 +137,7 @@ function strokeControls(
       checked: summary.holdToShapeEnabled,
       id: "hold-to-shape-enabled",
       kind: "toggle",
-      label: "Hold to shape",
+      label: t("editor.control.hold-to-shape-enabled"),
     });
   }
   return controls;
@@ -134,62 +145,97 @@ function strokeControls(
 
 function outlineControls(
   summary: Extract<ActiveToolStyleSummary, { readonly kind: "outline" }>,
+  t: Translator,
 ): readonly StyleControl[] {
-  const controls: StyleControl[] = [...outlinePaintControls(summary.style)];
+  const controls: StyleControl[] = [...outlinePaintControls(summary.style, t)];
   if (summary.fill !== null) {
     controls.push(
       choiceControl(
         "fill-color",
-        "Fill color",
+        t("editor.control.fill-color"),
         serializeNullableStyleColor(summary.fill.fillColor),
-        FILL_COLOR_STYLE_OPTIONS,
+        fillColorStyleOptions(t),
       ),
-      numberControl("fill-opacity", "Fill opacity", summary.fill.fillOpacity, 0, 1, 0.05),
+      numberControl(
+        "fill-opacity",
+        t("editor.control.fill-opacity"),
+        summary.fill.fillOpacity,
+        0,
+        1,
+        0.05,
+      ),
     );
   }
-  if (summary.arrowNodes !== null) controls.push(...arrowControls(summary.arrowNodes));
+  if (summary.arrowNodes !== null) controls.push(...arrowControls(summary.arrowNodes, t));
   if (summary.structural?.kind === "coordinate-system") {
     controls.push(
-      ...createStructuralStyleControls({ coordinateDimension: summary.structural.dimension }),
+      ...createStructuralStyleControls({ coordinateDimension: summary.structural.dimension }, t),
     );
   }
   if (summary.structural?.kind === "table") {
-    controls.push(...createStructuralStyleControls({ tableColumns: summary.structural.columns }));
+    controls.push(
+      ...createStructuralStyleControls({ tableColumns: summary.structural.columns }, t),
+    );
   }
   if (summary.snappingEnabled !== null) {
     controls.push({
       checked: summary.snappingEnabled,
       id: "snapping-enabled",
       kind: "toggle",
-      label: "Snapping",
+      label: t("editor.control.snapping-enabled"),
     });
   }
   return controls;
 }
 
-function outlinePaintControls(style: OutlineStyleV1): readonly StyleControl[] {
+function outlinePaintControls(style: OutlineStyleV1, t: Translator): readonly StyleControl[] {
   return [
     choiceControl(
       "outline-color",
-      "Outline color",
+      t("editor.control.outline-color"),
       serializeStyleColor(style.outlineColor),
-      COLOR_STYLE_OPTIONS,
+      colorStyleOptions(t),
     ),
     choiceControl(
       "outline-width",
-      "Outline width",
+      t("editor.control.outline-width"),
       String(style.outlineWidth),
       OUTLINE_WIDTH_STYLE_OPTIONS,
     ),
-    choiceControl("outline-style", "Outline style", style.outlineStyle, OUTLINE_STYLE_OPTIONS),
-    numberControl("outline-opacity", "Outline opacity", style.outlineOpacity, 0, 1, 0.05),
+    choiceControl(
+      "outline-style",
+      t("editor.control.outline-style"),
+      style.outlineStyle,
+      outlineStyleOptions(t),
+    ),
+    numberControl(
+      "outline-opacity",
+      t("editor.control.outline-opacity"),
+      style.outlineOpacity,
+      0,
+      1,
+      0.05,
+    ),
   ];
 }
 
-function arrowControls(nodes: { readonly start: ArrowNodeV1; readonly end: ArrowNodeV1 }) {
+function arrowControls(
+  nodes: { readonly start: ArrowNodeV1; readonly end: ArrowNodeV1 },
+  t: Translator,
+) {
   return [
-    choiceControl("arrow-start-node", "Start node", nodes.start, ARROW_NODE_STYLE_OPTIONS),
-    choiceControl("arrow-end-node", "End node", nodes.end, ARROW_NODE_STYLE_OPTIONS),
+    choiceControl(
+      "arrow-start-node",
+      t("editor.control.arrow-start-node"),
+      nodes.start,
+      arrowNodeStyleOptions(t),
+    ),
+    choiceControl(
+      "arrow-end-node",
+      t("editor.control.arrow-end-node"),
+      nodes.end,
+      arrowNodeStyleOptions(t),
+    ),
   ];
 }
 
