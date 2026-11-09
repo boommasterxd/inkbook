@@ -163,7 +163,7 @@ export class InkbookFeedbackManager {
         else {
           presenceMotion?.cancel();
           presenceMotion = undefined;
-          surface.element.setCssProps({ scale: "1" });
+          surface.element.style.removeProperty("scale");
         }
       },
       this.motionPreferences?.observeMotion,

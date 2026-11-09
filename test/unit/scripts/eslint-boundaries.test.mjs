@@ -7,6 +7,50 @@ const linter = new Linter({ configType: "flat" });
 const eslint = new ESLint();
 
 it.each([
+  ["src/main.ts", 2],
+  ["test/unit/obsidian/settings/settings-disclosure-motion.test.ts", 0],
+])("keeps host-document warnings blocking only in plugin code: %s", async (filePath, severity) => {
+  const config = await eslint.calculateConfigForFile(filePath);
+  const messages = linter.verify(
+    'document.createElement("div");',
+    {
+      files: ["**/*.ts"],
+      languageOptions: { globals: config.languageOptions.globals },
+      plugins: { obsidianmd: config.plugins.obsidianmd },
+      rules: {
+        "obsidianmd/prefer-active-doc": config.rules["obsidianmd/prefer-active-doc"] ?? "off",
+      },
+    },
+    { filename: filePath },
+  );
+
+  expect(messages.map((message) => message.severity)).toEqual(severity === 0 ? [] : [severity]);
+});
+
+it("keeps restricted Obsidian rule disables blocking", async () => {
+  const config = await eslint.calculateConfigForFile("src/main.ts");
+  const messages = linter.verify(
+    '// eslint-disable-next-line obsidianmd/prefer-active-doc -- Incorrect cross-window access.\ndocument.createElement("div");',
+    {
+      languageOptions: { globals: config.languageOptions.globals },
+      plugins: {
+        obsidianmd: config.plugins.obsidianmd,
+        "eslint-comments": config.plugins["eslint-comments"],
+      },
+      rules: {
+        "obsidianmd/prefer-active-doc": config.rules["obsidianmd/prefer-active-doc"],
+        "eslint-comments/no-restricted-disable":
+          config.rules["eslint-comments/no-restricted-disable"],
+      },
+    },
+  );
+
+  expect(messages.map(({ ruleId, severity }) => ({ ruleId, severity }))).toEqual([
+    { ruleId: "eslint-comments/no-restricted-disable", severity: 2 },
+  ]);
+});
+
+it.each([
   ["src/main.ts", true, true],
   ["test/fixtures/persistence/isolated-node-process.ts", false, false],
   ["test/unit/persistence/saving/isolated-node-process.test.ts", false, false],

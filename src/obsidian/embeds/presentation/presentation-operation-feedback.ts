@@ -248,7 +248,7 @@ export class PresentationOperationFeedback {
     if (!allowed) {
       this.#indicatorEntrance?.cancel();
       this.#indicatorEntrance = undefined;
-      this.#indicator?.setCssProps({ opacity: "1" });
+      this.#indicator?.style.removeProperty("opacity");
     }
     if (!allowed && this.#spin !== undefined) {
       this.#spin.cancel();

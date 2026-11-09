@@ -22,6 +22,8 @@ Test and test-support changes run the directly changed tests plus affected depen
 
 For non-documentation runs, selection installs dependencies and runs `npm audit --omit=dev --audit-level=high` before the quality and performance jobs can start. High/critical production findings and audit execution errors fail selection and prevent that fan-out. Development dependencies remain installed for builds and tests. The hosted quality runner omits its duplicate audit only when `EXPECTED_AUDIT=success` accompanies all four matching expected selection outputs. Any other supplied audit status or incomplete proof fails. Local quality runs without that proof retain the same production-only audit, and complete local `npm run ci` remains unfiltered. Documentation-only selection skips installation and audit; the final gate requires the corresponding `skipped` audit outcome.
 
+Every active quality run also executes native `npm ls --all`, including when selection has already verified the production audit. Invalid or missing required dependencies and incompatible peer relationships fail this check; installation success or peer warnings alone do not prove a valid installed graph. The same check runs in complete local quality and release gates.
+
 The project has no E2E or Playwright suite. Pull request selection adds no browser, container, or external-service test infrastructure. Existing accessibility checks remain within the selected Unit and Integration coverage.
 
 ## Coverage semantics

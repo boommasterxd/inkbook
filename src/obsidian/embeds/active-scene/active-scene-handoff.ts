@@ -117,6 +117,7 @@ export class ActiveScenePreviewHandoff {
     this.#mediaQuery?.removeEventListener("change", this.#handleMotionChange);
     const onLockComplete = this.#onLockComplete;
     this.#onLockComplete = undefined;
+    const lockEditor = this.#lockEditor;
     this.#lockEditor = undefined;
     onLockComplete?.();
     this.#root.classList.remove(
@@ -128,7 +129,7 @@ export class ActiveScenePreviewHandoff {
     this.#container.style.removeProperty(LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY);
     this.#preview?.classList.remove("inkbook-preview-handoff");
     this.#resetPreviewLayer();
-    this.#resetEditorLayer(this.#lockEditor);
+    this.#resetEditorLayer(lockEditor);
     this.restorePreview(false);
     this.#initialEntrance?.resumePreview();
   }
@@ -370,15 +371,8 @@ export class ActiveScenePreviewHandoff {
     }
     this.#onLockComplete = onComplete;
     this.#lockEditor = editorChrome;
-    preview.classList.add("inkbook-preview-handoff");
-    preview.setCssProps({
-      inset: "0",
-      position: "absolute",
-      zIndex: "1",
-    });
-    editorChrome.setCssProps({
-      zIndex: "2",
-    });
+    preview.classList.add("inkbook-preview-handoff", "inkbook-lock-handoff");
+    editorChrome.classList.add("inkbook-lock-handoff");
     this.#scheduleAfterPaint(() => {
       this.#resetPreviewLayer();
       editorChrome.hidden = true;
@@ -427,14 +421,11 @@ export class ActiveScenePreviewHandoff {
   }
 
   #resetPreviewLayer(): void {
-    const previewStyle = this.#preview?.style;
-    previewStyle?.removeProperty("inset");
-    previewStyle?.removeProperty("position");
-    previewStyle?.removeProperty("z-index");
+    this.#preview?.classList.remove("inkbook-lock-handoff");
   }
 
   #resetEditorLayer(editor: HTMLElement | undefined): void {
-    editor?.style.removeProperty("z-index");
+    editor?.classList.remove("inkbook-lock-handoff");
   }
 
   #complete(): void {

@@ -7,15 +7,18 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MotionPreference } from "../../../../src/rendering/motion/transitions";
 import { InkbookFeedbackManager } from "../../../../src/obsidian/feedback/feedback-manager";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { installPluginStyles } from "../../../fixtures/obsidian/plugin-styles";
 
 beforeEach(() => {
   installObsidianDomHelpers();
   vi.useFakeTimers();
+  installPluginStyles("feedback");
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   document.body.replaceChildren();
+  document.adoptedStyleSheets = [];
 });
 
 function preferences(ownerWindow: Window) {
@@ -93,7 +96,8 @@ it("settles an already visible global entrance on a live system Reduced event", 
     state.query.dispatchEvent(new Event("change"));
     const feedback = document.querySelector<HTMLElement>(".inkbook-feedback")!;
     expect(feedback.isConnected).toBe(true);
-    expect(feedback.style.scale).toBe("1");
+    expect(feedback.style.scale).toBe("");
+    expect(window.getComputedStyle(feedback).scale).toBe("1");
     expect(vi.getTimerCount()).toBe(0);
     handle.close();
     expect(feedback.isConnected).toBe(false);
