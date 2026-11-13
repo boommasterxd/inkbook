@@ -54,7 +54,11 @@ export function resolveToolCursor(options: ToolCursorOptions): ToolCursor {
       ? interaction.tool
       : state.activeTool;
   if (interaction === undefined && usesHoverEraser(options)) return eraserCursor(defaults);
-  if (interaction === undefined && options.systemHint !== undefined) {
+  if (
+    interaction === undefined &&
+    options.systemHint !== undefined &&
+    options.systemHint !== "move"
+  ) {
     return { system: options.systemHint, overlay: undefined };
   }
   if (tool === "eraser") return eraserCursor(defaults);
@@ -74,11 +78,12 @@ function interactionCursor(
     return DEFAULT_CURSOR;
   switch (interaction.phase) {
     case "element-move":
-      return MOVE_CURSOR;
+      return interaction.previewStarted ? MOVE_CURSOR : undefined;
     case "page-pan":
     case "note-scroll":
-    case "secondary-pending":
       return PAN_CURSOR;
+    case "secondary-pending":
+      return undefined;
     case "eraser-gesture":
       return eraserCursor(defaults, pointer.pointerType === "touch" ? "default" : "crosshair");
     case "touch-pending":

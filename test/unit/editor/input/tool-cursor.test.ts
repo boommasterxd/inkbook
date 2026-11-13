@@ -139,7 +139,6 @@ describe("tool cursor erasing and hints", () => {
 
   it("accepts precise system hints without any tool overlay", () => {
     const hints: ToolSystemCursor[] = [
-      "move",
       "grab",
       "grabbing",
       "ew-resize",
@@ -150,6 +149,7 @@ describe("tool cursor erasing and hints", () => {
     for (const systemHint of hints) {
       expect(resolve({ systemHint })).toEqual({ system: systemHint, overlay: undefined });
     }
+    expect(resolve({ systemHint: "move" })).toEqual(resolve());
   });
 });
 
@@ -166,10 +166,11 @@ describe("tool cursor interactions", () => {
   });
 
   it("uses accepted gestures instead of the toolbar tool or stale hover hints", () => {
-    const moved = reduceInput(
+    const pressed = reduceInput(
       base.state,
       pointerDown({ target: { elementId: "a", isSelected: true } }),
     ).state;
+    const moved = reduceInput(pressed, pointerMove()).state;
     expect(resolve({ state: moved })).toEqual({ system: "move", overlay: undefined });
     const erased = reduceInput(base.state, pointerDown({ controlOrMeta: true })).state;
     expect(resolve({ state: erased, systemHint: "move" }).overlay).toEqual({
@@ -225,5 +226,38 @@ describe("tool cursor interactions", () => {
   it("restores native feedback for absent pointers and blocked surfaces", () => {
     expect(resolve({ pointer: undefined })).toEqual(normal);
     expect(resolve({ suppressed: true, systemHint: "grabbing" })).toEqual(normal);
+  });
+});
+
+describe("tool cursor drag admission", () => {
+  it.each(["mouse", "pen"] as const)(
+    "keeps %s tool feedback until selected-element movement crosses its threshold",
+    (pointerType) => {
+      const activePointer = { ...pointer, pointerType };
+      const threshold = pointerType === "mouse" ? 2 : 6;
+      const hover = resolve({ pointer: activePointer });
+      let state = reduceInput(
+        base.state,
+        pointerDown({ pointerType, target: { elementId: "a", isSelected: true } }),
+      ).state;
+      expect(resolve({ state, pointer: activePointer, systemHint: "move" })).toEqual(hover);
+      state = reduceInput(state, pointerMove({ pointerType, x: 10 + threshold, y: 20 })).state;
+      expect(resolve({ state, pointer: activePointer })).toEqual(hover);
+      state = reduceInput(state, pointerMove({ pointerType, x: 11 + threshold, y: 20 })).state;
+      expect(resolve({ state, pointer: activePointer })).toEqual({
+        system: "move",
+        overlay: undefined,
+      });
+    },
+  );
+
+  it("changes secondary-button feedback only after page navigation is accepted", () => {
+    let state = reduceInput(base.state, pointerDown({ button: 2, buttons: 2 })).state;
+    expect(state.interaction?.phase).toBe("secondary-pending");
+    expect(resolve({ state })).toEqual(resolve());
+    state = reduceInput(state, pointerMove({ x: 16, y: 20 })).state;
+    expect(resolve({ state })).toEqual(resolve());
+    state = reduceInput(state, pointerMove({ x: 17, y: 20 })).state;
+    expect(resolve({ state })).toEqual({ system: "grabbing", overlay: undefined });
   });
 });
