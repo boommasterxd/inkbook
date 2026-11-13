@@ -27,7 +27,7 @@ export function textPaddingForReflow(element: TextElementV2, previousFontSize?: 
   return textPaddingForWidth(element.style.fontSize, element.width);
 }
 
-/** Expand only the outer field; existing wrapping, glyph positions and font resources stay exact. */
+/** Expand only the outer inset while retaining wrapping and font resource bindings. */
 export function* expandLegacyTextPaddingSteps(
   element: TextElementV2,
 ): Generator<void, TextElementV2> {
@@ -67,12 +67,17 @@ export function* expandLegacyTextPaddingSteps(
       yield;
     }
   }
+  const x = canonical(element.x - expansion);
+  const y = canonical(element.y - expansion);
+  const width = canonical(element.width + expansion * 2);
+  const height = canonical(element.height + expansion * 2);
   return {
     ...element,
-    x: canonical(element.x - expansion),
-    y: canonical(element.y - expansion),
-    width: canonical(element.width + expansion * 2),
-    height: canonical(element.height + expansion * 2),
+    x,
+    y,
+    width,
+    height,
+    pivot: { x: canonical(x + width / 2), y: canonical(y + height / 2) },
     layout,
   };
 }
