@@ -21,6 +21,7 @@ import type { FontPreviewSource } from "../../fonts/font-preview-source";
 import { menuTranslator } from "../../menus/localized-menu-text";
 
 interface ActiveEditorMenuOptions {
+  readonly canCopyText?: boolean | undefined;
   readonly localization?: Localization | undefined;
   readonly event?: MouseEvent;
   readonly factory: MenuFactoryPort;
@@ -34,6 +35,8 @@ interface ActiveEditorMenuOptions {
   readonly arrangeAvailability: Readonly<Record<ArrangeAction, boolean>>;
   readonly hasSelection: boolean;
   readonly onCopy: () => void;
+  readonly onCopyText?: (() => void) | undefined;
+  readonly onCopyElement?: (() => void) | undefined;
   readonly onCut: () => void;
   readonly onDelete: () => void;
   readonly onEraseAll: () => void;
@@ -72,6 +75,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
     options.factory,
     invocation,
     {
+      canCopyText: options.canCopyText,
       canBringForward: options.arrangeAvailability["bring-forward"],
       canBringToFront: options.arrangeAvailability["bring-to-front"],
       canCopyEmbed: true,
@@ -87,6 +91,8 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       bringForward: () => options.onArrange("bring-forward"),
       bringToFront: () => options.onArrange("bring-to-front"),
       copy: options.onCopy,
+      copyText: options.onCopyText,
+      copyElement: options.onCopyElement,
       copyEmbed: options.onCopyEmbed,
       cut: options.onCut,
       delete: options.onDelete,
@@ -309,6 +315,7 @@ export class ActiveEditorMenuController {
     };
     let session: ContextMenuSession;
     session = openActiveEditorMenu({
+      canCopyText: actions.canCopyText,
       localization: this.#options.localization,
       arrangeAvailability: actions.arrangeAvailability(),
       canEraseAll: this.#options.storeSize() > 0,
@@ -319,6 +326,8 @@ export class ActiveEditorMenuController {
       inputSurface: this.#options.inputSurface,
       onArrange: (action) => actions.execute(action),
       onCopy: () => actions.execute("copy"),
+      onCopyText: () => actions.execute("copy-text"),
+      onCopyElement: () => actions.execute("copy-element"),
       onCopyEmbed: () => actions.execute("copy-embed"),
       onCut: () => actions.execute("cut"),
       onDelete: () => actions.execute("delete"),

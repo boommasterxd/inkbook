@@ -100,6 +100,7 @@ function toolDefaults(): ToolDefaultsV1 {
 
 export function createBuiltInSettings(): InkbookSettingsV4 {
   return {
+    copyTextFieldsAsText: false,
     version: 4,
     fontLibrary: [],
     startupTool: "draw",

@@ -5,7 +5,7 @@ import { canonicalShortcutBinding, shortcutBindingSignature } from "./keyboard-s
 import { validateCustomVaultFolderPath } from "./path";
 import {
   addLegacySettingsDefaults,
-  LEGACY_VAULT_SETTINGS_KEYS,
+  migrateV3Settings,
   VAULT_SETTINGS_KEYS,
 } from "./vault-settings-compatibility";
 import {
@@ -271,55 +271,6 @@ function prepareSettingsRoot<T>(
   return { valid: true, value: input, diagnostics };
 }
 
-function migrateV3Settings(
-  input: unknown,
-  fallback: InkbookSettingsV4,
-):
-  | { readonly kind: "input"; readonly migratedFromV3: boolean; readonly value: unknown }
-  | { readonly kind: "failure"; readonly result: SettingsLoadResult<InkbookSettingsV4> } {
-  if (!isRecord(input) || input.version !== 3) {
-    return { kind: "input", migratedFromV3: false, value: input };
-  }
-  if (
-    !hasExactKeys(input, [
-      ...LEGACY_VAULT_SETTINGS_KEYS,
-      ...("fontLibrary" in input ? ["fontLibrary"] : []),
-    ])
-  ) {
-    return {
-      kind: "failure",
-      result: {
-        value: fallback,
-        diagnostics: [{ code: "settings.invalid-root", path: "$" }],
-      },
-    };
-  }
-  const legacyDefaults = input.toolDefaults;
-  if (isRecord(legacyDefaults) && Object.prototype.hasOwnProperty.call(legacyDefaults, "select")) {
-    return {
-      kind: "failure",
-      result: {
-        value: fallback,
-        diagnostics: [{ code: "settings.invalid-field", path: "toolDefaults" }],
-      },
-    };
-  }
-  return {
-    kind: "input",
-    migratedFromV3: true,
-    value: {
-      ...input,
-      version: 4,
-      selectionHighlightsEnabled: fallback.selectionHighlightsEnabled,
-      snapping: structuredClone(fallback.snapping),
-      holdToShape: structuredClone(fallback.holdToShape),
-      toolDefaults: isRecord(legacyDefaults)
-        ? { ...legacyDefaults, select: structuredClone(fallback.toolDefaults.select) }
-        : legacyDefaults,
-    },
-  };
-}
-
 export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV4> {
   const fallback = createBuiltInSettings();
   const migrated = migrateV3Settings(input, fallback);
@@ -338,6 +289,13 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
     value: {
       version: 4,
       fontLibrary: loadFontLibrary(value.fontLibrary, diagnostics),
+      copyTextFieldsAsText: validOrDefault(
+        value.copyTextFieldsAsText,
+        fallback.copyTextFieldsAsText,
+        (value): value is boolean => typeof value === "boolean",
+        diagnostics,
+        "copyTextFieldsAsText",
+      ),
       startupTool: validOrDefault(
         value.startupTool,
         fallback.startupTool,

@@ -1,5 +1,5 @@
-import type { StyleChoiceOption } from "../../menus/editor-menu-types";
-import type { Translator } from "../../../domain/localization";
+import type { StyleChoiceOption, StyleControl } from "../../menus/editor-menu-types";
+import { createEnglishLocalization, type Translator } from "../../../domain/localization";
 import type { Keymap, Setting, SettingDefinitionRender } from "obsidian";
 
 import type {
@@ -38,6 +38,7 @@ export interface ToolSectionValues {
   readonly observeMotion?: NativeControlFeedbackOptions["observeMotion"];
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly getDefaults: () => ToolDefaultsV1;
+  readonly getCopyTextFieldsAsText: () => boolean;
   readonly getTextFontOptions?: () => readonly StyleChoiceOption[];
   readonly getMotion: () => InkbookDeviceSettingsV2["motion"];
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
@@ -96,13 +97,7 @@ function renderToolSection(
         fontManagementAction: spec.tool === "text" ? values.fontManagementAction : undefined,
         keymap: values.keymap,
         ...(values.t === undefined ? {} : { t: values.t }),
-        controls: () =>
-          createToolStyleControls(
-            values.getDefaults(),
-            spec.tool,
-            values.t,
-            spec.tool === "text" ? values.getTextFontOptions?.() : undefined,
-          ),
+        controls: () => toolSectionControls(spec, values),
         descriptions: spec.controlDescriptions,
         idPrefix: panelId,
         onChange: (controlId, value) => setToolControl(spec, values, controlId, value),
@@ -142,6 +137,32 @@ function renderToolSection(
     dispose();
     panelMotion.dispose();
   };
+}
+
+function toolSectionControls(
+  spec: ToolSectionSpec,
+  values: ToolSectionValues,
+): readonly StyleControl[] {
+  const controls = createToolStyleControls(
+    values.getDefaults(),
+    spec.tool,
+    values.t,
+    spec.tool === "text" ? values.getTextFontOptions?.() : undefined,
+  );
+  if (spec.tool === "text") {
+    return [
+      ...controls,
+      {
+        id: "copy-text-fields-as-text",
+        kind: "toggle",
+        checked: values.getCopyTextFieldsAsText(),
+        label: (values.t ?? createEnglishLocalization().t)(
+          "settings.controls.copyTextFieldsAsText",
+        ),
+      },
+    ];
+  }
+  return controls;
 }
 
 function setToolControl(

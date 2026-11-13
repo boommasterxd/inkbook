@@ -13,12 +13,14 @@ import type { EditableDocumentModel } from "../document-session/vault-document-s
 import { ActiveEditorClipboardController } from "./controller-clipboard";
 import type { SynchronousClipboardData } from "./clipboard-reader";
 import { isClipboardAction } from "./controller-helpers";
+import { isTextOnlySelection } from "./clipboard-text-copy";
 import { arrangeSelectionAvailability, canArrangeSelection } from "./controller-elements";
 import { ActiveDocumentHistory } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
 
 export interface ActiveEditorActionsOptions {
+  readonly copyTextFieldsAsText?: boolean;
   readonly onPasteText?: import("./controller-clipboard").ActiveEditorClipboardOptions["onPasteText"];
   readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
   readonly currentSelection: () => ReadonlySet<string>;
@@ -68,8 +70,10 @@ export class ActiveEditorActions {
   #actionConfirmation: ToolbarActionConfirmation | null = null;
   #confirmationSequence = 0;
   #confirmationTimer: number | undefined;
+  #copyTextFieldsAsText: boolean;
 
   public constructor(options: ActiveEditorActionsOptions) {
+    this.#copyTextFieldsAsText = options.copyTextFieldsAsText ?? false;
     this.#renderer = options.renderer;
     this.#confirmEraseAll = options.confirmEraseAll;
     this.#isAttached = options.isAttached;
@@ -144,6 +148,14 @@ export class ActiveEditorActions {
     return this.#actionConfirmation;
   }
 
+  public updateTextCopyPreference(enabled: boolean): void {
+    this.#copyTextFieldsAsText = enabled;
+  }
+
+  public get canCopyText(): boolean {
+    return isTextOnlySelection(this.#model.store, this.#currentSelection());
+  }
+
   public get hasPasteCandidate(): boolean {
     return this.#clipboard.hasPastePayload;
   }
@@ -186,6 +198,9 @@ export class ActiveEditorActions {
 
   public isAvailable(action: ContextMenuAction): boolean {
     if (!this.#isEnabled() || this.#documentHistory.pending) return false;
+    if (action === "copy-text" || action === "copy-element") {
+      return this.#clipboard.canCopyOrCut && this.canCopyText;
+    }
     if (action === "copy" || action === "cut" || action === "delete") {
       return (
         this.#currentSelection().size > 0 && (action === "delete" || this.#clipboard.canCopyOrCut)
@@ -220,7 +235,7 @@ export class ActiveEditorActions {
   }
 
   #executeClipboard(
-    action: "copy" | "cut" | "paste",
+    action: "copy" | "copy-text" | "copy-element" | "cut" | "paste",
     invocation: PasteInvocation | undefined,
   ): void {
     if (!this.#isEnabled() || this.#documentHistory.pending) {
@@ -228,7 +243,13 @@ export class ActiveEditorActions {
       return;
     }
     const selection = this.#currentSelection();
-    if (action === "copy") void this.#clipboard.copy(selection);
+    const textOnly =
+      (action === "copy-text" || (action === "copy" && this.#copyTextFieldsAsText)) &&
+      isTextOnlySelection(this.#model.store, selection);
+    if (action === "copy-text" && !textOnly) return;
+    if (action === "copy-text" || (action === "copy" && this.#copyTextFieldsAsText && textOnly))
+      void this.#clipboard.copyText(selection);
+    else if (action === "copy" || action === "copy-element") void this.#clipboard.copy(selection);
     else if (action === "cut") void this.#clipboard.cut(selection);
     else void this.#clipboard.paste(invocation ?? this.#toolbarPaste());
   }
@@ -338,6 +359,7 @@ function feedbackForClipboardResult(
   if (result.reason === "empty-selection") return "clipboard-copy-failed";
   if (result.reason === "encode-failed") return "clipboard-copy-failed";
   if (result.reason === "system-write-failed") return "clipboard-copy-fallback";
+  if (result.reason === "plain-system-write-failed") return "clipboard-copy-failed";
   if (result.reason === "clipboard-read-failed") return "clipboard-paste-read-failed";
   if (result.reason === "invalid-payload") return "clipboard-paste-invalid";
   if (result.reason === "paste-failed") return "clipboard-paste-failed";

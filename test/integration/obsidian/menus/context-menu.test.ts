@@ -210,6 +210,60 @@ it("restores focus before handing off to erase-all confirmation", () => {
   canvas.remove();
 });
 
+describe("context menu text copying", () => {
+  it.each([
+    ["en", "Copy text field", "Copy text"],
+    ["de", "Textfeld kopieren", "Text kopieren"],
+  ] as const)(
+    "offers both explicit text copy actions in %s",
+    (language, elementLabel, textLabel) => {
+      const menu = new FakeMenu();
+      const copy = vi.fn();
+      const copyText = vi.fn();
+      const copyElement = vi.fn();
+      populateContextMenu(
+        menu,
+        document,
+        state({ canCopyText: true }),
+        { ...createContextMenuHandlers(), copy, copyText, copyElement },
+        new Localization(language),
+      );
+      expect(titles(menu).slice(0, 3)).toEqual([
+        elementLabel,
+        textLabel,
+        language === "en" ? "Cut" : "Ausschneiden",
+      ]);
+      const entries = menu.entries.filter((entry): entry is RecordedItem => entry !== "separator");
+      entries[0]?.click?.();
+      entries[1]?.click?.();
+      expect(copy).not.toHaveBeenCalled();
+      expect(copyText).toHaveBeenCalledOnce();
+      expect(copyElement).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    { hasSelection: false, canCopyText: true },
+    { canCopyText: false },
+    { canCopyText: undefined },
+  ])("omits text copy actions without an eligible selection: %j", (availability) => {
+    const menu = new FakeMenu();
+    populateContextMenu(menu, document, state(availability), {
+      ...createContextMenuHandlers(),
+      copyText: vi.fn(),
+      copyElement: vi.fn(),
+    });
+    expect(titles(menu)).not.toContain("Copy text");
+    expect(titles(menu)).not.toContain("Copy text field");
+  });
+
+  it("keeps legacy copy handlers valid when explicit text handlers are absent", () => {
+    const menu = new FakeMenu();
+    populateContextMenu(menu, document, state({ canCopyText: true }), createContextMenuHandlers());
+    expect(titles(menu).slice(0, 2)).toEqual(["Copy", "Cut"]);
+  });
+});
+
 describe("context menu population", () => {
   it("populates the selection and canvas sections in the contract order", () => {
     const menu = new FakeMenu();

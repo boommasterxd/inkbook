@@ -24,6 +24,7 @@ import type { NavigationCursorLayout } from "./navigation/navigation-layout";
 import type { TextFontLibraryPort } from "./text-preparation";
 
 export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
+  readonly copyTextFieldsAsText?: boolean;
   readonly textFonts?: TextFontLibraryPort;
   readonly localization?: Localization | undefined;
   readonly container: HTMLElement;

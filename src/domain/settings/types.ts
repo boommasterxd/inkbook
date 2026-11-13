@@ -179,6 +179,7 @@ export interface FontLibraryEntryV2 {
 }
 
 export interface InkbookSettingsV4 {
+  copyTextFieldsAsText: boolean;
   fontLibrary: FontLibraryEntryV2[];
   version: 4;
   startupTool: StartupToolV1;

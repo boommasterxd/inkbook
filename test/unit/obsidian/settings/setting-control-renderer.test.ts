@@ -48,7 +48,7 @@ function mount(definition: SettingDefinitionRender, container = document.body): 
   return definition.render(setting, group) ?? (() => undefined);
 }
 
-it("opens font management from the Text defaults picker instead of a standalone settings group", () => {
+it("persists text-copy preferences and opens font management from Text defaults", async () => {
   const store = new InkbookSettingsStore(
     { loadData: async () => createBuiltInSettings(), saveData: vi.fn() },
     { loadLocalStorage: () => createBuiltInDeviceSettings(), saveLocalStorage: vi.fn() },
@@ -78,6 +78,16 @@ it("opens font management from the Text defaults picker instead of a standalone 
   const dispose = mount(findRender(definitions, store.localization.t("settings.controls.text")));
   try {
     document.querySelector<HTMLButtonElement>(".inkbook-settings-tool-trigger")!.click();
+    const copyToggle = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Copy text fields as text"]',
+    )!;
+    expect(copyToggle.checked).toBe(false);
+    expect(
+      document.getElementById(copyToggle.getAttribute("aria-describedby")!.split(" ")[0]!)
+        ?.textContent,
+    ).toContain("Markdown and LaTeX are preserved");
+    copyToggle.click();
+    await vi.waitFor(() => expect(store.getVaultSettings().copyTextFieldsAsText).toBe(true));
     const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
     const confirmedFamily = tab.getControlValue("toolDefaults.text.fontFamily");
     trigger.click();

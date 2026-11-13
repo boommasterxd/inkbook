@@ -60,19 +60,24 @@ describe("vault settings loading", () => {
   });
 });
 
+function legacyV3VaultSettings(current: ReturnType<typeof createBuiltInSettings>) {
+  const {
+    snapping: _snapping,
+    selectionHighlightsEnabled: _highlights,
+    copyTextFieldsAsText: _copyText,
+    holdToShape: _holdToShape,
+    ...legacySettings
+  } = current;
+  return { ...legacySettings, version: 3 };
+}
+
 describe("vault settings V3 migration", () => {
   it("migrates valid V3 settings without changing existing values", () => {
     const current = createBuiltInSettings();
     current.startupTool = "arrow";
     current.toolDefaults.pen.opacity = 0.35;
     const { select: _select, ...legacyToolDefaults } = current.toolDefaults;
-    const {
-      snapping: _snapping,
-      selectionHighlightsEnabled: _highlights,
-      holdToShape: _holdToShape,
-      ...legacyCurrent
-    } = current;
-    const legacy = { ...legacyCurrent, version: 3, toolDefaults: legacyToolDefaults };
+    const legacy = { ...legacyV3VaultSettings(current), toolDefaults: legacyToolDefaults };
 
     const result = loadSettings(legacy);
 
@@ -91,15 +96,8 @@ describe("vault settings V3 migration", () => {
     const current = createBuiltInSettings();
     current.startupTool = "arrow";
     const { select: _select, ...legacyToolDefaults } = current.toolDefaults;
-    const {
-      snapping: _snapping,
-      selectionHighlightsEnabled: _highlights,
-      holdToShape: _holdToShape,
-      ...legacyCurrent
-    } = current;
     const legacy = {
-      ...legacyCurrent,
-      version: 3,
+      ...legacyV3VaultSettings(current),
       toolDefaults: {
         ...legacyToolDefaults,
         pen: { ...legacyToolDefaults.pen, opacity: Number.NaN },
@@ -117,14 +115,7 @@ describe("vault settings V3 migration", () => {
 
   it("rejects V3 tool defaults containing fields outside the legacy schema", () => {
     const current = structuredClone(createBuiltInSettings());
-    const {
-      snapping: _snapping,
-      selectionHighlightsEnabled: _highlights,
-      holdToShape: _holdToShape,
-      ...legacySettings
-    } = current;
-    const legacy = legacySettings as unknown as Record<string, unknown>;
-    legacy.version = 3;
+    const legacy = legacyV3VaultSettings(current);
 
     const result = loadSettings(legacy);
 

@@ -8,6 +8,7 @@ import {
 import { InkbookSettingsStore } from "./storage";
 
 type VaultControlKey =
+  | "copyTextFieldsAsText"
   | "startupTool"
   | "selectionHighlightsEnabled"
   | "refreshRatePreference"

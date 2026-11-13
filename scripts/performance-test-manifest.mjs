@@ -28,6 +28,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/obsidian/fonts/font-import-staging-work.test.ts",
     "test/performance/obsidian/embeds/active-editor/text-caret-occlusion-work.test.ts",
     "test/performance/obsidian/embeds/active-editor/selected-text-activation-work.test.ts",
+    "test/performance/obsidian/embeds/active-editor/text-copy-work.test.ts",
     "test/performance/obsidian/embeds/active-editor/text-handle-input-work.test.ts",
     "test/performance/obsidian/text/editor/text-background-work.test.ts",
     "test/performance/obsidian/text/editor/text-editor-scroll-work.test.ts",

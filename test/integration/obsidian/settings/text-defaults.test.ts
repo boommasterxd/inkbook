@@ -76,11 +76,17 @@ it("reuses every Text Style control and persists every matching vault default th
       [...view.container.querySelectorAll<HTMLElement>("[data-control]")].map(
         ({ dataset }) => dataset.control,
       ),
-    ).toEqual(controls.map(({ id }) => id));
+    ).toEqual([...controls.map(({ id }) => id), "copy-text-fields-as-text"]);
     for (const model of controls) {
       const menuControl = menu.querySelector(`[data-control="${model.id}"]`)!;
       expect(controlState(control(view.container, model.id))).toEqual(controlState(menuControl));
     }
+    expect(menu.querySelector('[data-control="copy-text-fields-as-text"]')).toBeNull();
+    requiredElement<HTMLInputElement>(
+      control(view.container, "copy-text-fields-as-text"),
+      'input[type="checkbox"]',
+    ).click();
+    await vi.waitFor(() => expect(store.getVaultSettings().copyTextFieldsAsText).toBe(true));
     const changes = [
       ["text-font-family", "fontFamily", "source-serif"],
       ["text-font-size", "fontSize", 31.375],
@@ -109,7 +115,7 @@ it("reuses every Text Style control and persists every matching vault default th
         expect(tab.getControlValue(`toolDefaults.text.${key}`)).toEqual(value),
       );
     }
-    expect(vault.saves).toBe(changes.length);
+    expect(vault.saves).toBe(changes.length + 1);
     expect(vault.value.toolDefaults.text).toEqual({
       fontFamily: "source-serif",
       fontSize: 31.375,

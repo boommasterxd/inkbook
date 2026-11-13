@@ -87,6 +87,7 @@ describe("InkbookSettingsStore", () => {
     delete legacy.snapping;
     delete legacy.holdToShape;
     delete legacy.selectionHighlightsEnabled;
+    delete legacy.copyTextFieldsAsText;
     delete (legacy.toolDefaults as Record<string, unknown>).select;
     const store = new InkbookSettingsStore(
       new VaultFake(legacy),
@@ -179,6 +180,7 @@ describe("InkbookSettingsStore persistence", () => {
     const vault = new VaultFake({
       ...createBuiltInSettings(),
       selectionHighlightsEnabled: false,
+      copyTextFieldsAsText: true,
       holdToShape: { enabled: false, holdDurationMs: 600, jitterTolerancePx: 12 },
     });
     const device = new DeviceFake(createBuiltInDeviceSettings());
@@ -186,6 +188,7 @@ describe("InkbookSettingsStore persistence", () => {
     await store.load();
 
     expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(false);
+    expect(store.getVaultSettings().copyTextFieldsAsText).toBe(true);
     expect(store.getVaultSettings().holdToShape).toEqual({
       enabled: false,
       holdDurationMs: 600,
@@ -194,6 +197,7 @@ describe("InkbookSettingsStore persistence", () => {
     await store.resetAll();
 
     expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(true);
+    expect(store.getVaultSettings().copyTextFieldsAsText).toBe(false);
     expect(store.getVaultSettings().holdToShape).toEqual({
       enabled: true,
       holdDurationMs: 400,

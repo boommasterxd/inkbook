@@ -39,8 +39,7 @@ const ports = vi.hoisted(() => ({
   setScrollPreloadMarginPx: vi.fn(),
   setReducedMotion: vi.fn(),
   setSelectionHighlightsEnabled: vi.fn(),
-  updateSnappingSettings: vi.fn(),
-  updateHoldToShapeSettings: vi.fn(),
+  updateDrawingPreferences: vi.fn(),
   prewarmEnabled: vi.fn(),
   prewarmDispose: vi.fn(),
 }));
@@ -71,8 +70,7 @@ vi.mock("../../../../../src/obsidian/embeds/active-editor/controller", () => ({
     public readonly isActionAvailable = vi.fn(() => true);
     public readonly dispose = vi.fn();
     public readonly updateDeviceSettings = vi.fn();
-    public readonly updateSnappingSettings = ports.updateSnappingSettings;
-    public readonly updateHoldToShapeSettings = ports.updateHoldToShapeSettings;
+    public readonly updateDrawingPreferences = ports.updateDrawingPreferences;
     public readonly getViewState = vi.fn(() => ({ cameraX: 0, zoom: 1 }));
     public readonly readResizeAnchor = vi.fn();
     public readonly applyResize = vi.fn(() => true);
@@ -263,14 +261,13 @@ it("forwards drawing preferences only while the active scene is alive", () => {
   settings.snapping.enabled = false;
   settings.holdToShape.holdDurationMs = 1000;
   settings.selectionHighlightsEnabled = false;
+  settings.copyTextFieldsAsText = true;
   h.scene.updateDrawingPreferences(settings);
-  expect(ports.updateSnappingSettings).toHaveBeenCalledExactlyOnceWith(settings.snapping);
-  expect(ports.updateHoldToShapeSettings).toHaveBeenCalledExactlyOnceWith(settings.holdToShape);
+  expect(ports.updateDrawingPreferences).toHaveBeenCalledExactlyOnceWith(settings);
   expect(ports.setSelectionHighlightsEnabled).toHaveBeenLastCalledWith(false);
   h.scene.dispose();
   h.scene.updateDrawingPreferences(createBuiltInSettings());
-  expect(ports.updateSnappingSettings).toHaveBeenCalledOnce();
-  expect(ports.updateHoldToShapeSettings).toHaveBeenCalledOnce();
+  expect(ports.updateDrawingPreferences).toHaveBeenCalledOnce();
   expect(ports.setSelectionHighlightsEnabled).toHaveBeenCalledTimes(2);
 });
 

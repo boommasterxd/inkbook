@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
 import { ElementStore } from "../../../../../../src/domain/store/public";
 import type { InkElementV1 } from "../../../../../../src/domain/schema/public";
+import { createBuiltInSettings } from "../../../../../../src/domain/settings";
 import { ActiveTextSession } from "../../../../../../src/obsidian/embeds/active-editor/text-session";
 import type { MenuItemPort, MenuPort } from "../../../../../../src/obsidian/menus/menu-ports";
 import { installObsidianDomHelpers } from "../../../../../adapters/obsidian/dom";
@@ -22,7 +23,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-it.each(["text", "shape", "mixed", "empty"] as const)(
+it.each(["text", "texts", "shape", "mixed", "empty"] as const)(
   "offers editing only for one selected text element: %s",
   (selection) => {
     const text = textElement();
@@ -30,18 +31,27 @@ it.each(["text", "shape", "mixed", "empty"] as const)(
     const elements: InkElementV1[] =
       selection === "text"
         ? [text]
-        : selection === "shape"
-          ? [shape]
-          : selection === "mixed"
-            ? [text, shape]
-            : [];
+        : selection === "texts"
+          ? [text, textElement(9)]
+          : selection === "shape"
+            ? [shape]
+            : selection === "mixed"
+              ? [text, shape]
+              : [];
     const h = createHarness({ model: createActiveEditorModel(new ElementStore(elements)) });
     const items = captureItems(h.menu);
     const edit = vi.spyOn(ActiveTextSession.prototype, "edit").mockResolvedValue(true);
     try {
       h.controller.handleToolbarAction("select");
       h.key("a", { ctrlKey: true });
-      h.controller.handleContextMenu(new MouseEvent("contextmenu", { cancelable: true }));
+      for (const copyTextFieldsAsText of [false, true]) {
+        items.clear();
+        h.controller.updateDrawingPreferences({ ...createBuiltInSettings(), copyTextFieldsAsText });
+        h.controller.handleContextMenu(new MouseEvent("contextmenu", { cancelable: true }));
+        expect(items.has("Copy text")).toBe(selection === "text" || selection === "texts");
+        expect(items.has("Copy text field")).toBe(selection === "text" || selection === "texts");
+        expect(items.has("Copy")).toBe(selection === "shape" || selection === "mixed");
+      }
       const action = items.get("Edit text");
       expect(action !== undefined).toBe(selection === "text");
       action?.();

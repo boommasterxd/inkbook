@@ -227,6 +227,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       t: this.store.localization.t,
       viewState,
       getDefaults: () => this.store.getVaultSettings().toolDefaults,
+      getCopyTextFieldsAsText: () => this.store.getVaultSettings().copyTextFieldsAsText,
       getTextFontOptions: () => [
         ...BUILT_IN_TEXT_FONT_OPTIONS,
         ...(this.scheduling?.fontLibrary?.choices() ?? []),
@@ -333,6 +334,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     return this.store
       .updateVaultSettings((settings) => {
         settings.toolDefaults.select = cloneDefaults("select");
+        settings.copyTextFieldsAsText = createBuiltInSettings().copyTextFieldsAsText;
         settings.toolDefaults.pen = cloneDefaults("pen");
         settings.toolDefaults.text = cloneDefaults("text");
         settings.toolDefaults.highlighter = cloneDefaults("highlighter");

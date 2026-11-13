@@ -112,6 +112,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     ...(options.registerApplied === undefined ? {} : { registerApplied: options.registerApplied }),
   });
   const actions = new ActiveEditorActions({
+    copyTextFieldsAsText: controller.copyTextFieldsAsText ?? false,
     confirmEraseAll: controller.confirmEraseAll,
     currentSelection: options.selection,
     history: options.history,

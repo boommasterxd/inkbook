@@ -10,6 +10,7 @@ describe("tool behavior preferences", () => {
     expected.toolDefaults.arrow.startNode = "circle";
     expected.snapping.enabled = false;
     const input = JSON.parse(JSON.stringify(expected)) as Record<string, unknown>;
+    delete input.copyTextFieldsAsText;
     const tools = input.toolDefaults as Record<string, Record<string, unknown>>;
     delete tools.pen?.holdToShapeEnabled;
     delete tools.line;
@@ -35,6 +36,19 @@ describe("tool behavior preferences", () => {
     const result = loadSettings(input);
     expect(result.diagnostics).toEqual([]);
     expect(result.value).toEqual(input);
+  });
+
+  it("loads explicit text-copy choices and rejects invalid persisted values", () => {
+    const defaults = createBuiltInSettings();
+    for (const enabled of [true, false]) {
+      const input = { ...defaults, copyTextFieldsAsText: enabled };
+      expect(loadSettings(input)).toEqual({ value: input, diagnostics: [] });
+    }
+    const loaded = loadSettings({ ...defaults, copyTextFieldsAsText: "true" });
+    expect(loaded.value).toEqual(defaults);
+    expect(loaded.diagnostics).toEqual([
+      { code: "settings.invalid-field", path: "copyTextFieldsAsText" },
+    ]);
   });
 
   it("diagnoses explicitly invalid preferences instead of treating them as legacy", () => {

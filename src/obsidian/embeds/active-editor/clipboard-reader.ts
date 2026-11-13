@@ -65,7 +65,7 @@ export function readSynchronousClipboardCandidates(
 
 export async function readClipboardCandidates(
   clipboard: Clipboard | undefined,
-  sessionText?: string,
+  sessionText?: string | TextClipboardCandidates,
   preferSession = false,
 ): Promise<TextClipboardCandidates | null> {
   if (preferSession) return sessionCandidates(sessionText);
@@ -137,8 +137,11 @@ async function boundedBlobText(blob: Blob): Promise<string> {
   return text;
 }
 
-function sessionCandidates(sessionText?: string): ClipboardCandidates | null {
-  return sessionText === undefined ? null : { sessionText };
+function sessionCandidates(
+  sessionText?: string | TextClipboardCandidates,
+): TextClipboardCandidates | null {
+  if (sessionText === undefined) return null;
+  return typeof sessionText === "string" ? { sessionText } : sessionText;
 }
 
 export function hasInkbookClipboardCandidate(candidates: TextClipboardCandidates): boolean {

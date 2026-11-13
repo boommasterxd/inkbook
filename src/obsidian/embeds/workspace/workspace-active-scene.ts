@@ -93,6 +93,7 @@ export function createWorkspaceActiveScene(
     scrollOwner: attachment.scrollOwner,
     workScheduler: options.workScheduler,
     selectionHighlightsEnabled: options.vaultSettings.selectionHighlightsEnabled,
+    copyTextFieldsAsText: options.vaultSettings.copyTextFieldsAsText,
     snapping: options.vaultSettings.snapping,
     holdToShape: options.vaultSettings.holdToShape,
     startupTool: options.vaultSettings.startupTool,

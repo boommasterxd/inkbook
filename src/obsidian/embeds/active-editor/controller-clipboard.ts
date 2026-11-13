@@ -25,6 +25,7 @@ import {
 import type { ActiveEditorHistory } from "./history";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { capturePastePlan } from "../../../persistence/clipboard/paste-plan-snapshot";
+import { copyTextSelection } from "./clipboard-text-copy";
 
 export type ClipboardControllerResult =
   | { readonly action: "copy" | "cut"; readonly kind: "copied" }
@@ -40,6 +41,7 @@ export type ClipboardControllerResult =
         | "encode-failed"
         | "invalid-payload"
         | "paste-failed"
+        | "plain-system-write-failed"
         | "stale-operation"
         | "system-write-failed";
     };
@@ -128,6 +130,7 @@ function clipboardItem(
 }
 
 export class ActiveEditorClipboardController {
+  readonly #abort = new AbortController();
   readonly #adoptionGuard: ClipboardAdoptionGuard;
   readonly #currentSelection: () => ReadonlySet<string>;
   readonly #history: ActiveEditorHistory;
@@ -146,6 +149,7 @@ export class ActiveEditorClipboardController {
   #pending = false;
   #repeatState: PasteRepeatState | undefined;
   #sessionPayload: ClipboardWritePayload | undefined;
+  #sessionPlainText: string | undefined;
   #sessionPayloadFresherThanSystem = false;
 
   constructor(options: ActiveEditorClipboardOptions) {
@@ -172,7 +176,7 @@ export class ActiveEditorClipboardController {
   }
 
   get hasPastePayload(): boolean {
-    return this.#sessionPayload !== undefined;
+    return this.#sessionPayload !== undefined || this.#sessionPlainText !== undefined;
   }
 
   get canCopyOrCut(): boolean {
@@ -185,11 +189,44 @@ export class ActiveEditorClipboardController {
 
   dispose(): void {
     this.#beginOperation();
+    this.#abort.abort();
     this.#adoptionGuard.dispose();
   }
 
   copy(selection: ReadonlySet<string>): Promise<ClipboardControllerResult> {
     return this.#runExclusive("copy", (operation) => this.#copyOrCut(selection, false, operation));
+  }
+
+  copyText(selection: ReadonlySet<string>): Promise<ClipboardControllerResult> {
+    return this.#runExclusive("copy", async (operation) => {
+      if (selection.size === 0) return this.#reportUnavailable("copy", "empty-selection");
+      const snapshot = new Set(selection);
+      const version = this.#model.store.mutationVersion;
+      const isCurrent = () =>
+        this.#isOperationCurrent(operation) &&
+        this.#isPresentationAttached() &&
+        this.#model.store.mutationVersion === version;
+      this.#sessionPayload = undefined;
+      this.#sessionPlainText = undefined;
+      this.#sessionPayloadFresherThanSystem = false;
+      this.#onPasteAvailabilityChanged?.(false);
+      const result = await copyTextSelection({
+        isCurrent,
+        isSelectionCurrent: () => sameSelection(snapshot, this.#currentSelection()),
+        port: this.#writePort(),
+        scheduler: this.#workScheduler,
+        signal: this.#abort.signal,
+        selection: snapshot,
+        store: this.#model.store,
+        timers: this.#ownerWindow,
+      });
+      if (result.kind === "unavailable") return this.#reportUnavailable("copy", result.reason);
+      if (!isCurrent() || !sameSelection(snapshot, this.#currentSelection()))
+        return this.#reportUnavailable("copy", "stale-operation");
+      this.#sessionPlainText = result.source;
+      this.#onPasteAvailabilityChanged?.(true);
+      return this.#report({ action: "copy", kind: "copied" });
+    });
   }
 
   cut(selection: ReadonlySet<string>): Promise<ClipboardControllerResult> {
@@ -416,7 +453,9 @@ export class ActiveEditorClipboardController {
   async #readCandidates(): Promise<TextClipboardCandidates | null> {
     return readClipboardCandidates(
       this.#ownerWindow.navigator.clipboard,
-      this.#sessionPayload?.customText,
+      this.#sessionPlainText === undefined
+        ? this.#sessionPayload?.customText
+        : { plainText: this.#sessionPlainText },
       this.#sessionPayloadFresherThanSystem,
     );
   }
@@ -439,6 +478,7 @@ export class ActiveEditorClipboardController {
       retainSessionPayload: (payload) => {
         const wasAvailable = this.hasPastePayload;
         this.#sessionPayload = payload;
+        this.#sessionPlainText = undefined;
         this.#sessionPayloadFresherThanSystem = true;
         if (!wasAvailable) this.#onPasteAvailabilityChanged?.(true);
       },

@@ -47,6 +47,8 @@ export const editor = {
   "editor.action.overflow": "Weitere Optionen",
   "editor.action.paste": "Einfügen",
   "editor.action.copy": "Kopieren",
+  "editor.action.copy-text": "Text kopieren",
+  "editor.action.copy-element": "Textfeld kopieren",
   "editor.action.cut": "Ausschneiden",
   "editor.action.delete": "Löschen",
   "editor.action.background": "Hintergrund",

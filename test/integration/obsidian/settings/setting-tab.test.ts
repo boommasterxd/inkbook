@@ -366,6 +366,7 @@ describe("InkbookSettingTab remaining group reset integration", () => {
     const { store, tab, defaults, deviceDefaults } = createResetFixture();
     await tab.setControlValue("pageDefaults.activeBufferLines", 6);
     await tab.setControlValue("toolDefaults.pen.width", 14);
+    await tab.setControlValue("copyTextFieldsAsText", true);
     await tab.setControlValue("toolDefaults.pen.holdToShapeEnabled", false);
     await tab.setControlValue("toolDefaults.line.snappingEnabled", false);
     await tab.setControlValue("toolDefaults.arrow.snappingEnabled", false);
@@ -394,6 +395,7 @@ describe("InkbookSettingTab remaining group reset integration", () => {
       straightHighlighter: defaults.toolDefaults.straightHighlighter,
     });
     expect(tab.getControlValue("toolDefaults.select.area")).toBe("lasso");
+    expect(tab.getControlValue("copyTextFieldsAsText")).toBe(false);
     expect(tab.getControlValue("toolDefaults.line.snappingEnabled")).toBe(false);
     expect(tab.getControlValue("toolDefaults.arrow.snappingEnabled")).toBe(false);
     resetGroup(tab, "Snapping");

@@ -24,6 +24,7 @@ import type { EditorChromeOpenings } from "./editor-chrome-openings";
 import type { HostZoomScroll } from "../live-preview/live-preview-zoom-scroll";
 
 export interface ActiveInkbookSceneOptions extends EditorChromeOpenings, LockedPreviewPresentation {
+  readonly copyTextFieldsAsText?: boolean;
   readonly textFonts?: TextFontLibraryPort | undefined;
   readonly localization?: Localization | undefined;
   readonly hostZoomScroll?: HostZoomScroll;

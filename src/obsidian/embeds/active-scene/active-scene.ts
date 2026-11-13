@@ -285,12 +285,9 @@ export class ActiveInkbookScene {
     }
   };
 
-  public updateDrawingPreferences(
-    settings: Pick<InkbookSettingsV4, "snapping" | "holdToShape" | "selectionHighlightsEnabled">,
-  ): void {
+  public updateDrawingPreferences(settings: InkbookSettingsV4): void {
     if (this.#disposed) return;
-    this.#controller.updateSnappingSettings(settings.snapping);
-    this.#controller.updateHoldToShapeSettings(settings.holdToShape);
+    this.#controller.updateDrawingPreferences(settings);
     this.#renderer.setSelectionHighlightsEnabled(settings.selectionHighlightsEnabled);
   }
 

@@ -101,6 +101,8 @@ When the unified history is empty, the plugin does not automatically lock the em
 
 These actions apply to selected canvas elements, not to the entire embed.
 
+Text-only selections additionally support source copying and a configurable ordinary Copy action, as defined in [Text Fields](text-fields.md#persistence-clipboard-and-pdf). The complete-element behavior below remains the default and always applies to mixed selections and Cut.
+
 Copy:
 
 - serializes the selection's geometry and style as JSON
@@ -164,16 +166,17 @@ Moving beyond the long-press threshold, receiving a second touch, starting a pen
 
 When a selection exists, the menu begins with:
 
-1. Copy
-2. Cut
-3. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
-4. a separator
-5. Delete
-6. a separator
-7. Bring forward
-8. Send backward
-9. Bring to front
-10. Send to back
+1. Copy, or Copy text field for a text-only selection
+2. Copy text for a text-only selection, independently of the ordinary Copy preference
+3. Cut
+4. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
+5. a separator
+6. Delete
+7. a separator
+8. Bring forward
+9. Send backward
+10. Bring to front
+11. Send to back
 
 The canvas section follows after a separator:
 

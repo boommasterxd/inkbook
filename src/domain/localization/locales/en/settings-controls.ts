@@ -1,4 +1,7 @@
 export const settingsControls = {
+  "settings.controls.copyTextFieldsAsText": "Copy text fields as text",
+  "settings.controls.copyTextFieldsAsTextHelp":
+    "Markdown and LaTeX are preserved. Fonts, colors, backgrounds, and other Inkbook formatting are not included.",
   "settings.controls.text": "Text",
   "settings.controls.textHelp": "Configure defaults for newly created text fields.",
   "settings.controls.textFontFamilyHelp": "Choose the font family used by new text fields.",

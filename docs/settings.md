@@ -478,6 +478,8 @@ Autosave delays, horizontal culling margin, spatial-index size, cache size, work
 
 Text defaults reuse the Style control order and font-size UI range defined in [Text Fields](text-fields.md#fonts-and-settings), including preservation of valid stored sizes outside the slider endpoints. Settings preview slider values locally and persist on change; canvas selection previews have their own lifecycle and do not mutate these defaults.
 
+The Text settings section also exposes the vault-wide `copyTextFieldsAsText` toggle, separate from element style defaults. Its built-in value is `false`; valid older settings receive that value additively. Changes apply immediately to active editors. The drawing-tools group reset and complete reset restore `false`. Clipboard representations and retained Markdown/LaTeX behavior are canonical in [Text Fields](text-fields.md#persistence-clipboard-and-pdf).
+
 ## Related Documentation
 
 - [Implementation specification](specification.md)

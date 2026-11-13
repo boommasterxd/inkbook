@@ -14,6 +14,7 @@ describe("settings defaults", () => {
 
     expect(settings).toMatchObject({
       version: 4,
+      copyTextFieldsAsText: false,
       startupTool: "draw",
       selectionHighlightsEnabled: true,
       refreshRatePreference: "auto",

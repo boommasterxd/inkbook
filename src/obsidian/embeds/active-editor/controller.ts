@@ -329,11 +329,10 @@ export class ActiveEditorController {
     }).state;
     if (changed) this.#onStateChanged();
   }
-  public updateSnappingSettings(settings: ActiveEditorControllerOptions["snapping"]): void {
-    this.#snapping = structuredClone(settings);
-  }
-  public updateHoldToShapeSettings(settings: ActiveEditorControllerOptions["holdToShape"]): void {
-    this.#holdToShape = structuredClone(settings);
+  public updateDrawingPreferences(settings: Helpers.DrawingPreferences): void {
+    this.#snapping = structuredClone(settings.snapping);
+    this.#holdToShape = structuredClone(settings.holdToShape);
+    this.#actions.updateTextCopyPreference(settings.copyTextFieldsAsText);
   }
   public readonly toolbarState = (): ToolbarState =>
     Chrome.createActiveEditorToolbarState(

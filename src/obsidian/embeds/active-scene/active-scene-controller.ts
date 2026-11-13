@@ -24,6 +24,7 @@ export function createActiveSceneController(
 ): ActiveEditorController {
   const { container, layout, renderer, scrollOwner, store } = environment;
   return new ActiveEditorController({
+    copyTextFieldsAsText: options.copyTextFieldsAsText ?? false,
     localization: options.localization,
     ...(options.textFonts === undefined ? {} : { textFonts: options.textFonts }),
     workScheduler: options.workScheduler,

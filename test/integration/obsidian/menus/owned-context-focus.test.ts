@@ -29,7 +29,12 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it.each([false, true])("keeps context focus restoration in the caller, keyboard=%s", (keyboard) => {
+it.each([
+  { keyboard: false, action: undefined },
+  { keyboard: true, action: undefined },
+  { keyboard: true, action: "copy-text" as const },
+  { keyboard: true, action: "copy-element" as const },
+])("keeps context focus restoration in the caller: %j", ({ keyboard, action }) => {
   const canvas = document.body.createEl("button", { cls: "inkbook-root" });
   canvas.dataset.inkbookMotion = "full";
   const trigger = document.body.createEl("button");
@@ -42,6 +47,7 @@ it.each([false, true])("keeps context focus restoration in the caller, keyboard=
     createPhoneSheetHost: () => createPhoneSheetHost(app),
   });
   const handlers = createContextMenuHandlers();
+  const copyAlternative = vi.fn();
   const closed = vi.fn();
   const session = openContextMenu(
     factory,
@@ -55,19 +61,33 @@ it.each([false, true])("keeps context focus restoration in the caller, keyboard=
       onClosed: closed,
     },
     {
-      hasSelection: false,
+      hasSelection: action !== undefined,
+      canCopyText: action !== undefined,
       canPaste: false,
       canBringForward: false,
       canSendBackward: false,
       canBringToFront: false,
       canSendToBack: false,
     },
-    handlers,
+    { ...handlers, copyText: copyAlternative, copyElement: copyAlternative },
   );
   vi.advanceTimersToNextFrame();
   canvasFocus.mockClear();
   triggerFocus.mockClear();
-  simulateNativeModalBack(document);
+  if (action === undefined) simulateNativeModalBack(document);
+  else {
+    const title = action === "copy-text" ? "Copy text" : "Copy text field";
+    const alternate = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === title,
+    );
+    expect(alternate).toBeDefined();
+    alternate!.focus();
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    expect(copyAlternative).toHaveBeenCalledOnce();
+    expect(handlers.copy).not.toHaveBeenCalled();
+  }
   vi.advanceTimersByTime(220);
   expect(canvasFocus).not.toHaveBeenCalled();
   expect(triggerFocus).toHaveBeenCalledTimes(keyboard ? 1 : 0);
