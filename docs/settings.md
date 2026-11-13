@@ -357,7 +357,7 @@ Finger drawing and pen-tap insertion use matching toggle controls. The pen-tap t
 
 ### Language
 
-The Interface group offers **Auto**, **Deutsch**, and **English**. The device-and-vault-local `language` preference defaults to `auto`. Auto follows Obsidian's language: German language variants resolve to German and other host languages resolve to English. An explicit selection overrides the host language. Supported older device settings without `language` receive `auto`; an invalid present value falls back to `auto` with a field diagnostic. The Interface group and full reset restore the default. See [Localization](localization.md) for translation scope and implementation.
+The General group offers **Auto**, **Deutsch**, and **English**. The device-and-vault-local `language` preference defaults to `auto`. Auto follows Obsidian's language: German language variants resolve to German and other host languages resolve to English. An explicit selection overrides the host language. Supported older device settings without `language` receive `auto`; an invalid present value falls back to `auto` with a field diagnostic. The General group and full reset restore the default. See [Localization](localization.md) for translation scope and implementation.
 
 ### Scroll Preload Margin
 
@@ -404,19 +404,18 @@ Each owned surface reads the saved device preference when it mounts and observes
 
 The settings tab uses these logical groups and this order:
 
-1. **General**: startup tool and file placement. General rows are the first rows and remain unheaded in the rendered Obsidian settings tab as required by the host contract.
+1. **General**: startup tool, file placement, text-field copy behavior, language, handedness, and motion. Its visible heading and rows appear first in both settings surfaces. Its group reset restores these vault and device preferences while preserving Input, Performance, and tool style defaults.
 2. **Performance**: display refresh-rate preference, scroll preload margin, and selection highlights. Descriptions explain each control's performance trade-off. Its group reset restores only these preferences; General reset preserves them, and Performance reset preserves startup, file placement, and unrelated device preferences.
 3. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
-4. **Drawing tools**: Select, Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
+4. **Drawing tools**: Select, Pen, Text, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section. Its reset restores tool defaults and preserves the General text-field copy preference.
 5. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Star, Coordinate system, and Table. Each tool is one independently collapsible section.
 6. **Snapping**: global enable switch followed by Angle, Bend, Connection, and Structure switches.
-7. **Hold to shape**: enable switch, hold delay, movement tolerance, and a group reset.
-8. **Input**: finger drawing and pen-tap insertion.
-9. **Interface**: language, handedness, and motion.
-10. **Shortcuts**: configurable device-local canvas bindings plus fixed system, gesture-modifier, and Obsidian-command references.
-11. **Import**: the optional **Start import** action and **Import history** disclosure, when the import workflow is available.
+7. **Input**: finger drawing and pen-tap insertion.
+8. **Hold to shape**: enable switch, hold delay, movement tolerance, and a group reset.
+9. **Shortcuts**: configurable device-local canvas bindings plus fixed system, gesture-modifier, and Obsidian-command references.
+10. **Import**: the optional **Start import** action and **Import history** disclosure, when the import workflow is available.
 
-The headings for Performance, Page defaults, Drawing tools, Shapes and structures, Snapping, Hold to shape, Input, Interface, Shortcuts, and Import use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
+All group headings use sentence case and omit the word `settings`. General combines the initial preferences and former Interface controls into one logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
 
 The Import group contains a **Start import** action whose description identifies Obsidian Ink, followed immediately by a default-collapsed **Import history** disclosure. Starting an import opens the local scan and review workflow described in [Importing from Obsidian Ink](features.md#importing-from-obsidian-ink); it does not show a history list. History loads only when the disclosure is expanded. Its runs show localized dates and statuses, with at most 25 entries per page. Selecting a run opens its details and available recovery actions directly. While loading, the disclosure shows a loading state; an empty history says that no imports are saved, and a failed load can be retried. When an import, undo, or cleanup dialog closes, an expanded history refreshes. Import remains an explicit action and adds no Inkbook setting or startup scan.
 
@@ -478,7 +477,7 @@ Autosave delays, horizontal culling margin, spatial-index size, cache size, work
 
 Text defaults reuse the Style control order and font-size UI range defined in [Text Fields](text-fields.md#fonts-and-settings), including preservation of valid stored sizes outside the slider endpoints. Settings preview slider values locally and persist on change; canvas selection previews have their own lifecycle and do not mutate these defaults.
 
-The Text settings section also exposes the vault-wide `copyTextFieldsAsText` toggle, separate from element style defaults. Its built-in value is `false`; valid older settings receive that value additively. Changes apply immediately to active editors. The drawing-tools group reset and complete reset restore `false`. Clipboard representations and retained Markdown/LaTeX behavior are canonical in [Text Fields](text-fields.md#persistence-clipboard-and-pdf).
+The General settings group exposes the vault-wide `copyTextFieldsAsText` toggle, separate from element style defaults. Its built-in value is `false`; valid older settings receive that value additively. Changes apply immediately to active editors. The General group reset and complete reset restore `false`. Clipboard representations and retained Markdown/LaTeX behavior are canonical in [Text Fields](text-fields.md#persistence-clipboard-and-pdf).
 
 ## Related Documentation
 

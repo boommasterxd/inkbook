@@ -7,7 +7,13 @@ import type { SettingDefinition, SettingDefinitionGroup } from "obsidian";
 
 import { STARTUP_TOOLS, validateCustomVaultFolderPath } from "../../../domain/settings";
 import type { SettingsControlKey } from "../control-values";
-import { dropdown, resetAction, sentenceCaseLabel, settingsAction } from "./definition-helpers";
+import {
+  dropdown,
+  resetAction,
+  sentenceCaseLabel,
+  settingsAction,
+  toggle,
+} from "./definition-helpers";
 
 const OPTION_KEYS = {
   select: "settings.options.select",
@@ -77,6 +83,7 @@ export function generalGroup(
   const t = callbacks.t ?? createEnglishLocalization().t;
   return {
     type: "group",
+    heading: t("settings.general"),
     cls: "inkbook-settings-general-group",
     items: [
       dropdown(
@@ -106,6 +113,26 @@ export function generalGroup(
         ),
         visible: callbacks.canCreateFolder,
       },
+      toggle(
+        "copyTextFieldsAsText",
+        t("settings.controls.copyTextFieldsAsText"),
+        t("settings.controls.copyTextFieldsAsTextHelp"),
+      ),
+      dropdown("device.language", t("settings.language"), t("settings.languageDescription"), {
+        auto: t("settings.languageAuto"),
+        de: "Deutsch",
+        en: "English",
+      }),
+      toggle(
+        "device.leftHandedToolbar",
+        t("settings.leftHanded"),
+        t("settings.leftHandedDescription"),
+      ),
+      dropdown("device.motion", t("settings.motion"), t("settings.motionDescription"), {
+        system: t("settings.motion.system"),
+        full: t("settings.motion.full"),
+        reduced: t("settings.motion.reduced"),
+      }),
       resetAction(t("settings.controls.resetGroup"), callbacks.reset, t),
     ],
   };

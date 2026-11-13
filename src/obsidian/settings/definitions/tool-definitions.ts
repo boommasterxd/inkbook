@@ -147,7 +147,6 @@ function textSpec(t: Translator): ToolSectionSpec {
     description: t("settings.controls.textHelp"),
     tool: "text",
     controlKeys: {
-      "copy-text-fields-as-text": "copyTextFieldsAsText",
       "text-font-family": "toolDefaults.text.fontFamily",
       "text-font-size": "toolDefaults.text.fontSize",
       color: "toolDefaults.text.color",
@@ -161,7 +160,6 @@ function textSpec(t: Translator): ToolSectionSpec {
       "text-background-opacity": "toolDefaults.text.backgroundOpacity",
     },
     controlDescriptions: {
-      "copy-text-fields-as-text": t("settings.controls.copyTextFieldsAsTextHelp"),
       "text-font-family": t("settings.controls.textFontFamilyHelp"),
       "text-font-size": t("settings.controls.textFontSizeHelp"),
       color: t("settings.controls.textColorHelp"),

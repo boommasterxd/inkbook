@@ -11,7 +11,7 @@ export const settings = {
     "Zeigt in jeder Einbettung den Schalter zum Zeichnen mit dem Finger für diese Sitzung.",
   "settings.penTap": "Einfügen durch Stifttippen",
   "settings.penTapDescription": "Fügt beim Tippen mit einem Stift eine Inkbook-Einbettung ein.",
-  "settings.interface": "Oberfläche",
+  "settings.general": "Allgemein",
   "settings.leftHanded": "Werkzeugleiste für Linkshänder",
   "settings.leftHandedDescription": "Richtet die Werkzeugleiste für linkshändige Bedienung aus.",
   "settings.motion": "Animationen",

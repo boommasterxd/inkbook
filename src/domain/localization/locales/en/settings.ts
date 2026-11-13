@@ -10,7 +10,7 @@ export const settings = {
   "settings.fingerDrawingDescription": "Show the session-only finger drawing toggle in each embed.",
   "settings.penTap": "Pen-tap insertion",
   "settings.penTapDescription": "Insert an Inkbook embed when tapping with a pen.",
-  "settings.interface": "Interface",
+  "settings.general": "General",
   "settings.leftHanded": "Left-handed toolbar",
   "settings.leftHandedDescription": "Align the toolbar for left-handed use.",
   "settings.motion": "Motion",

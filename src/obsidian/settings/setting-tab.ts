@@ -24,7 +24,6 @@ import { SettingsViewState } from "./settings-view-state";
 import { nativeSettingDefinitions } from "./setting-control-renderer";
 import { refreshSettingsView } from "./settings-view-refresh";
 import {
-  dropdown,
   resetAction,
   settingsAction,
   toggle,
@@ -182,7 +181,7 @@ export class InkbookSettingTab extends PluginSettingTab {
         reset: withSettingsActionFeedback(() => this.resetSnapping(), this.settingsFeedback),
         set: (key, value) => this.controls.set(key, value),
       }),
-      ...this.deviceGroups(),
+      this.inputGroup(createBuiltInDeviceSettings()),
       holdToShapeGroup(
         pageValues,
         withSettingsActionFeedback(() => this.resetHoldToShape(), this.settingsFeedback),
@@ -227,7 +226,6 @@ export class InkbookSettingTab extends PluginSettingTab {
       t: this.store.localization.t,
       viewState,
       getDefaults: () => this.store.getVaultSettings().toolDefaults,
-      getCopyTextFieldsAsText: () => this.store.getVaultSettings().copyTextFieldsAsText,
       getTextFontOptions: () => [
         ...BUILT_IN_TEXT_FONT_OPTIONS,
         ...(this.scheduling?.fontLibrary?.choices() ?? []),
@@ -294,13 +292,23 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   private resetGeneral(): Promise<void> {
     const defaults = createBuiltInSettings();
+    const deviceDefaults = createBuiltInDeviceSettings();
     return this.store
       .updateVaultSettings((settings) => ({
         ...settings,
         startupTool: defaults.startupTool,
         filePlacement: structuredClone(defaults.filePlacement),
+        copyTextFieldsAsText: defaults.copyTextFieldsAsText,
       }))
-      .then(() => this.update());
+      .then(() => {
+        this.store.updateDeviceSettings((settings) => ({
+          ...settings,
+          leftHandedToolbar: deviceDefaults.leftHandedToolbar,
+          motion: deviceDefaults.motion,
+          language: deviceDefaults.language,
+        }));
+        this.update();
+      });
   }
 
   private resetPerformance(): Promise<void> {
@@ -334,7 +342,6 @@ export class InkbookSettingTab extends PluginSettingTab {
     return this.store
       .updateVaultSettings((settings) => {
         settings.toolDefaults.select = cloneDefaults("select");
-        settings.copyTextFieldsAsText = createBuiltInSettings().copyTextFieldsAsText;
         settings.toolDefaults.pen = cloneDefaults("pen");
         settings.toolDefaults.text = cloneDefaults("text");
         settings.toolDefaults.highlighter = cloneDefaults("highlighter");
@@ -377,11 +384,6 @@ export class InkbookSettingTab extends PluginSettingTab {
       .then(() => this.update());
   }
 
-  private deviceGroups(): SettingDefinitionGroup<SettingsControlKey>[] {
-    const defaults = createBuiltInDeviceSettings();
-    return [this.inputGroup(defaults), this.interfaceGroup(defaults)];
-  }
-
   private inputGroup(
     defaults: ReturnType<typeof createBuiltInDeviceSettings>,
   ): SettingDefinitionGroup<SettingsControlKey> {
@@ -407,56 +409,6 @@ export class InkbookSettingTab extends PluginSettingTab {
               ...settings,
               fingerDrawingEnabled: defaults.fingerDrawingEnabled,
               penTapInsertion: defaults.penTapInsertion,
-            }));
-            this.update();
-          }, this.settingsFeedback),
-          this.store.localization.t,
-        ),
-      ],
-    };
-  }
-
-  private interfaceGroup(
-    defaults: ReturnType<typeof createBuiltInDeviceSettings>,
-  ): SettingDefinitionGroup<SettingsControlKey> {
-    return {
-      type: "group",
-      heading: this.store.localization.t("settings.interface"),
-      cls: "inkbook-settings-interface-group",
-      items: [
-        dropdown(
-          "device.language",
-          this.store.localization.t("settings.language"),
-          this.store.localization.t("settings.languageDescription"),
-          {
-            auto: this.store.localization.t("settings.languageAuto"),
-            de: "Deutsch",
-            en: "English",
-          },
-        ),
-        toggle(
-          "device.leftHandedToolbar",
-          this.store.localization.t("settings.leftHanded"),
-          this.store.localization.t("settings.leftHandedDescription"),
-        ),
-        dropdown(
-          "device.motion",
-          this.store.localization.t("settings.motion"),
-          this.store.localization.t("settings.motionDescription"),
-          {
-            system: this.store.localization.t("settings.motion.system"),
-            full: this.store.localization.t("settings.motion.full"),
-            reduced: this.store.localization.t("settings.motion.reduced"),
-          },
-        ),
-        resetAction(
-          this.store.localization.t("settings.resetGroup"),
-          withSettingsActionFeedback(() => {
-            this.store.updateDeviceSettings((settings) => ({
-              ...settings,
-              leftHandedToolbar: defaults.leftHandedToolbar,
-              motion: defaults.motion,
-              language: defaults.language,
             }));
             this.update();
           }, this.settingsFeedback),

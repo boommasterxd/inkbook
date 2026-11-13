@@ -173,14 +173,14 @@ The supported app versions include the declarative settings API introduced in Ob
 Settings UI follows these host rules:
 
 - all visible text uses sentence case
-- general rows appear first without a `General`, plugin-name, or `Settings` heading
+- general rows appear first under the localized `General` heading
 - later distinct sections use concise headings without the word `settings`
 - simple host-rendered rows contain one mutable control; one tool disclosure or visual Page-default row may own its documented group of recognizable controls
 - controls save on change; multi-field forms use a modal with Save and Cancel
 - reset operations use declarative actions or a bounded render callback and refresh affected definitions
 - descriptions remain one concise sentence
 
-The complete settings grouping, disclosure behavior, visual control parity, and validation contract is canonical in [Settings](settings.md#settings-ui). The host adapter MUST preserve the logical General, Page defaults, Drawing tools, Shapes and structures, Snapping, Input, Interface, and Shortcuts groups, while rendering the General rows first without a visible heading. Tool sections use a title with a right-aligned Lucide chevron and the required disclosure accessibility attributes. Settings inherit the neutral Obsidian `SettingGroup` surface and its host-owned radius; they add no nested surface and do not copy an adaptive menu's enclosing border or panel shape. Native host dividers separate independent settings rows, while expanded settings content uses spacing instead of nested separator lines. Within that surface, Settings reuse the Style and Background menu's recognizable swatches, width previews, exact three outline-style buttons, endpoint and dimension icons, table stepper, pattern choices, and slider-plus-number controls. Visual choices fill the available row and wrap only when the viewport cannot contain them; host-specific setting primitives MUST NOT replace these with plain dropdowns when a visual control is specified.
+The complete settings grouping, disclosure behavior, visual control parity, and validation contract is canonical in [Settings](settings.md#settings-ui). The host adapter MUST preserve those logical groups, with a visible General heading first and one reset covering its vault and device preferences. Tool sections use a title with a right-aligned Lucide chevron and the required disclosure accessibility attributes. Settings inherit the neutral Obsidian `SettingGroup` surface and its host-owned radius; they add no nested surface and do not copy an adaptive menu's enclosing border or panel shape. Native host dividers separate independent settings rows, while expanded settings content uses spacing instead of nested separator lines. Within that surface, Settings reuse the Style and Background menu's recognizable swatches, width previews, exact three outline-style buttons, endpoint and dimension icons, table stepper, pattern choices, and slider-plus-number controls. Visual choices fill the available row and wrap only when the viewport cannot contain them; host-specific setting primitives MUST NOT replace these with plain dropdowns when a visual control is specified.
 
 ## Commands, Menus, Icons, and Styling
 

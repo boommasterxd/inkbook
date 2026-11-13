@@ -177,7 +177,6 @@ function createTool(viewState?: SettingsViewState, store = createTestSettingsSto
     {
       ...(viewState === undefined ? {} : { viewState }),
       getDefaults: readDefaults,
-      getCopyTextFieldsAsText: () => store.getVaultSettings().copyTextFieldsAsText,
       getMotion: () => store.getDeviceSettings().motion,
       workScheduler: () => workSchedulerFromFrames(window),
       set: () => Promise.resolve(),

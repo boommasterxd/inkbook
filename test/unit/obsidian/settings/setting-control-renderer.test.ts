@@ -48,7 +48,7 @@ function mount(definition: SettingDefinitionRender, container = document.body): 
   return definition.render(setting, group) ?? (() => undefined);
 }
 
-it("persists text-copy preferences and opens font management from Text defaults", async () => {
+it("opens font management from Text defaults", async () => {
   const store = new InkbookSettingsStore(
     { loadData: async () => createBuiltInSettings(), saveData: vi.fn() },
     { loadLocalStorage: () => createBuiltInDeviceSettings(), saveLocalStorage: vi.fn() },
@@ -78,16 +78,7 @@ it("persists text-copy preferences and opens font management from Text defaults"
   const dispose = mount(findRender(definitions, store.localization.t("settings.controls.text")));
   try {
     document.querySelector<HTMLButtonElement>(".inkbook-settings-tool-trigger")!.click();
-    const copyToggle = document.querySelector<HTMLInputElement>(
-      'input[aria-label="Copy text fields as text"]',
-    )!;
-    expect(copyToggle.checked).toBe(false);
-    expect(
-      document.getElementById(copyToggle.getAttribute("aria-describedby")!.split(" ")[0]!)
-        ?.textContent,
-    ).toContain("Markdown and LaTeX are preserved");
-    copyToggle.click();
-    await vi.waitFor(() => expect(store.getVaultSettings().copyTextFieldsAsText).toBe(true));
+    expect(document.querySelector('input[aria-label="Copy text fields as text"]')).toBeNull();
     const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
     const confirmedFamily = tab.getControlValue("toolDefaults.text.fontFamily");
     trigger.click();
@@ -108,7 +99,7 @@ it("persists text-copy preferences and opens font management from Text defaults"
 
 it("restores the correct native reset focus and action after groups rebuild in a new order", () => {
   const host = { getControlValue: () => false, setControlValue: () => undefined };
-  const resets = { Input: vi.fn(), Interface: vi.fn() };
+  const resets = { Input: vi.fn(), General: vi.fn() };
   const definitions = Object.entries(resets).map(([heading, reset]) => ({
     type: "group" as const,
     cls: "shared-settings-group",
@@ -149,27 +140,30 @@ it("restores the correct native reset focus and action after groups rebuild in a
   expect(document.activeElement).toBe(replacement);
   replacement.click();
   expect(resets.Input).toHaveBeenCalledOnce();
-  expect(resets.Interface).not.toHaveBeenCalled();
-  resetButton("Interface").click();
-  expect(resets.Interface).toHaveBeenCalledOnce();
+  expect(resets.General).not.toHaveBeenCalled();
+  resetButton("General").click();
+  expect(resets.General).toHaveBeenCalledOnce();
   container.remove();
 });
 
 it.each([
   ["Selection highlights", "selectionHighlightsEnabled", false, "vault"],
   ["Left-handed toolbar", "device.leftHandedToolbar", true, "device"],
+  ["Copy text fields as text", "copyTextFieldsAsText", true, "vault"],
 ] as const)(
   "recovers native %s writes with an associated error, focus and retry",
   async (name, key, next, scope) => {
     let fail = true;
+    let persistedVault = createBuiltInSettings();
     const save = vi.fn(() => {
       if (fail) throw new Error("Storage unavailable");
     });
     const store = new InkbookSettingsStore(
       {
-        loadData: async () => createBuiltInSettings(),
-        saveData: async () => {
+        loadData: async () => persistedVault,
+        saveData: async (settings) => {
           if (scope === "vault") save();
+          persistedVault = structuredClone(settings);
         },
       },
       {
@@ -185,7 +179,14 @@ it.each([
       {} as ConstructorParameters<typeof InkbookSettingTab>[1],
       store,
     );
-    const dispose = mount(findRender(tab.getSettingDefinitions(), name));
+    const definitions = tab.getSettingDefinitions();
+    const group = definitions.find(
+      (item) =>
+        "heading" in item &&
+        item.heading === (name === "Selection highlights" ? "Performance" : "General"),
+    );
+    if (group === undefined || !("items" in group)) throw new Error("Missing control group.");
+    const dispose = mount(findRender(group.items ?? [], name));
     const input = document.querySelector<HTMLInputElement>(`[aria-label="${name}"]`)!;
     const confirmed = tab.getControlValue(key);
     input.focus();
@@ -206,6 +207,7 @@ it.each([
     input.checked = next;
     input.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(tab.getControlValue(key)).toBe(next));
+    expect(persistedVault).toEqual(store.getVaultSettings());
     expect(save).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe("");
     expect(document.activeElement).toBe(input);

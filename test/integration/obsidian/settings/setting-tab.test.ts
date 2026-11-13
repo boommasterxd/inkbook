@@ -93,14 +93,13 @@ describe("InkbookSettingTab definitions", () => {
     const definitions = tab.getControlDefinitions();
 
     expect(groups(tab).map((group) => group.heading)).toEqual([
-      undefined,
+      "General",
       "Performance",
       "Page defaults",
       "Drawing tools",
       "Shapes and structures",
       "Snapping",
       "Input",
-      "Interface",
       "Hold to shape",
       "Shortcuts",
     ]);
@@ -147,6 +146,10 @@ describe("InkbookSettingTab definitions", () => {
       "File placement",
       "Custom vault folder",
       "Create custom folder",
+      "Copy text fields as text",
+      "Language",
+      "Left-handed toolbar",
+      "Motion",
       "Reset group to defaults",
     ]);
     const performance = groups(tab).find((group) => group.heading === "Performance");
@@ -333,19 +336,31 @@ describe("InkbookSettingTab General and Performance reset integration", () => {
     expect(tab.getControlValue("selectionHighlightsEnabled")).toBe(false);
     await tab.setControlValue("pageDefaults.activeBufferLines", 6);
     await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
+    await tab.setControlValue("device.language", "en");
+    await tab.setControlValue("device.motion", "reduced");
+    await tab.setControlValue("copyTextFieldsAsText", true);
+    await tab.setControlValue("device.fingerDrawingEnabled", !deviceDefaults.fingerDrawingEnabled);
+    await tab.setControlValue("toolDefaults.pen.width", 14);
     await tab.setControlValue("device.scrollPreloadMarginPx", 800);
 
-    resetGroup(tab, undefined);
+    resetGroup(tab, "General");
     await vi.waitFor(() => expect(tab.getControlValue("startupTool")).toBe(defaults.startupTool));
     expect(store.getVaultSettings()).toMatchObject({
       filePlacement: defaults.filePlacement,
       selectionHighlightsEnabled: false,
       refreshRatePreference: 60,
       startupTool: defaults.startupTool,
+      copyTextFieldsAsText: defaults.copyTextFieldsAsText,
     });
+    expect(store.getDeviceSettings()).toMatchObject({
+      language: deviceDefaults.language,
+      leftHandedToolbar: deviceDefaults.leftHandedToolbar,
+      motion: deviceDefaults.motion,
+      fingerDrawingEnabled: !deviceDefaults.fingerDrawingEnabled,
+    });
+    expect(tab.getControlValue("toolDefaults.pen.width")).toBe(14);
     expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
     expect(tab.getControlValue("device.scrollPreloadMarginPx")).toBe(800);
-    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(!deviceDefaults.leftHandedToolbar);
     await tab.setControlValue("startupTool", "arrow");
     await tab.setControlValue("filePlacement.mode", "note-folder");
     resetGroup(tab, "Performance");
@@ -357,7 +372,7 @@ describe("InkbookSettingTab General and Performance reset integration", () => {
       filePlacement: { mode: "note-folder" },
     });
     expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
-    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(!deviceDefaults.leftHandedToolbar);
+    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(deviceDefaults.leftHandedToolbar);
   });
 });
 
@@ -395,7 +410,7 @@ describe("InkbookSettingTab remaining group reset integration", () => {
       straightHighlighter: defaults.toolDefaults.straightHighlighter,
     });
     expect(tab.getControlValue("toolDefaults.select.area")).toBe("lasso");
-    expect(tab.getControlValue("copyTextFieldsAsText")).toBe(false);
+    expect(tab.getControlValue("copyTextFieldsAsText")).toBe(true);
     expect(tab.getControlValue("toolDefaults.line.snappingEnabled")).toBe(false);
     expect(tab.getControlValue("toolDefaults.arrow.snappingEnabled")).toBe(false);
     resetGroup(tab, "Snapping");
@@ -425,12 +440,7 @@ describe("InkbookSettingTab remaining group reset integration", () => {
       fingerDrawingEnabled: deviceDefaults.fingerDrawingEnabled,
       penTapInsertion: deviceDefaults.penTapInsertion,
     });
-    resetGroup(tab, "Interface");
-    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(deviceDefaults.leftHandedToolbar);
-    expect(store.getDeviceSettings()).toMatchObject({
-      leftHandedToolbar: deviceDefaults.leftHandedToolbar,
-      motion: deviceDefaults.motion,
-    });
+    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(!deviceDefaults.leftHandedToolbar);
   });
 });
 
