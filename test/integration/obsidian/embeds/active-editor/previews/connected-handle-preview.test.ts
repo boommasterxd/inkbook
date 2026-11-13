@@ -25,6 +25,7 @@ import { rectangle, tableFromRectangle } from "../../../../../unit/domain/store/
 import { ManualFrameScheduler } from "../../../../../fixtures/obsidian/manual-frame-scheduler";
 import { immediateFrameScheduler } from "../../../../../fixtures/obsidian/immediate-frame-scheduler";
 import { immediateWorkScheduler } from "../../../../../fixtures/obsidian/immediate-work-scheduler";
+import { createHandlePreviewRenderer } from "../../../../../fixtures/obsidian/selection-preview-renderer";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -45,7 +46,7 @@ function fixture(elements: readonly InkElementV1[], selectedId: string | readonl
   const preparedHistory = activeEditorPreparedHistory(model, history);
   const sceneStore = new ElementSceneStore(store);
   const renderer = {
-    clearElementPreviews: vi.fn(),
+    ...createHandlePreviewRenderer(),
     clearProgressiveElementPreviews: vi.fn(),
     setProgressiveElementPreviews:
       vi.fn<
@@ -57,14 +58,6 @@ function fixture(elements: readonly InkElementV1[], selectedId: string | readonl
           purpose?: unknown,
         ) => void
       >(),
-    clearPreviewTransforms: vi.fn(),
-    flushPointerFeedbackFrame: vi.fn(),
-    setElementPreviews: vi.fn<(elements: readonly InkElementV1[], version: number) => void>(),
-    setSelectionOverlayPath: vi.fn(),
-    setSnapMarkerPath: vi.fn(),
-    setOverlayPath: vi.fn(),
-    setPreviewTransform: vi.fn(),
-    suppressMotionForNextDelta: vi.fn(),
   };
   const selection = () => new Set(typeof selectedId === "string" ? [selectedId] : selectedId);
   return { store, model, history, preparedHistory, sceneStore, renderer, selection };

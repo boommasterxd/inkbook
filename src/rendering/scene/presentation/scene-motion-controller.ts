@@ -2,14 +2,13 @@ import { mix } from "motion";
 import { FILE_SCHEMA_LIMITS, type InkElementV1 } from "../../../domain/schema/public";
 import { TRANSITION_DURATIONS } from "../../motion/transitions";
 import type { SceneContentRenderer } from "../content-renderer";
-import { interpolateElement, standardMotionProgress } from "./motion-interpolation";
+import * as interpolation from "./motion-interpolation";
 import { createCrossfadeMotion, crossfadeRetarget } from "./crossfade-visual";
 import {
   createMotionVisual,
   removeMotionVisual,
   writeMotionStyle,
   writeMotionVisual,
-  type MotionVisual,
 } from "./motion-visual";
 import type {
   GeometryMotionEntry,
@@ -287,7 +286,7 @@ export class SceneMotionController {
   private writeEntry(entry: MotionEntry, frameTime: number): void {
     entry.startTime ??= frameTime;
     const raw = Math.min(1, (frameTime - entry.startTime) / TRANSITION_DURATIONS.fallback);
-    const progress = standardMotionProgress(raw);
+    const progress = interpolation.standardMotionProgress(raw);
     if (entry.kind === "entrance") {
       this.#content.setElementMotion(entry.ids, progress, mix(0.96, 1, progress));
     } else if (entry.kind === "exit") {
@@ -306,7 +305,7 @@ export class SceneMotionController {
       const from = entry.from[index];
       const to = entry.to[index];
       if (from !== undefined && to !== undefined) {
-        const element = interpolateElement(from, to, progress);
+        const element = interpolation.interpolateElement(from, to, progress);
         current.push(element);
         this.#content.applyElementPreview(element);
       }
@@ -342,7 +341,7 @@ export class SceneMotionController {
     return rendered;
   }
 
-  private createVisual(elements: readonly InkElementV1[], retaining = false): MotionVisual {
+  private createVisual(elements: readonly InkElementV1[], retaining = false) {
     if (!retaining && this.#cacheEntries >= MAX_MOTION_PATHS) this.evictOldestVisual();
     return createMotionVisual(
       this.#dom.ownerDocument,
@@ -350,7 +349,10 @@ export class SceneMotionController {
       elements,
       MAX_MOTION_PATHS - this.#cacheEntries,
       MAX_MOTION_BYTES - this.#cacheBytes,
-      (element) => this.#content.readCanonicalStrokePath(element),
+      {
+        path: (element) => this.#content.readCanonicalStrokePath(element),
+        text: (element, nodes, bytes) => this.#content.textMotionSnapshot(element, nodes, bytes),
+      },
     );
   }
 
@@ -395,7 +397,7 @@ export class SceneMotionController {
     if (motion === undefined) return undefined;
     motion.startTime ??= frameTime;
     const raw = Math.min(1, (frameTime - motion.startTime) / TRANSITION_DURATIONS.fallback);
-    const progress = standardMotionProgress(raw);
+    const progress = interpolation.standardMotionProgress(raw);
     const visible = mix(1, 0, progress);
     writeMotionStyle(node, visible, 1);
     if (raw < 1) return motion;
@@ -468,9 +470,9 @@ export class SceneMotionController {
       return;
     }
     if (before == null || after == null) return;
-    if (change.domains.includes("geometry")) {
+    if (interpolation.hasGeometryMotion(change)) {
       this.startGeometry([rendered ?? before], [after]);
-    } else if (change.domains.includes("paint") || change.domains.includes("order")) {
+    } else if (interpolation.hasPaintMotion(change)) {
       this.startCrossfade([before]);
     }
   }

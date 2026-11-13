@@ -66,6 +66,15 @@ function* geometryEqualSteps(
       return yield* coordinateGeometryEqualSteps(left, right, progress);
     case "table":
       return yield* tableGeometryEqualSteps(left, right, progress);
+    case "text":
+      return (
+        right.kind === "text" &&
+        boxGeometryEqual(left, right) &&
+        left.source === right.source &&
+        (yield* valuesEqualSteps(left.layout, right.layout, progress)) &&
+        (yield* valuesEqualSteps(left.ranges, right.ranges, progress)) &&
+        (yield* valuesEqualSteps(left.paragraphs, right.paragraphs, progress))
+      );
     default:
       return boxGeometryEqual(left, right);
   }
@@ -156,6 +165,9 @@ function linearGeometryEqual(
 }
 
 function geometryStyleEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
+  if (left.kind === "text" || right.kind === "text") {
+    return left.kind === "text" && right.kind === "text" && valuesEqual(left.style, right.style);
+  }
   if (left.kind === "stroke" || left.kind === "straight-highlighter") {
     if (right.kind !== "stroke" && right.kind !== "straight-highlighter") return false;
     return (
@@ -169,6 +181,9 @@ function geometryStyleEqual(left: ImmutableInkElement, right: InkElementV1): boo
 }
 
 function paintEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
+  if (left.kind === "text" || right.kind === "text") {
+    return textPaintEqual(left, right);
+  }
   if (left.kind === "stroke" || left.kind === "straight-highlighter") {
     if (right.kind !== "stroke" && right.kind !== "straight-highlighter") return false;
     return (
@@ -188,6 +203,17 @@ function paintEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
   return (
     valuesEqual(left.style.fillColor, right.style.fillColor) &&
     left.style.fillOpacity === right.style.fillOpacity
+  );
+}
+
+function textPaintEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
+  return (
+    left.kind === "text" &&
+    right.kind === "text" &&
+    valuesEqual(left.style, right.style) &&
+    valuesEqual(left.backgroundColor, right.backgroundColor) &&
+    left.backgroundOpacity === right.backgroundOpacity &&
+    valuesEqual(left.ranges, right.ranges)
   );
 }
 

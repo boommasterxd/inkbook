@@ -7,14 +7,27 @@ export interface PointerCaptureSurface {
 export class ActivePointerCaptureOwner {
   readonly #captured = new Set<number>();
   readonly #surface: PointerCaptureSurface;
+  readonly #overrides = new Map<number, PointerCaptureSurface>();
 
   public constructor(surface: PointerCaptureSurface) {
     this.#surface = surface;
   }
 
   public capture(pointerId: number): void {
-    this.#surface.setPointerCapture(pointerId);
+    if (this.#overrides.has(pointerId) && this.#captured.has(pointerId)) return;
+    (this.#overrides.get(pointerId) ?? this.#surface).setPointerCapture(pointerId);
     this.#captured.add(pointerId);
+  }
+
+  public captureFrom(pointerId: number, surface: PointerCaptureSurface): boolean {
+    try {
+      surface.setPointerCapture(pointerId);
+    } catch {
+      return false;
+    }
+    this.#overrides.set(pointerId, surface);
+    this.#captured.add(pointerId);
+    return true;
   }
 
   public owns(pointerId: number): boolean {
@@ -27,7 +40,13 @@ export class ActivePointerCaptureOwner {
 
   public release(pointerId: number): void {
     this.#captured.delete(pointerId);
-    if (this.#surface.hasPointerCapture(pointerId)) this.#surface.releasePointerCapture(pointerId);
+    const surface = this.#overrides.get(pointerId) ?? this.#surface;
+    this.#overrides.delete(pointerId);
+    try {
+      if (surface.hasPointerCapture(pointerId)) surface.releasePointerCapture(pointerId);
+    } catch {
+      /* A detached child may already have released native capture. */
+    }
   }
 
   public releaseAll(): void {

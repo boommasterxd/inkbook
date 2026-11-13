@@ -185,12 +185,21 @@ describe("raw hold movement", () => {
     expect(fixture.history.commandCount).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
   });
-  it("allows the built-in 12-pixel jitter but cancels out-and-back movement before its frame", () => {
-    const fixture = setup(LINE, createBuiltInSettings().holdToShape);
-    hold(fixture, 500);
+  it("allows the built-in 20-pixel jitter but cancels out-and-back movement before its frame", () => {
+    const line = sampledPath(
+      [
+        [10, 20],
+        [1211, 20],
+      ],
+      false,
+    );
+    const fixture = setup(line, createBuiltInSettings().holdToShape);
+    hold(fixture, 399);
+    expect(fixture.ghost.nodes[0]?.attributes.get("d") ?? "").toBe("");
+    hold(fixture, 1);
     fixture.preview.observeInputSamples([
-      { x: 218, y: 20 },
-      { x: 222, y: 20 },
+      { x: 1219, y: 20 },
+      { x: 1231, y: 20 },
     ]);
     hold(fixture, 100);
     expect(fixture.ghost.nodes[0]?.attributes.get("d")).not.toBe("");
@@ -211,9 +220,9 @@ describe("raw hold movement", () => {
         pointerId: 1,
         timeStamp,
       }) as PointerEvent;
-    const terminal = event({ x: 210, y: 20 }, 1001);
+    const terminal = event({ x: 1211, y: 20 }, 1001);
     Object.assign(terminal, {
-      getCoalescedEvents: () => [event({ x: 223, y: 20 }, 1000), terminal],
+      getCoalescedEvents: () => [event({ x: 1232, y: 20 }, 1000), terminal],
     });
     expect(input.dispatch(terminal)).toBe(true);
     expect(frame.pendingCount).toBe(1);
@@ -221,9 +230,7 @@ describe("raw hold movement", () => {
     expect(fixture.ghost.nodes[0]?.attributes.get("d") ?? "").toBe("");
     expect(fixture.store.size).toBe(0);
     frame.runNext();
-    expect(input.dispatch(event({ x: 250, y: 20 }, 1002))).toBe(true);
-    frame.runNext();
-    hold(fixture, 599);
+    hold(fixture, 399);
     expect(fixture.ghost.nodes[0]?.attributes.get("d") ?? "").toBe("");
     hold(fixture, 1);
     expect(fixture.ghost.nodes[0]?.attributes.get("d")).not.toBe("");

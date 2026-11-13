@@ -1,3 +1,4 @@
+import type { TextFontLibraryPort } from "../active-editor/text-preparation";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { Localization } from "../../../domain/localization";
 import type { PhoneSheetNavigation } from "../../menus/panels/panel-page";
@@ -22,6 +23,7 @@ export interface WorkspaceRuntimeSettings {
 }
 
 export interface WorkspaceActiveSceneOptions {
+  readonly textFonts?: TextFontLibraryPort | undefined;
   readonly localization?: Localization | undefined;
   readonly onboardingPreference?: OnboardingPreferencePort | undefined;
   readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
@@ -36,6 +38,7 @@ export interface WorkspaceActiveSceneOptions {
   readonly markFirstStroke: () => void;
   readonly onLock: () => void;
   readonly onOpenSettings: (navigation?: PhoneSheetNavigation) => void;
+  readonly onOpenFonts?: ((trigger: HTMLButtonElement) => void) | undefined;
   readonly onOpenShortcuts: (navigation?: PhoneSheetNavigation) => void;
   readonly scheme: "dark" | "light";
   readonly showFeedback: (code: InkbookFeedbackCode) => void;
@@ -50,6 +53,7 @@ export function createWorkspaceActiveScene(
   let scene: ActiveInkbookScene | undefined;
   scene = new ActiveInkbookScene({
     localization: options.localization,
+    ...(options.textFonts === undefined ? {} : { textFonts: options.textFonts }),
     backgroundSpacing: options.backgroundSpacing,
     confirmEraseAll: options.confirmEraseAll,
     defaults: options.vaultSettings.toolDefaults,
@@ -81,6 +85,7 @@ export function createWorkspaceActiveScene(
     },
     onFirstStrokeCommitted: options.markFirstStroke,
     onOpenSettings: options.onOpenSettings,
+    onOpenFonts: options.onOpenFonts,
     onOpenShortcuts: options.onOpenShortcuts,
     onboardingPreference: options.onboardingPreference,
     root: attachment.root,

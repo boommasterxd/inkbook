@@ -1,5 +1,6 @@
+import type { StyleChoiceOption } from "../../menus/editor-menu-types";
 import type { Translator } from "../../../domain/localization";
-import type { Setting, SettingDefinitionRender } from "obsidian";
+import type { Keymap, Setting, SettingDefinitionRender } from "obsidian";
 
 import type {
   InkbookDeviceSettingsV2,
@@ -15,6 +16,10 @@ import { createSettingsDisclosure } from "../settings-disclosure";
 import { SettingsPanelMotion } from "../settings-panel-motion";
 import { SettingsViewState } from "../settings-view-state";
 import type { NativeControlFeedbackOptions } from "../../menus/feedback/native-control-feedback";
+import type {
+  FontOptionPreviewPort,
+  FontChoiceDropdownOptions,
+} from "../../menus/font-choice-dropdown";
 
 export interface ToolSectionSpec {
   readonly controlDescriptions: Readonly<Record<string, string>>;
@@ -25,11 +30,15 @@ export interface ToolSectionSpec {
 }
 
 export interface ToolSectionValues {
+  readonly keymap?: Pick<Keymap, "pushScope" | "popScope"> | undefined;
+  readonly createFontPreviews?: (document: Document) => FontOptionPreviewPort & { dispose(): void };
+  readonly fontManagementAction?: FontChoiceDropdownOptions["fontManagementAction"];
   readonly t?: Translator;
   readonly viewState?: SettingsViewState;
   readonly observeMotion?: NativeControlFeedbackOptions["observeMotion"];
   readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly getDefaults: () => ToolDefaultsV1;
+  readonly getTextFontOptions?: () => readonly StyleChoiceOption[];
   readonly getMotion: () => InkbookDeviceSettingsV2["motion"];
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
 }
@@ -64,6 +73,7 @@ function renderToolSection(
     dispose,
   } = createSettingsDisclosure(setting.settingEl, {
     description: spec.description,
+    deferDescriptionUntilExpanded: true,
     expanded: initiallyExpanded,
     panelId,
     readMotion: values.getMotion,
@@ -76,9 +86,23 @@ function renderToolSection(
   const initializeControls = (): void => {
     if (!initialized) {
       const controls = panelContent.createDiv({ cls: "inkbook-settings-tool-controls" });
-      releaseControls = renderSettingsControlContent(controls, {
+      const previews =
+        spec.tool === "text"
+          ? values.createFontPreviews?.(setting.settingEl.ownerDocument)
+          : undefined;
+      const release = renderSettingsControlContent(controls, {
+        workScheduler: values.workScheduler(setting.settingEl.ownerDocument.defaultView),
+        fontPreviews: previews,
+        fontManagementAction: spec.tool === "text" ? values.fontManagementAction : undefined,
+        keymap: values.keymap,
         ...(values.t === undefined ? {} : { t: values.t }),
-        controls: () => createToolStyleControls(values.getDefaults(), spec.tool, values.t),
+        controls: () =>
+          createToolStyleControls(
+            values.getDefaults(),
+            spec.tool,
+            values.t,
+            spec.tool === "text" ? values.getTextFontOptions?.() : undefined,
+          ),
         descriptions: spec.controlDescriptions,
         idPrefix: panelId,
         onChange: (controlId, value) => setToolControl(spec, values, controlId, value),
@@ -86,6 +110,10 @@ function renderToolSection(
         readMotion: values.getMotion,
         ...(values.observeMotion === undefined ? {} : { observeMotion: values.observeMotion }),
       });
+      releaseControls = () => {
+        release();
+        previews?.dispose();
+      };
       initialized = true;
     }
   };

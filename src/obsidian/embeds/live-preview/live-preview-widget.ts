@@ -64,6 +64,8 @@ export class InkbookLivePreviewWidget extends WidgetType {
   override eq(other: InkbookLivePreviewWidget): boolean {
     return (
       this.#sameAttachment(other) &&
+      this.#embed.from === other.#embed.from &&
+      this.#embed.to === other.#embed.to &&
       this.#embed.description === other.#embed.description &&
       this.#embed.width === other.#embed.width &&
       samePreviewContentIdentity(
@@ -77,8 +79,8 @@ export class InkbookLivePreviewWidget extends WidgetType {
     return (
       this.#ports === other.#ports &&
       this.#entranceState === other.#entranceState &&
-      this.#embed.from === other.#embed.from &&
-      this.#embed.to === other.#embed.to &&
+      (this.#entranceState !== undefined ||
+        (this.#embed.from === other.#embed.from && this.#embed.to === other.#embed.to)) &&
       this.#embed.sourcePath === other.#embed.sourcePath &&
       this.#embed.resolved.documentId === other.#embed.resolved.documentId
     );
@@ -87,6 +89,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
   override updateDOM(dom: HTMLElement): boolean {
     const mounted = mountedControllers.get(dom);
     if (mounted === undefined || !this.#sameAttachment(mounted.widget)) return false;
+    if (!mounted.controller.updateLivePreviewRange(this.#embed.from, this.#embed.to)) return false;
     updateEmbedDescription(dom, undefined, this.#embed.description, this.#ports.localization?.t);
     this.#applyWidth(dom);
     mounted.controller.updatePreview(this.#embed.preview);
@@ -105,7 +108,6 @@ export class InkbookLivePreviewWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
-    const embedFrom = this.#embed.from;
     const root = view.dom.createDiv({
       attr: { contenteditable: "false" },
       cls: "inkbook-root inkbook-embed-root",
@@ -159,7 +161,8 @@ export class InkbookLivePreviewWidget extends WidgetType {
         removeMarkdown: (range, expectedSource, mutate) =>
           removeLivePreviewMarkdown(view, range, expectedSource, mutate),
         measureRemovalSpacing: (range) => {
-          const block = view.lineBlockAt(embedFrom);
+          const widget = mountedControllers.get(root)?.widget ?? this;
+          const block = view.lineBlockAt(widget.#embed.from);
           const first = view.lineBlockAt(range.from);
           const last = view.lineBlockAt(Math.max(range.from, range.to - 1));
           return { before: block.top - first.top, after: last.bottom - block.bottom };

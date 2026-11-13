@@ -13,11 +13,25 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ElementReplacementHistoryData } from "../../../domain/store/public";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../../domain/commands/history";
 
-import { captureElementReplacementHistory, type ActiveEditorHistory } from "./history";
-import { createSelectionStyleReplacementSteps } from "./controller-styles";
+import {
+  captureElementReplacementHistory,
+  type ActiveEditorHistory,
+  type AppliedAsyncHistoryTransition,
+} from "./history";
+import {
+  prepareStyleReplacement,
+  type PreparedStyleReplacement,
+  type StyleReplacementRequest,
+} from "./prepared-style-replacement";
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 export interface PreparedElementHistoryOptions {
+  readonly registerApplied?: (
+    transition: AppliedAsyncHistoryTransition,
+    effect: SelectionFrameHistoryEffect | undefined,
+    ids: readonly string[],
+  ) => boolean | undefined;
+  readonly reflowText?: import("../../../editor/selection/transform/text-reflow-session").TextReflow;
   readonly history: ActiveEditorHistory;
   readonly isAttached: () => boolean;
   readonly model: EditableDocumentModel;
@@ -54,20 +68,20 @@ interface PreparedMovePreview {
   >;
 }
 
-export interface PreparedStyleChange {
-  readonly selection: ReadonlySet<string>;
-  readonly controlId: string;
-  readonly value: boolean | number | string;
-  readonly isCurrent: () => boolean;
+export interface PreparedStyleChange extends StyleReplacementRequest {
   readonly frameEffect?: (
     previous: readonly InkElementV1[],
     replacements: readonly InkElementV1[],
     scheduler: TransformSliceScheduler,
   ) => Promise<SelectionFrameHistoryEffect | undefined>;
   readonly onCompleted: (committed: boolean) => void;
+  readonly onSettled?: () => void;
 }
 
 export class PreparedElementHistory {
+  readonly #registerAppliedOverride: PreparedElementHistoryOptions["registerApplied"];
+  readonly #reflowText: PreparedElementHistoryOptions["reflowText"];
+  #reflowAbort: AbortController | undefined;
   readonly #history: ActiveEditorHistory;
   readonly #isAttached: () => boolean;
   readonly #model: EditableDocumentModel;
@@ -80,6 +94,8 @@ export class PreparedElementHistory {
   #pending = false;
 
   public constructor(options: PreparedElementHistoryOptions) {
+    this.#registerAppliedOverride = options.registerApplied;
+    this.#reflowText = options.reflowText;
     this.#history = options.history;
     this.#isAttached = options.isAttached;
     this.#model = options.model;
@@ -89,6 +105,7 @@ export class PreparedElementHistory {
   }
 
   public dispose(): void {
+    this.#reflowAbort?.abort();
     this.#disposed = true;
     this.#generation += 1;
     this.#abort.abort();
@@ -96,62 +113,70 @@ export class PreparedElementHistory {
   }
 
   public cancel(): void {
+    this.#reflowAbort?.abort();
     this.#generation += 1;
   }
 
-  public commitStyle(change: PreparedStyleChange): boolean {
-    if (this.#pending || this.#disposed || this.#history.isTraversing) return false;
-    const basisRevision = this.#model.revision;
-    this.#run(async (generation) => {
-      const scheduler = this.#scheduler(generation);
-      const isCancelled = scheduler.isCancelled;
-      const styleScheduler = {
-        ...scheduler,
-        isCancelled: () =>
-          isCancelled?.() === true ||
-          this.#history.isTraversing ||
-          !change.isCurrent() ||
-          this.#model.revision !== basisRevision,
-      };
-      const selected = this.#selectedElements(change.selection);
-      const steps = createSelectionStyleReplacementSteps(selected, change.controlId, change.value);
-      let step: ReturnType<typeof steps.next>;
-      do {
-        if (styleScheduler.isCancelled()) return false;
-        if (styleScheduler.shouldYield()) {
-          await styleScheduler.yieldControl();
-          if (styleScheduler.isCancelled()) return false;
-        }
-        step = steps.next();
-      } while (!step.done);
-      if (step.value === null) return false;
-      const effect = await change.frameEffect?.(
-        step.value.previous,
-        step.value.replacements,
-        styleScheduler,
-      );
-      if (styleScheduler.isCancelled()) return false;
-      return this.#commitApplied(
-        step.value.previous,
-        step.value.replacements,
-        generation,
-        undefined,
-        effect,
-        {
-          isCancelled: styleScheduler.isCancelled,
-          maxHistoryPayloadBytes: DEFAULT_HISTORY_BYTE_LIMIT,
-        },
-      );
-    }, change.onCompleted);
-    return true;
+  public prepareStyle(change: StyleReplacementRequest, signal: AbortSignal) {
+    return prepareStyleReplacement(change, {
+      model: this.#model,
+      reflow: this.#reflowText,
+      scheduler: this.#workScheduler,
+      signal,
+      isCancelled: () => this.#disposed || !this.#isAttached() || this.#history.isTraversing,
+    });
   }
 
-  *#selectedElements(selection: ReadonlySet<string>): Generator<InkElementV1> {
-    for (const id of selection) {
-      const record = this.#model.store.get(id);
-      if (record === undefined) throw new RangeError("Style selection is stale.");
-      yield record.element as InkElementV1;
-    }
+  public commitStyle(
+    change: PreparedStyleChange,
+    prepared?: PreparedStyleReplacement,
+    previewCommit?: ReturnType<PreparedElementHistoryOptions["motion"]["beginPreviewCommit"]>,
+  ): boolean {
+    if (this.#pending || this.#disposed || this.#history.isTraversing) return false;
+    this.#run(
+      async (generation) => {
+        const reflowAbort = new AbortController();
+        this.#reflowAbort = reflowAbort;
+        try {
+          const ready = prepared ?? (await this.prepareStyle(change, reflowAbort.signal));
+          if (!ready?.changed) return false;
+          const scheduler = this.#scheduler(generation);
+          const styleScheduler = {
+            ...scheduler,
+            isCancelled: () =>
+              scheduler.isCancelled?.() === true ||
+              this.#history.isTraversing ||
+              !change.isCurrent() ||
+              this.#model.revision !== ready.revision ||
+              this.#model.store.mutationVersion !== ready.mutationVersion,
+          };
+          if (styleScheduler.isCancelled()) return false;
+          const effect = await change.frameEffect?.(
+            ready.previous,
+            ready.replacements,
+            styleScheduler,
+          );
+          if (styleScheduler.isCancelled()) return false;
+          return await this.#commitApplied(
+            ready.previous,
+            ready.replacements,
+            generation,
+            previewCommit,
+            effect,
+            {
+              isCancelled: styleScheduler.isCancelled,
+              maxHistoryPayloadBytes: DEFAULT_HISTORY_BYTE_LIMIT,
+            },
+          );
+        } finally {
+          if (this.#reflowAbort === reflowAbort) this.#reflowAbort = undefined;
+          previewCommit?.cancel();
+        }
+      },
+      change.onCompleted,
+      change.onSettled,
+    );
+    return true;
   }
 
   public commitHandle(
@@ -275,28 +300,30 @@ export class PreparedElementHistory {
       conditions,
     );
     if (!committed) return false;
-    this.#registerApplied(captured, effect);
-    return true;
+    return this.#registerApplied(captured, effect);
   }
 
   #registerApplied(
     applied: ElementReplacementHistoryData,
     effect?: SelectionFrameHistoryEffect,
-  ): void {
+  ): boolean {
     if (applied.previous.length === 0 || applied.previous.length !== applied.replacements.length)
-      return;
+      return false;
     const model = this.#model;
     const history = this.#history;
     const replay = (elements: readonly InkElementV1[]) =>
       applyPreparedHistoryReplacement(model, elements, () => history.isDisposed);
-    history.registerApplied(
-      {
-        payloadBytes: applied.payloadBytes,
-        redo: () => replay(applied.replacements as readonly InkElementV1[]),
-        undo: () => replay(applied.previous as readonly InkElementV1[]),
-      },
-      effect,
-    );
+    const transition: AppliedAsyncHistoryTransition = {
+      payloadBytes: applied.payloadBytes,
+      redo: () => replay(applied.replacements as readonly InkElementV1[]),
+      undo: () => replay(applied.previous as readonly InkElementV1[]),
+    };
+    // A live source editor can retain one unaccepted text field; groups stay on normal history.
+    const registered =
+      applied.previous.length === 1
+        ? this.#registerAppliedOverride?.(transition, effect, [applied.previous[0]!.id])
+        : undefined;
+    return registered ?? history.registerApplied(transition, effect);
   }
 
   async #replace(

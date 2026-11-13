@@ -42,6 +42,7 @@ export class ActiveEditorLayout {
   readonly #heightTransition: ActiveHeightTransition;
   #blockInsets = 0;
   #chromeMounted = false;
+  #disposed = false;
   #fitZoom: number | undefined;
   #forcePageHeight = false;
   #frame: number | undefined;
@@ -51,7 +52,6 @@ export class ActiveEditorLayout {
   #readyFrame: number | undefined;
   #stableWidth: StableWidthState = createStableWidthState();
   #suspended = false;
-  #selectionMoveActive = false;
   #toolbar: HTMLElement | undefined;
   readonly #toolbarMeasurement = new ToolbarLayoutMeasurement();
   readonly #resizeObservation = new ToolbarResizeObservation();
@@ -135,7 +135,6 @@ export class ActiveEditorLayout {
   }
 
   public beginSelectionMove(): void {
-    this.#selectionMoveActive = true;
     this.#applyHeightUpdate(this.#pageLayout.beginSelectionMove());
   }
 
@@ -155,6 +154,8 @@ export class ActiveEditorLayout {
   }
 
   public dispose(): void {
+    this.#disposed = true;
+    this.#suspended = true;
     this.#ownZoomScroll.clear();
     this.#chromeObserver?.disconnect();
     this.#observer?.disconnect();
@@ -174,15 +175,14 @@ export class ActiveEditorLayout {
     this.#applyPreviewHeight(this.#options.page());
   }
 
-  public finishSelectionMove(committed: boolean, previewMaximumBottom?: number): void {
-    this.#selectionMoveActive = false;
+  public finishSelectionMove(committed: boolean, previewBottom?: number, immediate = false): void {
     const storeMaximumBottom = this.#options.storeMaximumBottom();
-    const maximumBottom = committed
-      ? maximumHeight(storeMaximumBottom, previewMaximumBottom)
+    const bottom = committed
+      ? maximumHeight(storeMaximumBottom, previewBottom)
       : storeMaximumBottom;
-    this.#applyHeightUpdate(
-      this.#pageLayout.finishSelectionMove(committed, this.#options.page(), maximumBottom),
-    );
+    const update = this.#pageLayout.finishSelectionMove(committed, this.#options.page(), bottom);
+    if (immediate && update) this.#pageLayout.cancelTransitions(update.height);
+    this.#applyHeightUpdate(immediate && update ? { ...update, animate: false } : update);
   }
 
   public interruptForInput(): void {
@@ -236,9 +236,10 @@ export class ActiveEditorLayout {
     this.#motion.update(preference);
   }
 
-  public updateSelectionMoveBottom(maximumBottom: number): void {
+  public updateSelectionMoveBottom(bottom: number, immediate = false, source = false): void {
+    const update = this.#pageLayout.previewSelectionMove(this.#options.page(), bottom, source);
     this.#applyHeightUpdate(
-      this.#pageLayout.previewSelectionMove(this.#options.page(), maximumBottom),
+      immediate && update?.animate !== false ? this.#pageLayout.completeTransitions() : update,
     );
   }
 
@@ -364,7 +365,7 @@ export class ActiveEditorLayout {
     page = this.#renderPage(),
     frameRead?: { readonly renderedHeight: number },
   ): void {
-    if (update === undefined) return;
+    if (this.#disposed || update === undefined) return;
     const minimumHeight = this.#requiredContentHeight(page);
     this.#pageLayout.retainMinimumHeight(minimumHeight);
     const targetHeight = Math.max(update.height, minimumHeight);
@@ -402,7 +403,7 @@ export class ActiveEditorLayout {
       currentRenderedHeight,
       onComplete: () => this.#completeHeightTransition(),
       sceneCommitPending: () => this.#options.renderer.hasPendingSceneCommit,
-      stabilizeScroll: !this.#selectionMoveActive,
+      stabilizeScroll: !this.#pageLayout.selectionMoveActive,
       targetRenderedHeight,
     });
     if (this.#motion.reduced) this.#heightTransition.finishImmediately();

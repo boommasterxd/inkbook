@@ -24,6 +24,7 @@ describe("tool cursor policy", () => {
     custom.pen.color = { type: "rgba", value: "#12345680" };
     custom.highlighter.color = { type: "rgba", value: "#23456780" };
     custom.straightHighlighter.color = { type: "rgba", value: "#34567880" };
+    custom.text.color = { type: "rgba", value: "#56789A80" };
     for (const shape of Object.values(custom.shapes)) {
       shape.outlineColor = { type: "rgba", value: "#45678980" };
     }
@@ -34,6 +35,7 @@ describe("tool cursor policy", () => {
         draw: custom.pen.color,
         highlighter: custom.highlighter.color,
         "straight-highlighter": custom.straightHighlighter.color,
+        text: custom.text.color,
       } as const;
       const color =
         activeTool in colors

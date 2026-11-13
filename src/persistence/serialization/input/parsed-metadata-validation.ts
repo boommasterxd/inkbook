@@ -11,6 +11,9 @@ import {
 import type { DocumentCodecResult } from "../types";
 import type { ChunkedInputCheckpoint } from "./chunked-input-types";
 import type { StrokeSampleEncodingCache } from "../metadata/stroke-sample-encoding-cache";
+import { validateFontResourceSteps } from "../../fonts/font-resources";
+import { restoreCompactFontResourcesSteps } from "../metadata/compact-font-resources";
+import { usedFontResourcesSteps } from "../../fonts/used-font-resources";
 
 interface MetadataValidationContext {
   readonly checkpoint: ChunkedInputCheckpoint;
@@ -29,7 +32,7 @@ export async function validateParsedMetadata(
   context: MetadataValidationContext,
 ): Promise<DocumentCodecResult<MigratedSnapshot>> {
   const actualMetadataHash =
-    context.prelude?.version === 1
+    context.prelude !== null && context.prelude.version >= 1
       ? await sha256TextChunked(context.metadataText, context.checkpoint, context.signal)
       : undefined;
   if (actualMetadataHash !== undefined && actualMetadataHash !== context.prelude?.snapshotHash) {
@@ -42,6 +45,8 @@ export async function validateParsedMetadata(
     };
   }
   const compact = context.prelude?.metadataEncoding === COMPACT_METADATA_ENCODING;
+  const restored = await restoreParsedFonts(parsed.value, context);
+  if (!restored.ok) return restored;
   if (compact) {
     try {
       await runSteps(
@@ -65,12 +70,14 @@ export async function validateParsedMetadata(
     migrateAndValidateDocumentSnapshotSteps(parsed.value, {
       allowRuntimeStrokeBuffers: compact,
       metadataBytes: context.metadataBytes,
-      parsedJsonProof: parsed.proof,
+      ...(restored.value ? {} : { parsedJsonProof: parsed.proof }),
       totalInputBytes: context.totalInputBytes,
     }),
     context.checkpoint,
   );
   if (!migrated.ok) return migrated;
+  const fonts = await validateParsedFonts(migrated.value, context);
+  if (!fonts.ok) return fonts;
   const integrity = validateCurrentMetadataIntegrity(
     context.metadataText,
     context.prelude?.snapshotHash ?? null,
@@ -80,6 +87,51 @@ export async function validateParsedMetadata(
     actualMetadataHash,
   );
   return integrity.ok ? migrated : integrity;
+}
+
+async function restoreParsedFonts(
+  value: unknown,
+  context: MetadataValidationContext,
+): Promise<DocumentCodecResult<boolean>> {
+  try {
+    return {
+      ok: true,
+      value: await runSteps(
+        restoreCompactFontResourcesSteps(value, context.prelude),
+        context.checkpoint,
+      ),
+    };
+  } catch (error) {
+    context.signal?.throwIfAborted();
+    if (!(error instanceof RangeError)) throw error;
+    return {
+      ok: false,
+      error: { code: "snapshot-invalid", message: "Embedded font descriptors are invalid." },
+    };
+  }
+}
+
+async function validateParsedFonts(
+  migrated: MigratedSnapshot,
+  context: MetadataValidationContext,
+): Promise<DocumentCodecResult<undefined>> {
+  try {
+    for (const resource of migrated.snapshot.fontResources ?? []) {
+      await runSteps(validateFontResourceSteps(resource, context.signal), context.checkpoint);
+    }
+    await runSteps(
+      usedFontResourcesSteps(migrated.snapshot.elements, migrated.snapshot.fontResources ?? []),
+      context.checkpoint,
+    );
+  } catch (error) {
+    context.signal?.throwIfAborted();
+    if (!(error instanceof RangeError)) throw error;
+    return {
+      ok: false,
+      error: { code: "snapshot-invalid", message: "Font resource content is invalid." },
+    };
+  }
+  return { ok: true, value: undefined };
 }
 
 async function runSteps<T>(

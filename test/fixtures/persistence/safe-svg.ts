@@ -1,6 +1,7 @@
 import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
 import type { validateSafeSvgSteps } from "../../../src/persistence/documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-envelope";
+import { StreamingSafeStaticValidator } from "../../../src/persistence/serialization/input/streaming-safe-static";
 
 export const MAXIMUM_PATH_BYTES = 16 * 1024 * 1024;
 
@@ -38,4 +39,12 @@ export function exhaustValidation(steps: ReturnType<typeof validateSafeSvgSteps>
     step = steps.next();
   }
   return { result: step.value, yields };
+}
+
+export async function validateStaticSvgChunks(input: string, chunk: number, version = 1) {
+  const validator = new StreamingSafeStaticValidator(() => undefined, version);
+  for (let start = 0; start < input.length; start += chunk) {
+    if (!(await validator.write(input.slice(start, start + chunk)))) return false;
+  }
+  return validator.finish();
 }

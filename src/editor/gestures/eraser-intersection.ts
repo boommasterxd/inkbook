@@ -108,6 +108,12 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       this.#linearPrevious = element.start;
       return;
     }
+    if (element.kind === "text") {
+      this.#mode = "polygon";
+      this.#vertices = shapeVertices({ ...element, kind: "rectangle" });
+      this.#polygonFillPending = true;
+      return;
+    }
     const outlineRadius = radius + element.style.outlineWidth / 2;
     if (element.kind === "coordinate-system") {
       this.#mode = "coordinate-system";
@@ -316,6 +322,13 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
     }
     this.#polygonFillPending = false;
     const element = this.#element;
+    if (element.kind === "text") {
+      this.#touches =
+        pointInPolygon(this.#localStart, this.#vertices) ||
+        pointInPolygon(this.#localEnd, this.#vertices);
+      this.#finished = true;
+      return;
+    }
     if (
       element.kind !== "rectangle" &&
       element.kind !== "ellipse" &&

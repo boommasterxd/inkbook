@@ -55,6 +55,8 @@ export function buildElementPathParts(
   pressureGeometry?: PreparedPressureGeometryPort,
 ): SvgPathPart[] {
   if (element.kind === "stroke") return buildStrokePathParts(element, pressureGeometry);
+  // Text uses its canonical rich layout, never the closed-shape path pipeline.
+  if (element.kind === "text") return [];
   if (element.kind === "coordinate-system")
     return [{ d: buildCoordinateSystemPath(element), paint: "stroke" }];
   if (element.kind === "table") return [{ d: buildTablePath(element), paint: "stroke" }];

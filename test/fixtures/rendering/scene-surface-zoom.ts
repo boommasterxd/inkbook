@@ -125,7 +125,9 @@ function bridgeThemeRead(root: HTMLElement, container: HTMLElement) {
           ? (name: string) =>
               target.getPropertyValue(name) ||
               container.style.getPropertyValue(name) ||
-              root.style.getPropertyValue(name)
+              root.style.getPropertyValue(name) ||
+              document.body.style.getPropertyValue(name) ||
+              document.documentElement.style.getPropertyValue(name)
           : (Reflect.get(target, property) as unknown),
     });
   });

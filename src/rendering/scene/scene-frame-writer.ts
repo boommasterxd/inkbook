@@ -51,6 +51,7 @@ export class SceneFrameWriter {
         readonly fill: "accent" | "none";
         readonly handles: string | null;
         readonly path: string | null;
+        readonly retainedTextFeedback: boolean;
       }
     | undefined;
   #pendingSystemCursor: string | undefined;
@@ -162,10 +163,11 @@ export class SceneFrameWriter {
 
   public setSelectionPath(
     path: string | null,
-    handles: string | null,
-    fill: "accent" | "none",
+    fill: "accent" | "none" = "accent",
+    handles: string | null = null,
+    retainedTextFeedback = false,
   ): void {
-    this.#pendingSelection = { fill, handles, path };
+    this.#pendingSelection = { fill, handles, path, retainedTextFeedback };
   }
 
   public setSnapPath(path: string | null): void {
@@ -217,15 +219,22 @@ export class SceneFrameWriter {
     elements.immediate.write();
     transforms.write();
     elements.progressive.writeFeedback(this.#camera.zoom, deadline, now);
-    const selection = this.#pendingSelection;
-    if (selection !== undefined) {
-      this.#pendingSelection = undefined;
-      motion.applySelectionPath(selection.path, selection.handles, selection.fill);
-    }
+    this.writeSelection(elements, motion);
     if (this.#pendingSnapPath !== undefined) {
       const snap = this.#pendingSnapPath;
       this.#pendingSnapPath = undefined;
       motion.applySnapPath(snap);
+    }
+  }
+
+  public writeSelection(elements: SceneElementPreviews, motion: SceneMotionController): void {
+    const selection = this.#pendingSelection;
+    if (
+      selection !== undefined &&
+      (selection.retainedTextFeedback || !elements.textPublicationPending)
+    ) {
+      this.#pendingSelection = undefined;
+      motion.applySelectionPath(selection.path, selection.handles, selection.fill);
     }
   }
 

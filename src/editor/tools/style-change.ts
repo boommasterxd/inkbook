@@ -1,3 +1,4 @@
+import { changeTextElement, textDefaultsMatch, textStylePatch } from "./text-style-change";
 import { changeCoordinateSystemDimension, changeTableColumns } from "../../domain/geometry/public";
 import type {
   ColorV1,
@@ -51,7 +52,7 @@ export function applyToolStyleChange(
 }
 
 function elementStyleChange(element: InkElementV1, change: StyleChange): StyleChange {
-  if (isStrokeStyled(element)) return change;
+  if (isStrokeStyled(element) || element.kind === "text") return change;
   switch (change.property) {
     case "color":
       return { property: "outline-color", value: change.value };
@@ -68,6 +69,10 @@ function changeElement(element: InkElementV1, change: StyleChange): InkElementV1
   validateChange(change);
   if (isToolOnlyChange(change))
     throw new RangeError(`${change.property} does not apply to an existing selection.`);
+  if (element.kind === "text") {
+    const changed = changeTextElement(element, change);
+    return changed === element ? element : validateStyleReplacement(element, changed);
+  }
   if (elementValueMatches(element, change)) return element;
   let result: InkElementV1;
   switch (change.property) {
@@ -110,7 +115,13 @@ function changeElement(element: InkElementV1, change: StyleChange): InkElementV1
     case "table-columns":
       result = changeTableColumns(element as never, change.value);
       break;
+    default:
+      throw new RangeError(`Unsupported style property ${change.property}.`);
   }
+  return validateStyleReplacement(element, result);
+}
+
+function validateStyleReplacement(element: InkElementV1, result: InkElementV1): InkElementV1 {
   const validation = validateInternalStyleReplacement(element, result);
   if (!validation.ok) throw new RangeError(`${validation.error.path}: ${validation.error.message}`);
   return validation.value;
@@ -124,19 +135,21 @@ function assertSelectionCompatibility(
   if (isToolOnlyChange(change))
     throw new RangeError(`Style property ${change.property} is not shared by the selection.`);
   const compatible = elements.every((element) => {
+    if (change.property.startsWith("text-")) return element.kind === "text";
     switch (change.property) {
       case "color":
-      case "stroke-width":
       case "opacity":
         return true;
+      case "stroke-width":
+        return element.kind !== "text";
       case "outline-color":
       case "outline-width":
       case "outline-style":
       case "outline-opacity":
-        return !isStrokeStyled(element);
+        return !isStrokeStyled(element) && element.kind !== "text";
       case "fill-color":
       case "fill-opacity":
-        return isClosedShape(element);
+        return isClosedShape(element) || element.kind === "text";
       case "arrow-start-node":
       case "arrow-end-node":
         return element.kind === "arrow";
@@ -144,6 +157,8 @@ function assertSelectionCompatibility(
         return element.kind === "coordinate-system";
       case "table-columns":
         return element.kind === "table";
+      default:
+        return false;
     }
   });
   if (!compatible)
@@ -161,12 +176,16 @@ function assertToolCompatibility(tool: StartupToolV1, change: StyleChange): void
       throw new RangeError(`Style property ${change.property} does not apply to ${tool}.`);
     return;
   }
+  if (change.property.startsWith("text-")) {
+    if (tool !== "text") throw new RangeError(`Text style does not apply to ${tool}.`);
+    return;
+  }
   const compatible = (() => {
     switch (change.property) {
       case "color":
-      case "stroke-width":
       case "opacity":
-        return tool === "draw" || tool === "highlighter" || tool === "straight-highlighter";
+      case "stroke-width":
+        return supportsStrokePaint(tool, change.property);
       case "outline-color":
       case "outline-width":
       case "outline-style":
@@ -187,6 +206,8 @@ function assertToolCompatibility(tool: StartupToolV1, change: StyleChange): void
       case "selection-area":
       case "selection-inclusion":
         return tool === "select";
+      default:
+        return false;
     }
   })();
   if (!compatible)
@@ -194,6 +215,10 @@ function assertToolCompatibility(tool: StartupToolV1, change: StyleChange): void
 }
 
 function changeToolValues(values: ToolDefaultsV1, tool: StartupToolV1, change: StyleChange): void {
+  if (tool === "text") {
+    Object.assign(values.text, textStylePatch(change));
+    return;
+  }
   if (change.property === "hold-to-shape-enabled") {
     values.pen.holdToShapeEnabled = change.value;
     return;
@@ -294,6 +319,8 @@ function elementValueMatches(element: InkElementV1, change: StyleChange): boolea
       return element.kind === "coordinate-system" && element.dimension === change.value;
     case "table-columns":
       return element.kind === "table" && element.columns === change.value;
+    default:
+      return false;
   }
 }
 
@@ -324,6 +351,7 @@ function toolValueMatches(
   tool: StartupToolV1,
   change: StyleChange,
 ): boolean {
+  if (tool === "text") return textDefaultsMatch(values.text, change);
   if (change.property === "hold-to-shape-enabled")
     return values.pen.holdToShapeEnabled === change.value;
   if (change.property === "snapping-enabled")
@@ -416,8 +444,18 @@ function isNonShapeTool(tool: StartupToolV1): boolean {
   return (
     tool === "select" ||
     tool === "eraser" ||
+    tool === "text" ||
     tool === "draw" ||
     tool === "highlighter" ||
     tool === "straight-highlighter"
+  );
+}
+
+function supportsStrokePaint(tool: StartupToolV1, property: string): boolean {
+  return (
+    tool === "draw" ||
+    tool === "highlighter" ||
+    tool === "straight-highlighter" ||
+    (tool === "text" && property !== "stroke-width")
   );
 }

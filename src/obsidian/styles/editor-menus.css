@@ -74,6 +74,18 @@
   grid-template-columns: repeat(auto-fit, minmax(36px, 1fr));
 }
 
+.inkbook-menu-toggle-button-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.inkbook-menu-toggle-button-cell {
+  min-inline-size: 0;
+}
+
+.inkbook-menu-toggle-button-grid .inkbook-menu-choice {
+  inline-size: 100%;
+}
+
 .inkbook-menu-color-grid {
   grid-template-columns: repeat(5, 36px);
   justify-content: space-between;
@@ -100,8 +112,8 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.inkbook-menu-controls .inkbook-menu-choice,
-.inkbook-menu-controls .inkbook-menu-stepper-button {
+.inkbook-menu-controls,
+.inkbook-menu-choice-palette {
   --inkbook-menu-choice-selected-background: color-mix(
     in srgb,
     var(--interactive-accent) 15%,
@@ -112,7 +124,10 @@
     var(--interactive-accent) 74%,
     transparent
   );
+}
 
+.inkbook-menu-controls .inkbook-menu-choice,
+.inkbook-menu-controls .inkbook-menu-stepper-button {
   align-items: center;
   appearance: none;
   background: var(--background-primary);
@@ -130,6 +145,7 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
+.inkbook-menu-choice-palette [role="option"][aria-selected="true"],
 .inkbook-menu-choice[aria-pressed="true"]:where(:not([data-inkbook-choice-state])),
 .inkbook-menu-choice[data-inkbook-choice-state="selected"] {
   background: var(--inkbook-menu-choice-selected-background);

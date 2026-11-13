@@ -27,6 +27,10 @@ import { ActiveEditorHistoryTraversal } from "./history-traversal";
 import { ActiveEditorStyleSession, type ActiveEditorStyleSessionOptions } from "./style-session";
 
 export interface ActiveEditorInteractionsOptions {
+  readonly onHandleSettled?: () => void;
+  readonly registerApplied?: import("./prepared-element-history").PreparedElementHistoryOptions["registerApplied"];
+  readonly reflowText?: import("./previews/handle-interaction-contracts").ActiveEditorHandleInteractionOptions["reflowText"];
+  readonly onPasteText?: import("./controller-clipboard").ActiveEditorClipboardOptions["onPasteText"];
   readonly controller: ActiveEditorControllerOptions;
   readonly dispatchMove: (pointer: PointerSample) => void;
   readonly history: ActiveEditorHistory;
@@ -53,6 +57,11 @@ export function createControllerStyleSession(
     | "selectionFrames"
     | "preparedHistory"
     | "isEnabled"
+    | "controlsOverride"
+    | "iconOverride"
+    | "applyOverride"
+    | "fontOptions"
+    | "preview"
   >,
 ): ActiveEditorStyleSession {
   return new ActiveEditorStyleSession({
@@ -99,6 +108,8 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     motion: controller.renderer,
     onPendingChanged: options.onPendingChanged,
     workScheduler: controller.workScheduler,
+    ...(options.reflowText === undefined ? {} : { reflowText: options.reflowText }),
+    ...(options.registerApplied === undefined ? {} : { registerApplied: options.registerApplied }),
   });
   const actions = new ActiveEditorActions({
     confirmEraseAll: controller.confirmEraseAll,
@@ -120,6 +131,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     setSelection: options.setSelection,
     lastSessionPointer: options.lastSessionPointer,
     visibleCenter: () => options.navigation.visibleCenter(),
+    ...(options.onPasteText === undefined ? {} : { onPasteText: options.onPasteText }),
   });
   return {
     actions,
@@ -130,6 +142,10 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       project: (event) => options.navigation.screenPointer(event),
     }),
     handles: new ActiveEditorHandleInteraction({
+      ...(options.onHandleSettled === undefined
+        ? {}
+        : { onGestureSettled: options.onHandleSettled }),
+      ...(options.reflowText === undefined ? {} : { reflowText: options.reflowText }),
       frameScheduler: controller.workScheduler,
       workScheduler: controller.workScheduler,
       history: options.history,
@@ -145,6 +161,9 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       zoom: () => options.navigation.zoom,
     }),
     menus: new ActiveEditorMenuController({
+      onOpenFonts: controller.onOpenFonts,
+      ...(controller.textFonts === undefined ? {} : { library: controller.textFonts }),
+      resources: () => controller.model.fontResources ?? [],
       localization: controller.localization,
       workScheduler: controller.workScheduler,
       actions,

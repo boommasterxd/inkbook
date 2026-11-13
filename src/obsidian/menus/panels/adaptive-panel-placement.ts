@@ -6,6 +6,8 @@ interface PanelPlacementOptions {
   readonly layer: HTMLElement;
   readonly surface: HTMLElement;
   readonly ownerWindow: Window;
+  readonly onOcclusionChanged?: ((top: number | undefined) => void) | undefined;
+  readonly externalFocusTarget?: (() => HTMLElement | undefined) | undefined;
 }
 
 /** Measures layout dimensions independently of entry and swipe transforms. */
@@ -13,9 +15,47 @@ export class AdaptivePanelPlacement {
   readonly #options: PanelPlacementOptions;
   readonly #phoneHeight = new PhoneSheetHeight();
   #keyboardProbe: HTMLElement | undefined;
+  #occlusionTop: number | undefined;
 
   public constructor(options: PanelPlacementOptions) {
     this.#options = options;
+  }
+
+  public get occlusionTop(): number | undefined {
+    return this.#occlusionTop;
+  }
+
+  public refreshOcclusion(): void {
+    const surface = this.#options.surface;
+    const measured =
+      Platform.isPhone && surface.dataset.kind === "style"
+        ? surface.getBoundingClientRect().top
+        : undefined;
+    this.publishOcclusion(
+      measured !== undefined && Number.isFinite(measured) ? measured : undefined,
+    );
+  }
+
+  public clearOcclusion(): void {
+    this.publishOcclusion(undefined);
+  }
+
+  private publishOcclusion(top: number | undefined): void {
+    if (top === this.#occlusionTop) return;
+    this.#occlusionTop = top;
+    this.#options.onOcclusionChanged?.(top);
+  }
+
+  public observeContent(content: HTMLElement, onResize: () => void): ResizeObserver | undefined {
+    const constructor = (
+      this.#options.ownerWindow as Window & {
+        readonly ResizeObserver?: typeof ResizeObserver;
+      }
+    ).ResizeObserver;
+    if (constructor === undefined) return undefined;
+    const observer = new constructor(onResize);
+    observer.observe(content);
+    return observer;
   }
 
   public observeKeyboard(onResize: () => void): () => void {
@@ -51,16 +91,15 @@ export class AdaptivePanelPlacement {
 
   #maximumScrollHeight(viewport: ReturnType<typeof readMenuViewport>): number {
     const { ownerWindow, surface } = this.#options;
-    return Math.max(
-      0,
-      Platform.isPhone
-        ? this.#phoneHeight.maximum(
-            viewport,
-            ownerWindow.innerHeight,
-            surface.dataset.kind === "menu" ? 16 : 0,
-          ) - 16
-        : viewport.height - 16,
+    if (!Platform.isPhone) return Math.max(0, viewport.height - 16);
+    let maximum = this.#phoneHeight.maximum(
+      viewport,
+      ownerWindow.innerHeight,
+      surface.dataset.kind === "menu" ? 16 : 0,
     );
+    if (surface.dataset.kind === "style" && this.#options.externalFocusTarget?.()?.isConnected)
+      maximum = Math.min(maximum, viewport.height * 0.6);
+    return Math.max(0, maximum - 16);
   }
 
   public position(): number | undefined {
@@ -78,6 +117,7 @@ export class AdaptivePanelPlacement {
         "--inkbook-adaptive-panel-maximum-height",
         `${String(maximumHeight)}px`,
       );
+      this.refreshOcclusion();
       return viewport.height;
     }
     const anchor = trigger.getBoundingClientRect();

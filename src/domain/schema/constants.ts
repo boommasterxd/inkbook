@@ -1,5 +1,4 @@
 export const INKBOOK_FORMAT = "inkbook" as const;
-export const INKBOOK_VERSION = 1 as const;
 export const PAGE_INNER_WIDTH = 2000 as const;
 export const PAGE_MARGIN = 24.3 as const;
 export const PAGE_WIDTH = 2048.6 as const;
@@ -10,6 +9,7 @@ export const MAX_JSON_DEPTH = 16 as const;
 export const MAX_ABSOLUTE_COORDINATE = 1_000_000 as const;
 export const MAX_DERIVED_HEIGHT = 1_000_000 as const;
 export const MAX_STROKE_POINTS = 16_384 as const;
+export const MAX_DOCUMENT_TEXT_BYTES = 32 * 1024 * 1024;
 
 export interface SchemaLimits {
   totalInputBytes: number;

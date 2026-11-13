@@ -64,22 +64,3 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
     workerEpoch: options.workerEpoch,
   });
 }
-
-export function prepareAutosaveForUnload(
-  autosave: AutosaveCoordinator | undefined,
-  dispose: () => void,
-): Promise<void> {
-  if (autosave === undefined || !autosave.dirty) {
-    dispose();
-    return Promise.resolve();
-  }
-  return autosave.flush("detach").then(
-    () => {
-      dispose();
-    },
-    (error: unknown) => {
-      dispose();
-      throw error;
-    },
-  );
-}

@@ -16,6 +16,9 @@ import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { Keymap } from "obsidian";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { FontOptionPreviews } from "../../fonts/font-option-previews";
+import type { FontPreviewSource } from "../../fonts/font-preview-source";
+import { menuTranslator } from "../../menus/localized-menu-text";
 
 interface ActiveEditorMenuOptions {
   readonly localization?: Localization | undefined;
@@ -39,6 +42,7 @@ interface ActiveEditorMenuOptions {
   readonly onClosed: () => void;
   readonly onArrange: (action: ArrangeAction) => void;
   readonly onPaste: () => void;
+  readonly onEditText?: (() => void) | undefined;
 }
 
 function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSession {
@@ -77,6 +81,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       canSendBackward: options.arrangeAvailability["send-backward"],
       canSendToBack: options.arrangeAvailability["send-to-back"],
       hasSelection: options.hasSelection,
+      canEditText: options.onEditText !== undefined,
     },
     {
       bringForward: () => options.onArrange("bring-forward"),
@@ -90,11 +95,13 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       paste: options.onPaste,
       sendBackward: () => options.onArrange("send-backward"),
       sendToBack: () => options.onArrange("send-to-back"),
+      editText: options.onEditText,
     },
   );
 }
 
-export interface ActiveEditorMenuControllerOptions {
+export interface ActiveEditorMenuControllerOptions extends FontPreviewSource {
+  readonly onOpenFonts?: ((trigger: HTMLButtonElement) => void) | undefined;
   readonly localization?: Localization | undefined;
   readonly workScheduler: WorkScheduler;
   readonly actions: ActiveEditorActions;
@@ -116,6 +123,13 @@ interface ToolbarMenuConfiguration {
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
 }
 
+export interface ActiveEditorTextMenu {
+  readonly selectedId: () => string | undefined;
+  readonly onEdit: (id: string) => void;
+  readonly focusTarget?: () => HTMLElement | undefined;
+  readonly onOcclusionChanged?: (top: number | undefined) => void;
+}
+
 export class ActiveEditorMenuController {
   readonly #options: ActiveEditorMenuControllerOptions;
   #event: MouseEvent | undefined;
@@ -124,13 +138,30 @@ export class ActiveEditorMenuController {
   #toolbarSession: EditorToolbarMenuSession | undefined;
   #toolbarMenuId: Exclude<EditorToolbarMenuId, "background"> | undefined;
   #toolbarOptions: ToolbarMenuConfiguration | undefined;
+  #textEditing: ActiveEditorTextMenu | undefined;
+  readonly #fontPreviews: FontOptionPreviews;
 
   public constructor(options: ActiveEditorMenuControllerOptions) {
     this.#options = options;
+    this.#fontPreviews = new FontOptionPreviews({
+      document: options.ownerDocument,
+      scheduler: options.workScheduler,
+      ...(options.library === undefined ? {} : { library: options.library }),
+      ...(options.resources === undefined ? {} : { resources: options.resources }),
+    });
+  }
+  public configureTextEditing(options: ActiveEditorTextMenu): void {
+    this.#textEditing = options;
   }
 
   public get isOpen(): boolean {
     return this.#session !== undefined || this.#toolbarSession !== undefined;
+  }
+  public get isStyleOpen(): boolean {
+    return this.#toolbarMenuId === "style" && this.#toolbarSession !== undefined;
+  }
+  public get occlusionTop(): number | undefined {
+    return this.#toolbarSession?.occlusionTop;
   }
 
   public dispose(): void {
@@ -139,6 +170,7 @@ export class ActiveEditorMenuController {
     this.#session = undefined;
     this.#toolbarSession?.close("immediate");
     this.#toolbarSession = undefined;
+    this.#fontPreviews.dispose();
   }
 
   public closeToolbar(mode: "animated" | "immediate" = "animated"): void {
@@ -153,6 +185,10 @@ export class ActiveEditorMenuController {
     this.#toolbarOptions = options;
   }
 
+  public refreshStyle(): void {
+    this.#toolbarSession?.refreshStyle();
+  }
+
   public toggleToolbar(
     id: Exclude<EditorToolbarMenuId, "background">,
     anchor: HTMLButtonElement | undefined,
@@ -164,7 +200,6 @@ export class ActiveEditorMenuController {
     const options = this.#toolbarOptions;
     if (anchor === undefined || options === undefined) return;
     this.openToolbar({ ...options, anchor, id, onClosed: () => options.onOpenChange(null) });
-    this.#toolbarMenuId = id;
     options.onOpenChange(id);
   }
 
@@ -190,10 +225,26 @@ export class ActiveEditorMenuController {
       getState: options.getState,
       handlers: options.handlers,
       initialMenu: options.id,
-      ...(this.#options.keymap === undefined ? {} : { keymap: this.#options.keymap }),
-      ...(this.#options.createPhoneSheetHost === undefined
+      ...(options.id !== "style" || this.#textEditing?.focusTarget === undefined
         ? {}
-        : { createPhoneSheetHost: this.#options.createPhoneSheetHost }),
+        : { externalFocusTarget: this.#textEditing.focusTarget }),
+      ...(options.id !== "style" || this.#textEditing?.onOcclusionChanged === undefined
+        ? {}
+        : { onOcclusionChanged: this.#textEditing.onOcclusionChanged }),
+      fontPreviews: this.#fontPreviews,
+      ...(this.#options.onOpenFonts === undefined
+        ? {}
+        : {
+            fontManagementAction: {
+              label: () => menuTranslator(this.#options)("fonts.manage"),
+              onActivate: () => {
+                this.closeToolbar("immediate");
+                this.#options.onOpenFonts?.(options.anchor as HTMLButtonElement);
+              },
+            },
+          }),
+      keymap: this.#options.keymap,
+      createPhoneSheetHost: this.#options.createPhoneSheetHost,
       onClosed: () => {
         if (this.#toolbarSession !== session) return;
         this.#toolbarSession = undefined;
@@ -206,6 +257,7 @@ export class ActiveEditorMenuController {
       renderIcon: options.renderIcon,
     });
     this.#toolbarSession = session;
+    this.#toolbarMenuId = options.id;
   }
 
   public dispatchFromEvent(event: MouseEvent | undefined, dispatch: () => void): void {
@@ -249,6 +301,8 @@ export class ActiveEditorMenuController {
   ): void {
     if (generation !== this.#openGeneration) return;
     const actions = this.#options.actions;
+    const textEditing = this.#textEditing;
+    const textId = textEditing?.selectedId();
     const pasteInvocation = {
       invocationPoint: { x: position.x, y: position.y },
       kind: "context-menu" as const,
@@ -274,6 +328,12 @@ export class ActiveEditorMenuController {
       },
       onEraseAll: () => actions.execute("erase-all"),
       onPaste: () => actions.execute("paste", pasteInvocation),
+      onEditText:
+        textId === undefined || textEditing === undefined
+          ? undefined
+          : () => {
+              if (textEditing.selectedId() === textId) textEditing.onEdit(textId);
+            },
       ownerDocument: this.#options.ownerDocument,
       position: this.#options.toScreenPoint(position),
       restoreFocus,

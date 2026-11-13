@@ -30,7 +30,7 @@ import {
 } from "typescript";
 import { validateWorkScheduling } from "./verify-work-scheduling.mjs";
 
-const SOURCE_FILE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.(?:ts|tsx)$/;
+const SOURCE_FILE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.(?:d\.ts|ts|tsx)$/;
 const TEST_FILE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.test\.(?:mjs|ts|tsx)$/;
 const TEST_APIS = new Set(["bench", "describe", "it", "suite", "test"]);
 const TEST_MODULES = new Set(["node:test", "vitest"]);

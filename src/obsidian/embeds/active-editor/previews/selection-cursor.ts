@@ -1,8 +1,95 @@
-import { pointInPolygon, pointSegmentDistance } from "../../../../domain/geometry/public";
-import type { BoxAnchorV1, PointV1 } from "../../../../domain/schema/public";
+import {
+  pointInPolygon,
+  pointSegmentDistance,
+  rotatePointClockwise,
+} from "../../../../domain/geometry/public";
+import { textContentWidth } from "../../../../domain/geometry/text-padding";
+import type {
+  BoxAnchorV1,
+  InkElementV1,
+  PointV1,
+  TextElementV2,
+} from "../../../../domain/schema/public";
 import type { PointerSample } from "../../../../editor/input/index";
 import type { ToolSystemCursor } from "../../../../editor/input/tool-cursor";
 import type { SelectionHandle, SelectionOutline } from "../../../../editor/selection/public";
+import {
+  findSelectionHandle,
+  type HitTestScratch,
+  type SelectionOverlayGeometry,
+  type SelectedElementGeometry,
+} from "../../../../editor/selection/public";
+
+export function selectionCursorAt(
+  geometry: SelectionOverlayGeometry | null,
+  pointer: PointerSample,
+  options: {
+    readonly zoom: number;
+    readonly rotation: number;
+    readonly linear: InkElementV1 | undefined;
+    readonly hit: HitTestScratch;
+    readonly selected?: readonly SelectedElementGeometry[];
+    readonly handlesOnly?: boolean;
+    readonly visualOnly?: boolean;
+  },
+): ToolSystemCursor | undefined {
+  if (geometry === null) return undefined;
+  const handle = selectionCursorHandle(
+    geometry,
+    pointer,
+    options.zoom,
+    options.selected,
+    options.visualOnly,
+  );
+  if (handle !== null) return selectionHandleCursor(handle, options.rotation);
+  if (options.handlesOnly) return undefined;
+  if (selectionCursorContainsPoint(geometry.outline, pointer)) return "move";
+  if (options.linear === undefined) return undefined;
+  options.hit.begin(pointer, pointer.pointerType, options.zoom);
+  options.hit.consider(options.linear.id, "content", options.linear, 0);
+  return options.hit.finish() === null ? undefined : "move";
+}
+
+export function selectionCursorHandle(
+  geometry: SelectionOverlayGeometry | null,
+  pointer: PointerSample,
+  zoom: number,
+  selected: readonly SelectedElementGeometry[] = [],
+  visualOnly = false,
+): SelectionHandle | null {
+  const element = selected.length === 1 ? selected[0]?.element : undefined;
+  const radius =
+    element?.kind === "text" && (visualOnly || textContentContainsPoint(element, pointer))
+      ? 6
+      : selectionCursorRadius(geometry?.outline ?? null, pointer, zoom);
+  return geometry === null ? null : findSelectionHandle(geometry.handles, pointer, zoom, radius);
+}
+
+function textContentContainsPoint(element: TextElementV2, point: PointV1): boolean {
+  const local = rotatePointClockwise(point, element.pivot, -element.rotation);
+  const padding = element.layout.padding ?? 0;
+  const left = element.x + padding;
+  return (
+    local.x >= left &&
+    local.x <= left + textContentWidth(element.width, padding) &&
+    local.y >= element.y + padding &&
+    local.y <= element.y + element.height - padding
+  );
+}
+
+export function preferredSelectionHandle(
+  handles: readonly SelectionHandle[],
+  preferred: SelectionHandle,
+): SelectionHandle | null {
+  return (
+    handles.find(
+      (candidate) =>
+        candidate.kind === preferred.kind &&
+        (candidate.kind !== "scale" ||
+          (preferred.kind === "scale" && candidate.position === preferred.position)),
+    ) ?? null
+  );
+}
 
 const SCALE_ANGLES: Readonly<Record<BoxAnchorV1, number>> = {
   "top-left": 45,

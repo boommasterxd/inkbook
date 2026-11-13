@@ -57,7 +57,11 @@ export interface PresentationPreviewLifecycle {
   readonly setSource?: (source: string) => Promise<PreviewContentIdentity | undefined>;
 }
 
-type MutablePresentationAttachment = Omit<PresentationAttachment, "previewContentIdentity"> & {
+type MutablePresentationAttachment = Omit<
+  PresentationAttachment,
+  "embedReference" | "previewContentIdentity"
+> & {
+  embedReference: PresentationAttachment["embedReference"];
   previewContentIdentity?: PreviewContentIdentity;
 };
 
@@ -275,6 +279,13 @@ export class PresentationController {
   updatePreview(descriptor: InkbookLockedPreviewDescriptor): void {
     this.#previewLifecycle?.setDescriptor?.(descriptor);
     this.#attachment.previewContentIdentity = descriptor.contentIdentity;
+  }
+
+  updateLivePreviewRange(from: number, to: number): boolean {
+    const reference = this.#attachment.embedReference;
+    if (reference.kind !== "live-preview") return false;
+    this.#attachment.embedReference = { ...reference, from, to };
+    return true;
   }
 
   public get scrollOwner(): HTMLElement | null {

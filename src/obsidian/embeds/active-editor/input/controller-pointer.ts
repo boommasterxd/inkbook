@@ -22,6 +22,8 @@ import {
 import { selectedTargetAt, selectionTargetAt } from "../controller-elements";
 import { isMacPlatform, normalizePointerType } from "../controller-helpers";
 import type { ActiveEditorHandleInteraction } from "../previews/handle-interaction";
+import type { SelectionHandle } from "../../../../editor/selection/public";
+import { beginHandlePointer, finishHandlePointer } from "./controller-handle-pointer";
 import type { ActiveEditorMenuController } from "../controller-menu";
 import type { ActiveEditorNavigation } from "../navigation/navigation";
 import type { ElementSceneStore } from "../scene-store";
@@ -140,7 +142,7 @@ export class ActiveEditorPointerController {
     this.#releasePointer(pointerId);
   }
 
-  public handlePointerDown(event: PointerEvent): void {
+  public handlePointerDown(event: PointerEvent, preferredHandle?: SelectionHandle): void {
     if (this.#isForeignHandlePointer(event.pointerId)) return;
     this.#options.cursor.record(event, "down");
     if (!this.#options.isEnabled()) return;
@@ -175,15 +177,14 @@ export class ActiveEditorPointerController {
     const pagePointer = this.#options.navigation.pageSample(pointer);
     this.#options.setLastPointer(pagePointer, pointer);
     if (
-      classification.handleEligible &&
-      this.#options.cursor.penRole(event.pointerId) === "normal" &&
-      this.#options.handles.pointerDown(pagePointer, event.shiftKey, event.altKey === true)
-    ) {
-      this.#options.beginHandlePointer(pagePointer.pointerType);
-      this.#options.capturePointer(event.pointerId);
-      if (event.cancelable) event.preventDefault();
+      beginHandlePointer(event, pagePointer, this.#options, {
+        eligible:
+          classification.handleEligible &&
+          this.#options.cursor.penRole(event.pointerId) === "normal",
+        preferredHandle,
+      })
+    )
       return;
-    }
     const target = this.#pointerDownTarget(pagePointer, event.button);
     this.#options.menus.dispatchFromEvent(
       classification.isPlatformContextClick ? event : undefined,
@@ -201,6 +202,7 @@ export class ActiveEditorPointerController {
           isPlatformContextClick: classification.isPlatformContextClick,
           penRole: this.#options.cursor.penRole(event.pointerId),
           shift: event.shiftKey,
+          alt: event.altKey,
           timestamp: event.timeStamp,
           ...(target === undefined ? {} : { target }),
         }),
@@ -426,27 +428,7 @@ export class ActiveEditorPointerController {
   }
 
   #finishHandleRelease(event: PointerEvent, pointer: PointerSample): boolean {
-    // A pen release may already contain hover coordinates. Finish from the queued contact frame.
-    const noncontactPen =
-      event.pointerType === "pen" && event.pressure === 0 && event.buttons === 0;
-    const handleFinished = noncontactPen && this.#options.handles.pointerUp(event.pointerId);
-    if (
-      handleFinished ||
-      (!noncontactPen &&
-        this.#options.handles.pointerMove(
-          this.#options.navigation.pageSample(pointer),
-          event.shiftKey,
-          event.altKey === true,
-        ))
-    ) {
-      if (!handleFinished) this.#options.handles.pointerUp(event.pointerId);
-      this.#releasePointer(event.pointerId);
-      this.#options.finishHandlePointer();
-      this.#setSnappingInverted(event.pointerId, null);
-      if (event.cancelable) event.preventDefault();
-      return true;
-    }
-    return false;
+    return finishHandlePointer(event, pointer, this.#options);
   }
 
   #pointerOrCancel(event: PointerEvent): PointerSample | undefined {

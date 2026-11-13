@@ -1,4 +1,21 @@
 export const settingsControls = {
+  "settings.controls.text": "Text",
+  "settings.controls.textHelp": "Konfiguriere Vorgaben für neue Textfelder.",
+  "settings.controls.textFontFamilyHelp": "Wähle die Schriftart für neue Textfelder.",
+  "settings.controls.textFontSizeHelp":
+    "Lege die Schriftgröße in Seiteneinheiten fest. Nachkommastellen bleiben erhalten.",
+  "settings.controls.textColorHelp": "Wähle die Textfarbe für neue Textfelder.",
+  "settings.controls.textOpacityHelp": "Lege die Deckkraft des Texts in neuen Textfeldern fest.",
+  "settings.controls.textBoldHelp": "Formatiere neue Textfelder standardmäßig fett.",
+  "settings.controls.textItalicHelp": "Formatiere neue Textfelder standardmäßig kursiv.",
+  "settings.controls.textUnderlineHelp": "Unterstreiche neue Textfelder standardmäßig.",
+  "settings.controls.textStrikethroughHelp": "Streiche neue Textfelder standardmäßig durch.",
+  "settings.controls.textAlignmentHelp": "Wähle die Absatzausrichtung für neue Textfelder.",
+  "settings.controls.textBackgroundColorHelp":
+    "Wähle eine Hintergrundfarbe oder keinen Hintergrund für neue Textfelder.",
+  "settings.controls.textBackgroundOpacityHelp":
+    "Lege die Deckkraft des Hintergrunds neuer Textfelder fest.",
+  "settings.options.text": "Text",
   "settings.controls.customFolder": "Eigener Vault-Ordner",
   "settings.controls.customFolderHelp":
     "Gib einen sicheren Ordner relativ zum Vault für neue Inkbook-Dateien an.",

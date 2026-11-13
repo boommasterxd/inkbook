@@ -1,7 +1,8 @@
 export const canvas = {
+  "canvas.kind_text": "Text",
   "canvas.name": "Inkbook canvas",
   "canvas.keyboard_instructions":
-    "Page Up and Page Down select objects. Home and End select the first and last object. Enter starts geometry editing. In geometry editing, Page Up and Page Down choose a handle, arrow keys adjust it by 1 document unit or 1 degree, and Shift adjusts by 10. Enter or Escape leaves geometry editing. Tab leaves the canvas.",
+    "Page Up and Page Down select objects. Home and End select the first and last object. Enter edits a selected text field or starts geometry editing for other objects. Shift+Enter starts geometry editing for text fields. In geometry editing, Page Up and Page Down choose a handle, arrow keys adjust it by 1 document unit or 1 degree, and Shift adjusts by 10. Escape leaves geometry or text editing. Tab leaves the canvas.",
   "canvas.updated": "Updated.",
   "canvas.edit_failed": "The edit could not be applied.",
   "canvas.editing": "Geometry editing.",

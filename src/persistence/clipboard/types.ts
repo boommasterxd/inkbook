@@ -1,4 +1,9 @@
-import type { InkClipboardV1, InkElementV1, PointV1 } from "../../domain/schema/public";
+import type {
+  FontResourceV2,
+  InkClipboardV1,
+  InkElementV1,
+  PointV1,
+} from "../../domain/schema/public";
 import type { Bounds } from "../../domain/geometry/public";
 
 type ClipboardErrorCode =
@@ -68,6 +73,7 @@ export type PasteInvocation =
 
 export interface PastePlan {
   elements: readonly InkElementV1[];
+  fontResources?: readonly FontResourceV2[];
   selectedIds: readonly string[];
   highlightIds: readonly string[];
   contentIds: readonly string[];

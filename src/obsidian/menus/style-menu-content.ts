@@ -4,31 +4,49 @@ import {
   updateMenuText,
   type MenuLocalizationOptions,
 } from "./localized-menu-text";
-import { createOutlineStylePreview } from "./style-outline-preview";
+import { createChoicePreview } from "./style-choice-preview";
+import { createFontChoiceDropdown, type FontChoiceDropdownOptions } from "./font-choice-dropdown";
 
 import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
-import {
-  arrowNodeIconId,
-  coordinateSystemIconId,
-  OPACITY_ICON_ID,
-  PRESSURE_SENSITIVITY_ICON_ID,
-  selectionAreaIconId,
-} from "../../rendering/ui/icon-ids";
+import { OPACITY_ICON_ID, PRESSURE_SENSITIVITY_ICON_ID } from "../../rendering/ui/icon-ids";
 import { configureMenuTooltips, menuDomWindow } from "./menu-dom";
+import { createStyleControlSync } from "./style-control-sync";
+import { formatStyleNumber, valueCharacterWidth } from "./style-number-format";
+import {
+  createStyleToggleButtons,
+  isIconToggle,
+  type StyleToggleButtonsOptions,
+} from "./style-toggle-buttons";
 
-export interface StyleMenuContentOptions extends MenuLocalizationOptions {
+export interface StyleMenuContentOptions
+  extends
+    MenuLocalizationOptions,
+    Omit<FontChoiceDropdownOptions, "workScheduler">,
+    StyleToggleButtonsOptions {
+  readonly workScheduler?: FontChoiceDropdownOptions["workScheduler"] | undefined;
   readonly controlDescriptions?: Readonly<Record<string, string>>;
   readonly controls: readonly StyleControl[];
   readonly numberInputMode?: "clamp" | "reject";
   readonly ownerDocument: Document;
   readonly onChange: (controlId: string, value: boolean | number | string) => void;
+  readonly onPreview?: ((controlId: string, value: boolean | number | string) => void) | undefined;
   readonly onInvalidValue?: (controlId: string) => void;
+  readonly registerStyleSync?: (sync: (controls: readonly StyleControl[]) => void) => void;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
 }
 
 let nextControlLabel = 0;
 
 const CONTROL_ICONS: Readonly<Record<string, string>> = {
+  "text-font-family": "type",
+  "text-font-size": "a-large-small",
+  "text-bold": "bold",
+  "text-italic": "italic",
+  "text-underline": "underline",
+  "text-strikethrough": "strikethrough",
+  "text-alignment": "align-left",
+  "text-background-color": "paint-bucket",
+  "text-background-opacity": OPACITY_ICON_ID,
   color: "palette",
   "stroke-width": "minus",
   opacity: OPACITY_ICON_ID,
@@ -49,17 +67,21 @@ const CONTROL_ICONS: Readonly<Record<string, string>> = {
   "active-buffer-lines": "rows-3",
 };
 
-const WIDTH_PREVIEW_PIXELS: Readonly<Record<string, number>> = {
-  "1": 0.5,
-  "2": 1,
-  "4": 2.5,
-  "8": 4,
-  "12": 5.5,
-  "14": 6,
-  "22": 8,
-};
-
 export function createStyleMenuContent(options: StyleMenuContentOptions): DocumentFragment {
+  const original = options;
+  const choices = new Map<string, (value: string | null) => void>();
+  const toggles = new Map<string, (checked: boolean, mixed: boolean) => void>();
+  options = {
+    ...options,
+    registerChoiceRestore: (id, restore) => {
+      choices.set(id, restore);
+      original.registerChoiceRestore?.(id, restore);
+    },
+    registerToggleRestore: (id, restore) => {
+      toggles.set(id, restore);
+      original.registerToggleRestore?.(id, restore);
+    },
+  };
   const fragment = menuDomWindow(options.ownerDocument, "style menu").createFragment();
   const root = fragment.createDiv({ cls: "inkbook-menu-controls" });
   if (options.controls.length === 0) {
@@ -72,10 +94,23 @@ export function createStyleMenuContent(options: StyleMenuContentOptions): Docume
     });
     root.append(empty);
   } else {
-    for (const control of options.controls) root.append(createControl(options, control));
+    let toggles: Extract<StyleControl, { kind: "toggle" }>[] = [];
+    const flushToggles = (): void => {
+      if (toggles.length > 0) root.append(createStyleToggleButtons(options, toggles));
+      toggles = [];
+    };
+    for (const control of options.controls) {
+      if (isIconToggle(control)) toggles.push(control);
+      else {
+        flushToggles();
+        root.append(createControl(options, control));
+      }
+    }
+    flushToggles();
   }
   fragment.append(root);
   configureMenuTooltips(fragment);
+  options.registerStyleSync?.(createStyleControlSync(root, { ...options, choices, toggles }));
   return fragment;
 }
 
@@ -100,7 +135,7 @@ function createField(
   const header = field.createDiv({ cls: "inkbook-menu-control-header" });
   const icon = header.createSpan({ cls: "inkbook-menu-control-icon" });
   options.renderIcon(icon, CONTROL_ICONS[control.id] ?? "settings-2");
-  const label = header.createSpan();
+  const label = header.createSpan({ cls: "inkbook-menu-control-label" });
   label.id = `inkbook-style-label-${++nextControlLabel}`;
   field.setAttribute("role", "group");
   field.setAttribute("aria-labelledby", label.id);
@@ -141,6 +176,12 @@ function createChoices(
   control: Extract<StyleControl, { readonly kind: "choice" }>,
 ): HTMLElement {
   const { field, body } = createField(options, control);
+  if (control.id === "text-font-family") {
+    const workScheduler = options.workScheduler;
+    if (workScheduler === undefined) throw new Error("Font choices require a work scheduler.");
+    createFontChoiceDropdown(body, control, { ...options, workScheduler });
+    return field;
+  }
   body.classList.add("inkbook-menu-choice-grid");
   if (control.id.endsWith("color")) body.classList.add("inkbook-menu-color-grid");
   if (control.id.endsWith("width")) body.classList.add("inkbook-menu-width-grid");
@@ -193,40 +234,6 @@ function createChoiceButton(
   return button;
 }
 
-function createChoicePreview(
-  options: StyleMenuContentOptions,
-  controlId: string,
-  value: string,
-): HTMLElement | null {
-  const preview = menuDomWindow(options.ownerDocument, "style menu").createSpan({
-    cls: "inkbook-menu-choice-preview",
-  });
-  if (controlId.endsWith("color")) {
-    preview.classList.add("inkbook-menu-color-swatch");
-    preview.dataset.empty = value === "none" ? "true" : undefined;
-    preview.style.setProperty(
-      "--inkbook-menu-color",
-      value === "theme-text" ? "var(--text-normal)" : value,
-    );
-    return preview;
-  }
-  if (controlId.endsWith("width")) {
-    preview.classList.add("inkbook-menu-line-preview");
-    preview.style.setProperty("--inkbook-menu-line-width", `${String(widthPreview(value))}px`);
-    return preview;
-  }
-  if (controlId === "outline-style") {
-    preview.classList.add("inkbook-menu-line-preview");
-    preview.append(createOutlineStylePreview(options.ownerDocument, value));
-    return preview;
-  }
-  const iconId = choiceIconId(controlId, value);
-  if (iconId === null) return null;
-  preview.classList.add("inkbook-menu-option-icon");
-  options.renderIcon(preview, iconId);
-  return preview;
-}
-
 function createSlider(
   options: StyleMenuContentOptions,
   control: Extract<StyleControl, { readonly kind: "number" }>,
@@ -237,11 +244,12 @@ function createSlider(
   const scale = percent ? 100 : 1;
   const range = body.createEl("input");
   const { valueField, value } = createNumberValueField(body, control, options, scale);
+  value.defaultValue = value.value;
   range.className = "inkbook-menu-slider";
   range.type = "range";
   range.min = String(control.min * scale);
   range.max = String(control.max * scale);
-  range.step = percent ? "1" : String(control.step * scale);
+  range.step = control.step === "any" ? "any" : percent ? "1" : String(control.step * scale);
   range.value = String((control.value ?? control.min) * scale);
   updateMenuText(options, () => range.setAttribute("aria-label", controlLabel(options, control)));
   if (control.mixed === true) {
@@ -252,8 +260,10 @@ function createSlider(
     });
   }
   range.addEventListener("input", () => {
-    value.value = formatNumber(range.valueAsNumber);
+    value.value = formatStyleNumber(range.valueAsNumber, control.id);
+    value.defaultValue = value.value;
     range.removeAttribute("aria-valuetext");
+    if (control.id === "text-font-size") options.onPreview?.(control.id, range.valueAsNumber);
   });
   range.addEventListener("change", () => {
     options.onChange(control.id, range.valueAsNumber / scale);
@@ -262,16 +272,25 @@ function createSlider(
     const next = valueInRange(value, range, options.numberInputMode);
     if (next === undefined) return;
     range.value = String(next);
+    value.defaultValue = formatStyleNumber(next, control.id);
     range.removeAttribute("aria-valuetext");
+    if (control.id === "text-font-size") options.onPreview?.(control.id, next);
   });
   value.addEventListener("change", () => {
+    if (
+      control.id === "text-font-size" &&
+      value.value === value.defaultValue &&
+      (value.valueAsNumber < control.min || value.valueAsNumber > control.max)
+    )
+      return;
     const next = valueInRange(value, range, options.numberInputMode);
     if (next === undefined) {
-      value.value = formatNumber(range.valueAsNumber);
+      value.value = value.defaultValue;
       options.onInvalidValue?.(control.id);
       return;
     }
-    value.value = formatNumber(next);
+    value.value = formatStyleNumber(next, control.id);
+    value.defaultValue = value.value;
     range.value = String(next);
     range.removeAttribute("aria-valuetext");
     options.onChange(control.id, next / scale);
@@ -291,10 +310,15 @@ function createNumberValueField(
   const value = valueContent.createEl("input");
   value.className = "inkbook-menu-value";
   value.type = "number";
+  value.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing || event.defaultPrevented) return;
+    event.preventDefault();
+    value.blur();
+  });
   value.min = String(control.min * scale);
   value.max = String(control.max * scale);
   value.step = scale === 100 ? "1" : String(control.step);
-  value.value = control.value === null ? "" : formatNumber(control.value * scale);
+  value.value = control.value === null ? "" : formatStyleNumber(control.value * scale, control.id);
   value.placeholder = control.mixed === true ? "—" : "";
   updateMenuText(options, () =>
     value.setAttribute(
@@ -325,18 +349,6 @@ function valueInRange(
     return undefined;
   }
   return clamp(value.valueAsNumber, Number(range.min), Number(range.max));
-}
-
-function valueCharacterWidth(
-  control: Extract<StyleControl, { readonly kind: "number" }>,
-  scale: number,
-  placeholder: string,
-): number {
-  return Math.max(
-    formatNumber(control.min * scale).length,
-    formatNumber(control.max * scale).length,
-    placeholder.length,
-  );
 }
 
 function createStepper(
@@ -370,7 +382,7 @@ function createStepper(
   });
   const commit = (next: number) => {
     const current = clamp(Math.round(next), control.min, control.max);
-    value.value = formatNumber(current);
+    value.value = formatStyleNumber(current, control.id);
     value.defaultValue = value.value;
     options.onChange(control.id, current);
   };
@@ -383,17 +395,12 @@ function createStepper(
     }
     commit(next);
   });
-  value.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    value.blur();
-  });
   const currentValue = (): number =>
     Number.isFinite(value.valueAsNumber)
       ? value.valueAsNumber
       : Number(value.defaultValue || control.min);
-  decrement.addEventListener("click", () => commit(currentValue() - control.step));
-  increment.addEventListener("click", () => commit(currentValue() + control.step));
+  decrement.addEventListener("click", () => commit(currentValue() - Number(control.step)));
+  increment.addEventListener("click", () => commit(currentValue() + Number(control.step)));
   body.append(decrement, valueField, increment);
   return field;
 }
@@ -436,46 +443,33 @@ function createToggle(
   const input = switchControl.createEl("input");
   input.type = "checkbox";
   input.checked = control.checked;
+  input.indeterminate = control.mixed === true;
+  input.setAttribute("aria-checked", control.mixed === true ? "mixed" : String(control.checked));
   updateMenuText(options, () => input.setAttribute("aria-label", controlLabel(options, control)));
   if (descriptionElement !== undefined) {
     descriptionElement.id = `inkbook-style-description-${++nextControlLabel}`;
     input.setAttribute("aria-describedby", descriptionElement.id);
   }
-  input.addEventListener("change", () => options.onChange(control.id, input.checked));
+  input.addEventListener("change", () => {
+    input.indeterminate = false;
+    input.setAttribute("aria-checked", String(input.checked));
+    options.onChange(control.id, input.checked);
+  });
   switchControl.createSpan({ cls: "inkbook-menu-switch-track" }).createSpan({
     cls: "inkbook-menu-switch-thumb",
   });
   return label;
 }
 
-function choiceIconId(controlId: string, value: string): string | null {
-  if (controlId === "arrow-start-node")
-    return arrowNodeIconId(value as Parameters<typeof arrowNodeIconId>[0], "start");
-  if (controlId === "arrow-end-node")
-    return arrowNodeIconId(value as Parameters<typeof arrowNodeIconId>[0], "end");
-  if (controlId === "coordinate-dimension" && (value === "2d" || value === "3d"))
-    return coordinateSystemIconId(value);
-  if (controlId === "selection-area" && (value === "rectangle" || value === "lasso"))
-    return selectionAreaIconId(value);
-  return null;
-}
-
 function isVisualOnlyChoice(controlId: string): boolean {
   return (
     controlId.endsWith("color") ||
+    controlId === "text-alignment" ||
     controlId === "outline-style" ||
     controlId.startsWith("arrow-") ||
     controlId === "coordinate-dimension" ||
     controlId === "selection-area"
   );
-}
-
-function widthPreview(value: string): number {
-  return WIDTH_PREVIEW_PIXELS[value] ?? Math.min(8, Math.max(1, Math.log2(Number(value))));
-}
-
-function formatNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "");
 }
 
 function clamp(value: number, min: number, max: number): number {

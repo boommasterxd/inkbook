@@ -76,6 +76,7 @@ export class FakeNode extends EventTarget {
   public shadowRoot: FakeNode | null = null;
   public contentDocument: FakeDocument | null = null;
   readonly #animations = new Set<FakeAnimation>();
+  #textContent = "";
 
   public constructor(
     public readonly ownerDocument: FakeDocument,
@@ -91,6 +92,22 @@ export class FakeNode extends EventTarget {
 
   public get childNodes(): readonly FakeNode[] {
     return this.nodes;
+  }
+  public get textContent(): string {
+    return this.#textContent + this.nodes.map((node) => node.textContent).join("");
+  }
+  public set textContent(value: string | null) {
+    this.clearChildren();
+    this.#textContent = value ?? "";
+  }
+  public replaceChildren(...nodes: FakeNode[]): void {
+    this.clearChildren();
+    for (const node of nodes) this.insertBefore(node, null);
+  }
+  private clearChildren(): void {
+    this.#textContent = "";
+    for (const child of this.nodes) child.parent = undefined;
+    this.nodes.length = 0;
   }
 
   public get parentNode(): FakeNode | null {
@@ -198,6 +215,10 @@ export class FakeNode extends EventTarget {
     this.attributes.set(name, value);
   }
 
+  public setAttributeNS(_namespace: string | null, name: string, value: string): void {
+    this.setAttribute(name, value);
+  }
+
   public getAttribute(name: string): string | null {
     return this.attributes.get(name) ?? null;
   }
@@ -217,7 +238,7 @@ export class FakeNode extends EventTarget {
   }
 }
 
-export class FakeDocument {
+export class FakeDocument extends EventTarget {
   public readonly body = new FakeNode(this, "body");
   public readonly head = new FakeNode(this, "head");
   public readonly documentElement = new FakeNode(this, "html");

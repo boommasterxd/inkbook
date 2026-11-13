@@ -35,7 +35,8 @@ export type InkbookFeedbackCode =
   | "placement-folder-fallback"
   | "onboarding-preference-failed"
   | "recovery-copy-saved"
-  | "stroke-point-limit-reached";
+  | "stroke-point-limit-reached"
+  | "text-preparation-failed";
 
 export type InkbookFeedbackSeverity = "error" | "info" | "success" | "warning";
 
@@ -188,6 +189,11 @@ const FEEDBACK: Readonly<
     detail: "host.feedback.history-change-failed.detail",
     severity: "error",
     title: "host.feedback.history-change-failed.title",
+  },
+  "text-preparation-failed": {
+    detail: "host.feedback.text-preparation-failed.detail",
+    severity: "error",
+    title: "host.feedback.text-preparation-failed.title",
   },
   "history-lock-required": {
     severity: "info",

@@ -10,6 +10,8 @@ import {
 import { encodeStrokeSampleBytesSteps } from "./stroke-sample-codec";
 import { metadataPrefix } from "./canonical-metadata";
 import { ChunkedSha256 } from "../chunked-output-sha256";
+import { metadataSliceEnd } from "../input/chunked-input-utils";
+import { bindSnapshotFontResourcesSteps } from "../../fonts/bound-font-resources";
 
 const encoder = new TextEncoder();
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
@@ -52,18 +54,37 @@ export class CanonicalMetadataCache {
     checkpoint: () => Promise<void> | undefined,
     signal?: AbortSignal,
   ): Promise<string> {
-    const fragments = [encoder.encode(metadataPrefix(snapshot.revision, snapshot.page))];
-    let length = fragments[0]!.byteLength + 2;
+    const bound = consumeMetadataSteps(
+      bindSnapshotFontResourcesSteps(snapshot),
+      checkpoint,
+      signal,
+    );
+    snapshot = bound instanceof Promise ? await bound : bound;
+    const prefix = metadataPrefix(snapshot.revision, snapshot.page, snapshot);
+    const fragments: Uint8Array<ArrayBuffer>[] = [];
+    for (let start = 0; start < prefix.length;) {
+      const end = metadataSliceEnd(prefix, start, CHUNK_BYTES);
+      fragments.push(encoder.encode(prefix.slice(start, end)));
+      start = end;
+      if (prefix.length > CHUNK_BYTES) {
+        const pending = checkpoint();
+        if (pending !== undefined) await pending;
+        signal?.throwIfAborted();
+      }
+    }
+    let length = fragments.reduce((total, fragment) => total + fragment.byteLength, 0) + 2;
+    let first = true;
     let pendingBytes = 0;
     let pendingElements = 0;
     for (const element of snapshot.elements) {
       signal?.throwIfAborted();
       const resolved = this.#elementBytes(element, checkpoint, signal);
       const elementFragments = resolved instanceof Promise ? await resolved : resolved;
-      if (fragments.length > 1) {
+      if (!first) {
         fragments.push(COMMA_BYTES);
         length += 1;
       }
+      first = false;
       fragments.push(...elementFragments);
       const elementBytes = elementFragments.reduce((sum, fragment) => sum + fragment.byteLength, 0);
       length += elementBytes;
@@ -213,25 +234,36 @@ function* encodeFragments(
   let length = 0;
   for (const fragment of fragments) {
     signal?.throwIfAborted();
-    const bytes = encoder.encode(fragment);
-    encoded.push(bytes);
-    length += bytes.byteLength;
-    if (length > FILE_SCHEMA_LIMITS.metadataBytes) throw new RangeError("Metadata byte limit.");
-    yield;
+    if (fragment.length === 0) {
+      yield;
+      continue;
+    }
+    for (let start = 0; start < fragment.length;) {
+      const end = metadataSliceEnd(fragment, start, CHUNK_BYTES);
+      const bytes = encoder.encode(fragment.slice(start, end));
+      encoded.push(bytes);
+      length += bytes.byteLength;
+      if (length > FILE_SCHEMA_LIMITS.metadataBytes) throw new RangeError("Metadata byte limit.");
+      start = end;
+      yield;
+    }
   }
-  return joinBytes(encoded, length);
+  return yield* joinBytesSteps(encoded, length, signal);
 }
 
-function joinBytes(
+function* joinBytesSteps(
   fragments: readonly Uint8Array<ArrayBuffer>[],
-  length = fragments.reduce((sum, fragment) => sum + fragment.byteLength, 0),
-): Uint8Array<ArrayBuffer> {
+  length: number,
+  signal?: AbortSignal,
+): Generator<void, Uint8Array<ArrayBuffer>> {
   if (fragments.length === 1) return fragments[0]!;
   const bytes = new Uint8Array(length);
   let offset = 0;
   for (const fragment of fragments) {
     bytes.set(fragment, offset);
     offset += fragment.byteLength;
+    signal?.throwIfAborted();
+    yield;
   }
   return bytes;
 }

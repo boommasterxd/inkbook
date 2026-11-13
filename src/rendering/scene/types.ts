@@ -7,6 +7,7 @@ import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PathPresentation } from "./content/element-presentation";
 
 type SceneDirtyDomain = "connection" | "geometry" | "order" | "paint" | "visibility";
+export type SceneBand = RenderBand;
 
 export interface SceneElementRecord {
   readonly band: RenderBand;

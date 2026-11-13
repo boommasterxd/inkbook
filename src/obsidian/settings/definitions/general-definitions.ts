@@ -13,6 +13,7 @@ const OPTION_KEYS = {
   select: "settings.options.select",
   eraser: "settings.options.eraser",
   draw: "settings.options.draw",
+  text: "settings.options.text",
   highlighter: "settings.options.highlighter",
   "straight-highlighter": "settings.options.straight-highlighter",
   line: "settings.options.line",

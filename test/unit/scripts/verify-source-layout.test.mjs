@@ -6,6 +6,10 @@ it("accepts the supported source, test, and CSS naming contracts", () => {
   const violations = validateSourceLayout([
     { content: "export const value = 1;\n", path: "src/domain/example-file.ts" },
     {
+      content: 'declare module "*.woff2?inline" { const data: string; export default data; }\n',
+      path: "src/persistence/fonts/font-assets.d.ts",
+    },
+    {
       content: 'import { it } from "vitest";\nit("case", () => {});\n',
       path: "test/unit/example-file.test.ts",
     },
@@ -18,6 +22,8 @@ it("accepts the supported source, test, and CSS naming contracts", () => {
 it("reports invalid source names, scene TSX, and executable test suffixes", () => {
   const violations = validateSourceLayout([
     { content: "", path: "src/domain/ExampleFile.ts" },
+    { content: "", path: "src/domain/ExampleFile.d.ts" },
+    { content: "", path: "src/domain/example-file.d.tsx" },
     { content: "", path: "src/rendering/scene/example-view.tsx" },
     {
       content: 'import { it } from "vitest";\nit("case", () => {});\n',
@@ -25,7 +31,7 @@ it("reports invalid source names, scene TSX, and executable test suffixes", () =
     },
   ]);
 
-  expect(violations).toHaveLength(3);
+  expect(violations).toHaveLength(5);
 });
 
 it("recognizes direct, namespace, aliased, and global test calls", () => {

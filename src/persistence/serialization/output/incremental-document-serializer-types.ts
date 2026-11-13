@@ -1,4 +1,4 @@
-import type { InkElementV1, PageV1 } from "../../../domain/schema/public";
+import type { FontResourceV2, InkElementV1, PageV1 } from "../../../domain/schema/public";
 import type { ElementValidationDerivation } from "../../../domain/schema/public";
 import type { ElementFragments, RenderBand } from "./element-fragments";
 import type { EncodedByteBudget } from "./encoded-byte-budget";
@@ -12,6 +12,7 @@ export interface PreparedDelta {
 }
 
 export interface DocumentSerializationDelta {
+  readonly fontResources?: readonly FontResourceV2[];
   readonly baseModelRevision: number;
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly InkElementV1[];

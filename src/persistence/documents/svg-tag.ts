@@ -1,4 +1,5 @@
-const ATTRIBUTE_NAME = /^[A-Za-z][A-Za-z0-9-]*$/u;
+const TAG_NAME = /^[A-Za-z][A-Za-z0-9-]*$/u;
+const ATTRIBUTE_NAME = /^(?:[A-Za-z][A-Za-z0-9-]*|xml:space)$/u;
 
 interface ParsedTag {
   readonly attributes: ReadonlyMap<string, string>;
@@ -41,7 +42,7 @@ export function parseOpeningTag(input: string, start: number): ParsedTag | null 
     cursor += 1;
   }
   const name = input.slice(nameStart, cursor);
-  if (!ATTRIBUTE_NAME.test(name)) {
+  if (!TAG_NAME.test(name)) {
     return null;
   }
   const attributes = new Map<string, string>();
@@ -58,7 +59,7 @@ export function parseOpeningTag(input: string, start: number): ParsedTag | null 
       return null;
     }
     const attributeStart = cursor;
-    while (cursor < input.length && /[A-Za-z0-9-]/u.test(input[cursor]!)) {
+    while (cursor < input.length && /[A-Za-z0-9:-]/u.test(input[cursor]!)) {
       cursor += 1;
     }
     const attribute = input.slice(attributeStart, cursor);

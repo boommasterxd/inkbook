@@ -18,6 +18,12 @@ const sourcePaths = [
   "manifest.json",
   "package.json",
   "versions.json",
+  "node_modules/brotli-dec-wasm/LICENSE-MIT.txt",
+  "src/persistence/fonts/assets/brotli-runtime-licenses.txt",
+  "node_modules/@mathjax/src/LICENSE",
+  ...["inter", "source-serif", "caveat", "jetbrains-mono"].map(
+    (family) => `src/persistence/fonts/assets/${family}-OFL.txt`,
+  ),
   ...["react", "react-dom", "scheduler"].map((name) => `node_modules/${name}/LICENSE`),
   ...["motion", "framer-motion", "motion-dom", "motion-utils"].map(
     (name) => `node_modules/${name}/LICENSE.md`,

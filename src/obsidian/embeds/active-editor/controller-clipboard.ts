@@ -1,6 +1,5 @@
 import {
   beginClipboardWriteDuringActivation,
-  type ClipboardCandidates,
   type ClipboardWritePayload,
   type ClipboardWritePort,
   type PasteInvocation,
@@ -9,12 +8,19 @@ import {
 } from "../../../persistence/clipboard/public";
 
 import type { EditableDocumentModel } from "../document-session/vault-document-session";
-import { ClipboardAdoptionGuard } from "./clipboard-adoption-guard";
+import {
+  ClipboardAdoptionGuard,
+  captureClipboardDocumentBasis,
+  clipboardDocumentBasisCurrent,
+} from "./clipboard-adoption-guard";
 import { registerAppliedDocumentMutation } from "./document-history";
 import {
   readClipboardCandidates,
   readSynchronousClipboardCandidates,
+  hasInkbookClipboardCandidate,
+  ordinaryClipboardSource,
   type SynchronousClipboardData,
+  type TextClipboardCandidates,
 } from "./clipboard-reader";
 import type { ActiveEditorHistory } from "./history";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
@@ -46,6 +52,7 @@ export interface ActiveEditorClipboardOptions {
   readonly onPendingChanged: (pending: boolean) => void;
   readonly onPasteAvailabilityChanged?: (available: boolean) => void;
   readonly onPasteCommitted?: (activeTool: "select", invocation: PasteInvocation) => void;
+  readonly onPasteText?: (source: string, invocation: PasteInvocation) => Promise<boolean>;
   readonly onResult: (result: ClipboardControllerResult) => void;
   readonly onSelectionChanged: (selection: ReadonlySet<string>) => void;
   readonly ownerWindow: Window;
@@ -132,6 +139,7 @@ export class ActiveEditorClipboardController {
   readonly #onPasteCommitted:
     ((activeTool: "select", invocation: PasteInvocation) => void) | undefined;
   readonly #onSelectionChanged: (selection: ReadonlySet<string>) => void;
+  readonly #onPasteText: ActiveEditorClipboardOptions["onPasteText"];
   readonly #ownerWindow: Window;
   readonly #workScheduler: WorkScheduler;
   #operationGeneration = 0;
@@ -149,6 +157,7 @@ export class ActiveEditorClipboardController {
     this.#onPendingChanged = options.onPendingChanged;
     this.#onPasteAvailabilityChanged = options.onPasteAvailabilityChanged;
     this.#onPasteCommitted = options.onPasteCommitted;
+    this.#onPasteText = options.onPasteText;
     this.#onResult = options.onResult;
     this.#onSelectionChanged = options.onSelectionChanged;
     this.#ownerWindow = options.ownerWindow;
@@ -196,7 +205,10 @@ export class ActiveEditorClipboardController {
     invocation: PasteInvocation,
   ): boolean {
     const candidates = readSynchronousClipboardCandidates(data);
-    if (candidates === null) {
+    if (
+      candidates === null ||
+      (!hasInkbookClipboardCandidate(candidates) && this.#onPasteText === undefined)
+    ) {
       this.#reportUnavailable("paste", this.#pending ? "busy" : "invalid-payload");
       return true;
     }
@@ -208,15 +220,21 @@ export class ActiveEditorClipboardController {
   async #paste(
     invocation: PasteInvocation,
     operationGeneration: number,
-    suppliedCandidates?: ClipboardCandidates,
+    suppliedCandidates?: TextClipboardCandidates,
   ): Promise<ClipboardControllerResult> {
-    const expectedRevision = this.#model.revision;
+    const basis = captureClipboardDocumentBasis(this.#model);
     const candidates = suppliedCandidates ?? (await this.#readCandidates());
-    if (!this.#isOperationCurrent(operationGeneration)) {
+    if (!this.#isOperationCurrent(operationGeneration) || !this.#isPresentationAttached()) {
       return this.#reportUnavailable("paste", "stale-operation");
     }
     if (candidates === null) {
       return this.#reportUnavailable("paste", "clipboard-read-failed");
+    }
+    if (!clipboardDocumentBasisCurrent(this.#model, basis)) {
+      return this.#reportUnavailable("paste", "stale-operation");
+    }
+    if (this.#onPasteText !== undefined && !hasInkbookClipboardCandidate(candidates)) {
+      return this.#pasteText(candidates, invocation, operationGeneration);
     }
     const previousRepeat = invocation.kind === "context-menu" ? undefined : this.#repeatState;
     const candidate = await this.#model.planClipboardPaste(candidates, invocation, previousRepeat);
@@ -224,10 +242,11 @@ export class ActiveEditorClipboardController {
     if (!this.#isOperationCurrent(operationGeneration)) {
       return this.#reportUnavailable("paste", "stale-operation");
     }
-    if (plan === null) {
-      return this.#reportUnavailable("paste", "invalid-payload");
+    if (!clipboardDocumentBasisCurrent(this.#model, basis, plan)) {
+      return this.#reportUnavailable("paste", "stale-operation");
     }
-    const applied = await this.#commitPaste(plan, expectedRevision, operationGeneration);
+    if (plan === null) return this.#pasteText(candidates, invocation, operationGeneration);
+    const applied = await this.#commitPaste(plan, this.#model.revision, operationGeneration);
     if (applied === null) {
       return this.#reportUnavailable("paste", "stale-operation");
     }
@@ -235,6 +254,25 @@ export class ActiveEditorClipboardController {
     this.#repeatState = invocation.kind === "context-menu" ? undefined : plan.repeatState;
     this.#onSelectionChanged(new Set(plan.selectedIds));
     this.#onPasteCommitted?.(plan.activateTool, invocation);
+    return this.#report({ action: "paste", kind: "committed" });
+  }
+
+  async #pasteText(
+    candidates: TextClipboardCandidates,
+    invocation: PasteInvocation,
+    operationGeneration: number,
+  ): Promise<ClipboardControllerResult> {
+    const source = ordinaryClipboardSource(candidates);
+    if (source === null || this.#onPasteText === undefined)
+      return this.#reportUnavailable("paste", "invalid-payload");
+    if (!this.#isPresentationAttached() || !this.#isOperationCurrent(operationGeneration))
+      return this.#reportUnavailable("paste", "stale-operation");
+    if (!(await this.#onPasteText(source, invocation)))
+      return this.#reportUnavailable("paste", "paste-failed");
+    if (!this.#isPresentationAttached() || !this.#isOperationCurrent(operationGeneration))
+      return this.#reportUnavailable("paste", "stale-operation");
+    this.#repeatState = undefined;
+    this.#onPasteCommitted?.("select", invocation);
     return this.#report({ action: "paste", kind: "committed" });
   }
 
@@ -316,8 +354,10 @@ export class ActiveEditorClipboardController {
     expectedRevision: number,
     operationGeneration: number,
   ): Promise<import("../../../domain/store/public").AppliedElementMutation | null> {
+    const storeVersion = this.#model.store.mutationVersion;
     const cancelled = () =>
       this.#model.revision !== expectedRevision ||
+      this.#model.store.mutationVersion !== storeVersion ||
       !this.#isPresentationAttached() ||
       !this.#isOperationCurrent(operationGeneration);
     const preparedAdoption = await this.#adoptionGuard.prepare(plan, {
@@ -373,7 +413,7 @@ export class ActiveEditorClipboardController {
     return payload;
   }
 
-  async #readCandidates(): Promise<ClipboardCandidates | null> {
+  async #readCandidates(): Promise<TextClipboardCandidates | null> {
     return readClipboardCandidates(
       this.#ownerWindow.navigator.clipboard,
       this.#sessionPayload?.customText,

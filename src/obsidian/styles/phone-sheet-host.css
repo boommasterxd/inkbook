@@ -2,4 +2,32 @@
   /* The shared sheet owns translate motion; native Modal also writes inline transform motion. */
   transform: none !important;
   transition-property: none !important;
+  border-radius: var(--touch-radius-s) var(--touch-radius-s) 0 0;
+  overflow: hidden;
+}
+
+:is(
+    .inkbook-import-container[data-platform="phone"],
+    .inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  )
+  :is(.inkbook-adaptive-panel-scroll, .inkbook-adaptive-panel-content) {
+  display: flex;
+  flex-direction: column;
+}
+
+:is(
+    .inkbook-import-container[data-platform="phone"],
+    .inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  )
+  .inkbook-adaptive-panel-scroll {
+  max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100dvh) - 48px);
+  overflow: hidden;
+}
+
+:is(
+    .inkbook-import-container[data-platform="phone"],
+    .inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  )
+  .inkbook-adaptive-panel-content {
+  min-block-size: 0;
 }

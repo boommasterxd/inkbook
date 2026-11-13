@@ -9,6 +9,182 @@ import {
   createTestStroke,
   createWorkerSnapshot,
 } from "../../../fixtures/persistence/worker-snapshot";
+import { textElement } from "../../../unit/domain/schema/fixtures";
+import { buildElementFragmentsSteps } from "../../../../src/persistence/serialization/output/element-fragments";
+import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/output/incremental-document-serializer";
+import { loadBuiltinFont } from "../../../../src/persistence/fonts/builtin-fonts";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import { matchesCanonicalFontOutput } from "../../../../src/persistence/serialization/output/font-output-binding";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/document-codec";
+
+it("bounds actual font payload reads during independent output binding and honors cancellation", async () => {
+  const font = await loadBuiltinFont("inter", 400, "normal", new TestWorkScheduler());
+  const element = textElement();
+  element.style.fontFamily = "inter";
+  const saved = serializeInkbookDocument({
+    ...createWorkerSnapshot([element]),
+    version: 2,
+    fontResources: [font],
+  });
+  expect(saved.ok).toBe(true);
+  if (!saved.ok) return;
+  const bytes = new TextEncoder().encode(saved.value.svg);
+  let reads = 0;
+  let total = 0;
+  const output = new Proxy(bytes, {
+    get(target, key) {
+      if (typeof key === "string" && /^\d+$/u.test(key)) {
+        reads++;
+        total++;
+        return target[Number(key)];
+      }
+      if (key === "subarray") return target.subarray.bind(target);
+      return Reflect.get(target, key, target) as unknown;
+    },
+  });
+  const checkpoint = vi.fn(() => {
+    expect(reads).toBeLessThanOrEqual(64 * 1024);
+    reads = 0;
+    return undefined;
+  });
+  expect(await matchesCanonicalFontOutput(output, [font], checkpoint)).toBe(true);
+  expect(total).toBeGreaterThan(font.data.length);
+  expect(checkpoint.mock.calls.length).toBeLessThanOrEqual(
+    Math.ceil(font.data.length / (64 * 1024)) + 2,
+  );
+  reads = 0;
+  const controller = new AbortController();
+  await expect(
+    matchesCanonicalFontOutput(output, [font], () => {
+      controller.abort();
+      controller.signal.throwIfAborted();
+    }),
+  ).rejects.toThrow();
+  expect(reads).toBeLessThanOrEqual(64 * 1024);
+});
+
+it("adds a first font without visiting the existing 10,000 stroke records or building fragments", async () => {
+  const elements = Array.from({ length: 10_000 }, (_, index) => ({
+    ...createTestStroke(),
+    id: elementId(index),
+  }));
+  const serializer = new IncrementalDocumentSerializer();
+  expect(serializer.reset(createWorkerSnapshot(elements)).ok).toBe(true);
+  let kindReads = 0;
+  for (const element of serializer.currentSnapshot()!.elements) {
+    Object.defineProperty(element, "kind", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        kindReads++;
+        return "stroke";
+      },
+    });
+  }
+  const font = await loadBuiltinFont("inter", 400, "normal", new TestWorkScheduler());
+  expect(
+    serializer.applyDelta({ baseModelRevision: 0, modelRevision: 1, fontResources: [font] }).ok,
+  ).toBe(true);
+  expect(kindReads).toBe(0);
+  expect(serializer.currentFontResources()).toHaveLength(1);
+  expect(serializer.instrumentation.fragmentBuilds).toBe(0);
+  serializer.clear();
+});
+
+it("bounds actual canonical and SVG run reads across a large wrapped text layout", () => {
+  const element = textElement();
+  element.width = 200;
+  element.height = 5120;
+  element.pivot = { x: 200, y: 2660 };
+  element.source = "a ".repeat(4096);
+  let reads = 0;
+  let totalReads = 0;
+  element.layout.lines = Array.from({ length: 256 }, (_, line) => ({
+    x: 0,
+    y: line * 20,
+    width: 192,
+    height: 20,
+    baseline: 15,
+    runs: Array.from(
+      { length: 16 },
+      (_, run) =>
+        new Proxy(
+          {
+            text: "a ",
+            start: (line * 16 + run) * 2,
+            end: (line * 16 + run) * 2 + 2,
+            x: run * 12,
+            width: 12,
+          },
+          {
+            get(target, key, receiver) {
+              if (key === "text") {
+                reads++;
+                totalReads++;
+              }
+              return Reflect.get(target, key, receiver) as unknown;
+            },
+          },
+        ),
+    ),
+  }));
+  const steps = buildElementFragmentsSteps(element, 5220);
+  let step;
+  do {
+    reads = 0;
+    step = steps.next();
+    expect(reads).toBeLessThanOrEqual(1);
+  } while (!step.done);
+  // Canonical capture and SVG emission each read the immutable run text once.
+  expect(totalReads).toBe(4096 * 2);
+  expect(step.value.svg.match(/<tspan /g)).toHaveLength(4096);
+  expect(step.value.svg.match(/lengthAdjust="spacingAndGlyphs"/g)).toHaveLength(4096);
+});
+
+it("bounds actual long text JSON and UTF-8 encoding and cancels before further publication", () => {
+  const element = textElement();
+  element.source = "a<&😀".repeat(20_000);
+  element.layout.lines[0]!.runs[0] = {
+    text: element.source,
+    start: 0,
+    end: element.source.length,
+    x: 0,
+    width: 40,
+  };
+  const encode = vi.spyOn(TextEncoder.prototype, "encode");
+  const stringify = vi.spyOn(JSON, "stringify");
+  try {
+    const steps = buildElementFragmentsSteps(element, 150);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    expect(step.value.svg).toContain("a&lt;&amp;😀");
+    expect(encode.mock.calls.length).toBeGreaterThan(10);
+    expect(
+      encode.mock.calls.every(([text]) => text === undefined || text.length <= 16 * 1024),
+    ).toBe(true);
+    expect(
+      stringify.mock.calls.every(
+        ([value]) => typeof value !== "string" || value.length <= 16 * 1024,
+      ),
+    ).toBe(true);
+    const controller = new AbortController();
+    const cancelled = buildElementFragmentsSteps(
+      element,
+      150,
+      undefined,
+      undefined,
+      controller.signal,
+    );
+    expect(cancelled.next().done).toBe(false);
+    const encodedBeforeAbort = encode.mock.calls.length;
+    controller.abort();
+    expect(() => cancelled.next()).toThrow();
+    expect(encode.mock.calls).toHaveLength(encodedBeforeAbort);
+  } finally {
+    encode.mockRestore();
+    stringify.mockRestore();
+  }
+});
 
 it("serializes only replaced elements across a 10,000-stroke save and releases cached ownership", async () => {
   let pointReads = 0;

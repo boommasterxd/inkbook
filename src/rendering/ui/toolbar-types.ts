@@ -1,5 +1,5 @@
 export type ToolId =
-  "select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "shape";
+  "select" | "eraser" | "draw" | "text" | "highlighter" | "straight-highlighter" | "shape";
 
 export type ShapeId =
   | "line"

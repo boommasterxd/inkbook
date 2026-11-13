@@ -5,8 +5,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { installMenuEscapeScope } from "../menu-escape-scope";
 
 import { effectiveTransitionDuration } from "../../runtime/effective-motion";
-import { registerFocusNavigation } from "../../runtime/focus-navigation";
-import { revealPhoneSheetEditable } from "./phone-sheet-editable";
+import { revealPhoneSheetFocus } from "./phone-sheet-editable";
 import { configureMenuTooltips, menuDomWindow, setMenuSurfaceLabel } from "../menu-dom";
 import type { FocusTargetPort } from "../menu-ports";
 import type { PhoneSheetHostPort } from "./phone-sheet-host";
@@ -17,7 +16,8 @@ import { registerMenuFeedback } from "../feedback/menu-feedback";
 
 import { AdaptivePanelLayout } from "./adaptive-panel-layout";
 import { createAdaptivePanelHeader } from "./adaptive-panel-header";
-import { registerPanelInteraction, registerPanelViewport } from "./adaptive-panel-interaction";
+import * as PanelInteraction from "./adaptive-panel-interaction";
+import { refreshPanelFocusBoundary, type ExternalPanelFocusTarget } from "./phone-sheet-focus";
 import { AdaptivePanelPlacement } from "./adaptive-panel-placement";
 import { PhoneSheetPages } from "./phone-sheet-pages";
 import type { AdaptivePanelContentLifecycle, PhoneSheetNavigation } from "./panel-page";
@@ -42,6 +42,8 @@ export interface AdaptivePanelOptions {
   readonly durationMs?: number;
   readonly entryDurationMs?: number;
   readonly initialFocus?: HTMLElement;
+  readonly externalFocusTarget?: ExternalPanelFocusTarget;
+  readonly onOcclusionChanged?: (top: number | undefined) => void;
   readonly restoreFocus?: boolean;
   readonly onClosing?: () => void;
   readonly kind: AdaptivePanelKind;
@@ -119,7 +121,6 @@ export class AdaptivePanelSession extends Component {
     this.register(bindPanelLocale(this.#surface, options, this.#localeUpdates));
     this.#surface.setAttribute("role", "dialog");
     this.#surface.tabIndex = -1;
-    if (Platform.isPhone) this.#surface.setAttribute("aria-modal", "true");
     this.#layer.style.setProperty(
       "--inkbook-adaptive-panel-duration",
       `${String(this.#durationMs)}ms`,
@@ -133,6 +134,8 @@ export class AdaptivePanelSession extends Component {
       layer: this.#layer,
       surface: this.#surface,
       ownerWindow: options.ownerWindow,
+      onOcclusionChanged: options.onOcclusionChanged,
+      externalFocusTarget: options.externalFocusTarget,
     });
     const grabber = this.#createGrabber();
     this.#scroll = menuDomWindow(options.ownerDocument, "adaptive panel").createDiv({
@@ -152,6 +155,7 @@ export class AdaptivePanelSession extends Component {
       options.createContent({
         mutateLayout: (update) => this.mutateLayout(update),
         registerLocaleUpdate: (update) => this.#localeUpdates.push(update),
+        registerCleanup: (cleanup) => this.register(cleanup),
       }),
     );
     this.#configureTooltips();
@@ -176,11 +180,20 @@ export class AdaptivePanelSession extends Component {
       : undefined;
     if (this.#phoneHost !== undefined) this.#phoneHost.open(() => this.#backOrClose());
     else options.ownerDocument.body.append(this.#layer);
+    this.refreshFocusBoundary();
     this.load();
   }
 
   public get navigation(): PhoneSheetNavigation | undefined {
     return this.#pages;
+  }
+
+  public get occlusionTop(): number | undefined {
+    return this.#placement.occlusionTop;
+  }
+
+  public refreshFocusBoundary(): void {
+    refreshPanelFocusBoundary(this.#surface, this.#options.externalFocusTarget, Platform.isPhone);
   }
 
   #configureTooltips(): void {
@@ -206,6 +219,7 @@ export class AdaptivePanelSession extends Component {
       lifecycle: {
         mutateLayout: (update) => this.mutateLayout(update),
         registerLocaleUpdate: (update) => this.#localeUpdates.push(update),
+        registerCleanup: (cleanup) => this.register(cleanup),
       },
       position: () => this.#position(),
       renderIcon: options.renderIcon,
@@ -240,6 +254,7 @@ export class AdaptivePanelSession extends Component {
   }
 
   public close(mode: AdaptivePanelCloseMode = "animated"): void {
+    this.#placement.clearOcclusion();
     if (this.#closed) {
       if (mode !== "animated" && this.#exitStop !== undefined) this.#finishClose();
       return;
@@ -280,35 +295,33 @@ export class AdaptivePanelSession extends Component {
   }
 
   public override onload(): void {
-    this.register(
-      registerFocusNavigation(
-        this.#layer,
-        !Platform.isPhone &&
-          this.#options.anchor.closest('[data-inkbook-keyboard-navigation="true"]') !== null,
-      ),
-    );
-    registerPanelInteraction({
+    PanelInteraction.registerPanelInteraction({
       owner: this,
       ownerDocument: this.#options.ownerDocument,
+      layer: this.#layer,
       surface: this.#surface,
       scroll: this.#interactionScroll,
       anchor: this.#options.anchor,
       ...(this.#options.initialFocus === undefined
         ? {}
         : { initialFocus: this.#options.initialFocus }),
+      ...(this.#options.externalFocusTarget === undefined
+        ? {}
+        : { externalFocusTarget: this.#options.externalFocusTarget }),
       dismissOnAnchorPointer: this.#options.dismissOnAnchorPointer === true,
       ...(this.#phoneSwipe === undefined ? {} : { swipe: this.#phoneSwipe }),
       topmost: () => this.#isTopmostLayer(),
-      focusable: () => this.#focusableElements(),
+      focusable: () => PanelInteraction.panelFocusableElements(this.#surface),
       backOrClose: () => this.#backOrClose(),
       close: () => this.close(),
     });
-    registerPanelViewport({
+    PanelInteraction.registerPanelViewport({
       owner: this,
       ownerWindow: this.#options.ownerWindow,
       ownerDocument: this.#options.ownerDocument,
       surface: this.#surface,
       placement: this.#placement,
+      contentScroll: this.#options.contentScroll,
       reposition: (reveal) => this.#requestPosition(reveal),
     });
     if (this.#phoneHost === undefined) {
@@ -338,7 +351,10 @@ export class AdaptivePanelSession extends Component {
     this.register(() => this.#pages?.dispose());
     this.register(() => this.#layout.dispose());
     this.#position();
-    this.#observeContentSize();
+    this.#contentObserver = this.#placement.observeContent(this.#content, () =>
+      this.#requestPosition(),
+    );
+    this.register(() => this.#contentObserver?.disconnect());
     this.#entryStop = Platform.isPhone
       ? animatePhoneSheetEntry(this.#surface, this.#backdrop, this.#entryDuration(), () =>
           this.#finishEntry(),
@@ -348,7 +364,11 @@ export class AdaptivePanelSession extends Component {
       this.#openFrame = undefined;
       if (this.#closed) return;
       this.#surface.dataset.state = "open";
-      (this.#options.initialFocus ?? this.#focusableElements()[0] ?? this.#surface).focus({
+      (
+        this.#options.initialFocus ??
+        PanelInteraction.panelFocusableElements(this.#surface)[0] ??
+        this.#surface
+      ).focus({
         preventScroll: true,
       });
     });
@@ -399,14 +419,18 @@ export class AdaptivePanelSession extends Component {
       this.#layoutFrame = undefined;
       if (this.#closed) return;
       if (!Platform.isPhone || this.#positionRequested) this.#position();
+      else this.#placement.refreshOcclusion();
       this.#positionRequested = false;
       if (this.#revealEditable && Platform.isPhone && this.#isTopmostLayer()) {
-        revealPhoneSheetEditable(this.#interactionScroll, this.#placement.viewport());
+        revealPhoneSheetFocus(
+          this.#interactionScroll,
+          this.#placement.viewport(),
+          this.#options.contentScroll !== undefined,
+        );
       }
       this.#revealEditable = false;
     });
   }
-
   #cancelScheduledWork(): void {
     if (this.#openFrame !== undefined) {
       this.#options.workScheduler.cancelFrame(this.#openFrame);
@@ -445,26 +469,6 @@ export class AdaptivePanelSession extends Component {
     return !this.#closed && layers.item(layers.length - 1) === this.#layer;
   }
 
-  #focusableElements(): HTMLElement[] {
-    return [...this.#surface.querySelectorAll<HTMLElement>(focusableSelector())].filter(
-      (element) =>
-        !element.hasAttribute("disabled") &&
-        element.tabIndex !== -1 &&
-        element.closest("[hidden], [inert]") === null,
-    );
-  }
-
-  #observeContentSize(): void {
-    const resizeObserverConstructor = (
-      this.#options.ownerWindow as Window & { readonly ResizeObserver?: typeof ResizeObserver }
-    ).ResizeObserver;
-    if (resizeObserverConstructor === undefined) return;
-    const observer = new resizeObserverConstructor(() => this.#requestPosition());
-    this.#contentObserver = observer;
-    observer.observe(this.#content);
-    this.register(() => observer.disconnect());
-  }
-
   #position(): void {
     const height = this.#placement.position();
     if (height !== undefined)
@@ -491,8 +495,4 @@ export class AdaptivePanelSession extends Component {
       anchor.isConnected && anchor.ownerDocument === ownerDocument ? anchor : canvasInputSurface;
     target.focus({ preventScroll: true });
   }
-}
-
-function focusableSelector(): string {
-  return "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
 }

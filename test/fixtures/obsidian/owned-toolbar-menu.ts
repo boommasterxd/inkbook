@@ -12,11 +12,17 @@ export function createOwnedToolbarMenuFixture({
   initialMenu = "overflow",
   localization,
   motion = "full",
+  keymap,
+  externalFocusTarget,
+  onOcclusionChanged,
   state = {},
 }: {
   initialMenu?: EditorToolbarMenuOptions["initialMenu"];
   localization?: Localization;
   motion?: MotionPreference;
+  keymap?: EditorToolbarMenuOptions["keymap"];
+  externalFocusTarget?: EditorToolbarMenuOptions["externalFocusTarget"];
+  onOcclusionChanged?: EditorToolbarMenuOptions["onOcclusionChanged"];
   state?: Partial<EditorToolbarMenuState>;
 } = {}) {
   const options = createEditorToolbarMenuOptions(state);
@@ -31,6 +37,7 @@ export function createOwnedToolbarMenuFixture({
     anchor: options.anchor,
     workScheduler: options.workScheduler,
     createPhoneSheetHost: host,
+    ...(keymap === undefined ? {} : { keymap }),
   });
   const session = new EditorToolbarMenuSession({
     ...options,
@@ -38,6 +45,9 @@ export function createOwnedToolbarMenuFixture({
     factory,
     createPhoneSheetHost: host,
     initialMenu,
+    ...(externalFocusTarget === undefined ? {} : { externalFocusTarget }),
+    ...(onOcclusionChanged === undefined ? {} : { onOcclusionChanged }),
+    ...(keymap === undefined ? {} : { keymap }),
   });
   return { options, session };
 }

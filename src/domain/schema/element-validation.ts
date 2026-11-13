@@ -1,4 +1,5 @@
 import { canonicalizeGeometryNumber } from "./canonical";
+import { assertTextElementSteps } from "./text-validation";
 import { assertStrokeSamplesSteps } from "./stroke-sample-validation";
 import { FILE_SCHEMA_LIMITS, type SchemaLimits } from "./constants";
 import { assertOutlineStyle, assertShapeStyle, assertStrokeStyle } from "./style-validation";
@@ -168,6 +169,10 @@ export function* assertInkElementSteps(
       return;
     case "table":
       assertTable(value, path, context);
+      return;
+    case "text":
+      assertBase(value, path, context);
+      yield* assertTextElementSteps(value, path, context);
       return;
     default:
       fail("invalid-literal", `${path}.kind`, "Unsupported element kind.");

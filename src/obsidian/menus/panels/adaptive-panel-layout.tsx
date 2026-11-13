@@ -83,6 +83,7 @@ function LayoutContent({
   }, [grabber, revision, scroll, update]);
   return (
     <motion.div
+      className="inkbook-adaptive-panel-layout-content"
       layout="position"
       layoutDependency={revision}
       ref={content}
@@ -106,7 +107,9 @@ export class AdaptivePanelLayout {
   public constructor(surface: HTMLElement, grabber: HTMLElement, scroll: HTMLElement) {
     this.#grabber = grabber;
     this.#scroll = scroll;
-    this.#host = menuDomWindow(surface.ownerDocument, "adaptive panel layout").createDiv();
+    this.#host = menuDomWindow(surface.ownerDocument, "adaptive panel layout").createDiv({
+      cls: "inkbook-adaptive-panel-layout-host",
+    });
     surface.append(this.#host);
     this.#root = createRoot(this.#host);
     this.#render(() => undefined, 0);

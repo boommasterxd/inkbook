@@ -1,4 +1,4 @@
-import type { ElementValidationDerivation } from "../../domain/schema/public";
+import type { ElementValidationDerivation, FontResourceV2 } from "../../domain/schema/public";
 import type { DocumentIntegrityManifest } from "../serialization/metadata/document-integrity-manifest";
 import type { PreparedPressurePathHint } from "../serialization/output/prepared-pressure-hints";
 
@@ -54,6 +54,7 @@ interface IncrementalExportRequest<TElement, TPage> extends ExportIdentity {
   readonly preparedPressurePaths?: readonly PreparedPressurePathHint[];
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly TElement[];
+  readonly fontResources?: readonly FontResourceV2[];
   readonly orderChanges?: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>;
   readonly page?: TPage;
   readonly removedIds?: readonly ElementId[];

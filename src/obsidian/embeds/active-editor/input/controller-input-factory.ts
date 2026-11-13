@@ -29,6 +29,7 @@ interface ActiveEditorInputFactoryOptions {
     PreparedElementHistory,
   ];
   readonly actions: ActiveEditorActions;
+  readonly activateElement?: GestureControllerPorts["activateElement"];
   readonly availability: Pick<ActiveEditorAvailability, "setPending" | "acceptsInput">;
   readonly beginPreview: GestureControllerPorts["beginPreview"];
   readonly cancelActiveGesture: () => boolean;
@@ -121,7 +122,7 @@ export function createActiveEditorInputControllers(
           });
         }),
     ],
-    [clearSelection, selectOne],
+    [clearSelection, selectOne, options.activateElement],
     [options.onStateChanged, options.onStateChanged],
   );
   return [keyboard, gestures];

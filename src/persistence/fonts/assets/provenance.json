@@ -1,0 +1,80 @@
+[
+  {
+    "file": "inter-400-normal.woff2",
+    "bytes": 111268,
+    "sha256": "e06f6b1bc553aaea4e4668023ed0ab0a147129c3107f511bc7d03d361b0ae085",
+    "source": "https://raw.githubusercontent.com/rsms/inter/master/docs/font-files/Inter-Regular.woff2"
+  },
+  {
+    "file": "inter-400-italic.woff2",
+    "bytes": 117700,
+    "sha256": "2d078cb3bc8f934740d53b39dd23b0678f2f97477e49ec785dd9d8acd8b96bfc",
+    "source": "https://raw.githubusercontent.com/rsms/inter/master/docs/font-files/Inter-Italic.woff2"
+  },
+  {
+    "file": "inter-700-normal.woff2",
+    "bytes": 114840,
+    "sha256": "fa888127b6da015b65569f0351f3b5c391ad928904951f1c20e9f8462a8d95ea",
+    "source": "https://raw.githubusercontent.com/rsms/inter/master/docs/font-files/Inter-Bold.woff2"
+  },
+  {
+    "file": "inter-700-italic.woff2",
+    "bytes": 121500,
+    "sha256": "4a10532d76c90c4597c0ad4bfc9284600e597d3012dd1ec16c1d44e0ad0058ab",
+    "source": "https://raw.githubusercontent.com/rsms/inter/master/docs/font-files/Inter-BoldItalic.woff2"
+  },
+  {
+    "file": "source-serif-400-normal.woff2",
+    "bytes": 107408,
+    "sha256": "42aa010dbb82d90764a28f6cc7d809a9395999b7390eb3b212028c6975e97402",
+    "source": "https://raw.githubusercontent.com/adobe-fonts/source-serif/release/WOFF2/OTF/SourceSerif4-Regular.otf.woff2"
+  },
+  {
+    "file": "source-serif-400-italic.woff2",
+    "bytes": 79940,
+    "sha256": "e65464583be3cb56b9fee2bff0f2f7d11706aba31435144f87f393e62ed316c8",
+    "source": "https://raw.githubusercontent.com/adobe-fonts/source-serif/release/WOFF2/OTF/SourceSerif4-It.otf.woff2"
+  },
+  {
+    "file": "source-serif-700-normal.woff2",
+    "bytes": 112824,
+    "sha256": "c1c3741a0292062e9694c927cf483fa24d725b4e5a64b5af73f411e2a0a631ce",
+    "source": "https://raw.githubusercontent.com/adobe-fonts/source-serif/release/WOFF2/OTF/SourceSerif4-Bold.otf.woff2"
+  },
+  {
+    "file": "source-serif-700-italic.woff2",
+    "bytes": 83900,
+    "sha256": "96e6a14dff163fae4031f5adb582357cdab55c9a3aad0cd7d72ac4181addf312",
+    "source": "https://raw.githubusercontent.com/adobe-fonts/source-serif/release/WOFF2/OTF/SourceSerif4-BoldIt.otf.woff2"
+  },
+  {
+    "file": "jetbrains-mono-400-normal.woff2",
+    "bytes": 92380,
+    "sha256": "f1a7a03672cdd494ce0d5543fac6e4360fe22403c6de297fdc2e55a815f7baff",
+    "source": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/fonts/webfonts/JetBrainsMono-Regular.woff2"
+  },
+  {
+    "file": "jetbrains-mono-400-italic.woff2",
+    "bytes": 96428,
+    "sha256": "9f158b85eca345daeee01dfffa602709a905ea08b0cc60dbf6153cbbd97da08f",
+    "source": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/fonts/webfonts/JetBrainsMono-Italic.woff2"
+  },
+  {
+    "file": "jetbrains-mono-700-normal.woff2",
+    "bytes": 94628,
+    "sha256": "08863c7964612257a90bd821e3127dc5ccb0b5046f881673a1ade5809eb21d0f",
+    "source": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/fonts/webfonts/JetBrainsMono-Bold.woff2"
+  },
+  {
+    "file": "jetbrains-mono-700-italic.woff2",
+    "bytes": 98684,
+    "sha256": "7a0a901712a0b6b94914ac49c86168b4a0af32e623c7835840338c36e7eceb78",
+    "source": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/fonts/webfonts/JetBrainsMono-BoldItalic.woff2"
+  },
+  {
+    "file": "caveat-variable.ttf",
+    "bytes": 403648,
+    "sha256": "0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/caveat/Caveat%5Bwght%5D.ttf"
+  }
+]

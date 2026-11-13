@@ -15,6 +15,47 @@ import { PORTABLE_PALETTE_V1 } from "../../../../../src/domain/schema/public";
 
 afterEach(() => vi.restoreAllMocks());
 
+it("retains embedded font and local geometry resources across text continuation references", async () => {
+  const fixture = exportFragmentFixture([
+    [
+      {
+        markup:
+          '<text x="20" y="220" font-family="inkbook-font-example"><tspan>Résumé</tspan></text>',
+        minY: 200,
+        maxY: 230,
+        background: false,
+      },
+      { markup: '<path d="M1 5L2 10"/>', minY: 5, maxY: 10, background: false },
+    ],
+  ]);
+  const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.textContent =
+    '@font-face{font-family:"inkbook-font-example";src:url(data:font/woff2;base64,d09GMg==)}';
+  const definitions = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const geometry = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  geometry.id = "local-math-geometry";
+  geometry.setAttribute("d", "M1 2L3 4");
+  definitions.append(geometry);
+  fixture.svg.prepend(style, definitions);
+  const text = fixture.svg.querySelector("text")!;
+  const drawing = await prepareExportDrawing(fixture.svg, fixture.fragments, {
+    scheduler: immediateWorkScheduler(),
+    signal: new AbortController().signal,
+  });
+  expect(drawing.fragments).toHaveLength(1);
+  expect(fixture.svg.querySelector("defs > style")).toBe(style);
+  expect(fixture.svg.querySelector("#local-math-geometry")).toBe(geometry);
+  expect(fixture.svg.querySelector(`#${drawing.id} style`)).toBeNull();
+  const page = createExportPage(document, drawing, { start: 190, end: 240 });
+  const reference = page.querySelector("use")?.getAttribute("href");
+  expect(reference).not.toBe(`#${drawing.id}`);
+  const target = fixture.svg.querySelector(reference!);
+  expect(target === text || target?.contains(text)).toBe(true);
+  expect(target?.querySelectorAll("path")).toHaveLength(0);
+  expect(text.textContent).toBe("Résumé");
+  expect(text.getAttribute("font-family")).toBe("inkbook-font-example");
+});
+
 it("paints each occurrence's text once behind an opaque page, including legacy fallback graphics", async () => {
   const fixture = exportFragmentFixture([
     [{ markup: '<path d="M10 20L30 40"/>', minY: 20, maxY: 40, background: false }],

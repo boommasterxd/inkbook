@@ -1,3 +1,4 @@
+import * as CodeMirrorCommands from "@codemirror/commands";
 import * as CodeMirrorLanguage from "@codemirror/language";
 import * as CodeMirrorState from "@codemirror/state";
 import * as CodeMirrorView from "@codemirror/view";
@@ -83,6 +84,7 @@ export class PluginRuntimeModuleLoader implements PluginRuntimeLoaderPort {
 
 export function pluginRuntimeHostModules(): Readonly<Record<string, object>> {
   return {
+    "@codemirror/commands": CodeMirrorCommands,
     "@codemirror/language": CodeMirrorLanguage,
     "@codemirror/state": CodeMirrorState,
     "@codemirror/view": CodeMirrorView,

@@ -67,8 +67,10 @@ export function updateWorkspaceMountedSettings(
 
 export function disposeWorkspaceMountedPresentations(
   presentations: Iterable<WorkspaceMountedPresentation>,
+  retainScenes = false,
 ): void {
   for (const mounted of presentations) {
+    if (retainScenes && mounted.scene !== undefined) continue;
     mounted.disposeScheme?.();
     mounted.activation?.release();
     mounted.feedback.dispose();
@@ -84,6 +86,7 @@ export function disposeWorkspaceMountedPresentations(
 export function releaseWorkspaceScene(
   mounted: WorkspaceMountedPresentation,
   options: {
+    readonly prepareRelease?: (release: () => void, failed: () => void) => void;
     readonly waitForPreview: boolean;
     readonly onLocked: () => void;
     readonly onFailure: () => void;
@@ -98,12 +101,18 @@ export function releaseWorkspaceScene(
     mounted.scene = undefined;
     options.onLocked();
   };
-  if (scene === undefined || !options.waitForPreview) {
-    finish();
-    return;
-  }
-  scene.disableInput();
-  void scene.finishLock().then(finish, () => {
-    if (current()) options.onFailure();
-  });
+  const release = () => {
+    if (scene === undefined || !options.waitForPreview) {
+      finish();
+      return;
+    }
+    scene.disableInput();
+    void scene.finishLock().then(finish, () => {
+      if (current()) options.onFailure();
+    });
+  };
+  if (options.prepareRelease !== undefined) {
+    scene?.disableInput();
+    options.prepareRelease(release, options.onFailure);
+  } else release();
 }

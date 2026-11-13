@@ -239,6 +239,7 @@ export class SceneVisibilityReconciler {
     const pending = this.#pending;
     if (pending === undefined) return { newlyMountedIds: EMPTY_IDS, pending: false };
     const isExit = (id: string) =>
+      !this.options.isPinned?.(id) &&
       !this.options.visibility.contains(id) &&
       previewTransforms.get(id)?.transform == null &&
       !previewElements.has(id);

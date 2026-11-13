@@ -111,6 +111,13 @@ function toolPaint(
   defaults: ToolDefaultsV1,
 ): { color: ColorV1; opacity: number; fillColor?: ColorV1 | null; fillOpacity?: number } {
   switch (tool) {
+    case "text":
+      return {
+        color: defaults.text.color,
+        opacity: defaults.text.opacity,
+        fillColor: defaults.text.backgroundColor,
+        fillOpacity: defaults.text.backgroundOpacity,
+      };
     case "draw":
       return { color: defaults.pen.color, opacity: defaults.pen.opacity };
     case "highlighter":

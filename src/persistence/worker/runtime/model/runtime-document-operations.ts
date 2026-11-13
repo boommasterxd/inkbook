@@ -62,6 +62,7 @@ export async function runUnlockRequest(
       page: snapshot.page,
       revision: snapshot.revision,
       version: snapshot.version,
+      ...(snapshot.fontResources === undefined ? {} : { fontResources: snapshot.fontResources }),
     },
     type: "unlock-success",
   };

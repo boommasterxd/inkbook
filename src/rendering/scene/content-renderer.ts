@@ -29,6 +29,9 @@ import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priorit
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
 export class SceneContentRenderer {
+  public onTextElementStateChanged: (id: string, state: "published" | "removed") => void = () =>
+    undefined;
+  #pinnedTextId: string | undefined;
   readonly #dom: SceneDom;
   readonly #committedIds: Record<RenderBand, readonly (string | undefined)[]> = {
     content: [],
@@ -110,6 +113,7 @@ export class SceneContentRenderer {
       instrumentation,
       selectionRuns: this.#selectionRuns,
       selectionTraces: this.#selectionTraces,
+      onTextPublished: (id) => this.onTextElementStateChanged(id, "published"),
     });
     this.#store = store;
     this.#visibility = visibility;
@@ -125,8 +129,10 @@ export class SceneContentRenderer {
       onMount: (entry) => {
         this.#fades.bindMounted(entry);
         this.#selectionRuns.mounted(entry);
+        if (entry.text !== undefined) this.onTextElementStateChanged(entry.id, "published");
       },
       onUnmount: (id) => {
+        this.onTextElementStateChanged(id, "removed");
         this.#publication.unmounted(id);
         this.#reconciler.preparation.release(id, true);
         this.#fades.releaseMounted(id);
@@ -138,6 +144,7 @@ export class SceneContentRenderer {
       pathCache,
       store,
       visibility,
+      isPinned: (id) => this.#pinnedTextId === id && this.#store.get(id) !== undefined,
     });
   }
   public setSelectedElements(ids: ReadonlySet<string>): void {
@@ -181,6 +188,30 @@ export class SceneContentRenderer {
   }
   public hasMounted(id: string): boolean {
     return this.#mounted.has(id);
+  }
+  public mountedText(id: string) {
+    return this.#mounted.get(id)?.text;
+  }
+  public textMotionSnapshot(element: InkElementV1, maximumNodes: number, maximumBytes: number) {
+    return element.kind === "text"
+      ? this.#mounted.get(element.id)?.text?.motionSnapshot(element, maximumNodes, maximumBytes)
+      : undefined;
+  }
+  public textReady(id: string): boolean {
+    const entry = this.#mounted.get(id);
+    const record = this.#store.get(id);
+    return (
+      record?.element.kind === "text" &&
+      entry?.text?.element === record.element &&
+      entry.geometryVersion === record.geometryVersion &&
+      entry.paintVersion === record.paintVersion
+    );
+  }
+  public pinText(id: string | undefined): void {
+    this.#pinnedTextId = id;
+    this.#visibility.removalReuse.invalidate();
+    if (id === undefined) this.#reconciler.replace(this.#visibility.resortCurrent());
+    this.#dom.onSurfaceInvalidated();
   }
   public mountedIds(band: RenderBand): readonly string[] {
     return mountedVisibleIds(this.#committedIds[band], this.#committedCounts[band], this.#mounted);
@@ -319,11 +350,22 @@ export class SceneContentRenderer {
     version: number,
     strokeWidthScale: number | null,
     matrix?: PreviewTransform["matrix"],
+    textBasis?: PreviewTransform["textBasis"],
   ): void {
-    this.#publication.applyPreviewTransform(id, transform, version, strokeWidthScale, matrix);
+    this.#publication.applyPreviewTransform(
+      id,
+      transform,
+      version,
+      strokeWidthScale,
+      matrix,
+      textBasis,
+    );
   }
   public applyElementPreview(element: InkElementV1): boolean {
     return this.#publication.applyElementPreview(element);
+  }
+  public get hasPendingTextPreviews(): boolean {
+    return this.#publication.hasPendingTextPreviews;
   }
   public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
     return this.#publication.readCanonicalStrokePath(element);
@@ -345,6 +387,7 @@ export class SceneContentRenderer {
     this.#fades.set(ids, durationMs, slice);
   }
   public prepareElementRemoval(id: string): void {
+    this.onTextElementStateChanged(id, "removed");
     if (this.#mounted.get(id)?.fadeActive !== true && this.#fades.readyAt(id) === 0)
       this.#fades.set([id], 0);
   }
@@ -357,6 +400,8 @@ export class SceneContentRenderer {
     durationMs: number,
     bounds?: Bounds,
   ): void {
+    if (direction === "exit" && this.#store.get(id) === undefined)
+      this.onTextElementStateChanged(id, "removed");
     this.#fades.setMembership(id, direction, durationMs, bounds ?? this.#store.get(id)?.bounds);
   }
   public settleMembershipVisibility(contains: (id: string) => boolean): void {

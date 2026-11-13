@@ -5,7 +5,7 @@ A handwriting area is not a conventional drawing area within the Markdown file. 
 This SVG file contains two things:
 
 - a regular, self-contained SVG graphic with deterministic light and dark document palettes
-- a versioned embedded snapshot containing strokes, shapes, styles, render-band ordering, endpoint connections, and background settings
+- a versioned embedded snapshot containing strokes, shapes, text fields, styles, render-band ordering, endpoint connections, and background settings
 
 The note references this file through a native image embed under the [recognition policy](obsidian-integration.md#native-embeds). Inkbook displays the saved SVG through its own locked preview, while opening the SVG file in an external viewer still produces the complete portable static graphic. When the embed is unlocked, the plugin also loads the embedded ink data and opens the interactive editor.
 
@@ -13,6 +13,7 @@ The patterned writing area has a fixed width of 2,000 page units. A writable mar
 
 ## Related Documentation
 
+- [Text fields](text-fields.md)
 - [Editor tools](editor-tools.md)
 - [Embed UI](embed-ui.md)
 - [File format](file-format.md)

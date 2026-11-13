@@ -1,4 +1,5 @@
-import { FILE_SCHEMA_LIMITS } from "../../schema/constants";
+import { FILE_SCHEMA_LIMITS, MAX_DOCUMENT_TEXT_BYTES } from "../../schema/constants";
+import { textElementPayloadBytes } from "../../schema/text-payload-size";
 
 import { connectionReferences } from "./connections";
 import type { ElementRecord, StoreSliceScheduler } from "../types";
@@ -8,6 +9,7 @@ interface CapacityTotals {
   elements: number;
   strokePoints: number;
   strokes: number;
+  textPayloadBytes: number;
 }
 
 export interface DocumentCapacityPatch {
@@ -20,7 +22,13 @@ export interface DocumentCapacityPatch {
 export class DocumentCapacity {
   readonly #fanout = new Map<string, number>();
   #generation = 0;
-  #totals: CapacityTotals = { connectedEndpoints: 0, elements: 0, strokePoints: 0, strokes: 0 };
+  #totals: CapacityTotals = {
+    connectedEndpoints: 0,
+    elements: 0,
+    strokePoints: 0,
+    strokes: 0,
+    textPayloadBytes: 0,
+  };
 
   public addInitial(record: ElementRecord): void {
     this.commit(this.prepare([], [record]));
@@ -107,6 +115,8 @@ function applyRecord(
 ): void {
   if (direction === 1) assertBounds(record);
   totals.elements += direction;
+  if (record.element.kind === "text")
+    totals.textPayloadBytes += direction * textElementPayloadBytes(record.element);
   if (record.element.kind === "stroke") {
     totals.strokes += direction;
     totals.strokePoints += direction * (record.element.points.length / 3);
@@ -129,6 +139,8 @@ function assertBounds(record: ElementRecord): void {
 }
 
 function assertTotals(totals: CapacityTotals): void {
+  if (totals.textPayloadBytes < 0 || totals.textPayloadBytes > MAX_DOCUMENT_TEXT_BYTES)
+    throw new RangeError("The document text-payload limit was exceeded.");
   if (totals.elements < 0 || totals.elements > FILE_SCHEMA_LIMITS.elements) {
     throw new RangeError("The document element limit was exceeded.");
   }

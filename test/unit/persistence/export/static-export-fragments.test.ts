@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { prepareStaticExportFragments } from "../../../../src/persistence/export/static-export-fragments";
 import { serializeSvgEnvelope } from "../../../../src/persistence/documents/svg-envelope";
 import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
@@ -15,6 +15,47 @@ function svg(content: string[], background: string[] = [], highlights: string[] 
 function path(d: string, paint = 'fill="none" stroke="#112233FF" stroke-width="2"') {
   return `<path d="${d}" ${paint}/>`;
 }
+
+it("emits embedded font resources and decoded text once while retaining conservative glyph bounds", async () => {
+  const stylesheet =
+    '@font-face{font-family:"inkbook-example";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,AA==") format("woff2")}';
+  const text =
+    '<text transform="rotate(45 10 20)"><tspan x="10" y="20" font-family="inkbook-example" font-size="16" font-weight="400" font-style="normal" text-decoration="underline" fill="#112233FF" fill-opacity="1">Résumé &amp; &lt;math&gt;</tspan></text>';
+  const input = svg([text])
+    .replace('data-inkbook-version="1"', 'data-inkbook-version="2"')
+    .replace("<metadata ", `<style id="inkbook-fonts">${stylesheet}</style><metadata `);
+  const values: string[] = [];
+  const tags: string[] = [];
+  const close = vi.fn();
+  expect(validateSafeSvg(input)).not.toBeNull();
+  expect(
+    await prepareStaticExportFragments(input, {
+      workScheduler,
+      visitor: { open: (tag) => tags.push(tag.name), close, text: (value) => values.push(value) },
+    }),
+  ).toEqual([{ minY: -Infinity, maxY: Infinity, background: false }]);
+  expect(values).toEqual([stylesheet, "Résumé & <math>"]);
+  expect(tags).toEqual(["svg", "style", "g", "g", "g", "text", "tspan"]);
+  expect(close).toHaveBeenCalledTimes(tags.length);
+  for (const damaged of [
+    input.replace("<text ", '<text onclick="unexpected()" '),
+    input.replace("data:font/woff2;base64,AA==", "https://unexpected.invalid/font"),
+  ]) {
+    expect(await prepareStaticExportFragments(damaged, { workScheduler })).toBeUndefined();
+  }
+});
+
+it("includes native math-path translations and retains rotated paths without unproven clipping bounds", async () => {
+  const input = svg([
+    '<path d="M0 10L20 30" fill="#112233FF" transform="translate(10 100)"/>',
+    '<path d="M0 10L20 30" fill="#112233FF" transform="rotate(45 10 20) translate(10 100)"/>',
+  ]).replace('data-inkbook-version="1"', 'data-inkbook-version="2"');
+  expect(validateSafeSvg(input)).not.toBeNull();
+  expect(await prepareStaticExportFragments(input, { workScheduler })).toEqual([
+    { minY: 110, maxY: 130, background: false },
+    { minY: -Infinity, maxY: Infinity, background: false },
+  ]);
+});
 
 describe("static SVG export fragment bounds", () => {
   it.each([

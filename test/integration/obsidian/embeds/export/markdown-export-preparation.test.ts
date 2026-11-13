@@ -13,11 +13,54 @@ import {
   validatedPreview,
 } from "../../../../fixtures/obsidian/markdown-export";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { StaticExportPagination } from "../../../../../src/obsidian/embeds/export/print-pagination";
 
 afterEach(() => {
   vi.restoreAllMocks();
   document.body.replaceChildren();
 });
+
+it.each([false, true])(
+  "waits for retained SVG fonts before print preparation and releases cancelled waits (abort: %s)",
+  async (abort) => {
+    const fixture = createMarkdownExportFixture(
+      "![[drawing.svg]]",
+      '<p><span><img alt="drawing.svg" src="app://vault/drawing.svg"></span></p>',
+    );
+    const gate = preparationGate();
+    const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: { ready: gate.promise },
+    });
+    const build = staticSvg.createStaticExportSvg;
+    vi.spyOn(staticSvg, "createStaticExportSvg").mockImplementation(async (...args) => {
+      const svg = await build(...args);
+      const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+      style.textContent = '@font-face{font-family:"inkbook-font-example"}';
+      svg?.prepend(style);
+      return svg;
+    });
+    const start = vi.spyOn(StaticExportPagination.prototype, "start");
+    try {
+      const pending = Promise.resolve(
+        createReadingViewPostProcessor(fixture.ports)(fixture.root, fixture.context),
+      );
+      await vi.waitFor(() => expect(fixture.root.querySelector("svg style")).not.toBeNull());
+      expect(start).not.toHaveBeenCalled();
+      if (abort) fixture.unload();
+      else gate.resolve();
+      await pending;
+      expect(start).toHaveBeenCalledTimes(abort ? 0 : 1);
+      if (abort) expect(fixture.root.querySelector("svg")).toBeNull();
+    } finally {
+      fixture.unload();
+      gate.resolve();
+      if (originalFonts === undefined) Reflect.deleteProperty(document, "fonts");
+      else Object.defineProperty(document, "fonts", originalFonts);
+    }
+  },
+);
 
 it.each(["worker", "graphic"] as const)(
   "starts both immutable-source consumers and waits for the other after %s preparation completes",

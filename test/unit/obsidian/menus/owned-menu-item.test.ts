@@ -40,6 +40,7 @@ describe("owned menu items", () => {
   });
 
   it("exposes checked, disabled and label states and excludes inert rows from activation", () => {
+    const highlight = vi.fn();
     const checked = new OwnedMenuItem()
       .setTitle("Selected")
       .setChecked(true)
@@ -48,8 +49,9 @@ describe("owned menu items", () => {
     const disabled = new OwnedMenuItem()
       .setTitle("Unavailable")
       .setChecked(false)
-      .setDisabled(true);
-    const label = new OwnedMenuItem().setTitle("Group").setIsLabel(true);
+      .setDisabled(true)
+      .onHighlight(highlight);
+    const label = new OwnedMenuItem().setTitle("Group").setIsLabel(true).onHighlight(highlight);
     const { container, activate, buttons } = render([checked, disabled, label]);
     expect(buttons).toHaveLength(1);
     expect(container.querySelector('[aria-checked="true"]')?.getAttribute("role")).toBe(
@@ -62,9 +64,12 @@ describe("owned menu items", () => {
       "presentation",
     );
     expect(container.querySelector('[data-warning="true"]')).not.toBeNull();
-    for (const row of container.querySelectorAll<HTMLElement>(".inkbook-owned-menu-item"))
+    for (const row of container.querySelectorAll<HTMLElement>(".inkbook-owned-menu-item")) {
       row.click();
+      row.dispatchEvent(new FocusEvent("focus"));
+    }
     expect(activate).toHaveBeenCalledExactlyOnceWith(checked, expect.any(Event));
+    expect(highlight).not.toHaveBeenCalled();
   });
 
   it("does not render leading, repeated or trailing separators", () => {
@@ -105,21 +110,34 @@ describe("owned menu items", () => {
     expect(activate).toHaveBeenLastCalledWith(buttons[0]);
     expect(key("Shift")).toBe(false);
   });
+});
 
-  it("focuses on mouse hover without stealing focus during touch dragging", () => {
-    const { buttons } = render([new OwnedMenuItem().setTitle("Hover")]);
-    const button = buttons[0]!;
-    button.dispatchEvent(new PointerEvent("pointermove", { pointerType: "touch" }));
-    expect(document.activeElement).not.toBe(button);
-    button.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse" }));
-    expect(document.activeElement).toBe(button);
-  });
+it("focuses on mouse hover without stealing focus during touch dragging", () => {
+  const highlight = vi.fn();
+  const { container, buttons } = render([
+    new OwnedMenuItem().setTitle("Hover").onHighlight(highlight),
+  ]);
+  const button = buttons[0]!;
+  button.dispatchEvent(new PointerEvent("pointermove", { pointerType: "touch" }));
+  expect(document.activeElement).not.toBe(button);
+  expect(highlight).not.toHaveBeenCalled();
+  button.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse" }));
+  expect(document.activeElement).toBe(button);
+  expect(highlight).toHaveBeenCalledExactlyOnceWith(true);
+  button.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse" }));
+  expect(highlight).toHaveBeenCalledTimes(1);
+  button.blur();
+  expect(highlight).toHaveBeenLastCalledWith(false);
+  container.remove();
+  button.dispatchEvent(new FocusEvent("focus"));
+  button.dispatchEvent(new FocusEvent("focusout"));
+  expect(highlight).toHaveBeenCalledTimes(2);
+});
 
-  it("handles empty menus and activation without a selected row", () => {
-    const activate = vi.fn();
-    for (const key of ["ArrowUp", "ArrowDown", "Home", "End", "Enter", " "]) {
-      expect(navigateOwnedMenu(new KeyboardEvent("keydown", { key }), [], activate)).toBe(true);
-    }
-    expect(activate).not.toHaveBeenCalled();
-  });
+it("handles empty menus and activation without a selected row", () => {
+  const activate = vi.fn();
+  for (const key of ["ArrowUp", "ArrowDown", "Home", "End", "Enter", " "]) {
+    expect(navigateOwnedMenu(new KeyboardEvent("keydown", { key }), [], activate)).toBe(true);
+  }
+  expect(activate).not.toHaveBeenCalled();
 });

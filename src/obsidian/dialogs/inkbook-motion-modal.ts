@@ -70,6 +70,13 @@ export class InkbookMotionModal {
     return this.#closing;
   }
 
+  protected get entering(): boolean {
+    return (
+      !this.#closing &&
+      (this.#animation !== undefined || this.modalEl.dataset.presence === "entering")
+    );
+  }
+
   protected get phoneContentScroll(): HTMLElement | undefined {
     return undefined;
   }
@@ -119,10 +126,13 @@ export class InkbookMotionModal {
   public close(): void {
     if (!this.#opened || this.#closing) return;
     this.#closing = true;
+    this.onClosing();
     this.modalEl.inert = true;
     if (this.#phone !== undefined) this.#phone.close();
     else if (!this.#animate(true)) this.closeImmediately();
   }
+
+  protected onClosing(): void {}
 
   /** Owner disposal and replacement must not retain an invisible dialog or timer. */
   public closeImmediately(): void {
@@ -183,7 +193,10 @@ export class InkbookMotionModal {
       label: this.titleEl.textContent ?? "Inkbook dialog",
       ...(this.#phoneHost === undefined ? {} : { phoneHost: this.#phoneHost }),
       onClosing: () => {
-        this.#closing = true;
+        if (!this.#closing) {
+          this.#closing = true;
+          this.onClosing();
+        }
       },
       onClosed: () => {
         if (this.#opened) this.onClose();

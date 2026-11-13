@@ -1,6 +1,4 @@
-import { strokeLocalGeometry } from "../../../domain/geometry/stroke-position";
-import { isStoredStroke } from "../../../domain/elements/stroke-replacement-proof";
-import { buildElementPathParts, type SvgPathPart } from "../../../domain/geometry/element-path";
+import type { SvgPathPart } from "../../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import { CommittedPreviewGeometry } from "../presentation/committed-preview-geometry";
 import type { SceneSelectionRuns } from "../presentation/selection-runs";
@@ -17,15 +15,19 @@ import type {
 import { writeDirtySet } from "./dirty-set-work";
 import {
   updateMountedGeometry,
-  updateMountedElementPreview,
-  updateMountedPaint,
   updatePreviewTransform,
+  retainTextScaleFeedback,
   type MountedSceneElement,
 } from "./mounted-element";
 import type { ScenePathCache } from "./path-cache";
-import { sameStrokeShape } from "./stroke-position";
+import { readCanonicalStrokePath } from "./stroke-position";
+import { mountedGeometryPath } from "./mounted-geometry-path";
+import { publishMountedPaint } from "./mounted-paint-publication";
+import { TextPreviewPublication } from "./text-preview-publication";
+import * as preview from "./element-preview-publication";
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 interface GeometryPublicationPorts {
+  readonly onTextPublished?: (id: string) => void;
   readonly prepareGeometry: (
     record: SceneElementRecord,
     deadline: number,
@@ -54,9 +56,11 @@ export class SceneGeometryPublication {
   #preferGroupGeometry = false;
   #waitingForPaths = false;
   readonly #ports: GeometryPublicationPorts;
+  readonly #textPreviews: TextPreviewPublication;
 
   public constructor(ports: GeometryPublicationPorts) {
     this.#ports = ports;
+    this.#textPreviews = new TextPreviewPublication(ports.mounted, ports.store);
   }
   public retain(entry: MountedSceneElement): void {
     if (!this.#ports.selectionRuns.needsVisibleGeometry(entry)) return;
@@ -70,10 +74,14 @@ export class SceneGeometryPublication {
   public get waitingForPaths(): boolean {
     return (
       this.#waitingForPaths &&
+      !this.#textPreviews.pending &&
       this.#paintDirty.size === 0 &&
       this.#selectionDirty.size === 0 &&
       (!this.#ports.selectionRuns.pending || this.#ports.selectionRuns.committing)
     );
+  }
+  public get hasPendingTextPreviews(): boolean {
+    return this.#textPreviews.pending;
   }
   public *upcomingGeometryIds(): Iterable<string> {
     for (const id of this.#geometryDirty) if (this.retainsGeometryPath(id)) yield id;
@@ -88,6 +96,7 @@ export class SceneGeometryPublication {
     );
   }
   public unmounted(id: string): void {
+    this.#textPreviews.cancel(id);
     this.#geometryDirty.delete(id);
     this.#ordinaryGeometryDirty.delete(id);
     this.#paintDirty.delete(id);
@@ -104,10 +113,12 @@ export class SceneGeometryPublication {
   public memoryUsage(): number {
     return (
       this.#committedGeometry.memoryUsage() +
+      this.#textPreviews.memoryUsage() +
       (this.#deferredPreviews.size + this.#committedPreviewIds.length) * 8
     );
   }
   public release(): void {
+    this.#textPreviews.release();
     this.#committedGeometry.release();
     this.#deferredPreviews.clear();
     this.#committedPreviewIds = [];
@@ -117,6 +128,7 @@ export class SceneGeometryPublication {
     this.#selectionDirty.clear();
   }
   public markGeometry(id: string, change?: SceneDeltaEntry): void {
+    this.#textPreviews.canonical(id);
     if (change !== undefined) this.#ports.selectionRuns.capture(id, change);
     this.#ports.selectionRuns.geometryChanged(id, change);
     if (this.#ports.mounted.has(id)) this.#geometryDirty.add(id);
@@ -124,6 +136,7 @@ export class SceneGeometryPublication {
     this.#ports.pathCache.invalidate(id);
   }
   public markPaint(id: string): void {
+    this.#textPreviews.canonical(id);
     this.#ports.selectionRuns.invalidate();
     this.#paintDirty.add(id);
   }
@@ -248,8 +261,30 @@ export class SceneGeometryPublication {
     now: () => number,
     publication: ScenePublicationBudget,
   ): boolean {
+    if (this.#textPreviews.pending) {
+      const ids = this.#committedPreviewIds;
+      if (
+        this.#textPreviews.write(deadline, now, ids, ({ element, parts }) =>
+          this.applyCanonicalElementPreview(element, parts),
+        )
+      )
+        return true;
+      if (now() >= deadline) return this.hasMountedWork;
+    }
     if (this.#paintDirty.size > 0) {
-      if (writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id, publication)))
+      const context = {
+        instrumentation: this.#ports.instrumentation,
+        runs: this.#ports.selectionRuns,
+        traces: this.#ports.selectionTraces,
+        store: this.#ports.store,
+        mounted: this.#ports.mounted,
+        publication,
+        deadline,
+        now,
+        onTextPublished: this.#ports.onTextPublished,
+        markSelectionDirty: (key: string) => this.#selectionDirty.add(key),
+      };
+      if (writeDirtySet(this.#paintDirty, deadline, now, (id) => publishMountedPaint(id, context)))
         return true;
       if (now() >= deadline) return this.hasMountedWork;
     }
@@ -267,6 +302,7 @@ export class SceneGeometryPublication {
   public get hasMountedWork(): boolean {
     return (
       this.#geometryDirty.size > 0 ||
+      this.#textPreviews.pending ||
       this.#paintDirty.size > 0 ||
       this.#selectionDirty.size > 0 ||
       this.#ports.selectionRuns.pending
@@ -278,9 +314,11 @@ export class SceneGeometryPublication {
     version: number,
     strokeWidthScale: number | null,
     matrix?: PreviewTransform["matrix"],
+    textBasis?: PreviewTransform["textBasis"],
   ): void {
     const entry = this.#ports.mounted.get(id);
     if (entry !== undefined) {
+      retainTextScaleFeedback(entry, textBasis, matrix);
       if (
         this.#ports.selectionRuns.applyTransform(
           entry,
@@ -293,12 +331,8 @@ export class SceneGeometryPublication {
         this.#ports.selectionTraces.transform(id, entry);
         return;
       }
-      const resolved = this.#committedGeometry.resolve(id, {
-        transform,
-        version,
-        strokeWidthScale,
-        matrix,
-      });
+      const request = { transform, version, strokeWidthScale, matrix };
+      const resolved = this.#committedGeometry.resolve(id, request);
       updatePreviewTransform(
         entry,
         resolved.transform,
@@ -323,19 +357,10 @@ export class SceneGeometryPublication {
   public applyElementPreview(element: InkElementV1): boolean {
     const entry = this.previewEntry(element.id);
     if (entry === undefined) return false;
-    const parts = sameStrokeShape(entry.displayedElement, element)
-      ? entry.displayedPathParts
-      : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);
-    return this.applyCanonicalElementPreview(element, parts);
+    return this.applyCanonicalElementPreview(element, preview.elementParts(entry, element));
   }
   public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
-    const entry = this.#ports.mounted.get(element.id);
-    return element.kind === "stroke" &&
-      (Object.isFrozen(element.points) || isStoredStroke(element)) &&
-      entry !== undefined &&
-      sameStrokeShape(entry.displayedElement, element)
-      ? entry.displayedPathParts
-      : undefined;
+    return readCanonicalStrokePath(element, this.#ports.mounted.get(element.id));
   }
   public applyCanonicalElementPreview(
     element: InkElementV1,
@@ -349,18 +374,14 @@ export class SceneGeometryPublication {
       this.#deferredPreviews.add(element.id);
       return false;
     }
-    updateMountedElementPreview(entry, record, element, parts, {
-      instrumentation: this.#ports.instrumentation,
-      ownerDocument: this.#ports.dom.ownerDocument,
-      parent: this.#ports.dom.group(entry.band),
-    });
-    this.#ports.selectionRuns.update(entry);
-    if (this.#ports.selectionTraces.update(entry, element, parts))
+    if (this.#textPreviews.defer(entry, element, parts)) return true;
+    if (preview.publish(entry, record, element, parts, this.#ports))
       this.#selectionDirty.delete(element.id);
     else this.#selectionDirty.add(element.id);
     return true;
   }
   public clearElementPreview(id: string): void {
+    this.#textPreviews.cancel(id);
     if (
       (this.#ports.selectionRuns.committing && this.#ports.selectionRuns.grouped(id)) ||
       this.#committedGeometry.has(id)
@@ -372,21 +393,15 @@ export class SceneGeometryPublication {
     if (entry === undefined) return;
     const record = this.#ports.store.get(id);
     if (record === undefined) return;
-    if (
-      entry.geometryVersion !== record.geometryVersion &&
-      record.element.kind === "stroke" &&
-      record.element.style.pressureEnabled
-    ) {
+    if (record.element.kind === "text") {
+      this.applyCanonicalElementPreview(record.element, entry.pathParts);
+      return;
+    }
+    const parts = preview.restoreParts(entry, record, this.#ports.pathCache);
+    if (parts === undefined) {
       this.#geometryDirty.add(id);
       return;
     }
-    const parts =
-      entry.geometryVersion === record.geometryVersion
-        ? entry.pathParts
-        : this.#ports.pathCache.build(
-            record.element,
-            this.#ports.store.pressureGeometry?.(record.id, record.geometryVersion),
-          );
     this.updateGeometry(entry, record, parts);
   }
   private writeGeometry(
@@ -412,24 +427,25 @@ export class SceneGeometryPublication {
       return true;
     }
     const currentVersion = liveRecord?.geometryVersion === record.geometryVersion;
+    if (
+      record.element.kind === "text" &&
+      this.#ports.prepareGeometry(record, deadline, now, true) === undefined
+    )
+      return false;
     const pressure = currentVersion
       ? this.#ports.store.pressureGeometry?.(record.id, record.geometryVersion)
       : undefined;
-    const pending =
-      this.#committedGeometry.has(id) ||
-      (this.#ports.selectionRuns.committing && this.#ports.selectionRuns.grouped(id)) ||
-      (record.element.kind === "stroke" && record.element.style.pressureEnabled);
     const canonicalStroke = record.element.kind === "stroke" && currentVersion;
-    const parts =
-      (sameStrokeShape(entry.displayedElement, record.element)
-        ? entry.displayedPathParts
-        : undefined) ??
-      this.#ports.pathCache.read(record.element, pressure, record.geometryVersion) ??
-      (pending
-        ? canonicalStroke
-          ? this.#ports.prepareGeometry(record, deadline, now, this.#ports.selectionRuns.committing)
-          : this.#committedGeometry.prepare(record, deadline, now, pressure)
-        : this.#ports.pathCache.build(record.element, pressure));
+    const parts = mountedGeometryPath(entry, record, {
+      currentVersion,
+      pressure,
+      deadline,
+      now,
+      retained: this.#committedGeometry,
+      runs: this.#ports.selectionRuns,
+      paths: this.#ports.pathCache,
+      prepare: this.#ports.prepareGeometry,
+    });
     if (parts === undefined) {
       this.#waitingForPaths = canonicalStroke && this.#ports.waitingForPaths();
       return false;
@@ -455,6 +471,7 @@ export class SceneGeometryPublication {
         desired.version,
         desired.strokeWidthScale,
         desired.matrix,
+        desired.textBasis,
       );
   }
   private updateGeometry(
@@ -474,27 +491,10 @@ export class SceneGeometryPublication {
       this.#ports.dom.group(entry.band),
       this.#ports.instrumentation,
     );
+    if (entry.text !== undefined) this.#ports.onTextPublished?.(entry.id);
     this.#ports.selectionRuns.update(entry, record);
     if (this.#ports.selectionTraces.update(entry, record.element, parts, publication))
       this.#selectionDirty.delete(entry.id);
     else this.#selectionDirty.add(entry.id);
-  }
-  private writePaint(id: string, publication: ScenePublicationBudget): void {
-    const entry = this.#ports.mounted.get(id);
-    const record = this.#ports.store.get(id);
-    if (entry === undefined || record === undefined || entry.paintVersion === record.paintVersion)
-      return;
-    updateMountedPaint(entry, record, entry.pathParts, this.#ports.instrumentation);
-    if (entry.geometryVersion === record.geometryVersion) entry.displayedElement = record.element;
-    this.#ports.selectionRuns.update(entry);
-    if (
-      !this.#ports.selectionTraces.update(
-        entry,
-        record.element,
-        entry.displayedPathParts,
-        publication,
-      )
-    )
-      this.#selectionDirty.add(id);
   }
 }

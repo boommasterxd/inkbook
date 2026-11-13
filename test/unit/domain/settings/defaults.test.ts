@@ -17,6 +17,7 @@ describe("settings defaults", () => {
       startupTool: "draw",
       selectionHighlightsEnabled: true,
       refreshRatePreference: "auto",
+      holdToShape: { enabled: true, holdDurationMs: 400, jitterTolerancePx: 20 },
     });
     expect(settings.pageDefaults).toEqual({
       activeBufferLines: 3,

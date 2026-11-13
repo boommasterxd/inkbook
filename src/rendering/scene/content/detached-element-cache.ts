@@ -122,6 +122,7 @@ function detachedElementBytes(entry: MountedSceneElement): number {
     6 * 8 +
     entry.id.length * 2 +
     elementBytes +
+    (entry.text?.memoryUsage() ?? 0) +
     (entry.group === null ? 0 : 512) +
     entry.paths.reduce((total, path) => total + 512 + path.appliedD.length * 2, 0)
   );

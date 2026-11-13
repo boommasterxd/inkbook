@@ -14,6 +14,7 @@ import type { VisibilityExitReadiness } from "./visibility-exit-readiness";
 import type { SceneRootPlacement } from "./root-placement";
 
 export interface ScenePreparationOptions {
+  readonly isPinned?: (id: string) => boolean;
   readonly upcomingGeometryIds?: () => Iterable<string>;
   readonly retainGeometryPath?: (id: string) => boolean;
   readonly placement?: SceneRootPlacement;

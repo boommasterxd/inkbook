@@ -6,6 +6,7 @@ import { prepareStaticExportFragments } from "../../../../src/persistence/export
 import { StaticPathBounds } from "../../../../src/persistence/export/static-path-bounds";
 import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
+import * as metadata from "../../../../src/persistence/documents/safe-svg-metadata";
 
 function envelope(content: string[]) {
   return serializeSvgEnvelope(createWorkerSnapshot([]), 100_000, {
@@ -14,6 +15,51 @@ function envelope(content: string[]) {
     highlights: [],
   });
 }
+
+it("decodes and visits each of 10,000 native text runs once without path geometry work", async () => {
+  const text =
+    '<text><tspan x="10" y="20" font-family="inkbook-example" font-size="16" font-weight="400" font-style="normal" text-decoration="none" fill="#112233FF" fill-opacity="1">A &amp; B</tspan></text>';
+  const svg = envelope(Array.from({ length: 10_000 }, () => text)).replace(
+    'data-inkbook-version="1"',
+    'data-inkbook-version="2"',
+  );
+  const decode = vi.spyOn(metadata, "decodeMetadataTextSteps");
+  const paths = vi.spyOn(validator, "validatePathDataSteps");
+  const visited = vi.fn();
+  try {
+    const result = await prepareStaticExportFragments(svg, {
+      workScheduler: createTestWorkScheduler(),
+      visitor: { open: () => {}, close: () => {}, text: visited },
+    });
+    expect(result).toHaveLength(10_000);
+    expect(result!.every(({ minY, maxY }) => minY === -Infinity && maxY === Infinity)).toBe(true);
+    expect(decode).toHaveBeenCalledTimes(10_000);
+    expect(visited).toHaveBeenCalledTimes(10_000);
+    expect(visited).toHaveBeenLastCalledWith("A & B");
+    expect(paths).not.toHaveBeenCalled();
+    visited.mockClear();
+    decode.mockClear();
+    const controller = new AbortController();
+    const workScheduler = createTestWorkScheduler({
+      checkpoint: () => {
+        if (visited.mock.calls.length === 100) controller.abort();
+        return undefined;
+      },
+    });
+    await expect(
+      prepareStaticExportFragments(svg, {
+        workScheduler,
+        signal: controller.signal,
+        visitor: { open: () => {}, close: () => {}, text: visited },
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(decode).toHaveBeenCalledTimes(100);
+    expect(visited).toHaveBeenCalledTimes(100);
+  } finally {
+    decode.mockRestore();
+    paths.mockRestore();
+  }
+});
 
 describe("static export fragment preparation work", () => {
   it("parses 10,000 mixed static paths once and keeps interspersed small arcs finite", async () => {

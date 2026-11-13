@@ -1,15 +1,23 @@
+import { MountedTextPresentation, setTextMotionOrigin } from "./mounted-text";
+import {
+  createMountedPath,
+  writeAttribute,
+  writePresentation,
+  writePreviewStrokeWidth,
+  writeRaw,
+  type MountedPath,
+} from "./mounted-path";
 import { positionedTransform } from "./stroke-position";
+import { textBasisRebaseMatrix } from "../text-editing-geometry";
+import { multiplyAffineMatrices, type AffineMatrix } from "../../../domain/geometry/affine-matrix";
+import type { TextElementV2 } from "../../../domain/schema/public";
 import type { SvgPathPart } from "../../../domain/geometry/element-path";
 import { SVG_NAMESPACE } from "../constants";
 import {
-  scaledDashPattern,
-  scaledStrokeWidth,
-  PRESENTATION_ATTRIBUTES,
-  pathPresentation,
   isPressureStroke,
   pressureRootOpacity,
-  type PathPresentation,
-  type PresentationAttribute,
+  pathPresentation,
+  PRESENTATION_ATTRIBUTES,
 } from "./element-presentation";
 import type { MutableSceneInstrumentation, SceneElementRecord } from "../types";
 import {
@@ -21,14 +29,6 @@ import { clearMotionStyle, writeMotionStyle } from "../presentation/motion-visua
 
 export { setMountedElementFade } from "../presentation/element-fade-style";
 
-interface MountedPath {
-  appliedD: string;
-  appliedPresentation: PathPresentation;
-  appliedPreviewStrokeWidthScale: number | null;
-  appliedTransform: string | null;
-  readonly node: SVGPathElement;
-}
-
 interface TopologyUpdateOptions {
   readonly instrumentation: MutableSceneInstrumentation;
   readonly ownerDocument: Document;
@@ -36,6 +36,7 @@ interface TopologyUpdateOptions {
 }
 
 export interface MountedSceneElement {
+  textScaleFeedback?: { readonly basis: TextElementV2; readonly matrix: AffineMatrix } | undefined;
   band: SceneElementRecord["band"];
   bounds: SceneElementRecord["bounds"];
   /** Rank at the last published DOM ordering, independent of paint/geometry updates. */
@@ -56,10 +57,21 @@ export interface MountedSceneElement {
   readonly id: string;
   paintVersion: number;
   readonly paths: MountedPath[];
+  text?: MountedTextPresentation | undefined;
   pathParts: readonly SvgPathPart[];
   previewStrokeWidthScale: number | null;
   previewTransformVersion: number;
   rank: number;
+}
+
+export function retainTextScaleFeedback(
+  entry: MountedSceneElement,
+  basis?: TextElementV2,
+  matrix?: AffineMatrix,
+): void {
+  if (entry.text === undefined) return;
+  entry.textScaleFeedback =
+    basis === undefined || matrix === undefined ? undefined : { basis, matrix };
 }
 
 export function createMountedElement(
@@ -67,11 +79,17 @@ export function createMountedElement(
   record: SceneElementRecord,
   parts: readonly SvgPathPart[],
   instrumentation: MutableSceneInstrumentation,
+  preparedText?: MountedTextPresentation,
 ): MountedSceneElement {
   const paths = parts.map((part) =>
     createMountedPath(ownerDocument, record, part, instrumentation),
   );
-  const group = createPressureGroup(ownerDocument, record, paths, instrumentation);
+  const text =
+    preparedText ??
+    (record.element.kind === "text"
+      ? new MountedTextPresentation(ownerDocument, record.element, instrumentation)
+      : undefined);
+  const group = text?.group ?? createPressureGroup(ownerDocument, record, paths, instrumentation);
   const entry: MountedSceneElement = {
     band: record.band,
     bounds: record.bounds,
@@ -91,6 +109,7 @@ export function createMountedElement(
     id: record.id,
     paintVersion: record.paintVersion,
     paths,
+    text,
     pathParts: parts,
     previewStrokeWidthScale: null,
     previewTransformVersion: 0,
@@ -110,6 +129,7 @@ export function appendElementToFragment(
 }
 
 export function removeMountedElement(entry: MountedSceneElement): void {
+  entry.text?.cancelPreparation();
   if (entry.fadeActive) setMountedElementFade(entry, null);
   if (entry.group !== null) entry.group.remove();
   else for (const path of entry.paths) path.node.remove();
@@ -118,6 +138,7 @@ export function removeMountedElement(entry: MountedSceneElement): void {
 /** Removes one top-level SVG node, retaining partial path ownership until reconciliation ends. */
 export function removeMountedElementNode(entry: MountedSceneElement): boolean {
   if (entry.group !== null) {
+    entry.text?.cancelPreparation();
     if (entry.fadeActive) setMountedElementFade(entry, null);
     entry.group.remove();
     return true;
@@ -139,24 +160,7 @@ export function updateMountedGeometry(
   parent: SVGGElement,
   instrumentation: MutableSceneInstrumentation,
 ): void {
-  if (
-    entry.paths.length !== parts.length ||
-    (entry.group !== null) !== (isPressureStroke(record.element) && parts.length > 1)
-  ) {
-    replacePathTopology(entry, record, parts, {
-      instrumentation,
-      ownerDocument,
-      parent,
-    });
-  } else {
-    for (let index = 0; index < parts.length; index += 1) {
-      const part = parts[index];
-      const path = entry.paths[index];
-      if (part === undefined || path === undefined) continue;
-      writeAttribute(path, "d", part.d, instrumentation, true);
-    }
-    updateMountedPaint(entry, record, parts, instrumentation);
-  }
+  updateMountedPreviewGeometry(entry, record, parts, { instrumentation, ownerDocument, parent });
   entry.pathParts = parts;
   entry.bounds = record.bounds;
   entry.displayedElement = record.element;
@@ -173,6 +177,7 @@ export function updateMountedPaint(
   parts: readonly SvgPathPart[],
   instrumentation: MutableSceneInstrumentation,
 ): void {
+  if (entry.text !== undefined && record.element.kind === "text") entry.text.update(record.element);
   const opacity = pressureRootOpacity(record.element);
   const pressure = isPressureStroke(record.element);
   const previousPressure = isPressureStroke(entry.displayedElement);
@@ -207,8 +212,20 @@ export function updatePreviewTransform(
   instrumentation: MutableSceneInstrumentation,
   matrix?: MountedSceneElement["appliedPreviewMatrix"],
 ): void {
+  const textFeedback = entry.text === undefined ? undefined : entry.textScaleFeedback;
+  if (transform !== null && textFeedback !== undefined && entry.displayedElement.kind === "text") {
+    matrix =
+      entry.displayedElement === textFeedback.basis
+        ? textFeedback.matrix
+        : multiplyAffineMatrices(
+            textFeedback.matrix,
+            textBasisRebaseMatrix(entry.displayedElement, textFeedback.basis),
+          );
+    transform = `matrix(${matrix.join(" ")})`;
+  }
   entry.appliedPreviewTransform = transform;
   entry.appliedPreviewMatrix = matrix?.every(Number.isFinite) ? matrix : undefined;
+  if (entry.text !== undefined) entry.text.previewMatrix = entry.appliedPreviewMatrix;
   transform = positionedTransform(entry.displayedElement, transform);
   if (entry.group !== null) {
     if (entry.appliedTransform !== transform) {
@@ -271,7 +288,10 @@ function updateMountedPreviewGeometry(
   parts: readonly SvgPathPart[],
   options: TopologyUpdateOptions,
 ): void {
-  if (
+  if (entry.text !== undefined && record.element.kind === "text") {
+    entry.text.update(record.element);
+    return;
+  } else if (
     entry.paths.length !== parts.length ||
     (entry.group !== null) !== (isPressureStroke(record.element) && parts.length > 1)
   ) {
@@ -296,9 +316,14 @@ export function setMountedElementMotion(
   if (opacity === null && !entry.motionActive) return;
   entry.motionActive = opacity !== null;
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
-  for (const node of nodes)
+  for (const node of nodes) {
+    const textPosition =
+      entry.displayedElement.kind === "text"
+        ? setTextMotionOrigin(node, opacity === null ? null : entry.displayedElement)
+        : "";
     if (opacity === null) clearMotionStyle(node);
-    else writeMotionStyle(node, opacity * entry.groupOpacity, scale);
+    else writeMotionStyle(node, opacity * entry.groupOpacity, scale, textPosition);
+  }
 }
 
 export function firstPath(entry: MountedSceneElement): SVGElement {
@@ -306,29 +331,6 @@ export function firstPath(entry: MountedSceneElement): SVGElement {
   const path = entry.paths[0];
   if (path === undefined) throw new Error("A mounted element must own at least one path.");
   return path.node;
-}
-
-function createMountedPath(
-  ownerDocument: Document,
-  record: SceneElementRecord,
-  part: SvgPathPart,
-  instrumentation: MutableSceneInstrumentation,
-): MountedPath {
-  const node = ownerDocument.createElementNS(SVG_NAMESPACE, "path");
-  const presentation = pathPresentation(record.element, part);
-  const mounted: MountedPath = {
-    appliedD: "",
-    appliedPresentation: presentation,
-    appliedPreviewStrokeWidthScale: null,
-    appliedTransform: null,
-    node,
-  };
-  writeAttribute(mounted, "d", part.d, instrumentation, true);
-  for (const attribute of PRESENTATION_ATTRIBUTES) {
-    const value = presentation[attribute];
-    if (value !== null) writeRaw(node, attribute, value, instrumentation, false);
-  }
-  return mounted;
 }
 
 function replacePathTopology(
@@ -391,92 +393,6 @@ function createPressureGroup(
 export function createFragment(ownerDocument: Document): DocumentFragment {
   const create = ownerDocument.createDocumentFragment.bind(ownerDocument);
   return create();
-}
-
-function writePresentation(
-  path: MountedPath,
-  attribute: PresentationAttribute,
-  value: string | null,
-  instrumentation: MutableSceneInstrumentation,
-): void {
-  if (path.appliedPresentation[attribute] === value) return;
-  let appliedValue = value;
-  if (path.appliedPreviewStrokeWidthScale !== null) {
-    if (attribute === "stroke-width") {
-      appliedValue = scaledStrokeWidth(value, path.appliedPreviewStrokeWidthScale);
-    } else if (attribute === "stroke-dasharray") {
-      appliedValue = scaledDashPattern(value, path.appliedPreviewStrokeWidthScale);
-    }
-  }
-  writeRaw(path.node, attribute, appliedValue, instrumentation, false);
-}
-
-function writePreviewStrokeWidth(
-  path: MountedPath,
-  scale: number | null,
-  instrumentation: MutableSceneInstrumentation,
-): void {
-  const strokeWidth = path.appliedPresentation["stroke-width"];
-  const appliedScale = strokeWidth === null ? null : scale;
-  if (path.appliedPreviewStrokeWidthScale === appliedScale) return;
-  if (appliedScale === null) {
-    if (path.appliedPreviewStrokeWidthScale !== null) {
-      writeRaw(path.node, "vector-effect", null, instrumentation, false);
-      if (strokeWidth !== null) {
-        writeRaw(path.node, "stroke-width", strokeWidth, instrumentation, false);
-      }
-    }
-  } else {
-    if (path.appliedPreviewStrokeWidthScale === null) {
-      writeRaw(path.node, "vector-effect", "non-scaling-stroke", instrumentation, false);
-    }
-    writeRaw(
-      path.node,
-      "stroke-width",
-      scaledStrokeWidth(strokeWidth, appliedScale),
-      instrumentation,
-      false,
-    );
-  }
-  const dash = path.appliedPresentation["stroke-dasharray"];
-  if (dash !== null) {
-    writeRaw(
-      path.node,
-      "stroke-dasharray",
-      scaledDashPattern(dash, appliedScale ?? 1),
-      instrumentation,
-      false,
-    );
-  }
-  path.appliedPreviewStrokeWidthScale = appliedScale;
-}
-
-function writeAttribute(
-  path: MountedPath,
-  attribute: "d" | "transform",
-  value: string | null,
-  instrumentation: MutableSceneInstrumentation,
-  geometry: boolean,
-): void {
-  const current = attribute === "d" ? path.appliedD : path.appliedTransform;
-  if (current === value) return;
-  writeRaw(path.node, attribute, value, instrumentation, geometry);
-  if (attribute === "d") path.appliedD = value ?? "";
-  else path.appliedTransform = value;
-}
-
-function writeRaw(
-  node: SVGElement,
-  attribute: string,
-  value: string | null,
-  instrumentation: MutableSceneInstrumentation,
-  geometry: boolean,
-): void {
-  if (value === null) node.removeAttribute(attribute);
-  else node.setAttribute(attribute, value);
-  instrumentation.attributeWrites += 1;
-  instrumentation.contentAttributeWrites += 1;
-  if (geometry) instrumentation.contentGeometryWrites += 1;
 }
 
 function refreshPosition(

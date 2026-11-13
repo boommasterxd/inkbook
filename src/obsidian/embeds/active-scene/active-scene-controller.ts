@@ -25,10 +25,15 @@ export function createActiveSceneController(
   const { container, layout, renderer, scrollOwner, store } = environment;
   return new ActiveEditorController({
     localization: options.localization,
+    ...(options.textFonts === undefined ? {} : { textFonts: options.textFonts }),
     workScheduler: options.workScheduler,
     applyZoomLayout: (update) =>
       applyActiveSceneZoomLayout(layout(), update, options.hostZoomScroll, container),
     onNavigationLayout: (navigationLayout) => layout().adoptNavigationLayout(navigationLayout),
+    reconcileTextLayout: (callback) => {
+      if (options.hostZoomScroll?.afterLayout) options.hostZoomScroll.afterLayout(callback);
+      else callback();
+    },
     backgroundSpacing: options.backgroundSpacing,
     container,
     confirmEraseAll: options.confirmEraseAll,
@@ -57,6 +62,7 @@ export function createActiveSceneController(
     onCopyEmbed: options.onCopyEmbed,
     onDeleteEmbed: options.onDeleteEmbed,
     onOpenSettings: options.onOpenSettings,
+    onOpenFonts: options.onOpenFonts,
     onOpenShortcuts: options.onOpenShortcuts,
     onboardingPreference: options.onboardingPreference,
     onPageChanged: () => layout().pageChanged(),
@@ -69,9 +75,10 @@ export function createActiveSceneController(
     selectionMoveLayout: {
       begin: () => layout().beginSelectionMove(),
       currentHeight: () => layout().currentPageHeight(),
-      finish: (committed, previewMaximumBottom) =>
-        layout().finishSelectionMove(committed, previewMaximumBottom),
-      updateBottom: (maximumBottom) => layout().updateSelectionMoveBottom(maximumBottom),
+      finish: (committed, previewMaximumBottom, immediate) =>
+        layout().finishSelectionMove(committed, previewMaximumBottom, immediate),
+      updateBottom: (maximumBottom, immediate, sourceExtent) =>
+        layout().updateSelectionMoveBottom(maximumBottom, immediate, sourceExtent),
     },
     scrollOwner,
     snapping: options.snapping,

@@ -83,6 +83,9 @@ export const host = {
     "Die Änderung am Verlauf konnte nicht angewendet werden.",
   "host.feedback.history-change-failed.detail":
     "Die Zeichnung ist unverändert. Versuche es erneut.",
+  "host.feedback.text-preparation-failed.title": "Der Text konnte nicht verarbeitet werden.",
+  "host.feedback.text-preparation-failed.detail":
+    "Prüfe die gewählte Schriftart und den Formelquelltext und versuche es erneut.",
   "host.feedback.history-lock-required.title":
     "Sperre die Zeichnung, um weitere Notizänderungen rückgängig zu machen.",
   "host.feedback.insertion-cleanup-failed.title":

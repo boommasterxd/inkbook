@@ -1,5 +1,6 @@
 import {
   captureRuntimeElementHeader,
+  captureRuntimeTextElementSteps,
   copyStrokeSamplesToImmutableJsonSteps,
   preparedInsertionHeader,
 } from "../../elements/runtime-element-copy";
@@ -7,7 +8,7 @@ import { calculateElementBoundsSteps } from "../../geometry/bounds";
 import type { Bounds } from "../../geometry/primitives";
 import { validateInkElementV1Steps } from "../../schema/element-validation";
 import type { InkElementV1 } from "../../schema/public";
-import { takeImmutableElementOwnership } from "../records/immutability";
+import { takeImmutableElementOwnershipSteps } from "../records/immutability";
 
 const boundsByElement = new WeakMap<object, Readonly<Bounds>>();
 
@@ -20,7 +21,11 @@ export function* prepareInsertionElementSteps(
   element: InkElementV1,
 ): Generator<boolean | void, InkElementV1> {
   if (boundsByElement.has(element)) return element;
-  const header = preparedInsertionHeader(element) ?? captureRuntimeElementHeader(element);
+  const header =
+    preparedInsertionHeader(element) ??
+    (element.kind === "text"
+      ? yield* captureRuntimeTextElementSteps(element)
+      : captureRuntimeElementHeader(element));
   const points = Object.getOwnPropertyDescriptor(element, "points");
   if (
     header.kind === "stroke" &&
@@ -33,7 +38,7 @@ export function* prepareInsertionElementSteps(
   const validation = yield* validateInkElementV1Steps(staged, {}, 2048, 256);
   if (!validation.ok) throw new RangeError(`Invalid insertion element: ${validation.error.code}`);
   const bounds = Object.freeze(yield* calculateElementBoundsSteps(staged));
-  const immutable = takeImmutableElementOwnership(staged) as InkElementV1;
+  const immutable = (yield* takeImmutableElementOwnershipSteps(staged)) as InkElementV1;
   boundsByElement.set(immutable, bounds);
   return immutable;
 }

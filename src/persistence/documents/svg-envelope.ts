@@ -7,6 +7,7 @@ import { COMPACT_METADATA_ENCODING } from "../serialization/metadata/stroke-samp
 import { serializeSvgNumber } from "./svg-number";
 import { CANONICAL_THEME_STYLESHEET } from "./svg-theme";
 import { escapeXmlText } from "./xml-text";
+import { fontStylesheetMarkup } from "../serialization/output/text-fonts";
 
 export interface StaticSvgBands {
   readonly background: readonly string[];
@@ -29,10 +30,11 @@ export function serializeSvgEnvelope(
   const metadataHash = metadataSha256(metadataText);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048.6 ${height}" ` +
-    `data-inkbook-format="inkbook" data-inkbook-version="1" ` +
+    `data-inkbook-format="inkbook" data-inkbook-version="${snapshot.version}" ` +
     `data-inkbook-revision="${snapshot.revision}" ` +
     `data-inkbook-snapshot-sha256="${metadataHash}">` +
     `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>` +
+    fontStylesheetMarkup(snapshot.fontResources ?? []) +
     `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">${metadata}</metadata>` +
     `<g id="inkbook-background">${joinPaths(bands.background)}</g>` +
     `<g id="inkbook-highlights">${joinPaths(bands.highlights)}</g>` +

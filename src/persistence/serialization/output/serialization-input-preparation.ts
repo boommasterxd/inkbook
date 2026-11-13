@@ -1,13 +1,43 @@
 import {
   captureRuntimeElementHeader,
   copyStrokeSamplesToRuntimeSteps,
+  captureRuntimeTextElementSteps,
 } from "../../../domain/elements/runtime-element-copy";
-import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
+import type {
+  FontResourceV2,
+  InkElementV1,
+  InkSnapshotV1,
+  PageV1,
+} from "../../../domain/schema/public";
 import { FILE_SCHEMA_LIMITS } from "../../../domain/schema/constants";
 import { fail } from "../../../domain/schema/validation-internals";
 import type { DocumentSerializationDelta } from "./incremental-document-serializer-types";
+import { canonicalElementWithFontResourcesSteps } from "../metadata/canonical-snapshot";
 
-const SNAPSHOT_BODY_KEYS = new Set(["elements"]);
+const SNAPSHOT_BODY_KEYS = new Set(["elements", "fontResources"]);
+
+export function* canonicalizeSerializationElementsSteps(
+  source: Iterable<InkElementV1>,
+  resources: readonly FontResourceV2[],
+  runtimeStrokeBuffers: boolean,
+  copyRuntimeStrokeBuffers: boolean,
+  nodesPerStep: number,
+): Generator<void, Map<string, InkElementV1>> {
+  const elements = new Map<string, InkElementV1>();
+  for (const element of source) {
+    elements.set(
+      element.id,
+      yield* canonicalElementWithFontResourcesSteps(
+        element,
+        resources,
+        runtimeStrokeBuffers,
+        copyRuntimeStrokeBuffers,
+      ),
+    );
+    if (elements.size % nodesPerStep === 0) yield;
+  }
+  return elements;
+}
 
 /** Capture external values into private candidates before schema validation may yield. */
 export function* captureSnapshotInputSteps(
@@ -15,7 +45,15 @@ export function* captureSnapshotInputSteps(
 ): Generator<void, InkSnapshotV1> {
   const header = captureRuntimeElementHeader(snapshot, SNAPSHOT_BODY_KEYS);
   const elements = yield* captureListSteps(snapshot.elements);
-  return { ...header, elements } as unknown as InkSnapshotV1;
+  const fontResources =
+    snapshot.fontResources === undefined
+      ? undefined
+      : yield* captureListSteps(snapshot.fontResources, captureRuntimeElementHeader);
+  return {
+    ...header,
+    elements,
+    ...(fontResources === undefined ? {} : { fontResources }),
+  } as unknown as InkSnapshotV1;
 }
 
 export function* captureDeltaInputSteps<T extends DocumentSerializationDelta>(
@@ -31,6 +69,10 @@ export function* captureDeltaInputSteps<T extends DocumentSerializationDelta>(
   const content = delta.orderChanges?.content;
   const derivations = delta.changedElementDerivations;
   const changed = delta.changedElements;
+  const fontResources =
+    delta.fontResources === undefined
+      ? undefined
+      : yield* captureListSteps(delta.fontResources, captureRuntimeElementHeader);
   const removedIds = removed === undefined ? undefined : yield* captureListSteps(removed);
   const capturedHighlight =
     highlight === undefined ? undefined : yield* captureListSteps(highlight);
@@ -42,6 +84,7 @@ export function* captureDeltaInputSteps<T extends DocumentSerializationDelta>(
   const changedElements = changed === undefined ? undefined : yield* captureListSteps(changed);
   return {
     ...delta,
+    ...(fontResources === undefined ? {} : { fontResources }),
     ...(page === undefined ? {} : { page }),
     ...(removedIds === undefined ? {} : { removedIds }),
     ...(delta.orderChanges === undefined
@@ -70,7 +113,10 @@ export function* copySerializationElementsSteps(
   const candidate: InkElementV1[] = [];
   const samples = { strokes: 0, strokePoints: 0 };
   for (const element of elements) {
-    const header = captureRuntimeElementHeader(element);
+    const header =
+      Object.getOwnPropertyDescriptor(element, "kind")?.value === "text"
+        ? yield* captureRuntimeTextElementSteps(element)
+        : captureRuntimeElementHeader(element);
     if (header.kind === "stroke") {
       if (element.kind !== "stroke") throw new TypeError("Stroke kind changed during capture.");
       assertStagedSampleCapacity(samples, element.points.length, `$.elements[${candidate.length}]`);

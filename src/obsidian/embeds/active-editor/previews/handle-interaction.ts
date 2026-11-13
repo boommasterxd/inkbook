@@ -1,4 +1,4 @@
-import type { InkElementV1, PointV1 } from "../../../../domain/schema/public";
+import type { InkElementV1, TextElementV2 } from "../../../../domain/schema/public";
 import type { SnappingSettingsV1 } from "../../../../domain/settings/types";
 import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler";
 import type { ToolSystemCursor } from "../../../../editor/input/tool-cursor";
@@ -6,7 +6,6 @@ import type { PointerSample } from "../../../../editor/input/index";
 import {
   ConnectedSelectionPreviewSession,
   HitTestScratch,
-  findSelectionHandle,
   selectionOverlayGeometry,
   type SelectionOverlayGeometry,
   SelectionFrameSession,
@@ -15,11 +14,13 @@ import {
   type ConnectedSelectionPreview,
   type OrientedSelectionFrame,
   type SelectionHandlePreview,
+  type SelectionHandle,
 } from "../../../../editor/selection/public";
 import type { EditableDocumentModel } from "../../document-session/vault-document-session";
 import {
-  selectionCursorContainsPoint,
-  selectionCursorRadius,
+  selectionCursorAt,
+  preferredSelectionHandle,
+  selectionCursorHandle,
   selectionHandleCursor,
 } from "./selection-cursor";
 import type { ActiveEditorHistory } from "../history";
@@ -33,36 +34,18 @@ import { SelectionHandlePresentation, type HandleInteractionRenderer } from "./h
 import { ConnectionPreviewPreparation } from "./connection-preview-preparation";
 import type { SelectionPreviewFrameScheduler } from "./selection-preview-contracts";
 import { subscribeSelectionHandleRefresh } from "./selection-handle-refresh";
-export interface ActiveEditorHandleInteractionOptions {
-  readonly frameScheduler: HandleFrameScheduler;
-  readonly workScheduler?: WorkScheduler;
-  readonly history: ActiveEditorHistory;
-  readonly layout?: {
-    begin(): void;
-    finish(committed: boolean, previewMaximumBottom?: number): void;
-    updateBottom(maximumBottom: number): void;
-  };
-  readonly model: EditableDocumentModel;
-  readonly pageToScreen: (point: PointV1) => PointV1;
-  readonly preparedHistory: PreparedElementHistory;
-  readonly renderer: HandleInteractionRenderer;
-  readonly sceneStore: ElementSceneStore;
-  readonly selectionFrames?: SelectionFrameSession;
-  readonly selection: () => ReadonlySet<string>;
-  readonly snapping?: () => SnappingSettingsV1;
-  readonly zoom: () => number;
-}
+import type { ActiveEditorHandleInteractionOptions } from "./handle-interaction-contracts";
+import { TextEditingFrame } from "./text-editing-frame";
+export type { ActiveEditorHandleInteractionOptions } from "./handle-interaction-contracts";
 export type { HandleInteractionRenderer } from "./handle-presentation";
-const NO_SCALE_TRANSFORM_IDS: readonly string[] = [];
 export type HandleFrameScheduler = SelectionPreviewFrameScheduler;
-
 interface PendingHandleSample {
   readonly pointer: PointerSample;
   readonly snappingInverted: boolean;
   readonly uniformScale: boolean;
 }
-
 export class ActiveEditorHandleInteraction {
+  readonly #editingFrame = new TextEditingFrame();
   readonly #frameScheduler: HandleFrameScheduler;
   readonly #history: ActiveEditorHistory;
   readonly #layout: ActiveEditorHandleInteractionOptions["layout"];
@@ -76,6 +59,8 @@ export class ActiveEditorHandleInteraction {
   readonly #snapping: () => SnappingSettingsV1 | undefined;
   readonly #zoom: () => number;
   readonly #workScheduler: WorkScheduler | undefined;
+  readonly #reflowText: ActiveEditorHandleInteractionOptions["reflowText"];
+  readonly #onGestureSettled: (() => void) | undefined;
   #connectionPreparation: ConnectionPreviewPreparation | undefined;
   #lastSample: PendingHandleSample | undefined;
   readonly #unsubscribeStore: () => void;
@@ -97,6 +82,7 @@ export class ActiveEditorHandleInteraction {
   #frameHandle: number | undefined;
   #pendingSample: PendingHandleSample | undefined;
   #previewMaximumBottom: number | undefined;
+  #disposed = false;
   public constructor(options: ActiveEditorHandleInteractionOptions) {
     this.#frameScheduler = options.frameScheduler;
     this.#history = options.history;
@@ -108,6 +94,7 @@ export class ActiveEditorHandleInteraction {
       options.renderer,
       options.pageToScreen,
       options.zoom,
+      (selected) => this.#editingFrame.preview(selected),
     );
     this.#sceneStore = options.sceneStore;
     this.#selectionFrames = options.selectionFrames ?? new SelectionFrameSession();
@@ -115,6 +102,8 @@ export class ActiveEditorHandleInteraction {
     this.#snapping = options.snapping ?? (() => undefined);
     this.#zoom = options.zoom;
     this.#workScheduler = options.workScheduler;
+    this.#reflowText = options.reflowText;
+    this.#onGestureSettled = options.onGestureSettled;
     this.#unsubscribeStore = subscribeSelectionHandleRefresh(
       options,
       () => {
@@ -128,6 +117,11 @@ export class ActiveEditorHandleInteraction {
   public get activePointerId(): number | undefined {
     return this.#active?.pointerId;
   }
+  public setTextEditingHeight(id: string, height: number | undefined, basis?: TextElementV2): void {
+    if (this.#disposed || !this.#editingFrame.set(id, height, basis)) return;
+    if (this.#active) this.#renderActivePreview(this.#active, this.#active.session.preview);
+    else this.renderSelection();
+  }
   public setKeyboardFocus(index: number | null): void {
     if (this.#presentation.keyboardFocus === index) return;
     this.#presentation.keyboardFocus = index;
@@ -136,28 +130,20 @@ export class ActiveEditorHandleInteraction {
   public get activePointerType(): PointerSample["pointerType"] | undefined {
     return this.#active?.pointerType;
   }
-  public cursorAt(pointer: PointerSample): ToolSystemCursor | undefined {
+  public cursorAt(pointer: PointerSample, visualOnly?: boolean): ToolSystemCursor | undefined {
     if (this.#active !== undefined) return this.#active.cursor;
-    const geometry = this.#cursorGeometry;
-    if (geometry === null) return undefined;
-    const handle = findSelectionHandle(
-      geometry.handles,
-      pointer,
-      this.#zoom(),
-      selectionCursorRadius(geometry.outline, pointer, this.#zoom()),
-    );
-    if (handle !== null) return selectionHandleCursor(handle, this.#cursorRotation);
-    if (selectionCursorContainsPoint(geometry.outline, pointer)) return "move";
-    if (this.#cursorLinear === undefined) return undefined;
-    this.#cursorLinearHit.begin(pointer, pointer.pointerType, this.#zoom());
-    this.#cursorLinearHit.consider(this.#cursorLinear.id, "content", this.#cursorLinear, 0);
-    return this.#cursorLinearHit.finish() === null ? undefined : "move";
+    return selectionCursorAt(this.#cursorGeometry, pointer, {
+      zoom: this.#zoom(),
+      rotation: this.#cursorRotation,
+      linear: this.#cursorLinear,
+      hit: this.#cursorLinearHit,
+      selected: this.#geometrySnapshot,
+      ...(visualOnly === undefined ? {} : { handlesOnly: true, visualOnly }),
+    });
   }
   public cancel(pointerId?: number): boolean {
     const active = this.#active;
-    if (active === undefined || (pointerId !== undefined && active.pointerId !== pointerId)) {
-      return false;
-    }
+    if (!active || (pointerId !== undefined && active.pointerId !== pointerId)) return false;
     this.#discardPendingSample();
     active.session.cancel();
     this.#layout?.finish(false);
@@ -165,6 +151,7 @@ export class ActiveEditorHandleInteraction {
     return true;
   }
   public dispose(): void {
+    this.#disposed = true;
     this.cancel();
     this.#unsubscribeStore();
     this.#geometrySelection = undefined;
@@ -180,23 +167,20 @@ export class ActiveEditorHandleInteraction {
     pointer: PointerSample,
     uniformScale = false,
     snappingInverted = false,
+    preferredHandle?: SelectionHandle,
   ): boolean {
     if (this.#active !== undefined) return false;
     const selected = this.selectionGeometry();
-    const frame = this.#selectionFrames.current(selected);
+    const frame = this.#editingFrame.resolve(selected, this.#selectionFrames);
     this.#cacheCursorGeometry(selected, frame);
     const handles = this.#cursorGeometry?.handles ?? [];
-    const handle = findSelectionHandle(
-      handles,
-      pointer,
-      this.#zoom(),
-      selectionCursorRadius(this.#cursorGeometry?.outline ?? null, pointer, this.#zoom()),
-    );
+    const handle = preferredHandle
+      ? preferredSelectionHandle(handles, preferredHandle)
+      : selectionCursorHandle(this.#cursorGeometry, pointer, this.#zoom(), selected);
     if (handle === null) return false;
     const elements = selected.map(({ element }) => element);
     const selectedIds = new Set(elements.map(({ id }) => id));
     const action = selectionHandleAction(handle, selected, frame);
-    const sessionStart = handle.point;
     const configuredSnapping = this.#snapping();
     const snapping =
       configuredSnapping === undefined ? undefined : structuredClone(configuredSnapping);
@@ -216,8 +200,8 @@ export class ActiveEditorHandleInteraction {
       connectedTransformIds,
       frame,
       grabOffset: {
-        x: pointer.x - sessionStart.x,
-        y: pointer.y - sessionStart.y,
+        x: pointer.x - handle.point.x,
+        y: pointer.y - handle.point.y,
       },
       pointerId: pointer.pointerId,
       pointerType: pointer.pointerType,
@@ -246,8 +230,9 @@ export class ActiveEditorHandleInteraction {
           },
           zoom: this.#zoom(),
         },
-        startPointer: sessionStart,
+        startPointer: handle.point,
         uniformScale,
+        ...(this.#reflowText === undefined ? {} : { reflowText: this.#reflowText }),
       }),
     };
     this.#model.setGestureActive(true);
@@ -269,6 +254,12 @@ export class ActiveEditorHandleInteraction {
     );
     this.#connectionPreparation.prepareConnected(connectedPreview, refreshConnections);
     return true;
+  }
+  public hitHandle(pointer: PointerSample, visualOnly = false): SelectionHandle | null {
+    const selected = this.selectionGeometry();
+    const frame = this.#editingFrame.resolve(selected, this.#selectionFrames);
+    this.#cacheCursorGeometry(selected, frame);
+    return selectionCursorHandle(this.#cursorGeometry, pointer, this.#zoom(), selected, visualOnly);
   }
   public pointerMove(
     pointer: PointerSample,
@@ -301,6 +292,7 @@ export class ActiveEditorHandleInteraction {
     this.#renderActivePreview(active, preview);
   }
   #renderActivePreview(active: ActiveHandleGesture, preview: SelectionHandlePreview): void {
+    const retainedTextIds = active.scalePreview.retainedTextIds(preview);
     const materializeScale = active.session.createScalePreviewMaterializer();
     const scaleMaterializer =
       materializeScale === undefined
@@ -312,8 +304,9 @@ export class ActiveEditorHandleInteraction {
       this.#renderer.clearProgressiveElementPreviews?.();
     }
     this.#presentation.renderTransform(
-      preview.transform?.kind === "scale" ? NO_SCALE_TRANSFORM_IDS : active.connectedTransformIds,
+      active.scalePreview.transformIds(preview, active.connectedTransformIds),
       preview.transform,
+      preview.textScaleBasis,
     );
     this.#updatePreviewBottom(
       this.#presentation.renderPreview(active, preview, connected, scale.elements),
@@ -323,7 +316,7 @@ export class ActiveEditorHandleInteraction {
         active.connectedTransformIds,
         scaleMaterializer,
         preview.transform,
-        connected.progressive,
+        connected.progressive ?? (retainedTextIds ? "connected" : undefined),
         connected.elements.length === 0 && connected.selectedPreviewIds.size === 0
           ? active.selectionSource
           : undefined,
@@ -357,7 +350,14 @@ export class ActiveEditorHandleInteraction {
           selectionFrames: this.#selectionFrames,
           previewMaximumBottom: this.#previewMaximumBottom,
         },
-        releaseConnectedPreview,
+        () => {
+          try {
+            releaseConnectedPreview?.();
+          } finally {
+            if (!this.#disposed) this.renderCameraSelection();
+            this.#onGestureSettled?.();
+          }
+        },
       );
       return true;
     } catch (error: unknown) {
@@ -365,14 +365,13 @@ export class ActiveEditorHandleInteraction {
       throw error;
     } finally {
       if (!prepared) releaseConnectedPreview?.();
-      this.#finish();
+      this.#finish(prepared);
     }
   }
-
   public renderSelection(): void {
     if (this.#active !== undefined) return;
     const selected = this.selectionGeometry();
-    const frame = this.#selectionFrames.current(selected);
+    const frame = this.#editingFrame.resolve(selected, this.#selectionFrames);
     this.#cacheCursorGeometry(selected, frame);
     this.#renderedSelection = this.#selection();
     this.#renderedSelectionSize = this.#renderedSelection.size;
@@ -420,7 +419,7 @@ export class ActiveEditorHandleInteraction {
         ? selected[0]!.element.rotation
         : (frame?.rotation ?? 0);
   }
-  #finish(): void {
+  #finish(retainOverlay = false): void {
     this.#connectionPreparation?.dispose();
     this.#connectionPreparation = undefined;
     this.#lastSample = undefined;
@@ -429,7 +428,8 @@ export class ActiveEditorHandleInteraction {
     this.#previewMaximumBottom = undefined;
     this.#model.setGestureActive(false);
     this.#presentation.clearPreviews();
-    this.renderCameraSelection();
+    if (!retainOverlay) this.renderCameraSelection();
+    if (!retainOverlay) this.#onGestureSettled?.();
   }
   #schedulePointerFrame(active: ActiveHandleGesture): void {
     if (this.#frameHandle !== undefined) return;

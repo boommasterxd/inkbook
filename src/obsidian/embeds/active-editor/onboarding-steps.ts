@@ -10,6 +10,7 @@ export function createOnboardingSteps(t: Translator): readonly CoachStep[] {
     step(t, "step-5", "draw", {}),
     step(t, "step-6", "highlighter", {}),
     step(t, "step-7", "straight-highlighter", {}),
+    step(t, "text", "text", {}),
     step(t, "step-8", "shape", {}),
     step(t, "step-9", "shape-picker", {}),
     step(t, "step-10", "style", {}),

@@ -1,4 +1,21 @@
 export const settingsControls = {
+  "settings.controls.text": "Text",
+  "settings.controls.textHelp": "Configure defaults for newly created text fields.",
+  "settings.controls.textFontFamilyHelp": "Choose the font family used by new text fields.",
+  "settings.controls.textFontSizeHelp":
+    "Set the font size in page units. Fractional sizes are preserved.",
+  "settings.controls.textColorHelp": "Choose the foreground color used by new text fields.",
+  "settings.controls.textOpacityHelp": "Set the foreground opacity used by new text fields.",
+  "settings.controls.textBoldHelp": "Make new text fields bold by default.",
+  "settings.controls.textItalicHelp": "Make new text fields italic by default.",
+  "settings.controls.textUnderlineHelp": "Underline new text fields by default.",
+  "settings.controls.textStrikethroughHelp": "Strike through new text fields by default.",
+  "settings.controls.textAlignmentHelp": "Choose the paragraph alignment used by new text fields.",
+  "settings.controls.textBackgroundColorHelp":
+    "Choose a background color or no background for new text fields.",
+  "settings.controls.textBackgroundOpacityHelp":
+    "Set the background opacity used by new text fields.",
+  "settings.options.text": "Text",
   "settings.controls.customFolder": "Custom vault folder",
   "settings.controls.customFolderHelp":
     "Enter a safe vault-relative folder for newly created Inkbook files.",

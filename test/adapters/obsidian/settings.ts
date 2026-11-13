@@ -85,21 +85,36 @@ export class Modal {
   }
 }
 
-class ButtonComponent {
-  readonly #element: HTMLButtonElement;
+export class ButtonComponent {
+  readonly buttonEl: HTMLButtonElement;
 
   public constructor(container: HTMLElement) {
-    this.#element = container.appendChild(createOwnedElement(container.ownerDocument, "button"));
-    this.#element.type = "button";
+    this.buttonEl = container.appendChild(createOwnedElement(container.ownerDocument, "button"));
+    this.buttonEl.type = "button";
   }
 
   public setButtonText(text: string): this {
-    this.#element.textContent = text;
+    this.buttonEl.textContent = text;
+    return this;
+  }
+
+  public setIcon(icon: string): this {
+    this.buttonEl.setAttribute("data-icon", icon);
+    return this;
+  }
+
+  public setTooltip(tooltip: string): this {
+    this.buttonEl.setAttribute("aria-label", tooltip);
+    return this;
+  }
+
+  public setDisabled(disabled: boolean): this {
+    this.buttonEl.disabled = disabled;
     return this;
   }
 
   public onClick(callback: () => void): this {
-    this.#element.addEventListener("click", callback);
+    this.buttonEl.addEventListener("click", callback);
     return this;
   }
 }

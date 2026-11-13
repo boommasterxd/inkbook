@@ -13,11 +13,17 @@ import {
   runInteractionFrames,
 } from "../../interaction-refresh-profile";
 
-it("coalesces viewport correction with two geometry reads with bounded work", () => {
+function observeSheetOcclusion(fixture: ReturnType<typeof createPhoneSheetEditableFixture>) {
+  const surface = fixture.input.closest<HTMLElement>(".inkbook-adaptive-panel")!;
+  return vi.spyOn(surface, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 300, 360, 200));
+}
+
+it("coalesces viewport correction with three geometry reads and cached occlusion with bounded work", () => {
   installObsidianDomHelpers();
   Platform.isPhone = true;
   const inset = installKeyboardInsetObserver();
   const fixture = createPhoneSheetEditableFixture(false);
+  const occlusionRead = observeSheetOcclusion(fixture);
   const events = Array.from({ length: INTERACTION_REFRESH_PROFILE.sampleCount }, () =>
     Array.from({ length: 3 }, () => new Event("resize")),
   );
@@ -31,10 +37,12 @@ it("coalesces viewport correction with two geometry reads with bounded work", ()
       }
       if (fixture.frames.pendingCount !== 1) incorrectlyQueuedFrames += 1;
       fixture.frames.runNext(0);
+      expect(fixture.session.occlusionTop).toBe(300);
     });
     expect(incorrectlyQueuedFrames).toBe(0);
     expect(fixture.inputReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(fixture.scrollReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(occlusionRead).toHaveBeenCalledTimes(INTERACTION_REFRESH_PROFILE.sampleCount);
   } finally {
     try {
       fixture.session.close("immediate");
@@ -52,6 +60,7 @@ it("bounds focused-field reads across viewport retargets and performs one final 
   Platform.isPhone = true;
   vi.useFakeTimers();
   const fixture = createPhoneSheetEditableFixture(false, "full");
+  const occlusionRead = observeSheetOcclusion(fixture);
   try {
     for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
       fixture.viewport.height = frame % 2 === 0 ? 300 : 400;
@@ -65,9 +74,12 @@ it("bounds focused-field reads across viewport retargets and performs one final 
     expect(fixture.scrollReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     await fixture.advanceMotion(300);
     expect(fixture.frames.pendingCount).toBe(1);
+    occlusionRead.mockReturnValue(new DOMRect(0, 180, 360, 270));
     fixture.frames.runNext(0);
     expect(fixture.inputReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount + 1);
     expect(fixture.scrollReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount + 1);
+    expect(occlusionRead).toHaveBeenCalledTimes(INTERACTION_REFRESH_PROFILE.sampleCount + 1);
+    expect(fixture.session.occlusionTop).toBe(180);
     expect(fixture.frames.pendingCount).toBe(0);
     fixture.session.close("immediate");
     await fixture.advanceMotion(300);

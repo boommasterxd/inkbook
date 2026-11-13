@@ -29,15 +29,19 @@ export function activeWorkspaceScene(
 export function recordWorkspaceMarkdownHistory(
   snapshot: WorkspaceEditorCoordinatorSnapshot,
   presentations: ReadonlyMap<string, WorkspaceMountedPresentation>,
-  sourcePath: string,
-  pane: HTMLElement,
-): void {
+  change: { readonly sourcePath: string; readonly pane: HTMLElement },
+): boolean {
   const current = snapshot.current;
-  if (current?.phase !== "active" || current.attachment === undefined) return;
+  if (current?.phase !== "active" || current.attachment === undefined) return false;
   const mounted = presentations.get(presentationAttachmentKey(current.attachment));
-  if (mounted !== undefined && ownsMarkdownEditorChange(mounted.attachment, sourcePath, pane)) {
+  if (
+    mounted !== undefined &&
+    ownsMarkdownEditorChange(mounted.attachment, change.sourcePath, change.pane)
+  ) {
     mounted.scene?.recordMarkdownHistory();
+    return true;
   }
+  return false;
 }
 
 export function ownsMarkdownEditorChange(

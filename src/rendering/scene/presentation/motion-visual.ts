@@ -5,12 +5,26 @@ import { PRESENTATION_ATTRIBUTES, pathPresentation } from "../content/element-pr
 import { SVG_NAMESPACE } from "../constants";
 import { positionedTransform } from "../content/stroke-position";
 import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
+import { setTextMotionOrigin } from "../content/mounted-text";
 
 export interface MotionVisual {
   readonly bytes: number;
   readonly targets: readonly MotionVisualTarget[];
-  readonly nodes: readonly SVGPathElement[];
+  readonly nodes: readonly SVGElement[];
 }
+
+interface MotionGeometryReader {
+  readonly path: (element: InkElementV1) => readonly SvgPathPart[] | undefined;
+  readonly text: (
+    element: InkElementV1,
+    maximumNodes: number,
+    maximumBytes: number,
+  ) =>
+    | { readonly root: SVGGElement; readonly nodes: readonly SVGElement[]; readonly bytes: number }
+    | undefined;
+}
+type GeometryReader =
+  ((element: InkElementV1) => readonly SvgPathPart[] | undefined) | MotionGeometryReader;
 
 interface MotionVisualTarget {
   readonly node: SVGElement;
@@ -25,15 +39,26 @@ export function createMotionVisual(
   elements: readonly InkElementV1[],
   remainingPaths: number,
   remainingBytes: number,
-  readCanonicalPath?: (element: InkElementV1) => readonly SvgPathPart[] | undefined,
+  reader?: GeometryReader,
 ): MotionVisual {
-  const nodes: SVGPathElement[] = [];
+  const nodes: SVGElement[] = [];
   const targets: MotionVisualTarget[] = [];
   let bytes = 0;
   for (const element of elements) {
     if (motionBudgetExhausted(nodes.length, bytes, remainingPaths, remainingBytes)) {
       return { bytes, nodes, targets };
     }
+    if (element.kind === "text") {
+      bytes += appendTextVisual(parent, element, {
+        reader,
+        remainingPaths: remainingPaths - nodes.length,
+        remainingBytes: remainingBytes - bytes,
+        nodes,
+        targets,
+      });
+      continue;
+    }
+    const readCanonicalPath = typeof reader === "function" ? reader : reader?.path;
     const canonical = readCanonicalPath?.(element);
     const parts = canonical ?? buildElementPathParts(element);
     const grouped = element.kind === "stroke" && element.style.pressureEnabled;
@@ -69,6 +94,27 @@ export function createMotionVisual(
     }
   }
   return { bytes, nodes, targets };
+}
+
+function appendTextVisual(
+  parent: SVGGElement,
+  element: InkElementV1,
+  context: {
+    readonly reader: GeometryReader | undefined;
+    readonly remainingPaths: number;
+    readonly remainingBytes: number;
+    readonly nodes: SVGElement[];
+    readonly targets: MotionVisualTarget[];
+  },
+): number {
+  if (typeof context.reader !== "object") return 0;
+  const snapshot = context.reader.text(element, context.remainingPaths, context.remainingBytes);
+  if (snapshot === undefined) return 0;
+  parent.append(snapshot.root);
+  context.nodes.push(...snapshot.nodes);
+  const position = element.kind === "text" ? setTextMotionOrigin(snapshot.root, element) : "";
+  context.targets.push({ node: snapshot.root, opacity: 1, renderedOpacity: 1, position });
+  return snapshot.bytes;
 }
 
 function appendMotionPath(

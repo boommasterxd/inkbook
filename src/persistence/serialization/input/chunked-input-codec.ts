@@ -8,10 +8,8 @@ import {
 import type { InkSnapshotV1 } from "../../../domain/schema/public";
 import { FILE_SCHEMA_LIMITS, MAX_JSON_DEPTH } from "../../../domain/schema/public";
 import { jsonContainerBudget, jsonNodeBudget } from "../../../domain/schema/validation-internals";
-import {
-  validateEditableSafeSvgPrelude,
-  type SafeSvgPrelude,
-} from "../../documents/safe-svg-validator";
+import type { SafeSvgPrelude } from "../../documents/safe-svg-validator";
+import { SvgInputPrelude } from "./svg-input-prelude";
 import { backgroundFitsStaticLimit } from "../output/background";
 import { validateParsedMetadata } from "./parsed-metadata-validation";
 import {
@@ -24,8 +22,15 @@ import {
   type ChunkedInkbookInputOptions,
   type ChunkedInputCheckpoint,
 } from "./chunked-input-types";
-import { positiveInputInteger, inputFailure as failure } from "./chunked-input-utils";
+import {
+  positiveInputInteger,
+  inputFailure as failure,
+  metadataSliceEnd,
+  staticInputFailure,
+} from "./chunked-input-utils";
+import { requiresTextLengthRewrite } from "./text-length-rewrite";
 import { isCanonicalLockedHeight } from "../output/locked-height";
+import { prepareValidatedTextFontBindings } from "./validated-text-font-bindings";
 import { ChunkedInputHash } from "./chunked-input-hash";
 import type { MigratedSnapshot } from "../metadata/document-migration";
 import type { DocumentCodecResult, ParsedInkbookDocument } from "../types";
@@ -37,9 +42,7 @@ import {
 
 const DEFAULT_INPUT_SLICE_BYTES = 256 * 1024;
 const JSON_STRING_SCRATCH_CHARACTERS = 16 * 1024;
-const MAXIMUM_PREFIX_CHARACTERS = 64 * 1024;
 const METADATA_INPUT_CODE_UNITS_PER_STEP = 16 * 1024;
-
 const IMMEDIATE_CHUNKED_INPUT_CHECKPOINT: ChunkedInputCheckpoint = () => undefined;
 
 export type { ChunkedInkbookInputOptions, ChunkedInputCheckpoint };
@@ -63,7 +66,7 @@ export class ChunkedInkbookInputParser {
   #failure: DocumentCodecResult<never> | null = null;
   #migrated: MigratedSnapshot | null = null;
   #maximumStaticChunkCharacters = 0;
-  #prefix = "";
+  readonly #prefix = new SvgInputPrelude();
   #prelude: SafeSvgPrelude | null = null;
   #runtimeSnapshot: InkSnapshotV1 | null = null;
   #state: "cancelled" | "collecting" | "finishing" | "finished" = "collecting";
@@ -203,7 +206,14 @@ export class ChunkedInkbookInputParser {
           derivations: this.#migrated.derivations,
           hash,
           lockedHeight: this.#prelude.lockedHeight,
-          requiresCanonicalRewrite: this.#prelude.requiresCanonicalRewrite,
+          requiresCanonicalRewrite:
+            this.#prelude.requiresCanonicalRewrite ||
+            (await requiresTextLengthRewrite(
+              this.#runtimeSnapshot,
+              this.#staticMatcher,
+              this.#safeStaticProof,
+              () => this.#runCheckpoint() ?? undefined,
+            )),
           snapshot: this.#runtimeSnapshot,
           sourceVersion: this.#migrated.sourceVersion,
         },
@@ -309,37 +319,30 @@ export class ChunkedInkbookInputParser {
     if (this.#streamPhase === "prefix") return this.#consumePrefix(input);
     if (this.#streamPhase === "metadata") return this.#consumeMetadata(input);
     if (!(await this.#writeStaticChunk(input))) {
-      return this.#staticFailure();
+      return staticInputFailure(this.#staticMatcher?.failure);
     }
     return { ok: true, value: undefined };
   }
 
   async #consumePrefix(input: string): Promise<DocumentCodecResult<undefined>> {
-    const prefixCapacity = MAXIMUM_PREFIX_CHARACTERS - this.#prefix.length;
-    this.#prefix += input.slice(0, prefixCapacity);
-    let candidateEnd = this.#prefix.indexOf(">");
-    while (candidateEnd >= 0) {
-      const candidate = this.#prefix.slice(0, candidateEnd + 1);
-      const prelude = validateEditableSafeSvgPrelude(candidate);
-      if (prelude !== null) {
-        const remaining = this.#prefix.slice(candidateEnd + 1) + input.slice(prefixCapacity);
-        this.#prefix = "";
-        this.#prelude = prelude;
-        this.#streamPhase = "metadata";
-        return this.#consumeMetadata(remaining);
-      }
-      candidateEnd = this.#prefix.indexOf(">", candidateEnd + 1);
+    const steps = this.#prefix.write(input);
+    let step = steps.next();
+    while (!step.done) {
+      await this.#runCheckpoint();
+      step = steps.next();
     }
-    if (input.length > prefixCapacity) {
-      return failure("invalid-svg", "Document SVG prefix exceeds its bounded envelope.");
-    }
-    return { ok: true, value: undefined };
+    const parsed = step.value;
+    if (!parsed.ok) return parsed;
+    if (parsed.value === null) return { ok: true, value: undefined };
+    this.#prelude = parsed.value.prelude;
+    this.#streamPhase = "metadata";
+    return this.#consumeMetadata(parsed.value.remaining);
   }
 
   async #consumeMetadata(input: string): Promise<DocumentCodecResult<undefined>> {
     let offset = 0;
     while (offset < input.length) {
-      const end = metadataSliceEnd(input, offset);
+      const end = metadataSliceEnd(input, offset, METADATA_INPUT_CODE_UNITS_PER_STEP);
       const result = this.#metadata.consume(input.slice(offset, end));
       offset = end;
       if (result.kind === "invalid") {
@@ -368,7 +371,8 @@ export class ChunkedInkbookInputParser {
     if (!migrated.ok) return migrated;
     const initialized = await this.#initializeStaticMatcher(migrated.value);
     if (!initialized.ok) return initialized;
-    if (!(await this.#writeStaticChunk(metadata.trailing))) return this.#staticFailure();
+    if (!(await this.#writeStaticChunk(metadata.trailing)))
+      return staticInputFailure(this.#staticMatcher?.failure);
     return this.#consumeStaticRemainder(input, offset);
   }
 
@@ -379,7 +383,8 @@ export class ChunkedInkbookInputParser {
     let offset = initialOffset;
     while (offset < input.length) {
       const end = Math.min(offset + METADATA_INPUT_CODE_UNITS_PER_STEP, input.length);
-      if (!(await this.#writeStaticChunk(input.slice(offset, end)))) return this.#staticFailure();
+      if (!(await this.#writeStaticChunk(input.slice(offset, end))))
+        return staticInputFailure(this.#staticMatcher?.failure);
       offset = end;
       if (offset < input.length) {
         const pending = this.#runCheckpoint();
@@ -403,6 +408,12 @@ export class ChunkedInkbookInputParser {
       return failure("migration-failed", "Root and snapshot source versions do not match.");
     }
     const snapshot = migrated.snapshot;
+    const bound = await prepareValidatedTextFontBindings(
+      snapshot,
+      prelude,
+      () => this.#runCheckpoint() ?? undefined,
+    );
+    if (!bound.ok) return bound;
     if (snapshot.revision !== prelude.revision) {
       return failure("revision-mismatch", "Root and snapshot revisions do not match.");
     }
@@ -427,22 +438,18 @@ export class ChunkedInkbookInputParser {
       this.#safeStaticProof !== undefined
         ? null
         : this.#staticValidation === "safe"
-          ? new StreamingSafeStaticValidator(() => this.#runCheckpoint() ?? undefined)
+          ? new StreamingSafeStaticValidator(
+              () => this.#runCheckpoint() ?? undefined,
+              prelude.version,
+            )
           : new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
-    this.#runtimeSnapshot = snapshot;
+    this.#runtimeSnapshot = bound.value.snapshot;
+    if (bound.value.requiresCanonicalRewrite)
+      this.#prelude = { ...prelude, requiresCanonicalRewrite: true };
     this.#streamPhase = "static";
-    this.#adoption.start(snapshot, migrated.derivations, this.#onValidatedSnapshot);
+    this.#adoption.start(bound.value.snapshot, migrated.derivations, this.#onValidatedSnapshot);
     this.#throwIfCancelled();
     return { ok: true, value: undefined };
-  }
-
-  #staticFailure(): DocumentCodecResult<never> {
-    return this.#staticMatcher?.failure === "invalid-svg"
-      ? failure("invalid-svg", "Document does not satisfy the safe SVG envelope.")
-      : failure(
-          "static-path-mismatch",
-          "Static SVG paths do not match the canonical snapshot rendering.",
-        );
   }
 
   async #flushDecoder(): Promise<DocumentCodecResult<undefined>> {
@@ -483,17 +490,11 @@ export class ChunkedInkbookInputParser {
     this.#stagedSampleEncodings?.clear();
     this.#inputHash.release();
     this.#metadata.release();
-    this.#prefix = "";
+    this.#prefix.clear();
+    this.#prelude = null;
   }
 
   #markFinished(): void {
     if (this.#state !== "cancelled") this.#state = "finished";
   }
-}
-
-function metadataSliceEnd(input: string, offset: number): number {
-  let end = Math.min(offset + METADATA_INPUT_CODE_UNITS_PER_STEP, input.length);
-  const trailing = input.charCodeAt(end - 1);
-  if (end < input.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
-  return end;
 }

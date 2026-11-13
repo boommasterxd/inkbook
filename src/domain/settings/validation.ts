@@ -1,3 +1,4 @@
+import { loadTextDefaults } from "./text-defaults";
 import {
   ARROW_NODES,
   CLOSED_SHAPE_TOOLS,
@@ -306,6 +307,7 @@ export function loadToolDefaults(
   diagnostics: SettingsDiagnostic[],
 ): ToolDefaultsV1 {
   const keys = [
+    "text",
     "select",
     "pen",
     "highlighter",
@@ -322,6 +324,7 @@ export function loadToolDefaults(
     return structuredClone(fallback);
   }
   return {
+    text: loadTextDefaults(input.text, fallback.text, diagnostics),
     select: validOrDefault(
       input.select,
       fallback.select,

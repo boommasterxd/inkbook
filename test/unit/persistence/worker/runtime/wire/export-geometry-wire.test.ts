@@ -22,6 +22,50 @@ function context() {
   return { signal: new AbortController().signal, checkpoint: () => undefined };
 }
 
+function encodeInputProof(type: "unlock" | "prepare-export-geometry", proof: SafeStaticProof) {
+  const encoded = encodeRuntimeRequest({
+    type,
+    input: "<svg/>",
+    safeStaticProof: proof,
+    identity: { ...identity, purpose: type === "unlock" ? "unlock" : "preflight" },
+  });
+  const wire = structuredClone(encoded.value);
+  if (wire.type !== "unlock" && wire.type !== "prepare-export-geometry")
+    throw new Error("Wrong input channel.");
+  return wire;
+}
+
+it("preserves known text-run counts and legacy unknown proofs through both input channels", async () => {
+  for (const count of [undefined, 0, 2]) {
+    for (const type of ["unlock", "prepare-export-geometry"] as const) {
+      const proof =
+        count === undefined
+          ? SafeStaticProof.fromTrustedProducer("a".repeat(64), 6)
+          : SafeStaticProof.fromTrustedProducer("a".repeat(64), 6, count);
+      const wire = encodeInputProof(type, proof);
+      if (count === undefined)
+        expect(wire.trustedSafeStatic).not.toHaveProperty("unadjustedTextRuns");
+      else expect(wire.trustedSafeStatic?.unadjustedTextRuns).toBe(count);
+      const decoded = await decodeRuntimeRequestChunked(wire, context());
+      if (decoded.type !== "unlock" && decoded.type !== "prepare-export-geometry")
+        throw new Error("Wrong input channel.");
+      expect(SafeStaticProof.isAuthentic(decoded.safeStaticProof)).toBe(true);
+      expect(decoded.safeStaticProof?.unadjustedTextRuns).toBe(count);
+    }
+  }
+});
+
+it("rejects negative and nonfinite text-run counts received on either input channel", async () => {
+  for (const count of [-1, Number.NaN]) {
+    for (const type of ["unlock", "prepare-export-geometry"] as const) {
+      const proof = SafeStaticProof.fromTrustedProducer("a".repeat(64), 6, 0);
+      const wire = encodeInputProof(type, proof);
+      Object.assign(wire.trustedSafeStatic!, { unadjustedTextRuns: count });
+      await expect(decodeRuntimeRequestChunked(wire, context())).rejects.toThrow(TypeError);
+    }
+  }
+});
+
 describe("export geometry worker wire", () => {
   it("encodes string input cooperatively without splitting a surrogate pair", async () => {
     const input = "a".repeat(16 * 1024 - 1) + "🖋" + "ü";

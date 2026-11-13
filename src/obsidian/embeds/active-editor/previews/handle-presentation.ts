@@ -1,7 +1,7 @@
 import { selectionPreviewMatrix } from "../../../../editor/selection/transform/selection-preview-matrix";
 import type { ProgressivePreviewPurpose } from "../../../../rendering/scene/presentation/connected-preview-cohort";
-import { calculateElementBounds } from "../../../../domain/geometry/public";
-import type { InkElementV1, PointV1 } from "../../../../domain/schema/public";
+import { calculateElementBounds, normalizeRotation } from "../../../../domain/geometry/public";
+import type { InkElementV1, PointV1, TextElementV2 } from "../../../../domain/schema/public";
 import type { ProgressivePreviewTransform } from "../../../../rendering/scene/presentation/progressive-element-preview";
 import type { PreviewBoundsTransform } from "../../../../rendering/scene/types";
 import {
@@ -41,6 +41,7 @@ export interface HandleInteractionRenderer {
     d: string | null,
     fill?: "accent" | "none",
     handles?: string | null,
+    retainedTextFeedback?: boolean,
   ): void;
   setSnapMarkerPath(d: string | null): void;
   setPreviewTransform(
@@ -49,7 +50,7 @@ export interface HandleInteractionRenderer {
     version: number,
     strokeWidth?: "preserve" | "scale",
     transformBounds?: PreviewBoundsTransform,
-    matrix?: ProgressivePreviewTransform["matrix"],
+    matrix?: ProgressivePreviewTransform["matrix"] | ProgressivePreviewTransform,
   ): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }
@@ -71,6 +72,9 @@ export class SelectionHandlePresentation {
     renderer: HandleInteractionRenderer,
     pageToScreen: (point: PointV1) => PointV1,
     zoom: () => number,
+    private readonly editingFrame?: (
+      selected: readonly SelectedElementGeometry[],
+    ) => OrientedSelectionFrame | null,
   ) {
     this.#renderer = renderer;
     this.#pageToScreen = pageToScreen;
@@ -92,6 +96,7 @@ export class SelectionHandlePresentation {
     selected: readonly SelectedElementGeometry[],
     geometry: SelectionOverlayGeometry | null,
     snap: SelectionHandlePreview["snapGuide"] = null,
+    retainedTextFeedback = false,
   ): SelectionOutline | null {
     const paths = selectionOverlayPaths(
       selected,
@@ -102,11 +107,9 @@ export class SelectionHandlePresentation {
       },
       geometry,
     );
-    this.#renderer.setSelectionOverlayPath(
-      paths.outline,
-      selectionOverlayFill(selected),
-      paths.handles,
-    );
+    const args = [paths.outline, selectionOverlayFill(selected), paths.handles] as const;
+    if (retainedTextFeedback) this.#renderer.setSelectionOverlayPath(...args, true);
+    else this.#renderer.setSelectionOverlayPath(...args);
     this.#renderer.setSnapMarkerPath(
       snap === null ? null : selectionSnapGuidePath(snap, this.#pageToScreen),
     );
@@ -136,11 +139,11 @@ export class SelectionHandlePresentation {
         : exactOverlay.length > 1
           ? createSelectionFrameAtRotation(
               exactOverlay.map(({ element }) => element),
-              context.frame?.rotation ?? 0,
+              previewFrameRotation(context.frame, preview.transform),
             )
           : null;
     const basePreviewElements =
-      preview.transform === null
+      preview.transform === null || preview.textScaleBasis !== undefined
         ? uniquePreviewElements(preview.exactElements, connected.elements)
         : preview.exactPreviewTruncated
           ? connected.elements
@@ -155,13 +158,19 @@ export class SelectionHandlePresentation {
     this.#renderConnectedPreview(connected, preview.transform);
     const previewFrame = exactOverlay.length === 0 ? preview.previewFrame : null;
     const selected = exactOverlay.length === 0 ? context.selected : exactOverlay;
+    const editingFrame = this.editingFrame?.(selected);
     const geometry = selectionOverlayGeometry(
       selected,
       this.#zoom(),
-      exactOverlay.length === 0 && previewFrame === null ? preview.transform : null,
-      exactOverlay.length === 0 ? (previewFrame ?? context.frame) : exactFrame,
+      previewOverlayTransform(preview, exactOverlay.length, editingFrame),
+      editingFrame ?? (exactOverlay.length === 0 ? (previewFrame ?? context.frame) : exactFrame),
     );
-    const outline = this.renderGeometry(selected, geometry, preview.snapGuide);
+    const outline = this.renderGeometry(
+      selected,
+      geometry,
+      preview.snapGuide,
+      preview.textScaleBasis !== undefined,
+    );
     return previewMaximumBottom(exactGeometry, connected.elements, outline);
   }
 
@@ -215,6 +224,7 @@ export class SelectionHandlePresentation {
   public renderTransform(
     ids: readonly string[],
     transform: SelectionPreviewTransform | null,
+    textBasis?: TextElementV2,
   ): void {
     this.#version += 1;
     this.#renderer.setPreviewTransform(
@@ -222,10 +232,47 @@ export class SelectionHandlePresentation {
       transformString(transform),
       this.#version,
       transform?.kind === "scale" ? "preserve" : "scale",
-      transform === null ? undefined : selectionPreviewBounds(transform),
-      selectionPreviewMatrix(transform),
+      transform === null
+        ? undefined
+        : textBasis === undefined
+          ? selectionPreviewBounds(transform)
+          : (_bounds, padding) =>
+              selectionPreviewBounds(transform)(calculateElementBounds(textBasis), padding),
+      textBasis === undefined
+        ? selectionPreviewMatrix(transform)
+        : {
+            matrix: selectionPreviewMatrix(transform)!,
+            textBasis,
+            transform: transformString(transform)!,
+            inverse:
+              transform?.kind === "scale"
+                ? transformString({
+                    ...transform,
+                    factors: { x: 1 / transform.factors.x, y: 1 / transform.factors.y },
+                  })!
+                : "",
+          },
     );
   }
+}
+
+function previewOverlayTransform(
+  preview: SelectionHandlePreview,
+  exactCount: number,
+  editingFrame: OrientedSelectionFrame | null | undefined,
+): SelectionPreviewTransform | null {
+  return preview.textScaleBasis !== undefined ||
+    (exactCount === 0 && (editingFrame || preview.previewFrame === null))
+    ? preview.transform
+    : null;
+}
+
+function previewFrameRotation(
+  frame: OrientedSelectionFrame | null,
+  transform: SelectionPreviewTransform | null,
+): number {
+  const delta = transform?.kind === "rotate" ? transform.degrees : 0;
+  return normalizeRotation((frame?.rotation ?? 0) + delta);
 }
 
 function previewMaximumBottom(

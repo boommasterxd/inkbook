@@ -11,6 +11,10 @@ import {
 import { ChunkedSha256 } from "../chunked-output-sha256";
 import type { MigratedSnapshot } from "./document-migration";
 import type { DocumentCodecResult } from "../types";
+import { canonicalFontResource, snapshotTextResources } from "../output/text-fonts";
+import { boundedJsonFragments } from "./bounded-json-fragments";
+import { metadataSliceEnd } from "../input/chunked-input-utils";
+import { bindSnapshotFontResources, textFontBindingMode } from "../../fonts/bound-font-resources";
 
 const encoder = new TextEncoder();
 const HASH_INPUT_CHARACTERS = 64 * 1024;
@@ -74,7 +78,7 @@ function canonicalMetadataMatches(
   encoding: SnapshotMetadataEncoding,
 ): boolean {
   let offset = 0;
-  for (const fragment of canonicalMetadataFragments(snapshot, encoding)) {
+  for (const fragment of canonicalMetadataFragments(snapshot, encoding, false)) {
     if (!input.startsWith(fragment, offset)) return false;
     offset += fragment.length;
   }
@@ -89,7 +93,7 @@ export function validateCurrentMetadataIntegrity(
   encoding: SnapshotMetadataEncoding = COMPACT_METADATA_ENCODING,
   actualMetadataHash?: string,
 ): DocumentCodecResult<undefined> {
-  if (migrated.sourceVersion !== 1) return { ok: true, value: undefined };
+  if (migrated.sourceVersion < 1) return { ok: true, value: undefined };
   if (
     validation === "canonical" &&
     !canonicalMetadataMatches(metadataText, migrated.snapshot, encoding)
@@ -123,18 +127,42 @@ function hashFragments(fragments: Iterable<string>): string {
   return hash.digestHex();
 }
 
-export function metadataPrefix(revision: number, page: PageV1): string {
+export function metadataPrefix(
+  revision: number,
+  page: PageV1,
+  snapshot?: InkSnapshotV1,
+  preserveResourceOrder = false,
+): string {
+  const resources =
+    snapshot === undefined
+      ? {}
+      : preserveResourceOrder
+        ? { fontResources: snapshot.fontResources?.map(canonicalFontResource) }
+        : snapshotTextResources(snapshot);
+  const version =
+    snapshot?.version === 2 && snapshot.elements.some((element) => element.kind === "text") ? 2 : 1;
+  const fonts =
+    resources.fontResources === undefined
+      ? ""
+      : `,"fontResources":${[...boundedJsonFragments(resources.fontResources.map(({ data: _data, ...descriptor }) => descriptor))].join("")}`;
   return (
-    `{"format":"inkbook","version":1,"revision":${revision},` +
-    `"page":${JSON.stringify(canonicalPage(page))},"elements":[`
+    `{"format":"inkbook","version":${version},"revision":${revision},` +
+    `"page":${JSON.stringify(canonicalPage(page))}${fonts},"elements":[`
   );
 }
 
 function* canonicalMetadataFragments(
   snapshot: InkSnapshotV1,
   encoding: SnapshotMetadataEncoding = COMPACT_METADATA_ENCODING,
+  normalizeBindings = true,
 ): Iterable<string> {
-  yield metadataPrefix(snapshot.revision, snapshot.page);
+  if (normalizeBindings) snapshot = bindSnapshotFontResources(snapshot);
+  yield metadataPrefix(
+    snapshot.revision,
+    snapshot.page,
+    snapshot,
+    !normalizeBindings && textFontBindingMode(snapshot) === "legacy",
+  );
   for (let index = 0; index < snapshot.elements.length; index += 1) {
     if (index > 0) yield ",";
     const element = snapshot.elements[index]!;
@@ -185,7 +213,11 @@ function* completeMetadataByteFragments(
   prefix: string,
   elements: Iterable<Uint8Array>,
 ): Iterable<Uint8Array> {
-  yield encoder.encode(prefix);
+  for (let start = 0; start < prefix.length;) {
+    const end = metadataSliceEnd(prefix, start, HASH_INPUT_CHARACTERS);
+    yield encoder.encode(prefix.slice(start, end));
+    start = end;
+  }
   let first = true;
   for (const element of elements) {
     if (!first) yield COMMA_BYTES;

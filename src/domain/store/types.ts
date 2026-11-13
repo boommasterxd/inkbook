@@ -170,6 +170,8 @@ export interface CreateOptions {
 export interface SnapshotMaterialization {
   readonly page: PageV1;
   readonly revision: number;
+  readonly version?: 1 | 2;
+  readonly fontResources?: InkSnapshotV1["fontResources"];
 }
 
 export type MaterializedSnapshot = InkSnapshotV1;

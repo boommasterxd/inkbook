@@ -1,12 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { CoalescedExportTarget } from "../../../../src/persistence/worker/coalesced-export";
+import { fontResource } from "../clipboard/fixtures";
 
 interface ElementRecord {
   readonly id: string;
   readonly value: number;
 }
 
+it("retains only the latest immutable font resources across coalesced deltas", () => {
+  const target = new CoalescedExportTarget<ElementRecord, never>(0, ({ id }) => id);
+  const first = fontResource();
+  target.record({ modelRevision: 1, fontResources: [first] });
+  first.data = "mutated";
+  target.record({ modelRevision: 2 });
+  const retained = target.materialize({});
+  expect(retained).toMatchObject({ fontResources: [fontResource()] });
+  if (retained.type !== "incremental") throw new Error("Expected an incremental plan.");
+  expect(Object.isFrozen(retained.fontResources?.[0])).toBe(true);
+  target.record({ modelRevision: 3, fontResources: [] });
+  expect(target.materialize({})).toMatchObject({ fontResources: [] });
+  target.requireFullSnapshot(3);
+  expect(target.materialize({ snapshot: {} })).not.toHaveProperty("fontResources");
+});
 describe("coalesced export target", () => {
   it("keeps latest element and page values while removals win within a delta", () => {
     const target = new CoalescedExportTarget<ElementRecord, { height: number }>(4, ({ id }) => id);

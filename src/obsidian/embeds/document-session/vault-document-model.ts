@@ -2,6 +2,7 @@ import { derivePageExtent } from "../../../domain/geometry/public";
 import {
   validateInkPageV1,
   MAX_DERIVED_HEIGHT,
+  type FontResourceV2,
   type InkElementV1,
   type InkSnapshotV1,
 } from "../../../domain/schema/public";
@@ -58,6 +59,8 @@ export function createVaultAutosaveSession(
     readonly identity: SessionIdentity;
     readonly page: () => InkSnapshotV1["page"];
     readonly store: ElementStore;
+    readonly fontResources?: () => readonly FontResourceV2[];
+    readonly formatVersion?: () => 1 | 2;
   },
 ): AutosaveCoordinator {
   return createAutosaveSession({
@@ -95,7 +98,10 @@ export function createVaultAutosaveSession(
     },
     integritySnapshot: () => ({
       format: "inkbook",
-      version: 1,
+      version: options.formatVersion?.() ?? 1,
+      ...(options.fontResources === undefined
+        ? {}
+        : { fontResources: [...options.fontResources()] }),
       page: options.page(),
       revision: options.currentRevision(),
       elements: ["highlight", "content"].flatMap((band) =>
@@ -108,6 +114,10 @@ export function createVaultAutosaveSession(
       options.store.materializeSnapshot({
         page: options.page(),
         revision: options.currentRevision(),
+        version: options.formatVersion?.() ?? 1,
+        ...(options.fontResources === undefined
+          ? {}
+          : { fontResources: [...options.fontResources()] }),
       }),
     vault: options.files,
     workerEpoch: options.workerEpoch,
@@ -115,6 +125,7 @@ export function createVaultAutosaveSession(
 }
 
 export function createVaultClipboardCoordinator(options: {
+  readonly ensureFontResources?: (resources: readonly FontResourceV2[]) => void | Promise<void>;
   readonly autosave: () => AutosaveCoordinator | undefined;
   readonly disposed: () => boolean;
   readonly executor: () => DocumentRuntimePort | undefined;
@@ -124,6 +135,9 @@ export function createVaultClipboardCoordinator(options: {
   readonly workerEpoch: () => number;
 }): SessionClipboardCoordinator {
   return new SessionClipboardCoordinator({
+    ...(options.ensureFontResources === undefined
+      ? {}
+      : { ensureFontResources: options.ensureFontResources }),
     disposed: options.disposed,
     executor: options.executor,
     recoverExecutorFailure: () => options.autosave()?.recoverWorkerExecutor() ?? false,

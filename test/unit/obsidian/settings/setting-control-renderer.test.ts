@@ -18,6 +18,8 @@ import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage"
 import { SettingDefinitionRenderer } from "../../../../src/obsidian/settings/setting-definition-renderer";
 import { refreshSettingsView } from "../../../../src/obsidian/settings/settings-view-refresh";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import type { PluginFontLibrary } from "../../../../src/obsidian/fonts/plugin-font-library";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -45,6 +47,54 @@ function mount(definition: SettingDefinitionRender, container = document.body): 
   const setting = new Setting(container).setName(definition.name);
   return definition.render(setting, group) ?? (() => undefined);
 }
+
+it("opens font management from the Text defaults picker instead of a standalone settings group", () => {
+  const store = new InkbookSettingsStore(
+    { loadData: async () => createBuiltInSettings(), saveData: vi.fn() },
+    { loadLocalStorage: () => createBuiltInDeviceSettings(), saveLocalStorage: vi.fn() },
+  );
+  const openFontManager = vi.fn();
+  const tab = new InkbookSettingTab(
+    {} as ConstructorParameters<typeof InkbookSettingTab>[0],
+    {} as ConstructorParameters<typeof InkbookSettingTab>[1],
+    store,
+    undefined,
+    undefined,
+    {
+      openFontManager,
+      fontLibrary: {
+        choices: () => [],
+        library: { list: () => [] },
+      } as unknown as PluginFontLibrary,
+      workScheduler: () => new TestWorkScheduler(),
+    },
+  );
+  const definitions = tab.getSettingDefinitions();
+  expect(
+    definitions.some(
+      (item) => "heading" in item && item.heading === store.localization.t("fonts.group"),
+    ),
+  ).toBe(false);
+  const dispose = mount(findRender(definitions, store.localization.t("settings.controls.text")));
+  try {
+    document.querySelector<HTMLButtonElement>(".inkbook-settings-tool-trigger")!.click();
+    const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    const confirmedFamily = tab.getControlValue("toolDefaults.text.fontFamily");
+    trigger.click();
+    const action = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.getAttribute("aria-label") === store.localization.t("fonts.manage"),
+    )!;
+    expect(action.closest('[role="listbox"]')).toBeNull();
+    action.click();
+    expect(openFontManager).toHaveBeenCalledExactlyOnceWith(trigger);
+    expect(trigger.isConnected).toBe(true);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(trigger);
+    expect(tab.getControlValue("toolDefaults.text.fontFamily")).toBe(confirmedFamily);
+  } finally {
+    dispose();
+  }
+});
 
 it("restores the correct native reset focus and action after groups rebuild in a new order", () => {
   const host = { getControlValue: () => false, setControlValue: () => undefined };
@@ -256,7 +306,7 @@ it("validates native hold fields, preserves disabled values and resets only thei
   slider = document.querySelector<HTMLInputElement>(
     'input[type="range"][aria-label="Movement tolerance"]',
   )!;
-  expect([field.value, field.min, field.max, field.step]).toEqual(["12", "1", "32", "1"]);
+  expect([field.value, field.min, field.max, field.step]).toEqual(["20", "1", "32", "1"]);
   field.focus();
   field.value = "32";
   field.dispatchEvent(new Event("input"));

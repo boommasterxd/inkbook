@@ -131,6 +131,7 @@ describe("safe-static proof trust and validation boundaries", () => {
     expect(encoded.value.trustedSafeStatic).toEqual({
       outputHash: proof.outputHash,
       totalBytes: proof.totalBytes,
+      unadjustedTextRuns: proof.unadjustedTextRuns,
     });
     const received = decodeUnlockRequest(encoded.value).safeStaticProof;
     expect(SafeStaticProof.isAuthentic(received)).toBe(true);

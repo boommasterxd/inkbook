@@ -33,6 +33,7 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
   readonly #rootLabel: string;
   #page: PhoneSheetPage | undefined;
   readonly #localeUpdates: (() => void)[] = [];
+  #contentCleanups: (() => void)[] = [];
   #unsubscribeLabel: (() => void) | undefined;
   #pending: PhoneSheetPage | undefined;
   #rootFocus: HTMLElement | undefined;
@@ -65,16 +66,15 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
       return;
     }
     const { scroll } = this.#options;
-    this.#localeUpdates.length = 0;
-    const content = page.createContent({
-      ...this.#options.lifecycle,
-      registerLocaleUpdate: (update) => this.#localeUpdates.push(update),
-    });
+    const prepared = this.#prepareContent(page);
+    this.#localeUpdates.splice(0, this.#localeUpdates.length, ...prepared.localeUpdates);
     this.#resetPageMotion();
     // Nested roots must unmount before the outer layout commit can detach their portals.
     this.#unsubscribeLabel?.();
     this.#unsubscribeLabel = undefined;
     this.#page?.dispose?.();
+    this.#disposeContent();
+    this.#contentCleanups = prepared.cleanups;
     this.#unsubscribeLabel = page.subscribeLabel?.(() =>
       this.#show(page.kind, page.readLabel?.() ?? page.label),
     );
@@ -90,7 +90,7 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
       scroll.replaceChildren();
       const body = scroll.createDiv({ cls: "inkbook-phone-sheet-page" });
       this.#createBack(body);
-      body.append(content);
+      body.append(prepared.content);
       this.#show(page.kind, page.readLabel?.() ?? page.label);
     }, this.#options.durationMs());
     const body = scroll.querySelector<HTMLElement>(".inkbook-phone-sheet-page");
@@ -125,6 +125,7 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     this.#unsubscribeLabel?.();
     this.#unsubscribeLabel = undefined;
     this.#page.dispose?.();
+    this.#disposeContent();
     this.#localeUpdates.length = 0;
     this.#options.layout.mutate(() => {
       this.#page = undefined;
@@ -165,6 +166,7 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     this.#unsubscribeLabel?.();
     this.#unsubscribeLabel = undefined;
     this.#page?.dispose?.();
+    this.#disposeContent();
     this.#page = undefined;
     this.#root.replaceChildren();
     this.#localeUpdates.length = 0;
@@ -172,6 +174,27 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
 
   #focus(target: HTMLElement | null | undefined): void {
     (target ?? this.#options.surface).focus({ preventScroll: true });
+  }
+
+  #disposeContent(): void {
+    for (const cleanup of this.#contentCleanups) cleanup();
+    this.#contentCleanups = [];
+  }
+
+  #prepareContent(page: PhoneSheetPage) {
+    const cleanups: (() => void)[] = [];
+    const localeUpdates: (() => void)[] = [];
+    try {
+      const content = page.createContent({
+        ...this.#options.lifecycle,
+        registerLocaleUpdate: (update) => localeUpdates.push(update),
+        registerCleanup: (cleanup) => cleanups.push(cleanup),
+      });
+      return { content, cleanups, localeUpdates };
+    } catch (error) {
+      cleanups.forEach((cleanup) => cleanup());
+      throw error;
+    }
   }
 
   #createBack(body: HTMLElement): void {

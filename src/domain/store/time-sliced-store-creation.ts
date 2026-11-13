@@ -9,6 +9,7 @@ import { DocumentCapacity } from "./records/document-capacity";
 import {
   createOwnedInitialRecordSteps,
   createOwnedValidatedInitialRecord,
+  createOwnedValidatedInitialRecordSteps,
 } from "./records/record-factory";
 import { MutationPreparationScheduler } from "./mutations/mutation-preparation-scheduler";
 import { prepareRuntimeElement } from "./records/runtime-element-preparation";
@@ -138,12 +139,12 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
       const cheap = isCheapValidatedRecord(element, derivation);
       const preparation = cheap ? 0 : yieldWhenRequested(this.#scheduler);
       if (preparation !== 0) this.#yields += await preparation;
-      if (!cheap && this.#isCancelled()) return this.#cancel();
-      if (this.#records.has(element.id) || batchIds.has(element.id)) {
-        throw new RangeError(`Duplicate element ID: ${element.id}`);
-      }
-      batchIds.add(element.id);
-      records.push(createOwnedValidatedInitialRecord(element, derivation));
+      if (this.#isCancelled()) return this.#cancel();
+      this.#reserveValidatedId(element.id, batchIds);
+      const preparedRecord = this.#prepareValidatedRecord(element, derivation);
+      const record = preparedRecord instanceof Promise ? await preparedRecord : preparedRecord;
+      if (record === "cancelled") return this.#cancel();
+      records.push(record);
       const commit =
         records.length >= MAX_HYDRATION_RECORDS_PER_SLICE || index === elements.length - 1;
       if (commit) {
@@ -152,7 +153,7 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
         records.length = 0;
       }
       cheapRecordsSinceCheck += 1;
-      if (cheap && !commit && cheapRecordsSinceCheck < HYDRATION_CLOCK_CHECK_INTERVAL) continue;
+      if (continueCheapRecords(cheap, commit, cheapRecordsSinceCheck)) continue;
       cheapRecordsSinceCheck = 0;
       const continuation = yieldWhenRequested(this.#scheduler);
       if (continuation !== 0) this.#yields += await continuation;
@@ -167,6 +168,18 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     this.#index.insertMany(records.map(({ bounds, element }) => ({ bounds, id: element.id })));
     this.#capacity.commit(capacityPatch);
     for (const record of records) this.#appendRecord(record);
+  }
+
+  #prepareValidatedRecord(element: InkElementV1, derivation: ElementValidationDerivation) {
+    return element.kind === "text"
+      ? this.#work.run(createOwnedValidatedInitialRecordSteps(element, derivation))
+      : createOwnedValidatedInitialRecord(element, derivation);
+  }
+
+  #reserveValidatedId(id: string, batchIds: Set<string>): void {
+    if (this.#records.has(id) || batchIds.has(id))
+      throw new RangeError(`Duplicate element ID: ${id}`);
+    batchIds.add(id);
   }
 
   #appendRecord(record: ElementRecord): void {
@@ -242,8 +255,13 @@ function isCheapValidatedRecord(
   element: InkElementV1,
   derivation: ElementValidationDerivation,
 ): boolean {
+  if (element.kind === "text") return false;
   return (
     element.kind !== "stroke" ||
     (derivation.strokeSampleExtrema !== undefined && element.points instanceof Float64Array)
   );
+}
+
+function continueCheapRecords(cheap: boolean, commit: boolean, count: number): boolean {
+  return cheap && !commit && count < HYDRATION_CLOCK_CHECK_INTERVAL;
 }

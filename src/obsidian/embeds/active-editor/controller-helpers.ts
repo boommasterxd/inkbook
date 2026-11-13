@@ -22,6 +22,7 @@ export function isTool(action: ToolbarAction): action is ToolId {
     action === "draw" ||
     action === "highlighter" ||
     action === "straight-highlighter" ||
+    action === "text" ||
     action === "shape"
   );
 }

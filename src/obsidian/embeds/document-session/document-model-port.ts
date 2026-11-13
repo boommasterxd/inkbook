@@ -1,7 +1,7 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { DocumentSaveStatus } from "../../../editor/session/session-port";
 import type { RenderBand } from "../../../domain/commands/render-bands";
-import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
+import type { FontResourceV2, InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type {
   AppliedElementMutation,
@@ -52,6 +52,8 @@ export class DocumentRevisionExhaustedError extends RangeError {
 }
 
 export interface EditableDocumentModel {
+  preparePendingInput?(): Promise<void>;
+  registerExportPreparation?(prepare: () => Promise<void>): () => void;
   getSaveStatus?(): DocumentSaveStatus;
   subscribeSaveStatus?(listener: () => void): () => void;
   prepareScenePaths?: import("../../../domain/geometry/prepared-scene-paths").ScenePathPreparation;
@@ -59,6 +61,9 @@ export interface EditableDocumentModel {
   waitForBackground?(): Promise<void> | undefined;
   isGestureActive?(): boolean;
   readonly mutationAvailability: DocumentMutationAvailability;
+  readonly fontResources?: readonly FontResourceV2[];
+  readonly formatVersion?: 1 | 2;
+  ensureFontResources?(resources: readonly FontResourceV2[]): void | Promise<void>;
   readonly page: InkSnapshotV1["page"];
   readonly revision: number;
   readonly store: ElementStore;

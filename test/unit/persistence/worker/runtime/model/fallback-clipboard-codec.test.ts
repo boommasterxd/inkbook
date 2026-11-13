@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { stroke } from "../../../../domain/schema/fixtures";
 import { encodeRuntimeSelection } from "../../../../../../src/persistence/clipboard/codec";
@@ -7,7 +7,82 @@ import {
   getValidatedClipboardBounds,
   validateClipboardPayloadSliced,
 } from "../../../../../../src/persistence/clipboard/validation";
+import { decodeClipboardChunked } from "../../../../../../src/persistence/worker/runtime/model/fallback-clipboard-codec";
+import { validFontResource, textElement } from "../../../clipboard/fixtures";
 
+it("retains the bound base face for formula-only clipboard layouts", async () => {
+  const element = textElement("$x$");
+  element.layout = {
+    version: 1,
+    lines: [],
+    math: [
+      {
+        start: 0,
+        end: 3,
+        display: false,
+        x: 0,
+        y: 0,
+        width: 10,
+        height: 10,
+        paths: [{ d: "M0 0L10 10" }],
+      },
+    ],
+  };
+  const font = await validFontResource();
+  const context = { checkpoint: () => undefined, signal: new AbortController().signal };
+  const expected = encodeRuntimeSelection([element], new Set([element.id]), [font]);
+  if (!expected.ok) throw new Error(expected.error.message);
+  const encoded = await encodeRuntimeSelectionChunked([element], [element.id], context, [font]);
+  if (!encoded.ok) throw new Error(encoded.error.message);
+  expect(encoded.value.customText).toBe(expected.value.customText);
+  expect(element.layout.baseFontResourceId).toBeUndefined();
+  const decoded = await decodeClipboardChunked({ customText: encoded.value.customText }, context);
+  if (!decoded.ok) throw new Error(decoded.error.message);
+  expect(decoded.value.payload.version).toBe(2);
+  expect(decoded.value.payload.fontResources?.map(({ id }) => id)).toEqual([font.id]);
+  expect(encoded.value.customText.split(font.data)).toHaveLength(2);
+  expect(decoded.value.payload.elements[0]!.element).toMatchObject({
+    kind: "text",
+    source: "$x$",
+    layout: { ...element.layout, baseFontResourceId: font.id },
+  });
+});
+
+it("slices large font and escaped text strings without changing canonical bytes", async () => {
+  const element = textElement('"\\\n😀'.repeat(2_000));
+  const font = await validFontResource();
+  const selected = new Set([element.id]);
+  const expected = encodeRuntimeSelection([element], selected, [font]);
+  if (!expected.ok) throw new Error(expected.error.message);
+  let checkpoints = 0;
+  const context = {
+    checkpoint: () => {
+      checkpoints += 1;
+      return undefined;
+    },
+    signal: new AbortController().signal,
+    workProfile: { inputByteLimit: 4096, nodeLimit: 64, outputByteLimit: 16384 },
+  };
+  const stringify = JSON.stringify;
+  let maximumString = 0;
+  const spy = vi.spyOn(JSON, "stringify").mockImplementation((value: unknown) => {
+    if (typeof value === "string") maximumString = Math.max(maximumString, value.length);
+    return stringify(value);
+  });
+  let encoded;
+  try {
+    encoded = await encodeRuntimeSelectionChunked([element], [element.id], context, [font]);
+  } finally {
+    spy.mockRestore();
+  }
+  expect(encoded).toMatchObject({ ok: true, value: { customText: expected.value.customText } });
+  expect(maximumString).toBeLessThanOrEqual(context.workProfile.inputByteLimit);
+  expect(checkpoints).toBeGreaterThan(
+    Math.floor(font.data.length / context.workProfile.inputByteLimit),
+  );
+  const decoded = await decodeClipboardChunked({ customText: expected.value.customText }, context);
+  expect(decoded).toMatchObject({ ok: true, value: { payload: expected.value.payload } });
+});
 describe("sliced clipboard fallback", () => {
   it("checks a long stroke during postparse validation and abandons cancelled bounds", async () => {
     const { createdAt: _createdAt, id: _id, ...body } = stroke();

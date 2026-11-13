@@ -22,6 +22,7 @@ import {
   immutableElementSteps,
   immutableReplacementSteps,
   takeImmutableElementOwnership,
+  takeImmutableElementOwnershipSteps,
 } from "./immutability";
 import type { ElementRecord } from "../types";
 import { preparedInsertionBounds } from "../mutations/prepared-insertion-element";
@@ -43,7 +44,7 @@ export function* createOwnedInitialRecordSteps(
   pointsPerStep = 256,
 ): Generator<void, ElementRecord> {
   return yield* initialRecordSteps(
-    takeImmutableElementOwnership(element),
+    yield* takeImmutableElementOwnershipSteps(element),
     preparedInsertionBounds(element),
     pointsPerStep,
   );
@@ -53,6 +54,13 @@ export function createOwnedValidatedInitialRecord(
   element: InkElementV1,
   derivation: ElementValidationDerivation,
 ): ElementRecord {
+  return drainRecordSteps(createOwnedValidatedInitialRecordSteps(element, derivation));
+}
+
+export function* createOwnedValidatedInitialRecordSteps(
+  element: InkElementV1,
+  derivation: ElementValidationDerivation,
+): Generator<void, ElementRecord> {
   const bounds = validatedElementDerivationBounds(element, derivation);
   if (element.kind === "stroke") {
     if (derivation.strokeSampleExtrema !== undefined) {
@@ -63,8 +71,9 @@ export function createOwnedValidatedInitialRecord(
       if (!validation.ok) throw new TypeError("Invalid stroke samples in runtime derivation.");
     }
   }
-  return drainRecordSteps(
-    initialRecordSteps(takeImmutableElementOwnership(element), Object.freeze({ ...bounds })),
+  return yield* initialRecordSteps(
+    yield* takeImmutableElementOwnershipSteps(element),
+    Object.freeze({ ...bounds }),
   );
 }
 
@@ -118,7 +127,7 @@ export function* createOwnedReplacementRecordSteps(
   pointsPerStep = 256,
 ): Generator<void, ElementRecord> {
   return yield* replacementRecordSteps(
-    takeImmutableElementOwnership(element),
+    yield* takeImmutableElementOwnershipSteps(element),
     current,
     geometryVersion,
     paintVersion,

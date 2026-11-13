@@ -111,8 +111,12 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
           transition={toolbarLayoutTransition(lifecycle.reduced)}
         />
       ) : null}
-      {props.definition.action === "style" ? (
-        <ToolbarStyleIcon state={props.styleIcon} />
+      {usesStyleIcon(props.definition.action, props.styleIcon) ? (
+        <ToolbarStyleIcon
+          state={props.styleIcon}
+          textPreview={action === "text"}
+          renderIcon={props.renderIcon}
+        />
       ) : (
         <ToolbarActionIcon
           confirmation={props.confirmation}
@@ -122,6 +126,10 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
       )}
     </motion.button>
   );
+}
+
+function usesStyleIcon(action: ToolbarAction, state: ToolbarStyleIconState): boolean {
+  return action === "style" || (action === "text" && state.text !== undefined);
 }
 
 function previewDescription(

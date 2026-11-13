@@ -148,7 +148,7 @@ describe("active editor temporary snapping modifier", () => {
     controller.handlePointerMove(pointerEvent("mouse", { altKey: false }));
     controller.handlePointerUp(pointerEvent("mouse", { altKey: true }));
 
-    expect(pointerDown).toHaveBeenCalledWith(expect.anything(), false, true);
+    expect(pointerDown).toHaveBeenCalledWith(expect.anything(), false, true, undefined);
     expect(pointerMove).toHaveBeenNthCalledWith(1, expect.anything(), false, false);
     expect(pointerMove).toHaveBeenNthCalledWith(2, expect.anything(), false, true);
     expect(setSnappingInverted).toHaveBeenLastCalledWith(7, null);

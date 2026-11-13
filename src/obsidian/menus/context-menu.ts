@@ -9,6 +9,7 @@ const CONTEXT_MENU_ICONS = {
   copy: "copy",
   cut: "scissors",
   delete: "trash-2",
+  editText: "type",
   eraseAll: CAUTION_ERASER_ICON_ID,
   paste: "clipboard-paste",
   sendBackward: "arrow-down",
@@ -29,6 +30,7 @@ export type ContextMenuAction =
   | "delete-embed";
 
 export interface ContextMenuState {
+  readonly canEditText?: boolean;
   readonly hasSelection: boolean;
   readonly canPaste: boolean;
   readonly canBringForward: boolean;
@@ -41,6 +43,7 @@ export interface ContextMenuState {
 }
 
 export interface ContextMenuHandlers {
+  readonly editText?: (() => void) | undefined;
   readonly copy: () => void;
   readonly cut: () => void;
   readonly delete: () => void;
@@ -107,6 +110,10 @@ function configureSelectionItems(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
+  if (state.canEditText === true && handlers.editText !== undefined) {
+    configureItem(menu, "editor.action.edit-text", CONTEXT_MENU_ICONS.editText, handlers.editText);
+    menu.addSeparator();
+  }
   configureItem(menu, "editor.action.copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
   configureItem(menu, "editor.action.cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
   if (state.canPaste) {
@@ -234,6 +241,14 @@ export function openContextMenu(
     state,
     {
       ...handlers,
+      ...(handlers.editText === undefined
+        ? {}
+        : {
+            editText: () => {
+              menu.close("handoff");
+              handlers.editText?.();
+            },
+          }),
       eraseAll: () => {
         // Restore focus before the confirmation dialog captures its return target.
         menu.close("handoff");

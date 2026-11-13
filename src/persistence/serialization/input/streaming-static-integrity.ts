@@ -3,10 +3,14 @@ import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public"
 
 import { serializeBackgroundPaths } from "../output/background";
 import { serializeElementPaths } from "../output/path-markup";
+import { serializeTextMarkupFragments } from "../output/text-markup";
 
 interface ExpectedToken {
   readonly allowLeadingWhitespace?: boolean;
   readonly text: string;
+  readonly legacyOptional?: true;
+  readonly legacyText?: string;
+  readonly legacyTexts?: readonly [string, string, string];
 }
 
 /**
@@ -20,6 +24,10 @@ export class StreamingStaticIntegrityMatcher {
   #finished = false;
   #offset = 0;
   #valid = true;
+  #legacyTextLengths = 0;
+  #alternatives: readonly string[] = [];
+  #possibleAlternatives = 0;
+  #alternativeComplete = false;
 
   public constructor(snapshot: InkSnapshotV1, lockedHeight: number) {
     this.#tokens = staticTokens(snapshot, lockedHeight)[Symbol.iterator]();
@@ -29,6 +37,10 @@ export class StreamingStaticIntegrityMatcher {
     return this.#failure;
   }
 
+  public get requiresCanonicalRewrite(): boolean {
+    return this.#legacyTextLengths > 0;
+  }
+
   public write(input: string): boolean {
     if (!this.#valid) return false;
     let cursor = 0;
@@ -36,6 +48,17 @@ export class StreamingStaticIntegrityMatcher {
       this.#advancePastEmptyTokens();
       if (this.#finished) return /^[ \t\r\n]*$/u.test(input.slice(cursor));
       const current = this.#current!;
+      if (this.#alternatives.length > 0) {
+        const consumed = this.#matchAlternative(input, cursor);
+        if (!this.#valid) return false;
+        cursor += consumed;
+        continue;
+      }
+      if (this.#offset === 0 && current.legacyOptional === true && input[cursor] === ">") {
+        this.#offset = current.text.length;
+        this.#legacyTextLengths++;
+        continue;
+      }
       if (
         this.#offset === 0 &&
         current.allowLeadingWhitespace === true &&
@@ -63,6 +86,26 @@ export class StreamingStaticIntegrityMatcher {
     return this.#finished;
   }
 
+  #matchAlternative(input: string, cursor: number): number {
+    let length = input.length - cursor;
+    for (const [index, alternative] of this.#alternatives.entries())
+      if (this.#possibleAlternatives & (1 << index))
+        length = Math.min(length, alternative.length - this.#offset);
+    const supplied = input.slice(cursor, cursor + length);
+    for (const [index, alternative] of this.#alternatives.entries()) {
+      if (supplied !== alternative.slice(this.#offset, this.#offset + length))
+        this.#possibleAlternatives &= ~(1 << index);
+    }
+    this.#valid = this.#possibleAlternatives !== 0;
+    this.#offset += length;
+    this.#alternativeComplete = this.#alternatives.some(
+      (alternative, index) =>
+        (this.#possibleAlternatives & (1 << index)) !== 0 && this.#offset === alternative.length,
+    );
+    if (this.#alternativeComplete && !(this.#possibleAlternatives & 1)) this.#legacyTextLengths++;
+    return length;
+  }
+
   #classifyMismatch(input: string, cursor: number, length: number): void {
     const text = this.#current!.text;
     if (!text.startsWith("</") || this.#offset > 1) return;
@@ -76,15 +119,30 @@ export class StreamingStaticIntegrityMatcher {
   }
 
   #advancePastEmptyTokens(): void {
-    while (this.#current === null || this.#offset === this.#current.text.length) {
+    while (
+      this.#current === null ||
+      (this.#alternatives.length === 0
+        ? this.#offset === this.#current.text.length
+        : this.#alternativeComplete)
+    ) {
       const next = this.#tokens.next();
       this.#offset = 0;
+      this.#alternatives = [];
+      this.#possibleAlternatives = 0;
+      this.#alternativeComplete = false;
       if (next.done) {
         this.#current = null;
         this.#finished = true;
         return;
       }
       this.#current = next.value;
+      if (next.value.legacyTexts !== undefined || next.value.legacyText !== undefined) {
+        this.#alternatives = [
+          next.value.text,
+          ...(next.value.legacyTexts ?? [next.value.legacyText!]),
+        ];
+        this.#possibleAlternatives = (1 << this.#alternatives.length) - 1;
+      }
       if (next.value.text.length > 0) return;
     }
   }
@@ -108,7 +166,8 @@ function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<
 
 function* elementTokens(elements: readonly InkElementV1[]): Iterable<ExpectedToken> {
   for (const element of elements) {
-    yield { text: serializeElementPaths(element).join("") };
+    if (element.kind === "text") yield* serializeTextMarkupFragments(element, true);
+    else yield { text: serializeElementPaths(element).join("") };
   }
 }
 

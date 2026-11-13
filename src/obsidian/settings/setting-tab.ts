@@ -1,3 +1,6 @@
+import { BUILT_IN_TEXT_FONT_OPTIONS } from "../menus/text-style-controls";
+import { FontOptionPreviews } from "../fonts/font-option-previews";
+import type { PluginFontLibrary } from "../fonts/plugin-font-library";
 import { bindElementLanguage } from "../../rendering/localization/element-language";
 import {
   PluginSettingTab,
@@ -36,6 +39,7 @@ import { holdToShapeGroup } from "./definitions/hold-to-shape-definitions";
 import { shortcutGroup } from "./shortcuts/shortcut-definitions";
 import { InkbookSettingsStore } from "./storage";
 import { drawingToolsGroup, shapesAndStructuresGroup } from "./definitions/tool-definitions";
+import type { ToolSectionValues } from "./definitions/tool-section";
 import type { InkImportSettingsAccess } from "./import/import-access";
 import { importSettingsGroup } from "./import/import-settings";
 import type { ImportHistoryState } from "./import/import-history";
@@ -45,8 +49,10 @@ export interface CustomFolderPort {
 }
 
 interface SettingsScheduling {
+  readonly openFontManager?: (trigger: HTMLButtonElement) => void;
   readonly lifetime?: AbortSignal;
   readonly inkImport?: InkImportSettingsAccess;
+  readonly fontLibrary?: PluginFontLibrary;
   readonly workScheduler?: (ownerWindow: Window | null) => WorkScheduler;
 }
 
@@ -83,6 +89,14 @@ export class InkbookSettingTab extends PluginSettingTab {
     plugin.register?.(bindElementLanguage(this.containerEl, store.localization));
     const unsubscribe = store.localization.subscribe(() => this.update());
     plugin.register?.(unsubscribe);
+  }
+
+  public get fontLibrary(): PluginFontLibrary | undefined {
+    return this.scheduling?.fontLibrary;
+  }
+
+  public get openFontManager(): ((trigger: HTMLButtonElement) => void) | undefined {
+    return this.scheduling?.openFontManager;
   }
 
   public override getControlValue(key: string): unknown {
@@ -122,15 +136,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
       workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
     };
-    const toolValues = {
-      t: this.store.localization.t,
-      viewState,
-      getDefaults: () => this.store.getVaultSettings().toolDefaults,
-      getMotion: () => this.store.getDeviceSettings().motion,
-      observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
-      workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
-      set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
-    };
+    const toolValues = this.toolSectionValues(viewState);
     const definitions = [
       generalGroup({
         t: this.store.localization.t,
@@ -204,6 +210,42 @@ export class InkbookSettingTab extends PluginSettingTab {
     return definitions.map((definition, index) =>
       Object.assign(definition, { settingsIdentity: `settings-group:${String(index)}` }),
     );
+  }
+
+  private toolSectionValues(viewState: SettingsViewState): ToolSectionValues {
+    return {
+      keymap: this.app.keymap,
+      createFontPreviews: (document: Document) => this.createFontOptionPreviews(document),
+      ...(this.openFontManager === undefined
+        ? {}
+        : {
+            fontManagementAction: {
+              label: () => this.store.localization.t("fonts.manage"),
+              onActivate: this.openFontManager,
+            },
+          }),
+      t: this.store.localization.t,
+      viewState,
+      getDefaults: () => this.store.getVaultSettings().toolDefaults,
+      getTextFontOptions: () => [
+        ...BUILT_IN_TEXT_FONT_OPTIONS,
+        ...(this.scheduling?.fontLibrary?.choices() ?? []),
+      ],
+      getMotion: () => this.store.getDeviceSettings().motion,
+      observeMotion: (listener: () => void) => this.store.subscribeDeviceSettings(listener),
+      workScheduler: (ownerWindow: Window | null) => this.scheduler(ownerWindow),
+      set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
+    };
+  }
+
+  private createFontOptionPreviews(document: Document): FontOptionPreviews {
+    return new FontOptionPreviews({
+      document,
+      scheduler: this.scheduler(document.defaultView),
+      ...(this.scheduling?.fontLibrary === undefined
+        ? {}
+        : { library: this.scheduling.fontLibrary }),
+    });
   }
 
   public scheduler(ownerWindow: Window | null): WorkScheduler {
@@ -292,6 +334,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       .updateVaultSettings((settings) => {
         settings.toolDefaults.select = cloneDefaults("select");
         settings.toolDefaults.pen = cloneDefaults("pen");
+        settings.toolDefaults.text = cloneDefaults("text");
         settings.toolDefaults.highlighter = cloneDefaults("highlighter");
         settings.toolDefaults.straightHighlighter = cloneDefaults("straightHighlighter");
         settings.toolDefaults.eraser = cloneDefaults("eraser");

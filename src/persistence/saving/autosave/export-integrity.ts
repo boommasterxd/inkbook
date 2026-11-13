@@ -9,6 +9,8 @@ import {
 import { CanonicalMetadataCache } from "../../serialization/metadata/canonical-metadata-cache";
 import { createMainThreadCheckpoint } from "../../scheduling/main-thread-checkpoint";
 import { adoptOwnedSvgOutput } from "../../scheduling/owned-svg-output";
+import { snapshotTextResources } from "../../serialization/output/text-fonts";
+import { matchesCanonicalFontOutput } from "../../serialization/output/font-output-binding";
 
 import type { AutosaveCoordinatorOptions } from "./types";
 
@@ -35,6 +37,7 @@ export class AutosaveExportIntegrity {
     workerManifest: DocumentIntegrityManifest,
     signal?: AbortSignal,
     isCurrent: () => boolean = () => true,
+    output?: string | Uint8Array,
   ): Promise<ExportIntegrityDecision> {
     let matches = false;
     try {
@@ -58,6 +61,12 @@ export class AutosaveExportIntegrity {
         workerManifest,
         deriveDocumentIntegrityManifestFromContentDigest(value, digest),
       );
+      if (matches)
+        matches = await matchesCanonicalFontOutput(
+          output,
+          snapshotTextResources(value).fontResources ?? [],
+          currentCheckpoint,
+        );
     } catch {
       // An invalid authoritative snapshot is an integrity failure, never a writable state.
     }

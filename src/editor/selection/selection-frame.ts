@@ -201,6 +201,18 @@ export function createSelectionFrameAtRotation(
   return completeFrame(createSelectionFrameAtRotationSteps(elements, rotation));
 }
 
+export async function createSelectionFrameAtRotationTimeSliced(
+  elements: readonly InkElementV1[],
+  rotation: number,
+  scheduler: TransformSliceScheduler,
+  selectedIds?: ReadonlySet<string>,
+): Promise<OrientedSelectionFrame | null> {
+  return prepareFrame(
+    createSelectionFrameAtRotationSteps(elements, rotation, selectedIds),
+    scheduler,
+  );
+}
+
 function* createSelectionFrameAtRotationSteps(
   elements: readonly InkElementV1[],
   rotation: number,

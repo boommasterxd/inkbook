@@ -208,6 +208,22 @@ function mountStaticExport(
   resource.published = true;
 }
 
+async function waitForExportFonts(document: Document, signal: AbortSignal): Promise<void> {
+  if (document.fonts === undefined) return;
+  signal.throwIfAborted();
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(new DOMException("Export font loading was cancelled.", "AbortError"));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    // FontFaceSet.ready includes the layout that discovers fonts in retained SVG references.
+    await Promise.race([document.fonts.ready, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
 /** Sectionless renderers receive complete, inert graphics without mounting a presentation. */
 export async function renderStaticMarkdownEmbeds(
   root: HTMLElement,
@@ -245,6 +261,7 @@ export async function renderStaticMarkdownEmbeds(
     if (candidates.length === 0) return;
     releaseSchedulingProfile = ports.acquireSchedulingProfile?.(owner);
     const drawings = new Map<string, ExportResource | false>();
+    let hasFonts = false;
     for (const candidate of candidates) {
       signal.throwIfAborted();
       const id = candidate.resolved.documentId;
@@ -265,8 +282,11 @@ export async function renderStaticMarkdownEmbeds(
       });
       if (!signal.aborted && root.contains(candidate.host)) {
         mountStaticExport(owner, resource, { host: candidate.host, pages, options });
+        hasFonts ||= resource.drawing.hasFonts === true;
       }
     }
+    if (hasFonts) await waitForExportFonts(root.ownerDocument, signal);
+    signal.throwIfAborted();
     owner.pagination.start();
   } catch (error: unknown) {
     if (!signal.aborted) throw error;

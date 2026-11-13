@@ -62,23 +62,27 @@ async function expectRuntimeMigrationCancellation(
 
 describe("document runtime migration", () => {
   it("requires a bounded source version on worker unlock results", () => {
-    expect(
-      isDocumentRuntimeWireResult({
-        lockedHeight: 348.6,
-        requiresCanonicalRewrite: false,
-        sourceVersion: 0,
-        type: "unlock-success",
-      }),
-    ).toBe(true);
+    for (const sourceVersion of [0, 2]) {
+      expect(
+        isDocumentRuntimeWireResult({
+          lockedHeight: 348.6,
+          requiresCanonicalRewrite: false,
+          sourceVersion,
+          type: "unlock-success",
+        }),
+      ).toBe(true);
+    }
     expect(isDocumentRuntimeWireResult({ sourceVersion: 0, type: "unlock-success" })).toBe(false);
-    expect(
-      isDocumentRuntimeWireResult({
-        lockedHeight: 348.6,
-        requiresCanonicalRewrite: false,
-        sourceVersion: 2,
-        type: "unlock-success",
-      }),
-    ).toBe(false);
+    for (const sourceVersion of [3, Number.NaN]) {
+      expect(
+        isDocumentRuntimeWireResult({
+          lockedHeight: 348.6,
+          requiresCanonicalRewrite: false,
+          sourceVersion,
+          type: "unlock-success",
+        }),
+      ).toBe(false);
+    }
   });
   it("adopts only the fully migrated version in worker and fallback paths", async () => {
     const input = versionZeroDocument();

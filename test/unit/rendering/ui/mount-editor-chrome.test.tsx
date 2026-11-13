@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { editorChromeLayoutKey } from "../../../../src/rendering/ui/editor-chrome-snapshot";
 import { mountEditorChrome } from "../../../../src/rendering/ui/mount-editor-chrome";
+import type { ToolbarStyleIconState } from "../../../../src/rendering/ui/style-icon";
 import { createEditorChromeProps } from "../../../fixtures/editor-chrome";
 
 const reactRoot = vi.hoisted(() => ({ render: vi.fn(), unmount: vi.fn() }));
@@ -73,5 +74,49 @@ it("publishes context previews through snapshot comparison and layout identity",
   mounted.update(explicitFalse);
   expect(reactRoot.render).toHaveBeenCalledTimes(3);
   expect(editorChromeLayoutKey(explicitFalse)).toBe(editorChromeLayoutKey(initial));
+  mounted.unmount();
+});
+
+it("publishes text format changes and deduplicates equivalent text icon states", () => {
+  const ownerDocument = {} as Document;
+  const initial = createEditorChromeProps(ownerDocument);
+  const mounted = mountEditorChrome({ ownerDocument } as HTMLElement, initial);
+  const text: NonNullable<ToolbarStyleIconState["text"]> = {
+    bold: false,
+    italic: false,
+    strikethrough: false,
+    underline: false,
+  };
+  let current = {
+    ...initial,
+    styleIcon: {
+      ...initial.styleIcon,
+      text,
+    },
+  };
+  mounted.update(current);
+  let renders = 2;
+  expect(reactRoot.render).toHaveBeenCalledTimes(renders);
+  for (const flag of ["bold", "italic", "strikethrough", "underline"] as const) {
+    current = {
+      ...current,
+      styleIcon: { ...current.styleIcon, text: { ...current.styleIcon.text, [flag]: true } },
+    };
+    mounted.update(current);
+    expect(reactRoot.render).toHaveBeenCalledTimes(++renders);
+    mounted.update({
+      ...current,
+      styleIcon: { ...current.styleIcon, text: { ...current.styleIcon.text } },
+    });
+    expect(reactRoot.render).toHaveBeenCalledTimes(renders);
+    current = {
+      ...current,
+      styleIcon: { ...current.styleIcon, text: { ...current.styleIcon.text, [flag]: null } },
+    };
+    mounted.update(current);
+    expect(reactRoot.render).toHaveBeenCalledTimes(++renders);
+  }
+  mounted.update(initial);
+  expect(reactRoot.render).toHaveBeenCalledTimes(++renders);
   mounted.unmount();
 });

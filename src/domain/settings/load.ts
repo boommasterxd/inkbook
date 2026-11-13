@@ -1,3 +1,4 @@
+import { loadFontLibrary } from "./font-library";
 import { createBuiltInDeviceSettings, createBuiltInSettings } from "./defaults";
 import { loadHoldToShapeSettings } from "./hold-to-shape";
 import { canonicalShortcutBinding, shortcutBindingSignature } from "./keyboard-shortcuts";
@@ -279,7 +280,12 @@ function migrateV3Settings(
   if (!isRecord(input) || input.version !== 3) {
     return { kind: "input", migratedFromV3: false, value: input };
   }
-  if (!hasExactKeys(input, LEGACY_VAULT_SETTINGS_KEYS)) {
+  if (
+    !hasExactKeys(input, [
+      ...LEGACY_VAULT_SETTINGS_KEYS,
+      ...("fontLibrary" in input ? ["fontLibrary"] : []),
+    ])
+  ) {
     return {
       kind: "failure",
       result: {
@@ -331,6 +337,7 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
   const result: SettingsLoadResult<InkbookSettingsV4> = {
     value: {
       version: 4,
+      fontLibrary: loadFontLibrary(value.fontLibrary, diagnostics),
       startupTool: validOrDefault(
         value.startupTool,
         fallback.startupTool,

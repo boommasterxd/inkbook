@@ -1,8 +1,10 @@
 import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
+import type { TextElementV2 } from "../../../domain/schema/public";
 import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
 import {
   createMountedElement,
   updatePreviewTransform,
+  retainTextScaleFeedback,
   type MountedSceneElement,
 } from "../content/mounted-element";
 import type { MountSlice } from "./mount-slice";
@@ -13,8 +15,10 @@ import { RemoteScenePaths } from "../content/remote-scene-paths";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "../types";
 import type { DetachedSceneElementCache } from "../content/detached-element-cache";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { SceneTextPreparation } from "../content/scene-text-preparation";
 
 export interface PreviewTransform {
+  readonly textBasis?: TextElementV2 | undefined;
   readonly matrix?: readonly [number, number, number, number, number, number] | undefined;
   readonly strokeWidthScale: number | null;
   readonly transform: string | null;
@@ -28,6 +32,7 @@ interface PendingPath {
 }
 
 interface MountPreparationOptions {
+  readonly mounted?: ReadonlyMap<string, MountedSceneElement>;
   readonly ownerDocument: Document;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly pathCache: ScenePathCache;
@@ -44,8 +49,10 @@ interface MountPreparationOptions {
 export class SceneMountPreparation {
   #pending: PendingPath | undefined;
   readonly #remote: RemoteScenePaths;
+  readonly #text: SceneTextPreparation;
 
   public constructor(private readonly options: MountPreparationOptions) {
+    this.#text = new SceneTextPreparation(options);
     this.#remote = new RemoteScenePaths(options.store, {
       ...(options.scheduler === undefined ? {} : { scheduler: options.scheduler }),
       ...(options.isViewport === undefined ? {} : { isViewport: options.isViewport }),
@@ -88,10 +95,15 @@ export class SceneMountPreparation {
   }
 
   public memoryUsage(): number {
-    return (this.#pending?.path.memoryUsage() ?? 0) + this.#remote.memoryUsage();
+    return (
+      (this.#pending?.path.memoryUsage() ?? 0) +
+      this.#remote.memoryUsage() +
+      this.#text.memoryUsage()
+    );
   }
 
   public cancel(retainVisible?: (id: string) => boolean): void {
+    this.#text.cancel();
     this.#remote.cancel(retainVisible);
     const pending = this.#pending;
     if (
@@ -113,6 +125,7 @@ export class SceneMountPreparation {
   }
 
   public release(id: string, deferRetarget = false): void {
+    this.#text.cancel(id);
     this.#remote.invalidate(id, deferRetarget);
     if (this.#pending?.id === id) this.cancelLocal();
   }
@@ -122,6 +135,7 @@ export class SceneMountPreparation {
   }
 
   public finish(id: string, version?: number): void {
+    this.#text.cancel(id);
     this.#remote.release(id, this.options.upcomingIds, version);
     if (this.#pending?.id === id && (version === undefined || this.#pending.version === version))
       this.cancelLocal();
@@ -142,9 +156,11 @@ export class SceneMountPreparation {
         record,
         parts,
         this.options.instrumentation,
+        this.#text.take(record.id),
       );
     }
-    if (preview !== undefined)
+    if (preview !== undefined) {
+      retainTextScaleFeedback(entry, preview.textBasis, preview.matrix);
       updatePreviewTransform(
         entry,
         preview.transform,
@@ -153,6 +169,7 @@ export class SceneMountPreparation {
         this.options.instrumentation,
         preview.matrix,
       );
+    }
     return entry;
   }
 
@@ -162,14 +179,26 @@ export class SceneMountPreparation {
     allowLocal = true,
     preemptLocal = false,
   ): readonly SvgPathPart[] | undefined {
-    const { pathCache, store } = this.options;
+    if (record.element.kind === "text") return this.prepareOther(record, slice, undefined);
+    const { store } = this.options;
     const pressure = store.pressureGeometry?.(record.id, record.geometryVersion);
     const cached = this.cachedPath(record, pressure);
     if (cached !== undefined) {
       this.finish(record.id, record.geometryVersion);
       return cached;
     }
-    if (record.element.kind !== "stroke") return pathCache.build(record.element, pressure);
+    if (record.element.kind !== "stroke") return this.prepareOther(record, slice, pressure);
+    return this.prepareStroke(record, slice, allowLocal, preemptLocal, pressure);
+  }
+
+  private prepareStroke(
+    record: SceneElementRecord,
+    slice: MountSlice,
+    allowLocal: boolean,
+    preemptLocal: boolean,
+    pressure: PreparedPressureGeometryPort | undefined,
+  ): readonly SvgPathPart[] | undefined {
+    const { pathCache } = this.options;
     if (preemptLocal && this.#pending?.id !== record.id) this.cancelLocal();
     if (this.#pending?.id !== record.id || this.#pending.version !== record.geometryVersion) {
       if (this.#pending !== undefined) return undefined;
@@ -207,5 +236,13 @@ export class SceneMountPreparation {
       pathCache.completePreparation(record.element, prepared, record.geometryVersion);
     }
     return prepared;
+  }
+  private prepareOther(
+    record: SceneElementRecord,
+    slice: MountSlice,
+    pressure: PreparedPressureGeometryPort | undefined,
+  ): readonly SvgPathPart[] | undefined {
+    if (record.element.kind === "text") return this.#text.prepare(record, slice) ? [] : undefined;
+    return this.options.pathCache.build(record.element, pressure);
   }
 }

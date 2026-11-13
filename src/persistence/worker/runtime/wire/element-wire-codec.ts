@@ -1,5 +1,6 @@
 import {
   captureRuntimeElementHeader,
+  captureRuntimeTextElementSteps,
   captureImmutableRuntimeElementHeader,
   attachCapturedStrokeSamples,
   copyStrokeSamplesToRuntimeSteps,
@@ -67,7 +68,7 @@ function* packElementsSteps(
   const records: PackedElement[] = [];
   for (let index = 0; index < elements.length; index += 1) {
     const source = elements[index]!;
-    const header = captureRuntimeElementHeader(source);
+    const header = yield* captureWireHeaderSteps(source);
     if (derivations !== undefined) assertMatchingDerivation(source, derivations[index]!);
     if (source.kind !== "stroke") records.push(header as unknown as NonStrokeElement);
     else {
@@ -84,6 +85,12 @@ function* packElementsSteps(
     if ((index + 1) % 64 === 0) yield;
   }
   return { pointBuffers, records };
+}
+
+function* captureWireHeaderSteps(source: InkElementV1): Generator<void, Record<string, unknown>> {
+  return Object.getOwnPropertyDescriptor(source, "kind")?.value === "text"
+    ? yield* captureRuntimeTextElementSteps(source)
+    : captureRuntimeElementHeader(source);
 }
 
 /** Only the identity-checked owned unlock channel may bypass repeated sample scans. */
@@ -137,9 +144,11 @@ function* unpackElementBuffersSteps(
   for (let recordIndex = 0; recordIndex < packed.records.length; recordIndex += 1) {
     const record = packed.records[recordIndex]!;
     const captured =
-      prepareElement === undefined
-        ? captureRuntimeElementHeader(record)
-        : captureImmutableRuntimeElementHeader(record, PACKED_STROKE_FIELDS);
+      Object.getOwnPropertyDescriptor(record, "kind")?.value === "text"
+        ? yield* captureRuntimeTextElementSteps(record)
+        : prepareElement === undefined
+          ? captureRuntimeElementHeader(record)
+          : captureImmutableRuntimeElementHeader(record, PACKED_STROKE_FIELDS);
     let element: InkElementV1;
     if (record.kind !== "stroke") element = captured as unknown as NonStrokeElement;
     else {

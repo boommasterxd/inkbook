@@ -30,6 +30,7 @@ export interface GestureControllerPorts {
   restoreTemporaryTool(tool: EditorTool): void;
   selectElement(elementId: string, mode: "add" | "preserve-or-replace" | "replace"): void;
   clearSelection(): void;
+  activateElement?(elementId: string): void;
   scrollNote(screenDeltaX: number, screenDeltaY: number): void;
   panPage(screenDeltaX: number, screenDeltaY?: number): void;
   revertNavigation(kind: "note-scroll" | "page-pan"): void;
@@ -100,6 +101,9 @@ export class GestureController {
         return;
       case "clear-selection":
         this.#ports.clearSelection();
+        return;
+      case "activate-element":
+        this.#ports.activateElement?.(effect.elementId);
         return;
       case "scroll-note":
         this.#ports.scrollNote(effect.screenDeltaX, effect.screenDeltaY);

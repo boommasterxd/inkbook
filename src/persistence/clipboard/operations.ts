@@ -322,6 +322,9 @@ function* planPasteInternalSteps(
     value: {
       ...grouped,
       elements: translated,
+      ...(options.decoded.payload.fontResources === undefined
+        ? {}
+        : { fontResources: options.decoded.payload.fontResources }),
       insertAtBandFront: true,
       activateTool: "select",
       commandTimestamp: options.commandTimestamp,

@@ -176,15 +176,29 @@ describe("InkbookSettingsStore persistence", () => {
   });
 
   it("persists resets to both scopes under the fixed local-storage key", async () => {
-    const vault = new VaultFake({ ...createBuiltInSettings(), selectionHighlightsEnabled: false });
+    const vault = new VaultFake({
+      ...createBuiltInSettings(),
+      selectionHighlightsEnabled: false,
+      holdToShape: { enabled: false, holdDurationMs: 600, jitterTolerancePx: 12 },
+    });
     const device = new DeviceFake(createBuiltInDeviceSettings());
     const store = new InkbookSettingsStore(vault, device);
     await store.load();
 
     expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(false);
+    expect(store.getVaultSettings().holdToShape).toEqual({
+      enabled: false,
+      holdDurationMs: 600,
+      jitterTolerancePx: 12,
+    });
     await store.resetAll();
 
     expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(true);
+    expect(store.getVaultSettings().holdToShape).toEqual({
+      enabled: true,
+      holdDurationMs: 400,
+      jitterTolerancePx: 20,
+    });
     expect(vault.saves).toEqual([createBuiltInSettings()]);
     expect(device.saves).toEqual([
       { key: DEVICE_SETTINGS_STORAGE_KEY, data: createBuiltInDeviceSettings() },

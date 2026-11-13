@@ -32,6 +32,9 @@ export function* migrateAndValidateDocumentSnapshotSteps(
   const migration = migrateSnapshotSequentiallySteps(
     value,
     createDocumentSnapshotMigrations(options, options.allowRuntimeStrokeBuffers === true),
+    typeof value === "object" && value !== null && "version" in value && value.version === 2
+      ? 2
+      : 1,
   );
   let migrationStep = migration.next();
   while (!migrationStep.done) {

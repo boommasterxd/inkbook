@@ -65,6 +65,9 @@ export const host = {
   "host.feedback.embed-paste-note-changed.title": "Paste stopped because the note changed.",
   "host.feedback.handwriting-inserted.title": "Handwriting inserted.",
   "host.feedback.history-change-failed.detail": "The drawing is unchanged. Try again.",
+  "host.feedback.text-preparation-failed.title": "The text could not be prepared.",
+  "host.feedback.text-preparation-failed.detail":
+    "Check the selected font and formula source, then try again.",
   "host.feedback.history-change-failed.title": "The history change couldn't be applied.",
   "host.feedback.history-lock-required.title": "Lock the drawing to continue undoing note changes.",
   "host.feedback.insertion-cleanup-failed.detail":

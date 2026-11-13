@@ -5,8 +5,24 @@ import type {
   OutlineStyleV1,
   ShapeStyleV1,
   StrokeStyleV1,
+  TextLayoutV2,
 } from "../../../../src/domain/schema/public";
 import { rewriteDocumentMetadata } from "../../../fixtures/persistence/metadata-rewrite";
+
+export function inlineFormulaLayout(): NonNullable<TextLayoutV2["math"]> {
+  return [
+    {
+      start: 0,
+      end: 3,
+      display: false,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      paths: [{ d: "M0 0L10 10L0 10Z" }],
+    },
+  ];
+}
 
 const strokeStyle: StrokeStyleV1 = {
   color: { type: "theme-text" },

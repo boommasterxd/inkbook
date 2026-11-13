@@ -11,8 +11,15 @@ import {
   type ShapeStyleV1,
   type StrokeStyleV1,
   type TableElementV1,
+  type FontResourceV2,
 } from "../../../domain/schema/public";
 import { copyValidatedSampleExtrema } from "../../../domain/schema/stroke-sample-extrema";
+import { canonicalTextElement, canonicalTextElementSteps } from "./text-canonical";
+import { snapshotTextResources } from "../output/text-fonts";
+import {
+  bindSnapshotFontResources,
+  bindTextElementFontResourcesSteps,
+} from "../../fonts/bound-font-resources";
 
 interface CanonicalElementBase {
   readonly createdAt: number;
@@ -27,11 +34,13 @@ export function canonicalSnapshot(
   preserveRuntimeStrokeBuffers = false,
   copyRuntimeStrokeBuffers = false,
 ): InkSnapshotV1 {
+  snapshot = bindSnapshotFontResources(snapshot);
   return {
     format: "inkbook",
-    version: 1,
+    version: snapshot.elements.some((element) => element.kind === "text") ? 2 : 1,
     revision: snapshot.revision,
     page: canonicalPage(snapshot.page),
+    ...snapshotTextResources(snapshot),
     elements: snapshot.elements.map((element) =>
       canonicalElement(element, preserveRuntimeStrokeBuffers, copyRuntimeStrokeBuffers),
     ),
@@ -69,6 +78,7 @@ export function canonicalElement(
     rotation: element.rotation,
     pivot: canonicalPoint(element.pivot),
   };
+  if (element.kind === "text") return canonicalTextElement(element);
   if (element.kind === "stroke") {
     return {
       ...base,
@@ -144,6 +154,33 @@ export function canonicalElement(
     height: element.height,
     style: canonicalShapeStyle(element.style),
   };
+}
+
+export function* canonicalElementSteps(
+  element: InkElementV1,
+  preserveRuntimeStrokeBuffers = false,
+  copyRuntimeStrokeBuffers = false,
+): Generator<void, InkElementV1> {
+  return element.kind === "text"
+    ? yield* canonicalTextElementSteps(element)
+    : canonicalElement(element, preserveRuntimeStrokeBuffers, copyRuntimeStrokeBuffers);
+}
+
+export function* canonicalElementWithFontResourcesSteps(
+  element: InkElementV1,
+  resources: readonly FontResourceV2[],
+  preserveRuntimeStrokeBuffers = false,
+  copyRuntimeStrokeBuffers = false,
+): Generator<void, InkElementV1> {
+  const bound =
+    element.kind === "text"
+      ? yield* bindTextElementFontResourcesSteps(element, resources)
+      : element;
+  return yield* canonicalElementSteps(
+    bound,
+    preserveRuntimeStrokeBuffers,
+    copyRuntimeStrokeBuffers,
+  );
 }
 
 function runtimeSamples<T extends Float64Array>(points: T, copy: boolean): T {

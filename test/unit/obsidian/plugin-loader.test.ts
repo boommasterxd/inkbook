@@ -14,6 +14,7 @@ const HOST_MODULES_KEY = "__inkbookHostModules";
 describe("plugin runtime loader", () => {
   it("provides every external module admitted by the runtime build", () => {
     expect(Object.keys(pluginRuntimeHostModules()).sort()).toEqual([
+      "@codemirror/commands",
       "@codemirror/language",
       "@codemirror/state",
       "@codemirror/view",

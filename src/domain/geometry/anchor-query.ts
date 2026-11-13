@@ -43,7 +43,12 @@ function localQueryBounds(target: AnchorTargetView, bounds: Bounds): Bounds {
 }
 
 function queryInsideBox(target: AnchorTargetView, bounds: Bounds): boolean {
-  if (target.kind !== "rectangle" && target.kind !== "table" && target.kind !== "ellipse")
+  if (
+    target.kind !== "rectangle" &&
+    target.kind !== "table" &&
+    target.kind !== "ellipse" &&
+    target.kind !== "text"
+  )
     return false;
   const width = target.kind === "table" ? tableWidth(target) : target.width;
   return (

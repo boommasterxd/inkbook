@@ -112,6 +112,9 @@ export function elementContainsPoint(
     return linearElementHit(element, point, tolerance);
   if (element.kind === "coordinate-system") return coordinateSystemHit(element, point, tolerance);
   if (element.kind === "table") return tableHit(element, point, tolerance);
+  if (element.kind === "text") {
+    return textBoxHit(element, point, tolerance);
+  }
   const radius = tolerance + element.style.outlineWidth / 2;
   if (element.kind === "ellipse") return ellipseHit(element, point, radius);
   const vertices = shapeVertices(element);
@@ -120,6 +123,19 @@ export function elementContainsPoint(
     (element.style.fillColor !== null &&
       element.style.fillOpacity > 0 &&
       pointInPolygon(point, vertices))
+  );
+}
+
+function textBoxHit(
+  element: Extract<InkElementV1, { kind: "text" }>,
+  point: PointV1,
+  tolerance: number,
+): boolean {
+  return (
+    point.x >= element.x - tolerance &&
+    point.x <= element.x + element.width + tolerance &&
+    point.y >= element.y - tolerance &&
+    point.y <= element.y + element.height + tolerance
   );
 }
 

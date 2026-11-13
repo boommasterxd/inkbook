@@ -1,4 +1,5 @@
 import { translatedStroke } from "../../../domain/geometry/stroke-position";
+import { scaledTextContent } from "../../../domain/geometry/text-scale";
 import {
   assertFinitePoint,
   canonicalPoint,
@@ -275,9 +276,16 @@ export function scaleElement(
   }
   const topLeft = scale({ x: element.x, y: element.y });
   const width = roundCanonical(element.width * factors.x);
-  const height = roundCanonical(element.height * factors.y);
+  const uniformText = element.kind === "text" && Math.abs(factors.x - factors.y) < 1e-9;
+  const scaled = uniformText
+    ? scaledTextContent(element, Math.max(0.001 / element.style.fontSize, factors.x), width)
+    : element;
+  const height =
+    element.kind === "text" && !uniformText
+      ? element.height
+      : roundCanonical(element.height * factors.y);
   return {
-    ...element,
+    ...scaled,
     x: topLeft.x,
     y: topLeft.y,
     width,

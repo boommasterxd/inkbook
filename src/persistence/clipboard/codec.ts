@@ -3,6 +3,7 @@ import type {
   ClipboardElementV1,
   InkClipboardV1,
   InkElementV1,
+  FontResourceV2,
 } from "../../domain/schema/public";
 import { MAX_JSON_DEPTH } from "../../domain/schema/public";
 import { CLIPBOARD_LIMITS, INKBOOK_CLIPBOARD_TEXT_PREFIX } from "./constants";
@@ -14,6 +15,9 @@ import type {
   EncodedClipboard,
 } from "./types";
 import { validateClipboardPayload, validateRuntimeClipboardPayload } from "./validation";
+import { usedFontResourcesSteps } from "../fonts/used-font-resources";
+import { bindTextElementFontResourcesSteps } from "../fonts/bound-font-resources";
+import { completeSerializationSteps } from "../serialization/output/serialization-model-preparation";
 
 const encoder = new TextEncoder();
 const PLAIN_TEXT_PREFIX_BYTES = encoder.encode(INKBOOK_CLIPBOARD_TEXT_PREFIX).byteLength;
@@ -89,16 +93,30 @@ const encodeSelectionInternal = (
   elementsInRenderOrder: readonly InkElementV1[],
   selectedIds: ReadonlySet<string>,
   allowRuntimeStrokeBuffers: boolean,
+  fontResources: readonly FontResourceV2[],
 ): ClipboardResult<EncodedClipboard> => {
   if (selectedIds.size === 0) {
     return { ok: false, error: { code: "empty-selection", message: "No elements are selected." } };
   }
-  const selectedElements = elementsInRenderOrder.filter(({ id }) => selectedIds.has(id));
+  let selectedElements = elementsInRenderOrder.filter(({ id }) => selectedIds.has(id));
   if (selectedElements.length !== selectedIds.size) {
     return {
       ok: false,
       error: { code: "missing-selection", message: "The selection contains an unknown element." },
     };
+  }
+  let selectedFonts: FontResourceV2[];
+  try {
+    selectedElements = selectedElements.map((element) =>
+      element.kind === "text"
+        ? completeSerializationSteps(bindTextElementFontResourcesSteps(element, fontResources))
+        : element,
+    );
+    selectedFonts = completeSerializationSteps(
+      usedFontResourcesSteps(selectedElements, fontResources),
+    );
+  } catch {
+    return schemaFailure("The selection references an unavailable font face.");
   }
   const documentIdToClipId = new Map(
     selectedElements.map(({ id }, index) => [id, compactClipId(index)] as const),
@@ -107,10 +125,12 @@ const encodeSelectionInternal = (
     clipId: compactClipId(index),
     element: createBody(element, documentIdToClipId),
   }));
+  const hasText = selectedElements.some((element) => element.kind === "text");
   const payload: InkClipboardV1 = {
     format: "inkbook-elements",
-    version: 1,
+    version: hasText ? 2 : 1,
     elements: clipboardElements,
+    ...(hasText ? { fontResources: selectedFonts } : {}),
   };
   const validation = allowRuntimeStrokeBuffers
     ? validateRuntimeClipboardPayload(payload)
@@ -121,8 +141,9 @@ const encodeSelectionInternal = (
 export const encodeRuntimeSelection = (
   elementsInRenderOrder: readonly InkElementV1[],
   selectedIds: ReadonlySet<string>,
+  fontResources: readonly FontResourceV2[] = [],
 ): ClipboardResult<EncodedClipboard> =>
-  encodeSelectionInternal(elementsInRenderOrder, selectedIds, true);
+  encodeSelectionInternal(elementsInRenderOrder, selectedIds, true, fontResources);
 
 function serializeClipboardPayload(payload: InkClipboardV1): string {
   return serializeCanonicalJson(payload);

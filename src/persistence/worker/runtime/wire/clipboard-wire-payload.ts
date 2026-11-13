@@ -64,7 +64,12 @@ export function unpackClipboardPayload(payload: PackedClipboardPayload): InkClip
   if (used.size !== payload.pointBuffers.length) {
     throw new RangeError("Every clipboard point buffer must be referenced exactly once.");
   }
-  return { format: payload.format, version: payload.version, elements };
+  return {
+    format: payload.format,
+    version: payload.version,
+    elements,
+    ...(payload.fontResources === undefined ? {} : { fontResources: payload.fontResources }),
+  };
 }
 
 function hasPackedClipboardArrays(payload: PackedClipboardPayload): boolean {

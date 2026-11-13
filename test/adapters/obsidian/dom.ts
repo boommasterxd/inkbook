@@ -42,6 +42,8 @@ export function installObsidianDomHelpers(): void {
       element.className = Array.isArray(normalized.cls) ? normalized.cls.join(" ") : normalized.cls;
     }
     if (typeof normalized?.text === "string") element.textContent = normalized.text;
+    if (normalized?.type !== undefined) element.setAttribute("type", normalized.type);
+    if (normalized?.value !== undefined) element.setAttribute("value", normalized.value);
     return element;
   };
   nodePrototype.createEl = function (tag, options) {

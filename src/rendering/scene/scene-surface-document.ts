@@ -1,5 +1,11 @@
 const htmlNamespace = "http://www.w3.org/1999/xhtml";
 
+export interface SceneDocumentAssets {
+  readonly ready: Promise<void>;
+  prepare(): Promise<void>;
+  dispose(): void;
+}
+
 export function createSceneFrame(ownerDocument: Document): {
   readonly frame: HTMLIFrameElement;
   readonly style: HTMLStyleElement;
@@ -19,6 +25,7 @@ export function createSceneFrame(ownerDocument: Document): {
 }
 
 export function configureSceneDocument(drawingDocument: Document): HTMLStyleElement {
+  drawingDocument.title = "Inkbook";
   const style = drawingDocument.createElementNS(htmlNamespace, "style") as HTMLStyleElement;
   style.textContent = `html, body {
     margin: 0; padding: 0; overflow: hidden; background: transparent;

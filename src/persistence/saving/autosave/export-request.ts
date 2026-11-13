@@ -146,6 +146,7 @@ function incrementalPayload(
   plan: Extract<CoalescedExportPlan<InkElementV1, PageV1, InkSnapshotV1>, { type: "incremental" }>,
 ) {
   return {
+    ...(plan.fontResources === undefined ? {} : { fontResources: plan.fontResources }),
     ...(plan.changedElementDerivations === undefined
       ? {}
       : { changedElementDerivations: plan.changedElementDerivations }),

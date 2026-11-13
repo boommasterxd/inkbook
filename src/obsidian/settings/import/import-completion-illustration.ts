@@ -5,7 +5,10 @@ import type { ImportViewContext } from "./import-findings";
 import { createImportIllustration } from "./import-illustration";
 
 /** One finite, decorative confirmation; semantic results never wait for motion. */
-export function renderImportCompletion(container: HTMLElement, context: ImportViewContext): void {
+export function renderImportCompletion(
+  container: HTMLElement,
+  context: Pick<ImportViewContext, "readMotion" | "observeMotion" | "own">,
+): void {
   const namespace = "http://www.w3.org/2000/svg";
   const graphic = createImportIllustration(container, "inkbook-import-completion");
   const circle = container.ownerDocument.createElementNS(namespace, "circle");

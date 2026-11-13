@@ -24,6 +24,8 @@ interface StyleChoiceControl {
 }
 
 interface StyleToggleControl {
+  readonly presentation?: "icon";
+  readonly mixed?: boolean;
   readonly checked: boolean;
   readonly id: string;
   readonly kind: "toggle";
@@ -37,7 +39,7 @@ interface StyleNumberControl {
   readonly max: number;
   readonly min: number;
   readonly mixed?: boolean;
-  readonly step: number;
+  readonly step: number | "any";
   readonly value: number | null;
 }
 
@@ -53,6 +55,9 @@ export interface EditorMenuCallbacks {
   readonly onOpenShortcuts: (navigation?: PhoneSheetNavigation) => void;
   readonly onShapeChange: (shape: ShapeId) => void;
   readonly onStyleChange: (controlId: string, value: boolean | number | string) => void;
+  readonly onStylePreview?:
+    ((controlId: string, value: boolean | number | string) => void) | undefined;
+  readonly onStylePreviewCancel?: (() => void) | undefined;
 }
 
 type OverflowMenuAction =

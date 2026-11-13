@@ -1,18 +1,25 @@
 import { Component, Platform } from "obsidian";
-import { cycleModalFocus } from "../../runtime/focus-navigation";
+import { cycleModalFocus, registerFocusNavigation } from "../../runtime/focus-navigation";
 
 import { registerMenuPointerDismissal } from "../menu-pointer-dismissal";
-import { trapPhoneSheetFocus } from "./phone-sheet-focus";
+import { containsOwnedMenuTarget } from "../owned-menu-target";
+import {
+  isExternalPanelFocus,
+  trapPhoneSheetFocus,
+  type ExternalPanelFocusTarget,
+} from "./phone-sheet-focus";
 import type { PhoneSheetSwipeController } from "./phone-sheet-swipe";
 import type { AdaptivePanelPlacement } from "./adaptive-panel-placement";
 
 interface PanelInteractionOptions {
   readonly owner: Component;
   readonly ownerDocument: Document;
+  readonly layer: HTMLElement;
   readonly surface: HTMLElement;
   readonly scroll: HTMLElement;
   readonly anchor: HTMLElement;
   readonly initialFocus?: HTMLElement;
+  readonly externalFocusTarget?: ExternalPanelFocusTarget;
   readonly dismissOnAnchorPointer: boolean;
   readonly swipe?: PhoneSheetSwipeController;
   readonly topmost: () => boolean;
@@ -24,22 +31,39 @@ interface PanelInteractionOptions {
 /** Lifecycle-owned keyboard, pointer, and phone swipe input for one panel. */
 export function registerPanelInteraction(options: PanelInteractionOptions): void {
   const { owner, ownerDocument, surface, scroll, swipe } = options;
+  owner.register(
+    registerFocusNavigation(
+      options.layer,
+      !Platform.isPhone &&
+        options.anchor.closest('[data-inkbook-keyboard-navigation="true"]') !== null,
+    ),
+  );
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.defaultPrevented || !options.topmost()) return;
     if (event.key === "Escape") {
+      if (
+        ownedPanelPopups(surface).some(
+          ({ anchor, popup }) => event.target === anchor || popup.contains(event.target as Node),
+        )
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       options.backOrClose();
       return;
     }
-    if (event.key === "Tab") cycleModalFocus(event, options.focusable());
+    if (
+      event.key === "Tab" &&
+      !isExternalPanelFocus(surface, event.target, options.externalFocusTarget)
+    )
+      cycleModalFocus(event, options.focusable());
   };
   const onOutsidePointer = (event: PointerEvent): void => {
     if (!options.topmost()) return;
     const target = event.target;
     if (target === null || !("nodeType" in target)) return;
     if (
-      surface.contains(target as Node) ||
+      containsOwnedMenuTarget(surface, target as Node) ||
       (!options.dismissOnAnchorPointer && options.anchor.contains(target as Node))
     )
       return;
@@ -50,7 +74,14 @@ export function registerPanelInteraction(options: PanelInteractionOptions): void
     options.close();
   };
   if (Platform.isPhone) {
-    owner.register(trapPhoneSheetFocus(surface, options.initialFocus ?? surface, options.topmost));
+    owner.register(
+      trapPhoneSheetFocus(
+        surface,
+        options.initialFocus ?? surface,
+        options.topmost,
+        options.externalFocusTarget,
+      ),
+    );
   }
   owner.registerDomEvent(ownerDocument, "keydown", onKeyDown, true);
   registerMenuPointerDismissal(owner, ownerDocument, onOutsidePointer);
@@ -64,12 +95,54 @@ export function registerPanelInteraction(options: PanelInteractionOptions): void
   owner.register(() => swipe.dispose());
 }
 
+/** Keyboard entry and cycling use the same currently available panel controls. */
+export function panelFocusableElements(surface: HTMLElement): HTMLElement[] {
+  const popups = ownedPanelPopups(surface);
+  return focusableElements(surface).flatMap((element) => [
+    element,
+    ...popups
+      .filter(({ anchor }) => anchor === element)
+      .flatMap(({ popup }) => focusableElements(popup)),
+  ]);
+}
+
+function ownedPanelPopups(surface: HTMLElement): { anchor: HTMLElement; popup: HTMLElement }[] {
+  const result: { anchor: HTMLElement; popup: HTMLElement }[] = [];
+  for (const id of surface.getAttribute("aria-owns")?.split(/\s+/).filter(Boolean) ?? []) {
+    const popup = surface.ownerDocument.getElementById(id);
+    const anchorId = popup?.dataset.inkbookMenuAnchor;
+    const anchor = anchorId === undefined ? null : surface.ownerDocument.getElementById(anchorId);
+    if (
+      popup !== null &&
+      anchor !== null &&
+      surface.contains(anchor) &&
+      !surface.contains(popup) &&
+      popup.closest("[hidden], [inert]") === null &&
+      containsOwnedMenuTarget(surface, popup)
+    )
+      result.push({ anchor, popup });
+  }
+  return result;
+}
+
+function focusableElements(surface: HTMLElement): HTMLElement[] {
+  const selector =
+    "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+  return [...surface.querySelectorAll<HTMLElement>(selector)].filter(
+    (element) =>
+      !element.hasAttribute("disabled") &&
+      element.tabIndex !== -1 &&
+      element.closest("[hidden], [inert]") === null,
+  );
+}
+
 interface PanelViewportOptions {
   readonly owner: Component;
   readonly ownerWindow: Window;
   readonly ownerDocument: Document;
   readonly surface: HTMLElement;
   readonly placement: AdaptivePanelPlacement;
+  readonly contentScroll?: HTMLElement | undefined;
   readonly reposition: (revealEditable?: boolean) => void;
 }
 
@@ -77,10 +150,13 @@ interface PanelViewportOptions {
 export function registerPanelViewport(options: PanelViewportOptions): void {
   const { owner, ownerWindow, ownerDocument, surface, placement } = options;
   const reveal = (): void => options.reposition(true);
+  if (Platform.isPhone && options.contentScroll !== undefined)
+    owner.registerDomEvent(options.contentScroll, "focusin", reveal);
   owner.register(placement.observeKeyboard(reveal));
   const onScroll = (event: Event): void => {
     const target = event.target;
-    if (target !== null && "nodeType" in target && surface.contains(target as Node)) return;
+    if (target !== null && "nodeType" in target && containsOwnedMenuTarget(surface, target as Node))
+      return;
     options.reposition();
   };
   owner.registerDomEvent(ownerWindow, "resize", reveal);

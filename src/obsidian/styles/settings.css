@@ -6,7 +6,8 @@
   border-color: var(--menu-divider-color);
 }
 
-.is-mobile .inkbook-settings-modal .inkbook-setting-controls {
+.is-mobile .inkbook-settings-modal .inkbook-setting-controls,
+.is-mobile .inkbook-settings-modal .inkbook-font-dropdown {
   --dropdown-background: var(--background-primary);
   --dropdown-background-hover: var(--background-primary-alt);
   --background-modifier-form-field: var(--background-primary);
@@ -19,19 +20,8 @@
   --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
 }
 
-:is(
-    .inkbook-settings-general-group,
-    .inkbook-settings-page-group,
-    .inkbook-settings-tool-group,
-    .inkbook-snapping-group,
-    .inkbook-settings-input-group,
-    .inkbook-settings-interface-group,
-    .inkbook-shortcuts-group
-  )
-  :is(
-    .setting-item.mod-toggle > .setting-item-control,
-    .setting-item > .setting-item-control:has(> .dropdown)
-  ) {
+.inkbook-setting-control-row.mod-toggle > .inkbook-setting-controls,
+.inkbook-setting-control-row > .inkbook-setting-controls:has(> .dropdown) {
   align-self: center;
 }
 
@@ -130,6 +120,23 @@
   border-block-start: 0;
   margin-inline: 0;
   padding-inline: 0;
+}
+
+.inkbook-settings-tool-controls [data-control="text-font-family"] {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.inkbook-settings-tool-controls
+  [data-control="text-font-family"]
+  .inkbook-menu-control-description {
+  grid-column: 1;
+}
+
+.inkbook-settings-tool-controls [data-control="text-font-family"] .inkbook-font-dropdown {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  max-inline-size: min(240px, 100%);
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-choice {

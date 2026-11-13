@@ -2,6 +2,7 @@ import { parseOpeningTag } from "../../../persistence/documents/svg-tag";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { configurePreviewSvg } from "./safe-preview-svg";
 import { findStaticSvgTokenSteps } from "../../../persistence/export/static-svg-scanner";
+import { decodeMetadataTextSteps } from "../../../persistence/documents/safe-svg-metadata";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
@@ -49,7 +50,7 @@ function appendElement(
   configureElement?: (element: Element) => void,
 ): Element {
   const tag = parseOpeningTag(markup, 0);
-  if (tag === null || !["svg", "g", "path"].includes(tag.name)) {
+  if (tag === null || !["svg", "g", "path", "text", "tspan"].includes(tag.name)) {
     throw new Error("The validated Inkbook preview has unexpected markup.");
   }
   return appendParsedPreviewElement(ownerDocument, tag, parents, configureElement);
@@ -75,7 +76,9 @@ export function appendParsedPreviewElement(
   }
   const element = ownerDocument.createElementNS(SVG_NAMESPACE, tag.name);
   for (const [name, value] of tag.attributes) {
-    element.setAttribute(name, value);
+    if (name === "xml:space")
+      element.setAttributeNS("http://www.w3.org/XML/1998/namespace", name, value);
+    else element.setAttribute(name, value);
   }
   configureElement?.(element);
   parent?.append(element);
@@ -94,12 +97,24 @@ function* buildPreviewSteps(
   let cursor = 0;
   while (cursor < safeSvg.length) {
     const start = yield* findToken(safeSvg, "<", cursor, exhausted);
+    if (start > cursor && parents[parents.length - 1]?.localName === "tspan") {
+      const decoded = yield* decodeMetadataTextSteps(safeSvg.slice(cursor, start));
+      if (decoded === null) throw new Error("The validated Inkbook preview has invalid text.");
+      parents[parents.length - 1]!.textContent = decoded.text;
+    }
     const end = yield* findToken(safeSvg, ">", start, exhausted);
     const markup = safeSvg.slice(start, end + 1);
     cursor = end + 1;
     if (markup.startsWith("<metadata") || markup.startsWith("<style")) {
       const closing = markup.startsWith("<metadata") ? "</metadata>" : "</style>";
-      cursor = (yield* findToken(safeSvg, closing, cursor, exhausted)) + closing.length;
+      const endContent = yield* findToken(safeSvg, closing, cursor, exhausted);
+      if (parseOpeningTag(markup, 0)?.attributes.get("id") === "inkbook-fonts") {
+        const style = ownerDocument.createElementNS(SVG_NAMESPACE, "style");
+        style.setAttribute("id", "inkbook-fonts");
+        style.textContent = safeSvg.slice(cursor, endContent);
+        root?.append(style);
+      }
+      cursor = endContent + closing.length;
       continue;
     }
     if (markup.startsWith("</")) {

@@ -314,6 +314,10 @@ After confirmation, deletion removes the complete embed line and at most one imm
 
 Reference resolution and recoverable deletion use the public APIs specified in [Obsidian Integration](obsidian-integration.md). An unresolved or not-yet-resolved metadata cache never authorizes file deletion.
 
+## Text Fields and Plain-Text Paste
+
+[Text fields](text-fields.md) combine retained Markdown source, rich formatting, local fonts, and portable formulas with ordinary canvas elements. Explicit Paste keeps validated Inkbook data priority; otherwise plain text, Markdown, or LaTeX source creates a new text field at the existing invocation location. Text selection Copy/Cut carries the necessary font resources. Active text editing is completed before native PDF document preparation.
+
 ## Related Documentation
 
 - [Editor tools](editor-tools.md)

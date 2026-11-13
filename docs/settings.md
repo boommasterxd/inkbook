@@ -46,6 +46,7 @@ interface InkbookSettingsV4 {
   startupTool: StartupToolV1;
   selectionHighlightsEnabled: boolean;
   toolDefaults: ToolDefaultsV1;
+  fontLibrary: FontLibraryEntryV2[];
   snapping: SnappingSettingsV1;
   holdToShape: { enabled: boolean; holdDurationMs: number; jitterTolerancePx: number };
   pageDefaults: PageDefaultsV3;
@@ -54,6 +55,7 @@ interface InkbookSettingsV4 {
 }
 
 interface ToolDefaultsV1 {
+  text: TextDefaultsV2;
   select: {
     area: "rectangle" | "lasso";
     inclusion: "fully-enclosed" | "touched";
@@ -90,7 +92,7 @@ interface InkbookDeviceSettingsV2 {
 }
 ```
 
-`StartupToolV1` is `"select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "line" | "arrow" | "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star" | "coordinate-system" | "table"`.
+`StartupToolV1` is `"text" | "select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "line" | "arrow" | "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star" | "coordinate-system" | "table"`.
 
 `ClosedShapeToolV1` is `"rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star"`.
 
@@ -117,7 +119,7 @@ Changing the preference updates all active presentations, including pop-outs, im
 
 ## Hold to Shape
 
-`holdToShape` is a vault preference exposed in the **Hold to shape** settings group. It contains `enabled` (built-in `true`), `holdDurationMs` (built-in `600`, integer range `200..2000`, UI step `50`), and `jitterTolerancePx` (built-in `12`, integer range `1..32`, UI step `1`). Tolerance is measured in screen CSS pixels independently of zoom and does not alter the geometric acceptance thresholds. Disabling recognition preserves both numeric preferences and disables their controls. The group reset restores all three defaults. Existing explicitly saved tolerances remain unchanged when the built-in default changes.
+`holdToShape` is a vault preference exposed in the **Hold to shape** settings group. It contains `enabled` (built-in `true`), `holdDurationMs` (built-in `400`, integer range `200..2000`, UI step `50`), and `jitterTolerancePx` (built-in `20`, integer range `1..32`, UI step `1`). Tolerance is measured in screen CSS pixels independently of zoom and does not alter the geometric acceptance thresholds. Disabling recognition preserves both numeric preferences and disables their controls. New installations, the group reset, and the full settings reset use these defaults. Existing explicitly saved durations and tolerances remain unchanged when the built-in defaults change.
 
 Both numeric preferences use the shared settings slider with its synchronized number field on the right, matching page buffer and scroll preload controls. Slider input previews the number locally and commits on change; typed input uses the same validation and write-recovery path. Disabling recognition disables both the slider and number field without discarding their saved values.
 
@@ -430,7 +432,7 @@ Tool controls are created once, on the first expansion, using the current defaul
 
 Settings MUST reuse the same typed option models, labels, ordering, selected-state treatment, previews, and control patterns as the corresponding Style and Background menus. A user must be able to recognize a setting from the menu without translating it to a different control. Shared control definitions prevent the two surfaces from acquiring different values or meanings.
 
-Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. In phone and tablet Inkbook dialogs, cards use the host interactive-normal color. Dropdowns and text fields within those cards use background-primary, with background-primary-alt for hover, so unfocused controls remain distinct from the card. The surrounding modal surface retains its native color. Native host dividers separate independent settings rows. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Changing Background between None and a patterned type animates the bounded content-height change while the Spacing control leaves or enters; reduced motion applies the final height immediately. Background choice grids use the same radius on every corner of each choice; the first/last-item radii and dividers of the standalone phone Background list never apply to settings. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower. A control commit updates its mounted row in place and preserves the settings scroll position. A setting whose value changes conditional row structure may rebuild that structure, but it restores the exact preceding scroll position before returning control to the user.
+Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. In phone and tablet Inkbook dialogs, cards use the host interactive-normal color. Dropdowns and text fields within those cards use background-primary, with background-primary-alt for hover, so unfocused controls remain distinct from the card. The surrounding modal surface retains its native color. Native host dividers separate independent settings rows. Side-by-side native dropdown and toggle controls are vertically centered against the complete label-and-description block in every settings group, including wrapped descriptions. Phone rows retain their native stacked layout. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Changing Background between None and a patterned type animates the bounded content-height change while the Spacing control leaves or enters; reduced motion applies the final height immediately. Background choice grids use the same radius on every corner of each choice; the first/last-item radii and dividers of the standalone phone Background list never apply to settings. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower. A control commit updates its mounted row in place and preserves the settings scroll position. A setting whose value changes conditional row structure may rebuild that structure, but it restores the exact preceding scroll position before returning control to the user.
 
 The following controls are visual choices rather than plain dropdowns:
 
@@ -446,7 +448,9 @@ The following controls are visual choices rather than plain dropdowns:
 
 Numeric settings that benefit from continuous adjustment use a slider paired with a directly editable text field, not a dropdown. This applies to opacity, eraser radius, active buffer lines, and scroll preload margin. The slider and field update each other live, preserve the documented numeric representation and units, and commit one setting change on `change`. Opacity remains a finite normalized value from 0 through 1 even when the field presents a percentage. The field rejects incomplete, non-finite, out-of-range, or otherwise invalid input without persisting it. Background spacing retains the menu's discrete S/M/L/XL slider and visible current-size output. The table stepper remains a discrete numeric control because its bounded integer range is best communicated through increment and decrement actions.
 
-Dropdowns are reserved for discrete values without a meaningful visual preview, such as startup tool, file placement, display refresh rate, and motion. Pen-tap insertion uses the binary toggle defined under [Device Settings](#device-settings). A dropdown MUST NOT replace a shared swatch, width preview, outline-style button group, endpoint or dimension icon group, pattern choice, slider-plus-field control, or table stepper merely for implementation convenience.
+Text font family uses the same compact dropdown in Style and tool defaults. The trigger uses Obsidian's `dropdown` class for native size, padding, colors, shadow, focus feedback, and double-chevron decoration, without a separate Inkbook appearance. Text-tool defaults place the content-sized control to the right of its label and description. Its intrinsic size accounts for the available font names and is capped at 240 pixels and the available control width; measurement labels remain hidden from assistive technology. Each visible option is previewed in its own locally loaded font and vertically centered in its row. The owned popup follows the trigger's width, capped by the visual viewport, and updates when the trigger resizes. Desktop options use the shared compact menu typography and spacing; tablet and phone rows retain 44-pixel minimum touch targets. A list that fits reserves no empty scrollbar gutter. The selected option uses the shared visual-choice accent border and tinted background; keyboard navigation keeps its separate active-option feedback. It floats above adjacent controls in its owner's overlay layer, without changing the Style surface's height or scroll extent. It flips and clamps against the owning visual viewport within 264 CSS pixels; its listbox scrolls independently above a separated, full-width **Add font** row with a small plus icon and visible localized text. The complete row is clickable, uses the font options' hover and keyboard-focus treatment without a separate circular background, has a localized tooltip and accessible name, remains outside the font options, and opens the shared font-management dialog described in [Text Fields](text-fields.md#fonts-and-settings). Arrow keys, Home, End, and initial-letter navigation move the active option; Enter commits, while Escape or outside contact closes without changing the value. Tab moves from the open combobox to the management action; Shift+Tab returns to the combobox. Long names truncate visually and retain their full accessible name. The dropdown's temporary native Escape scope takes priority over the enclosing dialog. Mixed values select no option. Preview leases are temporary and do not add document font resources.
+
+Other dropdowns are reserved for discrete values without a meaningful visual preview, such as startup tool, file placement, display refresh rate, and motion. Pen-tap insertion uses the binary toggle defined under [Device Settings](#device-settings). A dropdown MUST NOT replace a shared swatch, width preview, outline-style button group, endpoint or dimension icon group, pattern choice, slider-plus-field control, or table stepper merely for implementation convenience.
 
 All controls have a visible sentence-case label, one concise description, an accessible name, and a visible focus state. Choice controls expose their selected state to assistive technology. Touch targets are at least 44 CSS pixels in the phone settings layout. Multi-field forms use a modal with Save and Cancel only when one row cannot reasonably contain the fields.
 
@@ -467,6 +471,12 @@ Parity tests MUST enumerate every configurable Style and Background menu value a
 ## Settings Deliberately Not Exposed
 
 Autosave delays, horizontal culling margin, spatial-index size, cache size, worker thresholds, animation-frame batching, and serialization precision are implementation constants. The bounded vertical [Scroll Preload Margin](#scroll-preload-margin) is the explicit user-facing preloading preference; it does not change scheduler admission or resource limits.
+
+## Text Defaults and Font Library
+
+`ToolDefaultsV1` also includes `text: TextDefaultsV2`, and `StartupToolV1` includes `"text"`. `InkbookSettingsV4` includes `fontLibrary: FontLibraryEntryV2[]`; valid earlier version 4 settings receive the built-in text defaults and an empty font index. Text defaults and the import/remove behavior are canonical in [Text Fields](text-fields.md#fonts-and-settings). Font management is reached through the font picker instead of a separate settings section. It stores only face metadata in plugin data; local binaries use public Vault APIs and remain after an entry is removed. Existing text documents retain their embedded faces independently of this index.
+
+Text defaults reuse the Style control order and font-size UI range defined in [Text Fields](text-fields.md#fonts-and-settings), including preservation of valid stored sizes outside the slider endpoints. Settings preview slider values locally and persist on change; canvas selection previews have their own lifecycle and do not mutate these defaults.
 
 ## Related Documentation
 

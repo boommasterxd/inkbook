@@ -18,6 +18,7 @@ type VaultControlKey =
   | `pageDefaults.${"backgroundType" | "activeBufferLines" | "lockedBufferLines"}`
   | `pageDefaults.backgroundSpacing.${"lines" | "dots" | "squares"}`
   | `toolDefaults.select.${"area" | "inclusion"}`
+  | `toolDefaults.text.${keyof InkbookSettingsV4["toolDefaults"]["text"]}`
   | `toolDefaults.pen.${"color" | "width" | "opacity" | "pressureEnabled" | "holdToShapeEnabled"}`
   | `toolDefaults.${"line" | "arrow"}.snappingEnabled`
   | `toolDefaults.${"highlighter" | "straightHighlighter"}.${"color" | "width" | "opacity"}`
@@ -62,6 +63,9 @@ const NUMERIC_KEY_SUFFIXES = [
   ".jitterTolerancePx",
   ".scrollPreloadMarginPx",
   ".width",
+  ".fontSize",
+  ".opacity",
+  ".backgroundOpacity",
   ".outlineWidth",
   ".radius",
   ".columns",

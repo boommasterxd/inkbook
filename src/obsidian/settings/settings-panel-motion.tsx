@@ -18,6 +18,7 @@ export class SettingsPanelMotion {
   #animation: ReturnType<typeof animateOwnedElement> | undefined;
   readonly #releasePreference: () => void;
   #expanded: boolean;
+  #onCollapsed: (() => void) | undefined;
   #disposed = false;
 
   public constructor(
@@ -48,21 +49,26 @@ export class SettingsPanelMotion {
       (reduced) => {
         if (!reduced || this.#disposed) return;
         this.#render(true);
-        this.#panel.hidden = !this.#expanded;
+        this.#completeCollapse();
       },
       observeMotion,
     );
   }
 
-  public setExpanded(expanded: boolean): void {
+  public setExpanded(expanded: boolean, onCollapsed?: () => void): void {
     if (this.#disposed) return;
+    if (expanded || expanded !== this.#expanded || onCollapsed !== undefined)
+      this.#onCollapsed = expanded ? undefined : onCollapsed;
     const reduced = this.#reducedMotion();
-    if (expanded === this.#expanded && !reduced) return;
+    if (expanded === this.#expanded && !reduced) {
+      if (this.#panel.hidden) this.#completeCollapse();
+      return;
+    }
     this.#expanded = expanded;
     this.#panel.inert = !expanded;
     if (expanded) this.#panel.hidden = false;
     this.#render(reduced);
-    if (reduced && !expanded) this.#panel.hidden = true;
+    if (reduced && !expanded) this.#completeCollapse();
   }
 
   /** Retarget asynchronous content from the visible height before its intrinsic size changes. */
@@ -77,6 +83,7 @@ export class SettingsPanelMotion {
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#onCollapsed = undefined;
     this.#releasePreference();
     this.#animation?.stop();
     this.#animation = undefined;
@@ -97,15 +104,14 @@ export class SettingsPanelMotion {
           expanded={expanded}
           instant={instant}
           className="inkbook-settings-motion-content"
-          onAnimationComplete={() => {
-            if (!this.#disposed && !this.#expanded) this.#panel.hidden = true;
-          }}
+          onCollapsed={() => this.#completeCollapse()}
           ref={(node) => {
             if (node !== null && this.#panel.parentElement !== node) node.append(this.#panel);
           }}
         />,
       );
     });
+    if (instant) this.#completeCollapse();
   }
 
   #renderNative(instant: boolean, currentHeight?: string): void {
@@ -123,7 +129,7 @@ export class SettingsPanelMotion {
     // Older engines settle immediately rather than clipping usable controls forever.
     if (instant || !supported) {
       content.style.height = target;
-      this.#panel.hidden = !this.#expanded;
+      this.#completeCollapse();
       return;
     }
     const animation = animateOwnedElement(
@@ -135,7 +141,7 @@ export class SettingsPanelMotion {
         onComplete: () => {
           if (this.#disposed || this.#animation !== animation) return;
           this.#animation = undefined;
-          if (!this.#expanded) this.#panel.hidden = true;
+          this.#completeCollapse();
         },
       },
     );
@@ -150,25 +156,42 @@ export class SettingsPanelMotion {
         .matches ?? true
     );
   }
+
+  #completeCollapse(): void {
+    if (this.#disposed || this.#expanded) return;
+    this.#panel.hidden = true;
+    const onCollapsed = this.#onCollapsed;
+    this.#onCollapsed = undefined;
+    onCollapsed?.();
+  }
 }
 
 function PanelMotion({
   expanded,
   instant,
+  onCollapsed,
   ...props
 }: {
   readonly expanded: boolean;
   readonly instant: boolean;
+  readonly onCollapsed: () => void;
 } & ComponentProps<typeof motion.div>): JSX.Element {
   const controls = useAnimationControls();
   useLayoutEffect(() => {
     const target = { height: expanded ? "auto" : 0 };
+    let current = true;
     if (instant) {
       controls.stop();
       controls.set(target);
-      if (!expanded) props.onAnimationComplete?.(target);
-    } else void controls.start(target);
-  }, [controls, expanded, instant, props.onAnimationComplete]);
+    } else
+      void controls.start(target).then(() => {
+        if (current && !expanded) onCollapsed();
+      });
+    return () => {
+      current = false;
+      controls.stop();
+    };
+  }, [controls, expanded, instant, onCollapsed]);
   return (
     <motion.div
       {...props}

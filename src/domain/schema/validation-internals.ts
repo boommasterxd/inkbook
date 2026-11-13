@@ -50,6 +50,7 @@ class ValidationFailure extends Error {
 }
 
 export interface ValidationContext {
+  textPayloadBytes?: number;
   allowRuntimeStrokeBuffers?: boolean;
   parsedProof?: {
     consumeDecodedStrokeSamples(samples: object): StrokeSampleExtrema | undefined;

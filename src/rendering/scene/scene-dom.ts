@@ -44,6 +44,7 @@ export class SceneDom {
   #liveStrokeBand: RenderBand = "content";
   readonly #listeners: { name: InputEventName; listener: EventListener }[] = [];
   readonly #surface: SceneSurface;
+  #editingDocument: Document | undefined;
 
   public static create(options: SceneDomOptions): SceneDom {
     return new SceneDom(
@@ -159,6 +160,18 @@ export class SceneDom {
     this.#surface.read();
   }
 
+  public setTextEditing(active: boolean): void {
+    this.#surface.setInteractive(active);
+    if (active) this.svg.setAttribute("data-inkbook-text-editing", "");
+    else this.svg.removeAttribute("data-inkbook-text-editing");
+    this.inputSurface.style.pointerEvents = active ? "none" : "";
+    this.inputSurface.tabIndex = active ? -1 : 0;
+    if (active) this.inputSurface.setAttribute("inert", "");
+    else this.inputSurface.removeAttribute("inert");
+    if (active) this.svg.removeAttribute("aria-hidden");
+    else this.svg.setAttribute("aria-hidden", "true");
+  }
+
   private attachSurface(overlayGroup: SVGGElement): void {
     this.#surface.attach(this.svg, [
       this.highlightGroup,
@@ -234,8 +247,22 @@ export class SceneDom {
     for (const [property, value] of Object.entries(properties)) {
       this.svg.style.setProperty(property, value);
       this.toolCursor.surface.style.setProperty(property, value);
+      this.#editingDocument?.body.style.setProperty(property, value);
     }
     this.svg.style.colorScheme = scheme;
+    if (this.#editingDocument) this.#editingDocument.body.style.colorScheme = scheme;
+  }
+
+  public attachTextDocument(document: Document): () => void {
+    const releaseTheme = this.#surface.attachEditorTheme(document);
+    this.#editingDocument = document;
+    for (const property of ["--inkbook-guide", "--inkbook-page", "--inkbook-text"])
+      document.body.style.setProperty(property, this.svg.style.getPropertyValue(property));
+    document.body.style.colorScheme = this.svg.style.colorScheme;
+    return () => {
+      releaseTheme();
+      if (this.#editingDocument === document) this.#editingDocument = undefined;
+    };
   }
 
   public setBackgroundPaint(

@@ -46,13 +46,15 @@ describe("toolbar cursor icon adapter", () => {
       const expected =
         tool === "select"
           ? selectionAreaIconId(h.defaults.select.area)
-          : tool === "draw" || tool === "highlighter" || tool === "straight-highlighter"
-            ? DRAWING_TOOL_ICON_IDS[tool]
-            : activeShapeIconId(tool, {
-                arrowStart: h.defaults.arrow.startNode,
-                arrowEnd: h.defaults.arrow.endNode,
-                coordinateDimension: h.defaults.coordinateSystem.dimension,
-              });
+          : tool === "text"
+            ? "type"
+            : tool === "draw" || tool === "highlighter" || tool === "straight-highlighter"
+              ? DRAWING_TOOL_ICON_IDS[tool]
+              : activeShapeIconId(tool, {
+                  arrowStart: h.defaults.arrow.startNode,
+                  arrowEnd: h.defaults.arrow.endNode,
+                  coordinateDimension: h.defaults.coordinateSystem.dimension,
+                });
       expect(h.getIcon).toHaveBeenLastCalledWith(expected);
     }
     for (const area of ["rectangle", "lasso"] as const) {

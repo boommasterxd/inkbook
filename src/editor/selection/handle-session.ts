@@ -18,6 +18,12 @@ import {
 } from "./transform/handle-snap-resolution";
 import { assertFiniteHandlePoint } from "./transform/handle-session-validation";
 import { SelectionScaleGesture } from "./transform/selection-scale";
+import { createTextReflowSession, type TextReflowSession } from "./transform/text-reflow-session";
+import { TextScaleCommitReflow } from "./transform/text-scale-commit-reflow";
+import {
+  materializeHandleTimeSliced,
+  emptyHandlePreview,
+} from "./transform/scheduled-handle-materialization";
 import {
   moveSelection,
   rotateSelection,
@@ -60,6 +66,8 @@ export class SelectionHandleSession {
   readonly #planner: SelectionReplacementPlanner;
   readonly #requiresConnectionPreparation: () => boolean;
   readonly #scale: SelectionScaleGesture | undefined;
+  readonly #textReflow: TextReflowSession | undefined;
+  readonly #textScaleReflow: TextScaleCommitReflow;
   readonly #snapLookup: HandleSnapLookup;
   readonly #onPreviewReady: SelectionHandleSessionOptions["onPreviewReady"];
   readonly #snap: SelectionSnapPorts | undefined;
@@ -77,7 +85,8 @@ export class SelectionHandleSession {
     if (options.elements.length === 0) throw new RangeError("A handle session needs a selection.");
     assertFiniteHandlePoint(options.startPointer);
     this.#affineScalePreview =
-      options.action.kind === "scale" && options.elements.some(({ kind }) => kind === "stroke");
+      options.action.kind === "scale" &&
+      options.elements.some(({ kind }) => kind === "stroke" || kind === "text");
     this.#action = options.action;
     this.#elements = options.elements;
     this.#planner = options.planner;
@@ -94,12 +103,24 @@ export class SelectionHandleSession {
     this.#snap = options.snap;
     this.#snapLookup = new HandleSnapLookup(options.action, options.snap);
     this.#onPreviewReady = options.onPreviewReady;
+    const previewReady = () => {
+      this.#preview = this.#createPreview();
+      this.#onPreviewReady?.(this.#preview);
+    };
+    this.#textScaleReflow = new TextScaleCommitReflow(options, this.#scale, previewReady);
+    const only = options.elements.length === 1 ? options.elements[0] : undefined;
+    this.#textReflow = createTextReflowSession(
+      only,
+      options.reflowText,
+      options.action.kind === "scale" && options.action.position.startsWith("middle-"),
+      previewReady,
+    );
     this.#snapFeatures = options.snap?.features;
     this.#startPointer = options.startPointer;
     this.#currentPointer = options.startPointer;
     if (options.uniformScale !== undefined) this.#uniformScale = options.uniformScale;
     this.#assertActionTarget();
-    this.#preview = this.#emptyPreview();
+    this.#preview = emptyHandlePreview();
   }
 
   public get preview(): SelectionHandlePreview {
@@ -114,6 +135,7 @@ export class SelectionHandleSession {
     const scale = this.#scale;
     const transform = this.#preview.transform;
     if (scale === undefined || transform?.kind !== "scale") return undefined;
+    if (this.#preview.textScaleBasis !== undefined) return this.#textScaleReflow.materializer();
     const pointer = this.#currentPointer;
     const uniform = this.#uniformScale;
     const factors = scale.factorsAt(pointer, uniform);
@@ -123,11 +145,13 @@ export class SelectionHandleSession {
   }
 
   public cancel(): void {
+    this.#textScaleReflow.cancel();
+    this.#textReflow?.dispose();
     this.#snapLookup.cancel();
     this.#cancelled = true;
     this.#generation += 1;
     this.#snapCandidate = null;
-    this.#preview = this.#emptyPreview();
+    this.#preview = emptyHandlePreview();
   }
 
   public update(
@@ -136,10 +160,12 @@ export class SelectionHandleSession {
   ): SelectionHandlePreview {
     this.#assertActive();
     assertFiniteHandlePoint(pointer);
+    this.#textScaleReflow.cancelCommit();
     this.#currentPointer = pointer;
     if (options.uniformScale !== undefined) this.#uniformScale = options.uniformScale;
     if (options.snapFeatures !== undefined) this.#snapFeatures = options.snapFeatures;
     this.#generation += 1;
+    if (!this.#hasChanged()) (this.#textReflow ?? this.#textScaleReflow).restore();
     this.#updateSnapCandidate();
     this.#preview = this.#createPreview();
     return this.#preview;
@@ -175,6 +201,12 @@ export class SelectionHandleSession {
     this.#snapCandidate = snap;
     this.#preview = this.#createPreview();
     const pointer = this.#currentPointer;
+    if (this.#textReflow !== undefined || this.#textScaleReflow.live) {
+      const text = await (this.#textReflow ?? this.#textScaleReflow).settle();
+      return text === null || this.#preparationCancelled(scheduler, generation)
+        ? { status: "cancelled" }
+        : { previous: this.#elements, replacements: [text], status: "ready" };
+    }
     const materialized = await this.#materializeTimeSliced(scheduler, generation, pointer);
     if (materialized === null) return { status: "cancelled" };
     // The model prepares and validates one version-bound transaction before adoption.
@@ -183,18 +215,27 @@ export class SelectionHandleSession {
   }
 
   #createPreview(): SelectionHandlePreview {
-    if (!this.#hasChanged()) return this.#emptyPreview();
+    if (!this.#hasChanged()) return emptyHandlePreview();
+    if (this.#textReflow !== undefined) {
+      const text = this.#requiredScale().materialize(this.#currentPointer, false)[0]!;
+      if (text.kind !== "text") throw new Error("Text resize must preserve the field kind.");
+      this.#textReflow.request(text);
+      this.#valid = true;
+      return { ...this.#textReflow.preview(), snapGuide: this.#snapGuide() };
+    }
     if (
       this.#affineScalePreview ||
       this.#requiresConnectionPreparation() ||
       exceedsExactPreviewWork(this.#elements, this.#planner, this.#replacementWorkOptions())
     ) {
       this.#valid = true;
+      const native = this.#textScaleReflow.preview(this.#currentPointer, this.#uniformScale);
+      if (native !== null) return { ...native, snapGuide: this.#snapGuide() };
       const transform = this.#previewTransform(true);
       return {
         exactElements: "elementId" in this.#action ? this.#replaceActionTarget() : [],
         exactPreviewTruncated: true,
-        previewFrame: this.#previewFrame(),
+        previewFrame: this.#scale?.previewFrame ?? null,
         snapCandidate: this.#snapCandidate,
         snapGuide: this.#snapGuide(),
         transform,
@@ -207,7 +248,7 @@ export class SelectionHandleSession {
       return {
         exactElements: planned?.elements ?? [],
         exactPreviewTruncated: false,
-        previewFrame: this.#previewFrame(),
+        previewFrame: this.#scale?.previewFrame ?? null,
         snapCandidate: this.#snapCandidate,
         snapGuide: this.#snapGuide(),
         transform,
@@ -248,24 +289,24 @@ export class SelectionHandleSession {
     generation: number,
     pointer: PointV1,
   ): Promise<InkElementV1[] | null> {
-    const scaleFactors = await this.#timeSlicedScaleFactors(scheduler, generation, pointer);
-    if (scaleFactors === null) return null;
-    const replacements: InkElementV1[] = [];
-    for (const element of this.#elements) {
-      if (this.#preparationCancelled(scheduler, generation)) return null;
-      replacements.push(this.#materializeOne(element, scaleFactors, pointer));
-      if (this.#preparationCancelled(scheduler, generation)) return null;
-      if (scheduler.shouldYield()) {
-        await scheduler.yieldControl();
-        if (this.#preparationCancelled(scheduler, generation)) return null;
-      }
-    }
+    const scaleFactors =
+      this.#action.kind === "scale" && this.#elements.length > 1
+        ? this.#requiredScale().factorsAt(pointer, this.#uniformScale)
+        : undefined;
     if (this.#preparationCancelled(scheduler, generation)) return null;
-    if (this.#action.kind !== "scale") return replacements;
-    return this.#requiredScale().stabilizeAnchorTimeSliced(replacements, {
-      isCancelled: () => this.#preparationCancelled(scheduler, generation),
-      shouldYield: scheduler.shouldYield,
-      yieldControl: scheduler.yieldControl,
+    return materializeHandleTimeSliced({
+      elements: this.#elements,
+      scale: this.#scale,
+      pointer,
+      uniformScale: this.#uniformScale,
+      factors: scaleFactors,
+      materialize: (element) => this.#materializeOne(element, scaleFactors, pointer),
+      textReflow: this.#textScaleReflow,
+      scheduler: {
+        isCancelled: () => this.#preparationCancelled(scheduler, generation),
+        shouldYield: scheduler.shouldYield,
+        yieldControl: scheduler.yieldControl,
+      },
     });
   }
 
@@ -289,17 +330,6 @@ export class SelectionHandleSession {
       );
     }
     return this.#replaceActionTargetAt(pointer)[0]!;
-  }
-
-  async #timeSlicedScaleFactors(
-    scheduler: TransformSliceScheduler,
-    generation: number,
-    pointer: PointV1,
-  ): Promise<ScaleFactors | null | undefined> {
-    if (this.#action.kind !== "scale" || this.#elements.length === 1) return undefined;
-    const factors = this.#requiredScale().factorsAt(pointer, this.#uniformScale);
-    if (this.#preparationCancelled(scheduler, generation)) return null;
-    return factors;
   }
 
   #replaceActionTarget(): InkElementV1[] {
@@ -376,10 +406,6 @@ export class SelectionHandleSession {
       };
     }
     return null;
-  }
-
-  #previewFrame() {
-    return this.#action.kind === "scale" ? this.#requiredScale().previewFrame : null;
   }
 
   #translation(): PointV1 {
@@ -466,17 +492,6 @@ export class SelectionHandleSession {
     return (
       this.#cancelled || this.#generation !== generation || (scheduler.isCancelled?.() ?? false)
     );
-  }
-
-  #emptyPreview(): SelectionHandlePreview {
-    return {
-      exactElements: [],
-      exactPreviewTruncated: false,
-      previewFrame: null,
-      snapCandidate: null,
-      snapGuide: null,
-      transform: null,
-    };
   }
 
   #assertActive(): void {

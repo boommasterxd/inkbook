@@ -36,7 +36,7 @@ function createMenuChoiceController(
   ownerWindow: Window,
 ): MenuChoiceController {
   const selector =
-    ".inkbook-adaptive-panel-back, .inkbook-owned-menu-item[tabindex], .inkbook-menu-choice, .inkbook-menu-stepper-button, .inkbook-menu-background-choice, .inkbook-dialog-actions button, .inkbook-import-actions button, .inkbook-import-history-row, .inkbook-import-page-button, .inkbook-import-history-retry, .inkbook-shortcut-icon-button, .inkbook-shortcut-recorder, .inkbook-shortcuts-group-reset";
+    ".inkbook-adaptive-panel-back, .inkbook-owned-menu-item[tabindex], .inkbook-menu-choice, .inkbook-menu-stepper-button, .inkbook-menu-background-choice, .inkbook-dialog-actions button, .inkbook-import-actions button, .inkbook-import-history-row, .inkbook-import-page-button, .inkbook-import-history-retry, .inkbook-shortcut-icon-button, .inkbook-shortcut-recorder, .inkbook-shortcuts-group-reset, .inkbook-font-import-action, .inkbook-font-import-dropzone";
   const itemAt = menuItemLookup(root, selector);
   let hovered: HTMLElement | undefined;
   let pressed: HTMLElement | undefined;

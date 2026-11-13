@@ -1,7 +1,10 @@
+import type { TextStyleV2, TextParagraphStyleV2 } from "../schema/public";
+
 export const STARTUP_TOOLS = [
   "select",
   "eraser",
   "draw",
+  "text",
   "highlighter",
   "straight-highlighter",
   "line",
@@ -112,7 +115,14 @@ interface EraserDefaultsV1 {
   radius: number;
 }
 
+export interface TextDefaultsV2 extends TextStyleV2 {
+  backgroundColor: ColorV1 | null;
+  backgroundOpacity: number;
+  alignment: TextParagraphStyleV2["alignment"];
+}
+
 export interface ToolDefaultsV1 {
+  text: TextDefaultsV2;
   select: { area: SelectionAreaV1; inclusion: SelectionInclusionV1 };
   pen: PenDefaultsV1;
   highlighter: HighlighterDefaultsV1;
@@ -157,7 +167,19 @@ export type FilePlacementV1 =
 
 export type RefreshRatePreferenceV2 = (typeof REFRESH_RATE_PREFERENCES)[number];
 
+export interface FontLibraryEntryV2 {
+  readonly id: string;
+  readonly path: string;
+  readonly family: string;
+  readonly displayName: string;
+  readonly weight: number;
+  readonly style: "normal" | "italic";
+  readonly weightRange?: readonly [number, number];
+  readonly license?: string;
+}
+
 export interface InkbookSettingsV4 {
+  fontLibrary: FontLibraryEntryV2[];
   version: 4;
   startupTool: StartupToolV1;
   selectionHighlightsEnabled: boolean;

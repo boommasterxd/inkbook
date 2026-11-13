@@ -10,6 +10,58 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function flushForeignStyle(h: ReturnType<typeof sceneSurfaceZoomFixture>): void {
+  h.deliver();
+  expect(h.read).not.toHaveBeenCalled();
+  expect(h.scheduler.pendingCount).toBe(1);
+  h.scheduler.runAll();
+  expect(h.read).toHaveBeenCalledOnce();
+}
+
+it("relays live syntax and selection tokens from the host body through one coalesced scene read", () => {
+  const h = sceneSurfaceZoomFixture();
+  const before = document.body.getAttribute("style");
+  const tokens = {
+    "--code-normal": "#111111",
+    "--code-function": "#e0ac00",
+    "--code-punctuation": "#333333",
+    "--code-keyword": "#444444",
+    "--code-string": "#555555",
+    "--code-comment": "#666666",
+    "--code-tag": "#e93147",
+    "--code-property": "#00bfbc",
+    "--code-value": "#7852ee",
+    "--text-selection": "#777777",
+    "--text-faint": "#888888",
+    "--text-accent": "#8a5cf5",
+  };
+  try {
+    for (const [property, value] of Object.entries(tokens))
+      h.foreignStyle(document.body, property, value);
+    flushForeignStyle(h);
+    const body = h.renderer.textDocument.body;
+    for (const [property, value] of Object.entries(tokens))
+      expect(body.style.getPropertyValue(property)).toBe(value);
+    expect(h.drawingWrites).toHaveBeenCalledTimes(12);
+    h.read.mockClear();
+    h.drawingWrites.mockClear();
+    h.foreignStyle(document.body, "--code-function", "#ab3400");
+    h.deliver();
+    h.foreignStyle(document.body, "--code-comment", "#7c7c7c");
+    h.deliver();
+    expect(h.read).not.toHaveBeenCalled();
+    h.scheduler.runAll();
+    expect(h.read).toHaveBeenCalledOnce();
+    expect(body.style.getPropertyValue("--code-function")).toBe("#ab3400");
+    expect(body.style.getPropertyValue("--code-comment")).toBe("#7c7c7c");
+    expect(h.drawingWrites).toHaveBeenCalledTimes(2);
+  } finally {
+    if (before === null) document.body.removeAttribute("style");
+    else document.body.setAttribute("style", before);
+    h.release();
+  }
+});
+
 it("proves multiple owned heights without reads while preserving independent resize writes", () => {
   const h = sceneSurfaceZoomFixture();
   try {
@@ -47,11 +99,7 @@ it.each(["before", "between", "after"])(
       if (phase === "between") h.foreignStyle(h.container, "--text-normal", "red");
       h.zoom(300);
       if (phase === "after") h.foreignStyle(h.container, "--text-normal", "red");
-      h.deliver();
-      expect(h.read).not.toHaveBeenCalled();
-      expect(h.scheduler.pendingCount).toBe(1);
-      h.scheduler.runAll();
-      expect(h.read).toHaveBeenCalledOnce();
+      flushForeignStyle(h);
       expect(h.drawingWrites).toHaveBeenCalledExactlyOnceWith("--text-normal", "red");
       h.read.mockClear();
       h.zoom(400);

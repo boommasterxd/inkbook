@@ -17,6 +17,7 @@ export interface ExportDrawing {
   readonly width: number;
   readonly height: number;
   readonly fragments?: readonly ExportFragmentTree[];
+  readonly hasFonts?: boolean;
 }
 
 export interface ExportPageOptions {
@@ -45,8 +46,16 @@ export function retainExportDrawing(svg: SVGSVGElement): ExportDrawing {
   const id = `inkbook-export-drawing-${++nextDrawing}`;
   const group = svg.ownerDocument.createElementNS(SVG_NAMESPACE, "g");
   group.setAttribute("id", id);
-  while (svg.firstChild !== null) group.append(svg.firstChild);
   const definitions = svg.ownerDocument.createElementNS(SVG_NAMESPACE, "defs");
+  let hasFonts = false;
+  while (svg.firstChild !== null) {
+    const child = svg.firstChild;
+    // Font and local geometry resources belong to the whole retained graphic, not a band.
+    const resource =
+      child.nodeType === 1 && ["style", "defs"].includes((child as Element).localName);
+    if (child.nodeType === 1 && (child as Element).localName === "style") hasFonts = true;
+    (resource ? definitions : group).append(child);
+  }
   definitions.append(group);
   svg.append(definitions);
   svg.setAttribute("class", "inkbook-export-definitions");
@@ -55,7 +64,7 @@ export function retainExportDrawing(svg: SVGSVGElement): ExportDrawing {
   svg.setAttribute("aria-hidden", "true");
   svg.removeAttribute("role");
   svg.removeAttribute("aria-label");
-  return { id, width, height };
+  return { id, width, height, ...(hasFonts ? { hasFonts } : {}) };
 }
 
 /** Build export-only reference groups once, before any synchronous print callback. */
@@ -65,7 +74,7 @@ export async function prepareExportDrawing(
   options: { readonly scheduler: WorkScheduler; readonly signal: AbortSignal },
 ): Promise<ExportDrawing> {
   const drawing = retainExportDrawing(svg);
-  const group = svg.firstElementChild?.firstElementChild as SVGGElement;
+  const group = svg.firstElementChild?.lastElementChild as SVGGElement;
   if (fragments === undefined) return drawing;
   const trees = await retainExportFragments(group, fragments, options);
   return trees === undefined ? drawing : { ...drawing, fragments: trees };

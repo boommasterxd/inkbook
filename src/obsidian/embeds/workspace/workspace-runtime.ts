@@ -33,11 +33,7 @@ import {
   mountWorkspaceActiveScene,
   presentationActivationReady,
 } from "./workspace-runtime-scene-readiness";
-import {
-  activeWorkspaceScene,
-  executeWorkspaceSceneAction,
-  recordWorkspaceMarkdownHistory,
-} from "./workspace-runtime-editor";
+import * as editor from "./workspace-runtime-editor";
 import { WorkspaceDocumentStatus } from "./workspace-document-status";
 import { createWorkspaceSessionFactory } from "./workspace-runtime-workers";
 import { showWorkspaceHeadlessRecovery } from "./workspace-recovery-actions";
@@ -242,8 +238,10 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           markFirstStroke: () => this.#lifecycle.markFirstStroke(attachment.documentId),
           onLock: () => this.lockActivePresentation(),
           onOpenSettings: this.#host.onOpenSettings,
+          onOpenFonts: this.#host.onOpenFonts,
           onOpenShortcuts: this.#host.onOpenShortcuts,
           onboardingPreference: this.#host.onboardingPreference,
+          textFonts: this.#host.textFonts,
           scheme: attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light",
           showFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
           workScheduler: this.refreshRateProfiles.workScheduler(
@@ -295,11 +293,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       if (!this.lockActivePresentation()) throw new Error("No active Inkbook presentation.");
       return;
     }
-    executeWorkspaceSceneAction(action, this.#coordinator.getSnapshot(), this.#mounted);
+    editor.executeWorkspaceSceneAction(action, this.#coordinator.getSnapshot(), this.#mounted);
   }
   isAvailable(action: InkbookCommandAction): boolean {
     if (action === "lock") return this.hasActivePresentation();
-    const scene = activeWorkspaceScene(this.#coordinator.getSnapshot(), this.#mounted);
+    const scene = editor.activeWorkspaceScene(this.#coordinator.getSnapshot(), this.#mounted);
     return scene?.isActionAvailable(action) ?? false;
   }
   readonly lockActivePresentation = (): boolean => this.#coordinator.requestLockCurrent();
@@ -336,14 +334,14 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   ): void => {
     this.#safeStaticProof = provider;
   };
-  handleMarkdownEditorChange(sourcePath: string, pane: HTMLElement): void {
+  handleMarkdownEditorChange(sourcePath: string, pane: HTMLElement, focused = false): void {
     if (this.#disposed) return;
-    recordWorkspaceMarkdownHistory(
+    const owned = editor.recordWorkspaceMarkdownHistory(
       this.#coordinator.getSnapshot(),
       this.#mounted,
-      sourcePath,
-      pane,
+      { sourcePath, pane },
     );
+    if (owned && focused) this.#coordinator.requestLockCurrent();
   }
   readonly hasUnsavedChanges = (): boolean => this.#sessions.hasUnsavedChanges();
   readonly prepareStaticExport = (documentId: string): Promise<void> =>
@@ -359,13 +357,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#headlessRecovery = undefined;
     const persistenceDrained = this.#sessions.prepareForUnload();
     this.#coordinator.dispose({ preparePersistence: true });
-    disposeWorkspaceMountedPresentations(this.#mounted.values());
+    disposeWorkspaceMountedPresentations(this.#mounted.values(), true);
     this.#mounted.clear();
     const releaseScheduling = () => {
       this.refreshRateProfiles.dispose();
       this.#ownerWindows.clear();
     };
-    void persistenceDrained.then(releaseScheduling, releaseScheduling);
+    void persistenceDrained.then(releaseScheduling, () => undefined);
   }
   #reloadPresentation(documentId: string): void {
     const current = this.#coordinator.getSnapshot().current;
@@ -389,6 +387,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     mounted.loadError?.close();
     mounted.loadError = undefined;
     releaseWorkspaceScene(mounted, {
+      prepareRelease: (release, failed) =>
+        this.#sessions.deferPresentationRelease(mounted.attachment.documentId, release, failed),
       waitForPreview:
         !immediate &&
         !this.#disposed &&

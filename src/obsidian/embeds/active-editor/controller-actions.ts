@@ -19,6 +19,7 @@ import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
 
 export interface ActiveEditorActionsOptions {
+  readonly onPasteText?: import("./controller-clipboard").ActiveEditorClipboardOptions["onPasteText"];
   readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
   readonly currentSelection: () => ReadonlySet<string>;
   readonly history: ActiveEditorHistory;
@@ -93,6 +94,7 @@ export class ActiveEditorActions {
       onPendingChanged: options.onPendingChanged,
     });
     this.#clipboard = new ActiveEditorClipboardController({
+      ...(options.onPasteText === undefined ? {} : { onPasteText: options.onPasteText }),
       currentSelection: options.currentSelection,
       history: options.history,
       isPresentationAttached: options.isAttached,

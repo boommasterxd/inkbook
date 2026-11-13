@@ -21,12 +21,15 @@ import type { Keymap } from "obsidian";
 import type { EditorChromeOpenings } from "../active-scene/editor-chrome-openings";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { NavigationCursorLayout } from "./navigation/navigation-layout";
+import type { TextFontLibraryPort } from "./text-preparation";
 
 export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
+  readonly textFonts?: TextFontLibraryPort;
   readonly localization?: Localization | undefined;
   readonly container: HTMLElement;
   readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => number | void;
   readonly onNavigationLayout?: (layout: NavigationCursorLayout) => void;
+  readonly reconcileTextLayout?: (callback: () => void) => void;
   readonly backgroundSpacing: () => BackgroundSpacingDefaults;
   readonly defaults: ToolDefaultsV1;
   readonly deviceSettings: InkbookDeviceSettingsV2;
@@ -51,8 +54,8 @@ export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly selectionMoveLayout: {
     begin(): void;
     currentHeight?(): number | undefined;
-    finish(committed: boolean, previewMaximumBottom?: number): void;
-    updateBottom(maximumBottom: number): void;
+    finish(committed: boolean, previewMaximumBottom?: number, immediate?: boolean): void;
+    updateBottom(maximumBottom: number, immediate?: boolean, sourceExtent?: boolean): void;
   };
   readonly scrollOwner: BrowserScrollElement;
   readonly snapping: SnappingSettingsV1;

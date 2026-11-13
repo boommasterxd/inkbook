@@ -43,6 +43,9 @@ export async function createPreparedStaticExportSvg(
         close: () => {
           parents.pop();
         },
+        text: (value) => {
+          parents[parents.length - 1]?.append(ownerDocument.createTextNode(value));
+        },
       },
     });
     if (fragments === undefined || svg === undefined || options.signal.aborted) return undefined;
@@ -89,6 +92,7 @@ function configureExportRoot(svg: SVGSVGElement, description?: string): void {
 }
 
 function configureExportElement(element: Element, scheme: InkbookColorScheme): void {
+  if (element.localName === "style") return;
   const palette = PORTABLE_PALETTE_V1[scheme];
   switch (element.getAttribute("class")) {
     case "inkbook-theme-page":

@@ -162,6 +162,38 @@ it("commits page changes in both directions and completes page motion after 220m
   f.session.close("immediate");
 });
 
+it("releases registered page content on replacement, Back, teardown and failed creation", () => {
+  const f = fixture();
+  const release = vi.fn();
+  const page: PhoneSheetPage = {
+    ...f.page,
+    createContent: (lifecycle) => {
+      lifecycle.registerCleanup?.(release);
+      return createFragment();
+    },
+  };
+  f.session.navigation?.push(page);
+  f.session.navigation?.push(page);
+  expect(release).toHaveBeenCalledTimes(1);
+  f.session.navigation?.back();
+  expect(release).toHaveBeenCalledTimes(2);
+  expect(() =>
+    f.session.navigation?.push({
+      ...page,
+      createContent: (lifecycle) => {
+        lifecycle.registerCleanup?.(release);
+        throw new Error("Font preview failed");
+      },
+    }),
+  ).toThrow("Font preview failed");
+  expect(release).toHaveBeenCalledTimes(3);
+  expect(f.rootButton.isConnected).toBe(true);
+  f.session.navigation?.push(page);
+  f.session.close("immediate");
+  f.session.close("immediate");
+  expect(release).toHaveBeenCalledTimes(4);
+});
+
 it("keeps the sheet and scroll height limits stable through forward and interrupted Back motion", () => {
   vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
   const stylesheet = new CSSStyleSheet();

@@ -1,4 +1,10 @@
-import type { SceneCamera, SceneViewport } from "./types";
+import type { SceneCamera, SceneViewport, SceneRendererOptions } from "./types";
+import { validateScrollPreloadMargin } from "./scene-resource-policy";
+
+export function validateSceneOptions(options: SceneRendererOptions): void {
+  if (options.scrollPreloadMarginPx !== undefined)
+    validateScrollPreloadMargin(options.scrollPreloadMarginPx);
+}
 
 export function assertSceneActive(disposed: boolean): void {
   if (disposed) throw new Error("The SVG scene renderer has been destroyed.");

@@ -10,6 +10,8 @@ import { parseSafeSvgRoot } from "../documents/svg-envelope-root";
 import { consumeSerializationSteps } from "../serialization/output/serialization-model-preparation";
 import { StaticPathBounds } from "./static-path-bounds";
 import { findStaticSvgTokenSteps } from "./static-svg-scanner";
+import { validateTextElementSteps } from "../documents/safe-svg-text";
+import { validateFontStylesheetSteps } from "../documents/safe-svg-fonts";
 
 export interface StaticExportFragment {
   readonly minY: number;
@@ -27,6 +29,7 @@ export type StaticExportTag = NonNullable<ReturnType<typeof parseOpeningTag>>;
 export interface StaticExportTagVisitor {
   open(tag: StaticExportTag): void;
   close(): void;
+  text?(value: string): void;
 }
 
 type SvgTag = StaticExportTag;
@@ -35,6 +38,7 @@ interface FragmentParseContext {
   readonly totals: SvgTotals;
   readonly exhausted: () => boolean;
   readonly visitor?: StaticExportTagVisitor;
+  readonly version: number;
 }
 
 interface ParsedFragment {
@@ -70,14 +74,20 @@ function* prepareFragmentSteps(
   const fragments: StaticExportFragment[] = [];
   const prefix = yield* skipPrefixSteps(svg, exhausted, visitor);
   if (prefix === undefined) return undefined;
-  let cursor = prefix;
+  let cursor = prefix.cursor;
   const totals = { commands: 0, groups: 0, pathBytes: 0, paths: 0 };
   for (const band of BANDS) {
     const opening = parseOpeningTag(svg, cursor);
     if (!isBandGroup(opening, band)) return undefined;
     visitor?.open(opening!);
     cursor = skipWhitespace(svg, opening!.next);
-    const context = { band, totals, exhausted, ...(visitor === undefined ? {} : { visitor }) };
+    const context = {
+      band,
+      totals,
+      exhausted,
+      version: prefix.version,
+      ...(visitor === undefined ? {} : { visitor }),
+    };
     while (!svg.startsWith("</g>", cursor)) {
       const fragment = yield* parseFragmentSteps(svg, cursor, context);
       if (fragment === undefined) return undefined;
@@ -99,6 +109,14 @@ function* parseFragmentSteps(
   cursor: number,
   context: FragmentParseContext,
 ): Generator<void, ParsedFragment | undefined> {
+  if (context.version >= 2 && svg.startsWith("<text", cursor)) {
+    const next = yield* validateTextElementSteps(svg, cursor, context.visitor);
+    // Font tables may contain glyph overhang beyond nominal em bounds. Without trusted
+    // painted glyph bounds, retain text in every page reference rather than dropping ink.
+    return next === null
+      ? undefined
+      : { bounds: { minY: -Infinity, maxY: Infinity }, next: skipWhitespace(svg, next) };
+  }
   const exhausted = context.exhausted;
   const start = yield* findStaticSvgTokenSteps(svg, "<", cursor, exhausted);
   if (start !== cursor) return undefined;
@@ -119,7 +137,7 @@ function* parseFragmentSteps(
     cursor = skipWhitespace(svg, pathEnd + 1);
   }
   if (tag === null || tag.name !== "path" || !tag.selfClosing) return undefined;
-  const bounds = yield* preparePathBoundsSteps(tag, translationY, exhausted);
+  const bounds = yield* preparePathBoundsSteps(tag, translationY, exhausted, context.version);
   if (bounds === undefined) return undefined;
   context.visitor?.open(tag);
   if (grouped) {
@@ -134,21 +152,46 @@ function* skipPrefixSteps(
   svg: string,
   exhausted: () => boolean,
   visitor?: StaticExportTagVisitor,
-): Generator<void, number | undefined> {
+): Generator<void, { readonly cursor: number; readonly version: number } | undefined> {
   let cursor = skipWhitespace(svg, 0);
   const root = parseOpeningTag(svg, cursor);
-  if (root === null || parseSafeSvgRoot(root, "editable") === null) return undefined;
+  const parsedRoot = root === null ? null : parseSafeSvgRoot(root, "editable");
+  if (root === null || parsedRoot === null) return undefined;
   visitor?.open(root);
   cursor = skipWhitespace(svg, root.next);
   for (const name of ["style", "metadata"]) {
-    const tag = parseOpeningTag(svg, cursor);
+    let tag = parseOpeningTag(svg, cursor);
+    if (name === "metadata" && tag?.name === "style") {
+      const next = yield* visitFontStylesheetSteps(svg, tag, exhausted, visitor);
+      if (parsedRoot.version < 2 || next === undefined) return undefined;
+      cursor = skipWhitespace(svg, next);
+      tag = parseOpeningTag(svg, cursor);
+    }
     if (tag?.name !== name || tag.selfClosing) return undefined;
     const close = `</${name}>`;
     const end = yield* findStaticSvgTokenSteps(svg, close, tag.next, exhausted);
     if (end < 0) return undefined;
     cursor = skipWhitespace(svg, end + close.length);
   }
-  return cursor;
+  return { cursor, version: parsedRoot.version };
+}
+
+function* visitFontStylesheetSteps(
+  svg: string,
+  tag: SvgTag,
+  exhausted: () => boolean,
+  visitor?: StaticExportTagVisitor,
+): Generator<void, number | undefined> {
+  if (tag.selfClosing || tag.attributes.size !== 1 || tag.attributes.get("id") !== "inkbook-fonts")
+    return undefined;
+  const end = yield* findStaticSvgTokenSteps(svg, "</style>", tag.next, exhausted);
+  if (end < 0) return undefined;
+  const text = svg.slice(tag.next, end);
+  if (!(yield* validateFontStylesheetSteps(text))) return undefined;
+  visitor?.open(tag);
+  visitor?.text?.(text);
+  visitor?.close();
+  return end + 8;
 }
 
 function parseTranslationY(tag: SvgTag): number {
@@ -160,6 +203,7 @@ function* preparePathBoundsSteps(
   tag: SvgTag,
   translationY: number,
   exhausted: () => boolean,
+  version: number,
 ): Generator<void, { minY: number; maxY: number } | undefined> {
   const bounds = new StaticPathBounds();
   const result = yield* validatePathAttributesSteps(
@@ -167,10 +211,12 @@ function* preparePathBoundsSteps(
     exhausted,
     (command, values, startY, endY, startX) =>
       bounds.observe(command, values, startY, endY, startX),
+    version,
   );
   if (result === null) return undefined;
-  if (tag.attributes.get("class") === "inkbook-theme-guide") {
-    // Export gives guides non-scaling strokes; their SVG-unit extent depends on print scale.
+  const transform = tag.attributes.get("transform");
+  if (tag.attributes.get("class") === "inkbook-theme-guide" || transform?.startsWith("rotate(")) {
+    // Guides depend on print scale; rotated geometry lacks a proven vertical extent here.
     return { minY: -Infinity, maxY: Infinity };
   }
   const stroke = tag.attributes.get("stroke");
@@ -178,5 +224,5 @@ function* preparePathBoundsSteps(
     stroke === undefined || stroke === "none"
       ? 0
       : Number(tag.attributes.get("stroke-width") ?? "1");
-  return bounds.painted(translationY, width);
+  return bounds.painted(translationY + parseTranslationY(tag), width);
 }

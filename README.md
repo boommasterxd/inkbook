@@ -29,6 +29,7 @@ Work through an equation, connect the steps of a process, or highlight the part 
 | **Write and highlight** | A pressure-sensitive pen, freehand and straight highlighters, and a whole-element eraser.                                               |
 | **Sketch and connect**  | Shapes including stars, straight or curved lines and arrows, coordinate systems, and tables, with connectors that follow shape anchors. |
 | **Hold to shape**       | Hold a pen stroke still to preview a native shape; release to accept or continue drawing to cancel.                                     |
+| **Type and format**     | Multiline text fields with Markdown tables, LaTeX formulas, local fonts, text colors, and backgrounds.                                  |
 | **Refine a drawing**    | Selection and lasso, move, resize, rotate, style, and arrange controls.                                                                 |
 | **Find your rhythm**    | Zoom, undo and redo, copy and paste, and a page that grows as you write.                                                                |
 | **Choose your paper**   | Plain, lined, dotted, or square backgrounds, with adjustable spacing.                                                                   |
@@ -36,6 +37,20 @@ Work through an equation, connect the steps of a process, or highlight the part 
 Inkbook embeds work in **Live Preview and Reading view**, including split panes and pop-out windows. One drawing is active per workspace. Touch can navigate the page; drawing with a finger is optional and off by default.
 
 Inkbook's interface supports English and German. It follows Obsidian's language by default, and you can choose a language in Inkbook's Interface settings.
+
+## Add words and formulas
+
+Choose **Text** and drag out a field, or paste text onto the active canvas with **Ctrl+V** (**Cmd+V** on macOS). Markdown and LaTeX render inside the field. Select a field, then click or tap it again to edit, including with a pen. While editing, click formatted text or a formula to reveal its source in place.
+
+Text wraps at the width you choose. Side handles change that width; corner handles scale the text. The embed grows downward as the field needs more room. Select words to format them, or style an entire field with alignment, color, and a background.
+
+![A Markdown text field with headings, lists, and LaTeX formulas in Obsidian, beside the font selector, font-size slider, and compact formatting buttons.](docs/assets/readme-text-editor.webp)
+
+The font dropdown previews each family in its own typeface. Inter, Source Serif 4, Caveat, and JetBrains Mono are included; add your own font files in Inkbook's settings. Saved SVGs embed only the font faces they use. Text and formulas also participate in Obsidian's native PDF export.
+
+![The same text field rendered in Obsidian's dark Reading view, with formatted paragraphs, a nested list, and inline and display mathematics.](docs/assets/readme-text-reading-dark.webp)
+
+See [Text fields](docs/text-fields.md) for supported formatting, fonts, and export behavior.
 
 ## Your notes stay yours
 
@@ -45,7 +60,7 @@ Inkbook's interface supports English and German. It follows Obsidian's language 
 
 ![The saved handwritten diagram on squared paper alongside the surrounding note text in Obsidian's dark Reading view.](docs/assets/readme-reading-dark.webp)
 
-Both screenshots show the production plugin running in the real Obsidian desktop application. See the [SVG format and portability contract](docs/svg-envelope.md) for how saved files work outside Obsidian.
+The screenshots show the production plugin running in the real Obsidian desktop application. See the [SVG format and portability contract](docs/svg-envelope.md) for how saved files work outside Obsidian.
 
 ## Install
 
@@ -79,10 +94,10 @@ When updating, replace those three files and reload Obsidian. Keep the existing 
 
 1. Open a Markdown note in editing mode and place the cursor on an empty line.
 2. Run **Inkbook: Insert handwriting embed** from the command palette.
-3. Write with a pen or mouse, highlight an idea, or choose a shape.
+3. Write with a pen or mouse, highlight an idea, choose a shape, or add a [text field](docs/text-fields.md) with Markdown, formulas, and local fonts.
 4. Choose **Lock** in the toolbar to save and return to the preview. Activate the preview when you want to edit again.
 
-The first empty embed you open offers an optional toolbar tour. Choose **Start tour** or **Skip tour**, and skip the remaining steps whenever you like. The invitation will not appear again on this device and vault. You can reopen the tour through **More options → Quick tour** while the active embed is empty. Existing or imported drawings do not offer the tour.
+The first empty embed you open offers an optional toolbar tour, including the Text tool and its Markdown and formula editing. Choose **Start tour** or **Skip tour**, and skip the remaining steps whenever you like. The invitation will not appear again on this device and vault. You can reopen the tour through **More options → Quick tour** while the active embed is empty. Existing or imported drawings do not offer the tour.
 
 Inkbook creates the SVG attachment and inserts its reference for you. A reference occupies its own Markdown block:
 
@@ -122,6 +137,7 @@ The code separates pure domain logic, editor interactions, imperative SVG render
 | Guide                                                | What you will find                                            |
 | ---------------------------------------------------- | ------------------------------------------------------------- |
 | [Editor tools](docs/editor-tools.md)                 | Drawing, selection, shapes, connections, erasing, and styles. |
+| [Text fields](docs/text-fields.md)                   | Markdown, LaTeX, fonts, text formatting, and portable output. |
 | [Features](docs/features.md)                         | Paper, page growth, history, clipboard, and locking.          |
 | [Keyboard shortcuts](docs/keyboard-shortcuts.md)     | Canvas bindings and customization.                            |
 | [Settings](docs/settings.md)                         | Tool defaults and vault or device preferences.                |

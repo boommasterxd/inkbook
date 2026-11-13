@@ -75,6 +75,8 @@ function commitSingleInteraction(
       effects.unshift({ type: "clear-selection" });
       nextState = { ...nextState, hasSelection: false };
     }
+  } else if (canActivateElement(interaction, action)) {
+    effects.push({ type: "activate-element", elementId: interaction.elementId });
   } else if (interaction.phase === "lasso" && !interaction.shift && state.hasSelection) {
     effects.unshift({ type: "clear-selection" });
     nextState = { ...nextState, hasSelection: false };
@@ -93,6 +95,23 @@ function commitSingleInteraction(
     }
   }
   return { state: nextState, effects };
+}
+
+function canActivateElement(
+  interaction: Exclude<InputInteraction, PinchInteraction>,
+  action: PointerExitAction,
+): interaction is Extract<InputInteraction, { readonly phase: "element-move" }> {
+  return (
+    interaction.phase === "element-move" &&
+    !interaction.previewStarted &&
+    !interaction.shift &&
+    !interaction.controlOrMeta &&
+    !interaction.alt &&
+    interaction.penRole === "normal" &&
+    !interaction.temporaryEraser &&
+    interaction.tool !== "eraser" &&
+    (interaction.pointerType !== "touch" || isTouchTap(interaction, action))
+  );
 }
 
 function commitSelectPress(
@@ -211,7 +230,7 @@ export function handleLongPress(state: InputState, action: LongPressAction): Inp
 }
 
 function isTouchTap(
-  interaction: Extract<InputInteraction, { readonly phase: "touch-pending" }>,
+  interaction: Extract<InputInteraction, { readonly phase: "touch-pending" | "element-move" }>,
   action: PointerExitAction,
 ): boolean {
   if (distance(delta(interaction.start, interaction.current)) >= TOUCH_TAP_MAX_MOVEMENT_PX) {

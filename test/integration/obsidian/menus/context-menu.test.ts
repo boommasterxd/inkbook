@@ -3,6 +3,7 @@ import "../../../fixtures/obsidian/menu-motion";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
+import { Localization } from "../../../../src/domain/localization";
 
 import {
   openContextMenu,
@@ -138,6 +139,47 @@ function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> 
     createContextMenuHandlers(),
   );
 }
+
+it.each(["en", "de"] as const)(
+  "hands off the localized %s text-edit action after closing its menu",
+  (language) => {
+    const menu = new FakeMenu();
+    const editText = vi.fn(() => expect(menu.closed).toBe(true));
+    openContextMenu(
+      { create: () => menu, forEvent: () => menu },
+      {
+        type: "position",
+        ownerDocument: document,
+        position: { x: 20, y: 30 },
+        canvasInputSurface: createHtmlElement("button"),
+        restoreFocus: false,
+        localization: new Localization(language),
+      },
+      state({ canEditText: true }),
+      { ...createContextMenuHandlers(), editText },
+    );
+    const title = language === "en" ? "Edit text" : "Text bearbeiten";
+    expect(titles(menu)[0]).toBe(title);
+    const entry = menu.entries.find(
+      (value): value is RecordedItem =>
+        value !== "separator" && value.calls.includes(`title:${title}`),
+    )!;
+    entry.click?.();
+    expect(editText).toHaveBeenCalledOnce();
+  },
+);
+
+it.each([
+  { hasSelection: false, canEditText: true },
+  { hasSelection: true, canEditText: false },
+])("omits text editing without an eligible selection: %j", (eligibility) => {
+  const menu = new FakeMenu();
+  populateContextMenu(menu, document, state(eligibility), {
+    ...createContextMenuHandlers(),
+    editText: vi.fn(),
+  });
+  expect(titles(menu)).not.toContain("Edit text");
+});
 
 it("restores focus before handing off to erase-all confirmation", () => {
   const menu = new FakeMenu();

@@ -59,7 +59,7 @@ describe("InkSnapshotV1 validation", () => {
   it.each([
     ["root property", { ...snapshot(), script: "alert(1)" }, "unknown-property"],
     ["format", { ...snapshot(), format: "other" }, "invalid-literal"],
-    ["version", { ...snapshot(), version: 2 }, "invalid-literal"],
+    ["version", { ...snapshot(), version: 3 }, "invalid-literal"],
     ["revision", { ...snapshot(), revision: -1 }, "invalid-number"],
     ["unsafe revision", { ...snapshot(), revision: Number.MAX_SAFE_INTEGER + 1 }, "invalid-number"],
     [

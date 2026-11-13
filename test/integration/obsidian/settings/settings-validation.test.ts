@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
-import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import {
   control,
+  setupSettingsDom,
   createTab,
   DeviceAdapter,
   groups,
@@ -16,8 +16,7 @@ import {
   VaultAdapter,
 } from "./setting-tab-fixture";
 
-beforeAll(installObsidianDomHelpers);
-afterEach(() => document.body.replaceChildren());
+setupSettingsDom();
 
 function pageDefault(store: InkbookSettingsStore, name: string) {
   const group = groups(createTab(store)).find((candidate) => candidate.heading === "Page defaults");

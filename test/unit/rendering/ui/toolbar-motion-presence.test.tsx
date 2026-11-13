@@ -388,3 +388,50 @@ it("updates retained toolbar names without losing focus or the selected tool", (
   expect(document.activeElement).toBe(select);
   mounted.unmount();
 });
+
+it("retains Text and Style actions through interrupted text-format paint changes", async () => {
+  const mounted = mountSelectedToolbar();
+  const initial = createEditorChromeProps(document);
+  const onAction = vi.fn();
+  const text = mounted.button("text");
+  const style = mounted.button("style");
+  const palettePath = style.querySelector("path")!.getAttribute("d");
+  expect(palettePath).toBeTruthy();
+  act(() => text.focus());
+  for (const flags of [
+    { bold: true, italic: true, strikethrough: true, underline: true },
+    { bold: null, italic: null, strikethrough: null, underline: null },
+  ]) {
+    mounted.setChromeProps({
+      onToolbarAction: onAction,
+      toolbarState: { ...initial.toolbarState, activeTool: "text" },
+      styleIcon: {
+        ...initial.styleIcon,
+        outlineColor: { type: "rgba", value: "#3B82F6FF" },
+        fillColor: { type: "rgba", value: "#EAB308FF" },
+        fillOpacity: 0.35,
+        text: flags,
+      },
+    });
+    await advanceMotionBy(32);
+    expect(mounted.button("text")).toBe(text);
+    expect(mounted.button("style")).toBe(style);
+    expect(document.activeElement).toBe(text);
+    expect(text.getAttribute("aria-pressed")).toBe("true");
+    const palette = style.querySelector("svg g:last-child path")!;
+    expect(palette.getAttribute("d")).toBe(palettePath);
+    expect(palette.getAttribute("fill")).toBe("#EAB308FF");
+    expect(palette.getAttribute("fill-opacity")).toBe("0.35");
+    expect(palette.parentElement?.getAttribute("stroke")).toBe("#3B82F6FF");
+  }
+  mounted.presentation.dataset.inkbookMotion = "reduced";
+  await flushRootMutation();
+  mounted.setChromeProps({ styleIcon: initial.styleIcon });
+  act(() => text.click());
+  expect(onAction).toHaveBeenLastCalledWith("text", text);
+  act(() => style.click());
+  expect(onAction).toHaveBeenLastCalledWith("style", style);
+  expect(mounted.button("text")).toBe(text);
+  expect(mounted.button("style")).toBe(style);
+  mounted.unmount();
+});

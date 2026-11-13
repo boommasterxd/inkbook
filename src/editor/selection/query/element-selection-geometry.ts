@@ -30,6 +30,14 @@ export function visitVisibleElementPrimitives(
   if (element.kind === "stroke") return visitStroke(element, visitor);
   if (element.kind === "coordinate-system") return visitCoordinateSystem(element, visitor);
   if (element.kind === "table") return visitTable(element, visitor);
+  if (element.kind === "text") {
+    return visitor({
+      kind: "polygon",
+      points: shapeVertices({ ...element, kind: "rectangle" }).map((point) =>
+        rotatedFor(element, point),
+      ),
+    });
+  }
   if (
     element.kind === "line" ||
     element.kind === "arrow" ||

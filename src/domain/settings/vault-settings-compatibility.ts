@@ -3,6 +3,7 @@ import { hasExactKeys, isRecord } from "./validation";
 
 export const VAULT_SETTINGS_KEYS = [
   "version",
+  "fontLibrary",
   "startupTool",
   "selectionHighlightsEnabled",
   "toolDefaults",
@@ -14,7 +15,11 @@ export const VAULT_SETTINGS_KEYS = [
 ] as const;
 
 export const LEGACY_VAULT_SETTINGS_KEYS = VAULT_SETTINGS_KEYS.filter(
-  (key) => key !== "snapping" && key !== "selectionHighlightsEnabled" && key !== "holdToShape",
+  (key) =>
+    key !== "fontLibrary" &&
+    key !== "snapping" &&
+    key !== "selectionHighlightsEnabled" &&
+    key !== "holdToShape",
 );
 
 /** Completes additive V4 preferences while retaining every explicitly persisted choice. */
@@ -22,12 +27,14 @@ export function addLegacySettingsDefaults(input: unknown, fallback: InkbookSetti
   if (!isRecord(input) || input.version !== 4) return input;
   const keys = [
     ...LEGACY_VAULT_SETTINGS_KEYS,
+    ...("fontLibrary" in input ? ["fontLibrary"] : []),
     ...("snapping" in input ? ["snapping"] : []),
     ...("holdToShape" in input ? ["holdToShape"] : []),
     ...("selectionHighlightsEnabled" in input ? ["selectionHighlightsEnabled"] : []),
   ];
   if (!hasExactKeys(input, keys)) return input;
   return {
+    fontLibrary: [],
     snapping: structuredClone(fallback.snapping),
     holdToShape: structuredClone(fallback.holdToShape),
     selectionHighlightsEnabled: fallback.selectionHighlightsEnabled,
@@ -42,6 +49,7 @@ function addToolBehaviorDefaults(
 ): unknown {
   if (!isRecord(input)) return input;
   return {
+    text: structuredClone(fallback.text),
     line: structuredClone(fallback.line),
     ...input,
     pen: isRecord(input.pen)

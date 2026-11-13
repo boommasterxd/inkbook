@@ -130,6 +130,7 @@ const NORMAL_ACTIONS = [
   "draw",
   "highlighter",
   "straight-highlighter",
+  "text",
   "shape",
   "shape-picker",
   "style",
@@ -229,7 +230,7 @@ it("includes finger drawing only when available and resets each explicit reopeni
 it("waits for contextual controls to mount and resumes positioning without invoking them", async () => {
   const current = fixture(1200, "80px", false, true);
   current.tour.open(current.source);
-  goTo(11);
+  goTo(NORMAL_ACTIONS.indexOf("paste"));
   const layer = note()?.parentElement;
   expect(current.tour.contextPreview).toBe(true);
   expect(current.root.querySelector('[data-inkbook-action="paste"]')).toBeNull();
@@ -240,10 +241,10 @@ it("waits for contextual controls to mount and resumes positioning without invok
   expect(layer?.querySelector(".inkbook-onboarding-arrow path")?.getAttribute("d")).toContain(
     " C ",
   );
-  expectStep("paste", 11, NORMAL_ACTIONS.length);
+  expectStep("paste", NORMAL_ACTIONS.indexOf("paste"), NORMAL_ACTIONS.length);
   expect(note()?.querySelector('[aria-label="Tour navigation"]')).toBe(navigation);
   click("Back");
-  expectStep("overflow", 10, NORMAL_ACTIONS.length);
+  expectStep("overflow", NORMAL_ACTIONS.indexOf("paste") - 1, NORMAL_ACTIONS.length);
   expect(current.tour.contextPreview).toBe(false);
   expect(current.root.querySelector('[data-inkbook-tour-preview="true"]')).toBeNull();
   expect(current.toolbarAction).not.toHaveBeenCalled();
@@ -252,7 +253,7 @@ it("waits for contextual controls to mount and resumes positioning without invok
 it.each(["skip", "escape", "dispose"] as const)("releases contextual previews on %s", (exit) => {
   const current = fixture();
   current.tour.open(current.source);
-  goTo(11);
+  goTo(NORMAL_ACTIONS.indexOf("paste"));
   expect(current.tour.contextPreview).toBe(true);
   if (exit === "skip") click("Skip tour");
   else if (exit === "escape")
@@ -273,7 +274,7 @@ it("hands an outside Style click to the real panel without stealing its focus", 
   scrollport.getBoundingClientRect = () => new DOMRect(0, 80, 150, 50);
   current.source.getBoundingClientRect = () => new DOMRect(220 - scrollport.scrollLeft, 80, 44, 44);
   current.tour.open(current.source);
-  goTo(8);
+  goTo(NORMAL_ACTIONS.indexOf("style"));
   const control = createHtmlElement("button");
   control.textContent = "Ink color";
   const fragment = window.createFragment();

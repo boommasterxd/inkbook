@@ -21,7 +21,7 @@ export function* immutableElementSteps(
     const validation = step.value;
     if (!validation.ok) throw new RangeError(`Invalid immutable element: ${validation.error.code}`);
   }
-  return takeImmutableElementOwnership(clone);
+  return yield* takeImmutableElementOwnershipSteps(clone);
 }
 
 /** Preserve an unchanged owned sample buffer while copying all replaceable fields. */
@@ -41,6 +41,25 @@ export function takeImmutableElementOwnership(element: InkElementV1): ImmutableI
   if (Object.isFrozen(element)) return element;
   if (element.kind === "stroke" && Array.isArray(element.points)) Object.freeze(element.points);
   return freezeValue(element);
+}
+
+export function* takeImmutableElementOwnershipSteps(
+  element: InkElementV1,
+): Generator<void, ImmutableInkElement> {
+  if (element.kind !== "text") return takeImmutableElementOwnership(element);
+  yield* freezeTextValueSteps(element, { nodes: 0 });
+  return element;
+}
+
+function* freezeTextValueSteps(value: unknown, progress: { nodes: number }): Generator<void, void> {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return;
+  if (Array.isArray(value)) {
+    for (const child of value) yield* freezeTextValueSteps(child, progress);
+  } else {
+    for (const child of Object.values(value)) yield* freezeTextValueSteps(child, progress);
+  }
+  Object.freeze(value);
+  if (++progress.nodes % 256 === 0) yield;
 }
 
 export function mutableElement(element: ImmutableInkElement): InkElementV1 {

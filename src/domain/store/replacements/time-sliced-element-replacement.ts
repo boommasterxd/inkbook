@@ -3,6 +3,7 @@ import {
   type CanonicalStrokeReplacementProof,
 } from "../../elements/stroke-replacement-proof";
 import type { InkElementV1 } from "../../schema/public";
+import { textElementPayloadBytes } from "../../schema/text-payload-size";
 import { UniformSpatialIndex } from "../../spatial/index";
 
 import {
@@ -264,6 +265,11 @@ async function prepareCandidateRecords(
 
 function changesCapacity(candidate: ReplacementCandidate, record: ElementRecord): boolean {
   if (candidate.domains.includes("connection")) return true;
+  if (candidate.current.element.kind === "text" && record.element.kind === "text") {
+    return (
+      textElementPayloadBytes(candidate.current.element) !== textElementPayloadBytes(record.element)
+    );
+  }
   return (
     candidate.current.element.kind === "stroke" &&
     record.element.kind === "stroke" &&

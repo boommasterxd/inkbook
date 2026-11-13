@@ -20,6 +20,7 @@ export { selectionOverlayContainsPoint, selectionOverlayGeometry } from "./overl
 export type { SelectionOutline, SelectionOverlayGeometry } from "./overlay-geometry";
 export {
   createSelectionFrameAtRotation,
+  createSelectionFrameAtRotationTimeSliced,
   selectionFramePoint,
   SelectionFrameSession,
 } from "./selection-frame";

@@ -18,7 +18,7 @@ export function choiceLabel(
   option: StyleChoiceOption,
 ): string {
   if (options.localization === undefined && options.t === undefined) return option.label;
-  if (id.endsWith("width")) return option.label;
+  if (id.endsWith("width") || id === "text-font-family") return option.label;
   const key =
     id === "selection-area" ? `editor.shape.${option.value}` : `editor.option.${option.value}`;
   if (id.endsWith("color") && option.value.startsWith("#")) {

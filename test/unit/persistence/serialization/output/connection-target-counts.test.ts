@@ -9,6 +9,7 @@ import { ManualHost } from "../../../../fixtures/scheduling/manual-frame-host";
 import { connectionChain } from "../../../../fixtures/domain/connection-chain";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 import { createSnapshot, uuid } from "../fixtures";
+import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 
 it.each(["abort", "supersede", "unexpired"] as const)(
   "consults central admission after the final canonical record before publication: %s",
@@ -22,12 +23,16 @@ it.each(["abort", "supersede", "unexpired"] as const)(
     const scheduler = new SharedFrameScheduler(host);
     scheduler.deadline();
     const controller = new AbortController();
-    const original = canonical.canonicalElement;
-    const copy = vi.spyOn(canonical, "canonicalElement").mockImplementation((...args) => {
-      const result = original(...args);
-      host.time = mode === "unexpired" ? 1 : host.budget;
-      return result;
-    });
+    let finalRecord: InkElementV1 | undefined;
+    const original = canonical.canonicalElementWithFontResourcesSteps;
+    const copy = vi
+      .spyOn(canonical, "canonicalElementWithFontResourcesSteps")
+      .mockImplementation(function* (...args) {
+        const result = yield* original(...args);
+        finalRecord = result;
+        host.time = mode === "unexpired" ? 1 : host.budget;
+        return result;
+      });
     try {
       const operation = serializer.applyDeltaSliced(
         {
@@ -42,6 +47,7 @@ it.each(["abort", "supersede", "unexpired"] as const)(
         true,
       );
       expect(copy).toHaveBeenCalledOnce();
+      expect(finalRecord).toMatchObject({ id: source.id, startConnection: null });
       if (mode === "unexpired") {
         expect(await operation).toEqual({ ok: true, value: undefined });
         expect(host.frameRequests).toBe(0);
