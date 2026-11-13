@@ -151,19 +151,7 @@ export class InkbookSettingTab extends PluginSettingTab {
         this.store.localization.t,
         withSettingsActionFeedback(() => this.resetAppearance(), this.settingsFeedback),
       ),
-      performanceGroup({
-        t: this.store.localization.t,
-        readMotion: () => this.store.getDeviceSettings().motion,
-        observeMotion: (listener) => this.store.subscribeDeviceSettings(listener),
-        get: (key) => this.controls.get(key),
-        set: (key, value) => this.controls.set(key, value),
-        refreshRateStatus: () =>
-          this.refreshRateStatus?.() ?? {
-            kind: "detecting",
-            refreshRate: DEFAULT_REFRESH_RATE,
-          },
-        reset: withSettingsActionFeedback(() => this.resetPerformance(), this.settingsFeedback),
-      }),
+      this.inputGroup(createBuiltInDeviceSettings()),
       pageDefaultsGroup(
         pageValues,
         withSettingsActionFeedback(() => this.resetPageDefaults(), this.settingsFeedback),
@@ -185,7 +173,6 @@ export class InkbookSettingTab extends PluginSettingTab {
         reset: withSettingsActionFeedback(() => this.resetSnapping(), this.settingsFeedback),
         set: (key, value) => this.controls.set(key, value),
       }),
-      this.inputGroup(createBuiltInDeviceSettings()),
       holdToShapeGroup(
         pageValues,
         withSettingsActionFeedback(() => this.resetHoldToShape(), this.settingsFeedback),
@@ -197,6 +184,19 @@ export class InkbookSettingTab extends PluginSettingTab {
         (ownerWindow) => this.scheduler(ownerWindow),
         viewState,
       ),
+      performanceGroup({
+        t: this.store.localization.t,
+        readMotion: () => this.store.getDeviceSettings().motion,
+        observeMotion: (listener) => this.store.subscribeDeviceSettings(listener),
+        get: (key) => this.controls.get(key),
+        set: (key, value) => this.controls.set(key, value),
+        refreshRateStatus: () =>
+          this.refreshRateStatus?.() ?? {
+            kind: "detecting",
+            refreshRate: DEFAULT_REFRESH_RATE,
+          },
+        reset: withSettingsActionFeedback(() => this.resetPerformance(), this.settingsFeedback),
+      }),
       ...(this.scheduling?.inkImport === undefined
         ? []
         : [

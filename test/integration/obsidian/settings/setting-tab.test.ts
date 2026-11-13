@@ -78,14 +78,14 @@ describe("InkbookSettingTab group definitions and reset actions", () => {
     expect(groups(tab).map((group) => group.heading)).toEqual([
       "General",
       "Appearance",
-      "Performance",
+      "Input",
       "Page defaults",
       "Drawing tools",
       "Shapes and structures",
       "Snapping",
-      "Input",
       "Hold to shape",
       "Shortcuts",
+      "Performance",
     ]);
     expect(definitions[definitions.length - 1]).toMatchObject({
       name: "Reset all Inkbook settings",
