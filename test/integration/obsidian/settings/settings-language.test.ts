@@ -40,8 +40,9 @@ it("changes language inside the open settings modal while retaining focus, scrol
     ).getAttribute("aria-label"),
   ).toBe(store.localization.t("editor.style.percent", { label: "Deckkraft" }));
   expect(required(".inkbook-settings-general-group").textContent).toContain("Allgemein");
+  expect(required(".inkbook-settings-appearance-group").textContent).toContain("Darstellung");
   expect(document.querySelector(".inkbook-settings-interface-group")).toBeNull();
-  for (const group of ["general", "input"]) {
+  for (const group of ["general", "appearance", "input"]) {
     const reset = required<HTMLElement>(
       `.inkbook-settings-${group}-group [data-setting-name="Gruppe zurücksetzen"]`,
     );

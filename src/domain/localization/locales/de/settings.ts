@@ -12,6 +12,7 @@ export const settings = {
   "settings.penTap": "Einfügen durch Stifttippen",
   "settings.penTapDescription": "Fügt beim Tippen mit einem Stift eine Inkbook-Einbettung ein.",
   "settings.general": "Allgemein",
+  "settings.appearance": "Darstellung",
   "settings.leftHanded": "Werkzeugleiste für Linkshänder",
   "settings.leftHandedDescription": "Richtet die Werkzeugleiste für linkshändige Bedienung aus.",
   "settings.motion": "Animationen",

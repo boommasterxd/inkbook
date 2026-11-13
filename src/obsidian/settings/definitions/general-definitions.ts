@@ -118,6 +118,20 @@ export function generalGroup(
         t("settings.controls.copyTextFieldsAsText"),
         t("settings.controls.copyTextFieldsAsTextHelp"),
       ),
+      resetAction(t("settings.controls.resetGroup"), callbacks.reset, t),
+    ],
+  };
+}
+
+export function appearanceGroup(
+  t: Translator,
+  reset: () => void | Promise<void>,
+): SettingDefinitionGroup<SettingsControlKey> {
+  return {
+    type: "group",
+    heading: t("settings.appearance"),
+    cls: "inkbook-settings-appearance-group",
+    items: [
       dropdown("device.language", t("settings.language"), t("settings.languageDescription"), {
         auto: t("settings.languageAuto"),
         de: "Deutsch",
@@ -133,7 +147,7 @@ export function generalGroup(
         full: t("settings.motion.full"),
         reduced: t("settings.motion.reduced"),
       }),
-      resetAction(t("settings.controls.resetGroup"), callbacks.reset, t),
+      resetAction(t("settings.controls.resetGroup"), reset, t),
     ],
   };
 }

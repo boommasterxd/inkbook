@@ -29,7 +29,7 @@ import {
   toggle,
   withSettingsActionFeedback,
 } from "./definitions/definition-helpers";
-import { generalGroup } from "./definitions/general-definitions";
+import { appearanceGroup, generalGroup } from "./definitions/general-definitions";
 import { pageDefaultsGroup } from "./definitions/page-defaults";
 import { performanceGroup } from "./definitions/performance-definitions";
 import { createObsidianHotkeyAccess } from "./shortcuts/obsidian-hotkey-conflicts";
@@ -147,6 +147,10 @@ export class InkbookSettingTab extends PluginSettingTab {
         ),
         reset: withSettingsActionFeedback(() => this.resetGeneral(), this.settingsFeedback),
       }),
+      appearanceGroup(
+        this.store.localization.t,
+        withSettingsActionFeedback(() => this.resetAppearance(), this.settingsFeedback),
+      ),
       performanceGroup({
         t: this.store.localization.t,
         readMotion: () => this.store.getDeviceSettings().motion,
@@ -292,7 +296,6 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   private resetGeneral(): Promise<void> {
     const defaults = createBuiltInSettings();
-    const deviceDefaults = createBuiltInDeviceSettings();
     return this.store
       .updateVaultSettings((settings) => ({
         ...settings,
@@ -300,15 +303,18 @@ export class InkbookSettingTab extends PluginSettingTab {
         filePlacement: structuredClone(defaults.filePlacement),
         copyTextFieldsAsText: defaults.copyTextFieldsAsText,
       }))
-      .then(() => {
-        this.store.updateDeviceSettings((settings) => ({
-          ...settings,
-          leftHandedToolbar: deviceDefaults.leftHandedToolbar,
-          motion: deviceDefaults.motion,
-          language: deviceDefaults.language,
-        }));
-        this.update();
-      });
+      .then(() => this.update());
+  }
+
+  private resetAppearance(): void {
+    const defaults = createBuiltInDeviceSettings();
+    this.store.updateDeviceSettings((settings) => ({
+      ...settings,
+      leftHandedToolbar: defaults.leftHandedToolbar,
+      motion: defaults.motion,
+      language: defaults.language,
+    }));
+    this.update();
   }
 
   private resetPerformance(): Promise<void> {

@@ -99,7 +99,7 @@ it("opens font management from Text defaults", async () => {
 
 it("restores the correct native reset focus and action after groups rebuild in a new order", () => {
   const host = { getControlValue: () => false, setControlValue: () => undefined };
-  const resets = { Input: vi.fn(), General: vi.fn() };
+  const resets = { Appearance: vi.fn(), General: vi.fn() };
   const definitions = Object.entries(resets).map(([heading, reset]) => ({
     type: "group" as const,
     cls: "shared-settings-group",
@@ -132,14 +132,14 @@ it("restores the correct native reset focus and action after groups rebuild in a
   const resetButton = (group: string): HTMLButtonElement =>
     container.querySelector<HTMLButtonElement>(`section[aria-label="${group}"] button`)!;
   render(definitions);
-  const original = resetButton("Input");
+  const original = resetButton("Appearance");
   original.focus();
   refreshSettingsView(container, () => render([...definitions].reverse()));
   expect(original.isConnected).toBe(false);
-  const replacement = resetButton("Input");
+  const replacement = resetButton("Appearance");
   expect(document.activeElement).toBe(replacement);
   replacement.click();
-  expect(resets.Input).toHaveBeenCalledOnce();
+  expect(resets.Appearance).toHaveBeenCalledOnce();
   expect(resets.General).not.toHaveBeenCalled();
   resetButton("General").click();
   expect(resets.General).toHaveBeenCalledOnce();
@@ -147,12 +147,12 @@ it("restores the correct native reset focus and action after groups rebuild in a
 });
 
 it.each([
-  ["Selection highlights", "selectionHighlightsEnabled", false, "vault"],
-  ["Left-handed toolbar", "device.leftHandedToolbar", true, "device"],
-  ["Copy text fields as text", "copyTextFieldsAsText", true, "vault"],
+  ["Selection highlights", "selectionHighlightsEnabled", false, "vault", "Performance"],
+  ["Left-handed toolbar", "device.leftHandedToolbar", true, "device", "Appearance"],
+  ["Copy text fields as text", "copyTextFieldsAsText", true, "vault", "General"],
 ] as const)(
   "recovers native %s writes with an associated error, focus and retry",
-  async (name, key, next, scope) => {
+  async (name, key, next, scope, heading) => {
     let fail = true;
     let persistedVault = createBuiltInSettings();
     const save = vi.fn(() => {
@@ -180,11 +180,7 @@ it.each([
       store,
     );
     const definitions = tab.getSettingDefinitions();
-    const group = definitions.find(
-      (item) =>
-        "heading" in item &&
-        item.heading === (name === "Selection highlights" ? "Performance" : "General"),
-    );
+    const group = definitions.find((item) => "heading" in item && item.heading === heading);
     if (group === undefined || !("items" in group)) throw new Error("Missing control group.");
     const dispose = mount(findRender(group.items ?? [], name));
     const input = document.querySelector<HTMLInputElement>(`[aria-label="${name}"]`)!;

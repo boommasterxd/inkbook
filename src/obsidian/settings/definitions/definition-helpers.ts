@@ -50,6 +50,7 @@ export function settingsAction(
     name,
     desc,
     render: (setting) => {
+      setting.controlEl.remove();
       const element = setting.settingEl;
       const writes = new SettingsWriteFeedback(activate.feedback?.t);
       const error = createSettingsWriteError(

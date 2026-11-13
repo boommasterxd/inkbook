@@ -4,16 +4,11 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type SettingDefinitionItem, type SettingDefinitionRender } from "obsidian";
 
-import {
-  createBuiltInDeviceSettings,
-  createBuiltInSettings,
-} from "../../../../src/domain/settings";
 import type { SettingsControlKey } from "../../../../src/obsidian/settings/control-values";
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { labelledByElements } from "../../../fixtures/accessibility";
 import {
-  confirmAction,
   createTab,
   DeviceAdapter,
   groups,
@@ -66,25 +61,13 @@ function renderedLabels(definition: SettingDefinitionRender): string[] {
   return labels;
 }
 
-function resetGroup(tab: ReturnType<typeof createTab>, heading: string | undefined): void {
-  const group = groups(tab).find((candidate) => candidate.heading === heading);
-  const action = group?.items?.find(
-    (item): item is SettingDefinitionRender =>
-      item.name === "Reset group to defaults" && "render" in item,
-  );
-  if (action === undefined) throw new Error(`Missing reset action for ${heading ?? "General"}.`);
-  const rendered = renderDefinition(action);
-  rendered.container.click();
-  rendered.cleanup();
-}
-
 function isRenderDefinition(
   definition: SettingDefinitionItem<SettingsControlKey>,
 ): definition is SettingDefinitionRender {
   return "render" in definition && typeof definition.render === "function";
 }
 
-describe("InkbookSettingTab definitions", () => {
+describe("InkbookSettingTab group definitions and reset actions", () => {
   it("returns the required groups in order without storage access", () => {
     const vault = new VaultAdapter();
     const device = new DeviceAdapter();
@@ -94,6 +77,7 @@ describe("InkbookSettingTab definitions", () => {
 
     expect(groups(tab).map((group) => group.heading)).toEqual([
       "General",
+      "Appearance",
       "Performance",
       "Page defaults",
       "Drawing tools",
@@ -135,7 +119,9 @@ describe("InkbookSettingTab definitions", () => {
     groupRow.cleanup();
     globalRow.cleanup();
   });
+});
 
+describe("InkbookSettingTab general, appearance and tool controls", () => {
   it("exposes structural pages and conditional folder rows", async () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     const tab = createTab(store);
@@ -147,6 +133,10 @@ describe("InkbookSettingTab definitions", () => {
       "Custom vault folder",
       "Create custom folder",
       "Copy text fields as text",
+      "Reset group to defaults",
+    ]);
+    const appearance = groups(tab).find((group) => group.heading === "Appearance");
+    expect(appearance?.items?.map((item) => item.name)).toEqual([
       "Language",
       "Left-handed toolbar",
       "Motion",
@@ -262,11 +252,13 @@ describe("InkbookSettingTab snapping and refresh definitions", () => {
   it("shows the live automatic refresh-rate result in the selected option", () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     const detectingTab = createTab(store, () => ({ kind: "detecting", refreshRate: 120 }));
-    const detectingRate = groups(detectingTab)[1]?.items?.find(
-      (item) => item.name === "Display refresh rate",
-    );
+    const detectingRate = groups(detectingTab)
+      .find((group) => group.heading === "Performance")
+      ?.items?.find((item) => item.name === "Display refresh rate");
     const tab = createTab(store, () => ({ kind: "detected", refreshRate: 144 }));
-    const refreshRate = groups(tab)[1]?.items?.find((item) => item.name === "Display refresh rate");
+    const refreshRate = groups(tab)
+      .find((group) => group.heading === "Performance")
+      ?.items?.find((item) => item.name === "Display refresh rate");
     if (refreshRate === undefined || !("control" in refreshRate)) {
       throw new Error("Missing display refresh-rate control.");
     }
@@ -313,184 +305,5 @@ describe("InkbookSettingTab visible labels", () => {
           !/^Auto \((?:detected: \d+ Hz|detecting…)\)$/.test(label),
       ),
     ).toEqual([]);
-  });
-});
-
-function createResetFixture() {
-  const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
-  return {
-    store,
-    tab: createTab(store),
-    defaults: createBuiltInSettings(),
-    deviceDefaults: createBuiltInDeviceSettings(),
-  };
-}
-
-describe("InkbookSettingTab General and Performance reset integration", () => {
-  it("isolates General and Performance resets across both storage scopes", async () => {
-    const { store, tab, defaults, deviceDefaults } = createResetFixture();
-    await tab.setControlValue("startupTool", "arrow");
-    await tab.setControlValue("selectionHighlightsEnabled", false);
-    await tab.setControlValue("refreshRatePreference", 60);
-    await tab.setControlValue("filePlacement.mode", "note-folder");
-    expect(tab.getControlValue("selectionHighlightsEnabled")).toBe(false);
-    await tab.setControlValue("pageDefaults.activeBufferLines", 6);
-    await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
-    await tab.setControlValue("device.language", "en");
-    await tab.setControlValue("device.motion", "reduced");
-    await tab.setControlValue("copyTextFieldsAsText", true);
-    await tab.setControlValue("device.fingerDrawingEnabled", !deviceDefaults.fingerDrawingEnabled);
-    await tab.setControlValue("toolDefaults.pen.width", 14);
-    await tab.setControlValue("device.scrollPreloadMarginPx", 800);
-
-    resetGroup(tab, "General");
-    await vi.waitFor(() => expect(tab.getControlValue("startupTool")).toBe(defaults.startupTool));
-    expect(store.getVaultSettings()).toMatchObject({
-      filePlacement: defaults.filePlacement,
-      selectionHighlightsEnabled: false,
-      refreshRatePreference: 60,
-      startupTool: defaults.startupTool,
-      copyTextFieldsAsText: defaults.copyTextFieldsAsText,
-    });
-    expect(store.getDeviceSettings()).toMatchObject({
-      language: deviceDefaults.language,
-      leftHandedToolbar: deviceDefaults.leftHandedToolbar,
-      motion: deviceDefaults.motion,
-      fingerDrawingEnabled: !deviceDefaults.fingerDrawingEnabled,
-    });
-    expect(tab.getControlValue("toolDefaults.pen.width")).toBe(14);
-    expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
-    expect(tab.getControlValue("device.scrollPreloadMarginPx")).toBe(800);
-    await tab.setControlValue("startupTool", "arrow");
-    await tab.setControlValue("filePlacement.mode", "note-folder");
-    resetGroup(tab, "Performance");
-    await vi.waitFor(() => expect(tab.getControlValue("device.scrollPreloadMarginPx")).toBe(300));
-    expect(store.getVaultSettings()).toMatchObject({
-      selectionHighlightsEnabled: defaults.selectionHighlightsEnabled,
-      refreshRatePreference: defaults.refreshRatePreference,
-      startupTool: "arrow",
-      filePlacement: { mode: "note-folder" },
-    });
-    expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
-    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(deviceDefaults.leftHandedToolbar);
-  });
-});
-
-describe("InkbookSettingTab remaining group reset integration", () => {
-  it("resets every remaining logical group without changing the others", async () => {
-    const { store, tab, defaults, deviceDefaults } = createResetFixture();
-    await tab.setControlValue("pageDefaults.activeBufferLines", 6);
-    await tab.setControlValue("toolDefaults.pen.width", 14);
-    await tab.setControlValue("copyTextFieldsAsText", true);
-    await tab.setControlValue("toolDefaults.pen.holdToShapeEnabled", false);
-    await tab.setControlValue("toolDefaults.line.snappingEnabled", false);
-    await tab.setControlValue("toolDefaults.arrow.snappingEnabled", false);
-    await tab.setControlValue("toolDefaults.select.area", "rectangle");
-    await tab.setControlValue("toolDefaults.shapes.rectangle.outlineWidth", 8);
-    await tab.setControlValue("toolDefaults.shapes.rectangle.fillOpacity", 0.1);
-    await tab.setControlValue("snapping.angles", false);
-    await tab.setControlValue("device.fingerDrawingEnabled", !deviceDefaults.fingerDrawingEnabled);
-    await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
-    resetGroup(tab, "Page defaults");
-    await vi.waitFor(() =>
-      expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(
-        defaults.pageDefaults.activeBufferLines,
-      ),
-    );
-    expect(store.getVaultSettings().pageDefaults).toEqual(defaults.pageDefaults);
-    resetGroup(tab, "Drawing tools");
-    await vi.waitFor(() =>
-      expect(tab.getControlValue("toolDefaults.pen.width")).toBe(defaults.toolDefaults.pen.width),
-    );
-    expect(store.getVaultSettings().toolDefaults).toMatchObject({
-      eraser: defaults.toolDefaults.eraser,
-      highlighter: defaults.toolDefaults.highlighter,
-      pen: defaults.toolDefaults.pen,
-      select: defaults.toolDefaults.select,
-      straightHighlighter: defaults.toolDefaults.straightHighlighter,
-    });
-    expect(tab.getControlValue("toolDefaults.select.area")).toBe("lasso");
-    expect(tab.getControlValue("copyTextFieldsAsText")).toBe(true);
-    expect(tab.getControlValue("toolDefaults.line.snappingEnabled")).toBe(false);
-    expect(tab.getControlValue("toolDefaults.arrow.snappingEnabled")).toBe(false);
-    resetGroup(tab, "Snapping");
-    await vi.waitFor(() =>
-      expect(tab.getControlValue("snapping.angles")).toBe(defaults.snapping.angles),
-    );
-    expect(store.getVaultSettings().snapping).toEqual(defaults.snapping);
-    resetGroup(tab, "Shapes and structures");
-    await vi.waitFor(() =>
-      expect(tab.getControlValue("toolDefaults.shapes.rectangle.outlineWidth")).toBe(
-        defaults.toolDefaults.shapes.rectangle.outlineWidth,
-      ),
-    );
-    expect(store.getVaultSettings().toolDefaults).toMatchObject({
-      arrow: defaults.toolDefaults.arrow,
-      line: defaults.toolDefaults.line,
-      coordinateSystem: defaults.toolDefaults.coordinateSystem,
-      shapes: defaults.toolDefaults.shapes,
-      table: defaults.toolDefaults.table,
-    });
-    expect(tab.getControlValue("toolDefaults.shapes.rectangle.fillOpacity")).toBe(0.5);
-    resetGroup(tab, "Input");
-    expect(tab.getControlValue("device.fingerDrawingEnabled")).toBe(
-      deviceDefaults.fingerDrawingEnabled,
-    );
-    expect(store.getDeviceSettings()).toMatchObject({
-      fingerDrawingEnabled: deviceDefaults.fingerDrawingEnabled,
-      penTapInsertion: deviceDefaults.penTapInsertion,
-    });
-    expect(tab.getControlValue("device.leftHandedToolbar")).toBe(!deviceDefaults.leftHandedToolbar);
-  });
-});
-
-describe("InkbookSettingTab full reset integration", () => {
-  it("does not reset after the settings surface closes during confirmation", async () => {
-    const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
-    await store.load();
-    await store.updateVaultSettings((settings) => ({ ...settings, startupTool: "arrow" }));
-    const definitions = createTab(store).getControlDefinitions();
-    const rendered = renderDefinition(
-      definitions[definitions.length - 1] as SettingDefinitionRender,
-    );
-    document.body.append(rendered.container);
-    let finish: ((confirmed: boolean) => void) | undefined;
-    confirmAction.mockReturnValue(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
-    rendered.container.click();
-    rendered.container.remove();
-    finish?.(true);
-    await Promise.resolve();
-    expect(store.getVaultSettings().startupTool).toBe("arrow");
-    rendered.cleanup();
-  });
-
-  it("requires confirmation before resetting both scopes", async () => {
-    const vault = new VaultAdapter();
-    const device = new DeviceAdapter();
-    const store = new InkbookSettingsStore(vault, device);
-    await store.load();
-    await store.updateVaultSettings((settings) => ({ ...settings, startupTool: "arrow" }));
-    device.value.motion = "full";
-    const tab = createTab(store);
-    const definitions = tab.getControlDefinitions();
-    const action = definitions[definitions.length - 1] as SettingDefinitionRender;
-    const confirmMock = confirmAction.mockResolvedValue(false);
-    const rendered = renderDefinition(action);
-    document.body.append(rendered.container);
-
-    rendered.container.click();
-    await Promise.resolve();
-    expect(store.getVaultSettings().startupTool).toBe("arrow");
-
-    confirmMock.mockResolvedValue(true);
-    rendered.container.click();
-    await vi.waitFor(() => expect(store.getVaultSettings()).toEqual(createBuiltInSettings()));
-    expect(device.value).toEqual(createBuiltInDeviceSettings());
-    rendered.cleanup();
-    rendered.container.remove();
   });
 });

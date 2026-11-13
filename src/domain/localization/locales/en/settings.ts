@@ -11,6 +11,7 @@ export const settings = {
   "settings.penTap": "Pen-tap insertion",
   "settings.penTapDescription": "Insert an Inkbook embed when tapping with a pen.",
   "settings.general": "General",
+  "settings.appearance": "Appearance",
   "settings.leftHanded": "Left-handed toolbar",
   "settings.leftHandedDescription": "Align the toolbar for left-handed use.",
   "settings.motion": "Motion",

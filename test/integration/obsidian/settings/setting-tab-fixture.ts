@@ -49,9 +49,6 @@ vi.mock("obsidian", async (importOriginal) => ({
       this.refreshes += 1;
     }
   },
-  Setting: class {
-    public constructor(public settingEl: HTMLElement) {}
-  },
   SettingGroup: class {
     public constructor(public listEl: HTMLElement) {}
   },
