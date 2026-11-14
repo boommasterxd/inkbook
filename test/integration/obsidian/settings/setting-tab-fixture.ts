@@ -109,7 +109,10 @@ export function groups(tab: InkbookSettingTab): SettingDefinitionGroup<SettingsC
     .getControlDefinitions()
     .filter(
       (item): item is SettingDefinitionGroup<SettingsControlKey> =>
-        "type" in item && item.type === "group",
+        "type" in item &&
+        item.type === "group" &&
+        item.heading !== undefined &&
+        (typeof item.visible === "function" ? item.visible() : item.visible !== false),
     );
 }
 

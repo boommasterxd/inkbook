@@ -108,6 +108,7 @@ describe("settings palette and device defaults", () => {
       version: 2,
       language: "auto",
       onboardingDismissed: false,
+      readableLineWidthWarningDismissed: false,
       scrollPreloadMarginPx: 300,
       fingerDrawingEnabled: false,
       penTapInsertion: "off",

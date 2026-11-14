@@ -12,6 +12,13 @@ export const settings = {
   "settings.penTapDescription": "Insert an Inkbook embed when tapping with a pen.",
   "settings.general": "General",
   "settings.appearance": "Appearance",
+  "settings.readableWidth.title": "More room for your drawings",
+  "settings.readableWidth.description":
+    "Obsidian limits the note width. Turn off readable line length to give embeds more room.",
+  "settings.readableWidth.fix": "Use full width",
+  "settings.readableWidth.dismiss": "Hide until Inkbook restarts",
+  "settings.readableWidth.dismissPermanently": "Always hide this warning",
+  "settings.readableWidth.failure": "The note width could not be changed. Try again.",
   "settings.leftHanded": "Left-handed toolbar",
   "settings.leftHandedDescription": "Align the toolbar for left-handed use.",
   "settings.motion": "Motion",

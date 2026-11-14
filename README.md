@@ -99,6 +99,8 @@ When updating, replace those three files and reload Obsidian. Keep the existing 
 
 The first empty embed you open offers an optional toolbar tour, including the Text tool and its Markdown and formula editing. Choose **Start tour** or **Skip tour**, and skip the remaining steps whenever you like. The invitation will not appear again on this device and vault. You can reopen the tour through **More options → Quick tour** while the active embed is empty. Existing or imported drawings do not offer the tour.
 
+For wider drawings, turn off Obsidian's **Editor → Readable line length** setting. Inkbook's settings offer the same change when the column is limited.
+
 Inkbook creates the SVG attachment and inserts its reference for you. A reference occupies its own Markdown block:
 
 ```markdown

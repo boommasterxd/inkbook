@@ -36,6 +36,7 @@ function deviceSettingsEqual(
   return (
     left.language === right.language &&
     left.onboardingDismissed === right.onboardingDismissed &&
+    left.readableLineWidthWarningDismissed === right.readableLineWidthWarningDismissed &&
     left.scrollPreloadMarginPx === right.scrollPreloadMarginPx &&
     left.fingerDrawingEnabled === right.fingerDrawingEnabled &&
     left.penTapInsertion === right.penTapInsertion &&

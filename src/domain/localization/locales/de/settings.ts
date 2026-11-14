@@ -13,6 +13,14 @@ export const settings = {
   "settings.penTapDescription": "Fügt beim Tippen mit einem Stift eine Inkbook-Einbettung ein.",
   "settings.general": "Allgemein",
   "settings.appearance": "Darstellung",
+  "settings.readableWidth.title": "Mehr Platz für deine Zeichnungen",
+  "settings.readableWidth.description":
+    "Obsidian begrenzt die Textbreite. Deaktiviere die lesbare Zeilenlänge, damit Embeds mehr Platz haben.",
+  "settings.readableWidth.fix": "Volle Breite nutzen",
+  "settings.readableWidth.dismiss": "Bis zum Neustart von Inkbook ausblenden",
+  "settings.readableWidth.dismissPermanently": "Diesen Hinweis dauerhaft ausblenden",
+  "settings.readableWidth.failure":
+    "Die Textbreite konnte nicht geändert werden. Versuche es erneut.",
   "settings.leftHanded": "Werkzeugleiste für Linkshänder",
   "settings.leftHandedDescription": "Richtet die Werkzeugleiste für linkshändige Bedienung aus.",
   "settings.motion": "Animationen",

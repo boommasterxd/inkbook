@@ -32,7 +32,9 @@ async function fixture() {
   }));
   const createFolder = vi.fn(async () => undefined);
   const tab = new InkbookSettingTab({} as App, {} as Plugin, store, { createFolder });
-  const general = tab.getSettingDefinitions()[0];
+  const general = tab
+    .getSettingDefinitions()
+    .find((item) => "type" in item && item.type === "group" && item.heading === "General");
   if (general === undefined || !("items" in general)) throw new Error("Missing general group");
   const action = general.items?.find(
     (item) => "name" in item && item.name === "Create custom folder",

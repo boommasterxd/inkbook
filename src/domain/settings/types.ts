@@ -196,6 +196,7 @@ export interface InkbookDeviceSettingsV2 {
   version: 2;
   language: (typeof LANGUAGE_PREFERENCES)[number];
   onboardingDismissed: boolean;
+  readableLineWidthWarningDismissed: boolean;
   scrollPreloadMarginPx: number;
   fingerDrawingEnabled: boolean;
   penTapInsertion: (typeof PEN_TAP_INSERTIONS)[number];

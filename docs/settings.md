@@ -40,6 +40,8 @@ If local storage fails, a warning explains that the preference was not saved and
 
 ## Settings Root
 
+The native Inkbook tab and owned settings dialog show a yellow width notice above the groups when Obsidian's `readableLineLength` is explicitly `true`. The public `SettingTab` configuration access reads this value and the **Use full width** action sets it to `false`; unknown or unavailable host values show no notice. **Hide until Inkbook restarts** hides it until Inkbook reloads. **Always hide this warning** stores the device-and-vault boolean `readableLineWidthWarningDismissed`, whose built-in value is `false`. Earlier valid device settings receive that default without diagnostics. Group resets preserve dismissal; a complete reset clears both dismissals without changing Obsidian's width preference. Failed writes retain the notice and expose the shared inline error.
+
 ```ts
 interface InkbookSettingsV4 {
   version: 4;
@@ -83,6 +85,7 @@ interface InkbookDeviceSettingsV2 {
   version: 2;
   language: "auto" | "de" | "en";
   onboardingDismissed: boolean;
+  readableLineWidthWarningDismissed: boolean;
   fingerDrawingEnabled: boolean;
   penTapInsertion: "off" | "handwriting";
   leftHandedToolbar: boolean;

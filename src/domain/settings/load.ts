@@ -344,6 +344,7 @@ const DEVICE_SETTINGS_V2_KEYS = [
   ...LEGACY_DEVICE_SETTINGS_V2_KEYS,
   "scrollPreloadMarginPx",
   "onboardingDismissed",
+  "readableLineWidthWarningDismissed",
   "language",
 ] as const;
 
@@ -369,12 +370,14 @@ function addLegacyDeviceSettingsDefaults(
     ...("scrollPreloadMarginPx" in input ? ["scrollPreloadMarginPx"] : []),
     ...("onboardingDismissed" in input ? ["onboardingDismissed"] : []),
     ...("language" in input ? ["language"] : []),
+    ...("readableLineWidthWarningDismissed" in input ? ["readableLineWidthWarningDismissed"] : []),
   ];
   return hasExactKeys(input, keys)
     ? {
         scrollPreloadMarginPx: fallback.scrollPreloadMarginPx,
         onboardingDismissed: fallback.onboardingDismissed,
         language: fallback.language,
+        readableLineWidthWarningDismissed: fallback.readableLineWidthWarningDismissed,
         ...input,
       }
     : input;
@@ -409,6 +412,13 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
         booleanValue,
         diagnostics,
         "onboardingDismissed",
+      ),
+      readableLineWidthWarningDismissed: validOrDefault(
+        value.readableLineWidthWarningDismissed,
+        fallback.readableLineWidthWarningDismissed,
+        booleanValue,
+        diagnostics,
+        "readableLineWidthWarningDismissed",
       ),
       scrollPreloadMarginPx: validOrDefault(
         value.scrollPreloadMarginPx,

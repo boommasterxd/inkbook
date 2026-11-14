@@ -42,6 +42,7 @@ import type { ToolSectionValues } from "./definitions/tool-section";
 import type { InkImportSettingsAccess } from "./import/import-access";
 import { importSettingsGroup } from "./import/import-settings";
 import type { ImportHistoryState } from "./import/import-history";
+import { ReadableLineWidthWarning } from "./readable-line-width-warning";
 
 export interface CustomFolderPort {
   createFolder(path: string): Promise<void>;
@@ -66,6 +67,7 @@ export class InkbookSettingTab extends PluginSettingTab {
   private readonly nativeViewState = new SettingsViewState();
   private readonly importHistoryState: ImportHistoryState = {};
   private readonly updateListeners = new Set<() => void>();
+  private readonly widthWarning: ReadableLineWidthWarning;
   readonly settingsFeedback = {
     t: (
       key: import("../../domain/localization").MessageKey,
@@ -85,6 +87,13 @@ export class InkbookSettingTab extends PluginSettingTab {
   ) {
     super(app, plugin);
     this.controls = new SettingsControlValues(store);
+    this.widthWarning = new ReadableLineWidthWarning({
+      app,
+      store,
+      nativeContainer: this.containerEl,
+      onChanged: () => this.update(),
+      ...this.settingsFeedback,
+    });
     plugin.register?.(bindElementLanguage(this.containerEl, store.localization));
     const unsubscribe = store.localization.subscribe(() => this.update());
     plugin.register?.(unsubscribe);
@@ -210,9 +219,10 @@ export class InkbookSettingTab extends PluginSettingTab {
           ]),
       this.resetAllAction(),
     ];
-    return definitions.map((definition, index) =>
+    const groups = definitions.map((definition, index) =>
       Object.assign(definition, { settingsIdentity: `settings-group:${String(index)}` }),
     );
+    return [this.widthWarning.definition(), ...groups];
   }
 
   private toolSectionValues(viewState: SettingsViewState): ToolSectionValues {
@@ -446,6 +456,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     });
     if (!confirmed || !element.isConnected) return;
     await this.store.resetAll();
+    this.widthWarning.resetSessionDismissal();
     this.update();
   }
 }

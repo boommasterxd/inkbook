@@ -2,6 +2,8 @@
 
 This checklist supplements the [quality and release acceptance contract](quality-and-testing.md#release-gate).
 
+README and other product screenshots use the dedicated QA vault with Obsidian's **Readable line length** disabled, so the note and its embeds use the available width. Keep that QA preference for subsequent captures; restore unrelated host preferences after verification.
+
 Manual checks are not smoke or end-to-end test suites. They are focused acceptance measurements for behavior that cannot be represented faithfully in the automated harness:
 
 - pen latency and palm rejection on one supported stylus device; on affected Linux pen hardware, record the Obsidian/Electron version and Wayland or X11/XWayland backend and verify native crosshair selection separately from SVG icon and ring feedback. CSS cursor selection may not control a separately managed tablet-tool cursor. Xvfb and synthetic pen events do not establish physical S Pen behavior

@@ -127,6 +127,7 @@ describe("InkbookSettingsStore device migration", () => {
       version: 2,
       language: "auto",
       onboardingDismissed: false,
+      readableLineWidthWarningDismissed: false,
       scrollPreloadMarginPx: 300,
       keyboardShortcuts: createBuiltInDeviceSettings().keyboardShortcuts,
     });
@@ -335,22 +336,43 @@ describe("InkbookSettingsStore preload margin persistence", () => {
 });
 
 describe("InkbookSettingsStore device write failures", () => {
-  it.each([{ onboardingDismissed: true }, { scrollPreloadMarginPx: 100 }])(
-    "preserves confirmed settings and emits nothing when persisting %o fails",
-    async (change) => {
-      const { device, store, listener } = await createSubscribedDeviceStore();
-      const confirmed = store.getDeviceSettings();
-      vi.spyOn(device, "saveLocalStorage").mockImplementation(() => {
-        throw new Error("Storage unavailable");
-      });
+  it.each([
+    { onboardingDismissed: true },
+    { scrollPreloadMarginPx: 100 },
+    { readableLineWidthWarningDismissed: true },
+  ])("preserves confirmed settings and emits nothing when persisting %o fails", async (change) => {
+    const { device, store, listener } = await createSubscribedDeviceStore();
+    const confirmed = store.getDeviceSettings();
+    vi.spyOn(device, "saveLocalStorage").mockImplementation(() => {
+      throw new Error("Storage unavailable");
+    });
 
-      expect(() => store.updateDeviceSettings((settings) => ({ ...settings, ...change }))).toThrow(
-        "Storage unavailable",
-      );
-      expect(store.getDeviceSettings()).toEqual(confirmed);
-      expect(listener).not.toHaveBeenCalled();
-    },
+    expect(() => store.updateDeviceSettings((settings) => ({ ...settings, ...change }))).toThrow(
+      "Storage unavailable",
+    );
+    expect(store.getDeviceSettings()).toEqual(confirmed);
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+it("persists width-warning dismissal locally and restores it on reload until a global reset", async () => {
+  const { device, store, listener } = await createSubscribedDeviceStore();
+  store.updateDeviceSettings((settings) => ({
+    ...settings,
+    readableLineWidthWarningDismissed: true,
+  }));
+  expect(listener).toHaveBeenCalledWith({
+    ...createBuiltInDeviceSettings(),
+    readableLineWidthWarningDismissed: true,
+  });
+  const reloaded = new InkbookSettingsStore(
+    new VaultFake(createBuiltInSettings()),
+    new DeviceFake(device.saves[0]?.data),
   );
+  await reloaded.load();
+  expect(reloaded.getDeviceSettings().readableLineWidthWarningDismissed).toBe(true);
+  await reloaded.resetAll();
+  expect(reloaded.getDeviceSettings().readableLineWidthWarningDismissed).toBe(false);
 });
 
 it("persists the language on this device and restores host language when automatic is selected", async () => {

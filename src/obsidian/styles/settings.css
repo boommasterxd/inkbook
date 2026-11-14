@@ -227,6 +227,69 @@
   margin-block-start: var(--size-4-3);
 }
 
+.inkbook-width-warning-group {
+  --setting-items-background: transparent;
+}
+
+.inkbook-width-warning-group + .inkbook-settings-general-group {
+  margin-block-start: 0;
+}
+
+.inkbook-width-warning-group .inkbook-width-warning-footprint:not([hidden]) {
+  padding-block-end: var(--size-4-6);
+}
+
+.inkbook-width-warning-group .setting-item.inkbook-width-warning:not([hidden]) {
+  align-items: start;
+  background: color-mix(in srgb, var(--color-yellow) 12%, var(--background-primary));
+  border: var(--border-width) solid color-mix(in srgb, var(--color-yellow) 45%, transparent);
+  border-radius: var(--radius-l);
+  display: grid;
+  gap: var(--size-4-3);
+  grid-template-columns: var(--icon-size) minmax(0, 1fr);
+  padding: var(--size-4-4);
+}
+
+.inkbook-width-warning-icon {
+  color: color-mix(in srgb, var(--color-yellow) 55%, var(--text-normal));
+}
+
+.inkbook-width-warning-icon > svg {
+  block-size: var(--icon-size);
+  inline-size: var(--icon-size);
+}
+
+.inkbook-width-warning-actions {
+  --inkbook-menu-hover-background: color-mix(in srgb, var(--color-yellow) 15%, transparent);
+  --inkbook-menu-press-background: color-mix(in srgb, var(--color-yellow) 25%, transparent);
+
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-block-start: var(--size-4-2);
+}
+
+.inkbook-width-warning-actions > .inkbook-width-warning-button {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-m);
+  box-shadow: none;
+  color: var(--text-normal);
+  display: inline-flex;
+  font-size: var(--font-ui-small);
+  gap: var(--size-4-2);
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: var(--size-4-2);
+  transition: none;
+}
+
+.inkbook-width-warning-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
 @media (width <= 600px) {
   .inkbook-settings-tool-controls .inkbook-menu-value-field,
   .inkbook-settings-inline-controls .inkbook-menu-value-field,

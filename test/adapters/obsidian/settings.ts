@@ -253,13 +253,15 @@ export class Setting {
 
 export class SettingGroup {
   readonly #container: HTMLElement;
+  readonly listEl: HTMLElement;
 
   public constructor(container: HTMLElement) {
     this.#container = container.createDiv({ cls: "setting-group" });
+    this.listEl = this.#container.createDiv({ cls: "setting-items" });
   }
 
   public setHeading(heading: string): this {
-    this.#container.createEl("h3", { text: heading });
+    this.listEl.before(this.#container.createEl("h3", { text: heading }));
     return this;
   }
 
@@ -269,7 +271,7 @@ export class SettingGroup {
   }
 
   public addSetting(configure: (setting: Setting) => void): this {
-    const row = this.#container.createDiv({ cls: "setting-item" });
+    const row = this.listEl.createDiv({ cls: "setting-item" });
     configure(new Setting(row));
     return this;
   }

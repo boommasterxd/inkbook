@@ -42,14 +42,21 @@ export class SettingDefinitionRenderer {
   }
 
   #renderGroup(container: HTMLElement, definition: SettingDefinitionGroup): void {
+    const items = (definition.items ?? []).flatMap((item, index) =>
+      !isPage(item) && visible(item) ? [{ item, index }] : [],
+    );
+    if (
+      definition.heading === undefined &&
+      items.length === 0 &&
+      definition.search === undefined &&
+      (definition.extraButtons?.length ?? 0) === 0
+    )
+      return;
     const group = new SettingGroup(container);
     if (definition.heading !== undefined) group.setHeading(definition.heading);
     if (definition.cls !== undefined) group.addClass(definition.cls);
-    definition.items?.forEach((item, index) => {
-      if (!isPage(item) && visible(item)) {
-        this.#renderDefinition(group, item, index, settingsGroupIdentity(definition));
-      }
-    });
+    for (const { item, index } of items)
+      this.#renderDefinition(group, item, index, settingsGroupIdentity(definition));
   }
 
   #renderDefinition(

@@ -133,6 +133,7 @@ export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV2 {
   return {
     version: 2,
     onboardingDismissed: false,
+    readableLineWidthWarningDismissed: false,
     scrollPreloadMarginPx: DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
     fingerDrawingEnabled: false,
     penTapInsertion: "off",
