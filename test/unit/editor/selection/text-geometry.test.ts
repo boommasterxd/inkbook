@@ -18,29 +18,29 @@ import { SelectionScaleGesture } from "../../../../src/editor/selection/transfor
 import { layoutSelectionHandles } from "../../../../src/editor/selection/handles";
 import { line, snapshot, textElement } from "../../domain/schema/fixtures";
 
-describe("text field geometry", () => {
-  it("retains rotated field bounds while hit testing only its rendered line", () => {
-    const text = { ...textElement(), rotation: 90 };
-    expect(calculateElementBounds(text)).toEqual({ minX: 125, minY: 75, maxX: 175, maxY: 175 });
-    expect(selectionCenterlineBounds(text)).toEqual(calculateElementBounds(text));
-    for (const [point, expected] of [
-      [{ x: 165, y: 100 }, true],
-      [{ x: 150, y: 160 }, false],
-      [{ x: 110, y: 125 }, false],
-    ] as const) {
-      expect(elementContainsPoint(text, point, 0)).toBe(expected);
-      const eraser = createSweptCapsuleCheck(point, { x: point.x + 1, y: point.y }, 0, text);
-      expect(eraser.advance(Infinity).result).toBe(expected);
-    }
-    const primitives: unknown[] = [];
-    visitVisibleElementPrimitives(text, (primitive) => {
-      primitives.push(primitive);
-      return true;
-    });
-    expect(primitives).toHaveLength(1);
-    expect(primitives[0]).toMatchObject({ kind: "polygon" });
+it("retains rotated field bounds while hit testing only its rendered line", () => {
+  const text = { ...textElement(), rotation: 90 };
+  expect(calculateElementBounds(text)).toEqual({ minX: 125, minY: 75, maxX: 175, maxY: 175 });
+  expect(selectionCenterlineBounds(text)).toEqual(calculateElementBounds(text));
+  for (const [point, expected] of [
+    [{ x: 165, y: 100 }, true],
+    [{ x: 150, y: 160 }, false],
+    [{ x: 110, y: 125 }, false],
+  ] as const) {
+    expect(elementContainsPoint(text, point, 0)).toBe(expected);
+    const eraser = createSweptCapsuleCheck(point, { x: point.x + 1, y: point.y }, 0, text);
+    expect(eraser.advance(Infinity).result).toBe(expected);
+  }
+  const primitives: unknown[] = [];
+  visitVisibleElementPrimitives(text, (primitive) => {
+    primitives.push(primitive);
+    return true;
   });
+  expect(primitives).toHaveLength(1);
+  expect(primitives[0]).toMatchObject({ kind: "polygon" });
+});
 
+describe("text field geometry", () => {
   it("reuses text layout during translation and rotation and resolves all rectangle anchors", () => {
     const text = textElement();
     const moved = moveSelection([text], { x: 10, y: 20 })[0]!;
