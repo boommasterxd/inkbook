@@ -347,11 +347,11 @@ it.each(["cached", "new-preview", "preview-reset"] as const)(
   },
 );
 
-it("advances text windows fairly while every short admitted slice receives newer viewport bounds", () => {
+function mountedViewportFields(count: number) {
   const mounted = new Map<string, ReturnType<typeof createMountedElement>>();
   const viewport = new TextViewportPublication(mounted, () => undefined);
   viewport.set({ minX: 0, minY: 0, maxX: 200, maxY: 100 });
-  const texts = Array.from({ length: 3 }, (_, index) => {
+  const texts = Array.from({ length: count }, (_, index) => {
     const element = {
       ...field(),
       id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
@@ -374,6 +374,43 @@ it("advances text windows fairly while every short admitted slice receives newer
     viewport.mount(entry);
     return text;
   });
+  return { viewport, texts };
+}
+
+it("publishes the final viewport for fields visited before an in-flight scan was refreshed", () => {
+  const { viewport, texts } = mountedViewportFields(2);
+  viewport.write(Infinity, () => 0);
+  const first = texts[0]!;
+  const prepareFirst = first.prepareViewport.bind(first);
+  let paused = false;
+  const prepare = texts.map((text) => vi.spyOn(text, "prepareViewport"));
+  prepare[0]!.mockImplementation((deadline, now) => {
+    const complete = prepareFirst(deadline, now);
+    paused = true;
+    return complete;
+  });
+  try {
+    viewport.set({ minX: 0, minY: 800, maxX: 200, maxY: 900 });
+    expect(viewport.write(1, () => (paused ? 1 : 0))).toBe(true);
+    expect(lines(first).has("row020")).toBe(true);
+    expect(prepare[1]).not.toHaveBeenCalled();
+    for (const minY of [1200, 1600, 2000])
+      viewport.set({ minX: 0, minY, maxX: 200, maxY: minY + 100 });
+    expect(viewport.write(Infinity, () => 0)).toBe(false);
+    for (const text of texts) {
+      expect(lines(text).has("row050")).toBe(true);
+      expect(lines(text).has("row020")).toBe(false);
+    }
+    for (const spy of prepare) expect(spy).toHaveBeenCalledTimes(2);
+    expect(viewport.pending).toBe(false);
+  } finally {
+    for (const spy of prepare) spy.mockRestore();
+    viewport.release();
+  }
+});
+
+it("advances text windows fairly while every short admitted slice receives newer viewport bounds", () => {
+  const { viewport, texts } = mountedViewportFields(3);
   const prepare = texts.map((text) => vi.spyOn(text, "prepareViewport"));
   let clock = 0;
   try {

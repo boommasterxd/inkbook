@@ -16,6 +16,7 @@ import type { MountedTextPresentation } from "./mounted-text";
 export class TextViewportPublication {
   #bounds: Bounds | undefined;
   #scan: MapIterator<string> | undefined;
+  #rescan = false;
   readonly #texts = new Map<string, MountedTextPresentation>();
   readonly #pending = new Set<string>();
   #scanNext = true;
@@ -56,7 +57,8 @@ export class TextViewportPublication {
   }
 
   public refresh(): void {
-    this.#scan ??= this.#texts.keys();
+    if (this.#scan) this.#rescan = true;
+    else this.#scan = this.#texts.keys();
   }
 
   public readonly localBounds = (
@@ -106,8 +108,10 @@ export class TextViewportPublication {
       if (stepped && now() >= deadline) return true;
       if (this.#scan && (this.#scanNext || this.#pending.size === 0)) {
         const next = this.#scan.next();
-        if (next.done) this.#scan = undefined;
-        else this.invalidate(next.value);
+        if (next.done) {
+          this.#scan = this.#rescan ? this.#texts.keys() : undefined;
+          this.#rescan = false;
+        } else this.invalidate(next.value);
         this.#scanNext = false;
       } else {
         const id = this.#pending.values().next().value!;
@@ -122,6 +126,7 @@ export class TextViewportPublication {
 
   public release(): void {
     this.#scan = undefined;
+    this.#rescan = false;
     for (const text of this.#texts.values()) text.cancelViewport();
     this.#texts.clear();
     this.#pending.clear();
