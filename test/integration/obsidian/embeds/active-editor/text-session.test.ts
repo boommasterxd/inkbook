@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Localization } from "../../../../../src/domain/localization";
 import {
   activeTextLayout,
+  openTextSessionRange,
   textSessionFontResources,
   useActiveTextSessions,
 } from "../../../../fixtures/obsidian/active-text-session";
@@ -279,6 +280,7 @@ describe("active text ownership", () => {
 it("finishes a repeated background style without history, a preview arm or a failed pending draft", async () => {
   const state = mount();
   await state.session.edit(state.element.id);
+  state.input().contentDOM.blur();
   state.input().dispatch({ selection: { anchor: 0, head: state.element.source.length } });
   expect(state.session.applyStyle("text-background-opacity", 0.5)).toBe(true);
   await expect(state.session.flush()).resolves.toBe(true);
@@ -367,9 +369,7 @@ describe("active text formatting and recovery", () => {
 
   it("keeps formatting selection through owned toolbar menus and includes in-flight background changes", async () => {
     const state = mount();
-    await state.session.edit(state.element.id);
-    const input = state.input();
-    input.dispatch({ selection: { anchor: 0, head: 5 } });
+    const input = await openTextSessionRange(state, { anchor: 0, head: 5 });
     const toolbar = document.createElement("button");
     toolbar.className = "inkbook-toolbar-shell";
     document.body.append(toolbar);

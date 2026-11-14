@@ -5,6 +5,27 @@ import { registerAppliedDocumentMutation } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ProvisionalTextCreation } from "./text-provisional-creation";
 import { textPaddingForWidth } from "../../../domain/geometry/text-padding";
+import type { TextReflow } from "../../../editor/selection/transform/text-reflow-session";
+
+export async function createAndAppendTextField(
+  box: { readonly x: number; readonly y: number; readonly width: number },
+  source: string,
+  options: Parameters<typeof appendCreatedTextField>[1] & {
+    readonly defaults: () => TextDefaultsV2;
+    readonly ownerWindow: Pick<Window, "crypto">;
+    readonly reflow: TextReflow;
+    readonly signal: AbortSignal;
+  },
+): Promise<boolean> {
+  const element = await options.reflow(
+    createTextFieldDraft(box, source, options.defaults(), {
+      id: options.ownerWindow.crypto.randomUUID(),
+      createdAt: Date.now(),
+    }),
+    options.signal,
+  );
+  return appendCreatedTextField(element, options);
+}
 
 export async function appendCreatedTextField(
   element: TextElementV2,

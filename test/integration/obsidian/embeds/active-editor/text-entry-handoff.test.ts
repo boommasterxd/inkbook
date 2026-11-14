@@ -120,6 +120,7 @@ function presentationReady(state: ReturnType<typeof controllerSource>) {
 it("keeps first-click selection and opens the following click once at the complete source end", async () => {
   const state = controllerSource();
   const edit = vi.spyOn(ActiveTextSession.prototype, "edit");
+  const focus = vi.spyOn(TextFieldEditor.prototype, "focusAt");
   tapSelectedText(state.controller);
   expect(edit).not.toHaveBeenCalled();
   expect(state.inputNode()).toBeNull();
@@ -128,4 +129,22 @@ it("keeps first-click selection and opens the following click once at the comple
   expect(edit).toHaveBeenCalledExactlyOnceWith(state.element.id, state.element.source.length);
   expect(state.begin).toHaveBeenCalledOnce();
   expect(state.current().state.selection.main.head).toBe(state.element.source.length);
+  expect(focus).toHaveBeenCalledExactlyOnceWith(state.element.source.length, false);
+});
+
+it("keeps default entry, ready settlement and focus restoration silent until a user reveal", async () => {
+  const state = mount(textElement());
+  const reveal = vi.spyOn(TextFieldEditor.prototype, "requestCaretReveal");
+  expect(await state.session.edit(state.element.id)).toBe(true);
+  const input = state.input();
+  const measure = vi.spyOn(input, "requestMeasure").mockImplementation(() => undefined);
+  const dispatch = vi.spyOn(input, "dispatch");
+  expect(input.hasFocus).toBe(true);
+  expect(input.state.selection.main.head).toBe(input.state.doc.length);
+  state.session.focusInput();
+  state.session.requestCaretReveal();
+  expect(reveal).toHaveBeenCalledOnce();
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(measure.mock.calls.filter(([request]) => request !== undefined)).toHaveLength(0);
+  expect(state.error).not.toHaveBeenCalled();
 });

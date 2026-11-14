@@ -8,6 +8,7 @@ import type { TextEditingSurface } from "../../../../../src/rendering/scene/text
 import { parseTextMarkdown } from "../../../../fixtures/domain/text-source";
 import {
   activeTextLayout,
+  openTextSessionRange,
   useActiveTextSessions,
 } from "../../../../fixtures/obsidian/active-text-session";
 import { ActiveTextPreparation } from "../../../../../src/obsidian/embeds/active-editor/text-preparation";
@@ -158,10 +159,7 @@ describe("active text geometry handoff", () => {
 
   it("restores an unchanged field with the same source selection and no history step", async () => {
     const state = mount();
-    await state.session.edit(state.element.id);
-    const input = state.input();
-    input.contentDOM.blur();
-    input.dispatch({ selection: { anchor: 1, head: 4 } });
+    const input = await openTextSessionRange(state, { anchor: 1, head: 4 });
     const selection = input.state.selection;
     await expect(state.session.suspendForGeometry()).resolves.toBe(true);
     await resumeRetainedInput(state, input, selection);

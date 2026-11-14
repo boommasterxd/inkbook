@@ -22,6 +22,7 @@ function mount(
   onScrollIntoView?: TextFieldEditorOptions["onScrollIntoView"],
   source = "One\nTwo",
   onContentHeightChange?: TextFieldEditorOptions["onContentHeightChange"],
+  onScrollInterrupt?: TextFieldEditorOptions["onScrollInterrupt"],
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -33,6 +34,7 @@ function mount(
     onFinish: vi.fn(),
     ...(onScrollIntoView === undefined ? {} : { onScrollIntoView }),
     ...(onContentHeightChange === undefined ? {} : { onContentHeightChange }),
+    ...(onScrollInterrupt === undefined ? {} : { onScrollInterrupt }),
   });
   editors.push(editor);
   return editor;
@@ -106,6 +108,33 @@ afterEach(() => {
   for (const editor of editors.splice(0)) editor.dispose();
   document.body.replaceChildren();
   vi.restoreAllMocks();
+});
+
+describe("silent native editor entry", () => {
+  it("opens at the source end without reveal and reveals the first typed character once", () => {
+    const onScroll = vi.fn(() => true);
+    const editor = mount(onScroll);
+    const measure = vi.spyOn(editor.view, "requestMeasure").mockImplementation(() => undefined);
+    const rect = { left: 10, right: 11, top: 320, bottom: 340 };
+    vi.spyOn(editor.view, "coordsAtPos").mockReturnValue(rect);
+    editor.focusAt(editor.source.length, false);
+    editor.focusSelectionPreserved();
+    editor.requestCaretReveal();
+    expect(editor.view.hasFocus).toBe(true);
+    expect(editor.selectionStart).toBe(editor.source.length);
+    expect(measure.mock.calls.filter(([request]) => request !== undefined)).toHaveLength(0);
+    editor.view.dispatch({
+      ...editor.view.state.replaceSelection("!"),
+      scrollIntoView: true,
+      userEvent: "input.type",
+    });
+    const request = measure.mock.lastCall?.[0];
+    if (!request?.write) throw new Error("Missing first-input caret reveal.");
+    request.write(request.read(editor.view), editor.view);
+    expect(onScroll).toHaveBeenCalledExactlyOnceWith(rect);
+    expect(editor.source).toBe("One\nTwo!");
+    expect(editor.view.scrollDOM.scrollTop).toBe(0);
+  });
 });
 
 describe("native document keyboard boundaries", () => {
@@ -283,6 +312,28 @@ describe("standard source editing commands", () => {
 });
 
 describe("host-owned native editor scrolling", () => {
+  it("cancels host motion for a geometry owner and final disposal without restarting on resume", () => {
+    const onScroll = vi.fn(() => true);
+    const interrupt = vi.fn();
+    const editor = mount(onScroll, "One\nTwo", undefined, interrupt);
+    const { coords, request, measure } = deferredReveal(editor);
+    coords.mockReturnValue({ left: 10, right: 11, top: 320, bottom: 340 });
+    const rect = request.read(editor.view);
+    editor.setGeometrySuspended(true);
+    expect(interrupt).toHaveBeenCalledOnce();
+    request.write?.(rect, editor.view);
+    measure.mockClear();
+    editor.setGeometrySuspended(false);
+    editor.focusSelectionPreserved();
+    editor.requestCaretReveal();
+    expect(measure.mock.calls.filter(([pending]) => pending !== undefined)).toHaveLength(0);
+    expect(onScroll).not.toHaveBeenCalled();
+    editor.dispose();
+    expect(interrupt).toHaveBeenCalledTimes(2);
+    editor.dispose();
+    expect(interrupt).toHaveBeenCalledTimes(2);
+  });
+
   it("delegates caret geometry through the public scroll facet without editor updates or nested scrolling", () => {
     const onScroll = vi.fn(() => true);
     const editor = mount(onScroll);
@@ -328,6 +379,46 @@ describe("host-owned native editor scrolling", () => {
 });
 
 describe("deferred native caret reveal", () => {
+  it.each(["wheel", "pointerdown"])(
+    "keeps late geometry and focus passive after %s until typing resumes",
+    (event) => {
+      const onScroll = vi.fn(() => true);
+      const interrupt = vi.fn();
+      const editor = mount(onScroll, "One\nTwo", undefined, interrupt);
+      editor.focusAt(editor.source.length, false);
+      const { coords, request, measure } = deferredReveal(
+        editor,
+        () => pressBoundary(editor, "End").defaultPrevented,
+      );
+      const rect = { left: 10, right: 11, top: 320, bottom: 340 };
+      coords.mockReturnValue(rect);
+      const measured = request.read(editor.view);
+      editor.view.dom.dispatchEvent(new Event(event, { bubbles: true }));
+      expect(interrupt).toHaveBeenCalledOnce();
+      request.write?.(measured, editor.view);
+      measure.mockClear();
+      editor.focusSelectionPreserved();
+      editor.requestCaretReveal();
+      editor.hostLayoutChanged(500)?.();
+      editor.hostLayoutChanged(600)?.();
+      expect(measure.mock.calls.filter(([pending]) => pending !== undefined)).toHaveLength(0);
+      expect(onScroll).not.toHaveBeenCalled();
+      editor.view.dispatch({
+        ...editor.view.state.replaceSelection("!"),
+        scrollIntoView: true,
+        userEvent: "input.type",
+      });
+      const resumed = measure.mock.lastCall?.[0];
+      if (!resumed?.write) throw new Error("Missing resumed typing reveal.");
+      resumed.write(resumed.read(editor.view), editor.view);
+      expect(onScroll).toHaveBeenCalledExactlyOnceWith(rect);
+      expect(editor.source).toBe("One\nTwo!");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", bubbles: true }));
+      expect(interrupt).toHaveBeenCalledOnce();
+      expect(editor.view.scrollDOM.scrollTop).toBe(0);
+    },
+  );
+
   it("coalesces keyboard and native facet requests into one coordinate read and host reveal", () => {
     const onScroll = vi.fn(() => true);
     const editor = mount(onScroll);

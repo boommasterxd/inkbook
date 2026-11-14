@@ -15,7 +15,7 @@ import type { EditableDocumentModel } from "../document-session/document-model-p
 import type { ActiveEditorHistory } from "./history";
 import { ActiveTextPreparation, type TextFontLibraryPort } from "./text-preparation";
 import * as TextHistory from "./text-session-history";
-import { appendCreatedTextField, createTextFieldDraft } from "./text-session-creation";
+import { createAndAppendTextField } from "./text-session-creation";
 import { ProvisionalTextCreation } from "./text-provisional-creation";
 import type { TextSessionExtent, TextSourceExtentLayout } from "./text-session-extent";
 import * as TextEditor from "./text-session-editor";
@@ -37,6 +37,7 @@ export interface ActiveTextSessionOptions {
   readonly onError: (error: unknown) => void;
   readonly onFinished?: () => void;
   readonly onRevealBounds?: (bounds: Bounds) => void;
+  readonly onScrollInterrupt?: () => void;
   readonly sourceExtentLayout?: TextSourceExtentLayout;
   readonly onPointerDown?: (event: PointerEvent) => boolean;
   readonly onKeyDown?: (event: KeyboardEvent) => void;
@@ -125,22 +126,17 @@ export class ActiveTextSession {
   ): Promise<boolean> {
     if (!edit && source.trim().length === 0) return false;
     if (!(await this.finish())) return false;
-    return this.#start(async () => {
-      const element = await this.reflow(
-        createTextFieldDraft(box, source, this.#options.defaults(), {
-          id: this.#options.ownerWindow.crypto.randomUUID(),
-          createdAt: Date.now(),
-        }),
-        this.#lifetime.signal,
-      );
-      return appendCreatedTextField(element, {
+    return this.#start(() =>
+      createAndAppendTextField(box, source, {
         ...this.#options,
         creation: this.#creation,
         edit,
         isDisposed: () => this.#disposed,
         mount: (created) => this.#mount(created),
-      });
-    });
+        reflow: this.reflow,
+        signal: this.#lifetime.signal,
+      }),
+    );
   }
   public async edit(
     id: string,
@@ -371,11 +367,14 @@ export class ActiveTextSession {
       ),
       onError: this.#options.onError,
       onRevealBounds: this.#options.onRevealBounds,
+      ...(this.#options.onScrollInterrupt
+        ? { onScrollInterrupt: this.#options.onScrollInterrupt }
+        : {}),
     });
     this.#input = editor.input;
     this.#geometry.primeHostLayout();
     this.#extent = editor.extent;
-    this.#input.focusAt(point);
+    this.#input.focusAt(point ?? element.source.length, false);
     await this.#input.ready;
     if (this.#disposed || this.#lifetime.signal.aborted) return false;
     surface.setReady?.();

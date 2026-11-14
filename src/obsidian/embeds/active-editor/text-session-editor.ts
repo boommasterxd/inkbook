@@ -26,7 +26,7 @@ import {
 
 interface TextSessionEditorOptions extends Pick<
   TextFieldEditorOptions,
-  "onChange" | "onInputPending" | "onError"
+  "onChange" | "onInputPending" | "onError" | "onScrollInterrupt"
 > {
   readonly element: TextElementV2;
   readonly tableCellLabel?: string;
@@ -101,6 +101,7 @@ export function createTextSessionEditor(options: TextSessionEditorOptions) {
       ...(options.tableUi ? { tableUi: options.tableUi } : {}),
       scheduler: options.scheduler,
       onChange: options.onChange,
+      ...(options.onScrollInterrupt ? { onScrollInterrupt: options.onScrollInterrupt } : {}),
       resolveFontResourceId: preparation.resolveFontResourceId,
       fontResourceBoundaries: preparation.fontResourceBoundaries,
       onContentHeightChange: () => extent.invalidate(),
@@ -189,7 +190,7 @@ export function applyTextSessionStyle(
 export function revealTextSessionCaret(input: TextFieldEditor | undefined, focus = false): void {
   if (!input) return;
   if (focus) input.focusSelectionPreserved();
-  if (input.inputView.hasFocus) input.inputView.dispatch({ scrollIntoView: true });
+  else input.requestCaretReveal();
 }
 
 function finishTextSessionOnOutsidePointer(

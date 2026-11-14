@@ -1,5 +1,5 @@
 import type { Extension, Transaction } from "@codemirror/state";
-import type { EditorView, ViewUpdate } from "@codemirror/view";
+import type { ViewUpdate } from "@codemirror/view";
 import type { TextMarkdownTableCell, TextSourceRange } from "../../../domain/text/text-types";
 import { textTableEditSteps } from "../../../domain/text/text-table-edits";
 import { textBlockBaseStyle } from "../../../domain/text/text-layout-style";
@@ -72,8 +72,8 @@ export class TextTableEditor {
       this.#active?.table.context.node === node ? this.#active.row : undefined,
   };
 
-  public get inputView(): EditorView | undefined {
-    return this.#active?.editor.view;
+  public get inputEditor(): TextTableCellView | undefined {
+    return this.#active?.editor;
   }
 
   public arrowBindings(): Extension {

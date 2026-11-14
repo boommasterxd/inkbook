@@ -2,6 +2,7 @@
 import { expect, it, vi } from "vitest";
 import { useActiveTextSessions } from "../../../../fixtures/obsidian/active-text-session";
 import type { TextEditingCallbacks } from "../../../../../src/rendering/scene/text-editing-surface";
+import { textElement } from "../../../../unit/domain/schema/fixtures";
 
 const mount = useActiveTextSessions();
 
@@ -83,30 +84,54 @@ it("reopens a replaced document through normal save and input lifecycle with sou
   expect(state.error).not.toHaveBeenCalled();
 });
 
-it("requests caret reveal after a focused source commit adopts its final input bounds", async () => {
-  const state = mount();
-  const { input, dispatch } = await focusedInput(state);
-  const requestIndices = () =>
-    dispatch.mock.calls.flatMap(([spec], index) =>
-      spec && "scrollIntoView" in spec && spec.scrollIntoView === true ? [index] : [],
-    );
+it("keeps source commits passive until typing requests reveal and retains it through final bounds", async () => {
+  const reveal = vi.fn();
+  const state = mount(textElement(), false, reveal);
+  const { input } = await focusedInput(state);
+  const measure = vi.spyOn(input, "requestMeasure").mockImplementation(() => undefined);
+  const coords = vi.spyOn(input, "coordsAtPos").mockReturnValue({
+    left: 10,
+    right: 11,
+    top: 320,
+    bottom: 340,
+  });
+  const measurePending = () => {
+    for (const [request] of [...measure.mock.calls])
+      if (request?.write) request.write(request.read(input), input);
+    measure.mockClear();
+  };
   input.dispatch({
     changes: { from: 0, to: input.state.doc.length, insert: "Pasted source\nSecond line" },
     selection: { anchor: 25 },
   });
   await expect(state.session.flush()).resolves.toBe(true);
-  const requests = requestIndices();
-  expect(requests).toHaveLength(1);
-  expect(dispatch.mock.invocationCallOrder[requests[0]!]).toBeGreaterThan(
+  measurePending();
+  expect(coords).not.toHaveBeenCalled();
+  expect(reveal).not.toHaveBeenCalled();
+  input.dispatch({
+    ...input.state.replaceSelection("!"),
+    scrollIntoView: true,
+    userEvent: "input.type",
+  });
+  await expect(state.session.flush()).resolves.toBe(true);
+  measurePending();
+  expect(coords).toHaveBeenCalledOnce();
+  expect(reveal).toHaveBeenCalledExactlyOnceWith({ minX: 10, maxX: 11, minY: 320, maxY: 340 });
+  expect(coords.mock.invocationCallOrder[0]).toBeGreaterThan(
     state.bounds.mock.invocationCallOrder[state.bounds.mock.invocationCallOrder.length - 1]!,
   );
   expect(state.input()).toBe(input);
-  expect(input.state.selection.main.anchor).toBe(25);
-  input.contentDOM.blur();
-  dispatch.mockClear();
+  expect(input.state.selection.main.anchor).toBe(26);
+  input.contentDOM.dispatchEvent(new Event("wheel", { bubbles: true }));
+  coords.mockClear();
+  reveal.mockClear();
   input.dispatch({ changes: { from: 0, insert: "Next " } });
   await state.session.flush();
-  expect(requestIndices()).toHaveLength(0);
+  state.session.focusInput();
+  state.session.requestCaretReveal();
+  measurePending();
+  expect(coords).not.toHaveBeenCalled();
+  expect(reveal).not.toHaveBeenCalled();
 });
 
 it("does not reveal a source commit while a handle acquires geometry ownership", async () => {

@@ -14,7 +14,11 @@ import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 export const TABLE_SOURCE = "| Name | Value |\n| :--- | ---: |\n| one | $x$ |\n\nafter";
 const editors: TextFieldEditor[] = [];
 
-export async function mount(content = TABLE_SOURCE, menus = false) {
+export async function mount(
+  content = TABLE_SOURCE,
+  menus = false,
+  onScrollIntoView?: TextFieldEditorOptions["onScrollIntoView"],
+) {
   const container = document.createElement("div");
   if (menus) {
     installObsidianDomHelpers();
@@ -46,6 +50,7 @@ export async function mount(content = TABLE_SOURCE, menus = false) {
     onFinish: vi.fn(),
     onUndoRedo,
     onError,
+    ...(onScrollIntoView === undefined ? {} : { onScrollIntoView }),
   });
   editors.push(editor);
   editor.view.dispatch({ selection: { anchor: content.length } });

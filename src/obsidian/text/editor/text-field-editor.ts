@@ -21,6 +21,7 @@ import type {
 import { textStyleKey } from "../../../editor/tools/style-change-validation";
 import type { TextFieldEditorOptions } from "./text-field-editor-types";
 import { TextEditorScroll } from "./text-editor-scroll";
+import { focusTextEditorAt, focusTextEditorSelection } from "./text-editor-focus";
 import { TextEditorBackgroundLayer } from "./text-editor-background";
 import { textFieldTheme, textStyleCss } from "./text-field-theme";
 import { TextPreviewGeometry } from "./text-preview-geometry";
@@ -221,7 +222,7 @@ export class TextFieldEditor {
     return this.view.state.selection.main.to;
   }
   public get inputView(): EditorView {
-    return this.#tables.inputView ?? this.view;
+    return this.#tables.inputEditor?.view ?? this.view;
   }
   public get contentHeight(): number {
     return this.view.contentHeight;
@@ -239,25 +240,20 @@ export class TextFieldEditor {
     return Promise.all([this.#preview.ready, this.#background!.ready]).then(() => undefined);
   }
 
-  public focusAt(position?: number | { readonly x: number; readonly y: number }): void {
-    if (this.#disposed) return;
-    if (this.#tables.focusAt(position)) return;
-    const at =
-      typeof position === "number"
-        ? position
-        : position
-          ? this.view.posAtCoords(position)
-          : undefined;
-    if (at !== undefined && at !== null)
-      this.view.dispatch({
-        selection: { anchor: Math.max(0, Math.min(this.view.state.doc.length, at)) },
-        scrollIntoView: true,
-      });
-    this.focusSelectionPreserved();
+  public focusAt(
+    position?: number | { readonly x: number; readonly y: number },
+    reveal = true,
+  ): void {
+    if (!this.#disposed) focusTextEditorAt(this.view, this.#tables, position, reveal);
   }
 
   public focusSelectionPreserved(): void {
-    if (!this.#disposed && !this.#tables.focus()) this.view.focus();
+    if (!this.#disposed) focusTextEditorSelection(this.view, this.#tables);
+  }
+
+  public requestCaretReveal(): void {
+    if (this.#tables.inputEditor) this.#tables.inputEditor.requestCaretReveal();
+    else this.#scroll.reveal();
   }
 
   public requestViewportMeasure(): void {
@@ -339,7 +335,7 @@ export class TextFieldEditor {
           .reverse()
           .map((change) => ({ from: change.start, to: change.end, insert: change.insert })),
         selection: { anchor: result.selection.start, head: result.selection.end },
-        annotations: textTableCellSelection.of(this.#tables.inputView !== undefined),
+        annotations: textTableCellSelection.of(this.#tables.inputEditor !== undefined),
       });
     } finally {
       this.#formatting = false;
@@ -355,6 +351,7 @@ export class TextFieldEditor {
   public setGeometrySuspended(suspended: boolean): void {
     if (this.#disposed) return;
     this.#scroll.suspendGeometry(suspended);
+    this.#tables.inputEditor?.setGeometrySuspended(suspended);
     this.#tables.suspendGeometry(suspended);
   }
   public readonly hostLayoutChanged = (height: number) => this.#scroll.hostLayoutChanged(height);

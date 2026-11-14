@@ -1,5 +1,6 @@
 export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
   cadenceSensitive: Object.freeze([
+    "test/performance/obsidian/embeds/active-editor/caret-reveal-motion-work.test.ts",
     "test/performance/rendering/scene/interaction-refresh-profile.test.ts",
     "test/performance/obsidian/embeds/active-editor/selected-connected-preview-work.test.ts",
     "test/performance/persistence/clipboard/clipboard-planning-slices.test.ts",

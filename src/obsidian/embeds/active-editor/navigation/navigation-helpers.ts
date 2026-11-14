@@ -7,6 +7,7 @@ import { browserScrollMetrics, type BrowserScrollElement } from "../../../scroll
 
 import type { ActiveEditorViewState, ActiveEditorWheelInput } from "./navigation-types";
 import type { NavigationLayoutRead } from "./navigation-layout";
+import type { ActiveEditorResizeUpdate } from "../layout/layout-resize";
 
 function wheelDeltaMode(deltaMode: number): WheelDeltaMode {
   return deltaMode === 1 || deltaMode === 2 ? deltaMode : 0;
@@ -79,4 +80,13 @@ export function projectedScrollBounds(
 
 export function validViewState(state: ActiveEditorViewState): boolean {
   return Number.isFinite(state.cameraX) && Number.isFinite(state.zoom) && state.zoom > 0;
+}
+
+export function validResizeUpdate(update: ActiveEditorResizeUpdate): boolean {
+  return (
+    validViewState(update) &&
+    Number.isFinite(update.fitZoom) &&
+    update.fitZoom > 0 &&
+    (update.scrollTop === undefined || Number.isFinite(update.scrollTop))
+  );
 }

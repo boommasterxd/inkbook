@@ -51,6 +51,7 @@ export interface TextFieldEditorOptions {
   readonly onError?: (error: unknown) => void;
   readonly onInputPending?: (pending: boolean) => void;
   readonly onScrollIntoView?: (rect: TextEditorClientRect) => boolean;
+  readonly onScrollInterrupt?: () => void;
   /** Captures host geometry in the native read phase; its callback runs in the write phase. */
   readonly prepareScrollIntoView?: (
     rect: TextEditorClientRect,

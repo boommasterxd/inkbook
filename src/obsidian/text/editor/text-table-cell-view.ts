@@ -7,6 +7,7 @@ import { TEXT_TABLE_CELL_PADDING_EM } from "../../../domain/text/text-layout-sty
 import type { TextFieldEditorOptions } from "./text-field-editor-types";
 import { textFieldTheme, textStyleCss } from "./text-field-theme";
 import { isolateTextEditorEvents } from "./text-editor-events";
+import { TextEditorScroll } from "./text-editor-scroll";
 import { runTextEditorWork } from "./text-editor-work";
 import {
   createTextPreviewField,
@@ -37,6 +38,7 @@ interface TextTableCellViewOptions {
 
 /** One disposable native input surface; its parent owns source, styles and history. */
 export class TextTableCellView {
+  readonly #scroll: TextEditorScroll;
   public readonly view: EditorView;
   readonly #options: TextTableCellViewOptions;
   #presentation: TextTableCellPresentation;
@@ -53,6 +55,15 @@ export class TextTableCellView {
 
   public constructor(options: TextTableCellViewOptions) {
     this.#options = options;
+    const editor = options.editor;
+    this.#scroll = new TextEditorScroll({
+      ...(editor.onScrollIntoView ? { onScrollIntoView: editor.onScrollIntoView } : {}),
+      ...(editor.onScrollInterrupt ? { onScrollInterrupt: editor.onScrollInterrupt } : {}),
+      ...(editor.prepareScrollIntoView
+        ? { prepareScrollIntoView: editor.prepareScrollIntoView }
+        : {}),
+      ...(editor.surfaceCoordinates ? { surfaceCoordinates: editor.surfaceCoordinates } : {}),
+    });
     this.#presentation = { style: options.editor.element.style, width: 0, alignment: "left" };
     this.view = new EditorView({
       parent: options.host,
@@ -66,6 +77,7 @@ export class TextTableCellView {
           this.#previewField(),
           this.#inputBoundary(),
           this.#bindings(),
+          this.#scroll.extension,
           isolateTextEditorEvents(),
           EditorView.contentAttributes.of({
             "aria-label": options.editor.tableCellLabel ?? options.editor.label ?? "Table cell",
@@ -91,6 +103,7 @@ export class TextTableCellView {
           for (const transaction of transactions) options.onTransaction(transaction);
       },
     });
+    this.#scroll.attach(this.view);
     this.view.dom.addEventListener(TEXT_PREVIEW_VIEWPORT_EVENT, this.#viewport);
     this.view.dom.ownerDocument.addEventListener("selectionchange", this.#selectionChange, true);
   }
@@ -260,6 +273,7 @@ export class TextTableCellView {
   }
 
   #updated(update: ViewUpdate): void {
+    this.#scroll.update(update);
     if (update.docChanged && !this.#internal) {
       this.#abort.abort();
       this.#prepared = undefined;
@@ -359,6 +373,14 @@ export class TextTableCellView {
     return result;
   }
 
+  public requestCaretReveal(): void {
+    this.#scroll.reveal();
+  }
+
+  public setGeometrySuspended(suspended: boolean): void {
+    this.#scroll.suspendGeometry(suspended);
+  }
+
   public focus(point?: { x: number; y: number }): void {
     if (this.#disposed) return;
     const bounds = point && this.#options.host.getBoundingClientRect();
@@ -387,6 +409,7 @@ export class TextTableCellView {
     this.#queuedSync = undefined;
     this.view.dom.removeEventListener(TEXT_PREVIEW_VIEWPORT_EVENT, this.#viewport);
     this.view.dom.ownerDocument.removeEventListener("selectionchange", this.#selectionChange, true);
+    this.#scroll.dispose();
     this.view.destroy();
   }
 }

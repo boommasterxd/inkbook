@@ -60,3 +60,69 @@ it("projects the owned scene caret through a queued navigation frame into the ho
   navigation.dispose();
   viewport.release();
 });
+
+function animatedNavigation(motion: "full" | "reduced" = "full") {
+  const state = createNavigationHarness({ motion, ownerScrollTop: 0 });
+  let scrollTop = 0;
+  Object.defineProperty(state.owner, "scrollTop", {
+    get: () => scrollTop,
+    set: (value: number) => {
+      scrollTop = value;
+      state.containerRect.top = 100 - value;
+    },
+  });
+  const reveal = (bottom = 1000) =>
+    state.navigation.revealBounds(
+      { minX: 20, maxX: 21, minY: bottom - 20, maxY: bottom },
+      undefined,
+      undefined,
+      true,
+    );
+  return { ...state, reveal };
+}
+
+it("animates native caret scrolling and retargets repeated input continuously within one settle", () => {
+  const state = animatedNavigation();
+  state.reveal();
+  state.frames.flushOne();
+  state.frames.flushOne();
+  const initial = state.owner.scrollTop;
+  expect(initial).toBeGreaterThan(0);
+  expect(100 + 1000 * state.navigation.zoom - initial).toBeGreaterThan(484);
+  state.frames.flushOne();
+  const beforeRetarget = state.owner.scrollTop;
+  state.reveal(1100);
+  expect(state.owner.scrollTop).toBe(beforeRetarget);
+  expect(state.frames.pending).toBe(1);
+  state.frames.flushOne();
+  expect(state.owner.scrollTop).toBeGreaterThan(beforeRetarget);
+  for (let frame = 0; frame < 9 && state.frames.pending; frame++) state.frames.flushOne();
+  expect(state.frames.pending).toBe(0);
+  expect(state.containerRect.top + 1100 * state.navigation.zoom).toBeCloseTo(484);
+  state.navigation.dispose();
+});
+
+it("settles reduced-motion reveal in one frame and cancels animated reveal for direct navigation", () => {
+  const reduced = animatedNavigation("reduced");
+  reduced.reveal();
+  reduced.frames.flushOne();
+  expect(reduced.frames.pending).toBe(0);
+  expect(reduced.containerRect.top + 1000 * reduced.navigation.zoom).toBeCloseTo(484);
+  reduced.navigation.dispose();
+  const state = animatedNavigation();
+  state.reveal();
+  state.frames.flushOne();
+  state.frames.flushOne();
+  const stopped = state.owner.scrollTop;
+  expect(
+    state.navigation.updateWheel({ clientX: 0, clientY: 0, deltaMode: 0, deltaX: 0, deltaY: 40 }),
+  ).toBe(false);
+  expect(state.frames.pending).toBe(0);
+  expect(state.owner.scrollTop).toBe(stopped);
+  state.reveal();
+  state.navigation.cancelPanMomentum();
+  expect(state.frames.pending).toBe(0);
+  state.reveal();
+  state.navigation.dispose();
+  expect(state.frames.pending).toBe(0);
+});

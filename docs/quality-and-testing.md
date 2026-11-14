@@ -213,6 +213,7 @@ Every user-visible state change animates unless listed as immediate or reduced m
 | Arrange result                                                      |                  120 ms | old/new path opacity crossfade where overlap changes visibly                                                                                                                                   |
 | Snap candidate feedback update                                      |                    0 ms | immediate path replacement or removal                                                                                                                                                          |
 | Hold-to-shape candidate and raw-to-native commit                    |                    0 ms | immediate live-input preview and exact handoff; original ink remains above the translucent candidate                                                                                           |
+| Text caret reveal                                                   |                  180 ms | existing navigation frame interpolates native scroll position; repeated input retargets without restarting, direct input interrupts                                                            |
 
 Implementation rules:
 

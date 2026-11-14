@@ -75,6 +75,7 @@ export function createNavigationHarness(options?: {
   readonly ownerRect?: MutableRect;
   readonly ownerScrollHeight?: number;
   readonly ownerScrollTop?: number;
+  readonly motion?: "full" | "reduced";
 }): NavigationHarness {
   const frames = new FrameHarness();
   const sequence: string[] = [];
@@ -110,6 +111,8 @@ export function createNavigationHarness(options?: {
     },
   } as unknown as BrowserScrollElement;
   const container = {
+    hasAttribute: () => true,
+    dataset: { inkbookMotion: options?.motion ?? "full" },
     getBoundingClientRect: () => domRect(containerRect),
     ownerDocument: documentPort,
   } as unknown as HTMLElement;

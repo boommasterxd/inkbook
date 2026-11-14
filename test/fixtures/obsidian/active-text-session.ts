@@ -7,7 +7,10 @@ import type { SvgSceneRenderer } from "../../../src/rendering/scene/index";
 import type { TextEditingCallbacks } from "../../../src/rendering/scene/text-editing-surface";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { ActiveTextPreparation } from "../../../src/obsidian/embeds/active-editor/text-preparation";
-import { ActiveTextSession } from "../../../src/obsidian/embeds/active-editor/text-session";
+import {
+  ActiveTextSession,
+  type ActiveTextSessionOptions,
+} from "../../../src/obsidian/embeds/active-editor/text-session";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/document-model-port";
 import { textElement } from "../../unit/domain/schema/fixtures";
 import { elementMutationPorts, elementReplacementPorts } from "./element-mutation-ports";
@@ -23,11 +26,27 @@ export function useActiveTextSessions() {
     vi.restoreAllMocks();
     document.body.replaceChildren();
   });
-  return (element = textElement(), legacy = false) => {
-    const state = mountActiveTextSession({ element, legacy });
+  return (
+    element = textElement(),
+    legacy = false,
+    onRevealBounds?: ActiveTextSessionOptions["onRevealBounds"],
+  ) => {
+    const state = mountActiveTextSession({ element, legacy, onRevealBounds });
     sessions.push(state.session);
     return state;
   };
+}
+
+/** Opens a native session and selects a range without synchronous DOM selection feedback. */
+export async function openTextSessionRange(
+  state: ReturnType<typeof mountActiveTextSession>,
+  range: { readonly anchor: number; readonly head: number },
+): Promise<EditorView> {
+  await state.session.edit(state.element.id);
+  const input = state.input();
+  input.contentDOM.blur();
+  input.dispatch({ selection: range });
+  return input;
 }
 
 /** Exercise source-owned undo/redo and await the replacement native input. */
@@ -135,12 +154,17 @@ function createModel(element: TextElementV2) {
   };
 }
 
+function pageBoundsForClientRect(rect: DOMRect) {
+  return { minX: rect.left, maxX: rect.right, minY: rect.top, maxY: rect.bottom };
+}
+
 /** Real CodeMirror/history with a renderer/layout adapter; optionally exercises the actual document session. */
 export function mountActiveTextSession(
   options: {
     readonly element?: TextElementV2;
     readonly model?: EditableDocumentModel;
     readonly legacy?: boolean;
+    readonly onRevealBounds?: ActiveTextSessionOptions["onRevealBounds"];
   } = {},
 ) {
   const source = options.element ?? textElement();
@@ -178,6 +202,7 @@ export function mountActiveTextSession(
         setVisibility: vi.fn(),
         setSuspended: suspended,
         setContentHeight: vi.fn(() => undefined),
+        pageBoundsForClientRect,
       };
     }),
   } as unknown as SvgSceneRenderer;
@@ -206,6 +231,7 @@ export function mountActiveTextSession(
     onError: error,
     onSelection: selection,
     onStateChanged: vi.fn(),
+    ...(options.onRevealBounds ? { onRevealBounds: options.onRevealBounds } : {}),
   });
   return {
     ...owned,

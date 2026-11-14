@@ -53,9 +53,13 @@ export function createControllerTextSession(
     ...(bindings.onHeightChanged ? { onHeightChanged: bindings.onHeightChanged } : {}),
     onError: () => options.onFeedback("text-preparation-failed"),
     onFinished: bindings.onFinished,
+    onScrollInterrupt: () => bindings.navigation.cancelPanMomentum(),
     onRevealBounds: (bounds) =>
-      bindings.navigation.revealBounds(bounds, bindings.occlusionTop?.(), (bottom) =>
-        session.reserveSourceBottom(bottom),
+      bindings.navigation.revealBounds(
+        bounds,
+        bindings.occlusionTop?.(),
+        (bottom) => session.reserveSourceBottom(bottom),
+        true,
       ),
     sourceExtentLayout: options.selectionMoveLayout,
     ...(bindings.onPointerDown === undefined ? {} : { onPointerDown: bindings.onPointerDown }),

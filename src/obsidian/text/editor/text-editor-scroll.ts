@@ -33,7 +33,11 @@ export class TextEditorScroll {
   public constructor(
     private readonly ports: Pick<
       TextFieldEditorOptions,
-      "onScrollIntoView" | "prepareScrollIntoView" | "onContentHeightChange" | "surfaceCoordinates"
+      | "onScrollIntoView"
+      | "onScrollInterrupt"
+      | "prepareScrollIntoView"
+      | "onContentHeightChange"
+      | "surfaceCoordinates"
     >,
   ) {
     this.extension = EditorView.scrollHandler.of((_view, range) => {
@@ -138,15 +142,25 @@ export class TextEditorScroll {
     );
   }
 
-  private readonly interrupt = (): void => {
+  public reveal(): void {
+    const intent = this.#intent;
+    if (intent && !this.#suspended && this.matches(intent) && this.#view?.hasFocus)
+      this.request(intent.range);
+  }
+
+  private readonly interrupt = (event?: Event): void => {
     this.#generation += 1;
     this.#intent = undefined;
     this.#interrupted = true;
+    if (event?.type === "wheel" || event?.type === "pointerdown") this.ports.onScrollInterrupt?.();
   };
 
   public suspendGeometry(suspended: boolean): void {
     this.#suspended = suspended;
-    if (suspended) this.interrupt();
+    if (suspended) {
+      this.interrupt();
+      this.ports.onScrollInterrupt?.();
+    }
   }
 
   public hostLayoutChanged(height: number): (() => void) | undefined {
@@ -186,8 +200,10 @@ export class TextEditorScroll {
   }
 
   public dispose(): void {
+    if (this.#disposed) return;
     this.#disposed = true;
     this.interrupt();
+    this.ports.onScrollInterrupt?.();
     for (const document of this.#documents)
       for (const name of ["pointerdown", "wheel", "keydown"] as const)
         document.removeEventListener(name, this.interrupt, true);
