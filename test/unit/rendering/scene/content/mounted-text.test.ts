@@ -20,27 +20,48 @@ import { textBackgroundGeometrySteps } from "../../../../../src/domain/geometry/
 import { finishGeometrySteps } from "../../../../fixtures/domain/geometry-steps";
 import { textTableGridPathSteps } from "../../../../../src/domain/geometry/text-table-grid-path";
 
-it("preserves spaces across SVG text runs through the actual XML namespace", () => {
-  const element = textElement({ source: "a ccccx" });
+it("bounds native shaping to each line while preserving its styled runs and XML whitespace", () => {
+  const element = textElement({ source: "a ccccx\n d\n" });
   element.layout.lines[0]!.runs = [
     { text: "a", start: 0, end: 1, x: 0, width: 8 },
     { text: " ccccx", start: 1, end: 7, x: 8, width: 48, style: { bold: true } },
   ];
+  element.layout.lines.push(
+    {
+      ...element.layout.lines[0]!,
+      y: 43,
+      runs: [
+        { text: " ", start: 8, end: 9, x: 0, width: 4 },
+        { text: "d", start: 9, end: 10, x: 4, width: 8, style: { italic: true } },
+      ],
+    },
+    { ...element.layout.lines[0]!, y: 83, runs: [] },
+  );
   const entry = createMountedElement(
     document,
     createSceneRecord(element),
     [],
     createInstrumentation(),
   );
-  const text = entry.text!.content.querySelector("text")!;
-  const attribute = text.getAttributeNodeNS("http://www.w3.org/XML/1998/namespace", "space");
-  expect(attribute?.value).toBe("preserve");
-  expect(attribute?.prefix).toBe("xml");
-  expect(text.getAttributeNodeNS(null, "xml:space")).toBeNull();
-  expect(Array.from(text.querySelectorAll("tspan"), (span) => span.textContent)).toEqual([
-    "a",
-    " ccccx",
+  const lines = Array.from(entry.text!.content.querySelectorAll("text"));
+  expect(lines).toHaveLength(2);
+  // Two native line roots and four runs retain nine UTF-16 characters inside the owned scene.
+  expect(entry.text!.memoryUsage()).toBe(2048 + (2 + 4) * 512 + 9 * 2 + 4 * 66 + 64);
+  for (const text of lines) {
+    const attribute = text.getAttributeNodeNS("http://www.w3.org/XML/1998/namespace", "space");
+    expect(attribute?.value).toBe("preserve");
+    expect(attribute?.prefix).toBe("xml");
+    expect(text.getAttributeNodeNS(null, "xml:space")).toBeNull();
+  }
+  expect(lines.map((line) => Array.from(line.children, (span) => span.textContent))).toEqual([
+    ["a", " ccccx"],
+    [" ", "d"],
   ]);
+  expect(lines[0]!.lastElementChild!.getAttribute("font-weight")).toBe("700");
+  const last = lines[1]!.lastElementChild!;
+  expect(last.getAttribute("font-style")).toBe("italic");
+  expect(last.getAttribute("x")).toBe("16");
+  expect(last.getAttribute("y")).toBe("86");
 });
 
 it("shares transparent cutouts and retained inline backgrounds with canonical geometry during translation", () => {
@@ -258,6 +279,14 @@ it("keeps native text, background and safe math in one ordered retained root", (
 
 it("copies bounded native text tombstones from retained nodes without copying a runtime editor", () => {
   const element = textElement();
+  const firstLine = element.layout.lines[0]!;
+  const start = element.source.length + 1;
+  element.source += "\nSecond line";
+  element.layout.lines.push({
+    ...firstLine,
+    y: firstLine.y + firstLine.height,
+    runs: [{ text: "Second line", start, end: element.source.length, x: 0, width: 100 }],
+  });
   const entry = createMountedElement(
     document,
     createSceneRecord(element),
@@ -276,9 +305,15 @@ it("copies bounded native text tombstones from retained nodes without copying a 
   const insufficient = createMotionVisual(document, parent, [element], 5, 100_000, read);
   expect(insufficient.nodes).toHaveLength(0);
   const visual = createMotionVisual(document, parent, [element], 256, 100_000, read);
-  expect(visual.nodes).toHaveLength(6);
+  expect(visual.nodes).toHaveLength(8);
   expect(parent.querySelector("foreignObject")).toBeNull();
-  expect(parent.querySelector("tspan")?.textContent).toBe(element.source);
+  const lines = Array.from(parent.querySelectorAll("text"));
+  expect(lines).toHaveLength(2);
+  expect(lines.map((line) => Array.from(line.children, (span) => span.textContent))).toEqual([
+    [firstLine.runs[0]!.text],
+    ["Second line"],
+  ]);
+  expect(lines[0]!.parentElement).toBe(lines[1]!.parentElement);
   expect(parent.querySelector('[visibility="hidden"]')).toBeNull();
   expect(parent.querySelector("[data-inkbook-text-editor-ready]")).toBeNull();
   writeMotionVisual(visual, 0.5, 0.96);

@@ -53,7 +53,8 @@ export async function layoutTextTable(
   let top = request.top;
   let items = columns + descriptor.rows.length + 1;
   for (const [rowIndex, row] of descriptor.rows.entries()) {
-    await admitTextLayout(ports);
+    const handoff = admitTextLayout(ports);
+    if (handoff) await handoff;
     const lineStart = result.lines.length;
     const mathStart = result.math.length;
     const runStart = runIndex;
@@ -124,7 +125,8 @@ async function layoutCell(
     ...(fontResourceId === undefined ? {} : { fontResourceId }),
   });
   for await (const atom of textLayoutAtoms(block, ports, width, source)) {
-    await builder.append(atom);
+    const pending = builder.append(atom);
+    if (pending) await pending;
     if (builder.lines.length > MAX_TEXT_LAYOUT_ITEMS)
       throw new RangeError("Text table exceeds the supported item count.");
   }

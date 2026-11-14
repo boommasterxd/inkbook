@@ -16,6 +16,7 @@ import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } 
 import type { DetachedSceneElementCache } from "../content/detached-element-cache";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { SceneTextPreparation } from "../content/scene-text-preparation";
+import type { Bounds } from "../../../domain/geometry/primitives";
 
 export interface PreviewTransform {
   readonly textBasis?: TextElementV2 | undefined;
@@ -32,6 +33,7 @@ interface PendingPath {
 }
 
 interface MountPreparationOptions {
+  readonly textViewport?: (element: TextElementV2) => Bounds | undefined;
   readonly mounted?: ReadonlyMap<string, MountedSceneElement>;
   readonly ownerDocument: Document;
   readonly instrumentation: MutableSceneInstrumentation;
@@ -48,6 +50,7 @@ interface MountPreparationOptions {
 /** Owns one cancellable cold stroke build, never a queue of retained documents. */
 export class SceneMountPreparation {
   #pending: PendingPath | undefined;
+  #cached: MountedSceneElement | undefined;
   readonly #remote: RemoteScenePaths;
   readonly #text: SceneTextPreparation;
 
@@ -83,26 +86,28 @@ export class SceneMountPreparation {
   }
 
   public get pendingId(): string | undefined {
-    return this.#pending?.id;
+    return this.#pending?.id ?? this.#cached?.id;
   }
 
   public get waiting(): boolean {
-    return this.#pending === undefined && this.#remote.waiting;
+    return this.#pending === undefined && this.#cached === undefined && this.#remote.waiting;
   }
 
   public get waitingForPreparation(): boolean {
-    return this.#pending !== undefined || this.#remote.waiting;
+    return this.#pending !== undefined || this.#cached !== undefined || this.#remote.waiting;
   }
 
   public memoryUsage(): number {
     return (
       (this.#pending?.path.memoryUsage() ?? 0) +
       this.#remote.memoryUsage() +
-      this.#text.memoryUsage()
+      this.#text.memoryUsage() +
+      (this.#cached?.text?.memoryUsage() ?? 0)
     );
   }
 
   public cancel(retainVisible?: (id: string) => boolean): void {
+    this.cancelCached();
     this.#text.cancel();
     this.#remote.cancel(retainVisible);
     const pending = this.#pending;
@@ -120,11 +125,19 @@ export class SceneMountPreparation {
     this.#pending = undefined;
   }
 
+  private cancelCached(): void {
+    const cached = this.#cached;
+    this.#cached = undefined;
+    cached?.text?.cancelPreparation();
+    if (cached) this.options.detachedCache?.retain(cached);
+  }
+
   public pauseLocal(id: string): void {
     if (this.#pending?.id === id) this.cancelLocal();
   }
 
   public release(id: string, deferRetarget = false): void {
+    if (this.#cached?.id === id) this.cancelCached();
     this.#text.cancel(id);
     this.#remote.invalidate(id, deferRetarget);
     if (this.#pending?.id === id) this.cancelLocal();
@@ -135,6 +148,7 @@ export class SceneMountPreparation {
   }
 
   public finish(id: string, version?: number): void {
+    if (this.#cached?.id === id) this.cancelCached();
     this.#text.cancel(id);
     this.#remote.release(id, this.options.upcomingIds, version);
     if (this.#pending?.id === id && (version === undefined || this.#pending.version === version))
@@ -147,7 +161,15 @@ export class SceneMountPreparation {
     preview: PreviewTransform | undefined,
     allowLocal = true,
   ): MountedSceneElement | undefined {
-    let entry = this.options.detachedCache?.take(record, this.options.instrumentation);
+    if (
+      this.#cached &&
+      (this.#cached.id !== record.id ||
+        this.#cached.geometryVersion !== record.geometryVersion ||
+        this.#cached.paintVersion !== record.paintVersion)
+    )
+      this.cancelCached();
+    let entry =
+      this.#cached ?? this.options.detachedCache?.take(record, this.options.instrumentation);
     if (entry === undefined) {
       const parts = this.prepare(record, slice, allowLocal);
       if (parts === undefined) return undefined;
@@ -169,6 +191,15 @@ export class SceneMountPreparation {
         this.options.instrumentation,
         preview.matrix,
       );
+    } else {
+      retainTextScaleFeedback(entry);
+      updatePreviewTransform(entry, null, 0, null, this.options.instrumentation);
+    }
+    if (entry.text) {
+      this.#cached = entry;
+      if (!slice.prepare({ step: (deadline, now) => entry.text!.prepareViewport(deadline, now) }))
+        return undefined;
+      this.#cached = undefined;
     }
     return entry;
   }

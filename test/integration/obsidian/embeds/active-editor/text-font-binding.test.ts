@@ -1,6 +1,6 @@
 import { ChangeSet } from "@codemirror/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { FontResourceV2 } from "../../../../../src/domain/schema/public";
+import type { FontResourceV2, TextElementV2 } from "../../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { fontResourceCssFamily } from "../../../../../src/domain/text/font-family";
 import { ActiveTextPreparation } from "../../../../../src/obsidian/embeds/active-editor/text-preparation";
@@ -11,6 +11,7 @@ import { textElement } from "../../../../fixtures/rendering/text";
 import { expandLegacyTextPaddingSteps } from "../../../../../src/domain/geometry/text-padding";
 import { scaleElement } from "../../../../../src/editor/selection/transform/transforms";
 import { finishGeometrySteps } from "../../../../fixtures/domain/geometry-steps";
+import * as parser from "../../../../../src/domain/text/markdown-parser";
 
 const ids = vi.hoisted(() => ({ regular: "a".repeat(64), bold: "b".repeat(64) }));
 const primed = vi.hoisted(() => vi.fn());
@@ -92,6 +93,10 @@ function fixture(
   });
   const load = vi.fn(async () => []);
   const resolve = vi.fn(async () => bold);
+  const renderer = {
+    textDocument: { fonts: { load } },
+    setTextFonts: vi.fn(),
+  } as unknown as SvgSceneRenderer;
   const preparation = new ActiveTextPreparation({
     model: {
       store,
@@ -100,17 +105,62 @@ function fixture(
       },
       ensureFontResources: ensure,
     } as unknown as EditableDocumentModel,
-    renderer: {
-      textDocument: { fonts: { load } },
-      setTextFonts: vi.fn(),
-    } as unknown as SvgSceneRenderer,
+    renderer,
     scheduler: immediateWorkScheduler(),
     ...(options.unavailableLibrary
       ? {}
       : { library: { match: () => bold, resolve, choices: () => [] } }),
   });
-  return { preparation, element, store, resolve, ensure, load, regular, bold };
+  return { preparation, element, store, resolve, ensure, load, regular, bold, renderer };
 }
+
+it("reuses resumed embedded bindings but reloads a newly added face and rejects disposed preparation", async () => {
+  const t = fixture();
+  const signal = new AbortController().signal;
+  const parsed = vi.spyOn(parser, "parseTextMarkdownSteps");
+  const current = () => t.store.get(t.element.id)!.element as TextElementV2;
+  try {
+    const initial = current();
+    await t.preparation.open(initial, signal);
+    const loads = t.load.mock.calls.length;
+    t.store.replace(initial.id, {
+      ...initial,
+      x: initial.x + 40,
+      pivot: { ...initial.pivot, x: initial.pivot.x + 40 },
+    });
+    const moved = current();
+    expect(moved.style).not.toBe(initial.style);
+    expect(moved.layout).toBe(initial.layout);
+    await t.preparation.open(moved, signal);
+    t.store.replace(moved.id, { ...moved, rotation: 30 });
+    await t.preparation.open(current(), signal);
+    expect(parsed).toHaveBeenCalledOnce();
+    expect(t.load).toHaveBeenCalledTimes(loads);
+    expect(t.renderer.setTextFonts).toHaveBeenCalledOnce();
+    t.ensure([t.bold]);
+    await t.preparation.open(current(), signal);
+    expect(t.renderer.setTextFonts).toHaveBeenCalledTimes(2);
+    expect(t.load).toHaveBeenCalledTimes(loads + 1);
+    expect(t.load).toHaveBeenLastCalledWith(`normal 700 24px "${fontResourceCssFamily(ids.bold)}"`);
+    expect(
+      t.preparation.resolveFontResourceId({ ...t.element.style, bold: true }, { start: 2, end: 5 }),
+    ).toBe(ids.regular);
+    const rotated = current();
+    t.store.replace(rotated.id, {
+      ...rotated,
+      style: { ...rotated.style, color: { type: "rgba", value: "#FF0000FF" } },
+    });
+    await t.preparation.open(current(), signal);
+    expect(parsed).toHaveBeenCalledTimes(2);
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(t.preparation.open(t.element, aborted.signal)).rejects.toThrow();
+    expect(t.load).toHaveBeenCalledTimes(loads + 1);
+  } finally {
+    t.preparation.dispose();
+  }
+  await expect(t.preparation.open(t.element, signal)).rejects.toThrow("disposed");
+});
 
 it("retains a uniformly scaled inset when typing, caps narrow reflow and recalculates font-size changes", async () => {
   const { preparation, element, store } = fixture();

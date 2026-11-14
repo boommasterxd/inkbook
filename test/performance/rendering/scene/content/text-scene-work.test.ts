@@ -1,3 +1,4 @@
+import { expectReleasedPublicationScene } from "../../../../fixtures/rendering/scene-publication";
 import { afterEach, expect, it, vi } from "vitest";
 import { singleLineTextElement, textElement } from "../../../../fixtures/rendering/text";
 import { createSceneRecord, createSceneFixture } from "../../../../fixtures/rendering/scene";
@@ -14,6 +15,10 @@ import {
   fakeNode,
 } from "../../../../unit/rendering/scene/fakes";
 import { createWorkerSnapshot } from "../../../../fixtures/persistence/worker-snapshot";
+import { observeSchemaArray } from "../../../../fixtures/domain/schema-array-work";
+import { TextLineIndex } from "../../../../../src/rendering/scene/content/text-line-index";
+import { finishGeometrySteps } from "../../../../fixtures/domain/geometry-steps";
+import { MAX_TEXT_LAYOUT_ITEMS } from "../../../../../src/domain/schema/text-validation-primitives";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -139,7 +144,14 @@ it("updates one owned clip for a 3000-line field only in coalesced scene frames"
     expect(clip.style.getPropertyValue("--inkbook-text-viewport-top")).toBe("38600px");
     expect(clip.style.getPropertyValue("--inkbook-text-viewport-height")).toBe("400px");
     expect(handle.container.style.getPropertyValue("--inkbook-text-editor-height")).toBe("39000px");
-    expect(created).not.toHaveBeenCalled();
+    // Window changes may allocate text-line nodes; the editor and structured surfaces stay retained.
+    expect(created.mock.calls.every(([, tag]) => tag === "text" || tag === "tspan")).toBe(true);
+    // 800 CSS px / 13-unit lines, then 400 CSS px at 2x zoom, plus conservative overhang.
+    expect(created.mock.calls.filter(([, tag]) => tag === "tspan").length).toBeLessThanOrEqual(110);
+    expect(root.nodes.find((node) => node.tagName === "foreignObject")).toBe(editing);
+    expect(
+      editing.nodes.find((node) => node.getAttribute("class") === "inkbook-text-editor-viewport"),
+    ).toBe(clip);
     handle.dispose();
     renderer.setViewport({ left: 0, top: 0, width: 1_000, height: 800 });
     scheduler.runAll();
@@ -208,7 +220,12 @@ it.each(["immediate", "progressive"] as const)(
       expect(frames).toBeGreaterThan(1);
       expect(content.nodes[0]).not.toBe(originalContent);
       const spans = nodes(content).filter((node) => node.tagName === "tspan");
-      expect(spans).toHaveLength(3_000);
+      const textLines = nodes(content).filter((node) => node.tagName === "text");
+      // A 1,000-unit viewport plus conservative font overhang needs fewer than 100 of 3,000 lines.
+      expect(spans.length).toBeGreaterThan(60);
+      expect(spans.length).toBeLessThanOrEqual(100);
+      expect(textLines).toHaveLength(spans.length);
+      expect(textLines.every((node) => node.nodes.length === 1)).toBe(true);
       expect(spans.every((node) => node.getAttribute("font-size") === "30")).toBe(true);
       expect(overlay.getAttribute("d")).toBe("M0 0L30 30");
       expect(store.records.get(canonical.id)).toBe(record);
@@ -234,7 +251,12 @@ it.each(["immediate", "progressive"] as const)(
       scheduler.runAll(2_000);
       expect(content.nodes[0]).toBe(restored);
       expect(renderer.memoryUsage()).toEqual(memory);
-      expect(content.textContent).toBe(canonical.source.replaceAll("\n", ""));
+      expect(content.textContent).toBe(
+        canonical.layout.lines[0]!.runs[0]!.text.repeat(
+          nodes(content).filter((node) => node.tagName === "tspan").length,
+        ),
+      );
+      expect(store.records.get(canonical.id)?.element).toBe(canonical);
     } finally {
       renderer.destroy();
     }
@@ -293,8 +315,8 @@ it("keeps a 3000-line commit coherent when it supersedes unfinished preview glyp
   } finally {
     renderer.destroy();
   }
-  expect(scheduler.pendingCount).toBe(0);
-  expect(renderer.memoryUsage()).toEqual({ motionCacheBytes: 0, pathCacheBytes: 0 });
+  expectReleasedPublicationScene(renderer, scheduler);
+  expect(renderer.memoryUsage().motionCacheBytes).toBe(0);
 });
 
 it("bounds actual native DOM preparation for ten thousand runs and reuses retained geometry", () => {
@@ -375,4 +397,90 @@ it("releases superseded scratch and publishes only the current layout", () => {
   const presentation = preparation.take(element.id)!;
   expect(presentation.content.textContent).toBe("new");
   expect(preparation.memoryUsage()).toBe(0);
+});
+
+it("prunes real line-index work and retains overlap while scrolling a 3000-line field", () => {
+  const { renderer, scheduler, document, canonical, content } = largeTextScene();
+  const original = new Map(
+    nodes(content)
+      .filter((node) => node.tagName === "tspan")
+      .map((node) => [node.getAttribute("y"), node]),
+  );
+  const retained = observeSchemaArray(canonical.layout.lines);
+  canonical.layout.lines = retained.observed;
+  const create = observeNodeAllocations(document, scheduler);
+  const query = Object.getOwnPropertyDescriptor(TextLineIndex.prototype, "query")!
+    .value as TextLineIndex["query"];
+  let indexSteps = 0;
+  vi.spyOn(TextLineIndex.prototype, "query").mockImplementation(function* (
+    this: TextLineIndex,
+    bounds,
+  ) {
+    for (const step of query.call(this, bounds)) {
+      indexSteps += 1;
+      yield step;
+    }
+  });
+  try {
+    renderer.setViewport({ left: 0, top: 260, width: 2048, height: 1000 });
+    let frames = 0;
+    while (scheduler.pendingCount) {
+      const before = create.mock.calls.length;
+      scheduler.runFrame();
+      expect(create.mock.calls.length - before).toBeLessThanOrEqual(10);
+      frames += 1;
+      expect(frames).toBeLessThan(100);
+    }
+    const visible = nodes(content).filter((node) => node.tagName === "tspan");
+    expect(visible.length).toBeLessThanOrEqual(100);
+    expect(visible.length).toBeGreaterThan(60);
+    const overlap = visible.filter((node) => original.has(node.getAttribute("y")));
+    expect(overlap.length).toBeGreaterThan(50);
+    expect(overlap.every((node) => original.get(node.getAttribute("y")) === node)).toBe(true);
+    expect(create.mock.calls.filter(([, tag]) => tag === "tspan").length).toBeLessThanOrEqual(25);
+    expect(retained.work.indexedReads).toBeLessThanOrEqual(100);
+    expect(indexSteps).toBeLessThan(512);
+    const readBefore = retained.work.indexedReads;
+    create.mockClear();
+    renderer.setCamera({ x: 0, zoom: 2 });
+    scheduler.runAll(100);
+    expect(nodes(content).filter((node) => node.tagName === "tspan").length).toBeLessThanOrEqual(
+      50,
+    );
+    expect(retained.work.indexedReads - readBefore).toBeLessThanOrEqual(50);
+    expect(create.mock.calls.filter(([, tag]) => tag === "tspan").length).toBeLessThanOrEqual(25);
+  } finally {
+    renderer.destroy();
+  }
+  expectReleasedPublicationScene(renderer, scheduler);
+  expect(renderer.memoryUsage().motionCacheBytes).toBe(0);
+});
+
+it("bounds capacity line indexing and prunes warm viewport queries without rereading the layout", () => {
+  const element = largeTextElement();
+  const count = MAX_TEXT_LAYOUT_ITEMS / 2;
+  element.source = "a\n".repeat(count);
+  element.layout.lines = Array.from({ length: count }, (_, index) => ({
+    x: 0,
+    y: index * 13,
+    width: 10,
+    height: 13,
+    baseline: 10,
+    runs: [{ text: "a", start: index * 2, end: index * 2 + 1, x: 0, width: 10 }],
+  }));
+  const lines = observeSchemaArray(element.layout.lines);
+  element.layout.lines = lines.observed;
+  const cancelled = TextLineIndex.prepare(element);
+  expect(cancelled.next().done).toBe(false);
+  cancelled.return(undefined as never);
+  expect(lines.work.indexedReads).toBe(1);
+  lines.work.indexedReads = 0;
+  const index = finishGeometrySteps(TextLineIndex.prepare(element));
+  expect(lines.work.indexedReads).toBe(count);
+  expect(index.memoryUsage()).toBeLessThanOrEqual(count * 80);
+  const y = (count - 5) * 13;
+  const query = [...index.query({ minX: 1, maxX: 2, minY: y, maxY: y + 1 })];
+  expect(query.filter((value) => value !== undefined).length).toBeLessThanOrEqual(5);
+  expect(query.length).toBeLessThanOrEqual(96);
+  expect(lines.work.indexedReads).toBe(count);
 });

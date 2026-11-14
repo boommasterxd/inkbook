@@ -1,9 +1,7 @@
 import type { StyleControl } from "./editor-menu-types";
 
 export function formatStyleNumber(value: number, id: string): string {
-  return id === "text-font-size"
-    ? String(value < 1 || value > 100 ? value : Math.round(value))
-    : formatNumber(value);
+  return id === "text-font-size" ? String(value) : formatNumber(value);
 }
 
 function formatNumber(value: number): string {

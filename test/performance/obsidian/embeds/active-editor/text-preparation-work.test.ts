@@ -117,8 +117,19 @@ it("stages one native resize index cooperatively, reuses the validated parse and
       cached.blocks.length * 2 + visibleBlocks.length * 2 + stopBoundary,
     );
     expect(parse).not.toHaveBeenCalled();
-    input.updateElement({ ...prepared, x: 40, y: 50 });
+    const positioned = { ...prepared, x: 40, y: 50, rotation: 30 };
+    input.updateElement(positioned);
     expect(container.querySelector<HTMLElement>(".inkbook-text-run")!.style.fontSize).toBe("45px");
+    expect(parse).not.toHaveBeenCalled();
+    blocks.work.indexedReads = 0;
+    await input.prepareGeometry(positioned, new AbortController().signal, parsed);
+    expect(blocks.work.indexedReads).toBe(0);
+    await input.prepareGeometry(
+      { ...positioned, width: positioned.width + 100 },
+      new AbortController().signal,
+      parsed,
+    );
+    expect(blocks.work.indexedReads).toBeGreaterThan(0);
     expect(parse).not.toHaveBeenCalled();
   } finally {
     input.dispose();
@@ -214,7 +225,7 @@ describe("native text math publication work", () => {
     const abort = new AbortController();
     let cancelAt = Infinity;
     let reads = () => 0;
-    const { prepare } = fixture(() => {
+    const { prepare, ensure } = fixture(() => {
       if (reads() >= cancelAt) abort.abort();
       return undefined;
     });
@@ -258,6 +269,32 @@ describe("native text math publication work", () => {
       expect(measure).toHaveBeenCalledTimes(measured);
       expect(lines.work.indexedReads).toBe(visited.lines);
       expect(math.work.indexedReads).toBe(visited.math);
+      lines.work.indexedReads = 0;
+      math.work.indexedReads = 0;
+      await prepare.open({ ...retained, x: 120, y: 240, rotation: 30 }, abort.signal);
+      expect(lines.work.indexedReads).toBe(0);
+      expect(math.work.indexedReads).toBe(0);
+      expect(measure).toHaveBeenCalledTimes(measured);
+      ensure([
+        {
+          family: "jetbrains-mono",
+          weight: 700,
+          style: "normal",
+          id: "d".repeat(64),
+          data: "AA==",
+          mimeType: "font/woff2",
+        },
+      ]);
+      await prepare.open(retained, abort.signal);
+      expect(lines.work.indexedReads).toBeGreaterThan(0);
+      expect(math.work.indexedReads).toBeGreaterThan(0);
+      lines.work.indexedReads = 0;
+      math.work.indexedReads = 0;
+      const changedStyle = { ...retained, style: { ...retained.style, opacity: 0.5 } };
+      await prepare.open(changedStyle, abort.signal);
+      expect(lines.work.indexedReads).toBeGreaterThan(0);
+      expect(math.work.indexedReads).toBeGreaterThan(0);
+      prepare.clearBindings();
       math.work.indexedReads = 0;
       cancelAt = 40;
       await expect(prepare.open(retained, abort.signal)).rejects.toThrow();
@@ -266,41 +303,41 @@ describe("native text math publication work", () => {
       prepare.dispose();
     }
   });
+});
 
-  it("cancels actual SVG path creation through central admission before mounting a partial widget", async () => {
-    const create = vi.spyOn(document, "createElementNS");
-    const writes = () => create.mock.calls.filter((call) => call[1] === "path").length;
-    const abort = new AbortController();
-    const resolve = vi.fn(async () => ({
+it("cancels actual SVG path creation through central admission before mounting a partial widget", async () => {
+  const create = vi.spyOn(document, "createElementNS");
+  const writes = () => create.mock.calls.filter((call) => call[1] === "path").length;
+  const abort = new AbortController();
+  const resolve = vi.fn(async () => ({
+    width: 100,
+    height: 20,
+    ascent: 15,
+    descent: 5,
+    paths: Array.from({ length: 1000 }, () => ({ d: "M0 0L1 0L1 1Z" })),
+  }));
+  const scheduler = {
+    ...immediateWorkScheduler(),
+    checkpoint: () => {
+      if (writes() >= 50) abort.abort();
+      return undefined;
+    },
+  };
+  await expect(
+    renderTextMathWidget({
+      document,
+      math: { resolve } as unknown as ObsidianTextMathRenderer,
+      latex: "x",
+      display: true,
+      size: 24,
       width: 100,
-      height: 20,
-      ascent: 15,
-      descent: 5,
-      paths: Array.from({ length: 1000 }, () => ({ d: "M0 0L1 0L1 1Z" })),
-    }));
-    const scheduler = {
-      ...immediateWorkScheduler(),
-      checkpoint: () => {
-        if (writes() >= 50) abort.abort();
-        return undefined;
-      },
-    };
-    await expect(
-      renderTextMathWidget({
-        document,
-        math: { resolve } as unknown as ObsidianTextMathRenderer,
-        latex: "x",
-        display: true,
-        size: 24,
-        width: 100,
-        signal: abort.signal,
-        scheduler,
-      }),
-    ).rejects.toThrow();
-    expect(writes()).toBe(50);
-    expect(document.querySelector(".inkbook-text-math-widget")).toBeNull();
-    expect(resolve).toHaveBeenCalledWith("x", true, 24, abort.signal, 100, { bold: false });
-  });
+      signal: abort.signal,
+      scheduler,
+    }),
+  ).rejects.toThrow();
+  expect(writes()).toBe(50);
+  expect(document.querySelector(".inkbook-text-math-widget")).toBeNull();
+  expect(resolve).toHaveBeenCalledWith("x", true, 24, abort.signal, 100, { bold: false });
 });
 
 function fixture(checkpoint?: () => undefined) {

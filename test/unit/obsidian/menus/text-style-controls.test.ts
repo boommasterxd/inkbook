@@ -46,16 +46,16 @@ it("toggles mixed text flags independently and reversibly through the shared ico
   expect(onChange).toHaveBeenLastCalledWith("text-bold", false);
 });
 
-it("keeps fractional slider values independent of their rounded display", () => {
+it("shows fractional font sizes exactly during preview and after invalid input", () => {
   const { slider, value, onChange, onPreview } = fontSizeView(23.125);
   expect(slider.min).toBe("1");
   expect(slider.max).toBe("100");
   expect(slider.step).toBe("any");
   expect(slider.value).toBe("23.125");
-  expect(value.value).toBe("23");
+  expect(value.value).toBe("23.125");
   slider.value = "27.625";
   slider.dispatchEvent(new Event("input"));
-  expect(value.value).toBe("28");
+  expect(value.value).toBe("27.625");
   expect(onChange).not.toHaveBeenCalled();
   expect(onPreview).toHaveBeenCalledExactlyOnceWith("text-font-size", 27.625);
   slider.dispatchEvent(new Event("change"));
@@ -68,7 +68,7 @@ it("keeps fractional slider values independent of their rounded display", () => 
   expect(onChange).toHaveBeenLastCalledWith("text-font-size", 31.375);
   value.value = "";
   value.dispatchEvent(new Event("change"));
-  expect(value.value).toBe("31");
+  expect(value.value).toBe("31.375");
   expect(slider.value).toBe("31.375");
   expect(onChange).toHaveBeenCalledTimes(2);
 });

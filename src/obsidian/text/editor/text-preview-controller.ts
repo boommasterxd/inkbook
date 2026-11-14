@@ -14,6 +14,7 @@ import { runTextEditorWork } from "./text-editor-work";
 import { setTextLineBoundaries, textLineBoundariesSteps } from "./text-line-boundaries";
 import type { Text } from "@codemirror/state";
 import { TextEditorReadiness } from "./text-editor-readiness";
+import { sameTextStyle } from "../../../domain/text/text-layout-style";
 
 /** One coalesced parser job; stale continuations never publish into a newer document. */
 export class TextPreviewController {
@@ -38,7 +39,8 @@ export class TextPreviewController {
     return this.#preparedState?.source === current.state.source &&
       this.#preparedState.ranges === current.state.ranges &&
       this.#preparedState.paragraphs === current.state.paragraphs &&
-      this.#preparedStyle === current.style
+      this.#preparedStyle !== undefined &&
+      sameTextStyle(this.#preparedStyle, current.style)
       ? this.#parsed
       : undefined;
   }

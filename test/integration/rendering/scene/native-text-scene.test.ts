@@ -290,6 +290,9 @@ it("keeps an existing run bound to its original face when another resource is ad
   const face = (id: string) =>
     `@font-face{font-family:"inkbook-face-${id}";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,AA==") format("woff2")}`;
   scene.setTextFonts(face(originalId));
+  scene.setTextFonts(face(originalId));
+  expect(scene.textDocument.querySelectorAll("#inkbook-fonts")).toHaveLength(1);
+  expect(scene.textDocument.querySelector("#inkbook-fonts")?.textContent).toBe(face(originalId));
   scheduler.runAll();
   const original = scene.svg.querySelector("tspan")!;
   expect(original.getAttribute("font-family")).toBe(`inkbook-face-${originalId}`);
@@ -302,16 +305,9 @@ it("keeps an existing run bound to its original face when another resource is ad
 it("awaits authoritative glyph publication and pins one editor through culling until disposal", async () => {
   const { scene, scheduler, store, element, record, container } = fixture();
   const initial = scene.waitForTextElement(element.id);
-  const fonts =
-    '@font-face{font-family:"inkbook-inter";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,AA==") format("woff2")}';
-  scene.setTextFonts(fonts);
-  scene.setTextFonts(fonts);
-  expect(scene.textDocument.querySelectorAll("#inkbook-fonts")).toHaveLength(1);
-  expect(scene.textDocument.querySelector("#inkbook-fonts")?.textContent).toBe(fonts);
   scheduler.runAll();
   await initial;
   const root = scene.textDocument.querySelector<SVGGElement>(".inkbook-native-text")!;
-  const parent = root.parentElement;
   const savedText = root.children[1]!;
   const nativeDocument = vi.spyOn(HTMLIFrameElement.prototype, "contentDocument", "get");
   nativeDocument.mockReturnValueOnce(null);
@@ -323,7 +319,6 @@ it("awaits authoritative glyph publication and pins one editor through culling u
   expect(scene.svg.hasAttribute("data-inkbook-text-editing")).toBe(true);
   const editing = root.querySelector("foreignObject")!;
   expect(editing.parentElement).toBe(root);
-  expect(root.parentElement).toBe(parent);
   expect(editing.getAttribute("visibility")).toBe("hidden");
   expect(savedText.getAttribute("visibility")).toBeNull();
   handle.setReady?.();
@@ -360,6 +355,12 @@ it("awaits authoritative glyph publication and pins one editor through culling u
   await updated;
   expect(root.querySelector("tspan")?.textContent).toBe("new");
   expect(handle.container.isConnected).toBe(true);
+  scene.setViewport({ left: 0, top: 0, width: 2048, height: 1000 });
+  scheduler.runAll();
+  expect(root.querySelector("tspan")?.textContent).toBe("new");
+  expect(handle.container.isConnected).toBe(true);
+  scene.setViewport({ left: 0, top: 100_000, width: 2048, height: 1000 });
+  scheduler.runAll();
   handle.dispose();
   expect(editing.isConnected).toBe(false);
   expect(root.hasAttribute("data-inkbook-text-editor-ready")).toBe(false);

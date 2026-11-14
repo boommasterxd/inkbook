@@ -9,6 +9,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { parseTextMarkdownSteps } from "../../../domain/text/markdown-parser";
 import {
   TEXT_CODE_FONT_FAMILY,
+  sameTextStyle,
   textTableFollowingGap,
 } from "../../../domain/text/text-layout-style";
 import type {
@@ -31,6 +32,7 @@ import {
   TextFontBindingLookup,
   textFontBindingsSteps,
   textBaseFontBinding,
+  sameTextLayoutBindings,
   type TextFontBinding,
 } from "./text-session-font-bindings";
 import {
@@ -61,9 +63,13 @@ export class ActiveTextPreparation {
   readonly math: ObsidianTextMathRenderer;
   readonly #fonts: TextSessionFonts;
   readonly #bindings = new TextFontBindings();
-  readonly #preparedBindings = new WeakMap<TextElementV2, readonly TextFontBinding[]>();
+  #indexedBindings = new WeakMap<
+    TextElementV2["layout"],
+    { readonly element: TextElementV2; readonly bindings: readonly TextFontBinding[] }
+  >();
   readonly #tables = new WeakMap<TextMarkdownBlock, PreparedTextTable>();
   public readonly mathBaselines = new TextSessionMathBaselines();
+  #disposed = false;
   #parsed:
     | (Pick<TextElementV2, "source" | "style" | "ranges" | "paragraphs"> & {
         readonly document: TextMarkdownDocument;
@@ -90,6 +96,7 @@ export class ActiveTextPreparation {
     signal: AbortSignal,
     options: { readonly preservePadding?: boolean } = {},
   ): Promise<TextElementV2> {
+    this.#assertActive(signal);
     const { document, requests, measurements } = await this.#parse(element, signal);
     const previous = this.#model.store?.get(element.id)?.element;
     const retained =
@@ -147,11 +154,12 @@ export class ActiveTextPreparation {
       height,
       layout: result.layout,
     });
-    this.#preparedBindings.set(prepared, await this.#indexBindings(prepared, signal));
+    await this.#indexBindings(prepared, signal);
     return prepared;
   }
 
   public async open(element: TextElementV2, signal: AbortSignal): Promise<void> {
+    this.#assertActive(signal);
     const bindings = await this.#indexBindings(element, signal);
     const base = textBaseFontBinding(element);
     const { document, requests } = await this.#parse(element, signal);
@@ -165,7 +173,9 @@ export class ActiveTextPreparation {
       native: this.#measurer,
       scheduler: this.#scheduler,
       signal,
+      fontIdentity: this.#fonts.identity,
     });
+    this.#assertActive(signal);
     this.#bindings.adopt(element.id, bindings, base);
   }
 
@@ -175,6 +185,7 @@ export class ActiveTextPreparation {
     width: number,
     signal: AbortSignal,
   ) {
+    this.#assertActive(signal);
     const cached = this.#tables.get(block);
     if (cached?.table.width === width) return cached;
     const { requests } = await this.#parse(element, signal);
@@ -217,20 +228,23 @@ export class ActiveTextPreparation {
   }
 
   public adopt(element: TextElementV2): void {
+    if (this.#disposed) return;
     this.mathBaselines.adopt(element);
-    const bindings = this.#preparedBindings.get(element);
-    if (bindings !== undefined) {
-      this.#bindings.adopt(element.id, bindings, textBaseFontBinding(element));
+    const indexed = this.#indexedBindings.get(element.layout);
+    if (indexed && sameTextLayoutBindings(indexed.element, element)) {
+      this.#bindings.adopt(element.id, indexed.bindings, textBaseFontBinding(element));
     }
   }
 
   public mapChanges(changes: ChangeDesc): void {
     this.mathBaselines.clear();
+    this.#indexedBindings = new WeakMap();
     this.#bindings.map(changes);
   }
 
   public clearBindings(): void {
     this.mathBaselines.clear();
+    this.#indexedBindings = new WeakMap();
     this.#bindings.clear();
   }
 
@@ -276,7 +290,18 @@ export class ActiveTextPreparation {
     element: TextElementV2,
     signal: AbortSignal,
   ): Promise<readonly TextFontBinding[]> {
-    return this.#complete(textFontBindingsSteps(element), signal);
+    this.#assertActive(signal);
+    const cached = this.#indexedBindings.get(element.layout);
+    if (cached && sameTextLayoutBindings(cached.element, element)) return cached.bindings;
+    const bindings = await this.#complete(textFontBindingsSteps(element), signal);
+    this.#assertActive(signal);
+    this.#indexedBindings.set(element.layout, { element, bindings });
+    return bindings;
+  }
+
+  #assertActive(signal: AbortSignal): void {
+    signal.throwIfAborted();
+    if (this.#disposed) throw new Error("Text preparation disposed.");
   }
 
   async #complete<T>(steps: Generator<void, T>, signal: AbortSignal): Promise<T> {
@@ -284,7 +309,7 @@ export class ActiveTextPreparation {
     while (!step.done) {
       const pending = this.#scheduler.checkpoint(signal, "frame");
       if (pending !== undefined) await pending;
-      signal.throwIfAborted();
+      this.#assertActive(signal);
       step = steps.next();
     }
     return step.value;
@@ -299,13 +324,14 @@ export class ActiveTextPreparation {
     return (
       previous !== undefined &&
       previous.source === element.source &&
-      previous.style === element.style &&
+      sameTextStyle(previous.style, element.style) &&
       previous.ranges === element.ranges &&
       previous.paragraphs === element.paragraphs
     );
   }
 
   async #parse(element: TextElementV2, signal: AbortSignal) {
+    this.#assertActive(signal);
     if (this.#matches(element)) return this.#parsed!;
     const document = await this.#complete(parseTextMarkdownSteps(element.source, element), signal);
     const requests = new Map<string, FontFaceRequest>();
@@ -332,9 +358,10 @@ export class ActiveTextPreparation {
         } else if (run.kind === "math") include({ ...style, fontFamily: TEXT_CODE_FONT_FAMILY });
         const pending = this.#scheduler.checkpoint(signal, "frame");
         if (pending !== undefined) await pending;
-        signal.throwIfAborted();
+        this.#assertActive(signal);
       }
     }
+    this.#assertActive(signal);
     if (!hasGlyphs) include(element.style);
     this.#parsed = {
       source: element.source,
@@ -349,6 +376,8 @@ export class ActiveTextPreparation {
   }
 
   public dispose(): void {
+    this.#disposed = true;
+    this.#indexedBindings = new WeakMap();
     this.mathBaselines.clear();
     this.#measurer.dispose();
     this.math.dispose();

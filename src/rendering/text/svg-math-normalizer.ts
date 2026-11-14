@@ -55,7 +55,8 @@ export async function normalizeMathSvg<Node>(
   let nodes = 0;
   let characters = 0;
   while (pending.length) {
-    await admitTextLayout(admission);
+    const handoff = admitTextLayout(admission);
+    if (handoff) await handoff;
     const current = pending.pop()!;
     if (++nodes > MAX_NODES || current.depth > 64)
       throw new Error("Math SVG exceeds the item limit.");
@@ -143,7 +144,8 @@ async function mathSvgIds<Node>(
   const pending = [root];
   let count = 0;
   while (pending.length) {
-    await admitTextLayout(admission);
+    const handoff = admitTextLayout(admission);
+    if (handoff) await handoff;
     if (++count > MAX_NODES) throw new Error("Math SVG exceeds the item limit.");
     const node = pending.pop()!;
     const id = tree.attribute(node, "id");

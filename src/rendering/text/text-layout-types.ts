@@ -100,11 +100,12 @@ export function assertTextLayoutActive(signal?: FrameCancellation): void {
     throw signal.reason instanceof Error ? signal.reason : new Error("Text layout cancelled.");
 }
 
-export async function admitTextLayout(
+export function admitTextLayout(
   ports: Pick<TextLayoutPorts, "scheduler" | "signal">,
-): Promise<void> {
+): Promise<void> | undefined {
   assertTextLayoutActive(ports.signal);
   const handoff = ports.scheduler.checkpoint(ports.signal, "frame");
-  if (handoff) await handoff;
+  if (handoff) return handoff.then(() => assertTextLayoutActive(ports.signal));
   assertTextLayoutActive(ports.signal);
+  return undefined;
 }

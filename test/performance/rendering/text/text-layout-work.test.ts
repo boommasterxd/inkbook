@@ -79,6 +79,7 @@ function measurementBoundary(
     createElement,
     createElementNS,
     createTextNode,
+    createDocumentFragment: () => nativeDocument.createDocumentFragment(),
     head: nativeDocument.head,
     body: nativeDocument.body,
   } as unknown as Document;
@@ -182,20 +183,30 @@ it("batches exact font line boxes before shaping and cleans cancelled native pro
     { style },
     { style: { ...style, italic: true } },
   ];
-  const ports = { scheduler: createTestWorkScheduler() };
+  const append = vi.spyOn(boundary.nativeDocument.body, "append");
+  const liveCounts: number[] = [];
+  const preparationScheduler = createTestWorkScheduler({
+    checkpoint: () => {
+      liveCounts.push(boundary.nativeDocument.body.childElementCount);
+      return undefined;
+    },
+  });
   try {
-    await boundary.measure.prepareLineMetrics(fonts, ports);
+    await boundary.measure.prepareLineMetrics(fonts, { scheduler: preparationScheduler });
     expect(boundary.phases).toEqual([
       ...Array<string>(16).fill("write"),
       ...Array<string>(16).fill("read"),
     ]);
+    expect(append).toHaveBeenCalledOnce();
+    expect(liveCounts).toContain(fonts.length);
+    expect(liveCounts.every((count) => count === 0 || count === fonts.length)).toBe(true);
     expect(boundary.nativeDocument.body.childNodes).toHaveLength(0);
     for (const font of fonts) {
       expect(boundary.measure.measure("word", font.style).lineHeight).toBe(
         Math.floor(font.style.fontSize * 1.3 * 64) / 64,
       );
     }
-    await boundary.measure.prepareLineMetrics(fonts, ports);
+    await boundary.measure.prepareLineMetrics(fonts, { scheduler: preparationScheduler });
     expect(boundary.rectReads).toHaveBeenCalledTimes(16);
     expect(boundary.styleWrites).toHaveBeenCalledTimes(16);
     boundary.measure.clear();
@@ -211,6 +222,19 @@ it("batches exact font line boxes before shaping and cleans cancelled native pro
     ).rejects.toThrow();
     expect(boundary.styleWrites).toHaveBeenCalledTimes(20);
     expect(boundary.rectReads).toHaveBeenCalledTimes(16);
+    expect(boundary.nativeDocument.body.childNodes).toHaveLength(0);
+    expect(append).toHaveBeenCalledOnce();
+    const readAbort = new AbortController();
+    const readScheduler = createTestWorkScheduler({
+      checkpoint: () => {
+        if (boundary.rectReads.mock.calls.length > 16) readAbort.abort();
+        return undefined;
+      },
+    });
+    const readPorts = { scheduler: readScheduler, signal: readAbort.signal };
+    await expect(boundary.measure.prepareLineMetrics(fonts, readPorts)).rejects.toThrow();
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(boundary.rectReads).toHaveBeenCalledTimes(18);
     expect(boundary.nativeDocument.body.childNodes).toHaveLength(0);
   } finally {
     boundary.measure.dispose();

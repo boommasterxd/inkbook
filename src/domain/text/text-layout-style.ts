@@ -37,3 +37,19 @@ export function textBlockStyle(
         }),
   };
 }
+
+export function sameTextStyle(left: TextStyleV2, right: TextStyleV2): boolean {
+  return (
+    left === right ||
+    (left.fontFamily === right.fontFamily &&
+      left.fontSize === right.fontSize &&
+      left.opacity === right.opacity &&
+      left.bold === right.bold &&
+      left.italic === right.italic &&
+      left.underline === right.underline &&
+      left.strikethrough === right.strikethrough &&
+      left.color.type === right.color.type &&
+      (left.color.type === "theme-text" ||
+        (right.color.type === "rgba" && left.color.value === right.color.value)))
+  );
+}

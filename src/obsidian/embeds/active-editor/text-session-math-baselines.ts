@@ -4,6 +4,7 @@ import {
   type TextLayoutLineV2,
   type TextLayoutV2,
   type TextMathLayoutV2,
+  type TextStyleV2,
 } from "../../../domain/schema/public";
 import { textBlockBaseStyle } from "../../../domain/text/text-layout-style";
 import type {
@@ -19,10 +20,12 @@ import { blockTextStyle } from "../../../rendering/text/text-layout-atoms";
 import { collectTextGlyphStruts } from "../../../rendering/text/text-layout-strut";
 import {
   admitTextLayout,
+  assertTextLayoutActive,
   type ResolvedTextMath,
   type TextLayoutPorts,
   type TextMeasurer,
 } from "../../../rendering/text/text-layout-types";
+import { sameTextLayoutBindings } from "./text-session-font-bindings";
 
 // A stored coordinate has three decimal places; comparisons combine up to three coordinates.
 const GEOMETRY_TOLERANCE = 0.002;
@@ -42,12 +45,15 @@ interface RetainedMath {
 type MathBaselinePorts = Pick<TextLayoutPorts, "scheduler" | "signal"> & {
   readonly measure: TextMeasurer;
   readonly native: CanvasTextMeasurer;
+  readonly fontIdentity?: object | undefined;
 };
 
 /** Retains saved baselines without relaying native DOM measurements into decoration updates. */
 export class TextSessionMathBaselines {
   #entries = new Map<number, RetainedMath>();
   #element: TextElementV2 | undefined;
+  #document: TextMarkdownDocument | undefined;
+  #fontIdentity: object | undefined;
   #version = 0;
 
   public async open(
@@ -55,6 +61,8 @@ export class TextSessionMathBaselines {
     document: TextMarkdownDocument,
     ports: MathBaselinePorts,
   ): Promise<void> {
+    assertTextLayoutActive(ports.signal);
+    if (this.#matches(element, document, ports.fontIdentity)) return;
     this.clear();
     const version = this.#version;
     if (!element.layout.math?.length) return;
@@ -63,7 +71,8 @@ export class TextSessionMathBaselines {
     const rows = new Map<TextLayoutLineV2, RetainedMathLine>();
     const entries = new Map<number, RetainedMath>();
     for (const block of document.blocks) {
-      await admitTextLayout(ports);
+      const pending = admitTextLayout(ports);
+      if (pending) await pending;
       if (block.table) continue;
       const strut = struts.blocks.get(block);
       const style =
@@ -83,25 +92,27 @@ export class TextSessionMathBaselines {
         ports,
       );
     }
-    await ports.native.prepareLineMetrics(
-      (function* () {
-        for (const row of rows.values()) yield* row.fonts;
-      })(),
-      ports,
-    );
-    for (const row of rows.values()) {
-      for (const font of row.fonts) {
-        await admitTextLayout(ports);
-        row.ascent = Math.max(
-          row.ascent,
-          ports.native.measure("", font.style, font.fontResourceId).ascent,
-        );
-      }
-    }
-    await admitTextLayout(ports);
+    await prepareRetainedMathMetrics(rows, ports);
+    const pending = admitTextLayout(ports);
+    if (pending) await pending;
     if (this.#version !== version) return;
     this.#element = element;
+    this.#document = document;
+    this.#fontIdentity = ports.fontIdentity;
     this.#entries = entries;
+  }
+
+  #matches(
+    element: TextElementV2,
+    document: TextMarkdownDocument,
+    fontIdentity: object | undefined,
+  ): boolean {
+    return (
+      fontIdentity !== undefined &&
+      fontIdentity === this.#fontIdentity &&
+      document === this.#document &&
+      sameTextLayoutBindings(this.#element, element)
+    );
   }
 
   public offset(range: TextSourceRange, result: ResolvedTextMath, layout?: TextLayoutV2): number {
@@ -125,20 +136,14 @@ export class TextSessionMathBaselines {
   public clear(): void {
     this.#version += 1;
     this.#element = undefined;
+    this.#document = undefined;
+    this.#fontIdentity = undefined;
     this.#entries.clear();
   }
 
   public adopt(element: TextElementV2): void {
     const previous = this.#element;
-    if (
-      previous?.layout !== element.layout ||
-      previous.width !== element.width ||
-      previous.source !== element.source ||
-      previous.style !== element.style ||
-      previous.ranges !== element.ranges ||
-      previous.paragraphs !== element.paragraphs
-    )
-      this.clear();
+    if (!sameTextLayoutBindings(previous, element)) this.clear();
   }
 }
 
@@ -154,7 +159,8 @@ async function bindRetainedMathBlock(
   ports: MathBaselinePorts,
 ): Promise<void> {
   for (const run of block.runs) {
-    await admitTextLayout(ports);
+    const pending = admitTextLayout(ports);
+    if (pending) await pending;
     if (run.kind !== "math") continue;
     const math = index.retained.get(run.start);
     if (!math || math.end !== run.end) continue;
@@ -164,21 +170,50 @@ async function bindRetainedMathBlock(
     if (!row) {
       row = { line, fonts: [request.strut], ascent: 0, mathAscent: 0 };
       for (const part of line.runs) {
-        await admitTextLayout(ports);
-        row.fonts.push({
-          style: { ...request.element.style, ...part.style },
-          ...(part.fontResourceId ? { fontResourceId: part.fontResourceId } : {}),
-        });
+        const pending = admitTextLayout(ports);
+        if (pending) await pending;
+        row.fonts.push(
+          retainedFontMeasurement({ ...request.element.style, ...part.style }, part.fontResourceId),
+        );
       }
       index.rows.set(line, row);
     }
     if (!math.display) {
       const style = blockTextStyle(block, run.style);
       const id = ports.measure.resolveFontResourceId?.(style);
-      row.fonts.push({ style, ...(id ? { fontResourceId: id } : {}) });
+      row.fonts.push(retainedFontMeasurement(style, id));
     }
     row.mathAscent = Math.max(row.mathAscent, line.y + line.baseline - math.y);
     index.entries.set(math.start, { math, row });
+  }
+}
+
+function retainedFontMeasurement(
+  style: TextStyleV2,
+  fontResourceId: string | undefined,
+): TextFontMeasurement {
+  return { style, ...(fontResourceId ? { fontResourceId } : {}) };
+}
+
+async function prepareRetainedMathMetrics(
+  rows: ReadonlyMap<TextLayoutLineV2, RetainedMathLine>,
+  ports: MathBaselinePorts,
+): Promise<void> {
+  await ports.native.prepareLineMetrics(
+    (function* () {
+      for (const row of rows.values()) yield* row.fonts;
+    })(),
+    ports,
+  );
+  for (const row of rows.values()) {
+    for (const font of row.fonts) {
+      const pending = admitTextLayout(ports);
+      if (pending) await pending;
+      row.ascent = Math.max(
+        row.ascent,
+        ports.native.measure("", font.style, font.fontResourceId).ascent,
+      );
+    }
   }
 }
 
@@ -186,13 +221,15 @@ async function retainedMathIndex(element: TextElementV2, ports: MathBaselinePort
   const retained = new Map<number, TextMathLayoutV2>();
   const lines: TextLayoutLineV2[] = [];
   for (const math of element.layout.math ?? []) {
-    await admitTextLayout(ports);
+    const pending = admitTextLayout(ports);
+    if (pending) await pending;
     retained.set(math.start, math);
   }
   const tables = element.layout.tables ?? [];
   let tableIndex = 0;
   for (const line of element.layout.lines) {
-    await admitTextLayout(ports);
+    const pending = admitTextLayout(ports);
+    if (pending) await pending;
     while (tables[tableIndex] && line.y >= tables[tableIndex]!.y + tables[tableIndex]!.height)
       tableIndex += 1;
     const table = tables[tableIndex];

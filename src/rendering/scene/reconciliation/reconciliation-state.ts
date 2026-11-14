@@ -1,4 +1,6 @@
 import type { RenderBand } from "../../../domain/commands/render-bands";
+import type { Bounds } from "../../../domain/geometry/primitives";
+import type { TextElementV2 } from "../../../domain/schema/types";
 import type { MountedSceneElement } from "../content/mounted-element";
 import type { SceneDom } from "../scene-dom";
 import type { ScenePathCache } from "../content/path-cache";
@@ -14,6 +16,7 @@ import type { VisibilityExitReadiness } from "./visibility-exit-readiness";
 import type { SceneRootPlacement } from "./root-placement";
 
 export interface ScenePreparationOptions {
+  readonly textViewport?: (element: TextElementV2) => Bounds | undefined;
   readonly isPinned?: (id: string) => boolean;
   readonly upcomingGeometryIds?: () => Iterable<string>;
   readonly retainGeometryPath?: (id: string) => boolean;

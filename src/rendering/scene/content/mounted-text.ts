@@ -1,3 +1,4 @@
+import { sameBounds as sameWindow } from "../visibility/visibility-bounds";
 import type { ColorV1, TextElementV2, TextStyleV2 } from "../../../domain/schema/types";
 import { SVG_NAMESPACE } from "../constants";
 import type { MutableSceneInstrumentation } from "../types";
@@ -11,10 +12,13 @@ import {
 } from "../../../domain/geometry/rounded-background-path";
 import { textTableGridPathSteps } from "../../../domain/geometry/text-table-grid-path";
 import type { AffineMatrix } from "../../../domain/geometry/affine-matrix";
+import type { Bounds } from "../../../domain/geometry/primitives";
+import { MountedTextLines } from "./mounted-text-lines";
 
 /** One retained paint root, shared with the singleton runtime editing surface. */
 export class MountedTextPresentation {
   public previewMatrix: AffineMatrix | undefined;
+  public motionScale = 1;
   public readonly group: SVGGElement;
   public readonly content: SVGGElement;
   readonly #background: SVGPathElement;
@@ -26,12 +30,22 @@ export class MountedTextPresentation {
   #backgroundShape: string | undefined;
   #pending: { element: TextElementV2; steps: Generator<void> } | undefined;
   #paintNodes: readonly SVGElement[] = [];
+  #lineOffset = 0;
+  #lines: MountedTextLines | undefined;
+  #stagedLines: MountedTextLines | undefined;
+  #window: Bounds | undefined;
+  #viewportWork:
+    { bounds: Bounds | undefined; lines: MountedTextLines; steps: Generator<void> } | undefined;
 
   public constructor(
     document: Document,
     element: TextElementV2,
     stats: MutableSceneInstrumentation,
     deferred = false,
+    private readonly viewport?: (
+      element: TextElementV2,
+      detachedPreview?: AffineMatrix,
+    ) => Bounds | undefined,
   ) {
     this.#stats = stats;
     this.group = document.createElementNS(SVG_NAMESPACE, "g");
@@ -43,7 +57,13 @@ export class MountedTextPresentation {
   }
 
   public memoryUsage(): number {
-    return this.#bytes + this.#scratchBytes;
+    return (
+      this.#bytes +
+      this.#scratchBytes +
+      (this.#lines?.memoryUsage() ?? 0) +
+      (this.#stagedLines?.memoryUsage() ?? 0) +
+      (this.#viewportWork?.lines.memoryUsage() ?? 0)
+    );
   }
   public get element(): TextElementV2 {
     return this.#element!;
@@ -51,8 +71,9 @@ export class MountedTextPresentation {
   public motionSnapshot(element: TextElementV2, maximumNodes: number, maximumBytes: number) {
     if (
       this.#element !== element ||
-      this.#bytes > maximumBytes ||
-      this.#paintNodes.length + 3 > maximumNodes
+      this.#lines?.complete !== true ||
+      this.memoryUsage() > maximumBytes ||
+      this.#paintNodes.length + this.#lines.nodeCount + 3 > maximumNodes
     )
       return undefined;
     const root = this.group.cloneNode(false) as SVGGElement;
@@ -65,14 +86,14 @@ export class MountedTextPresentation {
     root.append(background, content);
     const nodes: SVGElement[] = [root, background, content];
     const clones = new Map<SVGElement, SVGElement>([[this.content, content]]);
-    for (const node of this.#paintNodes) {
+    for (const node of this.paintNodes()) {
       const clone = node.cloneNode(false) as SVGElement;
       if (node.localName === "tspan") clone.textContent = node.textContent;
       clones.get(node.parentNode as SVGElement)?.append(clone);
       clones.set(node, clone);
       nodes.push(clone);
     }
-    return { root, nodes, bytes: this.#bytes };
+    return { root, nodes, bytes: this.memoryUsage() };
   }
 
   public update(element: TextElementV2): void {
@@ -85,6 +106,37 @@ export class MountedTextPresentation {
     this.#pending?.steps.return(undefined);
     this.#pending = undefined;
     this.#scratchBytes = 0;
+    this.#stagedLines = undefined;
+    this.cancelViewport();
+  }
+
+  /** The content lane supplies the same admitted deadline used for native geometry preparation. */
+  public prepareViewport(deadline: number, now: () => number): boolean {
+    if (!this.#element || this.#pending) return this.#pending === undefined;
+    if (this.#lines?.windowed === false) return true;
+    const bounds = this.viewport?.(this.#element, this.previewMatrix);
+    if (coversWindow(this.#window, bounds)) {
+      this.cancelViewport();
+      return true;
+    }
+    if (!this.#viewportWork || !coversWindow(this.#viewportWork.bounds, bounds)) {
+      this.cancelViewport();
+      const lines = this.createLines({ ...this.#element, x: this.#origin.x, y: this.#origin.y });
+      const retained = reserveWindow(bounds, this.#element.style.fontSize);
+      this.#viewportWork = { bounds: retained, lines, steps: lines.prepare(retained, this.#lines) };
+    }
+    do {
+      if (this.#viewportWork.steps.next().done) {
+        const { lines } = this.#viewportWork;
+        const parent = this.#paintNodes[0] as SVGGElement;
+        lines.publish(parent, this.#paintNodes[this.#lineOffset] ?? null, this.#lines);
+        this.#lines = lines;
+        this.#window = this.#viewportWork.bounds;
+        this.#viewportWork = undefined;
+        return true;
+      }
+    } while (now() < deadline);
+    return false;
   }
 
   public prepare(element: TextElementV2, deadline: number, now: () => number): boolean {
@@ -132,7 +184,6 @@ export class MountedTextPresentation {
     const scratch = this.content.ownerDocument.createElementNS(SVG_NAMESPACE, "g");
     this.#scratchBytes = 2048;
     const backgrounds = yield* textBackgroundGeometrySteps(element);
-    const text = this.content.ownerDocument.createElementNS(SVG_NAMESPACE, "text");
     const nodes: SVGElement[] = [scratch];
     for (const paint of backgrounds.paints) {
       const path = this.content.ownerDocument.createElementNS(SVG_NAMESPACE, "path");
@@ -144,34 +195,47 @@ export class MountedTextPresentation {
       this.#scratchBytes += 512 + paint.d.length * 2;
       yield;
     }
-    nodes.push(text);
-    this.write(text, "xml:space", "preserve");
-    for (const line of element.layout.lines) {
-      for (const run of line.runs) {
-        const span = this.content.ownerDocument.createElementNS(SVG_NAMESPACE, "tspan");
-        this.write(span, "x", String(element.x + line.x + run.x));
-        this.write(span, "y", String(element.y + line.y + line.baseline));
-        if (run.text.length > 0 && run.width > 0) {
-          this.write(span, "textLength", String(run.width));
-          this.write(span, "lengthAdjust", "spacingAndGlyphs");
-        }
-        this.style(span, { ...element.style, ...run.style }, run.fontResourceId);
-        span.textContent = run.text;
-        this.#stats.contentGeometryWrites += 1;
-        this.#scratchBytes += 512 + run.text.length * 2;
-        text.append(span);
-        nodes.push(span);
-        yield;
-      }
-    }
-    scratch.append(text);
+    const lineOffset = nodes.length;
+    const window = reserveWindow(this.viewport?.(element), element.style.fontSize);
+    const lines = this.createLines(element);
+    this.#stagedLines = lines;
+    yield* lines.prepare(window, this.#lines);
     yield* this.appendTables(element, scratch, nodes);
     yield* this.appendMath(element, scratch, nodes);
+    lines.publish(scratch, nodes[lineOffset] ?? null);
     this.content.replaceChildren(scratch);
     this.#paintNodes = nodes;
+    this.#lineOffset = lineOffset;
+    this.#lines = lines;
+    this.#stagedLines = undefined;
+    this.#window = window;
     this.#origin = { x: element.x, y: element.y };
     this.#backgroundShape = backgrounds.basePath;
     this.#scratchBytes += backgrounds.basePath?.length ? backgrounds.basePath.length * 2 : 0;
+  }
+
+  private createLines(element: TextElementV2): MountedTextLines {
+    return new MountedTextLines(element, {
+      document: this.content.ownerDocument,
+      write: (node, name, value) => this.write(node, name, value),
+      style: (node, style, font) => this.style(node, style, font),
+      onText: () => {
+        this.#stats.contentGeometryWrites += 1;
+      },
+    });
+  }
+
+  private *paintNodes(): Generator<SVGElement> {
+    for (let index = 0; index < this.#paintNodes.length; index += 1) {
+      if (index === this.#lineOffset) yield* this.#lines!.nodes();
+      yield this.#paintNodes[index]!;
+    }
+    if (this.#lineOffset === this.#paintNodes.length) yield* this.#lines!.nodes();
+  }
+
+  public cancelViewport(): void {
+    this.#viewportWork?.steps.return(undefined);
+    this.#viewportWork = undefined;
   }
 
   private *appendTables(
@@ -287,4 +351,29 @@ export function setTextMotionOrigin(node: SVGElement, element: TextElementV2 | n
   }
   node.style.setProperty("transform-origin", `${element.pivot.x}px ${element.pivot.y}px`);
   return `rotate(${element.rotation}deg) `;
+}
+
+function coversWindow(retained: Bounds | undefined, requested: Bounds | undefined): boolean {
+  return (
+    sameWindow(retained, requested) ||
+    (retained !== undefined &&
+      requested !== undefined &&
+      retained.minX <= requested.minX &&
+      retained.minY <= requested.minY &&
+      retained.maxX >= requested.maxX &&
+      retained.maxY >= requested.maxY)
+  );
+}
+
+/** Match the line index's font-overhang reserve so small viewport retargets keep admitted work. */
+function reserveWindow(bounds: Bounds | undefined, fontSize: number): Bounds | undefined {
+  const reserve = fontSize * 2;
+  return (
+    bounds && {
+      minX: bounds.minX - reserve,
+      minY: bounds.minY - reserve,
+      maxX: bounds.maxX + reserve,
+      maxY: bounds.maxY + reserve,
+    }
+  );
 }

@@ -2,13 +2,15 @@ import type { Bounds } from "../../../domain/geometry/primitives";
 
 const SPATIAL_CELL_SIZE = 256;
 
-export function sameBounds(left: Bounds | undefined, right: Bounds): boolean {
+export function sameBounds(left: Bounds | undefined, right: Bounds | undefined): boolean {
   return (
-    left !== undefined &&
-    left.minX === right.minX &&
-    left.maxX === right.maxX &&
-    left.minY === right.minY &&
-    left.maxY === right.maxY
+    left === right ||
+    (left !== undefined &&
+      right !== undefined &&
+      left.minX === right.minX &&
+      left.maxX === right.maxX &&
+      left.minY === right.minY &&
+      left.maxY === right.maxY)
   );
 }
 

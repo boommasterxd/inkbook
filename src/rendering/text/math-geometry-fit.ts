@@ -14,7 +14,8 @@ export async function fitTextMathGeometry(
   const scale = width / value.width;
   const paths: ResolvedTextMath["paths"] = [];
   for (const path of value.paths) {
-    await admitTextLayout(admission);
+    const handoff = admitTextLayout(admission);
+    if (handoff) await handoff;
     const fillRule = path.fillRule;
     paths.push({
       d: normalizeMathPath(path.d, [scale, 0, 0, scale, 0, 0]),

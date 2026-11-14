@@ -25,12 +25,28 @@ export function textFontRequestKey(request: FontFaceRequest): string {
   return `${request.family}:${request.weight}:${request.style}`;
 }
 
+interface TextFontLoadOptions {
+  readonly retained?: readonly TextFontBinding[];
+  readonly preserveEmbedded?: boolean;
+  readonly base?: TextFontBinding;
+}
+
+interface ReadyTextFonts {
+  readonly requests: readonly FontFaceRequest[];
+  readonly options: TextFontLoadOptions;
+  readonly registry: readonly FontResourceV2[];
+  readonly document: Document;
+}
+
 /** Native face loads and embedded payloads remain document-owned and content-addressed. */
 export class TextSessionFonts {
   readonly #loaded = new Map<string, Promise<void>>();
   readonly #builtin = new Map<string, Promise<FontResourceV2>>();
   #registry: readonly FontResourceV2[] | undefined;
   #selected: ReadonlyMap<string, FontResourceV2> = new Map();
+  #ready: ReadyTextFonts | undefined;
+  #document: Document | undefined;
+  #disposed = false;
 
   public constructor(
     private readonly options: {
@@ -40,6 +56,10 @@ export class TextSessionFonts {
       readonly library?: TextFontLibraryPort;
     },
   ) {}
+
+  public get identity(): object | undefined {
+    return this.#ready;
+  }
 
   public resource(style: TextStyleV2): FontResourceV2 | undefined {
     const request = textFontRequest(style);
@@ -52,12 +72,17 @@ export class TextSessionFonts {
   public async load(
     requests: readonly FontFaceRequest[],
     signal: AbortSignal,
-    options: {
-      readonly retained?: readonly TextFontBinding[];
-      readonly preserveEmbedded?: boolean;
-      readonly base?: TextFontBinding;
-    } = {},
+    options: TextFontLoadOptions = {},
   ): Promise<ReadonlyMap<string, FontResourceV2>> {
+    this.#assertActive(signal);
+    if (this.#canReuse(requests, options)) return this.#selected;
+    this.#ready = undefined;
+    const document = this.options.renderer.textDocument;
+    if (this.#document !== document) {
+      this.#loaded.clear();
+      this.#registry = undefined;
+      this.#document = document;
+    }
     const available = new Set((this.options.model.fontResources ?? []).map((font) => font.id));
     const selected = new Map<string, FontResourceV2>();
     const missing = new Map<string, FontResourceV2>();
@@ -74,16 +99,16 @@ export class TextSessionFonts {
         options.preserveEmbedded === true,
         aliases.get(request.family),
       );
-      signal.throwIfAborted();
+      this.#assertActive(signal);
       selected.set(textFontRequestKey(request), face);
       if (!available.has(face.id)) missing.set(face.id, face);
     }
     if (missing.size) await this.options.model.ensureFontResources?.([...missing.values()]);
-    signal.throwIfAborted();
+    this.#assertActive(signal);
     const registry = this.options.model.fontResources ?? [...selected.values()];
-    if (registry !== this.#registry) {
+    if (!sameResources(this.#registry, registry)) {
       this.options.renderer.setTextFonts(serializeFontStylesheet(registry));
-      this.#registry = registry;
+      this.#registry = [...registry];
     }
     for (const request of requests)
       await this.#loadNative(request, selected.get(textFontRequestKey(request))!, signal);
@@ -101,8 +126,28 @@ export class TextSessionFonts {
         signal,
       );
     }
+    this.#assertActive(signal);
     this.#selected = selected;
+    this.#ready = { requests, options: { ...options }, registry: [...registry], document };
     return selected;
+  }
+
+  #canReuse(requests: readonly FontFaceRequest[], options: TextFontLoadOptions): boolean {
+    const ready = this.#ready;
+    return (
+      options.preserveEmbedded === true &&
+      ready?.options.preserveEmbedded === true &&
+      ready.requests === requests &&
+      ready.options.retained === options.retained &&
+      sameBaseBinding(ready.options.base, options.base) &&
+      ready.document === this.options.renderer.textDocument &&
+      sameResources(ready.registry, this.options.model.fontResources)
+    );
+  }
+
+  #assertActive(signal: AbortSignal): void {
+    signal.throwIfAborted();
+    if (this.#disposed) throw new Error("Text fonts disposed.");
   }
 
   async #resolve(
@@ -192,11 +237,37 @@ export class TextSessionFonts {
   }
 
   public dispose(): void {
+    this.#disposed = true;
+    this.#ready = undefined;
+    this.#document = undefined;
     this.#loaded.clear();
     this.#builtin.clear();
     this.#selected = new Map();
     this.#registry = undefined;
   }
+}
+
+function sameResources(
+  previous: readonly FontResourceV2[] | undefined,
+  current: readonly FontResourceV2[] | undefined,
+): boolean {
+  // Session resources are immutable; the private list also detects in-place list replacements.
+  return (
+    previous !== undefined &&
+    current !== undefined &&
+    previous.length === current.length &&
+    previous.every((resource, index) => resource === current[index])
+  );
+}
+
+function sameBaseBinding(left: TextFontBinding | undefined, right: TextFontBinding | undefined) {
+  return (
+    left === right ||
+    (left?.id === right?.id &&
+      left?.family === right?.family &&
+      left?.bold === right?.bold &&
+      left?.italic === right?.italic)
+  );
 }
 
 async function collectFontBindings(

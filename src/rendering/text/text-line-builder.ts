@@ -63,7 +63,7 @@ export class TextLineBuilder {
     this.#available = Math.max(1, width - this.#indent);
   }
 
-  public async append(atom: TextLayoutAtom): Promise<void> {
+  public append(atom: TextLayoutAtom): Promise<void> | undefined {
     if (atom.newline) {
       this.#flush(true);
       this.#sourcePosition = atom.end;
@@ -83,11 +83,11 @@ export class TextLineBuilder {
       !atom.tab &&
       !atom.math
     ) {
-      await this.#splitWord(atom);
-      return;
+      return this.#splitWord(atom);
     }
     this.#atoms.push(atom);
     this.#width += atom.width;
+    return undefined;
   }
 
   public finish(): number {
@@ -100,7 +100,8 @@ export class TextLineBuilder {
     let cursor = 0;
     let sourceOffset = 0;
     while (cursor < characters.length) {
-      await admitTextLayout(this.#ports);
+      const handoff = admitTextLayout(this.#ports);
+      if (handoff) await handoff;
       const fitting = this.#fittingCount(characters, cursor, atom.style, atom.fontResourceId);
       if (fitting === 0 && this.#atoms.length) {
         this.#flush(false);

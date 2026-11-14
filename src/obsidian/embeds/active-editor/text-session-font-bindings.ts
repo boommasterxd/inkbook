@@ -1,12 +1,29 @@
 import type { ChangeDesc } from "@codemirror/state";
 import type { TextElementV2, TextStyleV2 } from "../../../domain/schema/public";
 import type { TextSourceRange } from "../../../domain/text/text-types";
+import { sameTextStyle } from "../../../domain/text/text-layout-style";
 
 export interface TextFontBinding extends TextSourceRange {
   readonly id: string;
   readonly family: string;
   readonly bold: boolean;
   readonly italic: boolean;
+}
+
+export function sameTextLayoutBindings(
+  previous: TextElementV2 | undefined,
+  element: TextElementV2,
+): boolean {
+  return (
+    previous !== undefined &&
+    previous.id === element.id &&
+    previous.layout === element.layout &&
+    previous.width === element.width &&
+    previous.source === element.source &&
+    sameTextStyle(previous.style, element.style) &&
+    previous.ranges === element.ranges &&
+    previous.paragraphs === element.paragraphs
+  );
 }
 
 export function textBaseFontBinding(element: TextElementV2): TextFontBinding | undefined {

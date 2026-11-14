@@ -19,7 +19,7 @@ import type {
 } from "./scene-motion-types";
 import type { SceneDom } from "../scene-dom";
 import type { MutableSceneInstrumentation, SceneStoreDelta } from "../types";
-const MAX_MOTION_PATHS = 256;
+import { MAX_MOTION_PATHS } from "../constants";
 const MAX_MOTION_BYTES = 4 * 1024 * 1024;
 export class SceneMotionController {
   readonly #content: SceneContentRenderer;

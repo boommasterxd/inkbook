@@ -2,6 +2,8 @@ import type { MutableSceneInstrumentation, SceneElementRecord } from "../types";
 import type { MountedSceneElement } from "./mounted-element";
 import { MountedTextPresentation } from "./mounted-text";
 import type { MountSlice } from "../reconciliation/mount-slice";
+import type { Bounds } from "../../../domain/geometry/primitives";
+import type { TextElementV2 } from "../../../domain/schema/types";
 
 /** One cancellable native text DOM preparation shares the scene's admitted deadline. */
 export class SceneTextPreparation {
@@ -12,6 +14,7 @@ export class SceneTextPreparation {
       readonly ownerDocument: Document;
       readonly instrumentation: MutableSceneInstrumentation;
       readonly mounted?: ReadonlyMap<string, MountedSceneElement>;
+      readonly textViewport?: (element: TextElementV2) => Bounds | undefined;
     },
   ) {}
 
@@ -31,6 +34,7 @@ export class SceneTextPreparation {
             record.element,
             this.options.instrumentation,
             true,
+            this.options.textViewport,
           ),
       };
     }

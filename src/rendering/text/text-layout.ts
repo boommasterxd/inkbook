@@ -13,6 +13,7 @@ import { layoutTextTable } from "./text-table-layout";
 import type { TextMarkdownBlock } from "../../domain/text/text-types";
 import type {
   TextLayoutLineV2,
+  TextLayoutV2,
   TextMathLayoutV2,
   TextTableLayoutV2,
   TextStyleV2,
@@ -47,10 +48,10 @@ export async function layoutTextMarkdown(
   const baseFontResourceId = struts.first?.fontResourceId ?? request.baseFontResourceId;
   if (baseFontResourceId !== undefined) result.layout.baseFontResourceId = baseFontResourceId;
   let top = padding;
-  let items = 0;
-  let pathCharacters = 0;
+  const capacity = { items: 0, pathCharacters: 0 };
   for (const block of request.document.blocks) {
-    await admitTextLayout(ports);
+    const handoff = admitTextLayout(ports);
+    if (handoff) await handoff;
     const style = blockTextStyle(
       block,
       textBlockBaseStyle(request.style, block.kind === "heading"),
@@ -65,29 +66,11 @@ export async function layoutTextMarkdown(
       ports,
       request.document.source,
     );
-    if (content.table) {
-      content.table.x = canonicalizeGeometryNumber(content.table.x + padding);
-      (result.layout.tables ??= []).push(content.table);
-      items += content.table.rowHeights.length + content.table.columns + 1;
-    }
+    appendPreparedBlock(result.layout, content, padding, capacity);
     top = nextBlockTop(content, request.style.fontSize, block.end < request.document.source.length);
-    if (result.layout.baseFontResourceId === undefined && content.strutFontResourceId !== undefined)
-      result.layout.baseFontResourceId = content.strutFontResourceId;
-    for (const line of content.lines) {
-      items += line.runs.length + 1;
-      line.x = canonicalizeGeometryNumber(line.x + padding);
-    }
-    for (const math of content.math) {
-      math.x = canonicalizeGeometryNumber(math.x + padding);
-      items += math.paths.length + 1;
-      for (const path of math.paths) pathCharacters += path.d.length;
-    }
-    if (items > MAX_TEXT_LAYOUT_ITEMS || pathCharacters > 2_000_000)
-      throw new Error("Text layout exceeds the supported geometry size.");
-    result.layout.lines.push(...content.lines);
-    result.layout.math!.push(...content.math);
   }
-  await admitTextLayout(ports);
+  const handoff = admitTextLayout(ports);
+  if (handoff) await handoff;
   return {
     layout: result.layout,
     height: canonicalizeGeometryNumber(
@@ -102,6 +85,34 @@ interface PreparedTextBlock {
   readonly table?: TextTableLayoutV2;
   readonly top: number;
   readonly strutFontResourceId?: string;
+}
+
+function appendPreparedBlock(
+  layout: TextLayoutV2,
+  content: PreparedTextBlock,
+  padding: number,
+  capacity: { items: number; pathCharacters: number },
+): void {
+  if (content.table) {
+    content.table.x = canonicalizeGeometryNumber(content.table.x + padding);
+    (layout.tables ??= []).push(content.table);
+    capacity.items += content.table.rowHeights.length + content.table.columns + 1;
+  }
+  if (layout.baseFontResourceId === undefined && content.strutFontResourceId !== undefined)
+    layout.baseFontResourceId = content.strutFontResourceId;
+  for (const line of content.lines) {
+    capacity.items += line.runs.length + 1;
+    line.x = canonicalizeGeometryNumber(line.x + padding);
+  }
+  for (const math of content.math) {
+    math.x = canonicalizeGeometryNumber(math.x + padding);
+    capacity.items += math.paths.length + 1;
+    for (const path of math.paths) capacity.pathCharacters += path.d.length;
+  }
+  if (capacity.items > MAX_TEXT_LAYOUT_ITEMS || capacity.pathCharacters > 2_000_000)
+    throw new Error("Text layout exceeds the supported geometry size.");
+  layout.lines.push(...content.lines);
+  layout.math!.push(...content.math);
 }
 
 function nextBlockTop(content: PreparedTextBlock, fontSize: number, hasFollowing: boolean): number {
@@ -133,7 +144,8 @@ async function layoutBlock(
     request.strut,
   );
   for await (const atom of textLayoutAtoms(block, ports, request.width, source)) {
-    await builder.append(atom);
+    const pending = builder.append(atom);
+    if (pending) await pending;
     if (builder.lines.length > MAX_TEXT_LAYOUT_ITEMS)
       throw new Error("Text layout exceeds the supported item count.");
   }

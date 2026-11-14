@@ -1,4 +1,5 @@
 import { SceneGeometryPublication } from "./content/geometry-publication";
+import { TextViewportPublication } from "./content/text-viewport-publication";
 import { SceneSelectionRuns } from "./presentation/selection-runs";
 import type { ProgressivePreviewTransform } from "./presentation/progressive-preview-request";
 import type { RenderBand } from "../../domain/commands/render-bands";
@@ -42,6 +43,9 @@ export class SceneContentRenderer {
     highlight: 0,
   };
   readonly #mounted = new Map<string, MountedSceneElement>();
+  readonly #textViewport = new TextViewportPublication(this.#mounted, (id) =>
+    this.#selectionRuns.transforms.get(id),
+  );
   readonly #fades = new SceneElementFades(
     this.#mounted,
     (id, finish) => this.#reconciler.updateExitReadiness(id, finish),
@@ -119,6 +123,7 @@ export class SceneContentRenderer {
     this.#visibility = visibility;
     this.#reconciler = new SceneVisibilityReconciler({
       ...options,
+      textViewport: this.#textViewport.localBounds,
       upcomingGeometryIds: () => this.#publication.upcomingGeometryIds(),
       retainGeometryPath: (id) => this.#publication.retainsGeometryPath(id),
       dom,
@@ -127,11 +132,13 @@ export class SceneContentRenderer {
       exitReadyAt: (id) => this.#fades.readyAt(id),
       mounted: this.#mounted,
       onMount: (entry) => {
+        this.#textViewport.mount(entry);
         this.#fades.bindMounted(entry);
         this.#selectionRuns.mounted(entry);
         if (entry.text !== undefined) this.onTextElementStateChanged(entry.id, "published");
       },
       onUnmount: (id) => {
+        this.#textViewport.remove(id);
         this.onTextElementStateChanged(id, "removed");
         this.#publication.unmounted(id);
         this.#reconciler.preparation.release(id, true);
@@ -177,7 +184,8 @@ export class SceneContentRenderer {
       this.#selectionRuns.memoryUsage() +
       this.#publication.memoryUsage() +
       this.#reconciler.memoryUsage() +
-      this.#fades.memoryUsage()
+      this.#fades.memoryUsage() +
+      this.#textViewport.memoryUsage()
     );
   }
   public get mountedCount(): number {
@@ -223,6 +231,7 @@ export class SceneContentRenderer {
     return ids;
   }
   public markGeometry(id: string, change?: SceneDeltaEntry): void {
+    this.#textViewport.invalidate(id);
     this.#publication.markGeometry(id, change);
   }
   public markPaint(id: string): void {
@@ -248,18 +257,16 @@ export class SceneContentRenderer {
     return this.#publication.takeCommittedPreviewIds();
   }
   public writeMountedChanges(
-    deadline: number,
-    now: () => number,
-    publication: ScenePublicationBudget,
-    admittedFirstStep = false,
+    ...args: Parameters<SceneGeometryPublication["writeMountedChanges"]>
   ): boolean {
-    return this.#publication.writeMountedChanges(deadline, now, publication, admittedFirstStep);
+    const pending = this.#publication.writeMountedChanges(...args);
+    return this.#textViewport.write(args[0], args[1]) || pending;
   }
   public get hasPendingExitCleanup(): boolean {
     return this.#reconciler.hasPendingCleanup;
   }
   public get hasMountedWork(): boolean {
-    return this.#publication.hasMountedWork;
+    return this.#publication.hasMountedWork || this.#textViewport.pending;
   }
   public get hasGeometryWork(): boolean {
     return this.#publication.hasGeometryWork;
@@ -271,6 +278,7 @@ export class SceneContentRenderer {
     return this.hasMountedWork || this.#reconciler.hasPendingViewportWork;
   }
   public get waitingForPaths(): boolean {
+    if (this.#textViewport.pending) return false;
     return (
       (this.deferVisibilityForRunCommit ||
         this.#reconciler.waitingForPaths ||
@@ -352,6 +360,7 @@ export class SceneContentRenderer {
     matrix?: PreviewTransform["matrix"],
     textBasis?: PreviewTransform["textBasis"],
   ): void {
+    this.#textViewport.invalidate(id);
     this.#publication.applyPreviewTransform(
       id,
       transform,
@@ -392,6 +401,7 @@ export class SceneContentRenderer {
       this.#fades.set([id], 0);
   }
   public setMembershipViewport(bounds: Bounds | undefined): void {
+    this.#textViewport.set(bounds);
     this.#fades.setViewport(bounds);
   }
   public setMembershipFade(
@@ -423,11 +433,13 @@ export class SceneContentRenderer {
   }
   public setElementMotion(ids: readonly string[], opacity: number | null, scale = 1): void {
     for (const id of ids) {
+      this.#textViewport.invalidate(id);
       const entry = this.#mounted.get(id);
       if (entry !== undefined) setMountedElementMotion(entry, opacity, scale);
     }
   }
   public release(): void {
+    this.#textViewport.release();
     this.#selectionRuns.release();
     this.#publication.release();
     this.#fades.release();
@@ -462,6 +474,7 @@ export class SceneContentRenderer {
     return this.#selectionRuns.exceptionIds(feedback);
   }
   public publishSelectionFeedback(feedback: ProgressivePreviewTransform, version: number): boolean {
+    this.#textViewport.refresh();
     return this.#selectionRuns.publish(feedback, version);
   }
   public setSelectionFeedbackBasis(
@@ -471,6 +484,7 @@ export class SceneContentRenderer {
     this.#selectionRuns.basis(id, basis);
   }
   public clearSelectionFeedback(): void {
+    this.#textViewport.refresh();
     this.#selectionRuns.clear();
   }
   public get selectionFeedbackTransforms(): ReadonlyMap<string, PreviewTransform> {

@@ -46,6 +46,7 @@ export class CssTextLineMeasurer {
   /** Write all requested fonts before reading their exact native line boxes. */
   public *prepareSteps(fonts: ReadonlySet<string>): Generator<void> {
     const probes: { font: string; probe: HTMLDivElement; baseline: HTMLSpanElement }[] = [];
+    let fragment: DocumentFragment | undefined;
     try {
       for (const font of fonts) {
         if (this.#cache.has(font)) continue;
@@ -56,7 +57,11 @@ export class CssTextLineMeasurer {
         entry.probe.style.setProperty("line-height", String(TEXT_LINE_HEIGHT));
         this.#pending.add(entry.probe);
         probes.push(entry);
-        this.#document.body.append(entry.probe);
+        (fragment ??= this.#document.createDocumentFragment()).append(entry.probe);
+        yield;
+      }
+      if (fragment) {
+        this.#document.body.append(fragment);
         yield;
       }
       for (const entry of probes) {

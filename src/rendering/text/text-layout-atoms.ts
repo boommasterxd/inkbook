@@ -1,5 +1,9 @@
 import type { TextStyleV2 } from "../../domain/schema/public";
-import type { TextMarkdownBlock, TextMarkdownRun } from "../../domain/text/text-types";
+import type {
+  TextMarkdownBlock,
+  TextMarkdownRun,
+  TextSourceRange,
+} from "../../domain/text/text-types";
 import {
   TEXT_CODE_FONT_FAMILY,
   TEXT_LIST_INDENT_EM,
@@ -64,7 +68,8 @@ async function* mathRunAtoms(
 ): AsyncGenerator<TextLayoutAtom> {
   try {
     if (!ports.math) throw new Error("Math rendering is unavailable.");
-    await admitTextLayout(ports);
+    const handoff = admitTextLayout(ports);
+    if (handoff) await handoff;
     const math = await ports.math.resolve(
       run.latex ?? run.text,
       run.display ?? block.kind === "math",
@@ -79,7 +84,8 @@ async function* mathRunAtoms(
           ),
       { bold: style.bold },
     );
-    await admitTextLayout(ports);
+    const resolvedHandoff = admitTextLayout(ports);
+    if (resolvedHandoff) await resolvedHandoff;
     yield {
       ...math,
       text: "",
@@ -119,7 +125,8 @@ async function* textRunAtoms(
   for (const token of run.text.matchAll(/\r?\n|\t|[^\S\r\n\t]+|[^\s]+/gu)) {
     const text = token[0];
     for (let offset = 0; offset < text.length;) {
-      await admitTextLayout(ports);
+      const handoff = admitTextLayout(ports);
+      if (handoff) await handoff;
       let end = Math.min(text.length, offset + MAX_MEASUREMENT_CHARACTERS);
       if (end < text.length && /[\uD800-\uDBFF]/u.test(text[end - 1]!)) end -= 1;
       for (const fragment of fontBindingFragments(
@@ -128,25 +135,40 @@ async function* textRunAtoms(
         end - offset,
         ports,
       )) {
-        await admitTextLayout(ports);
-        const raw = run.text.slice(fragment.textStart, fragment.textEnd);
-        const part = raw === "\t" ? " " : raw;
-        const fontResourceId = ports.measure.resolveFontResourceId?.(style, fragment.range);
-        yield {
-          ...ports.measure.measure(part, style, fontResourceId),
-          ...(fontResourceId === undefined ? {} : { fontResourceId }),
-          text: part,
-          ...fragment.range,
-          style,
-          whitespace: /^\s+$/u.test(part),
-          newline: /^\r?\n$/u.test(part),
-          continuation: fragment.textStart > (token.index ?? 0),
-          ...(raw === "\t" ? { tab: true } : {}),
-        };
+        const fragmentHandoff = admitTextLayout(ports);
+        if (fragmentHandoff) await fragmentHandoff;
+        yield measureTextAtom(run, style, ports, fragment, token.index ?? 0);
       }
       offset = end;
     }
   }
+}
+
+function measureTextAtom(
+  run: TextMarkdownRun,
+  style: TextStyleV2,
+  ports: TextLayoutPorts,
+  fragment: {
+    readonly textStart: number;
+    readonly textEnd: number;
+    readonly range: TextSourceRange;
+  },
+  tokenStart: number,
+): TextLayoutAtom {
+  const raw = run.text.slice(fragment.textStart, fragment.textEnd);
+  const part = raw === "\t" ? " " : raw;
+  const fontResourceId = ports.measure.resolveFontResourceId?.(style, fragment.range);
+  return {
+    ...ports.measure.measure(part, style, fontResourceId),
+    ...(fontResourceId === undefined ? {} : { fontResourceId }),
+    text: part,
+    ...fragment.range,
+    style,
+    whitespace: /^\s+$/u.test(part),
+    newline: /^\r?\n$/u.test(part),
+    continuation: fragment.textStart > tokenStart,
+    ...(raw === "\t" ? { tab: true } : {}),
+  };
 }
 
 function* fontBindingFragments(

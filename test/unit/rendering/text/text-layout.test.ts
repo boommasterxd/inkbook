@@ -5,6 +5,9 @@ import { parseTextMarkdown } from "../../../fixtures/domain/text-source";
 import { layoutTextMarkdown } from "../../../../src/rendering/text/text-layout";
 import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { formatTextMarkdownStyle } from "../../../../src/domain/text/text-mark-formatting";
+import { admitTextLayout } from "../../../../src/rendering/text/text-layout-types";
+import { TextLineBuilder } from "../../../../src/rendering/text/text-line-builder";
+import { textLayoutAtoms } from "../../../../src/rendering/text/text-layout-atoms";
 
 const style: TextStyleV2 = {
   fontFamily: "inter",
@@ -16,6 +19,67 @@ const style: TextStyleV2 = {
   underline: false,
   strikethrough: false,
 };
+
+describe("central text layout admission", () => {
+  it("keeps in-budget admission synchronous and retains frame priority", () => {
+    const scheduler = createTestWorkScheduler();
+    const checkpoint = vi.spyOn(scheduler, "checkpoint");
+    expect(admitTextLayout({ scheduler })).toBeUndefined();
+    expect(checkpoint).toHaveBeenCalledExactlyOnceWith(undefined, "frame");
+  });
+
+  it("rejects cancellation before admission and during a synchronous checkpoint", () => {
+    const abort = new AbortController();
+    const reason = new Error("Text preparation is obsolete.");
+    const scheduler = createTestWorkScheduler({
+      checkpoint: () => {
+        abort.abort(reason);
+        return undefined;
+      },
+    });
+    const checkpoint = vi.spyOn(scheduler, "checkpoint");
+    const ports = { scheduler, signal: abort.signal };
+    expect(() => admitTextLayout(ports)).toThrow(reason);
+    expect(checkpoint).toHaveBeenCalledOnce();
+    expect(() => admitTextLayout(ports)).toThrow(reason);
+    expect(checkpoint).toHaveBeenCalledOnce();
+  });
+
+  it("waits for real scheduler admission and rechecks cancellation after the handoff", async () => {
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const abort = new AbortController();
+    const reason = new Error("Text preparation cancelled while waiting.");
+    const scheduler = createTestWorkScheduler({ checkpoint: () => gate });
+    const pending = admitTextLayout({ scheduler, signal: abort.signal });
+    expect(pending).toBeInstanceOf(Promise);
+    abort.abort(reason);
+    resume();
+    await expect(pending).rejects.toBe(reason);
+    await expect(admitTextLayout({ scheduler })).resolves.toBeUndefined();
+  });
+
+  it("propagates scheduler failures without admitting more work", async () => {
+    const reason = new Error("Frame admission failed.");
+    const scheduler = createTestWorkScheduler({ checkpoint: () => Promise.reject(reason) });
+    await expect(admitTextLayout({ scheduler })).rejects.toBe(reason);
+  });
+
+  it("appends ordinary native atoms without another promise per word or newline", async () => {
+    const value = fixture("word\nnext", 100);
+    const block = value.request.document.blocks[0]!;
+    const builder = new TextLineBuilder(block, 100, 0, style, value);
+    for await (const atom of textLayoutAtoms(block, value))
+      expect(builder.append(atom)).toBeUndefined();
+    expect(builder.finish()).toBe(52);
+    expect(builder.lines.map((line) => line.runs.map((run) => run.text).join(""))).toEqual([
+      "word",
+      "next",
+    ]);
+  });
+});
 
 function fixture(
   source: string,

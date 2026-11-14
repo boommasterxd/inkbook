@@ -26,7 +26,8 @@ export async function collectTextGlyphStruts(
   const blocks = new Map<TextMarkdownBlock, TextLineStrut>();
   let first: TextLineStrut | undefined;
   for (const block of document.blocks) {
-    await admitTextLayout(ports);
+    const handoff = admitTextLayout(ports);
+    if (handoff) await handoff;
     const glyph = textBlockGlyphStrut(block);
     if (!glyph) continue;
     const fontResourceId = ports.measure.resolveFontResourceId?.(glyph.style, {

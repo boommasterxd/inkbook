@@ -8,6 +8,7 @@ import type { IndexedTextPreview } from "./text-preview-index";
 import { normalizedTextSourceSteps, type TextSourceController } from "./text-source-controller";
 import { runTextEditorWork } from "./text-editor-work";
 import type { PreparedTextDecorations } from "./text-preview-decorations";
+import { sameTextStyle } from "../../../domain/text/text-layout-style";
 
 interface PreparedEditorGeometry {
   readonly element: TextElementV2;
@@ -16,6 +17,11 @@ interface PreparedEditorGeometry {
   readonly state: TextSourceState;
   readonly normalization: ChangeDesc | undefined;
   readonly decorations: PreparedTextDecorations;
+}
+
+interface NativeEditorGeometry {
+  readonly element: TextElementV2;
+  readonly document: Text;
 }
 
 export type TextHeightMeasured = (height: number | undefined) => void;
@@ -27,6 +33,7 @@ export class TextEditorGeometry {
   #backgroundPending = false;
   #preparing: AbortController | undefined;
   #heightCompletion: TextHeightMeasured | undefined;
+  #native: NativeEditorGeometry | undefined;
 
   public constructor(
     private readonly options: {
@@ -47,7 +54,9 @@ export class TextEditorGeometry {
         signal: AbortSignal,
       ) => Promise<PreparedTextDecorations>;
     },
-  ) {}
+  ) {
+    this.#native = { element: options.element(), document: options.view.state.doc };
+  }
 
   public async prepare(
     element: TextElementV2,
@@ -55,6 +64,11 @@ export class TextEditorGeometry {
     cached?: TextMarkdownDocument,
   ): Promise<void> {
     this.#preparing?.abort();
+    signal.throwIfAborted();
+    if (!this.#disposed && this.#matches(this.#native, element)) {
+      this.#prepared = undefined;
+      return;
+    }
     const preparing = new AbortController();
     this.#preparing = preparing;
     const cancel = () => preparing.abort();
@@ -105,9 +119,10 @@ export class TextEditorGeometry {
       !prepared && !preserveNative && !normalizedSource && element.source !== source.state.source;
     const bindingsChanged = element.layout !== previous.layout;
     const stylesChanged =
-      element.style !== previous.style ||
+      !sameTextStyle(element.style, previous.style) ||
       element.ranges !== previous.ranges ||
       element.paragraphs !== previous.paragraphs;
+    this.#retainNative(element, prepared);
     this.options.setElement(element);
     if (prepared) source.adoptNormalized(prepared.state, prepared.normalization);
     else if (!preserveNative) {
@@ -136,6 +151,7 @@ export class TextEditorGeometry {
     this.#heightCompletion = undefined;
     complete?.(undefined);
     this.#prepared = undefined;
+    this.#native = undefined;
   }
 
   public measureHeight(onMeasured?: TextHeightMeasured): number | undefined {
@@ -175,18 +191,28 @@ export class TextEditorGeometry {
 
   #take(element: TextElementV2): PreparedEditorGeometry | undefined {
     const prepared = this.#prepared;
-    const original = prepared?.element;
-    const matches =
-      original &&
-      prepared.document === this.options.view.state.doc &&
+    const matches = this.#matches(prepared, element);
+    if (matches || prepared?.document !== this.options.view.state.doc) this.#prepared = undefined;
+    return matches ? prepared : undefined;
+  }
+
+  #retainNative(element: TextElementV2, prepared: PreparedEditorGeometry | undefined): void {
+    if (prepared) this.#native = { element, document: prepared.document };
+    else if (!this.#matches(this.#native, element)) this.#native = undefined;
+  }
+
+  #matches(native: NativeEditorGeometry | undefined, element: TextElementV2): boolean {
+    const original = native?.element;
+    return (
+      original !== undefined &&
+      native?.document === this.options.view.state.doc &&
       original.source === element.source &&
-      original.style === element.style &&
+      sameTextStyle(original.style, element.style) &&
       original.ranges === element.ranges &&
       original.paragraphs === element.paragraphs &&
       original.layout === element.layout &&
-      original.width === element.width;
-    if (matches || prepared?.document !== this.options.view.state.doc) this.#prepared = undefined;
-    return matches ? prepared : undefined;
+      original.width === element.width
+    );
   }
 }
 

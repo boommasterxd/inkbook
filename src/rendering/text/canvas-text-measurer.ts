@@ -76,7 +76,8 @@ export class CanvasTextMeasurer implements TextMeasurer {
   ): Promise<void> {
     const fonts = new Set<string>();
     for (const request of requests) {
-      await admitTextLayout(ports);
+      const handoff = admitTextLayout(ports);
+      if (handoff) await handoff;
       if (this.#disposed) throw new Error("Text measurer disposed.");
       fonts.add(
         measurementFont(
@@ -89,7 +90,8 @@ export class CanvasTextMeasurer implements TextMeasurer {
     const steps = this.#lines.prepareSteps(fonts);
     try {
       for (;;) {
-        await admitTextLayout(ports);
+        const handoff = admitTextLayout(ports);
+        if (handoff) await handoff;
         if (this.#disposed) throw new Error("Text measurer disposed.");
         if (steps.next().done) return;
       }

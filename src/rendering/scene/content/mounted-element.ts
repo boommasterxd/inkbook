@@ -315,6 +315,7 @@ export function setMountedElementMotion(
 ): void {
   if (opacity === null && !entry.motionActive) return;
   entry.motionActive = opacity !== null;
+  if (entry.text) entry.text.motionScale = opacity === null ? 1 : scale;
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
   for (const node of nodes) {
     const textPosition =

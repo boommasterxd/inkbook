@@ -11,6 +11,8 @@ import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-sche
 import { textElement } from "../../../../unit/domain/schema/fixtures";
 import { setTextTableSource } from "../../../../../src/obsidian/text/editor/text-table-mode";
 import { appendOwnedIframe } from "../../../../fixtures/obsidian/owned-iframe";
+import { ElementStore } from "../../../../../src/domain/store/public";
+import type { TextElementV2 } from "../../../../../src/domain/schema/public";
 
 const source = "$x^2=\\frac{1}{2}$\n\n| A | B |\n| --- | --- |\n| one | two |\n\nfooter";
 const editors: TextFieldEditor[] = [];
@@ -34,7 +36,9 @@ function mount(ownerDocument = document) {
   const scheduler = workSchedulerFromFrames(frames);
   const container = ownerDocument.createElement("div");
   ownerDocument.body.append(container);
-  const element = { ...textElement(), source };
+  const initial = { ...textElement(), source };
+  const store = new ElementStore([initial]);
+  const element = store.get(initial.id)!.element as TextElementV2;
   const math = deferred<HTMLElement>();
   const table = deferred<TextTableRenderResult>();
   let delay = false;
@@ -72,6 +76,7 @@ function mount(ownerDocument = document) {
     editor,
     scheduler,
     element,
+    store,
     math,
     table,
     renderMath,
@@ -100,6 +105,55 @@ async function beginDelayedResize(t: ReturnType<typeof mount>) {
   });
   return { resized, preparation };
 }
+
+it("reuses native widget paint after unchanged geometry, placement and an adopted resize", async () => {
+  const t = mount();
+  await vi.waitFor(() => expect(t.editor.view.contentDOM.textContent).toContain("Table 100"));
+  const native = t.editor.view.state.doc;
+  const selection = t.editor.view.state.selection;
+  const mathNode = t.editor.view.contentDOM.querySelector(".inkbook-text-math-widget");
+  const tableNode = t.editor.view.contentDOM.querySelector(".inkbook-text-table-widget");
+  const signal = new AbortController().signal;
+  await t.editor.prepareGeometry(t.element, signal);
+  t.store.replace(t.element.id, {
+    ...t.element,
+    x: 80,
+    y: 120,
+    pivot: { x: 130, y: 145 },
+  });
+  const moved = t.store.get(t.element.id)!.element as TextElementV2;
+  expect(moved.style).not.toBe(t.element.style);
+  expect(moved.layout).toBe(t.element.layout);
+  t.editor.updateElement(moved);
+  await t.editor.prepareGeometry(moved, signal);
+  t.store.replace(moved.id, {
+    ...moved,
+    rotation: 30,
+    backgroundColor: { type: "rgba", value: "#FF0000FF" },
+    backgroundOpacity: 0.7,
+  });
+  const rotated = t.store.get(moved.id)!.element as TextElementV2;
+  t.editor.updateElement(rotated);
+  await t.editor.prepareGeometry(rotated, signal);
+  t.editor.measureContentHeight();
+  expect(t.editor.view.dom.querySelector(".inkbook-text-editor-background > path")).not.toBeNull();
+  expect(t.renderMath).toHaveBeenCalledOnce();
+  expect(t.renderTable).toHaveBeenCalledOnce();
+  const resized = { ...rotated, width: 240, pivot: { x: 200, y: 145 } };
+  await t.editor.prepareGeometry(resized, signal);
+  t.store.replace(resized.id, resized);
+  const committed = t.store.get(resized.id)!.element as TextElementV2;
+  t.editor.updateElement(committed);
+  await t.editor.prepareGeometry(committed, signal);
+  t.editor.updateElement(committed);
+  expect(t.renderMath).toHaveBeenCalledTimes(2);
+  expect(t.renderTable).toHaveBeenCalledTimes(2);
+  expect(t.editor.view.contentDOM.querySelector(".inkbook-text-math-widget")).toBe(mathNode);
+  expect(t.editor.view.contentDOM.querySelector(".inkbook-text-table-widget")).toBe(tableNode);
+  expect(t.editor.view.state.doc).toBe(native);
+  expect(t.editor.view.state.selection.eq(selection)).toBe(true);
+  expect(t.onError).not.toHaveBeenCalled();
+});
 
 it("publishes the prepared native background with its new box before queued iframe measurements", async () => {
   const inner = appendOwnedIframe();
