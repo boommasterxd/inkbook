@@ -19,12 +19,19 @@ import { layoutSelectionHandles } from "../../../../src/editor/selection/handles
 import { line, snapshot, textElement } from "../../domain/schema/fixtures";
 
 describe("text field geometry", () => {
-  it("hits the complete rotated transparent rectangle and visits one selection polygon", () => {
+  it("retains rotated field bounds while hit testing only its rendered line", () => {
     const text = { ...textElement(), rotation: 90 };
     expect(calculateElementBounds(text)).toEqual({ minX: 125, minY: 75, maxX: 175, maxY: 175 });
     expect(selectionCenterlineBounds(text)).toEqual(calculateElementBounds(text));
-    expect(elementContainsPoint(text, { x: 150, y: 160 }, 0)).toBe(true);
-    expect(elementContainsPoint(text, { x: 110, y: 125 }, 0)).toBe(false);
+    for (const [point, expected] of [
+      [{ x: 165, y: 100 }, true],
+      [{ x: 150, y: 160 }, false],
+      [{ x: 110, y: 125 }, false],
+    ] as const) {
+      expect(elementContainsPoint(text, point, 0)).toBe(expected);
+      const eraser = createSweptCapsuleCheck(point, { x: point.x + 1, y: point.y }, 0, text);
+      expect(eraser.advance(Infinity).result).toBe(expected);
+    }
     const primitives: unknown[] = [];
     visitVisibleElementPrimitives(text, (primitive) => {
       primitives.push(primitive);
@@ -32,8 +39,6 @@ describe("text field geometry", () => {
     });
     expect(primitives).toHaveLength(1);
     expect(primitives[0]).toMatchObject({ kind: "polygon" });
-    const eraser = createSweptCapsuleCheck({ x: 150, y: 160 }, { x: 151, y: 160 }, 0, text);
-    expect(eraser.advance(Infinity).result).toBe(true);
   });
 
   it("reuses text layout during translation and rotation and resolves all rectangle anchors", () => {
