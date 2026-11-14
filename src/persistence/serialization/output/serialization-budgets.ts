@@ -1,5 +1,5 @@
 import { FILE_SCHEMA_LIMITS } from "../../../domain/schema/public";
-import type { PageV1 } from "../../../domain/schema/public";
+import type { InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
 import { documentStaticByteLength } from "./document-assembly";
 import { EncodedByteBudget, encodedByteLength } from "./encoded-byte-budget";
 import { snapshotMetadataPrefix } from "./document-assembly";
@@ -24,6 +24,7 @@ function createSerializationBudgets(
   lockedHeight: number,
   metadataPrefix: string,
   background: string,
+  snapshot?: InkSnapshotV1,
 ): SerializationBudgets {
   return {
     metadata: new EncodedByteBudget(
@@ -32,7 +33,7 @@ function createSerializationBudgets(
     ),
     output: new EncodedByteBudget(
       FILE_SCHEMA_LIMITS.totalInputBytes,
-      documentStaticByteLength(revision, lockedHeight, metadataPrefix, background),
+      documentStaticByteLength(revision, lockedHeight, metadataPrefix, background, snapshot),
     ),
   };
 }
@@ -42,6 +43,7 @@ export function prepareSerialization(
   revision: number | null,
   maximumBottom: number | null,
   backgroundCache: BackgroundFragmentCache,
+  snapshot?: InkSnapshotV1,
 ): DocumentCodecResult<PreparedSerialization> {
   if (page === null || revision === null) {
     return codecFailure("invalid-delta", "Serializer has no initialized document model.");
@@ -49,12 +51,13 @@ export function prepareSerialization(
   const resolvedBackground = resolveBackground(page, maximumBottom, backgroundCache);
   if (!resolvedBackground.ok) return resolvedBackground;
   const { background, lockedHeight } = resolvedBackground.value;
-  const metadataPrefix = snapshotMetadataPrefix(revision, page);
+  const metadataPrefix = snapshotMetadataPrefix(revision, page, snapshot);
   const { output, metadata } = createSerializationBudgets(
     revision,
     lockedHeight,
     metadataPrefix,
     background,
+    snapshot,
   );
   return {
     ok: true,

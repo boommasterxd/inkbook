@@ -6,6 +6,7 @@ import { HostZoomMeasureThrottle } from "./host-zoom-measure-throttle";
 export interface HostZoomScroll {
   readonly geometryRevision?: number;
   retain(owner: BrowserScrollElement, scrollTop: number, anchor?: HostZoomScrollAnchor): void;
+  afterLayout?(callback: () => void): void;
   cancel(): void;
   dispose(): void;
 }
@@ -65,6 +66,8 @@ export class LivePreviewZoomScrollBinding implements HostZoomScroll {
   #measureQueued = false;
   #expiryFrame: number | undefined;
   #disposed = false;
+  #afterLayout: (() => void) | undefined;
+  #restoreScroll = false;
 
   constructor(view: EditorView, root: HTMLElement, scheduler: WorkScheduler) {
     this.#view = view;
@@ -98,8 +101,25 @@ export class LivePreviewZoomScrollBinding implements HostZoomScroll {
     }
     this.#owner = owner;
     this.#scrollTop = scrollTop;
+    this.#restoreScroll = true;
+    this.#afterLayout = undefined;
     this.#anchor = anchor;
     coordinator.retain(this);
+    if (!this.#measureQueued) this.#throttle.request(this.#requestMeasure);
+  }
+
+  afterLayout(callback: () => void): void {
+    const coordinator = this.#view.plugin(zoomScrollPlugin);
+    if (this.#disposed || !this.#root.isConnected || coordinator === null) return;
+    this.#epoch += 1;
+    this.#clearMeasurement();
+    this.#afterLayout = callback;
+    if (this.#owner === undefined) {
+      this.#owner = this.#view.scrollDOM;
+      this.#listen(this.#owner, true);
+      this.#restoreScroll = false;
+      coordinator.retain(this);
+    }
     if (!this.#measureQueued) this.#throttle.request(this.#requestMeasure);
   }
 
@@ -143,10 +163,18 @@ export class LivePreviewZoomScrollBinding implements HostZoomScroll {
         ? 0
         : anchor.container.getBoundingClientRect().top + currentScrollTop - anchor.contentTop;
     const desired = this.#scrollTop + originDelta;
+    const complete = this.#afterLayout;
+    const restore = this.#restoreScroll;
     this.cancel();
-    if (attached && Number.isFinite(desired) && Math.abs(currentScrollTop - desired) > 0.5) {
+    if (
+      restore &&
+      attached &&
+      Number.isFinite(desired) &&
+      Math.abs(currentScrollTop - desired) > 0.5
+    ) {
       owner.scrollTop = desired;
     }
+    if (attached) complete?.();
   }
 
   cancel(): void {
@@ -156,6 +184,8 @@ export class LivePreviewZoomScrollBinding implements HostZoomScroll {
     if (this.#owner !== undefined) this.#listen(this.#owner, false);
     this.#owner = undefined;
     this.#anchor = undefined;
+    this.#afterLayout = undefined;
+    this.#restoreScroll = false;
     this.#view.plugin(zoomScrollPlugin)?.release(this);
   }
 

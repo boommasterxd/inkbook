@@ -20,6 +20,7 @@ import {
 import { AdaptivePanelSession, type AdaptivePanelContentLifecycle } from "./panels/adaptive-panel";
 import { backgroundIconId, createBackgroundMenuContent } from "./background-menu-content";
 import { createStyleMenuContent } from "./style-menu-content";
+import type { FontOptionPreviewPort, FontChoiceDropdownOptions } from "./font-choice-dropdown";
 import type { FocusTargetPort, MenuFactoryPort, MenuPort } from "./menu-ports";
 
 export type EditorToolbarMenuId = "overflow" | "background" | "shape" | "style";
@@ -35,6 +36,10 @@ export interface EditorToolbarMenuState {
 export type EditorToolbarMenuHandlers = EditorMenuCallbacks;
 
 export interface EditorToolbarMenuOptions extends MenuLocalizationOptions {
+  readonly externalFocusTarget?: () => HTMLElement | undefined;
+  readonly onOcclusionChanged?: (top: number | undefined) => void;
+  readonly fontPreviews?: FontOptionPreviewPort | undefined;
+  readonly fontManagementAction?: FontChoiceDropdownOptions["fontManagementAction"];
   readonly workScheduler: WorkScheduler;
   readonly anchor: HTMLElement;
   readonly canvasInputSurface: FocusTargetPort;
@@ -42,8 +47,8 @@ export interface EditorToolbarMenuOptions extends MenuLocalizationOptions {
   readonly getState: () => EditorToolbarMenuState;
   readonly handlers: EditorToolbarMenuHandlers;
   readonly initialMenu: Exclude<EditorToolbarMenuId, "background">;
-  readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
-  readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
+  readonly createPhoneSheetHost?: (() => PhoneSheetHostPort) | undefined;
+  readonly keymap?: Pick<Keymap, "popScope" | "pushScope"> | undefined;
   readonly onClosed: () => void;
   readonly ownerDocument: Document;
   readonly ownerWindow: Window;
@@ -69,6 +74,7 @@ export class EditorToolbarMenuSession {
   #navigationGeneration = 0;
   readonly #options: EditorToolbarMenuOptions;
   #panel: AdaptivePanelSession | undefined;
+  #syncStyle: ((controls: readonly StyleControl[]) => void) | undefined;
 
   public constructor(options: EditorToolbarMenuOptions) {
     this.#options = options;
@@ -84,10 +90,21 @@ export class EditorToolbarMenuSession {
       return;
     }
     this.#closed = true;
+    this.#syncStyle = undefined;
     this.#navigationGeneration += 1;
     if (this.#menu !== undefined) this.#menu.close(mode);
     else if (this.#panel !== undefined) this.#panel.close(mode);
     else this.#finish();
+  }
+
+  public refreshStyle(): void {
+    if (this.#closed) return;
+    this.#panel?.refreshFocusBoundary();
+    this.#syncStyle?.(this.#options.getState().styleControls);
+  }
+
+  public get occlusionTop(): number | undefined {
+    return this.#closed ? undefined : this.#panel?.occlusionTop;
   }
 
   #finish(): void {
@@ -161,6 +178,12 @@ export class EditorToolbarMenuSession {
       anchor: this.#options.anchor,
       canvasInputSurface: this.#options.canvasInputSurface,
       createContent: (lifecycle) => this.#createPanelContent(id, lifecycle),
+      ...(id !== "style" || this.#options.externalFocusTarget === undefined
+        ? {}
+        : { externalFocusTarget: this.#options.externalFocusTarget }),
+      ...(id !== "style" || this.#options.onOcclusionChanged === undefined
+        ? {}
+        : { onOcclusionChanged: this.#options.onOcclusionChanged }),
       ...(this.#options.keymap === undefined ? {} : { keymap: this.#options.keymap }),
       ...(this.#options.createPhoneSheetHost === undefined
         ? {}
@@ -171,6 +194,9 @@ export class EditorToolbarMenuSession {
       ),
       localization: this.#options.localization,
       ...(id === "background" ? { onBack: () => this.#navigate("overflow") } : {}),
+      onClosing: () => {
+        if (id === "style") this.#options.handlers.onStylePreviewCancel?.();
+      },
       onClosed: () => {
         if (this.#panel !== panel) return;
         this.#panel = undefined;
@@ -191,10 +217,22 @@ export class EditorToolbarMenuSession {
     const state = this.#options.getState();
     if (id === "style") {
       return createStyleMenuContent({
+        workScheduler: this.#options.workScheduler,
         controls: state.styleControls,
         localization: this.#options.localization,
         registerLocaleUpdate: lifecycle.registerLocaleUpdate,
+        registerCleanup: lifecycle.registerCleanup,
+        fontPreviews: this.#options.fontPreviews,
+        fontManagementAction: this.#options.fontManagementAction,
+        keymap: this.#options.keymap,
         onChange: this.#options.handlers.onStyleChange,
+        onPreview: this.#options.handlers.onStylePreview,
+        registerStyleSync: (sync) => {
+          this.#syncStyle = sync;
+          lifecycle.registerCleanup?.(() => {
+            if (this.#syncStyle === sync) this.#syncStyle = undefined;
+          });
+        },
         ownerDocument: this.#options.ownerDocument,
         renderIcon: this.#options.renderIcon,
       });

@@ -24,6 +24,7 @@ type GesturePointer = readonly [
 type GestureSelection = readonly [
   clearSelection: GestureControllerPorts["clearSelection"],
   selectElement: GestureControllerPorts["selectElement"],
+  activateElement?: GestureControllerPorts["activateElement"],
 ];
 
 type GestureTools = readonly [
@@ -35,11 +36,12 @@ export function createActiveEditorGestureController(
   [openContextMenu, beginPreview]: GestureContext,
   [beginPinch, finishPinch, panPage, revertNavigation, revertPinch, updatePinch]: GestureNavigation,
   [cancelLongPress, capturePointer, releasePointer, scheduleLongPress]: GesturePointer,
-  [clearSelection, selectElement]: GestureSelection,
+  [clearSelection, selectElement, activateElement]: GestureSelection,
   [activateTemporaryEraser, restoreTemporaryTool]: GestureTools,
 ): GestureController {
   return new GestureController({
     activateTemporaryEraser,
+    ...(activateElement === undefined ? {} : { activateElement }),
     beginPinch,
     beginPreview,
     cancelLongPress,

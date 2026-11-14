@@ -153,6 +153,8 @@ export function buildNavigationHarness(api: NavigationProfileApi, refreshRate: n
     else scrollWrites += 1;
   });
   const container = {
+    hasAttribute: () => true,
+    dataset: { inkbookMotion: "full" },
     getBoundingClientRect: () => {
       containerBoundsReads += 1;
       return domRect(rect);
@@ -183,6 +185,7 @@ export function buildNavigationHarness(api: NavigationProfileApi, refreshRate: n
   });
   return {
     activity,
+    rect,
     inputWrites: () => inputWrites,
     get cameraWrites() {
       return cameraWrites;

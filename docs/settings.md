@@ -40,12 +40,15 @@ If local storage fails, a warning explains that the preference was not saved and
 
 ## Settings Root
 
+The native Inkbook tab and owned settings dialog show a yellow width notice above the groups when Obsidian's `readableLineLength` is explicitly `true`. The public `SettingTab` configuration access reads this value and the **Use full width** action sets it to `false`; unknown or unavailable host values show no notice. **Hide until Inkbook restarts** hides it until Inkbook reloads. **Always hide this warning** stores the device-and-vault boolean `readableLineWidthWarningDismissed`, whose built-in value is `false`. Earlier valid device settings receive that default without diagnostics. Group resets preserve dismissal; a complete reset clears both dismissals without changing Obsidian's width preference. Failed writes retain the notice and expose the shared inline error.
+
 ```ts
 interface InkbookSettingsV4 {
   version: 4;
   startupTool: StartupToolV1;
   selectionHighlightsEnabled: boolean;
   toolDefaults: ToolDefaultsV1;
+  fontLibrary: FontLibraryEntryV2[];
   snapping: SnappingSettingsV1;
   holdToShape: { enabled: boolean; holdDurationMs: number; jitterTolerancePx: number };
   pageDefaults: PageDefaultsV3;
@@ -54,6 +57,7 @@ interface InkbookSettingsV4 {
 }
 
 interface ToolDefaultsV1 {
+  text: TextDefaultsV2;
   select: {
     area: "rectangle" | "lasso";
     inclusion: "fully-enclosed" | "touched";
@@ -81,6 +85,7 @@ interface InkbookDeviceSettingsV2 {
   version: 2;
   language: "auto" | "de" | "en";
   onboardingDismissed: boolean;
+  readableLineWidthWarningDismissed: boolean;
   fingerDrawingEnabled: boolean;
   penTapInsertion: "off" | "handwriting";
   leftHandedToolbar: boolean;
@@ -90,7 +95,7 @@ interface InkbookDeviceSettingsV2 {
 }
 ```
 
-`StartupToolV1` is `"select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "line" | "arrow" | "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star" | "coordinate-system" | "table"`.
+`StartupToolV1` is `"text" | "select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "line" | "arrow" | "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star" | "coordinate-system" | "table"`.
 
 `ClosedShapeToolV1` is `"rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond" | "star"`.
 
@@ -117,7 +122,7 @@ Changing the preference updates all active presentations, including pop-outs, im
 
 ## Hold to Shape
 
-`holdToShape` is a vault preference exposed in the **Hold to shape** settings group. It contains `enabled` (built-in `true`), `holdDurationMs` (built-in `600`, integer range `200..2000`, UI step `50`), and `jitterTolerancePx` (built-in `12`, integer range `1..32`, UI step `1`). Tolerance is measured in screen CSS pixels independently of zoom and does not alter the geometric acceptance thresholds. Disabling recognition preserves both numeric preferences and disables their controls. The group reset restores all three defaults. Existing explicitly saved tolerances remain unchanged when the built-in default changes.
+`holdToShape` is a vault preference exposed in the **Hold to shape** settings group. It contains `enabled` (built-in `true`), `holdDurationMs` (built-in `400`, integer range `200..2000`, UI step `50`), and `jitterTolerancePx` (built-in `20`, integer range `1..32`, UI step `1`). Tolerance is measured in screen CSS pixels independently of zoom and does not alter the geometric acceptance thresholds. Disabling recognition preserves both numeric preferences and disables their controls. New installations, the group reset, and the full settings reset use these defaults. Existing explicitly saved durations and tolerances remain unchanged when the built-in defaults change.
 
 Both numeric preferences use the shared settings slider with its synchronized number field on the right, matching page buffer and scroll preload controls. Slider input previews the number locally and commits on change; typed input uses the same validation and write-recovery path. Disabling recognition disables both the slider and number field without discarding their saved values.
 
@@ -355,7 +360,7 @@ Finger drawing and pen-tap insertion use matching toggle controls. The pen-tap t
 
 ### Language
 
-The Interface group offers **Auto**, **Deutsch**, and **English**. The device-and-vault-local `language` preference defaults to `auto`. Auto follows Obsidian's language: German language variants resolve to German and other host languages resolve to English. An explicit selection overrides the host language. Supported older device settings without `language` receive `auto`; an invalid present value falls back to `auto` with a field diagnostic. The Interface group and full reset restore the default. See [Localization](localization.md) for translation scope and implementation.
+The Appearance group offers **Auto**, **Deutsch**, and **English**. The device-and-vault-local `language` preference defaults to `auto`. Auto follows Obsidian's language: German language variants resolve to German and other host languages resolve to English. An explicit selection overrides the host language. Supported older device settings without `language` receive `auto`; an invalid present value falls back to `auto` with a field diagnostic. The Appearance group and full reset restore the default. See [Localization](localization.md) for translation scope and implementation.
 
 ### Scroll Preload Margin
 
@@ -402,19 +407,19 @@ Each owned surface reads the saved device preference when it mounts and observes
 
 The settings tab uses these logical groups and this order:
 
-1. **General**: startup tool and file placement. General rows are the first rows and remain unheaded in the rendered Obsidian settings tab as required by the host contract.
-2. **Performance**: display refresh-rate preference, scroll preload margin, and selection highlights. Descriptions explain each control's performance trade-off. Its group reset restores only these preferences; General reset preserves them, and Performance reset preserves startup, file placement, and unrelated device preferences.
-3. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
-4. **Drawing tools**: Select, Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
-5. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Star, Coordinate system, and Table. Each tool is one independently collapsible section.
-6. **Snapping**: global enable switch followed by Angle, Bend, Connection, and Structure switches.
-7. **Hold to shape**: enable switch, hold delay, movement tolerance, and a group reset.
-8. **Input**: finger drawing and pen-tap insertion.
-9. **Interface**: language, handedness, and motion.
-10. **Shortcuts**: configurable device-local canvas bindings plus fixed system, gesture-modifier, and Obsidian-command references.
+1. **General**: startup tool, file placement, and text-field copy behavior. Its visible heading and rows appear first in both settings surfaces. Its group reset restores only these vault preferences.
+2. **Appearance**: language, handedness, and motion. Its group reset restores only these device-and-vault-local preferences. General and Appearance resets preserve each other, Input, Performance, and tool style defaults.
+3. **Input**: finger drawing and pen-tap insertion.
+4. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
+5. **Drawing tools**: Select, Pen, Text, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section. Its reset restores tool defaults and preserves the General text-field copy preference.
+6. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Star, Coordinate system, and Table. Each tool is one independently collapsible section.
+7. **Snapping**: global enable switch followed by Angle, Bend, Connection, and Structure switches.
+8. **Hold to shape**: enable switch, hold delay, movement tolerance, and a group reset.
+9. **Shortcuts**: configurable device-local canvas bindings plus fixed system, gesture-modifier, and Obsidian-command references.
+10. **Performance**: display refresh-rate preference, scroll preload margin, and selection highlights. Descriptions explain each control's performance trade-off. Its group reset restores only these preferences; General and Appearance resets preserve them, and Performance reset preserves startup, file placement, and unrelated device preferences.
 11. **Import**: the optional **Start import** action and **Import history** disclosure, when the import workflow is available.
 
-The headings for Performance, Page defaults, Drawing tools, Shapes and structures, Snapping, Hold to shape, Input, Interface, Shortcuts, and Import use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
+All group headings use sentence case and omit the word `settings`. General and Appearance are separate logical groups for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
 
 The Import group contains a **Start import** action whose description identifies Obsidian Ink, followed immediately by a default-collapsed **Import history** disclosure. Starting an import opens the local scan and review workflow described in [Importing from Obsidian Ink](features.md#importing-from-obsidian-ink); it does not show a history list. History loads only when the disclosure is expanded. Its runs show localized dates and statuses, with at most 25 entries per page. Selecting a run opens its details and available recovery actions directly. While loading, the disclosure shows a loading state; an empty history says that no imports are saved, and a failed load can be retried. When an import, undo, or cleanup dialog closes, an expanded history refreshes. Import remains an explicit action and adds no Inkbook setting or startup scan.
 
@@ -430,7 +435,7 @@ Tool controls are created once, on the first expansion, using the current defaul
 
 Settings MUST reuse the same typed option models, labels, ordering, selected-state treatment, previews, and control patterns as the corresponding Style and Background menus. A user must be able to recognize a setting from the menu without translating it to a different control. Shared control definitions prevent the two surfaces from acquiring different values or meanings.
 
-Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. In phone and tablet Inkbook dialogs, cards use the host interactive-normal color. Dropdowns and text fields within those cards use background-primary, with background-primary-alt for hover, so unfocused controls remain distinct from the card. The surrounding modal surface retains its native color. Native host dividers separate independent settings rows. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Changing Background between None and a patterned type animates the bounded content-height change while the Spacing control leaves or enters; reduced motion applies the final height immediately. Background choice grids use the same radius on every corner of each choice; the first/last-item radii and dividers of the standalone phone Background list never apply to settings. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower. A control commit updates its mounted row in place and preserves the settings scroll position. A setting whose value changes conditional row structure may rebuild that structure, but it restores the exact preceding scroll position before returning control to the user.
+Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. In phone and tablet Inkbook dialogs, cards use the host interactive-normal color. Dropdowns and text fields within those cards use background-primary, with background-primary-alt for hover, so unfocused controls remain distinct from the card. The surrounding modal surface retains its native color. Native host dividers separate independent settings rows. Side-by-side native dropdown and toggle controls are vertically centered against the complete label-and-description block in every settings group, including wrapped descriptions. Phone rows retain their native stacked layout. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Changing Background between None and a patterned type animates the bounded content-height change while the Spacing control leaves or enters; reduced motion applies the final height immediately. Background choice grids use the same radius on every corner of each choice; the first/last-item radii and dividers of the standalone phone Background list never apply to settings. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower. A control commit updates its mounted row in place and preserves the settings scroll position. A setting whose value changes conditional row structure may rebuild that structure, but it restores the exact preceding scroll position before returning control to the user.
 
 The following controls are visual choices rather than plain dropdowns:
 
@@ -446,7 +451,9 @@ The following controls are visual choices rather than plain dropdowns:
 
 Numeric settings that benefit from continuous adjustment use a slider paired with a directly editable text field, not a dropdown. This applies to opacity, eraser radius, active buffer lines, and scroll preload margin. The slider and field update each other live, preserve the documented numeric representation and units, and commit one setting change on `change`. Opacity remains a finite normalized value from 0 through 1 even when the field presents a percentage. The field rejects incomplete, non-finite, out-of-range, or otherwise invalid input without persisting it. Background spacing retains the menu's discrete S/M/L/XL slider and visible current-size output. The table stepper remains a discrete numeric control because its bounded integer range is best communicated through increment and decrement actions.
 
-Dropdowns are reserved for discrete values without a meaningful visual preview, such as startup tool, file placement, display refresh rate, and motion. Pen-tap insertion uses the binary toggle defined under [Device Settings](#device-settings). A dropdown MUST NOT replace a shared swatch, width preview, outline-style button group, endpoint or dimension icon group, pattern choice, slider-plus-field control, or table stepper merely for implementation convenience.
+Text font family uses the same compact dropdown in Style and tool defaults. The trigger uses Obsidian's `dropdown` class for native size, padding, colors, shadow, focus feedback, and double-chevron decoration, without a separate Inkbook appearance. Text-tool defaults place the content-sized control to the right of its label and description. Its intrinsic size accounts for the available font names and is capped at 240 pixels and the available control width; measurement labels remain hidden from assistive technology. Each visible option is previewed in its own locally loaded font and vertically centered in its row. The owned popup follows the trigger's width, capped by the visual viewport, and updates when the trigger resizes. Desktop options use the shared compact menu typography and spacing; tablet and phone rows retain 44-pixel minimum touch targets. A list that fits reserves no empty scrollbar gutter. The selected option uses the shared visual-choice accent border and tinted background; keyboard navigation keeps its separate active-option feedback. It floats above adjacent controls in its owner's overlay layer, without changing the Style surface's height or scroll extent. It flips and clamps against the owning visual viewport within 264 CSS pixels; its listbox scrolls independently above a separated, full-width **Add font** row with a small plus icon and visible localized text. The complete row is clickable, uses the font options' hover and keyboard-focus treatment without a separate circular background, has a localized tooltip and accessible name, remains outside the font options, and opens the shared font-management dialog described in [Text Fields](text-fields.md#fonts-and-settings). Arrow keys, Home, End, and initial-letter navigation move the active option; Enter commits, while Escape or outside contact closes without changing the value. Tab moves from the open combobox to the management action; Shift+Tab returns to the combobox. Long names truncate visually and retain their full accessible name. The dropdown's temporary native Escape scope takes priority over the enclosing dialog. Mixed values select no option. Preview leases are temporary and do not add document font resources.
+
+Other dropdowns are reserved for discrete values without a meaningful visual preview, such as startup tool, file placement, display refresh rate, and motion. Pen-tap insertion uses the binary toggle defined under [Device Settings](#device-settings). A dropdown MUST NOT replace a shared swatch, width preview, outline-style button group, endpoint or dimension icon group, pattern choice, slider-plus-field control, or table stepper merely for implementation convenience.
 
 All controls have a visible sentence-case label, one concise description, an accessible name, and a visible focus state. Choice controls expose their selected state to assistive technology. Touch targets are at least 44 CSS pixels in the phone settings layout. Multi-field forms use a modal with Save and Cancel only when one row cannot reasonably contain the fields.
 
@@ -467,6 +474,14 @@ Parity tests MUST enumerate every configurable Style and Background menu value a
 ## Settings Deliberately Not Exposed
 
 Autosave delays, horizontal culling margin, spatial-index size, cache size, worker thresholds, animation-frame batching, and serialization precision are implementation constants. The bounded vertical [Scroll Preload Margin](#scroll-preload-margin) is the explicit user-facing preloading preference; it does not change scheduler admission or resource limits.
+
+## Text Defaults and Font Library
+
+`ToolDefaultsV1` also includes `text: TextDefaultsV2`, and `StartupToolV1` includes `"text"`. `InkbookSettingsV4` includes `fontLibrary: FontLibraryEntryV2[]`; valid earlier version 4 settings receive the built-in text defaults and an empty font index. Text defaults and the import/remove behavior are canonical in [Text Fields](text-fields.md#fonts-and-settings). Font management is reached through the font picker instead of a separate settings section. It stores only face metadata in plugin data; local binaries use public Vault APIs and remain after an entry is removed. Existing text documents retain their embedded faces independently of this index.
+
+Text defaults reuse the Style control order and font-size UI range defined in [Text Fields](text-fields.md#fonts-and-settings), including preservation of valid stored sizes outside the slider endpoints. Settings preview slider values locally and persist on change; canvas selection previews have their own lifecycle and do not mutate these defaults.
+
+The General settings group exposes the vault-wide `copyTextFieldsAsText` toggle, separate from element style defaults. Its built-in value is `false`; valid older settings receive that value additively. Changes apply immediately to active editors. The General group reset and complete reset restore `false`. Clipboard representations and retained Markdown/LaTeX behavior are canonical in [Text Fields](text-fields.md#persistence-clipboard-and-pdf).
 
 ## Related Documentation
 

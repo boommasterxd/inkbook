@@ -101,6 +101,8 @@ When the unified history is empty, the plugin does not automatically lock the em
 
 These actions apply to selected canvas elements, not to the entire embed.
 
+Text-only selections additionally support source copying and a configurable ordinary Copy action, as defined in [Text Fields](text-fields.md#persistence-clipboard-and-pdf). The complete-element behavior below remains the default and always applies to mixed selections and Cut.
+
 Copy:
 
 - serializes the selection's geometry and style as JSON
@@ -164,16 +166,17 @@ Moving beyond the long-press threshold, receiving a second touch, starting a pen
 
 When a selection exists, the menu begins with:
 
-1. Copy
-2. Cut
-3. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
-4. a separator
-5. Delete
-6. a separator
-7. Bring forward
-8. Send backward
-9. Bring to front
-10. Send to back
+1. Copy, or Copy text field for a text-only selection
+2. Copy text for a text-only selection, independently of the ordinary Copy preference
+3. Cut
+4. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
+5. a separator
+6. Delete
+7. a separator
+8. Bring forward
+9. Send backward
+10. Bring to front
+11. Send to back
 
 The canvas section follows after a separator:
 
@@ -313,6 +316,10 @@ After confirmation, deletion removes the complete embed line and at most one imm
 - If there are no other references, the user can choose whether to delete only the embed or also the SVG file.
 
 Reference resolution and recoverable deletion use the public APIs specified in [Obsidian Integration](obsidian-integration.md). An unresolved or not-yet-resolved metadata cache never authorizes file deletion.
+
+## Text Fields and Plain-Text Paste
+
+[Text fields](text-fields.md) combine retained Markdown source, rich formatting, local fonts, and portable formulas with ordinary canvas elements. Explicit Paste keeps validated Inkbook data priority; otherwise plain text, Markdown, or LaTeX source creates a new text field at the existing invocation location. Text selection Copy/Cut carries the necessary font resources. Active text editing is completed before native PDF document preparation.
 
 ## Related Documentation
 

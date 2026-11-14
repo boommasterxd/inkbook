@@ -12,6 +12,29 @@ beforeEach(() => {
   document.body.replaceChildren();
 });
 
+it("retains titled groups and usable controls while omitting unavailable group items", () => {
+  const renderer = new SettingDefinitionRenderer(
+    { getControlValue: () => false, setControlValue: vi.fn() },
+    vi.fn(),
+  );
+  renderer.render(document.body, [
+    { type: "group", heading: "Help", items: [] },
+    { type: "group", items: [{ name: "Unavailable action", visible: false }] },
+    {
+      type: "group",
+      heading: "Preferences",
+      items: [{ name: "Enabled", control: { type: "toggle", key: "enabled" } }],
+    },
+  ]);
+  expect([...document.querySelectorAll("h3")].map((heading) => heading.textContent)).toEqual([
+    "Help",
+    "Preferences",
+  ]);
+  expect(document.querySelector('[aria-label="Enabled"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain("Unavailable action");
+  renderer.dispose();
+});
+
 describe("named settings controls", () => {
   it.each(["dropdown", "text", "folder"] as const)(
     "names %s controls and persists user changes",

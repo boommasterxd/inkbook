@@ -3,6 +3,7 @@ import type {
   ClipboardElementV1,
   InkClipboardV1,
   InkElementV1,
+  FontResourceV2,
 } from "../../../../domain/schema/public";
 import { MAX_JSON_DEPTH } from "../../../../domain/schema/public";
 import { CLIPBOARD_LIMITS, INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../clipboard/constants";
@@ -15,6 +16,9 @@ import type {
 } from "../../../clipboard/types";
 import { validateClipboardPayloadSliced } from "../../../clipboard/validation";
 import { encodeRuntimeSelection } from "../../../clipboard/codec";
+import { usedFontResourcesSteps } from "../../../fonts/used-font-resources";
+import { bindTextElementFontResourcesSteps } from "../../../fonts/bound-font-resources";
+import { consumeSerializationSteps } from "../../../serialization/output/serialization-model-preparation";
 import { parseChunkedJson } from "../../../serialization/input/chunked-json-parser";
 import { runtimeSliceWorkProfile } from "../slice-scheduler";
 import type { RuntimeSliceContext, RuntimeSliceWorkProfile } from "../types";
@@ -28,8 +32,9 @@ export function missingClipboardSelection(): ClipboardResult<never> {
 export function encodeRuntimeSelectionWrite(
   selected: readonly InkElementV1[],
   selectedIds: readonly string[],
+  fontResources: readonly FontResourceV2[] = [],
 ): ClipboardResult<ClipboardWritePayload> {
-  const result = encodeRuntimeSelection(selected, new Set(selectedIds));
+  const result = encodeRuntimeSelection(selected, new Set(selectedIds), fontResources);
   if (!result.ok) return result;
   const { byteLength, customText, plainText } = result.value;
   return { ok: true, value: { byteLength, customText, plainText } };
@@ -43,22 +48,20 @@ export async function encodeRuntimeSelectionChunked(
   elementsInRenderOrder: readonly InkElementV1[],
   selectedIds: readonly string[],
   context: RuntimeSliceContext,
+  fontResources: readonly FontResourceV2[] = [],
 ): Promise<ClipboardResult<ClipboardWritePayload>> {
   const profile = runtimeWorkProfile(context);
   const selection = new Set(selectedIds);
   if (selection.size === 0) return clipboardFailure("empty-selection", "No elements are selected.");
-  const selected: InkElementV1[] = [];
-  for (let index = 0; index < elementsInRenderOrder.length; index += 1) {
-    if (selection.has(elementsInRenderOrder[index]!.id))
-      selected.push(elementsInRenderOrder[index]!);
-    if ((index + 1) % profile.nodeLimit === 0) {
-      const pending = context.checkpoint();
-      if (pending !== undefined) await pending;
-    }
-  }
+  const selected = await selectedElementsInOrder(elementsInRenderOrder, selection, context);
   if (selected.length !== selection.size) {
     return clipboardFailure("missing-selection", "The selection contains an unknown element.");
   }
+  const hasText = selected.some((element) => element.kind === "text");
+  const fonts = hasText
+    ? await prepareSelectionFonts(selected, fontResources, context)
+    : { ok: true as const, value: [] };
+  if (!fonts.ok) return fonts;
   const documentIds = new Map<string, string>();
   for (let index = 0; index < selected.length; index += 1) {
     documentIds.set(selected[index]!.id, compactClipId(index));
@@ -80,7 +83,12 @@ export async function encodeRuntimeSelectionChunked(
     }
   }
   const encoded = await serializeClipboardPayload(
-    { elements: clipboardElements, format: "inkbook-elements", version: 1 },
+    {
+      elements: clipboardElements,
+      format: "inkbook-elements",
+      version: hasText ? 2 : 1,
+      ...(hasText ? { fontResources: fonts.value } : {}),
+    },
     context,
     true,
     profile,
@@ -94,6 +102,53 @@ export async function encodeRuntimeSelectionChunked(
       plainText: `${INKBOOK_CLIPBOARD_TEXT_PREFIX}${encoded.value.text}`,
     },
   };
+}
+
+async function selectedElementsInOrder(
+  elements: readonly InkElementV1[],
+  selection: ReadonlySet<string>,
+  context: RuntimeSliceContext,
+): Promise<InkElementV1[]> {
+  const selected: InkElementV1[] = [];
+  const profile = runtimeWorkProfile(context);
+  for (let index = 0; index < elements.length; index += 1) {
+    if (selection.has(elements[index]!.id)) selected.push(elements[index]!);
+    if ((index + 1) % profile.nodeLimit === 0) {
+      const pending = context.checkpoint();
+      if (pending !== undefined) await pending;
+    }
+  }
+  return selected;
+}
+
+/** Bind private selected records before body creation, preserving the source store records. */
+async function prepareSelectionFonts(
+  elements: InkElementV1[],
+  resources: readonly FontResourceV2[],
+  context: RuntimeSliceContext,
+): Promise<ClipboardResult<FontResourceV2[]>> {
+  try {
+    for (let index = 0; index < elements.length; index += 1) {
+      const element = elements[index]!;
+      if (element.kind === "text")
+        elements[index] = await consumeSerializationSteps(
+          bindTextElementFontResourcesSteps(element, resources),
+          context,
+        );
+    }
+    return {
+      ok: true,
+      value: await consumeSerializationSteps(usedFontResourcesSteps(elements, resources), context),
+    };
+  } catch (error) {
+    context.signal.throwIfAborted();
+    if (error instanceof RangeError)
+      return clipboardFailure(
+        "invalid-schema",
+        "The selection references an unavailable font face.",
+      );
+    throw error;
+  }
 }
 
 export async function decodeClipboardChunked(
@@ -219,11 +274,28 @@ class CanonicalJsonWriter {
           const pending = this.#context.checkpoint();
           if (pending !== undefined) await pending;
         }
-        this.#writeValue(frame.value, stack);
+        if (typeof frame.value === "string" && frame.value.length > this.#profile.inputByteLimit) {
+          await this.#writeString(frame.value);
+        } else this.#writeValue(frame.value, stack);
       } else {
         this.#continueContainer(frame, stack);
       }
     }
+  }
+
+  async #writeString(value: string): Promise<void> {
+    this.#append('"');
+    for (let start = 0; start < value.length;) {
+      let end = Math.min(value.length, start + Math.max(2, this.#profile.inputByteLimit));
+      const trailing = value.charCodeAt(end - 1);
+      if (end < value.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
+      this.#append(JSON.stringify(value.slice(start, end)).slice(1, -1));
+      start = end;
+      const pending = this.#context.checkpoint();
+      if (pending !== undefined) await pending;
+      this.#context.signal.throwIfAborted();
+    }
+    this.#append('"');
   }
 
   #writeValue(value: unknown, stack: JsonFrame[]): void {

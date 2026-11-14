@@ -10,6 +10,8 @@ import { strokeCenterWindow } from "../../../../../src/domain/geometry/stroke-ce
 import { rotatePointClockwise } from "../../../../../src/domain/geometry/primitives";
 import type { PreparedPressureGeometryPort } from "../../../../../src/domain/geometry/pressure/prepared-pressure-geometry";
 import { selectionStrokeCenters } from "../../../../../src/editor/selection/query/stroke-selection-centers";
+import { prepareTextPaintGeometrySteps } from "../../../../../src/domain/geometry/text-paint-geometry";
+import { textElement } from "../../../domain/schema/fixtures";
 import * as centers from "../../../../../src/domain/geometry/stroke-path";
 import {
   elementContainsPoint,
@@ -169,6 +171,91 @@ describe("selection hit testing", () => {
     const scratch = new HitTestScratch();
     expect(frontmostHit(scratch, { x: -12, y: 50 }, "touch", candidates)).toBe("front");
     expect(frontmostHit(scratch, { x: -12, y: 50 }, "mouse", candidates)).toBeNull();
+  });
+});
+
+describe("visible text point hits", () => {
+  it.each([0, 47])("keeps transparent field gaps empty at %s degrees", (rotation) => {
+    const element = { ...textElement(), rotation };
+    const world = (x: number, y: number) => rotatePointClockwise({ x, y }, element.pivot, rotation);
+    expect(elementContainsPoint(element, world(120, 110), 0)).toBe(true);
+    expect(elementContainsPoint(element, world(190, 140), 8)).toBe(false);
+    expect(elementContainsPoint(element, world(145, 110), 4)).toBe(false);
+    expect(elementContainsPoint(element, world(145, 110), 5.001)).toBe(true);
+  });
+
+  it("respects invisible ink and the rounded visible field background", () => {
+    const element = textElement();
+    element.style.opacity = 0;
+    expect(elementContainsPoint(element, { x: 120, y: 110 }, 0)).toBe(false);
+    element.backgroundColor = { type: "theme-text" };
+    element.backgroundOpacity = 1;
+    expect(elementContainsPoint(element, { x: 190, y: 140 }, 0)).toBe(true);
+    expect(elementContainsPoint(element, { x: 100, y: 100 }, 0)).toBe(false);
+    expect(elementContainsPoint(element, { x: 100, y: 100 }, 8)).toBe(false);
+    expect(elementContainsPoint(element, { x: 100, y: 100 }, 11)).toBe(true);
+    element.backgroundColor = { type: "rgba", value: "#11223300" };
+    expect(elementContainsPoint(element, { x: 190, y: 140 }, 0)).toBe(false);
+  });
+
+  it("hits retained math and table rules while leaving empty cells and field gaps empty", () => {
+    const element = textElement();
+    element.layout = {
+      version: 1,
+      lines: [],
+      math: [
+        {
+          start: 0,
+          end: 5,
+          display: false,
+          x: 10,
+          y: 5,
+          width: 20,
+          height: 15,
+          paths: [{ d: "M0 0L20 15" }],
+        },
+      ],
+      tables: [
+        {
+          start: 0,
+          end: 5,
+          x: 0,
+          y: 25,
+          width: 80,
+          height: 24,
+          columns: 2,
+          rowHeights: [12, 12],
+          borderWidth: 1,
+        },
+      ],
+    };
+    expect(elementContainsPoint(element, { x: 120, y: 110 }, 0)).toBe(true);
+    expect(elementContainsPoint(element, { x: 140, y: 140 }, 0)).toBe(true);
+    expect(elementContainsPoint(element, { x: 120, y: 140 }, 0)).toBe(false);
+    expect(elementContainsPoint(element, { x: 190, y: 140 }, 0)).toBe(false);
+  });
+
+  it("uses supplied paint without reading layout again and keeps pointer-specific tolerances", () => {
+    const element = textElement();
+    const steps = prepareTextPaintGeometrySteps(element);
+    let next = steps.next();
+    while (!next.done) next = steps.next();
+    const geometry = next.value;
+    const layoutRead = vi.fn(() => {
+      throw new Error("Prepared hits must not inspect layout");
+    });
+    Object.defineProperty(element, "layout", { get: layoutRead });
+    expect(elementContainsPoint(element, { x: 120, y: 110 }, 0, undefined, geometry)).toBe(true);
+    const scratch = new HitTestScratch();
+    for (const [pointerType, expected] of [
+      ["mouse", null],
+      ["touch", element.id],
+    ] as const) {
+      scratch.begin({ x: 150, y: 110 }, pointerType, 1);
+      scratch.consider(element.id, "content", element, 0, undefined, geometry);
+      expect(scratch.finish()).toBe(expected);
+    }
+    expect(layoutRead).not.toHaveBeenCalled();
   });
 });
 

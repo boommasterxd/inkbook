@@ -5,6 +5,7 @@ import {
 import { assertStrokeSamplesV1 } from "../../../../domain/elements/public";
 import {
   captureRuntimeElementHeader,
+  captureRuntimeTextElementSteps,
   copyStrokeSamplesToRuntimeSteps,
 } from "../../../../domain/elements/runtime-element-copy";
 import { isStoredStroke } from "../../../../domain/elements/stroke-replacement-proof";
@@ -137,7 +138,10 @@ function* copyElementsSteps(
   const sampleCounts = { strokes: 0, strokePoints: 0 };
   for (let index = 0; index < elements.length; index += 1) {
     const element = elements[index]!;
-    const header = captureRuntimeElementHeader(element);
+    const header =
+      Object.getOwnPropertyDescriptor(element, "kind")?.value === "text"
+        ? yield* captureRuntimeTextElementSteps(element)
+        : captureRuntimeElementHeader(element);
     if (element.kind !== "stroke") copied.push(header as unknown as RuntimeInkElement);
     else {
       assertStagedSampleCapacity(sampleCounts, element.points.length, `$.elements[${index}]`);

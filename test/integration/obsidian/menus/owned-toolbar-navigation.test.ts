@@ -3,12 +3,15 @@ import { Localization } from "../../../../src/domain/localization";
 import "../../../fixtures/obsidian/menu-motion";
 
 import { Platform } from "obsidian";
+import { Keymap } from "../../../adapters/obsidian/keymap";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { installNativeMenuMeasurementStyles } from "../../../adapters/obsidian/editor-toolbar-menu";
 import { nativeModalStack } from "../../../adapters/obsidian/settings";
 import { createOwnedToolbarMenuFixture as fixture } from "../../../fixtures/obsidian/owned-toolbar-menu";
+import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
+import { createTextStyleControls } from "../../../../src/obsidian/menus/text-style-controls";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -36,6 +39,54 @@ function finishHandoff({ options, session }: ReturnType<typeof fixture>): void {
   session.close("immediate");
   expect(vi.getTimerCount()).toBe(0);
 }
+
+it("dismisses the phone font list before its native sheet and retains a focused field during keyboard resize", () => {
+  Platform.isMobile = true;
+  Platform.isPhone = true;
+  const keymap = new Keymap();
+  const releaseCapture = keymap.installCapture(window);
+  const { options, session } = fixture({
+    initialMenu: "style",
+    motion: "reduced",
+    keymap,
+    state: { styleControls: createTextStyleControls(createBuiltInSettings().toolDefaults.text) },
+  });
+  const modal = nativeModalStack(document)[0]!;
+  modal.scope.register([], "Escape", () => {
+    session.close("immediate");
+    return false;
+  });
+  keymap.pushScope(modal.scope);
+  try {
+    vi.advanceTimersByTime(50);
+    const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    trigger.focus();
+    trigger.click();
+    trigger.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(options.onClosed).not.toHaveBeenCalled();
+    const input = document.querySelector<HTMLInputElement>(
+      'input[type="number"][aria-label="Font size"]',
+    )!;
+    input.focus();
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(430);
+    window.dispatchEvent(new Event("resize"));
+    vi.advanceTimersByTime(500);
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(options.onClosed).not.toHaveBeenCalled();
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    expect(options.onClosed).toHaveBeenCalledOnce();
+  } finally {
+    session.close("immediate");
+    keymap.popScope(modal.scope);
+    releaseCapture();
+  }
+});
 
 describe.each(["desktop", "tablet", "phone"])("owned toolbar navigation on %s", (mode) => {
   beforeEach(() => {

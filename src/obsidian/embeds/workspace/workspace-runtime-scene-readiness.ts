@@ -46,6 +46,8 @@ export async function mountWorkspaceActiveScene(
     readonly isActivationCurrent: () => boolean;
   },
 ): Promise<void> {
+  await options.editorContext.model.preparePendingInput?.();
+  if (!options.isActivationCurrent()) return;
   const mounted = options.mounted;
   const previous = mounted.scene;
   if (previous !== undefined) {

@@ -10,6 +10,7 @@ import {
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { connectedLine, highlighter, IDS, rectangle } from "../../../domain/store/fixtures";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
+import { textElement } from "../../../domain/schema/fixtures";
 
 describe("active editor arrange availability", () => {
   it("uses only selected ranks within each render band, ignoring missing IDs", () => {
@@ -149,6 +150,39 @@ describe("selected pressure target preparation", () => {
   });
 });
 
+describe("active editor text selection targets", () => {
+  it.each(["mouse", "pen", "touch"] as const)(
+    "targets visible selected text and leaves its empty field to the underlying object with %s",
+    (pointerType) => {
+      const text = { ...textElement(), createdAt: 2 };
+      const underneath = rectangle();
+      underneath.style.fillColor = { type: "theme-text" };
+      underneath.style.fillOpacity = 1;
+      const fixture = scene([underneath, text]);
+      const selection = new Set([text.id]);
+      const selected = [{ element: text, bounds: fixture.store.get(text.id)!.bounds }];
+      const blank = { x: 190, y: 140 };
+      const ink = { x: 120, y: 110 };
+      const target = { elementId: text.id, isSelected: true };
+      const prepareTextGeometry = vi.fn((id: string) => fixture.store.get(id)?.textPaintGeometry);
+      const context = { tolerance: 8, prepareTextGeometry };
+      try {
+        expect(selectedTargetAt(selected, blank, null, context)).toBeUndefined();
+        expect(selectionTargetAt(fixture.store, selection, blank, pointerType, 1)).toEqual({
+          elementId: underneath.id,
+          isSelected: false,
+        });
+        expect(selectedTargetAt(selected, ink, null, context)).toEqual(target);
+        expect(selectionTargetAt(fixture.store, selection, ink, pointerType, 1)).toEqual(target);
+        expect(prepareTextGeometry).toHaveBeenCalledTimes(2);
+        expect(prepareTextGeometry).toHaveBeenLastCalledWith(text.id);
+      } finally {
+        fixture.release();
+      }
+    },
+  );
+});
+
 describe("active editor indexed selection targets", () => {
   it.each(["mouse", "pen", "touch"] as const)(
     "moves a transparent box selection from its highlighted interior with %s input",
@@ -182,8 +216,8 @@ describe("active editor indexed selection targets", () => {
     fixture.release();
   });
 
-  it("moves a group from the transparent gap inside its shared bounding box", () => {
-    const left = rectangle();
+  it("moves a group containing text from the transparent gap inside its shared bounding box", () => {
+    const left = textElement();
     const right = rectangle(IDS.other, 500, 100);
     const fixture = scene([left, right]);
 

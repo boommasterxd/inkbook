@@ -15,6 +15,8 @@ export class ActivePageLayout {
   #height: number | undefined;
   #queuedHeight: number | undefined;
   #selectionOriginalHeight: number | undefined;
+  #selectionDepth = 0;
+  #selectionCommitted = false;
   #transitionTarget: number | undefined;
 
   public get height(): number | undefined {
@@ -23,6 +25,10 @@ export class ActivePageLayout {
 
   public get settledHeight(): number | undefined {
     return this.#height;
+  }
+
+  public get selectionMoveActive(): boolean {
+    return this.#selectionDepth > 0;
   }
 
   public retainMinimumHeight(height: number): void {
@@ -52,6 +58,8 @@ export class ActivePageLayout {
   public beginSelectionMove(): PageHeightUpdate | undefined {
     const height = this.height;
     if (height === undefined) return undefined;
+    if (this.#selectionDepth++ > 0) return undefined;
+    this.#selectionCommitted = false;
     this.#selectionOriginalHeight = height;
     if (this.#transitionTarget === undefined && this.#queuedHeight === undefined) return undefined;
     this.#height = height;
@@ -60,12 +68,24 @@ export class ActivePageLayout {
     return { animate: false, height };
   }
 
-  public previewSelectionMove(page: PageV1, maximumBottom: number): PageHeightUpdate | undefined {
+  public previewSelectionMove(
+    page: PageV1,
+    maximumBottom: number,
+    sourceExtent = false,
+  ): PageHeightUpdate | undefined {
     if (this.#selectionOriginalHeight === undefined || !Number.isFinite(maximumBottom)) {
       return undefined;
     }
-    const target = derivePageExtent(page, maximumBottom).activeHeight;
+    const sourceOnly = sourceExtent && this.#selectionDepth === 1;
+    const target = Math.max(
+      sourceOnly ? this.#selectionOriginalHeight : 0,
+      derivePageExtent(page, maximumBottom).activeHeight,
+    );
     const height = this.height;
+    if (sourceOnly && height !== undefined && target < height) {
+      this.cancelTransitions(target);
+      return { animate: false, height: target };
+    }
     if (height !== undefined && target <= height) return undefined;
     return this.#request(target);
   }
@@ -75,12 +95,16 @@ export class ActivePageLayout {
     page: PageV1,
     maximumBottom: number | undefined,
   ): PageHeightUpdate | undefined {
+    if (this.#selectionDepth === 0) return undefined;
+    this.#selectionCommitted ||= committed;
+    if (--this.#selectionDepth > 0) return undefined;
     const originalHeight = this.#selectionOriginalHeight;
     if (originalHeight === undefined) return undefined;
     this.#selectionOriginalHeight = undefined;
-    const target = committed
+    const target = this.#selectionCommitted
       ? derivePageExtent(page, maximumBottom ?? null).activeHeight
       : originalHeight;
+    this.#selectionCommitted = false;
     return this.#request(target);
   }
 

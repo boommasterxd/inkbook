@@ -18,9 +18,10 @@ export function createHarness(
   options: Partial<
     Pick<
       ActiveEditorControllerOptions,
-      "deviceSettings" | "model" | "onboardingPreference" | "onFeedback"
+      "deviceSettings" | "model" | "onboardingPreference" | "onFeedback" | "confirmEraseAll"
     >
   > = {},
+  rendererOverrides: Partial<SvgSceneRenderer> = {},
 ) {
   const input = createDiv();
   input.tabIndex = 0;
@@ -39,7 +40,7 @@ export function createHarness(
   const store = options.model?.store ?? new ElementStore([selectableElement()]);
   const sceneStore = new ElementSceneStore(store);
   const menu = new RecordedMenu();
-  const renderer = rendererPort(input);
+  const renderer = Object.assign(rendererPort(input), rendererOverrides);
   const model = options.model ?? createActiveEditorModel(store);
   const controller = new ActiveEditorController({
     applyZoomLayout: vi.fn(),
@@ -178,6 +179,7 @@ export function createActiveEditorModel(store: ElementStore): EditableDocumentMo
 function rendererPort(inputSurface: HTMLDivElement) {
   let cursorReader: ((layoutChanged: boolean) => SceneToolCursorFrame) | undefined;
   return {
+    textDocument: inputSurface.ownerDocument,
     requestToolCursorFrame: vi.fn((reader: (layoutChanged: boolean) => SceneToolCursorFrame) => {
       cursorReader = reader;
     }),

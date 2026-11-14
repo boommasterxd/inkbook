@@ -1,4 +1,5 @@
 const pluginRuntimeHostModules = new Set([
+  "@codemirror/commands",
   "@codemirror/language",
   "@codemirror/state",
   "@codemirror/view",

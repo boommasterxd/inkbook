@@ -15,6 +15,69 @@ import {
   ZOOM_SCROLL_CANCELLATION_REASONS,
 } from "../../../../fixtures/obsidian/live-preview-zoom-scroll";
 
+it("coalesces the latest layout completion after native measurement without restoring an old scroll value", () => {
+  const h = createLivePreviewZoomScrollFixture();
+  try {
+    const previous = vi.fn(),
+      latest = vi.fn();
+    h.binding.afterLayout(previous);
+    h.binding.afterLayout(latest);
+    expect(h.request).toHaveBeenCalledOnce();
+    h.notify(false, true);
+    expect(latest).not.toHaveBeenCalled();
+    h.measure();
+    h.owner.scrollTop = 1193;
+    h.scrollWrite.mockClear();
+    h.notify(false, true);
+    expect(previous).not.toHaveBeenCalled();
+    expect(latest).toHaveBeenCalledOnce();
+    expect(h.scrollWrite).not.toHaveBeenCalled();
+    expect(h.frames.pending).toBe(0);
+  } finally {
+    h.destroy();
+  }
+});
+
+it("awaits a new native measurement when another layout arrives after the previous measurement write", () => {
+  const h = createLivePreviewZoomScrollFixture();
+  try {
+    const previous = vi.fn(),
+      latest = vi.fn();
+    h.binding.retain(h.owner, 812);
+    h.binding.afterLayout(previous);
+    h.measure();
+    h.binding.afterLayout(latest);
+    h.notify(false, true);
+    expect(latest).not.toHaveBeenCalled();
+    expect(previous).not.toHaveBeenCalled();
+    h.advance(150);
+    h.frames.flushAll();
+    h.measure();
+    h.notify(false, true);
+    expect(h.owner.scrollTop).toBe(812);
+    expect(latest).toHaveBeenCalledOnce();
+    expect(h.request).toHaveBeenCalledTimes(2);
+  } finally {
+    h.destroy();
+  }
+});
+
+it.each(ZOOM_SCROLL_CANCELLATION_REASONS)("cancels retained layout completion on %s", (reason) => {
+  const h = createLivePreviewZoomScrollFixture();
+  try {
+    const complete = vi.fn();
+    h.binding.afterLayout(complete);
+    h.measure();
+    cancelZoomScrollForReason(h, reason);
+    h.notify();
+    h.frames.flushAll();
+    expect(complete).not.toHaveBeenCalled();
+    expect(h.scrollWrite).not.toHaveBeenCalled();
+  } finally {
+    h.destroy();
+  }
+});
+
 it("invalidates projected geometry before a host measurement or relayout can restore scrolling", () => {
   const h = createLivePreviewZoomScrollFixture();
   try {

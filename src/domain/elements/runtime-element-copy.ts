@@ -16,6 +16,7 @@ import {
 } from "./runtime-sample-copy-producer";
 
 const MAX_HEADER_NODES = 256;
+const MAX_TEXT_HEADER_NODES = 500_000;
 const immutableCapturedHeaders = new WeakSet<object>();
 
 interface HeaderCopyBudget {
@@ -74,6 +75,12 @@ export function captureRuntimeElementHeader(
   element: object,
   excludedKeys?: ReadonlySet<string>,
 ): Record<string, unknown> {
+  if (headerProperty(element, "kind") === "text") {
+    const steps = captureRuntimeTextElementSteps(element, excludedKeys);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
   const budget: HeaderCopyBudget = { remaining: MAX_HEADER_NODES, ancestors: new Set() };
   assertHeaderRecord(element);
   const header: Record<string, unknown> = {};
@@ -259,11 +266,108 @@ function* stageDifferentSamples(
 export function copyRuntimeElementSteps<T extends object>(
   element: T,
   ownedPoints?: SampleSource,
+  ownedText?: object,
 ): Generator<void, T> {
+  if (headerProperty(element, "kind") === "text") {
+    return captureRuntimeTextElementSteps(
+      element,
+      undefined,
+      reusableTextValues(element, ownedText),
+    ) as Generator<void, T>;
+  }
   const header = captureRuntimeElementHeader(element);
   if (header.kind !== "stroke") return returnHeader<T>(header);
   const points = headerProperty(element, "points") as SampleSource;
   return finishStrokeHeader<T>(header, stageStrokeSamplesSteps(points, ownedPoints));
+}
+
+/** The caller retains an unchanged candidate until staging completes or is cancelled. */
+export function* captureRuntimeTextElementSteps(
+  element: object,
+  excludedKeys?: ReadonlySet<string>,
+  reusable?: ReadonlySet<object>,
+): Generator<void, Record<string, unknown>> {
+  const progress = { nodes: 0, ancestors: new Set<object>(), reusable };
+  const value = yield* cloneTextValueSteps(element, progress, 1, excludedKeys);
+  return value as Record<string, unknown>;
+}
+
+function* cloneTextValueSteps(
+  value: unknown,
+  progress: { nodes: number; ancestors: Set<object>; reusable?: ReadonlySet<object> | undefined },
+  depth: number,
+  excludedKeys?: ReadonlySet<string>,
+): Generator<void, unknown> {
+  progress.nodes += 1;
+  if (progress.nodes > MAX_TEXT_HEADER_NODES || depth > MAX_JSON_DEPTH)
+    throw new RangeError("Text element exceeds the bounded copy limit.");
+  if (progress.nodes % DEFAULT_SAMPLE_COPY_STEP === 0) yield;
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    typeof value === "number"
+  )
+    return value;
+  if (typeof value !== "object") throw new TypeError("Text elements must contain JSON data.");
+  if (progress.reusable?.has(value)) return value;
+  if (progress.ancestors.has(value)) throw new TypeError("Text elements must be acyclic.");
+  progress.ancestors.add(value);
+  if (Array.isArray(value)) {
+    if (value.length > MAX_TEXT_HEADER_NODES - progress.nodes)
+      throw new RangeError("Text array exceeds the bounded copy limit.");
+    yield* assertTextArraySteps(value);
+    const clone: unknown[] = [];
+    for (let index = 0; index < value.length; index += 1)
+      clone.push(
+        yield* cloneTextValueSteps(headerProperty(value, String(index)), progress, depth + 1),
+      );
+    progress.ancestors.delete(value);
+    return clone;
+  }
+  assertHeaderRecord(value);
+  const clone: Record<string, unknown> = {};
+  for (const key of boundedHeaderKeys(
+    value,
+    Math.min(MAX_HEADER_NODES, MAX_TEXT_HEADER_NODES - progress.nodes),
+  )) {
+    if (excludedKeys?.has(key)) continue;
+    const child = yield* cloneTextValueSteps(headerProperty(value, key), progress, depth + 1);
+    Object.defineProperty(clone, key, { value: child, enumerable: true, writable: true });
+  }
+  progress.ancestors.delete(value);
+  return clone;
+}
+
+function reusableTextValues(
+  element: object,
+  owned: object | undefined,
+): ReadonlySet<object> | undefined {
+  if (owned === undefined || headerProperty(owned, "kind") !== "text") return undefined;
+  const reusable = new Set<object>();
+  for (const key of ["layout", "ranges", "paragraphs"]) {
+    const value = headerProperty(element, key);
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      value === headerProperty(owned, key) &&
+      Object.isFrozen(value)
+    )
+      reusable.add(value);
+  }
+  return reusable;
+}
+
+function* assertTextArraySteps(value: unknown[]): Generator<void, void> {
+  const keys = Object.getOwnPropertyNames(value);
+  if (keys.length !== value.length + 1 || Object.getOwnPropertySymbols(value).length !== 0)
+    throw new TypeError("Text arrays must contain dense indexed values only.");
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]!;
+    if (key !== "length" && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length))
+      throw new TypeError("Text arrays must contain indexed values only.");
+    if ((index + 1) % DEFAULT_SAMPLE_COPY_STEP === 0) yield;
+  }
 }
 
 function* returnHeader<T extends object>(header: Record<string, unknown>): Generator<void, T> {

@@ -105,7 +105,11 @@ function selectionOutline(
   selected: readonly SelectedElementGeometry[],
   frame: OrientedSelectionFrame | null,
 ): SelectionOutline | null {
-  if (selected.length === 1 && (selected[0]!.element.kind !== "stroke" || frame === null))
+  if (
+    selected.length === 1 &&
+    (frame === null ||
+      (selected[0]!.element.kind !== "stroke" && selected[0]!.element.kind !== "text"))
+  )
     return singleElementOutline(selected[0]!.element);
   if (frame !== null) return { kind: "polygon", points: frame.points };
   const bounds = selectionBounds(selected);

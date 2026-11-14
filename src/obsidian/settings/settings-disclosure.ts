@@ -23,6 +23,7 @@ export interface SettingsDisclosure {
 export interface SettingsDisclosureOptions {
   readonly contentClass?: string;
   readonly description: string;
+  readonly deferDescriptionUntilExpanded?: boolean;
   readonly expanded: boolean;
   readonly panelId: string;
   readonly observeMotion?: ObserveMotion;
@@ -61,11 +62,27 @@ export function createSettingsDisclosure(
   panel.inert = !options.expanded;
   const content = panel.createDiv({ cls: "inkbook-settings-tool-panel-content" });
   if (options.contentClass !== undefined) content.classList.add(options.contentClass);
-  content.createEl("p", {
-    cls: "inkbook-settings-tool-description",
-    text: options.description,
-  });
-  return { content, panel, trigger, ...bindDisclosureMotion(trigger, chevron, options) };
+  let description: HTMLElement | undefined;
+  const initializeDescription = (): void => {
+    if (description !== undefined) return;
+    description = content.createEl("p", {
+      cls: "inkbook-settings-tool-description",
+      text: options.description,
+    });
+    content.prepend(description);
+  };
+  if (options.expanded || options.deferDescriptionUntilExpanded !== true) initializeDescription();
+  const motion = bindDisclosureMotion(trigger, chevron, options);
+  return {
+    content,
+    panel,
+    trigger,
+    setExpanded: (expanded, reducedMotion) => {
+      if (expanded) initializeDescription();
+      motion.setExpanded(expanded, reducedMotion);
+    },
+    dispose: motion.dispose,
+  };
 }
 
 function bindDisclosureMotion(

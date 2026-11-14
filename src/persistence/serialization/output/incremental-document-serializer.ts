@@ -10,11 +10,7 @@ import {
   type SnapshotValidationDerivations,
 } from "../../../domain/schema/public";
 import { BackgroundFragmentCache } from "./background";
-import { canonicalElement, canonicalPage } from "../metadata/canonical-snapshot";
-import {
-  canonicalMetadataFragmentsSha256,
-  metadataPrefix as canonicalMetadataPrefix,
-} from "../metadata/canonical-metadata";
+import { canonicalPage } from "../metadata/canonical-snapshot";
 import { codecFailure } from "../codec-failure";
 import {
   ChunkedOutputCancelledError,
@@ -35,11 +31,12 @@ import type {
   DocumentSerializationDelta,
   FragmentSerializerInstrumentation,
 } from "./incremental-document-serializer-types";
-import { checkBackgroundLimit, prepareSerialization } from "./serialization-budgets";
-import { assembleOrderedElementFragments } from "./ordered-element-fragments";
+import { checkBackgroundLimit } from "./serialization-budgets";
+import { serializeDocumentFragments } from "./synchronous-document-export";
 import {
   captureDeltaInputSteps,
   copySerializationElementsSteps,
+  canonicalizeSerializationElementsSteps,
 } from "./serialization-input-preparation";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "../sha256";
 import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
@@ -49,7 +46,16 @@ import {
   type SerializationRanks,
 } from "./serialization-selection";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "../types";
+import {
+  canonicalFontResource,
+  snapshotTextResources,
+  deltaTextElements,
+  prepareDeltaFontResourcesSteps,
+  retainsFontFaces,
+} from "./text-fonts";
+import { usedFontResourcesSteps } from "../../fonts/used-font-resources";
 export class IncrementalDocumentSerializer {
+  #fontResources: NonNullable<InkSnapshotV1["fontResources"]> = [];
   #cache = new ElementFragmentCache();
   readonly #shapeCache = new StrokeShapeCache((stroke) => this.#elements.get(stroke.id) === stroke);
   #elements = new Map<string, InkElementV1>();
@@ -93,7 +99,19 @@ export class IncrementalDocumentSerializer {
     };
   }
   public currentSnapshot(): InkSnapshotV1 | null {
-    return document.orderedSnapshotValue(this.#revision, this.#page, this.#elements, this.#orders);
+    const snapshot = document.orderedSnapshotValue(
+      this.#revision,
+      this.#page,
+      this.#elements,
+      this.#orders,
+      this.#fontResources,
+    );
+    if (snapshot === null) return null;
+    const { fontResources: _resources, ...header } = snapshot;
+    return { ...header, ...snapshotTextResources(snapshot) };
+  }
+  public currentFontResources(): readonly NonNullable<InkSnapshotV1["fontResources"]>[number][] {
+    return this.#fontResources;
   }
   public currentRevision(): number | null {
     return this.#revision;
@@ -228,6 +246,7 @@ export class IncrementalDocumentSerializer {
     return { ok: true, value: undefined };
   }
   #adoptModel(model: PreparedSerializationModel, cache: ElementFragmentCache): void {
+    this.#fontResources = model.fontResources.map(canonicalFontResource);
     this.sampleEncodingCache.reconcileElements(model.elements);
     for (const id of this.#shapeCache.ids()) {
       if (!model.elements.has(id)) this.#shapeCache.remove(id);
@@ -282,6 +301,12 @@ export class IncrementalDocumentSerializer {
     signal?: AbortSignal,
   ): Generator<boolean | void, DocumentCodecResult<void>> {
     const epoch = this.#epoch;
+    const fonts = yield* prepareDeltaFontResourcesSteps(
+      this.#fontResources,
+      delta.fontResources,
+      signal,
+    );
+    if (!fonts.ok) return fonts;
     if (this.#revision === null || delta.baseModelRevision !== this.#revision) {
       return codecFailure(
         "base-revision-mismatch",
@@ -312,15 +337,30 @@ export class IncrementalDocumentSerializer {
       nodesPerStep,
     );
     if (!facts.ok) return facts;
+    try {
+      yield* usedFontResourcesSteps(
+        deltaTextElements(
+          this.#elements,
+          prepared.value.changed,
+          prepared.value.removed,
+          !retainsFontFaces(this.#fontResources, fonts.value),
+        ),
+        fonts.value,
+      );
+    } catch {
+      return codecFailure("invalid-delta", "A required text font resource is unavailable.");
+    }
     const ranks = yield* prepareSerializationRankUpdate(
       { currentOrders: this.#orders, nextOrders: prepared.value.orders, currentRanks: this.#ranks },
       nodesPerStep,
     );
-    const changed = new Map<string, InkElementV1>();
-    for (const element of prepared.value.changed.values()) {
-      changed.set(element.id, canonicalElement(element, this.#runtimeStrokeBuffers, !ownsSamples));
-      if (changed.size % nodesPerStep === 0) yield;
-    }
+    const changed = yield* canonicalizeSerializationElementsSteps(
+      prepared.value.changed.values(),
+      fonts.value,
+      this.#runtimeStrokeBuffers,
+      !ownsSamples,
+      nodesPerStep,
+    );
     yield;
     signal?.throwIfAborted();
     if (epoch !== this.#epoch)
@@ -343,6 +383,7 @@ export class IncrementalDocumentSerializer {
     this.#orders.content = prepared.value.orders.content;
     this.#ranks = ranks;
     this.#page = canonicalPage(prepared.value.page);
+    this.#fontResources = fonts.value;
     this.#revision = delta.modelRevision;
     this.#aggregateFacts = facts.value.aggregate;
     this.#connectionTargets = facts.value.connectionTargets;
@@ -354,57 +395,15 @@ export class IncrementalDocumentSerializer {
   public serialize(
     hasher: DocumentHashPort = SHA256_DOCUMENT_HASHER,
   ): DocumentCodecResult<SerializedInkbookDocument> {
-    const prepared = prepareSerialization(
-      this.#page,
-      this.#revision,
-      this.#aggregateFacts.maximumBottom,
-      this.#backgroundCache,
-    );
-    if (!prepared.ok) return prepared;
-    const {
-      background,
-      lockedHeight,
-      output: outputBudget,
-      metadata: metadataBudget,
-      page,
-      revision,
-    } = prepared.value;
-    const assembly = assembleOrderedElementFragments({
+    return serializeDocumentFragments({
+      snapshot: this.currentSnapshot(),
+      maximumBottom: this.#aggregateFacts.maximumBottom,
+      backgroundCache: this.#backgroundCache,
       orders: this.#orders,
       element: (id) => this.#elements.get(id)!,
       fragment: (element) => this.#fragmentsFor(element),
-      outputBudget,
-      metadataBudget,
+      hasher,
     });
-    if (!assembly.ok) return assembly;
-    const metadata = document.snapshotMetadata(revision, page, assembly.value.metadata);
-    const metadataHash = canonicalMetadataFragmentsSha256(
-      canonicalMetadataPrefix(revision, page),
-      assembly.value.canonicalMetadata,
-    );
-    const svg = document.envelope(
-      revision,
-      lockedHeight,
-      { hash: metadataHash, text: metadata },
-      background,
-      assembly.value.highlights,
-      assembly.value.content,
-    );
-    const metadataBytes = metadataBudget.usedBytes;
-    const totalBytes = outputBudget.usedBytes;
-    const snapshot = document.snapshotValue(revision, page, assembly.value.elements);
-    return {
-      ok: true,
-      value: {
-        hash: hasher.hash(svg),
-        lockedHeight,
-        metadataBytes,
-        snapshot,
-        snapshotHash: metadataHash,
-        svg,
-        totalBytes,
-      },
-    };
   }
   public async serializeChunked(
     options: ChunkedOutputAssemblyOptions = {},
@@ -441,6 +440,7 @@ export class IncrementalDocumentSerializer {
     );
   }
   public clear(): void {
+    this.#fontResources = [];
     this.#epoch += 1;
     this.#cache.clear();
     this.#shapeCache.clear();

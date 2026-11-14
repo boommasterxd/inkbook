@@ -1,3 +1,4 @@
+import { textElementPayloadBytes } from "../../schema/text-payload-size";
 import type { InkElementV1 } from "../../schema/public";
 
 import type { ElementMutation, ImmutableInkElement } from "../types";
@@ -10,6 +11,7 @@ export function mutationStructurePayloadBytes(mutation: ElementMutation): number
 
 export function elementMutationPayloadBytes(element: InkElementV1 | ImmutableInkElement): number {
   const structuralBytes = 256 + element.id.length * 2;
+  if (element.kind === "text") return textElementPayloadBytes(element);
   if (element.kind === "stroke") return structuralBytes + element.points.length * 8;
   if (element.kind === "coordinate-system") return structuralBytes + element.axes.length * 16;
   if (element.kind === "table") {

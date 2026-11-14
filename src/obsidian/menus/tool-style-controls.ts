@@ -1,11 +1,6 @@
+import { createTextStyleControls } from "./text-style-controls";
 import { Localization, type Translator } from "../../domain/localization";
-import type {
-  ArrowNodeV1,
-  ColorV1,
-  OutlineStyleV1,
-  ShapeStyleV1,
-} from "../../domain/schema/public";
-import { BUILT_IN_COLORS } from "../../domain/settings/defaults";
+import type { ArrowNodeV1, OutlineStyleV1 } from "../../domain/schema/public";
 import {
   ARROW_NODES,
   OUTLINE_STYLES,
@@ -18,29 +13,18 @@ import { summarizeActiveToolStyle, type ActiveToolStyleSummary } from "../../edi
 import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import { createStructuralStyleControls } from "./structural-style-controls";
 
-const COLOR_KEYS = [
-  "theme-text",
-  "red",
-  "orange",
-  "yellow",
-  "green",
-  "cyan",
-  "blue",
-  "violet",
-  "pink",
-  "gray",
-] as const;
-
-export function colorStyleOptions(t: Translator): readonly StyleChoiceOption[] {
-  return BUILT_IN_COLORS.map((color, index) => ({
-    label: t(`editor.option.${COLOR_KEYS[index]!}`),
-    value: serializeStyleColor(color),
-  }));
-}
-
-export function fillColorStyleOptions(t: Translator): readonly StyleChoiceOption[] {
-  return [{ label: t("editor.option.none"), value: "none" }, ...colorStyleOptions(t)];
-}
+export {
+  colorStyleOptions,
+  fillColorStyleOptions,
+  serializeStyleColor,
+  serializeNullableStyleColor,
+} from "./style-color-options";
+import {
+  colorStyleOptions,
+  fillColorStyleOptions,
+  serializeStyleColor,
+  serializeNullableStyleColor,
+} from "./style-color-options";
 
 export const PEN_WIDTH_STYLE_OPTIONS: readonly StyleChoiceOption[] = PEN_WIDTHS.map(
   (width, index) => ({
@@ -68,7 +52,9 @@ export function createToolStyleControls(
   defaults: ToolDefaultsV1,
   tool: StartupToolV1,
   t: Translator = new Localization().t,
+  fontOptions?: readonly StyleChoiceOption[],
 ): readonly StyleControl[] {
+  if (tool === "text") return createTextStyleControls(defaults.text, t, fontOptions);
   return controlsForSummary(summarizeActiveToolStyle(defaults, tool), t);
 }
 
@@ -77,6 +63,7 @@ function controlsForSummary(
   t: Translator,
 ): readonly StyleControl[] {
   if (summary === null) return [];
+  if (summary.kind === "text") return createTextStyleControls(summary.values, t);
   if (summary.kind === "select") return selectControls(summary.values, t);
   if (summary.kind === "eraser") {
     return [
@@ -257,12 +244,4 @@ function numberControl(
   step: number,
 ): StyleControl {
   return { id, kind: "number", label, max, min, step, value };
-}
-
-export function serializeStyleColor(color: ColorV1): string {
-  return color.type === "theme-text" ? "theme-text" : color.value;
-}
-
-export function serializeNullableStyleColor(color: ShapeStyleV1["fillColor"]): string {
-  return color === null ? "none" : serializeStyleColor(color);
 }

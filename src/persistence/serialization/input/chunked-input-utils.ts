@@ -27,3 +27,21 @@ export function inputFailure<T>(
     validationError === undefined ? { code, message } : { code, message, validationError };
   return { error, ok: false };
 }
+/** Keep bounded string slices intact at UTF-16 surrogate boundaries. */
+export function metadataSliceEnd(input: string, offset: number, limit: number): number {
+  let end = Math.min(offset + limit, input.length);
+  const trailing = input.charCodeAt(end - 1);
+  if (end < input.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
+  return end;
+}
+
+export function staticInputFailure(
+  code: "invalid-svg" | "static-path-mismatch" | undefined,
+): DocumentCodecResult<never> {
+  return code === "invalid-svg"
+    ? inputFailure("invalid-svg", "Document does not satisfy the safe SVG envelope.")
+    : inputFailure(
+        "static-path-mismatch",
+        "Static SVG paths do not match the canonical snapshot rendering.",
+      );
+}

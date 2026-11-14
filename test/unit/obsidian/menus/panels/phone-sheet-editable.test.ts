@@ -202,6 +202,40 @@ describe("phone sheet keyboard viewport", () => {
   );
 });
 
+describe("phone sheet focused controls", () => {
+  it.each([false, true])(
+    "reveals focused pagination buttons only in an owned content scroller (owned %s)",
+    (owned) => {
+      const fixture = createPhoneSheetEditableFixture(true, "reduced", owned);
+      try {
+        if (fixture.frames.pendingCount > 0) fixture.frames.runNext(0);
+        fixture.scroll.scrollTop = 100;
+        fixture.scrollRead.mockClear();
+        const next = window.createEl("button", { text: "Next fonts" });
+        fixture.input.replaceWith(next);
+        const buttonRead = vi
+          .spyOn(next, "getBoundingClientRect")
+          .mockReturnValue(new DOMRect(0, 530, 44, 30));
+        const outer = next.closest<HTMLElement>(".inkbook-adaptive-panel-scroll")!;
+        next.focus({ preventScroll: true });
+        expect(fixture.frames.pendingCount).toBe(owned ? 1 : 0);
+        expect(fixture.scroll.scrollTop).toBe(100);
+        if (owned) fixture.frames.runNext(1);
+        expect(document.activeElement).toBe(next);
+        expect(fixture.scroll.scrollTop).toBe(owned ? 160 : 100);
+        expect(outer.scrollTop).toBe(owned ? 0 : 100);
+        expect(document.documentElement.scrollTop).toBe(0);
+        expect(buttonRead).toHaveBeenCalledTimes(owned ? 1 : 0);
+        expect(fixture.scrollRead).toHaveBeenCalledTimes(owned ? 1 : 0);
+        expect(fixture.frames.pendingCount).toBe(0);
+      } finally {
+        fixture.session.close("immediate");
+        fixture.restore();
+      }
+    },
+  );
+});
+
 describe("phone sheet editable visibility", () => {
   it.each(["textarea", "true", "plaintext-only"])("reveals editable %s", (kind) => {
     const fixture = createPhoneSheetEditableFixture();

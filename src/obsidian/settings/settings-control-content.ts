@@ -1,8 +1,13 @@
 import { createEnglishLocalization } from "../../domain/localization";
-import { setIcon } from "obsidian";
+import { setIcon, type Keymap } from "obsidian";
 
 import type { StyleControl } from "../menus/editor-menu-types";
+import type {
+  FontOptionPreviewPort,
+  FontChoiceDropdownOptions,
+} from "../menus/font-choice-dropdown";
 import { createStyleMenuContent } from "../menus/style-menu-content";
+import { formatStyleNumber } from "../menus/style-number-format";
 import {
   registerNativeControlFeedback,
   type NativeControlFeedbackOptions,
@@ -11,6 +16,10 @@ import { createSettingsValidationMotion } from "./settings-validation-motion";
 import { SettingsWriteFeedback } from "./settings-write-feedback";
 
 export interface SettingsControlContentOptions extends NativeControlFeedbackOptions {
+  readonly workScheduler?: FontChoiceDropdownOptions["workScheduler"] | undefined;
+  readonly keymap?: Pick<Keymap, "pushScope" | "popScope"> | undefined;
+  readonly fontPreviews?: FontOptionPreviewPort | undefined;
+  readonly fontManagementAction?: FontChoiceDropdownOptions["fontManagementAction"];
   readonly controls: () => readonly StyleControl[];
   readonly descriptions: Readonly<Record<string, string>>;
   readonly idPrefix: string;
@@ -26,13 +35,23 @@ export function renderSettingsControlContent(
   const validation = createSettingsValidationMotion(container, options);
   let currentErrors = new Map<string, HTMLElement>();
   let releaseFeedback: ReturnType<typeof registerNativeControlFeedback> | undefined;
+  const cleanups: (() => void)[] = [];
+  const restoreChoices = new Map<string, (value: string | null) => void>();
+  const restoreToggles = new Map<string, (checked: boolean, mixed: boolean) => void>();
 
   const render = (): Map<string, HTMLElement> => {
     const controls = options.controls();
     const fragment = createStyleMenuContent({
+      workScheduler: options.workScheduler,
       ...(options.t === undefined ? {} : { t: options.t }),
       controlDescriptions: options.descriptions,
       controls,
+      fontPreviews: options.fontPreviews,
+      fontManagementAction: options.fontManagementAction,
+      keymap: options.keymap,
+      registerCleanup: (cleanup) => cleanups.push(cleanup),
+      registerChoiceRestore: (id, restore) => restoreChoices.set(id, restore),
+      registerToggleRestore: (id, restore) => restoreToggles.set(id, restore),
       numberInputMode: "reject",
       onChange: (controlId, value) => {
         const error = currentErrors.get(controlId);
@@ -41,7 +60,7 @@ export function renderSettingsControlContent(
             if (error !== undefined) validation.set(error, message);
           },
           restore: () => {
-            restoreControlValues(container, options.controls());
+            restoreControlValues(container, options.controls(), restoreChoices, restoreToggles);
             releaseFeedback?.refresh();
           },
         });
@@ -72,6 +91,7 @@ export function renderSettingsControlContent(
     releaseFeedback?.();
     releaseFeedback = undefined;
     validation.dispose();
+    for (const cleanup of cleanups) cleanup();
   };
 }
 
@@ -102,14 +122,25 @@ function installControlAccessibility(
   return errors;
 }
 
-function restoreControlValues(container: HTMLElement, controls: readonly StyleControl[]): void {
+function restoreControlValues(
+  container: HTMLElement,
+  controls: readonly StyleControl[],
+  restoreChoices: ReadonlyMap<string, (value: string | null) => void>,
+  restoreToggles: ReadonlyMap<string, (checked: boolean, mixed: boolean) => void>,
+): void {
   for (const control of controls) {
     const section = container.querySelector<HTMLElement>(`[data-control="${control.id}"]`);
     if (section === null) continue;
     if (control.kind === "choice") {
+      if (restoreChoices.has(control.id)) {
+        restoreChoices.get(control.id)!(control.value);
+        continue;
+      }
       for (const button of section.querySelectorAll<HTMLButtonElement>("button[data-value]")) {
         button.setAttribute("aria-pressed", String(button.dataset.value === control.value));
       }
+    } else if (control.kind === "toggle" && restoreToggles.has(control.id)) {
+      restoreToggles.get(control.id)!(control.checked, control.mixed === true);
     } else {
       restoreInputs(section, control);
     }
@@ -124,7 +155,12 @@ function restoreInputs(
     if (control.kind === "toggle") input.checked = control.checked;
     else {
       const scale = control.id.includes("opacity") ? 100 : 1;
-      input.value = control.value === null ? "" : String(control.value * scale);
+      input.value =
+        control.value === null
+          ? ""
+          : input.type === "number"
+            ? formatStyleNumber(control.value * scale, control.id)
+            : String(control.value * scale);
       input.defaultValue = input.value;
     }
   }

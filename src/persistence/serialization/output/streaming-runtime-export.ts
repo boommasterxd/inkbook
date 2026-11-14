@@ -20,6 +20,7 @@ import {
 import { EncodedByteBudget, encodedByteLength } from "./encoded-byte-budget";
 import { elementRenderBand, type ElementFragments } from "./element-fragments";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "../types";
+import { snapshotTextResources } from "./text-fonts";
 
 interface PreparedRuntimeExport {
   readonly background: string;
@@ -41,6 +42,9 @@ export async function serializeRuntimeSnapshotToUtf8(
   resolveFragment: RuntimeElementFragmentResolver,
   backgroundCache = new BackgroundFragmentCache(),
 ): Promise<DocumentCodecResult<SerializedInkbookDocument<Uint8Array<ArrayBuffer>>>> {
+  // Keep current record identities for the fragment cache while pruning font resources.
+  const { fontResources: _resources, ...header } = snapshot;
+  snapshot = { ...header, ...snapshotTextResources(snapshot) };
   const prepared = await prepareRuntimeExport(snapshot, options, resolveFragment, backgroundCache);
   if (!prepared.ok) return prepared;
   const value = prepared.value;
@@ -69,8 +73,8 @@ async function prepareRuntimeExport(
   resolveFragment: RuntimeElementFragmentResolver,
   backgroundCache: BackgroundFragmentCache,
 ): Promise<DocumentCodecResult<PreparedRuntimeExport>> {
-  const metadataPrefix = snapshotMetadataPrefix(snapshot.revision, snapshot.page);
-  const canonicalPrefix = canonicalMetadataPrefix(snapshot.revision, snapshot.page);
+  const metadataPrefix = snapshotMetadataPrefix(snapshot.revision, snapshot.page, snapshot);
+  const canonicalPrefix = canonicalMetadataPrefix(snapshot.revision, snapshot.page, snapshot);
   const metadataPrefixBytes = encodedByteLength(metadataPrefix);
   let canonicalMetadataBytes = encodedByteLength(canonicalPrefix) + 2;
   const metadataBudget = new EncodedByteBudget(
@@ -124,8 +128,13 @@ async function prepareRuntimeExport(
     options,
   );
   const remainingStaticBytes =
-    documentStaticByteLength(snapshot.revision, lockedHeight, metadataPrefix, background) -
-    metadataPrefixBytes;
+    documentStaticByteLength(
+      snapshot.revision,
+      lockedHeight,
+      metadataPrefix,
+      background,
+      snapshot,
+    ) - metadataPrefixBytes;
   if (!outputBudget.tryReserve(remainingStaticBytes)) {
     return limitFailure();
   }
@@ -157,6 +166,7 @@ function runtimeDocumentFragments(
     prepared.metadataPrefix,
     prepared.metadataHash,
     {
+      snapshot,
       content: fragmentMarkup(prepared.fragments, "content"),
       highlight: fragmentMarkup(prepared.fragments, "highlight"),
       metadata: fragmentMetadata(prepared.fragments),

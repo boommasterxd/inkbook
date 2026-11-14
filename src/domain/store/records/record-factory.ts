@@ -22,9 +22,11 @@ import {
   immutableElementSteps,
   immutableReplacementSteps,
   takeImmutableElementOwnership,
+  takeImmutableElementOwnershipSteps,
 } from "./immutability";
 import type { ElementRecord } from "../types";
 import { preparedInsertionBounds } from "../mutations/prepared-insertion-element";
+import { textRecordGeometrySteps } from "./text-record-geometry";
 
 export function createInitialRecord(element: InkElementV1): ElementRecord {
   return drainRecordSteps(createInitialRecordSteps(element));
@@ -43,7 +45,7 @@ export function* createOwnedInitialRecordSteps(
   pointsPerStep = 256,
 ): Generator<void, ElementRecord> {
   return yield* initialRecordSteps(
-    takeImmutableElementOwnership(element),
+    yield* takeImmutableElementOwnershipSteps(element),
     preparedInsertionBounds(element),
     pointsPerStep,
   );
@@ -53,6 +55,13 @@ export function createOwnedValidatedInitialRecord(
   element: InkElementV1,
   derivation: ElementValidationDerivation,
 ): ElementRecord {
+  return drainRecordSteps(createOwnedValidatedInitialRecordSteps(element, derivation));
+}
+
+export function* createOwnedValidatedInitialRecordSteps(
+  element: InkElementV1,
+  derivation: ElementValidationDerivation,
+): Generator<void, ElementRecord> {
   const bounds = validatedElementDerivationBounds(element, derivation);
   if (element.kind === "stroke") {
     if (derivation.strokeSampleExtrema !== undefined) {
@@ -63,8 +72,9 @@ export function createOwnedValidatedInitialRecord(
       if (!validation.ok) throw new TypeError("Invalid stroke samples in runtime derivation.");
     }
   }
-  return drainRecordSteps(
-    initialRecordSteps(takeImmutableElementOwnership(element), Object.freeze({ ...bounds })),
+  return yield* initialRecordSteps(
+    yield* takeImmutableElementOwnershipSteps(element),
+    Object.freeze({ ...bounds }),
   );
 }
 
@@ -79,7 +89,14 @@ function* initialRecordSteps(
     Object.freeze(
       yield* calculateElementBoundsSteps(immutable as unknown as InkElementV1, pointsPerStep),
     );
-  return Object.freeze({ bounds, element: immutable, geometryVersion: 0, paintVersion: 0 });
+  const textGeometry = yield* textRecordGeometrySteps(immutable);
+  return Object.freeze({
+    bounds,
+    element: immutable,
+    geometryVersion: 0,
+    paintVersion: 0,
+    ...textGeometry,
+  });
 }
 
 export function createReplacementRecord(
@@ -118,7 +135,7 @@ export function* createOwnedReplacementRecordSteps(
   pointsPerStep = 256,
 ): Generator<void, ElementRecord> {
   return yield* replacementRecordSteps(
-    takeImmutableElementOwnership(element),
+    yield* takeImmutableElementOwnershipSteps(element),
     current,
     geometryVersion,
     paintVersion,
@@ -177,7 +194,14 @@ function* replacementRecordSteps(
       : Object.freeze(
           yield* calculateElementBoundsSteps(immutable as unknown as InkElementV1, pointsPerStep),
         ));
-  return Object.freeze({ bounds, element: immutable, geometryVersion, paintVersion });
+  const textGeometry = yield* textRecordGeometrySteps(immutable, current);
+  return Object.freeze({
+    bounds,
+    element: immutable,
+    geometryVersion,
+    paintVersion,
+    ...textGeometry,
+  });
 }
 
 function drainRecordSteps(steps: Generator<void, ElementRecord>): ElementRecord {

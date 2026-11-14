@@ -1,3 +1,11 @@
+import {
+  summarizeTextStyle,
+  effectiveTextStyles,
+  commonTextValue,
+  type TextSelectionStyleSummary,
+  type TextBackgroundValue,
+} from "./text-style-summary";
+export type { TextSelectionStyleSummary } from "./text-style-summary";
 import type {
   ArrowNodeV1,
   ColorV1,
@@ -39,15 +47,21 @@ export interface OutlineSelectionStyleSummary {
 }
 
 export type SelectionStyleSummary =
+  | TextSelectionStyleSummary
   | StrokeSelectionStyleSummary
   | OutlineSelectionStyleSummary
   | (Pick<StrokeSelectionStyleSummary, "color" | "opacity"> & {
       readonly kind: "common";
-      readonly width: MixedValue<OutlineStyleV1["outlineWidth"]>;
+      readonly width: MixedValue<OutlineStyleV1["outlineWidth"]> | null;
+      readonly fill?: {
+        readonly color: MixedValue<ShapeStyleV1["fillColor"]>;
+        readonly opacity: MixedValue<number>;
+      } | null;
     })
   | null;
 
 export type ActiveToolStyleSummary =
+  | { readonly kind: "text"; readonly values: ToolDefaultsV1["text"] }
   | { readonly kind: "select"; readonly values: ToolDefaultsV1["select"] }
   | { readonly kind: "eraser"; readonly radius: number }
   | {
@@ -73,6 +87,7 @@ export type ActiveToolStyleSummary =
 
 export function summarizeSelectionStyle(elements: readonly InkElementV1[]): SelectionStyleSummary {
   if (elements.length === 0) return null;
+  if (elements.every((element) => element.kind === "text")) return summarizeTextStyle(elements);
   if (elements.every(isStrokeStyled)) return summarizeStrokeSelection(elements);
   if (!elements.every(isOutlineStyled)) return summarizeCommonSelection(elements);
 
@@ -113,6 +128,7 @@ export function summarizeActiveToolStyle(
   toolValues: ToolDefaultsV1,
   tool: StartupToolV1,
 ): ActiveToolStyleSummary {
+  if (tool === "text") return { kind: "text", values: structuredClone(toolValues.text) };
   if (tool === "select") return { kind: "select", values: structuredClone(toolValues.select) };
   if (tool === "eraser") return { kind: "eraser", radius: toolValues.eraser.radius };
   if (tool === "draw") {
@@ -153,16 +169,39 @@ export function summarizeActiveToolStyle(
 }
 
 function summarizeCommonSelection(elements: readonly InkElementV1[]): SelectionStyleSummary {
-  const styles = elements.map((element) =>
-    isStrokeStyled(element)
-      ? element.style
-      : {
-          color: element.style.outlineColor,
-          width: element.style.outlineWidth,
-          opacity: element.style.outlineOpacity,
-        },
+  const backgrounds: TextBackgroundValue[] = [];
+  const styles = elements.flatMap<{ readonly color: ColorV1; readonly opacity: number }>(
+    (element) => {
+      if (element.kind === "text") return effectiveTextStyles(element, backgrounds);
+      if (isStrokeStyled(element)) return [element.style];
+      if (isClosedShape(element))
+        backgrounds.push({ color: element.style.fillColor, opacity: element.style.fillOpacity });
+      return [{ color: element.style.outlineColor, opacity: element.style.outlineOpacity }];
+    },
   );
-  return { kind: "common", ...summarizePaint(styles) };
+  const hasText = elements.some((element) => element.kind === "text");
+  const fill =
+    hasText && elements.every((element) => element.kind === "text" || isClosedShape(element))
+      ? {
+          color: commonTextValue(backgrounds.map(({ color }) => color)),
+          opacity: commonTextValue(backgrounds.map(({ opacity }) => opacity)),
+        }
+      : null;
+  return {
+    kind: "common",
+    color: commonTextValue(styles.map(({ color }) => color)),
+    opacity: common(styles.map(({ opacity }) => opacity)),
+    width: hasText
+      ? null
+      : common(
+          elements.map((element) =>
+            isStrokeStyled(element)
+              ? element.style.width
+              : (element.style as OutlineStyleV1).outlineWidth,
+          ),
+        ),
+    ...(hasText ? { fill } : {}),
+  };
 }
 
 function summarizeStrokeSelection(
@@ -218,7 +257,7 @@ function isStrokeStyled(
 function isOutlineStyled(
   element: InkElementV1,
 ): element is InkElementV1 & { readonly style: OutlineStyleV1 } {
-  return !isStrokeStyled(element);
+  return !isStrokeStyled(element) && element.kind !== "text";
 }
 
 function isClosedShape(

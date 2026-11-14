@@ -276,6 +276,9 @@ export async function loadVaultDocument(
       page: result.snapshot.page,
       revision: result.snapshot.revision,
       version: result.snapshot.version,
+      ...(result.snapshot.fontResources === undefined
+        ? {}
+        : { fontResources: [...result.snapshot.fontResources] }),
     };
     await verifyVaultUnlockIntegrity({
       snapshot,

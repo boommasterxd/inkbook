@@ -22,12 +22,21 @@ export function isTool(action: ToolbarAction): action is ToolId {
     action === "draw" ||
     action === "highlighter" ||
     action === "straight-highlighter" ||
+    action === "text" ||
     action === "shape"
   );
 }
 
-export function isClipboardAction(action: string): action is "copy" | "cut" | "paste" {
-  return action === "copy" || action === "cut" || action === "paste";
+export function isClipboardAction(
+  action: string,
+): action is "copy" | "copy-text" | "copy-element" | "cut" | "paste" {
+  return (
+    action === "copy" ||
+    action === "copy-text" ||
+    action === "copy-element" ||
+    action === "cut" ||
+    action === "paste"
+  );
 }
 
 export function isShapeTool(tool: EditorTool): tool is ShapeId {
@@ -99,6 +108,11 @@ export function backgroundState(page: PageV1): {
 }
 
 export type BackgroundSpacingDefaults = InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
+
+export type DrawingPreferences = Pick<
+  InkbookSettingsV4,
+  "snapping" | "holdToShape" | "copyTextFieldsAsText"
+>;
 
 function backgroundForType(
   type: BackgroundType,

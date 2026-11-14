@@ -1,4 +1,5 @@
 import type { InputPoint } from "../../../../editor/input/index";
+import type { Bounds } from "../../../../domain/geometry/public";
 import type { ZoomAnchor } from "../../../../editor/zoom/index";
 import { clampScrollTop, type ScrollBounds } from "../../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../../scrolling/index";
@@ -106,6 +107,34 @@ export function readOwnerScrollBounds(scrollOwner: BrowserScrollElement): Scroll
         browserScrollMetrics.getClientHeight(scrollOwner),
     ),
   };
+}
+
+/** Reveal only the caret rectangle in the native owner viewport that remains above an inspector. */
+export function planBoundsReveal(
+  layout: NavigationLayoutRead,
+  bounds: Bounds,
+  camera: { readonly x: number; readonly zoom: number },
+  viewportBottom?: number,
+) {
+  const viewport = layout.ownerViewport;
+  const box = layout.containerBounds;
+  const left = Math.max(box.left, viewport.left) + 16;
+  const right = Math.min(box.right, viewport.right) - 16;
+  const top = viewport.top + 16;
+  const bottom = Math.max(top, Math.min(viewport.bottom, viewportBottom ?? viewport.bottom) - 16);
+  const x = box.left + (bounds.minX + camera.x) * camera.zoom;
+  const y = box.top + bounds.minY * camera.zoom;
+  const width = Math.min((bounds.maxX - bounds.minX) * camera.zoom, Math.max(0, right - left));
+  const height = Math.min((bounds.maxY - bounds.minY) * camera.zoom, Math.max(0, bottom - top));
+  const rawX = x < left ? left - x : Math.min(0, right - x - width);
+  const rawY = y < top ? top - y : Math.min(0, bottom - y - height);
+  const panX = Math.abs(rawX) < 0.001 ? 0 : rawX;
+  const panY = Math.abs(rawY) < 0.001 ? 0 : rawY;
+  const deficit =
+    viewportBottom === undefined || panY >= 0
+      ? 0
+      : Math.max(0, layout.scrollTop - panY - readOwnerScrollBounds(layout.scrollOwner).max);
+  return { panX, panY, deficit };
 }
 
 export function navigationResizeAnchor(layout: NavigationLayoutRead) {

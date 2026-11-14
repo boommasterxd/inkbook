@@ -1,5 +1,6 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
+import type { TextPaintGeometry } from "../../../domain/geometry/text-paint-geometry";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { InputPoint, PointerSample } from "../../../editor/input/index";
 import {
@@ -102,7 +103,10 @@ export function selectionTargetAt(
     selectionContext !== undefined && "geometry" in selectionContext
       ? selectionContext.geometry()
       : selectedGeometry(store, selection);
-  if (selectionOverlayContainsPoint(selected, point, selectionFrames?.current(selected) ?? null)) {
+  if (
+    (selected.length !== 1 || selected[0]?.element.kind !== "text") &&
+    selectionOverlayContainsPoint(selected, point, selectionFrames?.current(selected) ?? null)
+  ) {
     return { elementId: selected[0]!.element.id, isSelected: true };
   }
   const elementId = store.hit(point, pointerType, zoom);
@@ -129,11 +133,15 @@ export function selectedTargetAt(
   context: {
     readonly tolerance: number;
     readonly preparePressure?: (id: string) => PreparedPressureGeometryPort | undefined;
+    readonly prepareTextGeometry?: (id: string) => TextPaintGeometry | undefined;
   },
 ): { readonly elementId: string; readonly isSelected: true } | undefined {
   const first = selected[0];
   if (first === undefined) return undefined;
-  if (selectionOverlayContainsPoint(selected, point, frame)) {
+  if (
+    (selected.length !== 1 || first.element.kind !== "text") &&
+    selectionOverlayContainsPoint(selected, point, frame)
+  ) {
     return { elementId: first.element.id, isSelected: true };
   }
   const bounds = first.bounds;
@@ -151,6 +159,7 @@ export function selectedTargetAt(
       first.element.kind === "stroke" && first.element.style.pressureEnabled
         ? context.preparePressure?.(first.element.id)
         : undefined,
+      first.element.kind === "text" ? context.prepareTextGeometry?.(first.element.id) : undefined,
     )
   ) {
     return { elementId: first.element.id, isSelected: true };

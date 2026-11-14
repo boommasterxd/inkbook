@@ -3,6 +3,7 @@ import { StreamingSafeStaticValidator } from "../../../../../src/persistence/ser
 import {
   createMaximumComplexityPath,
   MAXIMUM_PATH_BYTES,
+  validateStaticSvgChunks,
 } from "../../../../fixtures/persistence/safe-svg";
 
 const PREFIX =
@@ -11,12 +12,7 @@ const PATH = '<path d="M 0 0 L 1 1" fill="none"/>';
 const SUFFIX = "</g></svg>";
 
 async function validate(content: string, chunk = 23) {
-  const validator = new StreamingSafeStaticValidator(async () => undefined);
-  const input = PREFIX + content + SUFFIX;
-  for (let start = 0; start < input.length; start += chunk) {
-    if (!(await validator.write(input.slice(start, start + chunk)))) return false;
-  }
-  return validator.finish();
+  return validateStaticSvgChunks(PREFIX + content + SUFFIX, chunk);
 }
 
 describe("streaming safe static presentation", () => {

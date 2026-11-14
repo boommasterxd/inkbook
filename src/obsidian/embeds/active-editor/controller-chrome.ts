@@ -21,6 +21,19 @@ import type { ActiveEditorAvailability } from "./controller-availability";
 import type { ActiveEditorHistory } from "./history";
 import type { ActiveEditorTouchMode } from "./input/controller-touch-mode";
 
+/** Keeps the retained menu controls and canvas cursor in the same coarse UI snapshot. */
+export function refreshActiveEditorChrome(
+  [cursor, menus]: readonly [
+    { refresh(): void } | undefined,
+    Pick<ActiveEditorMenuController, "refreshStyle"> | undefined,
+  ],
+  changed: () => void,
+): void {
+  cursor?.refresh();
+  menus?.refreshStyle();
+  changed();
+}
+
 type ActiveEditorChromeDependencies = readonly [
   actions: ActiveEditorActions,
   background: ActiveEditorBackgroundSession,
@@ -84,6 +97,8 @@ export function createActiveEditorChrome(
     },
     onShapeChange: (shape) => configureTool(chromeState.selectShape(shape)),
     onStyleChange: (id, value) => styles.apply(activeTool(), id, value),
+    onStylePreview: (id, value) => styles.preview(activeTool(), id, value),
+    onStylePreviewCancel: () => styles.cancelPreview(),
   };
   configureActiveEditorToolbarMenus(
     [menus, actions, chromeState, styles, model],

@@ -11,7 +11,12 @@ describe("collapsed geometry persistence", () => {
     "paints point geometry with %s outlines as round dots",
     (outlineStyle) => {
       for (const element of collapsedElements(0)) {
-        if (element.kind === "stroke" || element.kind === "straight-highlighter") continue;
+        if (
+          element.kind === "stroke" ||
+          element.kind === "straight-highlighter" ||
+          element.kind === "text"
+        )
+          continue;
         element.style.outlineStyle = outlineStyle;
         const paths = serializeElementPaths(element);
         expect(paths, element.kind).toHaveLength(1);

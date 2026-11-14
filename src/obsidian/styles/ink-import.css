@@ -243,19 +243,6 @@
   background: var(--modal-background);
 }
 
-.inkbook-import-container[data-platform="phone"] .inkbook-adaptive-panel-scroll {
-  display: flex;
-  flex-direction: column;
-  max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100dvh) - 48px);
-  overflow: hidden;
-}
-
-.inkbook-import-container[data-platform="phone"] .inkbook-adaptive-panel-content {
-  display: flex;
-  flex-direction: column;
-  min-block-size: 0;
-}
-
 .inkbook-import-container[data-platform="phone"] .inkbook-import-content {
   min-block-size: 0;
 }

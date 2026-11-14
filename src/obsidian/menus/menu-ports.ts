@@ -25,6 +25,7 @@ export interface MenuItemPort {
   setWarning(isWarning: boolean): MenuItemPort;
   setIsLabel(isLabel: boolean): MenuItemPort;
   setKeepOpen?(keepOpen: boolean): MenuItemPort;
+  onHighlight?(callback: (active: boolean) => void): MenuItemPort;
   onClick(callback: (event: unknown) => void): MenuItemPort;
 }
 

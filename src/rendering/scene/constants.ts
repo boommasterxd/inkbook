@@ -1,6 +1,7 @@
 import type { SceneCamera } from "./types";
 
 export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+export const MAX_MOTION_PATHS = 256;
 export const VIEWPORT_OVERSCAN_SCREEN_PX = 80;
 export const VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX = 40;
 export const PATH_CACHE_MAX_ENTRIES = 12_288;

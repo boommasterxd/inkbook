@@ -50,6 +50,7 @@ const TOOL_BUTTONS: readonly ToolbarButtonDefinition[] = [
     icon: DRAWING_TOOL_ICON_IDS["straight-highlighter"],
     label: "editor.action.straight-highlighter",
   },
+  { action: "text", icon: "type", label: "editor.action.text" },
   { action: "shape", icon: SHAPE_ICON_IDS.line, label: "editor.action.shape" },
   { action: "shape-picker", icon: "shapes", label: "editor.action.shape-picker" },
   { action: "style", icon: "palette", label: "editor.action.style" },
@@ -126,6 +127,7 @@ function isToolId(action: ToolbarAction): action is ToolId {
     action === "select" ||
     action === "eraser" ||
     action === "draw" ||
+    action === "text" ||
     action === "highlighter" ||
     action === "straight-highlighter" ||
     action === "shape"

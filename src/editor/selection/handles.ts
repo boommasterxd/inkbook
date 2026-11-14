@@ -86,8 +86,10 @@ export function layoutSelectionHandles(
   if (selected.length === 0) return [];
   if (selected.length > 1) return multiSelectionHandles(selected, options);
   const item = selected[0]!;
-  if (item.element.kind === "stroke" && options.frame != null)
-    return orientedBoxHandles(options.frame, options.zoom, options.rotateOffsetPixels);
+  if ((item.element.kind === "stroke" || item.element.kind === "text") && options.frame != null) {
+    const handles = orientedBoxHandles(options.frame, options.zoom, options.rotateOffsetPixels);
+    return item.element.kind === "text" ? handles.filter(visibleTextHandle) : handles;
+  }
   return singleElementHandles(item.element, options);
 }
 
@@ -196,10 +198,12 @@ function singleElementHandles(
     return linearHandles(element);
   }
   const bounds = selectionCenterlineBounds({ ...element, rotation: 0 });
-  const points = boxHandles(bounds).map((handle) => ({
-    ...handle,
-    point: rotatePointClockwise(handle.point, element.pivot, element.rotation),
-  }));
+  const points = boxHandles(bounds)
+    .filter((handle) => element.kind !== "text" || visibleTextHandle(handle))
+    .map((handle) => ({
+      ...handle,
+      point: rotatePointClockwise(handle.point, element.pivot, element.rotation),
+    }));
   const handles: SelectionHandle[] = [
     ...points,
     rotateHandle(bounds, options.zoom, options.rotateOffsetPixels, element),
@@ -235,6 +239,13 @@ function singleElementHandles(
     });
   }
   return handles;
+}
+
+function visibleTextHandle(handle: SelectionHandle): boolean {
+  return (
+    handle.kind !== "scale" ||
+    (handle.position !== "top-center" && handle.position !== "bottom-center")
+  );
 }
 
 function linearHandles(

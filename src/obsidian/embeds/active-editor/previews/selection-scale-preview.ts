@@ -9,9 +9,11 @@ export interface SelectionScalePreview {
 }
 
 const EMPTY_PREVIEW: SelectionScalePreview = { elements: [] };
+const NO_TRANSFORM_IDS: readonly string[] = [];
 
 export class SelectionScalePreviewPlan {
   readonly #elements: ReadonlyMap<string, InkElementV1>;
+  readonly #textIds: readonly string[] | undefined;
 
   public constructor(selected: readonly SelectedElementGeometry[]) {
     const elements = new Map<string, InkElementV1>();
@@ -19,6 +21,27 @@ export class SelectionScalePreviewPlan {
       elements.set(element.id, element);
     }
     this.#elements = elements;
+    this.#textIds =
+      selected.length === 1 && selected[0]!.element.kind === "text"
+        ? [selected[0]!.element.id]
+        : undefined;
+  }
+
+  /** Pending native layout scales the retained group without rebuilding its editor. */
+  public retainedTextIds(preview: SelectionHandlePreview): readonly string[] | undefined {
+    return preview.transform?.kind === "scale" &&
+      (preview.textScaleBasis !== undefined || preview.exactElements.length === 0)
+      ? this.#textIds
+      : undefined;
+  }
+
+  public transformIds(
+    preview: SelectionHandlePreview,
+    fallback: readonly string[],
+  ): readonly string[] {
+    return preview.transform?.kind === "scale"
+      ? (this.retainedTextIds(preview) ?? NO_TRANSFORM_IDS)
+      : fallback;
   }
 
   public resolve(preview: SelectionHandlePreview): SelectionScalePreview {

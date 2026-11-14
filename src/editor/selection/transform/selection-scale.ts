@@ -1,4 +1,5 @@
 import { selectionCenterlineBounds } from "../centerline-bounds";
+import { scaledTextContentSteps } from "../../../domain/geometry/text-scale";
 import {
   canonicalPoint,
   defaultTableHeaderHeight,
@@ -42,6 +43,7 @@ export class SelectionScaleGesture {
   readonly #initialFactors: ScaleFactors;
   readonly #singleSource: InkElementV1 | null;
   readonly #startPointer: PointV1;
+  readonly #minimumTextScale: number;
   #previewDelta: PointV1 = { x: 0, y: 0 };
   #previewFrame: OrientedSelectionFrame | null = null;
 
@@ -53,6 +55,7 @@ export class SelectionScaleGesture {
   ) {
     this.#action = action;
     this.#elements = elements;
+    this.#minimumTextScale = minimumTextScale(elements);
     const recovered = elements.length === 1 ? recoverCollapsedScaleSource(elements[0]!) : null;
     this.#singleSource =
       recovered !== null && recovered.element !== elements[0] ? recovered.element : null;
@@ -79,18 +82,25 @@ export class SelectionScaleGesture {
     const start = rotatePointClockwise(this.#startPointer, anchor, -this.#action.rotation);
     const current = rotatePointClockwise(pointer, anchor, -this.#action.rotation);
     const axes = activeScaleAxes(this.#action.position);
+    const text = this.#minimumTextScale > 0;
+    uniform = text && this.#elements.length === 1 ? axes.x && axes.y : uniform || text;
     const span = { x: start.x - anchor.x, y: start.y - anchor.y };
     if (Math.abs(span.x) < 1e-9 && this.#initialFactors.x === 0)
       span.x = this.#action.position.includes("left") ? -1 : 1;
     if (Math.abs(span.y) < 1e-9 && this.#initialFactors.y === 0)
       span.y = this.#action.position.startsWith("top") ? -1 : 1;
-    return this.#previewFramePlan.factorsForPointer(
+    const factors = this.#previewFramePlan.factorsForPointer(
       { x: axes.x ? span.x : 0, y: axes.y ? span.y : 0 },
       { x: axes.x ? current.x - start.x : 0, y: axes.y ? current.y - start.y : 0 },
       { x: 0, y: 0 },
       uniform,
       this.#initialFactors,
     );
+    if (text && uniform) {
+      const value = Math.max(factors.x, this.#minimumTextScale);
+      return { x: value, y: value };
+    }
+    return factors;
   }
 
   public materialize(pointer: PointV1, uniform: boolean): InkElementV1[] {
@@ -111,6 +121,39 @@ export class SelectionScaleGesture {
     return this.#elements.length === 1 || factors === undefined
       ? this.#scaleSingle(element, factors ?? this.factorsAt(pointer, uniform))
       : this.#scaleInFrame(element, factors);
+  }
+
+  public async materializeOneTimeSliced(
+    element: InkElementV1,
+    pointer: PointV1,
+    uniform: boolean,
+    factors: ScaleFactors | undefined,
+    scheduler: TransformSliceScheduler,
+    layoutMode: "scale" | "reflow" = "scale",
+  ): Promise<InkElementV1 | null> {
+    if (element.kind !== "text") return this.materializeOne(element, pointer, uniform, factors);
+    const shell = { ...element, ranges: [], layout: { version: 1 as const, lines: [] } };
+    const geometry = this.materializeOne(shell, pointer, uniform, factors);
+    if (geometry.kind !== "text") throw new Error("Text scaling must preserve the element kind.");
+    const factor = geometry.style.fontSize / element.style.fontSize;
+    if (factor === 1 && geometry.width === element.width && layoutMode === "scale")
+      return { ...geometry, ranges: element.ranges, layout: element.layout };
+    const content = scaledTextContentSteps(element, factor, layoutMode, geometry.width);
+    for (;;) {
+      if (scheduler.isCancelled?.()) return null;
+      if (scheduler.shouldYield()) {
+        await scheduler.yieldControl();
+        if (scheduler.isCancelled?.()) return null;
+      }
+      const step = content.next();
+      if (step.done)
+        return {
+          ...geometry,
+          style: step.value.style,
+          ranges: step.value.ranges,
+          layout: step.value.layout,
+        };
+    }
   }
 
   public previewFactors(
@@ -206,6 +249,18 @@ export class SelectionScaleGesture {
       ? { ...scaled, headerHeight: defaultTableHeaderHeight(scaled.height) }
       : scaled;
   }
+}
+
+function minimumTextScale(elements: readonly InkElementV1[]): number {
+  let minimum = Infinity;
+  for (const element of elements) {
+    if (element.kind !== "text") continue;
+    minimum = Math.min(minimum, element.style.fontSize);
+    for (const range of element.ranges) {
+      if (range.style.fontSize !== undefined) minimum = Math.min(minimum, range.style.fontSize);
+    }
+  }
+  return minimum === Infinity ? 0 : 0.001 / minimum;
 }
 
 function scaleElementInArbitraryFrame(

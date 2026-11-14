@@ -27,6 +27,7 @@ function estimateRecordBytes(record: ElementRecord): number {
   return (
     ELEMENT_RUNTIME_OVERHEAD_BYTES +
     elementMutationPayloadBytes(record.element) +
+    (record.textPaintGeometry?.memoryUsage() ?? 0) +
     spatialMemberships(record) * SPATIAL_MEMBERSHIP_BYTES +
     connectionReferences(record.element).length * CONNECTION_REFERENCE_BYTES
   );

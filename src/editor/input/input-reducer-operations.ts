@@ -24,6 +24,7 @@ export function interactionBase(
     pointerType: action.pointerType,
     penRole: penRole(action),
     controlOrMeta: action.controlOrMeta,
+    alt: action.alt === true,
     start: point(action),
     ...(validTimestamp(action.timestamp) ? { startedAt: action.timestamp } : {}),
     current: point(action),

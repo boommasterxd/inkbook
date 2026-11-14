@@ -7,6 +7,7 @@ import type {
   TableElementV1,
   InkElementV1,
   LinearElementV1,
+  TextElementV2,
 } from "../schema/types";
 import { shapeVertices, tableWidth } from "./creation";
 import { canonicalPoint, midpoint, rotatePointClockwise } from "./primitives";
@@ -14,7 +15,7 @@ import { canonicalPoint, midpoint, rotatePointClockwise } from "./primitives";
 type AnchorTransform = Pick<BoxShapeElementV1, "pivot" | "rotation">;
 
 type BoxAnchorTarget = AnchorTransform &
-  Pick<BoxShapeElementV1, "height" | "kind" | "width" | "x" | "y">;
+  Pick<BoxShapeElementV1 | TextElementV2, "height" | "kind" | "width" | "x" | "y">;
 
 type CoordinateAnchorTarget = AnchorTransform &
   Pick<CoordinateSystemElementV1, "kind" | "origin"> & {
@@ -55,7 +56,8 @@ export function isAnchorTarget<Element extends Pick<InkElementV1, "kind">>(
     element.kind === "coordinate-system" ||
     element.kind === "line" ||
     element.kind === "arrow" ||
-    element.kind === "table"
+    element.kind === "table" ||
+    element.kind === "text"
   );
 }
 
@@ -103,7 +105,7 @@ export function visitLocalAnchorPoints(
   if (target.kind === "line" || target.kind === "arrow") {
     return visit(target.start, "linear-endpoint", 0) || visit(target.end, "linear-endpoint", 1);
   }
-  if (target.kind === "rectangle" || target.kind === "table") {
+  if (target.kind === "rectangle" || target.kind === "table" || target.kind === "text") {
     const points = boxAnchorPoints(target);
     return BOX_POSITIONS.some((position, index) => visit(points[position], "box", index));
   }
@@ -152,7 +154,8 @@ function resolveUnrotatedAnchor(target: AnchorTargetView, anchor: ShapeAnchorV1)
     return target.kind === "coordinate-system" ? (target.axes[anchor.index] ?? null) : null;
   }
   if (anchor.kind === "box") {
-    if (target.kind !== "rectangle" && target.kind !== "table") return null;
+    if (target.kind !== "rectangle" && target.kind !== "table" && target.kind !== "text")
+      return null;
     return resolveBoxAnchor(target, anchor.position);
   }
   if (anchor.kind === "ellipse-cardinal") {

@@ -23,6 +23,17 @@ export type {
   StrokeSamplesV1,
   StrokeStyleV1,
   TableElementV1,
+  TextElementV2,
+  TextStyleV2,
+  TextRangeStyleV2,
+  TextStyleRangeV2,
+  TextParagraphStyleV2,
+  TextLayoutV2,
+  TextLayoutLineV2,
+  TextLayoutRunV2,
+  TextMathLayoutV2,
+  TextTableLayoutV2,
+  FontResourceV2,
 } from "./types";
 export {
   canonicalizeGeometryNumber,
@@ -44,6 +55,7 @@ export {
   PORTABLE_PALETTE_V1,
 } from "./constants";
 export { validateInkElementV1 } from "./element-validation";
+export { MAX_TEXT_SOURCE_LENGTH, MAX_TEXT_STYLE_RANGES } from "./text-validation-primitives";
 export { validatedElementDerivationBounds } from "./derivation-validation";
 export { validateInkPageV1, validateInkSnapshotV1 } from "./snapshot-validation";
 export type {

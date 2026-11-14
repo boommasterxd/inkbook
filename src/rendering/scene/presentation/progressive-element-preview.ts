@@ -439,6 +439,11 @@ export class ProgressiveElementPreview {
   #apply(completed: CompletedPath): void {
     const id = completed.element.id;
     if (!this.#content.applyCanonicalElementPreview(completed.element, completed.parts)) return;
+    if (
+      completed.element.kind === "text" &&
+      this.#content.mountedText(id)?.element !== completed.element
+    )
+      return;
     this.#content.setSelectionFeedbackBasis?.(id, completed.feedback);
     this.#setFeedback(this.#renderedFeedback, id, completed.feedback);
     this.#applyFeedback(id);

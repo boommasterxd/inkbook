@@ -22,9 +22,11 @@ import type {
   SelectedElementGeometry,
 } from "../../../../editor/selection/public";
 import { activeSnapFeatures } from "./snapping-settings";
+import { TextCreationPreview, type TextCreationBox } from "./text-creation-preview";
 import type { WorkScheduler } from "../../../../domain/scheduling/work-scheduler";
 
 export interface ActiveEditorPreviewOptions {
+  readonly createText?: (box: TextCreationBox) => void;
   readonly defaults: ToolDefaultsV1;
   readonly holdToShape?: HoldToShapeSettingsV1;
   readonly screenStart?: PointV1;
@@ -55,6 +57,15 @@ export function createActiveEditorPreview(
   start: GesturePreviewStart,
   options: ActiveEditorPreviewOptions,
 ) {
+  if (start.tool === "text" && start.kind === "tool-gesture") {
+    if (options.createText === undefined) throw new Error("Text creation is unavailable.");
+    return new TextCreationPreview({
+      start,
+      defaults: options.defaults.text,
+      renderer: options.renderer,
+      create: options.createText,
+    });
+  }
   if (start.kind === "eraser-gesture") {
     const zoom = previewZoom(options);
     return new EraserPreview({

@@ -5,9 +5,9 @@ import {
   type SettingDefinitionGroup,
   type SettingDefinitionRender,
 } from "obsidian";
-import { vi } from "vitest";
+import { afterEach, beforeAll, vi } from "vitest";
 import { Keymap } from "../../../adapters/obsidian/keymap";
-import { createHtmlElement } from "../../../adapters/obsidian/dom";
+import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 
 import {
   createBuiltInDeviceSettings,
@@ -49,9 +49,6 @@ vi.mock("obsidian", async (importOriginal) => ({
       this.refreshes += 1;
     }
   },
-  Setting: class {
-    public constructor(public settingEl: HTMLElement) {}
-  },
   SettingGroup: class {
     public constructor(public listEl: HTMLElement) {}
   },
@@ -64,6 +61,11 @@ vi.mock("obsidian", async (importOriginal) => ({
     element.append(svg);
   },
 }));
+
+export function setupSettingsDom(): void {
+  beforeAll(installObsidianDomHelpers);
+  afterEach(() => document.body.replaceChildren());
+}
 
 export class VaultAdapter implements VaultSettingsPort {
   public failure: Error | undefined;
@@ -107,7 +109,10 @@ export function groups(tab: InkbookSettingTab): SettingDefinitionGroup<SettingsC
     .getControlDefinitions()
     .filter(
       (item): item is SettingDefinitionGroup<SettingsControlKey> =>
-        "type" in item && item.type === "group",
+        "type" in item &&
+        item.type === "group" &&
+        item.heading !== undefined &&
+        (typeof item.visible === "function" ? item.visible() : item.visible !== false),
     );
 }
 

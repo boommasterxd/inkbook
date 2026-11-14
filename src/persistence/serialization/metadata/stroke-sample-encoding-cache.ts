@@ -85,7 +85,7 @@ export class StrokeSampleEncodingCache {
     sourceVersion: number,
   ): void {
     this.clear();
-    if (sourceVersion !== 1) return;
+    if (sourceVersion < 1) return;
     for (const element of snapshot.elements) {
       const entry = source.#entries.get(element.id);
       if (element.kind === "stroke" && entry?.points === element.points) {

@@ -32,6 +32,8 @@ export class SceneElementPreviews {
   #connectedPreparation: Generator<void, readonly string[]> | undefined;
   #nextLane = 0;
   #snapshotSource: readonly string[] | undefined;
+  #textSnapshotSource: readonly string[] | undefined;
+  #snapshotHasText = false;
   #snapshots: readonly string[] = [];
   #envelope: Bounds | undefined;
   #request: Parameters<ProgressiveElementPreview["set"]>[0] | undefined;
@@ -105,6 +107,10 @@ export class SceneElementPreviews {
         : this.selectProgressiveIds(request.ids, viewport, camera);
     const snapshots =
       this.content.selectionFeedbackSnapshotIds?.(request.feedback) ?? this.snapshotIds(ids);
+    if (this.#textSnapshotSource !== snapshots) {
+      this.#textSnapshotSource = snapshots;
+      this.#snapshotHasText = snapshots.some((id) => this.#store.get(id)?.element.kind === "text");
+    }
     const connected = this.connectedIds(request.ids, viewport, camera);
     this.progressive.set({
       ...request,
@@ -147,9 +153,16 @@ export class SceneElementPreviews {
 
   public get pending(): boolean {
     return (
+      this.textPublicationPending ||
       this.#connectedPreparation !== undefined ||
       this.progressive.pending ||
       this.#connected.pending
+    );
+  }
+
+  public get textPublicationPending(): boolean {
+    return (
+      this.content.hasPendingTextPreviews || (this.#snapshotHasText && this.progressive.pending)
     );
   }
 
@@ -234,6 +247,8 @@ export class SceneElementPreviews {
     this.#request = undefined;
     this.#selection = undefined;
     this.#snapshotSource = undefined;
+    this.#textSnapshotSource = undefined;
+    this.#snapshotHasText = false;
     this.#snapshots = [];
     this.clearConnected();
     this.#candidates.clear();
@@ -283,6 +298,8 @@ export class SceneElementPreviews {
     this.#request = undefined;
     this.#selection = undefined;
     this.#snapshotSource = undefined;
+    this.#textSnapshotSource = undefined;
+    this.#snapshotHasText = false;
     this.#snapshots = [];
     this.clearConnected(true);
     this.#candidates.clear();

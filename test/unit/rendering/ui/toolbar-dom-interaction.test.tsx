@@ -86,6 +86,16 @@ describe("mounted Inkbook toolbar accessibility", () => {
     mounted.unmount();
   });
 
+  it("exposes Text as an independent pressed tool in the keyboard track", () => {
+    const mounted = mountToolbar({ ...completeState, activeTool: "text" }, "scrollable");
+    const text = mounted.button("text");
+    expect(text.getAttribute("aria-label")).toBe("Text");
+    expect(text.getAttribute("aria-pressed")).toBe("true");
+    focus(mounted.button("straight-highlighter"));
+    key(mounted.button("straight-highlighter"), "ArrowRight");
+    expect(document.activeElement).toBe(text);
+    mounted.unmount();
+  });
   it("provides host tooltip labels without competing browser title tooltips", () => {
     const mounted = mountToolbar({ ...completeState, canPaste: false });
     const toolbar = mounted.container.querySelector<HTMLElement>("[role='toolbar']");

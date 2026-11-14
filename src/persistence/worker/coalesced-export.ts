@@ -1,12 +1,13 @@
 import { assertSafeCounter } from "./identity";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
-import type { ElementValidationDerivation } from "../../domain/schema/public";
+import type { ElementValidationDerivation, FontResourceV2 } from "../../domain/schema/public";
 import type { DocumentRevision, ElementId, RenderBand } from "./protocol";
 
 export interface ExportDelta<TElement, TPage> {
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly TElement[];
   readonly dirtyBands?: readonly RenderBand[];
+  readonly fontResources?: readonly FontResourceV2[];
   readonly modelRevision: DocumentRevision;
   readonly page?: TPage;
   readonly removedIds?: readonly ElementId[];
@@ -16,6 +17,7 @@ interface IncrementalExportPlan<TElement, TPage> {
   readonly baseModelRevision: DocumentRevision;
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements: readonly TElement[];
+  readonly fontResources?: readonly FontResourceV2[];
   readonly modelRevision: DocumentRevision;
   readonly orderChanges: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>;
   readonly page?: TPage;
@@ -49,6 +51,7 @@ export class CoalescedExportTarget<TElement, TPage> {
   readonly #dirtyBands = new Set<RenderBand>();
   #modelRevision: DocumentRevision;
   #latestPage: TPage | undefined;
+  #latestFontResources: readonly FontResourceV2[] | undefined;
   #hasPage = false;
   #requiresFullSnapshot = false;
 
@@ -96,6 +99,20 @@ export class CoalescedExportTarget<TElement, TPage> {
       this.#latestPage = delta.page;
       this.#hasPage = true;
     }
+    if (delta.fontResources !== undefined) {
+      this.#latestFontResources = Object.freeze(
+        delta.fontResources.map((font) =>
+          Object.freeze({
+            ...font,
+            ...(font.weightRange === undefined
+              ? {}
+              : {
+                  weightRange: Object.freeze([...font.weightRange]) as unknown as [number, number],
+                }),
+          }),
+        ),
+      );
+    }
   }
 
   public requireFullSnapshot(modelRevision: DocumentRevision): void {
@@ -110,6 +127,7 @@ export class CoalescedExportTarget<TElement, TPage> {
     this.#removedIds.clear();
     this.#dirtyBands.clear();
     this.#latestPage = undefined;
+    this.#latestFontResources = undefined;
     this.#hasPage = false;
   }
 
@@ -140,6 +158,9 @@ export class CoalescedExportTarget<TElement, TPage> {
         ? {}
         : { changedElementDerivations: [...this.#changedElementDerivations.values()] }),
       ...(this.#hasPage ? { page: this.#latestPage as TPage } : {}),
+      ...(this.#latestFontResources === undefined
+        ? {}
+        : { fontResources: this.#latestFontResources }),
     };
     return plan;
   }

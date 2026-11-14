@@ -66,6 +66,13 @@ export class VaultDocumentSessionFactory implements SessionFactory {
       if (session.getSnapshot().documentId === documentId) await session.flushForExport();
     }
   }
+  deferPresentationRelease(documentId: string, release: () => void, failed: () => void): void {
+    const session = [...this.#sessions.values()].find(
+      (candidate) => candidate.getSnapshot().documentId === documentId,
+    );
+    if (session === undefined) release();
+    else session.deferPresentationRelease(release, failed);
+  }
   currentSaveSettlement(documentId: string): Promise<void> | undefined {
     for (const session of this.#sessions.values()) {
       if (session.getSnapshot().documentId !== documentId) continue;

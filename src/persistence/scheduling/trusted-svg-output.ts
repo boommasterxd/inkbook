@@ -264,6 +264,7 @@ function trustedOutput(inspected: InspectedOutput, safe: SafeSvgValidation): Tru
     safeStaticProof: SafeStaticProof.fromTrustedProducer(
       inspected.outputHash,
       inspected.totalBytes,
+      safe.unadjustedTextRuns,
     ),
     lockedHeight: safe.lockedHeight,
     revision: safe.revision,

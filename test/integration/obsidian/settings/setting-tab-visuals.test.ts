@@ -218,7 +218,8 @@ describe("InkbookSettingTab recognizable shape controls", () => {
     expect(
       outlineOpacity.querySelectorAll("input[type='range'], input[type='number']"),
     ).toHaveLength(2);
-    expect(fillColor.querySelectorAll(".inkbook-menu-color-swatch")).toHaveLength(11);
+    expect(fillColor.querySelector('[aria-label="Gray"]')).toBeNull();
+    expect(outlineColor.querySelector('[aria-label="Gray"]')).not.toBeNull();
     expect(fillOpacity.querySelectorAll("input[type='range'], input[type='number']")).toHaveLength(
       2,
     );

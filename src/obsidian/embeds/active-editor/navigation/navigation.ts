@@ -35,6 +35,7 @@ import {
   isZoomWheel,
   positiveOr,
   validViewState,
+  validResizeUpdate,
   wheelZoomNormalization,
 } from "./navigation-helpers";
 import { applyNavigationFrameLayout, resolveNavigationFrame } from "./navigation-frame";
@@ -43,6 +44,7 @@ import { ActiveEditorPanMomentum } from "./navigation-momentum";
 import { NavigationFeedback } from "./navigation-feedback";
 import { validPinchSample } from "./navigation-pinch";
 import { NavigationPendingInput } from "./navigation-pending";
+import { NavigationBoundsReveal } from "./navigation-bounds-reveal";
 export type {
   ActiveEditorNavigationOptions,
   ActiveEditorViewState,
@@ -66,6 +68,7 @@ export class ActiveEditorNavigation {
   #gestureLayout: NavigationLayoutRead | undefined;
   #origin: { cameraX: number; scrollTop: number; zoom: number } | undefined;
   readonly #pending = new NavigationPendingInput();
+  readonly #boundsReveal = new NavigationBoundsReveal();
   readonly #panMomentum: ActiveEditorPanMomentum;
   readonly #onCancelPinch: ActiveEditorNavigationOptions["onCancelPinch"];
   #zoom: number;
@@ -149,17 +152,14 @@ export class ActiveEditorNavigation {
     return pointerSampleFromEvent(this.localScreenPoint(event), event);
   }
   public pageSample(sample: PointerSample): PointerSample {
-    return {
-      ...sample,
-      x: sample.x / this.#zoom - this.#cameraX,
-      y: sample.y / this.#zoom,
-    };
+    return { ...sample, ...this.pagePointFromScreen(sample) };
   }
   public pagePointFromScreen(point: InputPoint): InputPoint {
     return { x: point.x / this.#zoom - this.#cameraX, y: point.y / this.#zoom };
   }
   public pan(screenDeltaX: number): void {
     if (!Number.isFinite(screenDeltaX)) return;
+    this.cancelPanMomentum();
     this.begin();
     this.#pending.frame = accumulateZoomInput(this.#pending.frame, { panX: screenDeltaX });
     this.#scheduleFrame();
@@ -177,6 +177,7 @@ export class ActiveEditorNavigation {
     if (activePinch) this.#onCancelPinch?.();
   }
   public cancelPanMomentum(): void {
+    this.#boundsReveal.cancel();
     this.#panMomentum.cancel();
     if (this.#frame !== undefined && !this.#hasPendingFrame()) {
       this.#workScheduler.cancelFrame(this.#frame);
@@ -213,6 +214,7 @@ export class ActiveEditorNavigation {
   }
   public scroll(screenDeltaY: number): void {
     if (!Number.isFinite(screenDeltaY)) return;
+    this.cancelPanMomentum();
     this.begin();
     this.#pending.frame = accumulateZoomInput(this.#pending.frame, { panY: screenDeltaY });
     this.#scheduleFrame();
@@ -269,16 +271,7 @@ export class ActiveEditorNavigation {
     };
   }
   public applyResize(update: ActiveEditorResizeUpdate): boolean {
-    if (
-      !Number.isFinite(update.cameraX) ||
-      !Number.isFinite(update.fitZoom) ||
-      update.fitZoom <= 0 ||
-      (update.scrollTop !== undefined && !Number.isFinite(update.scrollTop)) ||
-      !Number.isFinite(update.zoom) ||
-      update.zoom <= 0
-    ) {
-      return false;
-    }
+    if (!validResizeUpdate(update)) return false;
     this.cancelPanMomentum();
     this.#feedback.reset();
     this.cancelNavigation();
@@ -344,6 +337,7 @@ export class ActiveEditorNavigation {
 
   public updateWheel(event: ActiveEditorWheelInput, physicallyHeldModifier = false): boolean {
     if (!Number.isFinite(event.deltaY) || !Number.isFinite(event.deltaX ?? 0)) return false;
+    this.#boundsReveal.cancel();
     if (event.deltaY !== 0 || (event.deltaX ?? 0) !== 0) this.#activity.pulse();
     if (isZoomWheel(event)) {
       this.cancelPanMomentum();
@@ -396,14 +390,25 @@ export class ActiveEditorNavigation {
         panX: momentumDelta,
       });
     }
-    const frame = this.#pending.consumeFrame();
+    let frame = this.#pending.consumeFrame();
     const pinch = this.#pending.pinch.take();
-    if (frame.factor === 1 && frame.panX === 0 && frame.panY === 0 && pinch === undefined) return;
+    if (
+      !this.#boundsReveal.active &&
+      frame.factor === 1 &&
+      frame.panX === 0 &&
+      frame.panY === 0 &&
+      pinch === undefined
+    )
+      return;
     const layout = readNavigationLayout(this.#container, this.#scrollOwner);
     if (layout === undefined) {
       this.cancelPanMomentum();
       return;
     }
+    frame = accumulateZoomInput(
+      frame,
+      this.#boundsReveal.advance(timestamp, layout.scrollTop, this.#cameraX, this.#zoom),
+    );
     const resolved = resolveNavigationFrame({
       cameraX: this.#cameraX,
       frame:
@@ -432,7 +437,7 @@ export class ActiveEditorNavigation {
     this.#cameraX = resolved.cameraX;
     this.#feedback.apply({ x: this.#cameraX, zoom: this.#zoom }, appliedLayout, resolved.fitZoom);
     if (frame.panX !== 0 && this.#cameraX === previousCameraX) {
-      this.cancelPanMomentum();
+      this.#panMomentum.cancel();
     }
   }
   public screenPoint(point: InputPoint): InputPoint {
@@ -456,36 +461,34 @@ export class ActiveEditorNavigation {
     return visibleCenterPoint(layout, this.#cameraX, this.#zoom);
   }
 
-  public revealBounds(bounds: Bounds): void {
-    this.cancelNavigation();
-    this.begin();
-    const layout = this.#gestureLayout;
-    if (layout === undefined) return;
-    const viewport = layout.ownerViewport;
-    const box = layout.containerBounds;
-    const left = Math.max(box.left, viewport.left) + 16;
-    const right = Math.min(box.right, viewport.right) - 16;
-    const top = viewport.top + 16;
-    const bottom = viewport.bottom - 16;
-    const x = box.left + (bounds.minX + this.#cameraX) * this.#zoom;
-    const y = box.top + bounds.minY * this.#zoom;
-    const width = Math.min((bounds.maxX - bounds.minX) * this.#zoom, Math.max(0, right - left));
-    const height = Math.min((bounds.maxY - bounds.minY) * this.#zoom, Math.max(0, bottom - top));
-    const panX = x < left ? left - x : Math.min(0, right - x - width);
-    const panY = y < top ? top - y : Math.min(0, bottom - y - height);
-    if (panX === 0 && panY === 0) {
-      this.finish();
-      return;
-    }
-    this.#pending.frame = accumulateZoomInput(this.#pending.frame, { panX, panY });
-    this.#scheduleFrame();
+  public revealBounds(
+    bounds: Bounds,
+    viewportBottom?: number,
+    reserveBottom?: (minimumBottom: number) => void,
+    animate = false,
+  ): void {
+    if (!animate || !this.#boundsReveal.active) this.cancelNavigation();
+    const plan = this.#boundsReveal.request({
+      bounds,
+      viewportBottom,
+      reserveBottom,
+      animate,
+      container: this.#container,
+      scrollOwner: this.#scrollOwner,
+      ownerWindow: this.#ownerWindow,
+      camera: { x: this.#cameraX, zoom: this.#zoom },
+      pageHeight: this.#activePageHeight,
+    });
+    if (plan) this.#pending.frame = accumulateZoomInput(this.#pending.frame, plan);
+    if (this.#hasPendingFrame()) this.#scheduleFrame();
   }
 
   #hasPendingFrame(): boolean {
-    return this.#panMomentum.active || this.#pending.pending;
+    return this.#boundsReveal.active || this.#panMomentum.active || this.#pending.pending;
   }
 
   #cancelPendingFrame(): void {
+    this.#boundsReveal.cancel();
     this.#activity.reset();
     if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;

@@ -1,8 +1,10 @@
 import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
+import type { TextElementV2 } from "../../../domain/schema/public";
 import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
 import {
   createMountedElement,
   updatePreviewTransform,
+  retainTextScaleFeedback,
   type MountedSceneElement,
 } from "../content/mounted-element";
 import type { MountSlice } from "./mount-slice";
@@ -13,8 +15,11 @@ import { RemoteScenePaths } from "../content/remote-scene-paths";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "../types";
 import type { DetachedSceneElementCache } from "../content/detached-element-cache";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { SceneTextPreparation } from "../content/scene-text-preparation";
+import type { Bounds } from "../../../domain/geometry/primitives";
 
 export interface PreviewTransform {
+  readonly textBasis?: TextElementV2 | undefined;
   readonly matrix?: readonly [number, number, number, number, number, number] | undefined;
   readonly strokeWidthScale: number | null;
   readonly transform: string | null;
@@ -28,6 +33,8 @@ interface PendingPath {
 }
 
 interface MountPreparationOptions {
+  readonly textViewport?: (element: TextElementV2) => Bounds | undefined;
+  readonly mounted?: ReadonlyMap<string, MountedSceneElement>;
   readonly ownerDocument: Document;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly pathCache: ScenePathCache;
@@ -43,9 +50,12 @@ interface MountPreparationOptions {
 /** Owns one cancellable cold stroke build, never a queue of retained documents. */
 export class SceneMountPreparation {
   #pending: PendingPath | undefined;
+  #cached: MountedSceneElement | undefined;
   readonly #remote: RemoteScenePaths;
+  readonly #text: SceneTextPreparation;
 
   public constructor(private readonly options: MountPreparationOptions) {
+    this.#text = new SceneTextPreparation(options);
     this.#remote = new RemoteScenePaths(options.store, {
       ...(options.scheduler === undefined ? {} : { scheduler: options.scheduler }),
       ...(options.isViewport === undefined ? {} : { isViewport: options.isViewport }),
@@ -76,22 +86,29 @@ export class SceneMountPreparation {
   }
 
   public get pendingId(): string | undefined {
-    return this.#pending?.id;
+    return this.#pending?.id ?? this.#cached?.id;
   }
 
   public get waiting(): boolean {
-    return this.#pending === undefined && this.#remote.waiting;
+    return this.#pending === undefined && this.#cached === undefined && this.#remote.waiting;
   }
 
   public get waitingForPreparation(): boolean {
-    return this.#pending !== undefined || this.#remote.waiting;
+    return this.#pending !== undefined || this.#cached !== undefined || this.#remote.waiting;
   }
 
   public memoryUsage(): number {
-    return (this.#pending?.path.memoryUsage() ?? 0) + this.#remote.memoryUsage();
+    return (
+      (this.#pending?.path.memoryUsage() ?? 0) +
+      this.#remote.memoryUsage() +
+      this.#text.memoryUsage() +
+      (this.#cached?.text?.memoryUsage() ?? 0)
+    );
   }
 
   public cancel(retainVisible?: (id: string) => boolean): void {
+    this.cancelCached();
+    this.#text.cancel();
     this.#remote.cancel(retainVisible);
     const pending = this.#pending;
     if (
@@ -108,11 +125,20 @@ export class SceneMountPreparation {
     this.#pending = undefined;
   }
 
+  private cancelCached(): void {
+    const cached = this.#cached;
+    this.#cached = undefined;
+    cached?.text?.cancelPreparation();
+    if (cached) this.options.detachedCache?.retain(cached);
+  }
+
   public pauseLocal(id: string): void {
     if (this.#pending?.id === id) this.cancelLocal();
   }
 
   public release(id: string, deferRetarget = false): void {
+    if (this.#cached?.id === id) this.cancelCached();
+    this.#text.cancel(id);
     this.#remote.invalidate(id, deferRetarget);
     if (this.#pending?.id === id) this.cancelLocal();
   }
@@ -122,6 +148,8 @@ export class SceneMountPreparation {
   }
 
   public finish(id: string, version?: number): void {
+    if (this.#cached?.id === id) this.cancelCached();
+    this.#text.cancel(id);
     this.#remote.release(id, this.options.upcomingIds, version);
     if (this.#pending?.id === id && (version === undefined || this.#pending.version === version))
       this.cancelLocal();
@@ -133,7 +161,15 @@ export class SceneMountPreparation {
     preview: PreviewTransform | undefined,
     allowLocal = true,
   ): MountedSceneElement | undefined {
-    let entry = this.options.detachedCache?.take(record, this.options.instrumentation);
+    if (
+      this.#cached &&
+      (this.#cached.id !== record.id ||
+        this.#cached.geometryVersion !== record.geometryVersion ||
+        this.#cached.paintVersion !== record.paintVersion)
+    )
+      this.cancelCached();
+    let entry =
+      this.#cached ?? this.options.detachedCache?.take(record, this.options.instrumentation);
     if (entry === undefined) {
       const parts = this.prepare(record, slice, allowLocal);
       if (parts === undefined) return undefined;
@@ -142,9 +178,11 @@ export class SceneMountPreparation {
         record,
         parts,
         this.options.instrumentation,
+        this.#text.take(record.id),
       );
     }
-    if (preview !== undefined)
+    if (preview !== undefined) {
+      retainTextScaleFeedback(entry, preview.textBasis, preview.matrix);
       updatePreviewTransform(
         entry,
         preview.transform,
@@ -153,6 +191,16 @@ export class SceneMountPreparation {
         this.options.instrumentation,
         preview.matrix,
       );
+    } else {
+      retainTextScaleFeedback(entry);
+      updatePreviewTransform(entry, null, 0, null, this.options.instrumentation);
+    }
+    if (entry.text) {
+      this.#cached = entry;
+      if (!slice.prepare({ step: (deadline, now) => entry.text!.prepareViewport(deadline, now) }))
+        return undefined;
+      this.#cached = undefined;
+    }
     return entry;
   }
 
@@ -162,14 +210,26 @@ export class SceneMountPreparation {
     allowLocal = true,
     preemptLocal = false,
   ): readonly SvgPathPart[] | undefined {
-    const { pathCache, store } = this.options;
+    if (record.element.kind === "text") return this.prepareOther(record, slice, undefined);
+    const { store } = this.options;
     const pressure = store.pressureGeometry?.(record.id, record.geometryVersion);
     const cached = this.cachedPath(record, pressure);
     if (cached !== undefined) {
       this.finish(record.id, record.geometryVersion);
       return cached;
     }
-    if (record.element.kind !== "stroke") return pathCache.build(record.element, pressure);
+    if (record.element.kind !== "stroke") return this.prepareOther(record, slice, pressure);
+    return this.prepareStroke(record, slice, allowLocal, preemptLocal, pressure);
+  }
+
+  private prepareStroke(
+    record: SceneElementRecord,
+    slice: MountSlice,
+    allowLocal: boolean,
+    preemptLocal: boolean,
+    pressure: PreparedPressureGeometryPort | undefined,
+  ): readonly SvgPathPart[] | undefined {
+    const { pathCache } = this.options;
     if (preemptLocal && this.#pending?.id !== record.id) this.cancelLocal();
     if (this.#pending?.id !== record.id || this.#pending.version !== record.geometryVersion) {
       if (this.#pending !== undefined) return undefined;
@@ -207,5 +267,13 @@ export class SceneMountPreparation {
       pathCache.completePreparation(record.element, prepared, record.geometryVersion);
     }
     return prepared;
+  }
+  private prepareOther(
+    record: SceneElementRecord,
+    slice: MountSlice,
+    pressure: PreparedPressureGeometryPort | undefined,
+  ): readonly SvgPathPart[] | undefined {
+    if (record.element.kind === "text") return this.#text.prepare(record, slice) ? [] : undefined;
+    return this.options.pathCache.build(record.element, pressure);
   }
 }

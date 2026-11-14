@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { validatePathDataSteps } from "../../../../src/persistence/documents/path-data-validator";
 import { inspectTrustedSvgOutput } from "../../../../src/persistence/scheduling/trusted-svg-output";
 import { validateSafeSvgSteps } from "../../../../src/persistence/documents/safe-svg-validator";
+import {
+  validateFontStylesheetSteps,
+  type SafeSvgFontFace,
+} from "../../../../src/persistence/documents/safe-svg-fonts";
 import { serializeSvgEnvelope } from "../../../../src/persistence/documents/svg-envelope";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { createCapacityExportSvg } from "../../../fixtures/persistence/export-geometry";
@@ -12,6 +16,55 @@ import {
   exhaustValidation,
 } from "../../../fixtures/persistence/safe-svg";
 describe("safe SVG validation performance", () => {
+  it("bounds actual embedded font reads per cooperative slice and total validation work", () => {
+    const css =
+      '@font-face{font-family:"inkbook-inter";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,' +
+      "AAAA".repeat(Math.ceil((8 * 1024 * 1024) / 3)) +
+      '") format("woff2")}';
+    let sliceReads = 0;
+    let totalReads = 0;
+    let payloadPublications = 0;
+    let payloadCharacters = 0;
+    const faces: SafeSvgFontFace[] = [];
+    const input = new Proxy(
+      {
+        length: css.length,
+        slice: (start: number, end: number) => {
+          const value = css.slice(start, end);
+          if (value.length > 16 * 1024) {
+            payloadPublications += 1;
+            payloadCharacters += value.length;
+            return value;
+          }
+          sliceReads += value.length;
+          totalReads += value.length;
+          return value;
+        },
+        startsWith: (value: string, start: number) => css.startsWith(value, start),
+      },
+      {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/u.test(key)) return css[Number(key)];
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      },
+    ) as unknown as string;
+    const steps = validateFontStylesheetSteps(input, (face) => faces.push(face));
+    let step;
+    do {
+      sliceReads = 0;
+      step = steps.next();
+      // At a phase boundary, one search slice and one Base64 validation slice may meet.
+      expect(sliceReads).toBeLessThanOrEqual(34 * 1024);
+    } while (!step.done);
+    expect(step.value).toBe(true);
+    expect(totalReads).toBeLessThanOrEqual(css.length * 2 + 1024);
+    expect(payloadPublications).toBe(1);
+    expect(payloadCharacters).toBe(4 * Math.ceil((8 * 1024 * 1024) / 3));
+    expect(faces).toHaveLength(1);
+    expect(faces[0]?.data.length).toBe(payloadCharacters);
+  });
+
   it("validates a maximum-size, maximum-command path with cooperative checkpoints", async () => {
     let checkpoints = 0;
     const trusted = await inspectTrustedSvgOutput(createMaximumComplexitySvg(), undefined, {

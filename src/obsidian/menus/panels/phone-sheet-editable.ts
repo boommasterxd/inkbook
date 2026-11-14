@@ -1,10 +1,12 @@
-/** Reveals the focused field by moving only the owned sheet's scroll container. */
-export function revealPhoneSheetEditable(
+/** Reveals focus within the owned scrollport, including controls in dialog bodies. */
+export function revealPhoneSheetFocus(
   scroll: HTMLElement,
   viewport: { readonly top: number; readonly height: number },
+  includeControls = false,
 ): void {
   const active = scroll.ownerDocument.activeElement;
-  if (active === null || !scroll.contains(active) || !isEditable(active)) return;
+  if (active === null || !scroll.contains(active) || (!includeControls && !isEditable(active)))
+    return;
   const bounds = scroll.getBoundingClientRect();
   const top = Math.max(bounds.top, viewport.top);
   const bottom = Math.min(bounds.bottom, viewport.top + viewport.height);

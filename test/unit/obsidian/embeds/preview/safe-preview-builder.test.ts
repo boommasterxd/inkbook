@@ -21,6 +21,27 @@ function budgetScheduler(now: () => number, budget: () => number) {
 
 afterEach(() => vi.restoreAllMocks());
 
+it("preserves validated font CSS and decoded native text without importing HTML", async () => {
+  const css =
+    '@font-face{font-family:"inkbook-inter";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,AA==") format("woff2")}';
+  const svg = await createPreviewSvgAsync(
+    document,
+    `<svg><style>theme</style><style id="inkbook-fonts">${css}</style><metadata>private</metadata><g><text xml:space="preserve"><tspan x="1" y="2"> Hello &amp; &lt;world&gt; 🙂</tspan></text></g></svg>`,
+    {
+      checkpoint: () => undefined,
+      workScheduler: immediateWorkScheduler(),
+      isCancelled: () => false,
+    },
+  );
+  expect(svg?.querySelectorAll("style")).toHaveLength(1);
+  expect(svg?.querySelector("style")?.textContent).toBe(css);
+  expect(svg?.querySelector("tspan")?.textContent).toBe(" Hello & <world> 🙂");
+  expect(
+    svg?.querySelector("text")?.getAttributeNS("http://www.w3.org/XML/1998/namespace", "space"),
+  ).toBe("preserve");
+  expect(svg?.querySelector("metadata, foreignObject, world")).toBeNull();
+});
+
 it("preserves the canonical detached preview without stylesheet or metadata", async () => {
   const serialized = serializeInkbookDocument(createSnapshot());
   if (!serialized.ok) throw new Error("Fixture serialization failed.");

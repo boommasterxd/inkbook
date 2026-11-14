@@ -1,9 +1,10 @@
-import type { InkElementV1 } from "../../../domain/schema/public";
+import type { InkElementV1, TextElementV2 } from "../../../domain/schema/public";
 import type { SvgPathPart } from "../../../domain/geometry/element-path";
 import type { PreviewBoundsTransform } from "../types";
 import type { ProgressivePreviewPath } from "../content/progressive-preview-path";
 
 export interface ProgressivePreviewTransform {
+  readonly textBasis?: TextElementV2;
   readonly matrix?: readonly [number, number, number, number, number, number];
   readonly selection?: ReadonlySet<string>;
   readonly selectionSize?: number;

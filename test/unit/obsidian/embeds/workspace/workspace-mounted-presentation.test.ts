@@ -174,3 +174,22 @@ it("keeps the disabled image and reports preview reconstruction failure", async 
   expect(h.options.onFailure).toHaveBeenCalledOnce();
   expect(h.options.onLocked).not.toHaveBeenCalled();
 });
+
+it("retains the disabled scene until its owned input preparation allows disposal", () => {
+  const h = releaseHarness();
+  let allowRelease!: () => void;
+  releaseWorkspaceScene(h.mounted, {
+    ...h.options,
+    waitForPreview: false,
+    prepareRelease: (release) => {
+      allowRelease = release;
+    },
+  });
+  expect(h.scene.disableInput).toHaveBeenCalledOnce();
+  expect(h.scene.dispose).not.toHaveBeenCalled();
+  disposeWorkspaceMountedPresentations([h.mounted], true);
+  expect(h.scene.dispose).not.toHaveBeenCalled();
+  allowRelease();
+  expect(h.scene.dispose).toHaveBeenCalledOnce();
+  expect(h.mounted.scene).toBeUndefined();
+});

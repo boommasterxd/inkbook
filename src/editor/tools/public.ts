@@ -1,5 +1,5 @@
 export { createDragElement, createFreehandElement } from "./creation";
-export { applySelectionStyleChange, applyToolStyleChange, type StyleChange } from "./style-change";
+export { applySelectionStyleChange, applyToolStyleChange } from "./style-change";
 export {
   summarizeActiveToolStyle,
   summarizeSelectionStyle,

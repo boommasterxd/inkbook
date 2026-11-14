@@ -1,21 +1,16 @@
 import { SceneFrameScheduler } from "./scene-frame-scheduler";
 import type { SceneToolCursorFrameReader } from "./tool-cursor";
-import type { RenderBand } from "../../domain/commands/render-bands";
 import type * as Schema from "../../domain/schema/public";
 import { SceneBackgroundController } from "./scene-background-controller";
 import { DetachedSceneElementCache } from "./content/detached-element-cache";
 import { DEFAULT_CAMERA } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
-import type { ProgressivePreviewTransform } from "./presentation/progressive-element-preview";
-import type { ProgressivePreviewPurpose } from "./presentation/connected-preview-cohort";
 import { SceneElementPreviews } from "./presentation/scene-element-previews";
-import { createFadeActions } from "./presentation/element-fade-controller";
-import type { SceneElementFadeController } from "./presentation/element-fade-controller";
+import * as fadeController from "./presentation/element-fade-controller";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import { SceneFrameWork } from "./scene-frame-work";
 import * as stats from "./instrumentation";
 import { ScenePathCache, type PreparedScenePath } from "./content/path-cache";
-import type { PreviewCommitHandoff } from "./presentation/preview-commit-handoff";
 import { ScenePreviewInput } from "./presentation/scene-preview-input";
 import { SceneDom } from "./scene-dom";
 import { SceneCommitCoordinator } from "./scene-commit-coordinator";
@@ -23,13 +18,19 @@ import { SceneContentScheduler } from "./scene-content-scheduler";
 import { SceneDeltaCoordinator } from "./scene-delta-coordinator";
 import { SceneLiveStrokeRenderer } from "./content/live-stroke-renderer";
 import { SceneMotionController } from "./presentation/scene-motion-controller";
-import { SceneResourcePolicy, validateScrollPreloadMargin } from "./scene-resource-policy";
+import { SceneResourcePolicy } from "./scene-resource-policy";
 import { SceneVisibilityCoordinator } from "./scene-visibility-coordinator";
 import * as runtime from "./scene-runtime";
 import type * as Scene from "./types";
 import { SceneTransformPreviewController } from "./presentation/transform-preview-controller";
 import { SceneVisibilityState } from "./visibility/visibility-state";
+import { SceneTextController } from "./scene-text-controller";
 export class SvgSceneRenderer {
+  readonly #text = new SceneTextController(() => [this.#dom, this.#content]);
+  public readonly textDocument: Document;
+  public readonly beginTextEditing = this.#text.begin;
+  public readonly waitForTextElement = this.#text.wait;
+  public readonly setTextFonts = this.#text.setFonts;
   readonly #background: SceneBackgroundController;
   #camera: Scene.SceneCamera = DEFAULT_CAMERA;
   readonly #content: SceneContentRenderer;
@@ -41,8 +42,8 @@ export class SvgSceneRenderer {
   readonly #frames: SceneFrameScheduler;
   readonly #sceneCommits: SceneCommitCoordinator;
   readonly #deltas: SceneDeltaCoordinator;
-  public readonly setElementFade: SceneElementFadeController["set"];
-  public readonly clearElementFade: SceneElementFadeController["clear"];
+  public readonly setElementFade: fadeController.SceneElementFadeController["set"];
+  public readonly clearElementFade: fadeController.SceneElementFadeController["clear"];
   readonly #stats: Scene.MutableSceneInstrumentation = stats.createInstrumentation();
   #layoutDirty = true;
   #layoutInvalidationVersion = 0;
@@ -60,14 +61,14 @@ export class SvgSceneRenderer {
   readonly #visibility: SceneVisibilityState;
   readonly #options: Scene.SceneRendererOptions;
   public constructor(options: Scene.SceneRendererOptions) {
-    if (options.scrollPreloadMarginPx !== undefined)
-      validateScrollPreloadMargin(options.scrollPreloadMarginPx);
+    runtime.validateSceneOptions(options);
     this.#options = options;
     this.#scheduler = options.workScheduler;
     this.#background = new SceneBackgroundController(options.page, this.#scheduler, this.#stats);
     const render = this.renderFrame.bind(this);
     this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, render);
     this.#dom = SceneDom.create(options);
+    this.textDocument = this.#dom.ownerDocument;
     this.#dom.onSurfaceInvalidated = (themeChanged) =>
       themeChanged === true ? this.invalidateLayout() : this.#frames.schedule();
     this.#frameWriter = new SceneFrameWriter(this.#dom, this.#background.cache, this.#stats, () =>
@@ -147,7 +148,7 @@ export class SvgSceneRenderer {
       },
       schedule: () => this.#frames.schedule(),
     });
-    [this.setElementFade, this.clearElementFade] = createFadeActions({
+    [this.setElementFade, this.clearElementFade] = fadeController.createFadeActions({
       assertActive: () => runtime.assertSceneActive(this.#disposed),
       content: this.#content,
       deltas: this.#deltas,
@@ -203,7 +204,7 @@ export class SvgSceneRenderer {
     this.#visibilityCoordinator.setDocumentPrewarmEnabled(enabled);
   }
   public readonly memoryUsage = () => this.#resourcePolicy.memoryUsage();
-  public beginPreviewCommit(): PreviewCommitHandoff {
+  public beginPreviewCommit() {
     runtime.assertSceneActive(this.#disposed);
     return this.#previewInput.commits.begin();
   }
@@ -310,13 +311,9 @@ export class SvgSceneRenderer {
     this.#content.setSelectedElements(ids);
     this.#frames.schedule();
   }
-  public setSelectionOverlayPath(
-    d: string | null,
-    fill: "accent" | "none" = "accent",
-    handles: string | null = null,
-  ): void {
+  public setSelectionOverlayPath(...args: Parameters<SceneFrameWriter["setSelectionPath"]>): void {
     runtime.assertSceneActive(this.#disposed);
-    this.#frameWriter.setSelectionPath(d, handles, fill);
+    this.#frameWriter.setSelectionPath(...args);
     this.#frames.schedule();
   }
   public setSnapMarkerPath(d: string | null): void {
@@ -360,7 +357,7 @@ export class SvgSceneRenderer {
     version: number,
     strokeWidth: Scene.PreviewStrokeWidth = "scale",
     transformBounds?: Scene.PreviewBoundsTransform,
-    matrix?: ProgressivePreviewTransform["matrix"] | ProgressivePreviewTransform,
+    matrix?: Parameters<ScenePreviewInput["setTransform"]>[5],
   ): void {
     runtime.assertSceneActive(this.#disposed);
     this.#previewInput.setTransform(ids, transform, version, strokeWidth, transformBounds, matrix);
@@ -377,8 +374,8 @@ export class SvgSceneRenderer {
     ids: readonly string[],
     materialize: (id: string) => Schema.InkElementV1 | undefined,
     version: number,
-    feedback?: ProgressivePreviewTransform,
-    mode?: ProgressivePreviewPurpose,
+    feedback?: Parameters<ScenePreviewInput["setProgressiveElements"]>[3],
+    mode?: Parameters<ScenePreviewInput["setProgressiveElements"]>[4],
   ): void {
     runtime.assertSceneActive(this.#disposed);
     this.#previewInput.setProgressiveElements(ids, materialize, version, feedback, mode);
@@ -404,7 +401,7 @@ export class SvgSceneRenderer {
   public resetInstrumentation(): void {
     this.#resourcePolicy.resetInstrumentation(this.#stats, this.#background.cache);
   }
-  public readonly mountedIds = (band: RenderBand) => this.#content.mountedIds(band);
+  public readonly mountedIds = (band: Scene.SceneBand) => this.#content.mountedIds(band);
   public replaceGeneration(): void {
     runtime.assertSceneActive(this.#disposed);
     if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
@@ -415,6 +412,7 @@ export class SvgSceneRenderer {
   public destroy(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#text.release();
     this.#frames.dispose();
     this.#visibilityCoordinator.release();
     this.#liveStroke.dispose();
@@ -450,6 +448,7 @@ export class SvgSceneRenderer {
     this.#visibilityCoordinator.prepare(this.#viewport, this.#camera, deadline);
     this.#transformPreviews.refreshContext();
     this.flushPointerFeedbackFrame(deadline);
+    this.#text.updateViewport(this.#viewport, this.#camera);
     const previewTransforms = this.#elementPreviews.previewTransforms(
       this.#transformPreviews.values,
     );
@@ -475,6 +474,7 @@ export class SvgSceneRenderer {
       this.#motion,
       startedAt,
     );
+    this.#frameWriter.writeSelection(this.#elementPreviews, this.#motion);
     this.#frameWork.complete(work, this.#sceneCommits, this.#frames);
     if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
   }

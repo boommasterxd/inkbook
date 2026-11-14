@@ -3,6 +3,7 @@ import "../../../fixtures/obsidian/menu-motion";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
+import { Localization } from "../../../../src/domain/localization";
 
 import {
   openContextMenu,
@@ -139,6 +140,47 @@ function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> 
   );
 }
 
+it.each(["en", "de"] as const)(
+  "hands off the localized %s text-edit action after closing its menu",
+  (language) => {
+    const menu = new FakeMenu();
+    const editText = vi.fn(() => expect(menu.closed).toBe(true));
+    openContextMenu(
+      { create: () => menu, forEvent: () => menu },
+      {
+        type: "position",
+        ownerDocument: document,
+        position: { x: 20, y: 30 },
+        canvasInputSurface: createHtmlElement("button"),
+        restoreFocus: false,
+        localization: new Localization(language),
+      },
+      state({ canEditText: true }),
+      { ...createContextMenuHandlers(), editText },
+    );
+    const title = language === "en" ? "Edit text" : "Text bearbeiten";
+    expect(titles(menu)[0]).toBe(title);
+    const entry = menu.entries.find(
+      (value): value is RecordedItem =>
+        value !== "separator" && value.calls.includes(`title:${title}`),
+    )!;
+    entry.click?.();
+    expect(editText).toHaveBeenCalledOnce();
+  },
+);
+
+it.each([
+  { hasSelection: false, canEditText: true },
+  { hasSelection: true, canEditText: false },
+])("omits text editing without an eligible selection: %j", (eligibility) => {
+  const menu = new FakeMenu();
+  populateContextMenu(menu, document, state(eligibility), {
+    ...createContextMenuHandlers(),
+    editText: vi.fn(),
+  });
+  expect(titles(menu)).not.toContain("Edit text");
+});
+
 it("restores focus before handing off to erase-all confirmation", () => {
   const menu = new FakeMenu();
   const canvas = createHtmlElement("button");
@@ -166,6 +208,60 @@ it("restores focus before handing off to erase-all confirmation", () => {
   expect(eraseAll).toHaveBeenCalledOnce();
   expect(document.activeElement).toBe(canvas);
   canvas.remove();
+});
+
+describe("context menu text copying", () => {
+  it.each([
+    ["en", "Copy text field", "Copy text"],
+    ["de", "Textfeld kopieren", "Text kopieren"],
+  ] as const)(
+    "offers both explicit text copy actions in %s",
+    (language, elementLabel, textLabel) => {
+      const menu = new FakeMenu();
+      const copy = vi.fn();
+      const copyText = vi.fn();
+      const copyElement = vi.fn();
+      populateContextMenu(
+        menu,
+        document,
+        state({ canCopyText: true }),
+        { ...createContextMenuHandlers(), copy, copyText, copyElement },
+        new Localization(language),
+      );
+      expect(titles(menu).slice(0, 3)).toEqual([
+        elementLabel,
+        textLabel,
+        language === "en" ? "Cut" : "Ausschneiden",
+      ]);
+      const entries = menu.entries.filter((entry): entry is RecordedItem => entry !== "separator");
+      entries[0]?.click?.();
+      entries[1]?.click?.();
+      expect(copy).not.toHaveBeenCalled();
+      expect(copyText).toHaveBeenCalledOnce();
+      expect(copyElement).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    { hasSelection: false, canCopyText: true },
+    { canCopyText: false },
+    { canCopyText: undefined },
+  ])("omits text copy actions without an eligible selection: %j", (availability) => {
+    const menu = new FakeMenu();
+    populateContextMenu(menu, document, state(availability), {
+      ...createContextMenuHandlers(),
+      copyText: vi.fn(),
+      copyElement: vi.fn(),
+    });
+    expect(titles(menu)).not.toContain("Copy text");
+    expect(titles(menu)).not.toContain("Copy text field");
+  });
+
+  it("keeps legacy copy handlers valid when explicit text handlers are absent", () => {
+    const menu = new FakeMenu();
+    populateContextMenu(menu, document, state({ canCopyText: true }), createContextMenuHandlers());
+    expect(titles(menu).slice(0, 2)).toEqual(["Copy", "Cut"]);
+  });
 });
 
 describe("context menu population", () => {

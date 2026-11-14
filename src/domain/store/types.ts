@@ -1,6 +1,7 @@
 import type { RenderBand } from "../commands/render-bands";
 import type { InkElementV1, InkSnapshotV1, PageV1 } from "../schema/public";
 import type { SpatialBounds } from "../spatial/index";
+import type { TextPaintGeometry } from "../geometry/text-paint-geometry";
 
 type ElementId = string;
 
@@ -24,6 +25,7 @@ export interface ElementRecord {
   readonly element: ImmutableInkElement;
   readonly geometryVersion: number;
   readonly paintVersion: number;
+  readonly textPaintGeometry?: TextPaintGeometry;
 }
 
 export const DELTA_DOMAINS = ["geometry", "paint", "order", "connection", "visibility"] as const;
@@ -170,6 +172,8 @@ export interface CreateOptions {
 export interface SnapshotMaterialization {
   readonly page: PageV1;
   readonly revision: number;
+  readonly version?: 1 | 2;
+  readonly fontResources?: InkSnapshotV1["fontResources"];
 }
 
 export type MaterializedSnapshot = InkSnapshotV1;

@@ -1,4 +1,9 @@
 import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
+import {
+  prepareTextPaintGeometrySteps,
+  type TextPaintGeometry,
+} from "../../../domain/geometry/text-paint-geometry";
+import { textRegionTouchesSweep } from "../../../domain/geometry/text-paint-region-distance";
 import { smoothStrokeCenters, type StrokeCenter } from "../../../domain/geometry/stroke-path";
 import {
   simplifyStrokeCenters,
@@ -43,9 +48,11 @@ export class HitTestScratch {
     element: InkElementV1,
     rank: number,
     prepared?: PreparedPressureGeometryPort,
+    textGeometry?: TextPaintGeometry,
   ): void {
     if (!this.#active || !this.#canOutrank(band, rank, id)) return;
-    if (!elementContainsPoint(element, this.#pointer, this.#tolerance, prepared)) return;
+    if (!elementContainsPoint(element, this.#pointer, this.#tolerance, prepared, textGeometry))
+      return;
     this.#element = element;
     this.#hitBand = band;
     this.#hitId = id;
@@ -94,6 +101,7 @@ export function elementContainsPoint(
   pagePoint: PointV1,
   tolerance: number,
   prepared?: PreparedPressureGeometryPort,
+  textGeometry?: TextPaintGeometry,
 ): boolean {
   if (!Number.isFinite(tolerance) || tolerance < 0) return false;
   const point = rotatePointClockwise(pagePoint, element.pivot, -element.rotation);
@@ -112,6 +120,9 @@ export function elementContainsPoint(
     return linearElementHit(element, point, tolerance);
   if (element.kind === "coordinate-system") return coordinateSystemHit(element, point, tolerance);
   if (element.kind === "table") return tableHit(element, point, tolerance);
+  if (element.kind === "text") {
+    return textPaintHit(element, point, tolerance, textGeometry);
+  }
   const radius = tolerance + element.style.outlineWidth / 2;
   if (element.kind === "ellipse") return ellipseHit(element, point, radius);
   const vertices = shapeVertices(element);
@@ -121,6 +132,37 @@ export function elementContainsPoint(
       element.style.fillOpacity > 0 &&
       pointInPolygon(point, vertices))
   );
+}
+
+function textPaintHit(
+  element: Extract<InkElementV1, { kind: "text" }>,
+  point: PointV1,
+  tolerance: number,
+  geometry?: TextPaintGeometry,
+): boolean {
+  if (geometry === undefined) {
+    const steps = prepareTextPaintGeometrySteps(element);
+    let next = steps.next();
+    while (!next.done) next = steps.next();
+    geometry = next.value;
+  }
+  point.x -= element.x;
+  point.y -= element.y;
+  const sweep = { startX: point.x, startY: point.y, endX: point.x, endY: point.y };
+  let hit = false;
+  geometry.query(
+    {
+      minX: point.x - tolerance,
+      minY: point.y - tolerance,
+      maxX: point.x + tolerance,
+      maxY: point.y + tolerance,
+    },
+    (region) => {
+      hit = textRegionTouchesSweep(region, sweep, tolerance);
+      return !hit;
+    },
+  );
+  return hit;
 }
 
 function linearElementHit(

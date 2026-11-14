@@ -1,3 +1,4 @@
+import type { PresentationLifecyclePort } from "../../../../../src/editor/session/session-port";
 import type { FileManager, Vault } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -26,6 +27,7 @@ const boundary = vi.hoisted(() => {
     createScene: vi.fn(),
     getEditorContext: vi.fn(() => ({ model: { getSaveStatus: () => "saved" as const } })),
     activationRequests: vi.fn(),
+    lockRequests: vi.fn(() => true),
     updateDrawingPreferences: vi.fn(),
     prepareForUnload: vi.fn(async (): Promise<void> => undefined),
   };
@@ -33,6 +35,7 @@ const boundary = vi.hoisted(() => {
 
 vi.mock("../../../../../src/editor/session/workspace-editor-coordinator", () => ({
   WorkspaceEditorCoordinator: class {
+    constructor(private readonly options: { presentations: PresentationLifecyclePort }) {}
     mountAttachment() {
       return true;
     }
@@ -42,6 +45,7 @@ vi.mock("../../../../../src/editor/session/workspace-editor-coordinator", () => 
     getSnapshot() {
       return boundary.snapshot;
     }
+    requestLockCurrent = boundary.lockRequests;
     requestActivation(attachment: PresentationAttachment) {
       boundary.activationRequests(attachment);
       boundary.snapshot = {
@@ -62,6 +66,8 @@ vi.mock("../../../../../src/editor/session/workspace-editor-coordinator", () => 
       };
     }
     dispose() {
+      const attachment = boundary.snapshot.current?.attachment;
+      if (attachment !== undefined) this.options.presentations.release(attachment);
       boundary.snapshot = { disposed: true };
     }
   },
@@ -82,6 +88,9 @@ vi.mock(
       }
       getEditorContext = boundary.getEditorContext;
       prepareForUnload = boundary.prepareForUnload;
+      deferPresentationRelease(_documentId: string, release: () => void) {
+        release();
+      }
     },
   }),
 );
@@ -96,12 +105,15 @@ function createHarness(initialEntrance?: PresentationAttachment["initialEntrance
   boundary.updateDrawingPreferences.mockClear();
   boundary.createScene.mockReset().mockImplementation(() => ({
     dispose: vi.fn(),
+    disableInput: vi.fn(),
     ready: Promise.resolve(true),
     setScheme: vi.fn(),
+    recordMarkdownHistory: vi.fn(),
     updateDrawingPreferences: boundary.updateDrawingPreferences,
   }));
   boundary.getEditorContext.mockClear();
   boundary.activationRequests.mockClear();
+  boundary.lockRequests.mockClear();
   const root = new FakePresentationElement() as unknown as HTMLElement;
   const settings = { device: createBuiltInDeviceSettings(), vault: createBuiltInSettings() };
   const runtime = new ObsidianWorkspaceRuntime(
@@ -207,6 +219,33 @@ function startActivation() {
   return harness;
 }
 
+it("locks only for focused Markdown changes in the active attachment's owning pane", async () => {
+  const h = startActivation();
+  h.finishEntrance(true);
+  await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledOnce());
+  const scene = boundary.createScene.mock.results[0]!.value as ActiveInkbookScene;
+  const history = vi.spyOn(scene, "recordMarkdownHistory");
+  h.runtime.handleMarkdownEditorChange("note.md", h.attachment.root);
+  expect(history).toHaveBeenCalledOnce();
+  expect(boundary.lockRequests).not.toHaveBeenCalled();
+  h.runtime.handleMarkdownEditorChange("other.md", h.attachment.root, true);
+  h.runtime.handleMarkdownEditorChange(
+    "note.md",
+    { contains: () => false } as unknown as HTMLElement,
+    true,
+  );
+  expect(history).toHaveBeenCalledOnce();
+  h.runtime.handleMarkdownEditorChange("note.md", h.attachment.root, true);
+  expect(history).toHaveBeenCalledTimes(2);
+  expect(boundary.lockRequests).toHaveBeenCalledOnce();
+  boundary.snapshot = {
+    ...boundary.snapshot,
+    current: { ...boundary.snapshot.current!, phase: "locking" },
+  };
+  h.runtime.handleMarkdownEditorChange("note.md", h.attachment.root, true);
+  expect(boundary.lockRequests).toHaveBeenCalledOnce();
+});
+
 describe("workspace activation entrance barrier", () => {
   it("forwards only the current host preview proof and releases its provider on disposal", () => {
     const { runtime } = createHarness();
@@ -295,6 +334,7 @@ describe("coalesced workspace activation", () => {
       });
       boundary.createScene.mockImplementationOnce(() => ({
         dispose: vi.fn(),
+        disableInput: vi.fn(),
         ready,
         setScheme: vi.fn(),
       }));
@@ -345,6 +385,7 @@ describe("coalesced workspace activation", () => {
     });
     boundary.createScene.mockImplementation(() => ({
       dispose: vi.fn(),
+      disableInput: vi.fn(),
       ready: sceneReady,
       setScheme: vi.fn(),
     }));
@@ -361,6 +402,7 @@ describe("coalesced workspace activation", () => {
     const { attachment, finishEntrance, runtime } = startActivation();
     boundary.createScene.mockImplementationOnce(() => ({
       dispose: vi.fn(),
+      disableInput: vi.fn(),
       ready: Promise.reject(new Error("Scene startup failed")),
       setScheme: vi.fn(),
     }));

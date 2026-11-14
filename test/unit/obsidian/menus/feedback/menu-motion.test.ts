@@ -8,6 +8,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { registerMenuFeedback } from "../../../../../src/obsidian/menus/feedback/menu-feedback";
 import type { StyleControl } from "../../../../../src/obsidian/menus/editor-menu-types";
 import { createStyleMenuContent } from "../../../../../src/obsidian/menus/style-menu-content";
+import { createTextStyleControls } from "../../../../../src/obsidian/menus/text-style-controls";
+import { createBuiltInSettings } from "../../../../../src/domain/settings";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 
 const feedbackStyles = Platform.isDesktop
@@ -189,6 +191,38 @@ it("retains switch semantics through reversal and reduced motion, then releases 
   release();
   input.click();
   expect(input.checked).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("retains independent text toggle semantics through shared feedback reversal and cleanup", async () => {
+  const root = menuRoot();
+  const controls = createTextStyleControls(createBuiltInSettings().toolDefaults.text).filter(
+    (control) => control.kind === "toggle",
+  );
+  const onChange = appendMenuControls(root, controls);
+  const buttons = [...root.querySelectorAll<HTMLButtonElement>("button")];
+  const release = registerMenuFeedback(root, root, window);
+  buttons[0]!.focus();
+  buttons[0]!.click();
+  buttons[1]!.click();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual([
+    "true",
+    "true",
+    "false",
+    "false",
+  ]);
+  buttons[0]!.click();
+  expect(onChange).toHaveBeenLastCalledWith("text-bold", false);
+  root.dataset.inkbookMotion = "reduced";
+  await vi.advanceTimersByTimeAsync(0);
+  expect(buttons[1]!.getAttribute("aria-pressed")).toBe("true");
+  expect(document.activeElement).toBe(buttons[0]);
+  expect(vi.getTimerCount()).toBe(0);
+  release();
+  buttons[1]!.click();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(onChange).toHaveBeenLastCalledWith("text-italic", false);
   expect(vi.getTimerCount()).toBe(0);
 });
 

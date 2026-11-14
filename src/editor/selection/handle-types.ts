@@ -1,4 +1,4 @@
-import type { InkElementV1, PointV1, BoxAnchorV1 } from "../../domain/schema/public";
+import type { InkElementV1, PointV1, BoxAnchorV1, TextElementV2 } from "../../domain/schema/public";
 import type { Bounds } from "../../domain/geometry/public";
 import type {
   SnapCandidate,
@@ -9,6 +9,7 @@ import type {
 
 import type { SelectionReplacementPlanner } from "./selection-work-budget";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import type { TextReflow } from "./transform/text-reflow-session";
 
 export interface SelectedElementGeometry {
   readonly bounds: Bounds;
@@ -60,6 +61,7 @@ export type SelectionPreviewTransform =
     };
 
 export interface SelectionHandlePreview {
+  readonly textScaleBasis?: TextElementV2;
   readonly exactElements: readonly InkElementV1[];
   readonly exactPreviewTruncated: boolean;
   readonly previewFrame: SelectionPreviewFrame | null;
@@ -118,6 +120,7 @@ export interface SelectionSnapFeatures {
 }
 
 export interface SelectionHandleSessionOptions {
+  readonly reflowText?: TextReflow;
   readonly onPreviewReady?: (preview: SelectionHandlePreview) => void;
   readonly action: SelectionHandleAction;
   readonly elements: readonly InkElementV1[];

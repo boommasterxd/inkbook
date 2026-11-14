@@ -3,16 +3,93 @@ import type {
   BoxShapeElementV1,
   InkElementV1,
   PageV1,
+  TextElementV2,
+  FontResourceV2,
 } from "../../../../src/domain/schema/public";
 import {
   encodeRuntimeSelection,
   resolveClipboardPayload,
 } from "../../../../src/persistence/clipboard/codec";
 import type { DecodedClipboard } from "../../../../src/persistence/clipboard/types";
+import { createFontResource } from "../../../../src/persistence/fonts/font-resources";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import { Platform } from "obsidian";
+import { textElement as schemaTextElement } from "../../domain/schema/fixtures";
 
 export const RECTANGLE_ID = "11111111-1111-4111-8111-111111111111";
 export const ARROW_ID = "22222222-2222-4222-8222-222222222222";
 export const EXTERNAL_ID = "33333333-3333-4333-8333-333333333333";
+
+export function textElement(source = "Text"): TextElementV2 {
+  const base = schemaTextElement();
+  return {
+    ...base,
+    id: EXTERNAL_ID,
+    createdAt: 1,
+    kind: "text",
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 30,
+    rotation: 0,
+    pivot: { x: 50, y: 15 },
+    source,
+    style: {
+      ...base.style,
+      fontFamily: "inter",
+      fontSize: 20,
+    },
+    layout: {
+      version: 1,
+      lines: [
+        {
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 30,
+          baseline: 20,
+          runs: [{ text: source, start: 0, end: source.length, x: 0, width: 100 }],
+        },
+      ],
+    },
+  };
+}
+
+export const fontResource = (
+  weight = 400,
+  style: "normal" | "italic" = "normal",
+): FontResourceV2 => ({
+  id: `inter_${weight}_${style}`,
+  family: "inter",
+  weight,
+  style,
+  mimeType: "font/woff2",
+  data: "AAECAw==",
+});
+
+const validFonts = new Map<string, Promise<FontResourceV2>>();
+
+/** Reuse immutable admitted asset bytes while each scenario keeps its own mutable records. */
+export async function validFontResource(
+  weight = 400,
+  style: "normal" | "italic" = "normal",
+): Promise<FontResourceV2> {
+  const key = `${weight}-${style}`;
+  let pending = validFonts.get(key);
+  if (pending === undefined) {
+    pending = loadFont(weight, style);
+    validFonts.set(key, pending);
+  }
+  return { ...(await pending) };
+}
+
+async function loadFont(weight: number, style: "normal" | "italic"): Promise<FontResourceV2> {
+  if (!Platform.isDesktop) throw new Error("Asset fixtures require desktop test runtime.");
+  const { readFile } = await import("node:fs/promises");
+  const root = new URL("../../../../src/persistence/fonts/assets/", import.meta.url);
+  const bytes = new Uint8Array(await readFile(new URL(`inter-${weight}-${style}.woff2`, root)));
+  return createFontResource(bytes, { family: "inter", weight, style }, new TestWorkScheduler());
+}
 
 const outlineStyle = {
   outlineColor: { type: "theme-text" as const },

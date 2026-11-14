@@ -13,8 +13,8 @@ describe("hold-to-shape vault settings", () => {
     expect(result.value).toEqual(current);
     expect(result.value.holdToShape).toEqual({
       enabled: true,
-      holdDurationMs: 600,
-      jitterTolerancePx: 12,
+      holdDurationMs: 400,
+      jitterTolerancePx: 20,
     });
   });
 

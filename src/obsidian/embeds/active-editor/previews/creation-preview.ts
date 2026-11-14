@@ -290,7 +290,7 @@ export class CreationPreview implements GesturePreview {
 
   #createDragElement(): InkElementV1 {
     const tool = this.#start.tool;
-    if (isFreehand(tool) || tool === "select" || tool === "eraser") {
+    if (isFreehand(tool) || tool === "select" || tool === "eraser" || tool === "text") {
       throw new TypeError(`${tool} is not a drag creation tool.`);
     }
     const start = this.#startSnap?.point ?? this.#start.pointer;

@@ -437,7 +437,7 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
       typeof value.sourceVersion === "number" &&
       Number.isSafeInteger(value.sourceVersion) &&
       value.sourceVersion >= 0 &&
-      value.sourceVersion <= 1
+      value.sourceVersion <= 2
     );
   }
   if (value.type !== "export-success-wire") return true;

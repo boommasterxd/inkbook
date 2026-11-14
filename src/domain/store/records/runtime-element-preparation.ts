@@ -1,7 +1,7 @@
 import { copyRuntimeElementSteps } from "../../elements/runtime-element-copy";
 import { validateRuntimeReplacementSteps } from "../../elements/runtime-replacement-validation";
 import type { InkElementV1 } from "../../schema/public";
-import { takeImmutableElementOwnership } from "./immutability";
+import { takeImmutableElementOwnershipSteps } from "./immutability";
 import type { MutationPreparationScheduler } from "../mutations/mutation-preparation-scheduler";
 import type { ElementRecord } from "../types";
 import { preparedInsertionBounds } from "../mutations/prepared-insertion-element";
@@ -18,7 +18,7 @@ export function prepareRuntimeElement(
   const points = owned?.element.kind === "stroke" ? owned.element.points : undefined;
   const phase = { copying: true };
   try {
-    const copy = copyRuntimeElementSteps(element, points);
+    const copy = copyRuntimeElementSteps(element, points, owned?.element);
     const prepared = scheduler.run(prepareRuntimeElementSteps(copy, owned, phase));
     return prepared instanceof Promise
       ? prepared.catch((error: unknown) => rethrowPreparationError(error, phase.copying))
@@ -39,7 +39,7 @@ function* prepareRuntimeElementSteps(
   yield;
   const validation = yield* validateRuntimeReplacementSteps(owned?.element ?? {}, staged);
   if (!validation.ok) throw new RangeError(`Invalid runtime element: ${validation.error.code}`);
-  return takeImmutableElementOwnership(staged) as InkElementV1;
+  return (yield* takeImmutableElementOwnershipSteps(staged)) as InkElementV1;
 }
 
 function rethrowPreparationError(error: unknown, copying: boolean): never {

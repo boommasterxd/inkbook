@@ -19,6 +19,7 @@ export class OwnedMenuItem implements MenuItemPort {
   public label = false;
   public keepOpen = false;
   public callback: ((event: unknown) => void) | undefined;
+  public highlightCallback: ((active: boolean) => void) | undefined;
 
   public setTitle(title: string): this {
     this.title = title;
@@ -58,6 +59,10 @@ export class OwnedMenuItem implements MenuItemPort {
     this.callback = callback;
     return this;
   }
+  public onHighlight(callback: (active: boolean) => void): this {
+    this.highlightCallback = callback;
+    return this;
+  }
 }
 
 export function renderOwnedMenuItems(
@@ -91,6 +96,14 @@ export function renderOwnedMenuItems(
     if (item.disabled || item.label) continue;
     row.tabIndex = -1;
     row.addEventListener("click", (event) => activate(item, event));
+    if (item.highlightCallback !== undefined) {
+      row.addEventListener("focus", () => {
+        if (row.isConnected) item.highlightCallback?.(true);
+      });
+      row.addEventListener("focusout", () => {
+        if (row.isConnected) item.highlightCallback?.(false);
+      });
+    }
     row.addEventListener("pointermove", (event) => {
       if (event.pointerType === "mouse") row.focus({ preventScroll: true });
     });

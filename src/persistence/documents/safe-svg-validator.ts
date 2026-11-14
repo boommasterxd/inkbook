@@ -1,22 +1,14 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import { hasExactAttributes, parseOpeningTag, skipWhitespace } from "./svg-tag";
-import {
-  validateDashArray,
-  validatePathDataSteps,
-  type PathValidationStepOptions,
-} from "./path-data-validator";
-import {
-  CANONICAL_THEME_STYLESHEET,
-  DOCUMENT_PALETTE,
-  DOCUMENT_THEME_FALLBACK,
-  THEME_CLASSES,
-  isSupportedThemeStylesheet,
-  type ThemeClass,
-} from "./svg-theme";
-import { parseCanonicalSvgDecimal, parseCanonicalSvgOpacity } from "./svg-number";
+import { validatePathAttributesSteps } from "./safe-svg-paths";
+export { validatePathAttributesSteps } from "./safe-svg-paths";
+import { CANONICAL_THEME_STYLESHEET, isSupportedThemeStylesheet } from "./svg-theme";
+import { parseCanonicalSvgOpacity } from "./svg-number";
 import { parseSafeSvgRoot, type SafeSvgRoot, type SafeSvgVersionPolicy } from "./svg-envelope-root";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "./svg-output-limits";
 import { decodeMetadataTextSteps, measureUtf8BytesSteps } from "./safe-svg-metadata";
+import { validateFontStylesheetSteps, type SafeSvgFontFace } from "./safe-svg-fonts";
+import { validateTextElementSteps } from "./safe-svg-text";
 import {
   COMPACT_METADATA_ENCODING,
   type SnapshotMetadataEncoding,
@@ -27,22 +19,9 @@ const MAXIMUM_PATHS = 60_004;
 const MAXIMUM_TOTAL_COMMANDS = 8_000_000;
 const DEFAULT_PATHS_PER_STEP = 128;
 const MARKUP_CODE_UNITS_PER_STEP = 256 * 1024;
-const RGBA = /^#[0-9A-F]{8}$/u;
-const PATH_ATTRIBUTES = new Set([
-  "class",
-  "d",
-  "fill",
-  "fill-opacity",
-  "fill-rule",
-  "stroke",
-  "stroke-dasharray",
-  "stroke-linecap",
-  "stroke-linejoin",
-  "stroke-opacity",
-  "stroke-width",
-]);
-
 interface SafeSvgPrefix {
+  readonly fontFaces?: readonly SafeSvgFontFace[];
+  readonly fontStylesheet?: string;
   readonly cursor: number;
   readonly metadataText: string;
   readonly metadataEncoding: SnapshotMetadataEncoding;
@@ -62,6 +41,9 @@ export interface SafeSvgValidationStepOptions {
 }
 
 export interface SafeSvgValidation {
+  readonly unadjustedTextRuns: number;
+  readonly fontFaces?: readonly SafeSvgFontFace[];
+  readonly fontStylesheet?: string;
   readonly groups: SafeSvgGroupRanges;
   readonly lockedHeight: number;
   readonly metadataBytes: number;
@@ -78,6 +60,8 @@ export interface SafeSvgValidation {
 export type SafeSvgPrelude = Readonly<
   Pick<SafeSvgRoot, "revision" | "snapshotHash" | "version"> & {
     lockedHeight: number;
+    fontStylesheet?: string;
+    fontFaces?: readonly SafeSvgFontFace[];
     metadataEncoding: SnapshotMetadataEncoding;
     requiresCanonicalRewrite: boolean;
   }
@@ -86,85 +70,6 @@ export type SafeSvgPrelude = Readonly<
 interface SafeSvgMetadata {
   readonly metadataBytes: number;
   readonly metadataText: string;
-}
-
-function validatePaint(value: string | undefined): boolean {
-  return value === undefined || value === "none" || RGBA.test(value);
-}
-
-function optionalMember(value: string | undefined, allowed: readonly string[]): boolean {
-  return value === undefined || allowed.includes(value);
-}
-
-function validateOptionalDecimals(attributes: ReadonlyMap<string, string>): boolean {
-  const opacityValid = ["fill-opacity", "stroke-opacity"].every((name) => {
-    const value = attributes.get(name);
-    return value === undefined || parseCanonicalSvgOpacity(value) !== null;
-  });
-  const width = attributes.get("stroke-width");
-  return opacityValid && (width === undefined || parseCanonicalSvgDecimal(width, 256) !== null);
-}
-
-export function* validatePathAttributesSteps(
-  attributes: ReadonlyMap<string, string>,
-  deadlineExceeded?: () => boolean,
-  observeCommand?: PathValidationStepOptions["observeCommand"],
-): Generator<void, number | null> {
-  if (
-    attributes.size === 0 ||
-    [...attributes.keys()].some((name) => !PATH_ATTRIBUTES.has(name)) ||
-    !validatePaint(attributes.get("fill")) ||
-    !validatePaint(attributes.get("stroke"))
-  ) {
-    return null;
-  }
-  const pathData = attributes.get("d");
-  const pathResult =
-    pathData === undefined
-      ? null
-      : yield* validatePathDataSteps(pathData, {
-          ...(deadlineExceeded === undefined ? {} : { deadlineExceeded }),
-          ...(observeCommand === undefined ? {} : { observeCommand }),
-        });
-  if (pathResult === null) {
-    return null;
-  }
-  const className = attributes.get("class");
-  if (className !== undefined && !THEME_CLASSES.some((entry) => entry === className)) {
-    return null;
-  }
-  if (className !== undefined && !validateThemeFallback(attributes, className as ThemeClass)) {
-    return null;
-  }
-  if (
-    !optionalMember(attributes.get("fill-rule"), ["nonzero", "evenodd"]) ||
-    !optionalMember(attributes.get("stroke-linecap"), ["butt", "round", "square"]) ||
-    !optionalMember(attributes.get("stroke-linejoin"), ["miter", "round", "bevel"]) ||
-    !validateOptionalDecimals(attributes)
-  ) {
-    return null;
-  }
-  const dash = attributes.get("stroke-dasharray");
-  return dash !== undefined && !validateDashArray(dash) ? null : pathResult.commands;
-}
-
-function validateThemeFallback(
-  attributes: ReadonlyMap<string, string>,
-  className: ThemeClass,
-): boolean {
-  const text = DOCUMENT_PALETTE.light.text;
-  switch (className) {
-    case "inkbook-theme-page":
-      return attributes.get("fill") === DOCUMENT_PALETTE.light.page;
-    case "inkbook-theme-guide":
-      return attributes.get("stroke") === DOCUMENT_THEME_FALLBACK.guide;
-    case "inkbook-theme-stroke":
-      return attributes.get("stroke") === text;
-    case "inkbook-theme-fill":
-      return attributes.get("fill") === text;
-    case "inkbook-theme-stroke-fill":
-      return attributes.get("stroke") === text && attributes.get("fill") === text;
-  }
 }
 
 function expectTextElement(
@@ -192,6 +97,8 @@ export interface SvgTotals {
   groups: number;
   pathBytes: number;
   paths: number;
+  textElements?: number;
+  unadjustedTextRuns?: number;
 }
 
 export function validPressureGroup(
@@ -267,30 +174,29 @@ function* parsePathGroupSteps(
   let pathsSinceStep = 0;
   let pressurePaths: number | null = null;
   while (pressurePaths !== null || !input.startsWith("</g>", cursor)) {
-    if (pressurePaths !== null && input.startsWith("</g>", cursor)) {
+    if (input.startsWith("</g>", cursor)) {
       if (pressurePaths === 0) return null;
       pressurePaths = null;
       cursor = skipWhitespace(input, cursor + 4);
       continue;
     }
     const path = parseOpeningTag(input, cursor);
+    if (path?.name === "text") {
+      const next = yield* parseBandTextSteps(input, cursor, { id, pressurePaths, totals });
+      if (next === null) return null;
+      cursor = skipWhitespace(input, next);
+      continue;
+    }
     if (path?.name === "g") {
       if (!validPressureGroup(path, id, pressurePaths, totals)) return null;
       pressurePaths = 0;
       cursor = skipWhitespace(input, path.next);
       continue;
     }
-    if (path === null || path.name !== "path" || !path.selfClosing) {
-      return null;
-    }
-    const commands = yield* validatePathAttributesSteps(path.attributes, deadlineExceeded);
-    const pathData = path.attributes.get("d")!;
-    if (commands === null) {
-      return null;
-    }
+    const next = yield* parseSinglePathSteps(path, totals, deadlineExceeded);
+    if (next === null) return null;
     if (pressurePaths !== null && ++pressurePaths > 1) return null;
-    if (!accountPath(totals, commands, pathData)) return null;
-    cursor = skipWhitespace(input, path.next);
+    cursor = skipWhitespace(input, next);
     pathsSinceStep += 1;
     if (pathsSinceStep === pathsPerStep) {
       pathsSinceStep = 0;
@@ -301,25 +207,61 @@ function* parsePathGroupSteps(
   return { next: cursor + 4, range: { end: cursor, start: contentStart } };
 }
 
+function* parseSinglePathSteps(
+  path: ReturnType<typeof parseOpeningTag>,
+  totals: SvgTotals,
+  deadlineExceeded?: () => boolean,
+): Generator<void, number | null> {
+  if (path === null || path.name !== "path" || !path.selfClosing) return null;
+  const commands = yield* validatePathAttributesSteps(
+    path.attributes,
+    deadlineExceeded,
+    undefined,
+    totals.textElements === undefined ? 1 : 2,
+  );
+  return commands !== null && accountPath(totals, commands, path.attributes.get("d")!)
+    ? path.next
+    : null;
+}
+
+function* parseBandTextSteps(
+  input: string,
+  cursor: number,
+  context: { id: string; pressurePaths: number | null; totals: SvgTotals },
+): Generator<void, number | null> {
+  const { id, pressurePaths, totals } = context;
+  if (id !== "inkbook-content" || pressurePaths !== null || totals.textElements === undefined)
+    return null;
+  const next = yield* validateTextElementSteps(input, cursor, {
+    open: () => undefined,
+    close: () => undefined,
+    unadjustedText: () => {
+      totals.unadjustedTextRuns = (totals.unadjustedTextRuns ?? 0) + 1;
+    },
+  });
+  totals.textElements += 1;
+  return totals.textElements > FILE_SCHEMA_LIMITS.elements ? null : next;
+}
+
 export function validateSafeSvg(svg: string): SafeSvgValidation | null {
   return completeValidation(validateSafeSvgSteps(svg));
 }
 
-export function validateEditableSafeSvg(svg: string): SafeSvgValidation | null {
-  return completeValidation(validateSafeSvgSteps(svg, { versionPolicy: "editable" }));
-}
-
 /** Validates the bounded root, stylesheet, and opening metadata tag without retaining static paths. */
-export function validateEditableSafeSvgPrelude(prefix: string): SafeSvgPrelude | null {
+export function* validateEditableSafeSvgPreludeSteps(
+  prefix: string,
+): Generator<void, SafeSvgPrelude | null> {
   const synthetic =
     `${prefix}</metadata>` +
     '<g id="inkbook-background"></g>' +
     '<g id="inkbook-highlights"></g>' +
     '<g id="inkbook-content"></g></svg>';
-  const safe = validateEditableSafeSvg(synthetic);
+  const safe = yield* validateSafeSvgSteps(synthetic, { versionPolicy: "editable" });
   return safe === null
     ? null
     : {
+        ...(safe.fontStylesheet === undefined ? {} : { fontStylesheet: safe.fontStylesheet }),
+        ...(safe.fontFaces === undefined ? {} : { fontFaces: safe.fontFaces }),
         lockedHeight: safe.lockedHeight,
         metadataEncoding: safe.metadataEncoding,
         requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
@@ -351,14 +293,20 @@ export function* validateSafeSvgSteps(
   }
   if (yield* hasUnsupportedMarkupSteps(svg)) return null;
   const versionPolicy = options.versionPolicy ?? "current";
-  const prefix = parseSafeSvgPrefix(svg, versionPolicy);
+  const prefix = yield* parseSafeSvgPrefixSteps(svg, versionPolicy);
   if (prefix === null) {
     return null;
   }
   const metadata = yield* validateSafeSvgMetadataSteps(prefix.metadataText);
   if (metadata === null) return null;
   let cursor = prefix.cursor;
-  const totals = { commands: 0, groups: 0, pathBytes: 0, paths: 0 };
+  const totals: SvgTotals = {
+    commands: 0,
+    groups: 0,
+    pathBytes: 0,
+    paths: 0,
+    ...(prefix.root.version >= 2 ? { textElements: 0 } : {}),
+  };
   const groups = {} as Record<keyof SafeSvgGroupRanges, SafeSvgGroupRange>;
   for (const group of ["inkbook-background", "inkbook-highlights", "inkbook-content"]) {
     const parsedGroup = yield* parsePathGroupSteps(
@@ -380,12 +328,15 @@ export function* validateSafeSvgSteps(
     return null;
   }
   return {
+    ...(prefix.fontStylesheet === undefined ? {} : { fontStylesheet: prefix.fontStylesheet }),
+    ...(prefix.fontFaces === undefined ? {} : { fontFaces: prefix.fontFaces }),
     groups,
     lockedHeight: prefix.root.height,
     metadataBytes: metadata.metadataBytes,
     metadataText: metadata.metadataText,
     metadataEncoding: prefix.metadataEncoding,
     pathCommands: totals.commands,
+    unadjustedTextRuns: totals.unadjustedTextRuns ?? 0,
     paths: totals.paths,
     revision: prefix.root.revision,
     requiresCanonicalRewrite: prefix.requiresCanonicalRewrite,
@@ -414,10 +365,10 @@ function* hasUnsupportedMarkupSteps(svg: string): Generator<void, boolean> {
   return false;
 }
 
-function parseSafeSvgPrefix(
+function* parseSafeSvgPrefixSteps(
   svg: string,
   versionPolicy: SafeSvgVersionPolicy,
-): SafeSvgPrefix | null {
+): Generator<void, SafeSvgPrefix | null> {
   let cursor = skipWhitespace(svg, 0);
   const rootTag = parseOpeningTag(svg, cursor);
   const root = rootTag === null ? null : parseSafeSvgRoot(rootTag, versionPolicy);
@@ -426,6 +377,21 @@ function parseSafeSvgPrefix(
   const style = expectTextElement(svg, cursor, "style", { id: "inkbook-theme" });
   if (style === null || !isSupportedThemeStylesheet(style.text)) return null;
   cursor = skipWhitespace(svg, style.next);
+  let fontStylesheet: string | undefined;
+  let fontFaces: SafeSvgFontFace[] | undefined;
+  if (svg.startsWith('<style id="inkbook-fonts">', cursor)) {
+    const fonts = expectTextElement(svg, cursor, "style", { id: "inkbook-fonts" });
+    fontFaces = [];
+    const parsedFaces = fontFaces;
+    if (
+      root.version < 2 ||
+      fonts === null ||
+      !(yield* validateFontStylesheetSteps(fonts.text, (face) => parsedFaces.push(face)))
+    )
+      return null;
+    fontStylesheet = fonts.text;
+    cursor = skipWhitespace(svg, fonts.next);
+  }
   const metadataTag = parseOpeningTag(svg, cursor);
   const metadataEncoding = metadataTag?.attributes.get("data-encoding");
   if (metadataEncoding !== "json" && metadataEncoding !== COMPACT_METADATA_ENCODING) return null;
@@ -436,6 +402,8 @@ function parseSafeSvgPrefix(
   return metadata === null
     ? null
     : {
+        ...(fontStylesheet === undefined ? {} : { fontStylesheet }),
+        ...(fontFaces === undefined ? {} : { fontFaces }),
         cursor: skipWhitespace(svg, metadata.next),
         metadataText: metadata.text,
         metadataEncoding,
@@ -444,9 +412,7 @@ function parseSafeSvgPrefix(
       };
 }
 
-function completeValidation(
-  steps: Generator<void, SafeSvgValidation | null>,
-): SafeSvgValidation | null {
+function completeValidation<T>(steps: Generator<void, T>): T {
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;

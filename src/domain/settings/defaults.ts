@@ -58,6 +58,19 @@ function toolDefaults(): ToolDefaultsV1 {
   ]) as ToolDefaultsV1["shapes"];
 
   return {
+    text: {
+      fontFamily: "inter",
+      fontSize: 24,
+      color: { type: "theme-text" },
+      opacity: 1,
+      bold: false,
+      italic: false,
+      underline: false,
+      strikethrough: false,
+      backgroundColor: null,
+      backgroundOpacity: 1,
+      alignment: "left",
+    },
     select: { area: "lasso", inclusion: "touched" },
     pen: {
       color: { type: "theme-text" },
@@ -87,7 +100,9 @@ function toolDefaults(): ToolDefaultsV1 {
 
 export function createBuiltInSettings(): InkbookSettingsV4 {
   return {
+    copyTextFieldsAsText: false,
     version: 4,
+    fontLibrary: [],
     startupTool: "draw",
     selectionHighlightsEnabled: true,
     toolDefaults: toolDefaults(),
@@ -98,7 +113,7 @@ export function createBuiltInSettings(): InkbookSettingsV4 {
       connections: true,
       structures: true,
     },
-    holdToShape: { enabled: true, holdDurationMs: 600, jitterTolerancePx: 12 },
+    holdToShape: { enabled: true, holdDurationMs: 400, jitterTolerancePx: 20 },
     pageDefaults: {
       backgroundType: "squares",
       backgroundSpacing: {
@@ -118,6 +133,7 @@ export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV2 {
   return {
     version: 2,
     onboardingDismissed: false,
+    readableLineWidthWarningDismissed: false,
     scrollPreloadMarginPx: DEFAULT_SCROLL_PRELOAD_MARGIN_PX,
     fingerDrawingEnabled: false,
     penTapInsertion: "off",

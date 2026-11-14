@@ -9,6 +9,7 @@ import {
 
 function iconId(tool: InputState["activeTool"], defaults: ToolDefaultsV1): string | undefined {
   if (tool === "eraser") return undefined;
+  if (tool === "text") return "type";
   if (tool === "select") return selectionAreaIconId(defaults.select.area);
   if (tool === "draw" || tool === "highlighter" || tool === "straight-highlighter") {
     return DRAWING_TOOL_ICON_IDS[tool];

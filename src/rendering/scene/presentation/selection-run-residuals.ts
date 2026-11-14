@@ -2,6 +2,7 @@ import type { MountedSceneElement } from "../content/mounted-element";
 import { updatePreviewTransform } from "../content/mounted-element";
 import type { MutableSceneInstrumentation } from "../types";
 import type { ProgressivePreviewTransform } from "./progressive-preview-request";
+import { multiplyAffineMatrices } from "../../../domain/geometry/affine-matrix";
 
 type Matrix = NonNullable<ProgressivePreviewTransform["matrix"]>;
 export const IDENTITY_MATRIX: Matrix = [1, 0, 0, 1, 0, 0];
@@ -197,16 +198,7 @@ function payload(member: Residual): number {
 }
 
 export function composeMatrices(left: Matrix, right: Matrix = IDENTITY_MATRIX): Matrix {
-  const [a, b, c, d, e, f] = left,
-    [g, h, i, j, k, l] = right;
-  return [
-    a * g + c * h,
-    b * g + d * h,
-    a * i + c * j,
-    b * i + d * j,
-    a * k + c * l + e,
-    b * k + d * l + f,
-  ];
+  return multiplyAffineMatrices(left, right);
 }
 export function inverseMatrix(matrix: Matrix): Matrix | undefined {
   const [a, b, c, d, e, f] = matrix,

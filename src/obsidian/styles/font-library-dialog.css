@@ -1,0 +1,274 @@
+.inkbook-font-library-dialog.inkbook-settings-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  interpolate-size: allow-keywords;
+}
+
+.inkbook-font-library-title {
+  margin: 0;
+  padding: var(--size-4-5) var(--size-4-5) var(--size-4-3);
+}
+
+.inkbook-font-library-dialog.inkbook-settings-modal .inkbook-font-library-dialog-content {
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  margin: 0;
+  min-block-size: 0;
+  padding: 0;
+}
+
+.inkbook-font-library-body {
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--size-4-5) var(--size-4-5);
+}
+
+.inkbook-font-library-content {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-normal);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.inkbook-font-library-dialog .inkbook-font-library-content [hidden] {
+  display: none;
+}
+
+.inkbook-font-library-content > p {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  margin: 0;
+}
+
+.inkbook-font-library-controls {
+  display: grid;
+  gap: var(--size-4-3);
+  margin-block-start: var(--size-4-3);
+}
+
+.inkbook-font-library-dialog .inkbook-font-library-content .setting-group {
+  inline-size: 100%;
+  max-inline-size: none;
+  margin: 0;
+}
+
+.inkbook-font-library-content .setting-item {
+  align-items: center;
+  display: grid;
+  gap: var(--size-4-2);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+}
+
+.inkbook-font-library-dialog .inkbook-font-library-content .setting-items > .setting-item {
+  padding: var(--size-4-2) var(--size-4-3);
+}
+
+.inkbook-font-library-content .setting-item-info {
+  inline-size: 100%;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.inkbook-font-library-content .setting-item.inkbook-font-library-font-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 0;
+}
+
+.inkbook-font-library-font-row > .inkbook-settings-motion-panel {
+  grid-column: 1 / -1;
+  min-inline-size: 0;
+}
+
+.inkbook-font-library-content .setting-item.inkbook-font-library-empty-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.inkbook-font-library-content .setting-item[data-inkbook-setting-identity="font-library-add"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.inkbook-font-library-content .setting-item-control {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1);
+  justify-content: flex-end;
+  min-inline-size: 0;
+}
+
+.inkbook-font-library-content .setting-item-control.inkbook-dialog-actions {
+  flex-direction: row;
+}
+
+.inkbook-font-library-content select {
+  flex: 1;
+}
+
+.inkbook-font-library-content .inkbook-font-library-import-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.inkbook-font-library-import-row .setting-item-name {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+}
+
+.inkbook-font-library-import-row .setting-item-control > select {
+  flex: 1 1 160px;
+}
+
+.inkbook-font-library-dialog .inkbook-font-library-icon-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-m);
+  block-size: 44px;
+  box-shadow: none;
+  color: var(--text-normal);
+  display: inline-flex;
+  inline-size: 44px;
+  justify-content: center;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: 0;
+  transition: none;
+}
+
+.inkbook-font-library-dialog .inkbook-dialog-actions > .inkbook-font-library-icon-button {
+  align-self: center;
+  flex: 0 0 44px;
+  order: 0;
+}
+
+.inkbook-font-library-icon-button > svg {
+  block-size: var(--icon-size);
+  inline-size: var(--icon-size);
+}
+
+.inkbook-font-library-dialog .inkbook-font-library-icon-button[data-warning="true"] {
+  --inkbook-menu-hover-background: var(--inkbook-tone-danger-subtle);
+  --inkbook-menu-press-background: var(--inkbook-tone-danger-subtle);
+
+  color: var(--inkbook-tone-danger);
+}
+
+.inkbook-font-family-editor {
+  display: grid;
+  gap: var(--size-4-3);
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.inkbook-font-family-editor .setting-item-control > input {
+  inline-size: 100%;
+  min-block-size: 44px;
+  min-inline-size: 0;
+}
+
+.inkbook-font-library-content :is(select, button) {
+  block-size: auto;
+  max-inline-size: 100%;
+  min-block-size: 44px;
+  min-inline-size: 0;
+  white-space: normal;
+}
+
+.inkbook-font-library-status {
+  color: var(--text-muted);
+}
+
+.inkbook-font-family-editor > .inkbook-font-library-status:empty {
+  display: none;
+}
+
+.inkbook-font-library-outcomes:has(
+  .inkbook-font-library-status:not(:empty),
+  .inkbook-settings-control-error:not([hidden]),
+  .inkbook-font-library-success:not([hidden])
+) {
+  margin-block-start: var(--size-4-3);
+}
+
+.inkbook-font-library-success:not([hidden]) {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  padding-block: var(--size-4-4);
+}
+
+.inkbook-font-library-success > p {
+  font-weight: var(--font-medium);
+  margin-block: 0 var(--size-4-2);
+}
+
+.inkbook-font-library-preview .inkbook-font-sample {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-normal);
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding-block-start: var(--size-4-2);
+}
+
+.inkbook-font-library-container .inkbook-phone-dialog-header {
+  margin: 0;
+}
+
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"] .inkbook-font-library-title {
+  padding: 0;
+}
+
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  .inkbook-adaptive-panel-layout-host,
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  .inkbook-adaptive-panel-motion-surface,
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  .inkbook-adaptive-panel-layout-content {
+  display: flex;
+  flex-direction: column;
+  max-block-size: inherit;
+  min-block-size: 0;
+}
+
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  .inkbook-adaptive-panel-scroll {
+  max-block-size: calc(var(--inkbook-adaptive-panel-maximum-height, 60dvh) - 16px);
+  min-block-size: 0;
+  padding-block-end: 0;
+}
+
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"] .inkbook-font-library-body {
+  padding-block-end: 0;
+  padding-inline: 0;
+}
+
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"] .inkbook-font-library-content {
+  padding-block-end: max(
+    calc(var(--safe-area-inset-bottom, 0px) - var(--keyboard-height, 0px)),
+    var(--size-4-5)
+  );
+}
+
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  :is(.inkbook-adaptive-panel-drag-region, .inkbook-phone-dialog-header) {
+  flex-shrink: 0;
+}
+
+@media (width <= 600px) {
+  .inkbook-font-library-title,
+  .inkbook-font-library-body {
+    padding-inline: var(--size-4-3);
+  }
+
+  .inkbook-font-library-content .setting-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

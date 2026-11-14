@@ -203,7 +203,7 @@ export function registerAppliedDocumentMutation(
   });
 }
 
-async function applyDocumentHistoryMutation(
+export async function applyDocumentHistoryMutation(
   model: EditableDocumentModel,
   mutation: ElementMutation,
   replay: AppliedElementMutation,

@@ -154,7 +154,7 @@ describe("safe SVG metadata and bounded validation", () => {
     expect(validateSafeSvg(unsafe)).toBeNull();
     expect(
       validateNewerVersionSafeSvg(
-        unsafe.replace('data-inkbook-version="1"', 'data-inkbook-version="2"'),
+        unsafe.replace('data-inkbook-version="1"', 'data-inkbook-version="3"'),
       ),
     ).toBeNull();
   });
@@ -181,10 +181,10 @@ describe("safe SVG metadata and bounded validation", () => {
   });
 
   it("admits allowlisted static markup from a newer version only for safe fallback preview", () => {
-    const newer = validSvg.replace('data-inkbook-version="1"', 'data-inkbook-version="2"');
+    const newer = validSvg.replace('data-inkbook-version="1"', 'data-inkbook-version="3"');
 
     expect(validateSafeSvg(newer)).toBeNull();
-    expect(validateNewerVersionSafeSvg(newer)).toMatchObject({ version: 2 });
+    expect(validateNewerVersionSafeSvg(newer)).toMatchObject({ version: 3 });
     expect(validateNewerVersionSafeSvg(validSvg)).toBeNull();
     expect(
       validateNewerVersionSafeSvg(newer.replace("<path ", '<path onclick="bad()" ')),

@@ -104,3 +104,4 @@ export interface ActiveAutosave {
 export interface FlushWaiter {
   readonly resolve: (outcome: FlushOutcome) => void;
 }
+export type ConfirmedBase = Extract<VaultBase, { type: "confirmed" }>;

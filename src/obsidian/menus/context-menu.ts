@@ -9,6 +9,7 @@ const CONTEXT_MENU_ICONS = {
   copy: "copy",
   cut: "scissors",
   delete: "trash-2",
+  editText: "type",
   eraseAll: CAUTION_ERASER_ICON_ID,
   paste: "clipboard-paste",
   sendBackward: "arrow-down",
@@ -17,6 +18,8 @@ const CONTEXT_MENU_ICONS = {
 
 export type ContextMenuAction =
   | "copy"
+  | "copy-text"
+  | "copy-element"
   | "cut"
   | "delete"
   | "bring-forward"
@@ -29,6 +32,8 @@ export type ContextMenuAction =
   | "delete-embed";
 
 export interface ContextMenuState {
+  readonly canCopyText?: boolean | undefined;
+  readonly canEditText?: boolean;
   readonly hasSelection: boolean;
   readonly canPaste: boolean;
   readonly canBringForward: boolean;
@@ -41,6 +46,9 @@ export interface ContextMenuState {
 }
 
 export interface ContextMenuHandlers {
+  readonly copyText?: (() => void) | undefined;
+  readonly copyElement?: (() => void) | undefined;
+  readonly editText?: (() => void) | undefined;
   readonly copy: () => void;
   readonly cut: () => void;
   readonly delete: () => void;
@@ -107,7 +115,11 @@ function configureSelectionItems(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
-  configureItem(menu, "editor.action.copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
+  if (state.canEditText === true && handlers.editText !== undefined) {
+    configureItem(menu, "editor.action.edit-text", CONTEXT_MENU_ICONS.editText, handlers.editText);
+    menu.addSeparator();
+  }
+  configureCopyItems(menu, state, handlers);
   configureItem(menu, "editor.action.cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
   if (state.canPaste) {
     configureItem(menu, "editor.action.paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
@@ -145,6 +157,23 @@ function configureSelectionItems(
     handlers.sendToBack,
     { disabled: !state.canSendToBack },
   );
+}
+
+function configureCopyItems(
+  menu: LocalizedActionMenu,
+  state: ContextMenuState,
+  handlers: ContextMenuHandlers,
+): void {
+  const copyElement = state.canCopyText === true ? handlers.copyElement : undefined;
+  configureItem(
+    menu,
+    copyElement === undefined ? "editor.action.copy" : "editor.action.copy-element",
+    CONTEXT_MENU_ICONS.copy,
+    copyElement ?? handlers.copy,
+  );
+  if (state.canCopyText === true && handlers.copyText !== undefined) {
+    configureItem(menu, "editor.action.copy-text", CONTEXT_MENU_ICONS.copy, handlers.copyText);
+  }
 }
 
 function configureCanvasItems(
@@ -234,6 +263,14 @@ export function openContextMenu(
     state,
     {
       ...handlers,
+      ...(handlers.editText === undefined
+        ? {}
+        : {
+            editText: () => {
+              menu.close("handoff");
+              handlers.editText?.();
+            },
+          }),
       eraseAll: () => {
         // Restore focus before the confirmation dialog captures its return target.
         menu.close("handoff");

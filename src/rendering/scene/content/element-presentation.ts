@@ -50,6 +50,7 @@ export function pressureRootOpacity(element: InkElementV1): number {
 }
 
 export function pathPresentation(element: InkElementV1, part: SvgPathPart): PathPresentation {
+  if (element.kind === "text") throw new Error("Text uses its native SVG presentation.");
   if (element.kind === "stroke" || element.kind === "straight-highlighter") {
     const style =
       element.kind === "stroke" && element.style.pressureEnabled
@@ -70,6 +71,7 @@ export function pathPresentation(element: InkElementV1, part: SvgPathPart): Path
 
 /** Conservative fixed-size paint reserve for snapshots that restore canonical widths. */
 export function previewPaintPadding(element: InkElementV1): number {
+  if (element.kind === "text") return 0;
   if (element.kind === "stroke" || element.kind === "straight-highlighter") {
     return effectiveStrokeWidth(element) / 2;
   }

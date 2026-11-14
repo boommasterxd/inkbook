@@ -104,7 +104,6 @@ vi.mock("../../../src/obsidian/embeds/active-scene/active-scene", () => ({
     }
   },
 }));
-
 const TestTFile = TFile as unknown as new (path: string, size: number) => TFile;
 
 function serializedDocument(): { readonly bytes: Uint8Array; readonly svg: string } {
@@ -266,10 +265,12 @@ async function createDirtyPresentationWithBlockedSave() {
   const processGate = new Promise<void>((resolve) => {
     releaseProcess = resolve;
   });
+  let persisted = serializedDocument().svg;
+  harness.app.vault.read = async () => persisted;
   harness.app.vault.process.mockImplementation(
     async (_file: TFile, update: (current: string) => string) => {
       await processGate;
-      return update(serializedDocument().svg);
+      return (persisted = update(persisted));
     },
   );
   scene.options.model.commitPage({
@@ -333,10 +334,11 @@ describe("plugin workspace realm integration", () => {
     expect(scene?.options.deviceSettings).toEqual(harness.settings.device);
     expect(harness.readBinary).toHaveBeenCalledTimes(1);
     expect(inkbookRoot(presentation.root).dataset.inkbookState).toBe("active");
-
     harness.darken();
     expect(scene?.setScheme).toHaveBeenLastCalledWith("dark");
     const settingTab = (harness.plugin as unknown as TestPluginRegistration).settingTabs[0];
+    expect(Reflect.get(scene!.options, "textFonts")).toBeDefined();
+    expect(Reflect.get(scene!.options, "textFonts")).toBe(Reflect.get(settingTab!, "fontLibrary"));
     await settingTab?.setControlValue("device.scrollPreloadMarginPx", 800);
     expect(scene?.updateDeviceSettings).toHaveBeenLastCalledWith(
       expect.objectContaining({ scrollPreloadMarginPx: 800 }),
@@ -345,7 +347,6 @@ describe("plugin workspace realm integration", () => {
     expect(scene?.dispose).toHaveBeenCalledTimes(1);
     expect(presentation.root.classNames).not.toContain("inkbook-scrollbar-stable");
     expect(presentation.button.listeners.get("click")?.size ?? 0).toBe(0);
-
     harness.plugin.onunload();
   });
 
@@ -448,7 +449,6 @@ describe("plugin workspace activation serialization", () => {
     const draining = tasks.promise().then(() => {
       settled = true;
     });
-
     await vi.waitFor(() => expect(harness.app.vault.process).toHaveBeenCalledOnce());
     expect(settled).toBe(false);
     releaseProcess();

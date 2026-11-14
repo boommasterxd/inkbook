@@ -60,18 +60,40 @@ if (outputMain.trim().length === 0 || outputMain.includes("sourceMappingURL")) {
   throw new Error("dist/main.js must be non-empty and contain no source map reference.");
 }
 
-const license = (await readFile("LICENSE", "utf8")).trim();
+function normalizeLicense(text) {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+$/gm, "")
+    .trim();
+}
+
+const license = normalizeLicense(await readFile("LICENSE", "utf8"));
 for (const dependency of ["react", "react-dom", "scheduler"]) {
-  const dependencyLicense = (await readFile(`node_modules/${dependency}/LICENSE`, "utf8")).trim();
+  const dependencyLicense = normalizeLicense(
+    await readFile(`node_modules/${dependency}/LICENSE`, "utf8"),
+  );
   if (!license.includes(dependencyLicense)) {
     throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
   }
 }
 for (const dependency of ["motion", "framer-motion", "motion-dom", "motion-utils"]) {
-  const dependencyLicense = (
-    await readFile(`node_modules/${dependency}/LICENSE.md`, "utf8")
-  ).trim();
+  const dependencyLicense = normalizeLicense(
+    await readFile(`node_modules/${dependency}/LICENSE.md`, "utf8"),
+  );
   if (!license.includes(dependencyLicense)) {
+    throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
+  }
+}
+for (const [dependency, file] of [
+  ["brotli-dec-wasm", "node_modules/brotli-dec-wasm/LICENSE-MIT.txt"],
+  ["brotli-dec-wasm Rust runtime", "src/persistence/fonts/assets/brotli-runtime-licenses.txt"],
+  ["MathJax and NewCM", "node_modules/@mathjax/src/LICENSE"],
+  ["Inter", "src/persistence/fonts/assets/inter-OFL.txt"],
+  ["Source Serif 4", "src/persistence/fonts/assets/source-serif-OFL.txt"],
+  ["Caveat", "src/persistence/fonts/assets/caveat-OFL.txt"],
+  ["JetBrains Mono", "src/persistence/fonts/assets/jetbrains-mono-OFL.txt"],
+]) {
+  if (!license.includes(normalizeLicense(await readFile(file, "utf8")))) {
     throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
   }
 }

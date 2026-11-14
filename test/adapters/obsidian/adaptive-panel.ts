@@ -16,6 +16,7 @@ export function createAdaptivePanelFixture(
     readonly motion?: "full" | "reduced";
     readonly keyboard?: boolean;
     readonly onBack?: () => void;
+    readonly contentScroll?: HTMLElement;
   } = {},
 ) {
   const root = createHtmlElement("div");
@@ -54,6 +55,7 @@ export function createAdaptivePanelFixture(
     kind,
     label: kind === "style" ? "Style" : "Background",
     ...(options.onBack === undefined ? {} : { onBack: options.onBack }),
+    ...(options.contentScroll === undefined ? {} : { contentScroll: options.contentScroll }),
     onClosed,
     ownerDocument: document,
     ownerWindow: window,

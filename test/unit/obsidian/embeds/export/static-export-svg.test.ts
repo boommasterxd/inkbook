@@ -13,6 +13,47 @@ import { validatedPreview } from "../../../../fixtures/obsidian/markdown-export"
 import { serializeSvgEnvelope } from "../../../../../src/persistence/documents/svg-envelope";
 import { createWorkerSnapshot } from "../../../../fixtures/persistence/worker-snapshot";
 
+it("builds identical retained text typography and embedded font rules through cold and warm export paths", async () => {
+  const descriptor = await validatedPreview();
+  const stylesheet =
+    '@font-face{font-family:"inkbook-example";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,AA==") format("woff2")}';
+  const text = `<text xml:space="preserve" transform="rotate(15 100 200)"><tspan x="100" y="200" textLength="320.125" lengthAdjust="spacingAndGlyphs" font-family="inkbook-example" font-size="24" font-weight="400" font-style="italic" text-decoration="underline line-through" class="inkbook-theme-fill" fill="${PORTABLE_PALETTE_V1.light.text}" fill-opacity="0.5">  Résumé   &amp; &lt;math&gt;  </tspan></text>`;
+  const safeSvg = serializeSvgEnvelope({ ...createWorkerSnapshot([]), version: 2 }, 1000, {
+    background: [],
+    highlights: [],
+    content: [text],
+  }).replace("<metadata ", `<style id="inkbook-fonts">${stylesheet}</style><metadata `);
+  const options = {
+    workScheduler: immediateWorkScheduler(),
+    signal: new AbortController().signal,
+    colorScheme: "dark" as const,
+  };
+  const prepared = await createPreparedStaticExportSvg(
+    document,
+    { ...descriptor, safeSvg },
+    options,
+  );
+  const complete = await createStaticExportSvg(document, { ...descriptor, safeSvg }, options);
+  expect(prepared?.svg.outerHTML).toBe(complete?.outerHTML);
+  expect(prepared?.fragments).toEqual([{ minY: -Infinity, maxY: Infinity, background: false }]);
+  const span = complete?.querySelector("text tspan");
+  expect(span?.textContent).toBe("  Résumé   & <math>  ");
+  for (const svg of [prepared!.svg, complete!])
+    expect(
+      svg.querySelector("text")!.getAttributeNS("http://www.w3.org/XML/1998/namespace", "space"),
+    ).toBe("preserve");
+  expect(span?.getAttribute("fill")).toBe(PORTABLE_PALETTE_V1.dark.text);
+  expect(span?.getAttribute("font-family")).toBe("inkbook-example");
+  expect(span?.getAttribute("text-decoration")).toBe("underline line-through");
+  expect(span?.getAttribute("textLength")).toBe("320.125");
+  expect(span?.getAttribute("lengthAdjust")).toBe("spacingAndGlyphs");
+  expect(complete?.querySelectorAll("text tspan")).toHaveLength(1);
+  expect(complete?.querySelector("path")).toBeNull();
+  expect(complete?.querySelector("text")?.getAttribute("transform")).toBe("rotate(15 100 200)");
+  expect(complete?.querySelector("style")?.textContent).toBe(stylesheet);
+  expect(complete?.querySelector("metadata")).toBeNull();
+});
+
 describe("static export SVG", () => {
   it.each(["light", "dark"] as const)(
     "preserves the complete graphic and opacity with the %s palette",

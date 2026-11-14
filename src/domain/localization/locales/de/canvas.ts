@@ -1,7 +1,8 @@
 export const canvas = {
+  "canvas.kind_text": "Text",
   "canvas.name": "Inkbook-Zeichenfläche",
   "canvas.keyboard_instructions":
-    "Bild auf und Bild ab wählen Objekte aus. Pos1 und Ende wählen das erste und letzte Objekt. Eingabe startet die Geometriebearbeitung. Dabei wählen Bild auf und Bild ab einen Anfasser; Pfeiltasten ändern ihn um 1 Dokumenteinheit oder 1 Grad, mit Umschalt um 10. Eingabe oder Escape beendet die Geometriebearbeitung. Tab verlässt die Zeichenfläche.",
+    "Bild auf und Bild ab wählen Objekte aus. Pos1 und Ende wählen das erste und letzte Objekt. Eingabe bearbeitet ein ausgewähltes Textfeld oder startet bei anderen Objekten die Geometriebearbeitung. Umschalt+Eingabe startet die Geometriebearbeitung von Textfeldern. Dabei wählen Bild auf und Bild ab einen Anfasser; Pfeiltasten ändern ihn um 1 Dokumenteinheit oder 1 Grad, mit Umschalt um 10. Escape beendet die Geometrie- oder Textbearbeitung. Tab verlässt die Zeichenfläche.",
   "canvas.updated": "Aktualisiert.",
   "canvas.edit_failed": "Die Änderung konnte nicht angewendet werden.",
   "canvas.editing": "Geometriebearbeitung.",

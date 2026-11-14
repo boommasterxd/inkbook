@@ -20,6 +20,42 @@ import {
 } from "../../../domain/store/mutations/prepared-insertion-element";
 import type { PastePlan } from "../../../persistence/clipboard/public";
 import { capturePastePlan } from "../../../persistence/clipboard/paste-plan-snapshot";
+import type { EditableDocumentModel } from "../document-session/document-model-port";
+
+type ClipboardDocumentBasis = Pick<EditableDocumentModel, "revision" | "page"> & {
+  readonly fontResources: EditableDocumentModel["fontResources"];
+  readonly storeVersion: number;
+};
+
+export function captureClipboardDocumentBasis(
+  model: EditableDocumentModel,
+): ClipboardDocumentBasis {
+  return {
+    revision: model.revision,
+    page: model.page,
+    fontResources: model.fontResources,
+    storeVersion: model.store.mutationVersion,
+  };
+}
+
+/** Font admission may advance only the resource revision; document edits invalidate the plan. */
+export function clipboardDocumentBasisCurrent(
+  model: EditableDocumentModel,
+  basis: ClipboardDocumentBasis,
+  plan?: PastePlan | null,
+): boolean {
+  if (model.store.mutationVersion !== basis.storeVersion || model.page !== basis.page) return false;
+  if (model.revision === basis.revision) return true;
+  if (model.revision !== basis.revision + 1 || model.fontResources === basis.fontResources)
+    return false;
+  return (
+    plan?.fontResources?.some(
+      (font) =>
+        !basis.fontResources?.some((previous) => previous.id === font.id) &&
+        model.fontResources?.some((current) => current.id === font.id),
+    ) === true
+  );
+}
 
 interface DocumentFacts {
   connectedEndpoints: number;

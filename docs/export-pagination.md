@@ -22,6 +22,10 @@ Cut-index preparation limits each numeric step to at most 256 interval, endpoint
 
 Cut selection prefers a candidate with no element interval crossing it; among crossing candidates it minimizes the number of intersected element bounds. `printScale` is rendered media width in CSS pixels divided by the canonical SVG viewBox width, so the desired document-space clearance is `1 / printScale`. A boundary cut moves into the adjacent gap by up to one CSS pixel, limited to half the available gap, to avoid antialiasing a tangent endpoint. Zero-width gaps between touching endpoints are not clear spans. If no clear span exists, the least-crossing candidate is used. This is a conservative bounds heuristic, not a painted-pixel or semantic-content optimizer. A stroke or shape that crosses a cut remains continuous through shared geometry references and source-coordinate viewBox fragments. The source coordinate scale and guide-grid phase remain unchanged.
 
+## Text and Current Editing
+
+Native export uses the general [pending-input preparation boundary](text-fields.md#persistence-clipboard-and-pdf), completing the active text session before collecting the authoritative snapshot; a failed preparation blocks export instead of capturing an older snapshot. Retained SVG text, field backgrounds, normalized math paths, and the used embedded font faces form part of the complete graphic and follow the same pagination pipeline. The temporary CodeMirror editor is excluded. The [text contract](text-fields.md#persistence-clipboard-and-pdf) defines portable font and version boundaries.
+
 ## Native PDF Scaling
 
 Obsidian's native downscale enlarges the print-layout viewport by the inverse factor before the final PDF render. Percentage widths alone therefore do not shrink with the text. The isolated [native PDF-options gateway](obsidian-integration.md) supplies a validated immutable scale only to its freshly bound output root; persisted preferences alone are insufficient.

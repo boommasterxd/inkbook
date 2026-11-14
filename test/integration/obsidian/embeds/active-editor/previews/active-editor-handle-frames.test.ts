@@ -5,6 +5,7 @@ import {
   calculateElementBounds,
 } from "../../../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../../../src/domain/schema/public";
+import type { TextReflow } from "../../../../../../src/editor/selection/transform/text-reflow-session";
 import { mutableElement } from "../../../../../../src/domain/store/records/immutability";
 import { ElementStore } from "../../../../../../src/domain/store/public";
 import {
@@ -20,6 +21,7 @@ import { maximumStroke } from "../../../../../performance/editor/maximum-stroke-
 import { indexedStroke } from "../../../../../fixtures/editor/stroke";
 import { activeEditorPreparedHistory } from "../../../../../fixtures/obsidian/active-editor";
 import { elementReplacementPorts } from "../../../../../fixtures/obsidian/element-mutation-ports";
+import { textElement } from "../../../../../unit/domain/schema/fixtures";
 
 describe("active editor large mixed resize routing", () => {
   it("uses a single progressive candidate list for pressure and fixed-width strokes", () => {
@@ -78,6 +80,72 @@ describe("active editor rotated shape resize parity", () => {
       );
     },
   );
+});
+
+describe("active editor text width handles", () => {
+  it("scales retained text without publishing an unprepared native editor layout", () => {
+    const text = textElement();
+    const fixture = harness(text);
+    const start = pointer(text.x + text.width, text.y + text.height, 32);
+    expect(fixture.interaction.pointerDown(start)).toBe(true);
+    fixture.interaction.pointerMove({ ...start, x: start.x + 40, y: start.y + 30 });
+    fixture.scheduler.runNext();
+    expect(fixture.renderer.setPreviewTransform.mock.lastCall?.[0]).toEqual([text.id]);
+    expect(fixture.renderer.setElementPreviews.mock.lastCall?.[0]).toEqual([]);
+    const progressive = fixture.renderer.setProgressiveElementPreviews.mock.lastCall!;
+    expect(progressive[4]).toBe("connected");
+    fixture.interaction.cancel(start.pointerId);
+    fixture.interaction.dispose();
+  });
+
+  it("starts from the same visible source-height grip used for hit testing", () => {
+    const text = textElement();
+    const fixture = harness(text);
+    fixture.interaction.setTextEditingHeight(text.id, 180);
+    const start = pointer(text.x + text.width, text.y + 180, 31);
+    const handle = fixture.interaction.hitHandle(start);
+    expect(handle).toMatchObject({ kind: "scale", position: "bottom-right" });
+    expect(fixture.interaction.pointerDown(start)).toBe(true);
+    fixture.interaction.pointerMove(start);
+    fixture.scheduler.runNext();
+    expect(fixture.renderer.setElementPreviews.mock.lastCall?.[0]).toEqual([]);
+    expect(fixture.store.get(text.id)!.element).toEqual(text);
+    fixture.interaction.cancel(start.pointerId);
+    fixture.interaction.dispose();
+  });
+
+  it("reflows a text side handle without stretching glyphs and commits the prepared height", async () => {
+    const text = textElement();
+    const reflow = vi.fn<TextReflow>(async (element) => ({
+      ...element,
+      height: 80,
+      pivot: { x: element.x + element.width / 2, y: element.y + 40 },
+    }));
+    const fixture = harness(text, [], reflow);
+    const start = pointer(200, 125, 30);
+    expect(fixture.interaction.pointerDown(start)).toBe(true);
+    fixture.interaction.pointerMove({ ...start, x: 180 });
+    fixture.interaction.pointerMove({ ...start, x: 150 });
+    fixture.scheduler.runNext();
+    await Promise.resolve();
+    expect(reflow).toHaveBeenCalledTimes(1);
+    expect(fixture.renderer.setProgressiveElementPreviews).not.toHaveBeenCalled();
+    expect(fixture.renderer.setElementPreviews.mock.lastCall?.[0][0]).toMatchObject({
+      width: 50,
+      height: 80,
+      style: { fontSize: 16.5 },
+    });
+    expect(fixture.previewTransforms.filter((transform) => transform !== null)).toEqual([]);
+    fixture.interaction.pointerUp(start.pointerId);
+    await vi.waitFor(() => expect(fixture.history.commandCount).toBe(1));
+    expect(fixture.store.get(text.id)!.element).toMatchObject({
+      width: 50,
+      height: 80,
+      pivot: { x: 125, y: 140 },
+    });
+    expect(reflow).toHaveBeenCalledTimes(1);
+    fixture.interaction.dispose();
+  });
 });
 
 describe("active editor handle frames", () => {
@@ -181,7 +249,11 @@ describe("active editor handle frames", () => {
   });
 });
 
-function harness(shape: InkElementV1, others: readonly InkElementV1[] = []) {
+function harness(
+  shape: InkElementV1,
+  others: readonly InkElementV1[] = [],
+  reflowText?: TextReflow,
+) {
   const elements = [shape, ...others];
   const store = new ElementStore(elements);
   const model = {
@@ -204,6 +276,7 @@ function harness(shape: InkElementV1, others: readonly InkElementV1[] = []) {
     sceneStore: new ElementSceneStore(store),
     selection: () => new Set(elements.map(({ id }) => id)),
     zoom: () => 1,
+    ...(reflowText === undefined ? {} : { reflowText }),
   });
   return { interaction, previewTransforms, renderer, scheduler, store, history };
 }

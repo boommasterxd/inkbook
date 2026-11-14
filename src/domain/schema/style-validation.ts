@@ -14,7 +14,7 @@ const STROKE_WIDTHS = [2, 4, 8, 14, 22] as const;
 const OUTLINE_WIDTHS = [1, 2, 4, 8, 12, 14, 22] as const;
 const OUTLINE_STYLES = ["solid", "dashed", "dotted"] as const;
 
-function assertColor(value: unknown, path: string): asserts value is ColorV1 {
+export function assertColor(value: unknown, path: string): asserts value is ColorV1 {
   assertRecord(value, path);
   if (value.type === "theme-text") {
     assertExactKeys(value, ["type"], path);

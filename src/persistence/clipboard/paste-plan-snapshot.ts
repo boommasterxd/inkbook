@@ -1,5 +1,6 @@
 import {
   CLIPBOARD_SCHEMA_LIMITS,
+  type FontResourceV2,
   type InkElementV1,
   type PointV1,
 } from "../../domain/schema/public";
@@ -80,6 +81,7 @@ export function capturePastePlan(plan: PastePlan): PastePlan | null {
       return null;
     const captured: PastePlan = Object.freeze({
       elements: Object.freeze(elements as InkElementV1[]),
+      ...captureFontResources(plan),
       selectedIds: captureIds(ownValue(plan, "selectedIds")),
       contentIds: captureIds(ownValue(plan, "contentIds")),
       highlightIds: captureIds(ownValue(plan, "highlightIds")),
@@ -94,4 +96,34 @@ export function capturePastePlan(plan: PastePlan): PastePlan | null {
   } catch {
     return null;
   }
+}
+
+function captureFontResources(plan: PastePlan): Pick<PastePlan, "fontResources"> {
+  if (Object.getOwnPropertyDescriptor(plan, "fontResources") === undefined) return {};
+  const source = ownValue(plan, "fontResources");
+  if (!Array.isArray(source) || source.length > 64)
+    throw new RangeError("Too many font resources.");
+  const resources = Array.from({ length: source.length }, (_, index) =>
+    captureFontResource(ownValue(source, String(index))),
+  );
+  return { fontResources: Object.freeze(resources) };
+}
+
+/** Admission validates binary content cooperatively; this boundary only captures owned headers. */
+function captureFontResource(source: unknown): FontResourceV2 {
+  if (source === null || typeof source !== "object" || Array.isArray(source))
+    throw new TypeError("Font resources must be records.");
+  const keys = Object.keys(source);
+  if (keys.length > 9) throw new RangeError("Font resource headers exceed their limit.");
+  const resource = Object.fromEntries(
+    keys.map((key) => [key, ownValue(source, key)]),
+  ) as unknown as FontResourceV2;
+  if (typeof resource.data !== "string" || resource.data.length > 8 * 1024 * 1024)
+    throw new RangeError("Font data exceeds its limit.");
+  if (resource.weightRange !== undefined) {
+    const range = boundedArray(resource.weightRange);
+    if (range.length !== 2) throw new RangeError("Invalid font weight range.");
+    resource.weightRange = Object.freeze(range) as unknown as [number, number];
+  }
+  return Object.freeze(resource);
 }

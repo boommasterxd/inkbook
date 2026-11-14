@@ -46,6 +46,17 @@ beforeEach(async () => {
   values = new SettingsControlValues(store);
 });
 
+it("persists text-copy preferences in the vault without changing text styles", async () => {
+  expect(values.get("copyTextFieldsAsText")).toBe(false);
+  await values.set("copyTextFieldsAsText", true);
+  expect(values.get("copyTextFieldsAsText")).toBe(true);
+  expect(vault.saved.copyTextFieldsAsText).toBe(true);
+  expect(vault.saved.toolDefaults.text).toEqual(createBuiltInSettings().toolDefaults.text);
+  expect(device.saved).toEqual(createBuiltInDeviceSettings());
+  await expect(values.set("copyTextFieldsAsText", "true")).rejects.toThrow("Invalid setting value");
+  expect(values.get("copyTextFieldsAsText")).toBe(true);
+});
+
 describe("SettingsControlValues", () => {
   it("persists hold settings in the vault and preserves values while disabled", async () => {
     await values.set("holdToShape.holdDurationMs", "950");

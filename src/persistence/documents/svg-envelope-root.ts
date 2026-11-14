@@ -1,6 +1,6 @@
 import { parseCanonicalSvgDecimal } from "./svg-number";
 
-const CURRENT_DOCUMENT_VERSION = 1;
+const CURRENT_DOCUMENT_VERSION = 2;
 const OLDEST_EDITABLE_DOCUMENT_VERSION = 0;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const ROOT_ATTRIBUTES = new Set([
@@ -80,7 +80,7 @@ function hasCanonicalViewBox(viewBox: string[] | undefined): viewBox is string[]
 
 function versionMatches(version: number | null, policy: SafeSvgVersionPolicy): version is number {
   if (version === null || !Number.isSafeInteger(version)) return false;
-  if (policy === "current") return version === CURRENT_DOCUMENT_VERSION;
+  if (policy === "current") return version >= 1 && version <= CURRENT_DOCUMENT_VERSION;
   if (policy === "editable") {
     return version >= OLDEST_EDITABLE_DOCUMENT_VERSION && version <= CURRENT_DOCUMENT_VERSION;
   }

@@ -115,3 +115,46 @@ describe("vault document static export persistence failures", () => {
     session.dispose();
   });
 });
+
+it("awaits active input preparation before export reads the document revision", async () => {
+  const harness = persistenceHarness();
+  await harness.session.unlock(operation());
+  const model = harness.session.documentModel!;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const unregister = model.registerExportPreparation!(async () => {
+    await pending;
+    model.commitElement(rectangle());
+  });
+  const exporting = harness.factory.prepareStaticExport(operation().documentId);
+  await Promise.resolve();
+  expect(harness.process).not.toHaveBeenCalled();
+  release();
+  await exporting;
+  const parsed = await parseInkbookDocumentForTest(harness.content());
+  expect(parsed.ok && parsed.value.snapshot.elements).toEqual([rectangle()]);
+  unregister();
+  harness.session.dispose();
+});
+
+it("blocks stale export when active text layout fails and releases preparation on detach", async () => {
+  const harness = persistenceHarness();
+  await harness.session.unlock(operation());
+  const model = harness.session.documentModel!;
+  model.commitElement(rectangle());
+  const unregister = model.registerExportPreparation!(async () => {
+    throw new Error("Text layout failed.");
+  });
+  await expect(harness.factory.prepareStaticExport(operation().documentId)).rejects.toThrow(
+    "Text layout failed.",
+  );
+  expect(harness.process).not.toHaveBeenCalled();
+  expect(harness.session.getSnapshot().dirty).toBe(true);
+  unregister();
+  unregister();
+  await harness.factory.prepareStaticExport(operation().documentId);
+  expect(harness.process).toHaveBeenCalledOnce();
+  harness.session.dispose();
+});

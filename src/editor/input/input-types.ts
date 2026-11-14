@@ -32,6 +32,7 @@ export interface PointerDownAction extends PointerSample {
   readonly buttons: number;
   readonly controlOrMeta: boolean;
   readonly shift: boolean;
+  readonly alt?: boolean;
   readonly isPlatformContextClick: boolean;
   readonly penRole?: "normal" | "eraser" | "side-button";
   readonly target?: PointerTarget;
@@ -97,6 +98,7 @@ interface SinglePointerInteraction {
   readonly pointerType: PointerSample["pointerType"];
   readonly penRole: "normal" | "eraser" | "side-button";
   readonly controlOrMeta?: boolean;
+  readonly alt?: boolean;
   readonly start: InputPoint;
   readonly startedAt?: number;
   readonly current: InputPoint;
@@ -197,6 +199,7 @@ export type InputEffect =
       readonly mode: "add" | "preserve-or-replace" | "replace";
     }
   | { readonly type: "clear-selection" }
+  | { readonly type: "activate-element"; readonly elementId: string }
   | {
       readonly type: "begin-preview";
       readonly kind: PreviewKind;

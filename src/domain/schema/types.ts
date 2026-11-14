@@ -1,9 +1,10 @@
 export interface InkSnapshotV1 {
   format: "inkbook";
-  version: 1;
+  version: 1 | 2;
   revision: number;
   page: PageV1;
   elements: InkElementV1[];
+  fontResources?: FontResourceV2[];
 }
 
 export interface PageV1 {
@@ -163,12 +164,117 @@ export interface TableElementV1 extends ElementBaseV1 {
   style: OutlineStyleV1;
 }
 
+export interface TextStyleV2 {
+  fontFamily: string;
+  fontSize: number;
+  color: ColorV1;
+  opacity: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikethrough: boolean;
+}
+
+export interface TextRangeStyleV2 extends Partial<TextStyleV2> {
+  backgroundColor?: ColorV1 | null;
+  backgroundOpacity?: number;
+}
+
+export interface TextStyleRangeV2 {
+  start: number;
+  end: number;
+  style: TextRangeStyleV2;
+}
+
+export interface TextParagraphStyleV2 {
+  start: number;
+  alignment: "left" | "center" | "right" | "justify";
+}
+
+export interface TextLayoutRunV2 {
+  text: string;
+  fontResourceId?: string;
+  start: number;
+  end: number;
+  x: number;
+  width: number;
+  style?: TextRangeStyleV2;
+}
+
+export interface TextLayoutLineV2 {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  baseline: number;
+  runs: TextLayoutRunV2[];
+}
+
+export interface TextMathLayoutV2 {
+  start: number;
+  end: number;
+  display: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  paths: { d: string; fillRule?: "nonzero" | "evenodd" }[];
+}
+
+export interface TextTableLayoutV2 {
+  start: number;
+  end: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  columns: number;
+  rowHeights: number[];
+  borderWidth: number;
+}
+
+export interface TextLayoutV2 {
+  version: 1;
+  padding?: number;
+  baseFontResourceId?: string;
+  lines: TextLayoutLineV2[];
+  math?: TextMathLayoutV2[];
+  tables?: TextTableLayoutV2[];
+}
+
+export interface TextElementV2 extends ElementBaseV1 {
+  kind: "text";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  source: string;
+  style: TextStyleV2;
+  ranges: TextStyleRangeV2[];
+  paragraphs: TextParagraphStyleV2[];
+  backgroundColor: ColorV1 | null;
+  backgroundOpacity: number;
+  layout: TextLayoutV2;
+}
+
+export interface FontResourceV2 {
+  id: string;
+  family: string;
+  weight: number;
+  weightRange?: [number, number];
+  style: "normal" | "italic";
+  mimeType: "font/woff2" | "font/woff" | "font/ttf" | "font/otf";
+  data: string;
+  license?: string;
+}
+
 export type InkElementV1 =
   | StrokeElementV1
   | LinearElementV1
   | BoxShapeElementV1
   | CoordinateSystemElementV1
-  | TableElementV1;
+  | TableElementV1
+  | TextElementV2;
 
 interface ClipboardEndpointConnectionV1 {
   targetClipId: string;
@@ -190,6 +296,7 @@ export interface ClipboardElementV1 {
 
 export interface InkClipboardV1 {
   format: "inkbook-elements";
-  version: 1;
+  version: 1 | 2;
   elements: ClipboardElementV1[];
+  fontResources?: FontResourceV2[];
 }

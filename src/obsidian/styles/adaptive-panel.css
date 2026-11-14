@@ -83,12 +83,6 @@
   background: transparent;
   border: 0;
   border-radius: var(--radius-s);
-  box-shadow: none;
-  color: var(--text-normal);
-  display: flex;
-  font-size: var(--font-ui-small);
-  gap: var(--size-4-2);
-  inline-size: 100%;
   justify-content: start;
   line-height: normal;
   margin: 0;

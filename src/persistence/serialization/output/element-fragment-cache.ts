@@ -2,6 +2,7 @@ import type { InkElementV1 } from "../../../domain/schema/public";
 import {
   canonicalStrokeMetadataFrame,
   serializeCanonicalElementMetadata,
+  serializeCanonicalElementMetadataSteps,
 } from "../metadata/canonical-element-fragments";
 import {
   buildElementFragments,
@@ -134,7 +135,10 @@ export class ElementFragmentCache {
       cached.element.points instanceof Float64Array &&
       element.points instanceof Float64Array
         ? yield* sameRuntimeStrokeMetadataSteps(cached.element, element, samplesPerStep)
-        : cached.canonicalMetadata === serializeCanonicalElementMetadata(element);
+        : cached.canonicalMetadata ===
+          (element.kind === "text"
+            ? yield* serializeCanonicalElementMetadataSteps(element)
+            : serializeCanonicalElementMetadata(element));
     if (!matching) return undefined;
     const descriptors = Object.getOwnPropertyDescriptors(cached);
     return Object.defineProperties(

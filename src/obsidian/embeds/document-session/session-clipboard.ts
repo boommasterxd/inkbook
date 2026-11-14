@@ -5,6 +5,7 @@ import type {
   PastePlan,
   PasteRepeatState,
 } from "../../../persistence/clipboard/public";
+import type { FontResourceV2 } from "../../../domain/schema/public";
 import type { PurposeOperationIdentity } from "../../../persistence/worker/protocol";
 import type {
   DocumentRuntimePort,
@@ -13,6 +14,7 @@ import type {
 } from "../../../persistence/worker/runtime/public";
 
 interface SessionClipboardOptions {
+  readonly ensureFontResources?: (resources: readonly FontResourceV2[]) => void | Promise<void>;
   readonly disposed: () => boolean;
   readonly executor: () => DocumentRuntimePort | undefined;
   readonly recoverExecutorFailure: () => boolean | Promise<boolean>;
@@ -54,7 +56,7 @@ export class SessionClipboardCoordinator {
     invocation: PasteInvocation,
     previousRepeat?: PasteRepeatState,
   ): Promise<PastePlan | null> {
-    return this.#execute(
+    const plan = await this.#execute(
       (basisRevision, identity) => ({
         basisRevision,
         candidates,
@@ -71,6 +73,12 @@ export class SessionClipboardCoordinator {
           ? result.result.value
           : null,
     );
+    if (plan?.fontResources !== undefined && plan.fontResources.length > 0) {
+      if (this.#options.ensureFontResources === undefined) return null;
+      await this.#options.ensureFontResources(plan.fontResources);
+      if (this.#options.disposed()) return null;
+    }
+    return plan;
   }
 
   async #execute<Result>(

@@ -14,6 +14,7 @@ function disclosure(ownerDocument: Document = document) {
   ownerDocument.body.append(container);
   const result = createSettingsDisclosure(container, {
     description: "Select a tool",
+    deferDescriptionUntilExpanded: true,
     expanded: false,
     panelId: "settings-disclosure-test",
     title: "Tool",
@@ -69,6 +70,28 @@ function popoutPanel(supportsIntrinsicSize = true) {
 }
 
 describe("settings disclosure motion", () => {
+  it("creates the visible description only on first expansion and reuses it when reopened", () => {
+    const view = disclosure();
+    try {
+      expect(view.content.querySelector(".inkbook-settings-tool-description")).toBeNull();
+      expect(
+        document.getElementById(view.trigger.getAttribute("aria-describedby")!)?.textContent,
+      ).toBe("Select a tool");
+      view.content.createEl("button", { text: "Control" });
+      view.setExpanded(true, true);
+      const description = view.content.firstElementChild;
+      expect(description?.textContent).toBe("Select a tool");
+      const create = vi.spyOn(document, "createElementNS");
+      view.setExpanded(false, true);
+      view.setExpanded(true, true);
+      expect(view.content.firstElementChild).toBe(description);
+      expect(create).not.toHaveBeenCalled();
+      create.mockRestore();
+    } finally {
+      view.cleanup();
+    }
+  });
+
   it("retargets the chevron from its current angle", () => {
     const view = disclosure();
     const chevron = view.trigger.querySelector<HTMLElement>(".inkbook-settings-tool-chevron");
@@ -151,71 +174,91 @@ describe("pop-out settings panel motion", () => {
 
   it("exposes pop-out controls after native expansion and hides them only after collapse", () => {
     const view = popoutPanel();
+    const collapsed = vi.fn(() => expect(view.panel.hidden).toBe(true));
     view.motion.setExpanded(true);
     expect(view.panel.hidden).toBe(false);
     expect(view.panel.inert).toBe(false);
     view.content.getAnimations()[0]!.finish();
     expect(view.content.style.height).toBe("auto");
-    view.motion.setExpanded(false);
+    view.motion.setExpanded(false, collapsed);
     expect(view.panel.inert).toBe(true);
     expect(view.panel.hidden).toBe(false);
+    expect(collapsed).not.toHaveBeenCalled();
     view.content.getAnimations()[0]!.finish();
     expect(view.panel.hidden).toBe(true);
     expect(view.content.style.height).toBe("0px");
     expect(view.content.getAnimations()).toHaveLength(0);
+    expect(collapsed).toHaveBeenCalledOnce();
     view.cleanup();
   });
 
   it("keeps reversed pop-out expansion usable and releases interrupted animations on disposal", () => {
     const view = popoutPanel();
+    const collapsed = vi.fn();
     const originalParent = view.content.parentElement!.parentElement;
     view.motion.setExpanded(true);
     view.content.getAnimations()[0]!.finish();
-    view.motion.setExpanded(false);
+    view.motion.setExpanded(false, collapsed);
     const collapse = view.content.getAnimations()[0]!;
     view.motion.setExpanded(true);
+    expect(collapsed).not.toHaveBeenCalled();
     expect(collapse.playState).toBe("idle");
     expect(view.content.getAnimations()).toHaveLength(1);
     view.content.getAnimations()[0]!.finish();
     expect(view.panel.hidden).toBe(false);
     expect(view.panel.inert).toBe(false);
     expect(view.content.style.height).toBe("auto");
-    view.motion.setExpanded(false);
+    view.motion.setExpanded(false, collapsed);
     view.motion.dispose();
+    expect(collapsed).not.toHaveBeenCalled();
     expect(view.content.getAnimations()).toHaveLength(0);
     expect(view.panel.parentElement).toBe(originalParent);
     expect(view.content.isConnected).toBe(false);
     expect(view.unsubscribe).toHaveBeenCalledOnce();
     view.cleanup();
   });
+});
 
+describe("pop-out settings panel completion fallbacks", () => {
   it("settles interrupted pop-out transitions when reduced motion changes live", () => {
     const view = popoutPanel();
     view.motion.setExpanded(true);
-    view.setReduced();
+    view.content.getAnimations()[0]!.finish();
     expect(view.content.getAnimations()).toHaveLength(0);
     expect(view.content.style.height).toBe("auto");
     expect(view.panel.hidden).toBe(false);
-    view.motion.setExpanded(false);
+    const collapsed = vi.fn(() => expect(view.panel.hidden).toBe(true));
+    view.motion.setExpanded(false, collapsed);
+    expect(collapsed).not.toHaveBeenCalled();
+    view.setReduced();
     expect(view.content.style.height).toBe("0px");
     expect(view.panel.inert).toBe(true);
     expect(view.panel.hidden).toBe(true);
+    expect(collapsed).toHaveBeenCalledOnce();
+    view.setReduced();
+    expect(collapsed).toHaveBeenCalledOnce();
     view.cleanup();
   });
 
   it("keeps pop-out controls usable without native intrinsic-size interpolation", () => {
     const view = popoutPanel(false);
+    const collapsed = vi.fn(() => expect(view.panel.hidden).toBe(true));
+    view.motion.setExpanded(false, collapsed);
+    expect(collapsed).toHaveBeenCalledOnce();
+    collapsed.mockClear();
     view.motion.setExpanded(true);
     expect(view.content.style.height).toBe("auto");
     expect(view.panel.hidden).toBe(false);
     expect(view.panel.inert).toBe(false);
     expect(view.content.getAnimations()).toHaveLength(0);
-    view.motion.setExpanded(false);
+    view.motion.setExpanded(false, collapsed);
     expect(view.panel.hidden).toBe(true);
     expect(view.panel.inert).toBe(true);
+    expect(collapsed).toHaveBeenCalledOnce();
     view.motion.setExpanded(true);
     expect(view.content.style.height).toBe("auto");
     expect(view.panel.hidden).toBe(false);
+    expect(collapsed).toHaveBeenCalledOnce();
     view.cleanup();
   });
 });
@@ -236,6 +279,10 @@ it("settles an opening and closing panel on live saved preference changes withou
       return unsubscribe;
     },
   );
+  const collapsed = vi.fn(() => expect(panel.hidden).toBe(true));
+  motion.setExpanded(false, collapsed);
+  expect(collapsed).toHaveBeenCalledOnce();
+  collapsed.mockClear();
   motion.setExpanded(true);
   input.focus();
   preference = "reduced";
@@ -246,14 +293,64 @@ it("settles an opening and closing panel on live saved preference changes withou
   expect(document.activeElement).toBe(input);
   preference = "full";
   changed();
-  motion.setExpanded(false);
+  motion.setExpanded(false, collapsed);
   expect(panel.inert).toBe(true);
+  expect(collapsed).not.toHaveBeenCalled();
   preference = "reduced";
   changed();
   expect(panel.hidden).toBe(true);
+  expect(collapsed).toHaveBeenCalledOnce();
+  changed();
+  expect(collapsed).toHaveBeenCalledOnce();
   motion.dispose();
   expect(unsubscribe).toHaveBeenCalledOnce();
   panel.remove();
+});
+
+it("allows a reduced-motion completion to dispose its React root outside the commit", () => {
+  const panel = document.body.createDiv();
+  panel.hidden = true;
+  const motion = new SettingsPanelMotion(panel, () => "reduced");
+  const errors = vi.spyOn(console, "error");
+  const collapsed = vi.fn(() => {
+    expect(panel.hidden).toBe(true);
+    motion.dispose();
+  });
+  try {
+    motion.setExpanded(true);
+    motion.setExpanded(false, collapsed);
+    expect(collapsed).toHaveBeenCalledOnce();
+    expect(errors).not.toHaveBeenCalled();
+  } finally {
+    errors.mockRestore();
+    motion.dispose();
+    panel.remove();
+  }
+});
+
+it("completes the current main-window collapse once and cancels interrupted callbacks", async () => {
+  const panel = document.body.createDiv();
+  panel.hidden = true;
+  const motion = new SettingsPanelMotion(panel, () => "full");
+  const interrupted = vi.fn();
+  const collapsed = vi.fn(() => expect(panel.hidden).toBe(true));
+  try {
+    motion.setExpanded(true);
+    motion.setExpanded(false, interrupted);
+    motion.setExpanded(true);
+    motion.setExpanded(false, collapsed);
+    await vi.waitFor(() => expect(collapsed).toHaveBeenCalledOnce());
+    expect(interrupted).not.toHaveBeenCalled();
+    motion.setExpanded(true);
+    motion.setExpanded(false, interrupted);
+    motion.dispose();
+    await Promise.resolve();
+    expect(interrupted).not.toHaveBeenCalled();
+    expect(collapsed).toHaveBeenCalledOnce();
+  } finally {
+    motion.dispose();
+    panel.remove();
+  }
 });
 
 it("releases pop-out keyboard and pointer feedback when its window loses focus or hides", async () => {

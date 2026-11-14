@@ -10,6 +10,7 @@ export function selectionCenterlineBounds(
   element: InkElementV1,
   painted: Bounds = calculateElementBounds(element),
 ): Bounds {
+  if (element.kind === "text") return painted;
   const radius =
     (element.kind === "stroke" || element.kind === "straight-highlighter"
       ? effectiveStrokeWidth(element)

@@ -5,8 +5,10 @@ import { escapeXmlText } from "../../documents/xml-text";
 import { metadataPrefix as canonicalMetadataPrefix } from "../metadata/canonical-metadata";
 import { encodedByteLength } from "./encoded-byte-budget";
 import { COMPACT_METADATA_ENCODING } from "../metadata/stroke-sample-codec";
+import { fontStylesheetMarkup } from "./text-fonts";
 
 interface FragmentAssembly<T> {
+  readonly snapshot?: InkSnapshotV1;
   readonly content: Iterable<T>;
   readonly highlight: Iterable<T>;
   readonly metadata: Iterable<T>;
@@ -16,12 +18,17 @@ export function snapshotMetadata(
   revision: number,
   page: PageV1,
   elements: readonly string[],
+  snapshot?: InkSnapshotV1,
 ): string {
-  return `${snapshotMetadataPrefix(revision, page)}${elements.join(",")}]}`;
+  return `${snapshotMetadataPrefix(revision, page, snapshot)}${elements.join(",")}]}`;
 }
 
-export function snapshotMetadataPrefix(revision: number, page: PageV1): string {
-  return escapeXmlText(canonicalMetadataPrefix(revision, page));
+export function snapshotMetadataPrefix(
+  revision: number,
+  page: PageV1,
+  snapshot?: InkSnapshotV1,
+): string {
+  return escapeXmlText(canonicalMetadataPrefix(revision, page, snapshot));
 }
 
 export function documentUtf8Fragments(
@@ -51,7 +58,9 @@ function* assembleDocumentFragments<T>(
   assembly: FragmentAssembly<T>,
   encode: (text: string) => T,
 ): Iterable<T> {
-  yield encode(rootPrefix(envelope.revision, envelope.lockedHeight, envelope.metadataHash));
+  yield encode(
+    rootPrefix(envelope.revision, envelope.lockedHeight, envelope.metadataHash, assembly.snapshot),
+  );
   yield encode(envelope.metadataPrefix);
   const separator = encode(",");
   let firstMetadata = true;
@@ -74,9 +83,10 @@ export function documentStaticByteLength(
   lockedHeight: number,
   metadataPrefix: string,
   background: string,
+  snapshot?: InkSnapshotV1,
 ): number {
   return [
-    rootPrefix(revision, lockedHeight, "0".repeat(64)),
+    rootPrefix(revision, lockedHeight, "0".repeat(64), snapshot),
     metadataPrefix,
     `]}</metadata><g id="inkbook-background">`,
     background,
@@ -90,8 +100,18 @@ export function snapshotValue(
   revision: number,
   page: PageV1,
   elements: readonly InkElementV1[],
+  fontResources?: InkSnapshotV1["fontResources"],
 ): InkSnapshotV1 {
-  return { elements: [...elements], format: "inkbook", page, revision, version: 1 };
+  return {
+    elements: [...elements],
+    format: "inkbook",
+    page,
+    revision,
+    version: elements.some((element) => element.kind === "text") ? 2 : 1,
+    ...(fontResources === undefined || fontResources.length === 0
+      ? {}
+      : { fontResources: [...fontResources] }),
+  };
 }
 
 export function orderedSnapshotValue(
@@ -99,37 +119,45 @@ export function orderedSnapshotValue(
   page: PageV1 | null,
   elements: ReadonlyMap<string, InkElementV1>,
   orders: Readonly<{ highlight: readonly string[]; content: readonly string[] }>,
+  fontResources?: InkSnapshotV1["fontResources"],
 ): InkSnapshotV1 | null {
   if (page === null || revision === null) return null;
   return snapshotValue(
     revision,
     page,
     [...orders.highlight, ...orders.content].map((id) => elements.get(id)!),
+    fontResources,
   );
 }
 
 export function envelope(
   revision: number,
   lockedHeight: number,
-  metadata: Readonly<{ hash: string; text: string }>,
+  metadata: Readonly<{ hash: string; text: string; snapshot?: InkSnapshotV1 }>,
   background: string,
   highlights: string,
   content: string,
 ): string {
   return (
-    `${rootPrefix(revision, lockedHeight, metadata.hash)}${metadata.text}</metadata>` +
+    `${rootPrefix(revision, lockedHeight, metadata.hash, metadata.snapshot)}${metadata.text}</metadata>` +
     `<g id="inkbook-background">${background}</g>` +
     `<g id="inkbook-highlights">${highlights}</g>` +
     `<g id="inkbook-content">${content}</g></svg>`
   );
 }
 
-function rootPrefix(revision: number, lockedHeight: number, metadataHash: string): string {
+function rootPrefix(
+  revision: number,
+  lockedHeight: number,
+  metadataHash: string,
+  snapshot?: InkSnapshotV1,
+): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048.6 ${serializeSvgNumber(lockedHeight)}" ` +
-    `data-inkbook-format="inkbook" data-inkbook-version="1" data-inkbook-revision="${revision}" ` +
+    `data-inkbook-format="inkbook" data-inkbook-version="${snapshot?.version ?? 1}" data-inkbook-revision="${revision}" ` +
     `data-inkbook-snapshot-sha256="${metadataHash}">` +
     `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>` +
+    fontStylesheetMarkup(snapshot?.fontResources ?? []) +
     `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">`
   );
 }

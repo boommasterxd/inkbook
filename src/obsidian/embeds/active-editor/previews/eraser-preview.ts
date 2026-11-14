@@ -56,6 +56,7 @@ export class EraserPreview implements GesturePreview {
       options.radius,
       {
         getElement: (id) => options.model.store.get(id)?.element as InkElementV1 | undefined,
+        getTextGeometry: (id) => options.model.store.get(id)?.textPaintGeometry,
         beginQuery: (bounds) => options.sceneStore.beginQuery(bounds),
       },
       feedback,

@@ -7,6 +7,7 @@ import { ManualFrameScheduler } from "./manual-frame-scheduler";
 export function createPhoneSheetEditableFixture(
   recordCalls = true,
   motion: "full" | "reduced" = "reduced",
+  ownContentScroll = false,
 ) {
   const motionDriver = createEditableMotionDriver(motion);
   const restoreWindow = preserveProperties(window, [
@@ -27,25 +28,22 @@ export function createPhoneSheetEditableFixture(
     window.cancelAnimationFrame = cancel;
   }
   try {
-    const viewport = Object.assign(new EventTarget(), {
-      height: 400,
-      offsetTop: 100,
-      offsetLeft: 0,
-      width: 360,
-    });
-    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    const viewport = installEditableViewport();
     const input = window.createEl("input");
+    const contentScroll = ownContentScroll ? window.createDiv() : undefined;
+    contentScroll?.append(input);
     const fixture = createAdaptivePanelFixture("style", {
       motion,
+      ...(contentScroll === undefined ? {} : { contentScroll }),
       createContent: () => {
         const fragment = window.createFragment();
-        fragment.append(input);
+        fragment.append(contentScroll ?? input);
         return fragment;
       },
     });
     frames.runNext(0);
     input.focus();
-    const scroll = input.closest<HTMLElement>(".inkbook-adaptive-panel-scroll")!;
+    const scroll = contentScroll ?? input.closest<HTMLElement>(".inkbook-adaptive-panel-scroll")!;
     const restoreScroll = preserveProperties(scroll, [
       "getBoundingClientRect",
       "scrollHeight",
@@ -100,6 +98,17 @@ export function createPhoneSheetEditableFixture(
     motionDriver.restore();
     throw error;
   }
+}
+
+function installEditableViewport() {
+  const viewport = Object.assign(new EventTarget(), {
+    height: 400,
+    offsetTop: 100,
+    offsetLeft: 0,
+    width: 360,
+  });
+  Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+  return viewport;
 }
 
 function createEditableMotionDriver(motion: "full" | "reduced") {

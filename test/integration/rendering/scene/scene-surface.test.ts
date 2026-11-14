@@ -94,7 +94,47 @@ function surfaceFixture() {
   return { container, invalidate, failure, surface };
 }
 
+it("requests one deferred theme refresh when text editing first exposes its document", () => {
+  const { surface, invalidate } = surfaceFixture();
+  const read = vi.spyOn(window, "getComputedStyle");
+  surface.setInteractive(true);
+  surface.setInteractive(true);
+  expect(invalidate).toHaveBeenCalledExactlyOnceWith(true);
+  expect(read).not.toHaveBeenCalled();
+  surface.read();
+  surface.write();
+  expect(read).toHaveBeenCalledOnce();
+  surface.setInteractive(true);
+  surface.read();
+  expect(invalidate).toHaveBeenCalledOnce();
+  expect(read).toHaveBeenCalledOnce();
+});
+
 describe("isolated scene surface", () => {
+  it("temporarily exposes only the owned native text editing document and restores inertness", () => {
+    const { host, scene } = fixture();
+    const frame = host.shadowRoot!.querySelector("iframe")!;
+    scene.setTextEditing(true);
+    expect(scene.svg.hasAttribute("data-inkbook-text-editing")).toBe(true);
+    expect(frame.hasAttribute("inert")).toBe(false);
+    expect(frame.hasAttribute("aria-hidden")).toBe(false);
+    expect(host.hasAttribute("aria-hidden")).toBe(false);
+    expect(scene.svg.hasAttribute("aria-hidden")).toBe(false);
+    expect(scene.svg.getAttribute("pointer-events")).toBe("none");
+    expect(frame.style.pointerEvents).toBe("auto");
+    expect(scene.inputSurface.style.pointerEvents).toBe("none");
+    expect(scene.inputSurface.hasAttribute("inert")).toBe(true);
+    expect(scene.inputSurface.tabIndex).toBe(-1);
+    scene.setTextEditing(false);
+    expect(scene.svg.hasAttribute("data-inkbook-text-editing")).toBe(false);
+    expectInertIsolatedFrame(frame);
+    expect(host.getAttribute("aria-hidden")).toBe("true");
+    expect(scene.svg.getAttribute("aria-hidden")).toBe("true");
+    expect(frame.style.pointerEvents).toBe("none");
+    expect(scene.inputSurface.style.pointerEvents).toBe("");
+    expect(scene.inputSurface.hasAttribute("inert")).toBe(false);
+    expect(scene.inputSurface.tabIndex).toBe(0);
+  });
   it("isolates retained SVG selectors while input stays on the accessible light DOM surface", () => {
     const { container, host, pointerdown, scene } = fixture();
     expect(host.shadowRoot?.mode).toBe("open");
@@ -197,7 +237,14 @@ describe("scene theme and local presentation styles", () => {
   it("keeps selection and motion styles local while inheriting chrome theme tokens", () => {
     const { container, scene } = fixture();
     container.setCssProps({ "--interactive-accent": "#123456", "--text-normal": "#654321" });
+    container.style.setProperty("--code-tag", "#aabbcc");
     synchronize(scene);
+    const target = document.implementation.createHTMLDocument("Native input");
+    const targetStyle = target.body.style;
+    const release = scene.attachTextDocument(target);
+    expect(targetStyle.getPropertyValue("--code-tag")).toBe("#aabbcc");
+    scene.setScheme("dark");
+    expect(targetStyle.getPropertyValue("--inkbook-text")).toBe(PORTABLE_PALETTE_V1.dark.text);
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--interactive-accent")).toBe(
       "#123456",
     );
@@ -222,8 +269,13 @@ describe("scene theme and local presentation styles", () => {
     container.setCssProps({ "--interactive-accent": "#abcdef", "--text-normal": "#fedcba" });
     synchronize(scene);
     expect(drawingStyle(trace).stroke).toBe("#abcdef");
+    expect(targetStyle.getPropertyValue("--interactive-accent")).toBe("#abcdef");
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--text-normal")).toBe("#fedcba");
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--inkbook-page")).toBe("");
+    release();
+    container.style.setProperty("--interactive-accent", "#ffffff");
+    synchronize(scene);
+    expect(targetStyle.getPropertyValue("--interactive-accent")).toBe("#abcdef");
   });
 });
 

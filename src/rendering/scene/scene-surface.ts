@@ -1,6 +1,23 @@
 import { configureSceneDocument, createSceneFrame } from "./scene-surface-document";
 
-const themeProperties = ["--interactive-accent", "--text-normal"] as const;
+const themeProperties = [
+  "--interactive-accent",
+  "--text-normal",
+  "--text-error",
+  "--background-secondary",
+  "--code-normal",
+  "--code-function",
+  "--code-punctuation",
+  "--code-keyword",
+  "--code-string",
+  "--code-comment",
+  "--code-tag",
+  "--code-property",
+  "--code-value",
+  "--text-selection",
+  "--text-faint",
+  "--text-accent",
+] as const;
 
 interface SceneSurfaceOptions {
   readonly themeRoot?: HTMLElement;
@@ -29,6 +46,7 @@ export class SceneSurface {
   readonly #load: () => void;
   readonly #tokens = new Map<string, string>();
   readonly #writtenTokens = new Map<string, string>();
+  #editorTheme: { readonly document: Document; readonly written: Map<string, string> } | undefined;
   #svg: SVGSVGElement | undefined;
   #foreground: readonly SVGElement[] = [];
   #foregroundRevealed = false;
@@ -41,6 +59,31 @@ export class SceneSurface {
   #height = "0px";
   #writtenWidth = "";
   #writtenHeight = "";
+  #interactiveAttributes: { title: string | null; language: string | null } | undefined;
+
+  public setInteractive(active: boolean): void {
+    if (this.#released) return;
+    if (active) {
+      const entering = this.#interactiveAttributes === undefined;
+      this.#interactiveAttributes ??= {
+        title: this.#frame.getAttribute("title"),
+        language: this.drawingDocument.documentElement.getAttribute("lang"),
+      };
+      this.#frame.setAttribute("title", "Text");
+      const language = this.#frame.ownerDocument.documentElement.getAttribute("lang");
+      if (language === null) this.drawingDocument.documentElement.removeAttribute("lang");
+      else this.drawingDocument.documentElement.setAttribute("lang", language);
+      if (entering) this.invalidateTheme();
+    } else this.restoreInteractiveAttributes();
+    for (const node of [this.host, this.#frame]) {
+      if (active) node.removeAttribute("aria-hidden");
+      else node.setAttribute("aria-hidden", "true");
+      node.style.pointerEvents = active ? "auto" : "none";
+    }
+    if (active) this.#frame.removeAttribute("inert");
+    else this.#frame.setAttribute("inert", "");
+    this.#frame.tabIndex = active ? 0 : -1;
+  }
 
   public constructor(
     container: HTMLElement,
@@ -154,7 +197,36 @@ export class SceneSurface {
       body.style.setProperty(property, value);
       this.#writtenTokens.set(property, value);
     }
+    if (this.#editorTheme) this.writeEditorTheme(this.#editorTheme);
     this.writeForeground();
+  }
+
+  /** One native editing document receives the existing cached host-token relay. */
+  public attachEditorTheme(document: Document): () => void {
+    if (this.#released || this.#editorTheme)
+      throw new Error("A scene already owns its editing theme document.");
+    const target = { document, written: new Map<string, string>() };
+    this.#editorTheme = target;
+    this.writeEditorTheme(target);
+    return () => {
+      if (this.#editorTheme === target) this.#editorTheme = undefined;
+    };
+  }
+
+  private writeEditorTheme(target: {
+    readonly document: Document;
+    readonly written: Map<string, string>;
+  }): void {
+    for (const [property, value] of this.#tokens) {
+      if (target.written.get(property) === value) continue;
+      target.document.body.style.setProperty(property, value);
+      target.written.set(property, value);
+    }
+    const language = this.drawingDocument.documentElement.getAttribute("lang");
+    const root = target.document.documentElement;
+    if (root.getAttribute("lang") === language) return;
+    if (language === null) root.removeAttribute("lang");
+    else root.setAttribute("lang", language);
   }
 
   public invalidateTheme(): void {
@@ -185,10 +257,12 @@ export class SceneSurface {
 
   public release(): void {
     if (this.#released) return;
+    this.restoreInteractiveAttributes();
     this.#released = true;
     this.#resizeObserver?.disconnect();
     this.#themeObserver?.disconnect();
     this.#ownZoomStyle = undefined;
+    this.#editorTheme = undefined;
     this.#foreground = [];
     this.#frame.removeEventListener("load", this.#load);
     this.#svg?.remove();
@@ -196,6 +270,16 @@ export class SceneSurface {
     this.#frame.remove();
     this.#frameStyle.remove();
     this.host.remove();
+  }
+
+  private restoreInteractiveAttributes(): void {
+    const previous = this.#interactiveAttributes;
+    if (previous === undefined) return;
+    if (previous.title === null) this.#frame.removeAttribute("title");
+    else this.#frame.setAttribute("title", previous.title);
+    if (previous.language === null) this.drawingDocument.documentElement.removeAttribute("lang");
+    else this.drawingDocument.documentElement.setAttribute("lang", previous.language);
+    this.#interactiveAttributes = undefined;
   }
 
   private resize(entries: readonly ResizeObserverEntry[]): void {

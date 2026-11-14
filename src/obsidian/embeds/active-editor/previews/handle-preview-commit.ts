@@ -79,9 +79,13 @@ export function commitHandlePreview(options: HandleCommitOptions, onSettled?: ()
           : options.selectionFrames.transition(active.frame, active.session.preview.transform),
       onSettled,
     );
-    if (!accepted) options.layout?.finish(false);
+    if (!accepted) {
+      active.session.cancel();
+      options.layout?.finish(false);
+    }
     return accepted;
   } else {
+    active.session.cancel();
     options.layout?.finish(false);
   }
   return false;

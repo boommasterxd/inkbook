@@ -14,9 +14,11 @@ describe("settings defaults", () => {
 
     expect(settings).toMatchObject({
       version: 4,
+      copyTextFieldsAsText: false,
       startupTool: "draw",
       selectionHighlightsEnabled: true,
       refreshRatePreference: "auto",
+      holdToShape: { enabled: true, holdDurationMs: 400, jitterTolerancePx: 20 },
     });
     expect(settings.pageDefaults).toEqual({
       activeBufferLines: 3,
@@ -106,6 +108,7 @@ describe("settings palette and device defaults", () => {
       version: 2,
       language: "auto",
       onboardingDismissed: false,
+      readableLineWidthWarningDismissed: false,
       scrollPreloadMarginPx: 300,
       fingerDrawingEnabled: false,
       penTapInsertion: "off",

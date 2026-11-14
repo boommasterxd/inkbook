@@ -3,6 +3,26 @@ import { activeEditorPointerHarness as harness } from "../../../../../fixtures/o
 import { cursorPointerEvent } from "../../../../../fixtures/obsidian/tool-cursor";
 
 describe("active editor pointer and cursor composition", () => {
+  it("opens the stationary secondary-click menu without publishing a drag cursor", () => {
+    const h = harness();
+    h.pointer.handlePointerMove(cursorPointerEvent());
+    const hover = h.read();
+    h.pointer.handlePointerDown(cursorPointerEvent({ button: 2, buttons: 2 }));
+    expect(h.controls.input.interaction?.phase).toBe("secondary-pending");
+    expect(h.read()).toEqual(hover);
+    h.pointer.handlePointerMove(cursorPointerEvent({ clientX: 121, buttons: 2 }));
+    expect(h.read()).toEqual({ ...hover, cursor: { ...hover.cursor, x: 121 } });
+    h.pointer.handlePointerUp(cursorPointerEvent({ clientX: 121, button: 2 }));
+    expect(h.effects).toContainEqual({
+      type: "open-context-menu",
+      source: "pointer",
+      position: { x: 100, y: 50 },
+    });
+    h.controls.menuOpen = true;
+    expect(h.read()).toEqual({ cursor: null, system: "default" });
+    h.controller.dispose();
+  });
+
   it("routes idle hover to the scene reader without synchronous navigation, gesture, or UI dispatch", () => {
     const h = harness();
     for (let x = 100; x < 200; x += 1) {

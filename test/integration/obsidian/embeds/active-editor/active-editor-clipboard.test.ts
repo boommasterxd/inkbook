@@ -16,28 +16,13 @@ import type { MenuItemPort, MenuPort } from "../../../../../src/obsidian/menus/i
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { elementMutationPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
 import {
+  ClipboardItemFixture as FakeClipboardItem,
   createClipboardDocumentModel,
   createEncodedClipboardFixture,
   createDeferredPreparation,
   createPastePlan,
   createPreparedToken,
 } from "./active-editor-clipboard-fixtures";
-
-class FakeClipboardItem {
-  public readonly formats: Record<string, Promise<Blob>>;
-  public readonly types: string[];
-
-  public constructor(formats: Record<string, Promise<Blob>>) {
-    this.formats = formats;
-    this.types = Object.keys(formats);
-  }
-
-  public async getType(type: string): Promise<Blob> {
-    const value = this.formats[type];
-    if (value === undefined) throw new DOMException("Type unavailable", "NotFoundError");
-    return value;
-  }
-}
 
 describe("active editor clipboard bridge", () => {
   it("writes interoperable system text, guards cut versions, and pastes its readback", async () => {

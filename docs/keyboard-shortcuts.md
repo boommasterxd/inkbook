@@ -50,7 +50,9 @@ The following fixed controls act only when the focused canvas input surface owns
 | Object navigation                       | `PageUp` / `PageDown` | Select the previous or next object in stable back-to-front band order.                       |
 | Object navigation                       | `Home` / `End`        | Select the first or last object.                                                             |
 | Object navigation                       | Hold `Shift`          | Add the navigated object to the selection instead of replacing it.                           |
-| Selected objects                        | `Enter`               | Enter geometry editing, initially on Move. Press again to leave editing.                     |
+| Selected non-text objects               | `Enter`               | Enter geometry editing, initially on Move. Press again to leave editing.                     |
+| Single selected text field              | `Enter`               | Open source editing; Escape finishes it.                                                     |
+| Selection containing text               | `Shift+Enter`         | Enter keyboard geometry editing instead of source editing.                                   |
 | Geometry editing                        | `PageUp` / `PageDown` | Cycle through Move and the handles available for the current selection.                      |
 | Geometry editing                        | Arrow keys            | Adjust Move or the chosen handle by 1 document unit, or rotate by 1 degree.                  |
 | Geometry editing                        | `Shift` + arrow keys  | Use a 10-unit or 10-degree step.                                                             |
@@ -58,6 +60,10 @@ The following fixed controls act only when the focused canvas input surface owns
 | Canvas                                  | `Tab`                 | Leave editing, cancel unfinished preparation, and retain normal sequential focus navigation. |
 
 Object navigation spans the complete logical document, including culled objects, with highlight-band objects before content-band objects. It reveals the selected object's bounds through the existing camera and native note-scroll adapter without introducing another scroll owner. A polite canvas status announces the object kind, position in the document, and selection count; geometry editing announces the current operation, first selected object's bounds and rotation, and the edit outcome. The selected handle has distinct visible focus feedback.
+
+[Text Fields](text-fields.md#scope-and-interaction) defines source-editing ownership and text-specific reflow and uniform-scaling rules.
+
+Text source editing uses CodeMirror's public `standardKeymap` so navigation, selection and deletion operate on the complete document while offscreen lines are unmounted. Inkbook's formatting, shared Undo/Redo and finish bindings take precedence; no separate CodeMirror history is installed. The exact development version of `@codemirror/commands` is compatible with the installed Obsidian CodeMirror peers and remains external to the plugin bundle, following the [official sample plugin configuration](https://github.com/obsidianmd/obsidian-sample-plugin/blob/master/esbuild.config.mjs).
 
 Each geometry step reuses the existing handle sessions, validation, prepared-history path, and atomic command commit. Keyboard steps disable snapping for exact increments without changing the saved snapping preferences. Larger preparations remain centrally scheduled and cancellable. Leaving editing preserves already committed steps; Escape does not undo them. Undo and Redo use the existing history. Freehand creation remains pointer-driven.
 

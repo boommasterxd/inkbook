@@ -71,6 +71,21 @@ describe("settings and confirmation semantic accessibility gate", () => {
             ? ["aria-dialog-name", "label", "select-name", "button-name"]
             : ["aria-dialog-name", "button-name"],
       );
+      if (group === "Drawing tools") {
+        const fontDropdown = surface!.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+        expect(fontDropdown.hasAttribute("aria-controls")).toBe(false);
+        fontDropdown.click();
+        await assertAccessibleSemantics(surface!, ["aria-valid-attr-value", "button-name"]);
+        fontDropdown.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        expect(fontDropdown.getAttribute("aria-expanded")).toBe("false");
+        expect(fontDropdown.hasAttribute("aria-controls")).toBe(false);
+      }
     } finally {
       controller.dispose();
     }

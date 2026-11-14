@@ -64,6 +64,7 @@ const ADAPTER_NATIVE_SITES = new Map([
 // event-turn cleanup. The exact method and call count prevent a new work loop
 // from inheriting a whole-file exception.
 const SEMANTIC_TIMER_SITES = new Map([
+  ["src/obsidian/embeds/active-editor/clipboard-text-copy.ts#boundedWrite", 1],
   ["src/obsidian/dialogs/inkbook-motion-modal.ts##animate", 1],
   ["src/obsidian/embeds/active-editor/controller-actions.ts##confirmClipboardAction", 1],
   ["src/obsidian/embeds/active-editor/input/long-press.ts#schedule", 1],

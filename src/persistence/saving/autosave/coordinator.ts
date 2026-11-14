@@ -20,7 +20,6 @@ import { inspectIndeterminateSave } from "./indeterminate-save";
 import { classifyAutosaveFailure } from "./save-failure";
 import { AutosaveExecutorRecovery } from "./executor-recovery";
 import { executeAutosaveModelSynchronization } from "./model-sync-recovery";
-type ConfirmedBase = Extract<VaultBase, { type: "confirmed" }>;
 export class AutosaveCoordinator {
   readonly #beforeExistingWrite;
   #canonicalRewritePending: boolean;
@@ -305,6 +304,7 @@ export class AutosaveCoordinator {
         !this.#disposed &&
         this.#exportInFlight === request &&
         result.modelRevision === this.#document.currentRevision(),
+      result.output,
     );
     this.#adoptExportIntegrity(request, result, integrity);
   }
@@ -453,7 +453,7 @@ export class AutosaveCoordinator {
     }
     this.#resolveWaiters();
   }
-  #confirmSavedOutput(base: ConfirmedBase, readBack?: MetadataGuardedFileRead): void {
+  #confirmSavedOutput(base: Autosave.ConfirmedBase, readBack?: MetadataGuardedFileRead): void {
     this.#confirmedBase = base;
     this.#canonicalRewritePending = false;
     this.#save = null;

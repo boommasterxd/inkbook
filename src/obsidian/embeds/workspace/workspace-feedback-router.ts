@@ -1,3 +1,4 @@
+import type { TextFontLibraryPort } from "../active-editor/text-preparation";
 import type { PhoneSheetHostPort } from "../../menus/panels/phone-sheet-host";
 import type { Localization } from "../../../domain/localization";
 import type { Keymap } from "obsidian";
@@ -19,6 +20,7 @@ export interface WorkspaceFeedbackHost {
 
 export interface WorkspaceRuntimeHost
   extends WorkspaceFeedbackHost, Omit<EditorChromeOpenings, "confirmEraseAll"> {
+  readonly textFonts?: TextFontLibraryPort | undefined;
   readonly deviceStorage?: DeviceLocalStoragePort;
   readonly resolveDocumentStatusPane?: (root: HTMLElement) => HTMLElement | undefined;
 }

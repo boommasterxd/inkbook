@@ -4,7 +4,11 @@ import { exclusiveTransferBytes } from "./transferable-bytes";
 import type { UnlockRuntimeRequest, UnlockRuntimeBatch } from "../types";
 
 export interface UnlockWireRequest extends Omit<UnlockRuntimeRequest, "safeStaticProof"> {
-  readonly trustedSafeStatic?: { readonly outputHash: string; readonly totalBytes: number };
+  readonly trustedSafeStatic?: {
+    readonly outputHash: string;
+    readonly totalBytes: number;
+    readonly unadjustedTextRuns?: number;
+  };
 }
 
 /** Only authentic host-owned evidence crosses the internal bundled-worker channel. */
@@ -25,6 +29,11 @@ export function encodeUnlockRequest(request: UnlockRuntimeRequest) {
           trustedSafeStatic: {
             outputHash: safeStaticProof.outputHash,
             totalBytes: safeStaticProof.totalBytes,
+            ...(safeStaticProof.unadjustedTextRuns === undefined
+              ? {}
+              : {
+                  unadjustedTextRuns: safeStaticProof.unadjustedTextRuns,
+                }),
           },
         }),
   };
@@ -43,6 +52,7 @@ export function decodeUnlockRequest(request: UnlockWireRequest): UnlockRuntimeRe
           safeStaticProof: SafeStaticProof.fromTrustedProducer(
             trustedSafeStatic.outputHash,
             trustedSafeStatic.totalBytes,
+            trustedSafeStatic.unadjustedTextRuns,
           ),
         }),
   };

@@ -1,3 +1,5 @@
+import { validateTextStyleValue } from "../../domain/settings/text-style-values";
+import type { TextDefaultsV2 } from "../../domain/settings/types";
 import type {
   ArrowNodeV1,
   ColorV1,
@@ -5,10 +7,22 @@ import type {
   ShapeStyleV1,
   StrokeStyleV1,
 } from "../../domain/schema/public";
-import { canonicalizeUnitIntervalNumber, isRgbaColor } from "../../domain/schema/public";
+import {
+  canonicalizeGeometryNumber,
+  canonicalizeUnitIntervalNumber,
+  isRgbaColor,
+} from "../../domain/schema/public";
 import type { SelectionAreaV1, SelectionInclusionV1 } from "../../domain/settings/types";
 
+export type TextStyleChange = {
+  [Key in keyof TextDefaultsV2]: {
+    readonly property: `text-${Key extends "fontFamily" ? "font-family" : Key extends "fontSize" ? "font-size" : Key extends "backgroundColor" ? "background-color" : Key extends "backgroundOpacity" ? "background-opacity" : Key}`;
+    readonly value: TextDefaultsV2[Key];
+  };
+}[Exclude<keyof TextDefaultsV2, "color" | "opacity">];
+
 export type StyleChange =
+  | TextStyleChange
   | { readonly property: "selection-area"; readonly value: SelectionAreaV1 }
   | { readonly property: "selection-inclusion"; readonly value: SelectionInclusionV1 }
   | { readonly property: "color"; readonly value: ColorV1 }
@@ -30,6 +44,11 @@ export type StyleChange =
   | { readonly property: "eraser-radius"; readonly value: number };
 
 export function validateChange(change: StyleChange): void {
+  if (
+    change.property.startsWith("text-") &&
+    !validateTextStyleValue(textStyleKey(change.property), change.value)
+  )
+    throw new RangeError("Invalid text style value.");
   if (
     (change.property === "pressure-enabled" ||
       change.property === "hold-to-shape-enabled" ||
@@ -55,9 +74,15 @@ export function validateChange(change: StyleChange): void {
 
 export function canonicalStyleChange(change: StyleChange): StyleChange {
   validateChange(change);
+  if (change.property === "text-font-size") {
+    const canonical = { ...change, value: canonicalizeGeometryNumber(change.value) };
+    validateChange(canonical);
+    return canonical;
+  }
   if (
     change.property !== "opacity" &&
     change.property !== "outline-opacity" &&
+    change.property !== "text-background-opacity" &&
     change.property !== "fill-opacity"
   ) {
     return change;
@@ -86,6 +111,7 @@ function validateOpacityChange(change: StyleChange): void {
   if (
     change.property !== "opacity" &&
     change.property !== "outline-opacity" &&
+    change.property !== "text-background-opacity" &&
     change.property !== "fill-opacity"
   ) {
     return;
@@ -93,4 +119,10 @@ function validateOpacityChange(change: StyleChange): void {
   if (!Number.isFinite(change.value) || change.value < 0 || change.value > 1) {
     throw new RangeError("Style opacity must be from 0 through 1.");
   }
+}
+
+export function textStyleKey(property: string): keyof TextDefaultsV2 {
+  return property
+    .slice(5)
+    .replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase()) as keyof TextDefaultsV2;
 }

@@ -13,10 +13,11 @@ The required XML structure, standalone page surface, portable light and dark pal
 ```ts
 interface InkSnapshotV1 {
   format: "inkbook";
-  version: 1;
+  version: 1 | 2;
   revision: number;
   page: PageV1;
   elements: InkElementV1[];
+  fontResources?: FontResourceV2[];
 }
 
 interface PageV1 {
@@ -117,7 +118,8 @@ type InkElementV1 =
   | LinearElementV1
   | BoxShapeElementV1
   | CoordinateSystemElementV1
-  | TableElementV1;
+  | TableElementV1
+  | TextElementV2;
 ```
 
 ### Freehand Strokes
@@ -326,13 +328,19 @@ interface TableElementV1 extends ElementBaseV1 {
 - When one command targets several selected tables, it applies the requested absolute column count independently while preserving each table's own persisted `columnWidth`. Changed tables and all affected line or arrow dependents commit atomically. A table already at the requested count remains unchanged; if every target is unchanged, the command is a no-op.
 - Scaling changes bounds, separators, `columnWidth`, and header height proportionally, never outline width. Table header and inner separator edits snap briefly to the default header position or equal spacing. Otherwise they clamp only to the logical outer rectangle. A vertical separator may cross another separator; offsets are stored in nondecreasing visual order.
 
+### Text Fields
+
+`TextElementV2`, its source-range formatting, paragraph records, portable layout, font resources, and capacity limits are defined in [Text Fields](text-fields.md). Text occupies the content render band, uses rectangular bounds and eight box anchors, and stores its center as pivot. Side-width resize reflows; corner resize scales the requested fonts and geometry uniformly, then prepares native line metrics before commit. Portable layouts may include a canonical nonnegative `padding` value. It is bounded by one quarter of the outer field width and retained by copying, scaling, clipboard encoding, and SVG round trips. Missing padding means the original zero-inset layout; loading it does not change its persisted SVG proof. The [text-field contract](text-fields.md#scope-and-interaction) defines new-field padding and the position-preserving upgrade when editing an older field.
+
+Markdown tables add optional `TextLayoutV2.tables: TextTableLayoutV2[]`. Each frame has exactly numeric `start`, `end`, `x`, `y`, `width`, `height`, `columns`, and `borderWidth`, plus numeric-array `rowHeights`. `start` and `end` are integer source offsets with `0 <= start < end <= source.length`; cell glyphs and formulas remain in the existing positioned `lines` and `math` arrays. Frame coordinates are field-local canonical geometry. Width is nonnegative; columns are equal-width `width / columns` divisions, with integer `columns` from 1 through 16,384. `rowHeights` is nonempty, includes the header and body rows, and contains positive canonical heights; their sum rounded to three decimals MUST equal `height`. Canonical `borderWidth` is nonnegative and fits within every row height and column width. A zero-width frame or zero border emits no grid paint. Each frame, column, and row contributes one item to the existing shared 16,384-item layout limit alongside lines, runs, math entries, and math paths; the 100,000-character source limit and document payload limits remain unchanged. Copy, clipboard, worker transfer, hashing, and serialization retain frames; scaling scales their geometry and padding upgrades translate their local origin. The optional field extends version 2 without rewriting absent frames; older strict readers reject files containing it. Portable grid output follows the [text and font extension](svg-envelope.md#text-and-font-extension).
+
 ## Transform Rules
 
 - Snapshot geometry uses canonical page-space coordinates, except for retained stroke samples with the optional position offset defined above. Scale and general transform matrices are not persisted. Rendering adds a stroke offset before applying the stored clockwise rotation around the world-space `pivot`.
 - Gesture previews MAY use one temporary SVG transform. A commit records the result once and removes the preview transform; a pure stroke move updates position without materializing new samples.
 - Move by vector `d` adds `d` to stroke `offset` and `pivot`, retaining the samples. For other elements it adds `d` to every geometry point and to `pivot`. Bounds-based elements instead translate and canonicalize `x` and `y`, then recompute `pivot` from the translated canonical bounds center, using `columns * columnWidth` for table width. This preserves the centered-pivot invariant across rounding boundaries. Rotation is unchanged.
-- Single-element scaling is performed in the element's unrotated local frame around the opposite handle `anchor`. Unrotate the start and current pointer by `-rotation` around the current pivot, compute `sx = (current.x - anchor.x) / (start.x - anchor.x)` and `sy = (current.y - anchor.y) / (start.y - anchor.y)`, and clamp each factor at zero without imposing a positive minimum. Every canonical point becomes `anchor + (sx * (point.x - anchor.x), sy * (point.y - anchor.y))`; bounds and table fields are derived from those transformed corners. The pivot is recomputed from the result. Handle crossing never mirrors an element.
-- Multi-element scaling uses the active selection frame and its immutable gesture-start anchor. Free scaling resolves a nonnegative factor for each frame axis; uniform scaling projects pointer displacement onto the gesture-start handle direction. Factors derive from geometric frame extents without paint margins. There is no positive minimum scale and handle crossing never mirrors geometry. Bounds and structural fields follow the resolved geometric transform while element rotations and paint widths remain unchanged; representability limits for differently rotated boxes follow [Editor Tools](editor-tools.md#select).
+- Single-element scaling is performed in the element's unrotated local frame around the opposite handle `anchor`. Unrotate the start and current pointer by `-rotation` around the current pivot, compute `sx = (current.x - anchor.x) / (start.x - anchor.x)` and `sy = (current.y - anchor.y) / (start.y - anchor.y)`, and clamp each factor at zero without imposing a positive minimum for non-text elements. A single text field instead reflows on side-handle resize regardless of Shift and scales uniformly on corner resize; uniform text scaling keeps the smallest base or explicit range font size at least 0.001 page units. Every canonical point becomes `anchor + (sx * (point.x - anchor.x), sy * (point.y - anchor.y))`; bounds and table fields are derived from those transformed corners. The pivot is recomputed from the result. Handle crossing never mirrors an element.
+- Multi-element scaling uses the active selection frame and its immutable gesture-start anchor. Free scaling resolves a nonnegative factor for each frame axis; uniform scaling projects pointer displacement onto the gesture-start handle direction. Factors derive from geometric frame extents without paint margins. Selections without text have no positive minimum scale. Any multi-selection containing text always uses uniform scaling, including side handles, with the text font-size minimum above. Handle crossing never mirrors geometry. Bounds and structural fields follow the resolved geometric transform while element rotations and paint widths remain unchanged; representability limits for differently rotated boxes follow [Editor Tools](editor-tools.md#select).
 - Single-element rotation adds the gesture angle delta to `rotation`; geometry and pivot remain unchanged. Multi-element rotation uses the active selection-frame center `c`: each element's canonical geometry and pivot first move by `rotate(pivot - c, delta) + c - pivot`, then its normalized `rotation` increases by `delta`. The ephemeral frame rotates by the same delta and remains authoritative for overlay orientation and later group snapping until selection membership changes. It is not persisted in the document.
 - Endpoint, bend, axis, dedicated shape-handle, coordinate-system dimensionality, and table column-count or separator edits update their named canonical fields directly and recompute the pivot where the element kind requires a bounds center. Editing a connected endpoint follows the connection rules above. Coordinate-system pivot always equals its origin. Structural edits use the kind-specific geometry rules above rather than a selection-scale transform.
 - Axis endpoint edits use an absolute 45-degree angular snap. Line and arrow creation and endpoint edits use an absolute 90-degree angular snap. Both use the active zoom to convert a 5 CSS-pixel screen threshold; semantic anchors take precedence. Screen-length activation and guide visibility follow [Editor Tools](editor-tools.md#select).
@@ -419,8 +427,9 @@ interface ClipboardElementV1 {
 
 interface InkClipboardV1 {
   format: "inkbook-elements";
-  version: 1;
+  version: 1 | 2;
   elements: ClipboardElementV1[];
+  fontResources?: FontResourceV2[];
 }
 ```
 
@@ -471,7 +480,7 @@ Readers continue to accept `data-encoding="json"` with flat numeric triples. Ope
 
 ## Versioning and Migration
 
-- Writers emit version 1 only.
+- Writers emit version 2 for documents containing text and canonical version 1 for documents without text. The [text extension](text-fields.md#persistence-clipboard-and-pdf) preserves legacy reading and uses font descriptors without binary data in disk metadata. Logical runtime and clipboard resources retain their `data` fields. Version 2 requires updated readers on editing devices.
 - Inkbook may display a replacement preview for a newer unsupported version only after its static SVG passes the same exact element-and-attribute allowlist as generated output; otherwise it leaves the native image host-owned and noninteractive, or replaces its owned presentation with a non-rendering placeholder. The document cannot be edited.
 - Version 0 uses the same envelope, snapshot fields, ordering, connections, and canonical geometry as version 1 except that both the root `data-inkbook-version` and snapshot `version` are `0` and the root omits `data-inkbook-snapshot-sha256`. Its only migration changes the snapshot discriminator to `1`. The first version 1 save adds the canonical metadata hash; the version 1 exact-text and hash requirements do not block loading the supported legacy source.
 - Older supported versions migrate in memory through sequential pure migrations in the document worker during unlock. Every adjacent step validates its complete output before the next step begins. Runtime batches and the export baseline are created only after the migrated current-version result passes schema and byte, depth, container, element, geometry, and connection limits. Cancellation applies between migration and validation slices. The equivalent bounded main-thread fallback uses the same registry, checkpoints, limits, and failure result when workers are unavailable.

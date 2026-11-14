@@ -128,6 +128,7 @@ function drawingToolSpecs(t: Translator): readonly ToolSectionSpec[] {
       },
       t,
     ),
+    textSpec(t),
     {
       name: t("settings.controls.eraser"),
       description: t("settings.controls.eraserHelp"),
@@ -138,6 +139,40 @@ function drawingToolSpecs(t: Translator): readonly ToolSectionSpec[] {
       controlKeys: { "eraser-radius": "toolDefaults.eraser.radius" },
     },
   ];
+}
+
+function textSpec(t: Translator): ToolSectionSpec {
+  return {
+    name: t("settings.controls.text"),
+    description: t("settings.controls.textHelp"),
+    tool: "text",
+    controlKeys: {
+      "text-font-family": "toolDefaults.text.fontFamily",
+      "text-font-size": "toolDefaults.text.fontSize",
+      color: "toolDefaults.text.color",
+      opacity: "toolDefaults.text.opacity",
+      "text-bold": "toolDefaults.text.bold",
+      "text-italic": "toolDefaults.text.italic",
+      "text-underline": "toolDefaults.text.underline",
+      "text-strikethrough": "toolDefaults.text.strikethrough",
+      "text-alignment": "toolDefaults.text.alignment",
+      "text-background-color": "toolDefaults.text.backgroundColor",
+      "text-background-opacity": "toolDefaults.text.backgroundOpacity",
+    },
+    controlDescriptions: {
+      "text-font-family": t("settings.controls.textFontFamilyHelp"),
+      "text-font-size": t("settings.controls.textFontSizeHelp"),
+      color: t("settings.controls.textColorHelp"),
+      opacity: t("settings.controls.textOpacityHelp"),
+      "text-bold": t("settings.controls.textBoldHelp"),
+      "text-italic": t("settings.controls.textItalicHelp"),
+      "text-underline": t("settings.controls.textUnderlineHelp"),
+      "text-strikethrough": t("settings.controls.textStrikethroughHelp"),
+      "text-alignment": t("settings.controls.textAlignmentHelp"),
+      "text-background-color": t("settings.controls.textBackgroundColorHelp"),
+      "text-background-opacity": t("settings.controls.textBackgroundOpacityHelp"),
+    },
+  };
 }
 
 interface StrokeSpecOptions {

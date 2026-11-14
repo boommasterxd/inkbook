@@ -1,3 +1,4 @@
+import type { TextFontLibraryPort } from "./embeds/active-editor/text-preparation";
 import { registerVaultLifecycle } from "./runtime/vault-lifecycle";
 import { ReadingMarkdownIndex } from "./embeds/reading-markdown-index";
 import { createPhoneSheetHost } from "./menus/panels/phone-sheet-host";
@@ -65,7 +66,8 @@ export async function activateInkbookPlugin(
   let layoutReady = false;
   const embedActions = createPluginEmbedActions(plugin, settings, workScheduler);
   plugin.register(() => embedActions.dispose());
-  const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, settingsModal);
+  const ui = { settingsModal, settingTab };
+  const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, ui);
   runtimeForSettings = runtime;
   const disposeStatus = registerDocumentStatusBar(plugin, runtime, settings, settings.localization);
   const validationScheduling = documentOutputScheduling(runtime, workScheduler);
@@ -189,7 +191,13 @@ function createRuntime(
   scheme: ColorSchemeBroadcaster,
   embedActions: ReturnType<typeof createObsidianEmbedActions>,
   feedback: InkbookFeedbackManager,
-  settingsModal: InkbookSettingsModalController,
+  ui: {
+    readonly settingsModal: InkbookSettingsModalController;
+    readonly settingTab: {
+      readonly fontLibrary?: TextFontLibraryPort | undefined;
+      readonly openFontManager?: ((trigger: HTMLButtonElement) => void) | undefined;
+    };
+  },
 ): ObsidianWorkspaceRuntime {
   const runtime: ObsidianWorkspaceRuntime = new ObsidianWorkspaceRuntime(
     plugin.app.vault,
@@ -202,6 +210,8 @@ function createRuntime(
     embedActions,
     {
       localization: settings.localization,
+      textFonts: ui.settingTab.fontLibrary,
+      onOpenFonts: ui.settingTab.openFontManager,
       resolveDocumentStatusPane: (root) => resolveDocumentStatusPane(plugin.app.workspace, root),
       confirmEraseAll: (signal) =>
         confirmInkbookAction(plugin.app, {
@@ -235,8 +245,8 @@ function createRuntime(
           settings.localization,
           (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
         ),
-      onOpenSettings: (navigation) => settingsModal.open("settings", navigation),
-      onOpenShortcuts: (navigation) => settingsModal.open("shortcuts", navigation),
+      onOpenSettings: (navigation) => ui.settingsModal.open("settings", navigation),
+      onOpenShortcuts: (navigation) => ui.settingsModal.open("shortcuts", navigation),
       onboardingPreference: new OnboardingPreference(settings),
     },
   );
@@ -344,7 +354,7 @@ function registerMarkdownHistory(plugin: Plugin, runtime: ObsidianWorkspaceRunti
       const pane = resolveEditorPane(editor, info);
       const sourcePath = info.file?.path;
       if (pane !== undefined && sourcePath !== undefined) {
-        runtime.handleMarkdownEditorChange(sourcePath, pane);
+        runtime.handleMarkdownEditorChange(sourcePath, pane, editor.hasFocus());
       }
     }),
   );

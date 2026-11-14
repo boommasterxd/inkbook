@@ -3,7 +3,8 @@ import { createHtmlElement } from "./dom";
 
 export { Keymap, Scope } from "./keymap";
 export { configureTestHostLanguage, getLanguage } from "./language";
-export { Modal, Setting, SettingGroup } from "./settings";
+export { ButtonComponent, Modal, Setting, SettingGroup } from "./settings";
+export { SettingTab } from "./core-settings";
 
 export interface TestEditorInfo {
   readonly editor?: Editor;

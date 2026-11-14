@@ -235,8 +235,16 @@ describe("selected pen release contact ownership", () => {
                 "commit-preview",
                 "release-pointer",
               ]
-            : ["capture-pointer", "schedule-long-press", "cancel-long-press", "release-pointer"],
+            : [
+                "capture-pointer",
+                "schedule-long-press",
+                "cancel-long-press",
+                "release-pointer",
+                "activate-element",
+              ],
         );
+        if (!realContact)
+          expect(h.effects).toContainEqual({ type: "activate-element", elementId: element.id });
         if (realContact)
           expect(h.effects.find((effect) => effect.type === "update-preview")).toMatchObject({
             kind: "element-move",

@@ -18,6 +18,8 @@ import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage"
 import { SettingDefinitionRenderer } from "../../../../src/obsidian/settings/setting-definition-renderer";
 import { refreshSettingsView } from "../../../../src/obsidian/settings/settings-view-refresh";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import type { PluginFontLibrary } from "../../../../src/obsidian/fonts/plugin-font-library";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -46,9 +48,58 @@ function mount(definition: SettingDefinitionRender, container = document.body): 
   return definition.render(setting, group) ?? (() => undefined);
 }
 
+it("opens font management from Text defaults", async () => {
+  const store = new InkbookSettingsStore(
+    { loadData: async () => createBuiltInSettings(), saveData: vi.fn() },
+    { loadLocalStorage: () => createBuiltInDeviceSettings(), saveLocalStorage: vi.fn() },
+  );
+  const openFontManager = vi.fn();
+  const tab = new InkbookSettingTab(
+    {} as ConstructorParameters<typeof InkbookSettingTab>[0],
+    {} as ConstructorParameters<typeof InkbookSettingTab>[1],
+    store,
+    undefined,
+    undefined,
+    {
+      openFontManager,
+      fontLibrary: {
+        choices: () => [],
+        library: { list: () => [] },
+      } as unknown as PluginFontLibrary,
+      workScheduler: () => new TestWorkScheduler(),
+    },
+  );
+  const definitions = tab.getSettingDefinitions();
+  expect(
+    definitions.some(
+      (item) => "heading" in item && item.heading === store.localization.t("fonts.group"),
+    ),
+  ).toBe(false);
+  const dispose = mount(findRender(definitions, store.localization.t("settings.controls.text")));
+  try {
+    document.querySelector<HTMLButtonElement>(".inkbook-settings-tool-trigger")!.click();
+    expect(document.querySelector('input[aria-label="Copy text fields as text"]')).toBeNull();
+    const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    const confirmedFamily = tab.getControlValue("toolDefaults.text.fontFamily");
+    trigger.click();
+    const action = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.getAttribute("aria-label") === store.localization.t("fonts.manage"),
+    )!;
+    expect(action.closest('[role="listbox"]')).toBeNull();
+    action.click();
+    expect(openFontManager).toHaveBeenCalledExactlyOnceWith(trigger);
+    expect(trigger.isConnected).toBe(true);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(trigger);
+    expect(tab.getControlValue("toolDefaults.text.fontFamily")).toBe(confirmedFamily);
+  } finally {
+    dispose();
+  }
+});
+
 it("restores the correct native reset focus and action after groups rebuild in a new order", () => {
   const host = { getControlValue: () => false, setControlValue: () => undefined };
-  const resets = { Input: vi.fn(), Interface: vi.fn() };
+  const resets = { Appearance: vi.fn(), General: vi.fn() };
   const definitions = Object.entries(resets).map(([heading, reset]) => ({
     type: "group" as const,
     cls: "shared-settings-group",
@@ -81,35 +132,38 @@ it("restores the correct native reset focus and action after groups rebuild in a
   const resetButton = (group: string): HTMLButtonElement =>
     container.querySelector<HTMLButtonElement>(`section[aria-label="${group}"] button`)!;
   render(definitions);
-  const original = resetButton("Input");
+  const original = resetButton("Appearance");
   original.focus();
   refreshSettingsView(container, () => render([...definitions].reverse()));
   expect(original.isConnected).toBe(false);
-  const replacement = resetButton("Input");
+  const replacement = resetButton("Appearance");
   expect(document.activeElement).toBe(replacement);
   replacement.click();
-  expect(resets.Input).toHaveBeenCalledOnce();
-  expect(resets.Interface).not.toHaveBeenCalled();
-  resetButton("Interface").click();
-  expect(resets.Interface).toHaveBeenCalledOnce();
+  expect(resets.Appearance).toHaveBeenCalledOnce();
+  expect(resets.General).not.toHaveBeenCalled();
+  resetButton("General").click();
+  expect(resets.General).toHaveBeenCalledOnce();
   container.remove();
 });
 
 it.each([
-  ["Selection highlights", "selectionHighlightsEnabled", false, "vault"],
-  ["Left-handed toolbar", "device.leftHandedToolbar", true, "device"],
+  ["Selection highlights", "selectionHighlightsEnabled", false, "vault", "Performance"],
+  ["Left-handed toolbar", "device.leftHandedToolbar", true, "device", "Appearance"],
+  ["Copy text fields as text", "copyTextFieldsAsText", true, "vault", "General"],
 ] as const)(
   "recovers native %s writes with an associated error, focus and retry",
-  async (name, key, next, scope) => {
+  async (name, key, next, scope, heading) => {
     let fail = true;
+    let persistedVault = createBuiltInSettings();
     const save = vi.fn(() => {
       if (fail) throw new Error("Storage unavailable");
     });
     const store = new InkbookSettingsStore(
       {
-        loadData: async () => createBuiltInSettings(),
-        saveData: async () => {
+        loadData: async () => persistedVault,
+        saveData: async (settings) => {
           if (scope === "vault") save();
+          persistedVault = structuredClone(settings);
         },
       },
       {
@@ -125,7 +179,10 @@ it.each([
       {} as ConstructorParameters<typeof InkbookSettingTab>[1],
       store,
     );
-    const dispose = mount(findRender(tab.getSettingDefinitions(), name));
+    const definitions = tab.getSettingDefinitions();
+    const group = definitions.find((item) => "heading" in item && item.heading === heading);
+    if (group === undefined || !("items" in group)) throw new Error("Missing control group.");
+    const dispose = mount(findRender(group.items ?? [], name));
     const input = document.querySelector<HTMLInputElement>(`[aria-label="${name}"]`)!;
     const confirmed = tab.getControlValue(key);
     input.focus();
@@ -146,6 +203,7 @@ it.each([
     input.checked = next;
     input.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(tab.getControlValue(key)).toBe(next));
+    expect(persistedVault).toEqual(store.getVaultSettings());
     expect(save).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe("");
     expect(document.activeElement).toBe(input);
@@ -256,7 +314,7 @@ it("validates native hold fields, preserves disabled values and resets only thei
   slider = document.querySelector<HTMLInputElement>(
     'input[type="range"][aria-label="Movement tolerance"]',
   )!;
-  expect([field.value, field.min, field.max, field.step]).toEqual(["12", "1", "32", "1"]);
+  expect([field.value, field.min, field.max, field.step]).toEqual(["20", "1", "32", "1"]);
   field.focus();
   field.value = "32";
   field.dispatchEvent(new Event("input"));

@@ -1,0 +1,161 @@
+.inkbook-adaptive-panel-back,
+.inkbook-font-dropdown-option,
+.inkbook-font-dropdown-popup .inkbook-font-dropdown-manage {
+  box-shadow: none;
+  color: var(--text-normal);
+  display: flex;
+  font-size: var(--font-ui-small);
+  gap: var(--size-4-2);
+  inline-size: 100%;
+}
+
+.inkbook-font-dropdown {
+  display: grid;
+  gap: var(--size-4-1);
+  justify-items: start;
+  min-inline-size: 0;
+}
+
+.inkbook-font-dropdown-trigger {
+  align-items: center;
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  touch-action: manipulation;
+}
+
+.inkbook-font-dropdown-sizer {
+  block-size: 0;
+  overflow: hidden;
+  visibility: hidden;
+  white-space: pre;
+}
+
+.inkbook-adaptive-panel[data-kind="style"] .inkbook-font-dropdown-trigger {
+  inline-size: 100%;
+  justify-content: flex-start;
+  text-align: start;
+}
+
+/* Generic button rules must not override the native dropdown tokens. */
+.inkbook-font-dropdown .inkbook-font-dropdown-trigger.dropdown {
+  background-color: var(--dropdown-background);
+  padding: var(--dropdown-padding);
+}
+
+.inkbook-font-dropdown .inkbook-font-dropdown-trigger.dropdown:is(:hover, .mobile-tap) {
+  background-color: var(--dropdown-background-hover);
+}
+
+.inkbook-font-dropdown-option,
+.inkbook-font-dropdown-popup .inkbook-font-dropdown-manage {
+  align-items: center;
+  background: var(--background-primary);
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin: 0;
+  line-height: 1.3;
+  min-block-size: var(--size-4-7);
+  min-inline-size: 0;
+  padding: var(--size-4-1) var(--size-4-2);
+  text-align: start;
+}
+
+.inkbook-font-dropdown-label,
+.inkbook-font-dropdown-option {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inkbook-font-dropdown-label {
+  min-inline-size: 0;
+}
+
+.inkbook-font-dropdown-trigger > .inkbook-font-dropdown-label,
+.inkbook-font-dropdown-sizer {
+  grid-area: 1 / 1;
+  text-align: start;
+}
+
+.inkbook-font-dropdown-popup {
+  box-sizing: border-box;
+  background: var(--background-primary);
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  max-block-size: min(264px, 40dvh);
+  margin: 0;
+  pointer-events: auto;
+  position: fixed;
+  z-index: var(--layer-menu);
+  box-shadow: var(--menu-shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: var(--size-4-1);
+}
+
+.inkbook-font-dropdown-list {
+  min-block-size: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+.inkbook-font-dropdown-popup[hidden] {
+  display: none;
+}
+
+.inkbook-font-dropdown-option {
+  border-color: transparent;
+  cursor: pointer;
+}
+
+.inkbook-font-dropdown-footer {
+  border-block-start: var(--border-width) solid var(--background-modifier-border);
+  display: flex;
+  flex-shrink: 0;
+  margin-block-start: var(--size-4-1);
+  padding-block-start: var(--size-4-1);
+}
+
+.inkbook-font-dropdown-popup .inkbook-font-dropdown-manage {
+  background: transparent;
+  block-size: auto;
+  border-color: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  justify-content: flex-start;
+  touch-action: manipulation;
+}
+
+.inkbook-font-dropdown-manage .inkbook-font-dropdown-label {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.is-mobile .inkbook-font-dropdown-option,
+.is-mobile .inkbook-font-dropdown-popup .inkbook-font-dropdown-manage {
+  min-block-size: 44px;
+}
+
+.inkbook-font-dropdown-option[data-active="true"],
+.inkbook-font-dropdown-option:hover,
+.inkbook-font-dropdown-popup .inkbook-font-dropdown-manage:hover {
+  background: var(--background-primary-alt);
+}
+
+.inkbook-font-dropdown-popup .inkbook-font-dropdown-manage:focus-visible,
+.inkbook-adaptive-panel-layer[data-inkbook-keyboard-navigation="true"]
+  .inkbook-font-dropdown-manage:focus {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.inkbook-font-dropdown-option[data-active="true"] {
+  border-color: var(--interactive-accent);
+}
+
+.inkbook-adaptive-panel[data-state="closing"] ~ .inkbook-font-dropdown-popup {
+  display: none;
+}

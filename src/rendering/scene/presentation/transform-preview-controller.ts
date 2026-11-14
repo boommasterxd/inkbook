@@ -241,7 +241,9 @@ export class SceneTransformPreviewController {
 
   private applyTransform(id: string, preview: PreviewTransform): void {
     const args = [id, preview.transform, preview.version, preview.strokeWidthScale] as const;
-    if (preview.transform !== null && preview.matrix !== undefined)
+    if (preview.textBasis !== undefined)
+      this.#content.applyPreviewTransform(...args, preview.matrix, preview.textBasis);
+    else if (preview.transform !== null && preview.matrix !== undefined)
       this.#content.applyPreviewTransform(...args, preview.matrix);
     else this.#content.applyPreviewTransform(...args);
   }
@@ -307,6 +309,9 @@ export class SceneTransformPreviewController {
       strokeWidthScale: preview.strokeWidth === "preserve" ? this.#camera.zoom : null,
       transform: preview.transform,
       matrix: preview.matrix?.every(Number.isFinite) ? preview.matrix : undefined,
+      ...(preview.feedback?.textBasis === undefined
+        ? {}
+        : { textBasis: preview.feedback.textBasis }),
       version: preview.version,
     };
   }

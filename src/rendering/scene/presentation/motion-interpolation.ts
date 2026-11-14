@@ -1,5 +1,6 @@
 import { cubicBezier, mix } from "motion";
 import { STANDARD_EASING } from "../../motion/transitions";
+import type { SceneDeltaEntry } from "../types";
 import type {
   BoxShapeElementV1,
   CoordinateSystemElementV1,
@@ -11,6 +12,18 @@ import type {
 } from "../../../domain/schema/public";
 
 const standardEase = cubicBezier(...STANDARD_EASING);
+
+export function hasGeometryMotion(change: SceneDeltaEntry): boolean {
+  return change.after?.kind !== "text" && change.domains.includes("geometry");
+}
+
+export function hasPaintMotion(change: SceneDeltaEntry): boolean {
+  return (
+    change.after?.kind === "text" ||
+    change.domains.includes("paint") ||
+    change.domains.includes("order")
+  );
+}
 
 export function interpolateElement(
   from: InkElementV1,
@@ -31,6 +44,8 @@ export function interpolateElement(
       return from.kind === "coordinate-system" ? interpolateAxes(from, to, progress) : to;
     case "table":
       return from.kind === "table" ? interpolateTable(from, to, progress) : to;
+    case "text":
+      return to;
     default:
       return isBox(from) ? interpolateBox(from, to, progress) : to;
   }

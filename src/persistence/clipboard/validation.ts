@@ -10,6 +10,9 @@ import {
   validateRuntimeInkElementV1,
 } from "../../domain/schema/element-validation";
 import { hasReachableDependencyCycle } from "../../domain/schema/dependency-cycle";
+import { assertFontResourcesSteps } from "../../domain/schema/font-resource-validation";
+import { usedFontResourcesSteps } from "../fonts/used-font-resources";
+import { validateFontResourceSteps } from "../fonts/font-resources";
 import {
   calculateElementBounds,
   isAnchorTarget,
@@ -110,7 +113,8 @@ const isCompatibleAnchor = (target: ClipboardElementBodyV1, anchor: ShapeAnchorV
   if (target.kind === "line" || target.kind === "arrow") {
     return anchor.kind === "linear-endpoint";
   }
-  if (target.kind === "rectangle" || target.kind === "table") return anchor.kind === "box";
+  if (target.kind === "rectangle" || target.kind === "table" || target.kind === "text")
+    return anchor.kind === "box";
   if (target.kind === "ellipse") return anchor.kind === "ellipse-cardinal";
   const vertices = polygonVertices(target.kind);
   if (vertices > 0) {
@@ -316,12 +320,20 @@ function* validateClipboardPayloadSteps(
   nodesPerStep: number,
   samplesPerStep: number,
 ): Generator<boolean | void, ClipboardResult<InkClipboardV1>> {
-  if (!isRecord(value) || !hasExactKeys(value, ["format", "version", "elements"])) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "format",
+      "version",
+      "elements",
+      ...(value.fontResources === undefined ? [] : ["fontResources"]),
+    ])
+  ) {
     return failure("Clipboard payload root does not match InkClipboardV1.");
   }
   if (
     value.format !== "inkbook-elements" ||
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     !Array.isArray(value.elements)
   ) {
     return failure("Clipboard payload discriminator or version is invalid.");
@@ -333,6 +345,26 @@ function* validateClipboardPayloadSteps(
     samplesPerStep,
   );
   if (!entries.ok) return entries;
+  try {
+    const hasText = entries.value.some(({ element }) => element.kind === "text");
+    if (value.version === 1 && (hasText || value.fontResources !== undefined)) {
+      return failure("Text and font resources require clipboard version 2.");
+    }
+    if (value.fontResources !== undefined) {
+      const fonts = assertFontResourcesSteps(value.fontResources, "$.fontResources");
+      for (let step = fonts.next(); !step.done; step = fonts.next()) yield true;
+      for (const resource of value.fontResources as NonNullable<InkClipboardV1["fontResources"]>) {
+        const verified = validateFontResourceSteps(resource);
+        for (let step = verified.next(); !step.done; step = verified.next()) yield true;
+      }
+    }
+    yield* usedFontResourcesSteps(
+      entries.value.map(({ element }) => element),
+      (value.fontResources ?? []) as NonNullable<InkClipboardV1["fontResources"]>,
+    );
+  } catch {
+    return failure("Clipboard font resources are invalid or a required face is unavailable.");
+  }
   if (!hasValidRenderBandOrder(entries.value)) {
     return failure("Clipboard elements violate fixed render-band order.");
   }

@@ -35,6 +35,7 @@ export function exceedsExactPreviewWork(
   options: ReplacementWorkOptions = {},
 ): boolean {
   if (hasLongStroke(elements)) return true;
+  if (elements.some((element) => element.kind === "text")) return true;
   return exceedsReplacementWork(
     elements,
     planner,
@@ -65,6 +66,8 @@ export function exceedsReplacementWork(
   options: ReplacementWorkOptions = {},
 ): boolean {
   if (elements.length > elementLimit) return true;
+  if (options.countStrokeSamples !== false && elements.some((element) => element.kind === "text"))
+    return true;
   // A linear target may reach the complete connection graph even without dependents.
   if (options.hasLinearConnectionTarget || hasLinearConnectionDependencies(elements)) return true;
   let work = 0;

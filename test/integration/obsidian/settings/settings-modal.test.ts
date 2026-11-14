@@ -288,7 +288,7 @@ describe("Inkbook settings disclosure motion", () => {
         '.inkbook-settings-tool-trigger[aria-expanded="false"]',
       ),
     ];
-    expect(triggers).toHaveLength(20);
+    expect(triggers).toHaveLength(21);
 
     const panels = triggers.map((trigger) => {
       const panel = required<HTMLElement>(`#${trigger.getAttribute("aria-controls") ?? "missing"}`);

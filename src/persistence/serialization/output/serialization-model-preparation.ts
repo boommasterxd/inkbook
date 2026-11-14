@@ -8,7 +8,10 @@ import {
   validateInkSnapshotV1Steps,
   validateRuntimeInkSnapshotV1Steps,
 } from "../../../domain/schema/snapshot-validation";
-import { canonicalElement, canonicalPage } from "../metadata/canonical-snapshot";
+import {
+  canonicalElementWithFontResourcesSteps,
+  canonicalPage,
+} from "../metadata/canonical-snapshot";
 import { codecFailure, invalidSnapshot } from "../codec-failure";
 import {
   renderBandOf as elementRenderBand,
@@ -23,8 +26,11 @@ import {
 import { toValidationError } from "../../../domain/schema/validation-internals";
 import { prepareSerializationRanks, type SerializationRanks } from "./serialization-selection";
 import { updateConnectionTargetCounts } from "./connection-target-counts";
+import { validateFontResourceSteps } from "../../fonts/font-resources";
+import { usedFontResourcesSteps } from "../../fonts/used-font-resources";
 
 export interface PreparedSerializationModel {
+  readonly fontResources: NonNullable<InkSnapshotV1["fontResources"]>;
   readonly elements: Map<string, InkElementV1>;
   readonly facts: Map<string, facts.ElementFacts>;
   readonly connectionTargets: Map<string, number>;
@@ -68,13 +74,24 @@ export function* prepareSerializationModelSteps(
   }
   if (derivations.elements.length !== snapshot.elements.length)
     return codecFailure("invalid-delta", "Validated element derivations are incomplete.");
+  try {
+    for (const resource of snapshot.fontResources ?? []) yield* validateFontResourceSteps(resource);
+    yield* usedFontResourcesSteps(snapshot.elements, snapshot.fontResources ?? []);
+  } catch {
+    return codecFailure("snapshot-invalid", "Font resource content is invalid.");
+  }
   const elements = new Map<string, InkElementV1>();
   const elementFacts = new Map<string, facts.ElementFacts>();
   const connectionTargets = new Map<string, number>();
   const orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
   try {
     for (let index = 0; index < snapshot.elements.length; index += 1) {
-      const element = canonicalElement(snapshot.elements[index]!, options.runtimeStrokeBuffers);
+      const source = snapshot.elements[index]!;
+      const element = yield* canonicalElementWithFontResourcesSteps(
+        source,
+        snapshot.fontResources ?? [],
+        options.runtimeStrokeBuffers,
+      );
       const derived = yield* facts.elementFactsSteps(
         element,
         derivations.elements[index],
@@ -93,6 +110,7 @@ export function* prepareSerializationModelSteps(
   return {
     ok: true,
     value: {
+      fontResources: snapshot.fontResources ?? [],
       elements,
       facts: elementFacts,
       connectionTargets,

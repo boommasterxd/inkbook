@@ -1,3 +1,4 @@
+import { createPluginFontLibrary } from "../fonts/plugin-font-library";
 import { normalizePath, TFolder, type Plugin } from "obsidian";
 import { FRAME_WORK_SHARE } from "../../domain/scheduling/work-scheduler";
 import type { ObsidianWorkspaceRuntime } from "../embeds";
@@ -8,6 +9,7 @@ import { ObsidianVaultFolderAdapter } from "../vault";
 import { InkImportAccess } from "./import/import-access";
 import { InkbookSettingTab } from "./setting-tab";
 import type { InkbookSettingsStore } from "./storage";
+import { FontLibraryAccess } from "./fonts/font-library-access";
 
 export function addPluginSettingsTab(
   plugin: Plugin,
@@ -39,6 +41,9 @@ export function addPluginSettingsTab(
     });
     return new ObsidianInkImportService(ports);
   };
+  const fontLibrary = createPluginFontLibrary(plugin, settings, () =>
+    workScheduler(plugin.app.workspace.containerEl.ownerDocument.defaultView),
+  );
   const inkImport = new InkImportAccess({
     localization: settings.localization,
     app: plugin.app,
@@ -48,6 +53,15 @@ export function addPluginSettingsTab(
     observeMotion: (listener) => settings.subscribeDeviceSettings(listener),
     signal,
   });
+  const fonts = new FontLibraryAccess({
+    app: plugin.app,
+    settings,
+    library: fontLibrary.library,
+    signal,
+    workScheduler,
+    onChanged: () => tab.update(),
+  });
+  plugin.register(() => fonts.dispose());
   const tab = new InkbookSettingTab(
     plugin.app,
     plugin,
@@ -57,7 +71,7 @@ export function addPluginSettingsTab(
       getRuntime()?.refreshRateProfiles.status(
         plugin.app.workspace.containerEl.ownerDocument.defaultView,
       ),
-    { lifetime: signal, workScheduler, inkImport },
+    { lifetime: signal, workScheduler, inkImport, fontLibrary, openFontManager: fonts.open },
   );
   plugin.addSettingTab(tab);
   return tab;

@@ -1,18 +1,8 @@
+import { styleChange } from "./controller-style-values";
+import { textToolbarIcon } from "./text-toolbar-icon";
 import { Localization, type Translator } from "../../../domain/localization";
-import {
-  type ArrowNodeV1,
-  type ColorV1,
-  type InkElementV1,
-  type OutlineStyleV1,
-  type StrokeStyleV1,
-} from "../../../domain/schema/public";
-import { BUILT_IN_COLORS } from "../../../domain/settings/defaults";
-import {
-  OUTLINE_WIDTHS,
-  PEN_WIDTHS,
-  type StartupToolV1,
-  type ToolDefaultsV1,
-} from "../../../domain/settings/types";
+import { type InkElementV1 } from "../../../domain/schema/public";
+import { type StartupToolV1, type ToolDefaultsV1 } from "../../../domain/settings/types";
 import {
   applySelectionStyleChange,
   applyToolStyleChange,
@@ -20,12 +10,12 @@ import {
   summarizeSelectionStyle,
   type OutlineSelectionStyleSummary,
   type SelectionStyleSummary,
-  type StyleChange,
 } from "../../../editor/tools/public";
 import type { ToolbarStyleIconState } from "../../../rendering/ui/index";
 import type { ActiveShapeIconState } from "../../../rendering/ui/icon-ids";
 import type { StyleChoiceOption, StyleControl } from "../../menus/editor-menu-types";
 import { createStructuralStyleControls } from "../../menus/structural-style-controls";
+import { createTextStyleControls } from "../../menus/text-style-controls";
 import {
   arrowNodeStyleOptions,
   colorStyleOptions,
@@ -52,11 +42,15 @@ export interface SelectionStyleReplacement {
 export function createActiveEditorStyleControls(
   context: ActiveEditorStyleContext,
   t: Translator = new Localization().t,
+  fontOptions?: readonly StyleChoiceOption[],
 ): readonly StyleControl[] {
   if (context.selection.length > 0) {
-    return selectionControls(summarizeSelectionStyle(context.selection), t);
+    const summary = summarizeSelectionStyle(context.selection);
+    return summary?.kind === "text"
+      ? createTextStyleControls(summary, t, fontOptions)
+      : selectionControls(summary, t);
   }
-  return createToolStyleControls(context.defaults, context.tool, t);
+  return createToolStyleControls(context.defaults, context.tool, t, fontOptions);
 }
 
 export function createActiveEditorStyleIcon(
@@ -74,6 +68,9 @@ export function createActiveEditorStyleIcon(
       outlineColor: summary.color,
       outlineStyle: "solid",
     };
+  }
+  if (summary.kind === "text") {
+    return textToolbarIcon(summary.values);
   }
   return {
     fillColor: summary.fill?.fillColor ?? null,
@@ -138,16 +135,17 @@ export function updateSessionToolDefaults(
 
 function selectionControls(summary: SelectionStyleSummary, t: Translator): readonly StyleControl[] {
   if (summary === null) return [];
+  if (summary.kind === "text") return createTextStyleControls(summary, t);
   return summary.kind === "outline"
     ? outlineSelectionControls(summary, t)
     : strokeSelectionControls(summary, t);
 }
 
 function strokeSelectionControls(
-  summary: Exclude<SelectionStyleSummary, OutlineSelectionStyleSummary | null>,
+  summary: Exclude<SelectionStyleSummary, OutlineSelectionStyleSummary | { kind: "text" } | null>,
   t: Translator,
 ): readonly StyleControl[] {
-  return [
+  const controls: StyleControl[] = [
     mixedChoiceControl(
       "color",
       t("editor.control.color"),
@@ -155,15 +153,25 @@ function strokeSelectionControls(
       colorStyleOptions(t),
       serializeStyleColor,
     ),
-    mixedChoiceControl(
-      "stroke-width",
-      t("editor.control.stroke-width"),
-      summary.width,
-      PEN_WIDTH_STYLE_OPTIONS,
-      String,
-    ),
     mixedNumberControl("opacity", t("editor.control.opacity"), summary.opacity, 0, 1, 0.05),
   ];
+  if (summary.width !== null) {
+    controls.splice(
+      1,
+      0,
+      mixedChoiceControl(
+        "stroke-width",
+        t("editor.control.stroke-width"),
+        summary.width,
+        PEN_WIDTH_STYLE_OPTIONS,
+        String,
+      ),
+    );
+  }
+  if (summary.kind === "common" && summary.fill != null) {
+    controls.push(...fillSelectionControls(summary.fill, t));
+  }
+  return controls;
 }
 
 function outlineSelectionControls(
@@ -202,23 +210,7 @@ function outlineSelectionControls(
     ),
   ];
   if (summary.fill !== null) {
-    controls.push(
-      mixedChoiceControl(
-        "fill-color",
-        t("editor.control.fill-color"),
-        summary.fill.color,
-        fillColorStyleOptions(t),
-        serializeNullableStyleColor,
-      ),
-      mixedNumberControl(
-        "fill-opacity",
-        t("editor.control.fill-opacity"),
-        summary.fill.opacity,
-        0,
-        1,
-        0.05,
-      ),
-    );
+    controls.push(...fillSelectionControls(summary.fill, t));
   }
   if (summary.arrowNodes !== null) {
     controls.push(
@@ -240,6 +232,22 @@ function outlineSelectionControls(
   }
   controls.push(...structuralControls(summary.structural, t));
   return controls;
+}
+
+function fillSelectionControls(
+  fill: NonNullable<OutlineSelectionStyleSummary["fill"]>,
+  t: Translator,
+): readonly StyleControl[] {
+  return [
+    mixedChoiceControl(
+      "fill-color",
+      t("editor.control.fill-color"),
+      fill.color,
+      fillColorStyleOptions(t),
+      serializeNullableStyleColor,
+    ),
+    mixedNumberControl("fill-opacity", t("editor.control.fill-opacity"), fill.opacity, 0, 1, 0.05),
+  ];
 }
 
 function structuralControls(
@@ -300,110 +308,4 @@ function mixedNumberControl(
     step,
     value: value === "mixed" ? null : value,
   };
-}
-
-function styleChange(controlId: string, value: boolean | number | string): StyleChange {
-  switch (controlId) {
-    case "selection-area":
-      return { property: controlId, value: parseSelectionArea(value) };
-    case "selection-inclusion":
-      return { property: controlId, value: parseSelectionInclusion(value) };
-    case "color":
-    case "outline-color":
-      return { property: controlId, value: parseColor(value, false) };
-    case "fill-color":
-      return { property: controlId, value: parseColor(value, true) };
-    case "stroke-width":
-      return { property: controlId, value: parseStrokeWidth(value) };
-    case "outline-width":
-      return { property: controlId, value: parseOutlineWidth(value) };
-    case "opacity":
-    case "outline-opacity":
-    case "fill-opacity":
-    case "eraser-radius":
-      return { property: controlId, value: requireNumber(value, controlId) };
-    case "pressure-enabled":
-    case "hold-to-shape-enabled":
-    case "snapping-enabled":
-      return { property: controlId, value: requireBoolean(value, controlId) };
-    case "outline-style":
-      return { property: controlId, value: parseOutlineStyle(value) };
-    case "arrow-start-node":
-    case "arrow-end-node":
-      return { property: controlId, value: parseArrowNode(value) };
-    case "coordinate-dimension":
-      return { property: controlId, value: parseDimension(value) };
-    case "table-columns":
-      return { property: controlId, value: requireNumber(value, controlId) };
-    default:
-      throw new RangeError(`Unknown style control: ${controlId}.`);
-  }
-}
-
-function parseSelectionArea(value: boolean | number | string): "rectangle" | "lasso" {
-  if (value === "rectangle" || value === "lasso") return value;
-  throw new RangeError("The selection area must be rectangle or lasso.");
-}
-
-function parseSelectionInclusion(value: boolean | number | string): "fully-enclosed" | "touched" {
-  if (value === "fully-enclosed" || value === "touched") return value;
-  throw new RangeError("Selection inclusion must be fully-enclosed or touched.");
-}
-
-function parseColor(value: boolean | number | string, nullable: false): ColorV1;
-function parseColor(value: boolean | number | string, nullable: true): ColorV1 | null;
-function parseColor(value: boolean | number | string, nullable: boolean): ColorV1 | null {
-  if (nullable && value === "none") return null;
-  if (value === "theme-text") return { type: "theme-text" };
-  const color = BUILT_IN_COLORS.find(
-    (candidate) => candidate.type === "rgba" && candidate.value === value,
-  );
-  if (color?.type !== "rgba") throw new RangeError("The color is not an available style option.");
-  return color;
-}
-
-function parseStrokeWidth(value: boolean | number | string): StrokeStyleV1["width"] {
-  const width = typeof value === "string" ? Number(value) : value;
-  const available = PEN_WIDTHS.find((candidate) => candidate === width);
-  if (available !== undefined) return available;
-  throw new RangeError("The stroke width is not an available style option.");
-}
-
-function parseOutlineWidth(value: boolean | number | string): OutlineStyleV1["outlineWidth"] {
-  const width = typeof value === "string" ? Number(value) : value;
-  const available = OUTLINE_WIDTHS.find((candidate) => candidate === width);
-  if (available !== undefined) return available;
-  throw new RangeError("The outline width is not an available style option.");
-}
-
-function parseOutlineStyle(value: boolean | number | string): OutlineStyleV1["outlineStyle"] {
-  if (value === "solid" || value === "dashed" || value === "dotted") return value;
-  throw new RangeError("The outline style is not an available style option.");
-}
-
-function parseArrowNode(value: boolean | number | string): ArrowNodeV1 {
-  if (
-    value === "none" ||
-    value === "arrow" ||
-    value === "triangle" ||
-    value === "diamond" ||
-    value === "circle"
-  )
-    return value;
-  throw new RangeError("The arrow node is not an available style option.");
-}
-
-function parseDimension(value: boolean | number | string): "2d" | "3d" {
-  if (value === "2d" || value === "3d") return value;
-  throw new RangeError("The coordinate-system dimension must be 2d or 3d.");
-}
-
-function requireNumber(value: boolean | number | string, controlId: string): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  throw new TypeError(`${controlId} requires a finite numeric value.`);
-}
-
-function requireBoolean(value: boolean | number | string, controlId: string): boolean {
-  if (typeof value === "boolean") return value;
-  throw new TypeError(`${controlId} requires a Boolean value.`);
 }

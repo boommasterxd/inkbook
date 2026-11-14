@@ -6,7 +6,6 @@ import { validateSafeSvg } from "../documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../documents/svg-envelope";
 import { serializeSvgNumber } from "../documents/svg-number";
 import { backgroundFitsStaticLimit, serializeBackgroundPaths } from "./output/background";
-import { canonicalSnapshot } from "./metadata/canonical-snapshot";
 import { serializeElementPaths } from "./output/path-markup";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import type {
@@ -15,6 +14,8 @@ import type {
   DocumentCodecResult,
   SerializedInkbookDocument,
 } from "./types";
+import { validateFontResourceSteps } from "../fonts/font-resources";
+import { canonicalSnapshot } from "./metadata/canonical-snapshot";
 
 const encoder = new TextEncoder();
 
@@ -26,7 +27,22 @@ export function serializeInkbookDocument(
   if (!validation.ok) {
     return failure("snapshot-invalid", "Snapshot validation failed.", validation.error);
   }
-  const snapshot = canonicalSnapshot(validation.value);
+  try {
+    for (const resource of validation.value.fontResources ?? []) {
+      const steps = validateFontResourceSteps(resource);
+      while (!steps.next().done) {
+        /* Complete synchronous public codec. */
+      }
+    }
+  } catch {
+    return failure("snapshot-invalid", "Font resource content is invalid.");
+  }
+  let snapshot: InkSnapshotV1;
+  try {
+    snapshot = canonicalSnapshot(validation.value);
+  } catch {
+    return failure("snapshot-invalid", "A required text font resource is unavailable.");
+  }
   const extent = derivePageExtent(snapshot.page, validation.derivations.maximumBottom);
   const lockedHeight = canonicalSvgNumber(extent.lockedHeight);
   if (

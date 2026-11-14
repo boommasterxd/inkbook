@@ -216,6 +216,19 @@
   position: relative;
 }
 
+.inkbook-root .inkbook-toolbar-text-icon {
+  display: grid;
+  place-items: center;
+}
+
+.inkbook-root .inkbook-toolbar-text-glyph {
+  align-items: center;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+}
+
 .inkbook-root .inkbook-toolbar-action-icon {
   block-size: 19px;
   display: grid;

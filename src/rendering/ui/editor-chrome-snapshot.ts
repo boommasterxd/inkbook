@@ -1,5 +1,6 @@
 import type { ColorV1 } from "../../domain/schema/public";
 import type { InkbookEditorChromeProps } from "./editor-chrome-types";
+import type { ToolbarStyleIconState } from "./style-icon";
 
 export function sameEditorChromeProps(
   left: InkbookEditorChromeProps,
@@ -75,7 +76,23 @@ function sameStyleIcon(left: InkbookEditorChromeProps, right: InkbookEditorChrom
     sameColor(a.fillColor, b.fillColor) &&
     a.fillOpacity === b.fillOpacity &&
     sameColor(a.outlineColor, b.outlineColor) &&
-    a.outlineStyle === b.outlineStyle
+    a.outlineStyle === b.outlineStyle &&
+    sameTextIcon(a.text, b.text)
+  );
+}
+
+function sameTextIcon(
+  left: ToolbarStyleIconState["text"],
+  right: ToolbarStyleIconState["text"],
+): boolean {
+  return (
+    left === right ||
+    (left !== undefined &&
+      right !== undefined &&
+      left.bold === right.bold &&
+      left.italic === right.italic &&
+      left.strikethrough === right.strikethrough &&
+      left.underline === right.underline)
   );
 }
 

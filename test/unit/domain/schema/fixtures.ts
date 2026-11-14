@@ -10,6 +10,8 @@ import {
   type StrokeElementV1,
   type StrokeStyleV1,
   type TableElementV1,
+  type TextElementV2,
+  type TextMathLayoutV2,
 } from "../../../../src/domain/schema/public";
 import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 
@@ -157,5 +159,60 @@ export function snapshot(elements: InkElementV1[] = []): InkSnapshotV1 {
       lockedBufferLines: 1,
     },
     elements,
+  };
+}
+
+export function textElement(index = 8): TextElementV2 {
+  return {
+    kind: "text",
+    id: uuid(index),
+    createdAt: 0,
+    rotation: 0,
+    pivot: { x: 150, y: 125 },
+    x: 100,
+    y: 100,
+    width: 100,
+    height: 50,
+    source: "Hello",
+    style: {
+      fontFamily: "sans-serif",
+      fontSize: 16.5,
+      color: { type: "theme-text" },
+      opacity: 1,
+      bold: false,
+      italic: false,
+      underline: false,
+      strikethrough: false,
+    },
+    ranges: [],
+    paragraphs: [],
+    backgroundColor: null,
+    backgroundOpacity: 0,
+    layout: {
+      version: 1,
+      lines: [
+        {
+          x: 0,
+          y: 0,
+          width: 40,
+          height: 20,
+          baseline: 15,
+          runs: [{ text: "Hello", start: 0, end: 5, x: 0, width: 40 }],
+        },
+      ],
+    },
+  };
+}
+
+export function textMathLayout(): TextMathLayoutV2 {
+  return {
+    start: 0,
+    end: 5,
+    display: false,
+    x: 20,
+    y: 25,
+    width: 10,
+    height: 10,
+    paths: [{ d: "M0 0L1 1" }],
   };
 }

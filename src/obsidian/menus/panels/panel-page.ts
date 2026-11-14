@@ -2,6 +2,7 @@
 export interface AdaptivePanelContentLifecycle {
   mutateLayout(update: () => void): void;
   readonly registerLocaleUpdate?: ((update: () => void) => void) | undefined;
+  readonly registerCleanup?: ((cleanup: () => void) => void) | undefined;
 }
 
 export interface PhoneSheetPage {

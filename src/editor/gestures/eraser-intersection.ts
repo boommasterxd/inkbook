@@ -2,6 +2,8 @@ import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import { shapeVertices, tableLineSegments } from "../../domain/geometry/creation";
 import { pointInPolygon, quadraticPoint } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
+import type { TextPaintGeometry } from "../../domain/geometry/text-paint-geometry";
+import { TextEraserCheck } from "./text-eraser-check";
 import {
   pointSegmentDistanceSquared,
   segmentBoundsOverlap,
@@ -17,7 +19,8 @@ import {
 const CURVE_SEGMENTS = 24;
 
 type LinearElement = Extract<InkElementV1, { kind: "line" | "arrow" | "straight-highlighter" }>;
-type CheckMode = "coordinate-system" | "ellipse" | "linear" | "polygon" | "segments" | "stroke";
+type CheckMode =
+  "coordinate-system" | "ellipse" | "linear" | "polygon" | "segments" | "stroke" | "text";
 
 export interface SweptCapsuleCheck {
   advance(workUnits: number): SweptCapsuleCheckProgress;
@@ -34,8 +37,9 @@ export function createSweptCapsuleCheck(
   radius: number,
   element: InkElementV1,
   cache?: EraserStrokeIndexCache,
+  textGeometry?: TextPaintGeometry,
 ): SweptCapsuleCheck {
-  return new ResumableSweptCapsuleCheck(pageStart, pageEnd, radius, element, cache);
+  return new ResumableSweptCapsuleCheck(pageStart, pageEnd, radius, element, cache, textGeometry);
 }
 
 class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
@@ -65,6 +69,7 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
   #strokeRecordPending = false;
   #indexedPreviousSegment = -2;
   #touches = false;
+  #textCheck: TextEraserCheck | undefined;
   #vertices: readonly PointV1[] = [];
 
   public constructor(
@@ -73,6 +78,7 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
     radius: number,
     element: InkElementV1,
     cache?: EraserStrokeIndexCache,
+    textGeometry?: TextPaintGeometry,
   ) {
     this.#element = element;
     this.#strokeCache = cache;
@@ -106,6 +112,11 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       this.#mode = "linear";
       this.#linearElement = element;
       this.#linearPrevious = element.start;
+      return;
+    }
+    if (element.kind === "text") {
+      this.#mode = "text";
+      this.#textCheck = new TextEraserCheck(this.#sweep, radius, element, textGeometry);
       return;
     }
     const outlineRadius = radius + element.style.outlineWidth / 2;
@@ -158,6 +169,12 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
   }
 
   private advanceOne(): void {
+    if (this.#mode === "text") {
+      const result = this.#textCheck!.advanceOne();
+      this.#touches = result === true;
+      this.#finished = result !== null;
+      return;
+    }
     if (this.#mode === "stroke") return this.advanceStroke();
     if (this.#mode === "linear") return this.advanceLinear();
     if (this.#mode === "ellipse") {

@@ -94,6 +94,7 @@ export class ShortcutSettingsView {
       {
         contentClass: "inkbook-shortcut-section-content",
         description,
+        deferDescriptionUntilExpanded: true,
         expanded,
         panelId,
         readMotion: () => this.#store.getDeviceSettings().motion,

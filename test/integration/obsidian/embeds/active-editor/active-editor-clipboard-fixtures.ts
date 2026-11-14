@@ -9,6 +9,20 @@ import type { InkElementV1, PageV1 } from "../../../../../src/domain/schema/publ
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/vault-document-session";
 import { renderBandOf } from "../../../../../src/domain/commands/render-bands";
 
+export class ClipboardItemFixture {
+  public readonly types: string[];
+
+  public constructor(public readonly formats: Record<string, Promise<Blob>>) {
+    this.types = Object.keys(formats);
+  }
+
+  public async getType(type: string): Promise<Blob> {
+    const value = this.formats[type];
+    if (value === undefined) throw new DOMException("Type unavailable", "NotFoundError");
+    return value;
+  }
+}
+
 export function createEncodedClipboardFixture(): EncodedClipboard {
   const customText = 'INKBOOK/1:{"format":"inkbook-elements"}';
   return {

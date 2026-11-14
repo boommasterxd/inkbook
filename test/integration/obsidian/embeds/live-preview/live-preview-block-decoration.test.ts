@@ -329,6 +329,37 @@ describe("Live Preview recognition during note edits", () => {
     removeObsidianDomHelpers();
   });
 
+  it("retains distinct occurrences and current references through prose and structural shifts", () => {
+    const ports = integrationPorts();
+    const mount = vi.spyOn(ports.sessions, "mount");
+    const detach = vi.spyOn(ports.sessions, "detach");
+    const embed = "![[drawings/page.svg]]";
+    const { parent, view } = mountView(ports, `Prose\n\n${embed}\n\n${embed}`);
+    try {
+      const attachments = mount.mock.calls.map(([attachment]) => attachment);
+      expect(attachments).toHaveLength(2);
+      attachments[0]!.root.dataset.inkbookState = "active";
+      for (const insert of ["longer", "\nHeading\n"]) {
+        view.dispatch({ changes: { from: 1, insert } });
+        expect([...parent.querySelectorAll(".inkbook-root")]).toEqual(
+          attachments.map((attachment) => attachment.root),
+        );
+        const source = view.state.doc.toString();
+        for (const [index, attachment] of attachments.entries()) {
+          const from = index === 0 ? source.indexOf(embed) : source.lastIndexOf(embed);
+          expect(attachment.embedReference).toMatchObject({ from, to: from + embed.length });
+        }
+        expect(attachments[0]!.root.dataset.inkbookState).toBe("active");
+        expect(mount).toHaveBeenCalledTimes(2);
+        expect(detach).not.toHaveBeenCalled();
+      }
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
+    expect(detach).toHaveBeenCalledTimes(2);
+  });
+
   it("applies queued recognition to the current range after an intervening note edit", async () => {
     const control: RecognitionControl = { notify: undefined, value: undefined };
     const ports = integrationPorts(control);
