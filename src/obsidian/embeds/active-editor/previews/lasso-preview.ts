@@ -184,6 +184,9 @@ function* selectionCandidates(
             bounds: record.bounds,
             element: record.element as InkElementV1,
             preparedPressure: options.sceneStore.pressureGeometry(id, record.geometryVersion),
+            ...(record.textPaintGeometry === undefined
+              ? {}
+              : { textPaintGeometry: record.textPaintGeometry }),
           };
         }
       }

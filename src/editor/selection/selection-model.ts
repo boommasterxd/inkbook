@@ -1,4 +1,5 @@
 import type { PreparedPressureGeometryPort } from "../../domain/geometry/pressure/prepared-pressure-geometry";
+import type { TextPaintGeometry } from "../../domain/geometry/text-paint-geometry";
 import type { Bounds } from "../../domain/geometry/public";
 import type { InkElementV1 } from "../../domain/schema/public";
 
@@ -30,6 +31,7 @@ export interface SelectionAreaCandidate {
   readonly bounds: Bounds;
   readonly element: InkElementV1;
   readonly preparedPressure?: PreparedPressureGeometryPort;
+  readonly textPaintGeometry?: TextPaintGeometry;
 }
 
 /** A false candidate-stream result discards an invalidated spatial query atomically. */
@@ -45,7 +47,7 @@ export function* selectBySelectionAreaCandidatesSteps(
     let step = candidates.next();
     while (!step.done) {
       if (step.value !== undefined) {
-        const { id, bounds, element, preparedPressure } = step.value;
+        const { id, bounds, element, preparedPressure, textPaintGeometry } = step.value;
         if (
           yield* elementMatchesSelectionAreaSteps(
             area,
@@ -53,6 +55,7 @@ export function* selectBySelectionAreaCandidatesSteps(
             inclusion,
             bounds,
             preparedPressure,
+            textPaintGeometry,
           )
         )
           next.add(id);

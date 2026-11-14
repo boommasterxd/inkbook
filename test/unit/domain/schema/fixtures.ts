@@ -11,6 +11,7 @@ import {
   type StrokeStyleV1,
   type TableElementV1,
   type TextElementV2,
+  type TextMathLayoutV2,
 } from "../../../../src/domain/schema/public";
 import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 
@@ -200,5 +201,18 @@ export function textElement(index = 8): TextElementV2 {
         },
       ],
     },
+  };
+}
+
+export function textMathLayout(): TextMathLayoutV2 {
+  return {
+    start: 0,
+    end: 5,
+    display: false,
+    x: 20,
+    y: 25,
+    width: 10,
+    height: 10,
+    paths: [{ d: "M0 0L1 1" }],
   };
 }

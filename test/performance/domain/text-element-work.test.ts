@@ -6,20 +6,22 @@ import { textElementPayloadBytes } from "../../../src/domain/schema/text-payload
 import { takeImmutableElementOwnership } from "../../../src/domain/store/records/immutability";
 import { DocumentCapacity } from "../../../src/domain/store/records/document-capacity";
 import { elementContainsPoint } from "../../../src/editor/selection/query/hit-test";
-import { visitVisibleElementPrimitives } from "../../../src/editor/selection/query/element-selection-geometry";
 import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 import { textElement } from "../../unit/domain/schema/fixtures";
 import { textBackgroundGeometrySteps } from "../../../src/domain/geometry/text-backgrounds";
 import { finishGeometrySteps } from "../../fixtures/domain/geometry-steps";
 import { expandLegacyTextPaddingSteps } from "../../../src/domain/geometry/text-padding";
 import { textTableGridPathSteps } from "../../../src/domain/geometry/text-table-grid-path";
+import { prepareTextPaintGeometrySteps } from "../../../src/domain/geometry/text-paint-geometry";
+import { textRecordGeometrySteps } from "../../../src/domain/store/records/text-record-geometry";
+import { MAX_TEXT_LAYOUT_ITEMS } from "../../../src/domain/schema/text-validation-primitives";
 
-function largeText() {
+function largeText(lineCount = 2000) {
   const text = textElement();
-  text.source = "a\n".repeat(2000);
-  text.height = 40_000;
+  text.source = "a\n".repeat(lineCount);
+  text.height = lineCount * 20;
   text.pivot.y = text.y + text.height / 2;
-  text.layout.lines = Array.from({ length: 2000 }, (_, index) => ({
+  text.layout.lines = Array.from({ length: lineCount }, (_, index) => ({
     x: 0,
     y: index * 20,
     width: 10,
@@ -138,7 +140,7 @@ describe("bounded text element work", () => {
     expect(text.layout.lines[0]!.runs[0]!.text).toBe("a");
   });
 
-  it("cancels scaling before reading the remaining layout and never reads layout for box queries", () => {
+  it("cancels scaling before reading the remaining layout and keeps bounds independent of layout", () => {
     const { text, lines } = largeText();
     const scale = scaledTextContentSteps(text, 2);
     expect(scale.next().done).toBe(false);
@@ -146,13 +148,73 @@ describe("bounded text element work", () => {
     scale.return(undefined as never);
     expect(lines.work.indexedReads).toBe(1);
     expect(calculateElementBounds(text)).toEqual({ minX: 100, minY: 100, maxX: 200, maxY: 40_100 });
-    expect(elementContainsPoint(text, { x: 150, y: 30_000 }, 0)).toBe(true);
-    let primitives = 0;
-    visitVisibleElementPrimitives(text, () => {
-      primitives += 1;
-      return true;
-    });
-    expect(primitives).toBe(1);
     expect(lines.work.indexedReads).toBe(1);
+  });
+});
+
+describe("bounded text paint work", () => {
+  // Each line and its run consume one layout item; 8,192 lines exhaust the shared limit.
+  it.each([2000, MAX_TEXT_LAYOUT_ITEMS / 2])(
+    "prepares %i paint regions once and prunes warm point queries through the real tree",
+    (lineCount) => {
+      const { text, lines } = largeText(lineCount);
+      let preparationVisits = 0;
+      const geometry = finishGeometrySteps(
+        prepareTextPaintGeometrySteps(text, () => {
+          preparationVisits += 1;
+        }),
+      );
+      expect(lines.work.indexedReads).toBe(lineCount);
+      expect(geometry.regions).toHaveLength(lineCount);
+      // Every region has one visit per merge pass, plus bounded line/leaf/internal-node work.
+      expect(preparationVisits).toBeLessThanOrEqual(
+        lineCount * (Math.ceil(Math.log2(lineCount)) + 5),
+      );
+      expect(geometry.memoryUsage()).toBeLessThanOrEqual(lineCount * 256);
+      let nodeVisits = 0;
+      let hits = 0;
+      const queryY = (lineCount - 5) * 20 + 5;
+      geometry.query(
+        { minX: 2, minY: queryY, maxX: 3, maxY: queryY + 1 },
+        () => {
+          hits += 1;
+          return true;
+        },
+        () => {
+          nodeVisits += 1;
+        },
+      );
+      expect(hits).toBe(1);
+      expect(nodeVisits).toBeLessThanOrEqual(2 * Math.ceil(Math.log2(lineCount)) + 1);
+      const point = { x: text.x + 5, y: text.y + queryY };
+      expect(elementContainsPoint(text, point, 0, undefined, geometry)).toBe(true);
+      expect(elementContainsPoint(text, { ...point, x: text.x + 50 }, 0, undefined, geometry)).toBe(
+        false,
+      );
+      expect(lines.work.indexedReads).toBe(lineCount);
+    },
+  );
+
+  it("abandons paint preparation after its first run and reuses local paint on movement", () => {
+    const { text, lines } = largeText();
+    const cancelled = prepareTextPaintGeometrySteps(text);
+    expect(cancelled.next().done).toBe(false);
+    cancelled.return(undefined as never);
+    expect(lines.work.indexedReads).toBe(1);
+    const retained = takeImmutableElementOwnership(text);
+    const prepared = finishGeometrySteps(textRecordGeometrySteps(retained));
+    const record = {
+      element: retained,
+      bounds: calculateElementBounds(text),
+      geometryVersion: 0,
+      paintVersion: 0,
+      ...prepared,
+    };
+    const before = lines.work.indexedReads;
+    const moved = finishGeometrySteps(
+      textRecordGeometrySteps({ ...retained, rotation: 23 }, record),
+    );
+    expect(moved.textPaintGeometry).toBe(prepared.textPaintGeometry);
+    expect(lines.work.indexedReads).toBe(before);
   });
 });

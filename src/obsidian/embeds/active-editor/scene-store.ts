@@ -39,6 +39,9 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
       id,
       paintVersion: record.paintVersion,
       rank: rank.rank,
+      ...(record.textPaintGeometry === undefined
+        ? {}
+        : { textPaintGeometry: record.textPaintGeometry }),
     };
   }
 
@@ -147,6 +150,7 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
       record.element,
       record.rank,
       this.pressureGeometry(id, record.geometryVersion),
+      record.textPaintGeometry,
     );
   }
 

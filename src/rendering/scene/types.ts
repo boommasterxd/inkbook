@@ -1,4 +1,5 @@
 import type { PreparedPressureGeometryPort } from "../../domain/geometry/pressure/prepared-pressure-geometry";
+import type { TextPaintGeometry } from "../../domain/geometry/text-paint-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { StrokePathGeometry } from "../../domain/geometry/stroke-path";
@@ -17,6 +18,7 @@ export interface SceneElementRecord {
   readonly id: string;
   readonly paintVersion: number;
   readonly rank: number;
+  readonly textPaintGeometry?: TextPaintGeometry;
 }
 
 export interface SceneDeltaEntry {

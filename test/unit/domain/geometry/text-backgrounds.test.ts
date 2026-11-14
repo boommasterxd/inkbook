@@ -6,6 +6,7 @@ import {
 import { finishGeometrySteps } from "../../../fixtures/domain/geometry-steps";
 import { textElement } from "../../../fixtures/rendering/text";
 import { polygonWinding, sampleSvgPathContours } from "../../../fixtures/domain/svg-path-fill";
+import { textMathLayout } from "../schema/fixtures";
 
 function covers(path: string, x: number, y: number): boolean {
   return (
@@ -26,18 +27,7 @@ it("cuts a selected background out of the box instead of compositing its alpha t
     },
   ];
   element.layout.lines[0]!.runs[0]!.style = element.ranges[0]!.style;
-  element.layout.math = [
-    {
-      start: 0,
-      end: 5,
-      display: false,
-      x: 20,
-      y: 25,
-      width: 10,
-      height: 10,
-      paths: [{ d: "M0 0L1 1" }],
-    },
-  ];
+  element.layout.math = [textMathLayout()];
   const result = finishGeometrySteps(textBackgroundGeometrySteps(element));
   expect(result.paints).toHaveLength(1);
   expect(result.paints[0]).toMatchObject({

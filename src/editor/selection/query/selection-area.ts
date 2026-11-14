@@ -1,4 +1,5 @@
 import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
+import type { TextPaintGeometry } from "../../../domain/geometry/text-paint-geometry";
 import { pressureContourOutwardError } from "../../../domain/geometry/pressure/pressure-contour-approximation";
 import { pressureRadius } from "../../../domain/geometry/pressure/pressure-radius";
 import type { StrokeCenter } from "../../../domain/geometry/stroke-path";
@@ -10,8 +11,7 @@ import {
 import type { Bounds } from "../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 
-import { visibleElementPrimitiveSteps } from "./element-selection-geometry";
-import type { PressurePaintQuery } from "./pressure-paint-additions";
+import { visibleElementPrimitiveSteps, type ElementPaintQuery } from "./element-selection-geometry";
 import {
   primitiveEnclosedByAreaSteps,
   primitiveTouchesAreaSteps,
@@ -81,6 +81,7 @@ export function* elementMatchesSelectionAreaSteps(
   inclusion: SelectionAreaInclusion,
   candidateBounds: Bounds,
   prepared?: PreparedPressureGeometryPort,
+  textPaintGeometry?: TextPaintGeometry,
 ): Generator<number | void, boolean> {
   if (!boundsIntersect(area.bounds, candidateBounds) || !hasPositiveArea(area)) return false;
   if (element.kind === "stroke") {
@@ -105,7 +106,7 @@ export function* elementMatchesSelectionAreaSteps(
   let visible = false;
   for (const primitive of visibleElementPrimitiveSteps(
     element,
-    selectionPaintQuery(area, inclusion, prepared),
+    selectionPaintQuery(area, inclusion, prepared, textPaintGeometry),
   )) {
     if (primitive === undefined || typeof primitive === "number") {
       yield primitive;
@@ -128,10 +129,13 @@ function selectionPaintQuery(
   area: SelectionArea,
   inclusion: SelectionAreaInclusion,
   prepared: PreparedPressureGeometryPort | undefined,
-): PressurePaintQuery {
+  textPaintGeometry: TextPaintGeometry | undefined,
+): ElementPaintQuery {
   return {
     bounds: area.bounds,
     prepared,
+    textPaintGeometry,
+    textBounds: inclusion === "touched" ? area.bounds : undefined,
     ...(area.kind === "lasso" && inclusion === "touched"
       ? {
           additionsMayTouch: (centers: readonly StrokeCenter[], width: number) =>

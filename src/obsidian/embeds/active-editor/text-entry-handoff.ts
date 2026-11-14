@@ -1,7 +1,6 @@
 import type { ElementStore } from "../../../domain/store/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
-import type { TextElementV2 } from "../../../domain/schema/public";
-import { elementContainsPoint } from "../../../editor/selection/public";
+import { rotatePointClockwise } from "../../../domain/geometry/public";
 import type { ActiveEditorNavigation } from "./navigation/navigation";
 import { TextHandleProjection } from "./text-handle-projection";
 import type { TextEditingCoordinates } from "../../../rendering/scene/text-editing-geometry";
@@ -51,7 +50,13 @@ export class TextEntryHandoff {
       const point = this.options.navigation.pageSample(
         this.options.navigation.screenPointer(projection.event(event)),
       );
-      return elementContainsPoint(element as TextElementV2, point, 0);
+      const local = rotatePointClockwise(point, element.pivot, -element.rotation);
+      return (
+        local.x >= element.x &&
+        local.x <= element.x + element.width &&
+        local.y >= element.y &&
+        local.y <= element.y + element.height
+      );
     } finally {
       projection.dispose();
     }

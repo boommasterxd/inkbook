@@ -1,6 +1,7 @@
 import { assertFinitePoint, type Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
+import type { TextPaintGeometry } from "../../domain/geometry/text-paint-geometry";
 import { EraserStrokeIndexCache } from "./eraser-stroke-index";
 
 const FINALIZATION_WORK_UNITS_PER_QUANTUM = 12_288;
@@ -47,6 +48,7 @@ export interface EraserQueryCursor {
 export interface EraserQueryPort {
   beginQuery(bounds: Bounds): EraserQueryCursor;
   getElement(id: string): InkElementV1 | undefined;
+  getTextGeometry?(id: string): TextPaintGeometry | undefined;
 }
 
 export interface EraserFeedbackPort {
@@ -313,6 +315,7 @@ export class EraserSweep {
       this.#radius,
       element,
       this.#strokeIndices,
+      this.#query.getTextGeometry?.(id),
     );
     return sweep.check;
   }

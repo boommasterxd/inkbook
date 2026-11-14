@@ -27,8 +27,8 @@ import {
 beforeAll(installObsidianDomHelpers);
 const mount = useActiveTextSessions();
 
-function controllerSource() {
-  const state = mount(textElement());
+function controllerSource(element = textElement()) {
+  const state = mount(element);
   const { frame, document: child } = appendOwnedIframe();
   vi.spyOn(frame, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 70, 800, 600));
   const presentation = new MountedTextPresentation(child, state.element, createInstrumentation());
@@ -73,7 +73,7 @@ async function lassoText(state: ReturnType<typeof controllerSource>) {
 it.each(["before-mount", "child-before-ready"] as const)(
   "keeps one native editor when a lasso-selected double tap continues %s",
   async (stage) => {
-    const state = controllerSource();
+    const state = controllerSource(textElement({ backgroundColor: null, backgroundOpacity: 0 }));
     await lassoText(state);
     let release!: () => void;
     const ready = new Promise<void>((resolve) => {
@@ -81,7 +81,7 @@ it.each(["before-mount", "child-before-ready"] as const)(
     });
     vi.spyOn(TextFieldEditor.prototype, "ready", "get").mockReturnValue(ready);
     const edit = vi.spyOn(ActiveTextSession.prototype, "edit");
-    tapSelectedText(state.controller);
+    tapSelectedText(state.controller, "mouse", { clientX: 40, clientY: 40 });
     if (stage === "before-mount") tapSelectedText(state.controller);
     else {
       await vi.waitFor(() => expect(state.inputNode()).not.toBeNull());

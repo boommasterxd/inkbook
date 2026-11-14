@@ -6,9 +6,10 @@ import { TextEntryHandoff } from "../../../../../src/obsidian/embeds/active-edit
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { textElement } from "../../../../fixtures/rendering/text";
 import { textActivationPointer } from "../../../../fixtures/obsidian/selected-text-activation";
+import { rotatePointClockwise } from "../../../../../src/domain/geometry/public";
 
-it("protects only an initiating primary contact inside the exact pending field and releases on settlement", async () => {
-  const element = textElement();
+it("protects contacts in the pending field's empty rectangle and releases on settlement", async () => {
+  const element = textElement({ backgroundColor: null, backgroundOpacity: 0, rotation: 25 });
   const store = new ElementStore([element]);
   let release!: (success: boolean) => void;
   const editing = new Promise<boolean>((resolve) => {
@@ -37,6 +38,10 @@ it("protects only an initiating primary contact inside the exact pending field a
     entry.activate(element.id, 0);
     expect(edit).toHaveBeenCalledExactlyOnceWith(element.id, element.source.length);
     expect(entry.claim(down())).toBe(true);
+    const blank = rotatePointClockwise({ x: 190, y: 110 }, element.pivot, element.rotation);
+    expect(entry.claim(down({ pointerType: "touch", clientX: blank.x, clientY: blank.y }))).toBe(
+      true,
+    );
     const count = reads.mock.calls.length;
     for (const options of [
       { button: 2 },

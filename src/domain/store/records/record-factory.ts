@@ -26,6 +26,7 @@ import {
 } from "./immutability";
 import type { ElementRecord } from "../types";
 import { preparedInsertionBounds } from "../mutations/prepared-insertion-element";
+import { textRecordGeometrySteps } from "./text-record-geometry";
 
 export function createInitialRecord(element: InkElementV1): ElementRecord {
   return drainRecordSteps(createInitialRecordSteps(element));
@@ -88,7 +89,14 @@ function* initialRecordSteps(
     Object.freeze(
       yield* calculateElementBoundsSteps(immutable as unknown as InkElementV1, pointsPerStep),
     );
-  return Object.freeze({ bounds, element: immutable, geometryVersion: 0, paintVersion: 0 });
+  const textGeometry = yield* textRecordGeometrySteps(immutable);
+  return Object.freeze({
+    bounds,
+    element: immutable,
+    geometryVersion: 0,
+    paintVersion: 0,
+    ...textGeometry,
+  });
 }
 
 export function createReplacementRecord(
@@ -186,7 +194,14 @@ function* replacementRecordSteps(
       : Object.freeze(
           yield* calculateElementBoundsSteps(immutable as unknown as InkElementV1, pointsPerStep),
         ));
-  return Object.freeze({ bounds, element: immutable, geometryVersion, paintVersion });
+  const textGeometry = yield* textRecordGeometrySteps(immutable, current);
+  return Object.freeze({
+    bounds,
+    element: immutable,
+    geometryVersion,
+    paintVersion,
+    ...textGeometry,
+  });
 }
 
 function drainRecordSteps(steps: Generator<void, ElementRecord>): ElementRecord {

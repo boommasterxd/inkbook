@@ -246,6 +246,7 @@ export class ActiveEditorPointerController {
       this.#options.selectionFrames?.current(selected) ?? null,
       {
         tolerance: 8 / this.#options.navigation.zoom,
+        prepareTextGeometry: (id) => this.#options.sceneStore.get(id)?.textPaintGeometry,
         preparePressure: (id) => {
           const record = this.#options.sceneStore.get(id);
           return record === undefined

@@ -1,4 +1,6 @@
 import type { PressurePaintQuery } from "./pressure-paint-additions";
+import type { TextPaintGeometry } from "../../../domain/geometry/text-paint-geometry";
+import type { Bounds } from "../../../domain/geometry/public";
 import { effectiveStrokeWidth } from "../../../domain/geometry/bounds";
 import { shapeVertices, tableLineSegments } from "../../../domain/geometry/creation";
 import {
@@ -17,6 +19,12 @@ import type {
 
 import { strokePrimitiveSteps } from "./stroke-selection-geometry";
 import type { VisibleSelectionPrimitive } from "./selection-area-primitives";
+import { textSelectionPrimitiveSteps } from "./text-selection-geometry";
+
+export interface ElementPaintQuery extends PressurePaintQuery {
+  readonly textPaintGeometry?: TextPaintGeometry | undefined;
+  readonly textBounds?: Bounds | undefined;
+}
 
 export type SelectionPrimitiveVisitor = (primitive: VisibleSelectionPrimitive) => boolean;
 
@@ -31,12 +39,9 @@ export function visitVisibleElementPrimitives(
   if (element.kind === "coordinate-system") return visitCoordinateSystem(element, visitor);
   if (element.kind === "table") return visitTable(element, visitor);
   if (element.kind === "text") {
-    return visitor({
-      kind: "polygon",
-      points: shapeVertices({ ...element, kind: "rectangle" }).map((point) =>
-        rotatedFor(element, point),
-      ),
-    });
+    for (const primitive of textSelectionPrimitiveSteps(element))
+      if (primitive !== undefined && !visitor(primitive)) return false;
+    return true;
   }
   if (
     element.kind === "line" ||
@@ -50,10 +55,14 @@ export function visitVisibleElementPrimitives(
 
 export function* visibleElementPrimitiveSteps(
   element: InkElementV1,
-  query: PressurePaintQuery = {},
+  query: ElementPaintQuery = {},
 ): Generator<VisibleSelectionPrimitive | number | undefined> {
   if (element.kind === "stroke") {
     yield* strokePrimitiveSteps(element, query);
+    return;
+  }
+  if (element.kind === "text") {
+    yield* textSelectionPrimitiveSteps(element, query.textPaintGeometry, query.textBounds);
     return;
   }
   const primitives: VisibleSelectionPrimitive[] = [];

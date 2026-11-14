@@ -29,6 +29,11 @@ export function* immutableReplacementSteps(
   element: InkElementV1,
   source: ImmutableInkElement,
 ): Generator<void, ImmutableInkElement> {
+  if (element.kind === "text" && source.kind === "text") {
+    return yield* takeImmutableElementOwnershipSteps(
+      yield* copyRuntimeElementSteps(element, undefined, source),
+    );
+  }
   if (element.kind !== "stroke" || source.kind !== "stroke" || element.points !== source.points) {
     return yield* immutableElementSteps(element);
   }
