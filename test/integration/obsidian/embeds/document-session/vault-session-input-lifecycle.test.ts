@@ -50,16 +50,23 @@ it.each(["detach", "lock"] as const)(
   },
 );
 
-it("prepares pending input while its model remains writable before unloading the session", async () => {
+it("prepares pending input before releasing active input and persisting the unloading session", async () => {
   const { harness, model } = await unlockedInputSession();
+  model.setGestureActive(true);
+  model.setNavigationActive!(true);
   let unregister = () => undefined as void;
   unregister = model.registerExportPreparation!(async () => {
+    expect(model.isGestureActive!()).toBe(true);
+    expect(model.waitForBackground!()).toBeDefined();
     model.commitElement(rectangle());
     unregister();
   });
   await harness.session.prepareForUnload();
+  expect(model.isGestureActive!()).toBe(false);
+  expect(model.waitForBackground!()).toBeUndefined();
   const parsed = await parseInkbookDocumentForTest(harness.content());
   expect(parsed.ok && parsed.value.snapshot.elements).toEqual([rectangle()]);
+  expect(harness.process).toHaveBeenCalledOnce();
   expect(harness.factory.getDocumentModel("session-1")).toBeUndefined();
 });
 
@@ -91,13 +98,20 @@ it("keeps failed detached input in its sole recovery session until a successful 
 
 it("allows retry after preparation rejects unload without disposing the draft owner", async () => {
   const { harness, model } = await unlockedInputSession();
+  model.setGestureActive(true);
+  model.setNavigationActive!(true);
   const unregister = model.registerExportPreparation!(async () => {
     throw new Error("Text layout failed.");
   });
   await expect(harness.session.prepareForUnload()).rejects.toThrow("Text layout failed.");
   expectRetainedInput(harness, model);
+  expect(model.isGestureActive!()).toBe(true);
+  expect(model.waitForBackground!()).toBeDefined();
   unregister();
+  model.commitElement(rectangle());
   await harness.session.prepareForUnload();
+  const parsed = await parseInkbookDocumentForTest(harness.content());
+  expect(parsed.ok && parsed.value.snapshot.elements).toEqual([rectangle()]);
   expect(harness.session.documentModel).toBeUndefined();
 });
 
@@ -122,6 +136,8 @@ it("keeps the committed document available when unload persistence fails and per
   await expect(harness.session.prepareForUnload()).rejects.toThrow("Could not persist");
   expect(harness.session.documentModel).toBe(model);
   expect(harness.session.getSnapshot().dirty).toBe(true);
+  model.setGestureActive(true);
+  expect(model.isGestureActive!()).toBe(true);
   model.commitPage({ ...model.page, activeBufferLines: 4 });
   await harness.session.prepareForUnload();
   const parsed = await parseInkbookDocumentForTest(harness.content());

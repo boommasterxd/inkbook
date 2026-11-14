@@ -125,8 +125,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     if (this.#lifecycle.disposed) return Promise.resolve();
     this.#unloadPreparation = this.#pendingInput.prepare().then(() => {
       this.#lifecycle.preparingForUnload = true;
-      this.#executor?.setLiveInputActive?.(false);
-      this.#executor?.setNavigationActive?.(false);
+      this.#model?.setGestureActive(false);
+      this.#model?.setNavigationActive?.(false);
       this.#recoveryOperation = undefined;
       this.#cancelled.clear();
       return this.#pendingInput.unload(this.#autosave, () => this.dispose());
