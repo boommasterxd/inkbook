@@ -188,6 +188,29 @@ function containedSelection(
   return { preview, store, sceneStore, scheduler, publish };
 }
 
+it("skips locked candidates before touched geometry while retaining bounded indexed work", () => {
+  const elements = targets.map((element) => ({
+    ...element,
+    locked: true,
+    points: [40, 40, 0.5, 60, 60, 0.5],
+  }));
+  const test = containedSelection("rectangle", elements, [{ x: 55, y: 55 }]);
+  const primitives = vi.spyOn(strokeSelectionGeometry, "strokePrimitiveSteps");
+  const read = vi.spyOn(test.store, "get");
+  try {
+    test.preview.commit();
+    expect(test.scheduler.pendingCount).toBe(0);
+    expect(read).toHaveBeenCalledTimes(elements.length);
+    expect(primitives).not.toHaveBeenCalled();
+    expect(test.publish).not.toHaveBeenCalled();
+    expect(test.store.instrumentation.fullStoreScans).toBe(0);
+  } finally {
+    primitives.mockRestore();
+    test.preview.revert();
+    test.sceneStore.release();
+  }
+});
+
 // The lasso's AABB includes these strokes, but its even-odd filled region does not.
 it("rejects 10,000 strokes inside a concave lasso notch without reading stroke geometry", () => {
   const elements = targets.map((element) => ({ ...element, points: [40, 40, 0.5, 60, 60, 0.5] }));

@@ -3,7 +3,6 @@ import type { ImageRasterSize } from "../../domain/images/image-raster-size";
 import { imageImportResolution } from "../../domain/images/image-import-resolution";
 import type { ImportedImageBatch } from "../embeds/active-scene/editor-chrome-openings";
 import { setIcon } from "obsidian";
-import { DialogHeightMotion } from "../dialogs/dialog-height-motion";
 import { ImageImportStaging } from "./image-import-staging";
 import { ImageImportSpinner } from "./image-import-spinner";
 import { ImageImportPages } from "./image-import-pages";
@@ -42,7 +41,6 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   #figure!: HTMLElement;
   #previewHint!: HTMLElement;
   #sourceDescription = "";
-  #heightMotion: DialogHeightMotion | undefined;
   #insert!: HTMLButtonElement;
   #previewImage!: HTMLImageElement;
   #status!: HTMLElement;
@@ -167,7 +165,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#pdfPages = new ImageImportPages(this.#body, this.#figure, {
       localization: this.options.localization,
       signal: this.abort.signal,
-      mutate: (update) => this.#mutateView(update),
+      mutate: (update) => update(),
       changed: (page) => {
         this.#updateInsert();
         if (page !== undefined) void this.#refreshPreview();
@@ -191,19 +189,18 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#rasterBytes = undefined;
     this.#pdfPages.setSource(undefined);
     this.#previewImage.removeAttribute("src");
-    this.#mutateView(() => {
-      this.#placement.hidden = true;
-      this.#resolution.element.hidden = true;
-      this.#resizeWarning.hidden = true;
-      this.#resizeWarningText.textContent = "";
-      this.#sourceDescription = this.options.localization.t("images.formats");
-      this.#fileName.textContent = file.name;
-      this.#fileName.title = file.name;
-      this.#choose.setAttribute(
-        "aria-label",
-        `${file.name} · ${this.options.localization.t("images.change")}`,
-      );
-    });
+    delete this.modalEl.dataset.review;
+    this.#placement.hidden = true;
+    this.#resolution.element.hidden = true;
+    this.#resizeWarning.hidden = true;
+    this.#resizeWarningText.textContent = "";
+    this.#sourceDescription = this.options.localization.t("images.formats");
+    this.#fileName.textContent = file.name;
+    this.#fileName.title = file.name;
+    this.#choose.setAttribute(
+      "aria-label",
+      `${file.name} · ${this.options.localization.t("images.change")}`,
+    );
     const generation = ++this.#generation;
     try {
       await this.#pdf?.dispose();
@@ -252,11 +249,8 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
       return;
     const active = this.contentEl.ownerDocument.activeElement;
     const focused = active === this.#quality ? this.#quality : this.#pdfPages.focused;
-    this.#setBusy(true);
+    this.#setBusy(true, true);
     this.#preview = undefined;
-    this.#previewImage.removeAttribute("src");
-    this.#resizeWarning.hidden = true;
-    this.#resizeWarningText.textContent = "";
     try {
       const prepared: PreparedRasterImage =
         this.#pdf !== undefined
@@ -283,42 +277,37 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   #showPreview(resource: ImageResourceV3, resizedFrom?: ImageRasterSize): void {
     if (this.abort.signal.aborted) return;
     this.#preview = resource;
-    this.#mutateView(() => {
-      this.#resolution.show(this.#pdf !== undefined);
-      const { details, warning } = imageResolutionDescription(
-        this.options.localization.t,
-        resource,
-        {
-          resizedFrom,
-          resolution: this.#pdf?.resolution,
-        },
-      );
-      this.#resizeWarning.hidden = warning === "";
-      this.#resizeWarningText.textContent = warning;
-      this.#details.textContent = details;
-      this.#choose.dataset.selected = "true";
-      this.#replace.hidden = false;
-      this.#previewImage.width = resource.width;
-      this.#previewImage.height = resource.height;
-      this.#previewImage.src = `data:${resource.mimeType};base64,${resource.data}`;
-      this.#previewImage.parentElement!.hidden = false;
-      this.#details.parentElement!.hidden = false;
-      this.#figure.hidden = false;
-      this.#placement.hidden = false;
-      this.#previewHint.hidden = this.#pdf === undefined;
-      this.#sourceDescription =
-        this.#pdf === undefined
-          ? resource.mimeType === "image/png"
-            ? "PNG"
-            : resource.mimeType === "image/webp"
-              ? "WebP"
-              : "JPEG"
-          : this.options.localization.t(
-              this.#pdf.pageCount === 1 ? "images.singlePage" : "images.pageCount",
-              { count: this.#pdf.pageCount },
-            );
-      this.#fileHint.textContent = this.#sourceDescription;
+    this.modalEl.dataset.review = "true";
+    this.#resolution.show(this.#pdf !== undefined);
+    const { details, warning } = imageResolutionDescription(this.options.localization.t, resource, {
+      resizedFrom,
+      resolution: this.#pdf?.resolution,
     });
+    this.#resizeWarning.hidden = warning === "";
+    this.#resizeWarningText.textContent = warning;
+    this.#details.textContent = details;
+    this.#choose.dataset.selected = "true";
+    this.#replace.hidden = false;
+    this.#previewImage.width = resource.width;
+    this.#previewImage.height = resource.height;
+    this.#previewImage.src = `data:${resource.mimeType};base64,${resource.data}`;
+    this.#previewImage.parentElement!.hidden = false;
+    this.#details.parentElement!.hidden = false;
+    this.#figure.hidden = false;
+    this.#placement.hidden = false;
+    this.#previewHint.hidden = this.#pdf === undefined;
+    this.#sourceDescription =
+      this.#pdf === undefined
+        ? resource.mimeType === "image/png"
+          ? "PNG"
+          : resource.mimeType === "image/webp"
+            ? "WebP"
+            : "JPEG"
+        : this.options.localization.t(
+            this.#pdf.pageCount === 1 ? "images.singlePage" : "images.pageCount",
+            { count: this.#pdf.pageCount },
+          );
+    this.#fileHint.textContent = this.#sourceDescription;
   }
 
   async #commit(): Promise<void> {
@@ -360,32 +349,36 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   }
 
   #showError(error: unknown): void {
-    if (!this.abort.signal.aborted)
-      this.#mutateView(() => {
-        if (this.#preview === undefined) {
-          this.#figure.hidden = this.#pdf === undefined;
-          this.#previewImage.parentElement!.hidden = true;
-          this.#details.parentElement!.hidden = true;
-          if (this.#pdf !== undefined || this.#rasterBytes !== undefined)
-            this.#resolution.show(this.#pdf !== undefined);
-          this.#placement.hidden = true;
-          this.#choose.dataset.selected = "true";
-          this.#replace.hidden = false;
-        }
-        this.#error.textContent = this.options.localization.t(imageImportErrorMessage(error));
-      });
+    if (!this.abort.signal.aborted) {
+      if (this.#preview === undefined) {
+        this.#previewImage.removeAttribute("src");
+        this.#resizeWarning.hidden = true;
+        this.#resizeWarningText.textContent = "";
+        this.#figure.hidden = this.#pdf === undefined;
+        this.#previewImage.parentElement!.hidden = true;
+        this.#details.parentElement!.hidden = true;
+        if (this.#pdf !== undefined || this.#rasterBytes !== undefined)
+          this.#resolution.show(this.#pdf !== undefined);
+        this.#placement.hidden = true;
+        this.#choose.dataset.selected = "true";
+        this.#replace.hidden = false;
+      }
+      this.#error.textContent = this.options.localization.t(imageImportErrorMessage(error));
+    }
   }
 
-  #setBusy(busy: boolean): void {
+  #setBusy(busy: boolean, refreshing = false): void {
     if (this.abort.signal.aborted) return;
     this.#busy = busy;
-    this.#mutateView(() => this.#renderBusy(busy));
+    this.#renderBusy(busy, refreshing);
   }
 
-  #renderBusy(busy: boolean): void {
+  #renderBusy(busy: boolean, refreshing: boolean): void {
+    const preparing = busy && !refreshing;
     this.#body.setAttribute("aria-busy", String(busy));
-    this.#choose.dataset.busy = String(busy);
-    this.#fileName.hidden = busy;
+    this.#body.dataset.preparing = String(preparing);
+    this.#choose.dataset.busy = String(preparing);
+    this.#fileName.hidden = preparing;
     this.#replace.hidden = busy || this.#choose.dataset.selected !== "true";
     setIcon(
       this.#fileIcon,
@@ -403,7 +396,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#pdfPages.setBusy(busy);
     for (const input of [this.#quality, this.#pageWidth]) input.disabled = busy;
     this.#status.textContent = busy ? this.options.localization.t("images.preparing") : "";
-    this.#fileHint.textContent = busy
+    this.#fileHint.textContent = preparing
       ? this.options.localization.t("images.preparing")
       : this.#sourceDescription;
     if (busy) this.#error.textContent = "";
@@ -426,28 +419,12 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
       (this.#pdf !== undefined && !this.#pdfPages.valid);
   }
 
-  public override open(): void {
-    super.open();
-    if (!this.closed && !this.closing)
-      this.#heightMotion = new DialogHeightMotion(
-        this.modalEl,
-        this.options.readMotion,
-        this.options.observeMotion,
-      );
-  }
-
   protected override get phoneContentScroll(): HTMLElement {
     return this.#body;
   }
 
-  #mutateView(update: () => void): void {
-    if (this.#heightMotion === undefined || this.entering || this.closing) update();
-    else this.#heightMotion.mutate(update);
-  }
-
   protected override onClosing(): void {
     this.#spinner?.dispose();
-    this.#heightMotion?.freeze();
     super.onClosing();
     void this.#pdf?.dispose().catch(() => undefined);
   }
@@ -455,8 +432,6 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   public override onClose(): void {
     this.#spinner?.dispose();
     this.#spinner = undefined;
-    this.#heightMotion?.dispose();
-    this.#heightMotion = undefined;
     void this.#pdf?.dispose().catch(() => undefined);
     this.#pdf = undefined;
     this.#rasterBytes = undefined;

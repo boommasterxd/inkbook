@@ -1,4 +1,5 @@
 import { setIcon } from "obsidian";
+import { IMAGE_LIMITS } from "../../domain/images/image-limits";
 import type { Localization } from "../../domain/localization";
 import { parsePdfPages } from "./image-import";
 
@@ -95,9 +96,10 @@ export class ImageImportPages {
 
   public setSource(pageCount: number | undefined): void {
     this.#pageCount = pageCount;
-    this.#selection = [1];
-    this.#selectionKey = "1";
-    this.#range.value = "1";
+    const lastPage = Math.min(pageCount ?? 1, IMAGE_LIMITS.pdfSelectedPages);
+    this.#range.value = lastPage === 1 ? "1" : `1-${lastPage}`;
+    this.#selection = parsePdfPages(this.#range.value, pageCount ?? 1);
+    this.#selectionKey = this.#selection.join(",");
     this.#page.value = "1";
     this.#page.max = String(pageCount ?? 1);
     this.#previewPage = 1;

@@ -18,7 +18,12 @@ installImageImportTestLifecycle();
 async function beginPdfReview(pageCount = 5) {
   const state = await setupPdfImport(pageCount);
   selectImportFile("pages.pdf");
-  await vi.waitFor(() => expect(dialogButton("Insert 1 page").disabled).toBe(false));
+  const selected = Math.min(pageCount, 20);
+  await vi.waitFor(() =>
+    expect(dialogButton(`Insert ${selected} ${selected === 1 ? "page" : "pages"}`).disabled).toBe(
+      false,
+    ),
+  );
   const range = document.querySelector<HTMLInputElement>('input[type="text"]')!;
   const page = document.querySelector<HTMLInputElement>('[aria-label="Preview page"]')!;
   return { ...state, range, page };
@@ -70,6 +75,7 @@ describe("PDF import selection and reviewed output", () => {
 
   it("freely browses unselected pages with bounded Previous/Next actions without changing import selection", async () => {
     const state = await beginPdfReview();
+    changeImportField(state.range, "1");
     expect(dialogButton("Previous page").disabled).toBe(true);
     dialogButton("Next page").click();
     await reviewedPage(state.render, 2);
@@ -104,10 +110,25 @@ describe("PDF import selection and reviewed output", () => {
     expect(state.render).toHaveBeenCalledExactlyOnceWith(1, expect.anything());
     expect(readImageSource).toHaveBeenCalledOnce();
   });
+
+  it.each([20, 21])("selects and imports at most 20 pages from a %i-page PDF", async (count) => {
+    const state = await beginPdfReview(count);
+    expect(state.range.value).toBe("1-20");
+    expect(state.page.value).toBe("1");
+    expect(state.render).toHaveBeenCalledExactlyOnceWith(1, expect.anything());
+    changeImportField(state.range, "1-20");
+    expect(state.render).toHaveBeenCalledOnce();
+    dialogButton("Insert 20 pages").click();
+    expect((await state.pending)?.resources).toHaveLength(20);
+    expect(state.render.mock.calls.map(([page]) => page)).toEqual(
+      Array.from({ length: 20 }, (_, index) => index + 1),
+    );
+  });
 });
 
 it("keeps the displayed page synchronized while navigating through an invalid import selection", async () => {
   const state = await beginPdfReview();
+  changeImportField(state.range, "1");
   const secondPage = await capacityImageResource(42);
   state.render.mockResolvedValueOnce(secondPage);
   changeImportField(state.range, "0");
@@ -136,6 +157,7 @@ describe("PDF page input recovery", () => {
     "rejects preview page %j locally without rendering and recovers in the same field",
     async (value) => {
       const state = await beginPdfReview();
+      changeImportField(state.range, "1");
       state.page.focus();
       changeImportField(state.page, value);
       expect(state.page.getAttribute("aria-invalid")).toBe("true");

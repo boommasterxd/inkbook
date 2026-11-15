@@ -90,40 +90,43 @@ describe("image import review", () => {
   });
 });
 
-describe("image downscale review", () => {
-  it("reuses source bytes for Ultra, blocks stale preview insertion on failure and recovers", async () => {
-    const standard = await capacityImageResource(1);
-    const ultra = await capacityImageResource(2, 4000);
-    vi.mocked(prepareRasterImage)
-      .mockResolvedValueOnce({ resource: standard })
-      .mockRejectedValueOnce(new ImageImportError("encodedSize", "private"))
-      .mockResolvedValueOnce({ resource: standard })
-      .mockResolvedValueOnce({ resource: ultra });
-    const { pending } = await beginImageReview();
-    const quality = document.querySelector<HTMLSelectElement>("select")!;
-    const change = (value: string) => {
-      quality.value = value;
-      quality.dispatchEvent(new Event("change", { bubbles: true }));
-    };
-    change("ultra");
-    await vi.waitFor(() => expect(quality.disabled).toBe(false));
-    expect(dialogButton("Insert").disabled).toBe(true);
-    expect(document.querySelector("img")?.hasAttribute("src")).toBe(false);
-    change("high");
-    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
-    change("ultra");
-    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
-    expect(prepareRasterImage).toHaveBeenLastCalledWith(
-      expect.any(Uint8Array),
-      expect.objectContaining({ maximumPixels: 16_000_000 }),
-    );
-    change("ultra");
-    dialogButton("Insert").click();
-    expect(await pending).toEqual({ resources: [ultra], source: "image" });
-    expect(prepareRasterImage).toHaveBeenCalledTimes(4);
-    expect(readImageSource).toHaveBeenCalledOnce();
-  });
+it("reuses source bytes for Ultra, blocks stale preview insertion on failure and recovers", async () => {
+  const standard = await capacityImageResource(1);
+  const ultra = await capacityImageResource(2, 4000);
+  vi.mocked(prepareRasterImage)
+    .mockResolvedValueOnce({ resource: standard, resizedFrom: { width: 5040, height: 5040 } })
+    .mockRejectedValueOnce(new ImageImportError("encodedSize", "private"))
+    .mockResolvedValueOnce({ resource: standard })
+    .mockResolvedValueOnce({ resource: ultra });
+  const { pending, warning } = await beginImageReview();
+  expect(warning.hidden).toBe(false);
+  const quality = document.querySelector<HTMLSelectElement>("select")!;
+  const change = (value: string) => {
+    quality.value = value;
+    quality.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  change("ultra");
+  await vi.waitFor(() => expect(quality.disabled).toBe(false));
+  expect(dialogButton("Insert").disabled).toBe(true);
+  expect(document.querySelector("img")?.hasAttribute("src")).toBe(false);
+  expect(warning.hidden).toBe(true);
+  expect(warning.textContent).toBe("");
+  change("high");
+  await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+  change("ultra");
+  await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+  expect(prepareRasterImage).toHaveBeenLastCalledWith(
+    expect.any(Uint8Array),
+    expect.objectContaining({ maximumPixels: 16_000_000 }),
+  );
+  change("ultra");
+  dialogButton("Insert").click();
+  expect(await pending).toEqual({ resources: [ultra], source: "image" });
+  expect(prepareRasterImage).toHaveBeenCalledTimes(4);
+  expect(readImageSource).toHaveBeenCalledOnce();
+});
 
+describe("image downscale review", () => {
   it("announces downscaling and inserts the reviewed resource without another decode", async () => {
     const resource = await capacityImageResource(1);
     vi.mocked(readImageSource).mockResolvedValue(new Uint8Array([1]));
@@ -284,6 +287,44 @@ describe("image import source ownership", () => {
     await Promise.resolve();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
+});
+
+it("retains the reviewed PDF while a page is pending and cancels a later resolution refresh", async () => {
+  const { resource, render, dispose, pending, abort } = await setupPdfImport();
+  selectFile("pages.pdf");
+  await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
+  const preview = document.querySelector("img")!;
+  const source = preview.getAttribute("src");
+  const replacement = await capacityImageResource(42);
+  let finish!: (value: typeof resource) => void;
+  render.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  dialogButton("Next page").click();
+  expect(preview.getAttribute("src")).toBe(source);
+  expect(preview.closest("figure")!.hidden).toBe(false);
+  expect(document.querySelector<HTMLFieldSetElement>("fieldset")!.hidden).toBe(false);
+  expect(document.querySelector<HTMLElement>(".inkbook-image-import-source-name")!.hidden).toBe(
+    false,
+  );
+  expect(imageImportSubmit().disabled).toBe(true);
+  expect(dialogButton("Cancel").disabled).toBe(false);
+  finish(replacement);
+  await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
+  expect(preview.getAttribute("src")).toContain(replacement.data);
+  expect(render).toHaveBeenLastCalledWith(2, expect.anything());
+  render.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  const quality = document.querySelector<HTMLSelectElement>("select")!;
+  quality.value = "ultra";
+  quality.dispatchEvent(new Event("change", { bubbles: true }));
+  expect(preview.getAttribute("src")).toContain(replacement.data);
+  expect(imageImportSubmit().disabled).toBe(true);
+  abort.abort();
+  expect(await pending).toBeUndefined();
+  finish(resource);
+  await Promise.resolve();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(dispose).toHaveBeenCalled();
+  expect(readImageSource).toHaveBeenCalledOnce();
+  expect(render.mock.calls.map(([page]) => page)).toEqual([1, 2, 2]);
 });
 
 describe("import preview and recovery", () => {
