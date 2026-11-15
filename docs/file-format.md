@@ -13,11 +13,12 @@ The required XML structure, standalone page surface, portable light and dark pal
 ```ts
 interface InkSnapshotV1 {
   format: "inkbook";
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   revision: number;
   page: PageV1;
   elements: InkElementV1[];
   fontResources?: FontResourceV2[];
+  imageResources?: ImageResourceV3[];
 }
 
 interface PageV1 {
@@ -97,7 +98,7 @@ Validation rules:
 - `theme-text` is preserved semantically and resolves through the versioned portable light and dark document palette in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md). It never captures a transient Community-theme value.
 - Current editors create outline widths from the same `2, 4, 8, 14, 22` XS-through-XL scale as pen strokes. Readers continue to accept legacy outline widths `1` and `12` so existing version 1 documents retain their exact appearance.
 
-The `elements` array is partitioned into two fixed render bands. All highlighter and straight-highlighter elements appear first in back-to-front highlight order. Every other element follows in back-to-front content order. Writers MUST emit this partitioned order and readers reject an element in the highlight band after content has begun. This keeps every highlight below every content element without a separate persisted layer field.
+The `elements` array is partitioned into three fixed render bands: images, highlights, then content. Images appear first; highlighter and straight-highlighter elements follow; every other element occupies content. Each band retains back-to-front order. Writers MUST emit this partition and readers reject a lower-band element after a higher band has begun. No separate layer field is persisted. The image geometry, resource schema, version 3 extension and capacities are defined in [Images and PDF Pages](images.md).
 
 Arrange commands change only array order inside a render band. Frontward means toward a larger array index. Determine selected runs once from the original band, then apply one stable pass:
 
@@ -106,7 +107,7 @@ Arrange commands change only array order inside a render band. Frontward means t
 - Bring to front uses a stable partition that places unselected elements first and selected elements last.
 - Send to back uses the inverse stable partition.
 
-A mixed selection applies the same operation independently to both bands in one command. Relative selected order is preserved. A boundary no-op does not change revision or history.
+A mixed selection applies the same operation independently to each band in one command. Relative selected order is preserved. A boundary no-op does not change revision or history.
 
 For example, with back-to-front order `[A*, B, C*, D, E]`, where `*` is selected, Bring forward produces `[B, A*, D, C*, E]`. Send backward on `[A, B*, C, D*]` produces `[B*, A, D*, C]`.
 
@@ -119,7 +120,8 @@ type InkElementV1 =
   | BoxShapeElementV1
   | CoordinateSystemElementV1
   | TableElementV1
-  | TextElementV2;
+  | TextElementV2
+  | ImageElementV3;
 ```
 
 ### Freehand Strokes
@@ -427,9 +429,10 @@ interface ClipboardElementV1 {
 
 interface InkClipboardV1 {
   format: "inkbook-elements";
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   elements: ClipboardElementV1[];
   fontResources?: FontResourceV2[];
+  imageResources?: ImageResourceV3[];
 }
 ```
 
@@ -480,7 +483,7 @@ Readers continue to accept `data-encoding="json"` with flat numeric triples. Ope
 
 ## Versioning and Migration
 
-- Writers emit version 2 for documents containing text and canonical version 1 for documents without text. The [text extension](text-fields.md#persistence-clipboard-and-pdf) preserves legacy reading and uses font descriptors without binary data in disk metadata. Logical runtime and clipboard resources retain their `data` fields. Version 2 requires updated readers on editing devices.
+- Writers emit version 3 for documents containing images, version 2 for documents containing text without images, and canonical version 1 otherwise. The [image extension](images.md#persistence-clipboard-and-safe-svg) defines resource descriptors and the single embedded raster payload. The [text extension](text-fields.md#persistence-clipboard-and-pdf) preserves legacy reading and uses font descriptors without binary data in disk metadata. Logical runtime and clipboard resources retain their `data` fields. Version 2 requires updated readers on editing devices.
 - Inkbook may display a replacement preview for a newer unsupported version only after its static SVG passes the same exact element-and-attribute allowlist as generated output; otherwise it leaves the native image host-owned and noninteractive, or replaces its owned presentation with a non-rendering placeholder. The document cannot be edited.
 - Version 0 uses the same envelope, snapshot fields, ordering, connections, and canonical geometry as version 1 except that both the root `data-inkbook-version` and snapshot `version` are `0` and the root omits `data-inkbook-snapshot-sha256`. Its only migration changes the snapshot discriminator to `1`. The first version 1 save adds the canonical metadata hash; the version 1 exact-text and hash requirements do not block loading the supported legacy source.
 - Older supported versions migrate in memory through sequential pure migrations in the document worker during unlock. Every adjacent step validates its complete output before the next step begins. Runtime batches and the export baseline are created only after the migrated current-version result passes schema and byte, depth, container, element, geometry, and connection limits. Cancellation applies between migration and validation slices. The equivalent bounded main-thread fallback uses the same registry, checkpoints, limits, and failure result when workers are unavailable.

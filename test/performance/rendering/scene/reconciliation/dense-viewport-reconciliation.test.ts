@@ -86,7 +86,7 @@ function verifyPublicationSlices(
   requireSceneCommit = true,
 ): void {
   const camera = fakeNode(renderer.svg).nodes[1]!;
-  const groups = new Set([camera.nodes[3], camera.nodes[4], camera.nodes[8]]);
+  const groups = new Set([camera.nodes[4], camera.nodes[5], camera.nodes[9]]);
   const original = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!.value as (
     this: FakeNode,
     node: FakeNode,
@@ -99,7 +99,7 @@ function verifyPublicationSlices(
   let writes = 0;
   let removals = 0;
   remove.mockImplementation(function (this: FakeNode) {
-    if (this.parent === camera.nodes[3] || this.parent === camera.nodes[4]) removals += 1;
+    if (this.parent === camera.nodes[4] || this.parent === camera.nodes[5]) removals += 1;
     originalRemove.call(this);
   });
   insert.mockImplementation(function (this: FakeNode, node, reference) {
@@ -238,7 +238,7 @@ it("bounds live writes when a multi-root arrow joins selected single-root ink", 
   renderer.setViewport(target);
   verifyPublicationSlices(renderer, scheduler, undefined, false);
   expect(renderer.mountedIds("content")).toEqual([...store.records.keys()]);
-  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(65);
+  expect(fakeNode(renderer.svg).nodes[1]!.nodes[5]!.nodes).toHaveLength(65);
   expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(selected.size);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
@@ -406,7 +406,7 @@ it("publishes new visible nodes while selected mounted traces remain dirty", () 
   );
   scheduler.runAll();
   const camera = fakeNode(renderer.svg).nodes[1]!;
-  const content = camera.nodes[4]!;
+  const content = camera.nodes[5]!;
   const insert = vi.spyOn(content, "insertBefore");
   const write = vi.spyOn(FakeNode.prototype, "setAttribute");
   let traceWrites = 0;

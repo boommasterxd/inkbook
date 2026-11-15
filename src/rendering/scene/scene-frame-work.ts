@@ -8,6 +8,10 @@ import type { PreviewTransform } from "./reconciliation/scene-visibility-reconci
 import { completeSceneFrame, type SceneFrameWorkResult } from "./scene-frame-completion";
 import type { SceneCommitCoordinator } from "./scene-commit-coordinator";
 import type { SceneFrameScheduler } from "./scene-frame-scheduler";
+import type { SceneBackgroundController } from "./scene-background-controller";
+import type { SceneFrameWriter } from "./scene-frame-writer";
+import type { SceneCamera, SceneViewport } from "./types";
+import type { SceneVisibilityCoordinator } from "./scene-visibility-coordinator";
 
 interface SceneFrameWorkPorts {
   readonly backgroundPending: () => boolean;
@@ -18,6 +22,33 @@ interface SceneFrameWorkPorts {
   readonly scheduler: WorkScheduler;
   readonly queryPending?: () => boolean;
   readonly writeBackground: (deadline: number, allowAtomic: boolean) => boolean;
+}
+
+export function createFrameWork(
+  background: SceneBackgroundController,
+  writer: SceneFrameWriter,
+  [content, contentScheduler, elements, motion]: readonly [
+    SceneContentRenderer,
+    SceneContentScheduler,
+    SceneElementPreviews,
+    SceneMotionController,
+  ],
+  scheduler: WorkScheduler,
+  read: () => readonly [SceneViewport | undefined, SceneCamera, SceneVisibilityCoordinator],
+): SceneFrameWork {
+  return new SceneFrameWork({
+    backgroundPending: () => background.dirty && read()[0] !== undefined,
+    queryPending: () => read()[2].hasPendingQuery,
+    content,
+    contentScheduler,
+    elements,
+    motion,
+    scheduler,
+    writeBackground: (deadline, allowAtomic) => {
+      const [viewport, camera] = read();
+      return viewport !== undefined && background.write(writer, camera.zoom, deadline, allowAtomic);
+    },
+  });
 }
 
 /** Gives an admitted scene one bounded late unit and rotates competing queues. */

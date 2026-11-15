@@ -1,5 +1,4 @@
 import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
-import type { validateSafeSvgSteps } from "../../../src/persistence/documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-envelope";
 import { StreamingSafeStaticValidator } from "../../../src/persistence/serialization/input/streaming-safe-static";
 
@@ -31,7 +30,7 @@ export function createMaximumComplexitySvg(): string {
   });
 }
 
-export function exhaustValidation(steps: ReturnType<typeof validateSafeSvgSteps>) {
+export function exhaustValidation<T>(steps: Generator<void, T>) {
   let yields = 0;
   let step = steps.next();
   while (!step.done) {

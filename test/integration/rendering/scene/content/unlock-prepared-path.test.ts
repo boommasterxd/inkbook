@@ -1,3 +1,4 @@
+import { fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import { expect, it, vi } from "vitest";
 import * as pressureUnion from "../../../../../src/domain/geometry/pressure/pressure-union";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
@@ -6,7 +7,7 @@ import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-edi
 import { createSceneFixture } from "../../../../fixtures/rendering/scene";
 import { createWorkerSnapshot } from "../../../../fixtures/persistence/worker-snapshot";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
+
 import { translatedStroke } from "../../../../../src/domain/geometry/stroke-position";
 import type { StrokeElementV1 } from "../../../../../src/domain/schema/public";
 import * as strokePath from "../../../../../src/domain/geometry/stroke-path";
@@ -27,7 +28,7 @@ it("mounts validated unlock paths without unions and rebuilds after a geometry c
   const first = createSceneFixture(createWorkerSnapshot([]).page, sceneStore);
   first.scheduler.runAll();
   expect(union).not.toHaveBeenCalled();
-  expect(fakeNode(first.renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!.attributes.get("d")).toBe(
+  expect(sceneBandNode(fakeNode(first.renderer.svg), "content").nodes[0]!.attributes.get("d")).toBe(
     geometry[0]!.d,
   );
   first.renderer.destroy();
@@ -68,7 +69,7 @@ it("remounts retained rotated local contours after movement without point or uni
   const scene = createSceneFixture(createWorkerSnapshot([]).page, sceneStore);
   try {
     scene.scheduler.runAll();
-    const group = fakeNode(scene.renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
+    const group = sceneBandNode(fakeNode(scene.renderer.svg), "content").nodes[0]!;
     const path = group;
     expect(path.attributes.get("d")).toBe(prepared[0]!.d);
     expect(group.attributes.get("transform")).toBe("translate(12.007 0.003)");

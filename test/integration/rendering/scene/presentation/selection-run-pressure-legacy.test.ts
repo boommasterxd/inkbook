@@ -1,3 +1,4 @@
+import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 import { expect, it, vi } from "vitest";
 import * as pressureWindows from "../../../../../src/domain/geometry/pressure/pressure-window";
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
@@ -13,7 +14,6 @@ import {
   applySelectionDelta,
   armSelectionCommit,
 } from "../../../../fixtures/rendering/selection-runs";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 import {
   assertGeometry,

@@ -1,3 +1,4 @@
+import type { RenderBand } from "../commands/render-bands";
 import { DELTA_DOMAINS, type DeltaDomain, type ElementRecord, type StoreDelta } from "./types";
 
 interface PendingDelta {
@@ -17,7 +18,7 @@ const ORDER_DOMAINS: readonly DeltaDomain[] = Object.freeze(["order"]);
 
 export class DeltaBuilder {
   readonly #changes = new Map<string, PendingDelta>();
-  readonly #dirtyBands = { content: false, highlight: false };
+  readonly #dirtyBands = { image: false, content: false, highlight: false };
 
   public add(
     id: string,
@@ -48,7 +49,7 @@ export class DeltaBuilder {
     current.domains |= domains;
   }
 
-  public dirtyBand(band: "content" | "highlight"): void {
+  public dirtyBand(band: RenderBand): void {
     this.#dirtyBands[band] = true;
   }
 

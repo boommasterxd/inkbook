@@ -322,7 +322,7 @@ it.each([false, true])(
       dom,
       instrumentation: stats,
       mounted: new Map(),
-      orderDirty: { content: new Set(), highlight: new Set() },
+      orderDirty: { image: new Set(), content: new Set(), highlight: new Set() },
       pathCache: cache,
       store,
       visibility,

@@ -21,6 +21,8 @@ import type { FontPreviewSource } from "../../fonts/font-preview-source";
 import { menuTranslator } from "../../menus/localized-menu-text";
 
 interface ActiveEditorMenuOptions {
+  readonly onImportImages?: (() => void) | undefined;
+  readonly onCropImage?: (() => void) | undefined;
   readonly canCopyText?: boolean | undefined;
   readonly localization?: Localization | undefined;
   readonly event?: MouseEvent;
@@ -76,6 +78,8 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
     invocation,
     {
       canCopyText: options.canCopyText,
+      canCropImage: options.onCropImage !== undefined,
+      canImportImages: options.onImportImages !== undefined,
       canBringForward: options.arrangeAvailability["bring-forward"],
       canBringToFront: options.arrangeAvailability["bring-to-front"],
       canCopyEmbed: true,
@@ -102,6 +106,8 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       sendBackward: () => options.onArrange("send-backward"),
       sendToBack: () => options.onArrange("send-to-back"),
       editText: options.onEditText,
+      cropImage: options.onCropImage,
+      importImages: options.onImportImages,
     },
   );
 }
@@ -309,6 +315,7 @@ export class ActiveEditorMenuController {
     const actions = this.#options.actions;
     const textEditing = this.#textEditing;
     const textId = textEditing?.selectedId();
+    const imageId = actions.selectedImageId;
     const pasteInvocation = {
       invocationPoint: { x: position.x, y: position.y },
       kind: "context-menu" as const,
@@ -316,6 +323,12 @@ export class ActiveEditorMenuController {
     let session: ContextMenuSession;
     session = openActiveEditorMenu({
       canCopyText: actions.canCopyText,
+      onImportImages: actions.canImportImages ? () => actions.importImages(position) : undefined,
+      onCropImage: actions.canCropImage
+        ? () => {
+            if (actions.selectedImageId === imageId) actions.cropImage();
+          }
+        : undefined,
       localization: this.#options.localization,
       arrangeAvailability: actions.arrangeAvailability(),
       canEraseAll: this.#options.storeSize() > 0,

@@ -40,6 +40,11 @@ export const SCENE_SURFACE_STYLES = `
 .inkbook-scene[data-inkbook-text-editing] .inkbook-selection-traces {
   visibility: hidden;
 }
+.inkbook-scene[data-inkbook-image-crop] .inkbook-selection-overlay,
+.inkbook-scene[data-inkbook-image-crop] .inkbook-selection-handles,
+.inkbook-scene[data-inkbook-image-crop] .inkbook-selection-traces {
+  visibility: hidden;
+}
 .inkbook-native-text[data-inkbook-text-editor-ready] > path:first-child {
   visibility: hidden;
 }

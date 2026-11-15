@@ -44,7 +44,7 @@ it("publishes completed remote contours before terminal completion without resca
     top: 0,
   });
   scheduler.runAll();
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   renderer.setViewport({ height: 100, width: 100, left: 500, top: 0 });
   scheduler.runAll();
   await Promise.resolve();

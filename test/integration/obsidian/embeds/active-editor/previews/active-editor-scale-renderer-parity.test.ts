@@ -18,7 +18,7 @@ import { ElementSceneStore } from "../../../../../../src/obsidian/embeds/active-
 import type { EditableDocumentModel } from "../../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { createSceneFixture } from "../../../../../fixtures/rendering/scene";
 import { createAllElementSnapshot } from "../../../../../unit/persistence/serialization/fixtures";
-import { fakeNode, type FakeNode } from "../../../../../unit/rendering/scene/fakes";
+import { fakeNode, sceneBandNode, type FakeNode } from "../../../../../unit/rendering/scene/fakes";
 import type { StoreDelta } from "../../../../../../src/domain/store/public";
 import type { SceneStoreDelta } from "../../../../../../src/rendering/scene/types";
 import { PreparedElementHistory } from "../../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
@@ -115,7 +115,7 @@ describe("mixed element scale commit renderer parity", () => {
       expect(history.commandCount).toBe(1);
       const committed = elements.map(({ id }) => store.get(id)!.element as InkElementV1);
       expect(committed).not.toEqual(elements);
-      const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+      const content = sceneBandNode(fakeNode(renderer.svg), "content");
       assertCommittedGraphic(content, committed);
       interaction.dispose();
       fixture.preparedHistory.dispose();

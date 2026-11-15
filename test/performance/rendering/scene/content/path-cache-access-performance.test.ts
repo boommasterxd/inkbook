@@ -35,7 +35,7 @@ it("clears previews after cache release without retaining unchanged canonical co
   const fixture = createColdHistoryScene();
   const { ids, store, renderer, scheduler } = fixture;
   const records = ids.map((id) => store.get(id)!);
-  const groups = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes.slice(0, ids.length);
+  const groups = fakeNode(renderer.svg).nodes[1]!.nodes[5]!.nodes.slice(0, ids.length);
   expect(groups).toHaveLength(ids.length);
   const canonical = groups.map((group) => ({
     attributes: [...group.attributes],

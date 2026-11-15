@@ -131,10 +131,10 @@ describe("safe text SVG envelopes", () => {
   });
 
   it("keeps supported future presentation fallback separate from editable versions", () => {
-    expect(validateSafeSvg(svg(TEXT, FONT, 3))).toBeNull();
+    expect(validateSafeSvg(svg(TEXT, FONT, 4))).toBeNull();
     expect(
-      exhaust(validateSafeSvgSteps(svg(TEXT, FONT, 3), { versionPolicy: "newer" })).result,
-    ).toMatchObject({ version: 3 });
+      exhaust(validateSafeSvgSteps(svg(TEXT, FONT, 4), { versionPolicy: "newer" })).result,
+    ).toMatchObject({ version: 4 });
   });
 
   it.each([1, 7, 4096])(

@@ -1,10 +1,10 @@
+import { fakeRectangleRecord } from "./fakes";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   routeSceneDelta,
   type SceneDeltaRoutingPorts,
 } from "../../../../src/rendering/scene/scene-delta-router";
-import { fakeRectangleRecord } from "./fakes";
 import * as geometry from "../../../../src/domain/geometry/public";
 
 it.each(["remove", "restore"] as const)(

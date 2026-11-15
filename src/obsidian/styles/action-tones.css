@@ -9,10 +9,12 @@
   .inkbook-settings-modal,
   .inkbook-shortcuts-view,
   .inkbook-settings-validation-surface,
+  .inkbook-width-warning-group,
   [data-inkbook-setting-action-tone]
 ) {
   --inkbook-tone-danger-base: var(--text-error);
   --inkbook-tone-caution: color-mix(in srgb, var(--color-orange) 55%, var(--text-normal));
+  --inkbook-tone-warning: color-mix(in srgb, var(--color-yellow) 55%, var(--text-normal));
   --inkbook-tone-danger: color-mix(
     in srgb,
     var(--inkbook-tone-danger-base) 50%,

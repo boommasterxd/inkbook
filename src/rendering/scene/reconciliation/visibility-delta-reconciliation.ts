@@ -1,4 +1,4 @@
-import type { RenderBand } from "../../../domain/commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import { publicationRootCount, type PendingMutationRun } from "./visibility-publication";
 import type { DetachedSceneElementCache } from "../content/detached-element-cache";
 import { updatePreviewTransform, type MountedSceneElement } from "../content/mounted-element";
@@ -74,7 +74,8 @@ export function orderDeltaPublication(pending: PendingReconciliation): void {
   if (pending.delta === undefined || pending.runCount < 2) return;
   const runs = pending.runs.slice(0, pending.runCount);
   runs.sort((left, right) => {
-    if (left.band !== right.band) return left.band === "highlight" ? -1 : 1;
+    if (left.band !== right.band)
+      return RENDER_BANDS.indexOf(left.band) - RENDER_BANDS.indexOf(right.band);
     const a = left.entries[0]!;
     const b = right.entries[0]!;
     return b.rank - a.rank || b.id.localeCompare(a.id);

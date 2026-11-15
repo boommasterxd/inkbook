@@ -13,3 +13,4 @@ export const SCENE_PUBLICATION_ROOTS_PER_FRAME = 384;
 export const SCENE_PUBLICATION_ELEMENTS_PER_UNIT = 16;
 // Use the stricter supported profile because the scene renderer is platform-neutral.
 export const DENSE_RECONCILIATION_VISIBLE_ELEMENT_THRESHOLD = 900;
+export const MAX_MOTION_BYTES = 4 * 1024 * 1024;

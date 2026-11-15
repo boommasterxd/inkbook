@@ -1,0 +1,69 @@
+import { expect, it } from "vitest";
+import { imageElement } from "../../../fixtures/domain/images";
+import { rasterResource } from "../../../fixtures/persistence/image-svg";
+import { createSnapshot } from "./fixtures";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/document-codec";
+import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/output/incremental-document-serializer";
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
+import { matchesCanonicalImageOutput } from "../../../../src/persistence/serialization/output/font-output-binding";
+import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/input/chunked-input-codec";
+
+it("round-trips one raster payload shared by independently cropped and rotated instances", async () => {
+  const resource = rasterResource();
+  const image = {
+    ...imageElement(),
+    assetId: resource.id,
+    crop: { x: 0, y: 0, width: 1, height: 1 },
+  };
+  const second = {
+    ...image,
+    id: "00000000-0000-4000-8000-000000000011",
+    rotation: 30,
+    crop: { x: 0.25, y: 0, width: 0.5, height: 1 },
+  };
+  const snapshot = {
+    ...createSnapshot([image, second]),
+    version: 3 as const,
+    imageResources: [resource],
+  };
+  const output = serializeInkbookDocument(snapshot);
+  expect(output.ok, JSON.stringify(output)).toBe(true);
+  if (!output.ok) return;
+  expect(output.value.svg.split(resource.data)).toHaveLength(2);
+  expect(await matchesCanonicalImageOutput(output.value.svg, [], [resource], () => undefined)).toBe(
+    true,
+  );
+  const parsed = await parseInkbookDocumentForTest(output.value.svg);
+  expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
+  if (parsed.ok) expect(parsed.value.snapshot).toEqual(snapshot);
+  const safe = new ChunkedInkbookInputParser({ staticValidation: "safe" });
+  expect((await safe.write(new TextEncoder().encode(output.value.svg))).ok).toBe(true);
+  expect((await safe.finish()).ok).toBe(true);
+  expect(
+    await matchesCanonicalImageOutput(
+      output.value.svg.replace(resource.data, "AAAA"),
+      [],
+      [resource],
+      () => undefined,
+    ),
+  ).toBe(false);
+  const serializer = new IncrementalDocumentSerializer();
+  expect(serializer.reset(snapshot)).toEqual({ ok: true, value: undefined });
+  const incremental = await serializer.serializeChunked();
+  expect(incremental.ok, JSON.stringify(incremental)).toBe(true);
+  if (incremental.ok) expect(incremental.value.svg).toEqual(output.value.svg);
+  expect(
+    serializer.applyDelta({
+      baseModelRevision: 7,
+      modelRevision: 8,
+      removedIds: [image.id, second.id],
+    }).ok,
+  ).toBe(true);
+  const removed = serializer.serialize();
+  expect(removed.ok).toBe(true);
+  if (removed.ok) {
+    expect(removed.value.snapshot.version).toBe(1);
+    expect(removed.value.svg).not.toContain(resource.data);
+    expect(removed.value.svg).not.toContain("inkbook-images-band");
+  }
+});

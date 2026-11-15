@@ -1,3 +1,9 @@
+import type { ImageResourceV3 } from "../../domain/schema/public";
+import {
+  hasSafeImageBand,
+  parseSafeImageDefinitionsSteps,
+  parseSafeImageInstance,
+} from "../documents/safe-svg-images";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import {
   isBandGroup,
@@ -34,6 +40,7 @@ export interface StaticExportTagVisitor {
 
 type SvgTag = StaticExportTag;
 interface FragmentParseContext {
+  readonly imageResources: ReadonlyMap<string, ImageResourceV3>;
   readonly band: string;
   readonly totals: SvgTotals;
   readonly exhausted: () => boolean;
@@ -76,13 +83,19 @@ function* prepareFragmentSteps(
   if (prefix === undefined) return undefined;
   let cursor = prefix.cursor;
   const totals = { commands: 0, groups: 0, pathBytes: 0, paths: 0 };
-  for (const band of BANDS) {
+  const bands = [
+    BANDS[0]!,
+    ...(hasSafeImageBand(svg, prefix.version) ? ["inkbook-images-band"] : []),
+    ...BANDS.slice(1),
+  ];
+  for (const band of bands) {
     const opening = parseOpeningTag(svg, cursor);
     if (!isBandGroup(opening, band)) return undefined;
     visitor?.open(opening!);
     cursor = skipWhitespace(svg, opening!.next);
     const context = {
       band,
+      imageResources: prefix.imageResources,
       totals,
       exhausted,
       version: prefix.version,
@@ -109,6 +122,7 @@ function* parseFragmentSteps(
   cursor: number,
   context: FragmentParseContext,
 ): Generator<void, ParsedFragment | undefined> {
+  if (context.band === "inkbook-images-band") return parseImageFragment(svg, cursor, context);
   if (context.version >= 2 && svg.startsWith("<text", cursor)) {
     const next = yield* validateTextElementSteps(svg, cursor, context.visitor);
     // Font tables may contain glyph overhang beyond nominal em bounds. Without trusted
@@ -152,13 +166,22 @@ function* skipPrefixSteps(
   svg: string,
   exhausted: () => boolean,
   visitor?: StaticExportTagVisitor,
-): Generator<void, { readonly cursor: number; readonly version: number } | undefined> {
+): Generator<
+  void,
+  | {
+      readonly cursor: number;
+      readonly version: number;
+      readonly imageResources: ReadonlyMap<string, ImageResourceV3>;
+    }
+  | undefined
+> {
   let cursor = skipWhitespace(svg, 0);
   const root = parseOpeningTag(svg, cursor);
   const parsedRoot = root === null ? null : parseSafeSvgRoot(root, "editable");
   if (root === null || parsedRoot === null) return undefined;
   visitor?.open(root);
   cursor = skipWhitespace(svg, root.next);
+  let imageResources: ReadonlyMap<string, ImageResourceV3> = new Map();
   for (const name of ["style", "metadata"]) {
     let tag = parseOpeningTag(svg, cursor);
     if (name === "metadata" && tag?.name === "style") {
@@ -167,13 +190,20 @@ function* skipPrefixSteps(
       cursor = skipWhitespace(svg, next);
       tag = parseOpeningTag(svg, cursor);
     }
+    if (name === "metadata" && tag?.name === "defs" && parsedRoot.version >= 3) {
+      const definitions = yield* visitImageDefinitionsSteps(svg, cursor, visitor);
+      if (definitions === undefined) return undefined;
+      imageResources = definitions.resources;
+      cursor = definitions.next;
+      tag = parseOpeningTag(svg, cursor);
+    }
     if (tag?.name !== name || tag.selfClosing) return undefined;
     const close = `</${name}>`;
     const end = yield* findStaticSvgTokenSteps(svg, close, tag.next, exhausted);
     if (end < 0) return undefined;
     cursor = skipWhitespace(svg, end + close.length);
   }
-  return { cursor, version: parsedRoot.version };
+  return { cursor, version: parsedRoot.version, imageResources };
 }
 
 function* visitFontStylesheetSteps(
@@ -225,4 +255,47 @@ function* preparePathBoundsSteps(
       ? 0
       : Number(tag.attributes.get("stroke-width") ?? "1");
   return bounds.painted(translationY + parseTranslationY(tag), width);
+}
+
+function parseImageFragment(
+  svg: string,
+  cursor: number,
+  context: FragmentParseContext,
+): ParsedFragment | undefined {
+  const image = parseSafeImageInstance(svg, cursor, context.imageResources);
+  if (image === null) return undefined;
+  for (const tag of image.tags) context.visitor?.open(tag);
+  context.visitor?.close();
+  context.visitor?.close();
+  return { bounds: { minY: image.minY, maxY: image.maxY }, next: skipWhitespace(svg, image.next) };
+}
+
+function* visitImageDefinitionsSteps(
+  svg: string,
+  cursor: number,
+  visitor?: StaticExportTagVisitor,
+): Generator<void, { resources: ReadonlyMap<string, ImageResourceV3>; next: number } | undefined> {
+  const definitions = yield* parseSafeImageDefinitionsSteps(svg, cursor, false);
+  if (definitions === null) return undefined;
+  visitor?.open(parseOpeningTag(svg, cursor)!);
+  for (const resource of definitions.resources) {
+    visitor?.open({
+      name: "image",
+      selfClosing: true,
+      next: 0,
+      attributes: new Map(
+        Object.entries({
+          id: `inkbook-image-${resource.id}`,
+          width: String(resource.width),
+          height: String(resource.height),
+          href: `data:${resource.mimeType};base64,${resource.data}`,
+        }),
+      ),
+    });
+  }
+  visitor?.close();
+  return {
+    resources: new Map(definitions.resources.map((resource) => [resource.id, resource])),
+    next: skipWhitespace(svg, definitions.next),
+  };
 }

@@ -26,10 +26,11 @@ import {
 import { toValidationError } from "../../../domain/schema/validation-internals";
 import { prepareSerializationRanks, type SerializationRanks } from "./serialization-selection";
 import { updateConnectionTargetCounts } from "./connection-target-counts";
-import { validateFontResourceSteps } from "../../fonts/font-resources";
-import { usedFontResourcesSteps } from "../../fonts/used-font-resources";
+import { canonicalImageResource } from "../../images/image-resources";
+import { validateSnapshotResourcesSteps } from "./serialization-resource-preparation";
 
 export interface PreparedSerializationModel {
+  readonly imageResources: NonNullable<InkSnapshotV1["imageResources"]>;
   readonly fontResources: NonNullable<InkSnapshotV1["fontResources"]>;
   readonly elements: Map<string, InkElementV1>;
   readonly facts: Map<string, facts.ElementFacts>;
@@ -74,16 +75,12 @@ export function* prepareSerializationModelSteps(
   }
   if (derivations.elements.length !== snapshot.elements.length)
     return codecFailure("invalid-delta", "Validated element derivations are incomplete.");
-  try {
-    for (const resource of snapshot.fontResources ?? []) yield* validateFontResourceSteps(resource);
-    yield* usedFontResourcesSteps(snapshot.elements, snapshot.fontResources ?? []);
-  } catch {
-    return codecFailure("snapshot-invalid", "Font resource content is invalid.");
-  }
+  if (!(yield* validateSnapshotResourcesSteps(snapshot)))
+    return codecFailure("snapshot-invalid", "Document resource content is invalid.");
   const elements = new Map<string, InkElementV1>();
   const elementFacts = new Map<string, facts.ElementFacts>();
   const connectionTargets = new Map<string, number>();
-  const orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  const orders: Record<RenderBand, string[]> = { image: [], content: [], highlight: [] };
   try {
     for (let index = 0; index < snapshot.elements.length; index += 1) {
       const source = snapshot.elements[index]!;
@@ -110,6 +107,7 @@ export function* prepareSerializationModelSteps(
   return {
     ok: true,
     value: {
+      imageResources: (snapshot.imageResources ?? []).map(canonicalImageResource),
       fontResources: snapshot.fontResources ?? [],
       elements,
       facts: elementFacts,

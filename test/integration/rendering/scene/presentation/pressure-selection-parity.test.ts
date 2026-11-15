@@ -1,10 +1,3 @@
-import { selectionOverlayGeometry } from "../../../../../src/editor/selection/public";
-import { describe, expect, it } from "vitest";
-
-import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
-import { SelectionHandlePresentation } from "../../../../../src/obsidian/embeds/active-editor/previews/handle-presentation";
-import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
-import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import {
   asElement,
   FakeDocument,
@@ -12,13 +5,21 @@ import {
   FakeSceneStore,
   FakeScheduler,
   fakeNode,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
+import { selectionOverlayGeometry } from "../../../../../src/editor/selection/public";
+import { describe, expect, it } from "vitest";
+
+import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
+import { SelectionHandlePresentation } from "../../../../../src/obsidian/embeds/active-editor/previews/handle-presentation";
+import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
+import { indexedStroke } from "../../../../fixtures/editor/stroke";
 
 describe("pressure stroke selection parity", () => {
   it("retains identical painted paths through multi-selection, move, rotation, and deselection", () => {
     const { renderer, scheduler, selected } = setup();
     scheduler.runAll();
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = sceneBandNode(fakeNode(renderer.svg), "content");
     const original = content.nodes.map((node) => new Map(node.attributes));
     const presentation = new SelectionHandlePresentation(
       renderer,

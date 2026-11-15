@@ -1,6 +1,6 @@
 import { parseCanonicalSvgDecimal } from "./svg-number";
 
-const CURRENT_DOCUMENT_VERSION = 2;
+export const CURRENT_DOCUMENT_VERSION = 3;
 const OLDEST_EDITABLE_DOCUMENT_VERSION = 0;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const ROOT_ATTRIBUTES = new Set([

@@ -1,3 +1,4 @@
+import { asDocument, FakeDocument, FakeSceneStore, fakeNode, fakeRectangleRecord } from "../fakes";
 import { describe, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { DETACHED_ELEMENT_CACHE_MAX_BYTES } from "../../../../../src/rendering/scene/constants";
@@ -12,7 +13,6 @@ import {
   setMountedElementMotion,
   updatePreviewTransform,
 } from "../../../../../src/rendering/scene/content/mounted-element";
-import { asDocument, FakeDocument, FakeSceneStore, fakeNode, fakeRectangleRecord } from "../fakes";
 
 function fixture(id = "retained", ownerDocument = asDocument(new FakeDocument())) {
   const instrumentation = createInstrumentation();

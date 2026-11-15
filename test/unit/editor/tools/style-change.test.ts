@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../fixtures/domain/element-style";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -21,7 +22,7 @@ describe("selection paint Style changes", () => {
     const result = applySelectionStyleChange([pen], { property: "opacity", value: 0.5 });
 
     expect(result.changed).toBe(true);
-    expect(result.elements[0]?.style).toMatchObject({ opacity: 0.5 });
+    expect(readElementStyle(result.elements[0])).toMatchObject({ opacity: 0.5 });
     expect(pen.style.opacity).toBe(1);
   });
 
@@ -31,7 +32,7 @@ describe("selection paint Style changes", () => {
 
     const result = applySelectionStyleChange([pen], { property: "opacity", value: 0.12345 });
 
-    expect(result.elements[0]?.style).toMatchObject({ opacity: 0.1235 });
+    expect(readElementStyle(result.elements[0])).toMatchObject({ opacity: 0.1235 });
   });
 
   it("returns the original selection for an accepted no-op", () => {
@@ -104,39 +105,46 @@ describe("selection paint property families", () => {
       property: "color",
       value: { type: "rgba", value: "#FF00AAFF" },
     });
-    expect(changedPen.elements[0]?.style).toMatchObject({
+    expect(readElementStyle(changedPen.elements[0])).toMatchObject({
       color: { type: "rgba", value: "#FF00AAFF" },
     });
     expect(
-      applySelectionStyleChange([pen], { property: "stroke-width", value: 2 }).elements[0]?.style,
+      readElementStyle(
+        applySelectionStyleChange([pen], { property: "stroke-width", value: 2 }).elements[0],
+      ),
     ).toMatchObject({ width: 2 });
 
     const changedLine = applySelectionStyleChange([line], {
       property: "outline-color",
       value: { type: "rgba", value: "#00AAFFFF" },
     });
-    expect(changedLine.elements[0]?.style).toMatchObject({
+    expect(readElementStyle(changedLine.elements[0])).toMatchObject({
       outlineColor: { type: "rgba", value: "#00AAFFFF" },
     });
     expect(
-      applySelectionStyleChange([line], { property: "outline-style", value: "dashed" }).elements[0]
-        ?.style,
+      readElementStyle(
+        applySelectionStyleChange([line], { property: "outline-style", value: "dashed" })
+          .elements[0],
+      ),
     ).toMatchObject({ outlineStyle: "dashed" });
     expect(
-      applySelectionStyleChange([line], { property: "outline-opacity", value: 0.25 }).elements[0]
-        ?.style,
+      readElementStyle(
+        applySelectionStyleChange([line], { property: "outline-opacity", value: 0.25 }).elements[0],
+      ),
     ).toMatchObject({ outlineOpacity: 0.25 });
 
     const changedRectangle = applySelectionStyleChange([rectangle], {
       property: "fill-color",
       value: { type: "theme-text" },
     });
-    expect(changedRectangle.elements[0]?.style).toMatchObject({
+    expect(readElementStyle(changedRectangle.elements[0])).toMatchObject({
       fillColor: { type: "theme-text" },
     });
     expect(
-      applySelectionStyleChange([rectangle], { property: "fill-opacity", value: 0.75 }).elements[0]
-        ?.style,
+      readElementStyle(
+        applySelectionStyleChange([rectangle], { property: "fill-opacity", value: 0.75 })
+          .elements[0],
+      ),
     ).toMatchObject({ fillOpacity: 0.75 });
   });
 });
@@ -201,12 +209,12 @@ describe("selection paint compatibility", () => {
       property: "fill-color",
       value: null,
     });
-    expect(transparent.elements[0]?.style).toMatchObject({ fillColor: null });
+    expect(readElementStyle(transparent.elements[0])).toMatchObject({ fillColor: null });
     const opacity = applySelectionStyleChange([rectangle], {
       property: "fill-opacity",
       value: 0.12345,
     });
-    expect(opacity.elements[0]?.style).toMatchObject({ fillOpacity: 0.1235 });
+    expect(readElementStyle(opacity.elements[0])).toMatchObject({ fillOpacity: 0.1235 });
     expect(() =>
       applySelectionStyleChange([rectangle], {
         property: "outline-color",

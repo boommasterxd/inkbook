@@ -27,7 +27,7 @@ async function removedStroke() {
   const { store } = await hydrateRuntimeStroke(highlighter());
   const record = store.get(highlighter().id)!;
   const { transition } = await applyElementMutation(store, {
-    bands: { content: [], highlight: [] },
+    bands: { image: [], content: [], highlight: [] },
     removeIds: [record.element.id],
   });
   return { store, record, transition };
@@ -60,6 +60,7 @@ describe("private retained history replay", () => {
       store.prepareHistoryReplay({ ...transition.reverse }, scheduler, transition),
     ).rejects.toThrow("retained transition direction");
     await replay(store, transition, "reverse");
+    if (record.element.kind !== "stroke") throw new Error("Expected retained stroke.");
     const changed = { ...record.element, style: { ...record.element.style, opacity: 0.25 } };
     store.replace(record.element.id, changed as Parameters<ElementStore["replace"]>[1]);
     const publications = vi.fn();
@@ -76,11 +77,11 @@ describe("private retained history replay", () => {
     const second = { ...first, id: "00000000-0000-4000-8000-000000000099" };
     const store = new ElementStore([first, second]);
     const a = await applyElementMutation(store, {
-      bands: { content: [second.id], highlight: [] },
+      bands: { image: [], content: [second.id], highlight: [] },
       removeIds: [first.id],
     });
     const b = await applyElementMutation(store, {
-      bands: { content: [], highlight: [] },
+      bands: { image: [], content: [], highlight: [] },
       removeIds: [second.id],
     });
     await replay(store, b.transition, "reverse");
@@ -105,7 +106,7 @@ describe("private retained history replay", () => {
     const store = new ElementStore([target, line, dependent]);
     const originalLine = store.get(line.id)!;
     const { transition } = await applyElementMutation(store, {
-      bands: { content: [line.id, dependent.id], highlight: [] },
+      bands: { image: [], content: [line.id, dependent.id], highlight: [] },
       removeIds: [target.id],
     });
     const detached = store.get(line.id)!;
@@ -134,7 +135,7 @@ describe("public connection replay validation", () => {
       const owner = new ElementStore([target, line]);
       const canonical = owner.get(line.id)?.element;
       const { transition } = await applyElementMutation(owner, {
-        bands: { content: [target.id], highlight: [] },
+        bands: { image: [], content: [target.id], highlight: [] },
         removeIds: [line.id],
       });
       const store = foreign ? new ElementStore([target]) : owner;
@@ -178,7 +179,7 @@ describe("retained replay transaction boundaries", () => {
     const target = rectangle();
     const store = new ElementStore([target]);
     const { transition } = await applyElementMutation(store, {
-      bands: { content: [], highlight: [] },
+      bands: { image: [], content: [], highlight: [] },
       removeIds: [target.id],
     });
     await replay(store, transition, "reverse");
@@ -199,7 +200,7 @@ describe("retained replay transaction boundaries", () => {
     const line = connectedLine(target);
     const store = new ElementStore([target, line]);
     const { transition } = await applyElementMutation(store, {
-      bands: { content: [target.id], highlight: [] },
+      bands: { image: [], content: [target.id], highlight: [] },
       removeIds: [line.id],
     });
     store.replace(target.id, rectangle(target.id, 200, 200));

@@ -1,3 +1,9 @@
+import type { ImageResourceV3 } from "../../domain/schema/public";
+import {
+  parseSafeImageDefinitionsSteps,
+  parseSafeImageBandSteps,
+  hasSafeImageBand,
+} from "./safe-svg-images";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import { hasExactAttributes, parseOpeningTag, skipWhitespace } from "./svg-tag";
 import { validatePathAttributesSteps } from "./safe-svg-paths";
@@ -20,6 +26,7 @@ const MAXIMUM_TOTAL_COMMANDS = 8_000_000;
 const DEFAULT_PATHS_PER_STEP = 128;
 const MARKUP_CODE_UNITS_PER_STEP = 256 * 1024;
 interface SafeSvgPrefix {
+  readonly imageResources?: readonly ImageResourceV3[];
   readonly fontFaces?: readonly SafeSvgFontFace[];
   readonly fontStylesheet?: string;
   readonly cursor: number;
@@ -31,7 +38,9 @@ interface SafeSvgPrefix {
 
 export type SafeSvgGroupRange = Readonly<{ end: number; start: number }>;
 type SafeSvgGroupRanges = Readonly<
-  Record<"background" | "content" | "highlights", SafeSvgGroupRange>
+  Record<"background" | "content" | "highlights", SafeSvgGroupRange> & {
+    readonly images?: SafeSvgGroupRange;
+  }
 >;
 export interface SafeSvgValidationStepOptions {
   readonly deadlineExceeded?: () => boolean;
@@ -41,6 +50,7 @@ export interface SafeSvgValidationStepOptions {
 }
 
 export interface SafeSvgValidation {
+  readonly imageResources?: readonly ImageResourceV3[];
   readonly unadjustedTextRuns: number;
   readonly fontFaces?: readonly SafeSvgFontFace[];
   readonly fontStylesheet?: string;
@@ -60,6 +70,7 @@ export interface SafeSvgValidation {
 export type SafeSvgPrelude = Readonly<
   Pick<SafeSvgRoot, "revision" | "snapshotHash" | "version"> & {
     lockedHeight: number;
+    imageResources?: readonly ImageResourceV3[];
     fontStylesheet?: string;
     fontFaces?: readonly SafeSvgFontFace[];
     metadataEncoding: SnapshotMetadataEncoding;
@@ -251,9 +262,13 @@ export function validateSafeSvg(svg: string): SafeSvgValidation | null {
 export function* validateEditableSafeSvgPreludeSteps(
   prefix: string,
 ): Generator<void, SafeSvgPrelude | null> {
+  const root = parseOpeningTag(prefix, skipWhitespace(prefix, 0));
   const synthetic =
     `${prefix}</metadata>` +
     '<g id="inkbook-background"></g>' +
+    (root?.attributes.get("data-inkbook-version") === "3"
+      ? '<g id="inkbook-images-band"></g>'
+      : "") +
     '<g id="inkbook-highlights"></g>' +
     '<g id="inkbook-content"></g></svg>';
   const safe = yield* validateSafeSvgSteps(synthetic, { versionPolicy: "editable" });
@@ -262,6 +277,7 @@ export function* validateEditableSafeSvgPreludeSteps(
     : {
         ...(safe.fontStylesheet === undefined ? {} : { fontStylesheet: safe.fontStylesheet }),
         ...(safe.fontFaces === undefined ? {} : { fontFaces: safe.fontFaces }),
+        ...(safe.imageResources === undefined ? {} : { imageResources: safe.imageResources }),
         lockedHeight: safe.lockedHeight,
         metadataEncoding: safe.metadataEncoding,
         requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
@@ -308,19 +324,36 @@ export function* validateSafeSvgSteps(
     ...(prefix.root.version >= 2 ? { textElements: 0 } : {}),
   };
   const groups = {} as Record<keyof SafeSvgGroupRanges, SafeSvgGroupRange>;
-  for (const group of ["inkbook-background", "inkbook-highlights", "inkbook-content"]) {
-    const parsedGroup = yield* parsePathGroupSteps(
-      svg,
-      cursor,
-      group,
-      totals,
-      pathsPerStep,
-      options.deadlineExceeded,
-    );
+  const bands = [
+    "inkbook-background",
+    ...(hasSafeImageBand(svg, prefix.root.version) ? ["inkbook-images-band"] : []),
+    "inkbook-highlights",
+    "inkbook-content",
+  ];
+  for (const group of bands) {
+    const parsedGroup =
+      group === "inkbook-images-band"
+        ? yield* parseSafeImageBandSteps(
+            svg,
+            cursor,
+            prefix.imageResources ?? [],
+            totals,
+            options.deadlineExceeded,
+          )
+        : yield* parsePathGroupSteps(
+            svg,
+            cursor,
+            group,
+            totals,
+            pathsPerStep,
+            options.deadlineExceeded,
+          );
     if (parsedGroup === null) {
       return null;
     }
-    const key = group.replace("inkbook-", "") as keyof SafeSvgGroupRanges;
+    const key = (
+      group === "inkbook-images-band" ? "images" : group.replace("inkbook-", "")
+    ) as keyof SafeSvgGroupRanges;
     groups[key] = parsedGroup.range;
     cursor = skipWhitespace(svg, parsedGroup.next);
   }
@@ -328,8 +361,7 @@ export function* validateSafeSvgSteps(
     return null;
   }
   return {
-    ...(prefix.fontStylesheet === undefined ? {} : { fontStylesheet: prefix.fontStylesheet }),
-    ...(prefix.fontFaces === undefined ? {} : { fontFaces: prefix.fontFaces }),
+    ...safeResourceFields(prefix),
     groups,
     lockedHeight: prefix.root.height,
     metadataBytes: metadata.metadataBytes,
@@ -392,6 +424,9 @@ function* parseSafeSvgPrefixSteps(
     fontStylesheet = fonts.text;
     cursor = skipWhitespace(svg, fonts.next);
   }
+  const images = yield* parseOptionalImageDefinitionsSteps(svg, cursor, root.version);
+  if (images === null) return null;
+  cursor = images.cursor;
   const metadataTag = parseOpeningTag(svg, cursor);
   const metadataEncoding = metadataTag?.attributes.get("data-encoding");
   if (metadataEncoding !== "json" && metadataEncoding !== COMPACT_METADATA_ENCODING) return null;
@@ -402,6 +437,7 @@ function* parseSafeSvgPrefixSteps(
   return metadata === null
     ? null
     : {
+        ...images.fields,
         ...(fontStylesheet === undefined ? {} : { fontStylesheet }),
         ...(fontFaces === undefined ? {} : { fontFaces }),
         cursor: skipWhitespace(svg, metadata.next),
@@ -416,4 +452,30 @@ function completeValidation<T>(steps: Generator<void, T>): T {
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
+}
+
+function safeResourceFields(
+  source: Pick<SafeSvgPrefix, "imageResources" | "fontFaces" | "fontStylesheet">,
+) {
+  return {
+    ...(source.imageResources === undefined ? {} : { imageResources: source.imageResources }),
+    ...(source.fontFaces === undefined ? {} : { fontFaces: source.fontFaces }),
+    ...(source.fontStylesheet === undefined ? {} : { fontStylesheet: source.fontStylesheet }),
+  };
+}
+
+function* parseOptionalImageDefinitionsSteps(
+  svg: string,
+  cursor: number,
+  version: number,
+): Generator<void, { cursor: number; fields: Pick<SafeSvgPrefix, "imageResources"> } | null> {
+  if (!svg.startsWith("<defs", cursor)) return { cursor, fields: {} };
+  if (version < 3) return null;
+  const images = yield* parseSafeImageDefinitionsSteps(svg, cursor);
+  return images === null
+    ? null
+    : {
+        cursor: skipWhitespace(svg, images.next),
+        fields: { imageResources: images.resources },
+      };
 }

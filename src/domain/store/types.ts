@@ -41,7 +41,7 @@ interface ElementDelta {
 
 export interface StoreDelta {
   readonly changes: readonly ElementDelta[];
-  readonly dirtyBands: Readonly<{ highlight: boolean; content: boolean }>;
+  readonly dirtyBands: Readonly<Record<RenderBand, boolean>>;
   readonly geometryVersion: number;
   readonly paintVersion: number;
 }
@@ -172,10 +172,11 @@ export interface CreateOptions {
 export interface SnapshotMaterialization {
   readonly page: PageV1;
   readonly revision: number;
-  readonly version?: 1 | 2;
+  readonly version?: 1 | 2 | 3;
   readonly fontResources?: InkSnapshotV1["fontResources"];
+  readonly imageResources?: InkSnapshotV1["imageResources"];
 }
 
 export type MaterializedSnapshot = InkSnapshotV1;
 export type StoreDeltaListener = (delta: StoreDelta) => void;
-export type ElementStyle = InkElementV1["style"];
+export type ElementStyle = Exclude<InkElementV1, { kind: "image" }>["style"];

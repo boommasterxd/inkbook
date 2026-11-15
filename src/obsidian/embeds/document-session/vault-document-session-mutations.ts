@@ -1,5 +1,5 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
-import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
+import type { ImageResourceV3, InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
 import type {
   AppliedElementMutation,
   ElementStore,
@@ -17,6 +17,8 @@ import {
 } from "./vault-document-model";
 
 interface VaultDocumentSessionMutationOptions {
+  readonly imageResources?: () => readonly ImageResourceV3[] | undefined;
+  readonly acknowledgeImageResources?: () => void;
   readonly autosave: () => AutosaveCoordinator | undefined;
   readonly commitState: (state: {
     readonly page: InkSnapshotV1["page"];
@@ -126,11 +128,14 @@ export class VaultDocumentSessionMutations {
 
   #recordDelta(context: VaultMutationContext, delta: StoreDelta): void {
     this.#options.setRevision(context.nextRevision);
+    const imageResources = this.#options.imageResources?.();
     recordVaultStoreDelta({
       autosave: context.autosave,
       delta,
       revision: context.nextRevision,
+      ...(imageResources === undefined ? {} : { imageResources }),
     });
+    this.#options.acknowledgeImageResources?.();
   }
 
   #requireContext(): VaultMutationContext | undefined {

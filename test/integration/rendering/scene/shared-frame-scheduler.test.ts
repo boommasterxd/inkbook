@@ -1,9 +1,3 @@
-import { expect, it, vi } from "vitest";
-
-import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
-import { SvgSceneRenderer } from "../../../../src/rendering/scene";
-import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
-import { createSceneFixture, QueryCostStore } from "../../../fixtures/rendering/scene";
 import {
   FakeSceneStore,
   FakeScheduler,
@@ -12,7 +6,14 @@ import {
   asElement,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../unit/rendering/scene/fakes";
+import { expect, it, vi } from "vitest";
+
+import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
+import { createSceneFixture, QueryCostStore } from "../../../fixtures/rendering/scene";
 
 const PAGE: PageV1 = {
   activeBufferLines: 3,
@@ -30,7 +31,7 @@ it("reuses detached SVG roots when the viewport returns", () => {
   store.records.set("second", fakeRectangleRecord("second", 1, 10));
   const { renderer, scheduler } = createSceneFixture(PAGE, store, VIEWPORT);
   scheduler.runAll();
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   const roots = [...content.nodes];
   expect(renderer.instrumentation()).toMatchObject({ domRootsPublished: 2, domFragmentRuns: 1 });
   renderer.setViewport({ ...VIEWPORT, top: 500 });
@@ -84,7 +85,7 @@ function createThemeScene() {
 it("coalesces host mutations and same-scheme theme refreshes through the central scene frame", () => {
   const h = createThemeScene();
   const drawing = fakeNode(h.renderer.svg).ownerDocument;
-  const foreground = fakeNode(h.renderer.svg).nodes[1]!.nodes[4]!;
+  const foreground = sceneBandNode(fakeNode(h.renderer.svg), "content");
   try {
     h.scheduler.runAll();
     expect(drawing.body.style.getPropertyValue("--interactive-accent")).toBe("#123456");
@@ -203,7 +204,7 @@ it("shares bounded SVG publication while both scenes advance under late host fra
   let publications = 0;
   let roots = 0;
   for (const scene of scenes) {
-    const content = fakeNode(scene.renderer.svg).nodes[1]!.nodes[4]!;
+    const content = sceneBandNode(fakeNode(scene.renderer.svg), "content");
     const insert = content.insertBefore.bind(content);
     vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
       publications += 1;

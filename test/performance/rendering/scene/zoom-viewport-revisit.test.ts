@@ -113,7 +113,7 @@ it.each([false, true])(
     renderer.setReducedMotion(true);
     scheduler.runAll(200);
     const initial = renderer.mountedIds("content");
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     const crossingNode = content.nodes[initial.indexOf(indexedStroke(9_999).id)]!;
     const crossingPath = crossingNode.attributes.get("d");
     const crossingElement = records.get(indexedStroke(9_999).id)!.element;

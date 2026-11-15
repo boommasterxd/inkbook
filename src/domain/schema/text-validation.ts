@@ -5,7 +5,7 @@ import { textElementPayloadBytes } from "./text-payload-size";
 import { assertColor } from "./style-validation";
 import {
   assertExactKeys,
-  assertGeometryNumber,
+  assertBoxGeometry,
   assertIntegerRange,
   assertOneOf,
   assertRecord,
@@ -51,9 +51,7 @@ export function* assertTextElementSteps(
     ],
     path,
   );
-  for (const key of ["x", "y", "width", "height"] as const) {
-    assertGeometryNumber(value[key], `${path}.${key}`, context.limits.absoluteCoordinate);
-  }
+  assertBoxGeometry(value, path, context.limits.absoluteCoordinate);
   if ((value.width as number) < 0 || (value.height as number) < 0)
     fail("invalid-range", path, "Text dimensions must be nonnegative.");
   const pivot = value.pivot as { x: number; y: number };

@@ -248,6 +248,7 @@ export class PreparedElementMutations {
     const source = this.#readSource();
     const beforeState = this.#bandStates.capture();
     const beforeBands = {
+      image: [...source.bands.image],
       content: [...source.bands.content],
       highlight: [...source.bands.highlight],
     };

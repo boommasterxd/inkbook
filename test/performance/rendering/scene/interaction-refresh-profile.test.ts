@@ -61,7 +61,7 @@ it("finishes cold pressure mounting during uninterrupted zoom and reuses dense o
   expect(nodes.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(
     NAVIGATION_VISIBLE_STROKES,
   );
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const original = new Set(content.nodes);
 
   flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 10_000, width: 100 });

@@ -1,7 +1,7 @@
+import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 import {
   moveSelection,
   scaleElement,

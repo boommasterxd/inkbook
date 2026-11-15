@@ -26,7 +26,7 @@ function capacityModel() {
         ]
       : [],
   );
-  const orders = { content: [] as string[], highlight: [] as string[] };
+  const orders = { image: [] as string[], content: [] as string[], highlight: [] as string[] };
   for (const element of elements)
     orders[element.tool === "highlighter" ? "highlight" : "content"].push(element.id);
   expect(elements).toHaveLength(10_000);
@@ -46,6 +46,7 @@ function observeWork(model: ReturnType<typeof capacityModel>) {
   const reads = { content: 0, highlight: 0 };
   const ranks = completeSerializationSteps(prepareSerializationRanks(model.currentOrders, 256));
   const currentOrders = {
+    image: model.currentOrders.image,
     content: observeSchemaArray(model.currentOrders.content, () => reads.content++).observed,
     highlight: observeSchemaArray(model.currentOrders.highlight, () => reads.highlight++).observed,
   };
@@ -119,7 +120,7 @@ function rankUpdateSteps(
   return prepareSerializationRankUpdate(
     {
       currentOrders: work.currentOrders,
-      nextOrders,
+      nextOrders: { image: work.currentOrders.image, ...nextOrders },
       currentRanks: work.ranks,
     },
     256,

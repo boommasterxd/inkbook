@@ -167,7 +167,7 @@ export class ReadableLineWidthWarning {
       button.buttonEl.classList.add("clickable-icon", "inkbook-width-warning-button");
       button.buttonEl.setAttribute("aria-label", label);
       button.buttonEl.querySelector("svg")?.setAttribute("aria-hidden", "true");
-      if (action === "fix") button.buttonEl.createSpan({ text: label });
+      button.buttonEl.createSpan({ text: label });
       buttons.set(action, button.buttonEl);
       error.associate(button.buttonEl);
     }

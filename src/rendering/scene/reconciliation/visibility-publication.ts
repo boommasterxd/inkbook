@@ -186,6 +186,7 @@ export class RetainedDomOrder {
 
   public release(): void {
     this.invalidate();
+    delete this.#previous.image;
     delete this.#previous.content;
     delete this.#previous.highlight;
   }

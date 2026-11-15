@@ -102,7 +102,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz staged marker commits move pat
   const { renderer, scheduler } = createInteractionRenderer(store);
   scheduler.runAll();
   const root = fakeNode(renderer.svg);
-  const liveGroup = root.nodes[1]!.nodes[5]!;
+  const liveGroup = root.nodes[1]!.nodes[6]!;
   const create = vi.spyOn(root.ownerDocument, "createElementNS");
   const append = vi.spyOn(FakeNode.prototype, "append");
   const write = vi.spyOn(FakeNode.prototype, "setAttribute");

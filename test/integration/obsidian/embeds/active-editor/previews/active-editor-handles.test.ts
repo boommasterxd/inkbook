@@ -189,7 +189,7 @@ describe("active editor generic selection transforms", () => {
     expect(overlays[overlays.length - 2]).toBe(previewOverlay);
 
     const resized = store.get(table.id)?.element;
-    if (resized === undefined) throw new TypeError("Expected the resized table.");
+    if (resized?.kind !== "table") throw new TypeError("Expected the resized table.");
     const bounds = store.get(table.id)!.bounds;
     expect(bounds.minX).toBeCloseTo(44, 3);
     expect(bounds.minY).toBeCloseTo(48, 3);

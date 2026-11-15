@@ -1,3 +1,4 @@
+import { FakeScheduler, fakeRectangleRecord } from "../fakes";
 import { expect, it, vi } from "vitest";
 import { UniformSpatialIndex } from "../../../../../src/domain/spatial";
 import type { Bounds } from "../../../../../src/domain/geometry/primitives";
@@ -8,7 +9,6 @@ import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
 import { createSceneRecord, createSceneFixture } from "../../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
-import { FakeScheduler, fakeRectangleRecord } from "../fakes";
 import type {
   PreparedScenePathEntry,
   ScenePathPreparationObserver,

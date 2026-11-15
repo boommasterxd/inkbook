@@ -1,3 +1,4 @@
+import { FakeSceneStore } from "../fakes";
 // @vitest-environment happy-dom
 import { expect, it, vi } from "vitest";
 import { MountedTextPresentation } from "../../../../../src/rendering/scene/content/mounted-text";
@@ -14,7 +15,6 @@ import { SceneMountPreparation } from "../../../../../src/rendering/scene/reconc
 import { MountSlice } from "../../../../../src/rendering/scene/reconciliation/mount-slice";
 import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
 import { DetachedSceneElementCache } from "../../../../../src/rendering/scene/content/detached-element-cache";
-import { FakeSceneStore } from "../fakes";
 
 function field(count = 200) {
   const source = Array.from(

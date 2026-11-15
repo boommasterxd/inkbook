@@ -14,12 +14,14 @@ import type {
 } from "../../../domain/schema/public";
 import { serializeSvgNumber, serializeSvgOpacity } from "../../documents/svg-number";
 import { DOCUMENT_PALETTE, type ThemeClass } from "../../documents/svg-theme";
+import { serializeImageMarkup } from "./image-markup";
 import { serializeTextMarkup } from "./text-markup";
 
 type AttributeValue = number | string;
 type PathAttributes = Readonly<Record<string, AttributeValue | undefined>>;
 
 export function serializeElementPaths(element: InkElementV1): string[] {
+  if (element.kind === "image") return [serializeImageMarkup(element)];
   if (element.kind === "text") return [...serializeTextMarkup(element)];
   return serializeParts(
     element,
@@ -28,6 +30,7 @@ export function serializeElementPaths(element: InkElementV1): string[] {
 }
 
 export function serializeParts(element: InkElementV1, parts: readonly SvgPathPart[]): string[] {
+  if (element.kind === "image") return [serializeImageMarkup(element)];
   if (element.kind === "text") return [...serializeTextMarkup(element)];
   if (element.kind === "stroke" && element.style.pressureEnabled) {
     const paint = normalizeStrokePaint(element.style);

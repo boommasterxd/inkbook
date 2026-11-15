@@ -125,7 +125,11 @@ it.each([false, true])(
     const originals = fixture.strokeIds.map((id) => store.get(id)!);
     const removed = await store.prepareElementMutation(
       {
-        bands: { content: elements.slice(fixture.strokeCount).map(({ id }) => id), highlight: [] },
+        bands: {
+          image: [],
+          content: elements.slice(fixture.strokeCount).map(({ id }) => id),
+          highlight: [],
+        },
         removeIds: fixture.strokeIds,
       },
       scheduler,
@@ -225,6 +229,7 @@ it("validates canonical connected destinations once in a 10,000-stroke document"
   const removal = await store.prepareElementMutation(
     {
       bands: {
+        image: store.materializeBandOrder("image"),
         content: store.materializeBandOrder("content").filter((id) => id !== targetId),
         highlight: store.materializeBandOrder("highlight"),
       },

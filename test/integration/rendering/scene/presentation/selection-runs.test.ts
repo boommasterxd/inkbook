@@ -1,3 +1,8 @@
+import {
+  fakeNode,
+  sceneBandNode,
+  sceneNodeWithClass,
+} from "../../../../unit/rendering/scene/fakes";
 import { expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { strokeLocalGeometry } from "../../../../../src/domain/geometry/stroke-position";
@@ -16,7 +21,6 @@ import {
   commitSelectionScale,
   startSelectionResize,
 } from "../../../../fixtures/rendering/selection-runs";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 import { contentPaths, fixture } from "../../../../fixtures/rendering/selection-runs";
 
@@ -101,7 +105,7 @@ it("freezes the run and retains pressure residuals across commit while canonical
     for (const e of replacements) expect(f.store.get(e.id)?.element).toEqual(e);
     expectCanonical(f);
     expect(contentPaths(svg).every((node) => !node.attributes.has("transform"))).toBe(true);
-    const traces = svg.nodes[1]!.nodes[8]!;
+    const traces = sceneNodeWithClass(svg, "inkbook-selection-traces");
     const tracePaths = (node: typeof svg): (typeof svg)[] =>
       node.tagName === "path" ? [node] : node.nodes.flatMap(tracePaths);
     const liveTraces = tracePaths(traces);
@@ -220,7 +224,7 @@ it.each([false, true])(
       f.renderer.flushPointerFeedbackFrame(f.scheduler.now());
       const firstX = (d: string) => Number(/^M\s*([-\d.]+)/.exec(d)![1]);
       let actualX = firstX(node.getAttribute("d")!);
-      const band = fakeNode(f.renderer.svg).nodes[1]!.nodes[4]!;
+      const band = sceneBandNode(fakeNode(f.renderer.svg), "content");
       for (
         let current: typeof node | undefined = node;
         current !== band;
@@ -303,7 +307,7 @@ it("keeps shared parent payloads and group counts bounded across coalesced same-
       affected: sceneDeltaEntries(f.store.replaceMany(latest)!),
     });
     const svg = fakeNode(f.renderer.svg),
-      band = svg.nodes[1]!.nodes[4]!,
+      band = sceneBandNode(svg, "content"),
       groups = band.nodes.filter((node) => node.tagName === "g");
     expect(groups).toHaveLength(2);
     for (let generation = 2; generation <= 18; generation++) {

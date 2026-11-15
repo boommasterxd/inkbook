@@ -196,7 +196,7 @@ describe("vault-backed document persistence", () => {
     if (record === undefined) throw new Error("Expected the committed source element.");
 
     const cut = await applyElementMutation(model, {
-      bands: { content: [], highlight: [] },
+      bands: { image: [], content: [], highlight: [] },
       removeIds: [record.element.id],
     });
     expect(cut).not.toBeNull();
@@ -220,7 +220,7 @@ describe("vault-backed document persistence", () => {
       translation: { x: 0, y: 0 },
     };
     const paste = await applyElementMutation(model, {
-      bands: { content: [source.id, ...plan.contentIds], highlight: plan.highlightIds },
+      bands: { image: [], content: [source.id, ...plan.contentIds], highlight: plan.highlightIds },
       elements: plan.elements,
     });
     expect(paste).not.toBeNull();
@@ -257,7 +257,11 @@ describe("vault-backed document save verification", () => {
     if (model === undefined) throw new Error("Expected an editable document model.");
     expect(
       await applyElementMutation(model, {
-        bands: { content: [rectangle().id, ...paste.contentIds], highlight: paste.highlightIds },
+        bands: {
+          image: [],
+          content: [rectangle().id, ...paste.contentIds],
+          highlight: paste.highlightIds,
+        },
         elements: paste.elements,
       }),
     ).not.toBeNull();

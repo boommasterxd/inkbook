@@ -1,5 +1,5 @@
 import type { ArrangeAction } from "../commands/arrange";
-import { renderBandOf, type RenderBand } from "../commands/render-bands";
+import { RENDER_BANDS, renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { ResolvedShapeAnchor } from "../geometry/anchors";
 import type { InkElementV1 } from "../schema/public";
 import { SpatialQueryScratch, UniformSpatialIndex, type SpatialBounds } from "../spatial/index";
@@ -46,7 +46,7 @@ import type { TimeSlicedStoreState } from "./time-sliced-store-creation";
 import type * as Store from "./types";
 
 export class ElementStore {
-  #bands: StoreBands = { content: [], highlight: [] };
+  #bands: StoreBands = { image: [], content: [], highlight: [] };
   #capacity = new DocumentCapacity();
   #ranks = new Map<string, Store.ElementRank>();
   #records = new Map<string, Store.ElementRecord>();
@@ -144,8 +144,7 @@ export class ElementStore {
     store.#spatialIndex = state.index;
     store.#capacity = state.capacity;
     store.#overflowCount = state.overflowCount;
-    for (const band of ["highlight", "content"] as const)
-      mutableBand(store.#bands, band).push(...state.bands[band]);
+    for (const band of RENDER_BANDS) mutableBand(store.#bands, band).push(...state.bands[band]);
     for (const [id, rank] of state.ranks) store.#ranks.set(id, { ...rank });
     for (const [id, references] of state.reverseConnections)
       store.#reverseConnections.set(id, references);
@@ -321,6 +320,7 @@ export class ElementStore {
   public updateStyle(id: string, style: Store.ElementStyle): Store.StoreDelta | null {
     const current = this.#requireRecord(id);
     const replacement = mutableElement(current.element);
+    if (replacement.kind === "image") return null;
     replacement.style = style;
     return this.replace(id, replacement);
   }
@@ -363,7 +363,7 @@ export class ElementStore {
 
   public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): Store.StoreDelta | null {
     const delta = new DeltaBuilder();
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of RENDER_BANDS) {
       if (!this.#ordering.arrange(band, selectedIds, action, delta)) continue;
       this.#instrumentation.bandScans += 1;
     }
@@ -373,7 +373,7 @@ export class ElementStore {
   public reorderBands(
     orderedIds: Readonly<Record<RenderBand, readonly string[]>>,
   ): Store.StoreDelta | null {
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of RENDER_BANDS) {
       assertCompleteBandOrder(
         this.#bands[band],
         band,
@@ -382,7 +382,7 @@ export class ElementStore {
       );
     }
     const delta = new DeltaBuilder();
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of RENDER_BANDS) {
       const ids = mutableBand(this.#bands, band);
       for (let index = 0; index < ids.length; index += 1) ids[index] = orderedIds[band][index]!;
       this.#instrumentation.bandScans += 1;

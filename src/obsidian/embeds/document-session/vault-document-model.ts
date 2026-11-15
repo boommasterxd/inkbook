@@ -3,6 +3,7 @@ import {
   validateInkPageV1,
   MAX_DERIVED_HEIGHT,
   type FontResourceV2,
+  type ImageResourceV3,
   type InkElementV1,
   type InkSnapshotV1,
 } from "../../../domain/schema/public";
@@ -27,7 +28,7 @@ import type {
 } from "../../../domain/store/public";
 import { prepareVaultStoreDelta } from "./vault-document-model-delta";
 
-import type { EditableDocumentModel } from "./document-model-port";
+import type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
 import { attachEditableDocumentState } from "./editable-document-state";
 import { SessionClipboardCoordinator } from "./session-clipboard";
 import { SessionScenePaths } from "./session-scene-paths";
@@ -60,9 +61,19 @@ export function createVaultAutosaveSession(
     readonly page: () => InkSnapshotV1["page"];
     readonly store: ElementStore;
     readonly fontResources?: () => readonly FontResourceV2[];
-    readonly formatVersion?: () => 1 | 2;
+    readonly imageResources?: () => readonly ImageResourceV3[];
+    readonly formatVersion?: () => 1 | 2 | 3;
   },
 ): AutosaveCoordinator {
+  const snapshotHeader = () => ({
+    page: options.page(),
+    revision: options.currentRevision(),
+    version: options.formatVersion?.() ?? 1,
+    ...(options.imageResources === undefined
+      ? {}
+      : { imageResources: [...options.imageResources()] }),
+    ...(options.fontResources === undefined ? {} : { fontResources: [...options.fontResources()] }),
+  });
   return createAutosaveSession({
     workScheduler: options.workScheduler,
     ...(options.beforeExistingWrite === undefined
@@ -98,33 +109,21 @@ export function createVaultAutosaveSession(
     },
     integritySnapshot: () => ({
       format: "inkbook",
-      version: options.formatVersion?.() ?? 1,
-      ...(options.fontResources === undefined
-        ? {}
-        : { fontResources: [...options.fontResources()] }),
-      page: options.page(),
-      revision: options.currentRevision(),
-      elements: ["highlight", "content"].flatMap((band) =>
+      ...snapshotHeader(),
+      elements: ["image", "highlight", "content"].flatMap((band) =>
         options.store
-          .materializeBandOrder(band as "highlight" | "content")
+          .materializeBandOrder(band as "image" | "highlight" | "content")
           .map((id) => options.store.get(id)!.element as InkElementV1),
       ),
     }),
-    snapshot: () =>
-      options.store.materializeSnapshot({
-        page: options.page(),
-        revision: options.currentRevision(),
-        version: options.formatVersion?.() ?? 1,
-        ...(options.fontResources === undefined
-          ? {}
-          : { fontResources: [...options.fontResources()] }),
-      }),
+    snapshot: () => options.store.materializeSnapshot(snapshotHeader()),
     vault: options.files,
     workerEpoch: options.workerEpoch,
   });
 }
 
 export function createVaultClipboardCoordinator(options: {
+  readonly addImageResources?: (resources: readonly ImageResourceV3[]) => Promise<void>;
   readonly ensureFontResources?: (resources: readonly FontResourceV2[]) => void | Promise<void>;
   readonly autosave: () => AutosaveCoordinator | undefined;
   readonly disposed: () => boolean;
@@ -135,6 +134,9 @@ export function createVaultClipboardCoordinator(options: {
   readonly workerEpoch: () => number;
 }): SessionClipboardCoordinator {
   return new SessionClipboardCoordinator({
+    ...(options.addImageResources === undefined
+      ? {}
+      : { addImageResources: options.addImageResources }),
     ...(options.ensureFontResources === undefined
       ? {}
       : { ensureFontResources: options.ensureFontResources }),
@@ -335,6 +337,7 @@ export function commitVaultElementReplacement(options: {
 }
 
 export function recordVaultStoreDelta(options: {
+  readonly imageResources?: readonly ImageResourceV3[];
   readonly autosave: AutosaveCoordinator | undefined;
   readonly delta: StoreDelta;
   readonly revision: number;
@@ -342,9 +345,10 @@ export function recordVaultStoreDelta(options: {
   if (options.autosave === undefined) return;
   options.autosave.recordCommit({
     ...prepareVaultStoreDelta(options.delta),
-    dirtyBands: (Object.keys(options.delta.dirtyBands) as Array<"content" | "highlight">).filter(
-      (band) => options.delta.dirtyBands[band],
-    ),
+    ...(options.imageResources === undefined ? {} : { imageResources: options.imageResources }),
+    dirtyBands: (
+      Object.keys(options.delta.dirtyBands) as Array<"image" | "content" | "highlight">
+    ).filter((band) => options.delta.dirtyBands[band]),
     modelRevision: options.revision,
   });
 }
@@ -381,7 +385,7 @@ export function requireVaultPage(page: InkSnapshotV1["page"] | undefined): InkSn
 
 function validatePageExtent(store: ElementStore, page: InkSnapshotV1["page"]): void {
   let bottom: number | null = null;
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of ["image", "highlight", "content"] as const) {
     for (const id of store.materializeBandOrder(band)) {
       const maxY = store.get(id)!.bounds.maxY;
       bottom = bottom === null ? maxY : Math.max(bottom, maxY);
@@ -391,4 +395,13 @@ function validatePageExtent(store: ElementStore, page: InkSnapshotV1["page"]): v
   if (extent.activeHeight > MAX_DERIVED_HEIGHT || extent.lockedHeight > MAX_DERIVED_HEIGHT) {
     throw new RangeError("Page update exceeds the maximum derived height.");
   }
+}
+
+export function createVaultStoreScheduler(
+  runtimes: DocumentRuntimeFactories,
+  documentId: string,
+  unavailable: () => boolean,
+): (cancelled: () => boolean, priority?: "frame") => StoreSliceScheduler {
+  return (cancelled, priority) =>
+    runtimes.createStoreScheduler(documentId, () => unavailable() || cancelled(), priority);
 }

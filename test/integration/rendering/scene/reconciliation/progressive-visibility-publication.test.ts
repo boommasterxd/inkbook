@@ -51,7 +51,7 @@ it("keeps mounted dirty scratch out of deferred entrant publication", () => {
     pathCache: cache,
     instrumentation,
     retainGeometryPath: (id) => mounted.has(id),
-    orderDirty: { content: new Set(), highlight: new Set() },
+    orderDirty: { image: new Set(), content: new Set(), highlight: new Set() },
   });
   const bounds = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
   const reconcile = () =>
@@ -147,7 +147,7 @@ it("rescans old mounted exits when a full target changes after its earlier exit 
     pathCache: cache,
     visibility,
     instrumentation,
-    orderDirty: { content: new Set(), highlight: new Set() },
+    orderDirty: { image: new Set(), content: new Set(), highlight: new Set() },
   });
   const reconcile = () =>
     reconciler.reconcile(Infinity, () => 0, new Map(), new Map(), {

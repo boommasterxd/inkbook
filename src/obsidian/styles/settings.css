@@ -236,7 +236,7 @@
 }
 
 .inkbook-width-warning-group .inkbook-width-warning-footprint:not([hidden]) {
-  padding-block-end: var(--size-4-6);
+  padding-block-end: var(--size-4-8);
 }
 
 .inkbook-width-warning-group .setting-item.inkbook-width-warning:not([hidden]) {
@@ -247,11 +247,13 @@
   display: grid;
   gap: var(--size-4-3);
   grid-template-columns: var(--icon-size) minmax(0, 1fr);
-  padding: var(--size-4-4);
+
+  /* The buttons already include vertical space around their visible labels. */
+  padding: var(--size-4-4) var(--size-4-4) var(--size-4-1);
 }
 
 .inkbook-width-warning-icon {
-  color: color-mix(in srgb, var(--color-yellow) 55%, var(--text-normal));
+  color: var(--inkbook-tone-warning);
 }
 
 .inkbook-width-warning-icon > svg {
@@ -271,7 +273,9 @@
 }
 
 .inkbook-width-warning-actions > .inkbook-width-warning-button {
+  align-items: center;
   background: transparent;
+  block-size: auto;
   border: 0;
   border-radius: var(--radius-m);
   box-shadow: none;
@@ -279,10 +283,17 @@
   display: inline-flex;
   font-size: var(--font-ui-small);
   gap: var(--size-4-2);
+  max-inline-size: 100%;
   min-block-size: 44px;
   min-inline-size: 44px;
   padding: var(--size-4-2);
+  text-align: start;
   transition: none;
+  white-space: normal;
+}
+
+.inkbook-width-warning-button > svg {
+  flex-shrink: 0;
 }
 
 .inkbook-width-warning-button:focus-visible {

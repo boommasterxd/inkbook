@@ -441,6 +441,7 @@ export class ChunkedInkbookInputParser {
           ? new StreamingSafeStaticValidator(
               () => this.#runCheckpoint() ?? undefined,
               prelude.version,
+              prelude.imageResources ?? [],
             )
           : new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
     this.#runtimeSnapshot = bound.value.snapshot;
@@ -493,7 +494,6 @@ export class ChunkedInkbookInputParser {
     this.#prefix.clear();
     this.#prelude = null;
   }
-
   #markFinished(): void {
     if (this.#state !== "cancelled") this.#state = "finished";
   }

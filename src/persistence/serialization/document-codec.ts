@@ -14,6 +14,7 @@ import type {
   DocumentCodecResult,
   SerializedInkbookDocument,
 } from "./types";
+import { validateImageResourceSteps } from "../images/image-resources";
 import { validateFontResourceSteps } from "../fonts/font-resources";
 import { canonicalSnapshot } from "./metadata/canonical-snapshot";
 
@@ -28,8 +29,17 @@ export function serializeInkbookDocument(
     return failure("snapshot-invalid", "Snapshot validation failed.", validation.error);
   }
   try {
-    for (const resource of validation.value.fontResources ?? []) {
-      const steps = validateFontResourceSteps(resource);
+    for (const resource of [
+      ...(validation.value.fontResources ?? []),
+      ...(validation.value.imageResources ?? []),
+    ]) {
+      const steps = resource.mimeType.startsWith("image/")
+        ? validateImageResourceSteps(
+            resource as import("../../domain/schema/public").ImageResourceV3,
+          )
+        : validateFontResourceSteps(
+            resource as import("../../domain/schema/public").FontResourceV2,
+          );
       while (!steps.next().done) {
         /* Complete synchronous public codec. */
       }
@@ -57,6 +67,7 @@ export function serializeInkbookDocument(
   const bands = deriveRenderBands(snapshot.elements);
   const svg = serializeSvgEnvelope(snapshot, lockedHeight, {
     background: serializeBackgroundPaths(snapshot.page.background, lockedHeight),
+    images: bands.image.flatMap(serializeElementPaths),
     highlights: bands.highlight.flatMap(serializeElementPaths),
     content: bands.content.flatMap(serializeElementPaths),
   });

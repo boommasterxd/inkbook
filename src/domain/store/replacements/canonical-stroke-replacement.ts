@@ -153,7 +153,7 @@ function finishPlan(
     capacityPatch,
     delta: Object.freeze({
       changes: Object.freeze(prepared.changes),
-      dirtyBands: Object.freeze({ content: false, highlight: false }),
+      dirtyBands: Object.freeze({ image: false, content: false, highlight: false }),
       geometryVersion,
       paintVersion: source.paintVersion,
     }),

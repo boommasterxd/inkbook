@@ -165,6 +165,9 @@ function linearGeometryEqual(
 }
 
 function geometryStyleEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
+  if (left.kind === "image" || right.kind === "image") {
+    return left.kind === "image" && right.kind === "image";
+  }
   if (left.kind === "text" || right.kind === "text") {
     return left.kind === "text" && right.kind === "text" && valuesEqual(left.style, right.style);
   }
@@ -181,6 +184,9 @@ function geometryStyleEqual(left: ImmutableInkElement, right: InkElementV1): boo
 }
 
 function paintEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
+  if (left.kind === "image" || right.kind === "image") {
+    return imagePaintEqual(left, right);
+  }
   if (left.kind === "text" || right.kind === "text") {
     return textPaintEqual(left, right);
   }
@@ -203,6 +209,15 @@ function paintEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
   return (
     valuesEqual(left.style.fillColor, right.style.fillColor) &&
     left.style.fillOpacity === right.style.fillOpacity
+  );
+}
+
+function imagePaintEqual(left: ImmutableInkElement, right: InkElementV1): boolean {
+  return (
+    left.kind === "image" &&
+    right.kind === "image" &&
+    left.assetId === right.assetId &&
+    valuesEqual(left.crop, right.crop)
   );
 }
 

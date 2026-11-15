@@ -304,7 +304,8 @@ export class DocumentModelRuntime {
     const selected = completeSerializationSteps(this.#serializer.selectionSteps(selectedIds));
     if (selected === null) return missingClipboardSelection();
     const fonts = this.#serializer.currentFontResources();
-    return encodeRuntimeSelectionWrite(selected, selectedIds, fonts);
+    const images = this.#serializer.currentImageResources();
+    return encodeRuntimeSelectionWrite(selected, selectedIds, fonts, images);
   }
 
   public async encodeClipboardSliced(
@@ -320,9 +321,10 @@ export class DocumentModelRuntime {
     context.signal.throwIfAborted();
     this.#validatedPasteState(basisRevision);
     const fonts = this.#serializer.currentFontResources();
+    const images = this.#serializer.currentImageResources();
     return selected === null
       ? missingClipboardSelection()
-      : encodeRuntimeSelectionChunked(selected, selectedIds, context, fonts);
+      : encodeRuntimeSelectionChunked(selected, selectedIds, context, fonts, images);
   }
 
   public decodeClipboard(

@@ -1,3 +1,4 @@
+import { fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { strokeLocalGeometry } from "../../../../../src/domain/geometry/stroke-position";
@@ -16,7 +17,6 @@ import {
   paintedX,
   scaleFeedback,
 } from "../../../../fixtures/rendering/selection-runs";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -55,7 +55,7 @@ it("recovers pressure snapshots and shared feedback through repeated zero to pos
     const last = f.selected[f.selected.length - 1]!;
     const shape = pathOf(f, last);
     const svg = fakeNode(f.renderer.svg);
-    const band = svg.nodes[1]!.nodes[4]!;
+    const band = sceneBandNode(svg, "content");
     for (const [index, factor] of [2, 0, 3, 0, 2].entries()) {
       publishScale(f, factor, index + 1);
       expect(paintedX(shape, band)).toBeCloseTo(
@@ -98,7 +98,7 @@ it("reopens an overlapping cohort after a zero commit and moves its pressure and
     f.renderer.setSelectedElements(new Set(ids));
     f.scheduler.runAll(1000);
     const svg = fakeNode(f.renderer.svg);
-    const band = svg.nodes[1]!.nodes[4]!;
+    const band = sceneBandNode(svg, "content");
     const before = [paintedX(pressure, band), paintedX(shape, band)];
     f.renderer.setPreviewTransform(
       ids,
@@ -131,7 +131,7 @@ it("cancels a zero-scale gesture back to the prior committed world while its can
   try {
     const shape = pathOf(f, f.selected[f.selected.length - 1]!);
     const pressure = pathOf(f, fixtureElement(f, f.pens[0]!));
-    const band = fakeNode(f.renderer.svg).nodes[1]!.nodes[4]!;
+    const band = sceneBandNode(fakeNode(f.renderer.svg), "content");
     const before = [paintedX(shape, band), paintedX(pressure, band)];
     const committed = f.ids.map((id) => fixtureElement(f, id));
     const collapsed = new Map(

@@ -127,7 +127,7 @@ export async function planElementReplacement(
     capacityPatch: dependentPatches.capacityPatch,
     delta: Object.freeze({
       changes,
-      dirtyBands: Object.freeze({ content: false, highlight: false }),
+      dirtyBands: Object.freeze({ image: false, content: false, highlight: false }),
       geometryVersion: nextGeometryVersion,
       paintVersion: nextPaintVersion,
     }),

@@ -1,3 +1,4 @@
+import { RENDER_BANDS } from "../../commands/render-bands";
 import type { RenderBand } from "../../commands/render-bands";
 import type { StoreBands } from "./band-snapshots";
 import type { InkElementV1 } from "../../schema/public";
@@ -283,7 +284,7 @@ async function buildRanks(
   scheduler: MutationPreparationScheduler,
 ): Promise<Map<string, ElementRank> | "cancelled"> {
   const ranks = new Map<string, ElementRank>();
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     for (let rank = 0; rank < bands[band].length; rank += 1) {
       if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
       ranks.set(bands[band][rank]!, { band, rank });

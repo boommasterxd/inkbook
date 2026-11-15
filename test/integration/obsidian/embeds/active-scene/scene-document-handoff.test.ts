@@ -14,7 +14,7 @@ import {
 } from "../../../../unit/rendering/scene/fakes";
 
 function expectForegroundOpacity(groups: readonly FakeNode[], opacity: string): void {
-  expect(groups).toHaveLength(7);
+  expect(groups).toHaveLength(8);
   for (const group of groups) expect(group.style.getPropertyValue("opacity")).toBe(opacity);
 }
 

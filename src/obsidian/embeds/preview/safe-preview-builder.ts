@@ -1,3 +1,4 @@
+import { createImageReferenceScope } from "./preview-image-references";
 import { parseOpeningTag } from "../../../persistence/documents/svg-tag";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { configurePreviewSvg } from "./safe-preview-svg";
@@ -50,7 +51,10 @@ function appendElement(
   configureElement?: (element: Element) => void,
 ): Element {
   const tag = parseOpeningTag(markup, 0);
-  if (tag === null || !["svg", "g", "path", "text", "tspan"].includes(tag.name)) {
+  if (
+    tag === null ||
+    !["svg", "g", "path", "text", "tspan", "defs", "image", "use"].includes(tag.name)
+  ) {
     throw new Error("The validated Inkbook preview has unexpected markup.");
   }
   return appendParsedPreviewElement(ownerDocument, tag, parents, configureElement);
@@ -93,6 +97,11 @@ function* buildPreviewSteps(
   configureElement?: (element: Element) => void,
 ): Generator<void, SVGSVGElement> {
   const parents: Element[] = [];
+  const scopeImages = createImageReferenceScope();
+  const configure = (element: Element) => {
+    scopeImages(element);
+    configureElement?.(element);
+  };
   let root: SVGSVGElement | undefined;
   let cursor = 0;
   while (cursor < safeSvg.length) {
@@ -122,7 +131,7 @@ function* buildPreviewSteps(
       if (parents.length === 0) break;
       continue;
     }
-    const element = appendElement(ownerDocument, markup, parents, configureElement);
+    const element = appendElement(ownerDocument, markup, parents, configure);
     root ??= element as SVGSVGElement;
     if (exhausted()) yield;
   }

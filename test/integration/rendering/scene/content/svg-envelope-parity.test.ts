@@ -1,3 +1,12 @@
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  asElement,
+  fakeNode,
+  sceneBandNode,
+} from "../../../../unit/rendering/scene/fakes";
 import { describe, expect, it } from "vitest";
 
 import { deriveRenderBands } from "../../../../../src/domain/commands/render-bands";
@@ -20,14 +29,6 @@ import {
   createAllElementSnapshot,
   uuid,
 } from "../../../../unit/persistence/serialization/fixtures";
-import {
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-  asElement,
-  fakeNode,
-} from "../../../../unit/rendering/scene/fakes";
 
 type Attributes = ReadonlyMap<string, string>;
 
@@ -318,8 +319,8 @@ function activeBandPaths(renderer: SvgSceneRenderer): {
 } {
   const camera = sceneCamera(renderer);
   return {
-    content: childAttributes(camera.nodes[4]),
-    highlight: childAttributes(camera.nodes[3]),
+    content: childAttributes(sceneBandNode(camera, "content")),
+    highlight: childAttributes(sceneBandNode(camera, "highlight")),
   };
 }
 

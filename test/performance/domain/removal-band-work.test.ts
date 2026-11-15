@@ -111,7 +111,7 @@ function fixture(highlightEvery = 2) {
     content,
     highlight,
     source: {
-      bands: { content: content.band, highlight: highlight.band },
+      bands: { image: [], content: content.band, highlight: highlight.band },
       records: new Map(elements.map(({ id }) => [id, store.get(id)!])),
       ranks: new Map(elements.map(({ id }) => [id, store.getRank(id)!])),
     },
@@ -149,7 +149,7 @@ it.each([1_000, 2_000])(
     expect(rankReads).toBe(selectionSize);
     expect(membershipReads).toBe(selectionSize);
     rankWrites.restore();
-    expect(prepared.order.dirtyBands).toEqual({ content: true, highlight: false });
+    expect(prepared.order.dirtyBands).toEqual({ image: false, content: true, highlight: false });
     for (const [id, position] of prepared.order.ranks) {
       expect(prepared.order.bands.content[position.rank]).toBe(id);
       expect(renderBandOf(source.records.get(id)!.element)).toBe("content");
@@ -348,7 +348,7 @@ it.each([1, 2_000])(
     expect(transition.reverse.elements).toBeUndefined();
     const expectedPayload =
       (20_000 - selectedCount) * 80 +
-      256 +
+      320 +
       records.reduce((bytes, { element }) => bytes + 208 + elementMutationPayloadBytes(element), 0);
     expect(transition.payloadBytes).toBe(expectedPayload);
     for (const direction of ["reverse", "forward"] as const) {

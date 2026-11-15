@@ -133,15 +133,14 @@ describe("internal style replacement proof", () => {
   it("still rejects malformed replacement fields and newly supplied samples", () => {
     const store = new ElementStore([{ ...indexedStroke(0), points: [20, 20, 0.5, 21, 21, 0.6] }]);
     const before = store.get(indexedStroke(0).id)!.element as InkElementV1;
+    if (before.kind !== "stroke") throw new Error("Expected owned stroke.");
     expect(() =>
       store.replaceMany([{ ...before, unexpected: true } as unknown as InkElementV1]),
     ).toThrow();
     expect(() =>
-      store.replaceMany([{ ...before, style: { ...before.style, opacity: 2 } } as InkElementV1]),
+      store.replaceMany([{ ...before, style: { ...before.style, opacity: 2 } }]),
     ).toThrow();
-    expect(() =>
-      store.replaceMany([{ ...before, points: [NaN, 0, 0.5] } as InkElementV1]),
-    ).toThrow();
+    expect(() => store.replaceMany([{ ...before, points: [NaN, 0, 0.5] }])).toThrow();
     expect(store.get(before.id)!.element).toBe(before);
   });
 });

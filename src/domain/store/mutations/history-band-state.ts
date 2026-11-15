@@ -5,7 +5,7 @@ import type { AppliedElementMutation, ElementMutation, StoreDelta } from "../typ
 export type HistoryBandState = Readonly<Record<RenderBand, object>>;
 
 export class HistoryBandStates {
-  #current: HistoryBandState = Object.freeze({ content: {}, highlight: {} });
+  #current: HistoryBandState = Object.freeze({ image: {}, content: {}, highlight: {} });
   readonly #transitions = new WeakMap<
     AppliedElementMutation,
     { readonly before: HistoryBandState; readonly after: HistoryBandState }
@@ -26,6 +26,7 @@ export class HistoryBandStates {
           : undefined;
     return (
       source !== undefined &&
+      source.image === this.#current.image &&
       source.content === this.#current.content &&
       source.highlight === this.#current.highlight
     );
@@ -46,6 +47,7 @@ export class HistoryBandStates {
     }
     const before = this.#current;
     this.#current = Object.freeze({
+      image: delta.dirtyBands.image ? {} : before.image,
       content: delta.dirtyBands.content ? {} : before.content,
       highlight: delta.dirtyBands.highlight ? {} : before.highlight,
     });

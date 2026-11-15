@@ -17,7 +17,7 @@ import type { MutableSceneInstrumentation, SceneStorePort, SceneDeltaEntry } fro
 import type { SceneVisibilityState } from "./visibility/visibility-state";
 import { SceneVisibilityReconciler } from "./reconciliation/scene-visibility-reconciler";
 import type { PreviewTransform } from "./reconciliation/scene-visibility-reconciler";
-import { markSceneOrderDirty } from "./content/dirty-set-work";
+import { markSceneOrderDirty, resetSceneBands } from "./content/dirty-set-work";
 import { commitVisibleBands, mountedVisibleIds } from "./visibility/visibility-order";
 import { mountedPreviewIds } from "./presentation/preview-transform-selection";
 import type { PreviewMembershipContext } from "./types";
@@ -35,10 +35,12 @@ export class SceneContentRenderer {
   #pinnedTextId: string | undefined;
   readonly #dom: SceneDom;
   readonly #committedIds: Record<RenderBand, readonly (string | undefined)[]> = {
+    image: [],
     content: [],
     highlight: [],
   };
   readonly #committedCounts: Record<RenderBand, number> = {
+    image: 0,
     content: 0,
     highlight: 0,
   };
@@ -53,6 +55,7 @@ export class SceneContentRenderer {
   );
   #newlyMountedIds: readonly string[] = EMPTY_IDS;
   readonly #orderDirty: Record<RenderBand, Set<string>> = {
+    image: new Set(),
     content: new Set(),
     highlight: new Set(),
   };
@@ -199,6 +202,9 @@ export class SceneContentRenderer {
   }
   public mountedText(id: string) {
     return this.#mounted.get(id)?.text;
+  }
+  public mountedImageRoot(id: string): SVGGElement | undefined {
+    return this.#mounted.get(id)?.image?.group;
   }
   public textMotionSnapshot(element: InkElementV1, maximumNodes: number, maximumBytes: number) {
     return element.kind === "text"
@@ -445,15 +451,10 @@ export class SceneContentRenderer {
     this.#fades.release();
     this.#selectionTraces.release();
     this.#reconciler.release();
-    this.#orderDirty.content.clear();
-    this.#orderDirty.highlight.clear();
+    resetSceneBands(this.#orderDirty, this.#committedIds, this.#committedCounts);
     this.#mounted.clear();
     this.#detachedCache?.dispose();
     this.#newlyMountedIds = EMPTY_IDS;
-    this.#committedIds.content = [];
-    this.#committedIds.highlight = [];
-    this.#committedCounts.content = 0;
-    this.#committedCounts.highlight = 0;
   }
   public selectionFeedbackIds(
     feedback: ProgressivePreviewTransform | undefined,

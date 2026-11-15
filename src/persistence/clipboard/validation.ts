@@ -10,6 +10,12 @@ import {
   validateRuntimeInkElementV1,
 } from "../../domain/schema/element-validation";
 import { hasReachableDependencyCycle } from "../../domain/schema/dependency-cycle";
+import {
+  assertImageResourcesSteps,
+  assertImageBindingsSteps,
+} from "../../domain/schema/image-validation";
+import { renderBandOf, RENDER_BANDS } from "../../domain/commands/render-bands";
+import { validateImageResourceSteps } from "../images/image-resources";
 import { assertFontResourcesSteps } from "../../domain/schema/font-resource-validation";
 import { usedFontResourcesSteps } from "../fonts/used-font-resources";
 import { validateFontResourceSteps } from "../fonts/font-resources";
@@ -293,13 +299,11 @@ const clipboardConnectionDependencies = (
 };
 
 const hasValidRenderBandOrder = (entries: readonly ValidatedEntry[]): boolean => {
-  let contentStarted = false;
+  let previousBand = -1;
   for (const { element } of entries) {
-    const isHighlight =
-      element.kind === "straight-highlighter" ||
-      (element.kind === "stroke" && element.tool === "highlighter");
-    if (isHighlight && contentStarted) return false;
-    if (!isHighlight) contentStarted = true;
+    const band = RENDER_BANDS.indexOf(renderBandOf(element));
+    if (band < previousBand) return false;
+    previousBand = band;
   }
   return true;
 };
@@ -327,13 +331,14 @@ function* validateClipboardPayloadSteps(
       "version",
       "elements",
       ...(value.fontResources === undefined ? [] : ["fontResources"]),
+      ...(value.imageResources === undefined ? [] : ["imageResources"]),
     ])
   ) {
     return failure("Clipboard payload root does not match InkClipboardV1.");
   }
   if (
     value.format !== "inkbook-elements" ||
-    (value.version !== 1 && value.version !== 2) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
     !Array.isArray(value.elements)
   ) {
     return failure("Clipboard payload discriminator or version is invalid.");
@@ -345,26 +350,8 @@ function* validateClipboardPayloadSteps(
     samplesPerStep,
   );
   if (!entries.ok) return entries;
-  try {
-    const hasText = entries.value.some(({ element }) => element.kind === "text");
-    if (value.version === 1 && (hasText || value.fontResources !== undefined)) {
-      return failure("Text and font resources require clipboard version 2.");
-    }
-    if (value.fontResources !== undefined) {
-      const fonts = assertFontResourcesSteps(value.fontResources, "$.fontResources");
-      for (let step = fonts.next(); !step.done; step = fonts.next()) yield true;
-      for (const resource of value.fontResources as NonNullable<InkClipboardV1["fontResources"]>) {
-        const verified = validateFontResourceSteps(resource);
-        for (let step = verified.next(); !step.done; step = verified.next()) yield true;
-      }
-    }
-    yield* usedFontResourcesSteps(
-      entries.value.map(({ element }) => element),
-      (value.fontResources ?? []) as NonNullable<InkClipboardV1["fontResources"]>,
-    );
-  } catch {
-    return failure("Clipboard font resources are invalid or a required face is unavailable.");
-  }
+  const resources = yield* validateClipboardResourcesSteps(value, entries.value);
+  if (!resources.ok) return resources;
   if (!hasValidRenderBandOrder(entries.value)) {
     return failure("Clipboard elements violate fixed render-band order.");
   }
@@ -417,3 +404,48 @@ export const validateClipboardPayload = (value: unknown): ClipboardResult<InkCli
 
 export const validateRuntimeClipboardPayload = (value: unknown): ClipboardResult<InkClipboardV1> =>
   validateClipboardPayloadInternal(value, true);
+
+function* validateClipboardResourcesSteps(
+  value: UnknownRecord,
+  entries: readonly ValidatedEntry[],
+): Generator<boolean | void, ClipboardResult<void>> {
+  try {
+    const hasImages = entries.some(({ element }) => element.kind === "image");
+    if (value.version !== 3 && (hasImages || value.imageResources !== undefined))
+      return failure("Images and image resources require clipboard version 3.");
+    if (value.imageResources !== undefined) {
+      yield* assertImageResourcesSteps(value.imageResources, "$.imageResources");
+      for (const resource of value.imageResources as NonNullable<
+        InkClipboardV1["imageResources"]
+      >) {
+        for (const _step of validateImageResourceSteps(resource)) {
+          void _step;
+          yield true;
+        }
+      }
+    }
+    yield* assertImageBindingsSteps(
+      entries.map(({ element }) => element),
+      (value.imageResources ?? []) as NonNullable<InkClipboardV1["imageResources"]>,
+    );
+    const hasText = entries.some(({ element }) => element.kind === "text");
+    if (value.version === 1 && (hasText || value.fontResources !== undefined)) {
+      return failure("Text and font resources require clipboard version 2.");
+    }
+    if (value.fontResources !== undefined) {
+      const fonts = assertFontResourcesSteps(value.fontResources, "$.fontResources");
+      for (let step = fonts.next(); !step.done; step = fonts.next()) yield true;
+      for (const resource of value.fontResources as NonNullable<InkClipboardV1["fontResources"]>) {
+        const verified = validateFontResourceSteps(resource);
+        for (let step = verified.next(); !step.done; step = verified.next()) yield true;
+      }
+    }
+    yield* usedFontResourcesSteps(
+      entries.map(({ element }) => element),
+      (value.fontResources ?? []) as NonNullable<InkClipboardV1["fontResources"]>,
+    );
+  } catch {
+    return failure("Clipboard resources are invalid or a required resource is unavailable.");
+  }
+  return { ok: true, value: undefined };
+}

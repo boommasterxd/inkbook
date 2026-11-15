@@ -64,6 +64,7 @@ function retargetCrossfadeVisual(previous: CrossfadeMotion, current: MotionVisua
   return {
     bytes: retained.bytes + current.bytes,
     nodes: [...current.nodes, ...retained.nodes],
+    releases: [...(current.releases ?? []), ...(retained.releases ?? [])],
     targets: [...current.targets, ...retained.targets],
   };
 }

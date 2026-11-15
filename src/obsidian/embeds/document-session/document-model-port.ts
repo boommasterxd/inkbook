@@ -1,7 +1,12 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { DocumentSaveStatus } from "../../../editor/session/session-port";
 import type { RenderBand } from "../../../domain/commands/render-bands";
-import type { FontResourceV2, InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
+import type {
+  FontResourceV2,
+  ImageResourceV3,
+  InkElementV1,
+  InkSnapshotV1,
+} from "../../../domain/schema/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type {
   AppliedElementMutation,
@@ -62,7 +67,10 @@ export interface EditableDocumentModel {
   isGestureActive?(): boolean;
   readonly mutationAvailability: DocumentMutationAvailability;
   readonly fontResources?: readonly FontResourceV2[];
-  readonly formatVersion?: 1 | 2;
+  readonly imageResources?: readonly ImageResourceV3[];
+  imageResource?(id: string): ImageResourceV3 | undefined;
+  addImageResources?(resources: readonly ImageResourceV3[]): Promise<void>;
+  readonly formatVersion?: 1 | 2 | 3;
   ensureFontResources?(resources: readonly FontResourceV2[]): void | Promise<void>;
   readonly page: InkSnapshotV1["page"];
   readonly revision: number;

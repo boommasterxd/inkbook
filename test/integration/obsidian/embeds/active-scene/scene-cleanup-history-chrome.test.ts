@@ -10,6 +10,7 @@ import {
   FakeSceneStore,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
 
 function setup() {
@@ -103,7 +104,7 @@ it("publishes Undo and Redo chrome state before obsolete SVG cleanup finishes", 
 
 function expectCleanupWithUndo(h: ReturnType<typeof setup>): void {
   expect(h.scheduler.pendingCount).toBe(1);
-  expect(fakeNode(h.renderer.svg).nodes[1]!.nodes[4]!.nodes.length).toBeGreaterThan(0);
+  expect(sceneBandNode(fakeNode(h.renderer.svg), "content").nodes.length).toBeGreaterThan(0);
   expect(h.renderer.hasPendingSceneCommit).toBe(false);
   expect(h.chrome.update.mock.lastCall?.[0].toolbarState).toMatchObject({
     canUndo: true,

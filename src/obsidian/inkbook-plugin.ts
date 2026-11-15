@@ -1,4 +1,5 @@
 import type { TextFontLibraryPort } from "./embeds/active-editor/text-preparation";
+import { createImageDialogOpenings } from "./images/image-dialog-openings";
 import { registerVaultLifecycle } from "./runtime/vault-lifecycle";
 import { ReadingMarkdownIndex } from "./embeds/reading-markdown-index";
 import { createPhoneSheetHost } from "./menus/panels/phone-sheet-host";
@@ -212,6 +213,9 @@ function createRuntime(
       localization: settings.localization,
       textFonts: ui.settingTab.fontLibrary,
       onOpenFonts: ui.settingTab.openFontManager,
+      ...createImageDialogOpenings(plugin.app, settings, (ownerWindow) =>
+        runtime.refreshRateProfiles.workScheduler(ownerWindow),
+      ),
       resolveDocumentStatusPane: (root) => resolveDocumentStatusPane(plugin.app.workspace, root),
       confirmEraseAll: (signal) =>
         confirmInkbookAction(plugin.app, {

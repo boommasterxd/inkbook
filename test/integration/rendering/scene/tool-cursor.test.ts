@@ -1,3 +1,13 @@
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  asElement,
+  fakeNode,
+  fakeRectangleRecord,
+  sceneBandNode,
+} from "../../../unit/rendering/scene/fakes";
 import { describe, expect, it, vi } from "vitest";
 import { cursorPointerEvent, toolCursorHarness } from "../../../fixtures/obsidian/tool-cursor";
 import { sceneNavigationFixture } from "../../../fixtures/obsidian/scene-navigation";
@@ -7,15 +17,6 @@ import { liveStrokePresentation } from "../../../../src/rendering/scene/content/
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import type { SceneToolCursor } from "../../../../src/rendering/scene/tool-cursor";
-import {
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-  asElement,
-  fakeNode,
-  fakeRectangleRecord,
-} from "../../../unit/rendering/scene/fakes";
 
 const CURSOR: Extract<SceneToolCursor, { kind: "tool" }> = {
   color: { type: "rgba", value: "#FFCC0080" },
@@ -176,7 +177,11 @@ describe("persistent tool decoration and frame reads", () => {
       "pen",
     );
     expect(cursor.attributes.get("display")).toBe("inline");
-    expect(svg.nodes[1]!.nodes[6]!.nodes[0]!.nodes[0]!.attributes.get("d")).toBe("M20 30L21 30");
+    expect(
+      sceneBandNode(svg, "content").nextSibling!.nextSibling!.nodes[0]!.nodes[0]!.attributes.get(
+        "d",
+      ),
+    ).toBe("M20 30L21 30");
     renderer.commitLiveStroke("new");
     scheduler.runAll();
     expect(cursor.attributes.get("display")).toBe("inline");
@@ -193,7 +198,7 @@ describe("persistent tool decoration and frame reads", () => {
       ],
     });
     expect(cursor.attributes.get("display")).toBe("inline");
-    const path = svg.nodes[1]!.nodes[5]!.nodes[0]!;
+    const path = sceneBandNode(svg, "content").nextSibling!.nodes[0]!;
     expect(path.attributes.get("d") ?? "").toBe("");
     scheduler.runAll();
     expect(path.attributes.get("d")).toBe("M20 30L50 30");
@@ -307,7 +312,7 @@ describe("tool decoration swaps", () => {
 describe("retained staged marker commits", () => {
   it("retains two fast commits until each mounts, including partial reconciliation", () => {
     const { renderer, scheduler, cursor, store, svg } = setup();
-    const group = svg.nodes[1]!.nodes[4]!;
+    const group = sceneBandNode(svg, "content");
     renderer.requestToolCursorFrame(() => FRAME);
     scheduler.runAll();
     const ids = ["first", "second"];
@@ -371,7 +376,7 @@ describe("retained staged marker commits", () => {
       ],
     });
     renderer.commitLivePath(record.id);
-    const retained = svg.nodes[1]!.nodes[4]!.nodes[0]!;
+    const retained = sceneBandNode(svg, "content").nodes[0]!;
     expect(() => renderer.commitLivePath(record.id)).toThrow("unique");
     store.records.delete(record.id);
     renderer.applyDelta({

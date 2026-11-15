@@ -1,4 +1,9 @@
-import type { FontResourceV2, InkElementV1, PageV1 } from "../../../domain/schema/public";
+import type {
+  FontResourceV2,
+  ImageResourceV3,
+  InkElementV1,
+  PageV1,
+} from "../../../domain/schema/public";
 import type { ElementValidationDerivation } from "../../../domain/schema/public";
 import type { ElementFragments, RenderBand } from "./element-fragments";
 import type { EncodedByteBudget } from "./encoded-byte-budget";
@@ -12,6 +17,7 @@ export interface PreparedDelta {
 }
 
 export interface DocumentSerializationDelta {
+  readonly imageResources?: readonly ImageResourceV3[];
   readonly fontResources?: readonly FontResourceV2[];
   readonly baseModelRevision: number;
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
@@ -44,6 +50,7 @@ export interface FragmentSerializerInstrumentation {
 
 export interface ElementAssembly {
   readonly canonicalMetadata: string[];
+  readonly images: string;
   readonly content: string;
   readonly elements: InkElementV1[];
   readonly highlights: string;
@@ -53,6 +60,7 @@ export interface ElementAssembly {
 
 export interface FragmentAssembly {
   readonly canonicalMetadata: string[];
+  readonly image: ElementFragments[];
   readonly content: ElementFragments[];
   readonly elements: InkElementV1[];
   readonly highlight: ElementFragments[];

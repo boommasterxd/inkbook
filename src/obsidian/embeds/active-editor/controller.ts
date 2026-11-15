@@ -401,6 +401,7 @@ export class ActiveEditorController {
   }
   #createInteractions(options: ActiveEditorControllerOptions) {
     return Interactions.createActiveEditorInteractions({
+      finishText: () => this.#textBindings.session.finish(),
       onHandleSettled: () => this.#textBindings?.handleInput.settled(),
       registerApplied: (...args) =>
         this.#textBindings?.session.registerProvisionalGeometryHistory(...args),

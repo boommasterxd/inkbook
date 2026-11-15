@@ -45,7 +45,7 @@ it("publishes the ordered viewport before building the 10,000-candidate overscan
   });
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   let firstPushes = 0;
   const insert = observeSceneInsertions(content, (roots) => {
     if (firstPushes === 0) firstPushes = priorityPushes;
@@ -100,7 +100,7 @@ it.each([383, 9_998])("bounds promotion reads at rank %s across a dense unmounte
       dom,
       instrumentation,
       mounted,
-      orderDirty: { content: new Set(), highlight: new Set() },
+      orderDirty: { image: new Set(), content: new Set(), highlight: new Set() },
       pathCache: new ScenePathCache(),
       store,
       visibility,

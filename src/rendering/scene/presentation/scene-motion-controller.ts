@@ -6,6 +6,7 @@ import * as interpolation from "./motion-interpolation";
 import { createCrossfadeMotion, crossfadeRetarget } from "./crossfade-visual";
 import {
   createMotionVisual,
+  sceneMotionGeometryReader,
   removeMotionVisual,
   writeMotionStyle,
   writeMotionVisual,
@@ -19,8 +20,7 @@ import type {
 } from "./scene-motion-types";
 import type { SceneDom } from "../scene-dom";
 import type { MutableSceneInstrumentation, SceneStoreDelta } from "../types";
-import { MAX_MOTION_PATHS } from "../constants";
-const MAX_MOTION_BYTES = 4 * 1024 * 1024;
+import { MAX_MOTION_BYTES, MAX_MOTION_PATHS } from "../constants";
 export class SceneMotionController {
   readonly #content: SceneContentRenderer;
   readonly #dom: SceneDom;
@@ -349,10 +349,7 @@ export class SceneMotionController {
       elements,
       MAX_MOTION_PATHS - this.#cacheEntries,
       MAX_MOTION_BYTES - this.#cacheBytes,
-      {
-        path: (element) => this.#content.readCanonicalStrokePath(element),
-        text: (element, nodes, bytes) => this.#content.textMotionSnapshot(element, nodes, bytes),
-      },
+      sceneMotionGeometryReader(this.#dom, this.#content, this.#instrumentation),
     );
   }
 

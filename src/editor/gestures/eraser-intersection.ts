@@ -114,6 +114,10 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       this.#linearPrevious = element.start;
       return;
     }
+    if (element.kind === "image") {
+      this.#finished = true;
+      return;
+    }
     if (element.kind === "text") {
       this.#mode = "text";
       this.#textCheck = new TextEraserCheck(this.#sweep, radius, element, textGeometry);

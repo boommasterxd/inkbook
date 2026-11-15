@@ -38,7 +38,7 @@ export interface TimeSlicedStoreState {
 }
 
 export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
-  readonly #bands: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  readonly #bands: Record<RenderBand, string[]> = { image: [], content: [], highlight: [] };
   readonly #capacity = new DocumentCapacity();
   #cancelled = false;
   #finished = false;
@@ -233,6 +233,7 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
 
   #cancel(): "cancelled" {
     this.#cancelled = true;
+    this.#bands.image.length = 0;
     this.#bands.content.length = 0;
     this.#bands.highlight.length = 0;
     this.#index = new UniformSpatialIndex<string>();

@@ -21,7 +21,7 @@ function active() {
     ...f,
     last,
     node,
-    band: fakeNode(f.renderer.svg).nodes[1]!.nodes[4]!,
+    band: fakeNode(f.renderer.svg).nodes[1]!.nodes[5]!,
   };
 }
 it("canonical pressure exceptions receive geometry admission before a whole large run finishes", () => {

@@ -54,6 +54,7 @@ export function serializeDocumentFragments(
     page,
     assembly.value.elements,
     currentSnapshot?.fontResources,
+    currentSnapshot?.imageResources,
   );
   const metadata = document.snapshotMetadata(revision, page, assembly.value.metadata, snapshot);
   const metadataHash = canonicalMetadataFragmentsSha256(
@@ -63,7 +64,7 @@ export function serializeDocumentFragments(
   const svg = document.envelope(
     revision,
     lockedHeight,
-    { hash: metadataHash, text: metadata, snapshot },
+    { hash: metadataHash, text: metadata, snapshot, images: assembly.value.images },
     background,
     assembly.value.highlights,
     assembly.value.content,

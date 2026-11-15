@@ -77,7 +77,7 @@ describe("scene interaction work", () => {
     renderer.resetInstrumentation();
     const reads = vi.spyOn(ElementSceneStore.prototype, "get");
     const preparations = vi.spyOn(ScenePathCache.prototype, "startPreparation");
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     try {
       renderer.setMinimumBackgroundBlockSize(360);
       scheduler.runAll();

@@ -1,10 +1,10 @@
+import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
 import { describe, expect, it, vi } from "vitest";
 import { PORTABLE_PALETTE_V1 } from "../../../../src/domain/schema/public";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import type { SceneToolCursor } from "../../../../src/rendering/scene/tool-cursor";
 import { createAllElementSnapshot } from "../../../unit/persistence/serialization/fixtures";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
-import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
 
 function setup() {
   const h = createSceneFixture(createAllElementSnapshot().page, new FakeSceneStore());

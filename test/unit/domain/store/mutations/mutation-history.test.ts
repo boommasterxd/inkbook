@@ -22,7 +22,7 @@ function historyFixture() {
   );
   const store = new ElementStore([original]);
   const source = {
-    bands: { content: [], highlight: [original.id] },
+    bands: { image: [], content: [], highlight: [original.id] },
     records: new Map([[original.id, store.get(original.id)!]]),
   };
   const replacement = { ...original, points: [...original.points], rotation: 90 };
@@ -59,17 +59,24 @@ describe("mutation history private and public ownership", () => {
   it("shares validated unchanged public removal bands and independently captures the changed band", async () => {
     const state = historyFixture();
     const requested = Object.freeze({
-      bands: Object.freeze({ content: Object.freeze([IDS.target]), highlight: Object.freeze([]) }),
+      bands: Object.freeze({
+        image: [],
+        content: Object.freeze([IDS.target]),
+        highlight: Object.freeze([]),
+      }),
       removeIds: Object.freeze([IDS.highlight]),
     });
     const transition = await prepareMutationHistory(
       {
         ...state,
-        source: { ...state.source, bands: { content: [IDS.target], highlight: [IDS.highlight] } },
+        source: {
+          ...state.source,
+          bands: { image: [], content: [IDS.target], highlight: [IDS.highlight] },
+        },
         requested,
         desired: new Map(),
         removeIds: new Set([IDS.highlight]),
-        dirtyBands: { content: false, highlight: true },
+        dirtyBands: { image: false, content: false, highlight: true },
       },
       uninterruptedScheduler(),
       undefined,
@@ -115,7 +122,10 @@ describe("mutation history private and public ownership", () => {
 
   it("retains the trusted removal direction and clones its removed private source once", async () => {
     const fixture = historyFixture();
-    const requested = { bands: { content: [], highlight: [] }, removeIds: [IDS.highlight] };
+    const requested = {
+      bands: { image: [], content: [], highlight: [] },
+      removeIds: [IDS.highlight],
+    };
     const allocate = vi.spyOn(sampleCopy, "allocateSampleCopy");
     const transition = await prepareMutationHistory(
       { ...fixture, requested, desired: new Map(), removeIds: new Set([IDS.highlight]) },
@@ -138,7 +148,10 @@ describe("mutation history cancellation and retention bounds", () => {
       const state = removal
         ? {
             ...fixture,
-            requested: { bands: { content: [], highlight: [] }, removeIds: [IDS.highlight] },
+            requested: {
+              bands: { image: [], content: [], highlight: [] },
+              removeIds: [IDS.highlight],
+            },
             desired: new Map(),
             removeIds: new Set([IDS.highlight]),
           }
@@ -171,7 +184,7 @@ describe("mutation history cancellation and retention bounds", () => {
   it.each([false, true])(
     "enforces the combined public/private payload cap (replay: %s)",
     async (replaying) => {
-      const requested = { bands: { content: [IDS.target], highlight: [] } };
+      const requested = { bands: { image: [], content: [IDS.target], highlight: [] } };
       const replay: AppliedElementMutation = {
         forward: requested,
         reverse: requested,

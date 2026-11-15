@@ -1,3 +1,4 @@
+import { fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { scaleElement } from "../../../../../src/editor/selection/transform/transforms";
@@ -9,7 +10,6 @@ import {
   scaleFeedback,
   startSelectionResize,
 } from "../../../../fixtures/rendering/selection-runs";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -20,7 +20,7 @@ function target(f: ReturnType<typeof fixture>) {
     (path) => path.getAttribute("d") === buildElementPathParts(last)[0]!.d,
   )!;
   expect(node).toBeDefined();
-  return { last, node, band: svg.nodes[1]!.nodes[4]! };
+  return { last, node, band: sceneBandNode(svg, "content") };
 }
 
 it.each([

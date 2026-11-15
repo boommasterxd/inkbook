@@ -12,7 +12,7 @@ function model() {
   const elements: InkElementV1[] = [highlighter(), rectangle(), rectangle(IDS.other)];
   return {
     currentElements: new Map(elements.map((element) => [element.id, element])),
-    currentOrders: { highlight: [IDS.highlight], content: [IDS.target, IDS.other] },
+    currentOrders: { image: [], highlight: [IDS.highlight], content: [IDS.target, IDS.other] },
     currentPage: createSnapshot().page,
   };
 }
@@ -48,8 +48,9 @@ describe("incremental render-band order preparation", () => {
     const current = model();
     const result = prepare({ removedIds: [IDS.highlight, IDS.target, uuid(99)] }, current);
     if (!result.ok) throw new Error(result.error.message);
-    expect(result.value.orders).toEqual({ highlight: [], content: [IDS.other] });
+    expect(result.value.orders).toEqual({ image: [], highlight: [], content: [IDS.other] });
     expect(current.currentOrders).toEqual({
+      image: [],
       highlight: [IDS.highlight],
       content: [IDS.target, IDS.other],
     });
@@ -107,19 +108,26 @@ describe("incremental render-band order preparation", () => {
 
 describe("staged selection ranks", () => {
   it.each([
-    { name: "reorder", next: { highlight: [IDS.highlight], content: [IDS.other, IDS.target] } },
-    { name: "remove", next: { highlight: [IDS.highlight], content: [IDS.other] } },
+    {
+      name: "reorder",
+      next: { image: [], highlight: [IDS.highlight], content: [IDS.other, IDS.target] },
+    },
+    { name: "remove", next: { image: [], highlight: [IDS.highlight], content: [IDS.other] } },
     {
       name: "insert",
-      next: { highlight: [IDS.highlight], content: [IDS.target, uuid(99), IDS.other] },
+      next: { image: [], highlight: [IDS.highlight], content: [IDS.target, uuid(99), IDS.other] },
     },
-    { name: "migrate", next: { highlight: [], content: [IDS.highlight, IDS.target, IDS.other] } },
+    {
+      name: "migrate",
+      next: { image: [], highlight: [], content: [IDS.highlight, IDS.target, IDS.other] },
+    },
   ])("stages $name ranks without mutating canonical ranks", ({ next }) => {
     const currentOrders = model().currentOrders;
     const currentRanks = completeSerializationSteps(
       selection.prepareSerializationRanks(currentOrders, 1),
     );
     const original = {
+      image: new Map(currentRanks.image),
       content: new Map(currentRanks.content),
       highlight: new Map(currentRanks.highlight),
     };

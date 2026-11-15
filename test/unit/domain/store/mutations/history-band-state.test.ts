@@ -65,7 +65,9 @@ describe("exact history band-state witnesses", () => {
     try {
       await replay(store, a, "reverse");
       expect(validate).not.toHaveBeenCalled();
-      expect(store.get(untouched.id)?.element.style).toMatchObject({ opacity: 0.25 });
+      const restored = store.get(untouched.id)!.element;
+      if (restored.kind !== "stroke") throw new Error("Expected restored stroke.");
+      expect(restored.style).toMatchObject({ opacity: 0.25 });
     } finally {
       validate.mockRestore();
     }
@@ -131,8 +133,8 @@ describe("ordinary publication witness invalidation", () => {
         store.arrange(new Set([highlight[0]!]), "send-to-back");
       } else if (mode === "reorder") {
         const content = store.materializeBandOrder("content");
-        store.reorderBands({ content, highlight: [...highlight].reverse() });
-        store.reorderBands({ content, highlight });
+        store.reorderBands({ image: [], content, highlight: [...highlight].reverse() });
+        store.reorderBands({ image: [], content, highlight });
       } else if (mode === "remove-create") {
         store.remove([highlight[highlight.length - 1]!]);
         store.create(elements[5]!);

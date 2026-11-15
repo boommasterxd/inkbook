@@ -10,7 +10,9 @@ function removalExportTarget(delta: StoreDelta) {
   const target = new CoalescedExportTarget(7, ({ id }: { readonly id: string }) => id);
   target.record({
     ...prepareVaultStoreDelta(delta),
-    dirtyBands: (["highlight", "content"] as const).filter((band) => delta.dirtyBands[band]),
+    dirtyBands: (["image", "highlight", "content"] as const).filter(
+      (band) => delta.dirtyBands[band],
+    ),
     modelRevision: 8,
   });
   return target;
@@ -32,7 +34,7 @@ describe("vault document model deltas", () => {
         orderByBand: { content: store.materializeBandOrder("content") },
       });
 
-      expect(delta.dirtyBands).toEqual({ content: true, highlight: false });
+      expect(delta.dirtyBands).toEqual({ image: false, content: true, highlight: false });
       expect(plan).toMatchObject({
         changedElements: [],
         orderChanges: { content: scope === "tail" ? [first.id] : [] },
@@ -116,7 +118,7 @@ describe("vault delta projection boundaries", () => {
         domains: domain,
         id: String(index),
       })),
-      dirtyBands: { content: true, highlight: false },
+      dirtyBands: { image: false, content: true, highlight: false },
       geometryVersion: 1,
       paintVersion: 1,
     };
@@ -155,7 +157,7 @@ describe("vault delta projection boundaries", () => {
     }));
     const delta: StoreDelta = {
       changes,
-      dirtyBands: { content: true, highlight: false },
+      dirtyBands: { image: false, content: true, highlight: false },
       geometryVersion: 1,
       paintVersion: 0,
     };

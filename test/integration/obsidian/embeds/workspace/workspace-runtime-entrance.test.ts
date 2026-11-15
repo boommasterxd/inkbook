@@ -95,9 +95,13 @@ vi.mock(
   }),
 );
 
-vi.mock("../../../../../src/obsidian/embeds/workspace/workspace-active-scene", () => ({
-  createWorkspaceActiveScene: boundary.createScene,
-}));
+vi.mock(
+  import("../../../../../src/obsidian/embeds/workspace/workspace-active-scene"),
+  async (importOriginal) => ({
+    ...(await importOriginal()),
+    createWorkspaceActiveScene: boundary.createScene,
+  }),
+);
 
 function createHarness(initialEntrance?: PresentationAttachment["initialEntrance"]) {
   boundary.snapshot = { disposed: false };

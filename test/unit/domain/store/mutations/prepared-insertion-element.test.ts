@@ -16,6 +16,7 @@ const scheduler = { shouldYield: () => false, yieldControl: async () => undefine
 it("reuses validation and bounds only for the exact immutable staged insertion", async () => {
   const source = highlighter();
   const staged = completeSerializationSteps(prepareInsertionElementSteps(source));
+  if (staged.kind !== "stroke") throw new Error("Expected staged stroke.");
   source.points[0] = 999;
   source.style = { ...source.style, width: 22 };
   expect(staged).not.toEqual(source);

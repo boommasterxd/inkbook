@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../../fixtures/domain/element-style";
 import { describe, expect, it } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
@@ -203,7 +204,7 @@ describe("active editor Style changes", () => {
 
     expect(replacement?.previous).toEqual([first, second]);
     expect(replacement?.replacements).toHaveLength(2);
-    expect(replacement?.replacements[0]?.style).toMatchObject({
+    expect(readElementStyle(replacement?.replacements[0])).toMatchObject({
       outlineColor: { type: "rgba", value: "#3B82F6FF" },
     });
     expect(first.style).toMatchObject({ outlineColor: { type: "theme-text" } });

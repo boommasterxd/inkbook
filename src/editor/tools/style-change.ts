@@ -28,9 +28,13 @@ export function applySelectionStyleChange(
   change: StyleChange,
 ): SelectionStyleChangeResult {
   const canonicalChange = canonicalStyleChange(change);
-  assertSelectionCompatibility(elements, canonicalChange);
+  const styled = elements.filter((element) => element.kind !== "image");
+  if (styled.length === 0 && elements.length > 0) return { elements, changed: false };
+  assertSelectionCompatibility(styled, canonicalChange);
   const changedElements = elements.map((element) =>
-    changeElement(element, elementStyleChange(element, canonicalChange)),
+    element.kind === "image"
+      ? element
+      : changeElement(element, elementStyleChange(element, canonicalChange)),
   );
   const changed = changedElements.some((element, index) => element !== elements[index]);
   return { elements: changed ? changedElements : elements, changed };
@@ -67,6 +71,7 @@ function elementStyleChange(element: InkElementV1, change: StyleChange): StyleCh
 
 function changeElement(element: InkElementV1, change: StyleChange): InkElementV1 {
   validateChange(change);
+  if (element.kind === "image") return element;
   if (isToolOnlyChange(change))
     throw new RangeError(`${change.property} does not apply to an existing selection.`);
   if (element.kind === "text") {
@@ -286,11 +291,12 @@ function toolStylePatch(change: StyleChange): object {
 }
 
 function withStyle(element: InkElementV1, patch: object): InkElementV1 {
+  if (element.kind === "image") return element;
   return { ...element, style: { ...element.style, ...patch } } as InkElementV1;
 }
 
 function elementValueMatches(element: InkElementV1, change: StyleChange): boolean {
-  if (isToolOnlyChange(change)) return false;
+  if (isToolOnlyChange(change) || element.kind === "image") return false;
   const style = element.style as Partial<StrokeStyleV1 & ShapeStyleV1>;
   switch (change.property) {
     case "color":

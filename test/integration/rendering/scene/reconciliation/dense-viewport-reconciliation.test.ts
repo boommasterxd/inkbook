@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { HitTestScratch } from "../../../../../src/editor/selection/query/hit-test";
 import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
+import { fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import {
   DENSE_VIEWPORT_PROFILES,
   createDenseViewportFixture,
@@ -158,7 +158,10 @@ function expectExactOrder(
   idByPath: ReadonlyMap<string, string>,
 ): void {
   const camera = fakeNode(renderer.svg).nodes[1]!;
-  const renderedIds = [camera.nodes[3]!, camera.nodes[4]!].flatMap(({ nodes }) =>
+  const renderedIds = [
+    sceneBandNode(camera, "highlight"),
+    sceneBandNode(camera, "content"),
+  ].flatMap(({ nodes }) =>
     nodes.map((node) =>
       idByPath.get((node.tagName === "g" ? node.nodes[0]! : node).attributes.get("d") ?? ""),
     ),

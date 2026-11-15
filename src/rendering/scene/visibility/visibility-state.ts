@@ -1,4 +1,4 @@
-import type { RenderBand } from "../../../domain/commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { Bounds } from "../../../domain/geometry/primitives";
 import type { MutableSceneInstrumentation, SceneStorePort } from "../types";
 import {
@@ -20,27 +20,38 @@ export class SceneVisibilityState {
   public readonly removalReuse: VisibilityRemovalReuse;
   readonly #candidates: VisibilityCandidates;
   readonly #classification: VisibilityClassification;
-  #contentIds: (string | undefined)[] = [];
+  readonly #bands = Object.fromEntries(
+    RENDER_BANDS.map((band) => [
+      band,
+      {
+        ids: [] as (string | undefined)[],
+        nextIds: [] as (string | undefined)[],
+        newIds: [] as string[],
+        capacity: 0,
+        count: 0,
+        nextCount: 0,
+      },
+    ]),
+  ) as Record<
+    RenderBand,
+    {
+      ids: (string | undefined)[];
+      nextIds: (string | undefined)[];
+      newIds: string[];
+      capacity: number;
+      count: number;
+      nextCount: number;
+    }
+  >;
   readonly #freeSlots: number[] = [];
-  #highlightIds: (string | undefined)[] = [];
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #slotById = new Map<string, number>();
   readonly #slotIds: (string | undefined)[] = [];
-  #nextContentIds: (string | undefined)[] = [];
-  #nextHighlightIds: (string | undefined)[] = [];
-  readonly #newContentIds: string[] = [];
-  readonly #newHighlightIds: string[] = [];
   readonly #enteredIds: string[] = [];
   readonly #exitedIds: string[] = [];
   readonly #edges: VisibilityEdgeQuery;
   readonly #store: SceneStorePort;
-  #contentCapacity = 0;
-  #contentCount = 0;
-  #highlightCapacity = 0;
-  #highlightCount = 0;
   #hasCurrentVisibility = false;
-  #nextContentCount = 0;
-  #nextHighlightCount = 0;
   #currentInvalidated = true;
   #visibilityEnvelope: Bounds | undefined;
   #visibleBands = new Uint8Array(0);
@@ -81,10 +92,10 @@ export class SceneVisibilityState {
     if (removal !== undefined) {
       this.#currentInvalidated = false;
       if (removal.exited.length === 0) return { changed: false, visibility: this.currentResult() };
-      this.#contentIds = removal.content;
-      this.#contentCount = removal.content.length;
-      this.#highlightIds = removal.highlight;
-      this.#highlightCount = removal.highlight.length;
+      for (const band of RENDER_BANDS) {
+        this.#bands[band].ids = removal[band];
+        this.#bands[band].count = removal[band].length;
+      }
       return {
         changed: true,
         visibility: this.currentResult(),
@@ -109,15 +120,13 @@ export class SceneVisibilityState {
   }
   public resortCurrent(): VisibilityResult {
     this.removalReuse.invalidate();
-    for (const band of ["highlight", "content"] as const) {
-      const ids = band === "highlight" ? this.#highlightIds : this.#contentIds;
-      const count = band === "highlight" ? this.#highlightCount : this.#contentCount;
+    for (const band of RENDER_BANDS) {
+      const { ids, count } = this.#bands[band];
       if (!refreshVisibleRanks(ids, count, band, this.#store, this.#slotById, this.#visibleRanks))
         continue;
       const sorted = ids.slice(0, count);
       this.sortBand(sorted, count, band);
-      if (band === "highlight") this.#highlightIds = sorted;
-      else this.#contentIds = sorted;
+      this.#bands[band].ids = sorted;
     }
     this.removalReuse.ranksFresh();
     return this.currentResult();
@@ -185,18 +194,12 @@ export class SceneVisibilityState {
     this.removalReuse.invalidate();
     this.#candidates.release();
     this.#classification.release();
-    this.#contentIds = [];
-    this.#highlightIds = [];
-    this.#nextContentIds = [];
-    this.#nextHighlightIds = [];
-    this.#contentCount = 0;
-    this.#highlightCount = 0;
-    this.#nextContentCount = 0;
-    this.#nextHighlightCount = 0;
-    this.#contentCapacity = 0;
-    this.#highlightCapacity = 0;
-    this.#newContentIds.length = 0;
-    this.#newHighlightIds.length = 0;
+    for (const state of Object.values(this.#bands)) {
+      state.ids = [];
+      state.nextIds = [];
+      state.count = state.nextCount = state.capacity = 0;
+      state.newIds.length = 0;
+    }
     this.#enteredIds.length = 0;
     this.#exitedIds.length = 0;
     this.#edges.release();
@@ -213,13 +216,8 @@ export class SceneVisibilityState {
   }
 
   private beginVisibleQuery(): number | undefined {
-    this.#newContentIds.length = 0;
-    this.#newHighlightIds.length = 0;
+    this.discardNextVisibility();
     this.#retainedRanksStable = true;
-    this.#nextContentIds.length = 0;
-    this.#nextHighlightIds.length = 0;
-    this.#nextContentCount = 0;
-    this.#nextHighlightCount = 0;
     if (this.#visibleEpoch === 0xffff_ffff) {
       this.#visibleMarkers.fill(0);
       this.#visibleEpoch = 1;
@@ -232,8 +230,9 @@ export class SceneVisibilityState {
 
   private currentResult(): VisibilityResult {
     return {
-      content: { count: this.#contentCount, ids: this.#contentIds },
-      highlight: { count: this.#highlightCount, ids: this.#highlightIds },
+      image: { count: this.#bands.image.count, ids: this.#bands.image.ids },
+      highlight: { count: this.#bands.highlight.count, ids: this.#bands.highlight.ids },
+      content: { count: this.#bands.content.count, ids: this.#bands.content.ids },
     };
   }
 
@@ -257,8 +256,7 @@ export class SceneVisibilityState {
     );
     if (changes === "pending" || now() >= deadline)
       return { changed: false, visibility: this.currentResult(), pending: true };
-    this.#newContentIds.length = 0;
-    this.#newHighlightIds.length = 0;
+    for (const band of RENDER_BANDS) this.#bands[band].newIds.length = 0;
     this.#visibilityEnvelope = bounds;
     if (changes.entered.length + changes.exited.length === 0) {
       this.#edges.release();
@@ -271,9 +269,9 @@ export class SceneVisibilityState {
     for (const record of changes.entered) {
       const slot = this.slotFor(record.id);
       this.#visibleMarkers[slot] = this.#visibleEpoch;
-      this.#visibleBands[slot] = record.band === "highlight" ? 1 : 2;
+      this.#visibleBands[slot] = RENDER_BANDS.indexOf(record.band) + 1;
       this.#visibleRanks[slot] = record.rank;
-      (record.band === "highlight" ? this.#newHighlightIds : this.#newContentIds).push(record.id);
+      this.#bands[record.band].newIds.push(record.id);
     }
     this.#retainedRanksStable = true;
     const delta = this.publishNextVisibility();
@@ -311,7 +309,7 @@ export class SceneVisibilityState {
       const id = record.id;
       const slot = this.#slotById.get(id);
       if (slot === undefined) continue;
-      const bandCode = record.band === "highlight" ? 1 : 2;
+      const bandCode = RENDER_BANDS.indexOf(record.band) + 1;
       const retained =
         previousEpoch !== undefined &&
         this.#visibleMarkers[slot] === previousEpoch &&
@@ -319,7 +317,7 @@ export class SceneVisibilityState {
       const rank = record.rank;
       if (retained && this.#visibleRanks[slot] !== rank) retainedRanksUnchanged = false;
       if (!retained) {
-        (record.band === "highlight" ? this.#newHighlightIds : this.#newContentIds).push(id);
+        this.#bands[record.band].newIds.push(id);
       }
       if (previousEpoch === undefined || !retained) {
         unchanged = false;
@@ -334,16 +332,15 @@ export class SceneVisibilityState {
     return (
       this.#retainedRanksStable &&
       unchanged &&
-      this.#nextContentCount === this.#contentCount &&
-      this.#nextHighlightCount === this.#highlightCount
+      RENDER_BANDS.every((band) => this.#bands[band].nextCount === this.#bands[band].count)
     );
   }
 
   private retainedOrderStable(): boolean {
-    return (["content", "highlight"] as const).every((band) =>
+    return RENDER_BANDS.every((band) =>
       retainedVisibleOrderStable(
-        band === "content" ? this.#contentIds : this.#highlightIds,
-        band === "content" ? this.#contentCount : this.#highlightCount,
+        this.#bands[band].ids,
+        this.#bands[band].count,
         (id) => this.containsInBand(id, band),
         (id) => this.rank(id, band),
       ),
@@ -351,62 +348,38 @@ export class SceneVisibilityState {
   }
 
   private pushNextBand(band: RenderBand, id: string): void {
-    if (band === "highlight") {
-      this.#highlightCapacity = growVisibilityCapacity(
-        this.#nextHighlightCount + 1,
-        this.#highlightCapacity,
-        this.#instrumentation,
-      );
-      this.#nextHighlightIds[this.#nextHighlightCount] = id;
-      this.#nextHighlightCount += 1;
-      return;
-    }
-    this.#contentCapacity = growVisibilityCapacity(
-      this.#nextContentCount + 1,
-      this.#contentCapacity,
+    const state = this.#bands[band];
+    state.capacity = growVisibilityCapacity(
+      state.nextCount + 1,
+      state.capacity,
       this.#instrumentation,
     );
-    this.#nextContentIds[this.#nextContentCount] = id;
-    this.#nextContentCount += 1;
+    state.nextIds[state.nextCount++] = id;
   }
 
   private publishNextVisibility(): VisibilityDelta | undefined {
     this.#enteredIds.length = 0;
     this.#exitedIds.length = 0;
     const deltaEligible = this.#hasCurrentVisibility && this.#retainedRanksStable;
-    const incremental = deltaEligible;
-    if (incremental) {
-      this.#nextContentIds.length = 0;
-      this.#nextHighlightIds.length = 0;
-      this.#nextContentCount = mergeVisibleBand(
-        this.#contentIds,
-        this.#contentCount,
-        this.#newContentIds,
-        this.#nextContentIds,
-        (id) => this.retainVisibleId(id, "content"),
-        (left, right) => this.compare(left, right, "content"),
-      );
-      this.#nextHighlightCount = mergeVisibleBand(
-        this.#highlightIds,
-        this.#highlightCount,
-        this.#newHighlightIds,
-        this.#nextHighlightIds,
-        (id) => this.retainVisibleId(id, "highlight"),
-        (left, right) => this.compare(left, right, "highlight"),
-      );
-      for (const id of this.#newHighlightIds) this.#enteredIds.push(id);
-      for (const id of this.#newContentIds) this.#enteredIds.push(id);
-    }
-    // Published arrays remain immutable while committed/pending targets reference them.
-    this.#contentIds = this.#nextContentIds;
-    this.#contentCount = this.#nextContentCount;
-    this.#highlightIds = this.#nextHighlightIds;
-    this.#highlightCount = this.#nextHighlightCount;
-    this.#nextContentIds = [];
-    this.#nextHighlightIds = [];
-    if (!incremental) {
-      this.sortBand(this.#highlightIds, this.#highlightCount, "highlight");
-      this.sortBand(this.#contentIds, this.#contentCount, "content");
+    for (const band of RENDER_BANDS) {
+      const state = this.#bands[band];
+      if (deltaEligible) {
+        state.nextIds.length = 0;
+        state.nextCount = mergeVisibleBand(
+          state.ids,
+          state.count,
+          state.newIds,
+          state.nextIds,
+          (id) => this.retainVisibleId(id, band),
+          (left, right) => this.compare(left, right, band),
+        );
+        for (const id of state.newIds) this.#enteredIds.push(id);
+      }
+      // Published arrays remain immutable while committed/pending targets reference them.
+      state.ids = state.nextIds;
+      state.count = state.nextCount;
+      state.nextIds = [];
+      if (!deltaEligible) this.sortBand(state.ids, state.count, band);
     }
     this.#hasCurrentVisibility = true;
     this.discardNextVisibility();
@@ -420,12 +393,11 @@ export class SceneVisibilityState {
   }
 
   private discardNextVisibility(): void {
-    this.#nextContentIds.length = 0;
-    this.#nextHighlightIds.length = 0;
-    this.#nextContentCount = 0;
-    this.#nextHighlightCount = 0;
-    this.#newContentIds.length = 0;
-    this.#newHighlightIds.length = 0;
+    for (const state of Object.values(this.#bands)) {
+      state.nextIds.length = 0;
+      state.nextCount = 0;
+      state.newIds.length = 0;
+    }
   }
 
   private canReuseCurrent(bounds: Bounds, retainedBounds: Bounds): boolean {
@@ -448,7 +420,7 @@ export class SceneVisibilityState {
     return (
       slot !== undefined &&
       this.#visibleMarkers[slot] === this.#visibleEpoch &&
-      this.#visibleBands[slot] === (band === "highlight" ? 1 : 2)
+      this.#visibleBands[slot] === RENDER_BANDS.indexOf(band) + 1
     );
   }
 
@@ -466,7 +438,7 @@ export class SceneVisibilityState {
   private rank(id: string, band: RenderBand): number {
     const slot = this.#slotById.get(id);
     if (slot === undefined) return Number.MAX_SAFE_INTEGER;
-    const bandCode = band === "highlight" ? 1 : 2;
+    const bandCode = RENDER_BANDS.indexOf(band) + 1;
     return this.#visibleBands[slot] === bandCode
       ? this.#visibleRanks[slot]!
       : Number.MAX_SAFE_INTEGER;

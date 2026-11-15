@@ -13,7 +13,7 @@ import { immediateFrameScheduler } from "../../../../../fixtures/obsidian/immedi
 import { createSceneFixture } from "../../../../../fixtures/rendering/scene";
 import { connectedLine, rectangle } from "../../../../../unit/domain/store/fixtures";
 import { createAllElementSnapshot } from "../../../../../unit/persistence/serialization/fixtures";
-import { fakeNode } from "../../../../../unit/rendering/scene/fakes";
+import { fakeNode, sceneBandNode } from "../../../../../unit/rendering/scene/fakes";
 
 function setup() {
   const target = rectangle();
@@ -62,7 +62,7 @@ describe("connected selected scale feedback", () => {
     );
     if (handle === undefined) throw new Error("Missing scale handle");
     const pointer = { ...handle.point, pointerId: 1, pointerType: "mouse" as const };
-    const lineNode = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes.find(
+    const lineNode = sceneBandNode(fakeNode(renderer.svg), "content").nodes.find(
       (node) => node.attributes.get("d") === buildElementPathParts(linear)[0]!.d,
     )!;
     const original = new Map(lineNode.attributes);

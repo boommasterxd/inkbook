@@ -197,6 +197,7 @@ export class SelectionRunGroups {
       parent === run.prefix ||
       parent === run.suffix ||
       parent === this.options.dom.group("content") ||
+      parent === this.options.dom.group("image") ||
       parent === this.options.dom.group("highlight")
     )
       return parent as SVGGElement;

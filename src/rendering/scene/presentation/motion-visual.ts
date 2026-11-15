@@ -6,14 +6,24 @@ import { SVG_NAMESPACE } from "../constants";
 import { positionedTransform } from "../content/stroke-position";
 import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
 import { setTextMotionOrigin } from "../content/mounted-text";
+import { imageMotionSnapshot } from "../content/mounted-image";
+import type { SceneDom } from "../scene-dom";
+import type { MutableSceneInstrumentation } from "../types";
 
 export interface MotionVisual {
+  readonly releases?: readonly (() => void)[];
   readonly bytes: number;
   readonly targets: readonly MotionVisualTarget[];
   readonly nodes: readonly SVGElement[];
 }
 
 interface MotionGeometryReader {
+  readonly image?: (
+    element: InkElementV1,
+    maximumBytes: number,
+  ) =>
+    | { readonly root: SVGGElement; readonly bytes: number; readonly release: () => void }
+    | undefined;
   readonly path: (element: InkElementV1) => readonly SvgPathPart[] | undefined;
   readonly text: (
     element: InkElementV1,
@@ -25,6 +35,21 @@ interface MotionGeometryReader {
 }
 type GeometryReader =
   ((element: InkElementV1) => readonly SvgPathPart[] | undefined) | MotionGeometryReader;
+
+export function sceneMotionGeometryReader(
+  dom: SceneDom,
+  content: {
+    readonly readCanonicalStrokePath: MotionGeometryReader["path"];
+    readonly textMotionSnapshot: MotionGeometryReader["text"];
+  },
+  instrumentation: MutableSceneInstrumentation,
+): MotionGeometryReader {
+  return {
+    path: (element) => content.readCanonicalStrokePath(element),
+    text: (element, nodes, bytes) => content.textMotionSnapshot(element, nodes, bytes),
+    image: (element, bytes) => imageMotionSnapshot(dom, element, bytes, instrumentation),
+  };
+}
 
 interface MotionVisualTarget {
   readonly node: SVGElement;
@@ -43,18 +68,20 @@ export function createMotionVisual(
 ): MotionVisual {
   const nodes: SVGElement[] = [];
   const targets: MotionVisualTarget[] = [];
+  const releases: (() => void)[] = [];
   let bytes = 0;
   for (const element of elements) {
     if (motionBudgetExhausted(nodes.length, bytes, remainingPaths, remainingBytes)) {
-      return { bytes, nodes, targets };
+      return { bytes, nodes, targets, releases };
     }
-    if (element.kind === "text") {
+    if (element.kind === "text" || element.kind === "image") {
       bytes += appendTextVisual(parent, element, {
         reader,
         remainingPaths: remainingPaths - nodes.length,
         remainingBytes: remainingBytes - bytes,
         nodes,
         targets,
+        releases,
       });
       continue;
     }
@@ -64,7 +91,7 @@ export function createMotionVisual(
     const grouped = element.kind === "stroke" && element.style.pressureEnabled;
     const groupBytes = parts.reduce((total, part) => total + part.d.length * 2, 0);
     if (nodes.length + parts.length > remainingPaths || bytes + groupBytes > remainingBytes) {
-      return { bytes, nodes, targets };
+      return { bytes, nodes, targets, releases };
     }
     const group = grouped ? ownerDocument.createElementNS(SVG_NAMESPACE, "g") : null;
     if (group !== null && element.kind === "stroke") {
@@ -93,7 +120,7 @@ export function createMotionVisual(
       bytes += pathBytes;
     }
   }
-  return { bytes, nodes, targets };
+  return { bytes, nodes, targets, releases };
 }
 
 function appendTextVisual(
@@ -105,14 +132,22 @@ function appendTextVisual(
     readonly remainingBytes: number;
     readonly nodes: SVGElement[];
     readonly targets: MotionVisualTarget[];
+    readonly releases: (() => void)[];
   },
 ): number {
   if (typeof context.reader !== "object") return 0;
-  const snapshot = context.reader.text(element, context.remainingPaths, context.remainingBytes);
+  const snapshot =
+    element.kind === "image"
+      ? context.reader.image?.(element, context.remainingBytes)
+      : context.reader.text(element, context.remainingPaths, context.remainingBytes);
   if (snapshot === undefined) return 0;
   parent.append(snapshot.root);
-  context.nodes.push(...snapshot.nodes);
-  const position = element.kind === "text" ? setTextMotionOrigin(snapshot.root, element) : "";
+  context.nodes.push(...("nodes" in snapshot ? snapshot.nodes : [snapshot.root]));
+  if ("release" in snapshot) context.releases.push(snapshot.release);
+  const position =
+    element.kind === "text" || element.kind === "image"
+      ? setTextMotionOrigin(snapshot.root, element)
+      : "";
   context.targets.push({ node: snapshot.root, opacity: 1, renderedOpacity: 1, position });
   return snapshot.bytes;
 }
@@ -155,6 +190,7 @@ function strokeCssPosition(element: InkElementV1): string {
 
 export function removeMotionVisual(visual: MotionVisual): void {
   for (const target of visual.targets) target.node.remove();
+  for (const release of visual.releases ?? []) release();
 }
 
 export function writeMotionVisual(visual: MotionVisual, opacity: number, scale: number): void {

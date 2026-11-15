@@ -14,7 +14,7 @@ import { fail } from "../../../domain/schema/validation-internals";
 import type { DocumentSerializationDelta } from "./incremental-document-serializer-types";
 import { canonicalElementWithFontResourcesSteps } from "../metadata/canonical-snapshot";
 
-const SNAPSHOT_BODY_KEYS = new Set(["elements", "fontResources"]);
+const SNAPSHOT_BODY_KEYS = new Set(["elements", "fontResources", "imageResources"]);
 
 export function* canonicalizeSerializationElementsSteps(
   source: Iterable<InkElementV1>,
@@ -49,8 +49,13 @@ export function* captureSnapshotInputSteps(
     snapshot.fontResources === undefined
       ? undefined
       : yield* captureListSteps(snapshot.fontResources, captureRuntimeElementHeader);
+  const imageResources =
+    snapshot.imageResources === undefined
+      ? undefined
+      : yield* captureListSteps(snapshot.imageResources, captureRuntimeElementHeader);
   return {
     ...header,
+    ...(imageResources === undefined ? {} : { imageResources }),
     elements,
     ...(fontResources === undefined ? {} : { fontResources }),
   } as unknown as InkSnapshotV1;
@@ -65,8 +70,7 @@ export function* captureDeltaInputSteps<T extends DocumentSerializationDelta>(
       ? undefined
       : (captureRuntimeElementHeader(delta.page) as unknown as PageV1);
   const removed = delta.removedIds;
-  const highlight = delta.orderChanges?.highlight;
-  const content = delta.orderChanges?.content;
+  const orderChanges = yield* captureOrdersSteps(delta.orderChanges);
   const derivations = delta.changedElementDerivations;
   const changed = delta.changedElements;
   const fontResources =
@@ -74,9 +78,10 @@ export function* captureDeltaInputSteps<T extends DocumentSerializationDelta>(
       ? undefined
       : yield* captureListSteps(delta.fontResources, captureRuntimeElementHeader);
   const removedIds = removed === undefined ? undefined : yield* captureListSteps(removed);
-  const capturedHighlight =
-    highlight === undefined ? undefined : yield* captureListSteps(highlight);
-  const capturedContent = content === undefined ? undefined : yield* captureListSteps(content);
+  const imageResources =
+    delta.imageResources === undefined
+      ? undefined
+      : yield* captureListSteps(delta.imageResources, captureRuntimeElementHeader);
   const changedElementDerivations =
     derivations === undefined
       ? undefined
@@ -84,17 +89,11 @@ export function* captureDeltaInputSteps<T extends DocumentSerializationDelta>(
   const changedElements = changed === undefined ? undefined : yield* captureListSteps(changed);
   return {
     ...delta,
+    ...(imageResources === undefined ? {} : { imageResources }),
     ...(fontResources === undefined ? {} : { fontResources }),
     ...(page === undefined ? {} : { page }),
     ...(removedIds === undefined ? {} : { removedIds }),
-    ...(delta.orderChanges === undefined
-      ? {}
-      : {
-          orderChanges: {
-            ...(capturedHighlight === undefined ? {} : { highlight: capturedHighlight }),
-            ...(capturedContent === undefined ? {} : { content: capturedContent }),
-          },
-        }),
+    ...(orderChanges === undefined ? {} : { orderChanges }),
     ...(changedElementDerivations === undefined
       ? {}
       : {
@@ -177,4 +176,16 @@ function assertSerializationList(source: unknown): void {
     throw new TypeError("Serialization lists must use plain arrays without symbols.");
   if (source.length > FILE_SCHEMA_LIMITS.elements)
     fail("element-limit-exceeded", "$.elements", "Element count exceeds the configured limit.");
+}
+
+function* captureOrdersSteps(
+  orders: DocumentSerializationDelta["orderChanges"],
+): Generator<void, DocumentSerializationDelta["orderChanges"]> {
+  if (orders === undefined) return undefined;
+  const captured: Partial<Record<"image" | "highlight" | "content", readonly string[]>> = {};
+  for (const band of ["image", "highlight", "content"] as const) {
+    const source = orders[band];
+    if (source !== undefined) captured[band] = yield* captureListSteps(source);
+  }
+  return captured;
 }

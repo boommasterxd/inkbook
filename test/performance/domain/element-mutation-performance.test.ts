@@ -40,6 +40,7 @@ it("atomically cuts and restores 10,000 strokes while yielding during preparatio
   const removed = new Set(fixture.strokeIds);
   const cut: ElementMutation = {
     bands: {
+      image: [],
       content: remainingBand(store, "content", removed),
       highlight: remainingBand(store, "highlight", removed),
     },
@@ -90,14 +91,14 @@ it("prepares a single end-of-band deletion without enumerating unaffected record
       {
         capacity,
         index,
-        bands: { content, highlight },
+        bands: { image: [], content, highlight },
         geometryVersion: 0,
         paintVersion: 0,
         ranks,
         records,
         reverseConnections: new Map(),
       },
-      { bands: { content: content.slice(0, -1), highlight }, removeIds: [removed] },
+      { bands: { image: [], content: content.slice(0, -1), highlight }, removeIds: [removed] },
       {
         shouldYield: () => false,
         yieldControl: async () => undefined,
@@ -207,6 +208,7 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
   try {
     const deletion = await prepareAndApply({
       bands: {
+        image: [],
         content: remainingBand(store, "content", removed),
         highlight: remainingBand(store, "highlight", removed),
       },
@@ -331,8 +333,8 @@ it("publishes local membership deltas and replays without validating unchanged 1
   });
   expect(content.length).toBe(10_000);
   const restored = await restoreOwnedReplayBands(
-    { content, highlight: [highlightId] },
-    { bands: { content, highlight: [] }, records: new Map() },
+    { image: [], content, highlight: [highlightId] },
+    { bands: { image: [], content, highlight: [] }, records: new Map() },
     new Map(),
     retained,
     new MutationPreparationScheduler({
@@ -400,7 +402,7 @@ it("slices actual sample work for one maximum-length insertion and owned Undo", 
   try {
     const inserted = await store.prepareElementMutation(
       {
-        bands: { content: [template.id], highlight: [] },
+        bands: { image: [], content: [template.id], highlight: [] },
         elements: [{ ...template, points: points as unknown as number[] }],
       },
       scheduler,

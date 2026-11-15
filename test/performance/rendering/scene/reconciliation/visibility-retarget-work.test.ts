@@ -447,8 +447,16 @@ it("merges a two-member edge delta once and commits immutable band references wi
   expect(reads).toBe(10_000);
   expect(writes).toBe(0);
   expect(get.mock.calls.length).toBeLessThanOrEqual(4);
-  const committed = { content: first.content.ids, highlight: first.highlight.ids };
-  const counts = { content: first.content.count, highlight: first.highlight.count };
+  const committed = {
+    image: first.image.ids,
+    content: first.content.ids,
+    highlight: first.highlight.ids,
+  };
+  const counts = {
+    image: first.image.count,
+    content: first.content.count,
+    highlight: first.highlight.count,
+  };
   let commitReads = 0;
   const source = new Proxy(changed.visibility.content.ids, {
     get(target, key) {

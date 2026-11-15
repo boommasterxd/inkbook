@@ -21,9 +21,9 @@ function eraseFixture(confirm?: (signal: AbortSignal) => Promise<boolean>) {
     token: createPreparedToken(),
   }));
   const commit = vi.fn(() => ({
-    forward: { bands: { content: [], highlight: [] }, removeIds: [element.id] },
+    forward: { bands: { image: [], content: [], highlight: [] }, removeIds: [element.id] },
     payloadBytes: 1,
-    reverse: { bands: { content: [element.id], highlight: [] } },
+    reverse: { bands: { image: [], content: [element.id], highlight: [] } },
   }));
   const model = createClipboardDocumentModel({
     store,

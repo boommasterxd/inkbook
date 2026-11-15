@@ -23,6 +23,8 @@ export class DetachedSceneElementCache extends VersionedCache<MountedSceneElemen
   }
 
   public retain(entry: MountedSceneElement, isNeeded?: (id: string) => boolean): boolean {
+    // Image decoders belong only to visible roots and bounded active motion snapshots.
+    if (entry.image !== undefined) return false;
     const connected =
       entry.group === null
         ? entry.paths.some(({ node }) => node.parentNode !== null)

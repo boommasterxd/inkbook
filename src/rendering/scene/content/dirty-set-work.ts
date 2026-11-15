@@ -14,7 +14,7 @@ export function writeDirtySet(
   }
   return false;
 }
-import type { RenderBand } from "../../../domain/commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { SceneStorePort } from "../types";
 import type { DetachedSceneElementCache } from "./detached-element-cache";
 
@@ -29,7 +29,19 @@ export function markSceneOrderDirty(
   retained?.unregisterMounted(id);
   const record = store.get(id);
   if (record === undefined) {
-    dirty.content.add(id);
-    dirty.highlight.add(id);
+    for (const band of RENDER_BANDS) dirty[band].add(id);
   } else dirty[record.band].add(id);
+}
+
+/** Releases all band-owned reconciliation state together on scene teardown. */
+export function resetSceneBands(
+  dirty: Record<RenderBand, Set<string>>,
+  ids: Record<RenderBand, readonly (string | undefined)[]>,
+  counts: Record<RenderBand, number>,
+): void {
+  for (const band of RENDER_BANDS) {
+    dirty[band].clear();
+    ids[band] = [];
+    counts[band] = 0;
+  }
 }

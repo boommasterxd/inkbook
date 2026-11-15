@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../../fixtures/domain/element-style";
 import { describe, expect, it } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
@@ -63,10 +64,10 @@ describe("mixed selection Style controls", () => {
 
     expect(history.replace(replacement.previous, replacement.replacements)).toBe(true);
     expect(model.revision).toBe(8);
-    expect(model.store.get(highlighter.id)?.element.style).toMatchObject({
+    expect(readElementStyle(model.store.get(highlighter.id)?.element)).toMatchObject({
       color: { type: "rgba", value: "#3B82F6FF" },
     });
-    expect(model.store.get(selection[1]!.id)?.element.style).toMatchObject({
+    expect(readElementStyle(model.store.get(selection[1]!.id)?.element)).toMatchObject({
       outlineColor: { type: "rgba", value: "#3B82F6FF" },
       fillColor: null,
     });

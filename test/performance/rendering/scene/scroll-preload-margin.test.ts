@@ -78,7 +78,7 @@ it("shrinks and refills only indexed fringes while retaining unchanged paths and
   const { renderer } = fixture;
   try {
     drainBoundedPublication(fixture);
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     const original = [...content.nodes];
     for (const margin of [300, 800]) {
       renderer.setScrollPreloadMarginPx(margin);

@@ -1,4 +1,5 @@
 import { buildElementPathParts, type SvgPathPart } from "../../../src/domain/geometry/element-path";
+import { renderBandOf } from "../../../src/domain/commands/render-bands";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
 import { createSceneFixture } from "./scene";
@@ -31,11 +32,7 @@ export function createSelectionTraceFixture(elements: readonly InkElementV1[]) {
       element,
       rank,
       id: element.id,
-      band:
-        element.kind === "straight-highlighter" ||
-        (element.kind === "stroke" && element.tool === "highlighter")
-          ? "highlight"
-          : "content",
+      band: renderBandOf(element),
       bounds: calculateElementBounds(element),
       geometryVersion: 1,
       paintVersion: 1,

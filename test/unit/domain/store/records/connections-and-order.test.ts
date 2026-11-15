@@ -239,7 +239,9 @@ describe("ElementStore order transactions", () => {
     const store = new ElementStore([first, second]);
 
     expect(store.arrange(new Set([second.id]), "bring-to-front")).toBeNull();
-    expect(store.reorderBands({ content: [first.id, second.id], highlight: [] })).toBeNull();
+    expect(
+      store.reorderBands({ image: [], content: [first.id, second.id], highlight: [] }),
+    ).toBeNull();
   });
 
   it("validates exact band order before mutating it", () => {
@@ -248,10 +250,14 @@ describe("ElementStore order transactions", () => {
     const store = new ElementStore([first, second, highlighter()]);
 
     expect(() =>
-      store.reorderBands({ content: [first.id, first.id], highlight: [IDS.highlight] }),
+      store.reorderBands({ image: [], content: [first.id, first.id], highlight: [IDS.highlight] }),
     ).toThrow(RangeError);
     expect(() =>
-      store.reorderBands({ content: [first.id, IDS.highlight], highlight: [IDS.highlight] }),
+      store.reorderBands({
+        image: [],
+        content: [first.id, IDS.highlight],
+        highlight: [IDS.highlight],
+      }),
     ).toThrow(RangeError);
     expect(store.materializeBandOrder("content")).toEqual([first.id, second.id]);
   });
@@ -270,10 +276,12 @@ describe("ElementStore atomic band reorder", () => {
     const listener = vi.fn();
     store.subscribe(listener);
     const original = {
+      image: [],
       content: [first.id, second.id],
       highlight: [firstHighlight.id, secondHighlight.id],
     } as const;
     const reversed = {
+      image: [],
       content: [second.id, first.id],
       highlight: [secondHighlight.id, firstHighlight.id],
     } as const;
@@ -282,13 +290,14 @@ describe("ElementStore atomic band reorder", () => {
 
     expect(store.materializeBandOrder("content")).toEqual(reversed.content);
     expect(store.materializeBandOrder("highlight")).toEqual(reversed.highlight);
-    expect(forward?.dirtyBands).toEqual({ content: true, highlight: true });
+    expect(forward?.dirtyBands).toEqual({ image: false, content: true, highlight: true });
     expect(listener).toHaveBeenCalledTimes(1);
     expect(store.reorderBands(reversed)).toBeNull();
     expect(listener).toHaveBeenCalledTimes(1);
 
     expect(() =>
       store.reorderBands({
+        image: [],
         content: original.content,
         highlight: [firstHighlight.id, firstHighlight.id],
       }),
@@ -315,7 +324,7 @@ describe("ElementStore order insertion and removal", () => {
 
     expect(store.materializeBandOrder("content")).toEqual([second.id, first.id]);
     expect(delta?.changes.map(({ id }) => id)).toEqual([second.id]);
-    expect(delta?.dirtyBands).toEqual({ content: true, highlight: false });
+    expect(delta?.dirtyBands).toEqual({ image: false, content: true, highlight: false });
     expect(store.getRank(first.id)).toEqual({ band: "content", rank: 1 });
     expect(store.get(first.id)).toBe(previous);
   });

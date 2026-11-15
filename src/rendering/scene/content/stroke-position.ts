@@ -26,7 +26,7 @@ export function positionedTransform(
   element: InkElementV1 | undefined,
   preview: string | null,
 ): string | null {
-  if (element?.kind === "text" && element.rotation !== 0) {
+  if ((element?.kind === "text" || element?.kind === "image") && element.rotation !== 0) {
     const rotation = `rotate(${element.rotation} ${element.pivot.x} ${element.pivot.y})`;
     return preview === null ? rotation : `${preview} ${rotation}`;
   }

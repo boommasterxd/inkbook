@@ -19,7 +19,7 @@ async function removedStroke() {
   const source = highlighter();
   const { store } = await hydrateRuntimeStroke(source);
   const transition = await apply(store, {
-    bands: { content: [], highlight: [] },
+    bands: { image: [], content: [], highlight: [] },
     removeIds: [source.id],
   });
   return { source, store, transition };
@@ -43,7 +43,10 @@ describe("owned history replay", () => {
       const transition =
         mode === "synchronous"
           ? store.removeWithHistory([source.id])!.transition
-          : await apply(store, { bands: { content: [], highlight: [] }, removeIds: [source.id] });
+          : await apply(store, {
+              bands: { image: [], content: [], highlight: [] },
+              removeIds: [source.id],
+            });
       const retained = transition.reverse.elements![0]!;
       expect(retained).not.toBe(original.element);
       await apply(store, transition.reverse, transition);
@@ -68,7 +71,7 @@ describe("owned history replay", () => {
     const store = new ElementStore([source]);
     const original = store.get(source.id)!;
     const transition = await apply(store, {
-      bands: { content: [source.id], highlight: [] },
+      bands: { image: [], content: [source.id], highlight: [] },
       elements: [
         { ...source, x: source.x + 100, pivot: { ...source.pivot, x: source.pivot.x + 100 } },
       ],
@@ -88,7 +91,7 @@ describe("owned history replay", () => {
     const source = highlighter();
     const { store, points } = await hydrateRuntimeStroke(source);
     const transition = await apply(store, {
-      bands: { content: [], highlight: [] },
+      bands: { image: [], content: [], highlight: [] },
       removeIds: [source.id],
     });
     const retained = transition.reverse.elements![0]!;
@@ -135,7 +138,7 @@ describe("validated history replay", () => {
       await expect(
         store.prepareElementMutation(
           {
-            bands: { content: [], highlight: [] },
+            bands: { image: [], content: [], highlight: [] },
             removeIds: [source.id],
           },
           scheduler,
@@ -147,7 +150,7 @@ describe("validated history replay", () => {
       estimate.mockRestore();
     }
     const transition = await apply(store, {
-      bands: { content: [], highlight: [] },
+      bands: { image: [], content: [], highlight: [] },
       removeIds: [source.id],
     });
     await apply(store, transition.reverse, transition);

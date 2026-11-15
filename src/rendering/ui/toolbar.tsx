@@ -51,6 +51,7 @@ const TOOL_BUTTONS: readonly ToolbarButtonDefinition[] = [
     label: "editor.action.straight-highlighter",
   },
   { action: "text", icon: "type", label: "editor.action.text" },
+  { action: "image", icon: "image", label: "editor.action.image" },
   { action: "shape", icon: SHAPE_ICON_IDS.line, label: "editor.action.shape" },
   { action: "shape-picker", icon: "shapes", label: "editor.action.shape-picker" },
   { action: "style", icon: "palette", label: "editor.action.style" },
@@ -260,9 +261,11 @@ function ToolbarGroup(props: ToolbarGroupProps) {
               onAction={props.onAction}
               enterOrder={Math.max(0, presenceOrder.entering.indexOf(button.action))}
               popupRole={
-                flyoutForAction(button.action) === null
-                  ? undefined
-                  : popupRoleForAction(button.action)
+                button.action === "image"
+                  ? "dialog"
+                  : flyoutForAction(button.action) === null
+                    ? undefined
+                    : popupRoleForAction(button.action)
               }
               pressed={pressedState(button.action, props.state)}
               registerButton={(action, element) => {

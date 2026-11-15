@@ -1,3 +1,5 @@
+import { asDocument, FakeDocument, fakeNode, fakeRectangleRecord } from "../fakes";
+
 import { describe, expect, it, vi } from "vitest";
 import type { ArrowElementV1, BoxShapeElementV1 } from "../../../../../src/domain/schema/public";
 
@@ -13,9 +15,7 @@ import {
 import { SVG_NAMESPACE } from "../../../../../src/rendering/scene/constants";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { observePointReads } from "../../../../fixtures/rendering/point-reads";
-import { fakeRectangleRecord } from "../fakes";
 import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
-import { asDocument, FakeDocument, fakeNode } from "../fakes";
 
 function pressureStroke() {
   const stroke = indexedStroke(1);

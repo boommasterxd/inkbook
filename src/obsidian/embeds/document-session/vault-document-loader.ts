@@ -276,6 +276,9 @@ export async function loadVaultDocument(
       page: result.snapshot.page,
       revision: result.snapshot.revision,
       version: result.snapshot.version,
+      ...(result.snapshot.imageResources === undefined
+        ? {}
+        : { imageResources: [...result.snapshot.imageResources] }),
       ...(result.snapshot.fontResources === undefined
         ? {}
         : { fontResources: [...result.snapshot.fontResources] }),

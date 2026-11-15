@@ -1,3 +1,4 @@
+import { RENDER_BANDS } from "../../commands/render-bands";
 import type { RenderBand } from "../../commands/render-bands";
 import { retainBandSnapshot } from "./band-snapshots";
 
@@ -22,8 +23,9 @@ export async function prepareRemovalMutation(
   const work = new MutationPreparationScheduler(scheduler);
   const removed: string[] = [];
   const removeIds = new Set<string>();
-  const removedByBand = { content: 0, highlight: 0 };
+  const removedByBand = { image: 0, content: 0, highlight: 0 };
   const firstChanged = {
+    image: source.bands.image.length,
     content: source.bands.content.length,
     highlight: source.bands.highlight.length,
   };
@@ -39,6 +41,9 @@ export async function prepareRemovalMutation(
   if (removed.length === 0) return null;
   const order = createUnchangedMutationOrder(source.bands);
   const changedRanks =
+    source.bands.image.length -
+    removedByBand.image -
+    firstChanged.image +
     source.bands.content.length -
     removedByBand.content -
     firstChanged.content +
@@ -47,7 +52,7 @@ export async function prepareRemovalMutation(
     firstChanged.highlight;
   // A complete map replaces two writes per changed survivor with one per survivor.
   order.ranksComplete = 2 * changedRanks > source.records.size - removed.length;
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     const next = await prepareRemovalBand(
       band,
       source.bands[band],
@@ -59,6 +64,7 @@ export async function prepareRemovalMutation(
   if (scheduler.isCancelled?.()) return "cancelled";
   const mutation = Object.freeze({
     bands: Object.freeze({
+      image: retainBandSnapshot(order.bands.image),
       content: retainBandSnapshot(order.bands.content),
       highlight: retainBandSnapshot(order.bands.highlight),
     }),

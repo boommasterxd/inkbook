@@ -8,7 +8,7 @@ import { flushBoundedScenePublication } from "../../../../fixtures/rendering/sce
 function initialVisibleFixture() {
   const store = new FakeSceneStore();
   const reads = new Map<string, number>();
-  const visible = { content: [] as string[], highlight: [] as string[] };
+  const visible = { image: [] as string[], content: [] as string[], highlight: [] as string[] };
   for (let rank = 0; rank < 10_000; rank += 1) {
     const y = rank < 160 ? (rank === 159 ? 95 : 20) : rank < 800 ? 140 : 10_000;
     const element = {

@@ -91,7 +91,7 @@ Automatic changes to the handwriting height do not create undo steps.
 
 ## Annotation Ordering and Connections
 
-Arrange actions change the stable back-to-front element order inside the fixed highlight or content render band. They never move highlighter elements above content. Bring forward and Send backward cross one adjacent unselected rank; Bring to front and Send to back move to the corresponding band boundary. Multi-selection reordering is stable and commits as one command.
+Arrange actions change the stable back-to-front element order inside the fixed image, highlight, or content render band. They never move highlighter elements above content. Bring forward and Send backward cross one adjacent unselected rank; Bring to front and Send to back move to the corresponding band boundary. Multi-selection reordering is stable and commits as one command.
 
 Line and arrow endpoint connections follow every semantic target anchor that remains valid when a shape moves, scales, rotates, or changes geometry. This includes table anchors affected by a selected table's column-count change. Changing a coordinate system from 3D to 2D removes its third axis, so connections to that removed endpoint detach at their last resolved positions instead of following an anchor that no longer exists. The target change, every retained endpoint update, and every required detachment are one atomic history command. Target deletion, Cut, or erasing likewise detaches surviving external lines and arrows at their last resolved positions within the same command. Exact ordering and connection contracts are defined in [File Format and Geometry](file-format.md).
 

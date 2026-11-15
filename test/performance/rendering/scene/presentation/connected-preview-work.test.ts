@@ -222,7 +222,7 @@ it("retains the latest deferred followers through pointer release and canonical 
     scheduler.time += 1;
     return replacements.get(id);
   });
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   try {
     renderer.setProgressiveElementPreviews(ids, materialize, 1, undefined, "connected");
     renderer.flushPointerFeedbackFrame(scheduler.time);

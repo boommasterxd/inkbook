@@ -1,4 +1,5 @@
 import type { PageV1 } from "../../domain/schema/public";
+import type { RenderBand } from "../../domain/commands/render-bands";
 import { patternCoveragePath, type SceneBackgroundCache } from "./content/background-cache";
 import { SVG_NAMESPACE } from "./constants";
 import {
@@ -21,7 +22,7 @@ interface AppliedLivePathPart {
 }
 
 export interface AppliedLivePath {
-  readonly band: "content" | "highlight";
+  readonly band: RenderBand;
   readonly parts: readonly AppliedLivePathPart[];
 }
 

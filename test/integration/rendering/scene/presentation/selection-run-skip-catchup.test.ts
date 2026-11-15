@@ -1,3 +1,4 @@
+import { FakeNode, fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { scaleElement } from "../../../../../src/editor/selection/transform/transforms";
@@ -8,7 +9,6 @@ import {
   paintedX,
   selectionPath,
 } from "../../../../fixtures/rendering/selection-runs";
-import { FakeNode, fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -85,7 +85,7 @@ function expectCanonicalPaint(f: ReturnType<typeof partialSkip>): void {
   }
   // Native SVG paint follows camera zoom: width 4 becomes 8 and dash lengths double.
   expect(f.svg.nodes[1]!.getAttribute("transform")).toContain("scale(2)");
-  expect(paintedX(node, f.svg.nodes[1]!.nodes[4]!)).toBeCloseTo(
+  expect(paintedX(node, sceneBandNode(fakeNode(f.renderer.svg), "content"))).toBeCloseTo(
     Number(/^M\s*([-\d.]+)/.exec(f.expectedD)![1]),
     6,
   );

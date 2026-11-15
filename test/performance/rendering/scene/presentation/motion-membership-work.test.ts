@@ -132,7 +132,7 @@ it("bounds real fade publication and replay interruption across 10,000 mounted m
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, indexed.store);
   scheduler.runAll(200);
   const startedAt = scheduler.time;
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const entries = [...records.records.values()];
   const fades = vi.spyOn(fadeStyle, "setElementFadeNode");
   const removals = vi.spyOn(FakeNode.prototype, "remove");
@@ -275,7 +275,7 @@ it.each(["queued", "running"] as const)(
     const indexed = createIndexedSceneStore(records);
     const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, indexed.store);
     scheduler.runAll(200);
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     const ids = [...records.records.keys()];
     const retainedBefore = renderer.memoryUsage().pathCacheBytes;
     const writeFade = fadeStyle.setElementFadeNode;

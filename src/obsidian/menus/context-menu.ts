@@ -10,6 +10,8 @@ const CONTEXT_MENU_ICONS = {
   cut: "scissors",
   delete: "trash-2",
   editText: "type",
+  cropImage: "crop",
+  importImages: "image",
   eraseAll: CAUTION_ERASER_ICON_ID,
   paste: "clipboard-paste",
   sendBackward: "arrow-down",
@@ -32,6 +34,8 @@ export type ContextMenuAction =
   | "delete-embed";
 
 export interface ContextMenuState {
+  readonly canCropImage?: boolean;
+  readonly canImportImages?: boolean;
   readonly canCopyText?: boolean | undefined;
   readonly canEditText?: boolean;
   readonly hasSelection: boolean;
@@ -46,6 +50,8 @@ export interface ContextMenuState {
 }
 
 export interface ContextMenuHandlers {
+  readonly cropImage?: (() => void) | undefined;
+  readonly importImages?: (() => void) | undefined;
   readonly copyText?: (() => void) | undefined;
   readonly copyElement?: (() => void) | undefined;
   readonly editText?: (() => void) | undefined;
@@ -115,6 +121,15 @@ function configureSelectionItems(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
+  if (state.canCropImage === true && handlers.cropImage !== undefined) {
+    configureItem(
+      menu,
+      "editor.action.crop-image",
+      CONTEXT_MENU_ICONS.cropImage,
+      handlers.cropImage,
+    );
+    menu.addSeparator();
+  }
   if (state.canEditText === true && handlers.editText !== undefined) {
     configureItem(menu, "editor.action.edit-text", CONTEXT_MENU_ICONS.editText, handlers.editText);
     menu.addSeparator();
@@ -181,6 +196,15 @@ function configureCanvasItems(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
+  if (state.canImportImages === true && handlers.importImages !== undefined) {
+    configureItem(
+      menu,
+      "editor.action.image",
+      CONTEXT_MENU_ICONS.importImages,
+      handlers.importImages,
+    );
+    menu.addSeparator();
+  }
   if (!state.hasSelection && state.canPaste) {
     configureItem(menu, "editor.action.paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
     menu.addSeparator();
@@ -263,6 +287,22 @@ export function openContextMenu(
     state,
     {
       ...handlers,
+      ...(handlers.cropImage === undefined
+        ? {}
+        : {
+            cropImage: () => {
+              menu.close("handoff");
+              handlers.cropImage?.();
+            },
+          }),
+      ...(handlers.importImages === undefined
+        ? {}
+        : {
+            importImages: () => {
+              menu.close("handoff");
+              handlers.importImages?.();
+            },
+          }),
       ...(handlers.editText === undefined
         ? {}
         : {

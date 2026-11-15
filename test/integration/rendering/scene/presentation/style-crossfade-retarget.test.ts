@@ -1,11 +1,12 @@
-import { expect, it } from "vitest";
-import type { BoxShapeElementV1, PageV1 } from "../../../../../src/domain/schema/public";
-import { createSceneFixture } from "../../../../fixtures/rendering/scene";
 import {
   FakeSceneStore,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
+import { expect, it } from "vitest";
+import type { BoxShapeElementV1, PageV1 } from "../../../../../src/domain/schema/public";
+import { createSceneFixture } from "../../../../fixtures/rendering/scene";
 
 const PAGE: PageV1 = {
   activeBufferLines: 3,
@@ -22,7 +23,7 @@ function fixture() {
   renderer.setPage(PAGE, 500);
   scheduler.runAll();
   const camera = fakeNode(renderer.svg).nodes[1]!;
-  const content = camera.nodes[4]!;
+  const content = sceneBandNode(camera, "content");
   const motion = camera.nodes.find((node) =>
     node.attributes.get("class")?.includes("inkbook-scene-motion"),
   )!;

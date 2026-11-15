@@ -57,6 +57,7 @@ export function arrangeSelectionAvailability(
   let canMoveForward = false;
   let canMoveBackward = false;
   const selectedBands = {
+    image: { count: 0, minRank: Number.POSITIVE_INFINITY, maxRank: -1 },
     highlight: { count: 0, minRank: Number.POSITIVE_INFINITY, maxRank: -1 },
     content: { count: 0, minRank: Number.POSITIVE_INFINITY, maxRank: -1 },
   };
@@ -68,7 +69,7 @@ export function arrangeSelectionAvailability(
     selected.minRank = Math.min(selected.minRank, record.rank);
     selected.maxRank = Math.max(selected.maxRank, record.rank);
   }
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of ["image", "highlight", "content"] as const) {
     const selected = selectedBands[band];
     if (selected.count === 0) continue;
     if (selected.minRank + selected.count < store.bandSize(band)) canMoveForward = true;

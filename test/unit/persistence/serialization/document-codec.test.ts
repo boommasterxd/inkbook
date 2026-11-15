@@ -45,6 +45,8 @@ describe("Inkbook document serialization", () => {
   it("omits SVG attributes whose values equal rendering defaults", () => {
     const snapshot = createAllElementSnapshot();
     for (const element of snapshot.elements) {
+      if (element.kind === "image")
+        throw new Error("Vector default-attribute fixture must contain vector elements.");
       if (element.kind === "stroke" || element.kind === "straight-highlighter") {
         Object.assign(element.style, { opacity: 1 });
       } else {

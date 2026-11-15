@@ -1,3 +1,4 @@
+import { RENDER_BANDS } from "../../commands/render-bands";
 import { renderBandOf, type RenderBand } from "../../commands/render-bands";
 import type { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import type { ElementMutation, ElementRank, ElementRecord } from "../types";
@@ -19,11 +20,11 @@ export function createUnchangedMutationOrder(
   bands: Readonly<Record<RenderBand, readonly string[]>>,
 ) {
   return {
-    bands: { content: bands.content, highlight: bands.highlight },
+    bands: { image: bands.image, content: bands.content, highlight: bands.highlight },
     ranks: new Map<string, ElementRank>(),
     ranksComplete: false,
-    dirtyBands: { content: false, highlight: false },
-    relativeOrderPreserved: { content: true, highlight: true },
+    dirtyBands: { image: false, content: false, highlight: false },
+    relativeOrderPreserved: { image: true, content: true, highlight: true },
   };
 }
 
@@ -104,17 +105,18 @@ export async function validateMutationBands(
   const seen = new Set<string>();
   const ranks = new Map<string, ElementRank>();
   const dirtyBands = {
+    image: requested.image.length !== source.bands.image.length,
     content: requested.content.length !== source.bands.content.length,
     highlight: requested.highlight.length !== source.bands.highlight.length,
   };
-  const relativeOrderPreserved = { content: true, highlight: true };
+  const relativeOrderPreserved = { image: true, content: true, highlight: true };
   let resultingSize = source.records.size;
   for (const [id, record] of records) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (record === null) resultingSize -= 1;
     else if (!source.records.has(id)) resultingSize += 1;
   }
-  const bands: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  const bands: Record<RenderBand, string[]> = { image: [], content: [], highlight: [] };
   const state = {
     requested,
     source,
@@ -126,7 +128,7 @@ export async function validateMutationBands(
     dirtyBands,
     relativeOrderPreserved,
   };
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     if ((await collectValidatedBand(state, band, scheduler)) === "cancelled") return "cancelled";
   }
   if (seen.size !== resultingSize) {
@@ -187,7 +189,7 @@ export function* mutationAffectedIds(
   order: MutationOrder,
 ): Generator<string | null> {
   yield* records.keys();
-  if (!order.relativeOrderPreserved.content || !order.relativeOrderPreserved.highlight) {
+  if (RENDER_BANDS.some((band) => !order.relativeOrderPreserved[band])) {
     for (const [id, rank] of order.ranks) {
       // Retain a checkpoint slot for duplicates and unaffected ranks as well.
       yield !order.relativeOrderPreserved[rank.band] && !records.has(id) ? id : null;
@@ -221,9 +223,9 @@ export async function restoreOwnedReplayBands(
   owned: OwnedMutationHistory,
   scheduler: MutationPreparationScheduler,
 ): Promise<MutationOrder | "cancelled"> {
-  const bands: StoreBands = { content: [], highlight: [] };
+  const bands: StoreBands = { image: [], content: [], highlight: [] };
   const ranks = new Map<string, ElementRank>();
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     if (!owned.dirtyBands[band]) {
       bands[band] = source.bands[band];
       continue;

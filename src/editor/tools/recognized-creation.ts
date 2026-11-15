@@ -30,6 +30,7 @@ export function createRecognizedElement(creation: RecognizedCreation): InkElemen
         }
       : shape;
   const pen = creation.defaults.pen;
+  if (base.kind === "image") throw new TypeError("Recognition cannot create image elements.");
   const style = {
     ...base.style,
     outlineColor: structuredClone(pen.color),

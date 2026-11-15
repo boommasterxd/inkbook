@@ -1,6 +1,7 @@
 import {
   CLIPBOARD_SCHEMA_LIMITS,
   type FontResourceV2,
+  type ImageResourceV3,
   type InkElementV1,
   type PointV1,
 } from "../../domain/schema/public";
@@ -82,6 +83,10 @@ export function capturePastePlan(plan: PastePlan): PastePlan | null {
     const captured: PastePlan = Object.freeze({
       elements: Object.freeze(elements as InkElementV1[]),
       ...captureFontResources(plan),
+      ...captureImageResources(plan),
+      ...(Object.getOwnPropertyDescriptor(plan, "imageIds") === undefined
+        ? {}
+        : { imageIds: captureIds(ownValue(plan, "imageIds")) }),
       selectedIds: captureIds(ownValue(plan, "selectedIds")),
       contentIds: captureIds(ownValue(plan, "contentIds")),
       highlightIds: captureIds(ownValue(plan, "highlightIds")),
@@ -126,4 +131,25 @@ function captureFontResource(source: unknown): FontResourceV2 {
     resource.weightRange = Object.freeze(range) as unknown as [number, number];
   }
   return Object.freeze(resource);
+}
+
+function captureImageResources(plan: PastePlan): Pick<PastePlan, "imageResources"> {
+  if (Object.getOwnPropertyDescriptor(plan, "imageResources") === undefined) return {};
+  const source = ownValue(plan, "imageResources");
+  if (!Array.isArray(source) || source.length > 128)
+    throw new RangeError("Too many image resources.");
+  const resources = Array.from({ length: source.length }, (_, index) => {
+    const resource = ownValue(source, String(index));
+    if (resource === null || typeof resource !== "object")
+      throw new TypeError("Invalid image resource.");
+    const keys = Object.keys(resource);
+    if (keys.length !== 5) throw new TypeError("Invalid image resource header.");
+    const captured = Object.fromEntries(
+      keys.map((key) => [key, ownValue(resource, key)]),
+    ) as unknown as ImageResourceV3;
+    if (typeof captured.data !== "string" || captured.data.length > 12 * 1024 * 1024)
+      throw new RangeError("Image data exceeds its limit.");
+    return Object.freeze(captured);
+  });
+  return { imageResources: Object.freeze(resources) };
 }

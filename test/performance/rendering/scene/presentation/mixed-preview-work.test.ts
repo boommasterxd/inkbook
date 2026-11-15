@@ -40,7 +40,7 @@ function mixedScene(strokes: readonly StrokeElementV1[], count = 600) {
   for (const [rank, element] of followers.entries())
     store.records.set(element.id, createSceneRecord(element, 40_000 + rank));
   const scene = createSettledPreviewScene(store);
-  const content = fakeNode(scene.renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(scene.renderer.svg).nodes[1]!.nodes[5]!;
   return {
     ...scene,
     store,
@@ -119,7 +119,7 @@ it("paints followers during continuous nonuniform pressure scaling and finishes 
     ]).flat(),
   };
   const { renderer, scheduler, store, shape, followers } = mixedScene([stroke], 40);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const pressureRoot = content.nodes[0]!;
   const initialShapePath = elementPath.buildElementPathParts(shape.element)[0]!.d;
   const shapeRoot = content.nodes.find((node) => node.attributes.get("d") === initialShapePath)!;
@@ -259,7 +259,7 @@ it("preserves complete selected pressure feedback while updating more than 256 c
           .map(([element]) => element.id),
       ).size,
     ).toBeLessThanOrEqual(256);
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     const followerRoots = content.nodes.slice(-600);
     expect(followerRoots.every((node) => !node.attributes.has("transform"))).toBe(true);
     const expected = elementPath.buildElementPathParts(materialize(followerIds[0]!))[0]!.d;

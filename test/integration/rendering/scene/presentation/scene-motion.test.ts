@@ -1,9 +1,3 @@
-import { describe, expect, it } from "vitest";
-import { activeFades } from "../../../../fixtures/rendering/scene-fades";
-
-import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
-import type { BoxShapeElementV1, PageV1 } from "../../../../../src/domain/schema/public";
-import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
 import {
   FakeDocument,
   FakeNode,
@@ -12,7 +6,14 @@ import {
   asElement,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
+import { describe, expect, it } from "vitest";
+import { activeFades } from "../../../../fixtures/rendering/scene-fades";
+
+import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
+import type { BoxShapeElementV1, PageV1 } from "../../../../../src/domain/schema/public";
+import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
 
 const PAGE: PageV1 = {
   activeBufferLines: 3,
@@ -449,7 +450,7 @@ function setup(reducedMotion = false): {
 }
 
 function contentPath(renderer: SvgSceneRenderer, index: number): FakeNode {
-  return fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[index]!;
+  return sceneBandNode(fakeNode(renderer.svg), "content").nodes[index]!;
 }
 
 function motionGroup(renderer: SvgSceneRenderer): FakeNode {

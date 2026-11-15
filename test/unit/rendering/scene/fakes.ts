@@ -1,5 +1,6 @@
 import { type SceneStorePort, type SpatialQuerySink } from "../../../../src/rendering/scene";
 import type { SceneElementRecord } from "../../../../src/rendering/scene/types";
+import type { RenderBand } from "../../../../src/domain/commands/render-bands";
 import type { Bounds } from "../../../../src/domain/geometry/public";
 import type { BoxShapeElementV1 } from "../../../../src/domain/schema/public";
 import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
@@ -265,6 +266,39 @@ export function asElement(node: FakeNode): HTMLElement {
 
 export function fakeNode(node: Element): FakeNode {
   return node as unknown as FakeNode;
+}
+
+/** Finds a retained scene band by its production-owned class, independent of camera child order. */
+export function sceneBandNode(root: FakeNode, band: RenderBand): FakeNode {
+  const className = {
+    image: "inkbook-scene-images",
+    highlight: "inkbook-scene-highlights",
+    content: "inkbook-scene-content",
+  }[band];
+  return sceneNodeWithClass(root, className, `The ${band} scene band is missing.`);
+}
+
+/** Finds a rendered scene node by its production-owned class, independent of sibling indexes. */
+export function sceneNodeWithClass(
+  root: FakeNode,
+  className: string,
+  message = `${className} is missing.`,
+): FakeNode {
+  const visit = (node: FakeNode): FakeNode | undefined => {
+    const attributes = node.attributes as Map<string, string> | NamedNodeMap | undefined;
+    const classes =
+      attributes instanceof Map
+        ? attributes.get("class")
+        : attributes?.getNamedItem?.("class")?.value;
+    if (classes?.split(/\s+/).includes(className)) return node;
+    const children = node.nodes ?? Array.from((node as unknown as ParentNode).childNodes ?? []);
+    return Array.from(children)
+      .map(visit)
+      .find((candidate) => candidate !== undefined);
+  };
+  const result = visit(root);
+  if (result === undefined) throw new Error(message);
+  return result;
 }
 
 export class FakeScheduler {

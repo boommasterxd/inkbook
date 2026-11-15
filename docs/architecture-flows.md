@@ -251,7 +251,7 @@ flowchart TD
   reuseBackground --> prepared
   rebuildBackground --> prepared
   prepared --> writes["Write phase: apply only prepared changed DOM state"]
-  writes --> bands["Preserve fixed highlight and content render bands"]
+  writes --> bands["Preserve fixed image, highlight and content render bands"]
   bands --> release["Release replaced entries and enforce DOM and cache caps"]
   release --> remaining{"Input-aware reconciliation work remains?"}
   remaining -->|Yes| nextFrame["Keep the last complete frame and queue one successor"]

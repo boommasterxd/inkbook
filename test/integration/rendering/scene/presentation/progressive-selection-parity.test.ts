@@ -1,3 +1,9 @@
+import {
+  FakeSceneStore,
+  fakeNode,
+  type FakeScheduler,
+  sceneBandNode,
+} from "../../../../unit/rendering/scene/fakes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -8,11 +14,6 @@ import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import { createSceneFixture } from "../../../../fixtures/rendering/scene";
 import { ProgressivePreviewPath } from "../../../../../src/rendering/scene/content/progressive-preview-path";
 import { createAllElementSnapshot } from "../../../../unit/persistence/serialization/fixtures";
-import {
-  FakeSceneStore,
-  fakeNode,
-  type FakeScheduler,
-} from "../../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -55,7 +56,7 @@ function setup() {
     });
   const { renderer, scheduler } = createSceneFixture(snapshot.page, store);
   scheduler.runAll();
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   return { renderer, scheduler, elements, content };
 }
 

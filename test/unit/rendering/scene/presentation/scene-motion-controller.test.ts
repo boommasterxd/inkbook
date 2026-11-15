@@ -1,3 +1,4 @@
+import { FakeDocument, FakeNode, fakeRectangleRecord } from "../fakes";
 import { describe, expect, it, vi } from "vitest";
 import type { BoxShapeElementV1, InkElementV1 } from "../../../../../src/domain/schema/public";
 import type { SceneContentRenderer } from "../../../../../src/rendering/scene/content-renderer";
@@ -8,7 +9,6 @@ import {
 } from "../../../../../src/rendering/scene/instrumentation";
 import { SceneMotionController } from "../../../../../src/rendering/scene/presentation/scene-motion-controller";
 import type { SceneStoreDelta } from "../../../../../src/rendering/scene/types";
-import { FakeDocument, FakeNode, fakeRectangleRecord } from "../fakes";
 
 function setup() {
   const document = new FakeDocument();

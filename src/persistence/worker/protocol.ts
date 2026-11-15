@@ -1,4 +1,8 @@
-import type { ElementValidationDerivation, FontResourceV2 } from "../../domain/schema/public";
+import type {
+  ElementValidationDerivation,
+  FontResourceV2,
+  ImageResourceV3,
+} from "../../domain/schema/public";
 import type { DocumentIntegrityManifest } from "../serialization/metadata/document-integrity-manifest";
 import type { PreparedPressurePathHint } from "../serialization/output/prepared-pressure-hints";
 
@@ -10,7 +14,7 @@ type ExportGeneration = number;
 export type OperationId = number;
 type SaveOperationId = number;
 
-export type RenderBand = "content" | "highlight";
+export type RenderBand = "image" | "content" | "highlight";
 
 export type WorkerPurpose =
   | "background"
@@ -55,6 +59,7 @@ interface IncrementalExportRequest<TElement, TPage> extends ExportIdentity {
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly TElement[];
   readonly fontResources?: readonly FontResourceV2[];
+  readonly imageResources?: readonly ImageResourceV3[];
   readonly orderChanges?: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>;
   readonly page?: TPage;
   readonly removedIds?: readonly ElementId[];

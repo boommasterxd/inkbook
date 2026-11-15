@@ -71,7 +71,15 @@ it("uses the same detected-width warning in native definitions and owned setting
   expect(definitions[1]).toMatchObject({ settingsIdentity: "settings-group:0" });
   renderNative(state);
   expect(document.querySelectorAll(".inkbook-width-warning")).toHaveLength(2);
-  expect(action("Use full width", state.tab.containerEl)).toBeDefined();
+  for (const scope of [document.querySelector(".inkbook-settings-modal")!, state.tab.containerEl]) {
+    for (const label of [
+      "Use full width",
+      "Hide until Inkbook restarts",
+      "Always hide this warning",
+    ]) {
+      expect(action(label, scope).textContent).toBe(label);
+    }
+  }
   expect(state.read).toHaveBeenCalledWith("readableLineLength");
   expect(state.write).not.toHaveBeenCalled();
 });

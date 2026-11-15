@@ -12,9 +12,9 @@ export function* prepareSerializationRanks(
   orders: Readonly<Record<RenderBand, readonly string[]>>,
   nodesPerStep: number,
 ): Generator<void, SerializationRanks> {
-  const ranks: SerializationRanks = { content: new Map(), highlight: new Map() };
+  const ranks: SerializationRanks = { image: new Map(), content: new Map(), highlight: new Map() };
   let visited = 0;
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of ["image", "highlight", "content"] as const) {
     for (let rank = 0; rank < orders[band].length; rank += 1) {
       ranks[band].set(orders[band][rank]!, { band, rank });
       if (++visited % nodesPerStep === 0) yield;
@@ -36,7 +36,7 @@ export function* prepareSerializationRankUpdate(
 ): Generator<void, SerializationRanks> {
   const next = { ...currentRanks };
   let visited = 0;
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of ["image", "highlight", "content"] as const) {
     if (currentOrders[band] === nextOrders[band]) continue;
     const prepared = new Map<string, SerializationRank>();
     for (let rank = 0; rank < nextOrders[band].length; rank += 1) {
@@ -47,7 +47,9 @@ export function* prepareSerializationRankUpdate(
     }
     next[band] = prepared;
   }
-  return next.content === currentRanks.content && next.highlight === currentRanks.highlight
+  return next.image === currentRanks.image &&
+    next.content === currentRanks.content &&
+    next.highlight === currentRanks.highlight
     ? currentRanks
     : next;
 }
@@ -73,9 +75,8 @@ export function* serializationSelectionSteps(
   selected.sort((left, right) =>
     left.position.band === right.position.band
       ? left.position.rank - right.position.rank
-      : left.position.band === "highlight"
-        ? -1
-        : 1,
+      : ["image", "highlight", "content"].indexOf(left.position.band) -
+        ["image", "highlight", "content"].indexOf(right.position.band),
   );
   return selected.map(({ element }) => element);
 }

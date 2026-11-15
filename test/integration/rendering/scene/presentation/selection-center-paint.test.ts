@@ -1,3 +1,4 @@
+import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -9,7 +10,6 @@ import {
 import { arrow, rectangle, stroke } from "../../../../unit/domain/schema/fixtures";
 import { coordinateSystem } from "../../../../unit/domain/geometry/fixtures";
 import { connectedLine } from "../../../../unit/domain/store/fixtures";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 import { decodeSvgPathCommands } from "../../../../fixtures/domain/svg-path-fill";
 
 afterEach(() => vi.restoreAllMocks());

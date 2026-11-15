@@ -16,9 +16,13 @@ function collectOrderedElementFragments(options: {
   const elements: InkElementV1[] = [];
   const metadata: string[] = [];
   const canonicalMetadata: string[] = [];
-  const fragments: Record<RenderBand, ElementFragments[]> = { content: [], highlight: [] };
+  const fragments: Record<RenderBand, ElementFragments[]> = {
+    image: [],
+    content: [],
+    highlight: [],
+  };
   let maximumBottom: number | null = null;
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of ["image", "highlight", "content"] as const) {
     for (const id of options.orders[band]) {
       const element = options.element(id);
       const fragment = options.fragment(element);
@@ -42,6 +46,7 @@ function collectOrderedElementFragments(options: {
   return {
     ok: true,
     value: {
+      image: fragments.image,
       content: fragments.content,
       elements,
       highlight: fragments.highlight,
@@ -61,6 +66,7 @@ export function assembleOrderedElementFragments(
   return {
     ok: true,
     value: {
+      images: fragments.value.image.map(({ svg }) => svg).join(""),
       content: fragments.value.content.map(({ svg }) => svg).join(""),
       elements: fragments.value.elements,
       highlights: fragments.value.highlight.map(({ svg }) => svg).join(""),

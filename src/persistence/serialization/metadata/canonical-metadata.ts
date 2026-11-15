@@ -12,6 +12,7 @@ import { ChunkedSha256 } from "../chunked-output-sha256";
 import type { MigratedSnapshot } from "./document-migration";
 import type { DocumentCodecResult } from "../types";
 import { canonicalFontResource, snapshotTextResources } from "../output/text-fonts";
+import { snapshotImageResources } from "../output/image-markup";
 import { boundedJsonFragments } from "./bounded-json-fragments";
 import { metadataSliceEnd } from "../input/chunked-input-utils";
 import { bindSnapshotFontResources, textFontBindingMode } from "../../fonts/bound-font-resources";
@@ -140,14 +141,26 @@ export function metadataPrefix(
         ? { fontResources: snapshot.fontResources?.map(canonicalFontResource) }
         : snapshotTextResources(snapshot);
   const version =
-    snapshot?.version === 2 && snapshot.elements.some((element) => element.kind === "text") ? 2 : 1;
+    snapshot?.version === 3 && snapshot.elements.some((element) => element.kind === "image")
+      ? 3
+      : snapshot !== undefined &&
+          snapshot.version >= 2 &&
+          snapshot.elements.some((element) => element.kind === "text")
+        ? 2
+        : 1;
   const fonts =
     resources.fontResources === undefined
       ? ""
       : `,"fontResources":${[...boundedJsonFragments(resources.fontResources.map(({ data: _data, ...descriptor }) => descriptor))].join("")}`;
+  const images =
+    snapshot === undefined ? undefined : snapshotImageResources(snapshot).imageResources;
+  const imageMetadata =
+    images === undefined
+      ? ""
+      : `,"imageResources":${JSON.stringify(images.map((resource) => ({ id: resource.id, mimeType: resource.mimeType, width: resource.width, height: resource.height })))}`;
   return (
     `{"format":"inkbook","version":${version},"revision":${revision},` +
-    `"page":${JSON.stringify(canonicalPage(page))}${fonts},"elements":[`
+    `"page":${JSON.stringify(canonicalPage(page))}${fonts}${imageMetadata},"elements":[`
   );
 }
 

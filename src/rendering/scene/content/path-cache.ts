@@ -132,6 +132,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     element: InkElementV1,
     pressureGeometry?: PreparedPressureGeometryPort,
   ): readonly SvgPathPart[] {
+    if (element.kind === "image") return [];
     pressureGeometry = localPressureGeometry(element, pressureGeometry);
     const cached = this.read(element, pressureGeometry);
     if (cached !== undefined) return cached;
@@ -220,6 +221,7 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     // Public frozen samples can still have mutable headers. Never memoize those values.
     if (
       this.#signatures.get(element)?.deref() !== identity &&
+      element.kind === "stroke" &&
       isStoredStroke(element) &&
       Object.isFrozen(element) &&
       Object.isFrozen(element.style) &&

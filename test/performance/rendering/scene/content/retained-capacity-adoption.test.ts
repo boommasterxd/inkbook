@@ -1,3 +1,4 @@
+import { createPublicationReconciliation } from "../../../../fixtures/rendering/scene-publication";
 import { expect, it, vi, type Mock } from "vitest";
 import type { ScenePathPreparation } from "../../../../../src/domain/geometry/prepared-scene-paths";
 import { dirtyGeometryScene } from "../../../../fixtures/rendering/dirty-geometry-scene";
@@ -30,7 +31,6 @@ import {
 } from "../../../../unit/rendering/scene/fakes";
 import { SceneDom } from "../../../../../src/rendering/scene/scene-dom";
 import { SceneVisibilityState } from "../../../../../src/rendering/scene/visibility/visibility-state";
-import { SceneVisibilityReconciler } from "../../../../../src/rendering/scene/reconciliation/scene-visibility-reconciler";
 import {
   createMountedElement,
   type MountedSceneElement,
@@ -333,13 +333,10 @@ function capacityScene() {
   };
   const visibility = new SceneVisibilityState(indexedStore, instrumentation);
   visibility.query({ minX: 0, minY: 20_000, maxX: 100, maxY: 20_100 });
-  const paths = new ScenePathCache();
-  const reconciler = new SceneVisibilityReconciler({
+  const { paths, reconciler } = createPublicationReconciliation({
     dom,
     instrumentation,
     mounted,
-    orderDirty: { content: new Set(), highlight: new Set() },
-    pathCache: paths,
     detachedCache: cache,
     store: indexedStore,
     visibility,

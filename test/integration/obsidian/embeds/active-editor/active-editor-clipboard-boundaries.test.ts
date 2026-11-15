@@ -356,9 +356,9 @@ function createModel(
 
 function appliedMutation(): AppliedElementMutation {
   return {
-    forward: { bands: { content: [], highlight: [] } },
+    forward: { bands: { image: [], content: [], highlight: [] } },
     payloadBytes: 1,
-    reverse: { bands: { content: [], highlight: [] } },
+    reverse: { bands: { image: [], content: [], highlight: [] } },
   };
 }
 

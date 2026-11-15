@@ -9,6 +9,7 @@ import type {
   StrokeElementV1,
   TableElementV1,
   TextElementV2,
+  ImageElementV3,
 } from "../schema/types";
 import { shapeVertices, tableWidth } from "./creation";
 import {
@@ -43,7 +44,8 @@ export function* calculateElementBoundsSteps(
   }
   if (element.kind === "stroke") return yield* strokeBoundsSteps(element, pointsPerStep);
   if (element.kind === "coordinate-system") return coordinateSystemBounds(element);
-  if (element.kind === "table" || element.kind === "text") return rotatedBoxBounds(element);
+  if (element.kind === "table" || element.kind === "text" || element.kind === "image")
+    return rotatedBoxBounds(element);
   if (
     element.kind === "line" ||
     element.kind === "arrow" ||
@@ -153,7 +155,9 @@ function closedShapeBounds(shape: BoxShapeElementV1): Bounds {
 }
 
 /** Preserves conservative corner bounds without allocating per-corner points and arrays. */
-function rotatedBoxBounds(box: BoxShapeElementV1 | TableElementV1 | TextElementV2): Bounds {
+function rotatedBoxBounds(
+  box: BoxShapeElementV1 | TableElementV1 | TextElementV2 | ImageElementV3,
+): Bounds {
   const width = box.kind === "table" ? tableWidth(box) : box.width;
   const radians = (box.rotation * Math.PI) / 180;
   const cosine = Math.cos(radians);
@@ -176,7 +180,7 @@ function rotatedBoxBounds(box: BoxShapeElementV1 | TableElementV1 | TextElementV
     minY = Math.min(minY, rotatedY);
     maxY = Math.max(maxY, rotatedY);
   }
-  const radius = box.kind === "text" ? 0 : box.style.outlineWidth / 2;
+  const radius = box.kind === "text" || box.kind === "image" ? 0 : box.style.outlineWidth / 2;
   return { minX: minX - radius, minY: minY - radius, maxX: maxX + radius, maxY: maxY + radius };
 }
 

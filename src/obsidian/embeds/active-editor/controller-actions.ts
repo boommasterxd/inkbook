@@ -18,8 +18,13 @@ import { arrangeSelectionAvailability, canArrangeSelection } from "./controller-
 import { ActiveDocumentHistory } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
+import { ActiveImageSession, type ActiveImageSessionOptions } from "./image-session";
 
-export interface ActiveEditorActionsOptions {
+export interface ActiveEditorActionsOptions extends Pick<
+  ActiveImageSessionOptions,
+  "onImportImages" | "onCropImage"
+> {
+  readonly finishText?: () => Promise<boolean>;
   readonly copyTextFieldsAsText?: boolean;
   readonly onPasteText?: import("./controller-clipboard").ActiveEditorClipboardOptions["onPasteText"];
   readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
@@ -36,7 +41,7 @@ export interface ActiveEditorActionsOptions {
   readonly onStateChanged: () => void;
   readonly ownerWindow: Window;
   readonly workScheduler: WorkScheduler;
-  readonly renderer: {
+  readonly renderer: NonNullable<ActiveImageSessionOptions["renderer"]> & {
     setElementFade(ids: readonly string[], durationMs: number): void;
     clearElementFade(ids: readonly string[]): void;
   };
@@ -47,6 +52,7 @@ export interface ActiveEditorActionsOptions {
 }
 
 export class ActiveEditorActions {
+  readonly #images: ActiveImageSession;
   readonly #renderer: ActiveEditorActionsOptions["renderer"];
   readonly #clipboard: ActiveEditorClipboardController;
   readonly #confirmEraseAll: ActiveEditorActionsOptions["confirmEraseAll"];
@@ -73,6 +79,17 @@ export class ActiveEditorActions {
   #copyTextFieldsAsText: boolean;
 
   public constructor(options: ActiveEditorActionsOptions) {
+    this.#images = new ActiveImageSession({
+      ...options,
+      selection: options.currentSelection,
+      select: options.setSelection,
+      finishText: options.finishText ?? (() => Promise.resolve(true)),
+      onCommitted: () => {
+        options.onPasteCommitted();
+        options.onStateChanged();
+      },
+      onFailed: () => options.onFeedback?.("history-change-failed"),
+    });
     this.#copyTextFieldsAsText = options.copyTextFieldsAsText ?? false;
     this.#renderer = options.renderer;
     this.#confirmEraseAll = options.confirmEraseAll;
@@ -125,6 +142,22 @@ export class ActiveEditorActions {
     return this.#clipboard.canCopyOrCut && this.#clipboard.canPaste;
   }
 
+  public get canImportImages(): boolean {
+    return this.#images.canImport;
+  }
+  public get canCropImage(): boolean {
+    return this.#images.canCrop;
+  }
+  public get selectedImageId(): string | undefined {
+    return this.#images.selectedImageId;
+  }
+  public importImages(point?: { readonly x: number; readonly y: number }): void {
+    this.#images.import(point);
+  }
+  public cropImage(): void {
+    this.#images.crop();
+  }
+
   public get canRequestPaste(): boolean {
     return (
       this.#isEnabled() &&
@@ -161,6 +194,7 @@ export class ActiveEditorActions {
   }
 
   public dispose(): void {
+    this.#images.dispose();
     this.cancelPendingConfirmation();
     this.#clearConfirmationTimer();
     this.#clipboard.dispose();
@@ -168,6 +202,7 @@ export class ActiveEditorActions {
   }
 
   public cancelPendingConfirmation(): void {
+    this.#images.cancel();
     this.#eraseConfirmation?.abort();
     this.#eraseConfirmation = undefined;
   }

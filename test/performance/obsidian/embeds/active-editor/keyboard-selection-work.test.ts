@@ -5,6 +5,7 @@ import { SelectionFrameSession } from "../../../../../src/editor/selection/publi
 import { CanvasKeyboardSelection } from "../../../../../src/obsidian/embeds/active-editor/input/canvas-keyboard-selection";
 import { KeyboardHandleInteraction } from "../../../../../src/obsidian/embeds/active-editor/previews/keyboard-handle-interaction";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
+import { imageElement } from "../../../../fixtures/domain/images";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import * as geometry from "../../../../../src/domain/geometry/public";
 import type { ActiveEditorControllerOptions } from "../../../../../src/obsidian/embeds/active-editor/controller-types";
@@ -29,15 +30,18 @@ beforeEach(installObsidianDomHelpers);
 it.each([100, 10_000])(
   "bounds keyboard navigation record and order work with %s strokes",
   (count) => {
-    const store = new ElementStore(
-      Array.from({ length: count }, (_, index) => indexedStroke(index)),
-    );
+    const store = new ElementStore([
+      imageElement(),
+      { ...imageElement(), id: "00000000-0000-4000-8000-000000000012" },
+      ...Array.from({ length: count }, (_, index) => indexedStroke(index)),
+    ]);
     const input = document.body.createDiv();
     let selection: ReadonlySet<string> = new Set();
     const read = vi.spyOn(store, "get");
     const rank = vi.spyOn(store, "getRank");
     const at = vi.spyOn(store, "idAtRank");
     const order = vi.spyOn(store, "materializeBandOrder");
+    const bands = vi.spyOn(store, "bandSize");
     const revealBounds = vi.fn();
     const keyboard = new CanvasKeyboardSelection({
       controller: { model: { store }, renderer: { inputSurface: input } } as never,
@@ -58,18 +62,20 @@ it.each([100, 10_000])(
         read.mockClear();
         rank.mockClear();
         at.mockClear();
+        bands.mockClear();
         expect(send(key)).toBe(true);
         expect(read).toHaveBeenCalledTimes(1);
         expect(at).toHaveBeenCalledTimes(1);
         expect(rank.mock.calls.length).toBeLessThanOrEqual(1);
         expect(order).not.toHaveBeenCalled();
+        expect(bands.mock.calls.length).toBeLessThanOrEqual(6);
       }
       const current = selection.values().next().value!;
       store.remove(new Set([current]));
       read.mockClear();
       at.mockClear();
       send("PageDown");
-      expect(selection.has(store.idAtRank("content", 0)!)).toBe(true);
+      expect(selection.has(store.idAtRank("image", 0)!)).toBe(true);
       expect(read).toHaveBeenCalledTimes(1);
       expect(at.mock.calls.length).toBeLessThanOrEqual(2);
       expect(revealBounds).toHaveBeenCalledTimes(5);

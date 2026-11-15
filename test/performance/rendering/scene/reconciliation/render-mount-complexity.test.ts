@@ -86,8 +86,8 @@ describe("visible render mount complexity", () => {
     expect(renderer.mountedCount).toBe(STROKES);
     expect(renderer.mountedIds("highlight")).toEqual(fixture.highlightIds);
     expect(renderer.mountedIds("content")).toEqual(fixture.contentIds);
-    expect(cameraGroup.nodes[3]?.nodes).toHaveLength(fixture.highlightIds.length);
-    expect(cameraGroup.nodes[4]?.nodes).toHaveLength(fixture.contentIds.length);
+    expect(cameraGroup.nodes[4]?.nodes).toHaveLength(fixture.highlightIds.length);
+    expect(cameraGroup.nodes[5]?.nodes).toHaveLength(fixture.contentIds.length);
     expect(instrumentation).toMatchObject({
       domEntrants: STROKES,
       geometryBuilds: 3,
@@ -165,7 +165,7 @@ function verifyEraserFeedback(
   cameraGroup: FakeNode,
   fixture: ReturnType<typeof createMaximumPointFixture>,
 ): void {
-  const nodes = [...cameraGroup.nodes[3]!.nodes, ...cameraGroup.nodes[4]!.nodes];
+  const nodes = [...cameraGroup.nodes[4]!.nodes, ...cameraGroup.nodes[5]!.nodes];
   const styleWrites = observeFadeWrites(nodes.flatMap((node) => [node, ...node.nodes]));
   const before = renderer.instrumentation();
   const ids = [...fixture.contentIds, ...fixture.highlightIds];
@@ -181,8 +181,8 @@ function verifyEraserFeedback(
     expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
   }
   expect(styleWrites()).toBe(STROKES);
-  expect(cameraGroup.nodes[3]!.nodes.every((node) => activeFades(node).length === 1)).toBe(true);
-  for (const node of cameraGroup.nodes[4]!.nodes)
+  expect(cameraGroup.nodes[4]!.nodes.every((node) => activeFades(node).length === 1)).toBe(true);
+  for (const node of cameraGroup.nodes[5]!.nodes)
     expect(activeFades(node).map((fade) => fade.keyframes.fillOpacity)).toEqual([["1", "0"]]);
   expect(scheduler.pendingCount).toBe(0);
   renderer.clearElementFade(ids);
@@ -289,7 +289,7 @@ it.each(["rank", "reverse"] as const)(
     const { renderer, scheduler, store } = createMountScene(records);
     scheduler.runAll(500);
     expect(renderer.mountedCount).toBe(records.length);
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     const nodes = [...content.nodes];
     expect(nodes).toHaveLength(records.length);
     const work = observeSelectedFadeWork(nodes);

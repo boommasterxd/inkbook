@@ -8,7 +8,7 @@ import { SceneContentRenderer } from "./content-renderer";
 import { SceneElementPreviews } from "./presentation/scene-element-previews";
 import * as fadeController from "./presentation/element-fade-controller";
 import { SceneFrameWriter } from "./scene-frame-writer";
-import { SceneFrameWork } from "./scene-frame-work";
+import { createFrameWork, type SceneFrameWork } from "./scene-frame-work";
 import * as stats from "./instrumentation";
 import { ScenePathCache, type PreparedScenePath } from "./content/path-cache";
 import { ScenePreviewInput } from "./presentation/scene-preview-input";
@@ -25,7 +25,13 @@ import type * as Scene from "./types";
 import { SceneTransformPreviewController } from "./presentation/transform-preview-controller";
 import { SceneVisibilityState } from "./visibility/visibility-state";
 import { SceneTextController } from "./scene-text-controller";
+import { SceneImageCropController } from "./scene-image-crop";
 export class SvgSceneRenderer {
+  readonly #crop = new SceneImageCropController(
+    () => [this.#dom, this.#stats, this.#camera, this.#content],
+    () => this.#frames.schedule(),
+  );
+  public readonly beginImageCrop = this.#crop.begin;
   readonly #text = new SceneTextController(() => [this.#dom, this.#content]);
   public readonly textDocument: Document;
   public readonly beginTextEditing = this.#text.begin;
@@ -103,7 +109,8 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
-      () => this.#visibilityCoordinator.previewMemoryUsage(),
+      () =>
+        this.#visibilityCoordinator.previewMemoryUsage() + this.#dom.imageResources.memoryUsage(),
       this.#detachedCache,
     );
     this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
@@ -122,16 +129,13 @@ export class SvgSceneRenderer {
     );
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
-    this.#frameWork = new SceneFrameWork({
-      backgroundPending: () => this.#background.dirty && this.#viewport !== undefined,
-      queryPending: () => this.#visibilityCoordinator.hasPendingQuery,
-      content: this.#content,
-      contentScheduler: this.#contentScheduler,
-      elements: this.#elementPreviews,
-      motion: this.#motion,
-      scheduler: this.#scheduler,
-      writeBackground: (deadline, allowAtomic) => this.writeBackground(deadline, allowAtomic),
-    });
+    this.#frameWork = createFrameWork(
+      this.#background,
+      this.#frameWriter,
+      [this.#content, this.#contentScheduler, this.#elementPreviews, this.#motion],
+      this.#scheduler,
+      () => [this.#viewport, this.#camera, this.#visibilityCoordinator],
+    );
     this.#previewInput = this.createPreviewInput();
     this.#deltas = new SceneDeltaCoordinator({
       commits: this.#sceneCommits,
@@ -214,6 +218,7 @@ export class SvgSceneRenderer {
     const zoomChanged = camera.zoom !== this.#camera.zoom;
     if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
     this.#camera = camera;
+    this.#crop.camera(camera);
     this.#frameWriter.setCamera(camera);
     this.#visibilityCoordinator.setContext(camera, this.#viewport);
     if (zoomChanged && this.#background.invalidateZoom()) {
@@ -342,6 +347,7 @@ export class SvgSceneRenderer {
     refreshCursorLayout = false,
   ): void {
     runtime.assertSceneActive(this.#disposed);
+    this.#crop.flush();
     if (refreshCursorLayout) this.#frameWriter.readToolCursor(true);
     this.#frameWriter.writePointerFeedback(
       this.#transformPreviews,
@@ -412,6 +418,7 @@ export class SvgSceneRenderer {
   public destroy(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#crop.release();
     this.#text.release();
     this.#frames.dispose();
     this.#visibilityCoordinator.release();
@@ -475,13 +482,9 @@ export class SvgSceneRenderer {
       startedAt,
     );
     this.#frameWriter.writeSelection(this.#elementPreviews, this.#motion);
+    this.#crop.flush();
     this.#frameWork.complete(work, this.#sceneCommits, this.#frames);
     if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
-  }
-  private writeBackground(deadline: number, allowAtomic = false): boolean {
-    return this.#viewport === undefined
-      ? false
-      : this.#background.write(this.#frameWriter, this.#camera.zoom, deadline, allowAtomic);
   }
   private createPreviewInput(): ScenePreviewInput {
     return new ScenePreviewInput(this.#motion, this.#content, {

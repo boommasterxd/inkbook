@@ -21,10 +21,12 @@ export interface OwnedMutationReplay {
 }
 
 export const STABLE_RELATIVE_ORDER: Readonly<Record<RenderBand, boolean>> = Object.freeze({
+  image: true,
   content: true,
   highlight: true,
 });
 const UNKNOWN_RELATIVE_ORDER: Readonly<Record<RenderBand, boolean>> = Object.freeze({
+  image: false,
   content: false,
   highlight: false,
 });
@@ -94,7 +96,7 @@ function historyBuilder(
       forward,
       reverse,
       // Two directional band-state snapshots and their identity references.
-      payloadBytes: payload.bytes + 192,
+      payloadBytes: payload.bytes + 256,
       dirtyBands: delta.dirtyBands,
       relativeOrderPreserved: Object.freeze(relativeOrderPreserved),
     }),

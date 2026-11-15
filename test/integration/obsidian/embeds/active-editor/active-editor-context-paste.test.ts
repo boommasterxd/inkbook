@@ -170,8 +170,8 @@ function clickableMenu(callbacks: Map<string, () => void>): MenuPort {
 
 function appliedMutation(): import("../../../../../src/domain/store/public").AppliedElementMutation {
   return {
-    forward: { bands: { content: ["paste"], highlight: [] } },
+    forward: { bands: { image: [], content: ["paste"], highlight: [] } },
     payloadBytes: 1,
-    reverse: { bands: { content: [], highlight: ["paste"] } },
+    reverse: { bands: { image: [], content: [], highlight: ["paste"] } },
   };
 }

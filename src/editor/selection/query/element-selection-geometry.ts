@@ -38,6 +38,15 @@ export function visitVisibleElementPrimitives(
   if (element.kind === "stroke") return visitStroke(element, visitor);
   if (element.kind === "coordinate-system") return visitCoordinateSystem(element, visitor);
   if (element.kind === "table") return visitTable(element, visitor);
+  if (element.kind === "image") {
+    const points = [
+      { x: element.x, y: element.y },
+      { x: element.x + element.width, y: element.y },
+      { x: element.x + element.width, y: element.y + element.height },
+      { x: element.x, y: element.y + element.height },
+    ].map((point) => rotatedFor(element, point));
+    return visitor({ kind: "polygon", points });
+  }
   if (element.kind === "text") {
     for (const primitive of textSelectionPrimitiveSteps(element))
       if (primitive !== undefined && !visitor(primitive)) return false;

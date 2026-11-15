@@ -1,3 +1,4 @@
+import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
@@ -5,8 +6,6 @@ import { SceneElementPreviewController } from "../../../../src/rendering/scene/p
 import { SceneElementPreviews } from "../../../../src/rendering/scene/presentation/scene-element-previews";
 import { SceneTransformPreviewController } from "../../../../src/rendering/scene/presentation/transform-preview-controller";
 import { PreviewElementMap } from "../../../../src/rendering/scene/presentation/preview-element-map";
-
-import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
 
 it("reads live preview owners without copying and preserves duplicate priority and iteration order", () => {
   const selected = fakeRectangleRecord("selected", 0, 10).element;

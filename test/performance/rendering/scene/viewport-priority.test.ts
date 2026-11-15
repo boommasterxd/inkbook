@@ -173,7 +173,7 @@ it.each([
       { waitForBackground: wait },
     );
     scheduler.runAll();
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     const publication = busy
       ? observeSceneInsertions(content, (roots) => {
           expect(roots).toBeLessThanOrEqual(16);
@@ -374,7 +374,7 @@ it("detaches exits in bounded frames after the first new publication", () => {
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   renderer.setReducedMotion(true);
   scheduler.runAll();
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const oldNodes = new Set(content.nodes);
   let oldRemovals = 0;
   const originalRemove = Object.getOwnPropertyDescriptor(FakeNode.prototype, "remove")!.value as (
@@ -459,7 +459,7 @@ it("finishes partially scanned old mounts while remote geometry waits, then stop
   renderer.setReducedMotion(true);
   scheduler.runNext();
   expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const oldNodes = [...content.nodes];
   const restoreClock = chargeClockAfterPublication(content, scheduler);
   try {

@@ -5,6 +5,7 @@ import type {
   BoxShapeElementV1,
   CoordinateSystemElementV1,
   InkElementV1,
+  ImageElementV3,
   LinearElementV1,
   PointV1,
   StrokeElementV1,
@@ -46,9 +47,31 @@ export function interpolateElement(
       return from.kind === "table" ? interpolateTable(from, to, progress) : to;
     case "text":
       return to;
+    case "image":
+      return from.kind === "image" ? interpolateImage(from, to, progress) : to;
     default:
       return isBox(from) ? interpolateBox(from, to, progress) : to;
   }
+}
+
+function interpolateImage(
+  from: ImageElementV3,
+  to: ImageElementV3,
+  progress: number,
+): ImageElementV3 {
+  return {
+    ...base(from, to, progress),
+    x: number(from.x, to.x, progress),
+    y: number(from.y, to.y, progress),
+    width: number(from.width, to.width, progress),
+    height: number(from.height, to.height, progress),
+    crop: {
+      x: number(from.crop.x, to.crop.x, progress),
+      y: number(from.crop.y, to.crop.y, progress),
+      width: number(from.crop.width, to.crop.width, progress),
+      height: number(from.crop.height, to.crop.height, progress),
+    },
+  };
 }
 
 export function standardMotionProgress(progress: number): number {

@@ -1,10 +1,11 @@
 export interface InkSnapshotV1 {
   format: "inkbook";
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   revision: number;
   page: PageV1;
   elements: InkElementV1[];
   fontResources?: FontResourceV2[];
+  imageResources?: ImageResourceV3[];
 }
 
 export interface PageV1 {
@@ -268,13 +269,40 @@ export interface FontResourceV2 {
   license?: string;
 }
 
+export interface ImageResourceV3 {
+  id: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  width: number;
+  height: number;
+  data: string;
+}
+
+/** Source pixels after orientation has been normalized by the import adapter. */
+export interface ImageCropV3 {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ImageElementV3 extends ElementBaseV1 {
+  kind: "image";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  assetId: string;
+  crop: ImageCropV3;
+}
+
 export type InkElementV1 =
   | StrokeElementV1
   | LinearElementV1
   | BoxShapeElementV1
   | CoordinateSystemElementV1
   | TableElementV1
-  | TextElementV2;
+  | TextElementV2
+  | ImageElementV3;
 
 interface ClipboardEndpointConnectionV1 {
   targetClipId: string;
@@ -296,7 +324,8 @@ export interface ClipboardElementV1 {
 
 export interface InkClipboardV1 {
   format: "inkbook-elements";
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   elements: ClipboardElementV1[];
   fontResources?: FontResourceV2[];
+  imageResources?: ImageResourceV3[];
 }

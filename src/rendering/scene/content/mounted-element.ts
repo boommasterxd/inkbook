@@ -1,4 +1,6 @@
 import { MountedTextPresentation, setTextMotionOrigin } from "./mounted-text";
+import { MountedImagePresentation } from "./mounted-image";
+import type { SceneImageResources } from "./image-resources";
 import {
   createMountedPath,
   writeAttribute,
@@ -58,6 +60,7 @@ export interface MountedSceneElement {
   paintVersion: number;
   readonly paths: MountedPath[];
   text?: MountedTextPresentation | undefined;
+  image?: MountedImagePresentation | undefined;
   pathParts: readonly SvgPathPart[];
   previewStrokeWidthScale: number | null;
   previewTransformVersion: number;
@@ -80,6 +83,7 @@ export function createMountedElement(
   parts: readonly SvgPathPart[],
   instrumentation: MutableSceneInstrumentation,
   preparedText?: MountedTextPresentation,
+  imageResources?: SceneImageResources,
 ): MountedSceneElement {
   const paths = parts.map((part) =>
     createMountedPath(ownerDocument, record, part, instrumentation),
@@ -89,7 +93,14 @@ export function createMountedElement(
     (record.element.kind === "text"
       ? new MountedTextPresentation(ownerDocument, record.element, instrumentation)
       : undefined);
-  const group = text?.group ?? createPressureGroup(ownerDocument, record, paths, instrumentation);
+  const image =
+    record.element.kind === "image" && imageResources !== undefined
+      ? new MountedImagePresentation(ownerDocument, record.element, imageResources, instrumentation)
+      : undefined;
+  const group =
+    image?.group ??
+    text?.group ??
+    createPressureGroup(ownerDocument, record, paths, instrumentation);
   const entry: MountedSceneElement = {
     band: record.band,
     bounds: record.bounds,
@@ -110,6 +121,7 @@ export function createMountedElement(
     paintVersion: record.paintVersion,
     paths,
     text,
+    image,
     pathParts: parts,
     previewStrokeWidthScale: null,
     previewTransformVersion: 0,
@@ -129,6 +141,7 @@ export function appendElementToFragment(
 }
 
 export function removeMountedElement(entry: MountedSceneElement): void {
+  entry.image?.release();
   entry.text?.cancelPreparation();
   if (entry.fadeActive) setMountedElementFade(entry, null);
   if (entry.group !== null) entry.group.remove();
@@ -138,6 +151,7 @@ export function removeMountedElement(entry: MountedSceneElement): void {
 /** Removes one top-level SVG node, retaining partial path ownership until reconciliation ends. */
 export function removeMountedElementNode(entry: MountedSceneElement): boolean {
   if (entry.group !== null) {
+    entry.image?.release();
     entry.text?.cancelPreparation();
     if (entry.fadeActive) setMountedElementFade(entry, null);
     entry.group.remove();
@@ -178,6 +192,8 @@ export function updateMountedPaint(
   instrumentation: MutableSceneInstrumentation,
 ): void {
   if (entry.text !== undefined && record.element.kind === "text") entry.text.update(record.element);
+  if (entry.image !== undefined && record.element.kind === "image")
+    entry.image.update(record.element);
   const opacity = pressureRootOpacity(record.element);
   const pressure = isPressureStroke(record.element);
   const previousPressure = isPressureStroke(entry.displayedElement);
@@ -288,7 +304,10 @@ function updateMountedPreviewGeometry(
   parts: readonly SvgPathPart[],
   options: TopologyUpdateOptions,
 ): void {
-  if (entry.text !== undefined && record.element.kind === "text") {
+  if (entry.image !== undefined && record.element.kind === "image") {
+    entry.image.update(record.element);
+    return;
+  } else if (entry.text !== undefined && record.element.kind === "text") {
     entry.text.update(record.element);
     return;
   } else if (
@@ -319,7 +338,7 @@ export function setMountedElementMotion(
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
   for (const node of nodes) {
     const textPosition =
-      entry.displayedElement.kind === "text"
+      entry.displayedElement.kind === "text" || entry.displayedElement.kind === "image"
         ? setTextMotionOrigin(node, opacity === null ? null : entry.displayedElement)
         : "";
     if (opacity === null) clearMotionStyle(node);

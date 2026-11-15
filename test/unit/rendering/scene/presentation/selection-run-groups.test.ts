@@ -12,6 +12,7 @@ import { FakeDocument, FakeNode, fakeNode, fakeRectangleRecord } from "../fakes"
 function fixture() {
   const document = new FakeDocument();
   const bands = {
+    image: new FakeNode(document, "g"),
     content: new FakeNode(document, "g"),
     highlight: new FakeNode(document, "g"),
   };

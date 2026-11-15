@@ -1,5 +1,16 @@
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  asDocument,
+  asElement,
+  fakeRectangleRecord,
+  fakeNode,
+  replaceWithRectangles,
+  sceneBandNode,
+} from "../../../unit/rendering/scene/fakes";
 import { describe, expect, it, vi } from "vitest";
-
 import {
   type ArrowElementV1,
   type BoxShapeElementV1,
@@ -12,17 +23,6 @@ import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import { flushSceneViewport } from "../../../fixtures/rendering/scene";
-import {
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-  asDocument,
-  asElement,
-  fakeRectangleRecord,
-  fakeNode,
-  replaceWithRectangles,
-} from "../../../unit/rendering/scene/fakes";
 
 const page: PageV1 = {
   activeBufferLines: 3,
@@ -132,7 +132,7 @@ function setupTransformPreview(
   scheduler.runAll();
   renderer.setPreviewTransform(ids, "translate(5 0)", 1);
   scheduler.runAll();
-  return { content: fakeNode(renderer.svg).nodes[1]!.nodes[4]!, renderer, scheduler };
+  return { content: sceneBandNode(fakeNode(renderer.svg), "content"), renderer, scheduler };
 }
 
 describe("imperative SVG scene renderer", () => {
@@ -242,7 +242,7 @@ describe("live stroke scene handoff", () => {
       input: { pressureSource: "pen", zoom: 1 },
       style,
     });
-    const liveLayer = fakeNode(renderer.svg).nodes[1]!.nodes[6]!;
+    const liveLayer = sceneBandNode(fakeNode(renderer.svg), "content").nextSibling!.nextSibling!;
     const liveGroup = liveLayer.nodes[0]!;
     let firstChunkNode: FakeNode | undefined;
     let latestPreview = builder.append({ pressure: 0.5, time: 0, x: 0, y: 0 });
@@ -453,7 +453,7 @@ describe("dense scene reconciliation", () => {
 
     scheduler.runNext();
     expect(renderer.mountedCount).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
-    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(
+    expect(sceneBandNode(fakeNode(renderer.svg), "content").nodes).toHaveLength(
       SCENE_PUBLICATION_ROOTS_PER_FRAME,
     );
     expect(renderer.instrumentation().geometryBuilds).toBeGreaterThan(0);

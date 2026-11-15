@@ -1,3 +1,6 @@
+import { SceneVisibilityReconciler } from "../../../src/rendering/scene/reconciliation/scene-visibility-reconciler";
+import type { SceneVisibilityReconcilerOptions } from "../../../src/rendering/scene/reconciliation/reconciliation-state";
+import { ScenePathCache } from "../../../src/rendering/scene/content/path-cache";
 import { expect, vi } from "vitest";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene";
 import type { SceneStorePort, SceneViewport } from "../../../src/rendering/scene/types";
@@ -9,6 +12,7 @@ import {
   FakeSceneStore,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../unit/rendering/scene/fakes";
 import { SceneDom } from "../../../src/rendering/scene/scene-dom";
 import { createInstrumentation } from "../../../src/rendering/scene/instrumentation";
@@ -68,7 +72,7 @@ export function createDirectPublicationScene(kind: "path" | "pressure" | "multip
 export function createPublicationScene(store: SceneStorePort, viewport: SceneViewport) {
   const fixture = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   fixture.scheduler.runAll();
-  return { ...fixture, content: fakeNode(fixture.renderer.svg).nodes[1]!.nodes[4]! };
+  return { ...fixture, content: sceneBandNode(fakeNode(fixture.renderer.svg), "content") };
 }
 
 /** Verifies released publication queues and retained geometry/node ownership. */
@@ -233,4 +237,17 @@ export function chargeClockAfterPublication(content: FakeNode, scheduler: FakeSc
     return result;
   });
   return () => insert.mockRestore();
+}
+
+/** Owns the path cache and initially clean render-band state for a direct publication test. */
+export function createPublicationReconciliation(
+  options: Omit<SceneVisibilityReconcilerOptions, "pathCache" | "orderDirty">,
+) {
+  const paths = new ScenePathCache();
+  const reconciler = new SceneVisibilityReconciler({
+    ...options,
+    pathCache: paths,
+    orderDirty: { image: new Set(), highlight: new Set(), content: new Set() },
+  });
+  return { paths, reconciler };
 }

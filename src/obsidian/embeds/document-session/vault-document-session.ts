@@ -12,6 +12,7 @@ import * as loader from "./vault-document-loader";
 import * as trustedLoader from "./trusted-vault-document-loader";
 import * as recovery from "./vault-document-recovery";
 import * as modelPorts from "./vault-document-model";
+import { SessionImageResources } from "./session-image-resources";
 import * as fontState from "./session-font-resources";
 import { VaultDocumentSessionMutations } from "./vault-document-session-mutations";
 import { lockedDocumentAspectRatio } from "./vault-document-session-identity";
@@ -305,56 +306,54 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     const { snapshot, outputHash, requiresCanonicalRewrite, store, sourceVersion } = loaded;
     this.#migrationBackup.version = sourceVersion < snapshot.version ? sourceVersion : undefined;
     const fonts = new fontState.SessionFontResources(snapshot);
+    const images = new SessionImageResources(snapshot);
     this.#page = snapshot.page;
     this.#revision = snapshot.revision;
     this.#confirmedRevision = snapshot.revision;
-    const clipboard = modelPorts.createVaultClipboardCoordinator({
-      ensureFontResources: (resources) => model.ensureFontResources!(resources),
-      autosave: () => this.#autosave,
-      disposed: () => this.#lifecycle.disposed,
-      executor: () => this.#executor,
-      now: () => this.runtimes.now(this.#identity.documentId),
-      revision: () => this.#revision,
-      sessionId: this.#identity.sessionId,
-      workerEpoch: () => this.#workerEpoch,
-    });
-    const mutations = new VaultDocumentSessionMutations({
-      autosave: () => this.#autosave,
-      commitState: (committed) => ({ page: this.#page, revision: this.#revision } = committed),
-      revision: () => this.#revision,
-      setRevision: (revision) => (this.#revision = revision),
-      store: () => this.#model?.store,
-    });
-    const scenePaths = modelPorts.createVaultSessionScenePaths({
+    const runtime = {
       autosave: () => this.#autosave,
       disposed: () => this.#lifecycle.disposed || this.#lifecycle.preparingForUnload,
       executor: () => this.#executor,
       revision: () => this.#revision,
       sessionId: this.#identity.sessionId,
       workerEpoch: () => this.#workerEpoch,
+    };
+    const clipboard = modelPorts.createVaultClipboardCoordinator({
+      ...runtime,
+      ensureFontResources: (resources) => model.ensureFontResources!(resources),
+      addImageResources: (resources) => model.addImageResources!(resources),
+      now: () => this.runtimes.now(this.#identity.documentId),
     });
-    const scheduler = (cancelled: () => boolean, priority?: "frame") =>
-      this.runtimes.createStoreScheduler(
-        this.#identity.documentId,
-        () => this.#lifecycle.disposed || this.#lifecycle.preparingForUnload || cancelled(),
-        priority,
-      );
+    const mutations = new VaultDocumentSessionMutations({
+      imageResources: () => images.changes,
+      acknowledgeImageResources: () => images.acknowledge(),
+      autosave: () => this.#autosave,
+      commitState: (committed) => ({ page: this.#page, revision: this.#revision } = committed),
+      revision: () => this.#revision,
+      setRevision: (revision) => (this.#revision = revision),
+      store: () => this.#model?.store,
+    });
+    const scenePaths = modelPorts.createVaultSessionScenePaths(runtime);
+    const scheduler = modelPorts.createVaultStoreScheduler(
+      this.runtimes,
+      this.#identity.documentId,
+      () => this.#lifecycle.disposed || this.#lifecycle.preparingForUnload,
+    );
     const model = modelPorts.createVaultEditableModel({
       actions: {
         ...this.#pendingInput.actions(() => this.documentModel === model),
-        ensureFontResources: (resources) =>
-          fontState.ensureSessionFontResources({
-            fonts,
-            resources,
-            scheduler: this.#workScheduler,
-            active: () =>
-              this.#model === model &&
-              !this.#lifecycle.disposed &&
-              !this.#lifecycle.preparingForUnload,
-            autosave: () => this.#autosave,
-            revision: () => this.#revision,
-            setRevision: (revision) => (this.#revision = revision),
-          }),
+        ...fontState.createSessionResourceActions({
+          fonts,
+          images,
+          scheduler: this.#workScheduler,
+          active: () =>
+            this.#model === model &&
+            !this.#lifecycle.disposed &&
+            !this.#lifecycle.preparingForUnload,
+          autosave: () => this.#autosave,
+          revision: () => this.#revision,
+          setRevision: (revision) => (this.#revision = revision),
+        }),
         getSaveStatus: this.#saveStatus.current,
         subscribeSaveStatus: this.#saveStatus.subscribe,
         prepareScenePaths: scenePaths.prepare,
@@ -387,7 +386,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       },
       state: {
         fontResources: () => fonts.resources,
-        formatVersion: () => fonts.version,
+        imageResources: () => images.resources,
+        formatVersion: () => (images.resources.length > 0 ? 3 : fonts.version),
         mutationAvailability: () =>
           this.#revision < Number.MAX_SAFE_INTEGER ? "available" : "revision-exhausted",
         page: () => modelPorts.requireVaultPage(this.#page),
@@ -433,6 +433,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       identity: this.#identity,
       initialSnapshot: snapshot,
       fontResources: () => this.#model?.fontResources ?? [],
+      imageResources: () => this.#model?.imageResources ?? [],
       formatVersion: () => this.#model?.formatVersion ?? snapshot.version,
       isGestureActive: () => this.#workPriority.inputActive,
       outputHash,

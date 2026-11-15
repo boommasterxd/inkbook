@@ -74,7 +74,7 @@ describe("native text snapshot validation", () => {
       ok: false,
       error: { code: "invalid-literal", path: "$.version" },
     });
-    expect(validateInkSnapshotV1({ ...snapshot(), version: 3 }).ok).toBe(false);
+    expect(validateInkSnapshotV1({ ...snapshot(), version: 3 }).ok).toBe(true);
   });
 
   it.each([

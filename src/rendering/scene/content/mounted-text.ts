@@ -344,7 +344,10 @@ export class MountedTextPresentation {
 }
 
 /** Explicit page-space origin keeps CSS motion identical to the native SVG rotation. */
-export function setTextMotionOrigin(node: SVGElement, element: TextElementV2 | null): string {
+export function setTextMotionOrigin(
+  node: SVGElement,
+  element: Pick<TextElementV2, "pivot" | "rotation"> | null,
+): string {
   if (element === null) {
     node.style.removeProperty("transform-origin");
     return "";

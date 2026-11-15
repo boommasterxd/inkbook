@@ -92,7 +92,9 @@ it("cancels graph traversal and later prepares and commits an unchanged-edge pai
   const prepared = await store.prepareElementReplacement([replacement], uninterrupted);
   if (prepared.token === null) throw new Error("Expected a prepared replacement.");
   expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
-  expect(store.get(last.id)?.element.style).toMatchObject({ outlineOpacity: 0.5 });
+  const committed = store.get(last.id)!.element;
+  if (committed.kind !== "line") throw new Error("Expected committed line.");
+  expect(committed.style).toMatchObject({ outlineOpacity: 0.5 });
   expect(store.instrumentation.publishedDeltas).toBe(1);
 });
 

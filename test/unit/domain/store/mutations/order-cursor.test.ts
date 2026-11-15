@@ -35,13 +35,13 @@ it("rejects order progress after an authoritative model mutation", () => {
 
 it("reads authoritative bands lazily and checks the version before accessing replaced arrays", () => {
   let version = 0;
-  let bands = { highlight: ["highlight"], content: ["content"] };
+  let bands = { image: [], highlight: ["highlight"], content: ["content"] };
   const readBands = vi.fn(() => bands);
   const cursor = new StoreOrderCursor(readBands, () => version);
   expect(readBands).not.toHaveBeenCalled();
   expect(cursor.advance().id).toBe("highlight");
   expect(readBands).toHaveBeenCalledOnce();
-  bands = { highlight: [], content: [] };
+  bands = { image: [], highlight: [], content: [] };
   version += 1;
   expect(cursor.advance()).toEqual({ done: true, stale: true });
   expect(readBands).toHaveBeenCalledOnce();

@@ -89,6 +89,7 @@ export class ActiveDocumentHistory {
       const bands = await this.#collectBandOrder(scheduler, isCancelled);
       if (bands === "cancelled") return { status: "cancelled", token: null };
       const ids = (function* () {
+        yield* bands.image;
         yield* bands.highlight;
         yield* bands.content;
       })();
@@ -167,8 +168,8 @@ export class ActiveDocumentHistory {
 export async function collectDocumentBandOrder(
   store: ElementStore,
   scheduler: TransformSliceScheduler,
-): Promise<{ content: string[]; highlight: string[] } | "cancelled"> {
-  const bands = { content: [] as string[], highlight: [] as string[] };
+): Promise<{ image: string[]; content: string[]; highlight: string[] } | "cancelled"> {
+  const bands = { image: [] as string[], content: [] as string[], highlight: [] as string[] };
   const cursor = store.beginOrder();
   try {
     while (!scheduler.isCancelled?.()) {

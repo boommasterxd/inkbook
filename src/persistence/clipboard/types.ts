@@ -1,5 +1,6 @@
 import type {
   FontResourceV2,
+  ImageResourceV3,
   InkClipboardV1,
   InkElementV1,
   PointV1,
@@ -74,8 +75,10 @@ export type PasteInvocation =
 export interface PastePlan {
   elements: readonly InkElementV1[];
   fontResources?: readonly FontResourceV2[];
+  imageResources?: readonly ImageResourceV3[];
   selectedIds: readonly string[];
   highlightIds: readonly string[];
+  imageIds?: readonly string[];
   contentIds: readonly string[];
   insertAtBandFront: true;
   activateTool: "select";

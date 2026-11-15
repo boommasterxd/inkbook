@@ -1,7 +1,7 @@
+import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 import { expect, it } from "vitest";
 import { createSelectionTraceFixture } from "../../../../fixtures/rendering/selection-traces";
 import { rectangle } from "../../../../unit/domain/schema/fixtures";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 it("keeps frame geometry centered and leaves handles and degenerate frames unclipped", () => {
   const { renderer } = createSelectionTraceFixture([]);

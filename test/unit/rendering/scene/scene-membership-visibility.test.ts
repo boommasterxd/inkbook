@@ -5,8 +5,14 @@ import { createInstrumentation } from "../../../../src/rendering/scene/instrumen
 import { createMountedElement } from "../../../../src/rendering/scene/content/mounted-element";
 import { SceneElementFades } from "../../../../src/rendering/scene/presentation/scene-element-fades";
 import * as fadeStyle from "../../../../src/rendering/scene/presentation/element-fade-style";
-import { FakeDocument, fakeNode, fakeRectangleRecord } from "./fakes";
-import { FakeSceneStore } from "./fakes";
+import {
+  FakeDocument,
+  fakeNode,
+  fakeRectangleRecord,
+  sceneBandNode,
+  FakeSceneStore,
+} from "./fakes";
+
 import {
   createSceneFixture,
   createSceneRecord,
@@ -374,7 +380,7 @@ it("keeps concealed reserve exits hidden across scroll while bounded physical cl
   });
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(100);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   try {
     replaySceneMembership(renderer, store, records, "exit");
     scheduler.runNext();

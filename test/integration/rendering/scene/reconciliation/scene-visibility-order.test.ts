@@ -15,6 +15,7 @@ import {
   FakeScheduler,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
 
 it.each(["before-commit", "after-commit", "offscreen-removal"] as const)(
@@ -168,7 +169,7 @@ it.each([false, true])(
       if (args[1] === "path") scheduler.time += 6 / SCENE_PUBLICATION_ROOTS_PER_FRAME;
       return node;
     });
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = sceneBandNode(fakeNode(renderer.svg), "content");
     const previousRoots = [...content.nodes];
     const entrants = Array.from({ length: SCENE_PUBLICATION_ROOTS_PER_FRAME * 2 }, (_, rank) =>
       fakeRectangleRecord(`new-${rank}`, rank, 10),
@@ -274,8 +275,8 @@ it("merges viewport entrants into band order and sorts after a rank change", () 
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(["first", "last"]);
   const camera = fakeNode(renderer.svg).nodes[1]!;
-  const highlightGroup = camera.nodes[3]!;
-  const contentGroup = camera.nodes[4]!;
+  const highlightGroup = sceneBandNode(camera, "highlight");
+  const contentGroup = sceneBandNode(camera, "content");
   const firstNode = contentGroup.nodes[0]!;
 
   store.records.set(first.id, { ...first, band: "highlight" });
@@ -348,7 +349,7 @@ it.each([
   );
   scheduler.runAll();
   expect(renderer.mountedIds("content")).toEqual(ids);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   expect(content.nodes).toHaveLength(ids.length);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
@@ -419,7 +420,7 @@ it("publishes a cached entrant while the earlier cold stroke waits for the worke
   const viewport = { height: 50, left: 0, top: 100, width: 100 };
   const { renderer, scheduler, document } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   scheduler.runAll();
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   const retained = content.nodes[0]!;
   renderer.setViewport({ ...viewport, top: 1_000 });
   scheduler.runAll();

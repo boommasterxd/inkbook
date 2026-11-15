@@ -8,6 +8,7 @@ import {
   type KeyboardHandleOptions,
 } from "../previews/keyboard-handle-interaction";
 import { CanvasKeyboardStatus } from "./canvas-keyboard-status";
+import { RENDER_BANDS } from "../../../../domain/commands/render-bands";
 
 export interface CanvasKeyboardSelectionOptions extends Omit<KeyboardHandleOptions, "settled"> {
   readonly geometryInteraction?: KeyboardHandleInteraction;
@@ -166,22 +167,28 @@ export class CanvasKeyboardSelection {
         ? this.#selectedId
         : selection.values().next().value;
     const rank = id === undefined ? undefined : this.#store.getRank(id);
-    const current =
-      rank === undefined
-        ? direction > 0
-          ? -1
-          : this.#store.size
-        : rank.rank + (rank.band === "content" ? this.#store.bandSize("highlight") : 0);
+    let current = rank === undefined ? (direction > 0 ? -1 : this.#store.size) : rank.rank;
+    if (rank !== undefined) {
+      for (const band of RENDER_BANDS) {
+        if (band === rank.band) break;
+        current += this.#store.bandSize(band);
+      }
+    }
     this.#selectRank(current + direction, additive);
   }
 
   #selectRank(index: number, additive: boolean): void {
     const bounded = Math.min(this.#store.size - 1, Math.max(0, index));
-    const highlights = this.#store.bandSize("highlight");
-    const id =
-      bounded < highlights
-        ? this.#store.idAtRank("highlight", bounded)
-        : this.#store.idAtRank("content", bounded - highlights);
+    let remaining = bounded;
+    let id: string | undefined;
+    for (const band of RENDER_BANDS) {
+      const size = this.#store.bandSize(band);
+      if (remaining >= 0 && remaining < size) {
+        id = this.#store.idAtRank(band, remaining);
+        break;
+      }
+      remaining -= size;
+    }
     if (id === undefined) {
       this.#status.announce(this.#localization.t("canvas.empty"));
       return;

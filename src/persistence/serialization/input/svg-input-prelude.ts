@@ -5,13 +5,13 @@ import {
 import type { DocumentCodecResult } from "../types";
 import { inputFailure } from "./chunked-input-utils";
 
-const MAXIMUM_PREFIX_CHARACTERS = 48 * 1024 * 1024 + 64 * 1024;
+const MAXIMUM_PREFIX_CHARACTERS = 64 * 1024 * 1024;
 interface CompletePrelude {
   readonly prelude: SafeSvgPrelude;
   readonly remaining: string;
 }
 
-/** Keep large font CSS bounded and inspect a completed prefix exactly once. */
+/** Keep embedded font and raster resources bounded and inspect a completed prefix exactly once. */
 export class SvgInputPrelude {
   #prefix = "";
   #scanOffset = 0;
@@ -40,7 +40,9 @@ export class SvgInputPrelude {
       end = this.#prefix.indexOf(">", end + 1);
     }
     const fontStart = this.#prefix.indexOf('<style id="inkbook-fonts">');
-    if (this.#prefix.length > 64 * 1024 && (fontStart < 0 || fontStart > 64 * 1024))
+    const imageStart = this.#prefix.indexOf('<defs id="inkbook-images">');
+    const resourceStart = fontStart < 0 ? imageStart : fontStart;
+    if (this.#prefix.length > 64 * 1024 && (resourceStart < 0 || resourceStart > 64 * 1024))
       return prefixFailure();
     return input.length > capacity ? prefixFailure() : { ok: true, value: null };
   }

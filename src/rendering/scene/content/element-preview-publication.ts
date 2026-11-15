@@ -49,6 +49,7 @@ export function elementParts(
   entry: MountedSceneElement,
   element: InkElementV1,
 ): readonly SvgPathPart[] {
+  if (element.kind === "image") return [];
   return sameStrokeShape(entry.displayedElement, element)
     ? entry.displayedPathParts
     : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);

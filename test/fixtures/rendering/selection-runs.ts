@@ -5,7 +5,7 @@ import { ElementStore } from "../../../src/domain/store/public";
 import { scaleElement } from "../../../src/editor/selection/transform/transforms";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import { PAGE, rectangle } from "../../unit/domain/store/fixtures";
-import { FakeNode, fakeNode } from "../../unit/rendering/scene/fakes";
+import { FakeNode, fakeNode, sceneBandNode } from "../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../editor/stroke";
 import { createSceneFixture, sceneDeltaEntries } from "./scene";
 
@@ -84,7 +84,7 @@ export function fixture(
 }
 
 export function contentPaths(svg: ReturnType<typeof fakeNode>) {
-  const content = svg.nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(svg, "content");
   const visit = (node: typeof svg): (typeof svg)[] =>
     node.tagName === "path" ? [node] : node.nodes.flatMap(visit);
   return visit(content);
@@ -231,7 +231,7 @@ export function expectSelectionStart(
 ) {
   const expectedD = buildElementPathParts(element)[0]!.d;
   const target = selectionPath(f, element);
-  const band = fakeNode(f.renderer.svg).nodes[1]!.nodes[4]!;
+  const band = sceneBandNode(fakeNode(f.renderer.svg), "content");
   expect(paintedX(target, band)).toBeCloseTo(Number(/^M\s*([-\d.]+)/.exec(expectedD)![1]), 6);
 }
 

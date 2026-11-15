@@ -12,6 +12,9 @@
 @import url("./font-choice-dropdown.css");
 @import url("./font-library-dialog.css");
 @import url("./font-import-wizard.css");
+@import url("./image-dialog.css");
+@import url("./image-import-dialog.css");
+@import url("./image-crop.css");
 @import url("./menu-feedback.css");
 @import url("./background-menu.css");
 @import url("./settings.css");

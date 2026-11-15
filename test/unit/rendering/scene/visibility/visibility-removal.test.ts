@@ -179,8 +179,8 @@ it("refreshes rank caches from the existing commit reads before merging camera e
   );
   const get = vi.spyOn(store, "get");
   commitVisibleBands(
-    { content: [], highlight: [] },
-    { content: 0, highlight: 0 },
+    { image: [], content: [], highlight: [] },
+    { image: 0, content: 0, highlight: 0 },
     visibility,
     { mounted, store, epoch: 1 },
     state.removalReuse,
@@ -199,6 +199,7 @@ it("refreshes rank caches from the existing commit reads before merging camera e
 it("bounds partial-copy work by the supplied deadline and releases its references on cancellation", () => {
   let clock = 0;
   const current = {
+    image: { count: 0, ids: [] },
     content: { count: 4, ids: ["a", "b", "c", "d"] },
     highlight: { count: 0, ids: [] },
   };
@@ -227,4 +228,27 @@ it("bounds partial-copy work by the supplied deadline and releases its reference
   expect(reuse.memoryUsage()).toBe(0);
   reuse.invalidate();
   expect(reuse.begin()).toBe(false);
+});
+
+it("removes image-band members without reading records or mutating published order", () => {
+  const { state, store } = publishedState(4, 1);
+  const image = { ...fakeRectangleRecord("image", 0, 10), band: "image" as const };
+  store.records.set(image.id, image);
+  state.invalidateForChanges(null, image.bounds, image.id);
+  const original = state.query(BOUNDS).visibility;
+  state.removalReuse.finishCommit(original, state.removalReuse.beginCommit(original));
+  state.releaseId(image.id);
+  store.records.delete(image.id);
+  expect(state.beginRemoval()).toBe(true);
+  const get = vi.spyOn(store, "get");
+  const query = vi.spyOn(store, "query");
+  const result = state.query(BOUNDS);
+  expect(result.visibility.image.ids).toEqual([]);
+  expect(result.visibility.highlight.ids).toEqual(["0"]);
+  expect(result.visibility.content.ids).toEqual(["1", "2", "3"]);
+  expect(result.delta).toEqual({ entered: [], exited: [image.id] });
+  expect(original.image.ids).toEqual([image.id]);
+  expect(get).not.toHaveBeenCalled();
+  expect(query).not.toHaveBeenCalled();
+  state.release();
 });

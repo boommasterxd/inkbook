@@ -11,7 +11,7 @@ describe("outline presentation", () => {
     "rounds every %s contour while preserving dash spacing and filled arrow nodes",
     (outlineStyle) => {
       const elements = createAllElementSnapshot().elements.filter(
-        (element) => "outlineStyle" in element.style,
+        (element) => "style" in element && "outlineStyle" in element.style,
       );
       elements.push({
         ...arrow(),
@@ -20,7 +20,8 @@ describe("outline presentation", () => {
         style: { ...arrow().style, outlineWidth: 1 },
       });
       for (const element of elements) {
-        if (!("outlineStyle" in element.style)) throw new Error("Expected an outline style.");
+        if (!("style" in element) || !("outlineStyle" in element.style))
+          throw new Error("Expected an outline style.");
         element.style.outlineStyle = outlineStyle;
         const width = element.style.outlineWidth;
         for (const part of buildElementPathParts(element)) {

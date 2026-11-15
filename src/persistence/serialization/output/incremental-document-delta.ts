@@ -119,7 +119,7 @@ export function* validateDocumentDeltaSteps(
   ) {
     const elements: InkElementV1[] = [];
     let visited = 0;
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of ["image", "highlight", "content"] as const) {
       for (const id of options.prepared.orders[band]) {
         elements.push(options.prepared.changed.get(id) ?? options.currentElements.get(id)!);
         if (++visited % nodesPerStep === 0) yield;

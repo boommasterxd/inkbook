@@ -1,13 +1,15 @@
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { Bounds } from "../../../domain/geometry/primitives";
 import type { VisibilityResult } from "./visibility-types";
 
 interface RemovalSnapshot {
   readonly source: VisibilityResult;
   readonly bounds: Bounds;
+  readonly image: string[];
   readonly content: string[];
   readonly highlight: string[];
   readonly exited: string[];
-  band: "content" | "highlight";
+  band: RenderBand;
   index: number;
 }
 
@@ -68,10 +70,11 @@ export class VisibilityRemovalReuse {
     this.#pending = {
       source: this.#proof,
       bounds,
+      image: [],
       content: [],
       highlight: [],
       exited: [],
-      band: "highlight",
+      band: RENDER_BANDS[0],
       index: 0,
     };
     this.#proof = undefined;
@@ -100,7 +103,7 @@ export class VisibilityRemovalReuse {
           if (pending.exited.length === 0) this.#proof = pending.source;
           return pending;
         }
-        pending.band = "content";
+        pending.band = RENDER_BANDS[RENDER_BANDS.indexOf(pending.band) + 1]!;
         pending.index = 0;
         continue;
       }
@@ -115,16 +118,19 @@ export class VisibilityRemovalReuse {
     const pending = this.#pending;
     return pending === undefined
       ? 0
-      : (pending.content.length + pending.highlight.length + pending.exited.length) * 8;
+      : (pending.image.length +
+          pending.content.length +
+          pending.highlight.length +
+          pending.exited.length) *
+          8;
   }
 
   private matches(visibility: VisibilityResult): boolean {
     const current = this.source.current();
-    return (
-      current.content.ids === visibility.content.ids &&
-      current.content.count === visibility.content.count &&
-      current.highlight.ids === visibility.highlight.ids &&
-      current.highlight.count === visibility.highlight.count
+    return RENDER_BANDS.every(
+      (band) =>
+        current[band].ids === visibility[band].ids &&
+        current[band].count === visibility[band].count,
     );
   }
 }

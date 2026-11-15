@@ -42,7 +42,7 @@ it("reuses detached multipart arrow roots with bounded publication and no order 
   }
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, target);
   scheduler.runAll(20);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const originalNodes = [...content.nodes];
   expect(originalNodes).toHaveLength(count + 1);
   const arrowTail = content.nodes[64]!;
@@ -83,7 +83,7 @@ it("bounds a single new stroke while page growth reveals a dense 10,000-entry do
   };
   const newRecord = createSceneRecord(element, 10_000);
   store.records.set(newRecord.id, newRecord);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   try {
     const writes = collectFrameWrites(
       content,
@@ -126,7 +126,7 @@ it("keeps the completed reorder proof across later full reconciliations", () => 
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   scheduler.runAll(20);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const first = store.records.get("entry-0")!;
   store.records.set(first.id, { ...first, rank: 256 });
   renderer.applyDelta({ affected: [{ id: first.id, domains: ["order"] }] });
@@ -172,7 +172,7 @@ it("reconciles only changed membership in a 10,000-entry viewport", () => {
       const stats = renderer.instrumentation();
       expect(renderer.mountedIds("content")).toEqual(expected);
       expect(renderer.mountedCount).toBe(expected.length);
-      const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+      const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
       expect(new Set(content.nodes).size).toBe(content.nodes.length);
       expect(content.nodes).toHaveLength(expected.length);
       expect(stats.detachedCacheBytes).toBeLessThanOrEqual(1024 * 1024);
@@ -197,7 +197,7 @@ it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry doc
   const { renderer, scheduler, viewport } = createEdgeViewportScene(store);
   const get = vi.spyOn(store, "get");
   scheduler.runAll(200);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   work.candidateVisits = 0;
   renderer.resetInstrumentation();
   get.mockClear();
@@ -256,7 +256,7 @@ it("resumes a long delta successor search at the shared frame deadline", () => {
 it("cancels a partially published large edge delta on viewport retarget", () => {
   const store = createViewportRectangleStore(401, (rank) => (rank < 400 ? 411 : 50));
   const { renderer, scheduler, viewport } = createEdgeViewportScene(store);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   try {
     scheduler.runAll(20);
     const stable = content.nodes[0]!;

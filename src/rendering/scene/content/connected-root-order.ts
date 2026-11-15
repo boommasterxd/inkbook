@@ -11,7 +11,7 @@ const MAXIMUM_BLOCK_ENTRIES = 128;
 
 /** Bounded blocks avoid moving a complete retained band for each new SVG root. */
 export class ConnectedRootOrder {
-  readonly #bands: Record<RenderBand, RootBlock[]> = { content: [], highlight: [] };
+  readonly #bands: Record<RenderBand, RootBlock[]> = { image: [], content: [], highlight: [] };
   readonly #owners = new Map<string, RootBlock>();
   readonly #ranks = new WeakMap<MountedSceneElement, { epoch: number; rank: number }>();
   readonly #proofs = new WeakMap<MountedSceneElement, { rank: number }>();
@@ -89,6 +89,7 @@ export class ConnectedRootOrder {
 
   public clear(): void {
     this.#owners.clear();
+    this.#bands.image.length = 0;
     this.#bands.content.length = 0;
     this.#bands.highlight.length = 0;
     this.#store = undefined;

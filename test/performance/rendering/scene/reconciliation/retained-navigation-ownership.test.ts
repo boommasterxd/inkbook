@@ -24,6 +24,7 @@ import {
   FakeSceneStore,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
 
 function observeBlockSearches() {
@@ -127,7 +128,7 @@ it.each([false, true])(
     const viewport = { height: 100, left: 0, top: 0, width: 100 };
     const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
     scheduler.runAll();
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = sceneBandNode(fakeNode(renderer.svg), "content");
     const original = [...content.nodes];
     const scans = vi.spyOn(records.records, "values");
     const removal = vi.spyOn(FakeNode.prototype, "remove");
@@ -205,7 +206,7 @@ it("mounts nearby offscreen strokes before scrolling into them and reuses their 
   };
   const viewport = { height: 100, left: 0, top: 1_000, width: 100 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   try {
     let frames = 0;
     while (scheduler.pendingCount > 0) {
@@ -286,7 +287,7 @@ it("keeps only the current envelope connected across 10,000 contour-warm visits"
   scheduler.runAll(200);
   renderer.setViewport({ ...viewport, top: 1_000 });
   scheduler.runAll(200);
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   const remove = vi.spyOn(FakeNode.prototype, "remove");
   const create = vi.spyOn(content.ownerDocument, "createElementNS");
   const insert = vi.spyOn(content, "insertBefore");
@@ -366,7 +367,7 @@ it.each(["content", "highlight"] as const)(
           .filter((record) => record.band === current)
           .sort((left, right) => left.rank - right.rank);
         expect(renderer.mountedIds(current)).toEqual(expected.map(({ id }) => id));
-        const group = fakeNode(renderer.svg).nodes[1]!.nodes[current === "content" ? 4 : 3]!;
+        const group = sceneBandNode(fakeNode(renderer.svg), current);
         expect(group.nodes.map((node) => node.attributes.get("d"))).toEqual(
           expected.map((record) => buildElementPathParts(record.element)[0]!.d),
         );

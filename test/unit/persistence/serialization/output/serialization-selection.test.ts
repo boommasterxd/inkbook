@@ -12,7 +12,10 @@ it("orders selected records by stable bands and ranks while deduplicating IDs", 
   const second = rectangle(IDS.other);
   const elements = new Map([highlight, first, second].map((element) => [element.id, element]));
   const ranks = completeSerializationSteps(
-    prepareSerializationRanks({ highlight: [highlight.id], content: [first.id, second.id] }, 1),
+    prepareSerializationRanks(
+      { image: [], highlight: [highlight.id], content: [first.id, second.id] },
+      1,
+    ),
   );
   expect(
     completeSerializationSteps(

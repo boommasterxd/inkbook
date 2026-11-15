@@ -322,6 +322,9 @@ function* planPasteInternalSteps(
     value: {
       ...grouped,
       elements: translated,
+      ...(options.decoded.payload.imageResources === undefined
+        ? {}
+        : { imageResources: options.decoded.payload.imageResources }),
       ...(options.decoded.payload.fontResources === undefined
         ? {}
         : { fontResources: options.decoded.payload.fontResources }),
@@ -336,13 +339,15 @@ function* planPasteInternalSteps(
 
 function* groupPlannedElementsSteps(
   translated: readonly InkElementV1[],
-): Generator<void, Pick<PastePlan, "selectedIds" | "highlightIds" | "contentIds">> {
+): Generator<void, Pick<PastePlan, "selectedIds" | "highlightIds" | "contentIds" | "imageIds">> {
+  const imageIds: string[] = [];
   const selectedIds: string[] = [];
   const highlightIds: string[] = [];
   const contentIds: string[] = [];
   for (const element of translated) {
     selectedIds.push(element.id);
-    if (
+    if (element.kind === "image") imageIds.push(element.id);
+    else if (
       element.kind === "straight-highlighter" ||
       (element.kind === "stroke" && element.tool === "highlighter")
     ) {
@@ -352,5 +357,5 @@ function* groupPlannedElementsSteps(
     }
     yield;
   }
-  return { selectedIds, highlightIds, contentIds };
+  return { selectedIds, highlightIds, contentIds, imageIds };
 }

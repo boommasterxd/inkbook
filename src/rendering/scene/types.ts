@@ -3,7 +3,7 @@ import type { TextPaintGeometry } from "../../domain/geometry/text-paint-geometr
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { StrokePathGeometry } from "../../domain/geometry/stroke-path";
-import type { InkElementV1, PageV1 } from "../../domain/schema/public";
+import type { ImageResourceV3, InkElementV1, PageV1 } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PathPresentation } from "./content/element-presentation";
 
@@ -99,6 +99,7 @@ export interface SceneInputHandlers {
 }
 
 export interface SceneRendererOptions {
+  readonly imageResource?: (assetId: string) => ImageResourceV3 | undefined;
   readonly accessibleName?: string;
   readonly container: HTMLElement;
   readonly inputHandlers?: SceneInputHandlers;

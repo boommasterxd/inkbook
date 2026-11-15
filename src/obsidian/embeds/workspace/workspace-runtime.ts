@@ -1,5 +1,5 @@
 import type { FileManager, Vault } from "obsidian";
-import type { WorkspaceRuntimeSettings } from "./workspace-active-scene";
+import { workspaceEditorOpenings, type WorkspaceRuntimeSettings } from "./workspace-active-scene";
 import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../../editor/session/session-port";
 import { WorkspaceEditorCoordinator } from "../../../editor/session/workspace-editor-coordinator";
@@ -237,10 +237,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
             : { createPhoneSheetHost: this.#host.createPhoneSheetHost }),
           markFirstStroke: () => this.#lifecycle.markFirstStroke(attachment.documentId),
           onLock: () => this.lockActivePresentation(),
-          onOpenSettings: this.#host.onOpenSettings,
-          onOpenFonts: this.#host.onOpenFonts,
-          onOpenShortcuts: this.#host.onOpenShortcuts,
-          onboardingPreference: this.#host.onboardingPreference,
+          ...workspaceEditorOpenings(this.#host),
           textFonts: this.#host.textFonts,
           scheme: attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light",
           showFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),

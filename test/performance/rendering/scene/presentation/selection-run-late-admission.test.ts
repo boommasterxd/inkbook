@@ -88,7 +88,7 @@ it("retains the coalesced preparation successor when the last paint publication 
       f.ids.map((id) => [id, scaleElement(fixtureElement(f, id), { x: 0, y: 0 }, { x: 2, y: 1 })]),
     );
     const shape = paths[paths.length - 1]!;
-    const band = svg.nodes[1]!.nodes[4]!;
+    const band = svg.nodes[1]!.nodes[5]!;
     const before = paintedX(shape, band);
     f.renderer.setProgressiveElementPreviews(f.ids, (id) => values.get(id), 1, f.feedback);
     f.renderer.flushPointerFeedbackFrame(f.scheduler.now());

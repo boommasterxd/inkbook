@@ -1,3 +1,4 @@
+import { FakeDocument, FakeNode } from "../fakes";
 import { describe, expect, it } from "vitest";
 
 import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../../../../src/domain/schema/public";
@@ -7,8 +8,6 @@ import type {
   SceneLiveStrokeChunk,
   SceneLiveStrokePreview,
 } from "../../../../../src/rendering/scene/types";
-
-import { FakeDocument, FakeNode } from "../fakes";
 
 const penStyle: StrokeStyleV1 = {
   color: { type: "theme-text" },

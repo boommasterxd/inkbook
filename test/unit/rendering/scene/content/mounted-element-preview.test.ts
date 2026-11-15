@@ -1,3 +1,4 @@
+import { FakeDocument, FakeNode, fakeNode, fakeRectangleRecord } from "../fakes";
 import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
 import { createSceneRecord } from "../../../../fixtures/rendering/scene";
 import { strokeLocalGeometry } from "../../../../../src/domain/geometry/stroke-position";
@@ -11,8 +12,6 @@ import {
   updatePreviewTransform,
   updateMountedGeometry,
 } from "../../../../../src/rendering/scene/content/mounted-element";
-
-import { FakeDocument, FakeNode, fakeNode, fakeRectangleRecord } from "../fakes";
 
 describe("mounted element transform previews", () => {
   it.each(["dashed", "dotted"] as const)(

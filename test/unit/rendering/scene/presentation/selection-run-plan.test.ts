@@ -1,3 +1,4 @@
+import { FakeDocument, fakeRectangleRecord } from "../fakes";
 import { expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { createMountedElement } from "../../../../../src/rendering/scene/content/mounted-element";
@@ -7,7 +8,6 @@ import {
   canonicalRunMember,
 } from "../../../../../src/rendering/scene/presentation/selection-run-plan";
 import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
-import { FakeDocument, fakeRectangleRecord } from "../fakes";
 
 it("does not acquire or walk the complete store order for selections covered by the existing snapshot budget", () => {
   const beginOrder = vi.fn();

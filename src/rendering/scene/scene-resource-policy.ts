@@ -95,7 +95,7 @@ export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
 
   public updateVisibility(visibility: VisibilityResult): void {
     const dense =
-      visibility.content.count + visibility.highlight.count >
+      visibility.image.count + visibility.content.count + visibility.highlight.count >
       DENSE_RECONCILIATION_VISIBLE_ELEMENT_THRESHOLD;
     if (dense === this.#denseReconciliation) return;
     this.#denseReconciliation = dense;

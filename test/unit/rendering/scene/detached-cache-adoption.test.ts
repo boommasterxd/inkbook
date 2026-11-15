@@ -86,7 +86,7 @@ function adoptionScene(coldRemote = false, multipartExit = false) {
     mounted,
     detachedCache: cache,
     pathCache: paths,
-    orderDirty: { content: new Set(), highlight: new Set() },
+    orderDirty: { image: new Set(), content: new Set(), highlight: new Set() },
     isExitReady: () => exitState.ready,
   });
   const target = visibility.query(TOP);

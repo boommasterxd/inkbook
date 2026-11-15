@@ -15,6 +15,7 @@ export type ShapeId =
   | "table";
 
 export type ToolbarAction =
+  | "image"
   | "finger-drawing"
   | "background"
   | "undo"

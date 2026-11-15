@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { RENDER_BANDS } from "../../../../../src/domain/commands/render-bands";
 import { ConnectedRootOrder } from "../../../../../src/rendering/scene/content/connected-root-order";
 import { createInstrumentation } from "../../../../../src/rendering/scene/instrumentation";
 import { createMountedElement } from "../../../../../src/rendering/scene/content/mounted-element";
@@ -37,7 +38,7 @@ it("maintains interleaved band successors through insertion, rank shifts, remova
   const entries = Array.from({ length: 1_000 }, (_, rank) => {
     const record = {
       ...fakeRectangleRecord(`order-${rank}`, rank, 10),
-      band: rank % 2 === 0 ? ("content" as const) : ("highlight" as const),
+      band: RENDER_BANDS[rank % RENDER_BANDS.length]!,
     };
     store.records.set(record.id, record);
     return createMountedElement(
@@ -61,7 +62,7 @@ it("maintains interleaved band successors through insertion, rank shifts, remova
   );
   for (const entry of entries) {
     comparisons.mockClear();
-    expect(order.successor(entry)).toBe(entries[entry.rank + 2]);
+    expect(order.successor(entry)).toBe(entries[entry.rank + 3]);
     expect(comparisons.mock.calls.length).toBeLessThanOrEqual(20);
   }
   expect(get).not.toHaveBeenCalled();
@@ -69,7 +70,7 @@ it("maintains interleaved band successors through insertion, rank shifts, remova
     store.records.set(record.id, { ...record, rank: record.rank + 20 });
   order.invalidateRanks();
   for (const entry of entries)
-    expect(order.successor({ ...entry, rank: entry.rank + 20 })).toBe(entries[entry.rank + 2]);
+    expect(order.successor({ ...entry, rank: entry.rank + 20 })).toBe(entries[entry.rank + 3]);
   expect(get.mock.calls.length).toBeLessThanOrEqual(entries.length);
   get.mockClear();
   for (const entry of entries) order.successor({ ...entry, rank: entry.rank + 20 });
@@ -78,7 +79,7 @@ it("maintains interleaved band successors through insertion, rank shifts, remova
   expect(order.successor({ id: "removed", rank: 19, band: "content" })).toBe(entries[500]);
   expect(order.memoryUsage()).toBe(500 * 112);
   for (const entry of entries.slice(500))
-    expect(order.successor({ ...entry, rank: entry.rank + 20 })).toBe(entries[entry.rank + 2]);
+    expect(order.successor({ ...entry, rank: entry.rank + 20 })).toBe(entries[entry.rank + 3]);
   for (const entry of entries.slice(500).reverse()) order.remove(entry.id);
   expect(order.memoryUsage()).toBe(0);
   expect(order.successor({ id: "removed", rank: -1, band: "highlight" })).toBeUndefined();

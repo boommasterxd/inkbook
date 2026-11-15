@@ -5,7 +5,7 @@ import type {
   PastePlan,
   PasteRepeatState,
 } from "../../../persistence/clipboard/public";
-import type { FontResourceV2 } from "../../../domain/schema/public";
+import type { FontResourceV2, ImageResourceV3 } from "../../../domain/schema/public";
 import type { PurposeOperationIdentity } from "../../../persistence/worker/protocol";
 import type {
   DocumentRuntimePort,
@@ -14,6 +14,7 @@ import type {
 } from "../../../persistence/worker/runtime/public";
 
 interface SessionClipboardOptions {
+  readonly addImageResources?: (resources: readonly ImageResourceV3[]) => Promise<void>;
   readonly ensureFontResources?: (resources: readonly FontResourceV2[]) => void | Promise<void>;
   readonly disposed: () => boolean;
   readonly executor: () => DocumentRuntimePort | undefined;
@@ -73,6 +74,12 @@ export class SessionClipboardCoordinator {
           ? result.result.value
           : null,
     );
+    const planRevision = this.#options.revision();
+    if (plan?.imageResources !== undefined && plan.imageResources.length > 0) {
+      if (this.#options.addImageResources === undefined) return null;
+      await this.#options.addImageResources(plan.imageResources);
+      if (this.#options.disposed() || this.#options.revision() !== planRevision) return null;
+    }
     if (plan?.fontResources !== undefined && plan.fontResources.length > 0) {
       if (this.#options.ensureFontResources === undefined) return null;
       await this.#options.ensureFontResources(plan.fontResources);

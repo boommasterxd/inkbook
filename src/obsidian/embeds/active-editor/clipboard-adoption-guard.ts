@@ -90,7 +90,7 @@ export class ClipboardAdoptionGuard {
 
   public constructor(store: ElementStore) {
     this.#store = store;
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of ["image", "highlight", "content"] as const) {
       for (const id of store.materializeBandOrder(band)) {
         const record = store.get(id);
         if (record === undefined) throw new Error("The element store order is inconsistent.");
@@ -234,14 +234,17 @@ function consistentPlanIds(plan: PastePlan): Set<string> | null {
     return null;
   }
   const ids = new Set<string>();
+  const images = new Set<string>();
   const highlights = new Set<string>();
   const contents = new Set<string>();
   for (const element of plan.elements) {
     ids.add(element.id);
-    (renderBandOf(element) === "highlight" ? highlights : contents).add(element.id);
+    const band = renderBandOf(element);
+    (band === "image" ? images : band === "highlight" ? highlights : contents).add(element.id);
   }
   return ids.size === plan.elements.length &&
     sameIds(ids, plan.selectedIds) &&
+    sameIds(images, plan.imageIds ?? []) &&
     sameIds(highlights, plan.highlightIds) &&
     sameIds(contents, plan.contentIds)
     ? ids

@@ -1,3 +1,4 @@
+import { RENDER_BANDS } from "../../../domain/commands/render-bands";
 import {
   mountedRootCount,
   publicationRootCount,
@@ -46,7 +47,6 @@ import type {
   ReconciliationResult,
   SceneVisibilityReconcilerOptions,
 } from "./reconciliation-state";
-
 export type { PreviewTransform } from "./scene-mount-preparation";
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
@@ -72,6 +72,7 @@ export class SceneVisibilityReconciler {
     this.preparation = new SceneMountPreparation({
       ...options,
       ownerDocument: options.dom.ownerDocument,
+      imageResources: options.dom.imageResources,
       upcomingIds: () => upcomingScenePathIds(this.#pending, mounted, upcomingGeometryIds?.()),
       isViewport: (record) =>
         this.#priority === undefined || intersects(this.#priority.viewport, record.bounds),
@@ -136,8 +137,7 @@ export class SceneVisibilityReconciler {
     for (const id of this.#publishedEntrantIds) this.#exitIds.push(id);
     this.#publishedEntrantIds.length = 0;
     this.cancel(true);
-    useDelta &&=
-      this.options.orderDirty.content.size === 0 && this.options.orderDirty.highlight.size === 0;
+    useDelta &&= RENDER_BANDS.every((band) => this.options.orderDirty[band].size === 0);
     this.#deferredExits.drainInto(this.#exitIds);
     this.#promotedId ??= this.preparation.pendingId;
     this.#cancelled = false;
@@ -156,8 +156,8 @@ export class SceneVisibilityReconciler {
     this.#pending = {
       ...(nextDelta === undefined ? {} : { delta: nextDelta }),
       cursor: {
-        band: "highlight",
-        index: visibility.highlight.count - 1,
+        band: RENDER_BANDS[0],
+        index: visibility[RENDER_BANDS[0]].count - 1,
         run: undefined,
         successor: undefined,
       },

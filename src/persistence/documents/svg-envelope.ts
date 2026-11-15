@@ -1,3 +1,4 @@
+import { imageDefinitionsMarkup } from "../serialization/output/image-markup";
 import type { InkSnapshotV1 } from "../../domain/schema/public";
 import {
   canonicalMetadataText,
@@ -10,6 +11,7 @@ import { escapeXmlText } from "./xml-text";
 import { fontStylesheetMarkup } from "../serialization/output/text-fonts";
 
 export interface StaticSvgBands {
+  readonly images?: readonly string[];
   readonly background: readonly string[];
   readonly highlights: readonly string[];
   readonly content: readonly string[];
@@ -35,8 +37,12 @@ export function serializeSvgEnvelope(
     `data-inkbook-snapshot-sha256="${metadataHash}">` +
     `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>` +
     fontStylesheetMarkup(snapshot.fontResources ?? []) +
+    imageDefinitionsMarkup(snapshot.imageResources ?? []) +
     `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">${metadata}</metadata>` +
     `<g id="inkbook-background">${joinPaths(bands.background)}</g>` +
+    (snapshot.version >= 3
+      ? `<g id="inkbook-images-band">${joinPaths(bands.images ?? [])}</g>`
+      : "") +
     `<g id="inkbook-highlights">${joinPaths(bands.highlights)}</g>` +
     `<g id="inkbook-content">${joinPaths(bands.content)}</g>` +
     "</svg>"
