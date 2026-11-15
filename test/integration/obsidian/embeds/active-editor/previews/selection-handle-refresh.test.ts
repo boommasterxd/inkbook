@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { moveSelection } from "../../../../../../src/editor/selection/transform/transforms";
 import { rotatePointClockwise } from "../../../../../../src/domain/geometry/public";
+import { withElementLock } from "../../../../../../src/domain/store/public";
+import { rectangle } from "../../../../../unit/domain/store/fixtures";
 import { layoutTextElement } from "../../../../../fixtures/editor/text-style";
 import { textElement } from "../../../../../unit/domain/schema/fixtures";
 import {
@@ -27,6 +29,39 @@ function expectCenter(
     ),
   ).toBe(true);
 }
+
+it("keeps locked members selected while editing only the unlocked selection and refreshes unlock", () => {
+  const locked = { ...rectangle(), locked: true };
+  const unlocked = rectangle("00000000-0000-4000-8000-000000000099", 500, 300);
+  const fixture = selectionHandleRefreshFixture([locked, unlocked]);
+  fixture.interaction.renderSelection();
+  expect(fixture.interaction.selectionGeometry().map(({ element }) => element.id)).toEqual([
+    unlocked.id,
+  ]);
+  expect(fixture.selection).toEqual(new Set([locked.id, unlocked.id]));
+  expect(fixture.renderer.setSelectedElements).toHaveBeenLastCalledWith(new Set([unlocked.id]));
+  expect(fixture.renderer.setLockedSelectionOverlayPath.mock.lastCall?.[0]).toBeTruthy();
+  fixture.store.replace(locked.id, withElementLock(fixture.store.get(locked.id)!.element, false));
+  fixture.scheduler.runNext();
+  expect(fixture.interaction.selectionGeometry().map(({ element }) => element.id)).toEqual([
+    locked.id,
+    unlocked.id,
+  ]);
+  expect(fixture.renderer.setSelectedElements).toHaveBeenLastCalledWith(fixture.selection);
+  expect(fixture.renderer.setLockedSelectionOverlayPath).toHaveBeenLastCalledWith(null);
+  fixture.store.replace(
+    unlocked.id,
+    withElementLock(fixture.store.get(unlocked.id)!.element, true),
+  );
+  fixture.store.replace(locked.id, withElementLock(fixture.store.get(locked.id)!.element, true));
+  fixture.scheduler.runNext();
+  expect(fixture.interaction.selectionGeometry()).toEqual([]);
+  expect(
+    fixture.interaction.hitHandle({ ...locked.pivot, pointerId: 1, pointerType: "pen" }),
+  ).toBeNull();
+  expect(fixture.renderer.setSelectedElements).toHaveBeenLastCalledWith(new Set());
+  expect(fixture.history.commandCount).toBe(0);
+});
 
 describe("temporary native source geometry", () => {
   it("keeps source expansion handles interactive without saving the source height", async () => {

@@ -1,3 +1,4 @@
+import { elementSnapshotVersion } from "../../../domain/schema/snapshot-version";
 import type { InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
 
 import { canonicalElement, canonicalPage } from "./canonical-snapshot";
@@ -141,13 +142,9 @@ export function metadataPrefix(
         ? { fontResources: snapshot.fontResources?.map(canonicalFontResource) }
         : snapshotTextResources(snapshot);
   const version =
-    snapshot?.version === 3 && snapshot.elements.some((element) => element.kind === "image")
-      ? 3
-      : snapshot !== undefined &&
-          snapshot.version >= 2 &&
-          snapshot.elements.some((element) => element.kind === "text")
-        ? 2
-        : 1;
+    snapshot === undefined || snapshot.version === 1
+      ? 1
+      : elementSnapshotVersion(snapshot.elements);
   const fonts =
     resources.fontResources === undefined
       ? ""

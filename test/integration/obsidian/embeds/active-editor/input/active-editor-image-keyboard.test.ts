@@ -24,6 +24,9 @@ function openCropMenu(editor: ReturnType<typeof createHarness>): void {
   menu!.dispatchEvent(
     new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }),
   );
+  menu!.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+  );
   expect(document.activeElement?.textContent).toBe("Crop image");
   document.activeElement!.dispatchEvent(
     new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),

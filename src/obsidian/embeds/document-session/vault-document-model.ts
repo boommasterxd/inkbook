@@ -62,7 +62,7 @@ export function createVaultAutosaveSession(
     readonly store: ElementStore;
     readonly fontResources?: () => readonly FontResourceV2[];
     readonly imageResources?: () => readonly ImageResourceV3[];
-    readonly formatVersion?: () => 1 | 2 | 3;
+    readonly formatVersion?: () => InkSnapshotV1["version"];
   },
 ): AutosaveCoordinator {
   const snapshotHeader = () => ({
@@ -213,13 +213,16 @@ export function prepareVaultElementMutation(options: {
   ) {
     return options.store.prepareHistoryReplay(
       options.mutation,
-      options.scheduler(() => options.cancellation.isCancelled()),
+      { ...options.scheduler(() => options.cancellation.isCancelled()), protectLocked: false },
       options.cancellation.replay,
     );
   }
   return options.store.prepareElementMutation(
     options.mutation,
-    options.scheduler(() => options.cancellation.isCancelled()),
+    {
+      ...options.scheduler(() => options.cancellation.isCancelled()),
+      protectLocked: options.cancellation.protectLocked ?? true,
+    },
     options.cancellation.replay,
   );
 }
@@ -233,7 +236,10 @@ export async function prepareVaultElementRemoval(options: {
 }): ReturnType<EditableDocumentModel["prepareElementRemoval"]> {
   if (!options.active) return { status: "cancelled", token: null };
   const scheduler = options.scheduler(() => options.cancellation.isCancelled());
-  return options.store.prepareElementRemoval(options.ids, scheduler);
+  return options.store.prepareElementRemoval(options.ids, {
+    ...scheduler,
+    protectLocked: options.cancellation.protectLocked ?? true,
+  });
 }
 
 export function createVaultElementPreparationActions(options: {
@@ -256,20 +262,19 @@ export function createVaultElementPreparationActions(options: {
       options.run(() =>
         !options.active()
           ? Promise.resolve({ status: "cancelled", token: null })
-          : options.store.prepareElementArrangement(
-              action,
-              selection,
-              options.scheduler(() => cancellation.isCancelled(), "frame"),
-            ),
+          : options.store.prepareElementArrangement(action, selection, {
+              ...options.scheduler(() => cancellation.isCancelled(), "frame"),
+              protectLocked: cancellation.protectLocked ?? true,
+            }),
       ),
     prepareElementAppend: (elements, cancellation) =>
       options.run(() =>
         !options.active()
           ? Promise.resolve({ status: "cancelled", token: null })
-          : options.store.prepareElementAppend(
-              elements,
-              options.scheduler(() => cancellation.isCancelled(), "frame"),
-            ),
+          : options.store.prepareElementAppend(elements, {
+              ...options.scheduler(() => cancellation.isCancelled(), "frame"),
+              protectLocked: cancellation.protectLocked ?? true,
+            }),
       ),
     prepareElementMutation: (mutation, cancellation) =>
       options.run(() =>
@@ -306,7 +311,7 @@ export function createVaultElementPreparationActions(options: {
 
 export function prepareVaultElementReplacement(options: {
   readonly active: boolean;
-  readonly cancellation: { isCancelled(): boolean };
+  readonly cancellation: Parameters<EditableDocumentModel["prepareElementReplacement"]>[1];
   readonly replacements: readonly InkElementV1[];
   readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
   readonly store: ElementStore | undefined;
@@ -314,10 +319,10 @@ export function prepareVaultElementReplacement(options: {
   if (options.store === undefined || !options.active) {
     return Promise.resolve({ status: "cancelled", token: null });
   }
-  return options.store.prepareElementReplacement(
-    options.replacements,
-    options.scheduler(() => options.cancellation.isCancelled()),
-  );
+  return options.store.prepareElementReplacement(options.replacements, {
+    ...options.scheduler(() => options.cancellation.isCancelled()),
+    protectLocked: options.cancellation.protectLocked ?? true,
+  });
 }
 
 export function commitVaultElementReplacement(options: {

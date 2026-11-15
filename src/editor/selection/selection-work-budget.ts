@@ -2,7 +2,10 @@ import type { InkElementV1 } from "../../domain/schema/public";
 
 export interface SelectionReplacementPlanner {
   countReverseDependencies(targetIds: readonly string[], limit: number): number;
-  planReplacements(replacements: readonly InkElementV1[]): SelectionReplacementPlan | null;
+  planReplacements(
+    replacements: readonly InkElementV1[],
+    options?: { readonly protectLocked?: boolean },
+  ): SelectionReplacementPlan | null;
   planReplacementsTimeSliced(
     replacements: readonly InkElementV1[],
     scheduler: SelectionReplacementSliceScheduler,

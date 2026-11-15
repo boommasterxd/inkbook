@@ -11,7 +11,11 @@ import type {
   SelectionFrameSession,
 } from "../../../editor/selection/public";
 
-import { selectedElements } from "./controller-elements";
+import {
+  editableSelectedElements,
+  editableSelection,
+  selectedElements,
+} from "./controller-elements";
 import {
   createActiveEditorStyleControls,
   createActiveEditorStyleIcon,
@@ -65,6 +69,13 @@ export class ActiveEditorStyleSession {
   #selectedControls:
     { readonly identity: object; readonly controls: readonly StyleControl[] } | undefined;
   #disposed = false;
+  #editableCache:
+    | {
+        readonly source: ReadonlySet<string>;
+        readonly version: number;
+        readonly value: ReadonlySet<string>;
+      }
+    | undefined;
   readonly #selectionFrames: SelectionFrameSession | undefined;
   readonly #store: ElementStore;
   readonly #preparedHistory: PreparedElementHistory | undefined;
@@ -157,7 +168,9 @@ export class ActiveEditorStyleSession {
     )
       return this.#selectedControls.controls;
     this.invalidateSelection();
-    const elements = selectedElements(this.#sceneStore, selection);
+    const selected = selectedElements(this.#sceneStore, selection);
+    const elements = selected.filter((element) => element.locked !== true);
+    if (selected.length > 0 && elements.length === 0) return [];
     const controls = createActiveEditorStyleControls(
       {
         defaults: this.#defaults,
@@ -177,14 +190,16 @@ export class ActiveEditorStyleSession {
     if (this.#preview?.commit(id, value)) return;
     this.cancelPreview();
     if (this.#options.applyOverride?.(id, value)) return;
-    const selection = this.#selection();
+    const sourceSelection = this.#selection();
+    const selection = this.#editableSelection();
+    if (sourceSelection.size > 0 && selection.size === 0) return;
     if (selection.size > 0 && this.#preparedHistory !== undefined) {
       if (tool === "select" && (id === "selection-area" || id === "selection-inclusion")) return;
       this.#preparedHistory.commitStyle({
         selection,
         controlId: id,
         value,
-        isCurrent: () => this.#selection() === selection,
+        isCurrent: () => this.#selection() === sourceSelection,
         frameEffect: (previous, replacements, scheduler) =>
           this.#prepareFrameEffect(previous, replacements, scheduler, id),
         onCompleted: (committed) => {
@@ -207,7 +222,7 @@ export class ActiveEditorStyleSession {
     const presentation = new StylePreviewPresentation(options, this.#selectionFrames);
     return new StylePreviewCoordinator({
       scheduler: options.workScheduler,
-      selection: this.#selection,
+      selection: () => this.#editableSelection(),
       mutationVersion: () => this.#store.mutationVersion,
       prepare: (request, signal) => history.prepareStyle(request, signal),
       present: (prepared, signal) => presentation.render(prepared, signal),
@@ -231,7 +246,7 @@ export class ActiveEditorStyleSession {
   }
 
   #applySelectionStyle(tool: EditorTool, id: string, value: boolean | number | string): boolean {
-    const elements = selectedElements(this.#sceneStore, this.#selection());
+    const elements = editableSelectedElements(this.#sceneStore, this.#selection());
     if (elements.length === 0) return false;
     if (tool === "select" && (id === "selection-area" || id === "selection-inclusion")) return true;
     const replacement = createSelectionStyleReplacement(elements, id, value);
@@ -246,6 +261,16 @@ export class ActiveEditorStyleSession {
         this.#onSelectionGeometryChanged();
     }
     return true;
+  }
+
+  #editableSelection(): ReadonlySet<string> {
+    const source = this.#selection();
+    const version = this.#store.mutationVersion;
+    if (this.#editableCache?.source === source && this.#editableCache.version === version)
+      return this.#editableCache.value;
+    const value = editableSelection(this.#sceneStore, source);
+    this.#editableCache = { source, version, value };
+    return value;
   }
 
   async #prepareFrameEffect(
@@ -301,7 +326,7 @@ function completeReplacement(
   readonly previous: readonly InkElementV1[];
   readonly replacements: readonly InkElementV1[];
 } | null {
-  const plan = store.planReplacements(requested);
+  const plan = store.planReplacements(requested, { protectLocked: true });
   if (plan === null) return null;
   const previous = plan.elements.map(({ id }) => {
     const record = store.get(id);

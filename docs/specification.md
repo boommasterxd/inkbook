@@ -22,6 +22,7 @@ The first release includes:
 - locked SVG previews across tabs, panes, and pop-out windows, with one active editor per Obsidian workspace
 - pen, highlighter, straight highlighter, eraser, selection, and lasso selection
 - editable [text fields](text-fields.md) with Markdown Live Preview, rich formatting, local fonts, and portable mathematics
+- image and PDF-page import, nondestructive crop, and [element locks](editor-tools.md#element-locks)
 - lines, arrows, rectangles, ellipses, triangles, octagons, parallelograms, diamonds, five-point stars, coordinate systems, and tables
 - stable annotation ordering, line and arrow endpoint snapping with persistent shape connections, styles, backgrounds, page expansion, zoom, clipboard actions, history, duplicate/reference behavior, and pen-tap insertion
 - desktop and mobile support without Node.js or Electron runtime APIs

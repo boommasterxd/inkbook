@@ -23,3 +23,15 @@ it("keeps tall PDF pages at writing width without a compact height limit", () =>
   const resource = { width: 1000, height: 4000 };
   expect(initialImageSize(resource, 2000, "pdf")).toEqual({ width: 1000, height: 4000 });
 });
+
+it.each(["image", "pdf"] as const)(
+  "fits a small %s source to the full writing width only when explicitly requested",
+  (source) => {
+    const resource = { width: 100, height: 200 };
+    expect(initialImageSize(resource, 2000, source, "page-width-locked")).toEqual({
+      width: 2000,
+      height: 4000,
+    });
+    expect(initialImageSize(resource, 2000, source, "default")).toEqual(resource);
+  },
+);

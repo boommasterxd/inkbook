@@ -189,6 +189,12 @@ Canvas menus use the shared lifecycle-owned adaptive surface with host-matching 
 
 | Action               | Icon                     |
 | -------------------- | ------------------------ |
+| Lock selection       | `lock`                   |
+| Unlock selection     | `lock-open`              |
+| Select all locked    | `scan`                   |
+| Crop image           | `crop`                   |
+| Import image or PDF  | `image`                  |
+| Edit text            | `type`                   |
 | Copy, Copy embed     | `copy`                   |
 | Cut                  | `scissors`               |
 | Paste                | `clipboard-paste`        |
@@ -199,7 +205,7 @@ Canvas menus use the shared lifecycle-owned adaptive surface with host-matching 
 | Send to back         | `chevrons-down`          |
 | Erase all            | `inkbook-eraser-caution` |
 
-Delete and Delete embed use the [shared derived danger tone](obsidian-integration.md#commands-menus-icons-and-styling) for both icon and text. Toolbar danger controls and feedback danger actions use that same foreground; filled confirmation actions use its contrasting dialog variant. Settings group resets always use the shared caution tone, including in the native settings tab, while Reset all settings uses danger. Erase all is disabled when the canvas contains no elements and uses the native muted title instead of the caution color in that state. When enabled, it retains its confirmation and uses the `inkbook-eraser-caution` custom icon and owned title with the same orange caution color. Cut remains a normal action because it is clipboard-preserving and undoable. Copy, Cut, and Paste form the clipboard section, Delete follows its separator and retains destructive styling, Arrange actions form the next section, Copy embed is document-level, and Erase all plus Delete embed form the final destructive section. Separators appear only between those sections. Phone bottom spacing follows the shared sheet contract without changing host-wide safe-area tokens. Menu items use sentence case, expose their visible title as the accessible name, and retain visible disabled Arrange boundary actions.
+Delete and Delete embed use the [shared derived danger tone](obsidian-integration.md#commands-menus-icons-and-styling) for both icon and text. Toolbar danger controls and feedback danger actions use that same foreground; filled confirmation actions use its contrasting dialog variant. Settings group resets always use the shared caution tone, including in the native settings tab, while Reset all settings uses danger. Erase all is disabled when the canvas contains no unlocked elements and uses the native muted title instead of the caution color in that state. When enabled, it retains its confirmation and uses the `inkbook-eraser-caution` custom icon and owned title with the same orange caution color. Cut remains a normal action because it is clipboard-preserving and undoable. The selection's Lock or Unlock action and the canvas-level Select all locked action use the same menu appearance; their availability and mixed-selection behavior are defined in [Element Locks](editor-tools.md#element-locks). Copy, Cut, and Paste form the clipboard section, Delete follows its separator and retains destructive styling, Arrange actions form the next section, Copy embed is document-level, and Erase all plus Delete embed form the final destructive section. Phone bottom spacing follows the shared sheet contract without changing host-wide safe-area tokens. Menu items use sentence case, expose their visible title as the accessible name, and retain visible disabled Arrange boundary actions.
 
 The owned menu preserves arrow-key navigation and `Escape` dismissal. After it closes, focus returns to the control that opened it or to the canvas input surface. Mouse, touch, keyboard placement, target selection, and action availability are normative in [Features](features.md#canvas-context-menus).
 

@@ -44,6 +44,7 @@ export interface ActiveEditorPreviewOptions {
   readonly sceneStore: ElementSceneStore;
   readonly selection: () => ReadonlySet<string>;
   readonly selectionGeometry?: () => readonly SelectedElementGeometry[];
+  readonly editableSelection?: () => ReadonlySet<string>;
   readonly selectionSignal?: AbortSignal;
   readonly selectionFrames: SelectionFrameSession;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
@@ -93,6 +94,7 @@ export function createActiveEditorPreview(
     renderer: options.renderer,
     sceneStore: options.sceneStore,
     selection: options.selection,
+    editableSelection: options.editableSelection,
     ...(options.selectionGeometry === undefined
       ? {}
       : { selectionGeometry: options.selectionGeometry }),

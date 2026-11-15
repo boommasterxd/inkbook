@@ -18,10 +18,12 @@ export function* validateSnapshotElementsSteps(
     const element = elements[index];
     yield* assertInkElementSteps(element, path, context);
     const validated = element as InkElementV1;
+    if (version < 4 && validated.locked === true)
+      fail("invalid-literal", "$.version", "Locked elements require snapshot version 4.");
     if (version === 1 && validated.kind === "text")
       fail("invalid-literal", "$.version", "Text elements require snapshot version 2.");
     if (validated.kind === "image") {
-      if (version !== 3)
+      if (version < 3)
         fail("invalid-literal", "$.version", "Image elements require snapshot version 3.");
       assertImageBinding(validated, byId.get(validated.assetId), index);
     }

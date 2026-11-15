@@ -158,6 +158,7 @@ export class ClipboardAdoptionGuard {
 
   #applyDelta(delta: StoreDelta): void {
     for (const change of delta.changes) {
+      if (change.domains.length === 1 && change.domains[0] === "interaction") continue;
       if (change.before !== null) {
         addElementFacts(this.#facts, this.#fanout, change.before.element, change.before.bounds, -1);
       }

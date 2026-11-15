@@ -266,7 +266,7 @@ export function* validateEditableSafeSvgPreludeSteps(
   const synthetic =
     `${prefix}</metadata>` +
     '<g id="inkbook-background"></g>' +
-    (root?.attributes.get("data-inkbook-version") === "3"
+    (Number(root?.attributes.get("data-inkbook-version")) >= 3
       ? '<g id="inkbook-images-band"></g>'
       : "") +
     '<g id="inkbook-highlights"></g>' +

@@ -93,6 +93,7 @@ describe("active editor context Paste menu", () => {
       }),
       canPaste: false,
       canRequestPaste: true,
+      isAvailable: () => false,
       execute,
     } as unknown as ActiveEditorActions;
     const menus = createActiveEditorMenuController(actions, { create, forEvent: create }, 0);
@@ -117,6 +118,7 @@ describe("active editor context Paste menu", () => {
       }),
       canPaste: true,
       canRequestPaste: true,
+      isAvailable: () => false,
       execute,
     } as unknown as ActiveEditorActions;
     const menus = createActiveEditorMenuController(

@@ -13,6 +13,7 @@ import {
   type TableElementV1,
   type FontResourceV2,
 } from "../../../domain/schema/public";
+import { elementSnapshotVersion } from "../../../domain/schema/snapshot-version";
 import { copyValidatedSampleExtrema } from "../../../domain/schema/stroke-sample-extrema";
 import { canonicalTextElement, canonicalTextElementSteps } from "./text-canonical";
 import { snapshotImageResources } from "../output/image-markup";
@@ -38,11 +39,7 @@ export function canonicalSnapshot(
   snapshot = bindSnapshotFontResources(snapshot);
   return {
     format: "inkbook",
-    version: snapshot.elements.some((element) => element.kind === "image")
-      ? 3
-      : snapshot.elements.some((element) => element.kind === "text")
-        ? 2
-        : 1,
+    version: elementSnapshotVersion(snapshot.elements),
     revision: snapshot.revision,
     page: canonicalPage(snapshot.page),
     ...snapshotTextResources(snapshot),
@@ -83,6 +80,7 @@ export function canonicalElement(
     createdAt: element.createdAt,
     rotation: element.rotation,
     pivot: canonicalPoint(element.pivot),
+    ...(element.locked === true ? { locked: true } : {}),
   };
   if (element.kind === "text") return canonicalTextElement(element);
   if (element.kind === "image") return canonicalImageElement(element, base);

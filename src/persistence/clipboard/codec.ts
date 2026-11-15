@@ -1,3 +1,4 @@
+import { elementSnapshotVersion } from "../../domain/schema/snapshot-version";
 import type {
   ClipboardElementBodyV1,
   ClipboardElementV1,
@@ -41,13 +42,14 @@ const createBody = (
   documentIdToClipId: ReadonlyMap<string, string>,
 ): ClipboardElementBodyV1 => {
   if (element.kind !== "line" && element.kind !== "arrow") {
-    const { id: _id, createdAt: _createdAt, ...identityFree } = element;
-    return identityFree;
+    const { id: _id, createdAt: _createdAt, locked, ...identityFree } = element;
+    return { ...identityFree, ...(locked === true ? { locked: true } : {}) };
   }
 
   const {
     id: _id,
     createdAt: _createdAt,
+    locked,
     startConnection: _start,
     endConnection: _end,
     ...linearBody
@@ -59,6 +61,7 @@ const createBody = (
   };
   return {
     ...linearBody,
+    ...(locked === true ? { locked: true } : {}),
     startConnection: remapConnection(element.startConnection),
     endConnection: remapConnection(element.endConnection),
   };
@@ -136,7 +139,7 @@ const encodeSelectionInternal = (
   const hasText = selectedElements.some((element) => element.kind === "text");
   const payload: InkClipboardV1 = {
     format: "inkbook-elements",
-    version: hasImages ? 3 : hasText ? 2 : 1,
+    version: elementSnapshotVersion(selectedElements),
     elements: clipboardElements,
     ...(hasText ? { fontResources: selectedFonts } : {}),
     ...(hasImages ? { imageResources: selectedImages } : {}),

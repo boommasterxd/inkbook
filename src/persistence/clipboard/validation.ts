@@ -338,7 +338,7 @@ function* validateClipboardPayloadSteps(
   }
   if (
     value.format !== "inkbook-elements" ||
-    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) ||
     !Array.isArray(value.elements)
   ) {
     return failure("Clipboard payload discriminator or version is invalid.");
@@ -350,6 +350,8 @@ function* validateClipboardPayloadSteps(
     samplesPerStep,
   );
   if (!entries.ok) return entries;
+  if (value.version !== 4 && entries.value.some(({ element }) => element.locked === true))
+    return failure("Locked elements require clipboard version 4.");
   const resources = yield* validateClipboardResourcesSteps(value, entries.value);
   if (!resources.ok) return resources;
   if (!hasValidRenderBandOrder(entries.value)) {
@@ -411,7 +413,7 @@ function* validateClipboardResourcesSteps(
 ): Generator<boolean | void, ClipboardResult<void>> {
   try {
     const hasImages = entries.some(({ element }) => element.kind === "image");
-    if (value.version !== 3 && (hasImages || value.imageResources !== undefined))
+    if ((value.version as number) < 3 && (hasImages || value.imageResources !== undefined))
       return failure("Images and image resources require clipboard version 3.");
     if (value.imageResources !== undefined) {
       yield* assertImageResourcesSteps(value.imageResources, "$.imageResources");

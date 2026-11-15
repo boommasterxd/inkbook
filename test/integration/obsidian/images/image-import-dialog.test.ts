@@ -78,6 +78,9 @@ describe("image import review", () => {
     vi.mocked(readImageSource).mockResolvedValue(webpBytes());
     vi.mocked(prepareRasterImage).mockResolvedValue({ resource });
     const { pending } = setup();
+    const placement = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(placement.checked).toBe(false);
+    expect(placement.closest("label")!.hidden).toBe(true);
     expect(document.querySelector<HTMLInputElement>('input[type="file"]')!.accept).toContain(
       "image/webp",
     );
@@ -85,8 +88,15 @@ describe("image import review", () => {
     await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("WebP");
     expect(document.querySelector("img")?.getAttribute("src")).toContain("data:image/webp;base64,");
+    expect(placement.closest("label")!.hidden).toBe(false);
+    placement.click();
+    await assertImageDialogSemantics(["label"]);
     dialogButton("Insert").click();
-    expect(await pending).toEqual({ resources: [resource], source: "image" });
+    expect(await pending).toEqual({
+      resources: [resource],
+      source: "image",
+      placement: "page-width-locked",
+    });
     expect(prepareRasterImage).toHaveBeenCalledOnce();
   });
 
@@ -206,9 +216,14 @@ describe("image import source ownership", () => {
     await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
     const pages = document.querySelector<HTMLInputElement>('input[type="text"]')!;
     pages.value = "5, 1, 3";
+    document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
     await assertImageDialogSemantics(["label", "select-name"]);
     dialogButton("Insert").click();
-    expect(await pending).toEqual({ resources: [resource, resource, resource], source: "pdf" });
+    expect(await pending).toEqual({
+      resources: [resource, resource, resource],
+      source: "pdf",
+      placement: "page-width-locked",
+    });
     expect(render.mock.calls.map((args) => args[0])).toEqual([1, 3, 5]);
     expect(readImageSource).toHaveBeenCalledOnce();
     expect(openPdfImageSource).toHaveBeenCalledOnce();
@@ -242,6 +257,7 @@ describe("image import source ownership", () => {
         ?.closest('[aria-busy="true"]'),
     ).toBeNull();
     expect(dialogButton("Insert").disabled).toBe(true);
+    expect(document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true);
     expect(dialogButton("Cancel").disabled).toBe(false);
     abort.abort();
     expect(await pending).toBeUndefined();

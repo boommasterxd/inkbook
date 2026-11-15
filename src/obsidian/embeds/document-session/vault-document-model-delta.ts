@@ -33,6 +33,10 @@ export function prepareVaultStoreDelta(delta: StoreDelta): {
 
 function requiresFragmentReplacement(domains: StoreDelta["changes"][number]["domains"]): boolean {
   return domains.some(
-    (domain) => domain === "geometry" || domain === "paint" || domain === "connection",
+    (domain) =>
+      domain === "geometry" ||
+      domain === "paint" ||
+      domain === "connection" ||
+      domain === "interaction",
   );
 }

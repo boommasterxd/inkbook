@@ -1,3 +1,4 @@
+import { elementSnapshotVersion } from "../../../../domain/schema/snapshot-version";
 import type {
   ClipboardElementBodyV1,
   ClipboardElementV1,
@@ -108,7 +109,7 @@ export async function encodeRuntimeSelectionChunked(
     {
       elements: clipboardElements,
       format: "inkbook-elements",
-      version: hasImages ? 3 : hasText ? 2 : 1,
+      version: elementSnapshotVersion(selected),
       ...(hasText ? { fontResources: fonts.value } : {}),
       ...(hasImages ? { imageResources: images } : {}),
     },
@@ -399,10 +400,17 @@ function createBody(
   documentIds: ReadonlyMap<string, string>,
 ): ClipboardElementBodyV1 {
   if (element.kind !== "line" && element.kind !== "arrow") {
-    const { createdAt: _createdAt, id: _id, ...body } = element;
-    return body;
+    const { createdAt: _createdAt, id: _id, locked, ...body } = element;
+    return { ...body, ...(locked === true ? { locked: true } : {}) };
   }
-  const { createdAt: _createdAt, endConnection, id: _id, startConnection, ...body } = element;
+  const {
+    createdAt: _createdAt,
+    endConnection,
+    id: _id,
+    startConnection,
+    locked,
+    ...body
+  } = element;
   const remap = (connection: typeof startConnection) => {
     if (connection === null) return null;
     const targetClipId = documentIds.get(connection.targetId);
@@ -410,6 +418,7 @@ function createBody(
   };
   return {
     ...body,
+    ...(locked === true ? { locked: true } : {}),
     endConnection: remap(endConnection),
     startConnection: remap(startConnection),
   };

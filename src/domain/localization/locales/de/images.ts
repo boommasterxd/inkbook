@@ -16,6 +16,7 @@ export const images = {
   "images.standard": "Standard · bis 72 dpi",
   "images.high": "Hoch · bis 144 dpi",
   "images.preview": "Bildvorschau",
+  "images.pageWidthLocked": "Auf Seitenbreite einfügen und sperren",
   "images.preparing": "Bild wird vorbereitet…",
   "images.preparingPage": "Seite {page} von {total} wird vorbereitet…",
   "images.details": "{width} × {height} Pixel",

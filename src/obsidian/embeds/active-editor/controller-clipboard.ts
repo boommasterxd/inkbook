@@ -26,6 +26,7 @@ import type { ActiveEditorHistory } from "./history";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { capturePastePlan } from "../../../persistence/clipboard/paste-plan-snapshot";
 import { copyTextSelection } from "./clipboard-text-copy";
+import { editableSelection } from "./controller-elements";
 
 export type ClipboardControllerResult =
   | { readonly action: "copy" | "cut"; readonly kind: "copied" }
@@ -321,10 +322,18 @@ export class ActiveEditorClipboardController {
     const action = cut ? "cut" : "copy";
     if (selection.size === 0) return this.#reportUnavailable(action, "empty-selection");
     const selectionSnapshot = new Set(selection);
+    const targets = cut
+      ? editableSelection(this.#model.store, selectionSnapshot)
+      : selectionSnapshot;
+    if (targets.size === 0) return this.#reportUnavailable(action, "empty-selection");
     const expectedRevision = this.#model.revision;
-    const selectedRecords = selectionRecords(this.#model, selectionSnapshot);
+    const storeVersion = this.#model.store.mutationVersion;
+    const selectionCurrent = () =>
+      sameSelection(selectionSnapshot, this.#currentSelection()) &&
+      this.#model.store.mutationVersion === storeVersion;
+    const selectedRecords = selectionRecords(this.#model, targets);
     if (selectedRecords === null) return this.#reportUnavailable(action, "stale-operation");
-    const payloadReady = this.#encodedPayload(selectionSnapshot);
+    const payloadReady = this.#encodedPayload(targets);
     const write = beginClipboardWriteDuringActivation(this.#writePort(), payloadReady);
     try {
       await write.payloadReady;
@@ -337,17 +346,18 @@ export class ActiveEditorClipboardController {
     if (
       !this.#isPresentationAttached() ||
       !this.#isOperationCurrent(operationGeneration) ||
-      !sameSelection(selectionSnapshot, this.#currentSelection()) ||
+      !selectionCurrent() ||
       !(await this.#commitCut(
-        selectionSnapshot,
+        targets,
         selectedRecords,
         expectedRevision,
         operationGeneration,
+        selectionCurrent,
       ))
     ) {
       return this.#reportUnavailable(action, "stale-operation");
     }
-    this.#onSelectionChanged(new Set());
+    this.#onSelectionChanged(new Set([...selectionSnapshot].filter((id) => !targets.has(id))));
     return this.#report({ action: "cut", kind: "committed" });
   }
 
@@ -368,6 +378,7 @@ export class ActiveEditorClipboardController {
     selected: readonly VersionedSelectionRecord[],
     expectedRevision: number,
     operationGeneration: number,
+    selectionCurrent: () => boolean,
   ): Promise<boolean> {
     if (!currentSelectionRecords(this.#model, selected)) return false;
     const cancelled = () =>
@@ -375,8 +386,7 @@ export class ActiveEditorClipboardController {
       !this.#isPresentationAttached() ||
       !this.#isOperationCurrent(operationGeneration);
     const currentSelection = () =>
-      sameSelection(selection, this.#currentSelection()) &&
-      currentSelectionRecords(this.#model, selected);
+      selectionCurrent() && currentSelectionRecords(this.#model, selected);
     if (cancelled() || !currentSelection()) return false;
     const prepared = await this.#model.prepareElementRemoval(selection, { isCancelled: cancelled });
     if (prepared.token === null || cancelled() || !currentSelection()) return false;

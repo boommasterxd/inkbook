@@ -14,6 +14,7 @@ import type { ArrangeAction } from "../../commands/arrange";
 import { prepareAppendMutation } from "./append-mutation";
 import { HistoryBandStates, type HistoryBandState } from "./history-band-state";
 import type { InkElementV1 } from "../../schema/public";
+import { assertElementUnlocked, protectElementDelta } from "../records/element-lock";
 import {
   captureOwnedMutationHistory,
   STABLE_RELATIVE_ORDER,
@@ -120,6 +121,15 @@ export class PreparedElementMutations {
     scheduler: StoreSliceScheduler,
   ): Promise<PreparedElementMutationResult> {
     const source = this.#readSource();
+    if (scheduler.protectLocked === true) {
+      const work = new MutationPreparationScheduler(scheduler);
+      for (const id of selection) {
+        if (!(work.checkpoint() || (await work.resume())))
+          return { status: "cancelled", token: null };
+        const element = source.records.get(id)?.element;
+        if (element !== undefined) assertElementUnlocked(element);
+      }
+    }
     const prepared = await prepareArrangementMutation(
       { bands: source.bands, ranks: source.ranks },
       action,
@@ -227,6 +237,14 @@ export class PreparedElementMutations {
       return { status: "cancelled", token: null };
     }
     if (plan === null) return { status: "noop", token: null };
+    if (
+      !(await protectElementDelta(
+        plan.delta,
+        { ...scheduler, isCancelled: work.isCancelled },
+        replay !== undefined,
+      ))
+    )
+      return { status: "cancelled", token: null };
     if (retained) this.#retainedReplays.add(plan);
     const token = Object.freeze({}) as PreparedElementMutation;
     this.#prepared.set(token, { mutationVersion: source.mutationVersion, plan });

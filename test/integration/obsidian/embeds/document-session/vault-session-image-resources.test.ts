@@ -1,4 +1,5 @@
 import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/runtime/public";
+import { withElementLock } from "../../../../../src/domain/store/public";
 import { expect, it, vi } from "vitest";
 import { validImageFixture } from "../../../../fixtures/persistence/images";
 import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/parse-document";
@@ -101,5 +102,51 @@ it("adopts pasted resources without a separate revision and rejects collisions b
   } finally {
     source.session.dispose();
     target.session.dispose();
+  }
+});
+
+it("persists a lock-only change through the worker and reopens locked images without losing resources", async () => {
+  const { asset, element } = await validImageFixture();
+  const harness = persistenceHarness();
+  let reopened: ReturnType<typeof persistenceHarness> | undefined;
+  try {
+    await harness.session.unlock(operation());
+    const model = harness.session.documentModel!;
+    await model.addImageResources!([asset]);
+    model.commitElement(element);
+    expect((await harness.session.lockLatest(operation())).status).toBe("confirmed");
+
+    const before = model.store.get(element.id)!;
+    const prepared = await model.prepareElementReplacement(
+      [withElementLock(before.element, true)],
+      { isCancelled: () => false, protectLocked: false },
+    );
+    if (prepared.token === null) throw new Error("Expected a prepared element lock.");
+    expect(model.commitPreparedElementReplacement(prepared.token)).toBe("committed");
+    expect(model.formatVersion).toBe(4);
+    expect(model.store.get(element.id)?.geometryVersion).toBe(before.geometryVersion);
+    expect((await harness.session.lockLatest(operation())).status).toBe("confirmed");
+
+    const saved = await parseInkbookDocumentForTest(harness.content());
+    if (!saved.ok) throw new Error(saved.error.message);
+    expect(saved.value.snapshot).toMatchObject({
+      version: 4,
+      elements: [{ ...element, locked: true }],
+      imageResources: [asset],
+    });
+    reopened = persistenceHarness(saved.value.snapshot);
+    expect((await reopened.session.unlock(operation())).status).toBe("active");
+    const reopenedModel = reopened.session.documentModel!;
+    expect(reopenedModel.formatVersion).toBe(4);
+    expect(reopenedModel.imageResource!(asset.id)).toEqual(asset);
+    const copy = await reopenedModel.encodeClipboard(new Set([element.id]));
+    expect(JSON.parse(copy!.customText)).toMatchObject({
+      version: 4,
+      elements: [{ element: { locked: true } }],
+      imageResources: [asset],
+    });
+  } finally {
+    reopened?.session.dispose();
+    harness.session.dispose();
   }
 });

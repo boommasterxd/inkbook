@@ -387,7 +387,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       state: {
         fontResources: () => fonts.resources,
         imageResources: () => images.resources,
-        formatVersion: () => (images.resources.length > 0 ? 3 : fonts.version),
+        formatVersion: () =>
+          fonts.version === 4 ? 4 : images.resources.length > 0 ? 3 : fonts.version,
         mutationAvailability: () =>
           this.#revision < Number.MAX_SAFE_INTEGER ? "available" : "revision-exhausted",
         page: () => modelPorts.requireVaultPage(this.#page),

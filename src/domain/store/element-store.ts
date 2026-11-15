@@ -16,6 +16,7 @@ import { mutableElement } from "./records/immutability";
 import { mutableBand, type StoreBands } from "./mutations/band-snapshots";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
 import { normalizeElementInput } from "./records/input-normalization";
+import { requireElementRecord } from "./records/record-access";
 import { applyMutationRecordPatches } from "./mutations/mutation-record-patch";
 import { assertCompleteBandOrder, ElementStoreOrdering } from "./mutations/order-operations";
 import {
@@ -156,6 +157,9 @@ export class ElementStore {
   public get size(): number {
     return this.#records.size;
   }
+  public get lockedCount(): number {
+    return this.#runtime.lockedCount;
+  }
   public get mutationVersion(): number {
     return this.#mutationVersion;
   }
@@ -253,6 +257,7 @@ export class ElementStore {
       replacements,
       this.#replacementPorts(),
       {
+        ...scheduler,
         isCancelled: () =>
           this.#mutationVersion !== mutationVersion || (scheduler.isCancelled?.() ?? false),
         shouldYield: scheduler.shouldYield,
@@ -318,7 +323,7 @@ export class ElementStore {
     };
   }
   public updateStyle(id: string, style: Store.ElementStyle): Store.StoreDelta | null {
-    const current = this.#requireRecord(id);
+    const current = requireElementRecord(this.#records, id);
     const replacement = mutableElement(current.element);
     if (replacement.kind === "image") return null;
     replacement.style = style;
@@ -473,18 +478,13 @@ export class ElementStore {
   }
   #replacementPorts(): ReplacementPlannerPorts {
     return {
-      getRecord: (id) => this.#requireRecord(id),
+      getRecord: (id) => requireElementRecord(this.#records, id),
       getRetainedRecord: (element) => this.#replacementHistory.retainedRecord(element),
       getReferences: (targetId) => this.#reverseConnections.get(targetId),
       onReverseVisit: () => {
         this.#instrumentation.reverseDependencyVisits += 1;
       },
     };
-  }
-  #requireRecord(id: string): Store.ElementRecord {
-    const record = this.#records.get(id);
-    if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
-    return record;
   }
   #publish(
     delta: Store.StoreDelta | null,

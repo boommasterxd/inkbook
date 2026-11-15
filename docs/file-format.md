@@ -13,7 +13,7 @@ The required XML structure, standalone page surface, portable light and dark pal
 ```ts
 interface InkSnapshotV1 {
   format: "inkbook";
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   revision: number;
   page: PageV1;
   elements: InkElementV1[];
@@ -61,6 +61,7 @@ interface ElementBaseV1 {
   createdAt: number;
   rotation: number;
   pivot: PointV1;
+  locked?: boolean;
 }
 
 interface StrokeStyleV1 {
@@ -87,6 +88,7 @@ interface ShapeStyleV1 extends OutlineStyleV1 {
 Validation rules:
 
 - All numbers MUST be finite.
+- `locked` is an optional boolean shared by all element kinds. Absence and `false` mean unlocked; canonical output omits both. A `true` value requires snapshot version 4. The interaction rules are defined in [Element Locks](editor-tools.md#element-locks).
 - Snapshot revision is a non-negative safe integer.
 - Opacity and pressure are in the inclusive range `0..1`. Version 1 stroke smoothing is exactly `0.5`.
 - Canonical geometry and rotation are rounded on command commit to at most three decimal places. Pressure and opacity in the editable JSON snapshot are rounded to at most four decimal places. Generated SVG opacity attributes retain at most four decimal places; every other numeric SVG attribute retains at most three, as defined by the [standalone SVG envelope](svg-envelope.md#strict-static-markup-allowlist). Negative zero is stored and serialized as zero. Anchor resolution uses canonical geometry before connected endpoints are committed.
@@ -247,9 +249,9 @@ Resolve an anchor in the target's unrotated canonical geometry, then rotate it c
 
 The store maintains a derived reverse map from target ID to `{ linearId, endpoint }` references. A target move, scale, rotation, shape-handle edit, axis edit, or outer table geometry edit resolves only its dependents, updates their endpoint coordinates, bounds, path caches, and spatial-index records, then commits the target and dependents atomically. Header and inner separator edits do not change outer table anchors and therefore do not visit reverse dependencies. The bend remains in page coordinates. Live target gestures follow the [connection-preview contract](rendering-and-performance.md#ordering-snapping-and-connections): small dependent cohorts update in the same frame without tweening; larger mounted cohorts prepare cooperatively while selected-element feedback remains immediate. This does not change persisted geometry or atomic commit validation.
 
-Bounds and geometry validation treat the target and all re-resolved dependents as one atomic candidate. Anchors and dependent bounds are recomputed from the exact proposed target transform. No target or dependent receives an edge correction. Connected endpoints may coincide, including when a target transform collapses a connected line or arrow to a point; collapsed geometry has no arrow node. If the complete candidate violates geometry, resource, or derived-height limits, the complete command is rejected.
+Bounds and geometry validation treat the target and all re-resolved dependents as one atomic candidate. Anchors and dependent bounds are recomputed from the exact proposed target transform. No target or dependent receives an edge correction. Connected endpoints may coincide, including when a target transform collapses a connected line or arrow to a point; collapsed geometry has no arrow node. If the complete candidate violates geometry, resource, or derived-height limits, the complete command is rejected. A user operation is also rejected when its actual dependent changes would alter a locked element, as defined in [Element Locks](editor-tools.md#element-locks).
 
-Dragging a connected endpoint previews a free point. Release on a valid candidate replaces the connection; release elsewhere stores `null` and the free point. Moving an entire line or arrow moves its bend and free endpoints; connected endpoints remain at their anchors. Removing a target first replaces every dependent connection with `null` at its last resolved endpoint in the same removal command. Undo and Redo restore both records atomically.
+Dragging a connected endpoint previews a free point. Release on a valid candidate replaces the connection; release elsewhere stores `null` and the free point. Moving an entire line or arrow moves its bend and free endpoints; connected endpoints remain at their anchors. Removing a target first replaces every dependent connection with `null` at its last resolved endpoint in the same removal command, subject to the locked-dependent restriction. Undo and Redo restore both records atomically.
 
 For a multi-selection containing both a target and its dependent line or arrow, apply the selection transform once to the target, bend, and free endpoints, then resolve connected endpoints from the final target geometry. This order prevents double translation.
 
@@ -429,14 +431,14 @@ interface ClipboardElementV1 {
 
 interface InkClipboardV1 {
   format: "inkbook-elements";
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   elements: ClipboardElementV1[];
   fontResources?: FontResourceV2[];
   imageResources?: ImageResourceV3[];
 }
 ```
 
-- Copy assigns compact unique `clipId` values in selection order, removes `id` and `createdAt`, and preserves geometry, style, render-band order, and relative positions. A connection whose target is selected becomes `targetClipId`; a connection to an unselected target becomes `null` at its resolved endpoint.
+- Copy assigns compact unique `clipId` values in selection order, removes `id` and `createdAt`, and preserves geometry, style, element locks, render-band order, and relative positions. A connection whose target is selected becomes `targetClipId`; a connection to an unselected target becomes `null` at its resolved endpoint. A payload containing a locked element uses version 4.
 - Paste first validates `InkClipboardV1` against clipboard limits. It maps every `clipId` to a new UUID, assigns `createdAt = pasteCommandTimestamp`, resolves connection targets through that complete map, translates the group, validates the resulting document limits, and commits atomically. Pasted elements enter the front of their respective render bands while retaining clipboard order. A failed step changes nothing.
 - On read, the prefixed system custom format takes precedence over the system `text/plain` representation, which takes precedence over the in-session fallback, when each candidate validates. Copy writes one `text/plain`-only `ClipboardItem` during the initiating user activation because that well-known format is the interoperable system representation and already contains the complete prefixed Inkbook payload. The optional standards-prefixed custom format remains read-compatible but is not written because unsupported custom types may reject the complete multi-format operation. Every write path retains the validated in-session payload, and a failed standard system write is reported without attempting a late retry after activation.
 - Codec execution, operation identity, revision synchronization, and worker fallback are defined in [Rendering and Performance](rendering-and-performance.md#document-worker-autosave-and-export).
@@ -471,7 +473,7 @@ Browser clipboard materialization and receiver-side worker batch limits are defi
 
 ## Disk Metadata Encoding
 
-Current writers emit `data-encoding="json-varint-v1"`. Root and snapshot format version remain `1`; only each stored stroke's `points` field changes from a numeric array to a canonical Base64 string. All other snapshot fields and the logical sample triples remain unchanged. Clipboard JSON retains numeric arrays.
+Current writers emit `data-encoding="json-varint-v1"`. This encoding does not change the snapshot-version selection; only each stored stroke's `points` field changes from a numeric array to a canonical Base64 string. All other snapshot fields and the logical sample triples remain unchanged. Clipboard JSON retains numeric arrays.
 
 The sample writer uses one fixed 256-byte ASCII staging buffer. String output decodes completed chunks into Base64 string parts; the independent main-thread integrity digest instead receives exact ASCII byte chunks from the same validating codec, without a Base64 string or native text conversion for the samples. Neither path stages a complete binary stroke or constructs intermediate strings for every quartet. Byte output retains exact chunk copies and joins them into an exactly sized buffer, reusing a single chunk directly when possible. Final byte copying checks the caller's central scheduler after each 64 KiB with more copying pending; sample cancellation checkpoints remain unchanged. Staging-buffer flushes themselves are storage boundaries, not scheduler handoffs.
 
@@ -483,10 +485,10 @@ Readers continue to accept `data-encoding="json"` with flat numeric triples. Ope
 
 ## Versioning and Migration
 
-- Writers emit version 3 for documents containing images, version 2 for documents containing text without images, and canonical version 1 otherwise. The [image extension](images.md#persistence-clipboard-and-safe-svg) defines resource descriptors and the single embedded raster payload. The [text extension](text-fields.md#persistence-clipboard-and-pdf) preserves legacy reading and uses font descriptors without binary data in disk metadata. Logical runtime and clipboard resources retain their `data` fields. Version 2 requires updated readers on editing devices.
+- Writers emit version 4 for documents containing a locked element, version 3 for documents containing images without locked elements, version 2 for documents containing text without images or locked elements, and canonical version 1 otherwise. Version 4 retains the version 3 image and version 2 text capabilities and adds the shared element lock field without changing the visible graphic. The [image extension](images.md#persistence-clipboard-and-safe-svg) defines resource descriptors and the single embedded raster payload. The [text extension](text-fields.md#persistence-clipboard-and-pdf) preserves legacy reading and uses font descriptors without binary data in disk metadata. Logical runtime and clipboard resources retain their `data` fields. Older strict readers require an update before editing version 4 files.
 - Inkbook may display a replacement preview for a newer unsupported version only after its static SVG passes the same exact element-and-attribute allowlist as generated output; otherwise it leaves the native image host-owned and noninteractive, or replaces its owned presentation with a non-rendering placeholder. The document cannot be edited.
 - Version 0 uses the same envelope, snapshot fields, ordering, connections, and canonical geometry as version 1 except that both the root `data-inkbook-version` and snapshot `version` are `0` and the root omits `data-inkbook-snapshot-sha256`. Its only migration changes the snapshot discriminator to `1`. The first version 1 save adds the canonical metadata hash; the version 1 exact-text and hash requirements do not block loading the supported legacy source.
-- Older supported versions migrate in memory through sequential pure migrations in the document worker during unlock. Every adjacent step validates its complete output before the next step begins. Runtime batches and the export baseline are created only after the migrated current-version result passes schema and byte, depth, container, element, geometry, and connection limits. Cancellation applies between migration and validation slices. The equivalent bounded main-thread fallback uses the same registry, checkpoints, limits, and failure result when workers are unavailable.
+- Version 0 migrates in memory to version 1 through a pure migration in the document worker during unlock. Versions 1 through 4 are validated as supported versions without requiring a migration to version 4. Runtime batches and the export baseline are created only after the resulting snapshot passes schema and byte, depth, container, element, geometry, and connection limits. Cancellation applies between migration and validation slices. The equivalent bounded main-thread fallback uses the same registry, checkpoints, limits, and failure result when workers are unavailable.
 - Before the first write that would replace a successfully migrated document, preserve the exact original content as `<base>.backup-v<old-version>.svg`. Creation uses the public Vault boundary and is read back before replacement. If that collision-safe path already exists, it is accepted only when its content exactly equals the original; Inkbook never replaces a different existing backup. The verified backup is required exactly once per adopted migrated source.
 - Migration or unlock cancellation leaves the original untouched and the presentation static/read-only. Backup creation or verification failure prevents the version 1 replacement and leaves the session in recovery-required state with the original still untouched.
 - Unknown properties in the current schema are rejected rather than silently discarded.

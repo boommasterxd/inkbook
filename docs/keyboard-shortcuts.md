@@ -13,7 +13,7 @@ Inkbook separates canvas-local keyboard bindings from Obsidian commands. A canva
 | Select all       | `Mod+A`               | An active Inkbook editor exists                        |
 | Copy selection   | `Mod+C`               | A selection exists and the canvas owns the key event   |
 | Cut selection    | `Mod+X`               | A selection exists and the canvas owns the key event   |
-| Delete selection | `Delete`              | A selection exists                                     |
+| Delete selection | `Delete`              | The selection contains an unlocked element             |
 | Zoom in          | `Mod++`               | The canvas owns the event and navigation is available  |
 | Zoom out         | `Mod+-`               | The canvas owns the event and navigation is available  |
 | Bring forward    | `Mod+ArrowUp`         | The selection can move one rank forward                |
@@ -59,7 +59,7 @@ The following fixed controls act only when the focused canvas input surface owns
 | Geometry editing or pending preparation | `Escape`              | Leave editing and cancel unfinished preparation.                                             |
 | Canvas                                  | `Tab`                 | Leave editing, cancel unfinished preparation, and retain normal sequential focus navigation. |
 
-Object navigation spans the complete logical document, including culled objects, with highlight-band objects before content-band objects. It reveals the selected object's bounds through the existing camera and native note-scroll adapter without introducing another scroll owner. A polite canvas status announces the object kind, position in the document, and selection count; geometry editing announces the current operation, first selected object's bounds and rotation, and the edit outcome. The selected handle has distinct visible focus feedback.
+Object navigation spans the complete logical document, including culled and locked objects, in image, highlight, then content band order. It reveals the selected object's bounds through the existing camera and native note-scroll adapter without introducing another scroll owner. A polite canvas status announces the object kind, position in the document, and selection count; geometry editing announces the current operation, first selected object's bounds and rotation, and the edit outcome. A fully locked selection announces its state instead of entering geometry editing. Mixed-selection editing follows [Element Locks](editor-tools.md#element-locks). The selected handle has distinct visible focus feedback.
 
 [Text Fields](text-fields.md#scope-and-interaction) defines source-editing ownership and text-specific reflow and uniform-scaling rules.
 

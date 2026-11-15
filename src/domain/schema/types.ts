@@ -1,6 +1,6 @@
 export interface InkSnapshotV1 {
   format: "inkbook";
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   revision: number;
   page: PageV1;
   elements: InkElementV1[];
@@ -36,6 +36,7 @@ interface ElementBaseV1 {
   createdAt: number;
   rotation: number;
   pivot: PointV1;
+  locked?: boolean;
 }
 
 export interface StrokeStyleV1 {
@@ -324,7 +325,7 @@ export interface ClipboardElementV1 {
 
 export interface InkClipboardV1 {
   format: "inkbook-elements";
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   elements: ClipboardElementV1[];
   fontResources?: FontResourceV2[];
   imageResources?: ImageResourceV3[];

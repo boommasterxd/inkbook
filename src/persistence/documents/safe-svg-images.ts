@@ -10,7 +10,10 @@ const IMAGE_PREFIX =
   /^<image id="inkbook-image-([0-9a-f]{64})" width="([1-9]\d{0,4})" height="([1-9]\d{0,4})" href="data:(image\/(?:png|jpeg|webp));base64,/u;
 
 export function hasSafeImageBand(input: string, version: number): boolean {
-  return version === 3 || (version > 3 && input.includes('<g id="inkbook-images-band">'));
+  return (
+    (version >= 3 && version <= 4) ||
+    (version > 4 && input.includes('<g id="inkbook-images-band">'))
+  );
 }
 
 export interface SafeSvgImages {

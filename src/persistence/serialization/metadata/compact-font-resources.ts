@@ -8,7 +8,7 @@ export function* restoreCompactFontResourcesSteps(
 ): Generator<void, boolean> {
   if (
     !isRecord(value) ||
-    (value.version !== 2 && value.version !== 3) ||
+    (value.version !== 2 && value.version !== 3 && value.version !== 4) ||
     value.fontResources === undefined
   )
     return false;

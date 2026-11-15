@@ -164,14 +164,14 @@ function* validateSnapshotSteps(
       "$",
     );
     assertLiteral(value.format, INKBOOK_FORMAT, "$.format");
-    assertOneOf(value.version, [1, 2, 3] as const, "$.version");
+    assertOneOf(value.version, [1, 2, 3, 4] as const, "$.version");
     if (value.fontResources !== undefined) {
       if (value.version === 1)
         fail("invalid-literal", "$.version", "Font resources require snapshot version 2.");
       yield* assertFontResourcesSteps(value.fontResources, "$.fontResources");
     }
     if (value.imageResources !== undefined) {
-      if (value.version !== 3) fail("invalid-literal", "$.version", "Images require version 3.");
+      if (value.version < 3) fail("invalid-literal", "$.version", "Images require version 3.");
       yield* assertImageResourcesSteps(value.imageResources, "$.imageResources");
     }
     assertSafeInteger(value.revision, 0, "$.revision");

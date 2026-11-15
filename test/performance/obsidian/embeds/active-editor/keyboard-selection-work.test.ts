@@ -18,7 +18,11 @@ import {
   elementReplacementPorts,
 } from "../../../../fixtures/obsidian/element-mutation-ports";
 import { activeEditorPreparedHistory } from "../../../../fixtures/obsidian/active-editor";
-import { pausedWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import {
+  immediateWorkScheduler,
+  pausedWorkScheduler,
+} from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { ElementLockSession } from "../../../../../src/obsidian/embeds/active-editor/element-lock-session";
 import { createSelectionPreviewRenderer } from "../../../../fixtures/obsidian/selection-preview-renderer";
 import {
   createConnectedTranslationFixture,
@@ -26,6 +30,59 @@ import {
 } from "../../../editor/connected-translation-fixture";
 
 beforeEach(installObsidianDomHelpers);
+
+it("selects all locked objects in one cooperative document traversal and reuses its summary", async () => {
+  const count = 10_000;
+  const store = new ElementStore(
+    Array.from({ length: count }, (_, index) => ({
+      ...indexedStroke(index),
+      ...(index % 10 === 0 ? { locked: true } : {}),
+    })),
+  );
+  const model = createActiveEditorModel(store);
+  const history = new ActiveEditorHistory(model);
+  let selection: ReadonlySet<string> = new Set();
+  const read = vi.spyOn(store, "get");
+  const order = vi.spyOn(store, "beginOrder");
+  const canonical = vi.spyOn(geometry, "calculateElementBounds");
+  const materialize = vi.spyOn(store, "materializeSnapshot");
+  const pending = vi.fn();
+  const session = new ElementLockSession({
+    model,
+    history,
+    workScheduler: immediateWorkScheduler(),
+    currentSelection: () => selection,
+    setSelection: (next) => {
+      selection = next;
+    },
+    isEnabled: () => true,
+    isAttached: () => true,
+    onPendingChanged: pending,
+    onStateChanged: vi.fn(),
+    onFailed: vi.fn(),
+  });
+  try {
+    store.resetInstrumentation();
+    session.selectLocked();
+    await vi.waitFor(() => expect(pending).toHaveBeenLastCalledWith(false));
+    expect(selection.size).toBe(count / 10);
+    expect(read).toHaveBeenCalledTimes(count);
+    expect(order).toHaveBeenCalledOnce();
+    expect(materialize).not.toHaveBeenCalled();
+    expect(canonical).not.toHaveBeenCalled();
+    expect(store.instrumentation.recordReplacements).toBe(0);
+    expect(store.instrumentation.publishedDeltas).toBe(0);
+    read.mockClear();
+    expect(session.selectionState).toEqual({ locked: count / 10, unlocked: 0 });
+    expect(session.selectionState).toEqual({ locked: count / 10, unlocked: 0 });
+    expect(read).toHaveBeenCalledTimes(count / 10);
+    expect(history.commandCount).toBe(0);
+  } finally {
+    session.dispose();
+    history.dispose();
+    vi.restoreAllMocks();
+  }
+});
 
 it.each([100, 10_000])(
   "bounds keyboard navigation record and order work with %s strokes",

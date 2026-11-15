@@ -10,7 +10,7 @@ import { validateFontResource } from "../../../persistence/fonts/font-resources"
 /** Session-owned immutable resources; output pruning belongs to persistence. */
 export class SessionFontResources {
   #resources: readonly FontResourceV2[];
-  #version: 1 | 2 | 3;
+  #version: InkSnapshotV1["version"];
   #pending: Promise<void> = Promise.resolve();
 
   constructor(snapshot: InkSnapshotV1) {
@@ -22,7 +22,7 @@ export class SessionFontResources {
     return this.#resources;
   }
 
-  get version(): 1 | 2 | 3 {
+  get version(): InkSnapshotV1["version"] {
     return this.#version;
   }
 
@@ -59,7 +59,7 @@ export class SessionFontResources {
       const previous = this.#resources;
       const previousVersion = this.#version;
       this.#resources = Object.freeze(merged);
-      this.#version = this.#version === 3 ? 3 : 2;
+      this.#version = this.#version >= 2 ? this.#version : 2;
       try {
         context.commit(this.#resources);
       } catch (error) {

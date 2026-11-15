@@ -108,7 +108,8 @@ export class ActiveDocumentHistory {
       const wait = scheduler.checkpoint(undefined, "frame");
       if (wait !== undefined) await wait;
       if (isCancelled()) return { status: "cancelled", token: null };
-      if (this.#model.store.get(id) !== undefined) ids.push(id);
+      const element = this.#model.store.get(id)?.element;
+      if (element !== undefined && element.locked !== true) ids.push(id);
     }
     if (isCancelled()) return { status: "cancelled", token: null };
     if (ids.length === 0) return { status: "noop", token: null };
@@ -215,6 +216,7 @@ export async function applyDocumentHistoryMutation(
   if (cancelled()) return false;
   try {
     const prepared = await model.prepareElementMutation(mutation, {
+      protectLocked: false,
       replay,
       replaySource: "retained",
       isCancelled: cancelled,

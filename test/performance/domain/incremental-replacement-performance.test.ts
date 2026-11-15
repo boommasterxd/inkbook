@@ -5,7 +5,7 @@ import * as sampleValidation from "../../../src/domain/schema/stroke-sample-rang
 import * as bottomHeap from "../../../src/domain/spatial/max-bottom-heap";
 import { UniformSpatialIndex } from "../../../src/domain/spatial";
 import { applySelectionStyleChange } from "../../../src/editor/tools/style-change";
-import { ElementStore } from "../../../src/domain/store/public";
+import { ElementStore, withElementLock } from "../../../src/domain/store/public";
 import type { ElementReplacementHistoryData } from "../../../src/domain/store/public";
 import type { ImmutableInkElement } from "../../../src/domain/store/types";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
@@ -185,6 +185,67 @@ it("prepares replacements incrementally and preserves unrelated records", async 
     recordReplacements: 10_000,
     timeSlicedIndexVisits: 10_000,
   });
+}, 30_000);
+
+it("locks and replays 10,000 strokes without sample work or geometry rebuilding", async () => {
+  const { fixture, observations, store } = await createObservedOwnedStore();
+  const original = fixture.strokeIds.map((id) => store.get(id)!);
+  const probes = [
+    vi.spyOn(bounds, "calculateElementBoundsSteps"),
+    vi.spyOn(sampleCopy, "copySampleRange"),
+    vi.spyOn(sampleCopy, "compareSampleRange"),
+    vi.spyOn(UniformSpatialIndex.prototype, "prepareReplacementsTimeSliced"),
+  ];
+  const scheduler = new CheckpointSliceScheduler(40);
+  store.resetInstrumentation();
+  try {
+    const prepared = await store.prepareElementReplacement(
+      original.map(({ element }) => withElementLock(element, true)),
+      scheduler,
+    );
+    expect(prepared.status).toBe("prepared");
+    expect(store.lockedCount).toBe(0);
+    const applied = store.commitPreparedElementReplacement(prepared.token!);
+    expect(applied.delta?.changes).toHaveLength(10_000);
+    expect(applied.delta?.changes.every(({ domains }) => domains.join() === "interaction")).toBe(
+      true,
+    );
+    expect(store.lockedCount).toBe(10_000);
+    for (const previous of original) {
+      const next = store.get(previous.element.id)!;
+      expect(next.bounds).toBe(previous.bounds);
+      expect(next.geometryVersion).toBe(previous.geometryVersion);
+      expect(next.paintVersion).toBe(previous.paintVersion);
+      expect(next.element.kind === "stroke" && next.element.points).toBe(
+        previous.element.kind === "stroke" && previous.element.points,
+      );
+    }
+    const history = applied.history!;
+    for (const elements of [history.previous, history.replacements]) {
+      const replay = await store.prepareElementReplacement(
+        elements as readonly InkElementV1[],
+        scheduler,
+      );
+      expect(store.commitPreparedElementReplacement(replay.token!).status).toBe("committed");
+    }
+    expect(store.lockedCount).toBe(10_000);
+    for (const probe of probes.slice(0, 3)) expect(probe).not.toHaveBeenCalled();
+    for (const [replacements] of probes[3]!.mock.calls) expect(replacements).toHaveLength(0);
+    expect(
+      observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
+    ).toBe(true);
+    expect(store.instrumentation).toMatchObject({
+      fullStoreScans: 0,
+      timeSlicedIndexVisits: 0,
+      reverseDependencyVisits: 0,
+      recordReplacements: 30_000,
+      publishedDeltas: 3,
+    });
+    expect(scheduler.checkpointCounts.length).toBeGreaterThan(1);
+    expect(scheduler.checkpointCounts.every((count) => count <= 40)).toBe(true);
+  } finally {
+    for (const probe of probes) probe.mockRestore();
+  }
 }, 30_000);
 
 const retainedTransforms = {

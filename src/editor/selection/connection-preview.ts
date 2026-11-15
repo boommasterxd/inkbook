@@ -7,7 +7,11 @@ import {
 } from "../../domain/geometry/public";
 import type { EndpointConnectionV1, InkElementV1, PointV1 } from "../../domain/schema/public";
 import type { FrameCancellation, WorkScheduler } from "../../domain/scheduling/work-scheduler";
-import type { ElementStore } from "../../domain/store/public";
+import {
+  assertElementUnlocked,
+  LockedElementMutationError,
+  type ElementStore,
+} from "../../domain/store/public";
 
 import type { SelectionPreviewTransform } from "./handle-types";
 import { transformSelectionPoint } from "./overlay-geometry";
@@ -34,6 +38,7 @@ export class ConnectedSelectionPreviewSession {
   readonly #selectedPreviewIds = new Set<string>();
   readonly #selectedPreviewOrder: string[] = [];
   readonly #steps: Generator<number, ConnectedPreviewPlan>;
+  readonly #hasLockedElements: boolean;
   #plan: ConnectedPreviewPlan | undefined;
   #valid = true;
   #generation = 0;
@@ -45,6 +50,7 @@ export class ConnectedSelectionPreviewSession {
     selectedIds: ReadonlySet<string>,
   ) {
     this.#selectedIds = selectedIds;
+    this.#hasLockedElements = store.lockedCount > 0;
     for (const element of selectedElements) {
       if (isAnchorTarget(element)) this.#selected.set(element.id, element);
       if (isConnectedLinear(element)) {
@@ -94,7 +100,7 @@ export class ConnectedSelectionPreviewSession {
 
   public dispose(): void {
     this.#valid = false;
-    this.#steps.return({ bindings: new Map(), ids: [] });
+    this.#steps.return({ bindings: new Map(), ids: [], lockedBindings: [] });
     this.#plan = undefined;
     this.#unsubscribe();
   }
@@ -132,7 +138,15 @@ export class ConnectedSelectionPreviewSession {
     }
     if (!this.#valid) return { elements: [], selectedPreviewIds: this.#selectedPreviewIds };
     const roots = new Map<EndpointConnectionV1, PointV1 | null>();
+    const pointAt = (root: EndpointConnectionV1 | null): PointV1 | null => {
+      if (root === null) return null;
+      if (!roots.has(root))
+        roots.set(root, this.#rootPoint(root, targets, transform, materializeRoot));
+      return roots.get(root) ?? null;
+    };
     const plan = this.#plan;
+    if (plan === undefined && this.#hasLockedElements) throw new LockedElementMutationError();
+    this.#assertLockedAnchors(pointAt);
     const selectedProgressive = exceedsExactLinearPreviewWork(this.#selectedPreviewIds.size);
     const ids = plan?.ids ?? (selectedProgressive ? this.#selectedPreviewOrder : []);
     if (ids.length === 0) {
@@ -145,13 +159,10 @@ export class ConnectedSelectionPreviewSession {
       const binding = plan?.bindings.get(id);
       if (binding === undefined) return undefined;
       let resolved = binding.element;
+      if (resolved.locked === true) return undefined;
       for (const endpoint of ["start", "end"] as const) {
-        const root = binding[endpoint];
-        if (root === null) continue;
-        if (!roots.has(root))
-          roots.set(root, this.#rootPoint(root, targets, transform, materializeRoot));
-        const point = roots.get(root);
-        if (point === null || point === undefined) continue;
+        const point = pointAt(binding[endpoint]);
+        if (point === null) continue;
         const connection = endpoint === "start" ? resolved.startConnection : resolved.endConnection;
         resolved = editLinearEndpointFromWorld(resolved, endpoint, point, {
           connection,
@@ -175,6 +186,22 @@ export class ConnectedSelectionPreviewSession {
       selectedPreviewIds: this.#selectedPreviewIds,
       progressive: { ids, materialize },
     };
+  }
+
+  #assertLockedAnchors(pointAt: (root: EndpointConnectionV1 | null) => PointV1 | null): void {
+    for (const binding of this.#plan?.lockedBindings ?? []) {
+      for (const endpoint of ["start", "end"] as const) {
+        const point = pointAt(binding[endpoint]);
+        if (point === null) continue;
+        const original = rotatePointClockwise(
+          binding.element[endpoint],
+          binding.element.pivot,
+          binding.element.rotation,
+        );
+        if (point.x !== original.x || point.y !== original.y)
+          assertElementUnlocked(binding.element);
+      }
+    }
   }
 
   #selectedPreview(

@@ -1,4 +1,5 @@
 import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
+import { elementSnapshotVersion } from "../../../domain/schema/snapshot-version";
 import { serializeSvgNumber } from "../../documents/svg-number";
 import { CANONICAL_THEME_STYLESHEET } from "../../documents/svg-theme";
 import { escapeXmlText } from "../../documents/xml-text";
@@ -77,7 +78,7 @@ function* assembleDocumentFragments<T>(
   }
   yield encode(`]}</metadata><g id="inkbook-background">`);
   yield encode(envelope.background);
-  if (assembly.snapshot?.version === 3) {
+  if ((assembly.snapshot?.version ?? 1) >= 3) {
     yield encode(`</g><g id="inkbook-images-band">`);
     yield* assembly.image ?? [];
   }
@@ -101,7 +102,7 @@ export function documentStaticByteLength(
     metadataPrefix,
     `]}</metadata><g id="inkbook-background">`,
     background,
-    ...(snapshot?.version === 3 ? [`</g><g id="inkbook-images-band">`] : []),
+    ...((snapshot?.version ?? 1) >= 3 ? [`</g><g id="inkbook-images-band">`] : []),
     `</g><g id="inkbook-highlights">`,
     `</g><g id="inkbook-content">`,
     "</g></svg>",
@@ -126,11 +127,7 @@ export function snapshotValue(
     format: "inkbook",
     page,
     revision,
-    version: elements.some((element) => element.kind === "image")
-      ? 3
-      : elements.some((element) => element.kind === "text")
-        ? 2
-        : 1,
+    version: elementSnapshotVersion(elements),
     ...(imageResources === undefined || imageResources.length === 0
       ? {}
       : { imageResources: [...imageResources] }),
@@ -173,7 +170,7 @@ export function envelope(
   return (
     `${rootPrefix(revision, lockedHeight, metadata.hash, metadata.snapshot)}${metadata.text}</metadata>` +
     `<g id="inkbook-background">${background}</g>` +
-    (metadata.snapshot?.version === 3
+    ((metadata.snapshot?.version ?? 1) >= 3
       ? `<g id="inkbook-images-band">${metadata.images ?? ""}</g>`
       : "") +
     `<g id="inkbook-highlights">${highlights}</g>` +

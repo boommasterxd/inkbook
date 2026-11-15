@@ -26,6 +26,7 @@ export function assertImageElement(
       "createdAt",
       "rotation",
       "pivot",
+      ...(value.locked === undefined ? [] : ["locked"]),
       "x",
       "y",
       "width",

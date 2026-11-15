@@ -11,15 +11,16 @@ export function materializeStoreSnapshot(
   if (!Number.isSafeInteger(input.revision) || input.revision < 0) {
     throw new RangeError("Snapshot revision must be a non-negative safe integer.");
   }
-  let version: 1 | 2 | 3 = input.version ?? (input.fontResources === undefined ? 1 : 2);
+  let version: 1 | 2 | 3 | 4 = input.version ?? (input.fontResources === undefined ? 1 : 2);
   if (input.fontResources !== undefined && version < 2) version = 2;
-  if (input.imageResources !== undefined) version = 3;
+  if (input.imageResources !== undefined && version < 3) version = 3;
   const elements = RENDER_BANDS.flatMap((band) =>
     bands[band].map((id) => {
       const record = records.get(id);
       if (record === undefined) throw new Error(`Missing record for band element: ${id}`);
       if (record.element.kind === "text" && version < 2) version = 2;
-      if (record.element.kind === "image") version = 3;
+      if (record.element.kind === "image" && version < 3) version = 3;
+      if (record.element.locked === true) version = 4;
       return mutableElement(record.element);
     }),
   );

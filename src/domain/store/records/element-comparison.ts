@@ -36,6 +36,7 @@ export function* classifyReplacementSteps(
   if (!(yield* geometryEqualSteps(previous, next, progress))) domains.push("geometry");
   if (!paintEqual(previous, next)) domains.push("paint");
   if (!connectionsEqual(previous, next)) domains.push("connection");
+  if ((previous.locked === true) !== (next.locked === true)) domains.push("interaction");
   return domains;
 }
 
@@ -43,6 +44,22 @@ export function hasConnections(element: ImmutableInkElement | InkElementV1): boo
   return (
     (element.kind === "line" || element.kind === "arrow") &&
     (element.startConnection !== null || element.endConnection !== null)
+  );
+}
+
+export function tableAnchorFrameEqual(
+  current: Extract<ImmutableInkElement, { kind: "table" }>,
+  draft: Extract<InkElementV1, { kind: "table" }>,
+): boolean {
+  return (
+    current.x === draft.x &&
+    current.y === draft.y &&
+    current.columnWidth === draft.columnWidth &&
+    current.columns === draft.columns &&
+    current.height === draft.height &&
+    current.rotation === draft.rotation &&
+    current.pivot.x === draft.pivot.x &&
+    current.pivot.y === draft.pivot.y
   );
 }
 

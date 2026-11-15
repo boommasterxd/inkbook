@@ -129,7 +129,7 @@ export const settingsControls = {
     "Delete the currently active embed.",
   "settings.shortcuts.reference.erase-all-annotations.label": "Erase all annotations",
   "settings.shortcuts.reference.erase-all-annotations.description":
-    "Remove every annotation from the active embed.",
+    "Remove every unlocked element from the active embed.",
   "settings.shortcuts.reference.copy-active-embed.label": "Copy active embed",
   "settings.shortcuts.reference.copy-active-embed.description":
     "Copy the currently active embed reference.",

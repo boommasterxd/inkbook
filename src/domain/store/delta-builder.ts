@@ -10,6 +10,7 @@ interface PendingDelta {
 const DOMAIN_BITS: Readonly<Record<DeltaDomain, number>> = Object.freeze({
   connection: 1 << 3,
   geometry: 1 << 0,
+  interaction: 1 << 5,
   order: 1 << 2,
   paint: 1 << 1,
   visibility: 1 << 4,

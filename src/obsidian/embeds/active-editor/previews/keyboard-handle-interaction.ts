@@ -116,7 +116,11 @@ export class KeyboardHandleInteraction {
       session.update(target);
       deferred = commitHandlePreview(
         {
-          active: { frame, selectedIds: this.#options.selection(), session },
+          active: {
+            frame,
+            selectedIds: handles.editableSelection(),
+            session,
+          },
           history: controller.history,
           layout: { finish },
           preparedHistory,

@@ -1,10 +1,12 @@
 import type { PhoneSheetNavigation } from "../../menus/panels/panel-page";
 import type { OnboardingPreferencePort } from "../../settings/onboarding-preference";
 import type { ImageCropV3, ImageElementV3, ImageResourceV3 } from "../../../domain/schema/public";
+import type { ImageInsertionPlacement } from "../../../domain/images/image-insertion-size";
 
 export interface ImportedImageBatch {
   readonly resources: readonly ImageResourceV3[];
   readonly source: "image" | "pdf";
+  readonly placement?: ImageInsertionPlacement;
 }
 
 export interface EditorChromeOpenings {

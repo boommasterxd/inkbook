@@ -37,6 +37,7 @@ export function* assertTextElementSteps(
       "createdAt",
       "rotation",
       "pivot",
+      ...(value.locked === undefined ? [] : ["locked"]),
       "x",
       "y",
       "width",

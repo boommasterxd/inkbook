@@ -190,7 +190,7 @@ The command history in this flow belongs to the Inkbook canvas. Creating an embe
 
 ```mermaid
 flowchart TD
-  storeDelta["Domain-classified store delta with versions"] --> dirty["Set geometry, paint, order, connection, or visibility flags"]
+  storeDelta["Domain-classified store delta with versions"] --> dirty["Set geometry, paint, order, connection, visibility, or interaction flags"]
   dirty --> scheduler{"Scene frame already pending?"}
   gestureUpdate["Gesture, camera, scroll, or zoom update"] --> scheduler
   hostUpdate["Resize or host-layout invalidation"] --> scheduler

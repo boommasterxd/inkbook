@@ -56,6 +56,8 @@ export class SceneFrameWriter {
     | undefined;
   #pendingSystemCursor: string | undefined;
   #pendingSnapPath: string | null | undefined;
+  #pendingLockedSelectionPath: string | undefined;
+  #lockedSelectionPath = "";
   #snapPath = "";
   #scheme: DocumentScheme = "light";
   #themeDirty = true;
@@ -176,6 +178,13 @@ export class SceneFrameWriter {
     this.#pendingSnapPath = path;
   }
 
+  public setLockedSelectionPath(path: string | null): void {
+    const next = path ?? "";
+    if (next === this.#lockedSelectionPath) return;
+    this.#lockedSelectionPath = next;
+    this.#pendingLockedSelectionPath = next;
+  }
+
   public setScheme(scheme: DocumentScheme): void {
     this.#dom.invalidateSurfaceTheme();
     this.#scheme = scheme;
@@ -228,6 +237,11 @@ export class SceneFrameWriter {
   }
 
   public writeSelection(elements: SceneElementPreviews, motion: SceneMotionController): void {
+    if (this.#pendingLockedSelectionPath !== undefined) {
+      this.#dom.lockedSelectionOverlayPath.setAttribute("d", this.#pendingLockedSelectionPath);
+      this.#instrumentation.attributeWrites += 1;
+      this.#pendingLockedSelectionPath = undefined;
+    }
     const selection = this.#pendingSelection;
     if (
       selection !== undefined &&

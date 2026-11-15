@@ -35,7 +35,7 @@ export function* migrateAndValidateDocumentSnapshotSteps(
     typeof value === "object" &&
       value !== null &&
       "version" in value &&
-      (value.version === 2 || value.version === 3)
+      (value.version === 2 || value.version === 3 || value.version === 4)
       ? value.version
       : 1,
   );

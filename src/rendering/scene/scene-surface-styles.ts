@@ -67,6 +67,9 @@ export const SCENE_SURFACE_STYLES = `
 .inkbook-scene-overlays .inkbook-selection-overlay[data-selection-fill="none"] {
   fill: none;
 }
+.inkbook-scene-overlays .inkbook-locked-selection-overlay {
+  fill: none; stroke-linecap: round; stroke-linejoin: round;
+}
 .inkbook-scene-overlays .inkbook-selection-handles {
   fill: var(--interactive-accent); stroke: var(--interactive-accent);
 }

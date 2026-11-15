@@ -23,6 +23,29 @@ export function selectedElements(
   return elements;
 }
 
+export function editableSelection(
+  store: {
+    get(id: string): { readonly element: { readonly locked?: boolean } } | undefined;
+  },
+  selection: ReadonlySet<string>,
+): ReadonlySet<string> {
+  let editable: Set<string> | undefined;
+  for (const id of selection) {
+    const element = store.get(id)?.element;
+    if (element !== undefined && element.locked !== true) continue;
+    editable ??= new Set(selection);
+    editable.delete(id);
+  }
+  return editable ?? selection;
+}
+
+export function editableSelectedElements(
+  store: ElementSceneStore,
+  selection: ReadonlySet<string>,
+): InkElementV1[] {
+  return selectedElements(store, selection).filter((element) => element.locked !== true);
+}
+
 export function visibleSelectionCenter(
   store: ElementSceneStore,
   selection: ReadonlySet<string>,
@@ -63,7 +86,7 @@ export function arrangeSelectionAvailability(
   };
   for (const id of selection) {
     const record = store.get(id);
-    if (record === undefined) continue;
+    if (record === undefined || record.element.locked === true) continue;
     const selected = selectedBands[record.band];
     selected.count += 1;
     selected.minRank = Math.min(selected.minRank, record.rank);
@@ -94,34 +117,48 @@ export function selectionTargetAt(
     | {
         readonly frames?: SelectionFrameSession;
         readonly geometry: () => readonly SelectedElementGeometry[];
+        readonly includeLocked?: boolean;
       },
 ): { readonly elementId: string; readonly isSelected: boolean } | undefined {
   const selectionFrames =
     selectionContext !== undefined && "current" in selectionContext
       ? selectionContext
       : selectionContext?.frames;
-  const selected =
-    selectionContext !== undefined && "geometry" in selectionContext
+  const includeLocked =
+    selectionContext !== undefined &&
+    "includeLocked" in selectionContext &&
+    selectionContext.includeLocked === true;
+  const selected = includeLocked
+    ? selectedGeometry(store, selection, true)
+    : selectionContext !== undefined && "geometry" in selectionContext
       ? selectionContext.geometry()
       : selectedGeometry(store, selection);
   if (
-    (selected.length !== 1 || selected[0]?.element.kind !== "text") &&
-    selectionOverlayContainsPoint(selected, point, selectionFrames?.current(selected) ?? null)
+    allowsSelectionOverlay(selected) &&
+    selectionOverlayContainsPoint(
+      selected,
+      point,
+      includeLocked ? null : (selectionFrames?.current(selected) ?? null),
+    )
   ) {
     return { elementId: selected[0]!.element.id, isSelected: true };
   }
   const elementId = store.hit(point, pointerType, zoom);
+  if (elementId !== null && !includeLocked && store.get(elementId)?.element.locked === true)
+    return undefined;
   return elementId === null ? undefined : { elementId, isSelected: selection.has(elementId) };
 }
 
 function selectedGeometry(
   store: ElementSceneStore,
   selection: ReadonlySet<string>,
+  includeLocked = false,
 ): SelectedElementGeometry[] {
   const selected: SelectedElementGeometry[] = [];
   for (const id of selection) {
     const record = store.get(id);
-    if (record !== undefined) selected.push({ bounds: record.bounds, element: record.element });
+    if (record !== undefined && (includeLocked || record.element.locked !== true))
+      selected.push({ bounds: record.bounds, element: record.element });
   }
   return selected;
 }
@@ -138,11 +175,8 @@ export function selectedTargetAt(
   },
 ): { readonly elementId: string; readonly isSelected: true } | undefined {
   const first = selected[0];
-  if (first === undefined) return undefined;
-  if (
-    (selected.length !== 1 || first.element.kind !== "text") &&
-    selectionOverlayContainsPoint(selected, point, frame)
-  ) {
+  if (first === undefined || first.element.locked === true) return undefined;
+  if (allowsSelectionOverlay(selected) && selectionOverlayContainsPoint(selected, point, frame)) {
     return { elementId: first.element.id, isSelected: true };
   }
   const bounds = first.bounds;
@@ -166,4 +200,8 @@ export function selectedTargetAt(
     return { elementId: first.element.id, isSelected: true };
   }
   return undefined;
+}
+
+function allowsSelectionOverlay(selected: readonly SelectedElementGeometry[]): boolean {
+  return selected.length !== 1 || selected[0]?.element.kind !== "text";
 }

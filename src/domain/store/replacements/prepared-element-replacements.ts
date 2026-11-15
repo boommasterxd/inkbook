@@ -6,6 +6,7 @@ import type {
   PreparedReplacementState,
 } from "./replacement-types";
 import { planElementReplacement } from "./time-sliced-element-replacement";
+import { protectElementDelta } from "../records/element-lock";
 import type {
   ElementReplacementCommitResult,
   PreparedElementReplacement,
@@ -46,6 +47,7 @@ export class PreparedElementReplacements {
     const isCancelled = () =>
       this.#readVersion() !== mutationVersion || (scheduler.isCancelled?.() ?? false);
     const plan = await planElementReplacement(source, replacements, {
+      ...scheduler,
       isCancelled,
       shouldYield: scheduler.shouldYield,
       yieldControl: scheduler.yieldControl,
@@ -54,6 +56,8 @@ export class PreparedElementReplacements {
       return { status: "cancelled", token: null };
     }
     if (plan === null) return { status: "noop", token: null };
+    if (!(await protectElementDelta(plan.delta, { ...scheduler, isCancelled })))
+      return { status: "cancelled", token: null };
     const token = Object.freeze({}) as PreparedElementReplacement;
     this.#prepared.set(token, { isCancelled, mutationVersion, plan });
     this.#onPrepared(plan);

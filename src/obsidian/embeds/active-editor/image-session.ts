@@ -27,7 +27,7 @@ export interface ActiveImageSessionOptions extends Pick<
   readonly selection: () => ReadonlySet<string>;
   readonly select: (selection: ReadonlySet<string>) => void;
   readonly visibleCenter: () => PointV1;
-  readonly onCommitted: () => void;
+  readonly onCommitted: (preserveTool?: boolean) => void;
   readonly onFailed: () => void;
   readonly renderer?: Partial<
     Pick<SvgSceneRenderer, "beginPreviewCommit" | "clearElementPreviews">
@@ -66,6 +66,7 @@ export class ActiveImageSession {
     return (
       this.#options.onCropImage !== undefined &&
       image !== undefined &&
+      image.locked !== true &&
       this.#options.model.imageResource?.(image.assetId) !== undefined
     );
   }
@@ -103,8 +104,10 @@ export class ActiveImageSession {
       const applied = options.model.commitPreparedElementMutation(prepared.token);
       if (applied === null) return;
       registerAppliedDocumentMutation(options.history, options.model, applied);
-      options.select(new Set(elements.map(({ id }) => id)));
-      options.onCommitted();
+      options.select(
+        new Set(imported.placement === "page-width-locked" ? [] : elements.map(({ id }) => id)),
+      );
+      options.onCommitted(imported.placement === "page-width-locked");
     });
   }
 
@@ -116,7 +119,7 @@ export class ActiveImageSession {
       if (this.#selectedImage() !== image) return;
       const resource =
         image === undefined ? undefined : options.model.imageResource?.(image.assetId);
-      if (image === undefined || resource === undefined) return;
+      if (image === undefined || image.locked === true || resource === undefined) return;
       const revision = options.model.revision;
       const previewCommit = options.renderer?.beginPreviewCommit?.();
       let previewReleased = false;
@@ -129,19 +132,14 @@ export class ActiveImageSession {
       signal.addEventListener("abort", clearPreview, { once: true });
       try {
         const crop = await options.onCropImage!(image, resource, signal, options.ownerWindow);
-        if (
-          crop === undefined ||
-          !this.#current(signal, revision) ||
-          this.#selectedImage() !== image
-        )
-          return;
+        if (crop === undefined || !this.#currentCrop(image, signal, revision)) return;
         if (sameCrop(crop, image.crop)) return;
         const replacement = applyImageCrop(image, crop);
         const captured = captureElementReplacementHistory([image], [replacement]);
-        const isCancelled = () =>
-          !this.#current(signal, revision) || this.#selectedImage() !== image;
+        const isCancelled = () => !this.#currentCrop(image, signal, revision);
         const prepared = await options.model.prepareElementReplacement([replacement], {
           isCancelled,
+          protectLocked: true,
         });
         if (prepared.status !== "prepared" || prepared.token === null || isCancelled()) return;
         if (previewCommit !== undefined && !previewCommit.arm([image.id])) return;
@@ -155,6 +153,7 @@ export class ActiveImageSession {
           const cancelled = () => options.history.isDisposed || options.model.revision !== basis;
           const ready = await options.model.prepareElementReplacement(elements, {
             isCancelled: cancelled,
+            protectLocked: false,
           });
           return (
             ready.status === "prepared" &&
@@ -213,6 +212,11 @@ export class ActiveImageSession {
     const element = this.#options.model.store.get(id)?.element;
     return element?.kind === "image" ? element : undefined;
   }
+
+  #currentCrop(image: ImageElementV3, signal: AbortSignal, revision: number): boolean {
+    const selected = this.#selectedImage();
+    return selected === image && selected.locked !== true && this.#current(signal, revision);
+  }
 }
 
 function createImportedImages(
@@ -221,16 +225,23 @@ function createImportedImages(
   page: EditableDocumentModel["page"],
   crypto: Pick<Crypto, "randomUUID">,
 ): ImageElementV3[] {
-  const { resources, source } = imported;
+  const { resources, source, placement } = imported;
+  const locked = placement === "page-width-locked";
   const first = resources[0]!;
-  const firstSize = initialImageSize(first, page.innerWidth, source);
+  const firstSize = initialImageSize(first, page.innerWidth, source, placement);
   let y = Math.max(page.margin, center.y - firstSize.height / 2);
   return resources.map((resource, index) => {
-    const size = index === 0 ? firstSize : initialImageSize(resource, page.innerWidth, source);
+    const size =
+      index === 0 ? firstSize : initialImageSize(resource, page.innerWidth, source, placement);
     const width = canonicalizeGeometryNumber(size.width);
     const height = canonicalizeGeometryNumber((width * resource.height) / resource.width);
     const x = canonicalizeGeometryNumber(
-      Math.max(page.margin, Math.min(center.x - width / 2, page.margin + page.innerWidth - width)),
+      locked
+        ? page.margin
+        : Math.max(
+            page.margin,
+            Math.min(center.x - width / 2, page.margin + page.innerWidth - width),
+          ),
     );
     const top = canonicalizeGeometryNumber(y);
     y += height + page.margin;
@@ -238,6 +249,7 @@ function createImportedImages(
       id: crypto.randomUUID(),
       createdAt: Date.now(),
       kind: "image",
+      ...(locked ? { locked: true } : {}),
       assetId: resource.id,
       x,
       y: top,

@@ -78,6 +78,10 @@ export class CanvasKeyboardSelection {
   #editKey(event: KeyboardEvent): boolean {
     if (event.key === "Enter") {
       if (event.repeat || this.#options.selection().size === 0) return this.#editing;
+      if (!this.#editing && this.#options.handles.selectionGeometry().length === 0) {
+        this.#status.announce(this.#localization.t("canvas.selection_locked"));
+        return true;
+      }
       this.#editing = !this.#editing;
       this.#handle = -1;
       this.#announce(

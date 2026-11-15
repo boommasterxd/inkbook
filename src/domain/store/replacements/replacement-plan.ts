@@ -25,6 +25,7 @@ export function prepareReplacementPlan(
 ): ReplacementPlan & { readonly candidates: readonly ReplacementCandidate[] } {
   const candidates = prepareReplacementCandidates(replacements, ports).map((candidate) => {
     if (
+      candidate.owned === true ||
       candidate.retainedRecord?.element === candidate.element ||
       isValidatedInternalStyleReplacement(candidate.current.element, candidate.element) ||
       getCanonicalStrokeReplacementProof(candidate.element)?.source === candidate.current.element
@@ -55,7 +56,14 @@ export async function prepareReplacementPlanTimeSliced(
   ports: ReplacementPlannerPorts,
   scheduler: StoreSliceScheduler,
 ): Promise<ReplacementPlan | "cancelled"> {
-  const prepared = await prepareReplacementCandidatesTimeSliced(replacements, ports, scheduler);
+  const prepared = await prepareReplacementCandidatesTimeSliced(
+    replacements,
+    {
+      ...ports,
+      ...(scheduler.protectLocked === undefined ? {} : { protectLocked: scheduler.protectLocked }),
+    },
+    scheduler,
+  );
   if (prepared === "cancelled") return prepared;
   return {
     elements: Object.freeze(prepared.candidates.map(({ element }) => element)),

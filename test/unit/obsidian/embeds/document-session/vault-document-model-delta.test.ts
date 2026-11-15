@@ -96,6 +96,21 @@ describe("vault document model deltas", () => {
       }),
     ]);
   });
+
+  it("exports lock-only interaction changes with retained element geometry", () => {
+    const element = rectangle();
+    const store = new ElementStore([element]);
+    const before = store.get(element.id)!;
+    const delta = store.replace(element.id, { ...element, locked: true });
+    if (delta === null) throw new Error("Expected a lock delta.");
+
+    const prepared = prepareVaultStoreDelta(delta);
+    expect(prepared.changedElements).toEqual([expect.objectContaining({ locked: true })]);
+    expect(prepared.changedElementDerivations[0]?.bounds).toBe(before.bounds);
+    expect(prepared.removedIds).toEqual([]);
+    expect(store.get(element.id)?.geometryVersion).toBe(before.geometryVersion);
+    expect(store.get(element.id)?.paintVersion).toBe(before.paintVersion);
+  });
 });
 
 describe("vault delta projection boundaries", () => {

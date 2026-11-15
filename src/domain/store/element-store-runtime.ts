@@ -35,6 +35,7 @@ export class ElementStoreRuntime {
   readonly #pressureAccess: PressureCacheAccess = { records: undefined, notify: undefined };
   readonly #anchorCache = new SemanticAnchorCache();
   #estimatedRetainedBytes = 0;
+  #lockedCount = 0;
   readonly #listeners = new Set<StoreDeltaListener>();
   readonly #memoryListeners = new Set<() => void>();
 
@@ -214,7 +215,19 @@ export class ElementStoreRuntime {
   }
 
   public initializeMemory(records: Iterable<ElementRecord>): void {
-    this.#estimatedRetainedBytes = estimateInitialStoreBytes(records);
+    this.#lockedCount = 0;
+    this.#estimatedRetainedBytes = estimateInitialStoreBytes(this.#initialRecords(records));
+  }
+
+  public get lockedCount(): number {
+    return this.#lockedCount;
+  }
+
+  *#initialRecords(records: Iterable<ElementRecord>): Generator<ElementRecord> {
+    for (const record of records) {
+      this.#lockedCount += Number(record.element.locked === true);
+      yield record;
+    }
   }
 
   public memoryUsage(): ElementStoreMemoryUsage {
@@ -253,6 +266,9 @@ export class ElementStoreRuntime {
       this.#strokeCenters.statistics().bytes;
     this.#estimatedRetainedBytes = applyStoreDeltaBytes(this.#estimatedRetainedBytes, delta);
     for (const change of delta.changes) {
+      this.#lockedCount +=
+        Number(change.after?.element.locked === true) -
+        Number(change.before?.element.locked === true);
       if (change.before !== null && change.after !== null && !change.domains.includes("geometry")) {
         this.#pressurePaths.retainGeometryNeutral(change.id, change.before, change.after);
       }

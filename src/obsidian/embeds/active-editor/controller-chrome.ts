@@ -56,18 +56,22 @@ export function createActiveEditorToolbarState(
   [touchMode, chromeState]: readonly [ActiveEditorTouchMode, ActiveEditorChromeState],
   [activeTool, hasSelection]: readonly [EditorTool, boolean],
 ): ToolbarState {
-  return createToolbarState({
-    actionConfirmation: actions.actionConfirmation,
-    activeTool,
-    canRedo: availability.acceptsInput && history.canRedo,
-    canUndo: availability.acceptsInput && history.canUndo,
-    canPaste: availability.acceptsInput && actions.canPaste,
-    fingerDrawingEnabled: touchMode.enabled,
-    fingerDrawingAvailable: touchMode.available,
-    hasSelection,
-    openFlyout: chromeState.openFlyout,
-    pasteVisible: actions.pasteVisible,
-  });
+  return {
+    ...createToolbarState({
+      actionConfirmation: actions.actionConfirmation,
+      activeTool,
+      canRedo: availability.acceptsInput && history.canRedo,
+      canUndo: availability.acceptsInput && history.canUndo,
+      canPaste: availability.acceptsInput && actions.canPaste,
+      fingerDrawingEnabled: touchMode.enabled,
+      fingerDrawingAvailable: touchMode.available,
+      hasSelection,
+      openFlyout: chromeState.openFlyout,
+      pasteVisible: actions.pasteVisible,
+    }),
+    canCut: actions.isAvailable("cut"),
+    canDelete: actions.isAvailable("delete"),
+  };
 }
 
 export function createActiveEditorChrome(

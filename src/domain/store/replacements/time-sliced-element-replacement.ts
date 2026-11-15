@@ -57,6 +57,7 @@ export async function planElementReplacement(
   const fallbackYields = canonical.yields;
   let reverseVisits = 0;
   const ports: ReplacementPlannerPorts = {
+    ...(scheduler.protectLocked === undefined ? {} : { protectLocked: scheduler.protectLocked }),
     getRecord: (id) => requireElementRecord(source.records, id),
     getReferences: (id) => source.reverseConnections.get(id),
     onReverseVisit: () => {

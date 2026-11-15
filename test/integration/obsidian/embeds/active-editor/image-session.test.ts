@@ -196,6 +196,88 @@ it("keeps a single PDF page at the existing writing-width placement", async () =
   owner.session.dispose();
 });
 
+it.each(["image", "pdf"] as const)(
+  "inserts a %s underlay at full writing width, locked and deselected, as one reversible batch",
+  async (source) => {
+    const resources =
+      source === "pdf"
+        ? [resource, { ...resource, id: "b".repeat(64), width: 100, height: 200 }]
+        : [{ ...resource, width: 100, height: 200 }];
+    const owner = harness({
+      onImportImages: async () => ({ resources, source, placement: "page-width-locked" }),
+    });
+    owner.session.import({ x: 700, y: 300 });
+    await vi.waitFor(() => expect(owner.onCommitted).toHaveBeenCalledOnce());
+    expect(owner.onCommitted).toHaveBeenCalledWith(true);
+    const elements = owner.store
+      .materializeBandOrder("image")
+      .map((id) => owner.store.get(id)!.element as ImageElementV3);
+    expect(elements).toHaveLength(resources.length);
+    for (const [index, element] of elements.entries()) {
+      expect(element).toMatchObject({
+        x: PAGE.margin,
+        width: PAGE.innerWidth,
+        height: (PAGE.innerWidth * resources[index]!.height) / resources[index]!.width,
+        locked: true,
+        crop: { x: 0, y: 0, width: resources[index]!.width, height: resources[index]!.height },
+      });
+      if (index > 0)
+        expect(element.y).toBeCloseTo(
+          elements[index - 1]!.y + elements[index - 1]!.height + PAGE.margin,
+          3,
+        );
+    }
+    expect(owner.selection().size).toBe(0);
+    expect(owner.addImageResources).toHaveBeenCalledExactlyOnceWith(resources);
+    await assertReversibleImport(owner, elements);
+    owner.session.dispose();
+  },
+);
+
+it.each(["default", "page-width-locked"] as const)(
+  "keeps drawing available after importing an underlay, placement=%s",
+  async (placement) => {
+    installObsidianDomHelpers();
+    const owner = harness();
+    const model = {
+      ...createActiveEditorModel(owner.store),
+      ...owner.model,
+      get revision() {
+        return owner.model.revision;
+      },
+    };
+    const editor = createHarness({
+      model,
+      onImportImages: async () => ({ resources: [resource], source: "image", placement }),
+    });
+    try {
+      editor.controller.handleToolbarAction("image");
+      await vi.waitFor(() => expect(owner.store.size).toBe(1));
+      expect(editor.controller.toolbarState().activeTool).toBe(
+        placement === "page-width-locked" ? "draw" : "select",
+      );
+      expect(editor.controller.toolbarState().hasSelection).toBe(placement === "default");
+    } finally {
+      editor.dispose();
+      owner.session.dispose();
+    }
+  },
+);
+
+it("keeps a locked image selectable without starting crop controls", async () => {
+  const onCropImage = vi.fn(async () => image.crop);
+  const lockedImage = { ...image, locked: true };
+  const owner = harness({ onCropImage }, [lockedImage]);
+  expect(owner.session.selectedImageId).toBe(image.id);
+  expect(owner.session.canCrop).toBe(false);
+  owner.session.crop();
+  await Promise.resolve();
+  expect(onCropImage).not.toHaveBeenCalled();
+  expect(owner.store.get(image.id)?.element).toEqual(lockedImage);
+  expect(owner.history.commandCount).toBe(0);
+  owner.session.dispose();
+});
+
 it("commits a crop through prepared replacement with one undo and reusable original pixels", async () => {
   const owner = harness({}, [image]);
   expect(owner.session.canCrop).toBe(true);
@@ -224,11 +306,13 @@ it("discards cancelled drafts and stale crop results without replacing later edi
   const owner = harness({ onCropImage }, [image]);
   owner.session.crop();
   await vi.waitFor(() => expect(onCropImage).toHaveBeenCalledOnce());
+  const lockedImage = { ...image, locked: true };
+  owner.store.replaceMany([lockedImage]);
   owner.changeRevision();
   crop.resolve({ x: 1, y: 1, width: 100, height: 100 });
   await crop.promise;
   await Promise.resolve();
-  expect(owner.store.get(image.id)?.element).toEqual(image);
+  expect(owner.store.get(image.id)?.element).toEqual(lockedImage);
   expect(owner.history.commandCount).toBe(0);
   owner.session.dispose();
 });

@@ -131,7 +131,7 @@ export const settingsControls = {
     "Lösche die aktuell aktive Einbettung.",
   "settings.shortcuts.reference.erase-all-annotations.label": "Alle Elemente löschen",
   "settings.shortcuts.reference.erase-all-annotations.description":
-    "Entferne alle Elemente der aktiven Einbettung.",
+    "Entferne alle ungesperrten Elemente der aktiven Einbettung.",
   "settings.shortcuts.reference.copy-active-embed.label": "Aktive Einbettung kopieren",
   "settings.shortcuts.reference.copy-active-embed.description":
     "Kopiere die Referenz der aktuell aktiven Einbettung.",

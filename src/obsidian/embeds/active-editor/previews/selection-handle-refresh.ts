@@ -29,7 +29,10 @@ export function subscribeSelectionHandleRefresh(
     const selection = options.selection();
     const affected = delta.changes.some(
       (change) =>
-        selection.has(change.id) && (change.after === null || change.domains.includes("geometry")),
+        selection.has(change.id) &&
+        (change.after === null ||
+          change.domains.includes("geometry") ||
+          change.domains.includes("interaction")),
     );
     if (!affected || frame !== undefined) return;
     let synchronous = false;

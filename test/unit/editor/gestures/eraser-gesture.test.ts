@@ -57,6 +57,27 @@ describe("screen-relative gesture distances", () => {
   });
 });
 
+it("leaves locked elements intact and does not prepare their text geometry or fade", async () => {
+  const fade = { setCandidateFade: vi.fn(), clearCandidateFade: vi.fn() };
+  const getTextGeometry = vi.fn();
+  const sweep = new EraserSweep(
+    { x: 0, y: 50 },
+    4,
+    {
+      beginQuery: () => eraserQuery([rectangle.id]),
+      getElement: () => ({ ...rectangle, locked: true }),
+      getTextGeometry,
+    },
+    fade,
+  );
+  sweep.update({ x: 100, y: 50 });
+  const remove = vi.fn(() => true);
+  await expect(sweep.commit(remove, scheduler)).resolves.toBe(false);
+  expect(remove).not.toHaveBeenCalled();
+  expect(getTextGeometry).not.toHaveBeenCalled();
+  expect(fade.setCandidateFade).not.toHaveBeenCalled();
+});
+
 describe("eraser sweep", () => {
   it("detects a thin element crossed between pointer samples", () => {
     expect(sweepTouchesElement({ x: 0, y: 50 }, { x: 100, y: 50 }, 4, rectangle)).toBe(true);

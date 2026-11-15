@@ -47,6 +47,8 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   #pages!: HTMLInputElement;
   #page!: HTMLInputElement;
   #quality!: HTMLSelectElement;
+  #placement!: HTMLLabelElement;
+  #pageWidth!: HTMLInputElement;
 
   protected build(): void {
     const { t } = this.options.localization;
@@ -74,6 +76,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#resizeWarningText = this.#resizeWarning.createSpan();
     this.#buildPreview();
     this.#buildPdfFields();
+    this.#buildPlacement();
     this.#status = this.contentEl.createEl("p", { cls: "inkbook-menu-visually-hidden" });
     this.#status.setAttribute("role", "status");
     this.#status.setAttribute("aria-live", "polite");
@@ -140,6 +143,19 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#previewHint.hidden = true;
   }
 
+  #buildPlacement(): void {
+    this.#placement = this.#body.createEl("label", {
+      cls: "inkbook-menu-toggle-row inkbook-image-import-placement",
+    });
+    this.#placement.hidden = true;
+    this.#placement.createSpan({ text: this.options.localization.t("images.pageWidthLocked") });
+    const control = this.#placement.createSpan({ cls: "inkbook-menu-switch" });
+    this.#pageWidth = control.createEl("input", { type: "checkbox" });
+    control.createSpan({ cls: "inkbook-menu-switch-track" }).createSpan({
+      cls: "inkbook-menu-switch-thumb",
+    });
+  }
+
   #buildPdfFields(): void {
     const { t } = this.options.localization;
     this.#pdfFields = this.#body.createEl("fieldset", { cls: "inkbook-image-import-pdf" });
@@ -184,6 +200,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#setBusy(true);
     this.#preview = undefined;
     this.#mutateView(() => {
+      this.#placement.hidden = true;
       this.#resizeWarning.hidden = true;
       this.#resizeWarningText.textContent = "";
       this.#sourceDescription = this.options.localization.t("images.formats");
@@ -263,6 +280,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
       this.#previewImage.height = resource.height;
       this.#previewImage.src = `data:${resource.mimeType};base64,${resource.data}`;
       this.#figure.hidden = false;
+      this.#placement.hidden = false;
       this.#pdfFields.hidden = this.#pdf === undefined;
       this.#previewHint.hidden = this.#pdf === undefined;
       this.#sourceDescription =
@@ -311,6 +329,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
       this.result = {
         resources: staging.resources,
         source: this.#pdf === undefined ? "image" : "pdf",
+        ...(this.#pageWidth.checked ? { placement: "page-width-locked" } : {}),
       };
       this.close();
     } catch (error) {
@@ -326,6 +345,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
         if (this.#preview === undefined) {
           this.#figure.hidden = true;
           this.#pdfFields.hidden = true;
+          this.#placement.hidden = true;
           this.#choose.dataset.selected = "true";
           this.#replace.hidden = false;
         }
@@ -357,7 +377,8 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#spinner?.setActive(busy);
     this.#choose.disabled = busy;
     this.#insert.disabled = busy || this.#preview === undefined;
-    for (const input of [this.#pages, this.#page, this.#quality]) input.disabled = busy;
+    for (const input of [this.#pages, this.#page, this.#quality, this.#pageWidth])
+      input.disabled = busy;
     this.#status.textContent = busy ? this.options.localization.t("images.preparing") : "";
     this.#fileHint.textContent = busy
       ? this.options.localization.t("images.preparing")

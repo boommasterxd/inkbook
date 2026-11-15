@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { canonicalPoint } from "../../../../src/domain/geometry/public";
-import { ElementStore } from "../../../../src/domain/store/public";
+import { ElementStore, LockedElementMutationError } from "../../../../src/domain/store/public";
 import { ConnectedSelectionPreviewSession } from "../../../../src/editor/selection/public";
 import {
   axisConnectedLine,
@@ -14,6 +14,29 @@ import { editLinearEndpointFromWorld } from "../../../../src/editor/selection/tr
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 describe("connected selection transform preview", () => {
+  it("rejects moving a fixed dependent while retaining operations at its unchanged anchor", () => {
+    const target = rectangle();
+    const line = { ...connectedLine(target), locked: true };
+    const store = new ElementStore([target, line]);
+    const session = new ConnectedSelectionPreviewSession(store, [target], new Set([target.id]));
+    try {
+      expect(() => session.update({ kind: "translate", delta: { x: 30, y: 0 } })).toThrow(
+        LockedElementMutationError,
+      );
+      const preview = session.update({
+        kind: "scale",
+        anchor: line.start,
+        factors: { x: 2, y: 2 },
+        delta: { x: 0, y: 0 },
+        rotation: 0,
+      });
+      expect(preview.elements).toEqual([]);
+      expect(store.get(line.id)?.element).toEqual(line);
+      expect(store.mutationVersion).toBe(0);
+    } finally {
+      session.dispose();
+    }
+  });
   it("moves an unselected dependent endpoint through the reverse connection map", () => {
     const target = rectangle();
     const line = connectedLine(target);

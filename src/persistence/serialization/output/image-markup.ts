@@ -34,7 +34,7 @@ export function imageDefinitionsMarkup(resources: readonly ImageResourceV3[]): s
 export function snapshotImageResources(snapshot: InkSnapshotV1): {
   imageResources?: ImageResourceV3[];
 } {
-  if (snapshot.version !== 3) return {};
+  if (snapshot.version < 3) return {};
   const steps = usedImageResourcesSteps(snapshot.elements, snapshot.imageResources ?? []);
   let step = steps.next();
   while (!step.done) step = steps.next();

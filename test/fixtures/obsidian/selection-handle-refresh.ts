@@ -36,6 +36,8 @@ export function selectionHandleRefreshFixture(
     clearElementPreviews: vi.fn(),
     flushPointerFeedbackFrame: vi.fn(),
     setElementPreviews: vi.fn(),
+    setSelectedElements: vi.fn(),
+    setLockedSelectionOverlayPath: vi.fn(),
     setSelectionOverlayPath: vi.fn<HandleInteractionRenderer["setSelectionOverlayPath"]>(),
     setSnapMarkerPath: vi.fn(),
   };

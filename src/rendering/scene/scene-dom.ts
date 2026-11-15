@@ -42,6 +42,7 @@ export class SceneDom {
   public readonly overlayPath: SVGPathElement;
   public readonly selectionTraceGroup: SVGGElement;
   public readonly selectionOverlayPath: SVGPathElement;
+  public readonly lockedSelectionOverlayPath: SVGPathElement;
   public readonly selectionHandlePath: SVGPathElement;
   public readonly snapMarkerPath: SVGPathElement;
   public readonly ownerDocument: Document;
@@ -95,6 +96,7 @@ export class SceneDom {
     this.overlayPath = this.createSvg("path");
     this.selectionTraceGroup = this.createSvg("g");
     this.selectionOverlayPath = this.createSvg("path");
+    this.lockedSelectionOverlayPath = this.createSvg("path");
     this.selectionHandlePath = this.createSvg("path");
     this.snapMarkerPath = this.createSvg("path");
     const themeStyle = this.createSvg("style");
@@ -145,12 +147,7 @@ export class SceneDom {
       this.selectionTraceGroup,
     );
     this.liveGroup.append(this.livePath);
-    overlayGroup.append(
-      this.overlayPath,
-      this.selectionOverlayPath,
-      this.selectionHandlePath,
-      this.snapMarkerPath,
-    );
+    this.appendSelectionOverlays(overlayGroup);
     const defs = this.createSvg("defs");
     this.imageResources = new SceneImageResources(defs, options.imageResource ?? (() => undefined));
     defs.append(this.#backgroundPattern);
@@ -371,9 +368,20 @@ export class SceneDom {
     this.selectionTraceGroup.setAttribute("pointer-events", "none");
     this.selectionOverlayPath.setAttribute("class", "inkbook-selection-overlay");
     this.selectionOverlayPath.setAttribute("data-selection-fill", "accent");
+    this.lockedSelectionOverlayPath.setAttribute("class", "inkbook-locked-selection-overlay");
     this.selectionHandlePath.setAttribute("class", "inkbook-selection-handles");
     this.snapMarkerPath.setAttribute("class", "inkbook-snap-guide");
     this.snapMarkerPath.setAttribute("pointer-events", "none");
+  }
+
+  private appendSelectionOverlays(group: SVGGElement): void {
+    group.append(
+      this.overlayPath,
+      this.selectionOverlayPath,
+      this.selectionHandlePath,
+      this.snapMarkerPath,
+      this.lockedSelectionOverlayPath,
+    );
   }
 
   private createSvg<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {

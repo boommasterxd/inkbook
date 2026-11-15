@@ -26,7 +26,21 @@ import { SceneTransformPreviewController } from "./presentation/transform-previe
 import { SceneVisibilityState } from "./visibility/visibility-state";
 import { SceneTextController } from "./scene-text-controller";
 import { SceneImageCropController } from "./scene-image-crop";
+import { SceneSelectionController } from "./scene-selection-controller";
 export class SvgSceneRenderer {
+  readonly #selection = new SceneSelectionController(() => {
+    runtime.assertSceneActive(this.#disposed);
+    return {
+      content: this.#content,
+      writer: this.#frameWriter,
+      schedule: () => this.#frames.schedule(),
+    };
+  });
+  public readonly setSelectedElements = this.#selection.select;
+  public readonly setSelectionHighlightsEnabled = this.#selection.highlights;
+  public readonly setSelectionOverlayPath = this.#selection.outline;
+  public readonly setLockedSelectionOverlayPath = this.#selection.lockedOutline;
+  public readonly setSnapMarkerPath = this.#selection.snap;
   readonly #crop = new SceneImageCropController(
     () => [this.#dom, this.#stats, this.#camera, this.#content],
     () => this.#frames.schedule(),
@@ -304,26 +318,6 @@ export class SvgSceneRenderer {
   public setOverlayPath(d: string | null): void {
     runtime.assertSceneActive(this.#disposed);
     if (!this.#frameWriter.setOverlayPath(d)) return;
-    this.#frames.schedule();
-  }
-  public setSelectionHighlightsEnabled(enabled: boolean): void {
-    runtime.assertSceneActive(this.#disposed);
-    this.#content.setSelectionHighlightsEnabled(enabled);
-    this.#frames.schedule();
-  }
-  public setSelectedElements(ids: ReadonlySet<string>): void {
-    runtime.assertSceneActive(this.#disposed);
-    this.#content.setSelectedElements(ids);
-    this.#frames.schedule();
-  }
-  public setSelectionOverlayPath(...args: Parameters<SceneFrameWriter["setSelectionPath"]>): void {
-    runtime.assertSceneActive(this.#disposed);
-    this.#frameWriter.setSelectionPath(...args);
-    this.#frames.schedule();
-  }
-  public setSnapMarkerPath(d: string | null): void {
-    runtime.assertSceneActive(this.#disposed);
-    this.#frameWriter.setSnapPath(d);
     this.#frames.schedule();
   }
   public suppressMotionForNextDelta(ids: readonly string[]): void {

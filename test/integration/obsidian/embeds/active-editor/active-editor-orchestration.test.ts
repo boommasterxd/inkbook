@@ -221,16 +221,16 @@ describe("active editor context-menu scaling", () => {
   });
 
   it("uses selected ranks without materializing 10k render bands for one availability pass", async () => {
-    const ids = Array.from({ length: 10_000 }, (_, index) => `element-${index}`);
-    const materializeBandOrder = vi.fn((band: "content" | "highlight") =>
-      band === "content" ? ids : [],
+    const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
+    const ids = elements.map(({ id }) => id);
+    const model = documentModel(
+      vi.fn(async () => null),
+      new ElementStore(elements),
     );
-    const get = vi.fn((id: string) => ({ id, band: "content", rank: 5_000 }));
-    const bandSize = vi.fn((band: "content" | "highlight") =>
-      band === "content" ? ids.length : 0,
-    );
-    const sceneStore = { materializeBandOrder, get, bandSize } as unknown as ElementSceneStore;
-    const model = documentModel(vi.fn(async () => null));
+    const sceneStore = new ElementSceneStore(model.store);
+    const materializeBandOrder = vi.spyOn(sceneStore, "materializeBandOrder");
+    const get = vi.spyOn(sceneStore, "get");
+    const bandSize = vi.spyOn(sceneStore, "bandSize");
     const actions = activeActions(
       model,
       sceneStore,
@@ -248,6 +248,7 @@ describe("active editor context-menu scaling", () => {
     expect(bandSize).toHaveBeenCalledExactlyOnceWith("content");
     menus.dispose();
     actions.dispose();
+    sceneStore.release();
   });
 });
 

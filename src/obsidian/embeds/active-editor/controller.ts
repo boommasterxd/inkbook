@@ -351,6 +351,7 @@ export class ActiveEditorController {
         },
         selectionSignal: this.#pendingSelection.signal,
         selectionGeometry: () => this.#handles.selectionGeometry(),
+        editableSelection: () => this.#handles.editableSelection(),
         defaults: this.#textBindings.styles.defaults,
         ...(this.#holdToShape === undefined ? {} : { holdToShape: this.#holdToShape }),
         screenStart: start.pointer,
@@ -492,7 +493,6 @@ export class ActiveEditorController {
     if (!Helpers.sameSelectionMembers(selection, this.#selection)) this.#selectionFrames.reset();
     this.#selection = selection;
     this.#textBindings.styles.invalidateSelection();
-    this.#renderer.setSelectedElements(selection);
     this.#input = { ...this.#input, hasSelection: selection.size > 0 };
     this.#handles.renderSelection();
     this.#onStateChanged();

@@ -7,7 +7,8 @@ import type { ImageResourceV3, InkElementV1, PageV1 } from "../../domain/schema/
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PathPresentation } from "./content/element-presentation";
 
-type SceneDirtyDomain = "connection" | "geometry" | "order" | "paint" | "visibility";
+type SceneDirtyDomain =
+  "connection" | "geometry" | "interaction" | "order" | "paint" | "visibility";
 export type SceneBand = RenderBand;
 
 export interface SceneElementRecord {

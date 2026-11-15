@@ -4,6 +4,7 @@ import type { InkElementV1 } from "../../schema/public";
 import { copyRuntimeElementSteps } from "../../elements/runtime-element-copy";
 
 import type { DeepReadonly, ImmutableInkElement } from "../types";
+import { isElementLockReplacement } from "./element-lock";
 
 export function* immutableElementSteps(
   element: InkElementV1,
@@ -29,6 +30,7 @@ export function* immutableReplacementSteps(
   element: InkElementV1,
   source: ImmutableInkElement,
 ): Generator<void, ImmutableInkElement> {
+  if (isElementLockReplacement(source, element)) return element;
   if (element.kind === "text" && source.kind === "text") {
     return yield* takeImmutableElementOwnershipSteps(
       yield* copyRuntimeElementSteps(element, undefined, source),

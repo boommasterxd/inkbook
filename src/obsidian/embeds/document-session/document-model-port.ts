@@ -70,7 +70,7 @@ export interface EditableDocumentModel {
   readonly imageResources?: readonly ImageResourceV3[];
   imageResource?(id: string): ImageResourceV3 | undefined;
   addImageResources?(resources: readonly ImageResourceV3[]): Promise<void>;
-  readonly formatVersion?: 1 | 2 | 3;
+  readonly formatVersion?: InkSnapshotV1["version"];
   ensureFontResources?(resources: readonly FontResourceV2[]): void | Promise<void>;
   readonly page: InkSnapshotV1["page"];
   readonly revision: number;
@@ -85,20 +85,21 @@ export interface EditableDocumentModel {
       isCancelled(): boolean;
       readonly replay?: AppliedElementMutation;
       readonly replaySource?: "retained";
+      readonly protectLocked?: boolean;
     },
   ): Promise<PreparedElementMutationResult>;
   prepareElementRemoval(
     ids: ReadonlySet<string> | readonly string[],
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementMutationResult>;
   prepareElementArrangement(
     action: ArrangeAction,
     selection: ReadonlySet<string>,
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementMutationResult>;
   prepareElementAppend(
     elements: readonly InkElementV1[],
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementMutationResult>;
   commitPreparedElementMutation(token: PreparedElementMutation): AppliedElementMutation | null;
   encodeClipboard(selectedIds: ReadonlySet<string>): Promise<ClipboardWritePayload | null>;
@@ -115,7 +116,7 @@ export interface EditableDocumentModel {
   ): void;
   prepareElementReplacement(
     replacements: readonly InkElementV1[],
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementReplacementResult>;
   commitPreparedElementReplacement(
     token: PreparedElementReplacement,

@@ -14,11 +14,17 @@ const CONTEXT_MENU_ICONS = {
   importImages: "image",
   eraseAll: CAUTION_ERASER_ICON_ID,
   paste: "clipboard-paste",
+  lockSelection: "lock",
+  unlockSelection: "lock-open",
+  selectLocked: "scan",
   sendBackward: "arrow-down",
   sendToBack: "chevrons-down",
 } as const;
 
 export type ContextMenuAction =
+  | "lock-selection"
+  | "unlock-selection"
+  | "select-locked"
   | "copy"
   | "copy-text"
   | "copy-element"
@@ -34,6 +40,10 @@ export type ContextMenuAction =
   | "delete-embed";
 
 export interface ContextMenuState {
+  readonly selectionLock?: "none" | "lock" | "unlock";
+  readonly canSelectLocked?: boolean;
+  readonly canCut?: boolean;
+  readonly canDelete?: boolean;
   readonly canCropImage?: boolean;
   readonly canImportImages?: boolean;
   readonly canCopyText?: boolean | undefined;
@@ -50,6 +60,9 @@ export interface ContextMenuState {
 }
 
 export interface ContextMenuHandlers {
+  readonly lockSelection?: (() => void) | undefined;
+  readonly unlockSelection?: (() => void) | undefined;
+  readonly selectLocked?: (() => void) | undefined;
   readonly cropImage?: (() => void) | undefined;
   readonly importImages?: (() => void) | undefined;
   readonly copyText?: (() => void) | undefined;
@@ -121,6 +134,25 @@ function configureSelectionItems(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
+  const lock =
+    state.selectionLock === "lock"
+      ? handlers.lockSelection
+      : state.selectionLock === "unlock"
+        ? handlers.unlockSelection
+        : undefined;
+  if (lock !== undefined) {
+    configureItem(
+      menu,
+      state.selectionLock === "lock"
+        ? "editor.action.lock-selection"
+        : "editor.action.unlock-selection",
+      state.selectionLock === "lock"
+        ? CONTEXT_MENU_ICONS.lockSelection
+        : CONTEXT_MENU_ICONS.unlockSelection,
+      lock,
+    );
+    menu.addSeparator();
+  }
   if (state.canCropImage === true && handlers.cropImage !== undefined) {
     configureItem(
       menu,
@@ -135,13 +167,16 @@ function configureSelectionItems(
     menu.addSeparator();
   }
   configureCopyItems(menu, state, handlers);
-  configureItem(menu, "editor.action.cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
+  configureItem(menu, "editor.action.cut", CONTEXT_MENU_ICONS.cut, handlers.cut, {
+    disabled: state.canCut === false,
+  });
   if (state.canPaste) {
     configureItem(menu, "editor.action.paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
   }
   menu.addSeparator();
   configureItem(menu, "editor.action.delete", CONTEXT_MENU_ICONS.delete, handlers.delete, {
     warning: true,
+    disabled: state.canDelete === false,
   });
   menu.addSeparator();
   configureItem(
@@ -196,6 +231,15 @@ function configureCanvasItems(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
+  if (state.canSelectLocked === true && handlers.selectLocked !== undefined) {
+    configureItem(
+      menu,
+      "editor.action.select-locked",
+      CONTEXT_MENU_ICONS.selectLocked,
+      handlers.selectLocked,
+    );
+    menu.addSeparator();
+  }
   if (state.canImportImages === true && handlers.importImages !== undefined) {
     configureItem(
       menu,

@@ -28,7 +28,14 @@ export interface ElementRecord {
   readonly textPaintGeometry?: TextPaintGeometry;
 }
 
-export const DELTA_DOMAINS = ["geometry", "paint", "order", "connection", "visibility"] as const;
+export const DELTA_DOMAINS = [
+  "geometry",
+  "paint",
+  "order",
+  "connection",
+  "visibility",
+  "interaction",
+] as const;
 
 export type DeltaDomain = (typeof DELTA_DOMAINS)[number];
 
@@ -86,6 +93,8 @@ export interface ElementStoreMemoryUsage {
 }
 
 export interface StoreSliceScheduler {
+  /** User edits reject changes to locked records; history and explicit lock commands omit it. */
+  readonly protectLocked?: boolean;
   readonly isCancelled?: () => boolean;
   readonly shouldYield: () => boolean;
   readonly yieldControl: () => Promise<void>;
@@ -172,7 +181,7 @@ export interface CreateOptions {
 export interface SnapshotMaterialization {
   readonly page: PageV1;
   readonly revision: number;
-  readonly version?: 1 | 2 | 3;
+  readonly version?: 1 | 2 | 3 | 4;
   readonly fontResources?: InkSnapshotV1["fontResources"];
   readonly imageResources?: InkSnapshotV1["imageResources"];
 }

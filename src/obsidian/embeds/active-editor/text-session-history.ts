@@ -65,11 +65,14 @@ export async function commitTextReplacement(
   beforeCommit?: () => boolean,
 ): Promise<boolean> {
   const previous = model.store.get(element.id)?.element;
-  if (previous?.kind !== "text") return false;
+  if (previous?.kind !== "text" || previous.locked === true) return false;
   const revision = model.revision;
   const isCancelled = () =>
     signal.aborted || history.isDisposed || history.isTraversing || model.revision !== revision;
-  const prepared = await model.prepareElementReplacement([element], { isCancelled });
+  const prepared = await model.prepareElementReplacement([element], {
+    isCancelled,
+    protectLocked: true,
+  });
   if (prepared.status === "noop") return !isCancelled();
   if (prepared.status !== "prepared" || prepared.token === null || isCancelled()) return false;
   const captured = captureElementReplacementHistory([previous as TextElementV2], [element]);
@@ -82,6 +85,7 @@ export async function commitTextReplacement(
     const cancelled = () => history.isDisposed || model.revision !== basis;
     const next = await model.prepareElementReplacement(replacement as readonly InkElementV1[], {
       isCancelled: cancelled,
+      protectLocked: false,
     });
     if (next.status !== "prepared" || next.token === null || cancelled()) return false;
     return model.commitPreparedElementReplacement(next.token) === "committed";

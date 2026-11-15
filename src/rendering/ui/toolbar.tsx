@@ -95,6 +95,8 @@ function buttonDisabled(action: ToolbarAction, state: ToolbarState): boolean {
   if (buttonPreview(action, state)) return true;
   if (action === "undo") return !state.canUndo;
   if (action === "redo") return !state.canRedo;
+  if (action === "cut") return state.canCut === false;
+  if (action === "delete") return state.canDelete === false;
   return false;
 }
 

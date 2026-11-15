@@ -74,6 +74,7 @@ Every completed canvas gesture is stored as a command, for example:
 - modify shape
 - change style
 - change coordinate-system dimensionality or table column count
+- lock or unlock selected elements
 - arrange selection
 - Paste
 - Cut
@@ -93,7 +94,7 @@ Automatic changes to the handwriting height do not create undo steps.
 
 Arrange actions change the stable back-to-front element order inside the fixed image, highlight, or content render band. They never move highlighter elements above content. Bring forward and Send backward cross one adjacent unselected rank; Bring to front and Send to back move to the corresponding band boundary. Multi-selection reordering is stable and commits as one command.
 
-Line and arrow endpoint connections follow every semantic target anchor that remains valid when a shape moves, scales, rotates, or changes geometry. This includes table anchors affected by a selected table's column-count change. Changing a coordinate system from 3D to 2D removes its third axis, so connections to that removed endpoint detach at their last resolved positions instead of following an anchor that no longer exists. The target change, every retained endpoint update, and every required detachment are one atomic history command. Target deletion, Cut, or erasing likewise detaches surviving external lines and arrows at their last resolved positions within the same command. Exact ordering and connection contracts are defined in [File Format and Geometry](file-format.md).
+Line and arrow endpoint connections follow every semantic target anchor that remains valid when a shape moves, scales, rotates, or changes geometry. This includes table anchors affected by a selected table's column-count change. Changing a coordinate system from 3D to 2D removes its third axis, so connections to that removed endpoint detach at their last resolved positions instead of following an anchor that no longer exists. The target change, every retained endpoint update, and every required detachment are one atomic history command. Target deletion, Cut, or erasing likewise detaches surviving external lines and arrows at their last resolved positions within the same command. A change that would alter a locked dependent is rejected under [Element Locks](editor-tools.md#element-locks). Exact ordering and connection contracts are defined in [File Format and Geometry](file-format.md).
 
 When the unified history is empty, the plugin does not automatically lock the embed. Instead, attached feedback indicates that the embed must be locked to continue undoing in Obsidian. This prevents existing canvas redo history from being lost unexpectedly.
 
@@ -117,15 +118,15 @@ The MIME identifier, versioned payload schema, validation rules, and limits are 
 
 Cut:
 
-- copies first
-- then removes the selected elements only if the same session, clipboard operation, basis revision, exact selection, and selected record versions are still current
+- copies the unlocked selected elements first
+- then removes the unlocked selected elements only if the same session, clipboard operation, basis revision, exact selection, and selected record versions are still current
 - creates one undo step
-- detaches unselected dependent lines or arrows at their current endpoint before removing a selected target
+- detaches unselected unlocked dependent lines or arrows at their current endpoint before removing a selected target; a locked dependent prevents its required detachment
 - keeps the copied payload but removes nothing and creates no history entry if the selection changes, an element is edited, the presentation detaches, or the operation otherwise becomes stale while the worker or system clipboard is pending
 
 Delete:
 
-- removes the selection
+- removes the unlocked elements in the selection
 - creates one undo step
 - is triggered through the toolbar, selection context menu, or `Delete`
 - previews a 150 ms opacity fade using retained scene nodes and bounded animation starts; committing does not wait for the animation
@@ -166,25 +167,29 @@ Moving beyond the long-press threshold, receiving a second touch, starting a pen
 
 When a selection exists, the menu begins with:
 
-1. Copy, or Copy text field for a text-only selection
-2. Copy text for a text-only selection, independently of the ordinary Copy preference
-3. Cut
-4. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
-5. a separator
-6. Delete
+1. Lock selection or Unlock selection, based on the [element lock rules](editor-tools.md#element-locks)
+2. Crop image or Edit text when available for the selection
+3. Copy, or Copy text field for a text-only selection
+4. Copy text for a text-only selection, independently of the ordinary Copy preference
+5. Cut
+6. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
 7. a separator
-8. Bring forward
-9. Send backward
-10. Bring to front
-11. Send to back
+8. Delete
+9. a separator
+10. Bring forward
+11. Send backward
+12. Bring to front
+13. Send to back
 
 The canvas section follows after a separator:
 
-1. Copy embed
-2. Erase all
-3. Delete embed
+1. Select all locked elements, when at least one exists
+2. Image import, when available
+3. Copy embed
+4. Erase all
+5. Delete embed
 
-Without a selection, the selection section is omitted and Paste precedes the canvas section when `Clipboard.read()` is supported or a validated in-session payload is available. This action availability does not inspect system clipboard contents or permission. The four Arrange actions remain flat entries, preserving the existing menu structure. Disabled boundary actions remain visible. Delete removes only the selected annotations with one undoable canvas command. Erase all and Delete embed retain their confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
+Without a selection, the selection section is omitted and Paste appears in the canvas section when `Clipboard.read()` is supported or a validated in-session payload is available. This action availability does not inspect system clipboard contents or permission. The four Arrange actions remain flat entries, preserving the existing menu structure. Disabled boundary actions remain visible. Delete removes only unlocked selected annotations with one undoable canvas command. Erase all removes only unlocked elements and, like Delete embed, retains its confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
 
 ## Copying the Entire Embed
 
@@ -306,7 +311,7 @@ The following functions are particularly relevant for the handwriting embed:
 - Erase all
 - Delete embed
 
-Erase all first displays a confirmation and then removes all canvas elements through an undoable command.
+Erase all first displays a confirmation and then removes the unlocked canvas elements through an undoable command. Locked elements remain in the drawing.
 
 Delete embed checks whether the same SVG file is still referenced in other notes.
 

@@ -11,7 +11,6 @@ import {
   SelectionFrameSession,
   SelectionHandleSession,
   type SelectedElementGeometry,
-  type ConnectedSelectionPreview,
   type OrientedSelectionFrame,
   type SelectionHandlePreview,
   type SelectionHandle,
@@ -36,6 +35,9 @@ import type { SelectionPreviewFrameScheduler } from "./selection-preview-contrac
 import { subscribeSelectionHandleRefresh } from "./selection-handle-refresh";
 import type { ActiveEditorHandleInteractionOptions } from "./handle-interaction-contracts";
 import { TextEditingFrame } from "./text-editing-frame";
+import { lockedSelectionOutline } from "./locked-selection-outline";
+import { SelectionGeometryCache } from "./selection-geometry-cache";
+import { connectedHandlePreview } from "./connected-handle-preview";
 export type { ActiveEditorHandleInteractionOptions } from "./handle-interaction-contracts";
 export type { HandleInteractionRenderer } from "./handle-presentation";
 export type HandleFrameScheduler = SelectionPreviewFrameScheduler;
@@ -51,6 +53,7 @@ export class ActiveEditorHandleInteraction {
   readonly #layout: ActiveEditorHandleInteractionOptions["layout"];
   readonly #model: EditableDocumentModel;
   readonly #presentation: SelectionHandlePresentation;
+  readonly #pageToScreen: ActiveEditorHandleInteractionOptions["pageToScreen"];
   readonly #preparedHistory: PreparedElementHistory;
   readonly #renderer: HandleInteractionRenderer;
   readonly #sceneStore: ElementSceneStore;
@@ -64,16 +67,14 @@ export class ActiveEditorHandleInteraction {
   #connectionPreparation: ConnectionPreviewPreparation | undefined;
   #lastSample: PendingHandleSample | undefined;
   readonly #unsubscribeStore: () => void;
-  #geometrySelection: ReadonlySet<string> | undefined;
-  #geometryRevision = -1;
-  #geometrySelectionSize = -1;
-  #geometrySnapshot: readonly SelectedElementGeometry[] = [];
+  readonly #geometry = new SelectionGeometryCache();
   #renderedSelection: ReadonlySet<string> | undefined;
   #renderedRevision = -1;
   #renderedSelectionSize = -1;
   #renderedGeometry: readonly SelectedElementGeometry[] = [];
   #renderedFrame: OrientedSelectionFrame | null = null;
   #renderedZoom = 1;
+  #publishedSelection: ReadonlySet<string> | undefined;
   #cursorGeometry: SelectionOverlayGeometry | null = null;
   #cursorRotation = 0;
   #cursorLinear: InkElementV1 | undefined;
@@ -90,6 +91,7 @@ export class ActiveEditorHandleInteraction {
     this.#model = options.model;
     this.#preparedHistory = options.preparedHistory;
     this.#renderer = options.renderer;
+    this.#pageToScreen = options.pageToScreen;
     this.#presentation = new SelectionHandlePresentation(
       options.renderer,
       options.pageToScreen,
@@ -107,7 +109,7 @@ export class ActiveEditorHandleInteraction {
     this.#unsubscribeStore = subscribeSelectionHandleRefresh(
       options,
       () => {
-        this.#geometrySelection = undefined;
+        this.#geometry.invalidate();
         this.#renderedRevision = -1;
         return this.#active === undefined;
       },
@@ -137,7 +139,7 @@ export class ActiveEditorHandleInteraction {
       rotation: this.#cursorRotation,
       linear: this.#cursorLinear,
       hit: this.#cursorLinearHit,
-      selected: this.#geometrySnapshot,
+      selected: this.#geometry.editable,
       ...(visualOnly === undefined ? {} : { handlesOnly: true, visualOnly }),
     });
   }
@@ -154,8 +156,7 @@ export class ActiveEditorHandleInteraction {
     this.#disposed = true;
     this.cancel();
     this.#unsubscribeStore();
-    this.#geometrySelection = undefined;
-    this.#geometrySnapshot = [];
+    this.#geometry.release();
     this.#presentation.dispose();
     this.#cursorGeometry = null;
     this.#cursorLinear = undefined;
@@ -193,7 +194,7 @@ export class ActiveEditorHandleInteraction {
     const scalePreview = new SelectionScalePreviewPlan(selected);
     const connectedTransformIds = ids.filter((id) => !connectedPreview.selectedPreviewIds.has(id));
     this.#active = {
-      selectionSource: this.#selection(),
+      selectionSource: this.#geometry.editableIds,
       cursor:
         handle.kind === "rotate" ? "grabbing" : selectionHandleCursor(handle, this.#cursorRotation),
       connectedPreview,
@@ -298,7 +299,11 @@ export class ActiveEditorHandleInteraction {
       materializeScale === undefined
         ? undefined
         : active.scalePreview.materializer(materializeScale);
-    const connected = this.#connectedPreview(active, preview, scaleMaterializer);
+    const connected = connectedHandlePreview(active, preview, scaleMaterializer);
+    if (connected === null) {
+      this.#presentation.clearPreviews();
+      return;
+    }
     const scale = active.scalePreview.resolve(preview);
     if (preview.transform?.kind !== "scale" && connected.progressive === undefined) {
       this.#renderer.clearProgressiveElementPreviews?.();
@@ -371,6 +376,11 @@ export class ActiveEditorHandleInteraction {
   public renderSelection(): void {
     if (this.#active !== undefined) return;
     const selected = this.selectionGeometry();
+    const ids = this.#geometry.editableIds;
+    if (ids !== this.#publishedSelection && (ids.size > 0 || this.#publishedSelection?.size)) {
+      this.#renderer.setSelectedElements?.(ids);
+      this.#publishedSelection = ids;
+    }
     const frame = this.#editingFrame.resolve(selected, this.#selectionFrames);
     this.#cacheCursorGeometry(selected, frame);
     this.#renderedSelection = this.#selection();
@@ -390,6 +400,7 @@ export class ActiveEditorHandleInteraction {
           }
         : null);
     this.#presentation.renderGeometry(selected, this.#cursorGeometry);
+    this.#renderLockedSelection();
   }
   public renderCameraSelection(): void {
     if (this.#active !== undefined) return;
@@ -406,6 +417,7 @@ export class ActiveEditorHandleInteraction {
       this.#renderedZoom = this.#zoom();
     }
     this.#presentation.renderGeometry(this.#renderedGeometry, this.#cursorGeometry);
+    this.#renderLockedSelection();
   }
   #cacheCursorGeometry(
     selected: readonly SelectedElementGeometry[],
@@ -459,42 +471,18 @@ export class ActiveEditorHandleInteraction {
     );
     this.#layout?.updateBottom(this.#previewMaximumBottom);
   }
-  #connectedPreview(
-    active: ActiveHandleGesture,
-    preview: SelectionHandlePreview,
-    materializeRoot: ((id: string) => InkElementV1 | undefined) | undefined,
-  ): ConnectedSelectionPreview {
-    if (preview.transform === null) {
-      return preview.exactPreviewTruncated
-        ? active.connectedPreview.updateTargets(preview.exactElements)
-        : { elements: [], selectedPreviewIds: new Set() };
-    }
-    if (!preview.exactPreviewTruncated) {
-      return {
-        elements: [],
-        selectedPreviewIds: active.connectedPreview.selectedPreviewIds,
-      };
-    }
-    return active.connectedPreview.update(preview.transform, materializeRoot);
-  }
   public selectionGeometry(): readonly SelectedElementGeometry[] {
-    const selection = this.#selection();
-    if (
-      this.#geometrySelection === selection &&
-      this.#geometrySelectionSize === selection.size &&
-      this.#geometryRevision === this.#model.revision
-    ) {
-      return this.#geometrySnapshot;
-    }
-    const geometry: SelectedElementGeometry[] = [];
-    for (const id of selection) {
-      const record = this.#sceneStore.get(id);
-      if (record !== undefined) geometry.push({ bounds: record.bounds, element: record.element });
-    }
-    this.#geometrySelection = selection;
-    this.#geometrySelectionSize = selection.size;
-    this.#geometryRevision = this.#model.revision;
-    this.#geometrySnapshot = geometry;
-    return this.#geometrySnapshot;
+    return this.#geometry.read(this.#sceneStore, this.#selection(), this.#model.revision);
+  }
+
+  public editableSelection(): ReadonlySet<string> {
+    this.selectionGeometry();
+    return this.#geometry.editableIds;
+  }
+
+  #renderLockedSelection(): void {
+    this.#renderer.setLockedSelectionOverlayPath?.(
+      lockedSelectionOutline(this.#geometry.lockedBounds, this.#pageToScreen),
+    );
   }
 }

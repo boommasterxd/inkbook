@@ -95,7 +95,7 @@ One canonical inner page frame runs exactly between the fixed page margins. Line
 
 ## Strict Static-Markup Allowlist
 
-Version 1 static markup uses only `svg`, `style`, `metadata`, `g`, and `path`. Version 2 adds the bounded [text and font extension](#text-and-font-extension); version 3 adds the [image extension](#image-extension). The safe-preview validator accepts:
+Version 1 static markup uses only `svg`, `style`, `metadata`, `g`, and `path`. Version 2 adds the bounded [text and font extension](#text-and-font-extension); version 3 adds the [image extension](#image-extension). Version 4 retains that static grammar while adding element lock state to editable metadata. The safe-preview validator accepts:
 
 - the documented root attributes, including a lowercase 64-character SHA-256 token for current-version metadata; editable loading subsequently verifies that token against the canonical decoded metadata
 - `id` and `data-encoding` only where shown
@@ -174,4 +174,4 @@ Safe previews validate this complete extension before DOM publication and retain
 
 Version 3 adds one optional `defs#inkbook-images` block after the theme stylesheet and optional font stylesheet, immediately before snapshot metadata and a fixed `g#inkbook-images-band` image band between background and highlights. Each definition contains one validated PNG, JPEG or static WebP Base64 payload and a content-addressed leaf ID; each image instance contains only a canonical rotation group, clipped nested SVG viewport, and a local `use` reference to that leaf. External references, arbitrary definition markup, reference cycles, extra attributes and invalid crops remain forbidden. Disk metadata carries matching resource descriptors without a second copy of the bytes. The exact schema, capacities, nondestructive crop geometry, codec admission and reader-compatibility boundary are canonical in [Images and PDF Pages](images.md).
 
-The version 1 envelope example above remains the no-image form. Version 3 uses matching root and snapshot version discriminators and retains the existing metadata hash, font rules when needed, palette and complete-file capacity. Image pixels keep their source colors across light and dark schemes. Locked-preview validation admits the complete narrow image grammar before mounting any definition or instance and rejects partially validated payloads.
+The version 1 envelope example above remains the no-image form. Versions 3 and 4 use matching root and snapshot version discriminators and retain the existing metadata hash, font rules when needed, palette and complete-file capacity. Image pixels keep their source colors across light and dark schemes. Locked-preview validation admits the complete narrow image grammar before mounting any definition or instance and rejects partially validated payloads.

@@ -190,6 +190,15 @@
   inline-size: 100%;
 }
 
+.inkbook-image-import-placement {
+  gap: var(--size-4-3);
+  min-block-size: 44px;
+}
+
+.inkbook-image-import-placement .inkbook-menu-switch {
+  flex: 0 0 auto;
+}
+
 .inkbook-image-import-pdf .inkbook-image-import-pages-hint {
   margin-block: calc(-1 * var(--size-4-1)) var(--size-4-1);
 }

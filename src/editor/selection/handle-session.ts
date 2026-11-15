@@ -52,13 +52,13 @@ export type {
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 const SYNCHRONOUS_SELECTION_WORK_LIMIT = 16_384;
+const USER_REPLACEMENT = Object.freeze({ protectLocked: true });
 const DEFAULT_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: true });
 const MOVE_REPLACEMENT_WORK = Object.freeze({
   includeReverseDependencies: true,
   countStrokeSamples: false,
 });
 const TABLE_SEPARATOR_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: false });
-
 export class SelectionHandleSession {
   readonly #affineScalePreview: boolean;
   readonly #action: SelectionHandleAction;
@@ -180,7 +180,7 @@ export class SelectionHandleSession {
       return { status: "time-sliced-required" };
     }
     try {
-      const plan = this.#planner.planReplacements(this.#materializeDirect());
+      const plan = this.#planner.planReplacements(this.#materializeDirect(), USER_REPLACEMENT);
       if (plan === null) return { status: "noop" };
       return { previous: this.#elements, replacements: plan.replacements, status: "ready" };
     } catch (error: unknown) {
@@ -242,7 +242,7 @@ export class SelectionHandleSession {
       };
     }
     try {
-      const planned = this.#planner.planReplacements(this.#materializeDirect());
+      const planned = this.#planner.planReplacements(this.#materializeDirect(), USER_REPLACEMENT);
       const transform = this.#previewTransform(false);
       this.#valid = planned !== null;
       return {

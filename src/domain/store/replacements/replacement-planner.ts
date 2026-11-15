@@ -20,9 +20,15 @@ import {
   classifyReplacementSteps,
   elementsEqual,
   elementsEqualSteps,
+  tableAnchorFrameEqual,
 } from "../records/element-comparison";
 import { MutationPreparationScheduler } from "../mutations/mutation-preparation-scheduler";
 import { prepareRuntimeElement } from "../records/runtime-element-preparation";
+import {
+  assertElementUnlocked,
+  elementLockCandidate,
+  isElementLockReplacement,
+} from "../records/element-lock";
 import { cancelled, yieldWhenRequested } from "./replacement-scheduler";
 import type {
   DeltaDomain,
@@ -43,6 +49,7 @@ export interface ReplacementCandidate {
 const CANONICAL_TRANSLATION_DOMAINS = Object.freeze(["geometry"] as const);
 
 export interface ReplacementPlannerPorts {
+  readonly protectLocked?: boolean;
   readonly getRecord: (id: string) => ElementRecord;
   readonly getReferences: (targetId: string) => readonly EndpointReference[] | undefined;
   readonly onReverseVisit: () => void;
@@ -61,7 +68,7 @@ export function prepareReplacementCandidates(
 ): ReplacementCandidate[] {
   const retained = new Map<string, ElementRecord>();
   const drafts = prepareReplacementDrafts(replacements, ports, retained);
-  return classifyReplacementDrafts(drafts, ports.getRecord, retained);
+  return classifyReplacementDrafts(drafts, ports.getRecord, retained, ports.protectLocked);
 }
 
 export async function prepareReplacementCandidatesTimeSliced(
@@ -90,6 +97,7 @@ export async function prepareReplacementCandidatesTimeSliced(
     ports.getRecord,
     trackedScheduler,
     retained,
+    ports.protectLocked,
   );
   if (classified === "cancelled") return classified;
   return {
@@ -155,6 +163,7 @@ function prepareDraftTimeSliced(
   retained: ElementRecord | undefined,
 ): InkElementV1 | "cancelled" | Promise<InkElementV1 | "cancelled"> {
   return retained?.element === replacement ||
+    isElementLockReplacement(current.element, replacement) ||
     isCanonicalStrokeTranslation(current.element, replacement) ||
     isValidatedInternalStyleReplacement(current.element, replacement)
     ? replacement
@@ -280,6 +289,7 @@ function propagateReference(reference: EndpointReference, state: PropagationStat
     state.drafts.get(reference.linearId) ?? state.ports.getRecord(reference.linearId).element;
   const resolved = resolveConnections(source, state.lookup, "detach");
   if (elementsEqual(source, resolved)) return;
+  if (state.ports.protectLocked === true) assertElementUnlocked(source);
   state.drafts.set(reference.linearId, resolved);
   if (state.queued.has(reference.linearId)) return;
   state.queue.push(reference.linearId);
@@ -290,11 +300,13 @@ export function classifyReplacementDrafts(
   drafts: Map<string, InkElementV1>,
   getRecord: (id: string) => ElementRecord,
   retained: ReadonlyMap<string, ElementRecord> = new Map(),
+  protectLocked = false,
 ): ReplacementCandidate[] {
   const candidates: ReplacementCandidate[] = [];
   const lookup = createLookup(drafts, getRecord);
   for (const [id, element] of drafts) {
     const candidate = classifyCandidate(id, element, getRecord, lookup, retained.get(id));
+    if (protectLocked && candidate !== null) assertElementUnlocked(candidate.current.element);
     if (candidate !== null) candidates.push(candidate);
   }
   return candidates;
@@ -305,6 +317,7 @@ async function classifyReplacementDraftsTimeSliced(
   getRecord: (id: string) => ElementRecord,
   scheduler: StoreSliceScheduler,
   retained: ReadonlyMap<string, ElementRecord>,
+  protectLocked = false,
 ): Promise<readonly ReplacementCandidate[] | "cancelled"> {
   const candidates: ReplacementCandidate[] = [];
   const lookup = createLookup(drafts, getRecord);
@@ -320,6 +333,7 @@ async function classifyReplacementDraftsTimeSliced(
     );
     const candidate = classification instanceof Promise ? await classification : classification;
     if (candidate === "cancelled") return candidate;
+    if (protectLocked && candidate !== null) assertElementUnlocked(candidate.current.element);
     if (candidate !== null) candidates.push(candidate);
     if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
   }
@@ -333,12 +347,8 @@ function classifyCandidateTimeSliced(
   work: MutationPreparationScheduler,
   retainedRecord: ElementRecord | undefined,
 ): ReplacementCandidate | null | "cancelled" | Promise<ReplacementCandidate | null | "cancelled"> {
-  const translation = canonicalStrokeTranslation(current.element, element);
-  if (translation !== null) {
-    return translation.x === 0 && translation.y === 0
-      ? null
-      : { current, domains: CANONICAL_TRANSLATION_DOMAINS, element, retainedRecord };
-  }
+  const known = classifyKnownReplacement(current, element, retainedRecord);
+  if (known !== undefined) return known;
   return work.run(classifyCandidateSteps(current, element, lookup, retainedRecord));
 }
 
@@ -364,15 +374,25 @@ function classifyCandidate(
   retainedRecord: ElementRecord | undefined,
 ): ReplacementCandidate | null {
   const current = getRecord(id);
-  const translation = canonicalStrokeTranslation(current.element, element);
-  if (translation !== null) {
-    return translation.x === 0 && translation.y === 0
-      ? null
-      : { current, domains: CANONICAL_TRANSLATION_DOMAINS, element, retainedRecord };
-  }
+  const known = classifyKnownReplacement(current, element, retainedRecord);
+  if (known !== undefined) return known;
   const domains = classifyReplacement(current.element, element);
   if (domains.length === 0 && elementsEqual(current.element, element)) return null;
   return classifiedCandidate(current, element, domains, lookup, retainedRecord);
+}
+
+function classifyKnownReplacement(
+  current: ElementRecord,
+  element: InkElementV1,
+  retainedRecord: ElementRecord | undefined,
+): ReplacementCandidate | null | undefined {
+  if (isElementLockReplacement(current.element, element))
+    return elementLockCandidate(current, element, retainedRecord);
+  const translation = canonicalStrokeTranslation(current.element, element);
+  if (translation === null) return undefined;
+  return translation.x === 0 && translation.y === 0
+    ? null
+    : { current, domains: CANONICAL_TRANSLATION_DOMAINS, element, retainedRecord };
 }
 
 function classifiedCandidate(
@@ -429,22 +449,6 @@ function isGeometryTargetChange(current: ImmutableInkElement, draft: InkElementV
   return isAnchorTarget(draft) && classifyReplacement(current, draft).includes("geometry");
 }
 
-function tableAnchorFrameEqual(
-  current: Extract<ImmutableInkElement, { kind: "table" }>,
-  draft: Extract<InkElementV1, { kind: "table" }>,
-): boolean {
-  return (
-    current.x === draft.x &&
-    current.y === draft.y &&
-    current.columnWidth === draft.columnWidth &&
-    current.columns === draft.columns &&
-    current.height === draft.height &&
-    current.rotation === draft.rotation &&
-    current.pivot.x === draft.pivot.x &&
-    current.pivot.y === draft.pivot.y
-  );
-}
-
 export function assertReplacementIdentity(
   current: ImmutableInkElement,
   replacement: InkElementV1,
@@ -470,6 +474,7 @@ export function assertValidReplacementElement(
   current: ImmutableInkElement,
   replacement: InkElementV1,
 ): void {
+  if (isElementLockReplacement(current, replacement)) return;
   if (isValidatedInternalStyleReplacement(current, replacement)) return;
   const isOwnedRuntimeStroke =
     current.kind === "stroke" &&
